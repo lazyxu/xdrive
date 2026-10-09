@@ -643,8 +643,8 @@ declare global {
         cancelMediaCreativeGeneration: (
           generationID: string,
         ) => Promise<DesktopResult<MediaCreativeGeneration>>
-        getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number) => Promise<DesktopResult<AgentMediaThumbnail>>
-        getMediaAnalysisPreview: (nodeID: number, requestID?: string) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>
         cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getMediaLivePhotoStill: (nodeID: number) => Promise<DesktopResult<string>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>

@@ -3359,7 +3359,7 @@ function registerIPCHandlers() {
     }, false),
   )
 
-  ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown) =>
+  ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown, revision: unknown, reportProgress: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {
         const hello = await requireAgentLifecycle().ensureRunning()
@@ -3376,14 +3376,22 @@ function registerIPCHandlers() {
           throw new AgentIPCError('invalid_input', 0, 'Thumbnail source revision is invalid.')
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
+        const notify = reportProgress === true && typeof requestID === 'string'
+          ? (loadedBytes: number, totalBytes?: number) => {
+              if (signal?.aborted || event.sender.isDestroyed()) return
+              event.sender.send('agent:media-binary-progress', {
+                request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
+              })
+            }
+          : undefined
         return requireAgentClient().mediaThumbnail(nodeID, signal,
-          typeof revision === 'number' && revision > 0 ? revision : undefined)
+          typeof revision === 'number' && revision > 0 ? revision : undefined, notify)
       }),
       false,
     ),
   )
 
-  ipcMain.handle('agent:get-media-analysis-preview', (event, nodeID: unknown, requestID: unknown) =>
+  ipcMain.handle('agent:get-media-analysis-preview', (event, nodeID: unknown, requestID: unknown, reportProgress: unknown) =>
     runAgentAction<AgentMediaThumbnail>(
       () => viewportRequests.run(event.sender, requestID, async (signal) => {
         const hello = await requireAgentLifecycle().ensureRunning()
@@ -3396,7 +3404,15 @@ function registerIPCHandlers() {
           throw new AgentIPCError('invalid_input', 0, 'RAW preview node id is required.')
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'RAW preview was cancelled.')
-        return requireAgentClient().mediaAnalysisPreview(nodeID, signal)
+        const notify = reportProgress === true && typeof requestID === 'string'
+          ? (loadedBytes: number, totalBytes?: number) => {
+              if (signal?.aborted || event.sender.isDestroyed()) return
+              event.sender.send('agent:media-binary-progress', {
+                request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
+              })
+            }
+          : undefined
+        return requireAgentClient().mediaAnalysisPreview(nodeID, signal, notify)
       }),
       false,
     ),

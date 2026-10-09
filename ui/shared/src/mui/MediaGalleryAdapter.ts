@@ -236,6 +236,7 @@ export interface XDriveMediaGalleryPort {
     nodeID: number,
     signal?: AbortSignal,
     revision?: number,
+    onProgress?: XDriveByteProgressHandler,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
   loadLivePhotoMotion?: (
     nodeID: number,
@@ -247,6 +248,7 @@ export interface XDriveMediaGalleryPort {
     signal?: AbortSignal,
     fileName?: string,
     revision?: number,
+    onProgress?: XDriveByteProgressHandler,
   ) => Promise<XDriveMediaGalleryTransportResult<string>>
   saveVideoPoster?: (
     nodeID: number,
@@ -584,8 +586,8 @@ export function createXDriveMediaGalleryDataSource(
     listAlbumItemRange: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItemRange(albumID, limit, offset, query),
     ),
-    loadThumbnail: async (nodeID, signal, revision) => mediaResourceURL(
-      await resolveXDriveTransport(port.loadThumbnail(nodeID, signal, revision)),
+    loadThumbnail: async (nodeID, signal, revision, onProgress) => mediaResourceURL(
+      await resolveXDriveTransport(port.loadThumbnail(nodeID, signal, revision, onProgress)),
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion
@@ -595,7 +597,7 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     loadPreviewURL: port.loadPreviewURL
-      ? (nodeID, kind, signal, fileName, revision) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind, signal, fileName, revision))
+      ? (nodeID, kind, signal, fileName, revision, onProgress) => resolveXDriveTransport(port.loadPreviewURL!(nodeID, kind, signal, fileName, revision, onProgress))
       : undefined,
     saveVideoPoster: port.saveVideoPoster
       ? async (nodeID, revision, poster, signal) => {

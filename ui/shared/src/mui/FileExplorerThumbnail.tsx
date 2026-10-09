@@ -11,10 +11,15 @@ import { Box } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
+import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import type { XDriveMediaLoadStage } from './MediaLoadProgress'
+import type { XDriveByteProgressHandler } from '../file-preview'
 
 export type XDriveFileExplorerThumbnailLoader = (
   item: XDriveFileExplorerItem,
   signal?: AbortSignal,
+  onProgress?: XDriveByteProgressHandler,
+  onStage?: (stage: XDriveMediaLoadStage) => void,
 ) => Promise<string | null | undefined>
 
 type FileThumbnailCache = {
@@ -350,12 +355,16 @@ export function XDriveFileExplorerThumbnail({
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
+  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [stage, setStage] = useState<XDriveMediaLoadStage>('transfer')
   const leaseRef = useRef<FileThumbnailLease | null>(null)
   const loadThumbnail = context?.loadThumbnail
   const cache = context?.cache
 
   useEffect(() => {
     setFailed(false)
+    setStage('transfer')
+    setProgress({ loadedBytes: 0 })
     const lease = cache ? fileThumbnailCacheAcquire(cache, cacheKey) : null
     const previous = leaseRef.current
     leaseRef.current = lease
@@ -392,7 +401,13 @@ export function XDriveFileExplorerThumbnail({
     }
     let active = true
     const requestedItem = itemRef.current
-    const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(requestedItem, signal))
+    const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(
+      requestedItem, signal,
+      (loadedBytes, totalBytes) => {
+        if (active && !signal.aborted) setProgress({ loadedBytes, totalBytes })
+      },
+      (nextStage) => { if (active && !signal.aborted) setStage(nextStage) },
+    ))
     void scheduled.promise
       .then((value) => {
         if (!value) {
@@ -455,6 +470,9 @@ export function XDriveFileExplorerThumbnail({
           sx={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       ) : fallback)}
+      {eligible && visible && !src && !failed && !item.thumbnail && loadThumbnail ? (
+        <XDriveMediaLoadingProgress compact stage={stage} {...progress} />
+      ) : null}
       {livePhoto && !failed && Boolean(item.thumbnail || src) ? (
         <Box
           component="span"

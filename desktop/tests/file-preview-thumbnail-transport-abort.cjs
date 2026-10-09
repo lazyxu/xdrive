@@ -35,6 +35,11 @@ new Function('exports', 'module', 'require', compiled)(
     if (name === './FilePreviewTransformedMedia') {
       return { XDriveTransformedImagePreview: passthrough('img') }
     }
+    // This test asserts transport ownership; UI progress rendering is
+    // independent and must not mask or relax real abort/disconnect checks.
+    if (name === './MediaLoadProgress') {
+      return { XDriveMediaLoadingProgress: passthrough('span') }
+    }
     return require(name)
   },
 )

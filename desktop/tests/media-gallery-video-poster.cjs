@@ -102,8 +102,9 @@ test('Gallery video poster viewport cleanup cancels queued work', () => {
   assert.ok(preview.includes('const scheduled = scheduleMediaPoster((signal) => xDriveResolveMediaVideoPoster({'))
   assert.ok(preview.includes('task: (signal: AbortSignal) => Promise<string | null>'))
   assert.ok(preview.includes('entry.controller.abort()'), 'a started video-poster request must receive a real abort')
-  assert.ok(preview.includes('      signal,\n      capture: (signal) => captureVideoPoster('), 'signal must reach cache GET, cold capture and revision-fenced PUT')
-  assert.ok(preview.includes('        sourceHeight,\n        signal,'), 'cold video capture must receive cancellation')
+  assert.ok(preview.includes('      signal,\n      onStage: (stage) =>'), 'poster reports persisted lookup and generation phase')
+  assert.ok(preview.includes('      capture: (signal, onCapturing) => captureVideoPoster('), 'signal and video-decode phase reach cold capture')
+  assert.ok(preview.includes('        signal, onCapturing,'), 'cold video capture must receive cancellation')
   assert.ok(preview.includes('void scheduled.promise'))
   assert.ok(preview.includes('scheduled.cancel()'))
   assert.ok(preview.includes('if (!entry.started) {'))
@@ -201,5 +202,37 @@ test('All three Gallery tile render paths forward persisted poster writes', () =
   assert.equal(tiles.length, 3, 'grid, virtual grid and timeline must all use the shared tile')
   for (const [, content] of tiles) {
     assert.ok(content.includes('saveVideoPoster={saveVideoPoster}'), 'every tile path must carry revision-checked poster writes')
+  }
+})
+
+test('Gallery poster status never reads video after persisted poster hit', async () => {
+  const phases = []
+  let captureCount = 0
+  const url = await xDriveResolveMediaVideoPoster({
+    nodeID: 109, revision: 3,
+    loadCached: async () => 'https://example.test/poster.jpg',
+    capture: async () => { captureCount++; return new Blob(['unexpected']) },
+    onStage: (phase) => phases.push(phase),
+  })
+  assert.equal(url, 'https://example.test/poster.jpg')
+  assert.deepEqual(phases, ['poster_lookup', 'decode'])
+  assert.equal(captureCount, 0)
+})
+
+test('Gallery cold poster has separate video-read and capture phases', async () => {
+  const phases = []
+  const url = await xDriveResolveMediaVideoPoster({
+    nodeID: 110, revision: 2,
+    loadCached: async () => null,
+    capture: async (_signal, onCapture) => {
+      onCapture?.()
+      return new Blob(['image'], { type: 'image/jpeg' })
+    },
+    onStage: (phase) => phases.push(phase),
+  })
+  try {
+    assert.deepEqual(phases, ['poster_lookup', 'video_read', 'poster_capture', 'decode'])
+  } finally {
+    if (url) URL.revokeObjectURL(url)
   }
 })

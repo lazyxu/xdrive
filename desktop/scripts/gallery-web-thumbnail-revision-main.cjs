@@ -67,10 +67,16 @@ function compiledRealWebMethod() {
     throw new Error('Web API thumbnail method no longer has the expected source boundary')
   }
   const actualMethod = full.slice(start, end)
-  if (!actualMethod.includes('fetch(') || !actualMethod.includes('return response.blob()')) {
+  if (!actualMethod.includes('fetch(') || !actualMethod.includes('xDriveMediaResponseBlob(response, signal, onProgress)')) {
     throw new Error('Native trial must exercise actual Web API fetch and Blob conversion')
   }
-  return ts.transpileModule([
+  const helperPath = path.resolve(__dirname, '../../web/src/mediaBinaryProgress.ts')
+  const helperSource = fs.readFileSync(helperPath, 'utf8')
+  const helperJS = ts.transpileModule(helperSource.replace(/^export /gm, ''), {
+    fileName: helperPath,
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
+  }).outputText
+  const methodJS = ts.transpileModule([
     'class ActualWebThumbnailClient {',
     "  session = { accessToken: '', refreshToken: '' }",
     '  async ensureFresh(_signal?: AbortSignal): Promise<void> {}',
@@ -81,6 +87,7 @@ function compiledRealWebMethod() {
     fileName: name,
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
   }).outputText
+  return helperJS + '\n' + methodJS
 }
 
 app.commandLine.appendSwitch('no-sandbox')

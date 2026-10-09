@@ -11,8 +11,8 @@ const script = fs.readFileSync(path.join(
 test('actual Chromium HTTP revision probe has a fixed 3+3 workload and real Web method', () => {
   assert.doesNotThrow(() => new vm.Script(script))
   for (const token of [
-    "web/src/api.ts",
-    "actualMethod", "response.blob()",
+    "web/src/api.ts", "web/src/mediaBinaryProgress.ts",
+    "actualMethod", "xDriveMediaResponseBlob(response, signal, onProgress)",
     "private, max-age=3600", "known-revision", "unknown-revision",
     "for (let sample = 1; sample <= 3; sample++)",
     "httpRequests === 2", "updatedRevisionNeverStale",

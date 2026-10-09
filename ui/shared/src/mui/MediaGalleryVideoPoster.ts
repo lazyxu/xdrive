@@ -188,22 +188,29 @@ export async function xDriveResolveMediaVideoPoster({
   capture,
   save,
   signal,
+  onStage,
+  onProgress,
 }: {
   nodeID: number
   revision: number
-  loadCached: (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
-  capture: (signal?: AbortSignal) => Promise<Blob | null>
+  loadCached: (nodeID: number, signal?: AbortSignal, revision?: number,
+    onProgress?: (loadedBytes: number, totalBytes?: number) => void) => Promise<string | null>
+  capture: (signal?: AbortSignal, onCapturing?: () => void) => Promise<Blob | null>
   save?: (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
   signal?: AbortSignal
+  onStage?: (stage: 'poster_lookup' | 'video_read' | 'poster_capture' | 'decode') => void
+  onProgress?: (loadedBytes: number, totalBytes?: number) => void
 }): Promise<string | null> {
   if (signal?.aborted) return null
   try {
-    const cached = await loadCached(nodeID, signal, revision)
+    onStage?.('poster_lookup')
+    const cached = await loadCached(nodeID, signal, revision, onProgress)
     if (cached) {
       if (signal?.aborted) {
         if (cached.startsWith('blob:')) URL.revokeObjectURL(cached)
         return null
       }
+      onStage?.('decode')
       return cached
     }
   } catch {
@@ -214,7 +221,8 @@ export async function xDriveResolveMediaVideoPoster({
   if (signal?.aborted) return null
   let poster: Blob | null
   try {
-    poster = await capture(signal)
+    onStage?.('video_read')
+    poster = await capture(signal, () => onStage?.('poster_capture'))
   } catch {
     return null
   }
@@ -229,5 +237,6 @@ export async function xDriveResolveMediaVideoPoster({
     }
   }
   if (signal?.aborted) return null
+  onStage?.('decode')
   return URL.createObjectURL(poster)
 }

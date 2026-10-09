@@ -32,6 +32,7 @@ import type {
   XDriveFileExplorerSelectionAction,
   XDriveFileExplorerQuickLookRequest,
   XDriveFileExplorerSort,
+  XDriveMediaLoadStage,
   XDriveFileExplorerWorkspaceVirtualDirectory,
   XDriveTrashDialogAdapter,
 } from '@xdrive/ui/mui'
@@ -561,19 +562,21 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal, onProgress?: XDriveByteProgressHandler, onStage?: (stage: XDriveMediaLoadStage) => void) => {
     if (item.kind !== 'file' || signal?.aborted) return null
     try {
-      const blob = await api.mediaThumbnail(Number(item.id), signal)
+      const blob = await api.mediaThumbnail(Number(item.id), signal, Number(item.revision), onProgress)
       if (signal?.aborted) return null
       return URL.createObjectURL(blob)
     } catch {
       if (signal?.aborted || xDriveFileKind(item.name, item.kind) !== 'video') return null
+      onStage?.('video_read')
     }
 
     try {
       const source = await api.filePreviewURL(Number(item.id), signal)
       if (signal?.aborted) return null
+      onStage?.('poster_capture')
       const poster = await xDriveCaptureVideoPosterBlob(source, 0, 0, 0, 512, signal)
       if (!poster || signal?.aborted) return null
       const revision = Number(item.revision)
@@ -633,6 +636,7 @@ export default function WebFileExplorer({
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
     signal?: AbortSignal,
+    onProgress?: XDriveByteProgressHandler,
   ) => {
     if (item.kind !== 'file') return null
     try {
@@ -640,7 +644,7 @@ export default function WebFileExplorer({
         return await api.mediaLivePhotoStillURL(Number(item.id))
       }
       if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
-        return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision))
+        return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision), onProgress)
       }
       if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
       return await api.filePreviewURL(Number(item.id), signal)

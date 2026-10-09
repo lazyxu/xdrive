@@ -87,6 +87,35 @@ jobs:
         working-directory: desktop
         run: npm run test:main
 
+  media-shared-progress-chromium:
+    if: github.event_name == 'pull_request' && github.head_ref == 'feat/media-shared-progress-p0c'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install native Chromium performance dependencies
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Compare real Chromium HTTP progress collector and native Blob
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p media-progress-results
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/media-shared-progress-chromium-main.cjs
+          cat media-progress-results/chromium-http-media-progress.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-shared-progress-chromium
+          path: desktop/media-progress-results/chromium-http-media-progress.json
+          if-no-files-found: error
+          retention-days: 7
+
   desktop-linux:
     runs-on: ubuntu-latest
     env:

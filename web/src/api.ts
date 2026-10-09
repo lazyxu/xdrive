@@ -97,6 +97,7 @@ import type {
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
 import { webTransferStore } from './transfers'
+import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
 import {
   xDriveAbortWebDownloadSink,
   xDriveCreateWebDownloadProgressReporter,
@@ -1448,7 +1449,7 @@ export class XDriveApi {
     )
   }
 
-  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number): Promise<Blob> {
+  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<Blob> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()
     // Known source revisions get immutable browser-cache URL identities.
@@ -1477,13 +1478,13 @@ export class XDriveApi {
         response.statusText || 'Thumbnail unavailable',
       )
     }
-    return response.blob()
+    return xDriveMediaResponseBlob(response, signal, onProgress)
   }
   /**
    * Authenticated bounded JPEG derivative for RAW images whose canonical
    * originals cannot be safely opened through the binary preview-ticket API.
    */
-  async mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, revision?: number): Promise<Blob> {
+  async mediaAnalysisPreview(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<Blob> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()
     // Cache identity includes the current source revision. The Server derivative
@@ -1511,13 +1512,13 @@ export class XDriveApi {
     if (!response.headers.get('Content-Type')?.toLowerCase().startsWith('image/jpeg')) {
       throw new ApiError(502, 'RAW preview response is not JPEG')
     }
-    const blob = await response.blob()
+    const blob = await xDriveMediaResponseBlob(response, signal, onProgress)
     signal?.throwIfAborted()
     return blob
   }
 
-  async mediaAnalysisPreviewURL(nodeID: number, signal?: AbortSignal, revision?: number): Promise<string> {
-    const blob = await this.mediaAnalysisPreview(nodeID, signal, revision)
+  async mediaAnalysisPreviewURL(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<string> {
+    const blob = await this.mediaAnalysisPreview(nodeID, signal, revision, onProgress)
     signal?.throwIfAborted()
     return URL.createObjectURL(blob)
   }

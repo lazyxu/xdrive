@@ -125,6 +125,31 @@ desktop-tests:
       npm install --no-audit --no-fund
       npm run test:main
 
+media-shared-progress-chromium:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "feat/media-shared-progress-p0c"'
+    - if: '$CI_COMMIT_BRANCH == "feat/media-shared-progress-p0c"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p media-progress-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/media-shared-progress-chromium-main.cjs
+      cat media-progress-results/chromium-http-media-progress.json
+  artifacts:
+    name: "media-shared-progress-chromium-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/media-progress-results/chromium-http-media-progress.json
+
 desktop-linux:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache

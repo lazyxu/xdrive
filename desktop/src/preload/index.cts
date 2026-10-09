@@ -1,6 +1,34 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
 type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number) => void
+let mediaBinaryProgressSequence = 0
+
+/** Progress is tied to the sender-owned viewport request and removed at settlement. */
+function invokeMediaBinaryWithProgress(
+  channel: string,
+  args: unknown[],
+  onProgress?: XDriveByteProgressCallback,
+) {
+  if (!onProgress) return ipcRenderer.invoke(channel, ...args, false)
+  const requestID = typeof args[1] === 'string' && args[1].length > 0
+    ? args[1]
+    : `binary-${Date.now()}-${++mediaBinaryProgressSequence}`
+  args[1] = requestID
+  const progressChannel = 'agent:media-binary-progress'
+  const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return
+    const value = payload as { request_id?: unknown; loaded_bytes?: unknown; total_bytes?: unknown }
+    if (value.request_id !== requestID ||
+        typeof value.loaded_bytes !== 'number' || !Number.isFinite(value.loaded_bytes)) return
+    const total = typeof value.total_bytes === 'number' && Number.isFinite(value.total_bytes) &&
+      value.total_bytes > 0 ? value.total_bytes : undefined
+    try { onProgress(value.loaded_bytes, total) } catch { /* UI subscriber cannot break IPC */ }
+  }
+  ipcRenderer.on(progressChannel, listener)
+  return ipcRenderer.invoke(channel, ...args, true).finally(() => {
+    ipcRenderer.removeListener(progressChannel, listener)
+  })
+}
 let mediaLivePhotoMotionRequestSequence = 0
 
 type MediaLivePhotoProgressEntry = {
@@ -409,9 +437,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-creative', generationID),
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
-  getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number) =>
-    ipcRenderer.invoke('agent:get-media-thumbnail', nodeID, requestID, revision),
-  getMediaAnalysisPreview: (nodeID: number, requestID?: string) => ipcRenderer.invoke('agent:get-media-analysis-preview', nodeID, requestID),
+  getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressCallback) =>
+    invokeMediaBinaryWithProgress('agent:get-media-thumbnail', [nodeID, requestID, revision], onProgress),
+  getMediaAnalysisPreview: (nodeID: number, requestID?: string, onProgress?: XDriveByteProgressCallback) =>
+    invokeMediaBinaryWithProgress('agent:get-media-analysis-preview', [nodeID, requestID], onProgress),
   cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),
   getMediaLivePhotoStill: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),
