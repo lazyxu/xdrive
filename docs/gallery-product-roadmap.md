@@ -466,7 +466,9 @@ changing ordinary file/folder selection or Properties semantics.
 [27fe038ec87c2b2b8ca200f86977e6e8938925da](https://github.com/lazyxu/xdrive/commit/27fe038ec87c2b2b8ca200f86977e6e8938925da),
 delivering desktop direct-open and in-Viewer Properties after the audit's fixed
 baseline. The audit records this delivered update. The FileExplorer media Properties
-adapter remains a separate follow-up; do not mark it complete from the Gallery change.
+adapter subsequently shipped in #1076; its lazy Node/MediaItem lookup and retained
+file context are now part of the canonical shared contract below. M09 accepts those
+existing boundaries across Files, Gallery and the routed Web Media Viewer.
 There is no Web/Desktop details fork: both clients consume the same shared content and
 responsive container, while Preview transport remains platform-specific through the
 existing adapters.
@@ -495,6 +497,16 @@ media metadata and file resources without copying KFS's separate property window
 Sections do not issue their own metadata requests, eagerly enumerate directories,
 or introduce a second Preview Engine. The same data source, edit callbacks and
 responsive Inspector container remain unchanged.
+
+M09 acceptance preserves this shared contract. Tags/people/description editors keep
+local save completion, errors and busy state owned by the initiating selected Node,
+so A's late response cannot replace B's draft. A byte revision alone does not create
+a different annotation target: legitimate same-Node normalized saves remain accepted.
+Compact Inspector Close has a44px target, and routed Viewer retains visible chrome
+and native return focus throughout Properties reading without recreating its player.
+The same raw still/video/Live fixtures produce identical ordered information/file/resource
+rows across Files, Gallery and the routed Viewer; exact evidence is in
+[the M09 ledger](validation/mobile-shared-properties-2026-10-09.json).
 
 Gallery Trash keeps its Phase-4 capability boundary in the new Inspector. Deleted media
 may show thumbnails and indexed metadata, but Favorite/tag/people/description/album
@@ -963,7 +975,7 @@ Gallery, its Viewer, the standalone Web media Viewer and FileExplorer use the sh
 
 ## Gallery Live Photo Properties parity (2026-10-09)
 
-**Candidate / CI pending:** A standalone `.livp` asset in direct Gallery Properties now delegates still+motion to the same native `XDriveFilePreviewSurface` used by Viewer, admits the `live_photo` signed still resource, and avoids nesting another Live Photo player. For a semantic still+MOV pair, the existing outer `XDriveLivePhotoSurface` remains but only admits first-hold after the still's presentation readiness callback. Viewer-opened Properties still suppresses the redundant preview. No media transport changes or measured performance claim.
+**Merged as `747f7d39`:** A standalone `.livp` asset in direct Gallery Properties delegates still+motion to the same native `XDriveFilePreviewSurface` used by Viewer, admits the `live_photo` signed still resource, and avoids nesting another Live Photo player. For a semantic still+MOV pair, the existing outer `XDriveLivePhotoSurface` remains but only admits first-hold after the still's presentation readiness callback. Viewer-opened Properties still suppresses the redundant preview. No media transport changes or measured performance claim.
 
 
 ## Media poster consistency follow-up (2026-10-09)

@@ -1,0 +1,34 @@
+# M09: shared media Properties acceptance
+
+Status: local acceptance and independent review complete. M06–M08 merged through PR #1105 after successful CI; the one M09 work commit was rebased without conflicts onto `eff2cd922ad644b7007bd00375aa0d8ad9769768`. The accepted implementation checkpoint is `f69876fa178b20ea45fd6302412b4d5441fdab10`; final amendments only add evidence and documentation. PR #1111, complete PR CI, linear merge and cleanup remain the delivery gate. The approved scope is M09 in `docs/mobile-web-followups.md`, with M49 evidence maintained alongside it.
+
+## Design and observed boundary
+
+Files, Gallery and routed Web Media Viewer already use the shared Media Inspector and Details content. Keep that boundary, existing scoped loaders, Web/Agent transports, file identity/revision validation, and media formatting. Files media Properties intentionally stays read-only and retains its ordinary file context. An unindexed file can yield a valid MediaItem on demand; a failed, unsupported, wrong-ID or stale-revision lookup falls back to regular file Properties with an honest error. Opening Properties over a Viewer must not create another player or fetch a second original/motion asset.
+
+The actual Gallery tile menu → Properties entry reproduces a narrow local-editor defect: while A's save is pending, opening B's Properties and typing a draft allows A's later tags/people/description success to overwrite B's input; A's description failure appears on B. The selected header remains B and the only transport targets A. Preserve these exact first-reds and the normal same-A normalization control, then give local completion/error/busy state the required target ownership. Existing model-level mutation acknowledgements remain authoritative. Do not add speculative global cancellation or new stores.
+
+Upstream `747f7d39` already aligns LIVP Properties still/motion rendering with Viewer and remains intact. Broader editor feedback is M14; current-album propagation/removal is M30; media editing and gesture expansion keep their own later items. This slice accepts existing behavior and corrects only concrete M09 failures.
+
+## Work and ownership
+
+- [x] Persist the real shared Workspace/FileExplorer/Inspector fixture: 121/121 checks cover fields/file context, lazy eligible lookup, wrong-ID/revision/404/indexing-error fallback, partial metadata, changed-version reopen, scoped cancellation and common goldens. Four actual adapter checks are included in 38/38 related tests; three actual Agent HTTP checks pass. No Files production defect was reproduced.
+- [x] Preserve four actual Gallery-entry failures, then scope local tags/people/description completion, error and busy state to the selected Node. Same-A normalization and a newer target's pending save remain correct. Real React/MUI editor tests pass8/8; actual Gallery checks pass25/25 after the integrated RAW revision correction. Existing LIVP rendering is unchanged.
+- [x] Exercise the actual built routed Viewer with common still/video/Live fixtures. The unchanged170-check suite first exposed eight compact Close target failures and one delayed-read focus failure; all170 pass after making Close44px below900px and retaining Viewer chrome while Properties is open. The exact player/preview DOM and state survive, with no additional original/motion read.
+- [x] Compare all nine ordered information/file/resource sections across three actual surfaces, retain source/fixture/build identities, reconcile canonical docs and M49.V07, and pass normal gates: Desktop1557/0fail/1existing optional skip, typecheck, Web lint/build, actual Search-return48/48.
+- [x] Independent review accepts the scoped fix. A real Gallery Refresh→same-Node revision7→8 probe passes8/8 while preserving Node-scoped annotation ownership; a byte revision alone does not justify a revision guard.
+- [ ] Exactly-one-work-commit PR CI, linear merge and cleanup. Do not reopen the previously rejected GitLab direct-master action.
+
+## Evidence and boundaries
+
+Initial actual Gallery source `84f7021331b75bc7cc7d26f9d8d110b8c4682f4ce38cdd04f704ea18496dd2f2` preceded the rebase; integrated first-reds must identify their own current source. Before/after checks use real React/MUI and controlled transport promises; they must not duplicate controller logic. The shared file context must retain authoritative path, source, availability, SHA/revision/ID and custom ReactNode values; Live resource sizes must not replace the selected Node size. Rich, missing and valid zero values should stay distinguishable.
+
+The local environment has no Go executable, PostgreSQL, Docker or `XD_TEST_DATABASE_URL`; real Server/DB acceptance is not claimed from renderer or Agent JavaScript probes. Existing PR CI separately runs `go-linux-api` with PostgreSQL17 and the real media integration test. Record the actual resulting CI gate rather than relabelling a skipped local integration as a pass. Native iOS/Android ordinary/installed modes, physical keyboards/safe areas and VoiceOver/TalkBack remain explicit not-run entries in M49.
+
+The durable acceptance ledger is [mobile-shared-properties-2026-10-09.json](../../validation/mobile-shared-properties-2026-10-09.json). The active routed build is `index-LaWk9B7O.js`, SHA-256 `a95a8ef9c8735434558f088af2cccb1de9e7fcd825a26fed7b14d73e95ee2d9b`. Files evidence is reused after exact dependency-hash verification; Gallery, routed Viewer and normal gates were rerun on the rebased candidate. Counts from overlapping unit/focused suites are not added together.
+
+## Shared RAW integration checkpoint
+
+The single delta was reconstructed onto `b493fc076f9d91256d710462d4493365825691f3` after the shared RAW preview adapter changed the touched Properties path. Actual GalleryPage Refresh reproduced same-Node/name revision8 Properties using revision7 in the new preview loader. Add only `item?.node.revision` to the existing callback dependency list; do not change Node-scoped annotation ownership or the unproven Viewer callback. The identical Gallery25 fixture changes24pass/1fail→25pass with zero errors; original22 cases and common goldens are unchanged. Final editor/preview units9/9 pass. The unit-before log is incomplete and excluded from first-red counts.
+
+Final implementation checkpoint `d8e6dc98ac4edb6cd3e4a8728d4842c5f7dd4770`: Files121, Gallery25, actual Viewer170 and Search-return48 pass; normal Desktop1557/0fail/1existing skip, typecheck/lint/build pass. The active build is `index-oWQk1Pnn.js`, SHA-256 `ef3569e49df95b66da5b8850d7adf0cbc2c272d09d77808e379609acb4afe0f5`. Complete latest identities, independent review and the additional first-red are appended in the same ledger. This checkpoint is locally accepted; subsequent docs-only amendment and expected-head PR update preserve the one-work-commit rule.

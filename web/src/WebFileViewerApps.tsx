@@ -63,6 +63,7 @@ function WebViewerFrame({
   subtitle,
   positionLabel,
   immersive = false,
+  keepChromeVisible = false,
   quickLook = false,
   canPrevious = false,
   canNext = false,
@@ -80,6 +81,7 @@ function WebViewerFrame({
   subtitle?: ReactNode
   positionLabel?: ReactNode
   immersive?: boolean
+  keepChromeVisible?: boolean
   quickLook?: boolean
   canPrevious?: boolean
   canNext?: boolean
@@ -116,13 +118,13 @@ function WebViewerFrame({
     setChromeVisible(true)
     if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
     hideTimerRef.current = null
-    if (immersive) {
+    if (immersive && !keepChromeVisible) {
       hideTimerRef.current = window.setTimeout(() => {
         hideTimerRef.current = null
         setChromeVisible(false)
       }, 2200)
     }
-  }, [immersive])
+  }, [immersive, keepChromeVisible])
 
   const clearTouchTapTimer = useCallback(() => {
     if (touchTapTimerRef.current !== null) {
@@ -179,7 +181,7 @@ function WebViewerFrame({
     }
 
     lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
-    const hideChrome = chromeVisible
+    const hideChrome = chromeVisible && !keepChromeVisible
     clearTouchTapTimer()
     touchTapTimerRef.current = window.setTimeout(() => {
       touchTapTimerRef.current = null
@@ -200,12 +202,19 @@ function WebViewerFrame({
 
   useEffect(() => {
     rootRef.current?.focus()
-    showChrome()
     return () => {
-      if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
       clearTouchTapTimer()
       touchPointersRef.current.clear()
       touchTapRef.current = null
+    }
+  }, [clearTouchTapTimer])
+
+  useEffect(() => {
+    clearTouchTapTimer()
+    showChrome()
+    return () => {
+      if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
     }
   }, [clearTouchTapTimer, showChrome])
 
@@ -758,6 +767,7 @@ function WebMediaViewerApp({
         subtitle={mediaItem && mediaItem.node.id === viewer.node?.id ? xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at) : undefined}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
+        keepChromeVisible={infoOpen}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}

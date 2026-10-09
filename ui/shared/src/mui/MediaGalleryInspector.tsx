@@ -52,7 +52,12 @@ function MediaInspectorHeader({
           {name}
         </Typography>
       </Box>
-      <IconButton size="small" aria-label="关闭属性" onClick={onClose}>
+      <IconButton
+        size="small"
+        aria-label="关闭属性"
+        onClick={onClose}
+        sx={{ '@media (max-width:899.95px)': { minWidth: 44, minHeight: 44 } }}
+      >
         <CloseRoundedIcon fontSize="small" />
       </IconButton>
     </Stack>

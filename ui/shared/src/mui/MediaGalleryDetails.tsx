@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Star as StarIcon,
@@ -234,6 +234,11 @@ export function XDriveMediaDetailsContent({
   onAddToAlbum,
   onRemoveFromAlbum,
 }: XDriveMediaDetailsContentProps) {
+  const editorTargetRef = useRef({ nodeID: item?.node.id })
+  if (editorTargetRef.current.nodeID !== item?.node.id) {
+    // Completion belongs to this displayed target, including its local busy/error state.
+    editorTargetRef.current = { nodeID: item?.node.id }
+  }
   const [targetAlbumID, setTargetAlbumID] = useState('')
   const [albumBusy, setAlbumBusy] = useState(false)
   const [albumError, setAlbumError] = useState('')
@@ -277,7 +282,7 @@ export function XDriveMediaDetailsContent({
   const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind, signal) => {
     if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')) return null
     return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision)
-  }, [item?.node.id, item?.node.name, loadPreviewURL])
+  }, [item?.node.id, item?.node.name, item?.node.revision, loadPreviewURL])
   const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
     if (!item?.metadata.has_thumbnail) return null
     return loadThumbnail(item.node.id)
@@ -439,12 +444,19 @@ export function XDriveMediaDetailsContent({
                   variant="outlined"
                   disabled={tagsBusy}
                   onClick={() => {
+                    const target = editorTargetRef.current
                     setTagsBusy(true)
                     setTagsError('')
                     void onSetTags(item, parseMediaTagsInput(tagsInput))
-                      .then((tags) => setTagsInput(tags.join(', ')))
-                      .catch((tagError) => setTagsError(xDriveMediaGalleryErrorMessage(tagError)))
-                      .finally(() => setTagsBusy(false))
+                      .then((tags) => {
+                        if (editorTargetRef.current === target) setTagsInput(tags.join(', '))
+                      })
+                      .catch((tagError) => {
+                        if (editorTargetRef.current === target) setTagsError(xDriveMediaGalleryErrorMessage(tagError))
+                      })
+                      .finally(() => {
+                        if (editorTargetRef.current === target) setTagsBusy(false)
+                      })
                   }}
                 >
                   保存标签
@@ -478,12 +490,19 @@ export function XDriveMediaDetailsContent({
                   variant="outlined"
                   disabled={peopleBusy}
                   onClick={() => {
+                    const target = editorTargetRef.current
                     setPeopleBusy(true)
                     setPeopleError('')
                     void onSetPeople(item, parseMediaTagsInput(peopleInput))
-                      .then((people) => setPeopleInput(people.join(', ')))
-                      .catch((saveError) => setPeopleError(xDriveMediaGalleryErrorMessage(saveError)))
-                      .finally(() => setPeopleBusy(false))
+                      .then((people) => {
+                        if (editorTargetRef.current === target) setPeopleInput(people.join(', '))
+                      })
+                      .catch((saveError) => {
+                        if (editorTargetRef.current === target) setPeopleError(xDriveMediaGalleryErrorMessage(saveError))
+                      })
+                      .finally(() => {
+                        if (editorTargetRef.current === target) setPeopleBusy(false)
+                      })
                   }}
                 >
                   保存人物
@@ -520,12 +539,19 @@ export function XDriveMediaDetailsContent({
                     variant="outlined"
                     disabled={descriptionBusy || Array.from(descriptionInput).length > 4096}
                     onClick={() => {
+                      const target = editorTargetRef.current
                       setDescriptionBusy(true)
                       setDescriptionError('')
                       void onSetDescription(item, descriptionInput)
-                        .then((description) => setDescriptionInput(description))
-                        .catch((saveError) => setDescriptionError(xDriveMediaGalleryErrorMessage(saveError)))
-                        .finally(() => setDescriptionBusy(false))
+                        .then((description) => {
+                          if (editorTargetRef.current === target) setDescriptionInput(description)
+                        })
+                        .catch((saveError) => {
+                          if (editorTargetRef.current === target) setDescriptionError(xDriveMediaGalleryErrorMessage(saveError))
+                        })
+                        .finally(() => {
+                          if (editorTargetRef.current === target) setDescriptionBusy(false)
+                        })
                     }}
                   >
                     保存描述

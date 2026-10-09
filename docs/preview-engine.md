@@ -464,12 +464,28 @@ Viewer or fetch original/Live motion resources. The existing Info icon is labele
 **属性**, and opening Properties must retain the Viewer without mounting another media
 player. [PR #1071](https://github.com/lazyxu/xdrive/pull/1071), merged on 2026-10-09,
 delivers desktop single-click and in-Viewer Properties after the audit's fixed baseline;
-touch single-tap was already delivered. FileExplorer media Properties integration is
-a separate follow-up. These Gallery activation rules do not replace FileExplorer's
+touch single-tap was already delivered. FileExplorer media Properties subsequently
+shipped in #1076 and consumes the same Inspector through a lazy, scoped Node/MediaItem
+adapter while retaining ordinary file context. M09 accepts the shared fields,
+fallbacks and late-response boundaries across the three surfaces. These Gallery
+activation rules do not replace FileExplorer's
 normal file selection/open behavior. Viewer actions such as Favorite, Properties,
 Download, Share, Delete, and its bounded filmstrip therefore live in the shared
 Gallery layer, even though Viewer
 embeds the generic preview shell and renderer.
+
+M09's actual routed Viewer acceptance retains the exact Preview Engine and media DOM,
+paused video time/volume/rate and existing Live motion while Properties opens. No
+additional original, still, thumbnail or motion request is made. The surrounding Web
+Viewer keeps its chrome visible while the Properties Drawer is open; initial Viewer
+focus remains separate from chrome visibility changes so the Drawer owns modal focus
+and returns it to a visible44px opener after reading. See the
+[shared Properties evidence](validation/mobile-shared-properties-2026-10-09.json).
+The shared Properties preview callback also keys its captured loader by the selected
+Node revision. Actual Gallery Refresh of the same RAW Node/name exposed the older
+revision being forwarded after revision8 metadata was selected; the one dependency
+correction is verified by the same actual25-check Gallery fixture and a real React
+preview regression. This does not turn a byte revision into a new annotation target.
 
 Double-clicking a Gallery media
 tile opens the media preview through the first permitted click; the second click is

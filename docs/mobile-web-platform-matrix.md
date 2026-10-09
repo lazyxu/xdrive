@@ -2,7 +2,7 @@
 
 更新日期：**2026-10-09**。本文件维护用户批准的 M49，并为 M47 生命周期、M55 读屏和 M56 显示/输入验收提供记录规范。[Mobile Web](mobile-web.md) 与 [Web App Runtime](web-app-runtime.md) 继续定义产品行为；[逐项清单](mobile-web-followups.md) 定义实施顺序。
 
-**当前状态：矩阵与验收规范已建立，M01–M08 的共享组件与实际Web应用模拟浏览器证据已记录；四个真机环境均待验。** 当前没有 iOS/Android 真机执行结果。后续功能使用下列固定 case ID 追加结果；列出一个用例不代表对应功能已经交付。
+**当前状态：矩阵与验收规范已建立，M01–M09 的共享组件与实际Web应用模拟浏览器证据已记录；四个真机环境均待验。** 当前没有 iOS/Android 真机执行结果。后续功能使用下列固定 case ID 追加结果；列出一个用例不代表对应功能已经交付。
 
 ## 1. 结果必须分为四层
 
@@ -76,6 +76,7 @@
 | M49.V04 | Files 选择混合文件/目录，全选未加载结果；加载中取消、清除、完成；切至 200% 文字和短视口，再展示真实任务长错误或下载汇总。 | 数量按唯一身份计算，目录/Search 范围明确；完整选择不被操作上限截断；主操作、任务入口、关闭提示及完成均可触达，同一列表宿主保留。分别记录 renderer 回调、实际下载字节与真机触控证据。 |
 | M49.V05 | 从 Files 直接移动/复制到文件夹，翻页、进入深层目录、取消/重试；从反馈进入对应任务；重命名失败后改变 899→900→360 宽度，在短屏/200% 文字下修改并保存。 | 目标浏览不改 Files 历史，来源身份/版本不丢失；目标和错误可读，提交/取消至少 44px；冲突/取消/重试跟随同一任务。重命名保留草稿、仅提交一次、返回文件焦点。迟到完成不能关闭新目标或清除后来重新应用的同一搜索。真实软件键盘与 renderer 缩短视口分别记录。 |
 | M49.V06 | 无选择时从位置面板管理标签；读取失败后重试，创建/编辑定义，再给完整选择分配或移除标签；保存搜索、修改条件、进入目录并返回；在 700/899px 鼠标与 360×390/200% 文字下重复。 | 管理与分配入口、数量和删除语义明确；失败读取显示未知，空标签正常；规则与当前 Search/历史匹配，不使用加载行数量推测结果。长规则、错误、提交与完成可触达，模态关闭恢复入口焦点；真机键盘和读屏另行记录。 |
+| M49.V07 | 同一照片/视频/实况分别从Files、Gallery与实际Web Viewer打开属性；在竖屏/短横屏读取长字段与资源，关闭返回；挂起A的查询或保存，改看B或关闭后再完成A；刷新版本后重新打开。 | 共享媒体字段一致，Files保留路径/来源/大小/版本/ID及普通文件回退；未索引成功、部分元数据与查询失败分别表达。属性不增加Viewer播放器或原件/动态加载，返回焦点正确，旧查询/保存不能覆盖新目标。传输边界、实际App及真机结果分开记录。 |
 | M49.K01 | 打开 Files 搜索并输入长查询；开筛选并选择类型/同步文件夹/标签；关闭键盘、嵌套菜单与面板；横屏重复。 | 可读/可点/可退出，焦点正确恢复，不触发背景文件；软件键盘与外接 Enter/空格/Ctrl+F 分列。筛选当前字段为选项按钮，不虚构可编辑字段。 |
 | M49.K02 | 搜索、长文件名重命名、真实密码表单；制造验证错误后取消。 | 输入位置、长错误、提交/取消可达，退出恢复视口与位置，密码不进入证据。 |
 | M49.K03 | 同步文件夹设置、目标/范围选择、长响应/错误、保存/重开。 | 用真实 M51 产品流程；该项目未就绪时保持待验，不以玩具弹窗替代。 |
@@ -143,6 +144,8 @@ M08的[组织功能证据](validation/mobile-files-organization-2026-10-09.json)
 
 交付前接到`31defbde`新主线后，M49.V05/V06的实际App流程分别72/33项、搜索返回48项，以及共享组织184项再次通过；完整Desktop1532项通过、零失败、一项既有可选跳过。实际入口构建为`index-sVHKtTvt.js`，精确哈希见同一证据的`latestAcceptedIntegration`。原174项控件的实际依赖哈希未改变，沿用其已记录结果；上述所有记录继续归属于Chromium模拟环境。
 
-复用脚本：`desktop/scripts/file-explorer-controls-browser.cjs`、`file-explorer-mobile-browser.cjs`、`file-explorer-selection-browser.cjs`、`file-explorer-organization-browser.cjs`、`mobile-web-app-browser.cjs`；表单/公开分享后续使用现有 `mobile-web-forms-browser.cjs` 与 `mobile-web-public-share-browser.cjs`。本次没有重新执行真实 Server 下载、OS 安装/分享或读屏用例；相应条目保持待验。
+M09的[共享媒体属性证据](validation/mobile-shared-properties-2026-10-09.json)追加M49.V07：Files121、Gallery25、实际路由Viewer170项通过，同一照片/视频/实况的九组实际字段完全一致。Viewer在390×844、844×390及700/899px精细指针环境测得属性关闭按钮44×44；阅读2.6秒后关闭仍恢复到可见、可点中的原入口，媒体元素与播放状态不变。Gallery的四项真实迟到保存失败转绿；同一Node仅字节版本变化的8项独立复查保留既有注释保存语义。Files旧查询取消、未索引/错误回退与重新打开新版本分别验证；Agent JavaScript HTTP取消不冒充完整Electron/Go/Server链路。完整Desktop1557项通过、零失败、一项既有可选跳过；真实App搜索返回48项通过。整合RAW兼容预览后，实际同文件刷新曾显示第8版属性却请求第7版预览；同一25项检查24通过/1失败转为全部通过，最后的原件版本参数为7→8。完整首次失败与最终构建见同一证据的`latestAcceptedIntegration`。四个真机环境、软件键盘、实际安全区及读屏继续not-run。
+
+复用脚本：`desktop/scripts/file-explorer-controls-browser.cjs`、`file-explorer-mobile-browser.cjs`、`file-explorer-selection-browser.cjs`、`file-explorer-organization-browser.cjs`、`file-explorer-media-properties-browser.cjs`、`media-properties-gallery-browser.cjs`、`web-media-properties-browser.cjs`、`mobile-web-app-browser.cjs`；表单/公开分享后续使用现有 `mobile-web-forms-browser.cjs` 与 `mobile-web-public-share-browser.cjs`。本次没有重新执行真实 Server 下载、OS 安装/分享或读屏用例；相应条目保持待验。
 
 上述标准和平台文档访问日期为 2026-10-09。规范草案与文档用于界定检测/动作语义，不能替代某个 OS/browser build 的实际结果，也不构成“当前所有 iOS/Android 版本都支持”的承诺。
