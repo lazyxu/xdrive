@@ -1074,7 +1074,10 @@ export function XDriveFileExplorer({
   const [dropTargetCrumbID, setDropTargetCrumbID] = useState<XDriveFileExplorerID | null>(null)
   const [marqueeRect, setMarqueeRect] = useState<XDriveFileExplorerMarqueeRect | null>(null)
 
-  const viewMode = controlledViewMode ?? internalViewMode
+  const preferredViewMode = controlledViewMode ?? internalViewMode
+  // Column View has desktop row interactions. Project it without changing the
+  // saved tab preference so widening the viewport restores the original view.
+  const viewMode = compactTouch && preferredViewMode === 'columns' ? 'details' : preferredViewMode
   const sort = controlledSort ?? internalSort
   const grouping = controlledGrouping ?? internalGrouping
   const groupingSignature = xDriveFileExplorerGroupingSignature(grouping)
