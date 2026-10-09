@@ -18,6 +18,10 @@ export function createDesktopMediaGalleryDataSource(
     ),
     listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
     getIndexStatus: () => agent.getMediaIndexStatus(),
+    getNodeLocation: (nodeID, signal) => xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => agent.getNodeLocation(nodeID, requestID),
+    ),
     getDuplicateOrganizePlan: (keeperNodeID, nodeIDs) => agent.getMediaDuplicateOrganizePlan(keeperNodeID, nodeIDs),
     listSyncFolders: () => agent.getMediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => agent.getMediaSyncFolder(sourceID, folderID),

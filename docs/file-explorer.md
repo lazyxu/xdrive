@@ -671,3 +671,13 @@ The related React/source contract is `desktop/tests/media-gallery-node-location.
 Desktop transport, direct-versus-recursive Gallery scope and real-device acceptance
 remain pending. Do not claim G06 complete until those are implemented and verified.
 
+### G06 phase 2b — Desktop media location (candidate, 2026-10-09)
+
+The Desktop Agent advertises `node-location` and delegates to authenticated
+`client.NodeLocation`. Electron Main owns each call under its viewport request
+cancellation scope; the shared Gallery/FileExplorer Properties section remains
+lazy and does not create a duplicate player. "显示所在位置" uses parent Node ID
+and returned breadcrumbs, never historical connector path guesses.
+Real Desktop Agent, native-device, short-screen and direct/recursive scope
+acceptance are not implied by TypeScript/Go source contracts.
+

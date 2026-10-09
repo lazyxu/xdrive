@@ -99,6 +99,8 @@ const agent = Object.freeze({
     albumID = '',
   ) => ipcRenderer.invoke('agent:get-media-facets', query, albumID),
   getMediaIndexStatus: () => ipcRenderer.invoke('agent:get-media-index-status'),
+  getNodeLocation: (nodeID: number, requestID?: string) =>
+    ipcRenderer.invoke('agent:get-node-location', nodeID, requestID),
   getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) =>
     ipcRenderer.invoke('agent:get-media-duplicate-organize-plan', keeperNodeID, nodeIDs),
   getMediaSyncFolders: () => ipcRenderer.invoke('agent:get-media-sync-folders'),
