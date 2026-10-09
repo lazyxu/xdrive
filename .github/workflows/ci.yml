@@ -399,6 +399,54 @@ jobs:
       - name: Measure production ReconcileOwner on 100k logical / 115k physical media
         run: go test -run '^TestPhotoAssetOwnerReconcilePerformance100K$' -count=1 -timeout=17m -v ./internal/api
 
+  photoasset-owner-alloc-profile-100k-performance:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/photoasset-owner-alloc-profile-100k-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PHOTOASSET_OWNER_WRITE_DIAGNOSTIC: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Profile 100k unchanged owner reconciliation CPU and allocations
+        run: |
+          set -euo pipefail
+          mkdir -p photoasset-profile
+          go test -run '^TestPhotoAssetOwnerReconcilePerformance100K$' -count=1 -timeout=17m -v -cpuprofile=photoasset-profile/cpu.pprof -memprofile=photoasset-profile/alloc.pprof -memprofilerate=16384 ./internal/api 2>&1 | tee photoasset-profile/bench.log
+          go tool pprof -sample_index=alloc_space -top -nodecount=30 photoasset-profile/alloc.pprof 2>&1 | tee photoasset-profile/alloc-top.txt
+          go tool pprof -sample_index=inuse_space -top -nodecount=30 photoasset-profile/alloc.pprof 2>&1 | tee photoasset-profile/inuse-top.txt
+          go tool pprof -top -nodecount=30 photoasset-profile/cpu.pprof 2>&1 | tee photoasset-profile/cpu-top.txt
+          test -s photoasset-profile/alloc.pprof
+          test -s photoasset-profile/cpu.pprof
+          grep -q 'PHOTOASSET_OWNER_RECONCILE_100K' photoasset-profile/bench.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: photoasset-owner-100k-profile
+          path: photoasset-profile/
+          if-no-files-found: warn
+          retention-days: 7
+
   photoasset-owner-write-100k-performance:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/photoasset-owner-write-100k-')
     runs-on: ubuntu-latest
