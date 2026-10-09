@@ -2072,6 +2072,8 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            fileOperations={cloudFileOperations}
+            onFileOperationQueued={() => { void refreshCloudFileOperations() }}
             onShowInFolder={(location) => {
               if (!location.parent_id) return
               const ancestry = location.breadcrumbs

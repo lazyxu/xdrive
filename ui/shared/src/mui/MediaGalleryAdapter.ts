@@ -42,6 +42,7 @@ import type {
   XDriveTransportResult,
 } from '../transport-result'
 import type { MediaGalleryDataSource } from './MediaGallery'
+import { xDriveMediaGalleryDeleteOperation } from './MediaGalleryCleanupTask'
 
 export type XDriveMediaGalleryTransportError = XDriveTransportError
 
@@ -654,9 +655,9 @@ export function createXDriveMediaGalleryDataSource(
         }
       : undefined,
     deleteItems: port.deleteItems
-      ? async (items) => {
-          await resolveXDriveTransport(port.deleteItems!(items))
-        }
+      ? async (items) => xDriveMediaGalleryDeleteOperation(
+          await resolveXDriveTransport(port.deleteItems!(items)),
+        )
       : undefined,
     downloadItems: port.downloadItems
       ? async (items) => {

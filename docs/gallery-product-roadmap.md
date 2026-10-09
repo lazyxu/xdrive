@@ -711,6 +711,39 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 Cleanup deletion completion reconciliation (2026-10-10)
+
+**Implementation candidate / PR CI pending.** Both Web and Desktop now forward
+their actual durable file-operation receipt through the shared Gallery adapter.
+Gallery triggers an immediate read through the **existing Task Center file
+operation lifecycle**, which already polls active tasks; only the full Server
+operation is retained in Task Center, while Gallery tracks its ID. No second media poll
+or unrelated Gallery-wide invalidation is introduced. When deleting inside
+a Burst cleanup review, the UI tracks the exact returned operation ID and
+**does not** treat accepted submission as deletion completion.
+
+Only a matching Task Center `completed`, `failed`, or `cancelled` status
+triggers a new authoritative Cleanup group query. `queued`, `running`,
+`cancel_requested`, missing IDs and unrelated task completions do not
+trigger cleanup refresh or imply saved bytes. A task that is already terminal
+when submitted takes the immediate refresh path. Reopening Cleanup after
+navigating elsewhere uses the existing first-page query; pending results
+must not navigate the user back from an unrelated Gallery section or a different
+open Burst review. Account changes invalidate any pending task association.
+Failed or
+cancelled atomic batches are still reflected in Task Center rather than
+being reported as successful deletion; no partial-success amount is
+fabricated. Older/mock adapters without valid receipts keep their legacy
+immediate refresh but do not claim task-final consistency.
+
+A shared-model+actual-TSX callback/effect regression test covers task receipts,
+queued/running/cancel-requested vs terminal states, unrelated task IDs,
+failed/cancelled outcomes, duplicate terminal snapshots, scope navigation,
+and Web/Desktop wiring. This only improves **post-task Cleanup refresh**;
+it is not a destructive full-asset SHA merge, nor a guarantee that an
+externally delayed media re-index or remote provider inventory has converged.
+Physical-device/live-PostgreSQL checks remain a separate validation gate.
+
 ### G11 Cleanup Burst review deletion refresh scope (2026-10-09)
 
 **In progress / PR validation pending.** The shared Web/Desktop Gallery deletion
