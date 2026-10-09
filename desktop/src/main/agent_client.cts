@@ -874,6 +874,18 @@ export type AgentMediaGalleryIndexStatus = {
   checked_at: string
 }
 
+export type AgentNodeLocation = {
+  node_id: number
+  revision: number
+  node_type: string
+  path: string
+  parent_id?: number
+  parent_path: string
+  breadcrumbs: Array<{ id: number; name: string; path: string }>
+  sources: Array<{ source_id: number; source_name: string; source_kind: string; source_item_path?: string; original_path?: string }>
+  sync_folders: Array<{ source_id: number; source_name: string; source_kind: string; target_node_id: number }>
+}
+
 export type AgentMediaSyncFolder = {
   source_id: number
   source_name: string
@@ -1573,6 +1585,14 @@ export class AgentIPCClient {
     return this.request<AgentMediaDuplicateOrganizePlan>(
       'GET',
       `/v1/media/duplicate-organize/plan?${query.toString()}`,
+    )
+  }
+
+  nodeLocation(nodeID: number, signal?: AbortSignal) {
+    return this.request<AgentNodeLocation>(
+      'GET',
+      `/v1/cloud/node-location?node_id=${encodeURIComponent(String(nodeID))}`,
+      undefined, 10_000, signal,
     )
   }
 

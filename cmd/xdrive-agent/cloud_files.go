@@ -1973,6 +1973,14 @@ func (c *agentController) CloudMediaItem(ctx context.Context, nodeID uint64) (cl
 	return cli.MediaItem(ctx, nodeID)
 }
 
+func (c *agentController) CloudNodeLocation(ctx context.Context, nodeID uint64) (client.NodeLocation, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.NodeLocation{}, err
+	}
+	return cli.NodeLocation(ctx, nodeID)
+}
+
 func (c *agentController) CloudMediaItems(
 	ctx context.Context,
 	query client.MediaQuery,

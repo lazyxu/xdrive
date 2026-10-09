@@ -112,6 +112,7 @@ import {
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
   type AgentMediaGalleryIndexStatus,
+  type AgentNodeLocation,
   type AgentMediaDuplicateOrganizePlan,
   type AgentMediaSyncFolder,
   type AgentMediaFolderView,
@@ -2089,6 +2090,21 @@ function registerIPCHandlers() {
           keeperNodeID, nodeIDs as number[],
         )
       }, false),
+  )
+
+  ipcMain.handle('agent:get-node-location', (event, nodeID: unknown, requestID: unknown) =>
+    runAgentAction<AgentNodeLocation>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'node-location')
+        if (typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+          throw new AgentIPCError('invalid_input', 0, 'Node id must be a positive integer.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Node location request was cancelled.')
+        return requireAgentClient().nodeLocation(nodeID, signal)
+      }),
+      false,
+    ),
   )
 
   ipcMain.handle('agent:get-media-sync-folders', () =>

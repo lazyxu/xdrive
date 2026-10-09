@@ -18,6 +18,7 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -455,6 +456,7 @@ declare global {
           albumID?: string,
         ) => Promise<DesktopResult<MediaGalleryFacets>>
         getMediaIndexStatus: () => Promise<DesktopResult<MediaGalleryIndexStatus>>
+        getNodeLocation: (nodeID: number, requestID?: string) => Promise<DesktopResult<NodeLocation>>
         getMediaDuplicateOrganizePlan: (keeperNodeID: number, nodeIDs: number[]) => Promise<DesktopResult<MediaDuplicateOrganizePlan>>
         getMediaSyncFolders: () => Promise<DesktopResult<MediaSyncFolder[]>>
         getMediaSyncFolder: (

@@ -2042,6 +2042,15 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            onShowInFolder={(location) => {
+              if (!location.parent_id) return
+              const ancestry = location.breadcrumbs
+                .filter((crumb) => crumb.id !== location.node_id)
+                .map((crumb) => ({ id: crumb.id, name: crumb.name }))
+              if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
+              setView('files')
+              void loadCloudDirectory(location.parent_id, ancestry)
+            }}
             preferenceScope={`desktop:${status?.server ?? ''}:${status?.username ?? ''}`}
             shareDialog={{
               adapter: desktopShareDialogAdapter,
@@ -2121,6 +2130,7 @@ export default function App({
               propertiesStatsSupported: filePropertiesStatsSupported,
               mediaDetailsSupported: fileMediaDetailsSupported,
               mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
+              nodeLocationSupported: agent.hello?.capabilities.includes('node-location') ?? false,
               fileAvailabilitySupported,
               openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,

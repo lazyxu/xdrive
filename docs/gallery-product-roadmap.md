@@ -1198,3 +1198,14 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
 - Filtering, album membership and search choose their visible representative **after** Server filters, preserving the correct sort, sparse virtual item range, authoritative count, timeline, anchor and Viewer target. Semantic search ranks eligible matches before collapsing identical results. Ordinary FileExplorer and Gallery without the opt-in retain their original Node/page counts, including at 100k scale.
 - Clicking a verified fold badge expands an on-demand, bounded exact-Node dialog. Each copy keeps its filename, Node ID, ownership, original file path, favorite, album membership, tag, person, edit recipe and CAS references. The secondary Viewer target carries an explicit member list; no copy is removed and no user metadata is merged.
 - Album cards describe **underlying asset counts**, whereas a folded collection count describes **visible cards**; these numbers are not interchangeable. Web and Desktop accept manual/smart/source/folder album IDs for both item-range and Viewer queries; the representative always belongs to the active album scope. Group badges may include copies outside the currently filtered album/search scope; expansion clearly lists all verified files. Fold view is opt-in to avoid imposing duplicate-equivalence scans on 100k gallery defaults.
+
+### G06 phase 2b — Desktop Agent/IPC transport candidate (2026-10-09)
+
+**In progress / CI pending:** Desktop reuses the shared Location section in
+Gallery and FileExplorer media Properties, gated by Agent `node-location`.
+A per-request AbortSignal is passed Renderer → Electron Main → Agent IPC HTTP →
+Go client → Server, without thumbnail, preview, original read or indexer work.
+"显示所在位置" navigates by the authoritative parent Node ID and breadcrumbs;
+recorded SourceItem paths remain distinct from current xDrive ancestry.
+Older Agents explicitly report the missing capability. This work is stacked
+on G06 Web phase 2a and requires its own complete PR CI before merge.

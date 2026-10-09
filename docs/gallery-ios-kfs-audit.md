@@ -419,6 +419,12 @@ embedded JPEG remains an explicit compatibility limitation. Final resolution,
 resource use and real Safari/Electron decode must be measured with identical
 fixtures before claiming high-resolution parity.
 
+- 2026-10-09: G06 phase 2b Desktop transport candidate (not yet merged):
+  Agent/Electron capability `node-location`, per-request cancellation,
+  Go client and shared Web/Desktop Gallery/FileExplorer media Properties
+  feeding parent-ID folder navigation. UI does not invent provider paths or
+  create a second player. Full CI and real device acceptance remain pending.
+
 ## M15–M16：人物与地点流程补充（2026-10-09）
 
 现有人物身份和猫／狗类型集合保留。人物确认、命名、合并、拆分使用窄屏44px和短横屏可滚动弹窗；只有新建或归入已有的人物成功且原建议卡退出时，焦点交接到持续挂载的当前标题。相同40项17/23→40/0、同70项68/2→70/0；拒绝、同参数重试和完整ID／revision均保留。

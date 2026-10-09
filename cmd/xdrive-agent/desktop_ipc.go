@@ -95,6 +95,7 @@ var desktopIPCCapabilities = []string{
 	"file-properties-stats",
 	"file-media-details",
 	"media-item-properties",
+	"node-location",
 	"media-timezone",
 	"upload-conflict-preflight",
 	"upload-conflict-preflight-batch",
@@ -620,6 +621,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/shares/revoke", h.cloudRevokeShare)
 	mux.HandleFunc("GET /v1/media/items", h.mediaItems)
 	mux.HandleFunc("GET /v1/media/item", h.mediaItem)
+	mux.HandleFunc("GET /v1/cloud/node-location", h.nodeLocation)
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
 	mux.HandleFunc("GET /v1/media/duplicate-organize/plan", h.mediaDuplicateOrganizePlan)
@@ -2666,6 +2668,29 @@ func (h *desktopIPCHandler) mediaItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, item)
+}
+
+type desktopIPCNodeLocationController interface {
+	CloudNodeLocation(context.Context, uint64) (client.NodeLocation, error)
+}
+
+func (h *desktopIPCHandler) nodeLocation(w http.ResponseWriter, r *http.Request) {
+	nodeID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("node_id")), 10, 64)
+	if err != nil || nodeID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_node_id", "node_id must be a positive integer")
+		return
+	}
+	provider, ok := h.ctrl.(desktopIPCNodeLocationController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "node_location_unavailable", "this Agent does not support Node location")
+		return
+	}
+	location, err := provider.CloudNodeLocation(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, location)
 }
 
 func (h *desktopIPCHandler) mediaItems(w http.ResponseWriter, r *http.Request) {

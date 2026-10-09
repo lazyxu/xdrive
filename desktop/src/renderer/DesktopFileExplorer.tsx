@@ -180,6 +180,7 @@ export default function DesktopFileExplorer({
   propertiesStatsSupported = false,
   mediaDetailsSupported = false,
   mediaPropertiesSupported = false,
+  nodeLocationSupported = false,
   fileAvailabilitySupported = false,
   openWithSupported = false,
   quickAccessSupported = false,
@@ -239,6 +240,7 @@ export default function DesktopFileExplorer({
   propertiesStatsSupported?: boolean
   mediaDetailsSupported?: boolean
   mediaPropertiesSupported?: boolean
+  nodeLocationSupported?: boolean
   fileAvailabilitySupported?: boolean
   openWithSupported?: boolean
   quickAccessSupported?: boolean
@@ -943,6 +945,16 @@ export default function DesktopFileExplorer({
       signal.removeEventListener('abort', cancel)
     }
   }, [mediaPropertiesSupported])
+
+  const loadNodeLocation = useCallback(async (nodeID: number, signal?: AbortSignal) => {
+    if (!nodeLocationSupported) throw new Error('当前 Agent 不支持文件位置查询，请更新客户端核心组件。')
+    const result = await xDriveDesktopViewportRequest(
+      signal,
+      (requestID) => window.xdriveDesktop.agent.getNodeLocation(nodeID, requestID),
+    )
+    if (!result.ok) throw new Error(result.error.message)
+    return result.data
+  }, [nodeLocationSupported])
 
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
@@ -1892,6 +1904,15 @@ const desktopTransferLifecycleChildBatchSize = 1000
         loadPropertiesStats={propertiesStatsSupported ? loadPropertiesStats : undefined}
         loadMediaDetails={mediaDetailsSupported ? loadMediaDetails : undefined}
         loadMediaItem={!trashActive && mediaPropertiesSupported ? loadMediaItem : undefined}
+        loadNodeLocation={!trashActive && nodeLocationSupported ? loadNodeLocation : undefined}
+        onShowInFolder={trashActive ? undefined : (location) => {
+          if (!location.parent_id) return
+          const ancestry = location.breadcrumbs
+            .filter((crumb) => crumb.id !== location.node_id)
+            .map((crumb) => ({ id: crumb.id, name: crumb.name }))
+          if (!ancestry.length || ancestry[ancestry.length - 1].id !== location.parent_id) return
+          void navigateTo(ancestry)
+        }}
         getItemStatus={fileAvailabilitySupported ? getItemStatus : undefined}
         getItemAvailability={fileAvailabilitySupported ? getItemAvailability : undefined}
         pathValue={trashActive ? '回收站' : pathValue}
