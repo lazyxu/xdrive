@@ -299,6 +299,17 @@ description-history archive and cannot justify deleting another source file.
 No first-render or scroll-triggered request is introduced. Native PostgreSQL
 and shared Web/Desktop contract tests are required before merge.
 
+### G11 Cleanup deletion-view refresh acceptance (2026-10-09)
+
+A proposed shared Gallery fix tracks the active Burst review in the memoized
+delete callback, so changing between ordinary Gallery and Burst review never
+refreshes the wrong collection after deletion submission. Its executable
+real-callback regression covers both directions and submission failure.
+This is not a task-completion guarantee: Web/Desktop submit asynchronous
+file operations, so accurate final cleanup totals/members after a finished
+background task require an additional terminal-state refresh test. No
+destructive full-asset duplicate consolidation has been enabled.
+
 ### G11/G12: organization, deletion and privacy are different contracts
 
 Current exact duplicates are equal primary SHA-256 originals. Near-duplicates and Burst
