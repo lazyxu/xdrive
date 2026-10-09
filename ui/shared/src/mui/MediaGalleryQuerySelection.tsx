@@ -67,6 +67,13 @@ export function XDriveMediaGalleryQuerySelection({
   const tokenRef = useRef('')
   const actionsRef = useRef(actions)
   actionsRef.current = actions
+  // React's visible busy state updates after the current event batch. Use one
+  // synchronous ownership lane for every snapshot, page and durable-job action.
+  const requestBusyRef = useRef(false)
+  const setRequestBusy = (next: boolean) => {
+    requestBusyRef.current = next
+    setBusy(next)
+  }
 
   // A durable job keeps running when the UI closes or its token expires.
   // Poll only the single active job; never poll or hydrate 100k items.
@@ -94,7 +101,7 @@ export function XDriveMediaGalleryQuerySelection({
   }, [])
 
   const close = () => {
-    if (busy) return
+    if (busy || requestBusyRef.current) return
     generation.current += 1
     const token = tokenRef.current
     tokenRef.current = ''
@@ -112,10 +119,10 @@ export function XDriveMediaGalleryQuerySelection({
   }
 
   const submitFavorite = async (favorite: boolean) => {
-    if (!actions.submitFavorite || !actions.getJob || busy || !snapshot ||
+    if (!actions.submitFavorite || !actions.getJob || busy || requestBusyRef.current || !snapshot ||
       snapshot.selected <= 0 || job) return
     const request = ++generation.current
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       // User confirmed the exact snapshot version and count in a separate dialog.
@@ -130,14 +137,14 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       if (request === generation.current) setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      if (request === generation.current) setBusy(false)
+      if (request === generation.current) setRequestBusy(false)
     }
   }
 
   const cancelJob = async () => {
-    if (!job || busy || !actions.cancelJob ||
+    if (!job || busy || requestBusyRef.current || !actions.cancelJob ||
       !['queued', 'running'].includes(job.status)) return
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       await actions.cancelJob(job.id)
@@ -146,14 +153,14 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      setBusy(false)
+      setRequestBusy(false)
     }
   }
 
   const retryJob = async () => {
-    if (!job || busy || !actions.retryJob ||
+    if (!job || busy || requestBusyRef.current || !actions.retryJob ||
       !['partial', 'cancelled'].includes(job.status)) return
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       const resumed = await actions.retryJob(job.id)
@@ -163,13 +170,13 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      setBusy(false)
+      setRequestBusy(false)
     }
   }
 
   const loadJobFailures = async (nextOffset: number) => {
-    if (!job || busy || !actions.failures) return
-    setBusy(true)
+    if (!job || busy || requestBusyRef.current || !actions.failures) return
+    setRequestBusy(true)
     setError('')
     try {
       const result = await actions.failures(job.id, nextOffset, pageSize)
@@ -178,14 +185,14 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      setBusy(false)
+      setRequestBusy(false)
     }
   }
 
   const create = async (selectedDay: string) => {
-    if (busy || disabled || tokenRef.current) return
+    if (busy || requestBusyRef.current || disabled || tokenRef.current) return
     const request = ++generation.current
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       const created = await actions.create(selectedDay || undefined)
@@ -210,14 +217,14 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       if (request === generation.current) setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      if (request === generation.current) setBusy(false)
+      if (request === generation.current) setRequestBusy(false)
     }
   }
 
   const readPage = async (nextOffset: number) => {
-    if (busy || !snapshot || job) return
+    if (busy || requestBusyRef.current || !snapshot || job) return
     const request = ++generation.current
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       const result = await actions.page(snapshot.token, nextOffset, pageSize)
@@ -229,14 +236,14 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       if (request === generation.current) setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      if (request === generation.current) setBusy(false)
+      if (request === generation.current) setRequestBusy(false)
     }
   }
 
   const changeExclusion = async (item: MediaSelectionSnapshotItem, excluded: boolean) => {
-    if (busy || !snapshot || job) return
+    if (busy || requestBusyRef.current || !snapshot || job) return
     const request = ++generation.current
-    setBusy(true)
+    setRequestBusy(true)
     setError('')
     try {
       const updated = await actions.exclude(
@@ -262,7 +269,7 @@ export function XDriveMediaGalleryQuerySelection({
     } catch (reason) {
       if (request === generation.current) setError(xDriveMediaGalleryErrorMessage(reason))
     } finally {
-      if (request === generation.current) setBusy(false)
+      if (request === generation.current) setRequestBusy(false)
     }
   }
 
