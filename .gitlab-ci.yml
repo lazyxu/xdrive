@@ -345,6 +345,35 @@ gallery-first-visible-server-performance:
         XD_FILEEXPLORER_MEDIA_SERVER_PERF=1 go test -run '^TestFileExplorerMediaServerObjectStorePerformance100K$' -count=1 -v ./internal/api
       fi
 
+gallery-hover-real-codecs-4k:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/gallery-hover-real-codecs-4k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/gallery-hover-real-codecs-4k"'
+  script:
+    - |
+      set -euo pipefail
+      if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+        apt-get update -qq
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+      fi
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/gallery-hover-4k-real-codec-trial-main.cjs
+      cat perf-results/gallery-hover-4k-real-codec-trial.json
+  artifacts:
+    name: "gallery-hover-real-codecs-4k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/gallery-hover-4k-real-codec-trial.json
+
 gallery-hover-original-video-trial:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache

@@ -1070,3 +1070,117 @@ Native first-frame latency (after assigning the original source): **2,693.7 ms f
 The actual server-side trial observed the request disconnections and full-body suppression; it does **not** prove that a real Viewer/Gallery autoplay has correct signed-ticket lifetimes, mobile pointer behavior, browser energy consumption or decoder/RSS peak. [Raw per-sample evidence](performance-evidence/gallery-hover-original-video/ci-run-37901388380.json) records unrounded first-frame times, HTTP Range headers, bytes and status.
 
 **Decision: accept only the small native feasibility result, with NO production hover change.** Keep default Gallery poster/static behavior unchanged. Next step is to repeat the test using representative 4K H.264, HEVC, long-GOP and high-bitrate footage through both Web and Desktop proxies; then add a limited, user-switchable hover only if measured memory/bandwidth/abort budgets support it. The final whole-PR CI must rerun after the evidence is committed.
+
+
+## P3 real-coded 4K/HEVC original-video hover baseline (2026-10-09)
+
+Status: **Benchmarking / product hover remains disabled**. The accepted 96×64 H.264
+feasibility probe does not extrapolate to real source bitrate or decode. The
+follow-up branch `perf/gallery-hover-real-codecs-4k` measures **real 3840×2160
+encoded video bytes**, generated deterministically on a native Electron/Chromium
+runner with FFmpeg, without changing Gallery UI or enabled settings. Production
+Gallery hover continues to cause **0 extra video original requests**.
+
+**Frozen workload:** 100,000 **logical** video assets (one mounted player maximum,
+not 100k DOM elements), FFmpeg `testsrc2` 3840×2160 **8 fps** actual H.264
+(`libx264`) and HEVC (`libx265` tagged `hvc1`) 6-second video segments, target
+12 Mbps with recorded **actual** file size/bitrate, GOP of **48 frames / 6 seconds**,
+and **60-second synthetic long videos** by stream-copying each segment 10 times.
+The repeated 6-second GOPs are not a single continuous 60-second GOP or real camera
+footage. Check exact generated metadata with FFprobe; neither 4K nor HEVC is
+faked by CSS resizing or by substituting a small original fixture.
+
+For **each** of four codec/duration assets, run **3 samples per mode** on the
+same generated file and native Electron session: quick pointer pass **150 ms**
+(before planned 400 ms threshold), deliberate 400 ms hover + up to 9-second
+first-frame acquisition + **350 ms** playback, and 400 ms hover abandoned
+**125 ms** after source assignment while the HTTP server delays body for
+**900 ms**. Observe server disconnect, residual active requests and emitted
+bytes **160 ms** after leaving; record HTTP Range headers, requested/emitted
+bytes, actual video dimensions, `canPlayType`, first-frame time, decoded
+frames and total app working set (diagnostic only, not video-only memory).
+Each source is an authenticated-stream *proxy approximation* over local HTTP
+Range; real server tickets, Desktop IPC/proxy, browsers on physical mobile
+and hardware decoders remain separate tests.
+
+**Predeclared resource gate for enabling any future production hover:**
+quick passes must issue **0** original video requests; never more than
+**one** active player; all started deliberately abandoned requests must
+end with 0 active connections and **0** further emitted bytes by +160 ms.
+On H.264-capable samples, expect loaded real 3840×2160 frames; record any
+HEVC codec unsupported error, rather than claiming successful playback.
+For the deliberate dwell, a proposed promotion ceiling is **8 MiB original
+bytes per hover** and a **2-second warm first-frame** target. The current
+hover-only baseline is **0 bytes/0 requests**. **Every budget violation
+prevents default-on or opt-in product hover until reassessed**; it does not
+mean this test-only PR should silently change the product. Whole-process
+128 MiB memory variation is diagnostic because Electron heap/decoder/cache
+and runner processes are not individually attributed.
+
+**Measured current / evidence-amended:** [native GitHub CI 37904531303](https://github.com/lazyxu/xdrive/actions/runs/37904531303), [trial job 113734686556](https://github.com/lazyxu/xdrive/actions/runs/37904531303/job/113734686556), Ubuntu 24.04 hosted runner, Electron/Chromium with FFmpeg 6.1.1 and FFprobe. The branch-only scoped job and the complete first PR CI passed, but passing benchmark execution does **not** mean the video-hover product resource budget passed. This raw-data amendment must receive **a fresh complete PR CI run** before merge.
+
+**BEFORE/current Gallery behavior:** 0 hover-initiated original video GETs, no automatic original-video decoder. No before/after wall-clock speedup can be computed for a feature that has not been shipped. **Trial only:** four real encoded original files, 3 samples per file × 3 scenarios = 36 native experiments. 100k counts **logical IDs**, not mounted media elements or real 100k browser painting. No production UI/cancellation changes in this PR.
+
+**Exact FFprobe-verified fixture metadata** (target encoder rate 12 Mbps; measured outputs differ):
+
+| Encoded source | Resolution | Duration | Actual bytes | Observed bitrate (bps) | GOP |
+| --- | --- | ---: | ---: | ---: | --- |
+| `h264-4k-6s` | 3840×2160, 8/1 fps | 6s | 10228185 | 13637580 | 48 frames = 6s |
+| `hevc-4k-6s` | 3840×2160, 8/1 fps | 6s | 11290579 | 15054105 | 48 frames = 6s |
+| `h264-4k-60s` | 3840×2160, 8/1 fps | 60s | 102274353 | 13636580 | 48 frames = 6s |
+| `hevc-4k-60s` | 3840×2160, 8/1 fps | 60s | 112875577 | 15050076 | 48 frames = 6s |
+
+**Predeclared budgets versus measured result:**
+- Quick pass before 400 ms: **12/12 0 original GET / 0 B**, PASS. Maximum simultaneously mounted HTMLVideoElements: **1**, PASS.
+- Deliberately abandoned started requests: **12/12 Server-observed early disconnects** with **0 emitted response bytes and 0 active responses** after the 160 ms observation point, PASS. This is native loopback HTTP behavior, not proof of every Web/Desktop/Go cancellation path.
+- H.264 decoded at 3840×2160 in **6/6 playback trials**, 6–7 decoded frames; native loaded first-frame observations were **43.5–66.6 ms**, under the proposed **2,000 ms warm** budget. This is hosted native warm behavior rather than app-wide first paint, authenticated proxy performance or a user SLA, PASS for this limited test.
+- Original data byte budget: **FAIL** against **8,388,608 B / hover**. Every 6-second H.264 playback transferred **10,228,185 B**; 60-second H.264 streamed **31,850,496 / 31,916,032 / 34,013,184 B** respectively, despite a brief preview. H.264 network reads do not become cheap merely because one player is used.
+- HEVC playback in the tested Electron/Chromium environment: **0/6 supported**; all six attempted original loads produced `media-error-4`, 0 decoded frames, and nevertheless emitted **1,638,400–4,390,912 B** before termination. Codec capability is platform-dependent; this does not mean HEVC is unsupported on all user devices.
+- Memory numbers in exact JSON are **whole-process working-set deltas** (not renderer-only, decoder-only, controlled A/B or user RSS evidence). They are diagnostics and cannot justify global memory thresholds.
+
+**All 36 measured trial rows** (bytes are Server-emitted HTTP response bytes; first frame is measured *after original source assignment*, not inclusive of the hover threshold):
+
+| Asset | Scenario | Sample | GET | Server bytes | First frame (ms) | Frames | Early closes | Active end | Outcome |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| `h264-4k-6s` | 150 ms pass | 1 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-6s` | 150 ms pass | 2 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-6s` | 150 ms pass | 3 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-6s` | 400 ms + play | 1 | 1 | 10228185 | 66.2 | 6 | 0 | 0 | 4K frame decoded |
+| `h264-4k-6s` | 400 ms + play | 2 | 1 | 10228185 | 59.9 | 7 | 0 | 0 | 4K frame decoded |
+| `h264-4k-6s` | 400 ms + play | 3 | 1 | 10228185 | 43.5 | 6 | 0 | 0 | 4K frame decoded |
+| `h264-4k-6s` | 125 ms abandon | 1 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `h264-4k-6s` | 125 ms abandon | 2 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `h264-4k-6s` | 125 ms abandon | 3 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-6s` | 150 ms pass | 1 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-6s` | 150 ms pass | 2 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-6s` | 150 ms pass | 3 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-6s` | 400 ms + play | 1 | 1 | 2097152 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-6s` | 400 ms + play | 2 | 1 | 2228224 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-6s` | 400 ms + play | 3 | 1 | 1966080 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-6s` | 125 ms abandon | 1 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-6s` | 125 ms abandon | 2 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-6s` | 125 ms abandon | 3 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `h264-4k-60s` | 150 ms pass | 1 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-60s` | 150 ms pass | 2 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-60s` | 150 ms pass | 3 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `h264-4k-60s` | 400 ms + play | 1 | 1 | 31850496 | 44.3 | 6 | 1 | 0 | 4K frame decoded |
+| `h264-4k-60s` | 400 ms + play | 2 | 1 | 31916032 | 61.7 | 6 | 1 | 0 | 4K frame decoded |
+| `h264-4k-60s` | 400 ms + play | 3 | 1 | 34013184 | 66.6 | 7 | 1 | 0 | 4K frame decoded |
+| `h264-4k-60s` | 125 ms abandon | 1 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `h264-4k-60s` | 125 ms abandon | 2 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `h264-4k-60s` | 125 ms abandon | 3 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-60s` | 150 ms pass | 1 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-60s` | 150 ms pass | 2 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-60s` | 150 ms pass | 3 | 0 | 0 | — | 0 | 0 | 0 | No source |
+| `hevc-4k-60s` | 400 ms + play | 1 | 1 | 4390912 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-60s` | 400 ms + play | 2 | 1 | 1638400 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-60s` | 400 ms + play | 3 | 1 | 1769472 | — | 0 | 1 | 0 | Unsupported codec (`error:media-error-4`) |
+| `hevc-4k-60s` | 125 ms abandon | 1 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-60s` | 125 ms abandon | 2 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+| `hevc-4k-60s` | 125 ms abandon | 3 | 1 | 0 | — | 0 | 1 | 0 | Cancelled/no body |
+
+**Decision: REJECT production original-video hover on this evidence.** The benchmark itself is an **Accepted measured baseline**, but the 8 MiB resource promotion budget failed and HEVC has no successful sample. Keep Gallery/Web/Desktop default **persisted static poster** and Live Photo **explicit first press** unchanged. Do **not** enable a default or optional original-video hover, raise the resource cap after seeing the result, or represent successful benchmark execution as successful codec/bandwidth acceptance.
+
+**Next action (P4, separate measurement-gated work):** measure a strictly bounded, off-by-default short-derived-preview candidate (duration, resolution, codec, bitrate and source revision defined before implementation), and compare against the same 4K H.264/HEVC cases with real signed-ticket Server and Desktop Agent proxy, plus browser/physical-device verification. Record preview-generation cost, storage inventory, cache invalidation, original/derived bytes, first frame, CPU/RSS and cancellation. Build only if paired data shows material benefit and preserves correctness. The current benchmark does **not** create a derivative, second media transport or cache path.
+
+Exact machine-readable source: [36 native trial samples](performance-evidence/gallery-hover-real-codecs-4k/ci-run-37904531303.json). Generated by the PR benchmark; data values preserved without rounding in JSON. The result is a **native synthetic-codec probe**, not real camera footage, complete Gallery integration, HDR/VFR playback, hardware decoding, 100k mounted DOM, real Go request context or measured end-to-end app latency. Status: **Measured baseline / product original-hover rejected / evidence-amended full CI pending**.
