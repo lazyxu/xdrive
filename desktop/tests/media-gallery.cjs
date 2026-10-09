@@ -1473,7 +1473,7 @@ test('Gallery grid uses VirtualCollection with stable logical height and bounded
   }
 
   assert.equal(sharedGalleryMain.includes('hasMore'), false, 'Gallery must not retain append pagination state')
-  assert.equal(sharedGalleryMain.includes('onLoadMore'), false, 'Gallery must not retain append pagination callbacks')
+  assert.equal(/onLoadMore(?!Duplicate|Burst)/.test(sharedGalleryMain), false, 'Gallery must not retain media-item append pagination callbacks')
   assert.equal(sharedGalleryMain.includes('加载更多'), false, 'Gallery must not expose load-more UI')
   assert.ok(
     sharedVirtualCollectionController.includes('updateLoadedItems'),

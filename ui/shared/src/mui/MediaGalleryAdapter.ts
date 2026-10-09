@@ -114,6 +114,7 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listDuplicateGroups?: (
     limit?: number,
+    offset?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateGroupList>>
   listDuplicateItemRange?: (
     duplicateID: string,
@@ -122,6 +123,7 @@ export interface XDriveMediaGalleryPort {
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listBurstReviews?: (
     limit?: number,
+    offset?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaBurstReviewList>>
   listBurstReviewItemRange?: (
     burstID: string,
@@ -436,7 +438,7 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listDuplicateGroups: port.listDuplicateGroups
-      ? (limit) => resolveXDriveTransport(port.listDuplicateGroups!(limit))
+      ? (limit, offset) => resolveXDriveTransport(port.listDuplicateGroups!(limit, offset))
       : undefined,
     listDuplicateItemRange: port.listDuplicateItemRange
       ? (duplicateID, limit, offset) => resolveXDriveTransport(
@@ -444,7 +446,7 @@ export function createXDriveMediaGalleryDataSource(
         )
       : undefined,
     listBurstReviews: port.listBurstReviews
-      ? (limit) => resolveXDriveTransport(port.listBurstReviews!(limit))
+      ? (limit, offset) => resolveXDriveTransport(port.listBurstReviews!(limit, offset))
       : undefined,
     listBurstReviewItemRange: port.listBurstReviewItemRange
       ? (burstID, limit, offset) => resolveXDriveTransport(

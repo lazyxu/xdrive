@@ -2165,6 +2165,18 @@ func (c *agentController) CloudMediaDuplicateGroups(
 	return cli.MediaDuplicateGroups(ctx, limit)
 }
 
+// Optional pagination interface preserves the legacy controller contract.
+func (c *agentController) CloudMediaDuplicateGroupsPage(
+	ctx context.Context,
+	limit, offset int,
+) (client.MediaDuplicateGroupList, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaDuplicateGroupList{}, err
+	}
+	return cli.MediaDuplicateGroups(ctx, limit, offset)
+}
+
 func (c *agentController) CloudMediaDuplicateItemsRange(
 	ctx context.Context,
 	duplicateID string,
@@ -2186,6 +2198,17 @@ func (c *agentController) CloudMediaBurstReviews(
 		return client.MediaBurstReviewList{}, err
 	}
 	return cli.MediaBurstReviews(ctx, limit)
+}
+
+func (c *agentController) CloudMediaBurstReviewsPage(
+	ctx context.Context,
+	limit, offset int,
+) (client.MediaBurstReviewList, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBurstReviewList{}, err
+	}
+	return cli.MediaBurstReviews(ctx, limit, offset)
 }
 
 func (c *agentController) CloudMediaBurstReviewItemsRange(

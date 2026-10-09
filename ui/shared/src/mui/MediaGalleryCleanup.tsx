@@ -5,6 +5,7 @@ import {
 } from '@mui/icons-material'
 import {
   Box,
+  Button,
   Chip,
   CircularProgress,
   Paper,
@@ -190,6 +191,10 @@ export function XDriveMediaGalleryCleanup({
   loadThumbnail,
   onOpenDuplicate,
   onOpenBurst,
+  onLoadMoreDuplicate,
+  onLoadMoreBurst,
+  onRefresh,
+  loadingMore,
 }: {
   duplicates: MediaDuplicateGroupList | null
   bursts: MediaBurstReviewList | null
@@ -197,6 +202,10 @@ export function XDriveMediaGalleryCleanup({
   loadThumbnail: MediaThumbnailLoader
   onOpenDuplicate?: (group: MediaDuplicateGroup) => void
   onOpenBurst?: (group: MediaBurstReview) => void
+  onLoadMoreDuplicate?: () => void
+  onLoadMoreBurst?: () => void
+  onRefresh?: () => void
+  loadingMore?: 'duplicate' | 'burst' | null
 }) {
   if (loading && !duplicates && !bursts) {
     return (
@@ -219,10 +228,11 @@ export function XDriveMediaGalleryCleanup({
       >
         <Stack spacing={0.75} alignItems="center">
           <SuggestionIcon color="disabled" sx={{ fontSize: 42 }} />
-          <Typography color="text.secondary">暂时没有清理建议</Typography>
+          <Typography color="text.secondary">当前已索引素材暂时没有清理建议</Typography>
           <Typography variant="caption" color="text.secondary" align="center">
-            主原文件重复按 SHA-256 识别；完整资源与编辑状态必须单独核对
+            结果仅覆盖已就绪的媒体索引，尚不能据此证明全库不存在重复照片。
           </Typography>
+          {onRefresh ? <Button onClick={onRefresh} sx={{ minHeight: 44 }}>重新检查</Button> : null}
         </Stack>
       </Paper>
     )
@@ -232,11 +242,15 @@ export function XDriveMediaGalleryCleanup({
     <Stack spacing={3} data-xdrive-media-gallery-cleanup>
       <Paper variant="outlined" sx={{ p: 1.5 }}>
         <Stack spacing={0.5}>
-          <Typography variant="subtitle2" fontWeight={700}>空间说明</Typography>
+          <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+            <Typography variant="subtitle2" fontWeight={700}>空间说明</Typography>
+            {onRefresh ? <Button size="small" onClick={onRefresh} sx={{ minHeight: 44 }}>刷新清理建议</Button> : null}
+          </Stack>
           <Typography variant="caption" color="text.secondary">
             相同主文件已经由 xDrive CAS 按内容去重，因此删除重复引用通常不会释放共享 blob；
             这里分别显示逻辑重复体积与物理可释放空间。完整实况、RAW 和编辑配方需要单独核对。
             删除操作仍然先进入回收站，只会处理选中的真实文件，不会自动删除关联资源或合并相册、人物等信息。
+            后台删除任务完成后可刷新检查最新组数；此列表目前仅包含已就绪的媒体索引。
           </Typography>
         </Stack>
       </Paper>
@@ -245,7 +259,7 @@ export function XDriveMediaGalleryCleanup({
         <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1.25 }}>
           <Typography variant="subtitle1" fontWeight={700}>主原文件重复</Typography>
           <Typography variant="caption" color="text.secondary">
-            {(duplicates?.total_groups ?? 0).toLocaleString('zh-CN')} 组
+            已显示 {duplicateGroups.length.toLocaleString('zh-CN')} / {(duplicates?.total_groups ?? 0).toLocaleString('zh-CN')} 组
             {' · '}逻辑重复 {formatBytes(duplicates?.logical_duplicate_bytes ?? 0)}
             {' · '}物理可释放 {formatBytes(duplicates?.physical_reclaimable_bytes ?? 0)}
           </Typography>
@@ -268,15 +282,28 @@ export function XDriveMediaGalleryCleanup({
             ))}
           </Box>
         ) : (
-          <Typography variant="body2" color="text.secondary">没有完全重复项</Typography>
+          <Typography variant="body2" color="text.secondary">没有主原文件重复项</Typography>
         )}
+        {(duplicates?.total_groups ?? 0) > duplicateGroups.length && onLoadMoreDuplicate ? (
+          <Stack alignItems="center" sx={{ mt: 1.5 }}>
+            <Button
+              variant="outlined"
+              onClick={onLoadMoreDuplicate}
+              disabled={Boolean(loadingMore)}
+              startIcon={loadingMore === 'duplicate' ? <CircularProgress size={16} /> : undefined}
+              sx={{ minHeight: 44 }}
+            >
+              {loadingMore === 'duplicate' ? '正在加载' : '加载更多重复组'}
+            </Button>
+          </Stack>
+        ) : null}
       </Box>
 
       <Box>
         <Stack direction="row" spacing={1} alignItems="baseline" sx={{ mb: 1.25 }}>
           <Typography variant="subtitle1" fontWeight={700}>连拍精选</Typography>
           <Typography variant="caption" color="text.secondary">
-            {(bursts?.total_groups ?? 0).toLocaleString('zh-CN')} 组
+            已显示 {burstGroups.length.toLocaleString('zh-CN')} / {(bursts?.total_groups ?? 0).toLocaleString('zh-CN')} 组
             {' · '}非推荐帧 {formatBytes(bursts?.potential_cleanup_bytes ?? 0)}
             {' · '}永久删除后预计可释放 {formatBytes(bursts?.physical_reclaimable_bytes ?? 0)}
           </Typography>
@@ -301,6 +328,19 @@ export function XDriveMediaGalleryCleanup({
         ) : (
           <Typography variant="body2" color="text.secondary">没有需要审查的连拍组</Typography>
         )}
+        {(bursts?.total_groups ?? 0) > burstGroups.length && onLoadMoreBurst ? (
+          <Stack alignItems="center" sx={{ mt: 1.5 }}>
+            <Button
+              variant="outlined"
+              onClick={onLoadMoreBurst}
+              disabled={Boolean(loadingMore)}
+              startIcon={loadingMore === 'burst' ? <CircularProgress size={16} /> : undefined}
+              sx={{ minHeight: 44 }}
+            >
+              {loadingMore === 'burst' ? '正在加载' : '加载更多连拍组'}
+            </Button>
+          </Stack>
+        ) : null}
       </Box>
     </Stack>
   )

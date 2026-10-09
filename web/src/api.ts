@@ -895,9 +895,10 @@ export class XDriveApi {
     )
   }
 
-  mediaDuplicateGroups(limit = 24) {
+  mediaDuplicateGroups(limit = 24, offset = 0) {
     const query = new URLSearchParams({
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<MediaDuplicateGroupList>(
       `/api/v1/media/duplicates?${query.toString()}`,
@@ -919,9 +920,10 @@ export class XDriveApi {
     )
   }
 
-  mediaBurstReviews(limit = 24) {
+  mediaBurstReviews(limit = 24, offset = 0) {
     const query = new URLSearchParams({
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<MediaBurstReviewList>(
       `/api/v1/media/bursts?${query.toString()}`,

@@ -486,6 +486,7 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaDuplicateGroups: (
           limit?: number,
+          offset?: number,
         ) => Promise<DesktopResult<MediaDuplicateGroupList>>
         getMediaDuplicateItemRange: (
           duplicateID: string,
@@ -494,6 +495,7 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaItemRange>>
         getMediaBurstReviews: (
           limit?: number,
+          offset?: number,
         ) => Promise<DesktopResult<MediaBurstReviewList>>
         getMediaBurstReviewItemRange: (
           burstID: string,

@@ -2254,6 +2254,18 @@ function registerIPCHandlers() {
     return requestedLimit
   }
 
+  const normalizeMediaCleanupOffset = (offset: unknown = 0) => {
+    if (
+      typeof offset !== 'number' ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      offset > 10000000
+    ) {
+      throw new AgentIPCError('invalid_input', 0, 'Cleanup group offset must be between 0 and 10000000.')
+    }
+    return offset
+  }
+
   const normalizeMediaCleanupID = (value: unknown, label: string) => {
     if (
       typeof value !== 'string' ||
@@ -2267,10 +2279,13 @@ function registerIPCHandlers() {
 
   ipcMain.handle(
     'agent:get-media-duplicate-groups',
-    (_event, limit: unknown = 24) => runAgentAction<AgentMediaDuplicateGroupList>(async () => {
+    (_event, limit: unknown = 24, offset: unknown = 0) => runAgentAction<AgentMediaDuplicateGroupList>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
-      return requireAgentClient().mediaDuplicateGroups(normalizeMediaCleanupLimit(limit))
+      return requireAgentClient().mediaDuplicateGroups(
+        normalizeMediaCleanupLimit(limit),
+        normalizeMediaCleanupOffset(offset),
+      )
     }, false),
   )
 
@@ -2295,10 +2310,13 @@ function registerIPCHandlers() {
 
   ipcMain.handle(
     'agent:get-media-burst-reviews',
-    (_event, limit: unknown = 24) => runAgentAction<AgentMediaBurstReviewList>(async () => {
+    (_event, limit: unknown = 24, offset: unknown = 0) => runAgentAction<AgentMediaBurstReviewList>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
-      return requireAgentClient().mediaBurstReviews(normalizeMediaCleanupLimit(limit))
+      return requireAgentClient().mediaBurstReviews(
+        normalizeMediaCleanupLimit(limit),
+        normalizeMediaCleanupOffset(offset),
+      )
     }, false),
   )
 

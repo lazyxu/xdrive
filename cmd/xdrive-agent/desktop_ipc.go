@@ -3024,12 +3024,44 @@ func desktopIPCMediaCleanupLimit(w http.ResponseWriter, r *http.Request) (int, b
 	return limit, true
 }
 
+func desktopIPCMediaCleanupOffset(w http.ResponseWriter, r *http.Request) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("offset"))
+	if raw == "" {
+		return 0, true
+	}
+	offset, err := strconv.Atoi(raw)
+	if err != nil || offset < 0 || offset > 10000000 {
+		writeDesktopIPCError(
+			w, http.StatusBadRequest, "invalid_media_cleanup_offset",
+			"offset must be between 0 and 10000000",
+		)
+		return 0, false
+	}
+	return offset, true
+}
+
 func (h *desktopIPCHandler) mediaDuplicateGroups(w http.ResponseWriter, r *http.Request) {
 	limit, ok := desktopIPCMediaCleanupLimit(w, r)
 	if !ok {
 		return
 	}
-	result, err := h.ctrl.CloudMediaDuplicateGroups(r.Context(), limit)
+	offset, ok := desktopIPCMediaCleanupOffset(w, r)
+	if !ok {
+		return
+	}
+	var result client.MediaDuplicateGroupList
+	var err error
+	if offset == 0 {
+		result, err = h.ctrl.CloudMediaDuplicateGroups(r.Context(), limit)
+	} else if pager, supported := h.ctrl.(interface {
+		CloudMediaDuplicateGroupsPage(context.Context, int, int) (client.MediaDuplicateGroupList, error)
+	}); supported {
+		result, err = pager.CloudMediaDuplicateGroupsPage(r.Context(), limit, offset)
+	} else {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_cleanup_paging_unavailable",
+			"upgrade Agent to review additional duplicate groups")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -3070,7 +3102,23 @@ func (h *desktopIPCHandler) mediaBurstReviews(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	result, err := h.ctrl.CloudMediaBurstReviews(r.Context(), limit)
+	offset, ok := desktopIPCMediaCleanupOffset(w, r)
+	if !ok {
+		return
+	}
+	var result client.MediaBurstReviewList
+	var err error
+	if offset == 0 {
+		result, err = h.ctrl.CloudMediaBurstReviews(r.Context(), limit)
+	} else if pager, supported := h.ctrl.(interface {
+		CloudMediaBurstReviewsPage(context.Context, int, int) (client.MediaBurstReviewList, error)
+	}); supported {
+		result, err = pager.CloudMediaBurstReviewsPage(r.Context(), limit, offset)
+	} else {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_cleanup_paging_unavailable",
+			"upgrade Agent to review additional burst groups")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

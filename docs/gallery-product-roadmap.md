@@ -703,6 +703,21 @@ second relationship database and no automatic permanent-delete path.
 - User cleanup continues through the existing durable Gallery/FileOperation delete
   action, which moves items to trash first. No new cleanup mutation endpoint bypasses
   trash or CAS reference accounting.
+- **2026-10-09 — group pagination (G11 phase 2a):** the cleanup overview
+  fetches 48 stable-sorted group cards at a time. Both duplicate groups and
+  Burst reviews accept a bounded optional `offset` (legacy omitted offset is
+  zero) and return `offset`/`has_more` with unchanged full-library
+  `total_groups` and logical/physical totals. Web/Desktop use the same
+  explicit “加载更多” actions; old Agents which ignore an offset are rejected
+  rather than silently repeating page one. Group IDs are deduplicated,
+  and a changed total or overlap triggers a fresh first-page query to avoid
+  stale offset windows following concurrent imports or deletions. Since
+  FileOperation delete is durable/asynchronous, do not claim task completion
+  on submission: show an explicit refresh action after Task Center finishes.
+  This is read/navigation pagination, not a new deletion or auto-merge API.
+- **Still pending in G11:** an authoritative indexing-coverage/status signal;
+  until available, the empty state must explicitly say it only covers currently
+  ready media index records, not declare the complete library duplicate-free.
 - Burst `potential_cleanup_bytes` is the logical size of non-recommended frames.
   `physical_reclaimable_bytes` is conservative and counts a blob only when all of its
   current CAS references would be removed by the reviewed non-recommended members;
