@@ -1139,9 +1139,38 @@ The actual server-side trial observed the request disconnections and full-body s
 
 **Decision: accept only the small native feasibility result, with NO production hover change.** Keep default Gallery poster/static behavior unchanged. Next step is to repeat the test using representative 4K H.264, HEVC, long-GOP and high-bitrate footage through both Web and Desktop proxies; then add a limited, user-switchable hover only if measured memory/bandwidth/abort budgets support it. The final whole-PR CI must rerun after the evidence is committed.
 
+### 2026-10-09 — 10k/100k native verified duplicate-fold performance
+
+Status: **Accepted / measured BEFORE–AFTER, full evidence-amended CI pending (#1140)**. Real paired CI [run 37917773635](https://github.com/lazyxu/xdrive/actions/runs/37917773635), [PostgreSQL 17 benchmark job 113778629575](https://github.com/lazyxu/xdrive/actions/runs/37917773635/job/113778629575) ran the unchanged pre-optimization code (parent `4d5d1ba23`) and the candidate `932960d86` on the same host, with the identical test harness and **n=3 per stage**. The scoped performance job passed its complete correctness+performance validator with **status `accepted` and no errors**. Full PR CI must pass again after this evidence is committed.
+
+- **Frozen `gallery-fold-mixed-v1` workload:** exactly **10,000** and **100,000 PhotoAssets** with 70% ordinary JPEG, 15% video, 15% Live Photo and **11,500 / 115,000** physical media Nodes. Among ordinary JPEGs, 10% form fully resource/recipe-identical 5-copy groups: **200 groups / 1,000 members** and **2,000 groups / 10,000 members** respectively. Favorite is independently set for only one copy of each group; the folder collection retains all original members. Expected folded visible counts are **9,200 / 92,000**. Every phase passed real GORM/PostgreSQL count and first/middle/album/favorite membership checks; original Node relationships were not merged.
+- **Predeclared trigger:** 10k first folded range >1,500 ms, 100k >3,000 ms, >4× the OFF first range, incorrect counts, or timeout. First-red on 100k: **2,772.366 / 562.610 = 4.93×** the OFF first range, plus **3,936.129 ms** for the 100k album range. The baseline failed the *ratio* trigger rather than the 3-second first-page ceiling; there was no timeout or incorrect count.
+- **Fix kept:** `applyVerifiedMediaFolding` now ranks only verified duplicate candidates with a scoped inner join, finds excess in-scope copies and excludes those from the regular owner-filtered query, instead of applying `ROW_NUMBER` over every otherwise-unique PhotoAsset. No cache, schema migration, duplicate deletion, favorite/album rewrite or default-mode path change.
+- **Accepted performance rule:** initial 100k folded range must improve **≥30% and ≥100 ms** on the same host without a material regression (>25% *and* >150ms) on other stages. **Actual 100k: 2,772.366 → 1,480.912 ms; −46.58%, 1,291.454 ms saved**. 10k first folded range: **293.885 → 187.012 ms; −36.37%, 106.873 ms saved**. The 100k album range fell **3,936.129 → 1,780.661 ms (−54.76%)**. The smaller 10k mid-window stage improves only 69.238ms/29.91%, and is not independently claimed to satisfy the acceptance threshold.
+- **Detailed n=3 medians (ms):**
+
+| Logical assets | Stage | BEFORE p50 (ms) | AFTER p50 (ms) | Time difference | Relative change |
+|---:|---|---:|---:|---:|---:|
+| 10,000 | fold\_off\_first | 84.868 | 93.666 | +8.798 | +10.37% |
+| 10,000 | fold\_index | 76.435 | 76.461 | +0.026 | +0.03% |
+| 10,000 | fold\_on\_first | 293.885 | 187.012 | −106.873 | −36.37% |
+| 10,000 | fold\_on\_mid | 231.503 | 162.265 | −69.238 | −29.91% |
+| 10,000 | fold\_album | 423.362 | 216.446 | −206.916 | −48.87% |
+| 10,000 | fold\_favorite | 100.392 | 107.571 | +7.179 | +7.15% |
+| 100,000 | fold\_off\_first | 562.610 | 588.758 | +26.148 | +4.65% |
+| 100,000 | fold\_index | 574.307 | 583.718 | +9.411 | +1.64% |
+| 100,000 | fold\_on\_first | 2772.366 | 1480.912 | −1291.454 | −46.58% |
+| 100,000 | fold\_on\_mid | 2370.952 | 1430.838 | −940.114 | −39.65% |
+| 100,000 | fold\_album | 3936.129 | 1780.661 | −2155.468 | −54.76% |
+| 100,000 | fold\_favorite | 821.164 | 846.817 | +25.653 | +3.12% |
+
+- **Potential regressions and scale overhead:** Fold-index building is essentially unchanged (**76.435 → 76.461 ms at 10k**, **574.307 → 583.718 ms at 100k**). OFF first-range p50 moves **84.868 → 93.666 ms** at 10k and **562.610 → 588.758 ms** at 100k, while Favorite-only moves **100.392 → 107.571 ms** and **821.164 → 846.817 ms**; all changes are below the predeclared material regression threshold. The expensive owner-wide identity scan remains for every opt-in request, so repeated sparse page changes still incur this work. This is not claimed to eliminate all large-gallery folding overhead.
+- **Evidence:** Exact unrounded phase samples, seed elapsed, row counts, visible counts and source commits are committed in [raw paired samples](performance-evidence/gallery-fold-10k-100k/ci-run-37917773635.json). The Actions artifact independently includes `before.jsonl`, `after.jsonl`, `acceptance.json` and logs. Go command: `XD_GALLERY_FOLD_PERF=1 XD_TEST_DATABASE_URL=postgres://... go test -run '^TestGalleryVerifiedFoldPerformance10K100K$' -count=1 -timeout=12m -v ./internal/api`; GitHub and GitLab feature-branch-scoped jobs use PostgreSQL 17.
+- **Boundary:** timings are native Go + real PostgreSQL query p50, **not** Web/Desktop route-to-paint, Agent IPC, thumbnail decode, image/video rendering, CPU utilization, per-query allocations, peak RSS, real network bandwidth or energy usage. Those dimensions are **unmeasured** and must not be represented as improved. Re-test before enabling this opt-in feature by default. The production default remains uncollapsed, with no new opt-in index work in the default path.
+
 ### 2026-10-09 — opt-in verified Gallery duplicate folding
 
-The new complete-resource duplicate fold is a functionality feature, not a performance optimisation. **Default 100k asset first-paint, paging and cancellation paths are unchanged** when `fold_duplicates` is absent. In opt-in mode the Server builds a bounded-batch owner-scoped equivalence projection and folds before count/range/timeline pagination, rather than client-side hiding cards after paging (which would corrupt 100k offsets and Viewer positions). The first implementation has no measured 100k fold-mode wall-clock BEFORE/AFTER evidence; status: **unmeasured / functional validation**. Measure query latency, DB CPU and repeated page-request overhead with representative 100k data before promising performance budgets or enabling folding by default.
+The new complete-resource duplicate fold is a functionality feature, not a performance optimisation. **Default 100k asset first-paint, paging and cancellation paths are unchanged** when `fold_duplicates` is absent. In opt-in mode the Server builds a bounded-batch owner-scoped equivalence projection and folds before count/range/timeline pagination, rather than client-side hiding cards after paging (which would corrupt 100k offsets and Viewer positions). The 10k/100k **native Go + PostgreSQL** opt-in fold-mode first-page and album query wall clocks are now measured in the preceding section, with the accepted scoped SQL optimisation. Browser route-to-first-paint, CPU/RSS, repeated page-request cancellation and thumbnail/rendering costs remain **unmeasured**; do not promise an end-to-end latency budget or enable folding by default.
 
 
 ## P3 real-coded 4K/HEVC original-video hover baseline (2026-10-09)

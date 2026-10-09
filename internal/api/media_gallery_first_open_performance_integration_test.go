@@ -201,6 +201,25 @@ func mediaGallerySeedFirstOpen100K(
 	ownerID, folderID uint64,
 ) {
 	t.Helper()
+	mediaGallerySeedFirstOpenScaled(t, db, ownerID, folderID, mediaGalleryFirstOpenLogicalCount)
+}
+
+// The production-shape fixture remains identical at 100k, but the opt-in
+// duplicate-fold baseline also uses it at 10k with the same 70/15/15 mix.
+func mediaGallerySeedFirstOpenScaled(
+	t *testing.T,
+	db *gorm.DB,
+	ownerID, folderID uint64,
+	logicalCount int,
+) {
+	t.Helper()
+	if logicalCount != 10_000 && logicalCount != mediaGalleryFirstOpenLogicalCount {
+		t.Fatalf("unsupported Gallery performance fixture scale: %d", logicalCount)
+	}
+	photos := logicalCount * 70 / 100
+	videos := logicalCount * 15 / 100
+	livePhotos := logicalCount * 15 / 100
+	physicalCountExpected := photos + videos + 2*livePhotos
 
 	insertNodes := func(prefix, suffix string, count int) {
 		t.Helper()
@@ -226,10 +245,10 @@ func mediaGallerySeedFirstOpen100K(
 			t.Fatal(err)
 		}
 	}
-	insertNodes("photo-", ".jpg", mediaGalleryFirstOpenPhotos)
-	insertNodes("video-", ".mp4", mediaGalleryFirstOpenVideos)
-	insertNodes("live-still-", ".jpg", mediaGalleryFirstOpenLivePhotos)
-	insertNodes("live-motion-", ".mov", mediaGalleryFirstOpenLivePhotos)
+	insertNodes("photo-", ".jpg", photos)
+	insertNodes("video-", ".mp4", videos)
+	insertNodes("live-still-", ".jpg", livePhotos)
+	insertNodes("live-motion-", ".mov", livePhotos)
 
 	// Fixture-only index: keep synthetic Live Photo pairing setup out of the
 	// product first-open timings measured below.
@@ -323,7 +342,7 @@ func mediaGallerySeedFirstOpen100K(
 		FROM generate_series(1, ?) AS gs`,
 		ownerID,
 		meta.MediaGroupKindLivePhoto,
-		mediaGalleryFirstOpenLivePhotos,
+		livePhotos,
 	).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -593,8 +612,8 @@ func mediaGallerySeedFirstOpen100K(
 		Count(&physicalCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if physicalCount != mediaGalleryFirstOpenPhysical {
-		t.Fatalf("physical media rows=%d want=%d", physicalCount, mediaGalleryFirstOpenPhysical)
+	if physicalCount != int64(physicalCountExpected) {
+		t.Fatalf("physical media rows=%d want=%d", physicalCount, int64(physicalCountExpected))
 	}
 	var assetCount int64
 	if err := db.Model(&meta.PhotoAsset{}).
@@ -602,8 +621,8 @@ func mediaGallerySeedFirstOpen100K(
 		Count(&assetCount).Error; err != nil {
 		t.Fatal(err)
 	}
-	if assetCount != mediaGalleryFirstOpenLogicalCount {
-		t.Fatalf("photo assets=%d want=%d", assetCount, mediaGalleryFirstOpenLogicalCount)
+	if assetCount != int64(logicalCount) {
+		t.Fatalf("photo assets=%d want=%d", assetCount, int64(logicalCount))
 	}
 }
 
