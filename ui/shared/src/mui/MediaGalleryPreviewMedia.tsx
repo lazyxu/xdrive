@@ -6,13 +6,15 @@ import {
 } from '@mui/icons-material'
 import { Box, Skeleton } from '@mui/material'
 import type { MediaMetadata } from '../models'
-import { xDriveCaptureVideoPosterBlob } from './MediaGalleryVideoPoster'
+import { xDriveCaptureVideoPosterBlob, xDriveResolveMediaVideoPoster } from './MediaGalleryVideoPoster'
 
-type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
+type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal) => Promise<string | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',
+  signal?: AbortSignal,
 ) => Promise<string | null>
+type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
 
 function revokeIfBlob(url: string) {
   if (url.startsWith('blob:')) URL.revokeObjectURL(url)
@@ -160,19 +162,21 @@ async function captureVideoPoster(
   rotationDegrees = 0,
   sourceWidth = 0,
   sourceHeight = 0,
-): Promise<string | null> {
-  const source = await loadPreviewURL(nodeID, 'video')
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  if (signal?.aborted) return null
+  const source = await loadPreviewURL(nodeID, 'video', signal)
   if (!source) return null
-
   try {
-    const poster = await xDriveCaptureVideoPosterBlob(
+    if (signal?.aborted) return null
+    return await xDriveCaptureVideoPosterBlob(
       source,
       rotationDegrees,
       sourceWidth,
       sourceHeight,
       512,
+      signal,
     )
-    return poster ? URL.createObjectURL(poster) : null
   } finally {
     revokeIfBlob(source)
   }
@@ -182,6 +186,9 @@ export function XDriveMediaAsyncVideoPoster({
   nodeID,
   alt,
   loadPreviewURL,
+  loadThumbnail,
+  saveVideoPoster,
+  revision,
   fallback,
   rotationDegrees = 0,
   sourceWidth = 0,
@@ -190,6 +197,9 @@ export function XDriveMediaAsyncVideoPoster({
   nodeID: number
   alt: string
   loadPreviewURL: MediaPreviewURLLoader
+  loadThumbnail: MediaThumbnailLoader
+  saveVideoPoster?: MediaVideoPosterSaver
+  revision: number
   fallback: ReactNode
   rotationDegrees?: number
   sourceWidth?: number
@@ -223,13 +233,19 @@ export function XDriveMediaAsyncVideoPoster({
     setSrc('')
     if (!visible) return () => { active = false }
 
-    const scheduled = scheduleMediaPoster(() => captureVideoPoster(
+    const scheduled = scheduleMediaPoster(() => xDriveResolveMediaVideoPoster({
       nodeID,
-      loadPreviewURL,
-      rotationDegrees,
-      sourceWidth,
-      sourceHeight,
-    ))
+      revision,
+      loadCached: loadThumbnail,
+      save: saveVideoPoster,
+      capture: () => captureVideoPoster(
+        nodeID,
+        loadPreviewURL,
+        rotationDegrees,
+        sourceWidth,
+        sourceHeight,
+      ),
+    }))
     void scheduled.promise
       .then((value) => {
         if (!value) return
@@ -246,6 +262,9 @@ export function XDriveMediaAsyncVideoPoster({
     }
   }, [
     loadPreviewURL,
+    loadThumbnail,
+    saveVideoPoster,
+    revision,
     nodeID,
     rotationDegrees,
     sourceHeight,

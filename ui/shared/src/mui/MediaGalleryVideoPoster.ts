@@ -172,3 +172,62 @@ export function xDriveCaptureVideoPosterBlob(
     video.load()
   })
 }
+
+
+/**
+ * Use a persisted, revision-matched Server poster before accessing original
+ * video bytes. The callback that captures a cold poster is viewport-owned;
+ * a cancelled viewport must not publish or backfill its stale result.
+ *
+ * Returned Blob URLs belong to the caller and must be revoked on disposal.
+ */
+export async function xDriveResolveMediaVideoPoster({
+  nodeID,
+  revision,
+  loadCached,
+  capture,
+  save,
+  signal,
+}: {
+  nodeID: number
+  revision: number
+  loadCached: (nodeID: number, signal?: AbortSignal) => Promise<string | null>
+  capture: (signal?: AbortSignal) => Promise<Blob | null>
+  save?: (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
+  signal?: AbortSignal
+}): Promise<string | null> {
+  if (signal?.aborted) return null
+  try {
+    const cached = await loadCached(nodeID, signal)
+    if (cached) {
+      if (signal?.aborted) {
+        if (cached.startsWith('blob:')) URL.revokeObjectURL(cached)
+        return null
+      }
+      return cached
+    }
+  } catch {
+    if (signal?.aborted) return null
+    // A missing poster or transient cache error can use the cold capture path.
+  }
+
+  if (signal?.aborted) return null
+  let poster: Blob | null
+  try {
+    poster = await capture(signal)
+  } catch {
+    return null
+  }
+  if (!poster || signal?.aborted) return null
+
+  if (save && Number.isSafeInteger(revision) && revision > 0) {
+    try {
+      if (signal?.aborted) return null
+      await save(nodeID, revision, poster, signal)
+    } catch {
+      // The cold local poster is useful even when the shared cache rejects PUT.
+    }
+  }
+  if (signal?.aborted) return null
+  return URL.createObjectURL(poster)
+}

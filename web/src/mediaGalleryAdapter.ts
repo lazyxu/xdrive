@@ -72,10 +72,11 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     listAlbumItemRange: (albumID, limit, offset, query) =>
       api.mediaAlbumItemRange(albumID, limit, offset, query),
     loadThumbnail: (nodeID, signal) => api.mediaThumbnail(nodeID, signal),
+    saveVideoPoster: (nodeID, revision, poster, signal) => api.mediaVideoPoster(nodeID, revision, poster, signal),
     loadLivePhotoMotion: (nodeID, _onProgress) => api.mediaLivePhotoMotionURL(nodeID),
-    loadPreviewURL: (nodeID, kind) => kind === 'live_photo'
+    loadPreviewURL: (nodeID, kind, signal) => kind === 'live_photo'
       ? api.mediaLivePhotoStillURL(nodeID)
-      : api.filePreviewURL(nodeID),
+      : api.filePreviewURL(nodeID, signal),
     setFavorite: (nodeID, favorite) => api.setMediaFavorite(nodeID, favorite),
     setFavoriteBatch: (nodeIDs, favorite) => api.setMediaFavoriteBatch(nodeIDs, favorite),
     addTagsBatch: (nodeIDs, tags) => api.addMediaTagsBatch(nodeIDs, tags),

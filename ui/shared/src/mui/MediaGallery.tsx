@@ -147,7 +147,9 @@ export type MediaMotionLoader = (
 export type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video' | 'live_photo',
+  signal?: AbortSignal,
 ) => Promise<string | null>
+export type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
 
 export interface MediaGalleryDataSource {
   loadMusicRoot?: () => Promise<Node>
@@ -275,6 +277,7 @@ export interface MediaGalleryDataSource {
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   setFavorite?: (nodeID: number, favorite: boolean) => Promise<void>
   setFavoriteBatch?: (nodeIDs: number[], favorite: boolean) => Promise<void>
   addTagsBatch?: (nodeIDs: number[], tags: string[]) => Promise<void>
@@ -1924,6 +1927,7 @@ export function XDriveMediaGalleryPage({
         listMusicChildren={source.listMusicChildren}
         loadLivePhotoMotion={source.loadLivePhotoMotion}
         loadPreviewURL={source.loadPreviewURL}
+        saveVideoPoster={source.saveVideoPoster}
         onSetFavorite={source.setFavorite ? setFavorite : undefined}
         onSetFavoriteBatch={source.setFavoriteBatch ? setFavoriteBatch : undefined}
         onAddTagsBatch={source.addTagsBatch ? addTagsBatch : undefined}
@@ -2188,6 +2192,7 @@ export interface XDriveMediaGalleryProps {
   listMusicChildren?: (parentID: number) => Promise<Node[]>
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetFavoriteBatch?: (items: MediaItem[], favorite: boolean) => Promise<void>
   onAddTagsBatch?: (items: MediaItem[], tags: string[]) => Promise<void>
@@ -2515,6 +2520,7 @@ type MediaTileProps = {
   thumbnailScheduler?: XDriveMediaThumbnailScheduler
   thumbnailPriority?: XDriveMediaThumbnailPriority
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
@@ -2533,6 +2539,7 @@ function MediaTile({
   thumbnailScheduler,
   thumbnailPriority = 1,
   loadPreviewURL,
+  saveVideoPoster,
   onSetFavorite,
   onSetCover,
   onOpen,
@@ -2614,8 +2621,11 @@ function MediaTile({
       {video && !livePhoto && loadPreviewURL ? (
         <XDriveMediaAsyncVideoPoster
           nodeID={item.node.id}
+          revision={item.node.revision}
           alt={item.node.name}
           loadPreviewURL={loadPreviewURL}
+          loadThumbnail={loadThumbnail}
+          saveVideoPoster={saveVideoPoster}
           rotationDegrees={item.metadata.rotation_degrees}
           sourceWidth={item.metadata.width}
           sourceHeight={item.metadata.height}
@@ -2823,6 +2833,7 @@ function MediaTileGrid({
   minTileWidth,
   loadThumbnail,
   loadPreviewURL,
+  saveVideoPoster,
   onSetFavorite,
   onSetCover,
   selectionMode,
@@ -2842,6 +2853,7 @@ function MediaTileGrid({
   indexOffset?: number
   loadThumbnail: MediaThumbnailLoader
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
@@ -2868,6 +2880,7 @@ function MediaTileGrid({
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
           loadPreviewURL={loadPreviewURL}
+          saveVideoPoster={saveVideoPoster}
           onSetFavorite={onSetFavorite}
           onSetCover={onSetCover}
           onOpen={onOpen}
@@ -2895,6 +2908,7 @@ function MediaVirtualTileGrid({
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
+  saveVideoPoster,
   onSetFavorite,
   onSetCover,
   selectionMode,
@@ -2916,6 +2930,7 @@ function MediaVirtualTileGrid({
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
@@ -3086,6 +3101,7 @@ function MediaVirtualTileGrid({
           thumbnailScheduler={thumbnailScheduler}
           thumbnailPriority={thumbnailPriority}
           loadPreviewURL={loadPreviewURL}
+          saveVideoPoster={saveVideoPoster}
           onSetFavorite={onSetFavorite}
           onSetCover={onSetCover}
           onOpen={onOpen}
@@ -3164,6 +3180,7 @@ function MediaVirtualTimeline({
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
+  saveVideoPoster,
   onSetFavorite,
   onSetCover,
   selectionMode,
@@ -3185,6 +3202,7 @@ function MediaVirtualTimeline({
   loadThumbnail: MediaThumbnailLoader
   thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
+  saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
   onSetCover?: (item: MediaItem) => void
   onOpen: (item: MediaItem) => void
@@ -3367,6 +3385,7 @@ function MediaVirtualTimeline({
                 thumbnailScheduler={thumbnailScheduler}
                 thumbnailPriority={thumbnailPriority}
                 loadPreviewURL={loadPreviewURL}
+                saveVideoPoster={saveVideoPoster}
                 onSetFavorite={onSetFavorite}
                 onSetCover={onSetCover}
                 onOpen={onOpen}
@@ -3492,6 +3511,7 @@ export function XDriveMediaGallery({
   listMusicChildren,
   loadLivePhotoMotion,
   loadPreviewURL,
+  saveVideoPoster,
   onSetFavorite,
   onSetFavoriteBatch,
   onAddTagsBatch,
@@ -5220,6 +5240,7 @@ export function XDriveMediaGallery({
               loadThumbnail={loadThumbnail}
               thumbnailScheduler={thumbnailScheduler}
               loadPreviewURL={collectionPreviewURL}
+              saveVideoPoster={saveVideoPoster}
               onSetFavorite={collectionSetFavorite}
               onSetCover={
                 currentPerson && onSetPersonCover
@@ -5269,6 +5290,7 @@ export function XDriveMediaGallery({
                     onSelect={handleMediaSelect}
                     loadThumbnail={loadThumbnail}
                     loadPreviewURL={collectionPreviewURL}
+                    saveVideoPoster={saveVideoPoster}
                     onSetFavorite={collectionSetFavorite}
                     onSetCover={
                       currentPerson && onSetPersonCover
@@ -5293,6 +5315,7 @@ export function XDriveMediaGallery({
             loadThumbnail={loadThumbnail}
             thumbnailScheduler={thumbnailScheduler}
             loadPreviewURL={collectionPreviewURL}
+            saveVideoPoster={saveVideoPoster}
             onSetFavorite={collectionSetFavorite}
             onSetCover={
               currentPerson && onSetPersonCover
@@ -5316,6 +5339,7 @@ export function XDriveMediaGallery({
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
             loadPreviewURL={collectionPreviewURL}
+            saveVideoPoster={saveVideoPoster}
             onSetFavorite={collectionSetFavorite}
             onSetCover={
               currentPerson && onSetPersonCover
