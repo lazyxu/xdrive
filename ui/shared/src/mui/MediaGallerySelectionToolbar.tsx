@@ -48,6 +48,7 @@ function parseSelectionTags(value: string) {
 }
 
 export function XDriveMediaGallerySelectionToolbar({
+  mobileBottomDock = false,
   selectedCount,
   selectionIdentity,
   allFavorite,
@@ -67,6 +68,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onReview,
   onClear,
 }: {
+  mobileBottomDock?: boolean
   selectedCount: number
   selectionIdentity?: unknown
   allFavorite: boolean
@@ -159,8 +161,14 @@ export function XDriveMediaGallerySelectionToolbar({
         variant="outlined"
         data-xdrive-gallery-selection-toolbar
         sx={{
-          position: 'sticky',
-          top: 8,
+          position: compactViewport && mobileBottomDock ? 'fixed' : 'sticky',
+          top: compactViewport && mobileBottomDock ? 'auto' : 8,
+          bottom: compactViewport && mobileBottomDock ? 0 : undefined,
+          left: compactViewport && mobileBottomDock ? 0 : undefined,
+          right: compactViewport && mobileBottomDock ? 0 : undefined,
+          width: compactViewport && mobileBottomDock ? '100%' : undefined,
+          boxSizing: 'border-box',
+          pb: compactViewport && mobileBottomDock ? 'max(8px, env(safe-area-inset-bottom, 0px))' : 0.75,
           zIndex: 4,
           px: 1.25,
           py: 0.75,

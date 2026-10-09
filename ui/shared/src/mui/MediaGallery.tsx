@@ -109,6 +109,7 @@ import {
   XDriveMediaGalleryNavigation,
 } from './MediaGalleryNavigation'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
+import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import type { XDriveMediaPlacesMapViewport } from './MediaGalleryPlacesMapModel'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
@@ -483,6 +484,7 @@ export type XDriveMediaGalleryShareDialogOptions = {
 
 export interface XDriveMediaGalleryPageProps {
   source: MediaGalleryDataSource
+  mobileWebChrome?: boolean
   fileOperations?: readonly MediaGalleryDeleteOperation[]
   onFileOperationQueued?: (operation: MediaGalleryDeleteOperation) => void
   preferenceScope?: string
@@ -497,6 +499,7 @@ export interface XDriveMediaGalleryPageProps {
 
 export function XDriveMediaGalleryPage({
   source,
+  mobileWebChrome = false,
   fileOperations,
   onFileOperationQueued,
   preferenceScope = '',
@@ -2225,6 +2228,7 @@ export function XDriveMediaGalleryPage({
       <XDriveMediaGallery
         key={preferenceScope || 'gallery-default'}
         preferenceScope={preferenceScope}
+        mobileWebChrome={mobileWebChrome}
         items={items}
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
@@ -2320,6 +2324,7 @@ export function XDriveMediaGalleryPage({
         onClearFilters={clearFilters}
         filters={(
           <XDriveMediaGalleryFilterToolbar
+            mobileEmbedded={mobileWebChrome}
             draft={draftFilters}
             recentSearches={recentSearches}
             loading={loading}
@@ -2627,6 +2632,7 @@ export type XDriveMediaGalleryVirtualCollection = {
 }
 
 export interface XDriveMediaGalleryProps {
+  mobileWebChrome?: boolean
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
   preferenceScope?: string
@@ -4007,6 +4013,7 @@ const personDialogDescriptions = {
 } as const
 
 export function XDriveMediaGallery({
+  mobileWebChrome = false,
   preferenceScope = '',
   items,
   virtualCollection,
@@ -4126,6 +4133,7 @@ export function XDriveMediaGallery({
     [loadThumbnail],
   )
   const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
+  const compactGallery = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
   useEffect(() => () => {
     thumbnailScheduler.dispose()
   }, [thumbnailScheduler])
@@ -5018,67 +5026,27 @@ export function XDriveMediaGallery({
   const collectionSetFavorite = isTrashSection ? undefined : onSetFavorite
   const collectionPreviewURL = isTrashSection ? undefined : loadPreviewURL
 
-  return (
-    <Stack
-      ref={galleryRootRef}
-      spacing={2}
-      onContextMenu={handleMediaContextMenu}
-      onPointerDownCapture={handleGalleryPointerDown}
-      onPointerMoveCapture={handleGalleryPointerMove}
-      onPointerUpCapture={handleGalleryPointerUp}
-      onPointerCancelCapture={handleGalleryPointerCancel}
-      onClickCapture={(event) => {
-        consumeGalleryHoldClick(event)
-        if (!event.isPropagationStopped()) handleFoldExpandClick(event)
-      }}
-      data-xdrive-gallery-aspect-mode={aspectMode}
-      sx={{
-        minWidth: 0,
-        // Do not change the square grid's row heights/virtual range. Only stop
-        // cropping the already-decoded still/video/Live thumbnail image.
-        '& [data-xdrive-media-tile] img': {
-          objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
-        },
-        pr: { lg: selected && !previewItem ? '380px' : 0 },
-        transition: 'padding-right 160ms ease',
-      }}
-    >
-      <Stack
-        direction={{ xs: 'column', lg: 'row' }}
-        spacing={1.25}
-        alignItems={{ xs: 'stretch', lg: 'center' }}
-        data-xdrive-gallery-header
-      >
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: { xs: '0 0 auto', lg: '1 1 320px' }, minWidth: 0 }}>
-          {canBack && onBack ? (
-            <Tooltip title="返回上一级">
-              <IconButton
-                onClick={onBack}
-                size="small"
-                aria-label="返回上一级"
-                sx={currentPerson || currentSuggestedPerson || activePlaceID ? personTouchTargetSx : undefined}
-              >
-                <ArrowBackIcon />
-              </IconButton>
-            </Tooltip>
-          ) : null}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography
-              component="h5"
-              ref={personContextTitleRef}
-              tabIndex={-1}
-              variant="h5"
-              fontWeight={700}
-              noWrap
-            >
-              {galleryTitle}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {gallerySubtitle}
-            </Typography>
-          </Box>
-        </Stack>
+  // Query-wide selection is available from More on Mobile without adding
+  // another permanent row of controls over the photo wall.
+  const querySelectionControls = (
+    <>
+    {showPhotoCollection && !isTrashSection && !foldDuplicates &&
+       !currentCleanupReview && querySelectionActions ? (
+        <XDriveMediaGalleryQuerySelection
+          key={collectionKey}
+          actions={querySelectionActions}
+          sortBy={sortBy}
+          timeZone={timeZone}
+          disabled={selectionBusy || loading}
+          onActivated={clearMediaSelection}
+        />
+      ) : null}
+    </>
+  )
 
+  // Existing contextual album/person commands are moved, not duplicated.
+  // The global App Header remains the only owner of app switching/transfers.
+  const contextualHeaderActions = (
         <Stack
           direction="row"
           spacing={0.75}
@@ -5088,7 +5056,7 @@ export function XDriveMediaGallery({
           justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
           sx={{ flex: '1 1 auto', minWidth: 0 }}
         >
-          {showCollectionFilters && filters ? (
+          {showCollectionFilters && filters && !compactGallery ? (
             <Box sx={{ flex: '1 1 360px', minWidth: { xs: 0, sm: 300 }, maxWidth: 560 }}>
               {filters}
             </Box>
@@ -5199,6 +5167,123 @@ export function XDriveMediaGallery({
             </Tooltip>
           ) : null}
         </Stack>
+  )
+
+  return (
+    <Stack
+      ref={galleryRootRef}
+      spacing={2}
+      onContextMenu={handleMediaContextMenu}
+      onPointerDownCapture={handleGalleryPointerDown}
+      onPointerMoveCapture={handleGalleryPointerMove}
+      onPointerUpCapture={handleGalleryPointerUp}
+      onPointerCancelCapture={handleGalleryPointerCancel}
+      onClickCapture={(event) => {
+        consumeGalleryHoldClick(event)
+        if (!event.isPropagationStopped()) handleFoldExpandClick(event)
+      }}
+      data-xdrive-gallery-aspect-mode={aspectMode}
+      sx={{
+        minWidth: 0,
+        // Do not change the square grid's row heights/virtual range. Only stop
+        // cropping the already-decoded still/video/Live thumbnail image.
+        '& [data-xdrive-media-tile] img': {
+          objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
+        },
+        pr: { lg: selected && !previewItem ? '380px' : 0 },
+        pb: compactGallery ? (selectionMode ? '156px' : '84px') : 0,
+        transition: 'padding-right 160ms ease',
+      }}
+    >
+      {compactGallery ? (
+        <XDriveMobileGalleryChrome
+          section={section}
+          onSectionChange={onSectionChange}
+          collectionTitle={galleryTitle}
+          canGoBack={canBack}
+          onGoBack={onBack}
+          showCollection={showPhotoCollection}
+          selectionMode={selectionMode}
+          onToggleSelection={() => {
+            if (selectionMode) clearMediaSelection()
+            else setSelectionMode(true)
+          }}
+          sortBy={sortBy}
+          sortDir={sortDir}
+          onSort={requestGallerySort}
+          filterContent={showCollectionFilters ? filters : undefined}
+          timeScale={effectiveTimeScale}
+          onTimeScale={updateGalleryTimeScale}
+          currentDateLabel={currentTimelineGroupKey
+            ? xDriveMediaGalleryTimelineGroupLabel(currentTimelineGroupKey) : undefined}
+          timeZone={timeZone}
+          onTimeZoneChange={onTimeZoneChange}
+          aspectMode={aspectMode}
+          onAspectModeChange={updateGalleryAspectMode}
+          density={minTileWidth}
+          densityMin={XDRIVE_MEDIA_GALLERY_DENSITY_MIN}
+          densityMax={XDRIVE_MEDIA_GALLERY_DENSITY_MAX}
+          densityStep={XDRIVE_MEDIA_GALLERY_DENSITY_STEP}
+          onDensityChange={updateGalleryDensity}
+          foldDuplicates={foldDuplicates}
+          onFoldDuplicatesChange={onToggleFoldDuplicates}
+          jumpGroups={timelineJumpGroups.map((group) => ({
+            key: group.key,
+            label: xDriveMediaGalleryTimelineGroupLabel(group.key),
+          }))}
+          onJumpGroup={(key) => {
+            const group = timelineJumpGroups.find((value) => value.key === key)
+            if (group) jumpToTimelineGroup(group)
+          }}
+          onJumpDay={jumpToTimelineDay}
+          canReturnToPosition={timelineReturnAnchor !== null}
+          onReturnToPosition={returnToTimelineAnchor}
+          onRefresh={onRefresh}
+          extraActions={<>
+            {contextualHeaderActions}
+            {querySelectionControls}
+          </>}
+        />
+      ) : null}
+
+      <Stack
+        direction={{ xs: 'column', lg: 'row' }}
+        spacing={1.25}
+        alignItems={{ xs: 'stretch', lg: 'center' }}
+        data-xdrive-gallery-header
+        sx={{ display: compactGallery ? 'none' : 'flex' }}
+      >
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: { xs: '0 0 auto', lg: '1 1 320px' }, minWidth: 0 }}>
+          {canBack && onBack ? (
+            <Tooltip title="返回上一级">
+              <IconButton
+                onClick={onBack}
+                size="small"
+                aria-label="返回上一级"
+                sx={currentPerson || currentSuggestedPerson || activePlaceID ? personTouchTargetSx : undefined}
+              >
+                <ArrowBackIcon />
+              </IconButton>
+            </Tooltip>
+          ) : null}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography
+              component="h5"
+              ref={personContextTitleRef}
+              tabIndex={-1}
+              variant="h5"
+              fontWeight={700}
+              noWrap
+            >
+              {galleryTitle}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {gallerySubtitle}
+            </Typography>
+          </Box>
+        </Stack>
+
+        {contextualHeaderActions}
       </Stack>
 
       <Stack
@@ -5207,6 +5292,7 @@ export function XDriveMediaGallery({
         alignItems={{ xs: 'stretch', lg: 'center' }}
         justifyContent="space-between"
         data-xdrive-gallery-toolbar
+        sx={{ display: compactGallery ? 'none' : 'flex' }}
       >
         <Box sx={{ flex: '1 1 auto', minWidth: 0 }}>
           {onSectionChange ? (
@@ -5446,6 +5532,7 @@ export function XDriveMediaGallery({
           alignItems="center"
           data-xdrive-gallery-search-feedback
           aria-live="polite"
+          sx={{ display: compactGallery ? 'none' : 'flex' }}
         >
           <Typography variant="caption" color="text.secondary">
             {'范围：' + (appliedScopeLabel || galleryTitle) + ' · '}
@@ -5516,20 +5603,11 @@ export function XDriveMediaGallery({
         </Stack>
       ) : null}
 
-      {showPhotoCollection && !isTrashSection && !foldDuplicates &&
-       !currentCleanupReview && querySelectionActions ? (
-        <XDriveMediaGalleryQuerySelection
-          key={collectionKey}
-          actions={querySelectionActions}
-          sortBy={sortBy}
-          timeZone={timeZone}
-          disabled={selectionBusy || loading}
-          onActivated={clearMediaSelection}
-        />
-      ) : null}
+      {!compactGallery ? querySelectionControls : null}
 
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
+          mobileBottomDock={compactGallery}
           selectedCount={selectedMedia.length}
           selectionIdentity={selectedMediaItems}
           allFavorite={allSelectedFavorite}
