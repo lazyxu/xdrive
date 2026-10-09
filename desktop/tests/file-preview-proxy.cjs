@@ -57,6 +57,12 @@ test('file preview proxy hides upstream ticket and preserves Range responses', a
   assert.equal(response.headers.get('cache-control'), 'private, no-store')
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff')
   assert.equal(response.headers.get('access-control-allow-origin'), '*')
+  const exposed = (response.headers.get('access-control-expose-headers') || '').toLowerCase()
+  for (const header of ['content-range', 'content-length', 'accept-ranges', 'etag',
+    'last-modified', 'cache-control', 'x-content-type-options']) {
+    assert.ok(exposed.split(',').map(value => value.trim()).includes(header),
+      'Renderer must see signed Range/progress response header: ' + header)
+  }
   assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin')
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF')
   assert.equal(seenRange, 'bytes=0-3')

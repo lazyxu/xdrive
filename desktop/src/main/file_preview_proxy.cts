@@ -311,6 +311,14 @@ export class DesktopFilePreviewProxy {
       res.setHeader('X-Content-Type-Options', 'nosniff')
       res.setHeader('Referrer-Policy', 'no-referrer')
       res.setHeader('Access-Control-Allow-Origin', '*')
+      // These are metadata-only Range/progress headers from the authenticated
+      // signed upstream response. Without expose-headers, the Chromium
+      // Renderer can read 206 video bytes but not their Content-Range/length.
+      // Never expose the signed ticket, session or Agent bearer token.
+      res.setHeader(
+        'Access-Control-Expose-Headers',
+        'Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified, Cache-Control, X-Content-Type-Options',
+      )
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
       res.statusCode = upstream.status
 
