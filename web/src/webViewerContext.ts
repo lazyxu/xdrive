@@ -19,6 +19,11 @@ export type XDriveWebViewerCandidate = {
   totalCount: number
 }
 
+type XDriveWebViewerRangePage = {
+  items: Array<{ node: Node; mediaItem?: MediaItem }>
+  totalCount: number
+}
+
 export type XDriveWebViewerPredicate = (node: Node) => boolean
 
 export const xDriveWebViewerAnyFile: XDriveWebViewerPredicate = (node) => node.type === 'file'
@@ -73,10 +78,7 @@ async function loadRange(
   context: Exclude<XDriveWebAppBrowseContext, { kind: 'selection' }>,
   offset: number,
   limit: number,
-): Promise<{
-  items: Array<{ node: Node; mediaItem?: MediaItem }>
-  totalCount: number
-}> {
+): Promise<XDriveWebViewerRangePage> {
   if (context.kind === 'directory') {
     const page = await api.listRange(
       context.directoryID,
@@ -121,33 +123,154 @@ async function loadRange(
   }
 }
 
+export type XDriveWebViewerContextResolver = {
+  resolveCandidateAt: (index: number) => Promise<XDriveWebViewerCandidate | null>
+  findNeighbor: (
+    currentIndex: number,
+    direction: -1 | 1,
+    predicate: XDriveWebViewerPredicate,
+  ) => Promise<XDriveWebViewerCandidate | null>
+}
+
+export function xDriveCreateWebViewerContextResolver(
+  api: XDriveApi,
+  gallerySource: MediaGalleryDataSource,
+  context: XDriveWebAppBrowseContext,
+): XDriveWebViewerContextResolver {
+  const pageSize = 128
+  const pageLimit = 4
+  const pagePromises = new Map<number, Promise<XDriveWebViewerRangePage>>()
+  const pageOrder: number[] = []
+
+  const touchPage = (offset: number) => {
+    const index = pageOrder.indexOf(offset)
+    if (index >= 0) pageOrder.splice(index, 1)
+    pageOrder.push(offset)
+    while (pageOrder.length > pageLimit) {
+      const evicted = pageOrder.shift()
+      if (evicted !== undefined) pagePromises.delete(evicted)
+    }
+  }
+
+  const loadPage = (offset: number) => {
+    const cached = pagePromises.get(offset)
+    if (cached) {
+      touchPage(offset)
+      return cached
+    }
+    let request: Promise<XDriveWebViewerRangePage>
+    request = loadRange(api, gallerySource, context as Exclude<XDriveWebAppBrowseContext, { kind: 'selection' }>, offset, pageSize)
+      .catch((error) => {
+        if (pagePromises.get(offset) === request) {
+          pagePromises.delete(offset)
+          const index = pageOrder.indexOf(offset)
+          if (index >= 0) pageOrder.splice(index, 1)
+        }
+        throw error
+      })
+    pagePromises.set(offset, request)
+    touchPage(offset)
+    return request
+  }
+
+  const resolveCandidateAt = async (index: number) => {
+    if (index < 0) return null
+    if (context.kind === 'selection') {
+      if (index >= context.nodeIDs.length) return null
+      const node = await api.node(context.nodeIDs[index])
+      return {
+        node,
+        index,
+        totalCount: context.nodeIDs.length,
+      } satisfies XDriveWebViewerCandidate
+    }
+
+    const offset = Math.floor(index / pageSize) * pageSize
+    const page = await loadPage(offset)
+    const item = page.items[index - offset]
+    if (!item) return null
+    return {
+      ...item,
+      index,
+      totalCount: page.totalCount,
+    } satisfies XDriveWebViewerCandidate
+  }
+
+  const findNeighbor = async (
+    currentIndex: number,
+    direction: -1 | 1,
+    predicate: XDriveWebViewerPredicate,
+  ) => {
+    if (context.kind === 'selection') {
+      for (
+        let index = currentIndex + direction;
+        index >= 0 && index < context.nodeIDs.length;
+        index += direction
+      ) {
+        const node = await api.node(context.nodeIDs[index])
+        if (!predicate(node)) continue
+        return {
+          node,
+          index,
+          totalCount: context.nodeIDs.length,
+        } satisfies XDriveWebViewerCandidate
+      }
+      return null
+    }
+
+    let cursor = currentIndex + direction
+    while (cursor >= 0) {
+      const offset = Math.floor(cursor / pageSize) * pageSize
+      const page = await loadPage(offset)
+      if (cursor >= page.totalCount) {
+        if (direction > 0) return null
+        cursor = page.totalCount - 1
+        if (cursor < 0) return null
+        continue
+      }
+
+      const pageEnd = Math.min(page.totalCount - 1, offset + page.items.length - 1)
+      if (direction > 0) {
+        for (let index = Math.max(cursor, offset); index <= pageEnd; index += 1) {
+          const item = page.items[index - offset]
+          if (item && predicate(item.node)) {
+            return {
+              ...item,
+              index,
+              totalCount: page.totalCount,
+            } satisfies XDriveWebViewerCandidate
+          }
+        }
+        cursor = pageEnd + 1
+        if (cursor >= page.totalCount) return null
+      } else {
+        for (let index = Math.min(cursor, pageEnd); index >= offset; index -= 1) {
+          const item = page.items[index - offset]
+          if (item && predicate(item.node)) {
+            return {
+              ...item,
+              index,
+              totalCount: page.totalCount,
+            } satisfies XDriveWebViewerCandidate
+          }
+        }
+        cursor = offset - 1
+      }
+    }
+    return null
+  }
+
+  return { resolveCandidateAt, findNeighbor }
+}
+
 export async function xDriveResolveWebViewerCandidateAt(
   api: XDriveApi,
   gallerySource: MediaGalleryDataSource,
   context: XDriveWebAppBrowseContext,
   index: number,
 ) {
-  if (index < 0) return null
-  if (context.kind === 'selection') {
-    if (index >= context.nodeIDs.length) return null
-    const node = await api.node(context.nodeIDs[index])
-    return {
-      node,
-      index,
-      totalCount: context.nodeIDs.length,
-    } satisfies XDriveWebViewerCandidate
-  }
-
-  const pageSize = 128
-  const offset = Math.floor(index / pageSize) * pageSize
-  const page = await loadRange(api, gallerySource, context, offset, pageSize)
-  const item = page.items[index - offset]
-  if (!item) return null
-  return {
-    ...item,
-    index,
-    totalCount: page.totalCount,
-  } satisfies XDriveWebViewerCandidate
+  return xDriveCreateWebViewerContextResolver(api, gallerySource, context)
+    .resolveCandidateAt(index)
 }
 
 export async function xDriveFindWebViewerNeighbor(
@@ -158,62 +281,6 @@ export async function xDriveFindWebViewerNeighbor(
   direction: -1 | 1,
   predicate: XDriveWebViewerPredicate,
 ) {
-  if (context.kind === 'selection') {
-    for (
-      let index = currentIndex + direction;
-      index >= 0 && index < context.nodeIDs.length;
-      index += direction
-    ) {
-      const node = await api.node(context.nodeIDs[index])
-      if (!predicate(node)) continue
-      return {
-        node,
-        index,
-        totalCount: context.nodeIDs.length,
-      } satisfies XDriveWebViewerCandidate
-    }
-    return null
-  }
-
-  const pageSize = 128
-  let cursor = currentIndex + direction
-  while (cursor >= 0) {
-    const offset = Math.floor(cursor / pageSize) * pageSize
-    const page = await loadRange(api, gallerySource, context, offset, pageSize)
-    if (cursor >= page.totalCount) {
-      if (direction > 0) return null
-      cursor = page.totalCount - 1
-      if (cursor < 0) return null
-      continue
-    }
-
-    const pageEnd = Math.min(page.totalCount - 1, offset + page.items.length - 1)
-    if (direction > 0) {
-      for (let index = Math.max(cursor, offset); index <= pageEnd; index += 1) {
-        const item = page.items[index - offset]
-        if (item && predicate(item.node)) {
-          return {
-            ...item,
-            index,
-            totalCount: page.totalCount,
-          } satisfies XDriveWebViewerCandidate
-        }
-      }
-      cursor = pageEnd + 1
-      if (cursor >= page.totalCount) return null
-    } else {
-      for (let index = Math.min(cursor, pageEnd); index >= offset; index -= 1) {
-        const item = page.items[index - offset]
-        if (item && predicate(item.node)) {
-          return {
-            ...item,
-            index,
-            totalCount: page.totalCount,
-          } satisfies XDriveWebViewerCandidate
-        }
-      }
-      cursor = offset - 1
-    }
-  }
-  return null
+  return xDriveCreateWebViewerContextResolver(api, gallerySource, context)
+    .findNeighbor(currentIndex, direction, predicate)
 }
