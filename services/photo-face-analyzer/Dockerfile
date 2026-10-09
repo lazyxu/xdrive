@@ -31,6 +31,7 @@ ARG XDRIVE_RUNTIME_CONTRACT_HASH=unknown
 ARG HF_ENDPOINT
 ARG XDRIVE_MODEL_DOWNLOAD_ATTEMPTS
 ARG XDRIVE_MODEL_DOWNLOAD_TIMEOUT
+ARG XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS
 
 LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
       org.opencontainers.image.description="xDrive Photo Intelligence test/runtime dependencies" \

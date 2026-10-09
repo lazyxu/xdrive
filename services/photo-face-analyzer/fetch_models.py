@@ -143,10 +143,18 @@ class InvalidDownloadResponse(RuntimeError):
 
 
 def download_urls(url: str) -> list[str]:
-    """An explicit Hub mirror changes only the host/base, never the pinned path."""
+    """Prefer configured HF mirror for Hub and OpenCV Zoo models; retain original."""
     endpoint = os.environ.get("HF_ENDPOINT", "").strip().rstrip("/")
+    if not endpoint:
+        return [url]
     parsed = urllib.parse.urlsplit(url)
-    if not endpoint or parsed.hostname != "huggingface.co":
+    if parsed.hostname == "huggingface.co":
+        suffix = parsed.path
+    elif url.startswith(ZOO_MEDIA + "/models/"):
+        # OpenCV publishes the same Zoo weights on Hugging Face. The mirror
+        # uses main; only our pinned SHA-256 and size establish identity.
+        suffix = "/opencv/opencv_zoo/resolve/main/models/" + url[len(ZOO_MEDIA + "/models/"):]
+    else:
         return [url]
     mirror = urllib.parse.urlsplit(endpoint)
     if (
@@ -154,7 +162,7 @@ def download_urls(url: str) -> list[str]:
         or mirror.username or mirror.password or mirror.query or mirror.fragment
     ):
         raise ValueError("HF_ENDPOINT must be an HTTP(S) base URL without credentials, query or fragment")
-    candidate = endpoint + parsed.path
+    candidate = endpoint + suffix
     if parsed.query:
         candidate += "?" + parsed.query
     return list(dict.fromkeys([candidate, url]))
@@ -172,8 +180,12 @@ def download(
         os.environ.get("XDRIVE_MODEL_DOWNLOAD_ATTEMPTS") or "5"
     )
     timeout = float(os.environ.get("XDRIVE_MODEL_DOWNLOAD_TIMEOUT") or "30")
-    if attempts < 1 or not math.isfinite(timeout) or timeout <= 0:
-        raise ValueError("model download attempts and timeout must be positive")
+    source_budget = float(os.environ.get("XDRIVE_MODEL_DOWNLOAD_SOURCE_MAX_SECONDS") or "240")
+    if (
+        attempts < 1 or not math.isfinite(timeout) or timeout <= 0
+        or not math.isfinite(source_budget) or source_budget <= 0
+    ):
+        raise ValueError("model download attempts and socket/source timeouts must be positive")
     sources = download_urls(url)
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".part")
@@ -214,6 +226,7 @@ def download(
                 continue
             offset = partial.stat().st_size if partial.exists() else 0
             request_count += 1
+            source_started_at = time.monotonic()
             host = urllib.parse.urlsplit(source).hostname
             print(
                 f"[photo-face-model] {destination.name}: source={host} "
@@ -261,7 +274,15 @@ def download(
 
                     with partial.open("ab" if offset else "wb") as output:
                         reader = getattr(response, "read1", response.read)
-                        for chunk in iter(lambda: reader(1024 * 1024), b""):
+                        while True:
+                            # The socket timeout does not cap a trickling source.
+                            if time.monotonic() - source_started_at > source_budget:
+                                raise TimeoutError(
+                                    f"source exceeded {source_budget:g}s transfer budget"
+                                )
+                            chunk = reader(1024 * 1024)
+                            if not chunk:
+                                break
                             output.write(chunk)
                     actual_size = partial.stat().st_size
                     if expected_end is not None and actual_size != expected_end:
