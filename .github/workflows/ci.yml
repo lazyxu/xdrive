@@ -530,6 +530,36 @@ jobs:
       - name: Measure FileExplorer 100k sparse-range count cost
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-explorer-viewport-cancel-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/viewport-cancel-request-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install cancellation benchmark TypeScript compiler
+        working-directory: desktop
+        run: npm install --no-audit --no-fund
+      - name: Compare viewport cancellation on real loopback HTTP, same runner
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results
+          node scripts/thumbnail-request-cancel-performance.cjs paired
+          cat perf-results/thumbnail-request-cancel-paired.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: viewport-cancel-http-paired
+          path: desktop/perf-results/thumbnail-request-cancel-paired.json
+          if-no-files-found: error
+          retention-days: 7
+
   file-explorer-media-renderer-trace:
     if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'perf/file-explorer-media-')
     runs-on: ubuntu-latest

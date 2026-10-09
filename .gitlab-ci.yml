@@ -465,6 +465,31 @@ file-explorer-range-count-performance:
   script:
     - go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+file-explorer-viewport-cancel-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/viewport-cancel-request-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/viewport-cancel-request-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      cd desktop
+      npm install --no-audit --no-fund
+      mkdir -p perf-results
+      node scripts/thumbnail-request-cancel-performance.cjs paired
+      cat perf-results/thumbnail-request-cancel-paired.json
+  artifacts:
+    name: "viewport-cancel-http-paired-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/perf-results/thumbnail-request-cancel-paired.json
+
 file-explorer-media-renderer-trace:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache

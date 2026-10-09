@@ -8,10 +8,19 @@ Only comparable measurements should be presented as timing improvements. Structu
 
 | Area | Status | Evidence |
 | --- | --- | --- |
+| Gallery stale thumbnail transport cancellation | **Measured baseline / structural breach (#1077)** | Three 6-request parent/current HTTP tests: **6/6 still active at +160 ms, 0/6 transport aborted, 6/6 late responses** after viewport eviction or view unmount. Logical Promise cancel is not transport cancel; production fix warranted separately. |
 | Timeline viewport group lookup | **Accepted / structural contract** | 100,000 synthetic date groups; a viewport near group 90,000 uses fewer than 64 indexed group reads instead of scanning from group 0. No wall-clock speedup claimed. |
 | 100k thumbnail fast-scroll retention | **Accepted / measured structural** | Image/Live Photo stays unchanged at peak queue **180**, active/in-flight **6/6**. Video poster peak queue **99,997 -> 90 (-99.91%, ~1,111x smaller)** and final queue **99,997 -> 10** while real active work remains capped at **3**. Hosted-runner CPU timings are diagnostic only. |
 | 100k mixed-media first open | **Accepted / measured + structural** | 70k photos + 15k videos + 15k Live Photos (115k physical media nodes / 100k logical items). Warm first range **409.147 ms median**, zero-stale refresh **212.556 ms**, UI timeline layout **2.507 ms median**; first range now commits before secondary facets. |
 | 100k renderer measurement attribution | **Accepted measurement / native baseline healthy** | PR #1067 initial CI: all 36 renderer samples pass applicable timing/CPU budgets; full activation-overlapping maximum task 60 ms. Buffered totals, preparation, decode and two-rAF proxy remain distinct. No production optimization. |
+
+## Gallery stale-request cancellation workload (2026-10-09)
+
+Status: **Benchmarking / baseline only**. The canonical combined cancelled-view-request workload, exact environment/acceptance and raw data will be recorded alongside [FileExplorer's performance benchmark](file-explorer-performance.md#request-scoped-viewport-cancellation-benchmark-2026-10-09).
+
+Test the real `XDriveMediaThumbnailScheduler` at six active requests with a controlled 500 ms local HTTP response, then invoke `setRetention([])` (viewport scroll) or `dispose()` (window unmount). Record server-observed disconnect within 160 ms, how many started HTTP requests remain and whether any 8 KiB response bytes were needlessly transmitted. **Three samples**, paired same-host original/head measurements. This is transport instrumentation, not an actual Web/Agent/Go end-to-end cancellation claim. No production changes are authorized without an observed breach, and durable background jobs must remain independent of view lifetime.
+
+**BEFORE/current: measured** in [CI 37877779088](https://github.com/lazyxu/xdrive/actions/runs/37877779088), three parent/current pairs. Gallery logical settlement was **6/6** after invalidation, but at +160 ms its **HTTP cancellation was 0/6, stale Server requests still active 6/6**, and all six 8 KiB responses eventually completed. No AbortSignal reached the loader. **AFTER:** N/A in this benchmark-only PR. The next production change must show 6/6 actual aborts, zero stale request bodies, and maintain scheduler correctness; raw rows are in [the shared evidence](performance-evidence/viewport-cancel/ci-run-37877779088.json).
 
 ## 100k renderer measurement attribution
 
