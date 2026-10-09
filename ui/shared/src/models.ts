@@ -617,7 +617,16 @@ export interface MediaItemRange {
   timeline_group_sets?: MediaTimelineGroupSets
 }
 
+export interface MediaAlbumFolder {
+  id: number
+  parent_id: number
+  name: string
+  revision: number
+  updated_at: string
+}
+
 export interface MediaAlbum {
+  album_folder_id?: number
   id: string
   kind: 'folder' | 'imported' | 'manual' | 'smart' | string
   name: string

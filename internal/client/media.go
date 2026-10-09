@@ -198,15 +198,24 @@ type MediaSmartAlbumQuery struct {
 	Place          string     `json:"place,omitempty"`
 }
 
+type MediaAlbumFolder struct {
+	ID        uint64    `json:"id"`
+	ParentID  uint64    `json:"parent_id"`
+	Name      string    `json:"name"`
+	Revision  uint64    `json:"revision"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type MediaAlbum struct {
-	ID          string                `json:"id"`
-	Kind        string                `json:"kind"`
-	Name        string                `json:"name"`
-	Revision    uint64                `json:"revision,omitempty"`
-	ItemCount   int64                 `json:"item_count"`
-	CoverNodeID *uint64               `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time            `json:"updated_at,omitempty"`
-	Query       *MediaSmartAlbumQuery `json:"query,omitempty"`
+	AlbumFolderID uint64                `json:"album_folder_id"`
+	ID            string                `json:"id"`
+	Kind          string                `json:"kind"`
+	Name          string                `json:"name"`
+	Revision      uint64                `json:"revision,omitempty"`
+	ItemCount     int64                 `json:"item_count"`
+	CoverNodeID   *uint64               `json:"cover_node_id,omitempty"`
+	UpdatedAt     *time.Time            `json:"updated_at,omitempty"`
+	Query         *MediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
 type MediaSyncFolder struct {
@@ -592,6 +601,51 @@ func (c *Client) MediaItem(ctx context.Context, nodeID uint64) (MediaItem, error
 func (c *Client) MediaAlbums(ctx context.Context) ([]MediaAlbum, error) {
 	var out []MediaAlbum
 	err := c.json(ctx, http.MethodGet, "/api/v1/media/albums", nil, &out)
+	return out, err
+}
+
+// MediaAlbumFolders lists only folders belonging to the current authenticated owner.
+func (c *Client) MediaAlbumFolders(ctx context.Context) ([]MediaAlbumFolder, error) {
+	var out []MediaAlbumFolder
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/album-folders", nil, &out)
+	return out, err
+}
+
+func (c *Client) CreateMediaAlbumFolder(ctx context.Context, name string, parentID uint64) (MediaAlbumFolder, error) {
+	var out MediaAlbumFolder
+	err := c.json(ctx, http.MethodPost, "/api/v1/media/album-folders",
+		map[string]any{"name": name, "parent_id": parentID}, &out)
+	return out, err
+}
+
+func (c *Client) UpdateMediaAlbumFolder(
+	ctx context.Context, folderID, revision uint64, name *string, parentID *uint64,
+) (MediaAlbumFolder, error) {
+	input := map[string]any{}
+	if name != nil {
+		input["name"] = *name
+	}
+	if parentID != nil {
+		input["parent_id"] = *parentID
+	}
+	var out MediaAlbumFolder
+	err := c.jsonRevision(ctx, http.MethodPatch,
+		fmt.Sprintf("/api/v1/media/album-folders/%d", folderID), revision, input, &out)
+	return out, err
+}
+
+func (c *Client) DeleteMediaAlbumFolder(ctx context.Context, folderID, revision uint64) error {
+	return c.jsonRevision(ctx, http.MethodDelete,
+		fmt.Sprintf("/api/v1/media/album-folders/%d", folderID), revision, nil, nil)
+}
+
+func (c *Client) MoveMediaAlbumToFolder(
+	ctx context.Context, albumID string, revision, folderID uint64,
+) (MediaAlbum, error) {
+	var out MediaAlbum
+	err := c.jsonRevision(ctx, http.MethodPatch,
+		"/api/v1/media/albums/"+url.PathEscape(albumID)+"/folder",
+		revision, map[string]uint64{"folder_id": folderID}, &out)
 	return out, err
 }
 

@@ -141,14 +141,15 @@ type mediaItemRangeDTO struct {
 }
 
 type mediaAlbumDTO struct {
-	ID          string                `json:"id"`
-	Kind        string                `json:"kind"`
-	Name        string                `json:"name"`
-	Revision    uint64                `json:"revision,omitempty"`
-	ItemCount   int64                 `json:"item_count"`
-	CoverNodeID *uint64               `json:"cover_node_id,omitempty"`
-	UpdatedAt   *time.Time            `json:"updated_at,omitempty"`
-	Query       *mediaSmartAlbumQuery `json:"query,omitempty"`
+	AlbumFolderID uint64                `json:"album_folder_id"`
+	ID            string                `json:"id"`
+	Kind          string                `json:"kind"`
+	Name          string                `json:"name"`
+	Revision      uint64                `json:"revision,omitempty"`
+	ItemCount     int64                 `json:"item_count"`
+	CoverNodeID   *uint64               `json:"cover_node_id,omitempty"`
+	UpdatedAt     *time.Time            `json:"updated_at,omitempty"`
+	Query         *mediaSmartAlbumQuery `json:"query,omitempty"`
 }
 
 func toMediaMetadataDTO(row meta.MediaMetadata) mediaMetadataDTO {
@@ -338,20 +339,21 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 	}
 
 	type albumRow struct {
-		ExternalKey string
-		Kind        string
-		Name        string
-		Revision    uint64
-		QueryJSON   string
-		ItemCount   int64
-		CoverNodeID *uint64
-		UpdatedAt   *time.Time
+		AlbumFolderID uint64
+		ExternalKey   string
+		Kind          string
+		Name          string
+		Revision      uint64
+		QueryJSON     string
+		ItemCount     int64
+		CoverNodeID   *uint64
+		UpdatedAt     *time.Time
 	}
 	var rows []albumRow
 	if err := s.DB.WithContext(c.Request.Context()).
 		Table("xd_photo_collections AS pc").
 		Select(
-			"pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, COUNT(DISTINCT album_n.id) AS item_count, "+
+			"pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, COUNT(DISTINCT album_n.id) AS item_count, "+
 				"COALESCE(MAX(CASE WHEN album_n.id = pc.preferred_cover_node_id AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
 				"MAX(CASE WHEN album_n.id IS NOT NULL THEN COALESCE(pm.captured_at, pc.updated_at) ELSE pc.updated_at END) AS updated_at",
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
@@ -363,7 +365,7 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 		Joins("LEFT JOIN xd_photo_metadata AS pm ON pm.asset_id = pa.id").
 		Joins("LEFT JOIN xd_media_metadata AS mm ON mm.node_id = pa.primary_node_id").
 		Where("pc.owner_id = ? AND pc.state = ?", uid, meta.PhotoCollectionStateActive).
-		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
+		Group("pc.id, pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
 		Order("updated_at DESC, lower(pc.name) ASC").
 		Scan(&rows).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list media albums failed")
@@ -387,14 +389,15 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 				return
 			}
 			result = append(result, mediaAlbumDTO{
-				ID:          row.ExternalKey,
-				Kind:        row.Kind,
-				Name:        row.Name,
-				Revision:    row.Revision,
-				ItemCount:   count,
-				CoverNodeID: coverNodeID,
-				UpdatedAt:   row.UpdatedAt,
-				Query:       &query,
+				ID:            row.ExternalKey,
+				AlbumFolderID: row.AlbumFolderID,
+				Kind:          row.Kind,
+				Name:          row.Name,
+				Revision:      row.Revision,
+				ItemCount:     count,
+				CoverNodeID:   coverNodeID,
+				UpdatedAt:     row.UpdatedAt,
+				Query:         &query,
 			})
 			continue
 		}
@@ -403,13 +406,14 @@ func (s *Server) listMediaAlbums(c *gin.Context) {
 			kind = "imported"
 		}
 		result = append(result, mediaAlbumDTO{
-			ID:          row.ExternalKey,
-			Kind:        kind,
-			Name:        row.Name,
-			Revision:    row.Revision,
-			ItemCount:   row.ItemCount,
-			CoverNodeID: row.CoverNodeID,
-			UpdatedAt:   row.UpdatedAt,
+			ID:            row.ExternalKey,
+			AlbumFolderID: row.AlbumFolderID,
+			Kind:          kind,
+			Name:          row.Name,
+			Revision:      row.Revision,
+			ItemCount:     row.ItemCount,
+			CoverNodeID:   row.CoverNodeID,
+			UpdatedAt:     row.UpdatedAt,
 		})
 	}
 	c.Header("Cache-Control", "no-store")

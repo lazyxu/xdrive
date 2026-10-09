@@ -62,20 +62,21 @@ func (s *Server) mediaAlbumDTOByKey(
 		"image/x-adobe-dng",
 	}
 	type row struct {
-		ExternalKey string
-		Kind        string
-		Name        string
-		Revision    uint64
-		QueryJSON   string
-		ItemCount   int64
-		CoverNodeID *uint64
-		UpdatedAt   *time.Time
+		AlbumFolderID uint64
+		ExternalKey   string
+		Kind          string
+		Name          string
+		Revision      uint64
+		QueryJSON     string
+		ItemCount     int64
+		CoverNodeID   *uint64
+		UpdatedAt     *time.Time
 	}
 	var result row
 	err := s.DB.WithContext(ctx).
 		Table("xd_photo_collections AS pc").
 		Select(
-			"pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, "+
+			"pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json, "+
 				"COUNT(DISTINCT album_n.id) AS item_count, "+
 				"COALESCE(MAX(CASE WHEN album_n.id = pc.preferred_cover_node_id AND mm.media_kind IN ? THEN album_n.id END), MIN(CASE WHEN album_n.id IS NOT NULL AND lower(mm.mime_type) IN ? THEN pa.primary_node_id END)) AS cover_node_id, "+
 				"MAX(CASE WHEN album_n.id IS NOT NULL THEN COALESCE(pm.captured_at, pc.updated_at) ELSE pc.updated_at END) AS updated_at",
@@ -93,7 +94,7 @@ func (s *Server) mediaAlbumDTOByKey(
 			key,
 			meta.PhotoCollectionStateActive,
 		).
-		Group("pc.id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
+		Group("pc.id, pc.album_folder_id, pc.external_key, pc.kind, pc.name, pc.revision, pc.query_json").
 		Scan(&result).Error
 	if err != nil {
 		return mediaAlbumDTO{}, err
@@ -111,24 +112,26 @@ func (s *Server) mediaAlbumDTOByKey(
 			return mediaAlbumDTO{}, err
 		}
 		return mediaAlbumDTO{
-			ID:          result.ExternalKey,
-			Kind:        result.Kind,
-			Name:        result.Name,
-			Revision:    result.Revision,
-			ItemCount:   count,
-			CoverNodeID: coverNodeID,
-			UpdatedAt:   result.UpdatedAt,
-			Query:       &query,
+			ID:            result.ExternalKey,
+			AlbumFolderID: result.AlbumFolderID,
+			Kind:          result.Kind,
+			Name:          result.Name,
+			Revision:      result.Revision,
+			ItemCount:     count,
+			CoverNodeID:   coverNodeID,
+			UpdatedAt:     result.UpdatedAt,
+			Query:         &query,
 		}, nil
 	}
 	return mediaAlbumDTO{
-		ID:          result.ExternalKey,
-		Kind:        mediaAlbumKindForDTO(result.Kind),
-		Name:        result.Name,
-		Revision:    result.Revision,
-		ItemCount:   result.ItemCount,
-		CoverNodeID: result.CoverNodeID,
-		UpdatedAt:   result.UpdatedAt,
+		ID:            result.ExternalKey,
+		AlbumFolderID: result.AlbumFolderID,
+		Kind:          mediaAlbumKindForDTO(result.Kind),
+		Name:          result.Name,
+		Revision:      result.Revision,
+		ItemCount:     result.ItemCount,
+		CoverNodeID:   result.CoverNodeID,
+		UpdatedAt:     result.UpdatedAt,
 	}, nil
 }
 

@@ -117,6 +117,22 @@ type PhotoEditRecipe struct {
 
 func (PhotoEditRecipe) TableName() string { return "xd_photo_edit_recipes" }
 
+// PhotoAlbumFolder organizes logical albums only. It contains no media bytes or
+// PhotoCollectionAsset memberships. ParentID=0 is an owner's root folder.
+// NameKey is a normalized, case-insensitive sibling identity.
+type PhotoAlbumFolder struct {
+	ID        uint64 `gorm:"primaryKey"`
+	OwnerID   uint64 `gorm:"not null;uniqueIndex:idx_xd_photo_album_folder_siblings,priority:1"`
+	ParentID  uint64 `gorm:"not null;default:0;uniqueIndex:idx_xd_photo_album_folder_siblings,priority:2"`
+	Name      string `gorm:"size:512;not null"`
+	NameKey   string `gorm:"size:512;not null;uniqueIndex:idx_xd_photo_album_folder_siblings,priority:3"`
+	Revision  uint64 `gorm:"not null;default:1"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (PhotoAlbumFolder) TableName() string { return "xd_photo_album_folders" }
+
 type PhotoCollection struct {
 	ID          uint64 `gorm:"primaryKey"`
 	OwnerID     uint64 `gorm:"not null;index;uniqueIndex:idx_xd_photo_collections_owner_key,priority:1"`
@@ -130,6 +146,7 @@ type PhotoCollection struct {
 	UpdatedAt   time.Time
 
 	PreferredCoverNodeID *uint64
+	AlbumFolderID        uint64 `gorm:"not null;default:0;index"`
 
 	Owner User `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 }

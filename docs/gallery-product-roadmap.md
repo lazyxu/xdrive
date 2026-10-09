@@ -121,6 +121,24 @@ silently become editable via this manual-album endpoint.
 thumbnail wall remain separate acceptance and must not be marked complete
 by implementing covers or device-local pins.
 
+## G04 authoritative album folders (Server contract candidate)
+
+Album folders are a **separate logical organization entity**, not file
+system directories or imported synchronization-folder metadata. The owner-
+scoped `PhotoAlbumFolder` hierarchy has a parent identifier, normalized
+sibling-name uniqueness, an optimistic revision, ancestor/cycle checks,
+and a bounded list API. Existing `PhotoCollection` manual/smart albums
+point to the desired folder through `album_folder_id`, defaulting to root
+(0) on upgrade. Imported/source albums remain fixed in their source scope.
+
+Folder CRUD and album moves use authenticated APIs with If-Match; deletion
+of nonempty folders returns a conflict and never recursively deletes
+media or albums. The backend stage alone is **not** Gallery UI delivery:
+the Web/Desktop shared Gallery must still show folder breadcrumbs, create/
+rename/move/delete actions, and display actual Server folder assignments.
+Neither device-local pinned albums nor saved searches should masquerade as
+durable synchronized album-folder membership.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |
