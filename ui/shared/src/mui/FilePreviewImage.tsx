@@ -108,7 +108,7 @@ export function XDriveDecodedImagePreview<T extends XDriveFilePreviewTarget>({
       start('original', currentLoaders.loadPreviewURL
         ? () => currentLoaders.loadPreviewURL!(currentLoaders.target, kind, requestController.signal) : undefined)
       start('thumbnail', currentLoaders.loadImagePreview
-        ? () => currentLoaders.loadImagePreview!(currentLoaders.target) : undefined)
+        ? () => currentLoaders.loadImagePreview!(currentLoaders.target, requestController.signal) : undefined)
     }
     acquireSourcesRef.current = acquireAvailableSources
     acquireAvailableSources()

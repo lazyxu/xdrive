@@ -1033,7 +1033,7 @@ export function XDriveFileExplorer({
   commandBarEnd?: ReactNode
   navigationPane?: ReactNode
   statusText?: ReactNode
-  loadThumbnail?: (item: XDriveFileExplorerItem) => Promise<string | null | undefined>
+  loadThumbnail?: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
   loadTextPreview?: (item: XDriveFileExplorerItem) => Promise<XDriveFileTextPreview | null | undefined>
   loadPreviewURL?: (
     item: XDriveFileExplorerItem,

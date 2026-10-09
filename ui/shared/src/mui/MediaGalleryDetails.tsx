@@ -40,7 +40,7 @@ import {
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveMediaNodeLocationSection } from './MediaNodeLocationSection'
 
-type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
+type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number) => Promise<string | null>
 type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,
@@ -327,10 +327,10 @@ export function XDriveMediaDetailsContent({
     if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')) return null
     return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision)
   }, [item?.node.id, item?.node.name, item?.node.revision, loadPreviewURL])
-  const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
+  const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async (_target, signal) => {
     if (!item?.metadata.has_thumbnail) return null
-    return loadThumbnail(item.node.id)
-  }, [item?.metadata.has_thumbnail, item?.node.id, loadThumbnail])
+    return loadThumbnail(item.node.id, signal, item.node.revision)
+  }, [item?.metadata.has_thumbnail, item?.node.id, item?.node.revision, loadThumbnail])
 
   const loadSelectedLivePhotoMotion = useCallback(async (
     onProgress?: XDriveByteProgressHandler,

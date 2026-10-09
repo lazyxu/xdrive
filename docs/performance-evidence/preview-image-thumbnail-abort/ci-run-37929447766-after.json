@@ -1,0 +1,120 @@
+{
+  "title": "P1 shared Viewer/FileExplorer Inspector low-res thumbnail actual HTTP abort before versus after",
+  "date": "2026-10-09",
+  "workload": {
+    "realComponent": "ui/shared/src/mui/FilePreviewImage.tsx",
+    "originalAndThumbnailRoles": "independent; only thumbnail HTTP fetched in fixture",
+    "responseDelayMs": 500,
+    "responseBodyBytes": 8192,
+    "observeAfterMs": 160,
+    "unmountSamples": 3,
+    "replacementSamples": 1,
+    "runner": "GitHub Linux Node22 react-test-renderer real Node HTTP server"
+  },
+  "before": {
+    "head": "1e8a7c562a017df6b2dc0f93484e0118e26333e1",
+    "ci": 37929000720,
+    "job": 113814791265,
+    "unmount": [
+      {
+        "repeat": 1,
+        "id": 701,
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      },
+      {
+        "repeat": 2,
+        "id": 702,
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      },
+      {
+        "repeat": 3,
+        "id": 703,
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      }
+    ],
+    "replacement": {
+      "before": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      },
+      "now": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      }
+    },
+    "suite": "1,647 passes; two genuine first-red cases failed; one skipped"
+  },
+  "after": {
+    "head": "aadb8fe56abab8fede369453e179b92786d57452",
+    "ci": 37929447766,
+    "job": 113816766904,
+    "unmount": [
+      {
+        "repeat": 1,
+        "id": 701,
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "bodyBytes": 0
+      },
+      {
+        "repeat": 2,
+        "id": 702,
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "bodyBytes": 0
+      },
+      {
+        "repeat": 3,
+        "id": 703,
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "bodyBytes": 0
+      }
+    ],
+    "replacement": {
+      "before": {
+        "started": 1,
+        "active": 0,
+        "earlyClosed": 1,
+        "bodyBytes": 0
+      },
+      "now": {
+        "started": 1,
+        "active": 1,
+        "earlyClosed": 0,
+        "bodyBytes": 0
+      }
+    },
+    "suite": "1,653 passes; 0 failures; one skipped"
+  },
+  "observation": {
+    "staleActiveUnloadsBefore": 3,
+    "after": 3,
+    "serverEarlyClosesBefore": 0,
+    "newConsumerNotAborted": true,
+    "staleBodyBytesAt160Before": 0,
+    "staleBodyBytesAt160After": 0
+  },
+  "limits": [
+    "No wall-clock/browser-first-frame/RSS improvement claimed; initial 0 bytes are only the delayed-response timing, not proof of cancellation",
+    "This is actual shared component and Node HTTP, not deployed authenticated Gin, Agent IPC or physical mobile.",
+    "Other durable background tasks remain independent of Viewer lifecycle"
+  ],
+  "decision": "ACCEPT actual request-owned Viewer/Inspector thumbnail HTTP abort; preserve independent original image source."
+}

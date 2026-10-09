@@ -269,9 +269,11 @@ the first usable frame. Original failure may keep the decoded thumbnail; failure
 sources preserves the consumer's failure content (or an explicit image-preview failure).
 This does not change list/grid thumbnail error behavior or replace failed thumbnails with
 generic icons. Closing/replacing the surface fences late source/decode completions and
-releases its owned blob URLs, including URLs returned after close. The existing string
-loader contract does not propagate AbortSignal to ticket/thumbnail requests; this is not
-a claim that every outstanding transport request is aborted.
+releases its owned blob URLs, including URLs returned after close. The shared image thumbnail loader now supports an optional AbortSignal and passes the
+same request-owned signal as the original URL role to existing Web/Desktop thumbnail
+adapters. Closing/replacing an image preview cancels stale thumbnail GETs as well as the
+original source. Text, PDF, audio and durable background tasks have independent
+request-lifecycle contracts; this is not a blanket assertion that all transports cancel.
 
 Edited image presentation draws from the same decoded DOM image, before paint, through
 `FilePreviewTransformedMedia`. It must not fetch the original again for the canvas, or
@@ -743,3 +745,51 @@ rail as media Viewer with **44 CSS px** targets and safe-area padding. Text rema
 read-only and uses **16 CSS px** on compact touch layouts; desktop keeps its existing
 text size. Compact Viewer sizing follows the dynamic viewport without replacing the
 mounted caller workspace. Native phone/browser acceptance remains a separate gate.
+
+## P1 Viewer/Inspector low-resolution thumbnail HTTP cancellation (2026-10-09)
+
+Status: **Accepted actual HTTP abort structural improvement / paired first-red-to-green / full evidence-amended CI pending**.
+The shared FilePreviewImage original URL loader accepts a request-scoped
+AbortSignal and cleanup aborts it. Its independent low-resolution image
+fallback loader currently accepts only target, and is invoked without
+an AbortSignal, even though Web/Desktop FileExplorer thumbnail adapters
+already support forwarding a signal to actual HTTP/Agent IPC. Leaving
+the Viewer or rapidly switching the media may fence React completion
+but keep an unneeded thumbnail GET alive.
+
+**Frozen real HTTP reproducer:** desktop/tests/file-preview-thumbnail-transport-abort.cjs
+mounts the actual shared FilePreviewImage TSX under react-test-renderer,
+with local HTTP server delaying a real 8192-byte image body for 500ms.
+Three independent image thumbnails must be started and unmounted,
+measuring at +160ms whether the server saw an early close and whether
+active HTTP or body bytes remain. One old-ID/new-ID replacement
+must abort only old transport while current image stays active.
+Sample markers PREVIEW_IMAGE_THUMB_ABORT_SAMPLE and
+PREVIEW_IMAGE_THUMB_REPLACE_SAMPLE preserve exact observed values.
+
+**BEFORE first-red measured:** [CI 37929000720](https://github.com/lazyxu/xdrive/actions/runs/37929000720), Desktop test job [113814791265](https://github.com/lazyxu/xdrive/actions/runs/37929000720/job/113814791265), the actual shared FilePreviewImage TSX, not a mock transport. Three independent thumbnail mounts/unmounts yielded started=1, **active=1, earlyClosed=0, bodyBytes=0** at +160ms (3/3 abandoned requests still alive). Image 810→811 switch left old request **active=1, earlyClosed=0**, while new request **active=1**, proving stale work survived the lifecycle change. Both original tests failed on server-observed HTTP disconnect contract; Desktop suite had **1,647 other passes, 2 expected product-condition failures, 1 skipped**. Zero BEFORE payload bytes at +160ms are caused by delayed response and do NOT mean the request was canceled.
+
+**AFTER confirmed same reproducer:** [CI 37929447766](https://github.com/lazyxu/xdrive/actions/runs/37929447766), Desktop test job [113816766904](https://github.com/lazyxu/xdrive/actions/runs/37929447766/job/113816766904). All three original +160ms observations became started=1, **active=0, earlyClosed=1, bodyBytes=0** (3/3 real server-side HTTP cancel), and the image 810→811 replacement now aborts old while the new thumbnail remains **active=1, earlyClosed=0**. Original failing tests did not change. Desktop tests **1,653 passed, 0 failed, 1 skipped**. Existing original/thumbnail independent staged decode tests remain passing; no second image surface, player, or cache was added.
+
+The production change is a request-scoped optional AbortSignal in the canonical FilePreviewSurface image thumbnail loader, forwarded by FilePreviewImage with its existing AbortController. FileExplorer Inspector/QuickLook prop types now accept the optional signal; Gallery media-details forwards the signal and current Node revision to its existing thumbnail data source. **Web/Desktop TypeScript builds in the first candidate CI exposed a single local Gallery MediaDetails callback alias still declared with one argument** (TS2554); this is a source-contract typing omission, not a failed HTTP regression. Align that alias with the existing optional (nodeID, signal, revision) signature, then run full CI on the final single work commit.
+
+**Paired raw evidence:** [three real HTTP teardown + one replacement samples before and after](performance-evidence/preview-image-thumbnail-abort/ci-run-37929447766-after.json). The meaningful performance metric here is active obsolete requests **3/3 BEFORE → 0/3 AFTER** and actual early transport disconnect **0/3 → 3/3**, not an unmeasured page wall-clock speedup. Node loopback HTTP is not the same as a complete real Gin/Agent or physical mobile measurement.
+
+**Required BEFORE acceptance failure to authorize code:** actual source
+must show obsolete request still open (or other genuine broken HTTP
+abort contract), not a test harness setup/error or missed request.
+**AFTER target:** 3/3 original unmount GETs and old switched GET
+server-observed early disconnect, active=0 and no stale response
+body by +160ms, new active request unaffected. The exact first-red
+tests must turn green without changing the fixture or expiry window.
+Only then forward optional signal through existing FilePreviewSurface
+image thumbnail loader, shared FilePreviewImage, Gallery details and
+FileExplorer QuickLook/Inspector. Preserve two decoded image roles,
+original/thumbnail independent acquisition, no duplicate original
+player, Blob URL ownership and current image failure semantics.
+
+Web/Desktop actual transport follows its existing signed/cancelable
+API; no new route, poster storage class or durable-task cancellation.
+Do not claim first-visible/wall-time or physical mobile gain from
+the Node HTTP fixture. Full Web/Desktop/Go validation and evidence
+doc update are required before linear merge.
