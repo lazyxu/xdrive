@@ -217,6 +217,15 @@ request carries a viewport AbortSignal to Web fetch or Desktop IPC/Agent GET.
 
 The original signed ticket, user/session scope, `nosniff`, Server ownership,
 2048px creative preview, and physical derivative storage classes are unchanged.
+The Server must verify owner-scoped current Node revision before serving either
+`GET /api/v1/media/items/:id/thumbnail?revision=N` (including video poster)
+or the 1280px `analysis-preview?revision=N` derivative. A future or
+superseded revision returns `409 revision_conflict` plus `Cache-Control:
+private, no-store`; an invalid or zero supplied revision returns `400`
+and is also uncacheable. When `revision` is absent, legacy clients may
+use the same ETag-based revalidation without changing the existing
+authorization or thumbnail/persisted-poster data paths.
+
 The existing `analysis_preview` storage class includes this 1280px output;
 no new cache subtree is created. CI and physical sample tests must distinguish
 pre-existing thumbnails from 1280px derivatives, image orientation and

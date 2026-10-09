@@ -501,6 +501,39 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		)
 	}
 
+	// A revision-specific thumbnail URL must represent ONLY its named source
+	// revision; HTTP cache max-age must never poison a newer URL with old pixels.
+	originalRevisionThumbnail := fmt.Sprintf(
+		"/api/v1/media/items/%d/thumbnail?revision=%d", file.ID, file.Revision,
+	)
+	matchedRevisionThumbnail := request(
+		t, router, http.MethodGet, originalRevisionThumbnail, token, nil, http.StatusOK,
+	)
+	if !bytes.Equal(matchedRevisionThumbnail.Body.Bytes(), thumbnailResponse.Body.Bytes()) {
+		t.Fatal("same-revision thumbnail GET changed the original cache bytes")
+	}
+	// This real Server request currently returns 200; first-red requires
+	// conflict before it could cache stale bytes under a future version URL.
+	t.Run("thumbnail future revision cannot pollute a new cache URL", func(t *testing.T) {
+		outOfOrderThumbnail := request(
+			t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d/thumbnail?revision=%d", file.ID, file.Revision+1),
+			token, nil, http.StatusConflict,
+		)
+		if got := outOfOrderThumbnail.Header().Get("Cache-Control"); got != "private, no-store" {
+			t.Fatalf("future source revision rejection must not be cached: %q", got)
+		}
+	})
+	for _, invalidRevision := range []string{"not-a-revision", "0"} {
+		t.Run("thumbnail invalid revision "+invalidRevision, func(t *testing.T) {
+			request(
+				t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/media/items/%d/thumbnail?revision=%s", file.ID, invalidRevision),
+				token, nil, http.StatusBadRequest,
+			)
+		})
+	}
+
 	analysisPreviewResponse := request(
 		t,
 		router,
@@ -548,6 +581,33 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if cachedAnalysisPreview.Header().Get("ETag") != analysisETag ||
 		!bytes.Equal(cachedAnalysisPreview.Body.Bytes(), analysisPreviewResponse.Body.Bytes()) {
 		t.Fatal("analysis preview cache response changed")
+	}
+	// The same version-fencing contract also governs the high-resolution
+	// 1280px analysis derivative (used by RAW compatibility preview).
+	matchingAnalysisRevision := request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d", file.ID, file.Revision),
+		token, nil, http.StatusOK,
+	)
+	if !bytes.Equal(matchingAnalysisRevision.Body.Bytes(), analysisPreviewResponse.Body.Bytes()) {
+		t.Fatal("same-revision analysis preview did not reuse the correct derivative")
+	}
+	t.Run("analysis preview future revision cannot cache stale RAW pixels", func(t *testing.T) {
+		response := request(
+			t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d", file.ID, file.Revision+1),
+			token, nil, http.StatusConflict,
+		)
+		if got := response.Header().Get("Cache-Control"); got != "private, no-store" {
+			t.Fatalf("analysis preview future revision rejection is cacheable: %q", got)
+		}
+	})
+	for _, invalidRevision := range []string{"bad", "0"} {
+		t.Run("analysis preview invalid revision "+invalidRevision, func(t *testing.T) {
+			request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%s", file.ID, invalidRevision),
+				token, nil, http.StatusBadRequest)
+		})
 	}
 
 	var mediaUser meta.User
@@ -660,6 +720,37 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("favorite was lost after media re-index: %+v", detail)
 	}
 
+	// Real Node overwrite: the original revision URL must NOT respond with
+	// updated bytes or a cacheable ETag. Its new revision URL must serve the
+	// new 5x4 pixels and not be confused with the old 3x2 derivative.
+	t.Run("thumbnail stale revision cannot cache overwritten image", func(t *testing.T) {
+		staleRevisionThumbnail := request(
+			t, router, http.MethodGet, originalRevisionThumbnail,
+			token, nil, http.StatusConflict,
+		)
+		if got := staleRevisionThumbnail.Header().Get("Cache-Control"); got != "private, no-store" {
+			t.Fatalf("superseded thumbnail revision rejection must not be cached: %q", got)
+		}
+	})
+	updatedThumbnail := request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail?revision=%d", file.ID, updated.Revision),
+		token, nil, http.StatusOK,
+	)
+	updatedThumbnailConfig, err := jpeg.DecodeConfig(
+		bytes.NewReader(updatedThumbnail.Body.Bytes()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updatedThumbnailConfig.Width != 5 || updatedThumbnailConfig.Height != 4 {
+		t.Fatalf("updated revision thumbnail=%dx%d want=5x4",
+			updatedThumbnailConfig.Width, updatedThumbnailConfig.Height)
+	}
+	if updatedThumbnail.Header().Get("ETag") == thumbnailResponse.Header().Get("ETag") {
+		t.Fatal("updated revision must not reuse the old thumbnail ETag")
+	}
+
 	updatedAnalysisPreview := request(
 		t,
 		router,
@@ -684,6 +775,24 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 			updatedAnalysisConfig.Width,
 			updatedAnalysisConfig.Height,
 		)
+	}
+	t.Run("analysis preview stale revision cannot cache overwritten RAW", func(t *testing.T) {
+		response := request(
+			t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d", file.ID, file.Revision),
+			token, nil, http.StatusConflict,
+		)
+		if got := response.Header().Get("Cache-Control"); got != "private, no-store" {
+			t.Fatalf("superseded analysis preview rejection is cacheable: %q", got)
+		}
+	})
+	matchingUpdatedAnalysis := request(
+		t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d/analysis-preview?revision=%d", file.ID, updated.Revision),
+		token, nil, http.StatusOK,
+	)
+	if !bytes.Equal(matchingUpdatedAnalysis.Body.Bytes(), updatedAnalysisPreview.Body.Bytes()) {
+		t.Fatal("correct current revision must serve the updated analysis preview")
 	}
 
 	var persisted meta.MediaMetadata

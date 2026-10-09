@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-09",
+  "workload": "real authenticated Gin/PG media integration test, Node ID 3, source PNG 3x2 then overwrite with 5x4 via If-Match; both 512px thumbnail and 1280px analysis-preview, revision 1 then 2",
+  "firstRed": {
+    "ci": 37923974647,
+    "job": 113798447885,
+    "sha": "6d711719ec70fd989105a86964d78802d642f867",
+    "test": "TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership",
+    "failures": [
+      {
+        "name": "thumbnail_future_revision_cannot_pollute_a_new_cache_URL",
+        "url": "/api/v1/media/items/3/thumbnail?revision=2",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "518"
+      },
+      {
+        "name": "thumbnail_invalid_revision_not-a-revision",
+        "url": "/api/v1/media/items/3/thumbnail?revision=not-a-revision",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "529"
+      },
+      {
+        "name": "thumbnail_invalid_revision_0",
+        "url": "/api/v1/media/items/3/thumbnail?revision=0",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "529"
+      },
+      {
+        "name": "analysis_preview_future_revision_cannot_cache_stale_RAW_pixels",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=2",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "596"
+      },
+      {
+        "name": "analysis_preview_invalid_revision_bad",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=bad",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "607"
+      },
+      {
+        "name": "analysis_preview_invalid_revision_0",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=0",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "607"
+      },
+      {
+        "name": "thumbnail_stale_revision_cannot_cache_overwritten_image",
+        "url": "/api/v1/media/items/3/thumbnail?revision=1",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "727"
+      },
+      {
+        "name": "analysis_preview_stale_revision_cannot_cache_overwritten_RAW",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=1",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "780"
+      }
+    ],
+    "mismatchRequests": 4,
+    "invalidParameterRequests": 4,
+    "matchingRevisionRequestsPassed": true
+  },
+  "earlierFirstRed": {
+    "ci": 37923364331,
+    "job": 113796386499,
+    "sha": "86c2e419b1ea13199d8823d63146c7b02bed29a4",
+    "thumbnailFuture": {
+      "url": "/api/v1/media/items/3/thumbnail?revision=2",
+      "status": 200,
+      "expected": 409
+    }
+  },
+  "proposedGuard": {
+    "matchingSourceRevision": 200,
+    "wrongSourceRevision": 409,
+    "invalidRevision": 400,
+    "noStoreWhenRejected": true,
+    "knownSourceVersionCacheIdentityPreserved": true,
+    "legacyNoRevisionAllowed": true,
+    "requiresOwnerAuthorizationFirst": true
+  },
+  "after": "unmeasured: preserve exact test and collect CI after source change",
+  "limitations": [
+    "Before statuses were read from actual CI JSON test lines and confirmed; deliberately omit binary JPEG data embedded in failure logs.",
+    "No actual latency or RSS delta, this is a correctness/HTTP response identity gate.",
+    "The real uploaded fixture is ordinary PNG; 1280px analysis derivative shares the endpoint used by RAW compatibility, not a physical RAW camera sample."
+  ]
+}

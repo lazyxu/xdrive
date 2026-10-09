@@ -1062,6 +1062,28 @@ func (s *Server) ownedThumbnailNode(
 	return node, err
 }
 
+// requireMediaSourceRevision prevents an old or future source revision
+// from poisoning a version-scoped browser thumbnail/RAW preview cache.
+// Unknown-revision clients continue to use ETag-based revalidation.
+func requireMediaSourceRevision(c *gin.Context, current uint64) bool {
+	raw, provided := c.GetQuery("revision")
+	if !provided {
+		return true
+	}
+	expected, err := strconv.ParseUint(raw, 10, 64)
+	if err != nil || expected == 0 {
+		c.Header("Cache-Control", "private, no-store")
+		fail(c, http.StatusBadRequest, "invalid media source revision")
+		return false
+	}
+	if expected != current {
+		c.Header("Cache-Control", "private, no-store")
+		revisionConflict(c, expected, current)
+		return false
+	}
+	return true
+}
+
 func (s *Server) mediaThumbnail(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
@@ -1071,6 +1093,9 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 	node, err := s.ownedThumbnailNode(c.Request.Context(), userID(c), id)
 	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
 		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if !requireMediaSourceRevision(c, node.Revision) {
 		return
 	}
 	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
@@ -1235,6 +1260,9 @@ func (s *Server) mediaAnalysisPreview(c *gin.Context) {
 	node, err := s.ownedNode(userID(c), id, true)
 	if err != nil || node.Type != meta.NodeTypeFile || node.File == nil {
 		fail(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if !requireMediaSourceRevision(c, node.Revision) {
 		return
 	}
 	metadata, err := s.ensureMediaMetadata(c.Request.Context(), node)
