@@ -44,6 +44,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
   const [loading, setLoading] = useState(false)
   const [applying, setApplying] = useState(false)
   const [confirmed, setConfirmed] = useState(false)
+  const [selectedDescription, setSelectedDescription] = useState<string | null>(null)
   const [applyResult, setApplyResult] = useState<MediaDuplicateOrganizeApplyResult | null>(null)
   const [error, setError] = useState('')
   const applyInFlight = useRef(false)
@@ -55,6 +56,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
     setLoading(false)
     setApplying(false)
     setConfirmed(false)
+    setSelectedDescription(null)
     setApplyResult(null)
     setError('')
     return () => { requestID.current += 1 }
@@ -76,6 +78,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
     setError('')
     setPlan(null)
     setConfirmed(false)
+    setSelectedDescription(null)
     setApplyResult(null)
     void requestPlan(keeperNodeID, [...nodeIDs]).then((next) => {
       if (generation !== requestID.current) return
@@ -102,8 +105,13 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
   // exact SHA-256 plan token and all backing resource revisions again in a
   // serializable PostgreSQL transaction. No file or CAS operation is sent.
   const requestConfirmedApply = () => {
-    if (!applyPlan || !plan || !confirmed || !plan.ready_for_manual_review ||
-        plan.asset_comparison !== 'identical' || plan.distinct_descriptions.length > 1 ||
+    if (!applyPlan || !plan || !confirmed ||
+        plan.asset_comparison !== 'identical' ||
+        (plan.distinct_descriptions.length > 1
+          ? selectedDescription === null || !plan.distinct_descriptions.includes(selectedDescription) ||
+            !plan.members.some((member) => member.node_id === plan.keeper_node_id &&
+              (!member.description.trim() || member.description === selectedDescription))
+          : !plan.ready_for_manual_review) ||
         !/^[0-9a-fA-F]{64}$/.test(plan.plan_revision || '') ||
         applyInFlight.current || loading) {
       return
@@ -116,6 +124,9 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
       keeper_node_id: plan.keeper_node_id,
       node_ids: [...nodeIDs],
       expected_plan_revision: plan.plan_revision,
+      ...(plan.distinct_descriptions.length > 1 && selectedDescription !== null
+        ? { selected_description: selectedDescription }
+        : {}),
       confirm: true,
     }
     void applyPlan(input).then((result) => {
@@ -128,10 +139,12 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
       setApplyResult(result)
       setPlan(null)
       setConfirmed(false)
+      setSelectedDescription(null)
     }).catch((failure: unknown) => {
       if (generation !== requestID.current) return
       setPlan(null)
       setConfirmed(false)
+      setSelectedDescription(null)
       setApplyResult(null)
       setError((failure instanceof Error ? failure.message : '标注保全失败') +
         '。请重新查看最新保全计划；旧的确认不能重试。')
@@ -142,6 +155,12 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
   }
 
   const nameByID = new Map(items.map((item) => [item.node.id, item.node.name]))
+  const keeperOriginalDescription = plan?.members.find(
+    (member) => member.node_id === plan.keeper_node_id,
+  )?.description ?? ''
+  const descriptionChoices = plan?.distinct_descriptions.filter(
+    (description) => !keeperOriginalDescription.trim() || description === keeperOriginalDescription,
+  ) ?? []
   return (
     <Stack spacing={1.5} data-xdrive-gallery-duplicate-organize>
       <Typography variant="subtitle2" fontWeight={700}>
@@ -163,6 +182,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
             setPlan(null)
             setLoading(false)
             setConfirmed(false)
+            setSelectedDescription(null)
             setApplyResult(null)
             setError('')
           }}
@@ -241,9 +261,32 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
               。该结果仅代表本地已关联的来源记录，不是远端完整扫描。
             </Typography>
             {plan.distinct_descriptions.length > 1 ? (
-              <Typography variant="body2" color="error">
-                描述冲突：{plan.distinct_descriptions.join(' / ')}。必须人工处理，不能静默覆盖。
-              </Typography>
+              <Stack spacing={0.75}>
+                <Typography variant="body2" color="warning.main">
+                  各副本描述不同。必须主动选择 keeper 的显示描述；其他原始文件及其描述全部保留。
+                </Typography>
+                <TextField
+                  select
+                  label="选择 keeper 的显示描述"
+                  value={selectedDescription ?? ''}
+                  onChange={(event) => {
+                    setSelectedDescription(event.target.value || null)
+                    setConfirmed(false)
+                  }}
+                  disabled={applying || loading}
+                  size="small"
+                  data-xdrive-gallery-organize-description-choice
+                >
+                  <MenuItem value="">请选择描述</MenuItem>
+                  {descriptionChoices.map((description) => (
+                    <MenuItem key={description} value={description}>{description}</MenuItem>
+                  ))}
+                </TextField>
+                <Typography variant="caption" color="text.secondary">
+                  keeper 已有描述时只能保留其原文；若要采用另一份描述，请改选那份原文件为 keeper 并重新查看计划。
+                  其他描述仍留在各自独立原文件里；不是归档所有描述，更不允许据此删除其他副本。
+                </Typography>
+              </Stack>
             ) : null}
             {plan.members.map((member) => (
               <Box key={member.node_id} sx={{ borderTop: 1, borderColor: 'divider', pt: 1 }}>
@@ -301,12 +344,15 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
             <Typography variant="body2" color="text.secondary">
               {plan.source_warning}
             </Typography>
-            {applyPlan && plan.ready_for_manual_review &&
-             plan.asset_comparison === 'identical' && plan.distinct_descriptions.length <= 1 ? (
+            {applyPlan && plan.asset_comparison === 'identical' &&
+             (plan.ready_for_manual_review ||
+               (plan.distinct_descriptions.length > 1 && selectedDescription !== null &&
+                descriptionChoices.includes(selectedDescription))) ? (
               <Stack spacing={1}>
                 <Typography variant="caption" color="text.secondary">
                   下一步仅把收藏、标签、人物备注、手动相册和持久人物关系补充到选定文件。
                   不会删除、移动或合并原文件、编辑版本、来源目录和共享 Blob，也不会节省更多空间。
+                  若描述不同，只更新 keeper 的显示描述，其余文本仍留在各自原文件。
                 </Typography>
                 <FormControlLabel
                   control={<Checkbox
@@ -331,7 +377,7 @@ export function XDriveMediaGalleryDuplicateOrganizePreview({
             ) : (
               <Typography variant="caption" color="text.secondary">
                 {applyPlan
-                  ? '完整资源、编辑或描述存在冲突；本次不能合并标注，请先逐项解决。'
+                  ? '完整资源或编辑不可验证，或存在尚未明确选择的描述冲突；不能擅自合并。'
                   : '本客户端仅支持只读保全预览，升级服务端或 Desktop Agent 后才能确认标注合并。'}
               </Typography>
             )}

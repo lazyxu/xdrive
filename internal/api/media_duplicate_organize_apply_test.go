@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -49,5 +50,52 @@ func TestMediaDuplicateOrganizeApplyRequiresExplicitReviewedPlan(t *testing.T) {
 					recorder.Code, recorder.Body.String())
 			}
 		})
+	}
+}
+
+func TestMediaDuplicateOrganizeDescriptionChoiceRequiresExplicitSelection(t *testing.T) {
+	plan := mediaDuplicateOrganizePlan{
+		AssetComparison: duplicateAssetIdentical,
+		Descriptions:    []string{"different", "first"},
+		KeeperNodeID:    11,
+		Members: []mediaDuplicateOrganizeMember{
+			{NodeID: 11, Description: "first"},
+			{NodeID: 12, Description: "different"},
+		},
+	}
+	if _, err := mediaDuplicateOrganizeDescriptionChoice(plan, nil); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("conflicting descriptions without a selection must fail: %v", err)
+	}
+	for _, value := range []string{"", "First", "other", "first "} {
+		if _, err := mediaDuplicateOrganizeDescriptionChoice(plan, &value); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+			t.Fatalf("unreviewed description choice %q accepted: %v", value, err)
+		}
+	}
+	selected := "different"
+	if _, err := mediaDuplicateOrganizeDescriptionChoice(plan, &selected); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("overwriting keeper's independent original description is unsafe: %v", err)
+	}
+	selected = "first"
+	got, err := mediaDuplicateOrganizeDescriptionChoice(plan, &selected)
+	if err != nil || got != selected {
+		t.Fatalf("preserving selected keeper description not accepted: %q %v", got, err)
+	}
+	plan.Members[0].Description = ""
+	selected = "different"
+	got, err = mediaDuplicateOrganizeDescriptionChoice(plan, &selected)
+	if err != nil || got != selected {
+		t.Fatalf("empty-description keeper must allow a reviewed source variant: %q %v", got, err)
+	}
+	plan.Descriptions = []string{"first"}
+	plan.ReadyForManualReview = true
+	if got, err := mediaDuplicateOrganizeDescriptionChoice(plan, nil); err != nil || got != "first" {
+		t.Fatalf("single nonconflicting description changed: %q %v", got, err)
+	}
+	if _, err := mediaDuplicateOrganizeDescriptionChoice(plan, &selected); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("unneeded override accepted without a conflict: %v", err)
+	}
+	plan.ReadyForManualReview = false
+	if _, err := mediaDuplicateOrganizeDescriptionChoice(plan, nil); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("unready singleton plan accepted: %v", err)
 	}
 }

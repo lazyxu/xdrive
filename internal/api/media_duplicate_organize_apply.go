@@ -31,6 +31,7 @@ type mediaDuplicateOrganizeApplyInput struct {
 	KeeperNodeID         uint64   `json:"keeper_node_id"`
 	NodeIDs              []uint64 `json:"node_ids"`
 	ExpectedPlanRevision string   `json:"expected_plan_revision"`
+	SelectedDescription  *string  `json:"selected_description,omitempty"`
 	Confirm              bool     `json:"confirm"`
 }
 
@@ -54,6 +55,11 @@ func mediaDuplicateOrganizeApplyInputValid(in mediaDuplicateOrganizeApplyInput) 
 	if _, err := hex.DecodeString(in.ExpectedPlanRevision); err != nil {
 		return false
 	}
+	if in.SelectedDescription != nil {
+		if _, err := normalizeMediaDescription(*in.SelectedDescription); err != nil {
+			return false
+		}
+	}
 	seen := make(map[uint64]struct{}, len(in.NodeIDs))
 	for _, id := range in.NodeIDs {
 		if id == 0 {
@@ -66,6 +72,58 @@ func mediaDuplicateOrganizeApplyInputValid(in mediaDuplicateOrganizeApplyInput) 
 	}
 	_, included := seen[in.KeeperNodeID]
 	return included
+}
+
+// A conflicting description must be resolved by explicitly choosing one
+// reviewed, unmodified variant for the keeper. Other originals and their
+// descriptions are retained independently; this never permits their removal.
+func mediaDuplicateOrganizeDescriptionChoice(
+	plan mediaDuplicateOrganizePlan, choice *string,
+) (string, error) {
+	if len(plan.Descriptions) <= 1 {
+		if choice != nil || !plan.ReadyForManualReview {
+			return "", errMediaDuplicateOrganizeConflict
+		}
+		if len(plan.Descriptions) == 0 {
+			return "", nil
+		}
+		value, err := normalizeMediaDescription(plan.Descriptions[0])
+		if err != nil {
+			return "", fmt.Errorf("%w: description cannot be preserved", errMediaDuplicateOrganizeConflict)
+		}
+		return value, nil
+	}
+	if choice == nil {
+		return "", errMediaDuplicateOrganizeConflict
+	}
+	chosen, err := normalizeMediaDescription(*choice)
+	if err != nil || chosen == "" || chosen != *choice {
+		return "", errMediaDuplicateOrganizeConflict
+	}
+	keeperFound := false
+	keeperDescription := ""
+	for _, member := range plan.Members {
+		if member.NodeID == plan.KeeperNodeID {
+			keeperFound = true
+			keeperDescription = member.Description
+			break
+		}
+	}
+	if !keeperFound {
+		return "", errMediaDuplicateOrganizeConflict
+	}
+	// Never overwrite a nonempty keeper description without a durable
+	// description-history archive. To choose another text, choose its
+	// original Node as keeper and request a fresh review instead.
+	if strings.TrimSpace(keeperDescription) != "" && keeperDescription != chosen {
+		return "", errMediaDuplicateOrganizeConflict
+	}
+	for _, candidate := range plan.Descriptions {
+		if candidate == chosen {
+			return chosen, nil
+		}
+	}
+	return "", errMediaDuplicateOrganizeConflict
 }
 
 // Confirm every backing Node resource still matches the persisted projection.
@@ -168,9 +226,7 @@ func (s *Server) applyMediaDuplicateOrganizeMetadata(
 			return err
 		}
 		if plan.AssetComparison != duplicateAssetIdentical ||
-			!plan.ReadyForManualReview || !strings.EqualFold(
-			plan.PlanRevision, in.ExpectedPlanRevision,
-		) {
+			!strings.EqualFold(plan.PlanRevision, in.ExpectedPlanRevision) {
 			return errMediaDuplicateOrganizeConflict
 		}
 		fresh, err := mediaDuplicateOrganizeResourcesCurrent(ctx, tx, ownerID, plan)
@@ -189,15 +245,9 @@ func (s *Server) applyMediaDuplicateOrganizeMetadata(
 		if err != nil {
 			return fmt.Errorf("%w: people notes cannot be merged without loss", errMediaDuplicateOrganizeConflict)
 		}
-		description := ""
-		if len(plan.Descriptions) > 1 {
-			return errMediaDuplicateOrganizeConflict
-		}
-		if len(plan.Descriptions) == 1 {
-			description, err = normalizeMediaDescription(plan.Descriptions[0])
-			if err != nil {
-				return fmt.Errorf("%w: description cannot be preserved safely", errMediaDuplicateOrganizeConflict)
-			}
+		description, err := mediaDuplicateOrganizeDescriptionChoice(plan, in.SelectedDescription)
+		if err != nil {
+			return err
 		}
 
 		var keeper mediaDuplicateOrganizeMember
@@ -365,11 +415,12 @@ func (s *Server) applyMediaDuplicateOrganizeMetadata(
 			Result: auditpkg.ResultSuccess,
 			Metadata: map[string]any{
 				"keeper_node_id": in.KeeperNodeID, "node_ids": in.NodeIDs,
-				"expected_plan_revision":  in.ExpectedPlanRevision,
-				"metadata_updated":        out.MetadataUpdated,
-				"manual_albums_added":     out.ManualAlbumsAdded,
-				"durable_people_added":    out.DurablePeopleAdded,
-				"original_files_retained": true, "physical_bytes_reclaimed": 0,
+				"expected_plan_revision":       in.ExpectedPlanRevision,
+				"metadata_updated":             out.MetadataUpdated,
+				"manual_albums_added":          out.ManualAlbumsAdded,
+				"durable_people_added":         out.DurablePeopleAdded,
+				"description_choice_confirmed": len(plan.Descriptions) > 1,
+				"original_files_retained":      true, "physical_bytes_reclaimed": 0,
 			},
 		}
 		return recordAuditTx(tx, event)

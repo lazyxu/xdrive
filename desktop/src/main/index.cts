@@ -2186,6 +2186,11 @@ function registerIPCHandlers() {
         const keeper = data.keeper_node_id
         const ids = data.node_ids
         const revision = data.expected_plan_revision
+        const selectedDescription = data.selected_description
+        if (selectedDescription !== undefined &&
+            (typeof selectedDescription !== 'string' || [...selectedDescription].length > 4096)) {
+          throw new AgentIPCError('invalid_input', 0, 'The selected description is invalid or too long.')
+        }
         if (typeof keeper !== 'number' || !Number.isSafeInteger(keeper) || keeper <= 0 ||
             !Array.isArray(ids) || ids.length < 2 || ids.length > 32 ||
             !ids.every((id) => typeof id === 'number' && Number.isSafeInteger(id) && id > 0) ||
@@ -2200,6 +2205,9 @@ function registerIPCHandlers() {
           keeper_node_id: keeper,
           node_ids: ids as number[],
           expected_plan_revision: revision,
+          ...(typeof selectedDescription === 'string'
+            ? { selected_description: selectedDescription }
+            : {}),
           confirm: true,
         })
       }, false),

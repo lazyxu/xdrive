@@ -717,6 +717,91 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		t.Fatalf("trashed PhotoAsset must remain frozen plus new independent copy: %d",
 			assetCountAfterTrashReimport)
 	}
+
+	// Annotation union with different descriptions requires explicit choice
+	// and must not erase the keeper's existing free text or the other
+	// original's description. No physical Node or PhotoResource is removed.
+	textA := create(owners[0], "descriptions-keeper.jpg",
+		"keeper text", `["cat"]`, `["Alice"]`, false)
+	textB := create(owners[0], "descriptions-copy.jpg",
+		"other original text", `["travel"]`, `["Bob"]`, true)
+	textIDs := []uint64{textA.node.ID, textB.node.ID}
+	textPlan, err := server.queryMediaDuplicateOrganizePlan(
+		context.Background(), owners[0].ID, textA.node.ID, textIDs,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if textPlan.AssetComparison != duplicateAssetIdentical ||
+		textPlan.ReadyForManualReview || len(textPlan.Descriptions) != 2 {
+		t.Fatalf("distinct descriptions need explicit keeper choice: %+v", textPlan)
+	}
+	choiceInput := mediaDuplicateOrganizeApplyInput{
+		KeeperNodeID: textA.node.ID, NodeIDs: textIDs,
+		ExpectedPlanRevision: textPlan.PlanRevision, Confirm: true,
+	}
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, choiceInput,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("unresolved conflict must reject transaction: %v", err)
+	}
+	wrongDescription := "other original text"
+	choiceInput.SelectedDescription = &wrongDescription
+	if _, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, choiceInput,
+	); !errors.Is(err, errMediaDuplicateOrganizeConflict) {
+		t.Fatalf("overwriting keeper's original text must fail closed: %v", err)
+	}
+	keeperDescription := "keeper text"
+	choiceInput.SelectedDescription = &keeperDescription
+	chosenResult, err := server.applyMediaDuplicateOrganizeMetadata(
+		context.Background(), owners[0].ID, choiceInput,
+	)
+	if err != nil || !chosenResult.OriginalFilesRetained ||
+		!chosenResult.OriginalEditsRetained ||
+		chosenResult.PhysicalBytesReclaimed != 0 {
+		t.Fatalf("confirmed lossless description choice failed: %+v err=%v", chosenResult, err)
+	}
+	var keptText, otherText meta.PhotoMetadata
+	if err := db.First(&keptText, "asset_id = ?", textA.asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&otherText, "asset_id = ?", textB.asset.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !keptText.Favorite || keptText.Description != "keeper text" ||
+		keptText.TagsJSON != `["cat","travel"]` ||
+		keptText.PeopleJSON != `["Alice","Bob"]` ||
+		otherText.Description != "other original text" ||
+		!otherText.Favorite || otherText.TagsJSON != `["travel"]` {
+		t.Fatalf("choosing keeper's original description lost independent text or annotations: keeper=%+v other=%+v",
+			keptText, otherText)
+	}
+	var copyNodes, copyResources int64
+	if err := db.Model(&meta.Node{}).Where("id IN ?", textIDs).
+		Count(&copyNodes).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.PhotoResource{}).
+		Where("asset_id IN ?", []uint64{textA.asset.ID, textB.asset.ID}).
+		Count(&copyResources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if copyNodes != 2 || copyResources != 2 {
+		t.Fatalf("confirmed description selection altered original Nodes/resources: %d/%d",
+			copyNodes, copyResources)
+	}
+	var sensitiveAudit meta.AuditEvent
+	if err := db.Where(
+		"action = ? AND target_id = ?",
+		"media.duplicate.organize_metadata", fmt.Sprint(textA.asset.ID),
+	).First(&sensitiveAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sensitiveAudit.Metadata, "keeper text") ||
+		strings.Contains(sensitiveAudit.Metadata, "other original text") {
+		t.Fatal("audit must not record the user's description text")
+	}
 }
 
 func TestMediaDuplicateOrganizePlanFindsLiveMotionSourceLinks(t *testing.T) {

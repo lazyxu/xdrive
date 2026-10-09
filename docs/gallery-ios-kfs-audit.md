@@ -284,6 +284,21 @@ deduplicating cleanup is permitted. The physical byte saving is zero by
 design, and user quota does not decrease. The actual file-removal/undo and
 sync-reimport contract remains separately unimplemented.
 
+### G11 description conflicts — opt-in keeper-original selection (2026-10-09)
+
+The existing verified, manually confirmed **annotation-only** organization
+flow is not storage cleanup. A distinct nonempty description on the intended
+keeper must never be overwritten just to collect favorite/tags/manual-album or
+people relations. The G11 phase-7 change allows a user to explicitly retain
+that keeper's own existing description (or select one reviewed original text
+when the keeper was blank), while keeping all original files and their other
+descriptions independently available. Changing keeper requires a fresh preview.
+The original assets, source-album memberships, edit recipes, Live Photo/RAW
+resources and globally shared CAS refs remain untouched. This is not a
+description-history archive and cannot justify deleting another source file.
+No first-render or scroll-triggered request is introduced. Native PostgreSQL
+and shared Web/Desktop contract tests are required before merge.
+
 ### G11/G12: organization, deletion and privacy are different contracts
 
 Current exact duplicates are equal primary SHA-256 originals. Near-duplicates and Burst

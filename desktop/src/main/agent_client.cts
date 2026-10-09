@@ -887,6 +887,7 @@ export type AgentMediaDuplicateOrganizeApplyInput = {
   keeper_node_id: number
   node_ids: number[]
   expected_plan_revision: string
+  selected_description?: string
   confirm: true
 }
 

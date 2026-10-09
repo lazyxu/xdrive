@@ -711,6 +711,41 @@ Trips use only xDrive-local GPS and optional local place labels. They do not con
 provider trip/albums/person semantics, online location services, or AI inference.
 
 
+### G11 P4 phase 7 — preserve distinct descriptions by explicit keeper choice (2026-10-09)
+
+**In progress / CI pending.** The existing non-destructive annotation-only
+confirmation remains the only write operation. If multiple original files have
+different nonempty descriptions, the Server now accepts an optional, explicitly
+reviewed `selected_description` with the existing 64-character
+`expected_plan_revision` and `confirm:true`.
+
+- No selection means **409 Conflict**; a description not present verbatim in
+  the reviewed plan, a missing keeper, a different edit/resource identity or
+  a stale plan revision also fails closed.
+- If the selected keeper already has nonempty description text, **only that
+  exact original text may be chosen**. To select another description, choose
+  the original file bearing that text as keeper and review again. An empty
+  keeper may explicitly adopt one reviewed original description. Do not
+  silently replace or lose keeper text.
+- Other descriptions remain on their **independent original assets**; selected
+  keeper's favorite, tags, people notes, manual albums and durable people are
+  still merged using the existing serializable transaction. Source albums,
+  original resource relationships and all PhotoEditRecipes are untouched.
+- Web/Desktop share the MUI description selection, reset user confirmation
+  on any choice or keeper change, and transport the exact string through
+  REST / Agent IPC. The audit records only that an explicit choice was made,
+  **not any description text**.
+- This is **not** a durable multi-description archive: physical duplicate
+  deletion remains prohibited until description history, edit-version history,
+  Trash/undo and Source reimport rules are implemented and tested. It yields
+  **zero physical reclaim**. Older Server/Agent clients fail closed.
+
+Native PostgreSQL integration verifies two independent descriptions, rejecting
+missing/unreviewed/keeper-overwriting choices, accepting an exact keeper-own
+choice, preserving other original text and metadata, and excluding sensitive
+text from audits. Test and product CI are authoritative; do not claim this
+stage merged before full gate success.
+
 ### G11 P4 phase 2 — shared metadata organization review UI (2026-10-09)
 
 **Implementation pending CI:** after the successful backend dry-run #1139, the

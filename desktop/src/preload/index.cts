@@ -118,6 +118,7 @@ const agent = Object.freeze({
     keeper_node_id: number
     node_ids: number[]
     expected_plan_revision: string
+    selected_description?: string
     confirm: true
   }) => ipcRenderer.invoke('agent:apply-media-duplicate-organize', input),
   getMediaSyncFolders: () => ipcRenderer.invoke('agent:get-media-sync-folders'),

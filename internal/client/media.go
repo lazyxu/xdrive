@@ -412,6 +412,7 @@ type MediaDuplicateOrganizeApplyInput struct {
 	KeeperNodeID         uint64   `json:"keeper_node_id"`
 	NodeIDs              []uint64 `json:"node_ids"`
 	ExpectedPlanRevision string   `json:"expected_plan_revision"`
+	SelectedDescription  *string  `json:"selected_description,omitempty"`
 	Confirm              bool     `json:"confirm"`
 }
 
