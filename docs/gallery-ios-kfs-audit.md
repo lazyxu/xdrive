@@ -269,6 +269,21 @@ already bake saved recipes, or that simple image/video recipes cover Live/RAW/Bu
 Optional video/Live derivatives belong behind the existing renderer/task boundaries;
 persistent derivatives need storage-inventory categories and safe cleanup semantics.
 
+### G11 phase 4 — confirmed annotation transfer is not duplicate deletion (2026-10-09)
+
+The shared Gallery expands only verified full-asset-equivalent copies;
+a separate review panel can examine 2–32 independent originals and their
+user edits, albums, descriptions, people and tags. The next confirmed
+operation uses the Server's exact SHA-256 plan token, an explicit checkbox
+and capability-checked Web/Desktop/Agent POST. It may union only verified
+non-conflicting user annotations onto a designated keeper. The UI must
+disable confirmation for ambiguous resources, different edit recipes or
+descriptions, and require a **new plan** following any 409 conflict.
+No source-managed album migration, Node delete, CAS decrement or automatic
+deduplicating cleanup is permitted. The physical byte saving is zero by
+design, and user quota does not decrease. The actual file-removal/undo and
+sync-reimport contract remains separately unimplemented.
+
 ### G11/G12: organization, deletion and privacy are different contracts
 
 Current exact duplicates are equal primary SHA-256 originals. Near-duplicates and Burst

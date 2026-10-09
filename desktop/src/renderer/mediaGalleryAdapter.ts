@@ -23,6 +23,7 @@ export function createDesktopMediaGalleryDataSource(
       (requestID) => agent.getNodeLocation(nodeID, requestID),
     ),
     getDuplicateOrganizePlan: (keeperNodeID, nodeIDs) => agent.getMediaDuplicateOrganizePlan(keeperNodeID, nodeIDs),
+    applyDuplicateOrganize: (input) => agent.applyMediaDuplicateOrganize(input),
     listSyncFolders: () => agent.getMediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => agent.getMediaSyncFolder(sourceID, folderID),
     listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),

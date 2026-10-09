@@ -737,9 +737,45 @@ automated deletion. Subsequent transactional consolidation and safe undo
 need separate native PostgreSQL correctness gates including concurrent sync
 and reimport. This stage is not a full metadata merge.
 
+### G11 P4 phase 4 — explicit Web/Desktop annotation confirmation (2026-10-09)
+
+**Phase status: one-commit PR / full CI required.** Continue the existing
+verified Gallery fold-expansion UI and its G11 read-only preservation plan.
+The user must first select the real keeper, explicitly request
+`查看保全计划`, and then check **“只合并标注、保留全部原文件”**
+before the `确认保全标注` action becomes accessible. Web/Desktop share
+one UI and strict `MediaDuplicateOrganizeApplyInput` DTO. The request
+sends the exact Server-issued SHA-256 `expected_plan_revision` with
+`confirm: true`; it never derives equivalence from the client or reuses an
+old token after a conflict. Missing Agent capability returns an explicit
+unsupported response, never silently performs another action.
+
+When `asset_comparison != identical`, `ready_for_manual_review`
+is false, descriptions conflict, the group has more than 32 members,
+or the token is missing/stale, **the write control is disabled**. The
+Server remains the authority under a serializable transaction, rechecking
+every resource and source Node revision before copying only user annotations
+(favorite, tags, people labels, safe single description, manual albums,
+persistent people) onto the designated keeper. The dialog reports the exact
+applied counters with an explicit refresh control. A rejected/stale apply
+clears the prior confirmation and requires the user to load a new plan.
+No mutation request is dispatched on Gallery first paint, merely opening
+the fold group or selecting a keeper.
+
+The confirmed action is deliberately **non-destructive**. Every original
+file, original resource role, independent PhotoEditRecipe, source-managed
+album membership and cross-account CAS reference stays untouched.
+`physical_bytes_reclaimed = 0` and no account quota savings are claimed.
+Repeated sync can add original files again; it is not a background
+auto-consolidation. **Still missing before *deleting* duplicate files:**
+revision-safe undo/trash, a lossless way to preserve multiple different
+descriptions/edit versions, explicit manual conflict decisions, source
+re-import/idempotence gates and same-account/cross-account CAS+quota
+integration tests. This phase must never be presented as whole P4 completion.
+
 ### G11 P4 phase 3 — confirmed, non-destructive annotation consolidation (2026-10-09)
 
-**Implementation/CI pending:** new authenticated `POST /api/v1/media/duplicate-organize/apply`
+**Implemented in merged #1151:** new authenticated `POST /api/v1/media/duplicate-organize/apply`
 accepts a selected keeper, **2–32** unique primary Node IDs, a SHA-256
 `expected_plan_revision` returned by the G11 read-only preservation plan,
 and explicit `confirm: true`. The Server rechecks the complete resource/edit

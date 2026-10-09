@@ -5,6 +5,8 @@ import type {
   MediaGalleryIndexStatus,
   NodeLocation,
   MediaDuplicateOrganizePlan,
+  MediaDuplicateOrganizeApplyInput,
+  MediaDuplicateOrganizeApplyResult,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderView,
@@ -80,6 +82,7 @@ export interface XDriveMediaGalleryPort {
   getIndexStatus?: () => Promise<XDriveMediaGalleryTransportResult<MediaGalleryIndexStatus>>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<NodeLocation>>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizePlan>>
+  applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizeApplyResult>>
   listSyncFolders?: () => Promise<XDriveMediaGalleryTransportResult<MediaSyncFolder[]>>
   getSyncFolder?: (
     sourceID: number,
@@ -397,6 +400,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     getDuplicateOrganizePlan: port.getDuplicateOrganizePlan
       ? (keeperNodeID, nodeIDs) => resolveXDriveTransport(port.getDuplicateOrganizePlan!(keeperNodeID, nodeIDs))
+      : undefined,
+    applyDuplicateOrganize: port.applyDuplicateOrganize
+      ? (input) => resolveXDriveTransport(port.applyDuplicateOrganize!(input))
       : undefined,
     listSyncFolders: port.listSyncFolders
       ? () => resolveXDriveTransport(port.listSyncFolders!())

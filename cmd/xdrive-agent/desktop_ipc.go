@@ -105,6 +105,7 @@ var desktopIPCCapabilities = []string{
 	"media-index-status",
 	"media-folder-recursive",
 	"media-duplicate-organize-plan",
+	"media-duplicate-organize-apply",
 	"media-album-folders",
 	"external-sources",
 	"storage-intelligence",
@@ -626,6 +627,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/facets", h.mediaFacets)
 	mux.HandleFunc("GET /v1/media/index-status", h.mediaIndexStatus)
 	mux.HandleFunc("GET /v1/media/duplicate-organize/plan", h.mediaDuplicateOrganizePlan)
+	mux.HandleFunc("POST /v1/media/duplicate-organize/apply", h.mediaDuplicateOrganizeApply)
 	mux.HandleFunc("GET /v1/media/sync-folders", h.mediaSyncFolders)
 	mux.HandleFunc("GET /v1/media/sync-folder", h.mediaSyncFolder)
 	mux.HandleFunc("GET /v1/media/trash", h.mediaTrash)
@@ -2793,6 +2795,59 @@ func (h *desktopIPCHandler) mediaDuplicateOrganizePlan(w http.ResponseWriter, r 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, plan)
+}
+
+// Do not silently fall back to read-only plan on legacy Agents.
+func (h *desktopIPCHandler) mediaDuplicateOrganizeApply(w http.ResponseWriter, r *http.Request) {
+	var input client.MediaDuplicateOrganizeApplyInput
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if !input.Confirm || input.KeeperNodeID == 0 ||
+		len(input.NodeIDs) < 2 || len(input.NodeIDs) > 32 ||
+		len(input.ExpectedPlanRevision) != 64 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+			"explicit keeper, 2–32 distinct Node IDs, plan revision and confirmation required")
+		return
+	}
+	if _, err := hex.DecodeString(input.ExpectedPlanRevision); err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+			"plan revision must be a SHA-256 hex digest")
+		return
+	}
+	seen := make(map[uint64]struct{}, len(input.NodeIDs))
+	for _, id := range input.NodeIDs {
+		if id == 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+				"node IDs must be positive")
+			return
+		}
+		if _, duplicate := seen[id]; duplicate {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+				"node IDs must be distinct")
+			return
+		}
+		seen[id] = struct{}{}
+	}
+	if _, found := seen[input.KeeperNodeID]; !found {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_organize_apply",
+			"keeper must be one of the selected Nodes")
+		return
+	}
+	provider, ok := h.ctrl.(interface {
+		CloudMediaDuplicateOrganizeApply(context.Context, client.MediaDuplicateOrganizeApplyInput) (client.MediaDuplicateOrganizeApplyResult, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "media_duplicate_organize_apply_unavailable",
+			"update Agent to confirm duplicate annotation organization")
+		return
+	}
+	result, err := provider.CloudMediaDuplicateOrganizeApply(r.Context(), input)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) mediaIndexStatus(w http.ResponseWriter, r *http.Request) {

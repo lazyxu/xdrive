@@ -15,6 +15,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     getIndexStatus: () => api.mediaIndexStatus(),
     getNodeLocation: (nodeID, signal) => api.nodeLocation(nodeID, signal),
     getDuplicateOrganizePlan: (keeperNodeID, nodeIDs) => api.mediaDuplicateOrganizePlan(keeperNodeID, nodeIDs),
+    applyDuplicateOrganize: (input) => api.mediaDuplicateOrganizeApply(input),
     listSyncFolders: () => api.mediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => api.mediaSyncFolder(sourceID, folderID),
     listTrashItemRange: (limit, offset) => api.mediaTrashRange(limit, offset),

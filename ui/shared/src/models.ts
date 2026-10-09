@@ -870,6 +870,24 @@ export interface MediaDuplicateOrganizePlan {
   source_warning: string
 }
 
+export interface MediaDuplicateOrganizeApplyInput {
+  keeper_node_id: number
+  node_ids: number[]
+  expected_plan_revision: string
+  confirm: true
+}
+
+export interface MediaDuplicateOrganizeApplyResult {
+  keeper_node_id: number
+  metadata_updated: boolean
+  manual_albums_added: number
+  durable_people_added: number
+  original_files_retained: boolean
+  original_edits_retained: boolean
+  source_links_unchanged: boolean
+  physical_bytes_reclaimed: number
+}
+
 export interface MediaBurstReview {
   id: string
   item_count: number

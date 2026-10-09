@@ -114,6 +114,7 @@ import {
   type AgentMediaGalleryIndexStatus,
   type AgentNodeLocation,
   type AgentMediaDuplicateOrganizePlan,
+  type AgentMediaDuplicateOrganizeApplyResult,
   type AgentMediaSyncFolder,
   type AgentMediaFolderView,
   type AgentMediaAlbum,
@@ -2116,6 +2117,36 @@ function registerIPCHandlers() {
       }),
       false,
     ),
+  )
+
+  ipcMain.handle(
+    'agent:apply-media-duplicate-organize',
+    (_event, input: unknown) =>
+      runAgentAction<AgentMediaDuplicateOrganizeApplyResult>(async () => {
+        if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+          throw new AgentIPCError('invalid_input', 0, 'Confirmed organization input must be an object.')
+        }
+        const data = input as Record<string, unknown>
+        const keeper = data.keeper_node_id
+        const ids = data.node_ids
+        const revision = data.expected_plan_revision
+        if (typeof keeper !== 'number' || !Number.isSafeInteger(keeper) || keeper <= 0 ||
+            !Array.isArray(ids) || ids.length < 2 || ids.length > 32 ||
+            !ids.every((id) => typeof id === 'number' && Number.isSafeInteger(id) && id > 0) ||
+            new Set(ids).size !== ids.length || !ids.includes(keeper) ||
+            typeof revision !== 'string' || !/^[0-9a-fA-F]{64}$/.test(revision) ||
+            data.confirm !== true) {
+          throw new AgentIPCError('invalid_input', 0, 'Select a keeper, 2–32 original files and explicitly confirm the current review.')
+        }
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-duplicate-organize-apply')
+        return requireAgentClient().mediaDuplicateOrganizeApply({
+          keeper_node_id: keeper,
+          node_ids: ids as number[],
+          expected_plan_revision: revision,
+          confirm: true,
+        })
+      }, false),
   )
 
   ipcMain.handle('agent:get-media-sync-folders', () =>

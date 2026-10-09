@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -370,6 +371,7 @@ type MediaDuplicateOrganizeMember struct {
 }
 
 type MediaDuplicateOrganizePlan struct {
+	PlanRevision               string                         `json:"plan_revision"`
 	KeeperNodeID               uint64                         `json:"keeper_node_id"`
 	Members                    []MediaDuplicateOrganizeMember `json:"members"`
 	AssetComparison            string                         `json:"asset_comparison"`
@@ -385,6 +387,26 @@ type MediaDuplicateOrganizePlan struct {
 	NoMutation                 bool                           `json:"no_mutation"`
 	PhysicalReclaimableBytes   int64                          `json:"physical_reclaimable_bytes"`
 	SourceWarning              string                         `json:"source_warning"`
+}
+
+// Explicit caller confirmation and verified plan fingerprint are required.
+// Files and CAS references are never deleted by this annotation-only operation.
+type MediaDuplicateOrganizeApplyInput struct {
+	KeeperNodeID         uint64   `json:"keeper_node_id"`
+	NodeIDs              []uint64 `json:"node_ids"`
+	ExpectedPlanRevision string   `json:"expected_plan_revision"`
+	Confirm              bool     `json:"confirm"`
+}
+
+type MediaDuplicateOrganizeApplyResult struct {
+	KeeperNodeID           uint64 `json:"keeper_node_id"`
+	MetadataUpdated        bool   `json:"metadata_updated"`
+	ManualAlbumsAdded      int    `json:"manual_albums_added"`
+	DurablePeopleAdded     int    `json:"durable_people_added"`
+	OriginalFilesRetained  bool   `json:"original_files_retained"`
+	OriginalEditsRetained  bool   `json:"original_edits_retained"`
+	SourceLinksUnchanged   bool   `json:"source_links_unchanged"`
+	PhysicalBytesReclaimed int64  `json:"physical_bytes_reclaimed"`
 }
 
 type MediaBurstReview struct {
@@ -839,6 +861,39 @@ func (c *Client) MediaDuplicateOrganizePlan(
 	}
 	err := c.json(ctx, http.MethodGet,
 		"/api/v1/media/duplicate-organize/plan?"+query.Encode(), nil, &out)
+	return out, err
+}
+
+// MediaDuplicateOrganizeApply transfers only user-owned annotations to the
+// selected keeper. The Server re-verifies resources, ownership, edits and
+// the exact preview fingerprint inside a serializable transaction.
+func (c *Client) MediaDuplicateOrganizeApply(
+	ctx context.Context,
+	input MediaDuplicateOrganizeApplyInput,
+) (MediaDuplicateOrganizeApplyResult, error) {
+	var out MediaDuplicateOrganizeApplyResult
+	if !input.Confirm || input.KeeperNodeID == 0 ||
+		len(input.NodeIDs) < 2 || len(input.NodeIDs) > 32 ||
+		len(input.ExpectedPlanRevision) != 64 {
+		return out, fmt.Errorf("confirmed 2–32 distinct original nodes and current plan revision required")
+	}
+	if _, err := hex.DecodeString(input.ExpectedPlanRevision); err != nil {
+		return out, fmt.Errorf("invalid duplicate organization plan revision")
+	}
+	seen := make(map[uint64]struct{}, len(input.NodeIDs))
+	for _, id := range input.NodeIDs {
+		if id == 0 {
+			return out, fmt.Errorf("invalid duplicate organization member")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return out, fmt.Errorf("duplicate organization members must be distinct")
+		}
+		seen[id] = struct{}{}
+	}
+	if _, ok := seen[input.KeeperNodeID]; !ok {
+		return out, fmt.Errorf("keeper must belong to original members")
+	}
+	err := c.json(ctx, http.MethodPost, "/api/v1/media/duplicate-organize/apply", input, &out)
 	return out, err
 }
 

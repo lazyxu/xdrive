@@ -33,6 +33,8 @@ import type {
   MediaMemory,
   MediaDuplicateGroupList,
   MediaDuplicateOrganizePlan,
+  MediaDuplicateOrganizeApplyInput,
+  MediaDuplicateOrganizeApplyResult,
   MediaBurstReviewList,
   MediaEditRecipe,
   MediaEditRecipeInput,
@@ -920,6 +922,13 @@ export class XDriveApi {
     for (const nodeID of nodeIDs) query.append('node_id', String(nodeID))
     return this.request<MediaDuplicateOrganizePlan>(
       `/api/v1/media/duplicate-organize/plan?${query.toString()}`,
+    )
+  }
+
+  mediaDuplicateOrganizeApply(input: MediaDuplicateOrganizeApplyInput) {
+    return this.request<MediaDuplicateOrganizeApplyResult>(
+      '/api/v1/media/duplicate-organize/apply',
+      { method: 'POST', body: JSON.stringify(input) },
     )
   }
 
