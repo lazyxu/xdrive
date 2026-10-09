@@ -6,7 +6,7 @@ Mobile Web Files 的展示层独立于 Desktop FileExplorer；在同一个 `file
 
 Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而是把可独立启动、可深链接、可由其他工作区调用的能力注册为 Web 程序。Web 程序使用统一的 App Registry、类型化 launch contract、Hash Route 和 session browse context。设置、属性、分享、历史版本、标签、重命名和冲突确认仍是程序内部 Dialog / Inspector，不升级成独立程序。
 
-当前固定为 **15 个 Web 程序**：
+当前固定为 **16 个 Web 程序**：
 
 | App ID | 名称 | Presentation | 主要启动参数 |
 | --- | --- | --- | --- |
@@ -25,6 +25,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `admin-users` | 用户管理 | workspace | `user?` |
 | `admin-audit` | 审计日志 | workspace | 无 |
 | `admin-storage` | 全局存储 | workspace | `section?`, `task?` |
+| `admin-services` | 服务与依赖 | workspace | 无（管理员专用） |
 
 ## Route 与启动契约
 
@@ -115,7 +116,7 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 
 ### Mobile Web 全屏硬约束
 
-适用于上述 **15 个 Web 程序及今后新增程序**。手机 **App Frame 根**占满整个可用动态视口，`x=0, y=0, width=viewportWidth, height=viewportHeight`。Frame **自身**拥有 52px（加顶部安全区）的标题栏：左上角退出当前 App（回到上一个 App；无调用方时回主页），右上角打开应用导航及实时传输入口（小于 350 CSS px 时传输入口自动收入应用 Drawer）。内层 `main` 应从标题栏以下开始并填满剩余高度，保留已有 Files/Gallery 滚动容器；不得把旧的 `main y=0` 验收要求机械套用在新 Frame 下。禁止全局悬浮导航、常驻底部导航、独立全局 AppBar 和遮挡状态栏的覆盖层；Desktop/宽 Web 不变。
+适用于上述 **16 个 Web 程序及今后新增程序**。手机 **App Frame 根**占满整个可用动态视口，`x=0, y=0, width=viewportWidth, height=viewportHeight`。Frame **自身**拥有 52px（加顶部安全区）的标题栏：左上角退出当前 App（回到上一个 App；无调用方时回主页），右上角打开应用导航及实时传输入口（小于 350 CSS px 时传输入口自动收入应用 Drawer）。内层 `main` 应从标题栏以下开始并填满剩余高度，保留已有 Files/Gallery 滚动容器；不得把旧的 `main y=0` 验收要求机械套用在新 Frame 下。禁止全局悬浮导航、常驻底部导航、独立全局 AppBar 和遮挡状态栏的覆盖层；Desktop/宽 Web 不变。
 
 标题栏右侧“打开应用导航”打开同一权限过滤后的应用 Drawer，账号/设置在 Drawer 内，上传/下载状态在标题栏内；打开/关闭 Drawer 不改变 route/history，不重新挂载当前 main。Files/Gallery 的条目短按打开、静止长按显示 Context Menu、拖动仅作用于有效目标；不在每个条目叠加 More、Info、Favorite 操作按钮。程序自己的文件工具条、PDF 页码、文本操作等保留在程序内；Viewer 使用同一全屏覆盖层和独立返回控件。详细规则以 [Mobile Web](mobile-web.md) 为准。
 

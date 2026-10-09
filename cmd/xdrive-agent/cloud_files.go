@@ -567,6 +567,14 @@ func (c *agentController) CloudBackgroundTaskActiveSummary(
 	return cli.BackgroundTaskActiveSummary(ctx)
 }
 
+func (c *agentController) CloudAdminServices(ctx context.Context) (client.ServiceDependenciesSnapshot, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ServiceDependenciesSnapshot{}, err
+	}
+	return cli.AdminServices(ctx)
+}
+
 func (c *agentController) CloudBackgroundTaskPage(
 	ctx context.Context,
 	global bool,

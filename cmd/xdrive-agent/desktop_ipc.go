@@ -80,6 +80,7 @@ var desktopIPCCapabilities = []string{
 	"cloud-change-feed",
 	"background-tasks",
 	"background-task-summary",
+	"admin-services",
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
@@ -588,6 +589,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/media-details", h.cloudFileMediaDetails)
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
+	mux.HandleFunc("GET /v1/cloud/admin-services", h.cloudAdminServices)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
@@ -1784,6 +1786,22 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+func (h *desktopIPCHandler) cloudAdminServices(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(interface {
+		CloudAdminServices(context.Context) (client.ServiceDependenciesSnapshot, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_services_unavailable", "service dependencies are not supported by this agent")
+		return
+	}
+	result, err := provider.CloudAdminServices(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudBackgroundTaskPage(

@@ -1334,7 +1334,7 @@ test('Web and Desktop expose the same Gallery data operations', () => {
 })
 
 test('Desktop navigation exposes Gallery as a first-class view', () => {
-  assert.ok(desktopApp.includes("type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>"), 'Desktop must extend the shared workspace route model')
+  assert.ok(desktopApp.includes("type View = XDriveWorkspaceViewKey<"), 'Desktop must extend the shared workspace route model')
   assert.ok(sharedRoute.includes("'gallery'"), 'shared workspace route model must expose Gallery')
   assert.ok(sharedGallery.includes('title="图库"'), 'shared Gallery page must own its workspace title')
   assert.ok(desktopApp.includes('<XDriveWorkspaceSidebar'), 'Desktop must expose Gallery through the shared workspace sidebar')

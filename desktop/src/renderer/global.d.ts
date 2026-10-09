@@ -64,6 +64,7 @@ import type {
   XDriveBackgroundTaskPage,
   XDriveByteProgressHandler,
   XDriveBackgroundTaskActiveSummary,
+  XDriveServiceDependenciesSnapshot,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
   XDriveFileExplorerPropertiesStats,
@@ -747,6 +748,7 @@ declare global {
           items: AgentCloudBatchNodeRef[],
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
+        cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>
         cloudBackgroundTaskPage: (
           global?: boolean,

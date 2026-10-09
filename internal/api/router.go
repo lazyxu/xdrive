@@ -306,6 +306,7 @@ func (s *Server) Router() *gin.Engine {
 	admin := authed.Group("/admin")
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
+	admin.GET("/services", s.adminServiceDependencies)
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/background-tasks", s.adminListBackgroundTasks)
 	admin.GET("/background-tasks/page", s.adminListBackgroundTaskPage)

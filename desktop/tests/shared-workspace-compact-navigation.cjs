@@ -289,7 +289,7 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
   for (const { profile, expectedMore } of [
     { profile: undefined, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
     { profile: { role: 'user' }, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['sources', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage'] },
+    { profile: { role: 'admin' }, expectedMore: ['sources', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])

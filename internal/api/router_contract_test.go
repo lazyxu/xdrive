@@ -233,6 +233,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/sources/:id/runs/:runID/heartbeat", suite: "sources"},
 		{method: "POST", path: "/api/v1/sources/:id/runs/:runID/finish", suite: "sources"},
 		{method: "GET", path: "/api/v1/admin/users", suite: "admin"},
+		{method: "GET", path: "/api/v1/admin/services", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/update", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/update", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/audit", suite: "audit"},

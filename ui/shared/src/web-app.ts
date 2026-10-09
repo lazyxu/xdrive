@@ -18,6 +18,7 @@ export const XDRIVE_WEB_APP_IDS = [
   'admin-users',
   'admin-audit',
   'admin-storage',
+  'admin-services',
 ] as const
 
 export type XDriveWebAppID = typeof XDRIVE_WEB_APP_IDS[number]
@@ -97,6 +98,7 @@ export interface XDriveWebAppLaunchMap {
   'admin-users': { user?: number }
   'admin-audit': Record<string, never>
   'admin-storage': { section?: string; task?: string }
+  'admin-services': Record<string, never>
 }
 
 export type XDriveWebAppRoute = {
@@ -194,6 +196,7 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
     case 'local-storage':
     case 'cloud-storage':
     case 'admin-audit':
+    case 'admin-services':
       return { app, params: {} } as XDriveWebAppRoute
   }
 }

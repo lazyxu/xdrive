@@ -20,6 +20,7 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import CropSquareRoundedIcon from '@mui/icons-material/CropSquareRounded'
@@ -52,6 +53,7 @@ import {
   createXDriveCloudStorageDataSource,
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
+  XDriveServiceDependenciesPage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -104,7 +106,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics'>
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-services'>
 
 type ConfirmDialogState = {
   title: string
@@ -868,7 +870,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if (view === 'global-tasks' && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-services') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -1365,6 +1367,14 @@ export default function App({
     </DesktopFrame>
   )
 
+  const adminServicesPort = useMemo(() => ({
+    load: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminServices()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+  }), [status?.server, status?.username])
+
   const desktopSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
@@ -1389,6 +1399,17 @@ export default function App({
         },
       ],
     },
+    ...(status?.role === 'admin'
+      ? [{
+          key: 'admin',
+          label: '管理',
+          ariaLabel: '管理员功能',
+          placement: 'after-core' as const,
+          items: [
+            { key: 'admin-services', label: '服务与依赖', icon: <DnsRoundedIcon fontSize="small" /> },
+          ],
+        }]
+      : []),
     {
       key: 'diagnostics',
       ariaLabel: '桌面版辅助功能',
@@ -2232,6 +2253,14 @@ export default function App({
 
         {view === 'cloud-storage' && (
           <XDriveCloudStoragePage source={cloudStorageSource} />
+        )}
+
+        {view === 'admin-services' && status?.role === 'admin' && (
+          agent.hello?.capabilities.includes('admin-services') ? (
+            <XDriveServiceDependenciesPage source={adminServicesPort} />
+          ) : (
+            <XDriveStatePanel message="当前 xdrive-agent 不支持服务状态查询，请更新客户端核心组件。" />
+          )
         )}
 
         {view === 'conflicts' && (
