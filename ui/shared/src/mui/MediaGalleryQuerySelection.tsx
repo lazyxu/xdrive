@@ -6,6 +6,7 @@ import {
 } from '@mui/material'
 import type {
   MediaSelectionSnapshot, MediaSelectionSnapshotItem, MediaSelectionSnapshotPage,
+  MediaSelectionJob, MediaSelectionJobFailurePage,
 } from '../models'
 import { xDriveMediaGalleryErrorMessage } from './MediaGalleryUtils'
 import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
@@ -19,12 +20,21 @@ export interface XDriveMediaGalleryQuerySelectionActions {
     token: string, nodeID: number, excluded: boolean, version: number,
   ) => Promise<MediaSelectionSnapshot>
   release: (token: string) => Promise<void>
+  submitFavorite?: (
+    token: string, version: number, favorite: boolean,
+  ) => Promise<MediaSelectionJob>
+  getJob?: (jobID: string) => Promise<MediaSelectionJob>
+  cancelJob?: (jobID: string) => Promise<void>
+  retryJob?: (jobID: string) => Promise<MediaSelectionJob>
+  failures?: (
+    jobID: string, offset: number, limit: number,
+  ) => Promise<MediaSelectionJobFailurePage>
 }
 
 /**
- * Query selections are owner-scoped, short-lived and read-only. Do not pass
- * their token to existing MediaItem[] batch actions: Phase 3 needs a durable
- * Task Center operation with fresh ACL/revision checks first.
+ * Query selections are owner-scoped and short-lived. Only explicit favorite
+ * operations may consume a snapshot into a durable server job; never pass
+ * the token to existing MediaItem[] mutation handlers.
  *
  * Parent keys this component by the active server collection scope, so a
  * changed filter, folder, account or sorting dimension releases its token.
@@ -48,10 +58,33 @@ export function XDriveMediaGalleryQuerySelection({
   const [excludedItems, setExcludedItems] = useState<MediaSelectionSnapshotItem[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [confirmFavorite, setConfirmFavorite] = useState<boolean | null>(null)
+  const [job, setJob] = useState<MediaSelectionJob | null>(null)
+  const [jobFailures, setJobFailures] = useState<MediaSelectionJobFailurePage | null>(null)
+  const [jobFailureOffset, setJobFailureOffset] = useState(0)
+
   const generation = useRef(0)
   const tokenRef = useRef('')
   const actionsRef = useRef(actions)
   actionsRef.current = actions
+
+  // A durable job keeps running when the UI closes or its token expires.
+  // Poll only the single active job; never poll or hydrate 100k items.
+  useEffect(() => {
+    if (!job || !actionsRef.current.getJob ||
+      ['completed', 'partial', 'cancelled'].includes(job.status)) return
+    let alive = true
+    const id = job.id
+    const refresh = () => {
+      void actionsRef.current.getJob?.(id).then((latest) => {
+        if (alive) setJob((current) => current?.id === id ? latest : current)
+      }).catch((reason) => {
+        if (alive) setError(xDriveMediaGalleryErrorMessage(reason))
+      })
+    }
+    const timer = setInterval(refresh, 1700)
+    return () => { alive = false; clearInterval(timer) }
+  }, [job?.id, job?.status])
 
   useEffect(() => () => {
     generation.current += 1
@@ -69,9 +102,84 @@ export function XDriveMediaGalleryQuerySelection({
     setPage(null)
     setOffset(0)
     setExcludedItems([])
+    setConfirmFavorite(null)
+    setJob(null)
+    setJobFailures(null)
+    setJobFailureOffset(0)
     setOpen(false)
     setError('')
     if (token) void actionsRef.current.release(token).catch(() => undefined)
+  }
+
+  const submitFavorite = async (favorite: boolean) => {
+    if (!actions.submitFavorite || !actions.getJob || busy || !snapshot ||
+      snapshot.selected <= 0 || job) return
+    const request = ++generation.current
+    setBusy(true)
+    setError('')
+    try {
+      // User confirmed the exact snapshot version and count in a separate dialog.
+      const queued = await actions.submitFavorite(snapshot.token, snapshot.version, favorite)
+      if (request !== generation.current) return
+      tokenRef.current = '' // server consumed it after durable commit
+      setJob(queued)
+      setSnapshot(null)
+      setPage(null)
+      setExcludedItems([])
+      setConfirmFavorite(null)
+    } catch (reason) {
+      if (request === generation.current) setError(xDriveMediaGalleryErrorMessage(reason))
+    } finally {
+      if (request === generation.current) setBusy(false)
+    }
+  }
+
+  const cancelJob = async () => {
+    if (!job || busy || !actions.cancelJob ||
+      !['queued', 'running'].includes(job.status)) return
+    setBusy(true)
+    setError('')
+    try {
+      await actions.cancelJob(job.id)
+      setJob((current) => current?.id === job.id
+        ? { ...current, status: 'cancel_requested' } : current)
+    } catch (reason) {
+      setError(xDriveMediaGalleryErrorMessage(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const retryJob = async () => {
+    if (!job || busy || !actions.retryJob ||
+      !['partial', 'cancelled'].includes(job.status)) return
+    setBusy(true)
+    setError('')
+    try {
+      const resumed = await actions.retryJob(job.id)
+      setJob(resumed)
+      setJobFailures(null)
+      setJobFailureOffset(0)
+    } catch (reason) {
+      setError(xDriveMediaGalleryErrorMessage(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const loadJobFailures = async (nextOffset: number) => {
+    if (!job || busy || !actions.failures) return
+    setBusy(true)
+    setError('')
+    try {
+      const result = await actions.failures(job.id, nextOffset, pageSize)
+      setJobFailures(result)
+      setJobFailureOffset(nextOffset)
+    } catch (reason) {
+      setError(xDriveMediaGalleryErrorMessage(reason))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const create = async (selectedDay: string) => {
@@ -87,6 +195,8 @@ export function XDriveMediaGalleryQuerySelection({
       }
       tokenRef.current = created.token
       setSnapshot(created)
+      setJob(null)
+      setJobFailures(null)
       setPage(null)
       setOffset(0)
       setExcludedItems([])
@@ -105,7 +215,7 @@ export function XDriveMediaGalleryQuerySelection({
   }
 
   const readPage = async (nextOffset: number) => {
-    if (busy || !snapshot) return
+    if (busy || !snapshot || job) return
     const request = ++generation.current
     setBusy(true)
     setError('')
@@ -124,7 +234,7 @@ export function XDriveMediaGalleryQuerySelection({
   }
 
   const changeExclusion = async (item: MediaSelectionSnapshotItem, excluded: boolean) => {
-    if (busy || !snapshot) return
+    if (busy || !snapshot || job) return
     const request = ++generation.current
     setBusy(true)
     setError('')
@@ -212,15 +322,84 @@ export function XDriveMediaGalleryQuerySelection({
             {(snapshot?.day ? '日期 ' + snapshot.day + ' · ' : '全部查询结果 · ') +
               (sortBy === 'captured' ? '拍摄日期' : '加入日期') + ' · ' + timeZone}
           </Typography>
-          <Typography variant="caption" color="warning.main" sx={{ display: 'block' }}>
-            临时选择有效期 15 分钟，且仅包含已识别媒体。当前支持核对和排除；
-            尚不支持从查询选择直接删除、下载或修改文件。
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            {job
+              ? '已创建持久化收藏任务。关闭面板不取消任务，可在媒体任务记录查看结果。'
+              : '选择会在 15 分钟后过期；仅包含已识别媒体，操作前会重新核对权限与文件版本。'}
           </Typography>
+          {!job && actions.submitFavorite && actions.getJob && snapshot && snapshot.selected > 0 ? (
+            <Stack direction="row" spacing={1} sx={{ mt: 1 }} useFlexGap flexWrap="wrap">
+              <Button size="small" variant="contained" disabled={busy}
+                data-xdrive-gallery-submit-favorite
+                onClick={() => setConfirmFavorite(true)}>批量收藏已选</Button>
+              <Button size="small" variant="outlined" disabled={busy}
+                data-xdrive-gallery-submit-unfavorite
+                onClick={() => setConfirmFavorite(false)}>批量取消收藏</Button>
+            </Stack>
+          ) : null}
+          {job ? (
+            <Stack spacing={0.5} data-xdrive-gallery-durable-job sx={{ mt: 1 }}>
+              <Typography variant="body2" role="status">
+                {job.favorite ? '批量收藏' : '批量取消收藏'} ·
+                {job.status === 'queued' ? '等待处理' :
+                  job.status === 'running' ? '正在处理' :
+                  job.status === 'cancel_requested' ? '正在取消' :
+                  job.status === 'completed' ? '已完成' :
+                  job.status === 'partial' ? '部分成功' : '已取消'}
+              </Typography>
+              <Typography variant="caption">
+                已处理 {job.processed_items.toLocaleString('zh-CN')} /
+                {job.total_items.toLocaleString('zh-CN')} · 成功
+                {job.succeeded_items.toLocaleString('zh-CN')} · 失败
+                {job.failed_items.toLocaleString('zh-CN')} · 取消
+                {job.cancelled_items.toLocaleString('zh-CN')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                任务 ID：{job.id}
+              </Typography>
+              <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                {['queued', 'running'].includes(job.status) && actions.cancelJob ? (
+                  <Button size="small" color="error" disabled={busy}
+                    onClick={() => { void cancelJob() }}>取消任务</Button>
+                ) : null}
+                {['partial', 'cancelled'].includes(job.status) && actions.retryJob ? (
+                  <Button size="small" disabled={busy}
+                    onClick={() => { void retryJob() }}>重试未成功项</Button>
+                ) : null}
+                {job.failed_items > 0 && actions.failures ? (
+                  <Button size="small" disabled={busy}
+                    onClick={() => { void loadJobFailures(0) }}>查看失败详情</Button>
+                ) : null}
+              </Stack>
+            </Stack>
+          ) : null}
           {error ? <Typography color="error" role="alert">{error}</Typography> : null}
         </Box>
         <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain',
           px: 1.5, py: 0.5 }}>
-          {page?.items.map((item) => (
+          {jobFailures ? (
+            <Box data-xdrive-gallery-job-failures sx={{ py: 1 }}>
+              <Typography variant="subtitle2">
+                失败详情：{jobFailures.total.toLocaleString('zh-CN')} 项
+              </Typography>
+              {jobFailures.items.map((item) => (
+                <Typography key={item.node_id} variant="body2" sx={{ py: 0.5 }}>
+                  文件 #{item.node_id} · 版本 {item.revision} · {item.failure_code}
+                </Typography>
+              ))}
+              <Stack direction="row" justifyContent="space-between" sx={{ mt: 1 }}>
+                <Button disabled={busy || jobFailureOffset === 0}
+                  onClick={() => { void loadJobFailures(Math.max(0, jobFailureOffset-pageSize)) }}>
+                  上一页失败项
+                </Button>
+                <Button disabled={busy || !jobFailures.has_more}
+                  onClick={() => { void loadJobFailures(jobFailureOffset+pageSize) }}>
+                  下一页失败项
+                </Button>
+              </Stack>
+            </Box>
+          ) : null}
+          {!job && page?.items.map((item) => (
             <Stack key={item.node_id} direction="row" spacing={1}
               alignItems="center" data-xdrive-gallery-snapshot-row={item.node_id}
               sx={{ minHeight: 48, borderBottom: 1, borderColor: 'divider', py: 0.5 }}>
@@ -240,7 +419,7 @@ export function XDriveMediaGalleryQuerySelection({
           {page && page.items.length === 0 ? (
             <Typography variant="body2" sx={{ p: 2 }} color="text.secondary">此页没有已选媒体</Typography>
           ) : null}
-          {excludedItems.length > 0 ? (
+          {!job && excludedItems.length > 0 ? (
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle2">本次审核中排除的项目</Typography>
               {excludedItems.map((item) => (
@@ -256,7 +435,7 @@ export function XDriveMediaGalleryQuerySelection({
             </Box>
           ) : null}
         </Box>
-        <Stack direction="row" alignItems="center" spacing={1}
+        {!job ? <Stack direction="row" alignItems="center" spacing={1}
           sx={{ borderTop: 1, borderColor: 'divider', px: 1.5, py: 1 }}>
           <Button size="small" disabled={busy || offset === 0}
             onClick={() => { void readPage(Math.max(0, offset - pageSize)) }}>上一页</Button>
@@ -266,11 +445,35 @@ export function XDriveMediaGalleryQuerySelection({
           </Typography>
           <Button size="small" disabled={busy || !page?.has_more}
             onClick={() => { void readPage(offset + pageSize) }}>下一页</Button>
-        </Stack>
+        </Stack> : null}
         <DialogActions sx={{ pb: compact
           ? 'max(8px, env(safe-area-inset-bottom, 0px))' : 1.5 }}>
-          <Button variant="outlined" disabled={busy} onClick={() => { void readPage(offset) }}>刷新本页</Button>
+          {!job ? <Button variant="outlined" disabled={busy} onClick={() => { void readPage(offset) }}>刷新本页</Button> : null}
           <Button variant="contained" disabled={busy} onClick={close}>完成审核</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmFavorite !== null} maxWidth="xs" fullWidth
+        onClose={busy ? undefined : () => setConfirmFavorite(null)}
+        aria-label="确认媒体批量收藏任务">
+        <Box sx={{ p: 2 }}>
+          <Typography variant="subtitle1" fontWeight={700}>确认提交批量任务？</Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            将对 {snapshot?.selected.toLocaleString('zh-CN') ?? 0} 个已选媒体
+            {confirmFavorite ? '设置收藏' : '取消收藏'}。
+            提交后在服务端持久化执行，逐项检查权限及文件版本。
+            已变更的文件会记录为失败，不会跳过检查强制修改。
+          </Typography>
+        </Box>
+        <DialogActions>
+          <Button disabled={busy} onClick={() => setConfirmFavorite(null)}>返回审核</Button>
+          <Button variant="contained" disabled={busy || !snapshot || snapshot.selected === 0}
+            data-xdrive-gallery-confirm-durable-favorite
+            onClick={() => {
+              if (confirmFavorite !== null) void submitFavorite(confirmFavorite)
+            }}>
+            {busy ? '提交中…' : '确认提交'}
+          </Button>
         </DialogActions>
       </Dialog>
     </>

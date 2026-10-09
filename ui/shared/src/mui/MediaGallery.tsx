@@ -63,6 +63,8 @@ import type {
   MediaItemRange,
   MediaSelectionSnapshot,
   MediaSelectionSnapshotPage,
+  MediaSelectionJob,
+  MediaSelectionJobFailurePage,
   MediaMemory,
   MediaPetFacet,
   MediaPersonSuggestionReview,
@@ -206,6 +208,16 @@ export interface MediaGalleryDataSource {
     token: string, nodeID: number, excluded: boolean, version: number,
   ) => Promise<MediaSelectionSnapshot>
   deleteSelectionSnapshot?: (token: string) => Promise<void>
+  submitSelectionFavoriteJob?: (
+    token: string, version: number, favorite: boolean,
+  ) => Promise<MediaSelectionJob>
+  getSelectionJob?: (jobID: string) => Promise<MediaSelectionJob>
+  listSelectionJobs?: () => Promise<MediaSelectionJob[]>
+  cancelSelectionJob?: (jobID: string) => Promise<void>
+  retrySelectionJob?: (jobID: string) => Promise<MediaSelectionJob>
+  getSelectionJobFailures?: (
+    jobID: string, offset: number, limit: number,
+  ) => Promise<MediaSelectionJobFailurePage>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<MediaDuplicateOrganizePlan>
   applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<MediaDuplicateOrganizeApplyResult>
@@ -2214,6 +2226,11 @@ export function XDriveMediaGalleryPage({
           page: source.getSelectionSnapshot,
           exclude: source.setSelectionExcluded,
           release: source.deleteSelectionSnapshot,
+          submitFavorite: source.submitSelectionFavoriteJob,
+          getJob: source.getSelectionJob,
+          cancelJob: source.cancelSelectionJob,
+          retryJob: source.retrySelectionJob,
+          failures: source.getSelectionJobFailures,
         } : undefined}
         draftPending={draftPending}
         searchOrder={searchOrder}

@@ -1452,3 +1452,15 @@ cancelled immutable revisions. Revision mismatches never auto-rebase. A
 partial result remains **partial**, not complete. These server endpoints do
 not enable all-query delete/download/album/tag until matching Task Center
 UI, cancellation and 10k/100k verification land. No physical device claim.
+
+### G07 Phase 3b — Web favorite job submission and inspection (candidate)
+
+The shared Gallery snapshot inspector now supports an explicit separate
+confirmation before submitting `favorite` / `unfavorite`, using its exact
+frozen token and optimistic version. It never calls legacy client
+`MediaItem[]` batch mutations for query-wide selection. The consumed token
+is not released twice. Inline progress polls only the one job ID; users can
+cancel, retry frozen failed/unprocessed items, and page failure codes without
+loading 100k MediaItems. Closing the view does not cancel a durable job.
+A persistent Task Center listing and Desktop Agent job protocol are further
+delivery stages; this branch alone does not claim those capabilities.

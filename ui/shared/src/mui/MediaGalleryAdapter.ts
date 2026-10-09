@@ -5,6 +5,8 @@ import type {
   MediaGalleryIndexStatus,
   MediaSelectionSnapshot,
   MediaSelectionSnapshotPage,
+  MediaSelectionJob,
+  MediaSelectionJobFailurePage,
   NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaDuplicateOrganizeApplyInput,
@@ -92,6 +94,16 @@ export interface XDriveMediaGalleryPort {
     token: string, nodeID: number, excluded: boolean, version: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionSnapshot>>
   deleteSelectionSnapshot?: (token: string) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  submitSelectionFavoriteJob?: (
+    token: string, version: number, favorite: boolean,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionJob>>
+  getSelectionJob?: (jobID: string) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionJob>>
+  listSelectionJobs?: () => Promise<XDriveMediaGalleryTransportResult<MediaSelectionJob[]>>
+  cancelSelectionJob?: (jobID: string) => Promise<XDriveMediaGalleryTransportResult<unknown>>
+  retrySelectionJob?: (jobID: string) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionJob>>
+  getSelectionJobFailures?: (
+    jobID: string, offset: number, limit: number,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaSelectionJobFailurePage>>
   getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<NodeLocation>>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizePlan>>
   applyDuplicateOrganize?: (input: MediaDuplicateOrganizeApplyInput) => Promise<XDriveMediaGalleryTransportResult<MediaDuplicateOrganizeApplyResult>>
@@ -426,6 +438,28 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     deleteSelectionSnapshot: port.deleteSelectionSnapshot
       ? async (token) => { await resolveXDriveTransport(port.deleteSelectionSnapshot!(token)) }
+      : undefined,
+    submitSelectionFavoriteJob: port.submitSelectionFavoriteJob
+      ? (token, version, favorite) => resolveXDriveTransport(
+          port.submitSelectionFavoriteJob!(token, version, favorite),
+        )
+      : undefined,
+    getSelectionJob: port.getSelectionJob
+      ? (jobID) => resolveXDriveTransport(port.getSelectionJob!(jobID))
+      : undefined,
+    listSelectionJobs: port.listSelectionJobs
+      ? () => resolveXDriveTransport(port.listSelectionJobs!())
+      : undefined,
+    cancelSelectionJob: port.cancelSelectionJob
+      ? async (jobID) => { await resolveXDriveTransport(port.cancelSelectionJob!(jobID)) }
+      : undefined,
+    retrySelectionJob: port.retrySelectionJob
+      ? (jobID) => resolveXDriveTransport(port.retrySelectionJob!(jobID))
+      : undefined,
+    getSelectionJobFailures: port.getSelectionJobFailures
+      ? (jobID, offset, limit) => resolveXDriveTransport(
+          port.getSelectionJobFailures!(jobID, offset, limit),
+        )
       : undefined,
     getNodeLocation: port.getNodeLocation
       ? (nodeID, signal) => resolveXDriveTransport(port.getNodeLocation!(nodeID, signal))
