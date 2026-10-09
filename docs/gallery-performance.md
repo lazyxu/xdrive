@@ -4,6 +4,38 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## P0 100k verified Gallery duplicate-fold stage attribution (2026-10-10)
+
+**Status: Measured native 100k SQL stage baseline / no production optimization.** Actual 100k Web browser #1178 independently reproduced real warm fold-ON first-12 paint proxy **2,949.35ms / 3,177.45ms** in two exact-source CI runs (3/6 and 4/6 individual ON transitions breached provisional **3,000ms**). Fold-OFF warm p50 was **1,623.85 / 1,647.15ms**. Existing #1140 native SQL improved fold-ON first-range 2,772.366→1,480.912ms but the real UI path remains at risk.
+
+Reuse exactly the #1178 test fixture: native PostgreSQL 17, 100k logical PhotoAssets, 115k physical nodes, 15k genuine Live Photo pairs and 2,000 five-member equal-*metadata*-SHA groups; folded total **92,000**. Offscreen SHA equality is synthetic test metadata, not independently byte-verified real files.
+
+Measure three successful full production `queryMediaItemRange` calls each with fold-ON and fold-OFF, alternating order on sample 2. Then profile each production function sequentially on the same fixture: verified complete-resource/recipe fold-index build, base query setup, authoritative distinct count, timeline group sets and first-100 materialization. Record exact elapsed ms and Go `TotalAlloc` deltas, result counts, timeline validity and all errors. Split stage totals are not literal browser timings or a replacement for separate complete requests. No fake CPU attribution or product caching.
+
+The strict correctness gate is 100k OFF, 92k ON, 100 first-page rows, 10k fold-index entries and valid timeline. Branch-scoped GitHub/GitLab native job `gallery-fold-stage-profile-100k-performance` executes `TestGalleryFoldStagesPerformance100K` with `XD_GALLERY_FOLD_STAGE_PERF=1` and `XD_TEST_DATABASE_URL` set. Archive exact n=3 raw JSON under `docs/performance-evidence/gallery-fold-stage-profile-100k/` and update this canonical document as part of the **same one work commit** before final CI. Timing breaches are diagnostics; incorrect results fail.
+
+**Optimization policy:** investigate the actual dominant stage first. Keep a later minimal candidate only if matched same-run BEFORE/AFTER n≥3 demonstrates >=30% and >=100ms improvement to the targeted operation without visible-count/album/Live/resource-equivalence regressions, OFF slowdown or Go allocation/ctx-cancellation/CPU regressions. Do not touch race, Web/Desktop UI, editing, metadata, storage or durable task semantics in this measurement PR.
+
+### Native 100k exact-PR source evidence: 2026-10-09
+
+**Status: Measured baseline / no production optimization.** GitHub Actions [run 37958484392](https://github.com/lazyxu/xdrive/actions/runs/37958484392), [benchmark job 113915577958](https://github.com/lazyxu/xdrive/actions/runs/37958484392/job/113915577958) succeeded for **all three** native PostgreSQL 17 production-query and stage samples at frozen source commit `a006c1a7ab9404e796ba8e906d939e7cafd62ada`. Real fixture remains 100,000 logical / 115,000 physical / 15,000 genuine Live, 2,000 synthetic-digest five-member groups = 10,000 fully resolved fold-index nodes and **92,000** visible logical assets. Every range returned exactly 100 first-page items and 3,650 daily timeline groups. Fixture seed **39566.581 ms** excluded.
+
+Full production `queryMediaItemRange` fold-ON samples **1562.808 / 1619.698 / 1572.629 ms**, **p50 1572.629 ms**. Full fold-OFF samples **632.932 / 645.375 / 635.782 ms**, **p50 635.782 ms**. Calls alternated OFF→ON, ON→OFF, OFF→ON to reduce fixed ordering bias.
+
+| Production query stage | n=3 raw elapsed ms | p50 ms | Go TotalAlloc p50 |
+| --- | --- | ---: | ---: |
+| `verified_full_resource_index` | 602.400 / 588.936 / 585.565 | **588.936** | 78.281 MiB |
+| `build_filtered_ranked_sql` | 0.064 / 0.039 / 0.044 | **0.044** | 0.011 MiB |
+| `authoritative_distinct_count` | 246.856 / 217.689 / 231.411 | **231.411** | 2.252 MiB |
+| `full_timeline_group_sets` | 434.846 / 386.958 / 408.233 | **408.233** | 3.469 MiB |
+| `first_100_materialize` | 336.135 / 323.161 / 322.027 | **323.161** | 4.104 MiB |
+
+Standalone index verification/index allocation is the largest single stage: **588.936 ms** (~37.449% of full ON request p50, only as a rough attribution) and **78.281 MiB TotalAlloc**. Timeline set computation is next at **408.233 ms**, Count **231.411 ms**, first-100 materialization **323.161 ms**. These are **separate measurements**, not one exact shared wall-clock profile; do not sum their medians and call it an HTTP request. `TotalAlloc` captures Go allocation deltas, not peak RSS or GPU heap.
+
+Three separate split-stage total elapsed samples: **1620.301 / 1516.783 / 1547.280 ms**, excluding initial production ON/OFF reads. Raw unrounded `Go` timings, allocations, counts and SHA/run provenance: [ci-run-37958484392.json](performance-evidence/gallery-fold-stage-profile-100k/ci-run-37958484392.json). The distinct #1178 actual Chromium warm ON p50s ~2,949 / 3,177 ms continue to show a UI response risk but are **not** paired against these Go-only numbers.
+
+**Decision:** preserve production media-folding SQL, cache/recipe/resource semantics and UI unchanged in this profiler PR. The first test code revision was rejected at Go format gate with **no** performance data; after formatting, the same scoped fixture passed 3/3. Next, run a separate same-fixture **BEFORE/AFTER** test isolating only full-equivalence index allocations/read path and maintaining exact 10k members and 92k folded count. Retain candidate only for predeclared ≥30% and ≥100ms benefit without material changes to other stages, OFF latency, requests, cancellation or memory. Repeated warm UI timings may require further staged browser profiling; do not infer directly from Go allocations that UI is blocked on GC.
+
 ## P0 100k verified duplicate-fold ON/OFF actual Web browser (2026-10-09)
 
 **Status: Measured baseline / production unchanged / evidence-amended PR CI pending (#1178).** Three fresh native PostgreSQL 17 schemas each contained **100,000 logical PhotoAssets, 115,000 physical media Nodes, 15,000 paired Live Photos**, 2,000 identical-*metadata* five-copy groups (10,000 copied assets). The ON query returned **92,000** logical cards; OFF returned **100,000**. First visible items were real decodable CAS JPEGs; offscreen synthetic SHA identities were not verified by original-byte comparisons.
