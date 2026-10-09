@@ -2,6 +2,8 @@
 
 ## Direction and scope
 
+**Mobile Gallery iOS 27 high-fidelity contract (2026-10-10):** The user approved iOS 27 Photos as the 1:1 visual and interaction target for the **Gallery-local** Mobile Web presentation; see [the normative Gallery contract](mobile-gallery-ios27.md). This supersedes the old Gallery category-drawer / four-scale bottom navigation as a final target, **not** the 52px App Frame header, unique app-switcher, shared backend/controller, Web/Desktop separation or existing media semantics. Native pixel/gesture acceptance is pending; treat previous iOS-inspired Gallery chrome as shipped groundwork, not 1:1 completion.
+
 - G04 nested Gallery album-folder navigation uses the shared compact MUI
   organizer with easy-to-tap folder rows, breadcrumbs and focused create/move
   dialogs. The Server-backed album folders are different from synchronization
