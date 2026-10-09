@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MediaGalleryDataSource } from '@xdrive/ui/mui'
 import { XDriveMediaGalleryPage } from '@xdrive/ui/mui'
+import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
+
+const progressMode = new URLSearchParams(window.location.search).get('xdriveMediaProgress') === 'on' ? 'on' : 'off'
 
 type RealColdConfig = {
   token: string
@@ -29,6 +32,12 @@ type RealColdMetrics = {
   thumbnailSuccess: number
   thumbnailErrors: number
   thumbnailResponseBytes: number
+  progressMode: 'on' | 'off'
+  thumbnailProgressRequests: number
+  thumbnailProgressEvents: number
+  thumbnailProgressCompleted: number
+  thumbnailProgressReportedBytes: number
+  thumbnailProgressErrors: number
   usedJSHeapSize: number | null
   longTaskCount: number
   longestLongTaskMs: number
@@ -63,6 +72,11 @@ export function XDriveGalleryRealColdPerformanceHarness() {
     success: 0,
     errors: 0,
     bytes: 0,
+    progressRequests: 0,
+    progressEvents: 0,
+    progressCompleted: 0,
+    progressReportedBytes: 0,
+    progressErrors: 0,
   })
   const finished = useRef(false)
   const longTasks = useRef<number[]>([])
@@ -102,7 +116,10 @@ export function XDriveGalleryRealColdPerformanceHarness() {
       listAlbums: async () => [],
       listAlbumItems: async (_album, limit, offset, query) => (await getRange(limit, offset, query)).items,
       listAlbumItemRange: async (_album, limit, offset, query) => getRange(limit, offset, query),
-      loadThumbnail: async (nodeID, signal) => {
+      // Source-exact paired A/B: the same production helper gets a visible
+      // subscriber in ON mode; OFF uses its native Response.blob() fast path.
+      // Both modes mount the same real 100k Gallery and fetch Gin/CAS bytes.
+      loadThumbnail: async (nodeID, signal, _revision, onProgress) => {
         if (!Number.isFinite(markers.current.thumbRequest)) markers.current.thumbRequest = elapsed()
         markers.current.requests++
         try {
@@ -113,7 +130,32 @@ export function XDriveGalleryRealColdPerformanceHarness() {
             markers.current.errors++
             return null
           }
-          const blob = await response.blob()
+          let lastProgressBytes = 0
+          let progressEvents = 0
+          const observe = progressMode === 'on' && onProgress
+          if (observe) markers.current.progressRequests++
+          const blob = await xDriveMediaResponseBlob(response, signal, observe
+            ? (loadedBytes, totalBytes) => {
+              if (signal?.aborted) return
+              if (!Number.isSafeInteger(loadedBytes) || loadedBytes < lastProgressBytes ||
+                (totalBytes !== undefined && loadedBytes > totalBytes)) {
+                markers.current.progressErrors++
+                return
+              }
+              lastProgressBytes = loadedBytes
+              progressEvents++
+              markers.current.progressEvents++
+              onProgress(loadedBytes, totalBytes)
+            }
+            : undefined)
+          if (observe) {
+            if (progressEvents === 0 || lastProgressBytes !== blob.size) {
+              markers.current.progressErrors++
+            } else {
+              markers.current.progressCompleted++
+              markers.current.progressReportedBytes += lastProgressBytes
+            }
+          }
           markers.current.success++
           markers.current.bytes += blob.size
           if (!Number.isFinite(markers.current.thumbResponse)) markers.current.thumbResponse = elapsed()
@@ -190,6 +232,12 @@ export function XDriveGalleryRealColdPerformanceHarness() {
             thumbnailSuccess: markers.current.success,
             thumbnailErrors: markers.current.errors,
             thumbnailResponseBytes: markers.current.bytes,
+            progressMode,
+            thumbnailProgressRequests: markers.current.progressRequests,
+            thumbnailProgressEvents: markers.current.progressEvents,
+            thumbnailProgressCompleted: markers.current.progressCompleted,
+            thumbnailProgressReportedBytes: markers.current.progressReportedBytes,
+            thumbnailProgressErrors: markers.current.progressErrors,
             usedJSHeapSize: (performance as Performance & {
               memory?: { usedJSHeapSize?: number }
             }).memory?.usedJSHeapSize ?? null,
@@ -197,9 +245,16 @@ export function XDriveGalleryRealColdPerformanceHarness() {
             longestLongTaskMs: Math.max(0, ...longTasks.current),
             provisionalFirstPaintUnder2s: performance.now() - elapsed() + firstPaint < 2000,
             first12IsFullViewport: false,
-            note: 'Real authenticated Gin/PostgreSQL media range and Local CAS JPEG decode. Fresh browser context; excludes Electron Agent IPC. First12 means first 12 successfully decoded visible image elements, not every tile.',
+            note: 'Real authenticated Gin/PostgreSQL/CAS media and decoded photo. Same production response-blob helper with optional progress ON/OFF; fresh browser context, independent seeded fixture per sample/mode. No Desktop Agent IPC. First12 is 12 decoded elements, not entire viewport.',
           }
-          if (metrics.logicalItems !== 100000 || metrics.mountedTiles >= 1000) {
+          if (metrics.logicalItems !== 100000 || metrics.mountedTiles >= 1000 ||
+            metrics.thumbnailProgressErrors !== 0 ||
+            (progressMode === 'on' && (
+              metrics.thumbnailProgressRequests < 1 || metrics.thumbnailProgressEvents < 1 ||
+              metrics.thumbnailProgressCompleted < 1 || metrics.thumbnailProgressReportedBytes <= 0)) ||
+            (progressMode === 'off' && (
+              metrics.thumbnailProgressRequests !== 0 || metrics.thumbnailProgressEvents !== 0 ||
+              metrics.thumbnailProgressCompleted !== 0 || metrics.thumbnailProgressReportedBytes !== 0))) {
             throw new Error('100k sparse viewport contract failed: ' + JSON.stringify(metrics))
           }
           finished.current = true
