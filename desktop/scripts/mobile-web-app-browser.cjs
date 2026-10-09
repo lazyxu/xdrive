@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, or mobile-panels.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, or gallery-selection.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -38,9 +38,17 @@ const filesTouchDragScenario = options.scenario === 'files-touch-drag';
 if (filesTouchDragScenario) rootChildren.push(makeNode(3, '触控目标甲', 1, 'dir'), makeNode(4, '触控目标乙', 1, 'dir'));
 const touchFixture = { quickOrder: [2, 3, 4], savedOrder: [17, 18, 19], quickWrites: [], savedWrites: [] };
 const mobilePanelsScenario = options.scenario === 'mobile-panels';
+const gallerySelectionScenario = options.scenario === 'gallery-selection';
+const gallerySelectionFixture = {
+  albums: [...Array.from({ length: 24 }, (_, index) => ({
+    id: `qa-album-${index + 1}`, name: index === 0 ? '验收家庭相册' : `验收相册 ${String(index + 1).padStart(2, '0')} 长名称仍应完整可读`,
+    kind: 'manual', revision: index + 7, item_count: index + 2, created_at: stamp, updated_at: stamp,
+  })), { id: 'qa-smart-album', name: '验收智能相册', kind: 'smart', revision: 4, item_count: 12, query: { favorite: true }, created_at: stamp, updated_at: stamp }],
+  attempts: [], accepted: [], rejectNext: true,
+};
 let operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
 const organizationFixture = { tags: [], savedSearches: [], tagCreates: [], savedCreates: [], assignments: [], tagQueries: [], assignedNodeIDs: new Set(), rejectTagRead: true };
-const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : filesOrganizationScenario ? 24 : 240 }, (_, index) => ({
+const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : (filesOrganizationScenario || gallerySelectionScenario) ? 24 : 240 }, (_, index) => ({
   node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario || filesOrganizationScenario ? 2 : 1),
   metadata: { media_kind: 'image', mime_type: 'image/png', width: 80, height: 80, captured_at: stamp,
     index_state: 'ready', has_thumbnail: true, thumbnail_mime_type: 'image/png', thumbnail_width: 80, thumbnail_height: 80 },
@@ -269,7 +277,7 @@ function fixtureFor(request, role) {
       queryOnly(url, mobilePanelsScenario ? ['tag'] : []);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       return { cameras: [], formats: [{ value: 'png', label: 'PNG', item_count: mediaItems.length }] };
-    case 'GET /api/v1/media/albums': return plain([]);
+    case 'GET /api/v1/media/albums': return plain(gallerySelectionScenario ? gallerySelectionFixture.albums : []);
     case 'GET /api/v1/media/pets': return plain([]);
     case 'GET /api/v1/media/places':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 24, 1000); return [];
@@ -278,6 +286,23 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/media/people/identities':
       queryOnly(url, ['include_hidden', 'offset', 'limit']); assert.equal(url.searchParams.get('include_hidden'), 'true');
       integerQuery(url, 'offset', 0, 0); integerQuery(url, 'limit', 100, 100); return [];
+  }
+  if (gallerySelectionScenario && key === 'POST /api/v1/media/albums/qa-album-24/items') {
+    queryOnly(url, []);
+    const album = gallerySelectionFixture.albums.find((item) => item.id === 'qa-album-24');
+    const body = jsonBody(request);
+    assert.deepEqual(Object.keys(body), ['node_ids']);
+    assert.deepEqual(body.node_ids, [1000, 1001, 1002]);
+    assert.equal(request.headers()['if-match'], `"${album.revision}"`);
+    const attempt = { albumID: album.id, node_ids: body.node_ids, ifMatch: request.headers()['if-match'], status: gallerySelectionFixture.rejectNext ? 403 : 200 };
+    gallerySelectionFixture.attempts.push(attempt);
+    if (gallerySelectionFixture.rejectNext) {
+      gallerySelectionFixture.rejectNext = false;
+      return { __fixtureStatus: 403, __fixturePurpose: 'one actual album assignment is refused before explicit retry', __fixtureBody: { error: '验收：相册暂时不可写，请重试。' } };
+    }
+    gallerySelectionFixture.accepted.push(attempt);
+    Object.assign(album, { revision: album.revision + 1, item_count: album.item_count + body.node_ids.length });
+    return album;
   }
   let match = /^GET \/api\/v1\/nodes\/(1|2)\/children$/.exec(key);
   if (match) {
@@ -364,7 +389,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario)) {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -429,7 +454,7 @@ async function loadFiles(context, origin, role) {
   page.on('console', (message) => {
     if (message.type() !== 'error') return;
     const entry = { role, stage: activeStage, message: message.text(), url: message.location().url };
-    if (expectedConsoleURLs.has(entry.url) && /Failed to load resource:.*(?:404|409|503)/.test(entry.message)) result.expectedConsoleErrors.push(entry);
+    if (expectedConsoleURLs.has(entry.url) && /Failed to load resource:.*(?:403|404|409|503)/.test(entry.message)) result.expectedConsoleErrors.push(entry);
     else result.consoleErrors.push(entry);
   });
   await page.goto(`${origin}/#/app/files`, { waitUntil: 'domcontentloaded' });
@@ -1179,6 +1204,130 @@ async function searchReturnAcceptance() {
 }
 
 
+async function gallerySelectionAcceptance() {
+  activeStage = 'user-gallery-selection';
+  page.setDefaultTimeout(5000);
+  await navigateWorkspace('图库', 'gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  const galleryURL = page.url();
+  await geometry('user-gallery-selection-initial');
+  await page.evaluate(() => { window.__m12GalleryCaller = { main: document.querySelector('main'), header: document.querySelector('[data-xdrive-gallery-header]') }; });
+  const galleryToolbar = page.locator('[data-xdrive-gallery-toolbar]');
+  await galleryToolbar.getByRole('button', { name: '选择', exact: true }).tap();
+  for (const index of [0, 1, 2]) {
+    const tile = page.locator(`[data-xdrive-media-tile][data-xdrive-media-index="${index}"]`);
+    await tile.getByRole('checkbox').tap();
+  }
+  const selection = page.locator('[data-xdrive-gallery-selection-toolbar]');
+  const count = async () => (await selection.getByRole('status', { includeHidden: true }).textContent()).replace(/\s/g, '');
+  check('Gallery native three-tile selection shows its real count', await count() === '已选择3项', await count());
+  check('Gallery selection keeps the real caller mounted and does not open Viewer', await page.evaluate(() => {
+    const caller = window.__m12GalleryCaller;
+    return caller.main === document.querySelector('main') && caller.header === document.querySelector('[data-xdrive-gallery-header]') && !location.hash.includes('media-viewer');
+  }));
+  const selectedIndexes = () => page.locator('[data-xdrive-media-tile] input:checked').evaluateAll(inputs => inputs.map(input => Number(input.closest('[data-xdrive-media-tile]').dataset.xdriveMediaIndex)).sort((a,b) => a-b));
+  check('Gallery selection uses the observed first three media rows', JSON.stringify(await selectedIndexes()) === '[0,1,2]', await selectedIndexes());
+  const join = selection.getByRole('button', { name: '加入相册', exact: true });
+  const picker = page.getByRole('dialog', { name: '选择手动相册', exact: true });
+  const search = picker.getByRole('textbox', { name: '搜索相册', exact: true });
+  const lastAlbum = picker.getByRole('button', { name: /^验收相册 24 / });
+  const finishTransition = async () => {
+    await settle();
+    await page.evaluate(() => Promise.all(document.getAnimations().filter(animation => animation.playState === 'running' && animation.effect?.getComputedTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))));
+  };
+  const focus = () => page.evaluate(() => {
+    const active = document.activeElement;
+    return { tag: active?.tagName, role: active?.getAttribute('role'), name: active?.getAttribute('aria-label') || active?.textContent?.trim().slice(0,80),
+      connected: Boolean(active?.isConnected), insideMain: Boolean(document.querySelector('main')?.contains(active)) };
+  });
+  const rect = locator => locator.evaluate(element => {
+    const r = element.getBoundingClientRect();
+    let left = Math.max(0,r.left), right = Math.min(innerWidth,r.right), top = Math.max(0,r.top), bottom = Math.min(innerHeight,r.bottom);
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const css = getComputedStyle(parent), p = parent.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(css.overflowX)) { left = Math.max(left,p.left); right = Math.min(right,p.right); }
+      if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { top = Math.max(top,p.top); bottom = Math.min(bottom,p.bottom); }
+    }
+    const visibleWidth = Math.max(0,right-left), visibleHeight = Math.max(0,bottom-top);
+    const hit = visibleWidth && visibleHeight ? document.elementFromPoint((left+right)/2,(top+bottom)/2) : null;
+    return { ...r.toJSON(), visibleWidth, visibleHeight, hit: Boolean(hit && element.contains(hit)) };
+  });
+  const target44 = r => r.visibleWidth >= 43.9 && r.visibleHeight >= 43.9 && r.hit;
+  await join.tap(); await picker.waitFor(); await finishTransition();
+  check('Gallery album picker uses the real manual-only catalog', await picker.locator('[data-xdrive-gallery-album-picker]').getByRole('button').count() === 24 && await picker.getByText('验收智能相册', { exact: true }).count() === 0);
+  await search.fill('验收相册 24');
+  check('Gallery album search narrows the actual catalog without submitting', await picker.locator('[data-xdrive-gallery-album-picker]').getByRole('button').count() === 1 && gallerySelectionFixture.attempts.length === 0);
+  await lastAlbum.tap();
+  check('Choosing an album does not submit before confirmation', gallerySelectionFixture.attempts.length === 0);
+  await picker.getByRole('button', { name: '取消', exact: true }).tap(); await picker.waitFor({ state: 'hidden' }); await settle();
+  result.samples['gallery-selection-cancel-focus'] = await focus();
+  check('Gallery album Cancel preserves selection and sends no mutation', await count() === '已选择3项' && gallerySelectionFixture.attempts.length === 0);
+  check('Gallery album Cancel restores the live initiating trigger', await join.evaluate(element => element === document.activeElement), result.samples['gallery-selection-cancel-focus']);
+  await join.tap(); await picker.waitFor(); await finishTransition();
+  await page.setViewportSize({ width: 844, height: 200 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; }); await settle();
+  const firstRow = await rect(picker.getByRole('button', { name: /^验收家庭相册/ }));
+  const close = picker.getByRole('button', { name: '关闭相册选择', exact: true });
+  const initialClose = await rect(close);
+  result.samples['gallery-selection-short-initial'] = { row: firstRow, close: initialClose };
+  check('Built Gallery short200 with200percent text exposes a full album choice', target44(firstRow) && firstRow.visibleHeight >= firstRow.height - .5, firstRow);
+  check('Built Gallery short picker keeps the44px Close visible', target44(initialClose), initialClose);
+  const content = picker.locator('[data-xdrive-gallery-album-picker-content]');
+  const scrollToActions = async () => {
+    const box = await content.boundingBox();
+    // The real App Snackbar occupies the lower right after a refused mutation.
+    // Keep native wheel input over the measured, uncovered left of this scroller.
+    const point = { x: box.x+Math.min(24,box.width/2), y: box.y+box.height/2 };
+    const readScrollTarget = () => page.evaluate(({x,y}) => {
+      const element = document.querySelector('[data-xdrive-gallery-album-picker-content]');
+      const hit = document.elementFromPoint(x,y);
+      return { point:{x,y}, scrollTop:element.scrollTop,clientHeight:element.clientHeight,scrollHeight:element.scrollHeight,
+        hitTag:hit?.tagName,hitText:hit?.textContent?.trim().slice(0,100),hitInContent:Boolean(hit && element.contains(hit)),
+        alerts:[...document.querySelectorAll('[role=alert]')].map(alert=>({text:alert.textContent,rect:alert.getBoundingClientRect().toJSON()})) };
+    },point);
+    result.samples[`${activeStage}-scroll-before`] = await readScrollTarget();
+    await page.mouse.move(point.x,point.y); await page.mouse.wheel(0,10000);
+    try { await page.waitForFunction(() => { const element = document.querySelector('[data-xdrive-gallery-album-picker-content]'); return element && element.scrollTop+element.clientHeight >= element.scrollHeight-2; }); }
+    finally { result.samples[`${activeStage}-scroll-after`] = await readScrollTarget(); }
+    await settle();
+  };
+  await scrollToActions();
+  const lastRow = await rect(lastAlbum);
+  check('Built Gallery native content scrolling exposes the final complete album row', target44(lastRow) && lastRow.visibleHeight >= lastRow.height-.5,lastRow);
+  await lastAlbum.tap();
+  const add = picker.getByRole('button', { name: '添加到相册', exact: true });
+  const actionRects = { add: await rect(add), cancel: await rect(picker.getByRole('button', { name: '取消', exact: true })), close: await rect(close) };
+  result.samples['gallery-selection-short-actions'] = { ...actionRects, content: await content.evaluate(element => ({ height: element.clientHeight, scrollTop: element.scrollTop, scrollHeight: element.scrollHeight })) };
+  check('Built Gallery native scrolling reaches complete Add and Cancel targets', [actionRects.add,actionRects.cancel].every(r => target44(r) && r.visibleHeight >= r.height-.5), actionRects);
+  check('Built Gallery Close remains44px at the end of the album list',target44(actionRects.close),actionRects.close);
+  await page.screenshot({ path: path.join(outputDir,'gallery-selection-short-actions.png') });
+  activeStage = 'user-gallery-selection-refused';
+  await add.tap();
+  await picker.getByRole('alert').waitFor(); await scrollToActions();
+  result.samples['gallery-selection-refused-focus'] = await focus();
+  result.samples['gallery-selection-refused-actions'] = { add:await rect(add),close:await rect(close) };
+  check('Actual album POST carries complete node IDs and the quoted revision', JSON.stringify(gallerySelectionFixture.attempts) === JSON.stringify([{ albumID:'qa-album-24',node_ids:[1000,1001,1002],ifMatch:'"30"',status:403 }]),gallerySelectionFixture.attempts);
+  check('Actual403 remains readable and retains the current three-item selection', (await picker.getByRole('alert').textContent()).trim() === '验收：相册暂时不可写，请重试。' && await count() === '已选择3项' && await add.isEnabled(), { error:await picker.getByRole('alert').textContent(),count:await count() });
+  await page.screenshot({ path:path.join(outputDir,'gallery-selection-error-retry.png') });
+  activeStage = 'user-gallery-selection-retry-success';
+  await add.tap();
+  await selection.waitFor({ state:'hidden' }); await picker.waitFor({ state:'hidden' }); await settle();
+  const selectAgain = galleryToolbar.getByRole('button',{name:'选择',exact:true});
+  await selectAgain.waitFor();
+  result.samples['gallery-selection-success-focus'] = await focus();
+  check('Retry sends one new actual request for the retained album and unchanged selection', JSON.stringify(gallerySelectionFixture.attempts) === JSON.stringify([
+    {albumID:'qa-album-24',node_ids:[1000,1001,1002],ifMatch:'"30"',status:403},
+    {albumID:'qa-album-24',node_ids:[1000,1001,1002],ifMatch:'"30"',status:200},
+  ]),gallerySelectionFixture.attempts);
+  check('Successful Add clears the real Gallery selection once', await selection.count() === 0 && (await selectedIndexes()).length === 0 && gallerySelectionFixture.accepted.length === 1);
+  check('Successful Add returns focus to the remaining Gallery selection control',await selectAgain.evaluate(element => element === document.activeElement),result.samples['gallery-selection-success-focus']);
+  check('Picker return keeps the same Gallery caller and route', page.url() === galleryURL && await page.evaluate(() => window.__m12GalleryCaller.main === document.querySelector('main') && window.__m12GalleryCaller.header === document.querySelector('[data-xdrive-gallery-header]')));
+  await page.evaluate(() => { document.documentElement.style.fontSize = ''; }); await page.setViewportSize({width:390,height:844});
+  await geometry('user-gallery-selection-return');
+  await page.screenshot({path:path.join(outputDir,'gallery-selection-return.png')});
+  result.samples['gallery-selection-transport'] = {attempts:gallerySelectionFixture.attempts,accepted:gallerySelectionFixture.accepted,album:gallerySelectionFixture.albums.find(album=>album.id==='qa-album-24')};
+}
+
 async function mobilePanelsAcceptance() {
   activeStage = 'user-mobile-panels';
   const rect = async (locator) => locator.evaluate((element) => {
@@ -1579,13 +1728,22 @@ async function fullscreenAcceptance(role) {
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
-  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario) {
+  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario) {
     const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     result.runnerSHA256 = hash(__filename);
     result.builtWebSHA256 = {
       'index.html': hash(path.join(distRoot, 'index.html')),
       ...Object.fromEntries(fs.readdirSync(path.join(distRoot, 'assets')).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => [`assets/${name}`, hash(path.join(distRoot, 'assets', name))])),
     };
+    if (gallerySelectionScenario) {
+      fs.copyFileSync(__filename,path.join(outputDir,path.basename(__filename)));
+      result.fixture.gallerySelection = { selectedNodeIDs: [1000, 1001, 1002], manualAlbums: 24, smartAlbums: 1, targetAlbumID: 'qa-album-24', initialRevision: 30, refusalStatus: 403 };
+      result.sourceHashes = Object.fromEntries([
+        'web/src/App.tsx', 'web/src/api.ts', 'web/src/mediaGalleryAdapter.ts',
+        'ui/shared/src/mui/MediaGallery.tsx', 'ui/shared/src/mui/MediaGallerySelectionToolbar.tsx',
+        'ui/shared/src/mui/useMobilePanelViewport.ts', 'ui/shared/src/mui/AppearanceThemeProvider.tsx', 'ui/shared/src/mui/theme.ts',
+      ].map((file) => [file, hash(path.join(sourceRoot, file))]));
+    }
     if (searchReturnScenario) {
       result.fixture.searchItems = mediaItems.length;
       result.fixture.searchDefinition = { query: 'photo', filters: { kind: 'image' }, sort: 'name', order: 'asc', group: 'none', foldersFirst: true, parentID: 2 };
@@ -1606,7 +1764,7 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -1674,6 +1832,7 @@ async function main() {
       else if (filesTouchDragScenario) await filesTouchDragAcceptance();
       else if (filesOrganizationScenario) await filesOrganizationAcceptance();
       else if (mobilePanelsScenario) await mobilePanelsAcceptance();
+      else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);

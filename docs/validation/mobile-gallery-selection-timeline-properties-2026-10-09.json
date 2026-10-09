@@ -1,0 +1,5487 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUTC": "2026-10-09T10:16:24.584756+00:00",
+  "scope": "M12 album selection, M13 timeline targets, M14 shared Properties feedback; ordered next delivery after M10/M11.",
+  "status": "Local final integration accepted; new single-commit PR full CI and linear merge pending.",
+  "testedProductionCommit": "c55d5ad1a0519988483c221184d1166d38de01f0",
+  "parent": "3ad7e73a96a4ee0d7c304b9a78cee2be6001a860",
+  "packaging": "Only canonical documentation/evidence added after these runs. Production and browser fixtures frozen.",
+  "mergedM10M11": {
+    "pr": {
+      "url": "https://github.com/lazyxu/xdrive/pull/1125",
+      "number": 1125,
+      "state": "closed",
+      "merged": true,
+      "mergeable": false,
+      "draft": false,
+      "body": "## Complete M10 touch drag and M11 short-viewport panels\n\nPR1119 and PR1122 supplied the merged foundations. This continues existing PR1125 as exactly one work commit on merged M12bd96b2b1. Actual checklist/matrix conflicts required reconstruction. The independently updated remote95a23 was inspected before the leased update: all its M10 production and fixture bytes, merged Gallery index-status/selection work and concise sidebar copy are preserved.\n\n### Resulting behavior\n\n- A44px selected-items handle carries complete IDs/revisions through existing move operations; valid mounted folder/ancestor targets highlight and edge scrolling stays in the owning list. Invalid targets, second pointers, cancellation, scope changes and teardown clean up. Compatibility release clicks cannot activate replacement controls.\n- Quick Access and saved-search44px reorder handles use existing full-order persistence/rollback. Tap/keyboard Move To and Up/Down remain available.\n- Files keeps fixed Close and places fields plus unchanged Save/Clear actions in one bounded scroll region. Gallery removes compact sticky action positioning from its existing scroller and keeps fixed44px Close. Gallery navigation gets44px targets below900CSSpx independent of pointer type.\n- At844×200/200%text, Files field space improves24→87.97px for a61px control; Gallery's63px field improves23→63px unobscured. Actions remain reachable by scrolling. No global bar/spacer, viewport metadata change, new state machine or transport is added.\n\n### Evidence\n\nPreserved M10 first-reds include long-press release opening replacement controls, sidebar53px displacement, native release-click failures18/21 and stationary late target8/9; the same reproducers pass. M11 preserves identical Files17 (16pass/1fail) and Gallery57 (52pass/5fail) before/after assertions. Selector and strict fixture-query mistakes are recorded separately and are not product defects.\n\nFinal local validation on production53177a7b (later edits only runner hash recording and documentation):\n\n- Files135/135; Navigation162/162; Files panels22/22; Gallery panels57/57.\n- Real built-Web drag49/49 and panels37/37, zero unexpected API/page/console errors. Active assets/index-BYQXNagw.js; both receipts record runner/build hashes.\n- FullDesktop1594pass/0fail/1existing optional skip; typecheck and Web lint/build pass.\n- Native helper21 reused with identical source. Eight actual VisualViewport scale/pan observations retained with explicit dependency comparison; these are not keyboard tests. Historical upstream80 is not counted as a new run.\n- Independent integrated review found no remaining concrete blocker.\n\nExact hashes, complete checks, preserved first-reds and integration history are in docs/validation/mobile-files-touch-drag-2026-10-09.json and mobile-panels-short-viewport-2026-10-09.json. Canonical Files/Gallery/mobile docs and M49.V08/V09 are updated. All physical iOS/Android ordinary/installed, real keyboard/address bars/safe areas and screen-reader checks remain NOT RUN. The complete new PR CI is the merge gate; prior-head CI does not validate these M11 supplements.\n",
+      "title": "feat(mobile): complete touch drag and short viewport panels (M10–M11)",
+      "base": "master",
+      "base_sha": "9cd7596f59ccd15f7d6f6617e9c7d7753dfd2981",
+      "head": "feat/mobile-files-drag-reorder",
+      "head_sha": "1483a94a41475b9e960005fc36c46f30cd796f30",
+      "head_repo_id": 1382670236,
+      "head_repo_full_name": "lazyxu/xdrive",
+      "merge_commit_sha": "3ad7e73a96a4ee0d7c304b9a78cee2be6001a860",
+      "user": {
+        "login": "lazyxu",
+        "name": "lazyxu",
+        "email": null,
+        "avatar_url": "https://avatars.githubusercontent.com/u/14952805?v=4",
+        "id": 14952805
+      },
+      "requested_reviewers": null,
+      "requested_team_reviewers": null,
+      "diff": null,
+      "comments": null,
+      "created_at": "2026-10-09T09:01:10Z",
+      "updated_at": "2026-10-09T10:06:08Z",
+      "closed_at": "2026-10-09T10:05:21Z",
+      "merged_at": "2026-10-09T10:05:21Z",
+      "commits": 1,
+      "changed_files": 37,
+      "additions": 80429,
+      "deletions": 439,
+      "display_url": "https://github.com/lazyxu/xdrive/pull/1125",
+      "display_title": "feat(mobile): complete touch drag and short viewport panels (M10–M11)"
+    },
+    "ci": {
+      "workflow_runs": [
+        {
+          "id": 37914259268,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success",
+          "run_number": 4845,
+          "jobs_url": "https://api.github.com/repos/lazyxu/xdrive/actions/runs/37914259268/jobs",
+          "logs_url": "https://api.github.com/repos/lazyxu/xdrive/actions/runs/37914259268/logs",
+          "workflow_id": 364825829
+        }
+      ]
+    },
+    "cleanup": "Remote refs/heads/feat/mobile-files-drag-reorder absent after merged PR. Observed by git fetch; no post-merge master CI polled."
+  },
+  "priorM12M13Evidence": "mobile-gallery-controls-m10-m13-2026-10-09.json",
+  "m14OwnerEvidence": {
+    "recordedAtUTC": "2026-10-09T10:09:03.644794+00:00",
+    "status": "Implementation, required local gates and independent review complete; clean single commit ready for parent integration. No remote writes.",
+    "worktree": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+    "branch": "feat/mobile-properties-edit-feedback",
+    "base": "75b2af908282823351a4a9ad0cf1a95536dae96d",
+    "head": "34db38c0e2a708e9e20fcab6e80c8f71d78273a6",
+    "commitsAboveBase": 1,
+    "workingTreeClean": true,
+    "scope": [
+      "ui/shared/src/mui/MediaGalleryDetails.tsx",
+      "desktop/scripts/media-properties-feedback-browser.cjs",
+      "desktop/tests/media-properties-feedback.cjs"
+    ],
+    "production": {
+      "file": "ui/shared/src/mui/MediaGalleryDetails.tsx",
+      "beforeSHA256": "473ae8543fcde6ae4ce29be2749d20eecd626b22c00e83a737b4611241526a56",
+      "afterSHA256": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "diff": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-production.diff",
+      "diffSHA256": "160579487604c44846dc6b0fc88b93a518579971b3fffdf22819c2fa17a7dc99"
+    },
+    "fixtureHashes": {
+      "cjs": "9e84cf9c7f3a0b23483ec19000232db6cd10e763653f396f30adc95e8d3f77b4",
+      "tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "goldens": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "focusedTestSHA256": "c79fd7808ad43b5a91c91e326644d7881896e76d448ec41367a290148c5f1260",
+    "sharedSourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "ui/shared/src/mui/MediaGalleryInspector.tsx": "adaa419df9eefca10b44fb9f596aec4fe263df84044324d7290f9b22a1b52998",
+      "ui/shared/src/mui/MediaGallery.tsx": "8439e3e2c49ea5b5c050fad336c819c46a1691e460f488c1217aabd73fb7a5e4",
+      "ui/shared/src/mui/StatusAlert.tsx": "b937a5a3e246cab4994d05d26b75775b0336043c2aa3f986ecce7e9cd9b6e8e4",
+      "ui/shared/src/mui/theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074",
+      "desktop/scripts/media-properties-gallery-browser.tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "sourceCommitProvenance": "Browser runs record the initial work-commit HEAD069d4262 plus exact source/fixture hashes while the three owned files were being implemented. All recorded final source/fixture hashes are verified byte-identical to the now-amended single commit; no production or test changes occurred after final gates.",
+    "tests": {
+      "historicalBrowser": {
+        "path": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-before/results.json",
+        "passed": 11,
+        "failed": 10,
+        "disposition": "Preserved historicalc63; not relabeled current."
+      },
+      "freshC0Browser": {
+        "path": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-c0-before/results.json",
+        "passed": 11,
+        "failed": 10
+      },
+      "selectedBaseBrowserBefore": {
+        "command": "node desktop/scripts/media-properties-feedback-browser.cjs --output-dir=/workspace/scratch/33a6f8d71159/m14-75b2-browser-before",
+        "cwd": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-before/results.json",
+        "sha256": "7117d0c4396120c988f95752e9e8256b9f0e5b58c4947ec4399b64cfb2d1945f",
+        "runnerSnapshot": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-before/runner.cjs",
+        "runnerSHA256": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+        "passed": 11,
+        "failed": 10,
+        "errors": [],
+        "sourceHashMatch": true
+      },
+      "same21After": {
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-after/results.json",
+        "passed": 21,
+        "failed": 0,
+        "errors": [],
+        "sameOriginalNamesAndInputs": true,
+        "archivedBeforeAfterRunnerBytesVerified": {
+          "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-before/runner.cjs",
+          "sha256": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+          "matchesBothRecordedProbeHashes": true,
+          "original21BodyByteIdenticalInFinalRunner": true,
+          "bodySHA256": "470c3717889acd7dd2f992b9834441a90cc131bd0aeae84795833b8d267c85b8"
+        }
+      },
+      "finalBrowser": {
+        "command": "node desktop/scripts/media-properties-feedback-browser.cjs --case=all --output-dir=/workspace/scratch/33a6f8d71159/m14-75b2-browser-final",
+        "cwd": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-final/results.json",
+        "sha256": "343928baf1569095d42194a913b31b737c8c9b804f37f6d33c4b927553d72bcb",
+        "passed": 28,
+        "failed": 0,
+        "errors": [],
+        "sourceHashMatch": true,
+        "original21UnchangedPrefix": true,
+        "additional7": "One900px density control and one844x390/root32px flow: native Save, wheel, meaningful polite saving/saved/edited status, Close44 and exit."
+      },
+      "rotation5": {
+        "historicalProof": "/workspace/scratch/33a6f8d71159/m14-rotation-provenance-review.json",
+        "selectedBaseBeforeLog": "/workspace/scratch/33a6f8d71159/m14-75b2-focused-before.log",
+        "beforePassed": 3,
+        "beforeFailed": 2,
+        "afterPassed": 5,
+        "afterFailed": 0,
+        "sameExact5TestNames": true,
+        "owner": "Actual exported xDriveMediaInspectorFields, not copied formatting code."
+      },
+      "focused": {
+        "command": "node --test desktop/tests/media-properties-feedback.cjs desktop/tests/media-properties-editor-target.cjs",
+        "cwd": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+        "before": {
+          "log": "/workspace/scratch/33a6f8d71159/m14-75b2-focused-before.log",
+          "sha256": "4c1f341c8c6ec8f8057e0adb4ce9f8120440ef6228b65e63b348e6784c5b3365",
+          "passed": 12,
+          "failed": 5
+        },
+        "after": {
+          "log": "/workspace/scratch/33a6f8d71159/m14-75b2-focused-after.log",
+          "sha256": "7cfb7652140104de0a7acb316ad99cab8338d68b72271294caa6c775137014d4",
+          "passed": 17,
+          "failed": 0
+        },
+        "composition": "Exactrotation5 +3 real current-editor feedback sequences +unchanged9 M09 target/revision tests."
+      },
+      "normalDesktop": {
+        "command": "npm run test:main",
+        "cwd": "/workspace/scratch/33a6f8d71159/m14-properties-feedback/desktop",
+        "log": "/workspace/scratch/33a6f8d71159/m14-75b2-desktop-tests.log",
+        "sha256": "8b0cdfc55fdb87351ca926f6ff5081286616c3e8195b0417e6d4bd63e74f6ccc",
+        "exitCode": 0,
+        "tests": 1598,
+        "pass": 1597,
+        "fail": 0,
+        "skipped": 1,
+        "existingSkip": "FileExplorer VirtualCollection 100k scroll CPU baseline"
+      },
+      "desktopTypecheck": {
+        "command": "npm run typecheck",
+        "cwd": "/workspace/scratch/33a6f8d71159/m14-properties-feedback/desktop",
+        "log": "/workspace/scratch/33a6f8d71159/m14-75b2-typecheck.log",
+        "sha256": "029064cbb9cfecba89b8fa3ca1ec9237eaead9aea7449d31d991f0e60e35d30f",
+        "exitCode": 0
+      },
+      "diffCheck": {
+        "command": "git diff --check",
+        "exitCode": 0
+      }
+    },
+    "verifiedActualPerFieldMessages": [
+      {
+        "field": "tags",
+        "saving": "正在保存标签…",
+        "saved": "标签已保存",
+        "targetGeometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "field": "people",
+        "saving": "正在保存人物…",
+        "saved": "人物已保存",
+        "targetGeometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "field": "description",
+        "saving": "正在保存描述…",
+        "saved": "描述已保存",
+        "targetGeometry": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      }
+    ],
+    "shortGeometry": {
+      "kind": "short-text200",
+      "viewport": {
+        "width": 844,
+        "height": 390,
+        "rootText": "32px"
+      },
+      "saveBounds": {
+        "x": 688,
+        "y": 240.234375,
+        "width": 144,
+        "height": 61,
+        "visibleWidth": 144,
+        "visibleHeight": 61,
+        "receivesPoint": true
+      },
+      "savingBounds": {
+        "x": 12,
+        "y": 307.234375,
+        "width": 820,
+        "height": 40.03125,
+        "visibleWidth": 820,
+        "visibleHeight": 40.03125,
+        "receivesPoint": true
+      },
+      "savedBounds": {
+        "x": 12,
+        "y": 307.234375,
+        "width": 820,
+        "height": 40.03125,
+        "visibleWidth": 820,
+        "visibleHeight": 40.03125,
+        "receivesPoint": true
+      },
+      "editedBounds": {
+        "x": 12,
+        "y": 292.234375,
+        "width": 820,
+        "height": 40.03125,
+        "visibleWidth": 820,
+        "visibleHeight": 40.03125,
+        "receivesPoint": true
+      },
+      "closeBounds": {
+        "x": 782,
+        "y": 77.515625,
+        "width": 50,
+        "height": 50,
+        "visibleWidth": 50,
+        "visibleHeight": 50,
+        "receivesPoint": true
+      },
+      "wheel": [
+        {
+          "before": 1146,
+          "after": 954,
+          "delta": -192
+        },
+        {
+          "before": 954,
+          "after": 1018,
+          "delta": 64
+        },
+        {
+          "before": 1018,
+          "after": 1082,
+          "delta": 64
+        },
+        {
+          "before": 1082,
+          "after": 1146,
+          "delta": 64
+        },
+        {
+          "before": 1033,
+          "after": 1097,
+          "delta": 64
+        },
+        {
+          "before": 1097,
+          "after": 1161,
+          "delta": 64
+        }
+      ]
+    },
+    "desktopDensity": {
+      "name": "900: desktop Description Save keeps existing density",
+      "passed": true,
+      "actual": {
+        "x": 800,
+        "y": 672.203125,
+        "width": 88,
+        "height": 36.5,
+        "visibleWidth": 88,
+        "visibleHeight": 36.5,
+        "receivesPoint": true
+      }
+    },
+    "harnessOnlyCorrection": {
+      "path": "/workspace/scratch/33a6f8d71159/m14-75b2-short-after/results.json",
+      "result": "6pass/1fixture-failure,0errors; excluded from product first-reds",
+      "reason": "Save already left the status fully visible, so reveal() issued no wheel but the new assertion required wheel movement. The fixture now deliberately scrolls away/back with native wheel. It also snapshots wheel history instead of retaining a mutable array that later steps extend. No production change accompanied this correction.",
+      "sameShortAfter": "/workspace/scratch/33a6f8d71159/m14-75b2-short-final/results.json",
+      "afterPassed": 7,
+      "afterFailed": 0
+    },
+    "retainedHarnessWarnings": "Focused before/after each retain the same four known React TestRenderer/MUI function-ref warnings. Real browser errors are zero. npm emits the existing http-proxy configuration warning; typecheck and full suite exit0.",
+    "decisions": [
+      "Use existing editorTargetRef identity and existing busy/error/guarded completion; presentation receipts introduce no request/intent fence.",
+      "Saved acknowledgment survives accepted normalized parent data, edited value gets unsaved feedback, another displayed target gets no prior feedback.",
+      "Use existing top-level numeric rotation then existing video-map number, else未记录; no schema/extractor/Server changes.",
+      "Keep the fixed75b2 base even while parent integrates M10–M13 elsewhere.",
+      "Keep canonical plan draft and evidence in scratch for parent delivery; no remote writes."
+    ],
+    "planDraft": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-canonical-plan-draft.md",
+    "boundary": "Actual shared Gallery/Inspector/Details renderer and controlled mutation callbacks; source-read provenance and actual pure formatter. No physical OS keyboard/screen-reader/iOS/Android or real Server persistence certification. No redundant full M09 browser sweep and no Web build claimed.",
+    "independentReview": {
+      "reviewer": "/root/platform_transfer_audit",
+      "decision": "No concrete blocker found in the scoped change",
+      "json": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-independent-review.json",
+      "jsonSHA256": "a7ab56fad456d2373c029d4912f97e1c58bb785ca1b878ddfc26055f092e8a05",
+      "markdown": "/workspace/scratch/33a6f8d71159/m14-properties-feedback-independent-review.md",
+      "markdownSHA256": "e19edef99e6fc6b14c627bddeef82dde69aea6168a90a0213047820a46c52138",
+      "reviewedPatchSHA256": "160579487604c44846dc6b0fc88b93a518579971b3fffdf22819c2fa17a7dc99",
+      "verification": "Reviewer inspected explicit75b2..34db production delta, source/fixture hashes, native geometry and preserved before/after logs. No duplicate run or source edits. Metadata-only missing-runner/empty-plain-diff capture was corrected using retained runner bytes and the explicit commit range."
+    },
+    "planDraftSHA256": "f5d950bcf6ff7ebeb0263abd781c26ee9cbf066fde74c58a8882c602cd5c7a38"
+  },
+  "m14IndependentReview": {
+    "reviewedAt": "2026-10-09T10:06:27.324040+00:00",
+    "reviewer": "/root/platform_transfer_audit",
+    "scope": "Independent read-only M14 shared Details delta; no production writes or repeated browser run",
+    "repo": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+    "workHead": "34db38c0e2a708e9e20fcab6e80c8f71d78273a6",
+    "base": "75b2af908282823351a4a9ad0cf1a95536dae96d",
+    "detailsSHA256": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+    "reviewedPatchSHA256": "160579487604c44846dc6b0fc88b93a518579971b3fffdf22819c2fa17a7dc99",
+    "decision": "No concrete blocker found in the scoped change",
+    "checks": {
+      "sourceHashesMatchFinalReceipt": {
+        "ui/shared/src/mui/MediaGalleryDetails.tsx": true,
+        "ui/shared/src/mui/MediaGalleryInspector.tsx": true,
+        "ui/shared/src/mui/MediaGallery.tsx": true,
+        "ui/shared/src/mui/StatusAlert.tsx": true,
+        "ui/shared/src/mui/theme.ts": true,
+        "desktop/scripts/media-properties-gallery-browser.tsx": true,
+        "desktop/scripts/media-properties-fixtures.cjs": true
+      },
+      "finalRunnerHashMatches": true,
+      "same21Names": true,
+      "same21RecordedProbeHash": true,
+      "recordedSame21ProbeHash": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+      "finalUnitSHA256": "c79fd7808ad43b5a91c91e326644d7881896e76d448ec41367a290148c5f1260",
+      "archivedSame21Runner": {
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-before/runner.cjs",
+        "sha256": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+        "matchesBeforeAfterRecordedHash": true
+      }
+    },
+    "evidence": [
+      {
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-before/results.json",
+        "passed": 11,
+        "failed": 10,
+        "errors": []
+      },
+      {
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-after/results.json",
+        "passed": 21,
+        "failed": 0,
+        "errors": []
+      },
+      {
+        "path": "/workspace/scratch/33a6f8d71159/m14-75b2-browser-final/results.json",
+        "passed": 28,
+        "failed": 0,
+        "errors": []
+      }
+    ],
+    "logs": {
+      "m14-75b2-focused-before.log": {
+        "sha256": "4c1f341c8c6ec8f8057e0adb4ce9f8120440ef6228b65e63b348e6784c5b3365",
+        "totals": [
+          "ℹ tests 17",
+          "ℹ pass 12",
+          "ℹ fail 5",
+          "ℹ skipped 0"
+        ]
+      },
+      "m14-75b2-focused-after.log": {
+        "sha256": "7cfb7652140104de0a7acb316ad99cab8338d68b72271294caa6c775137014d4",
+        "totals": [
+          "ℹ tests 17",
+          "ℹ pass 17",
+          "ℹ fail 0",
+          "ℹ skipped 0"
+        ]
+      },
+      "m14-75b2-desktop-tests.log": {
+        "sha256": "8b0cdfc55fdb87351ca926f6ff5081286616c3e8195b0417e6d4bd63e74f6ccc",
+        "totals": [
+          "ℹ tests 1598",
+          "ℹ pass 1597",
+          "ℹ fail 0",
+          "ℹ skipped 1"
+        ]
+      },
+      "m14-75b2-typecheck.log": {
+        "sha256": "029064cbb9cfecba89b8fa3ca1ec9237eaead9aea7449d31d991f0e60e35d30f",
+        "totals": []
+      }
+    },
+    "limitations": [
+      "This review reuses retained actual Gallery/MUI results and independently verifies their current source/fixture hashes; it does not repeat the browser run.",
+      "Native iOS/Android, installed mode, software keyboard and screen readers remain not-run; simulated root text200 and mouse wheel are renderer evidence.",
+      "No Server persistence, changed annotation revision policy, transport, album workflow or preview architecture is introduced."
+    ],
+    "finalCommitVerification": {
+      "head": "34db38c0e2a708e9e20fcab6e80c8f71d78273a6",
+      "detailsSHA256": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "sameReviewedProduction": true,
+      "commitCountAboveBase": 1,
+      "status": ""
+    },
+    "reviewedPatchCommand": "git diff 75b2af90..34db38c0 -- ui/shared/src/mui/MediaGalleryDetails.tsx",
+    "evidenceCorrections": [
+      "After owner finalized the commit, a plain git diff produced an empty retained patch. Replaced it with the explicit immutable base..final diff; independently reviewed source bytes were unchanged.",
+      "Owner identified retained before/runner.cjs; its actual bytes now independently match both before/after recorded SAME21 hashes."
+    ]
+  },
+  "m14Original21Before": {
+    "startedAt": "2026-10-09T09:56:30.140Z",
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+    "sourceCommit": "069d4262d89f703586eb191f5efe5a9b36baac48",
+    "sourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "473ae8543fcde6ae4ce29be2749d20eecd626b22c00e83a737b4611241526a56",
+      "ui/shared/src/mui/MediaGalleryInspector.tsx": "adaa419df9eefca10b44fb9f596aec4fe263df84044324d7290f9b22a1b52998",
+      "ui/shared/src/mui/MediaGallery.tsx": "8439e3e2c49ea5b5c050fad336c819c46a1691e460f488c1217aabd73fb7a5e4",
+      "ui/shared/src/mui/StatusAlert.tsx": "b937a5a3e246cab4994d05d26b75775b0336043c2aa3f986ecce7e9cd9b6e8e4",
+      "ui/shared/src/mui/theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074",
+      "desktop/scripts/media-properties-gallery-browser.tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "probeHash": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+    "boundary": "Unchanged M09 actual Gallery -> Inspector -> shared Details fixture; only its existing mutation transport is held/settled. Trusted touch or mouse enters Properties and saves. This is shared renderer/callback acceptance, not Server persistence or native certification.",
+    "acceptance": [
+      "Compact Save targets have at least 44px actual width and height after scrolling into view.",
+      "While a transport is held, its editor visibly reports saving (text, accessible status, progress, or aria-busy), rather than only disabling unchanged controls.",
+      "A successful save visibly acknowledges completion; error feedback preserves the draft and allows retry."
+    ],
+    "checks": [
+      {
+        "name": "390: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": true
+        }
+      },
+      {
+        "name": "390: tags Save actual target is 44px",
+        "passed": false,
+        "actual": {
+          "width": 366,
+          "height": 36.5,
+          "visibleWidth": 366,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: tags pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: tags pending visibly reports saving",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": [],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: tags successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: tags success visibly acknowledges completion",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": []
+        }
+      },
+      {
+        "name": "390: people Save actual target is 44px",
+        "passed": false,
+        "actual": {
+          "width": 366,
+          "height": 36.5,
+          "visibleWidth": 366,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: people pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: people pending visibly reports saving",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": [],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: people successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: people success visibly acknowledges completion",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": []
+        }
+      },
+      {
+        "name": "390: description Save actual target is 44px",
+        "passed": false,
+        "actual": {
+          "width": 88,
+          "height": 36.5,
+          "visibleWidth": 88,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: description pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          },
+          {
+            "field": "description",
+            "id": 101,
+            "revision": 7,
+            "value": "description-current-draft"
+          }
+        ]
+      },
+      {
+        "name": "390: description pending visibly reports saving",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": [],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: rejected description preserves its draft and exposes retryable error",
+        "passed": true,
+        "actual": {
+          "draft": "description-current-draft",
+          "disabled": false,
+          "error": "A-save-failed"
+        }
+      },
+      {
+        "name": "390: description successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: description success visibly acknowledges completion",
+        "passed": false,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": []
+        }
+      },
+      {
+        "name": "700: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": false
+        }
+      },
+      {
+        "name": "700: tags Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: people Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: description Save actual target is 44px",
+        "passed": false,
+        "actual": {
+          "width": 88,
+          "height": 36.5,
+          "visibleWidth": 88,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        }
+      }
+    ],
+    "observations": [
+      {
+        "width": 390,
+        "field": "tags",
+        "geometry": {
+          "width": 366,
+          "height": 36.5,
+          "visibleWidth": 366,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "people",
+        "geometry": {
+          "width": 366,
+          "height": 36.5,
+          "visibleWidth": 366,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "description",
+        "geometry": {
+          "width": 88,
+          "height": 36.5,
+          "visibleWidth": 88,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n25 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n描述 / 备注\n描述\n描述\n\n12 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        }
+      }
+    ],
+    "errors": [],
+    "bundleHash": "ea7a0c6a673514b301f4857a064cbc8ae2891c67bf69c4ebd337de08d0a75ac6",
+    "browserVersion": "153.0.8010.0",
+    "finishedAt": "2026-10-09T09:56:34.114Z",
+    "passed": 11,
+    "failed": 10,
+    "sourceHashMatch": true
+  },
+  "m14Original21After": {
+    "startedAt": "2026-10-09T09:58:41.505Z",
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/m14-properties-feedback",
+    "sourceCommit": "069d4262d89f703586eb191f5efe5a9b36baac48",
+    "sourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "ui/shared/src/mui/MediaGalleryInspector.tsx": "adaa419df9eefca10b44fb9f596aec4fe263df84044324d7290f9b22a1b52998",
+      "ui/shared/src/mui/MediaGallery.tsx": "8439e3e2c49ea5b5c050fad336c819c46a1691e460f488c1217aabd73fb7a5e4",
+      "ui/shared/src/mui/StatusAlert.tsx": "b937a5a3e246cab4994d05d26b75775b0336043c2aa3f986ecce7e9cd9b6e8e4",
+      "ui/shared/src/mui/theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074",
+      "desktop/scripts/media-properties-gallery-browser.tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "probeHash": "157a502c4ae5319c98ec72c656e56a2b652a142d639845ff853afc18eb154bd1",
+    "boundary": "Unchanged M09 actual Gallery -> Inspector -> shared Details fixture; only its existing mutation transport is held/settled. Trusted touch or mouse enters Properties and saves. This is shared renderer/callback acceptance, not Server persistence or native certification.",
+    "acceptance": [
+      "Compact Save targets have at least 44px actual width and height after scrolling into view.",
+      "While a transport is held, its editor visibly reports saving (text, accessible status, progress, or aria-busy), rather than only disabling unchanged controls.",
+      "A successful save visibly acknowledges completion; error feedback preserves the draft and allows retry."
+    ],
+    "checks": [
+      {
+        "name": "390: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": true
+        }
+      },
+      {
+        "name": "390: tags Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: tags pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: tags pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": [
+            "正在保存标签…",
+            "",
+            ""
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: tags successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: tags success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": [
+            "标签已保存",
+            "",
+            ""
+          ]
+        }
+      },
+      {
+        "name": "390: people Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: people pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: people pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": [
+            "标签已保存",
+            "正在保存人物…",
+            ""
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: people successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: people success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            ""
+          ]
+        }
+      },
+      {
+        "name": "390: description Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: description pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          },
+          {
+            "field": "description",
+            "id": 101,
+            "revision": 7,
+            "value": "description-current-draft"
+          }
+        ]
+      },
+      {
+        "name": "390: description pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "正在保存描述…"
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: rejected description preserves its draft and exposes retryable error",
+        "passed": true,
+        "actual": {
+          "draft": "description-current-draft",
+          "disabled": false,
+          "error": "A-save-failed"
+        }
+      },
+      {
+        "name": "390: description successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: description success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "描述已保存"
+          ]
+        }
+      },
+      {
+        "name": "700: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": false
+        }
+      },
+      {
+        "name": "700: tags Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: people Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: description Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      }
+    ],
+    "observations": [
+      {
+        "width": 390,
+        "field": "tags",
+        "geometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n正在保存标签…\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "正在保存标签…",
+            "",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "people",
+        "geometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n正在保存人物…\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "标签已保存",
+            "正在保存人物…",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "description",
+        "geometry": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n25 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n正在保存描述…\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "正在保存描述…"
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n12 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n描述已保存\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "描述已保存"
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        }
+      }
+    ],
+    "errors": [],
+    "bundleHash": "6b3bdfe0bc9616fa5859bb7236e34f58cf0872620298ea164ca242af71a3b324",
+    "browserVersion": "153.0.8010.0",
+    "finishedAt": "2026-10-09T09:58:51.884Z",
+    "passed": 21,
+    "failed": 0,
+    "sourceHashMatch": true
+  },
+  "m14FinalIntegrated28": {
+    "startedAt": "2026-10-09T10:11:47.583Z",
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/xdrive",
+    "sourceCommit": "c55d5ad1a0519988483c221184d1166d38de01f0",
+    "sourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "ui/shared/src/mui/MediaGalleryInspector.tsx": "adaa419df9eefca10b44fb9f596aec4fe263df84044324d7290f9b22a1b52998",
+      "ui/shared/src/mui/MediaGallery.tsx": "050d80cd5d974762ae78048ad1e74a4320176ba2ae15e80b4160c601ad9fd7e1",
+      "ui/shared/src/mui/StatusAlert.tsx": "b937a5a3e246cab4994d05d26b75775b0336043c2aa3f986ecce7e9cd9b6e8e4",
+      "ui/shared/src/mui/theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074",
+      "desktop/scripts/media-properties-gallery-browser.tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "fixtureHashes": {
+      "cjs": "9e84cf9c7f3a0b23483ec19000232db6cd10e763653f396f30adc95e8d3f77b4",
+      "tsx": "8999b081582a499e871dacd71e1be9751868328d49a02842d0f75b94590a86b8",
+      "goldens": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "selectedCase": "all",
+    "probeHash": "9e84cf9c7f3a0b23483ec19000232db6cd10e763653f396f30adc95e8d3f77b4",
+    "boundary": "Unchanged M09 actual Gallery -> Inspector -> shared Details fixture; only its existing mutation transport is held/settled. Trusted touch or mouse enters Properties and saves. This is shared renderer/callback acceptance, not Server persistence or native certification.",
+    "acceptance": [
+      "Compact Save targets have at least 44px actual width and height after scrolling into view.",
+      "While a transport is held, its editor visibly reports saving (text, accessible status, progress, or aria-busy), rather than only disabling unchanged controls.",
+      "A successful save visibly acknowledges completion; error feedback preserves the draft and allows retry."
+    ],
+    "checks": [
+      {
+        "name": "390: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": true
+        }
+      },
+      {
+        "name": "390: tags Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: tags pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: tags pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": [
+            "正在保存标签…",
+            "",
+            ""
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: tags successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: tags success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存标签",
+          "statuses": [
+            "标签已保存",
+            "",
+            ""
+          ]
+        }
+      },
+      {
+        "name": "390: people Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: people pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "390: people pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": [
+            "标签已保存",
+            "正在保存人物…",
+            ""
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: people successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: people success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存人物",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            ""
+          ]
+        }
+      },
+      {
+        "name": "390: description Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "390: description pending keeps exactly one current-target request",
+        "passed": true,
+        "actual": [
+          {
+            "field": "tags",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "tags-current-draft"
+            ]
+          },
+          {
+            "field": "people",
+            "id": 101,
+            "revision": 7,
+            "value": [
+              "people-current-draft"
+            ]
+          },
+          {
+            "field": "description",
+            "id": 101,
+            "revision": 7,
+            "value": "description-current-draft"
+          }
+        ]
+      },
+      {
+        "name": "390: description pending visibly reports saving",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "正在保存描述…"
+          ],
+          "disabled": true
+        }
+      },
+      {
+        "name": "390: rejected description preserves its draft and exposes retryable error",
+        "passed": true,
+        "actual": {
+          "draft": "description-current-draft",
+          "disabled": false,
+          "error": "A-save-failed"
+        }
+      },
+      {
+        "name": "390: description successful normalized value is retained",
+        "passed": true,
+        "actual": {
+          "value": "A-normalized",
+          "disabled": false
+        }
+      },
+      {
+        "name": "390: description success visibly acknowledges completion",
+        "passed": true,
+        "actual": {
+          "buttonText": "保存描述",
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "描述已保存"
+          ]
+        }
+      },
+      {
+        "name": "700: actual Gallery opens current Properties",
+        "passed": true,
+        "actual": {
+          "name": "Item-101.jpg",
+          "touch": false
+        }
+      },
+      {
+        "name": "700: tags Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: people Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 80.65625,
+          "height": 63.90625,
+          "visibleWidth": 80.65625,
+          "visibleHeight": 63.90625,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "700: description Save actual target is 44px",
+        "passed": true,
+        "actual": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "900: desktop Description Save keeps existing density",
+        "passed": true,
+        "actual": {
+          "x": 800,
+          "y": 672.203125,
+          "width": 88,
+          "height": 36.5,
+          "visibleWidth": 88,
+          "visibleHeight": 36.5,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "844x390 text200: Save remains a fully reachable 44px target",
+        "passed": true,
+        "actual": {
+          "x": 688,
+          "y": 240.234375,
+          "width": 144,
+          "height": 61,
+          "visibleWidth": 144,
+          "visibleHeight": 61,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "844x390 text200: user wheel reveals nonempty polite saving feedback",
+        "passed": true,
+        "actual": {
+          "bounds": {
+            "x": 12,
+            "y": 307.234375,
+            "width": 820,
+            "height": 40.03125,
+            "visibleWidth": 820,
+            "visibleHeight": 40.03125,
+            "receivesPoint": true
+          },
+          "text": "正在保存描述…",
+          "live": "polite",
+          "wheel": [
+            {
+              "before": 1146,
+              "after": 954,
+              "delta": -192
+            },
+            {
+              "before": 954,
+              "after": 1018,
+              "delta": 64
+            },
+            {
+              "before": 1018,
+              "after": 1082,
+              "delta": 64
+            },
+            {
+              "before": 1082,
+              "after": 1146,
+              "delta": 64
+            }
+          ]
+        }
+      },
+      {
+        "name": "844x390 text200: accepted normalized value and saved feedback remain readable",
+        "passed": true,
+        "actual": {
+          "bounds": {
+            "x": 12,
+            "y": 307.234375,
+            "width": 820,
+            "height": 40.03125,
+            "visibleWidth": 820,
+            "visibleHeight": 40.03125,
+            "receivesPoint": true
+          },
+          "text": "描述已保存",
+          "value": "A-normalized"
+        }
+      },
+      {
+        "name": "844x390 text200: next edit replaces saved feedback without another request",
+        "passed": true,
+        "actual": {
+          "bounds": {
+            "x": 12,
+            "y": 292.234375,
+            "width": 820,
+            "height": 40.03125,
+            "visibleWidth": 820,
+            "visibleHeight": 40.03125,
+            "receivesPoint": true
+          },
+          "text": "描述有未保存的更改",
+          "requests": [
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "Large text local draft"
+            }
+          ]
+        }
+      },
+      {
+        "name": "844x390 text200: existing Close remains visible and 44px",
+        "passed": true,
+        "actual": {
+          "x": 782,
+          "y": 77.515625,
+          "width": 50,
+          "height": 50,
+          "visibleWidth": 50,
+          "visibleHeight": 50,
+          "receivesPoint": true
+        }
+      },
+      {
+        "name": "844x390 text200: existing native Close exits Properties",
+        "passed": true,
+        "actual": {
+          "panelCount": 0
+        }
+      }
+    ],
+    "observations": [
+      {
+        "width": 390,
+        "field": "tags",
+        "geometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n正在保存标签…\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "正在保存标签…",
+            "",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存标签",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "people",
+        "geometry": {
+          "width": 366,
+          "height": 44,
+          "visibleWidth": 366,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n正在保存人物…\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "标签已保存",
+            "正在保存人物…",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n13 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存人物",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            ""
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "width": 390,
+        "field": "description",
+        "geometry": {
+          "width": 88,
+          "height": 44,
+          "visibleWidth": 88,
+          "visibleHeight": 44,
+          "receivesPoint": true
+        },
+        "pending": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n25 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n正在保存描述…\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": true,
+          "inputDisabled": true,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "正在保存描述…"
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        },
+        "done": {
+          "text": "属性\nItem-101.jpg\n照片信息\n\n类型\n\n图片\n\n拍摄时间\n\n2026/10/09 12:00:00\n\n分辨率\n\n100 × 100\n\n方向\n\n—\n\n整理\n\n收藏\n\n未收藏\n\n标签\n标签\n标签\n\n使用逗号分隔；最多 32 个标签。\n\n保存标签\n\n标签已保存\n\n人物标签\n人物\n人物\n\n用户维护的本地人物标签；使用逗号分隔，最多 32 个。不进行自动人脸识别。\n\n保存人物\n\n人物已保存\n\n描述 / 备注\n描述\n描述\n\n12 / 4096 字符；仅保存在 xDrive 本地图库。\n\n保存描述\n\n描述已保存\n\n文件与资源\n\n文件名\n\nItem-101.jpg\n\n大小\n\n4 KiB\n\n格式\n\nimage/jpeg",
+          "buttonText": "保存描述",
+          "disabled": false,
+          "inputDisabled": false,
+          "statuses": [
+            "标签已保存",
+            "人物已保存",
+            "描述已保存"
+          ],
+          "requests": [
+            {
+              "field": "tags",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "tags-current-draft"
+              ]
+            },
+            {
+              "field": "people",
+              "id": 101,
+              "revision": 7,
+              "value": [
+                "people-current-draft"
+              ]
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            },
+            {
+              "field": "description",
+              "id": 101,
+              "revision": 7,
+              "value": "description-current-draft"
+            }
+          ]
+        }
+      },
+      {
+        "kind": "short-text200",
+        "viewport": {
+          "width": 844,
+          "height": 390,
+          "rootText": "32px"
+        },
+        "saveBounds": {
+          "x": 688,
+          "y": 240.234375,
+          "width": 144,
+          "height": 61,
+          "visibleWidth": 144,
+          "visibleHeight": 61,
+          "receivesPoint": true
+        },
+        "savingBounds": {
+          "x": 12,
+          "y": 307.234375,
+          "width": 820,
+          "height": 40.03125,
+          "visibleWidth": 820,
+          "visibleHeight": 40.03125,
+          "receivesPoint": true
+        },
+        "savedBounds": {
+          "x": 12,
+          "y": 307.234375,
+          "width": 820,
+          "height": 40.03125,
+          "visibleWidth": 820,
+          "visibleHeight": 40.03125,
+          "receivesPoint": true
+        },
+        "editedBounds": {
+          "x": 12,
+          "y": 292.234375,
+          "width": 820,
+          "height": 40.03125,
+          "visibleWidth": 820,
+          "visibleHeight": 40.03125,
+          "receivesPoint": true
+        },
+        "closeBounds": {
+          "x": 782,
+          "y": 77.515625,
+          "width": 50,
+          "height": 50,
+          "visibleWidth": 50,
+          "visibleHeight": 50,
+          "receivesPoint": true
+        },
+        "wheel": [
+          {
+            "before": 1146,
+            "after": 954,
+            "delta": -192
+          },
+          {
+            "before": 954,
+            "after": 1018,
+            "delta": 64
+          },
+          {
+            "before": 1018,
+            "after": 1082,
+            "delta": 64
+          },
+          {
+            "before": 1082,
+            "after": 1146,
+            "delta": 64
+          },
+          {
+            "before": 1033,
+            "after": 1097,
+            "delta": 64
+          },
+          {
+            "before": 1097,
+            "after": 1161,
+            "delta": 64
+          }
+        ]
+      }
+    ],
+    "errors": [],
+    "bundleHash": "332414f2f8a6f4e2888f9b09536d42122ec0f2622fe85d242c6990573ec15833",
+    "browserVersion": "153.0.8010.0",
+    "finishedAt": "2026-10-09T10:12:00.913Z",
+    "passed": 28,
+    "failed": 0,
+    "sourceHashMatch": true
+  },
+  "m14RotationProvenance": {
+    "recordedAtUTC": "2026-10-09T09:50:04.373553+00:00",
+    "status": "Read-only source review and actual formatter first-red confirmed; no production change before M14 GO.",
+    "sourceCommit": "c0a214d10b746ac5edb39db6dac3424cb54abd10",
+    "sourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "473ae8543fcde6ae4ce29be2749d20eecd626b22c00e83a737b4611241526a56",
+      "ui/shared/src/models.ts": "9451e23743154595afee43672a78b44c7b01042a7b0264ff31bb05dd966699ba",
+      "internal/api/media.go": "28d2fb1a2ec0849684138326125107642acff39049d86f4682e6f44ae3c1ae0d",
+      "internal/media/extract.go": "95bd7b479190475297495ce85e1edd9bb4c5cee4a142b14ab327bf7d2696720d",
+      "internal/media/video_legacy.go": "427479def45516d37f88cd6188c823b42dc8d92c5c42c568be7510ce808009f6",
+      "internal/media/video_mpegts.go": "3d57689048b7172a5b751665645bdcb39c09b8a598b1d953071cea3945f3a5d1",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "repositoryClean": true,
+    "sourceReferences": [
+      {
+        "file": "internal/api/media.go",
+        "anchors": [
+          {
+            "text": "RotationDegrees          int",
+            "lines": [
+              44
+            ]
+          },
+          {
+            "text": "func toMediaMetadataDTO",
+            "lines": [
+              155
+            ]
+          },
+          {
+            "text": "json.Unmarshal([]byte(row.VideoJSON)",
+            "lines": [
+              188
+            ]
+          }
+        ]
+      },
+      {
+        "file": "internal/media/extract.go",
+        "anchors": [
+          {
+            "text": "func extractVideo",
+            "lines": [
+              966
+            ]
+          },
+          {
+            "text": "Unsupported containers still participate",
+            "lines": [
+              992
+            ]
+          },
+          {
+            "text": "\"rotation_degrees\": out.RotationDegrees",
+            "lines": [
+              1027
+            ]
+          }
+        ]
+      },
+      {
+        "file": "internal/media/video_legacy.go",
+        "anchors": [
+          {
+            "text": "func extractMatroskaVideo",
+            "lines": [
+              58
+            ]
+          },
+          {
+            "text": "\"timestamp_scale\": info.TimestampScale",
+            "lines": [
+              93
+            ]
+          }
+        ]
+      },
+      {
+        "file": "internal/media/video_mpegts.go",
+        "anchors": [
+          {
+            "text": "func extractMPEGTSVideo",
+            "lines": [
+              63
+            ]
+          },
+          {
+            "text": "\"container\":   \"mpeg-ts\"",
+            "lines": [
+              78
+            ]
+          }
+        ]
+      },
+      {
+        "file": "ui/shared/src/mui/MediaGalleryDetails.tsx",
+        "anchors": [
+          {
+            "text": "export function xDriveMediaInspectorFields",
+            "lines": [
+              125
+            ]
+          },
+          {
+            "text": "['视频旋转', metadata.rotation_degrees",
+            "lines": [
+              141
+            ]
+          }
+        ]
+      }
+    ],
+    "provenance": [
+      "mediaMetadataDTO.rotation_degrees is a Go int with omitempty, so explicit numeric zero is omitted at the top-level wire boundary.",
+      "toMediaMetadataDTO unmarshals stored VideoJSON into the existing metadata.video map.",
+      "The parsed MP4 branch serializes rotation_degrees into VideoJSON even when zero. Preserve that canonical explicit zero.",
+      "Unsupported parse returns before VideoJSON population. Existing Matroska/WebM and MPEG-TS maps contain codec/container fields but no rotation value. Their missing top-level zero is not evidence that rotation was recorded.",
+      "Current xDriveMediaInspectorFields uses a truthiness fallback to0 degrees and does not distinguish either missing-value case."
+    ],
+    "firstRed": {
+      "command": "node /workspace/scratch/33a6f8d71159/m14-rotation-provenance-probe.cjs",
+      "result": "/workspace/scratch/33a6f8d71159/m14-rotation-provenance-before/results.json",
+      "resultSHA256": "7c22f706780821857fb42c6ecca9d6b218eb7f9488d950f52dd6d5ada4815420",
+      "log": "/workspace/scratch/33a6f8d71159/m14-rotation-provenance-before.log",
+      "logSHA256": "2417228261302b56bf5b211601ba1ccf8a8828427596b488fb84cab829e03950",
+      "probe": "/workspace/scratch/33a6f8d71159/m14-rotation-provenance-probe.cjs",
+      "probeSHA256": "255357ebca72dafbc96940d6fa8915e51eb04b029ebf68ad794afb52155bf2fd",
+      "compiledModuleSHA256": "8ffbd086d0086e95662965b639f48b965c9659fa0713939fbeae0928f4430016",
+      "passed": 3,
+      "failed": 2,
+      "errors": [],
+      "sourceHashMatch": true,
+      "checks": [
+        {
+          "name": "Explicit top-level zero remains known 0 degrees",
+          "input": {
+            "rotation_degrees": 0
+          },
+          "expected": "0°",
+          "actual": "0°",
+          "passed": true
+        },
+        {
+          "name": "Explicit top-level nonzero remains known 90 degrees",
+          "input": {
+            "rotation_degrees": 90
+          },
+          "expected": "90°",
+          "actual": "90°",
+          "passed": true
+        },
+        {
+          "name": "Omitted top-level zero uses existing VideoJSON rotation zero",
+          "input": {
+            "video": {
+              "rotation_degrees": 0,
+              "video_codec": "avc1"
+            }
+          },
+          "expected": "0°",
+          "actual": "0°",
+          "passed": true
+        },
+        {
+          "name": "Rotation absent from both top-level and video is unrecorded",
+          "input": {},
+          "expected": "未记录",
+          "actual": "0°",
+          "passed": false
+        },
+        {
+          "name": "Legacy WebM metadata without rotation does not imply zero",
+          "input": {
+            "video": {
+              "container": "webm",
+              "video_codec": "V_VP9",
+              "tracks": []
+            }
+          },
+          "expected": "未记录",
+          "actual": "0°",
+          "passed": false
+        }
+      ]
+    },
+    "smallestProposedPresentationChange": "After M14 GO, display an available numeric top-level rotation (including0); otherwise use numeric metadata.video.rotation_degrees (including0); when neither contains a recorded number, display未记录. A local finite-number check is appropriate to this existing unknown-valued video map. Preserve the current canonical metadata rather than guessing from MIME, filename, dimensions, or default zero.",
+    "scope": "A single formatter row in the already-owned shared Details component; no Server schema, extraction, transport, editor lifecycle, locking or global unknown-value sweep.",
+    "supersedesPlanningBoundary": "The earlier rotation note was intentionally unresolved because top-level absence alone is ambiguous. The existing VideoJSON provenance and two actual formatter failures now justify this narrow presentation addition; they do not establish other unknown-field defects.",
+    "evidenceBoundary": "Full actual shared Details module compiled and its exported pure formatter executed with existing golden MediaItem data plus focused DTO-shaped rotation cases. API/extractor paths were inspected, not executed against real uploaded containers or a running Server. Not a browser or native-device test."
+  },
+  "m14RotationBefore": {
+    "startedAt": "2026-10-09T09:49:11.508Z",
+    "command": "node /workspace/scratch/33a6f8d71159/m14-rotation-provenance-probe.cjs",
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/xdrive",
+    "sourceCommit": "c0a214d10b746ac5edb39db6dac3424cb54abd10",
+    "sourceHashes": {
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "473ae8543fcde6ae4ce29be2749d20eecd626b22c00e83a737b4611241526a56",
+      "ui/shared/src/models.ts": "9451e23743154595afee43672a78b44c7b01042a7b0264ff31bb05dd966699ba",
+      "internal/api/media.go": "28d2fb1a2ec0849684138326125107642acff39049d86f4682e6f44ae3c1ae0d",
+      "internal/media/extract.go": "95bd7b479190475297495ce85e1edd9bb4c5cee4a142b14ab327bf7d2696720d",
+      "internal/media/video_legacy.go": "427479def45516d37f88cd6188c823b42dc8d92c5c42c568be7510ce808009f6",
+      "internal/media/video_mpegts.go": "3d57689048b7172a5b751665645bdcb39c09b8a598b1d953071cea3945f3a5d1",
+      "desktop/scripts/media-properties-fixtures.cjs": "e6101d2954c8fb13fdfaaee2e9c358ab02903310567e1d2126c82f031416ba41"
+    },
+    "probeSHA256": "255357ebca72dafbc96940d6fa8915e51eb04b029ebf68ad794afb52155bf2fd",
+    "boundary": "Pure execution of the actual exported xDriveMediaInspectorFields from the complete shared Details module. Cases follow the read-verified existing DTO and VideoJSON shape. No copied formatter, Server/parser execution claim, renderer interaction, lifecycle case, or production edit.",
+    "checks": [
+      {
+        "name": "Explicit top-level zero remains known 0 degrees",
+        "input": {
+          "rotation_degrees": 0
+        },
+        "expected": "0°",
+        "actual": "0°",
+        "passed": true
+      },
+      {
+        "name": "Explicit top-level nonzero remains known 90 degrees",
+        "input": {
+          "rotation_degrees": 90
+        },
+        "expected": "90°",
+        "actual": "90°",
+        "passed": true
+      },
+      {
+        "name": "Omitted top-level zero uses existing VideoJSON rotation zero",
+        "input": {
+          "video": {
+            "rotation_degrees": 0,
+            "video_codec": "avc1"
+          }
+        },
+        "expected": "0°",
+        "actual": "0°",
+        "passed": true
+      },
+      {
+        "name": "Rotation absent from both top-level and video is unrecorded",
+        "input": {},
+        "expected": "未记录",
+        "actual": "0°",
+        "passed": false
+      },
+      {
+        "name": "Legacy WebM metadata without rotation does not imply zero",
+        "input": {
+          "video": {
+            "container": "webm",
+            "video_codec": "V_VP9",
+            "tracks": []
+          }
+        },
+        "expected": "未记录",
+        "actual": "0°",
+        "passed": false
+      }
+    ],
+    "errors": [],
+    "compiledModuleSHA256": "8ffbd086d0086e95662965b639f48b965c9659fa0713939fbeae0928f4430016",
+    "finishedAt": "2026-10-09T09:49:13.911Z",
+    "passed": 3,
+    "failed": 2,
+    "sourceHashMatch": true,
+    "repoStatus": ""
+  },
+  "finalBuiltAppSelection40": {
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/xdrive",
+    "distRoot": "/workspace/scratch/33a6f8d71159/xdrive/web/dist",
+    "startedAt": "2026-10-09T10:12:49.457Z",
+    "scenario": "gallery-selection",
+    "fixture": {
+      "rootItems": 97,
+      "nestedItems": 64,
+      "galleryItems": 24,
+      "network": "local bounded fixtures only",
+      "gallerySelection": {
+        "selectedNodeIDs": [
+          1000,
+          1001,
+          1002
+        ],
+        "manualAlbums": 24,
+        "smartAlbums": 1,
+        "targetAlbumID": "qa-album-24",
+        "initialRevision": 30,
+        "refusalStatus": 403
+      }
+    },
+    "checks": [
+      {
+        "name": "user-gallery-selection-initial: requested CSS viewport",
+        "passed": true,
+        "evidence": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: no document overflow",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: workspace within viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-selection-initial: mobile main fills the entire viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: global chrome does not reserve viewport space",
+        "passed": true,
+        "evidence": {
+          "header": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "right": 0,
+            "bottom": 0,
+            "clientWidth": 0,
+            "clientHeight": 0,
+            "scrollWidth": 0,
+            "scrollHeight": 0,
+            "scrollTop": 0,
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "padding": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "flexDirection": "column",
+            "flexBasis": "auto"
+          },
+          "bottomNavigation": null
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: mobile workspace has no outer padding",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: workspace page meets available edges",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 2846.6875,
+          "right": 390,
+          "bottom": 2846.6875,
+          "clientWidth": 390,
+          "clientHeight": 2847,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-gallery-selection-initial: Gallery title does not reserve a 320px column",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 52.03125,
+          "right": 390,
+          "bottom": 52.03125,
+          "clientWidth": 390,
+          "clientHeight": 52,
+          "scrollWidth": 390,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "Gallery native three-tile selection shows its real count",
+        "passed": true,
+        "evidence": "已选择3项"
+      },
+      {
+        "name": "Gallery selection keeps the real caller mounted and does not open Viewer",
+        "passed": true
+      },
+      {
+        "name": "Gallery selection uses the observed first three media rows",
+        "passed": true,
+        "evidence": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "name": "Gallery album picker uses the real manual-only catalog",
+        "passed": true
+      },
+      {
+        "name": "Gallery album search narrows the actual catalog without submitting",
+        "passed": true
+      },
+      {
+        "name": "Choosing an album does not submit before confirmation",
+        "passed": true
+      },
+      {
+        "name": "Gallery album Cancel preserves selection and sends no mutation",
+        "passed": true
+      },
+      {
+        "name": "Gallery album Cancel restores the live initiating trigger",
+        "passed": true,
+        "evidence": {
+          "tag": "BUTTON",
+          "role": null,
+          "name": "加入相册",
+          "connected": true,
+          "insideMain": true
+        }
+      },
+      {
+        "name": "Built Gallery short200 with200percent text exposes a full album choice",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 144,
+          "width": 844,
+          "height": 56.03125,
+          "top": 144,
+          "right": 844,
+          "bottom": 200.03125,
+          "left": 0,
+          "visibleWidth": 844,
+          "visibleHeight": 56,
+          "hit": true
+        }
+      },
+      {
+        "name": "Built Gallery short picker keeps the44px Close visible",
+        "passed": true,
+        "evidence": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "hit": true
+        }
+      },
+      {
+        "name": "Built Gallery native content scrolling exposes the final complete album row",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 65.71875,
+          "width": 844,
+          "height": 56.03125,
+          "top": 65.71875,
+          "right": 844,
+          "bottom": 121.75,
+          "left": 0,
+          "visibleWidth": 844,
+          "visibleHeight": 56.03125,
+          "hit": true
+        }
+      },
+      {
+        "name": "Built Gallery native scrolling reaches complete Add and Cancel targets",
+        "passed": true,
+        "evidence": {
+          "add": {
+            "x": 418,
+            "y": 130.75,
+            "width": 414,
+            "height": 61,
+            "top": 130.75,
+            "right": 832,
+            "bottom": 191.75,
+            "left": 418,
+            "visibleWidth": 414,
+            "visibleHeight": 61,
+            "hit": true
+          },
+          "cancel": {
+            "x": 12,
+            "y": 130.75,
+            "width": 398,
+            "height": 61,
+            "top": 130.75,
+            "right": 410,
+            "bottom": 191.75,
+            "left": 12,
+            "visibleWidth": 398,
+            "visibleHeight": 61,
+            "hit": true
+          },
+          "close": {
+            "x": 788,
+            "y": 6,
+            "width": 44,
+            "height": 44,
+            "top": 6,
+            "right": 832,
+            "bottom": 50,
+            "left": 788,
+            "visibleWidth": 44,
+            "visibleHeight": 44,
+            "hit": true
+          }
+        }
+      },
+      {
+        "name": "Built Gallery Close remains44px at the end of the album list",
+        "passed": true,
+        "evidence": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "hit": true
+        }
+      },
+      {
+        "name": "Actual album POST carries complete node IDs and the quoted revision",
+        "passed": true,
+        "evidence": [
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 403
+          },
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "name": "Actual403 remains readable and retains the current three-item selection",
+        "passed": true,
+        "evidence": {
+          "error": "验收：相册暂时不可写，请重试。",
+          "count": "已选择3项"
+        }
+      },
+      {
+        "name": "Retry sends one new actual request for the retained album and unchanged selection",
+        "passed": true,
+        "evidence": [
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 403
+          },
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 200
+          }
+        ]
+      },
+      {
+        "name": "Successful Add clears the real Gallery selection once",
+        "passed": true
+      },
+      {
+        "name": "Successful Add returns focus to the remaining Gallery selection control",
+        "passed": true,
+        "evidence": {
+          "tag": "BUTTON",
+          "role": null,
+          "name": "选择",
+          "connected": true,
+          "insideMain": true
+        }
+      },
+      {
+        "name": "Picker return keeps the same Gallery caller and route",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-selection-return: requested CSS viewport",
+        "passed": true,
+        "evidence": {
+          "width": 390,
+          "height": 844
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: no document overflow",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: workspace within viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 202,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-gallery-selection-return: mobile main fills the entire viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 202,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: global chrome does not reserve viewport space",
+        "passed": true,
+        "evidence": {
+          "header": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "right": 0,
+            "bottom": 0,
+            "clientWidth": 0,
+            "clientHeight": 0,
+            "scrollWidth": 0,
+            "scrollHeight": 0,
+            "scrollTop": 0,
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "padding": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "flexDirection": "column",
+            "flexBasis": "auto"
+          },
+          "bottomNavigation": null
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: mobile workspace has no outer padding",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 202,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: workspace page meets available edges",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": -202,
+          "width": 390,
+          "height": 2846.6875,
+          "right": 390,
+          "bottom": 2644.6875,
+          "clientWidth": 390,
+          "clientHeight": 2847,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-gallery-selection-return: Gallery title does not reserve a 320px column",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": -202,
+          "width": 390,
+          "height": 52.03125,
+          "right": 390,
+          "bottom": -149.96875,
+          "clientWidth": 390,
+          "clientHeight": 52,
+          "scrollWidth": 390,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "no unknown API or external requests",
+        "passed": true,
+        "evidence": []
+      },
+      {
+        "name": "no application page errors",
+        "passed": true,
+        "evidence": []
+      },
+      {
+        "name": "no browser console errors",
+        "passed": true,
+        "evidence": []
+      }
+    ],
+    "samples": {
+      "user-gallery-selection-initial": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "hash": "#/app/gallery",
+        "document": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "body": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "main": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        },
+        "files": null,
+        "filesScroll": null,
+        "workspacePage": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 2846.6875,
+          "right": 390,
+          "bottom": 2846.6875,
+          "clientWidth": 390,
+          "clientHeight": 2847,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "galleryHeader": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 146.03125,
+          "right": 390,
+          "bottom": 146.03125,
+          "clientWidth": 390,
+          "clientHeight": 146,
+          "scrollWidth": 390,
+          "scrollHeight": 146,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "galleryTitle": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 52.03125,
+          "right": 390,
+          "bottom": 52.03125,
+          "clientWidth": 390,
+          "clientHeight": 52,
+          "scrollWidth": 390,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "navigation": {
+          "x": 16,
+          "y": 956,
+          "width": 358,
+          "height": 192,
+          "right": 374,
+          "bottom": 1148,
+          "clientWidth": 358,
+          "clientHeight": 192,
+          "scrollWidth": 358,
+          "scrollHeight": 192,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "globalHeader": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "right": 0,
+          "bottom": 0,
+          "clientWidth": 0,
+          "clientHeight": 0,
+          "scrollWidth": 0,
+          "scrollHeight": 0,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "floatingNavigation": {
+          "x": 56,
+          "y": 788,
+          "width": 44,
+          "height": 44,
+          "right": 100,
+          "bottom": 832,
+          "clientWidth": 42,
+          "clientHeight": 42,
+          "scrollWidth": 42,
+          "scrollHeight": 42,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "bottomNavigation": null,
+        "coarse": true,
+        "compact": true
+      },
+      "gallery-selection-cancel-focus": {
+        "tag": "BUTTON",
+        "role": null,
+        "name": "加入相册",
+        "connected": true,
+        "insideMain": true
+      },
+      "gallery-selection-short-initial": {
+        "row": {
+          "x": 0,
+          "y": 144,
+          "width": 844,
+          "height": 56.03125,
+          "top": 144,
+          "right": 844,
+          "bottom": 200.03125,
+          "left": 0,
+          "visibleWidth": 844,
+          "visibleHeight": 56,
+          "hit": true
+        },
+        "close": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "hit": true
+        }
+      },
+      "user-gallery-selection-scroll-before": {
+        "point": {
+          "x": 24,
+          "y": 128.5
+        },
+        "scrollTop": 0,
+        "clientHeight": 143,
+        "scrollHeight": 1510,
+        "hitTag": "INPUT",
+        "hitText": "",
+        "hitInContent": true,
+        "alerts": []
+      },
+      "user-gallery-selection-scroll-after": {
+        "point": {
+          "x": 24,
+          "y": 128.5
+        },
+        "scrollTop": 1367,
+        "clientHeight": 143,
+        "scrollHeight": 1510,
+        "hitTag": "DIV",
+        "hitText": "取消添加到相册",
+        "hitInContent": true,
+        "alerts": []
+      },
+      "gallery-selection-short-actions": {
+        "add": {
+          "x": 418,
+          "y": 130.75,
+          "width": 414,
+          "height": 61,
+          "top": 130.75,
+          "right": 832,
+          "bottom": 191.75,
+          "left": 418,
+          "visibleWidth": 414,
+          "visibleHeight": 61,
+          "hit": true
+        },
+        "cancel": {
+          "x": 12,
+          "y": 130.75,
+          "width": 398,
+          "height": 61,
+          "top": 130.75,
+          "right": 410,
+          "bottom": 191.75,
+          "left": 12,
+          "visibleWidth": 398,
+          "visibleHeight": 61,
+          "hit": true
+        },
+        "close": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "hit": true
+        },
+        "content": {
+          "height": 143,
+          "scrollTop": 1367,
+          "scrollHeight": 1510
+        }
+      },
+      "user-gallery-selection-refused-scroll-before": {
+        "point": {
+          "x": 24,
+          "y": 128.5
+        },
+        "scrollTop": 1367,
+        "clientHeight": 143,
+        "scrollHeight": 1562,
+        "hitTag": "P",
+        "hitText": "验收：相册暂时不可写，请重试。",
+        "hitInContent": true,
+        "alerts": [
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 0,
+              "y": 736.71875,
+              "width": 844,
+              "height": 68.03125,
+              "top": 736.71875,
+              "right": 844,
+              "bottom": 804.75,
+              "left": 0
+            }
+          },
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 394.75,
+              "y": 122.8505859375,
+              "width": 364.5,
+              "height": 38.267578125,
+              "top": 122.8505859375,
+              "right": 759.25,
+              "bottom": 161.1181640625,
+              "left": 394.75
+            }
+          },
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 0,
+              "y": 121.75,
+              "width": 844,
+              "height": 52,
+              "top": 121.75,
+              "right": 844,
+              "bottom": 173.75,
+              "left": 0
+            }
+          }
+        ]
+      },
+      "user-gallery-selection-refused-scroll-after": {
+        "point": {
+          "x": 24,
+          "y": 128.5
+        },
+        "scrollTop": 1419,
+        "clientHeight": 143,
+        "scrollHeight": 1562,
+        "hitTag": "DIV",
+        "hitText": "取消添加到相册",
+        "hitInContent": true,
+        "alerts": [
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 0,
+              "y": 736.71875,
+              "width": 844,
+              "height": 68.03125,
+              "top": 736.71875,
+              "right": 844,
+              "bottom": 804.75,
+              "left": 0
+            }
+          },
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 352.4755859375,
+              "y": 112.49468231201172,
+              "width": 449.048828125,
+              "height": 58.97937774658203,
+              "top": 112.49468231201172,
+              "right": 801.5244140625,
+              "bottom": 171.47406005859375,
+              "left": 352.4755859375
+            }
+          },
+          {
+            "text": "验收：相册暂时不可写，请重试。",
+            "rect": {
+              "x": 0,
+              "y": 69.75,
+              "width": 844,
+              "height": 52,
+              "top": 69.75,
+              "right": 844,
+              "bottom": 121.75,
+              "left": 0
+            }
+          }
+        ]
+      },
+      "gallery-selection-refused-focus": {
+        "tag": "DIV",
+        "role": "dialog",
+        "name": "选择手动相册",
+        "connected": true,
+        "insideMain": false
+      },
+      "gallery-selection-refused-actions": {
+        "add": {
+          "x": 418,
+          "y": 130.75,
+          "width": 414,
+          "height": 61,
+          "top": 130.75,
+          "right": 832,
+          "bottom": 191.75,
+          "left": 418,
+          "visibleWidth": 414,
+          "visibleHeight": 61,
+          "hit": false
+        },
+        "close": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "hit": true
+        }
+      },
+      "gallery-selection-success-focus": {
+        "tag": "BUTTON",
+        "role": null,
+        "name": "选择",
+        "connected": true,
+        "insideMain": true
+      },
+      "user-gallery-selection-return": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "hash": "#/app/gallery",
+        "document": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "body": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 844,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "main": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 844,
+          "right": 390,
+          "bottom": 844,
+          "clientWidth": 390,
+          "clientHeight": 844,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 202,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        },
+        "files": null,
+        "filesScroll": null,
+        "workspacePage": {
+          "x": 0,
+          "y": -202,
+          "width": 390,
+          "height": 2846.6875,
+          "right": 390,
+          "bottom": 2644.6875,
+          "clientWidth": 390,
+          "clientHeight": 2847,
+          "scrollWidth": 390,
+          "scrollHeight": 2847,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "galleryHeader": {
+          "x": 0,
+          "y": -202,
+          "width": 390,
+          "height": 146.03125,
+          "right": 390,
+          "bottom": -55.96875,
+          "clientWidth": 390,
+          "clientHeight": 146,
+          "scrollWidth": 390,
+          "scrollHeight": 146,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "galleryTitle": {
+          "x": 0,
+          "y": -202,
+          "width": 390,
+          "height": 52.03125,
+          "right": 390,
+          "bottom": -149.96875,
+          "clientWidth": 390,
+          "clientHeight": 52,
+          "scrollWidth": 390,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "navigation": {
+          "x": 16,
+          "y": 563.390625,
+          "width": 358,
+          "height": 192,
+          "right": 374,
+          "bottom": 755.390625,
+          "clientWidth": 358,
+          "clientHeight": 192,
+          "scrollWidth": 358,
+          "scrollHeight": 192,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "globalHeader": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "right": 0,
+          "bottom": 0,
+          "clientWidth": 0,
+          "clientHeight": 0,
+          "scrollWidth": 0,
+          "scrollHeight": 0,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "floatingNavigation": {
+          "x": 56,
+          "y": 788,
+          "width": 44,
+          "height": 44,
+          "right": 100,
+          "bottom": 832,
+          "clientWidth": 42,
+          "clientHeight": 42,
+          "scrollWidth": 42,
+          "scrollHeight": 42,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "bottomNavigation": null,
+        "coarse": true,
+        "compact": true
+      },
+      "gallery-selection-transport": {
+        "attempts": [
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 403
+          },
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 200
+          }
+        ],
+        "accepted": [
+          {
+            "albumID": "qa-album-24",
+            "node_ids": [
+              1000,
+              1001,
+              1002
+            ],
+            "ifMatch": "\"30\"",
+            "status": 200
+          }
+        ],
+        "album": {
+          "id": "qa-album-24",
+          "name": "验收相册 24 长名称仍应完整可读",
+          "kind": "manual",
+          "revision": 31,
+          "item_count": 28,
+          "created_at": "2026-10-08T12:00:00Z",
+          "updated_at": "2026-10-08T12:00:00Z"
+        }
+      }
+    },
+    "requests": {
+      "user GET /api/v1/version": 1,
+      "user GET /api/v1/sources": 1,
+      "user GET /api/v1/file-recent?limit=16": 1,
+      "user GET /api/v1/file-quick-access": 1,
+      "user GET /api/v1/file-tags": 1,
+      "user GET /api/v1/file-saved-searches": 1,
+      "user GET /api/v1/file-favorites": 1,
+      "user GET /api/v1/me": 1,
+      "user GET /api/v1/me/quota": 1,
+      "user GET /api/v1/nodes/root": 1,
+      "user GET /api/v1/changes?after=0&limit=1": 1,
+      "user GET /api/v1/file-operations?limit=200": 1,
+      "user GET /api/v1/background-tasks/active-summary": 3,
+      "user GET /api/v1/nodes/1/children?offset=0&limit=200&sort=name&order=asc": 2,
+      "user GET /api/v1/media/items?range=true&limit=100&offset=0&time_zone=UTC&sort_by=captured&sort_dir=desc": 1,
+      "user GET /api/v1/media/albums": 1,
+      "user GET /api/v1/media/places?limit=24": 1,
+      "user GET /api/v1/media/pets": 1,
+      "user GET /api/v1/media/people/suggestions?include_reviewed=true&limit=100": 1,
+      "user GET /api/v1/media/people/identities?limit=100&offset=0&include_hidden=true": 1,
+      "user GET /api/v1/media/items/1000/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1001/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1002/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1003/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1004/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1005/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1006/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1007/thumbnail?v=3": 1,
+      "user GET /api/v1/changes?after=1&limit=200": 5,
+      "user GET /api/v1/media/items/1008/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1009/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1010/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1011/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1012/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1013/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1014/thumbnail?v=3": 1,
+      "user POST /api/v1/media/albums/qa-album-24/items": 2
+    },
+    "unknownRequests": [],
+    "consoleErrors": [],
+    "expectedConsoleErrors": [
+      {
+        "role": "user",
+        "stage": "user-gallery-selection-refused",
+        "message": "Failed to load resource: the server responded with a status of 403 (Forbidden)",
+        "url": "http://127.0.0.1:36779/api/v1/media/albums/qa-album-24/items"
+      }
+    ],
+    "expectedApiErrors": [
+      {
+        "request": "user POST /api/v1/media/albums/qa-album-24/items",
+        "status": 403,
+        "purpose": "one actual album assignment is refused before explicit retry"
+      }
+    ],
+    "pageErrors": [],
+    "failures": [],
+    "runnerSHA256": "20b1aefb0605072e5292761bc3eb82fb49c0ac479c0df4b77758d3f4775bfd39",
+    "builtWebSHA256": {
+      "index.html": "ce8145d1f1a050f66aeb885f6790ee2926ce32454921ccb891071f3384780278",
+      "assets/index-BAElkkhY.css": "c7430d0cd4919141fb7491d8b8e8e085f159372ad0e9fb6c0e53a3e0fa3a666f",
+      "assets/index-BzRFYcZt.js": "f024be94b4324f2eb41e42a5670fffd986b7d065231053f55b272ee7aeb05b59"
+    },
+    "sourceHashes": {
+      "web/src/App.tsx": "7864e1f66183212edef54770427eb0c68726e42ea9a709cdeca5ffdea216b9e4",
+      "web/src/api.ts": "bf33f2b77daa901e79c8b6523a9f583774c84000718750c0f0548f403e54a515",
+      "web/src/mediaGalleryAdapter.ts": "e784a923b5ff9b43e3b55dd620a3a15464364185cd2da11b278d129e47ff21db",
+      "ui/shared/src/mui/MediaGallery.tsx": "050d80cd5d974762ae78048ad1e74a4320176ba2ae15e80b4160c601ad9fd7e1",
+      "ui/shared/src/mui/MediaGallerySelectionToolbar.tsx": "f60d42d99e6b7bb65fc8aadf17047d8d5e6a153a9c2eb88aa78dcd2943f5357d",
+      "ui/shared/src/mui/useMobilePanelViewport.ts": "17d556fbfa00d76be7d1c3b21c7026b0677831f24598d5c98ecf7d436e41eea6",
+      "ui/shared/src/mui/AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b",
+      "ui/shared/src/mui/theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074"
+    },
+    "browserVersion": "153.0.8010.0",
+    "finishedAt": "2026-10-09T10:12:57.484Z",
+    "passed": true
+  },
+  "finalBuiltAppPanels37": {
+    "sourceRoot": "/workspace/scratch/33a6f8d71159/xdrive",
+    "distRoot": "/workspace/scratch/33a6f8d71159/xdrive/web/dist",
+    "startedAt": "2026-10-09T10:12:49.460Z",
+    "scenario": "mobile-panels",
+    "fixture": {
+      "rootItems": 97,
+      "nestedItems": 64,
+      "galleryItems": 240,
+      "network": "local bounded fixtures only"
+    },
+    "checks": [
+      {
+        "name": "files-short200-type: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 12,
+          "y": 124.03125,
+          "width": 768,
+          "height": 61,
+          "top": 124.03125,
+          "right": 780,
+          "bottom": 185.03125,
+          "left": 12,
+          "visibleWidth": 768,
+          "visibleHeight": 61,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "files-short200-close: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 788,
+          "y": 34.015625,
+          "width": 44,
+          "height": 44,
+          "top": 34.015625,
+          "right": 832,
+          "bottom": 78.015625,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "files-short200-save: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 12,
+          "y": 127.03125,
+          "width": 406,
+          "height": 61,
+          "top": 127.03125,
+          "right": 418,
+          "bottom": 188.03125,
+          "left": 12,
+          "visibleWidth": 406,
+          "visibleHeight": 61,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "files-short200-clear: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 426,
+          "y": 127.03125,
+          "width": 406,
+          "height": 61,
+          "top": 127.03125,
+          "right": 832,
+          "bottom": 188.03125,
+          "left": 426,
+          "visibleWidth": 406,
+          "visibleHeight": 61,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "Files clears actual applied conditions without leaving its panel",
+        "passed": true
+      },
+      {
+        "name": "Files close restores trigger focus",
+        "passed": true
+      },
+      {
+        "name": "files-short200-location-close: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 264,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 308,
+          "bottom": 50,
+          "left": 264,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "Location close preserves mounted Files and main",
+        "passed": true
+      },
+      {
+        "name": "Location close returns focus to its trigger",
+        "passed": true
+      },
+      {
+        "name": "Gallery all nine compact navigation targets are44px",
+        "passed": true,
+        "evidence": [
+          {
+            "section": "library",
+            "x": 0,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 64,
+            "bottom": 206.03125,
+            "left": 0
+          },
+          {
+            "section": "memories",
+            "x": 68,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 132,
+            "bottom": 206.03125,
+            "left": 68
+          },
+          {
+            "section": "people",
+            "x": 136,
+            "y": 162.03125,
+            "width": 89,
+            "height": 44,
+            "top": 162.03125,
+            "right": 225,
+            "bottom": 206.03125,
+            "left": 136
+          },
+          {
+            "section": "places",
+            "x": 229,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 293,
+            "bottom": 206.03125,
+            "left": 229
+          },
+          {
+            "section": "albums",
+            "x": 297,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 361,
+            "bottom": 206.03125,
+            "left": 297
+          },
+          {
+            "section": "favorites",
+            "x": 365,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 429,
+            "bottom": 206.03125,
+            "left": 365
+          },
+          {
+            "section": "media-types",
+            "x": 433,
+            "y": 162.03125,
+            "width": 76,
+            "height": 44,
+            "top": 162.03125,
+            "right": 509,
+            "bottom": 206.03125,
+            "left": 433
+          },
+          {
+            "section": "cleanup",
+            "x": 513,
+            "y": 162.03125,
+            "width": 76,
+            "height": 44,
+            "top": 162.03125,
+            "right": 589,
+            "bottom": 206.03125,
+            "left": 513
+          },
+          {
+            "section": "trash",
+            "x": 593,
+            "y": 162.03125,
+            "width": 64,
+            "height": 44,
+            "top": 162.03125,
+            "right": 657,
+            "bottom": 206.03125,
+            "left": 593
+          }
+        ]
+      },
+      {
+        "name": "gallery-filter-trigger: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 320,
+          "y": 62.03125,
+          "width": 70,
+          "height": 44,
+          "top": 62.03125,
+          "right": 390,
+          "bottom": 106.03125,
+          "left": 320,
+          "visibleWidth": 70,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 390,
+            "height": 844,
+            "visualHeight": 844,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "Focused Gallery draft survives reduced layout viewport in the same input",
+        "passed": true
+      },
+      {
+        "name": "gallery-reduced-close: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 334,
+          "y": 3.5,
+          "width": 44,
+          "height": 44,
+          "top": 3.5,
+          "right": 378,
+          "bottom": 47.5,
+          "left": 334,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 390,
+            "height": 260,
+            "visualHeight": 260,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "gallery-reduced-apply: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 23,
+          "y": 185,
+          "width": 91.328125,
+          "height": 44,
+          "top": 185,
+          "right": 114.328125,
+          "bottom": 229,
+          "left": 23,
+          "visibleWidth": 91.328125,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 390,
+            "height": 260,
+            "visualHeight": 260,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "gallery-reduced-clear: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 122.328125,
+          "y": 185,
+          "width": 75.34375,
+          "height": 44,
+          "top": 185,
+          "right": 197.671875,
+          "bottom": 229,
+          "left": 122.328125,
+          "visibleWidth": 75.34375,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 390,
+            "height": 260,
+            "visualHeight": 260,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "gallery-reduced-save: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 205.671875,
+          "y": 185,
+          "width": 161.328125,
+          "height": 44,
+          "top": 185,
+          "right": 367,
+          "bottom": 229,
+          "left": 205.671875,
+          "visibleWidth": 161.328125,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 390,
+            "height": 260,
+            "visualHeight": 260,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "Gallery Apply reaches its actual query with trimmed tag",
+        "passed": true
+      },
+      {
+        "name": "Gallery Apply restores filter-trigger focus",
+        "passed": true
+      },
+      {
+        "name": "Filter Apply never opens Viewer",
+        "passed": true
+      },
+      {
+        "name": "Reopened Gallery filter retains committed condition",
+        "passed": true
+      },
+      {
+        "name": "gallery-short200-tag: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 19,
+          "y": 76,
+          "width": 806,
+          "height": 63,
+          "top": 76,
+          "right": 825,
+          "bottom": 139,
+          "left": 19,
+          "visibleWidth": 806,
+          "visibleHeight": 63,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "gallery-short200-save: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 461.671875,
+          "y": 108,
+          "width": 359.328125,
+          "height": 61,
+          "top": 108,
+          "right": 821,
+          "bottom": 169,
+          "left": 461.671875,
+          "visibleWidth": 359.328125,
+          "visibleHeight": 61,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "gallery-short200-close: at least44px visible target",
+        "passed": true,
+        "evidence": {
+          "x": 788,
+          "y": 6,
+          "width": 44,
+          "height": 44,
+          "top": 6,
+          "right": 832,
+          "bottom": 50,
+          "left": 788,
+          "visibleWidth": 44,
+          "visibleHeight": 44,
+          "viewport": {
+            "width": 844,
+            "height": 200,
+            "visualHeight": 200,
+            "visualOffset": 0
+          }
+        }
+      },
+      {
+        "name": "Gallery Escape returns focus without a navigation change",
+        "passed": true
+      },
+      {
+        "name": "user-mobile-panels-final: requested CSS viewport",
+        "passed": true,
+        "evidence": {
+          "width": 844,
+          "height": 390
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: no document overflow",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 390,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: workspace within viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: correct navigation breakpoint",
+        "passed": true
+      },
+      {
+        "name": "user-mobile-panels-final: mobile main fills the entire viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: global chrome does not reserve viewport space",
+        "passed": true,
+        "evidence": {
+          "header": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "right": 0,
+            "bottom": 0,
+            "clientWidth": 0,
+            "clientHeight": 0,
+            "scrollWidth": 0,
+            "scrollHeight": 0,
+            "scrollTop": 0,
+            "overflowX": "visible",
+            "overflowY": "visible",
+            "padding": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "flexDirection": "column",
+            "flexBasis": "auto"
+          },
+          "bottomNavigation": null
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: mobile workspace has no outer padding",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: workspace page meets available edges",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 8489.484375,
+          "right": 844,
+          "bottom": 8489.484375,
+          "clientWidth": 844,
+          "clientHeight": 8489,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "user-mobile-panels-final: Gallery title does not reserve a 320px column",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 52.03125,
+          "right": 844,
+          "bottom": 52.03125,
+          "clientWidth": 844,
+          "clientHeight": 52,
+          "scrollWidth": 844,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        }
+      },
+      {
+        "name": "Panels leave the app occupying the full compact viewport",
+        "passed": true,
+        "evidence": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        }
+      },
+      {
+        "name": "no unknown API or external requests",
+        "passed": true,
+        "evidence": []
+      },
+      {
+        "name": "no application page errors",
+        "passed": true,
+        "evidence": []
+      },
+      {
+        "name": "no browser console errors",
+        "passed": true,
+        "evidence": []
+      }
+    ],
+    "samples": {
+      "files-short200-type": {
+        "x": 12,
+        "y": 124.03125,
+        "width": 768,
+        "height": 61,
+        "top": 124.03125,
+        "right": 780,
+        "bottom": 185.03125,
+        "left": 12,
+        "visibleWidth": 768,
+        "visibleHeight": 61,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "files-short200-close": {
+        "x": 788,
+        "y": 34.015625,
+        "width": 44,
+        "height": 44,
+        "top": 34.015625,
+        "right": 832,
+        "bottom": 78.015625,
+        "left": 788,
+        "visibleWidth": 44,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "files-short200-save": {
+        "x": 12,
+        "y": 127.03125,
+        "width": 406,
+        "height": 61,
+        "top": 127.03125,
+        "right": 418,
+        "bottom": 188.03125,
+        "left": 12,
+        "visibleWidth": 406,
+        "visibleHeight": 61,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "files-short200-clear": {
+        "x": 426,
+        "y": 127.03125,
+        "width": 406,
+        "height": 61,
+        "top": 127.03125,
+        "right": 832,
+        "bottom": 188.03125,
+        "left": 426,
+        "visibleWidth": 406,
+        "visibleHeight": 61,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "files-short200-location-close": {
+        "x": 264,
+        "y": 6,
+        "width": 44,
+        "height": 44,
+        "top": 6,
+        "right": 308,
+        "bottom": 50,
+        "left": 264,
+        "visibleWidth": 44,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "gallery-navigation-targets": [
+        {
+          "section": "library",
+          "x": 0,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 64,
+          "bottom": 206.03125,
+          "left": 0
+        },
+        {
+          "section": "memories",
+          "x": 68,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 132,
+          "bottom": 206.03125,
+          "left": 68
+        },
+        {
+          "section": "people",
+          "x": 136,
+          "y": 162.03125,
+          "width": 89,
+          "height": 44,
+          "top": 162.03125,
+          "right": 225,
+          "bottom": 206.03125,
+          "left": 136
+        },
+        {
+          "section": "places",
+          "x": 229,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 293,
+          "bottom": 206.03125,
+          "left": 229
+        },
+        {
+          "section": "albums",
+          "x": 297,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 361,
+          "bottom": 206.03125,
+          "left": 297
+        },
+        {
+          "section": "favorites",
+          "x": 365,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 429,
+          "bottom": 206.03125,
+          "left": 365
+        },
+        {
+          "section": "media-types",
+          "x": 433,
+          "y": 162.03125,
+          "width": 76,
+          "height": 44,
+          "top": 162.03125,
+          "right": 509,
+          "bottom": 206.03125,
+          "left": 433
+        },
+        {
+          "section": "cleanup",
+          "x": 513,
+          "y": 162.03125,
+          "width": 76,
+          "height": 44,
+          "top": 162.03125,
+          "right": 589,
+          "bottom": 206.03125,
+          "left": 513
+        },
+        {
+          "section": "trash",
+          "x": 593,
+          "y": 162.03125,
+          "width": 64,
+          "height": 44,
+          "top": 162.03125,
+          "right": 657,
+          "bottom": 206.03125,
+          "left": 593
+        }
+      ],
+      "gallery-filter-trigger": {
+        "x": 320,
+        "y": 62.03125,
+        "width": 70,
+        "height": 44,
+        "top": 62.03125,
+        "right": 390,
+        "bottom": 106.03125,
+        "left": 320,
+        "visibleWidth": 70,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 390,
+          "height": 844,
+          "visualHeight": 844,
+          "visualOffset": 0
+        }
+      },
+      "gallery-reduced-close": {
+        "x": 334,
+        "y": 3.5,
+        "width": 44,
+        "height": 44,
+        "top": 3.5,
+        "right": 378,
+        "bottom": 47.5,
+        "left": 334,
+        "visibleWidth": 44,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 390,
+          "height": 260,
+          "visualHeight": 260,
+          "visualOffset": 0
+        }
+      },
+      "gallery-reduced-apply": {
+        "x": 23,
+        "y": 185,
+        "width": 91.328125,
+        "height": 44,
+        "top": 185,
+        "right": 114.328125,
+        "bottom": 229,
+        "left": 23,
+        "visibleWidth": 91.328125,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 390,
+          "height": 260,
+          "visualHeight": 260,
+          "visualOffset": 0
+        }
+      },
+      "gallery-reduced-clear": {
+        "x": 122.328125,
+        "y": 185,
+        "width": 75.34375,
+        "height": 44,
+        "top": 185,
+        "right": 197.671875,
+        "bottom": 229,
+        "left": 122.328125,
+        "visibleWidth": 75.34375,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 390,
+          "height": 260,
+          "visualHeight": 260,
+          "visualOffset": 0
+        }
+      },
+      "gallery-reduced-save": {
+        "x": 205.671875,
+        "y": 185,
+        "width": 161.328125,
+        "height": 44,
+        "top": 185,
+        "right": 367,
+        "bottom": 229,
+        "left": 205.671875,
+        "visibleWidth": 161.328125,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 390,
+          "height": 260,
+          "visualHeight": 260,
+          "visualOffset": 0
+        }
+      },
+      "gallery-short200-tag": {
+        "x": 19,
+        "y": 76,
+        "width": 806,
+        "height": 63,
+        "top": 76,
+        "right": 825,
+        "bottom": 139,
+        "left": 19,
+        "visibleWidth": 806,
+        "visibleHeight": 63,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "gallery-short200-save": {
+        "x": 461.671875,
+        "y": 108,
+        "width": 359.328125,
+        "height": 61,
+        "top": 108,
+        "right": 821,
+        "bottom": 169,
+        "left": 461.671875,
+        "visibleWidth": 359.328125,
+        "visibleHeight": 61,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "gallery-short200-close": {
+        "x": 788,
+        "y": 6,
+        "width": 44,
+        "height": 44,
+        "top": 6,
+        "right": 832,
+        "bottom": 50,
+        "left": 788,
+        "visibleWidth": 44,
+        "visibleHeight": 44,
+        "viewport": {
+          "width": 844,
+          "height": 200,
+          "visualHeight": 200,
+          "visualOffset": 0
+        }
+      },
+      "user-mobile-panels-final": {
+        "viewport": {
+          "width": 844,
+          "height": 390
+        },
+        "hash": "#/app/gallery",
+        "document": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 390,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "body": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 390,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "main": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 390,
+          "right": 844,
+          "bottom": 390,
+          "clientWidth": 844,
+          "clientHeight": 390,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "auto",
+          "overflowY": "auto",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "0%"
+        },
+        "files": null,
+        "filesScroll": null,
+        "workspacePage": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 8489.484375,
+          "right": 844,
+          "bottom": 8489.484375,
+          "clientWidth": 844,
+          "clientHeight": 8489,
+          "scrollWidth": 844,
+          "scrollHeight": 8489,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "galleryHeader": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 106.03125,
+          "right": 844,
+          "bottom": 106.03125,
+          "clientWidth": 844,
+          "clientHeight": 106,
+          "scrollWidth": 844,
+          "scrollHeight": 106,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "galleryTitle": {
+          "x": 0,
+          "y": 0,
+          "width": 844,
+          "height": 52.03125,
+          "right": 844,
+          "bottom": 52.03125,
+          "clientWidth": 844,
+          "clientHeight": 52,
+          "scrollWidth": 844,
+          "scrollHeight": 52,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "navigation": {
+          "x": 16,
+          "y": 350,
+          "width": 812,
+          "height": 192,
+          "right": 828,
+          "bottom": 542,
+          "clientWidth": 812,
+          "clientHeight": 192,
+          "scrollWidth": 812,
+          "scrollHeight": 192,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "globalHeader": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "right": 0,
+          "bottom": 0,
+          "clientWidth": 0,
+          "clientHeight": 0,
+          "scrollWidth": 0,
+          "scrollHeight": 0,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            0,
+            0,
+            0,
+            0
+          ],
+          "flexDirection": "column",
+          "flexBasis": "auto"
+        },
+        "floatingNavigation": {
+          "x": 56,
+          "y": 334,
+          "width": 44,
+          "height": 44,
+          "right": 100,
+          "bottom": 378,
+          "clientWidth": 42,
+          "clientHeight": 42,
+          "scrollWidth": 42,
+          "scrollHeight": 42,
+          "scrollTop": 0,
+          "overflowX": "visible",
+          "overflowY": "visible",
+          "padding": [
+            8,
+            8,
+            8,
+            8
+          ],
+          "flexDirection": "row",
+          "flexBasis": "auto"
+        },
+        "bottomNavigation": null,
+        "coarse": true,
+        "compact": true
+      }
+    },
+    "requests": {
+      "user GET /api/v1/version": 1,
+      "user GET /api/v1/sources": 1,
+      "user GET /api/v1/file-recent?limit=16": 1,
+      "user GET /api/v1/file-quick-access": 1,
+      "user GET /api/v1/file-tags": 1,
+      "user GET /api/v1/file-saved-searches": 1,
+      "user GET /api/v1/file-favorites": 1,
+      "user GET /api/v1/me": 1,
+      "user GET /api/v1/me/quota": 1,
+      "user GET /api/v1/nodes/root": 1,
+      "user GET /api/v1/changes?after=0&limit=1": 1,
+      "user GET /api/v1/file-operations?limit=200": 1,
+      "user GET /api/v1/background-tasks/active-summary": 3,
+      "user GET /api/v1/nodes/1/children?offset=0&limit=200&sort=name&order=asc": 2,
+      "user GET /api/v1/search?q=&offset=0&limit=200&sort=name&order=asc&kind=image": 1,
+      "user GET /api/v1/changes?after=1&limit=200": 4,
+      "user GET /api/v1/media/items?range=true&limit=100&offset=0&time_zone=UTC&sort_by=captured&sort_dir=desc": 1,
+      "user GET /api/v1/media/albums": 2,
+      "user GET /api/v1/media/places?limit=24": 2,
+      "user GET /api/v1/media/pets": 2,
+      "user GET /api/v1/media/people/suggestions?include_reviewed=true&limit=100": 2,
+      "user GET /api/v1/media/people/identities?limit=100&offset=0&include_hidden=true": 2,
+      "user GET /api/v1/media/items?range=true&limit=100&offset=100&time_zone=UTC&sort_by=captured&sort_dir=desc": 1,
+      "user GET /api/v1/media/items/1000/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1001/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1002/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1003/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1004/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1005/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1006/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1007/thumbnail?v=3": 1,
+      "user GET /api/v1/media/facets": 1,
+      "user GET /api/v1/media/items?range=true&limit=100&offset=0&time_zone=UTC&sort_by=captured&sort_dir=desc&tag=%E9%9D%A2%E6%9D%BF%E9%AA%8C%E6%94%B6": 2,
+      "user GET /api/v1/media/items?range=true&limit=100&offset=100&time_zone=UTC&sort_by=captured&sort_dir=desc&tag=%E9%9D%A2%E6%9D%BF%E9%AA%8C%E6%94%B6": 1,
+      "user GET /api/v1/media/items/1008/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1009/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1010/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1011/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1012/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1013/thumbnail?v=3": 1,
+      "user GET /api/v1/media/items/1014/thumbnail?v=3": 1,
+      "user GET /api/v1/media/facets?tag=%E9%9D%A2%E6%9D%BF%E9%AA%8C%E6%94%B6": 1
+    },
+    "unknownRequests": [],
+    "consoleErrors": [],
+    "expectedConsoleErrors": [],
+    "expectedApiErrors": [],
+    "pageErrors": [],
+    "failures": [],
+    "runnerSHA256": "20b1aefb0605072e5292761bc3eb82fb49c0ac479c0df4b77758d3f4775bfd39",
+    "builtWebSHA256": {
+      "index.html": "ce8145d1f1a050f66aeb885f6790ee2926ce32454921ccb891071f3384780278",
+      "assets/index-BAElkkhY.css": "c7430d0cd4919141fb7491d8b8e8e085f159372ad0e9fb6c0e53a3e0fa3a666f",
+      "assets/index-BzRFYcZt.js": "f024be94b4324f2eb41e42a5670fffd986b7d065231053f55b272ee7aeb05b59"
+    },
+    "browserVersion": "153.0.8010.0",
+    "finishedAt": "2026-10-09T10:12:56.082Z",
+    "passed": true
+  },
+  "reusedRecordedInputs": {
+    "m10-m13-682d-timeline45-final": {
+      "passed": 45,
+      "recordedSourceHashes": {
+        "MediaGalleryTimelineNavigation.ts": "af0719d64a4412c1c5a6db2ff6489a9e469e8c87ff30d9c7b7a176fb464656a2",
+        "MediaGallery.tsx": "050d80cd5d974762ae78048ad1e74a4320176ba2ae15e80b4160c601ad9fd7e1",
+        "MediaGalleryVirtualTimeline.ts": "68f397661e121481b654ce6c51ee097848353ef05835f7f3b67d789c3d746416",
+        "MediaGalleryVirtualGrid.ts": "a548d110c676775e1a99ec9fb3120afeb22abbe0c09cd634d88cf2df4aa99935",
+        "MediaGalleryFilters.tsx": "300d8f7ec656e005bb9e786bdcdd0d39e6baddefdf7ad31fabe41009cce1aa8e",
+        "MediaGalleryNavigation.tsx": "8c47ca153f65467be69f48c9022831b7db1f543094c4e439e85e38ae6528267b",
+        "WorkspaceContent.tsx": "baa16e8efec4cbedd2713c2a2c2a8eb26c20b089c918d185c5a0092efd605f26",
+        "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b",
+        "theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074"
+      },
+      "fixtureHashes": {
+        "cjs": "a697fc3aa3d97dff707deea7208e9756a46bc915fe09ee682f0d945a6b46e19c",
+        "tsx": "11fb5f2fff6e975bd07306c01b5ffdfa114aa9fa58e5ec936c3437e681a9d2ea"
+      },
+      "receiptSHA256": "91ee1de5d54e4ea0541fe129b6c669ff4b4cff606ec5a223e577a943108447db",
+      "decision": "Reuse the dated run: all recorded owning source and fixture bytes are identical. New Details presentation is separately exercised by final28 and final built App. No fresh45/57/35 run claimed."
+    },
+    "m10-m13-682d-gallery57": {
+      "passed": 57,
+      "recordedSourceHashes": {
+        "MediaGallery.tsx": "050d80cd5d974762ae78048ad1e74a4320176ba2ae15e80b4160c601ad9fd7e1",
+        "MediaGalleryFilters.tsx": "300d8f7ec656e005bb9e786bdcdd0d39e6baddefdf7ad31fabe41009cce1aa8e",
+        "MediaGalleryNavigation.tsx": "8c47ca153f65467be69f48c9022831b7db1f543094c4e439e85e38ae6528267b",
+        "WorkspaceContent.tsx": "baa16e8efec4cbedd2713c2a2c2a8eb26c20b089c918d185c5a0092efd605f26",
+        "WorkspaceSurface.tsx": "ecfdaaaf3d94ab0d6f44bcd1531d75b69fbb08a9c6ed95ce767e9d92127c6d83",
+        "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b",
+        "theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074",
+        "useMobilePanelViewport.ts": "17d556fbfa00d76be7d1c3b21c7026b0677831f24598d5c98ecf7d436e41eea6"
+      },
+      "fixtureHashes": {
+        "cjs": "4755e3b146985760afb4de32f2e0690e389ba7403674b9282b494a1e166a52c9",
+        "tsx": "2c4b0796554156ebfd57bc9d351d9245338ee6b57b40ab12200077977044036a"
+      },
+      "receiptSHA256": "bdef4a36fdaa92f7c48e7dd66b0f54d60814869db485ed15d7079f2fdbdb875a",
+      "decision": "Reuse the dated run: all recorded owning source and fixture bytes are identical. New Details presentation is separately exercised by final28 and final built App. No fresh45/57/35 run claimed."
+    },
+    "m12-album-picker-extended": {
+      "passed": 35,
+      "recordedSourceHashes": {
+        "MediaGallerySelectionToolbar.tsx": "f60d42d99e6b7bb65fc8aadf17047d8d5e6a153a9c2eb88aa78dcd2943f5357d",
+        "useMobilePanelViewport.ts": "17d556fbfa00d76be7d1c3b21c7026b0677831f24598d5c98ecf7d436e41eea6",
+        "AppearanceThemeProvider.tsx": "4cadfb7be8c37b2ff3ce7ab59478632721a8d7af930c92f1465fee182a2a705b",
+        "theme.ts": "7a86451fc3cffb17fed898ab4623fffbe81f4b7a8a9e2937ea8fc6363e841074"
+      },
+      "fixtureHashes": {
+        "cjs": "414576f337c38e017a2a86f5fe33b0452d6cdddb4386b57d152f5e13aaf641a8",
+        "tsx": "7d8a39663c4ee91b9b4f1f8ea8a1e2f681b79ed4a14bccbb1f0c0b2d0636d45e"
+      },
+      "receiptSHA256": "2b454b698c9911bbaa9a2d60e15de3881d8e0167eb703cb862a0e00179ec5030",
+      "decision": "Reuse the dated run: all recorded owning source and fixture bytes are identical. New Details presentation is separately exercised by final28 and final built App. No fresh45/57/35 run claimed."
+    }
+  },
+  "normalDesktop": {
+    "returncode": 0,
+    "counts": {
+      "tests": 1614,
+      "pass": 1613,
+      "fail": 0,
+      "skipped": 1
+    },
+    "log": "/workspace/scratch/33a6f8d71159/m12-m14-c55-tests.log",
+    "fullSummaryPresent": true,
+    "logSHA256": "44dd07520048c5f4bd010030612e15072912f2f0641bd8afcdbd152cff5faf8a"
+  },
+  "desktopTypecheck": {
+    "returncode": 0,
+    "log": "m12-m14-c55-typecheck.log",
+    "sha256": "029064cbb9cfecba89b8fa3ca1ec9237eaead9aea7449d31d991f0e60e35d30f"
+  },
+  "webGates": [
+    {
+      "step": "web-config",
+      "command": [
+        "node",
+        "web/node_modules/typescript/bin/tsc",
+        "-b",
+        "web/tsconfig.node.json",
+        "--force"
+      ],
+      "returncode": 0,
+      "log": "/workspace/scratch/33a6f8d71159/m12-m14-c55-web-config.log",
+      "logSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "step": "lint",
+      "command": [
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "lint"
+      ],
+      "returncode": 0,
+      "log": "/workspace/scratch/33a6f8d71159/m12-m14-c55-lint.log",
+      "logSHA256": "3f6829b6904ad99e43b802b6fb8cc9b1788f78120e771b1472e85fb96676af72"
+    },
+    {
+      "step": "build",
+      "command": [
+        "npm",
+        "--prefix",
+        "web",
+        "run",
+        "build"
+      ],
+      "returncode": 0,
+      "log": "/workspace/scratch/33a6f8d71159/m12-m14-c55-build.log",
+      "logSHA256": "0e833c1504f89ba7a6ce5fc6aaefa82c2ef84da803fde797d9bd118979bb815b"
+    }
+  ],
+  "builtWebSHA256": {
+    "index.html": "ce8145d1f1a050f66aeb885f6790ee2926ce32454921ccb891071f3384780278",
+    "assets/index-BAElkkhY.css": "c7430d0cd4919141fb7491d8b8e8e085f159372ad0e9fb6c0e53a3e0fa3a666f",
+    "assets/index-BzRFYcZt.js": "f024be94b4324f2eb41e42a5670fffd986b7d065231053f55b272ee7aeb05b59"
+  },
+  "boundaries": [
+    "Browser evidence uses real shared Gallery/MUI and actual built Web client with controlled transport, not live Server persistence.",
+    "Exact fields/IDs/revisions, current target guards, cancel/error/retry and original mounted main are checked; no new lifecycle fence or backend API.",
+    "The final complete local gate reports1613 pass/0fail/1existing optional benchmark skip. The earlier682d log lacking an aggregate summary is not counted as a complete normal gate.",
+    "Prior45/57/35 and M10 source-bound results retain their original run identities; counts overlap and are not summed.",
+    "All physical iOS/Android ordinary/installed modes, real keyboards, address bars, safe areas, OS lifecycle and screen readers remain not-run."
+  ],
+  "independentIntegrationReview": {
+    "reviewedAt": "2026-10-09T10:19:02.607345+00:00",
+    "reviewer": "/root/platform_transfer_audit",
+    "decision": "No concrete blocker in scoped M12–M14 integration/evidence review",
+    "scope": "Read-only source preservation and evidence closure; no new browser/test execution, no repository writes",
+    "testedProductionCommit": "c55d5ad1a0519988483c221184d1166d38de01f0",
+    "parent": "3ad7e73a96a4ee0d7c304b9a78cee2be6001a860",
+    "commitCountAboveParent": 1,
+    "productionSHA256": {
+      "ui/shared/src/mui/MediaGallery.tsx": "050d80cd5d974762ae78048ad1e74a4320176ba2ae15e80b4160c601ad9fd7e1",
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": "9672833feb1d321c1a006f44da285323d811283c337ca64b2c20545aa20b3f40",
+      "ui/shared/src/mui/MediaGallerySelectionToolbar.tsx": "f60d42d99e6b7bb65fc8aadf17047d8d5e6a153a9c2eb88aa78dcd2943f5357d"
+    },
+    "productionMatchesCommittedBlob": {
+      "ui/shared/src/mui/MediaGallery.tsx": true,
+      "ui/shared/src/mui/MediaGalleryDetails.tsx": true,
+      "ui/shared/src/mui/MediaGallerySelectionToolbar.tsx": true
+    },
+    "m12ExactOwnerFragments": {
+      "selectionControlRef": true,
+      "restoreSelectionFocusRef": true,
+      "runSelectionAction": true,
+      "owningPersistentButton": true,
+      "focusEffect": true,
+      "albumCallback": true,
+      "effectFollowsAction": true
+    },
+    "hashVerificationReceipt": "/workspace/scratch/33a6f8d71159/m12-m14-c55-independent-hash-check.json",
+    "hashVerificationSHA256": "6cad75293d19dc065928ecfb106e088dac964b6f277367c840ba1826ba460544",
+    "finalRuns": {
+      "properties": {
+        "passed": 28,
+        "failed": 0,
+        "receipt": "/workspace/scratch/33a6f8d71159/m12-m14-c55-properties28/results.json"
+      },
+      "actualAppSelection": {
+        "passed": 40,
+        "failed": 0,
+        "unexpectedErrors": 0,
+        "receipt": "/workspace/scratch/33a6f8d71159/m12-m14-c55-app-selection40/results.json"
+      },
+      "actualAppPanels": {
+        "passed": 37,
+        "failed": 0,
+        "unexpectedErrors": 0,
+        "receipt": "/workspace/scratch/33a6f8d71159/m12-m14-c55-app-panels37/results.json"
+      }
+    },
+    "reusedHistoricalRuns": {
+      "timeline45": "All recorded owning source/fixture/original receipt hashes match; no new run claimed",
+      "gallery57": "All recorded owning source/fixture/original receipt hashes match; no new run claimed",
+      "picker35": "All recorded owning source/fixture/original receipt hashes match; no new run claimed"
+    },
+    "normalGate": {
+      "totals": {
+        "tests": 1614,
+        "pass": 1613,
+        "fail": 0,
+        "skipped": 1
+      },
+      "checks": {
+        "wrapperReturncode0": true,
+        "fullSummaryPresent": true,
+        "totalsMatch": true,
+        "logHashMatches": true,
+        "typecheckHashMatches": true,
+        "web-configReceipt": true,
+        "lintReceipt": true,
+        "buildReceipt": true
+      }
+    },
+    "reviewedLedgerSHA256": "63c54531928e7eaf81bfb108e335605a955a0ec0b28e7ff942f7b4710dfbb911",
+    "reviewedHistoricalLedgerSHA256": "5b140ff2b0b94c48aa4d5d62f2a828339460ba83a95c163ea46e8ae6d1a0a8fc",
+    "historyDisposition": [
+      "Original owner first-reds retained with original source/run identities.",
+      "7af integration ref misapplication39/40 preserved separately; full three-way blob restoration and same40 green are explicit.",
+      "682d normal log has no aggregate summary and is expressly excluded from a full normal gate claim. c55 complete wrapper1613pass/0fail/1skip is used.",
+      "M14 adds actual final28 and fresh built App40/37. Unchanged recorded45/57/35 are explicitly reused and not summed."
+    ],
+    "limitations": [
+      "Prior whole Gallery byte hashes differ where upstream features were integrated; only verified exact owner fragments and the recorded owning inputs are reused.",
+      "Panels37 carries actual final build+runner hashes, not a sourceHashes field. Those final built asset bytes match the same c55 build validated by selection40.",
+      "Physical iOS/Android browser/installed, OS keyboard/address-bar/safe-area and screen readers remain not-run.",
+      "New PR full CI and merge remain pending; no old-head CI promoted to this candidate."
+    ]
+  },
+  "independentIntegrationHashChecks": {
+    "sourceCommit": "c55d5ad1a0519988483c221184d1166d38de01f0",
+    "verified": {
+      "m10-m13-682d-timeline45-final": {
+        "MediaGalleryTimelineNavigation.ts": true,
+        "MediaGallery.tsx": true,
+        "MediaGalleryVirtualTimeline.ts": true,
+        "MediaGalleryVirtualGrid.ts": true,
+        "MediaGalleryFilters.tsx": true,
+        "MediaGalleryNavigation.tsx": true,
+        "WorkspaceContent.tsx": true,
+        "AppearanceThemeProvider.tsx": true,
+        "theme.ts": true,
+        "cjs": true,
+        "tsx": true,
+        "receiptHash": true
+      },
+      "m10-m13-682d-gallery57": {
+        "MediaGallery.tsx": true,
+        "MediaGalleryFilters.tsx": true,
+        "MediaGalleryNavigation.tsx": true,
+        "WorkspaceContent.tsx": true,
+        "WorkspaceSurface.tsx": true,
+        "AppearanceThemeProvider.tsx": true,
+        "theme.ts": true,
+        "useMobilePanelViewport.ts": true,
+        "cjs": true,
+        "tsx": true,
+        "receiptHash": true
+      },
+      "m12-album-picker-extended": {
+        "MediaGallerySelectionToolbar.tsx": true,
+        "useMobilePanelViewport.ts": true,
+        "AppearanceThemeProvider.tsx": true,
+        "theme.ts": true,
+        "cjs": true,
+        "tsx": true,
+        "receiptHash": true
+      },
+      "m12-m14-c55-properties28": {
+        "ui/shared/src/mui/MediaGalleryDetails.tsx": true,
+        "ui/shared/src/mui/MediaGalleryInspector.tsx": true,
+        "ui/shared/src/mui/MediaGallery.tsx": true,
+        "ui/shared/src/mui/StatusAlert.tsx": true,
+        "ui/shared/src/mui/theme.ts": true,
+        "desktop/scripts/media-properties-gallery-browser.tsx": true,
+        "desktop/scripts/media-properties-fixtures.cjs": true,
+        "cjs": true,
+        "tsx": true,
+        "goldens": true
+      },
+      "m12-m14-c55-app-selection40": {
+        "web/src/App.tsx": true,
+        "web/src/api.ts": true,
+        "web/src/mediaGalleryAdapter.ts": true,
+        "ui/shared/src/mui/MediaGallery.tsx": true,
+        "ui/shared/src/mui/MediaGallerySelectionToolbar.tsx": true,
+        "ui/shared/src/mui/useMobilePanelViewport.ts": true,
+        "ui/shared/src/mui/AppearanceThemeProvider.tsx": true,
+        "ui/shared/src/mui/theme.ts": true,
+        "index.html": true,
+        "assets/index-BAElkkhY.css": true,
+        "assets/index-BzRFYcZt.js": true,
+        "runner": true
+      },
+      "m12-m14-c55-app-panels37": {
+        "index.html": true,
+        "assets/index-BAElkkhY.css": true,
+        "assets/index-BzRFYcZt.js": true,
+        "runner": true
+      }
+    },
+    "failures": []
+  }
+}

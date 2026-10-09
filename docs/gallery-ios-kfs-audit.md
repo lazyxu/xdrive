@@ -410,6 +410,10 @@ embedded JPEG remains an explicit compatibility limitation. Final resolution,
 resource use and real Safari/Electron decode must be measured with identical
 fixtures before claiming high-resolution parity.
 
+## M12–M14：相册、日期与属性补充（2026-10-09）
+
+M10/M11已由PR1125完整CI37914259268合并3ad7e73a并清理。以此为固定父版本，补齐相册选择器短屏滚动与成功焦点、实际年月选择框44px，以及描述/标签/人物的保存反馈和未记录的视频旋转。复用现有选择ID/版本、日期索引、编辑目标守卫与共享属性，不改Server或算法。相册同14项12/2→14/0、实际同40项39/1→40/0；日期同45项41/4→45/0；属性同21项11/10→21/0、旋转5项3/2→5/0。整合c55d5ad1上的实际App40/37、属性28均通过，完整Desktop1613/0/1既有skip，typecheck/lint/build通过。新PR完整CI/合并待完成；真机、键盘、读屏仍not-run。详见[整合证据](validation/mobile-gallery-selection-timeline-properties-2026-10-09.json)。
+
 ## M11 compact panels — renderer acceptance (2026-10-09)
 
 Reused merged PR #1122's shared VisualViewport observer and in-app filter Drawer. A measured 844×200/200% text case exposed only23px of a63px first field beneath sticky actions; removing only compact sticky positioning makes the field and existing actions reachable through one scroller while fixed44px Close remains. Gallery navigation is at least44px below900CSSpx independent of pointer type. Existing draft/applied query, on-demand index status, album selection, IANA boundaries and adapters remain intact.
