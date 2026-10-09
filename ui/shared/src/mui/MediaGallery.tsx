@@ -2324,9 +2324,12 @@ type MediaGalleryTimeScale = 'year' | 'month' | 'day' | 'all'
 
 type MediaGalleryDensityPreferences = Record<MediaGalleryTimeScale, number>
 
+type MediaGalleryAspectMode = 'crop' | 'contain'
+
 type MediaGalleryViewPreferences = {
   timeScale: MediaGalleryTimeScale
   densityByScale: MediaGalleryDensityPreferences
+  aspectMode: MediaGalleryAspectMode
 }
 
 const XDRIVE_MEDIA_GALLERY_VIEW_PREFERENCES_KEY = 'xdrive.gallery.view-preferences.v1'
@@ -2363,6 +2366,7 @@ function xDriveReadMediaGalleryViewPreferences(): MediaGalleryViewPreferences {
   const fallback: MediaGalleryViewPreferences = {
     timeScale: 'all',
     densityByScale: { ...XDRIVE_MEDIA_GALLERY_DEFAULT_DENSITY },
+    aspectMode: 'crop',
   }
   if (typeof window === 'undefined') return fallback
   try {
@@ -2381,7 +2385,9 @@ function xDriveReadMediaGalleryViewPreferences(): MediaGalleryViewPreferences {
         densityByScale[scale],
       )
     }
-    return { timeScale, densityByScale }
+    const aspectMode: MediaGalleryAspectMode =
+      parsed.aspectMode === 'contain' ? 'contain' : 'crop'
+    return { timeScale, densityByScale, aspectMode }
   } catch {
     return fallback
   }
@@ -3606,6 +3612,7 @@ export function XDriveMediaGallery({
   const effectiveTimeScale: MediaGalleryTimeScale =
     searchActive || currentCleanupReview ? 'all' : timeScale
   const minTileWidth = viewPreferences.densityByScale[effectiveTimeScale]
+  const aspectMode = viewPreferences.aspectMode
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
   const selectionBusyRef = useRef(false)
@@ -3752,6 +3759,13 @@ export function XDriveMediaGallery({
       },
     }))
   }, [effectiveTimeScale, minTileWidth])
+
+  const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
+    if (nextMode === aspectMode) return
+    // Same logical rows/columns in either mode; preserve the visible anchor.
+    setViewAnchorRevision((current) => current + 1)
+    setViewPreferences((current) => ({ ...current, aspectMode: nextMode }))
+  }, [aspectMode])
 
   const jumpToTimelineGroup = useCallback((group: MediaTimelineGroupIndex) => {
     viewAnchorIndexRef.current = Math.max(0, Math.trunc(group.start_index))
@@ -4187,8 +4201,14 @@ export function XDriveMediaGallery({
       ref={galleryRootRef}
       spacing={2}
       onContextMenu={handleMediaContextMenu}
+      data-xdrive-gallery-aspect-mode={aspectMode}
       sx={{
         minWidth: 0,
+        // Do not change the square grid's row heights/virtual range. Only stop
+        // cropping the already-decoded still/video/Live thumbnail image.
+        '& [data-xdrive-media-tile] img': {
+          objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
+        },
         pr: { lg: selected && !previewItem ? '380px' : 0 },
         transition: 'padding-right 160ms ease',
       }}
@@ -4458,6 +4478,26 @@ export function XDriveMediaGallery({
                 ))}
               </TextField>
             ) : null}
+            <Stack direction="row" spacing={0.25} aria-label="照片墙显示比例">
+              <Button
+                size="small"
+                variant={aspectMode === 'crop' ? 'contained' : 'text'}
+                aria-pressed={aspectMode === 'crop'}
+                data-xdrive-gallery-aspect-crop
+                onClick={() => updateGalleryAspectMode('crop')}
+              >
+                方形裁切
+              </Button>
+              <Button
+                size="small"
+                variant={aspectMode === 'contain' ? 'contained' : 'text'}
+                aria-pressed={aspectMode === 'contain'}
+                data-xdrive-gallery-aspect-contain
+                onClick={() => updateGalleryAspectMode('contain')}
+              >
+                原比例完整显示
+              </Button>
+            </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
               <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
                 缩略图大小

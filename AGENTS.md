@@ -89,6 +89,12 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G04 Gallery tile presentation may toggle square crop versus uncropped
+  media within the same bounded, square virtual cell. Do not describe
+  the latter as variable-height masonry or change VirtualGrid/Timeline
+  row geometry without the 100k media benchmark, original-item anchor
+  checks, and explicit layout correctness tests. CSS mode changes must
+  not trigger new original-byte reads or duplicate media-player surfaces.
 - G04 manual-album cover updates require owner-scoped active collection
   and actual media membership verification; optimistic If-Match revision,
   transparent automatic-cover fallback when source media goes missing or is
