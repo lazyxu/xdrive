@@ -39,6 +39,16 @@ function loadGrouping() {
   return layout.exports
 }
 const grouped = loadGrouping()
+const propertiesHook = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', 'require', compile('ui/shared/src/mui/FileExplorerPropertiesController.ts'))(
+    mod, mod.exports, name => {
+      if (name === 'react') return React
+      throw Error('Unexpected properties hook dependency: ' + name)
+    },
+  )
+  return mod.exports.useXDriveFileExplorerPropertiesController
+})()
 const material = new Proxy({}, { get: (_, name) => String(name) })
 const ui = {
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
@@ -46,6 +56,7 @@ const ui = {
   XDriveFileExplorerThumbnail: 'file-thumbnail',
   XDriveFileExplorerThumbnailProvider: 'thumbnail-provider',
   XDriveFilePropertiesDialog: 'properties-dialog',
+  useXDriveFileExplorerPropertiesController: propertiesHook,
   XDriveMediaDetailsInspector: 'media-inspector',
   xDriveFileSupportsThumbnail: name => /\.(?:png|jpg|jpeg|livp|mov|mp4)$/i.test(name),
   xDriveFileExplorerMarkThumbnailScrollActivity() {},
@@ -724,5 +735,39 @@ test('F-iOS-01A: Mobile context menu respects shared icons, separators and destr
       { id: 'delete', label: '删除', danger: true, icon: React.createElement('action-icon', { name: 'delete' }),
         onSelect: () => dispatched.push('delete') },
     ],
+  } })
+})
+
+test('F-PARITY-01A: Mobile folder Properties show Server-recursive counts and provenance, abort on close', async () => {
+  const requests = []
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    const folder = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    await act(async () => { folder.props.onContextMenu({
+      preventDefault() {}, clientX: 40, clientY: 90, nativeEvent: { pointerType: 'mouse' },
+    }) })
+    const propertiesAction = h.view.root.findAll(node =>
+      node.type === 'MenuItem' && textOf(node.props?.children).includes('属性'))[0]
+    assert.ok(propertiesAction)
+    await act(async () => { propertiesAction.props.onClick() })
+    assert.equal(requests.length, 1)
+    assert.deepEqual(requests[0].items, [2])
+    const dialog = h.view.root.findAll(node => node.type === 'properties-dialog')[0]
+    assert.equal(dialog.props.open, true)
+    const fields = Object.fromEntries(dialog.props.properties.map(p => [p.label, p.value]))
+    assert.equal(fields['大小'], '5120 B')
+    assert.equal(fields['内容'], '2 个文件 · 1 个文件夹')
+    assert.equal(fields['来源'], '照片来源 (yike)')
+    assert.equal(fields['Revision'], 1)
+    await act(async () => { dialog.props.onClose() })
+    assert.equal(requests[0].signal.aborted, true)
+  }, { props: {
+    loadPropertiesStats: async (items, signal) => {
+      requests.push({ items: items.map(item => item.id), signal })
+      return { selected_count: 1, effective_root_count: 1, total_bytes: 5120,
+        file_count: 2, folder_count: 1, sources: [{ id: 7, name: '照片来源', kind: 'yike' }] }
+    },
   } })
 })

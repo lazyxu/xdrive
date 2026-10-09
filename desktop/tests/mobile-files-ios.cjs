@@ -331,6 +331,31 @@ test('F-iOS-01A: context menu consumes shared action icon/divider/danger metadat
   assert.match(mobileSource, /data-mobile-files-native-share-entry="directory"/)
 })
 
+test('F-PARITY-01A: Mobile Properties reuse the wide Web stats loader, abortable hook and dialog', () => {
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  assert.match(adapter, /loadPropertiesStats=\{loadPropertiesStats\}/)
+  assert.match(mobileSource, /useXDriveFileExplorerPropertiesController\(\{/)
+  assert.match(mobileSource, /loadStats: props\.loadPropertiesStats/)
+  assert.match(mobileSource, /const propertiesItems = useMemo/)
+  assert.match(mobileSource, /propertiesStatsState\.stats\.total_bytes/)
+  assert.match(mobileSource, /propertiesStatsState\.stats\.sources/)
+  assert.match(mobileSource, /properties\.sha256/)
+  assert.match(mobileSource, /extraFileRows=\{mediaFileRows\}/)
+  assert.match(mobileSource, /properties=\{propertiesRows\}/)
+  assert.doesNotMatch(mobileSource, /api\.filePropertiesStats\(/)
+})
+
+test('F-PARITY: AGENTS and canonical FileExplorer docs enforce wide Web / Mobile full feature parity', () => {
+  const agents = read('AGENTS.md')
+  const canonical = read('docs/file-explorer.md')
+  assert.match(agents, /Web\/Mobile Web Files functional equivalence/)
+  assert.match(agents, /Only internal multi-tab UI and its commands/)
+  assert.match(agents, /shared virtual collection/)
+  assert.match(canonical, /Every functional operation available in wide Web/)
+  assert.match(canonical, /Only internal multi-tab UI/)
+  assert.match(mobileSource, /path: entry\.subtitle, updatedAt: entry\.updatedAt/)
+})
+
 test('AGENTS continuation status contract is mandatory and distinguishes merged from planned', () => {
   const agents = read('AGENTS.md')
   assert.match(agents, /## Continuation progress reporting/)

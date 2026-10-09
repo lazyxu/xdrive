@@ -1043,6 +1043,7 @@ export default function WebFileExplorer({
           getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}
           loadThumbnail={loadThumbnail}
           loadMediaItem={loadMediaItem}
+          loadPropertiesStats={loadPropertiesStats}
           loadNodeLocation={loadNodeLocation}
           onShowInFolder={location => {
             if (!location.parent_id) return false

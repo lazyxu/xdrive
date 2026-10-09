@@ -33,12 +33,14 @@ import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
+  useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb, XDriveFileExplorerItem, XDriveFileExplorerMenuItem,
   XDriveFileExplorerSearchSummary, XDriveFileExplorerSort, XDriveFileExplorerVirtualCollection,
+  XDriveFileExplorerPropertiesLoader, XDriveFilePropertiesDialogProperty,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
 import {
@@ -126,6 +128,7 @@ type Props = {
   getItemMenuItems: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   loadThumbnail: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
   loadMediaItem: (item: XDriveFileExplorerItem, signal: AbortSignal) => Promise<MediaItem | null>
+  loadPropertiesStats?: XDriveFileExplorerPropertiesLoader<XDriveFileExplorerItem>
   loadNodeLocation: (id: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder: (location: NodeLocation) => boolean | void | Promise<boolean | void>
 }
@@ -306,6 +309,10 @@ export default function MobileFiles(props: Props) {
   const [renameDraft, setRenameDraft] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [properties, setProperties] = useState<XDriveFileExplorerItem | null>(null)
+  const propertiesItems = useMemo(() => properties ? [properties] : [], [properties])
+  const propertiesStatsState = useXDriveFileExplorerPropertiesController({
+    items: propertiesItems, loadStats: props.loadPropertiesStats,
+  })
   const [mediaState, setMediaState] = useState<{
     key: string; status: 'loading' | 'done'; item: MediaItem | null
   } | null>(null)
@@ -531,8 +538,10 @@ export default function MobileFiles(props: Props) {
     pendingSectionScrollRef.current = 0
   }, [props.searchActive, section, browseHome])
 
-  const mediaEligible = properties?.kind === 'file' &&
-    ['image', 'video'].includes(xDriveFileKind(properties.name, properties.kind))
+  const mediaEligible = properties?.kind === 'file' && (
+    ['image', 'video'].includes(xDriveFileKind(properties.name, properties.kind)) ||
+    properties.name.toLowerCase().endsWith('.livp')
+  )
   const mediaKey = mediaEligible && properties ? String(properties.id) + ':' + String(properties.revision ?? '') : ''
   const activeMediaState = mediaState?.key === mediaKey ? mediaState : null
   useEffect(() => {
@@ -547,6 +556,58 @@ export default function MobileFiles(props: Props) {
     })
     return () => abort.abort()
   }, [properties, mediaEligible, props.loadMediaItem])
+
+  // Use the same cancellable Server stats controller and property dialog as
+  // wide Web. No Mobile-only traversal, recursive size scan or REST endpoint.
+  const propertiesSource = propertiesStatsState.loading ? '正在加载…'
+    : propertiesStatsState.error ? '加载失败'
+      : propertiesStatsState.stats?.sources?.length
+        ? propertiesStatsState.stats.sources.map(source => `${source.name} (${source.kind})`).join('；')
+        : '—'
+  const propertiesPath = properties?.path || properties?.secondaryLabel ||
+    props.crumbs.map(crumb => crumb.name).join('/')
+  const propertiesCreated = properties?.createdAt ? new Date(properties.createdAt).toLocaleString() : '—'
+  const propertiesModified = properties?.updatedAt ? new Date(properties.updatedAt).toLocaleString() : '—'
+  const recursiveSize = propertiesStatsState.stats
+    ? formatBytes(propertiesStatsState.stats.total_bytes)
+    : propertiesStatsState.loading ? '正在计算…'
+      : propertiesStatsState.error ? '计算失败' : '—'
+  const recursiveContent = propertiesStatsState.stats
+    ? `${propertiesStatsState.stats.file_count} 个文件 · ${propertiesStatsState.stats.folder_count} 个文件夹`
+    : propertiesStatsState.loading ? '正在计算…'
+      : propertiesStatsState.error ? '计算失败' : '—'
+  const propertiesRows: XDriveFilePropertiesDialogProperty[] = properties ? [
+    { label: '类型', value: labelOf(properties), section: 'general' },
+    { label: '修改时间', value: propertiesModified, section: 'general' },
+    { label: '创建时间', value: propertiesCreated, section: 'general' },
+    { label: '位置', value: propertiesPath, section: 'general' },
+    ...(properties.availability ? [
+      { label: '可用性', value: properties.availability.label, section: 'general' as const },
+    ] : []),
+    { label: '大小', value: properties.kind === 'dir'
+      ? recursiveSize : properties.size === undefined ? '未知' : formatBytes(properties.size), section: 'content' },
+    ...(properties.kind === 'dir' ? [
+      { label: '内容', value: recursiveContent, section: 'content' as const },
+    ] : []),
+    ...(properties.properties ?? []),
+    ...(properties.kind === 'file' ? [
+      { label: 'SHA-256', value: properties.sha256 || '—', section: 'technical' as const },
+    ] : []),
+    { label: 'Revision', value: properties.revision ?? '—', section: 'technical' },
+    { label: 'ID', value: String(properties.id), section: 'technical' },
+    { label: '来源', value: propertiesSource, section: 'technical' },
+  ] : []
+  const mediaFileRows: Array<[string, ReactNode]> = properties ? [
+    ['位置', propertiesPath],
+    ['创建时间', propertiesCreated],
+    ['修改时间', propertiesModified],
+    ...(properties.availability ? [['可用性', properties.availability.label] as [string, string]] : []),
+    ...(properties.sha256 ? [['SHA-256', properties.sha256] as [string, string]] : []),
+    ...(properties.properties ?? []).map((property): [string, ReactNode] => [property.label, property.value]),
+    ['Revision', String(properties.revision ?? '—')],
+    ['ID', String(properties.id)],
+    ['来源', propertiesSource],
+  ] : []
 
   const flushBrowseScroll = () => {
     if (scrollSaveRef.current !== null) {
@@ -1465,7 +1526,7 @@ export default function MobileFiles(props: Props) {
             const entry = collectionMenu.entry
             setCollectionMenu(null)
             openProperties({ id: entry.id, name: entry.name, kind: entry.kind,
-              size: entry.size, revision: entry.revision })
+              size: entry.size, revision: entry.revision, path: entry.subtitle, updatedAt: entry.updatedAt })
           }}>属性</MenuItem> : null}
           {collectionMenu?.owner === 'favorites' ? <MenuItem onClick={() => {
             const id = collectionMenu.entry.id
@@ -1536,16 +1597,12 @@ export default function MobileFiles(props: Props) {
             fallbackName={properties.name} showPreview={false} onClose={() => setProperties(null)}
             albums={[]} loadThumbnail={async nodeID => Number(properties.id) === nodeID
               ? (await props.loadThumbnail(properties)) ?? null : null}
+            extraFileRows={mediaFileRows}
             loadNodeLocation={props.loadNodeLocation} onShowInFolder={props.onShowInFolder}/>
         ) : (
-          <XDriveFilePropertiesDialog open={Boolean(properties)} title={properties?.name ?? '文件属性'}
-            properties={properties ? [
-              { label: '名称', value: properties.name },
-              { label: '类型', value: labelOf(properties) },
-              { label: '大小', value: properties.size !== undefined ? formatBytes(properties.size) : '未知' },
-              { label: '修改时间', value: properties.updatedAt ?? '未知' },
-              { label: '节点 ID', value: String(properties.id), section: 'technical' },
-            ] : []} onClose={() => setProperties(null)}/>
+          <XDriveFilePropertiesDialog open={Boolean(properties)}
+            title={properties ? `属性 — ${properties.name}` : '文件属性'}
+            properties={propertiesRows} onClose={() => setProperties(null)}/>
         )}
       </Box>
     </XDriveFileExplorerThumbnailProvider>

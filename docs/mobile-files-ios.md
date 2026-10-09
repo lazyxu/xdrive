@@ -93,3 +93,13 @@ Follow-up to #1183; this phase reuses the existing Server-owned order of Quick A
 8. Native iOS Safari/home-screen and Android Chrome/installed-mode checks are **pending until actually run**. Compare native Files screenshots with the default folder, generic file, PDF, document and archive icons in both list/grid, light/dark; verify the 320/350/375/390/430px header shows both transfer speeds and its popover remains operable. Exact proprietary assets or pixel-matched glyphs require an approved source and the target iOS release. Do not label Chromium emulation as a real-device pass.
 
 This document overrides older Mobile clauses in `docs/file-explorer.md` and the original iOS comparison inventory where they describe a shared Desktop-like command bar, a per-row More button, long-press-to-select or a global floating Apps control.
+
+## 2026-10-10 F-PARITY-01A · Web/Mobile property parity
+
+**Status: implemented on a stacked draft PR; full CI, merge and hardware acceptance remain separate.**
+- Mobile Properties receives the exact Web adapter's existing `loadPropertiesStats`, which uses the authenticated Server `filePropertiesStats` endpoint and shares the abortable `useXDriveFileExplorerPropertiesController` with wide Web. No renderer-side directory recursion, second API shape or separate permissions.
+- Reuse the common `XDriveFilePropertiesDialog` and `XDriveMediaDetailsInspector` with the same directory recursive bytes/file/folder counts, Source provenance, timestamps, path, SHA-256, revision and availability where backed by item metadata. Live Photo `.livp` follows the media inspector instead of silently using the generic five-field fallback.
+- Closing the property inspector aborts stats work. The mounted React test covers the real shared stats hook and abort, plus count/source values. Native Safari interaction and a full server-backed end-to-end test remain outstanding.
+- Recent/Favorites properties pass their recorded path and timestamp through the same property projection, rather than substituting the directory currently open in Browse.
+- **Permanent product invariant:** wide Web and Mobile Web Files must have equal real end-user functionality, authorization, data state, errors/retries and cancellation. Only internal multi-tab UI and commands are exempt on Mobile; iOS-native chrome is solely a presentation difference. Maintain a paired feature matrix and tests for both layouts rather than counting menu visibility as implemented behavior.
+- Remaining parity steps include Web Undo/Redo, Copy Paths, saved-search editing, any additional browser-history shortcuts, and replacing Mobile's separate virtualization window helper with the shared window primitives. Multi-tab commands remain intentionally absent only on Mobile.
