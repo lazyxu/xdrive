@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
+import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
+import LabelRoundedIcon from '@mui/icons-material/LabelRounded'
+import ManageSearchRoundedIcon from '@mui/icons-material/ManageSearchRounded'
+import RadioButtonUncheckedRoundedIcon from '@mui/icons-material/RadioButtonUncheckedRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -18,7 +23,7 @@ import {
 import { formatBytes, xDriveFileExplorerDragAutoScrollDelta } from '../../ui/shared/src'
 import type { MediaItem, NodeLocation, XDriveFileExplorerGrouping } from '../../ui/shared/src'
 import {
-  XDriveFileExplorerAvailabilityBadge, XDriveFileExplorerItemIcon,
+  XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
@@ -35,7 +40,16 @@ import {
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
 
-type SectionEntry = { id: number; name: string; kind: 'dir' | 'file'; subtitle?: string; size?: number; revision?: number }
+type SectionEntry = {
+  id: number
+  name: string
+  kind: 'dir' | 'file'
+  subtitle?: string
+  size?: number
+  revision?: number
+  updatedAt?: string
+}
+type MobileCollectionAction = 'copy' | 'download' | 'share'
 type SavedEntry = { id: number; name: string }
 
 type Props = {
@@ -64,6 +78,7 @@ type Props = {
   onOpenQuickAccess: (id: number) => Promise<boolean>
   onClearRecent: () => void | boolean | Promise<void | boolean>
   onUnfavorite: (id: number) => void | boolean | Promise<void | boolean>
+  onCollectionAction?: (entry: SectionEntry, action: MobileCollectionAction) => Promise<void>
   onOpenSavedSearch: (id: number) => void
   onOpenTag: (id: number) => void
   onManageTags: (items?: XDriveFileExplorerItem[]) => void
@@ -105,7 +120,97 @@ type Props = {
   onShowInFolder: (location: NodeLocation) => boolean | void | Promise<boolean | void>
 }
 
-const BLUE_FOLDER = '#2677e8'
+// Visually calibrated against Apple's published Files folder screenshot:
+// https://cdsassets.apple.com/live/7WUAS350/images/icloud/ios-26-iphone-16-pro-files-icloud-drive-downloads.png
+// Keep colors central so grid/list/Recents/Favorites never diverge. This is
+// xDrive's own SVG; appearance comparisons do not establish pixel equivalence.
+const BLUE_FOLDER = '#4caddb'
+const IOS_FILES_ICON_COLORS = {
+  folderBackTop: '#69c8ee',
+  folderBackBottom: '#49add9',
+  folderFrontTop: '#7dceeb',
+  folderFrontMiddle: '#5dbce3',
+  folderOutline: '#399abf',
+  folderHighlight: '#e8fbff',
+  documentPaper: '#ffffff',
+  documentBorder: '#c4cad2',
+  documentFold: '#e6e9ed',
+  documentDetail: '#c8cfd6',
+} as const
+const MOBILE_DOCUMENT_BADGES: Record<string, { label: string; color: string }> = {
+  pdf: { label: 'PDF', color: '#e34c50' },
+  document: { label: 'DOC', color: '#377ec9' },
+  spreadsheet: { label: 'XLS', color: '#359f70' },
+  presentation: { label: 'PPT', color: '#e48b43' },
+  archive: { label: 'ZIP', color: '#6b83a3' },
+  code: { label: '</>', color: '#607fae' },
+  text: { label: 'TXT', color: '#9aa6b5' },
+  image: { label: 'IMG', color: '#55a5db' },
+  video: { label: 'MOV', color: '#9c78bc' },
+  audio: { label: 'AUD', color: '#ac78bd' },
+}
+
+function MobileFolderIcon({ size = 38 }: { size?: number }) {
+  // A gradient id must be unique per mounted folder, including virtualized rows.
+  const paintID = useId().replace(/:/g, '')
+  return (
+    <Box component="svg" viewBox="0 0 64 54" aria-hidden="true" focusable="false"
+      data-xdrive-mobile-folder-icon
+      sx={{ width: size, height: size * 54 / 64, flexShrink: 0, display: 'block' }}>
+      <defs>
+        <linearGradient id={`${paintID}-folder-back`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={IOS_FILES_ICON_COLORS.folderBackTop}/>
+          <stop offset="100%" stopColor={IOS_FILES_ICON_COLORS.folderBackBottom}/>
+        </linearGradient>
+        <linearGradient id={`${paintID}-folder-front`} x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor={IOS_FILES_ICON_COLORS.folderFrontTop}/>
+          <stop offset="26%" stopColor={IOS_FILES_ICON_COLORS.folderFrontMiddle}/>
+          <stop offset="100%" stopColor={BLUE_FOLDER}/>
+        </linearGradient>
+      </defs>
+      <path d="M6 8h15c1.1 0 2.1.4 2.9 1.2l4.8 4.6H58a4 4 0 0 1 4 4v28.7H2V12a4 4 0 0 1 4-4Z"
+        fill={`url(#${paintID}-folder-back)`} stroke={IOS_FILES_ICON_COLORS.folderOutline} strokeWidth="0.75"/>
+      <path d="M6 18.5h52a4 4 0 0 1 4 4v24a4.5 4.5 0 0 1-4.5 4.5h-51A4.5 4.5 0 0 1 2 46.5v-24a4 4 0 0 1 4-4Z"
+        fill={`url(#${paintID}-folder-front)`} stroke={IOS_FILES_ICON_COLORS.folderOutline} strokeWidth="0.75"/>
+      <path d="M6 19.5h52" fill="none" stroke={IOS_FILES_ICON_COLORS.folderHighlight} strokeWidth="1.1"
+        strokeOpacity="0.95" strokeLinecap="round"/>
+    </Box>
+  )
+}
+
+function MobileDocumentIcon({ item, size = 32 }: {
+  item: Pick<XDriveFileExplorerItem, 'name' | 'kind' | 'fileKind'>
+  size?: number
+}) {
+  const kind = item.fileKind ?? xDriveFileKind(item.name, item.kind)
+  // Unknown files are plain white pages. Known formats get a small native-like
+  // type band, never an invented preview of the file's actual contents.
+  const badge = MOBILE_DOCUMENT_BADGES[kind]
+  return (
+    <Box component="svg" viewBox="0 0 44 52" aria-hidden="true" focusable="false"
+      data-xdrive-mobile-document-icon
+      sx={{ width: size, height: size * 52 / 44, flexShrink: 0, display: 'block' }}>
+      <path d="M8 1.5h21.5L41 13v33.5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-41a4 4 0 0 1 4-4Z"
+        fill={IOS_FILES_ICON_COLORS.documentPaper} stroke={IOS_FILES_ICON_COLORS.documentBorder} strokeWidth="1.2"/>
+      <path d="M29.5 1.5v8.3A3.2 3.2 0 0 0 32.7 13H41Z"
+        fill={IOS_FILES_ICON_COLORS.documentFold} stroke={IOS_FILES_ICON_COLORS.documentBorder} strokeWidth="0.8" strokeLinejoin="round"/>
+      {kind === 'text' || kind === 'document' || kind === 'code' ? (
+        <path d="M10 21h24M10 25h21M10 29h23" fill="none" stroke={IOS_FILES_ICON_COLORS.documentDetail}
+          strokeWidth="1.1" strokeLinecap="round"/>
+      ) : null}
+      {badge ? (
+        <>
+          <rect x="7" y="34" width="32" height="13" rx="1.6" fill={badge.color}/>
+          <text x="23" y="43.5" textAnchor="middle" fontFamily="system-ui, sans-serif"
+            fontWeight="700" fontSize="9.5" letterSpacing="0.4" fill="#fff">
+            {badge.label}
+          </text>
+        </>
+      ) : null}
+    </Box>
+  )
+}
+
 const MIN_TOUCH = 44
 const labelOf = (item: XDriveFileExplorerItem) => (
   item.kind === 'dir' ? '文件夹' : xDriveFileTypeLabel(item.name, item.kind)
@@ -186,6 +291,7 @@ export default function MobileFiles(props: Props) {
   const selection = [...selected.values()]
   const directoryID = Number(props.crumbs.at(-1)?.id ?? 0) || null
   const showDirectory = section === 'browse' && (!browseHome || props.trashActive || props.searchActive)
+  const selectionActive = selectionMode && showDirectory
   const effectiveGrid = viewPreference === 'grid'
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
   const rowHeight = effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
@@ -196,6 +302,11 @@ export default function MobileFiles(props: Props) {
   const end = Math.min(totalCount, windowRows.end * (effectiveGrid ? columns : 1))
   const sectionItems = section === 'recent' ? props.recentItems : props.favorites
   const sectionWindow = mobileFilesWindow(sectionItems.length, scrollTop, viewport.height, MOBILE_FILES_ROW_HEIGHT)
+  const sortLabel = ({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[props.sort.key]
+  const groupLabel = props.grouping?.groupBy === 'type' ? '类型' :
+    props.grouping?.groupBy === 'modified' ? '修改日期' :
+      props.grouping?.groupBy === 'size' ? '大小' : ''
+  const arrangementLabel = `${sortLabel} ${props.sort.direction === 'asc' ? '↑' : '↓'} · ${effectiveGrid ? '图标' : '列表'}${groupLabel ? ` · 按${groupLabel}分组` : ''}`
   // Grouping is still the authoritative Server ordering/index. Never invent
   // local group membership from the loaded portion of a paged collection.
   const groupedLayout = useMemo(() => {
@@ -556,6 +667,11 @@ export default function MobileFiles(props: Props) {
     return common
   }
   const openProperties = (item: XDriveFileExplorerItem) => { setItemMenu(null); setProperties(item) }
+  const runCollectionAction = (entry: SectionEntry, action: MobileCollectionAction) => {
+    setCollectionMenu(null)
+    const task = props.onCollectionAction?.(entry, action)
+    if (task) void task.catch(props.onOpenError)
+  }
   const beginRename = (item: XDriveFileExplorerItem) => {
     setItemMenu(null); setRenameDraft(item.name); setRenaming(item)
   }
@@ -602,8 +718,8 @@ export default function MobileFiles(props: Props) {
         data-mobile-files-folder-id={item.kind === 'dir' ? String(item.id) : undefined}
         role="button"
         tabIndex={0}
-        aria-label={item.name}
-        aria-selected={selectionMode ? chosen : undefined}
+        aria-label={selectionMode ? `${chosen ? '已选' : '未选'}，${item.name}` : item.name}
+        aria-pressed={selectionMode ? chosen : undefined}
         onClick={() => { if (!cancelClickRef.current) onOpenEntry(item); else cancelClickRef.current = false }}
         onContextMenu={event => {
           event.preventDefault()
@@ -637,13 +753,16 @@ export default function MobileFiles(props: Props) {
         }}
       >
         {selectionMode ? (
-          <Box sx={{ color: chosen ? 'primary.main' : 'text.disabled' }}><CheckRoundedIcon fontSize="small"/></Box>
+          <Box sx={{ color: chosen ? 'primary.main' : 'text.disabled', width: 24, height: 24,
+            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {chosen ? <CheckCircleRoundedIcon fontSize="small"/> : <RadioButtonUncheckedRoundedIcon fontSize="small"/>}
+          </Box>
         ) : null}
         <Box sx={{ flexShrink: 0, width: effectiveGrid ? 70 : 44, height: effectiveGrid ? 70 : 44,
           display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-          {item.kind === 'dir' ? <FolderRoundedIcon sx={{ fontSize: effectiveGrid ? 62 : 38, color: BLUE_FOLDER }} /> : (
+          {item.kind === 'dir' ? <MobileFolderIcon size={effectiveGrid ? 62 : 38} /> : (
             <XDriveFileExplorerThumbnail item={item} eligible={xDriveFileSupportsThumbnail(item.name, item.kind)}
-              fallback={<XDriveFileExplorerItemIcon item={item} size={effectiveGrid ? 38 : 28}/>}
+              fallback={<MobileDocumentIcon item={item} size={effectiveGrid ? 38 : 28}/>}
               sx={{ width: effectiveGrid ? 64 : 42, height: effectiveGrid ? 64 : 42, borderRadius: 0 }}/>
           )}
         </Box>
@@ -661,6 +780,7 @@ export default function MobileFiles(props: Props) {
   const mobileRow = (
     entry: SectionEntry, action: () => void, isFolder = false,
     owner?: 'recent' | 'favorites',
+    locationKind?: 'cloud' | 'trash' | 'smart' | 'tag',
   ) => (
     <Box key={String(entry.id)} role="button" tabIndex={0}
       onClick={() => {
@@ -710,9 +830,22 @@ export default function MobileFiles(props: Props) {
       sx={{ display: 'flex', alignItems: 'center', minHeight: 64, px: 2, gap: 1.5,
         borderBottom: 1, borderColor: 'divider',
         '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main' } }}>
-      {isFolder || entry.kind === 'dir'
-        ? <FolderRoundedIcon sx={{ color: BLUE_FOLDER, fontSize: 35 }}/>
-        : <XDriveFileExplorerItemIcon item={entry} size={29}/>}
+      <Box sx={{ flexShrink: 0, width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {locationKind === 'cloud'
+          ? <CloudRoundedIcon sx={{ color: 'primary.main', fontSize: 32 }} />
+          : locationKind === 'trash'
+            ? <DeleteOutlineRoundedIcon sx={{ color: 'text.secondary', fontSize: 31 }} />
+            : locationKind === 'smart'
+              ? <ManageSearchRoundedIcon sx={{ color: 'secondary.main', fontSize: 31 }} />
+              : locationKind === 'tag'
+                ? <LabelRoundedIcon sx={{ color: 'warning.main', fontSize: 30 }} />
+                : isFolder || entry.kind === 'dir'
+                  ? <MobileFolderIcon size={35}/>
+                  : <XDriveFileExplorerThumbnail item={entry}
+                      eligible={xDriveFileSupportsThumbnail(entry.name, entry.kind)}
+                      fallback={<MobileDocumentIcon item={entry} size={29}/>}
+                      sx={{ width: 42, height: 42, borderRadius: 0 }}/>}
+      </Box>
       <Box minWidth={0} flex={1}>
         <Typography variant="body2" noWrap>{entry.name}</Typography>
         <Typography variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (entry.kind === 'dir' ? '文件夹' : '文件')}</Typography>
@@ -746,12 +879,28 @@ export default function MobileFiles(props: Props) {
             <Button size="small" onClick={navigateUp} startIcon={<ArrowBackIosNewRoundedIcon sx={{ fontSize: 15 }}/>}
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, px: 1 }}>返回</Button>
           ) : null}
-          <Typography variant="h5" fontWeight={750} noWrap sx={{ flex: 1, minWidth: 0 }}>{heading}</Typography>
-          <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
-            sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}><MoreHorizRoundedIcon/></IconButton>
+          <Typography variant="h5" fontWeight={750} noWrap sx={{ flex: 1, minWidth: 0 }}>
+            {selectionActive ? `已选 ${selection.length} 项` : heading}
+          </Typography>
+          {selectionActive ? (
+            <>
+              <Button size="small" onClick={() => void selectAllCurrent()}
+                disabled={props.loading || totalCount === 0} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>
+                全选
+              </Button>
+              <Button size="small" onClick={() => {
+                setSelectionMode(false); setSelected(new Map())
+                setSelectionFeedback(''); setSelectionMoreAnchor(null)
+              }} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
+            </>
+          ) : (
+            <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
+              sx={{ width: MIN_TOUCH, height: MIN_TOUCH }}><MoreHorizRoundedIcon/></IconButton>
+          )}
         </Stack>
-        <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll
+        <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
           onScroll={(event: UIEvent<HTMLDivElement>) => {
+            xDriveFileExplorerMarkThumbnailScrollActivity(event.currentTarget)
             const top = event.currentTarget.scrollTop
             setScrollTop(top)
             if (section === 'browse' && showDirectory && !props.trashActive && !props.searchActive) {
@@ -808,10 +957,10 @@ export default function MobileFiles(props: Props) {
                 props.onBrowseRoot()
                 beginBrowse(Number(props.crumbs[0]?.id ?? 0) || null)
                 setBrowseHome(false)
-              }, true)}
+              }, true, undefined, 'cloud')}
               {mobileRow({ id: -2, name: '最近删除', kind: 'dir' }, () => {
                 props.onOpenTrash(); beginBrowse(null)
-              }, true)}
+              }, true, undefined, 'trash')}
               {props.quickAccess.length > 0 ? (
                 <>
                   <Typography variant="overline" sx={{ px: 2, pt: 2, color: 'text.secondary' }}>个人收藏文件夹</Typography>
@@ -828,10 +977,10 @@ export default function MobileFiles(props: Props) {
                   <Typography variant="overline" sx={{ px: 2, pt: 2, color: 'text.secondary' }}>整理</Typography>
                   {props.savedSearches.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '智能文件夹' }, () => {
                     launchGlobalSearch(() => props.onOpenSavedSearch(entry.id))
-                  }, true))}
+                  }, true, undefined, 'smart'))}
                   {props.tags.map(entry => mobileRow({ ...entry, kind: 'dir', subtitle: '标签' }, () => {
                     launchGlobalSearch(() => props.onOpenTag(entry.id))
-                  }))}
+                  }, false, undefined, 'tag'))}
                 </>
               ) : null}
             </Box>
@@ -855,8 +1004,8 @@ export default function MobileFiles(props: Props) {
                   ))}
                 </Stack>
               ) : null}
-              <Typography variant="caption" color="text.secondary" sx={{ px: 2, display: 'block', pb: 1 }}>
-                {props.loading ? '正在加载…' : `${totalCount} 个项目`}{groupedLayout ? ' · 已分组' : ''}
+              <Typography data-mobile-files-arrangement-status variant="caption" color="text.secondary" sx={{ px: 2, display: 'block', pb: 1 }}>
+                {props.loading ? '正在加载…' : `${totalCount} 个项目`} · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {props.loading && totalCount === 0 ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress size={24}/></Box> : null}
               {totalCount === 0 && !props.loading ? <Typography sx={{ p: 4 }} color="text.secondary">这里还没有文件</Typography> : null}
@@ -925,43 +1074,54 @@ export default function MobileFiles(props: Props) {
         {props.actionFeedback ? <Box data-mobile-files-operation-feedback sx={{ flexShrink: 0 }}>{props.actionFeedback}</Box> : null}
         {selectionFeedback ? <Typography role="status" variant="caption" color="warning.main"
           sx={{ px: 2, py: 0.5, flexShrink: 0 }}>{selectionFeedback}</Typography> : null}
-        {selectionMode && showDirectory ? (
-          <Stack direction="row" gap={0.5} sx={{ px: 1, minHeight: 54, alignItems: 'center', borderTop: 1, borderColor: 'divider', flexShrink: 0 }}>
-            <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }}>已选 {selection.length} 项</Typography>
-            <Button size="small" onClick={() => void selectAllCurrent()}
-              disabled={props.loading || totalCount === 0} sx={{ minWidth: MIN_TOUCH }}>
-              全选
+        {selectionActive ? (
+          <Stack data-xdrive-mobile-selection-toolbar direction="row" alignItems="stretch" sx={{
+            px: 0.5, pt: 0.5, pb: 'max(env(safe-area-inset-bottom), 4px)',
+            borderTop: 1, borderColor: 'divider', flexShrink: 0, bgcolor: 'background.paper',
+          }}>
+            <Button aria-label="复制已选" disabled={!selection.length} onClick={() => selectedAction('copy')}
+              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              <ContentCopyOutlinedIcon fontSize="small"/>复制
             </Button>
-            <IconButton aria-label="复制已选" disabled={!selection.length} onClick={() => selectedAction('copy')}><ContentCopyOutlinedIcon/></IconButton>
-            <IconButton aria-label="移动已选" disabled={!selection.length} onClick={() => selectedAction('move')}><DriveFileMoveOutlinedIcon/></IconButton>
-            <IconButton aria-label="删除已选" disabled={!selection.length} onClick={() => selectedAction('delete')}><DeleteOutlineRoundedIcon/></IconButton>
-            <IconButton aria-label="更多已选操作" disabled={!selection.length}
-              onClick={event => setSelectionMoreAnchor(event.currentTarget)}><MoreHorizRoundedIcon/></IconButton>
-            <Button onClick={() => {
-              setSelectionMode(false); setSelected(new Map())
-              setSelectionFeedback(''); setSelectionMoreAnchor(null)
-            }}>完成</Button>
+            <Button aria-label="移动已选" disabled={!selection.length} onClick={() => selectedAction('move')}
+              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              <DriveFileMoveOutlinedIcon fontSize="small"/>移动
+            </Button>
+            <Button aria-label="下载已选" disabled={!selection.length} onClick={() => selectedAction('download')}
+              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              <DownloadRoundedIcon fontSize="small"/>下载
+            </Button>
+            <Button aria-label="删除已选" disabled={!selection.length} onClick={() => selectedAction('delete')}
+              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11, color: 'error.main' }}>
+              <DeleteOutlineRoundedIcon fontSize="small"/>删除
+            </Button>
+            <Button aria-label="更多已选操作" disabled={!selection.length}
+              onClick={event => setSelectionMoreAnchor(event.currentTarget)}
+              sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
+              <MoreHorizRoundedIcon fontSize="small"/>更多
+            </Button>
           </Stack>
-        ) : null}
-        <Stack component="nav" direction="row" justifyContent="space-around" sx={{
-          flexShrink: 0, borderTop: 1, borderColor: 'divider', py: 0.25,
-          pb: 'max(env(safe-area-inset-bottom), 4px)', bgcolor: 'background.paper',
-        }} aria-label="文件分类">
-          {([
-            ['recent', <HistoryRoundedIcon/>, '最近'],
-            ['browse', <FolderRoundedIcon/>, '浏览'],
-            ['favorites', <StarBorderRoundedIcon/>, '收藏'],
-          ] as const).map(([value, icon, label]) => (
-            <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
-              onClick={() => changeSection(value)} sx={{
-                flex: 1, flexDirection: 'column', minHeight: 52, gap: 0,
-                color: section === value ? 'primary.main' : 'text.secondary',
-                fontSize: 11, borderRadius: 0,
-              }}>
-              {icon}{label}
-            </Button>
-          ))}
-        </Stack>
+        ) : (
+          <Stack component="nav" direction="row" justifyContent="space-around" sx={{
+            flexShrink: 0, borderTop: 1, borderColor: 'divider', py: 0.25,
+            pb: 'max(env(safe-area-inset-bottom), 4px)', bgcolor: 'background.paper',
+          }} aria-label="文件分类">
+            {([
+              ['recent', <HistoryRoundedIcon/>, '最近'],
+              ['browse', <FolderRoundedIcon/>, '浏览'],
+              ['favorites', <StarBorderRoundedIcon/>, '收藏'],
+            ] as const).map(([value, icon, label]) => (
+              <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
+                onClick={() => changeSection(value)} sx={{
+                  flex: 1, flexDirection: 'column', minHeight: 52, gap: 0,
+                  color: section === value ? 'primary.main' : 'text.secondary',
+                  fontSize: 11, borderRadius: 0,
+                }}>
+                {icon}{label}
+              </Button>
+            ))}
+          </Stack>
+        )}
         <Menu anchorEl={selectionMoreAnchor} open={Boolean(selectionMoreAnchor)}
           onClose={() => setSelectionMoreAnchor(null)}>
           <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
@@ -1061,6 +1221,18 @@ export default function MobileFiles(props: Props) {
             setCollectionMenu(null)
             void Promise.resolve(props.onUnfavorite(id)).catch(props.onOpenError)
           }}>取消收藏</MenuItem> : null}
+          {collectionMenu && props.onCollectionAction ? (
+            <MenuItem data-mobile-files-collection-action="copy"
+              onClick={() => runCollectionAction(collectionMenu.entry, 'copy')}>复制</MenuItem>
+          ) : null}
+          {collectionMenu && props.onCollectionAction ? (
+            <MenuItem data-mobile-files-collection-action="download"
+              onClick={() => runCollectionAction(collectionMenu.entry, 'download')}>下载</MenuItem>
+          ) : null}
+          {collectionMenu?.entry.kind === 'file' && props.onCollectionAction ? (
+            <MenuItem data-mobile-files-collection-action="share"
+              onClick={() => runCollectionAction(collectionMenu.entry, 'share')}>分享</MenuItem>
+          ) : null}
         </Menu>
         <Dialog open={clearRecentConfirm} onClose={() => setClearRecentConfirm(false)} fullWidth maxWidth="xs">
           <DialogTitle>清空最近记录？</DialogTitle>

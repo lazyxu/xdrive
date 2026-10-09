@@ -219,6 +219,7 @@ export default function WebFileExplorer({
     explorerCrumbs,
     copyItems: copyWorkspaceItems,
     cutItems: cutWorkspaceItems,
+    copyNodes: copyWorkspaceNodes,
     planPaste,
     completePaste,
     canPaste,
@@ -758,6 +759,42 @@ export default function WebFileExplorer({
     ]
   }
 
+  // Recent/Favorites nodes are not guaranteed to be in the active directory
+  // projection. Resolve current authenticated metadata before any operation.
+  const collectionAction = async (
+    entry: { id: number; kind: 'dir' | 'file' },
+    action: 'copy' | 'download' | 'share',
+  ) => {
+    const lifecycle = renameLifecycleKeyRef.current
+    const node = await api.node(entry.id)
+    if (renameLifecycleKeyRef.current !== lifecycle) return
+    if (node.id !== entry.id || node.type !== entry.kind) {
+      throw new Error('文件已变化，请刷新最近或收藏列表后重试。')
+    }
+    if (action === 'copy') {
+      copyWorkspaceNodes([node])
+      onFeedback('good', '已复制，可在目标文件夹中粘贴。')
+    } else if (action === 'download') {
+      const plan = xDriveFileExplorerWebDownloadPlan([node])
+      if (plan.kind === 'none') return
+      try {
+        if (plan.kind === 'file') {
+          const saved = await api.download(plan.file)
+          if (!saved) return
+        } else {
+          const saved = await api.downloadArchive(plan.ids, plan.filename)
+          if (!saved) return
+        }
+        const feedback = xDriveFileExplorerWebDownloadFeedback(plan)
+        onFeedback(feedback.tone, feedback.message)
+      } catch (error) {
+        onError(error)
+      }
+    } else if (node.type === 'file') {
+      onShare(node)
+    }
+  }
+
   const renameItem = async (item: XDriveFileExplorerItem, name: string) => {
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node || !current) return
@@ -898,10 +935,12 @@ export default function WebFileExplorer({
           recentItems={recent.items.map(item => ({
             id: item.id, name: item.name, kind: item.kind, subtitle: item.path,
             size: item.size, revision: typeof item.revision === 'number' ? item.revision : undefined,
+            updatedAt: item.updatedAt,
           }))}
           favorites={favorites.items.map(item => ({
             id: item.id, name: item.name, kind: 'file' as const,
             subtitle: item.path, size: item.size, revision: item.revision,
+            updatedAt: item.updatedAt,
           }))}
           quickAccess={quickAccess.items.map(item => ({ id: item.id, name: item.name, kind: 'dir' as const, subtitle: item.path }))}
           savedSearches={organization.savedSearches.map(item => ({ id: item.id, name: item.name }))}
@@ -932,6 +971,7 @@ export default function WebFileExplorer({
           }}
           onClearRecent={() => recent.clear()}
           onUnfavorite={id => favorites.unfavorite(id)}
+          onCollectionAction={collectionAction}
           onOpenSavedSearch={id => {
             onCloseTrash()
             const saved = organization.savedSearches.find(item => item.id === id)
