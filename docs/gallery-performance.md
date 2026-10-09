@@ -1422,3 +1422,45 @@ from a CI source/HTTP test or pretend Node HTTP alone proves the full
 physical Web/Desktop/Go request context; those remain further evidence.
 
 **Next action:** rerun the exact original red reproducer, preserve all three unmount and one replacement sample outputs, and confirm unchanged supported Web/Desktop adapters. The Gallery thumbnail scheduler remains the owner of shared viewport requests; per-cover AbortSignals are only forwarded to direct per-cover loaders, and any scheduler wrapper that ignores a local signal retains its existing independent setRetention/dispose semantics. Measured AFTER is now recorded with the original first-red; require complete full PR CI on the evidence-amended **one-commit head** before a linear-history merge. No cancellation change is permitted to affect durable background tasks.
+
+## P1 Gallery revision-scoped thumbnail cache (2026-10-09)
+
+Status: **Accepted scoped structural revision correction / exact AFTER reproducer green / full evidence-amended CI pending**.
+The shared XDriveMediaThumbnailScheduler currently keys its cache, queued map
+and in-flight map only by Node ID. The Gallery Grid/Timeline passes the Node
+ID without its current revision, unlike the revision-aware FileExplorer
+thumbnail cache. Consequently, after the same Node is overwritten, Gallery
+may return a previous cached Blob without a new Server GET. This is a
+source-observed hypothesis, not yet a measured failure.
+
+**Frozen reproducible contract:** cd desktop && node --test
+tests/media-gallery-thumbnail-revision.cjs. With Node 417, load revision
+3, then 3 again (one request and cache hit), then revision 4 (a second
+request and different preview URL). With Node 418, keep revision 8
+source pending, request revision 9, verify independent HTTP request
+ownership and old signal aborted, resolve revision 9 and then
+revision 8 late; old result must never reenter cache and its Blob
+must be revoked. Gallery MediaTile must pass item.node.revision and
+update its loader callback dependencies when revision changes.
+These are repeatable source/Promise/cancellation tests, not full
+browser or real network measurements.
+
+**BEFORE / verified first-red:** [GitHub CI 37916151616](https://github.com/lazyxu/xdrive/actions/runs/37916151616), [Desktop job 113772701469](https://github.com/lazyxu/xdrive/actions/runs/37916151616/job/113772701469), the actual original scheduler implementation, not production-modified test mocks. Node 417 rev3→rev4 returned `blob:version-1` twice with just **1** loader call instead of the required 2; Node 418 rev8→rev9 had **1** upstream pending request, the same Promise reused, and `oldAborted=false`; the MediaTile forwarded no revision and had no revision callback dependency. All three new assertions failed; other Desktop tests were 1606 passed, 1 skipped, 0 unrelated failures.
+
+**AFTER / confirmed exact original 3 reproducers:** [GitHub CI 37916615118](https://github.com/lazyxu/xdrive/actions/runs/37916615118), [Desktop test job 113774788258](https://github.com/lazyxu/xdrive/actions/runs/37916615118/job/113774788258): Node 417 unchanged rev3 warm cache is still one load, rev3→rev4 now starts **2** total source loads and returns `blob:version-2` instead of `blob:version-1`. Node 418 rev8→rev9 issues **2** separate loads, `oldAborted=true`, rejects/revokes late obsolete Blob and preserves the rev9 cache. The new MediaTile revision propagation test is also green. These are exact structural request-count and lifecycle changes, not elapsed-time performance gains.
+
+**One unrelated test-harness assertion was stale after this accepted API change:** existing `desktop/tests/media-gallery.cjs` searched for a literal `thumbnailScheduler.load(nodeID, thumbnailPriority)` and numeric Node-ID cache map types, whereas the valid new contract adds the Node revision and string identity keys. All three first-red tests passed, but the initial candidate Desktop suite reported **1608 passes, 1 failure in this obsolete source assertion, 1 skip**. Its assertions have now been updated to require the new revision-aware expression/maps while continuing to guard 6-request, 512-entry, viewport-retention and Blob-ownership invariants. This is a test-contract correction, not a new product behavior change.
+
+**Evidence:** [exact before and after sample rows](performance-evidence/gallery-thumbnail-revision/ci-first-red-versus-candidate-2026-10-09.json) include the obsolete warm and in-flight request counts and their replacement versions. The original reference tests were not rewritten to avoid the previously failing interleaving. The same test suite and final full PR CI must pass on the updated **single work commit** before merge. The current Web/Agent transport-level revision freshness is still unmeasured and separate. No end-to-end user page latency or percent improvement is asserted. Maintain
+same-revision hit, the 6 active / 512 cached limits, version-consistent
+tile rendering, stale result fencing, existing Blob ownership and
+view-scope cancellation. Avoid accidental original-video reads,
+especially for persisted posters and idle Live Photos.
+
+**Separate end-to-end follow-up:** Web thumbnail fetch URL uses a static
+version parameter, and album/memory covers may expose only a Node ID.
+Even after the in-memory cache is fixed, browser HTTP cache freshness
+and cover identity need real same-Node-overwrite tests. Do not
+represent this scoped test as proving full cross-surface cache freshness.
+The current wall-clock page speed is unmeasured; this is a correctness
+and request-count baseline, not a percent speedup claim.

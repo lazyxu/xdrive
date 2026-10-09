@@ -10,6 +10,8 @@ export type XDriveMediaThumbnailSourceLoader = (
 
 type ThumbnailTask = {
   nodeID: number
+  revision: number
+  key: string
   priority: XDriveMediaThumbnailPriority
   sequence: number
   promise: Promise<string | null>
@@ -35,9 +37,9 @@ export class XDriveMediaThumbnailScheduler {
   private disposed = false
   private pumpScheduled = false
   private readonly queue: ThumbnailTask[] = []
-  private readonly queued = new Map<number, ThumbnailTask>()
-  private readonly inFlight = new Map<number, ThumbnailTask>()
-  private readonly cache = new Map<number, string>()
+  private readonly queued = new Map<string, ThumbnailTask>()
+  private readonly inFlight = new Map<string, ThumbnailTask>()
+  private readonly cache = new Map<string, string>()
 
   constructor(
     loader: XDriveMediaThumbnailSourceLoader,
@@ -60,22 +62,39 @@ export class XDriveMediaThumbnailScheduler {
   load = (
     nodeID: number,
     priority: XDriveMediaThumbnailPriority = 1,
+    revision = 0,
   ): Promise<string | null> => {
     if (this.disposed || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
       return Promise.resolve(null)
     }
+    const currentRevision = Number.isSafeInteger(revision) && revision > 0 ? revision : 0
+    const key = `${nodeID}:${currentRevision}`
 
-    const cached = this.cache.get(nodeID)
+    // A new source revision supersedes only the old requests for this Node,
+    // not independent requests for other Nodes or the durable media indexer.
+    // Keep the existing 512-entry LRU: old decoded Blob URLs can remain
+    // temporarily cached rather than being revoked behind a mounted image.
+    if (currentRevision > 0) {
+      for (const task of [...this.queue]) {
+        if (task.nodeID === nodeID && task.revision < currentRevision) this.cancelTask(task)
+      }
+      for (const task of [...this.inFlight.values()]) {
+        if (task.nodeID === nodeID && task.revision < currentRevision) this.cancelTask(task)
+      }
+      this.compactQueue()
+    }
+
+    const cached = this.cache.get(key)
     if (cached !== undefined) {
-      this.cache.delete(nodeID)
-      this.cache.set(nodeID, cached)
+      this.cache.delete(key)
+      this.cache.set(key, cached)
       return Promise.resolve(cached)
     }
 
-    const active = this.inFlight.get(nodeID)
+    const active = this.inFlight.get(key)
     if (active) return active.promise
 
-    const queued = this.queued.get(nodeID)
+    const queued = this.queued.get(key)
     if (queued) {
       if (priority < queued.priority) {
         queued.priority = priority
@@ -92,6 +111,8 @@ export class XDriveMediaThumbnailScheduler {
     })
     const task: ThumbnailTask = {
       nodeID,
+      revision: currentRevision,
+      key,
       priority,
       sequence: this.sequence++,
       promise,
@@ -100,7 +121,7 @@ export class XDriveMediaThumbnailScheduler {
       cancelled: false,
       controller: new AbortController(),
     }
-    this.queued.set(nodeID, task)
+    this.queued.set(key, task)
     this.queue.push(task)
     this.sortQueue()
     this.schedulePump()
@@ -135,8 +156,8 @@ export class XDriveMediaThumbnailScheduler {
     if (task.cancelled) return
     task.cancelled = true
     task.controller.abort()
-    if (this.queued.get(task.nodeID) === task) this.queued.delete(task.nodeID)
-    if (this.inFlight.get(task.nodeID) === task) this.inFlight.delete(task.nodeID)
+    if (this.queued.get(task.key) === task) this.queued.delete(task.key)
+    if (this.inFlight.get(task.key) === task) this.inFlight.delete(task.key)
     task.resolve(null)
   }
 
@@ -171,25 +192,25 @@ export class XDriveMediaThumbnailScheduler {
     this.compactQueue()
     while (this.active < this.concurrency && this.queue.length > 0) {
       const task = this.queue.shift()!
-      this.queued.delete(task.nodeID)
+      this.queued.delete(task.key)
       if (task.cancelled) continue
       this.active += 1
-      this.inFlight.set(task.nodeID, task)
+      this.inFlight.set(task.key, task)
       void this.loader(task.nodeID, task.controller.signal)
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)
             return
           }
-          if (url) this.cacheURL(task.nodeID, url)
+          if (url) this.cacheURL(task.key, url)
           task.resolve(url)
         })
         .catch((error) => {
           if (!task.cancelled && !this.disposed) task.reject(error)
         })
         .finally(() => {
-          if (this.inFlight.get(task.nodeID) === task) {
-            this.inFlight.delete(task.nodeID)
+          if (this.inFlight.get(task.key) === task) {
+            this.inFlight.delete(task.key)
           }
           this.active = Math.max(0, this.active - 1)
           this.schedulePump()
@@ -197,13 +218,13 @@ export class XDriveMediaThumbnailScheduler {
     }
   }
 
-  private cacheURL(nodeID: number, url: string) {
-    const previous = this.cache.get(nodeID)
+  private cacheURL(key: string, url: string) {
+    const previous = this.cache.get(key)
     if (previous && previous !== url) this.revokeURL(previous)
-    this.cache.delete(nodeID)
-    this.cache.set(nodeID, url)
+    this.cache.delete(key)
+    this.cache.set(key, url)
     while (this.cache.size > this.maxCacheEntries) {
-      const oldest = this.cache.entries().next().value as [number, string] | undefined
+      const oldest = this.cache.entries().next().value as [string, string] | undefined
       if (!oldest) break
       this.cache.delete(oldest[0])
       this.revokeURL(oldest[1])

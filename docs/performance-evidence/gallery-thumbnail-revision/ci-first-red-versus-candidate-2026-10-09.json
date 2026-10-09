@@ -1,0 +1,65 @@
+{
+  "title": "Gallery Node revision thumbnail cache reuse",
+  "date": "2026-10-09",
+  "workload": "same one Node ID rev3 then rev4, pending rev8 then rev9, same test source unchanged; Node 417 and 418; no wall-clock A/B claim",
+  "before": {
+    "sha": "067749b686625f0b33f566d5812ee96acf0db77d",
+    "ci": 37916151616,
+    "job": 113772701469,
+    "cache": {
+      "nodeID": 417,
+      "fromRevision": 3,
+      "toRevision": 4,
+      "first": "blob:version-1",
+      "warm": "blob:version-1",
+      "next": "blob:version-1",
+      "requests": 1
+    },
+    "inflight": {
+      "nodeID": 418,
+      "oldRevision": 8,
+      "newRevision": 9,
+      "upstreamRequests": 1,
+      "oldAborted": false
+    },
+    "galleryTileTest": "failed: no revision passed or dependency",
+    "desktop": "1606 passed, 3 first-red fails, 1 skipped"
+  },
+  "after": {
+    "sha": "7ccd387d63eb11f53bab020a5624b9e06c74a9a7",
+    "ci": 37916615118,
+    "job": 113774788258,
+    "cache": {
+      "nodeID": 417,
+      "fromRevision": 3,
+      "toRevision": 4,
+      "first": "blob:version-1",
+      "warm": "blob:version-1",
+      "next": "blob:version-2",
+      "requests": 2
+    },
+    "inflight": {
+      "nodeID": 418,
+      "oldRevision": 8,
+      "newRevision": 9,
+      "upstreamRequests": 2,
+      "oldAborted": true
+    },
+    "galleryTileTest": "passed: revision forwarded and dependency changed",
+    "desktop": "1608 passed, 1 obsolete source-token harness failure, 1 skipped"
+  },
+  "codeFix": {
+    "scopedCacheAndInflightKey": "NodeID:revision",
+    "fenceLateResponse": true,
+    "abortSupersededPending": true,
+    "sameVersionDeduped": true,
+    "maxConcurrency": 6,
+    "maxCacheEntries": 512
+  },
+  "testHarnessAdjustment": "Old literal source token assertions in desktop/tests/media-gallery.cjs now require the new revision-aware cache and tile contract.",
+  "limitations": [
+    "This is the shared Gallery in-memory scheduler, not the browser HTTP cache or Desktop Agent thumbnail cache.",
+    "No actual xDrive Server/physical-device overwritten-file end-to-end experiment.",
+    "No comparison of page load wall clock, CPU, RSS or transport bytes; structural request identity/lifecycle only."
+  ]
+}

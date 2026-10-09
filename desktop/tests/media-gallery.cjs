@@ -1583,7 +1583,7 @@ test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler
   for (const token of [
     'XDriveMediaThumbnailScheduler',
     'thumbnailScheduler = useMemo(',
-    'thumbnailScheduler.load(nodeID, thumbnailPriority)',
+    'thumbnailScheduler.load(nodeID, thumbnailPriority, item.node.revision)',
     'revokeOnDispose={!thumbnailScheduler}',
     'overscanRows: 0',
     'thumbnailPriority: XDriveMediaThumbnailPriority',
@@ -1598,14 +1598,14 @@ test('Gallery Grid uses one viewport-priority thumbnail scheduler with scheduler
     'XDRIVE_MEDIA_THUMBNAIL_CONCURRENCY = 6',
     'XDRIVE_MEDIA_THUMBNAIL_CACHE_SIZE = 512',
     'class XDriveMediaThumbnailScheduler',
-    'private readonly queued = new Map<number, ThumbnailTask>()',
-    'private readonly inFlight = new Map<number, ThumbnailTask>()',
-    'private readonly cache = new Map<number, string>()',
+    'private readonly queued = new Map<string, ThumbnailTask>()',
+    'private readonly inFlight = new Map<string, ThumbnailTask>()',
+    'private readonly cache = new Map<string, string>()',
     'left.priority - right.priority',
     'queueMicrotask(() => {',
     'setRetention(nodeIDs: Iterable<number>)',
     'this.cancelTask(task)',
-    'this.cacheURL(task.nodeID, url)',
+    'this.cacheURL(task.key, url)',
     'this.revokeURL(url)',
   ]) {
     assert.ok(sharedGalleryThumbnailScheduler.includes(token), `Gallery scheduler missing: ${token}`)
