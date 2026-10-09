@@ -56,6 +56,8 @@ type Server struct {
 	archiveProgress                map[string]*archiveDownloadProgressState
 	mediaIndexMu                   sync.Mutex
 	mediaIndexOwners               map[uint64]*mediaIndexOwnerState
+	mediaSelectionMu               sync.Mutex
+	mediaSelections                map[string]*mediaSelectionSnapshot
 	photoIntelligenceMu            sync.Mutex
 	photoIntelligenceOwners        map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
 	photoFaceRunner                photoFaceOwnerRunner
@@ -178,6 +180,10 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/download/archive", s.downloadArchive)
 	authed.GET("/nodes/:id/location", s.getNodeLocation)
 	authed.GET("/media/items", s.listMediaItems)
+	authed.POST("/media/selection-snapshots", s.createMediaSelectionSnapshot)
+	authed.GET("/media/selection-snapshots/:token", s.getMediaSelectionSnapshot)
+	authed.PATCH("/media/selection-snapshots/:token/exclusion", s.updateMediaSelectionExclusion)
+	authed.DELETE("/media/selection-snapshots/:token", s.deleteMediaSelectionSnapshot)
 	authed.GET("/media/facets", s.listMediaFacets)
 	authed.GET("/media/index-status", s.listMediaIndexStatus)
 	authed.GET("/media/sync-folders", s.listMediaSyncFolders)

@@ -467,3 +467,12 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   silent all-query expansion. Query-wide frozen snapshots/exclusions, date
   selection beyond loaded pages, partial batch failures, and 100k physical
   acceptance are **not yet implemented**; do not mark G07 finished.
+
+- 2026-10-09: G07 phase 2a owner-scoped snapshot candidate (backend-only,
+  unmerged): explicit selection operation freezes up to 100k matching known
+  media Node IDs/revisions; no first-open scan, 100k client hydration or
+  implied original-byte fetch. A bounded response plus server exclusions,
+  session version, expiry, tenant guard and DST-correct selected day are
+  deliberately distinct from the G07 phase-1 review of explicitly loaded
+  items. Query-wide mutations, Task Center progress, partial failures and
+  iOS/Android/device QA are NOT implemented by this stage.
