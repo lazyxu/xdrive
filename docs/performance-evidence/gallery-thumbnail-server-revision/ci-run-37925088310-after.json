@@ -1,0 +1,173 @@
+{
+  "title": "P1 xDrive Server thumbnail & 1280px analysis-preview URL revision-fence HTTP integration before/after",
+  "date": "2026-10-09",
+  "workload": "authenticated Gin + PostgreSQL 17 + local store + actual media derivative scheduler; Node 3 3x2 PNG overwritten via If-Match with 5x4 PNG; exact revision1 and revision2 plus future/stale/invalid query",
+  "before": {
+    "head": "6d711719ec70fd989105a86964d78802d642f867",
+    "job": 113798447885,
+    "failures": [
+      {
+        "name": "thumbnail_future_revision_cannot_pollute_a_new_cache_URL",
+        "url": "/api/v1/media/items/3/thumbnail?revision=2",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "518"
+      },
+      {
+        "name": "thumbnail_invalid_revision_not-a-revision",
+        "url": "/api/v1/media/items/3/thumbnail?revision=not-a-revision",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "529"
+      },
+      {
+        "name": "thumbnail_invalid_revision_0",
+        "url": "/api/v1/media/items/3/thumbnail?revision=0",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "529"
+      },
+      {
+        "name": "analysis_preview_future_revision_cannot_cache_stale_RAW_pixels",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=2",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "596"
+      },
+      {
+        "name": "analysis_preview_invalid_revision_bad",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=bad",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "607"
+      },
+      {
+        "name": "analysis_preview_invalid_revision_0",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=0",
+        "actualStatus": 200,
+        "expectedStatus": 400,
+        "failureSite": "607"
+      },
+      {
+        "name": "thumbnail_stale_revision_cannot_cache_overwritten_image",
+        "url": "/api/v1/media/items/3/thumbnail?revision=1",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "727"
+      },
+      {
+        "name": "analysis_preview_stale_revision_cannot_cache_overwritten_RAW",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=1",
+        "actualStatus": 200,
+        "expectedStatus": 409,
+        "failureSite": "780"
+      }
+    ]
+  },
+  "after": {
+    "head": "d2d6e61b79f577a33d1a34822c751072707ac9aa",
+    "ci": 37925088310,
+    "job": 113801986362,
+    "paired": [
+      {
+        "test": "thumbnail_future_revision_cannot_pollute_a_new_cache_URL",
+        "url": "/api/v1/media/items/3/thumbnail?revision=2",
+        "beforeStatus": 200,
+        "expectedStatus": 409,
+        "afterStatus": 409,
+        "afterResponseBytes": 72,
+        "afterDurationMsDiagnostic": 44.847,
+        "passed": true
+      },
+      {
+        "test": "thumbnail_invalid_revision_not-a-revision",
+        "url": "/api/v1/media/items/3/thumbnail?revision=not-a-revision",
+        "beforeStatus": 200,
+        "expectedStatus": 400,
+        "afterStatus": 400,
+        "afterResponseBytes": 41,
+        "afterDurationMsDiagnostic": 45.327,
+        "passed": true
+      },
+      {
+        "test": "thumbnail_invalid_revision_0",
+        "url": "/api/v1/media/items/3/thumbnail?revision=0",
+        "beforeStatus": 200,
+        "expectedStatus": 400,
+        "afterStatus": 400,
+        "afterResponseBytes": 41,
+        "afterDurationMsDiagnostic": 45.38,
+        "passed": true
+      },
+      {
+        "test": "analysis_preview_future_revision_cannot_cache_stale_RAW_pixels",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=2",
+        "beforeStatus": 200,
+        "expectedStatus": 409,
+        "afterStatus": 409,
+        "afterResponseBytes": 72,
+        "afterDurationMsDiagnostic": 44.448,
+        "passed": true
+      },
+      {
+        "test": "analysis_preview_invalid_revision_bad",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=bad",
+        "beforeStatus": 200,
+        "expectedStatus": 400,
+        "afterStatus": 400,
+        "afterResponseBytes": 41,
+        "afterDurationMsDiagnostic": 47.581,
+        "passed": true
+      },
+      {
+        "test": "analysis_preview_invalid_revision_0",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=0",
+        "beforeStatus": 200,
+        "expectedStatus": 400,
+        "afterStatus": 400,
+        "afterResponseBytes": 41,
+        "afterDurationMsDiagnostic": 45.965,
+        "passed": true
+      },
+      {
+        "test": "thumbnail_stale_revision_cannot_cache_overwritten_image",
+        "url": "/api/v1/media/items/3/thumbnail?revision=1",
+        "beforeStatus": 200,
+        "expectedStatus": 409,
+        "afterStatus": 409,
+        "afterResponseBytes": 72,
+        "afterDurationMsDiagnostic": 44.935,
+        "passed": true
+      },
+      {
+        "test": "analysis_preview_stale_revision_cannot_cache_overwritten_RAW",
+        "url": "/api/v1/media/items/3/analysis-preview?revision=1",
+        "beforeStatus": 200,
+        "expectedStatus": 409,
+        "afterStatus": 409,
+        "afterResponseBytes": 72,
+        "afterDurationMsDiagnostic": 45.956,
+        "passed": true
+      }
+    ],
+    "unitCases": [
+      "legacy_unknown_revision",
+      "known_current_revision",
+      "newer_query",
+      "superseded_query",
+      "invalid_zero",
+      "invalid_negative",
+      "empty_supplied",
+      "overflow"
+    ],
+    "allEightCorrect": true,
+    "allEightUnitsPass": true
+  },
+  "decision": "ACCEPT structural HTTP revision/byte identity fix; no source content/preview/generation cost increase for matching current revisions; return noncacheable 409/400 for stale or invalid",
+  "limitations": [
+    "Before and after are separate GH-hosted CI runners; response duration values are diagnostics, not comparable wall-clock speedup.",
+    "The workload covers one Node at two revisions, not 100k nodes or physically captured RAW input.",
+    "1280px analysis-preview API shares RAW preview contract, but fixture uses an ordinary PNG to validate query fencing.",
+    "No ordinary video hover, new persistent storage or additional media transport endpoint."
+  ]
+}

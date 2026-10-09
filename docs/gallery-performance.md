@@ -1591,3 +1591,62 @@ production change in the same single work commit; runner/setup/test
 fixture errors do not. Store exact before/after sample evidence here.
 This is a correctness and transport-byte request-count comparison,
 not a claim of improved first paint, 100k DOM behavior or RSS.
+
+## P1 Server thumbnail query revision guard after Web/Agent overwrite fix (2026-10-09)
+
+Status: **Accepted HTTP version-fence A/B: original 8 failures → 8 passes; final evidence-amended CI pending**.
+Merged #1148 fixed client-side stale thumbnail HTTP caching in Chromium Web and
+Desktop Agent, but production `mediaThumbnail` still handles
+`GET /api/v1/media/items/:id/thumbnail?revision=<r>` without testing `r`
+against the owner-scoped current `Node.Revision`. A client that has an
+out-of-order new revision may receive old bytes under a new immutable
+browser URL, or an old-version request may fetch new bytes under its old URL.
+This work is independent of binary Preview Engine streaming and does not
+introduce a new derivative/cached media class.
+
+**Test-first real Server workload:** extend
+`TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership` in
+`internal/api/media_integration_test.go`, with an authenticated Gin Router,
+real PostgreSQL 17 test DB, real derivative scheduler, local media storage
+and two uploaded PNG sources (3x2 original, 5x4 overwrite). Frozen order:
+(1) original thumbnail 200, revision-matched GET 200 with identical bytes,
+(2) future revision URL must be **409 Conflict** plus
+`Cache-Control: private, no-store`, with invalid/missing-effective
+revision 400, (3) overwrite original Node with If-Match and verify
+incremented revision, (4) old revision URL now **409 and uncacheable**,
+(5) updated revision URL **200**, decoded thumbnail dimensions 5x4
+and changed ETag. This covers two mismatched versions, two matching
+versions, and invalid revision inputs; unknown-revision callers still use
+the original route unaffected and retain ETag revalidation behavior.
+
+**BEFORE:** not yet measured; CI will run the unchanged Server implementation
+with these same tests, expecting real HTTP 200 for a future revision (wrong).
+Only a true integration first-red allows the narrow production guard.
+**AFTER:** not yet available. The original tests must turn green without
+weakening the status assertions. This is an identity/caching correctness
+gate; it is not a claimed 100k throughput/latency improvement, video hover,
+Live Photo motion change or new physical storage. Preserve owner authorization
+before leaking Node revision and ensure wrong-revision responses cannot be
+long-lived cache entries. Keep the existing thumbnail/poster persistence,
+Go request context, user/session-scoped access and cancellation unchanged.
+
+**Expanded same-root-cause endpoint:** the 1280px RAW/JPEG analysis derivative is also served by `mediaAnalysisPreview` and its Web client uses `?revision=N`, while the Server endpoint does not compare that query to the owner-scoped Node revision. The original first-red test is extended to exercise both endpoints with independent nonfatal subtests: future revision **409 + private,no-store**, old revision after overwrite **409**, matching old/new **200 + matching JPEG bytes**, invalid version **400**. The same authenticated PostgreSQL 3x2 → 5x4 workflow and the same file/node identity are reused; this adds no new fixture or Server API. Distinguish first-red measurements for each endpoint, and do not change production before both actual failures are verified.
+
+**BEFORE — two real test-first runs:** [initial Go API CI #37923364331](https://github.com/lazyxu/xdrive/actions/runs/37923364331) first observed GET /media/items/3/thumbnail?revision=2 returning 200 instead of 409 (actual revision 1). Expanded [Go API CI #37923974647](https://github.com/lazyxu/xdrive/actions/runs/37923974647), test [job 113798447885](https://github.com/lazyxu/xdrive/actions/runs/37923974647/job/113798447885), used the same authenticated Gin/PostgreSQL/local Store/media derivative scheduler, with original 3x2 PNG and a 5x4 overwriting upload. Eight independent subtest failures: thumbnail future/stale revision wrongly returned 200 instead of 409 (2), invalid revisions wrongly returned 200 instead of 400 (2), and the corresponding 1280px analysis-preview future/stale and invalid cases wrongly returned 200 (4). Matching old/current and legacy unknown revision requests continued to succeed, with JPEG geometry/ETag checks. This is real HTTP status/bytes correctness evidence, not a timing benchmark. [Raw 8 status/URL/test-location rows](performance-evidence/gallery-thumbnail-server-revision/ci-run-37923974647-before.json).
+
+**AFTER / candidate, not yet measured:** add a shared owner-scoped `requireMediaSourceRevision(c, currentNodeRevision)` guard to existing `mediaThumbnail` (still/video poster) and `mediaAnalysisPreview` (RAW 1280px). Validate only after owner-scoped Node lookup and before metadata/derivative reads; absent revision retains existing legacy semantics; invalid/zero responds 400 + private,no-store; future or superseded revision responds 409 revision_conflict + private,no-store. Exact matches still use existing persisted derivative, ETag and positive max-age. Add eight lightweight Gin helper unit cases, and keep the original failing PostgreSQL integration tests byte-identical. No new cached data class, storage path, worker, player or motion request. Subsequent CI must show all original 8 red subtests green. An additional query-parameter parse is not a measured first-paint improvement.
+
+**AFTER (original 8 integration subtests all green):** [GitHub CI 37925088310](https://github.com/lazyxu/xdrive/actions/runs/37925088310), [Go API job 113801986362](https://github.com/lazyxu/xdrive/actions/runs/37925088310/job/113801986362), exact original 3x2→5x4 database overwrite/Gin/auth/media-derivative test unchanged. All **8/8** subtests now pass; the common helper also passes **8/8** pure Gin query edge cases. Error responses become uncacheable JSON instead of streaming JPEG; correct-version and legacy no-version requests continue to serve original persistence-fenced JPEG/ETag.
+
+| Request (one Node, old and new source) | BEFORE actual HTTP | AFTER actual HTTP | AFTER response bytes |
+| --- | ---: | ---: | ---: |
+| 512px thumbnail future source revision | 200 | 409 | 72 |
+| 512px thumbnail old source revision after overwrite | 200 | 409 | 72 |
+| 512px thumbnail malformed / zero revision | 200 / 200 | 400 / 400 | 41 / 41 |
+| 1280px analysis-preview future source revision | 200 | 409 | 72 |
+| 1280px analysis-preview old source revision after overwrite | 200 | 409 | 72 |
+| 1280px analysis-preview malformed / zero revision | 200 / 200 | 400 / 400 | 41 / 41 |
+
+**Machine evidence:** [original eight incorrect route/status rows](performance-evidence/gallery-thumbnail-server-revision/ci-run-37923974647-before.json), [exact paired eight corrected route/status/HTTP bytes rows and eight unit test names](performance-evidence/gallery-thumbnail-server-revision/ci-run-37925088310-after.json). The actual Go API test saw 409/400 for every invalid or mismatched request with Cache-Control private,no-store (checked in test). This is a structural version/HTTP correctness acceptance, **not** an apples-to-apples latency or memory improvement; distinct CI runners were used and the 1280px endpoint's fixture is PNG not a physical RAW photo.
+
+**Final merge gate:** same source and test functionality but evidence-amended **one-work-commit HEAD** must complete its entire new GitHub CI, including Go Race, Web/Desktop, Windows packages and final gate. Do not merge on the earlier candidate CI alone. No extra viewer, generated media class, source-workload change or video hover was enabled.
