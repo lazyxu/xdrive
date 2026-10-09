@@ -1,8 +1,8 @@
 import { formatBytes } from './format'
 
-export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos'
+export type SupportedExternalSourceKind = 'synology_photos' | 'synology_files' | 'yike_photos' | 'local_folder'
 export type ExternalSourceDirection = 'push' | 'pull'
-export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull'
+export type ExternalSourceCreatePreset = 'synology_push' | 'synology_pull' | 'synology_files_pull' | 'yike_pull' | 'local_push'
 export type SynologyPhotoSpace = 'personal' | 'shared'
 export type ExternalSourceRunMode = 'scan' | 'sync'
 export type ExternalSourceSyncMode = 'backup' | 'mirror'
@@ -296,6 +296,13 @@ export const externalSourceCreateOptions: ExternalSourceCreateOption[] = [
     label: '一刻相册 · Pull',
     description: '由 xDrive Server 使用一刻相册 Cookie 读取并备份媒体。',
   },
+  {
+    value: 'local_push',
+    kind: 'local_folder',
+    direction: 'push',
+    label: '本机文件夹 · Push',
+    description: '由本机 Desktop 选择目录并授权 Agent。当前仅完成来源登记，上传执行器尚未启用。',
+  },
 ]
 
 export const synologyPhotoSpaceOptions: Array<{ value: SynologyPhotoSpace; label: string }> = [
@@ -342,6 +349,7 @@ export function externalSourceCreateOption(value: ExternalSourceCreatePreset) {
 }
 
 export function externalSourceCreatePresetFor(kind: string, direction: ExternalSourceDirection): ExternalSourceCreatePreset {
+  if (kind === 'local_folder') return 'local_push'
   if (kind === 'yike_photos') return 'yike_pull'
   if (kind === 'synology_files') return 'synology_files_pull'
   return direction === 'pull' ? 'synology_pull' : 'synology_push'
@@ -373,7 +381,7 @@ export interface ExternalSourceConnectorProfile {
   label: string
   direction: ExternalSourceDirection
   credential: 'cookie' | 'synology_dsm' | null
-  manualTriggerExecutor: 'pull_worker' | 'source_agent'
+  manualTriggerExecutor: 'pull_worker' | 'source_agent' | 'local_agent'
   defaultName: string
   defaultIgnoreRules: string
 }
@@ -508,6 +516,17 @@ export function defaultExternalSourceTimezone() {
 }
 
 export function externalSourceConnectorProfile(kind: string, direction?: ExternalSourceDirection): ExternalSourceConnectorProfile {
+  if (kind === 'local_folder') {
+    return {
+      kind,
+      label: '本机文件夹',
+      direction: 'push',
+      credential: null,
+      manualTriggerExecutor: 'local_agent',
+      defaultName: '本机文件夹',
+      defaultIgnoreRules: '',
+    }
+  }
   if (kind === 'yike_photos') {
     return {
       kind,
@@ -632,6 +651,9 @@ export function getExternalSourceState(row: ExternalSourceRow): ExternalSourceSt
 }
 
 export function getExternalSourceTriggerState(row: ExternalSourceRow): ExternalSourceTriggerState {
+  if (row.source.kind === 'local_folder') {
+    return { ready: false, label: '本机同步执行器尚未启用，请先完成本地目录授权' }
+  }
   const { source, latestRun, credential } = row
   const connector = externalSourceConnectorProfile(source.kind, source.direction)
   if (source.run_requested_at) return { ready: false, label: '已提交扫描请求' }
@@ -655,6 +677,13 @@ export function externalSourceTriggerActionLabel(row: ExternalSourceRow) {
 
 export function externalSourceDefaults(kind: SupportedExternalSourceKind, direction?: ExternalSourceDirection): ExternalSourceDefaults {
   const profile = externalSourceConnectorProfile(kind, direction)
+  if (kind === 'local_folder') {
+    return {
+      kind, name: profile.defaultName, direction: 'push',
+      runMode: 'sync', ignoreRules: '', scheduleType: 'manual',
+      scheduleExpression: '', scheduleTimezone: '',
+    }
+  }
   return {
     kind,
     name: profile.defaultName,

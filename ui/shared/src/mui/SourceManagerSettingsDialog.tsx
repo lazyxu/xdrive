@@ -165,6 +165,13 @@ export function XDriveSourceSettingsDialog({
                   if (nameError) onClearNameError()
                 }}
               />
+              {setting.source.kind === 'local_folder' ? (
+                <XDriveStatusAlert tone="neutral">
+                  此同步文件夹目前只能管理名称、目标路径和忽略规则。设备授权已可配置，
+                  但扫描、上传、镜像删除和自动任务仍未启用，当前不能激活来源。
+                </XDriveStatusAlert>
+              ) : (
+                <>
               <XDriveSourceRunModeField
                 value={values.run_mode}
                 onChange={(value) => onChange({ run_mode: value })}
@@ -187,19 +194,23 @@ export function XDriveSourceSettingsDialog({
                 value={values.status}
                 onChange={(value) => onChange({ status: value })}
               />
+                </>
+              )}
               <XDriveSourceTargetField
                 value={setting.source.target_path}
                 managed={setting.source.kind === 'yike_photos'}
               />
-              <XDriveSourceScheduleFields
-                wideAt="md"
-                scheduleType={values.schedule_type}
-                expression={values.schedule_expression}
-                timezone={values.schedule_timezone}
-                onScheduleTypeChange={(value) => onChange({ schedule_type: value })}
-                onExpressionChange={(value) => onChange({ schedule_expression: value })}
-                onTimezoneChange={(value) => onChange({ schedule_timezone: value })}
-              />
+              {setting.source.kind !== 'local_folder' ? (
+                <XDriveSourceScheduleFields
+                  wideAt="md"
+                  scheduleType={values.schedule_type}
+                  expression={values.schedule_expression}
+                  timezone={values.schedule_timezone}
+                  onScheduleTypeChange={(value) => onChange({ schedule_type: value })}
+                  onExpressionChange={(value) => onChange({ schedule_expression: value })}
+                  onTimezoneChange={(value) => onChange({ schedule_timezone: value })}
+                />
+              ) : null}
               <XDriveSourceIgnoreRulesField
                 rows={6}
                 placeholder={'每行一条规则，例如：\n@eaDir/\n*.tmp\n!important.jpg'}

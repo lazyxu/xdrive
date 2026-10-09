@@ -1,4 +1,5 @@
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import { Box, Tooltip } from '@mui/material'
 import { externalSourceKindLabel } from '../external-sources'
 
@@ -55,6 +56,8 @@ export function XDriveSourceKindIcon({
               objectFit: 'contain',
             }}
           />
+        ) : kind === 'local_folder' ? (
+          <FolderRoundedIcon sx={{ fontSize: size === 'small' ? 22 : 30, color: 'primary.main' }} />
         ) : (
           <StorageRoundedIcon sx={{ fontSize: size === 'small' ? 18 : 24, color: 'text.secondary' }} />
         )}

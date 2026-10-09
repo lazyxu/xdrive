@@ -323,9 +323,10 @@ export default function App({
       state,
     })
   }, [status?.server, status?.username])
+  const localFolderGrantSupported = agent.hello?.capabilities.includes('local-folder-root-grants') ?? false
   const sourceManagerAdapter = useMemo(
-    () => createDesktopSourceManagerAdapter(status?.username),
-    [status?.username],
+    () => createDesktopSourceManagerAdapter(status?.username, localFolderGrantSupported),
+    [status?.username, localFolderGrantSupported],
   )
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'

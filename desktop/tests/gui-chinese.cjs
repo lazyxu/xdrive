@@ -527,7 +527,8 @@ test('shared SourceManager persists schedule and ignore-rule semantics', () => {
     assert.ok(sharedSourceScheduleFields.includes(text), `missing shared Source schedule UI label: ${text}`)
   }
   assert.equal((sharedSourceManager.match(/<XDriveSourceScheduleFields\b/g) || []).length, 2, 'create/settings should share Source schedule fields')
-  assert.ok((sharedSourceManager.match(/schedule_type: values\.schedule_type/g) || []).length >= 2, 'create/update schedule payloads are missing')
+  assert.ok(sharedSourceManager.includes('schedule_type: values.schedule_type'), 'normal connector create scheduling payload missing')
+  assert.ok(sharedSourceManager.includes("schedule_type: isLocalFolder ? 'manual' : values.schedule_type"), 'normal connector updates must retain scheduling while local folders stay manual')
   assert.ok(sharedSourceIgnoreRulesField.includes('spellCheck: false'), 'shared ignore-rules field should disable spellcheck')
   assert.equal((sharedSourceManager.match(/<XDriveSourceIgnoreRulesField\b/g) || []).length, 2, 'create/settings should share ignore-rules fields')
   assert.ok(main.includes('schedule_expression'), 'Electron main does not forward Source schedule fields')

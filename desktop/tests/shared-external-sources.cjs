@@ -569,6 +569,7 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
       ['synology_pull', 'synology_photos', 'pull'],
       ['synology_files_pull', 'synology_files', 'pull'],
       ['yike_pull', 'yike_photos', 'pull'],
+      ['local_push', 'local_folder', 'push'],
     ],
   )
   assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos · Pull')
@@ -576,6 +577,12 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_files', 'pull'), 'synology_files_pull')
   assert.equal(shared.externalSourceCreatePresetFor('yike_photos', 'pull'), 'yike_pull')
+  assert.equal(shared.externalSourceCreatePresetFor('local_folder', 'push'), 'local_push')
+  assert.equal(shared.externalSourceKindLabel('local_folder'), '本机文件夹')
+  const localDefaults = shared.externalSourceDefaults('local_folder', 'push')
+  assert.equal(localDefaults.scheduleType, 'manual')
+  assert.equal(localDefaults.runMode, 'sync')
+  assert.equal(shared.externalSourceConnectorProfile('local_folder', 'push').manualTriggerExecutor, 'local_agent')
 })
 
 test('shared Synology space normalization is deterministic', () => {
@@ -897,4 +904,20 @@ test('Desktop source details reuse shared description and section primitives', (
     assert.equal(desktop.includes(`className="${legacy}"`), false, `Desktop should not retain local ${legacy} markup`)
     assert.equal(styles.includes(`.${legacy}`), false, `Desktop should not retain local ${legacy} CSS`)
   }
+})
+
+test('local folder Source UI stays Desktop-only and explicitly non-executable', () => {
+  const presetField = fs.readFileSync(path.join(__dirname, '..', '..', 'ui/shared/src/mui/SourceBasicFields.tsx'), 'utf8')
+  const manager = fs.readFileSync(path.join(__dirname, '..', '..', 'ui/shared/src/mui/SourceManager.tsx'), 'utf8')
+  const desktopAdapter = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/sourceManagerAdapter.ts'), 'utf8')
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/App.tsx'), 'utf8')
+  assert.match(presetField, /allowLocalPush \|\| option\.kind !== 'local_folder'/)
+  assert.match(manager, /allowLocalPush=\{Boolean\(adapter\.authorizeLocalFolder\)\}/)
+  assert.match(manager, /await adapter\.authorizeLocalFolder\(created\.id\)/)
+  assert.match(desktopAdapter, /localFolderSupported \? \(sourceID\) => window\.xdriveDesktop\.authorizeLocalFolder\(sourceID\)/)
+  assert.match(app, /capabilities\.includes\('local-folder-root-grants'\)/)
+  assert.equal(shared.getExternalSourceTriggerState({
+    source: { kind: 'local_folder', status: 'paused', direction: 'push', run_mode: 'sync', sync_mode: 'backup' },
+    latestRun: null, credential: null,
+  }).ready, false)
 })

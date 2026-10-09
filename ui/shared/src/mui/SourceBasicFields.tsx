@@ -16,10 +16,12 @@ export function XDriveSourcePresetField({
   value,
   onChange,
   label = '同步文件夹类型',
+  allowLocalPush = false,
 }: {
   value: ExternalSourceCreatePreset
   onChange: (value: ExternalSourceCreatePreset) => void
   label?: ReactNode
+  allowLocalPush?: boolean
 }) {
   const selected = externalSourceCreateOption(value)
 
@@ -34,7 +36,7 @@ export function XDriveSourcePresetField({
       onChange={(event) => onChange(event.target.value as ExternalSourceCreatePreset)}
       sx={{ minWidth: 0 }}
     >
-      {externalSourceCreateOptions.map((option) => (
+      {externalSourceCreateOptions.filter((option) => allowLocalPush || option.kind !== 'local_folder').map((option) => (
         <MenuItem key={option.value} value={option.value} sx={{ gap: 1 }}>
           <XDriveSourceKindIcon kind={option.kind} size="small" title={option.label} />
           <ListItemText primary={option.label} />
