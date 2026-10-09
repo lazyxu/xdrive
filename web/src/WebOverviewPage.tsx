@@ -17,6 +17,9 @@ import type {
 } from '../../ui/shared/src'
 import {
   XDriveHomePage,
+  xDriveCaptureVideoPosterBlob,
+  xDriveFileKind,
+  xDriveResolveMediaVideoPoster,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerItem,
@@ -100,13 +103,34 @@ export default function WebOverviewPage({
     }
   }, [activityRevision, api, lifecycleKey])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (item.kind !== 'file') return null
-    try {
-      return URL.createObjectURL(await api.mediaThumbnail(Number(item.id)))
-    } catch {
-      return null
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (item.kind !== 'file' || signal?.aborted) return null
+    const nodeID = Number(item.id)
+    const loadCached = async (id: number, requestSignal?: AbortSignal) => {
+      const blob = await api.mediaThumbnail(id, requestSignal)
+      if (requestSignal?.aborted) return null
+      return URL.createObjectURL(blob)
     }
+    if (xDriveFileKind(item.name, item.kind) !== 'video') {
+      try {
+        return await loadCached(nodeID, signal)
+      } catch {
+        return null
+      }
+    }
+    return xDriveResolveMediaVideoPoster({
+      nodeID,
+      revision: Number(item.revision),
+      signal,
+      loadCached,
+      capture: async (requestSignal) => {
+        const source = await api.filePreviewURL(nodeID, requestSignal)
+        if (requestSignal?.aborted) return null
+        return xDriveCaptureVideoPosterBlob(source, 0, 0, 0, 512, requestSignal)
+      },
+      save: (id, revision, poster, requestSignal) =>
+        api.mediaVideoPoster(id, revision, poster, requestSignal),
+    })
   }, [api])
 
   const project = (
