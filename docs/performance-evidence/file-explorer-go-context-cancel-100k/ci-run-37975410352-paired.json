@@ -1,0 +1,232 @@
+{
+  "status": "accepted_resource_cancellation_3_3_matched_pairs_native_postgresql_17",
+  "before_run": 37974982928,
+  "before_job": 113970884456,
+  "paired_run": 37975410352,
+  "paired_job": 113972652556,
+  "before_source_parent_sha": "e0738502a07e101185f5eaab601c2606b167401b",
+  "after_source_head_sha": "cd1e962f178a3dbc1a2b4ff512dbbe0ab0e7cb88",
+  "workload": {
+    "logical_nodes": 100000,
+    "media_extensions": [
+      ".jpg",
+      ".mp4",
+      ".livp",
+      ".txt"
+    ],
+    "requests_per_arm": 6,
+    "query": "GET /api/v1/nodes/:id/children?offset=N&limit=200&sort=name&order=asc",
+    "postgres": "native 17",
+    "lock": "ACCESS EXCLUSIVE ON xd_nodes",
+    "observation_ms": 160
+  },
+  "methodology": "three alternated before-after fresh-schema runs on one runner, same formatted opt-in Go benchmark test copied into exact parent production tree, with healthy new request and exact 100k count verified per arm",
+  "results": [
+    {
+      "arm": "before",
+      "sample": 1,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": false,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 6,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.12,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 6,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1421.902,
+      "server_context_latency_ms": [
+        0.083,
+        0.09,
+        0.097,
+        0.101,
+        0.108,
+        0.12
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 1,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": true,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 0,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.159,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1403.554,
+      "server_context_latency_ms": [
+        0.102,
+        0.109,
+        0.125,
+        0.132,
+        0.137,
+        0.159
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 2,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": true,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 0,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.409,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1395.369,
+      "server_context_latency_ms": [
+        0.17,
+        0.172,
+        0.257,
+        0.261,
+        0.264,
+        0.409
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 2,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": false,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 6,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.251,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 6,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1409.284,
+      "server_context_latency_ms": [
+        0.234,
+        0.241,
+        0.245,
+        0.246,
+        0.25,
+        0.251
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    },
+    {
+      "arm": "before",
+      "sample": 3,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": false,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 6,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.126,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 6,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1394.843,
+      "server_context_latency_ms": [
+        0.084,
+        0.095,
+        0.101,
+        0.111,
+        0.118,
+        0.126
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    },
+    {
+      "arm": "after",
+      "sample": 3,
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "expect_fixed": true,
+      "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+      "handler_active_at_160ms": 0,
+      "logical_files": 100000,
+      "max_server_context_done_ms": 0.162,
+      "observation_ms": 160,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requests": 6,
+      "scope": "actual HTTP authenticated Gin FileExplorer counted-range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+      "seed_ms": 1395.567,
+      "server_context_latency_ms": [
+        0.132,
+        0.132,
+        0.136,
+        0.139,
+        0.144,
+        0.162
+      ],
+      "started_sql_waits": 6,
+      "workload": "file-explorer-go-context-cancel-100k"
+    }
+  ],
+  "pairs": [
+    {
+      "sample": 1,
+      "before": {
+        "sql": 6,
+        "handlers": 6,
+        "ctx_max_ms": 0.12
+      },
+      "after": {
+        "sql": 0,
+        "handlers": 0,
+        "ctx_max_ms": 0.159
+      }
+    },
+    {
+      "sample": 2,
+      "before": {
+        "sql": 6,
+        "handlers": 6,
+        "ctx_max_ms": 0.251
+      },
+      "after": {
+        "sql": 0,
+        "handlers": 0,
+        "ctx_max_ms": 0.409
+      }
+    },
+    {
+      "sample": 3,
+      "before": {
+        "sql": 6,
+        "handlers": 6,
+        "ctx_max_ms": 0.126
+      },
+      "after": {
+        "sql": 0,
+        "handlers": 0,
+        "ctx_max_ms": 0.162
+      }
+    }
+  ],
+  "acceptance": {
+    "all_after_sql_lock_waiters": 0,
+    "all_after_active_handlers": 0,
+    "all_after_context_done": 6,
+    "all_after_client_stale_bytes": 0,
+    "all_before_sql_lock_waiters": 6,
+    "all_before_active_handlers": 6
+  },
+  "exclusions": "Code-level Go→PostgreSQL request cancellation, no real browser/Renderer-to-Agent test, no durable task cancellation, no actual Live Photo pairing/thumbnail decoder"
+}
