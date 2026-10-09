@@ -1,0 +1,50 @@
+{
+  "status": "confirmed_BEFORE_native_postgresql_parameter_limit",
+  "source_head": "22a60debb2851f42f148db60fe29b9b7d3d98f44",
+  "ci_run_id": 37978549397,
+  "ci_job_id": 113982910988,
+  "ci_job_url": "https://github.com/lazyxu/xdrive/actions/runs/37978549397/job/113982910988",
+  "workload": "native PostgreSQL 17, production markFileOperationDeleteSubtreeTx, isolated owner; 100000 child file-type Nodes and selected root, 100001 subtree IDs",
+  "measurements": [
+    {
+      "sample": 1,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 188.611,
+      "root_updated": false,
+      "seed_ms": 777.323,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58312568,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "sample": 2,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 203.266,
+      "root_updated": false,
+      "seed_ms": 788.955,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58313216,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    },
+    {
+      "sample": 3,
+      "error": "extended protocol limited to 65535 parameters",
+      "expect_fixed": false,
+      "logical_file_nodes": 100000,
+      "mutation_ms": 203.391,
+      "root_updated": false,
+      "seed_ms": 806.554,
+      "subtree_ids": 100001,
+      "total_alloc_delta_bytes": 58319136,
+      "trashed_count": 0,
+      "workload": "real-postgres-mark-soft-delete-100k"
+    }
+  ],
+  "interpretation": "All 3 original calls fail with PostgreSQL extended-protocol 65535 parameter limit; no Node is partially trashed. Mutation milliseconds measure failed requests, not successful throughput. Candidate NOT yet measured."
+}

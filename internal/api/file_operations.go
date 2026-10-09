@@ -1441,6 +1441,25 @@ func (s *Server) executeQueuedBatchMove(ctx context.Context, operation meta.File
 	})
 }
 
+// fileOperationDeleteIDArrayLiteral encodes trusted numeric Node IDs as one
+// PostgreSQL bigint[] bind argument. Large subtrees must not expand into
+// 100k individual extended-protocol parameters.
+func fileOperationDeleteIDArrayLiteral(ids []uint64) (string, error) {
+	data := make([]byte, 0, 2+len(ids)*12)
+	data = append(data, '{')
+	for index, id := range ids {
+		if id > uint64(1<<63-1) {
+			return "", fmt.Errorf("node id %d exceeds PostgreSQL bigint range", id)
+		}
+		if index != 0 {
+			data = append(data, ',')
+		}
+		data = strconv.AppendUint(data, id, 10)
+	}
+	data = append(data, '}')
+	return string(data), nil
+}
+
 func markFileOperationDeleteSubtreeTx(
 	tx *gorm.DB,
 	uid uint64,
@@ -1455,7 +1474,17 @@ func markFileOperationDeleteSubtreeTx(
 	var result struct {
 		RootUpdated bool `gorm:"column:root_updated"`
 	}
-	err := tx.Raw(`
+	idsArg := any(subtreeIDs)
+	idPredicate := "IN ?"
+	if len(subtreeIDs) > 32000 {
+		literal, arrayErr := fileOperationDeleteIDArrayLiteral(subtreeIDs)
+		if arrayErr != nil {
+			return false, arrayErr
+		}
+		idsArg = literal
+		idPredicate = "= ANY(CAST(? AS bigint[]))"
+	}
+	err := tx.Raw(fmt.Sprintf(`
 WITH root_ok AS (
 	SELECT id
 	FROM xd_nodes
@@ -1478,7 +1507,7 @@ updated AS (
 			ELSE n.revision
 		END,
 		updated_at = ?
-	WHERE n.id IN ?
+	WHERE n.id %s
 	  AND n.owner_id = ?
 	  AND (n.deleted_at IS NULL OR n.id = ?)
 	  AND EXISTS (SELECT 1 FROM root_ok)
@@ -1489,7 +1518,7 @@ SELECT EXISTS (
 	FROM updated
 	WHERE id = ?
 ) AS root_updated
-`,
+`, idPredicate),
 		rootID,
 		uid,
 		rootRevision,
@@ -1497,7 +1526,7 @@ SELECT EXISTS (
 		rootID,
 		rootID,
 		now,
-		subtreeIDs,
+		idsArg,
 		uid,
 		rootID,
 		rootID,
