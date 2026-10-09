@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
 import {
   Autocomplete,
@@ -6,13 +7,17 @@ import {
   Button,
   Checkbox,
   Chip,
+  Drawer,
+  IconButton,
   MenuItem,
   Paper,
   Popover,
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
+import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 import {
   xDriveMediaDayKey,
   xDriveMediaDayStartISO,
@@ -177,6 +182,7 @@ export function XDriveMediaGalleryFilterBar({
   personIdentityLabel,
   personIdentityLocked = false,
   showSearch = true,
+  compactScrollable = false,
   lockedAssetKind = false,
   lockedFavorite = false,
   facets,
@@ -197,6 +203,7 @@ export function XDriveMediaGalleryFilterBar({
   personIdentityLabel?: string
   personIdentityLocked?: boolean
   showSearch?: boolean
+  compactScrollable?: boolean
   lockedAssetKind?: boolean
   lockedFavorite?: boolean
   facets?: MediaGalleryFacets
@@ -210,11 +217,18 @@ export function XDriveMediaGalleryFilterBar({
   onSaveSmart?: () => void
 }) {
   return (
-    <Paper variant="outlined" sx={{ p: 1.25 }}>
+    <Paper variant="outlined" sx={compactScrollable ? {
+      p: 1.25, boxSizing: 'border-box', height: '100%', minHeight: 0,
+      display: 'flex', flexDirection: 'column', overflow: 'hidden',
+    } : { p: 1.25 }}>
       <Stack
         direction={{ xs: 'column', lg: 'row' }}
         spacing={1}
         alignItems={{ xs: 'stretch', lg: 'center' }}
+        sx={compactScrollable ? {
+          flex: '1 1 auto', minHeight: 0, overflowY: 'auto',
+          overscrollBehavior: 'contain', pb: 0.5,
+        } : undefined}
       >
         {showSearch ? (
           <TextField
@@ -423,7 +437,17 @@ export function XDriveMediaGalleryFilterBar({
             size="small"
           />
         ) : null}
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} useFlexGap flexWrap={compactScrollable ? 'wrap' : 'nowrap'}
+          sx={compactScrollable ? {
+            position: 'sticky', bottom: 0, zIndex: 1,
+            bgcolor: 'background.paper',
+            flexShrink: 0, px: 0.5, py: 1, borderTop: 1, borderColor: 'divider',
+            '& .MuiButton-root': {
+              minHeight: 44, flex: '1 1 auto', whiteSpace: 'normal',
+              overflowWrap: 'anywhere',
+            },
+          } : undefined}
+        >
           <Button variant="contained" onClick={onApply} disabled={loading}>
             {applyLabel}
           </Button>
@@ -507,17 +531,52 @@ export function XDriveMediaGalleryFilterToolbar({
   onClear: () => void
   onSaveSmart?: () => void
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
+  const [openedCompact, setOpenedCompact] = useState(compactViewport)
+  const panelOpen = Boolean(anchorEl) && compactViewport === openedCompact
+  const panelViewport = useXDriveMobilePanelViewport(compactViewport && panelOpen)
   const advancedCount = mediaGalleryAdvancedFilterCount(draft)
+  const closePanel = useCallback(() => setAnchorEl(null), [])
+
+  useEffect(() => {
+    if (!anchorEl || openedCompact === compactViewport) return
+    closePanel()
+    triggerRef.current?.focus()
+  }, [anchorEl, closePanel, compactViewport, openedCompact])
+
+  const filterContent = (mobile: boolean) => (
+    <XDriveMediaGalleryFilterBar
+      draft={draft}
+      loading={loading}
+      applyLabel={applyLabel}
+      clearLabel={clearLabel}
+      placeLabel={placeLabel}
+      personIdentityLabel={personIdentityLabel}
+      personIdentityLocked={personIdentityLocked}
+      showSearch={false}
+      compactScrollable={mobile}
+      lockedAssetKind={lockedAssetKind}
+      lockedFavorite={lockedFavorite}
+      facets={facets}
+      facetsLoading={facetsLoading}
+      facetsError={facetsError}
+      facetsAvailable={facetsAvailable}
+      onRequestFacets={onRequestFacets}
+      onChange={onChange}
+      onApply={() => {
+        onApply()
+        closePanel()
+      }}
+      onClear={onClear}
+      onSaveSmart={onSaveSmart}
+    />
+  )
 
   return (
     <>
-      <Stack
-        direction="row"
-        spacing={1}
-        alignItems="center"
-        sx={{ minWidth: 0 }}
-      >
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
         <Autocomplete
           freeSolo
           fullWidth
@@ -549,55 +608,82 @@ export function XDriveMediaGalleryFilterToolbar({
           sx={{ maxWidth: 520 }}
         />
         <Button
+          ref={triggerRef}
           size="small"
           variant={advancedCount > 0 ? 'contained' : 'outlined'}
           startIcon={<FilterAltOutlinedIcon />}
-          aria-expanded={Boolean(anchorEl)}
+          aria-expanded={panelOpen}
           aria-haspopup="dialog"
+          aria-label={advancedCount > 0 ? '图库筛选，' + advancedCount + ' 个条件' : '图库筛选'}
           onClick={(event) => {
+            setOpenedCompact(compactViewport)
             setAnchorEl(event.currentTarget)
             onRequestFacets?.(draft)
           }}
-          sx={{ flexShrink: 0 }}
+          sx={{ flexShrink: 0, minHeight: compactViewport ? 44 : undefined }}
         >
-          {advancedCount > 0 ? `筛选 · ${advancedCount}` : '筛选'}
+          {advancedCount > 0 ? '筛选 · ' + advancedCount : '筛选'}
         </Button>
       </Stack>
-      <Popover
-        open={Boolean(anchorEl)}
-        anchorEl={anchorEl}
-        onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { mt: 0.75, maxWidth: 'calc(100vw - 32px)' } } }}
-      >
-        <Box sx={{ p: 1.5, width: { xs: 320, sm: 720, lg: 860 }, maxWidth: '100%' }}>
-          <XDriveMediaGalleryFilterBar
-            draft={draft}
-            loading={loading}
-            applyLabel={applyLabel}
-            clearLabel={clearLabel}
-            placeLabel={placeLabel}
-            personIdentityLabel={personIdentityLabel}
-            personIdentityLocked={personIdentityLocked}
-            showSearch={false}
-            lockedAssetKind={lockedAssetKind}
-            lockedFavorite={lockedFavorite}
-            facets={facets}
-            facetsLoading={facetsLoading}
-            facetsError={facetsError}
-            facetsAvailable={facetsAvailable}
-            onRequestFacets={onRequestFacets}
-            onChange={onChange}
-            onApply={() => {
-              onApply()
-              setAnchorEl(null)
+      {compactViewport ? (
+        <Drawer
+          anchor="bottom"
+          open={panelOpen}
+          onClose={closePanel}
+          slotProps={{ paper: {
+            role: 'dialog',
+            'aria-label': '图库筛选',
+            sx: {
+              bottom: panelViewport ? panelViewport.bottom + 'px' : undefined,
+              height: panelViewport
+                ? 'min(640px, ' + panelViewport.height + 'px)'
+                : 'min(640px, calc(100dvh - env(safe-area-inset-top, 0px)))',
+              maxHeight: panelViewport
+                ? panelViewport.height + 'px'
+                : 'calc(100dvh - env(safe-area-inset-top, 0px))',
+              minHeight: 0, overflow: 'hidden',
+              display: 'flex', flexDirection: 'column',
+              borderTopLeftRadius: 16, borderTopRightRadius: 16,
+            },
+          } }}
+        >
+          <Stack direction="row" spacing={1} alignItems="center"
+            data-xdrive-gallery-mobile-filters-header
+            sx={{ px: 1.5, minHeight: 52, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
+            <Typography variant="subtitle1" fontWeight={700} sx={{ flex: 1 }}>筛选图库</Typography>
+            <IconButton aria-label="关闭图库筛选" onClick={closePanel}
+              sx={{ width: 44, height: 44, flex: '0 0 44px' }}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+          <Box
+            data-xdrive-gallery-mobile-filters
+            sx={{
+              flex: '1 1 auto', minHeight: 0, px: 1, pt: 1,
+              pb: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+              overflow: 'hidden',
             }}
-            onClear={onClear}
-            onSaveSmart={onSaveSmart}
-          />
-        </Box>
-      </Popover>
+          >
+            {filterContent(true)}
+          </Box>
+        </Drawer>
+      ) : (
+        <Popover
+          open={panelOpen}
+          anchorEl={panelOpen ? anchorEl : null}
+          onClose={closePanel}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          slotProps={{ paper: { sx: {
+            mt: 0.75, maxWidth: 'calc(100vw - 32px)',
+            maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto',
+          } } }}
+        >
+          <Box sx={{ p: 1.5, width: { xs: 320, sm: 720, lg: 860 }, maxWidth: '100%' }}>
+            {filterContent(false)}
+          </Box>
+        </Popover>
+      )}
     </>
   )
 }
