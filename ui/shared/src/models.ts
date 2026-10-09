@@ -592,6 +592,7 @@ export interface MediaItem {
   description?: string
   edit_recipe?: MediaEditRecipe
   resources?: MediaResource[]
+  fold_member_ids?: number[]
   derived_resources?: MediaDerivedResource[]
   live_photo?: boolean
   trash_root?: Node
@@ -643,6 +644,8 @@ export interface MediaAlbum {
 export interface MediaGalleryQuery {
   time_zone?: string
   anchor_node_id?: number
+  fold_duplicates?: boolean
+  fold_member_ids?: number[]
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'
   search?: string

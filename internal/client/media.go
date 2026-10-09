@@ -154,6 +154,7 @@ type MediaItem struct {
 	Description      string                 `json:"description,omitempty"`
 	EditRecipe       *MediaEditRecipe       `json:"edit_recipe,omitempty"`
 	Resources        []MediaResource        `json:"resources,omitempty"`
+	FoldMemberIDs    []uint64               `json:"fold_member_ids,omitempty"`
 	DerivedResources []MediaDerivedResource `json:"derived_resources,omitempty"`
 	LivePhoto        bool                   `json:"live_photo,omitempty"`
 	TrashRoot        *Node                  `json:"trash_root,omitempty"`
@@ -397,6 +398,8 @@ type UpdateMediaPersonIdentityInput struct {
 type MediaQuery struct {
 	TimeZone       string
 	AnchorNodeID   uint64
+	FoldDuplicates bool
+	FoldMemberIDs  []uint64
 	SortBy         string
 	SortDir        string
 	MediaKind      string
@@ -422,6 +425,14 @@ func (q MediaQuery) add(values url.Values) {
 	}
 	if q.AnchorNodeID > 0 {
 		values.Set("anchor_node_id", strconv.FormatUint(q.AnchorNodeID, 10))
+	}
+	if q.FoldDuplicates {
+		values.Set("fold_duplicates", "true")
+	}
+	for _, id := range q.FoldMemberIDs {
+		if id > 0 {
+			values.Add("fold_member_id", strconv.FormatUint(id, 10))
+		}
 	}
 	if value := strings.TrimSpace(q.SortBy); value != "" {
 		values.Set("sort_by", value)

@@ -112,6 +112,7 @@ type mediaItemDTO struct {
 	Description      string                    `json:"description,omitempty"`
 	EditRecipe       *mediaEditRecipeDTO       `json:"edit_recipe,omitempty"`
 	Resources        []mediaResourceDTO        `json:"resources,omitempty"`
+	FoldMemberIDs    []uint64                  `json:"fold_member_ids,omitempty"`
 	DerivedResources []mediaDerivedResourceDTO `json:"derived_resources,omitempty"`
 	LivePhoto        bool                      `json:"live_photo,omitempty"`
 	TrashRoot        *nodeDTO                  `json:"trash_root,omitempty"`
@@ -561,7 +562,7 @@ func (s *Server) mediaItemsBaseQuery(
 	query = applyMediaQueryFilters(query, options)
 
 	if albumKey == "" {
-		return query, nil
+		return s.applyVerifiedMediaFolding(ctx, query, options), nil
 	}
 	if !validMediaAlbumKey(albumKey) {
 		return nil, gorm.ErrRecordNotFound
@@ -582,7 +583,7 @@ func (s *Server) mediaItemsBaseQuery(
 		if err != nil {
 			return nil, err
 		}
-		return applyMediaQueryFilters(query, saved.options()), nil
+		return s.applyVerifiedMediaFolding(ctx, applyMediaQueryFilters(query, saved.options()), options), nil
 	}
 
 	membership := s.DB.WithContext(ctx).
@@ -590,7 +591,7 @@ func (s *Server) mediaItemsBaseQuery(
 		Select("pa_media.primary_node_id").
 		Joins("JOIN xd_photo_assets AS pa_media ON pa_media.id = pca_media.asset_id").
 		Where("pca_media.collection_id = ? AND pa_media.owner_id = ?", collection.ID, uid)
-	return query.Where("n.id IN (?)", membership), nil
+	return s.applyVerifiedMediaFolding(ctx, query.Where("n.id IN (?)", membership), options), nil
 }
 
 func mediaGallerySortClauses(options mediaQueryOptions) []string {
@@ -663,17 +664,22 @@ func (s *Server) materializeMediaItems(
 		if node, ok := byID[row.NodeID]; ok {
 			_, standaloneLivePhoto := livePhotoIDs[row.NodeID]
 			presentation := assetPresentations[row.NodeID]
+			var memberIDs []uint64
+			if options.foldIndex != nil {
+				memberIDs = options.foldIndex.members(row.NodeID)
+			}
 			out = append(out, mediaItemDTO{
-				Node:        toNodeDTO(node),
-				Metadata:    toMediaMetadataDTO(row),
-				AssetKind:   presentation.Kind,
-				Favorite:    presentation.Favorite,
-				Tags:        presentation.Tags,
-				People:      presentation.People,
-				Description: presentation.Description,
-				EditRecipe:  presentation.EditRecipe,
-				Resources:   presentation.Resources,
-				LivePhoto:   standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
+				FoldMemberIDs: memberIDs,
+				Node:          toNodeDTO(node),
+				Metadata:      toMediaMetadataDTO(row),
+				AssetKind:     presentation.Kind,
+				Favorite:      presentation.Favorite,
+				Tags:          presentation.Tags,
+				People:        presentation.People,
+				Description:   presentation.Description,
+				EditRecipe:    presentation.EditRecipe,
+				Resources:     presentation.Resources,
+				LivePhoto:     standaloneLivePhoto || row.ContainerKind == mediapkg.ContainerKindLIVP,
 			})
 		}
 	}
@@ -690,10 +696,16 @@ func (s *Server) materializeMediaItemsByNodeIDs(
 	if len(nodeIDs) == 0 {
 		return []mediaItemDTO{}, nil
 	}
+	// Semantic search ranks all in-scope matching copies before choosing
+	// the best-relevance representative. Do not independently choose a
+	// time-sorted SQL keeper for this already-ranked explicit Node list.
+	// Retain options.foldIndex for metadata materialization and fold badges.
+	queryOptions := options.withoutSearch()
+	queryOptions.foldIndex = nil
 	query, err := s.mediaItemsBaseQuery(
 		ctx,
 		uid,
-		options.withoutSearch(),
+		queryOptions,
 		albumKey,
 	)
 	if err != nil {
@@ -724,6 +736,11 @@ func (s *Server) queryMediaItems(
 	albumKey string,
 	limit, offset int,
 ) ([]mediaItemDTO, error) {
+	var err error
+	options, err = s.prepareVerifiedMediaFolding(ctx, uid, options)
+	if err != nil {
+		return nil, err
+	}
 	if ranked, handled, err := s.semanticRankedMediaNodeIDs(
 		ctx,
 		uid,
@@ -835,6 +852,11 @@ func (s *Server) queryMediaItemRange(
 	albumKey string,
 	limit, offset int,
 ) (mediaItemRangeDTO, error) {
+	var err error
+	options, err = s.prepareVerifiedMediaFolding(ctx, uid, options)
+	if err != nil {
+		return mediaItemRangeDTO{}, err
+	}
 	if ranked, handled, err := s.semanticRankedMediaNodeIDs(
 		ctx,
 		uid,

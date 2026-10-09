@@ -343,16 +343,18 @@ func (s *Server) semanticRankedMediaNodeIDs(
 	engine := s.photoSemanticSearch
 	s.photoIntelligenceMu.Unlock()
 
+	queryOptions := options.withoutSearch()
+	queryOptions.foldIndex = nil // Rank all search matches before folding.
 	base, err := s.mediaItemsBaseQuery(
 		ctx,
 		uid,
-		options.withoutSearch(),
+		queryOptions,
 		albumKey,
 	)
 	if err != nil {
 		return nil, false, err
 	}
-	return engine.Rank(
+	ranked, handled, err := engine.Rank(
 		ctx,
 		s.DB,
 		s.PhotoSemanticAnalyzer,
@@ -360,6 +362,10 @@ func (s *Server) semanticRankedMediaNodeIDs(
 		base,
 		options.Search,
 	)
+	if err != nil || !handled || options.foldIndex == nil {
+		return ranked, handled, err
+	}
+	return options.foldIndex.foldRankedIDs(ranked), handled, nil
 }
 
 func semanticPage(nodeIDs []uint64, limit, offset int) []uint64 {

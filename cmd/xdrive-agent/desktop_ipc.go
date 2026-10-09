@@ -4217,6 +4217,33 @@ func desktopIPCMediaTimeZone(w http.ResponseWriter, r *http.Request) (string, bo
 
 func desktopIPCMediaQuery(w http.ResponseWriter, r *http.Request) (client.MediaQuery, bool) {
 	var out client.MediaQuery
+	if raw := strings.TrimSpace(r.URL.Query().Get("fold_duplicates")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folding", "fold_duplicates must be true or false")
+			return client.MediaQuery{}, false
+		}
+		out.FoldDuplicates = value
+	}
+	if values := r.URL.Query()["fold_member_id"]; len(values) > 0 {
+		if len(values) > 512 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folding", "too many fold members")
+			return client.MediaQuery{}, false
+		}
+		seen := make(map[uint64]struct{}, len(values))
+		for _, raw := range values {
+			id, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+			if err != nil || id == 0 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_folding", "fold_member_id must be positive")
+				return client.MediaQuery{}, false
+			}
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				out.FoldMemberIDs = append(out.FoldMemberIDs, id)
+			}
+		}
+		out.FoldDuplicates = false
+	}
 	var zoneOK bool
 	if out.TimeZone, zoneOK = desktopIPCMediaTimeZone(w, r); !zoneOK {
 		return client.MediaQuery{}, false

@@ -1304,6 +1304,21 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
 
   const input = value as Record<string, unknown>
   const out: AgentMediaQuery = {}
+  if (input.fold_duplicates !== undefined) {
+    if (typeof input.fold_duplicates !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Media duplicate folding must be boolean.')
+    }
+    out.fold_duplicates = input.fold_duplicates
+  }
+  if (input.fold_member_ids !== undefined) {
+    const ids = input.fold_member_ids
+    if (!Array.isArray(ids) || ids.length > 512 ||
+        !ids.every((id) => typeof id === 'number' && Number.isSafeInteger(id) && id > 0)) {
+      throw new AgentIPCError('invalid_input', 0, 'Media fold members must be positive node ids.')
+    }
+    out.fold_member_ids = [...new Set(ids)]
+    out.fold_duplicates = false
+  }
   if (input.time_zone !== undefined) {
     out.time_zone = normalizeGalleryTimeZone(input.time_zone)
   }
@@ -2899,7 +2914,7 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'media-gallery')
     if (
       typeof albumID !== 'string' ||
-      (!albumID.startsWith('folder:') && !albumID.startsWith('source:'))
+      !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
     }
@@ -2939,7 +2954,7 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'media-gallery')
     if (
       typeof albumID !== 'string' ||
-      (!albumID.startsWith('folder:') && !albumID.startsWith('source:'))
+      !(['folder:', 'source:', 'manual:', 'smart:'].some((prefix) => albumID.startsWith(prefix) && albumID.length > prefix.length))
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Valid media album id is required.')
     }

@@ -1118,6 +1118,10 @@ The actual server-side trial observed the request disconnections and full-body s
 
 **Decision: accept only the small native feasibility result, with NO production hover change.** Keep default Gallery poster/static behavior unchanged. Next step is to repeat the test using representative 4K H.264, HEVC, long-GOP and high-bitrate footage through both Web and Desktop proxies; then add a limited, user-switchable hover only if measured memory/bandwidth/abort budgets support it. The final whole-PR CI must rerun after the evidence is committed.
 
+### 2026-10-09 — opt-in verified Gallery duplicate folding
+
+The new complete-resource duplicate fold is a functionality feature, not a performance optimisation. **Default 100k asset first-paint, paging and cancellation paths are unchanged** when `fold_duplicates` is absent. In opt-in mode the Server builds a bounded-batch owner-scoped equivalence projection and folds before count/range/timeline pagination, rather than client-side hiding cards after paging (which would corrupt 100k offsets and Viewer positions). The first implementation has no measured 100k fold-mode wall-clock BEFORE/AFTER evidence; status: **unmeasured / functional validation**. Measure query latency, DB CPU and repeated page-request overhead with representative 100k data before promising performance budgets or enabling folding by default.
+
 
 ## P3 real-coded 4K/HEVC original-video hover baseline (2026-10-09)
 
