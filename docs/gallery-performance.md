@@ -4,6 +4,26 @@ This document is the canonical performance contract for the shared Web/Desktop G
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
 
+## Rejected 100k durable selection enqueue candidates (#1186, 2026-10-10)
+
+**Status: Rejected / all experimental production changes reverted; documentation-only final CI pending.** G07's already-merged production enqueue uses 100-row GORM inserts, with 100-item worker transactions. This entry archives two optimization candidates without changing deployed enqueue, workers, Web/Desktop, CAS, or request cancellation.
+
+**First rejected candidate:** 1,000-row GORM Create, tested with three paired native PostgreSQL 17 samples in [run 37954132670](https://github.com/lazyxu/xdrive/actions/runs/37954132670): 100k enqueue **5,395 → 3,886 ms P50** (27.97%), but the predeclared **≤3,000 ms** absolute gate failed. 100k worker **39,537 → 38,457 ms P50**; 10k enqueue **418 → 404 ms P50**. Removed from production candidate before the next trial.
+
+**Second rejected candidate:** bounded 2,000-row parameterized PostgreSQL `INSERT ... SELECT FROM VALUES`, ≤4,003 parameters/statement. Same runner and actual handler/worker test, three fresh-schema BEFORE/AFTER pairs with alternating order, PostgreSQL 17, 10k and 100k PhotoAsset/Node/PhotoMetadata records. [CI run 37955358474](https://github.com/lazyxu/xdrive/actions/runs/37955358474) / [job 113904370690](https://github.com/lazyxu/xdrive/actions/runs/37955358474/job/113904370690); failing *performance acceptance gate*, while all twelve 10k/100k subtests individually passed with exact item counts, revision/favorites and worker chunks.
+
+| Scale / measurement | BEFORE samples (ms) | Candidate samples (ms) | BEFORE P50 (ms) | Candidate P50 (ms) | Decision |
+| --- | --- | --- | ---: | ---: | --- |
+| 10k enqueue | 419, 408, 402 | 326, 328, 326 | 408 | 326 | Under 750 ms |
+| 10k worker (unchanged) | 3835, 3755, 3746 | 3794, 3861, 3734 | 3755 | 3794 | ~1% higher |
+| 100k enqueue | 5686, 5537, 5488 | 3134, 3326, 3014 | 5537 | 3134 | **Reject:** 134 ms over ≤3000 ms |
+| 100k worker (unchanged) | 45734, 169583, 163921 | 34886, 39636, 26021 | 163921 | 34886 | Unstable before-arm timing; no claimed worker speedup |
+
+100k enqueue decreased **2,403 ms / 43.4%**, beyond the ≥25% relative goal, but missed the independently required **3,000 ms P50** limit. The worker code was unchanged; observed large and erratic worker-time differences are not attributable to the enqueue optimization. Point-in-time Go heap measurements do not establish peak RSS; CPU, I/O, Web/Desktop end-to-end responsiveness and physical hardware are not measured here.
+
+**Decision and rollback:** Reject both candidates under the *predeclared conjunctive gate*. Rebuild this PR as exactly one documentation-only work commit above the current `master`, removing the experimental `internal/api/media_selection_jobs.go` changes and temporary A/B workflow/parser. Preserve [all 12 per-run measurements and fixture/heap values](performance-evidence/gallery-selection-enqueue-batch-g07/ci-run-37955358474.json). Future candidates must profile actual synchronous snapshot + enqueue and driver round-trips, target ≤3s P50 **on a matched 100k workload**, and measure worker/DB/RSS regressions independently. The canonical 10k/100k acceptance thresholds remain unchanged; do not promote the 2,000-row candidate because of its attractive percentage alone.
+
+
 ## Rejected 100k fold-only member-column projection (2026-10-10)
 
 **Status: Rejected / candidate fully reverted / documentation-only merge.** After merged #1191 proved fold-index build **588.936ms / 78.281MiB Go TotalAlloc** and the actual Web warm fold-ON gate remained red, a narrowly scoped candidate stripped cleanup-only favorite/tag/people/album columns from fold member queries. It still validated **all primary SHA-256, original PhotoResource and edit recipes**, and preserved user album membership semantics. The test compared three alternating legacy-vs-candidate full index builds on the **same** native PostgreSQL17 100k/115k/15k-Live and 2k-five-copy metadata-SHA fixture. Both produced **exactly identical sorted 10k-Node mapping JSON and full member index** in all 3 samples.
