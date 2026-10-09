@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
@@ -10,9 +10,13 @@ import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
 import {
+  Box,
   Button,
   CircularProgress,
   Dialog,
+  Drawer,
+  List,
+  ListItemButton,
   DialogActions,
   IconButton,
   MenuItem,
@@ -20,11 +24,14 @@ import {
   Stack,
   TextField,
   Typography,
+  useMediaQuery,
 } from '@mui/material'
 import type { MediaAlbum } from '../models'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, xDriveDialogPaperProps } from './DialogTitle'
+import { xDriveMediaGalleryErrorMessage } from './MediaGalleryUtils'
+import { useXDriveMobilePanelViewport } from './useMobilePanelViewport'
 
 function parseSelectionTags(value: string) {
   const seen = new Set<string>()
@@ -42,6 +49,7 @@ function parseSelectionTags(value: string) {
 
 export function XDriveMediaGallerySelectionToolbar({
   selectedCount,
+  selectionIdentity,
   allFavorite,
   albums,
   trashRootCount = 0,
@@ -59,6 +67,7 @@ export function XDriveMediaGallerySelectionToolbar({
   onClear,
 }: {
   selectedCount: number
+  selectionIdentity?: unknown
   allFavorite: boolean
   albums: MediaAlbum[]
   trashRootCount?: number
@@ -75,7 +84,17 @@ export function XDriveMediaGallerySelectionToolbar({
   onPermanentDelete?: () => Promise<void>
   onClear: () => void
 }) {
+  const compactViewport = useMediaQuery('(max-width:899.95px)')
+  const albumTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const albumSubmitRef = useRef(false)
   const [albumID, setAlbumID] = useState('')
+  const [albumPickerOpen, setAlbumPickerOpen] = useState(false)
+  const [albumQuery, setAlbumQuery] = useState('')
+  const [albumError, setAlbumError] = useState('')
+  const [albumBusy, setAlbumBusy] = useState(false)
+  const [albumSelectionCount, setAlbumSelectionCount] = useState(selectedCount)
+  const [albumSelectionIdentity, setAlbumSelectionIdentity] = useState(selectionIdentity)
+  const albumViewport = useXDriveMobilePanelViewport(compactViewport && albumPickerOpen)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -87,6 +106,50 @@ export function XDriveMediaGallerySelectionToolbar({
   )
   const tags = parseSelectionTags(tagsInput)
   const disabled = busy || selectedCount === 0
+  const filteredAlbums = useMemo(
+    () => manualAlbums.filter((album) => album.name.toLocaleLowerCase('zh-CN')
+      .includes(albumQuery.trim().toLocaleLowerCase('zh-CN'))),
+    [manualAlbums, albumQuery],
+  )
+  const albumSelectionChanged = selectedCount !== albumSelectionCount ||
+    albumSelectionIdentity !== selectionIdentity
+  useEffect(() => {
+    if (compactViewport || !albumPickerOpen) return
+    setAlbumPickerOpen(false)
+  }, [compactViewport, albumPickerOpen])
+
+  const openAlbumPicker = () => {
+    setAlbumSelectionCount(selectedCount)
+    setAlbumSelectionIdentity(selectionIdentity)
+    setAlbumID('')
+    setAlbumQuery('')
+    setAlbumError('')
+    setAlbumPickerOpen(true)
+  }
+  const closeAlbumPicker = () => {
+    if (albumBusy) return
+    setAlbumPickerOpen(false)
+    setAlbumError('')
+  }
+  const confirmAlbumPicker = async () => {
+    if (!onAddToAlbum || busy || albumBusy || albumSubmitRef.current ||
+        albumSelectionChanged || selectedCount === 0) return
+    const album = manualAlbums.find((entry) => entry.id === albumID)
+    if (!album) return
+    albumSubmitRef.current = true
+    setAlbumBusy(true)
+    setAlbumError('')
+    try {
+      await onAddToAlbum(album)
+      setAlbumID('')
+      setAlbumPickerOpen(false)
+    } catch (reason) {
+      setAlbumError(xDriveMediaGalleryErrorMessage(reason))
+    } finally {
+      albumSubmitRef.current = false
+      setAlbumBusy(false)
+    }
+  }
 
   return (
     <>
@@ -102,18 +165,26 @@ export function XDriveMediaGallerySelectionToolbar({
           borderRadius: 2,
           bgcolor: 'background.paper',
           boxShadow: 1,
+          '& .MuiButton-root, & .MuiIconButton-root': compactViewport ? { minHeight: 44 } : undefined,
         }}
       >
-        <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+        <Stack direction={compactViewport ? 'column' : 'row'} spacing={1}
+          alignItems={compactViewport ? 'stretch' : 'center'}
+          useFlexGap flexWrap={compactViewport ? 'nowrap' : 'wrap'}
+          sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center"
+            sx={{ minHeight: compactViewport ? 44 : undefined, minWidth: 0 }}>
           <IconButton
             size="small"
             aria-label="退出选择"
             onClick={onClear}
             disabled={busy}
+            sx={compactViewport ? { width: 44, height: 44, flex: '0 0 44px' } : undefined}
           >
             <CloseRoundedIcon fontSize="small" />
           </IconButton>
-          <Typography variant="body2" fontWeight={700} sx={{ mr: 0.5 }}>
+          <Typography role="status" variant="body2" fontWeight={700}
+            sx={{ mr: 0.5, minWidth: 0, overflowWrap: 'anywhere' }}>
             已选择 {selectedCount.toLocaleString('zh-CN')} 项
           </Typography>
           {trashMode ? (
@@ -123,6 +194,16 @@ export function XDriveMediaGallerySelectionToolbar({
             </Typography>
           ) : null}
           {busy ? <CircularProgress size={18} /> : null}
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center"
+            sx={compactViewport ? {
+              minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
+              flexWrap: 'nowrap', overscrollBehaviorX: 'contain',
+              pb: 0.5, '& .MuiButton-root': {
+                minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap',
+              },
+            } : { minWidth: 0 }}
+          >
           {onRestore ? (
             <Button
               size="small"
@@ -143,27 +224,34 @@ export function XDriveMediaGallerySelectionToolbar({
               {allFavorite ? '取消收藏' : '收藏'}
             </Button>
           ) : null}
-          {onAddToAlbum && !trashMode && manualAlbums.length > 0 ? (
-            <TextField
-              select
-              size="small"
-              label="添加到相册"
-              value={albumID}
-              disabled={disabled}
-              onChange={(event) => {
-                const next = event.target.value
-                setAlbumID(next)
-                const album = manualAlbums.find((item) => item.id === next)
-                if (!album) return
-                void onAddToAlbum(album).catch(() => undefined).finally(() => setAlbumID(''))
-              }}
-              sx={{ minWidth: 180 }}
-            >
-              <MenuItem value="">选择相册</MenuItem>
-              {manualAlbums.map((album) => (
-                <MenuItem key={album.id} value={album.id}>{album.name}</MenuItem>
-              ))}
-            </TextField>
+          {onAddToAlbum && !trashMode && (compactViewport || manualAlbums.length > 0) ? (
+            compactViewport ? (
+              <Button ref={albumTriggerRef} size="small" disabled={disabled}
+                onClick={openAlbumPicker}>
+                加入相册
+              </Button>
+            ) : (
+              <TextField
+                select
+                size="small"
+                label="添加到相册"
+                value={albumID}
+                disabled={disabled}
+                onChange={(event) => {
+                  const next = event.target.value
+                  setAlbumID(next)
+                  const album = manualAlbums.find((item) => item.id === next)
+                  if (!album) return
+                  void onAddToAlbum(album).catch(() => undefined).finally(() => setAlbumID(''))
+                }}
+                sx={{ minWidth: 180 }}
+              >
+                <MenuItem value="">选择相册</MenuItem>
+                {manualAlbums.map((album) => (
+                  <MenuItem key={album.id} value={album.id}>{album.name}</MenuItem>
+                ))}
+              </TextField>
+            )
           ) : null}
           {onAddTags && !trashMode ? (
             <Button
@@ -227,8 +315,93 @@ export function XDriveMediaGallerySelectionToolbar({
               永久删除
             </Button>
           ) : null}
+          </Stack>
         </Stack>
       </Paper>
+
+      <Drawer anchor="bottom" open={compactViewport && albumPickerOpen}
+        onClose={closeAlbumPicker}
+        slotProps={{ paper: {
+          role: 'dialog',
+          'aria-label': '选择手动相册',
+          sx: {
+            bottom: albumViewport ? albumViewport.bottom + 'px' : undefined,
+            maxHeight: albumViewport ? albumViewport.height + 'px' :
+              'calc(100dvh - env(safe-area-inset-top, 0px))',
+            height: albumViewport ? 'min(540px, ' + albumViewport.height + 'px)' : 'min(540px, 100dvh)',
+            minHeight: 0, overflow: 'hidden',
+            display: 'flex', flexDirection: 'column',
+            borderTopLeftRadius: 16, borderTopRightRadius: 16,
+          },
+        } }}
+      >
+        <Stack direction="row" alignItems="center" spacing={1}
+          sx={{ minHeight: 52, px: 1.5, flexShrink: 0, borderBottom: 1, borderColor: 'divider' }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography variant="subtitle1" fontWeight={700}>加入手动相册</Typography>
+            <Typography variant="caption" role="status">
+              已选择 {selectedCount.toLocaleString('zh-CN')} 项
+            </Typography>
+          </Box>
+          <IconButton aria-label="关闭相册选择" onClick={closeAlbumPicker}
+            disabled={albumBusy} sx={{ width: 44, height: 44 }}>
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </Stack>
+        <Box sx={{ p: 1.5, flexShrink: 0 }}>
+          <TextField fullWidth size="small" label="搜索相册"
+            placeholder="输入手动相册名称" value={albumQuery}
+            disabled={albumBusy}
+            onChange={(event) => setAlbumQuery(event.target.value)} />
+        </Box>
+        <List data-xdrive-gallery-album-picker
+          sx={{ minHeight: 0, flex: '1 1 auto', overflowY: 'auto',
+            overscrollBehavior: 'contain', py: 0 }}>
+          {filteredAlbums.length === 0 ? (
+            <Typography variant="body2" role="status" color="text.secondary"
+              sx={{ px: 1.5, py: 2 }}>
+              {manualAlbums.length === 0 ? '暂无手动相册，请先在相册页面创建。' : '没有匹配的手动相册'}
+            </Typography>
+          ) : filteredAlbums.map((album) => (
+            <ListItemButton key={album.id} selected={albumID === album.id}
+              disabled={albumBusy || busy || albumSelectionChanged}
+              onClick={() => {
+                setAlbumID(album.id)
+                setAlbumError('')
+              }}
+              sx={{ minHeight: 44, gap: 1.5, px: 2 }}>
+              <Typography variant="body2" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+                {album.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {album.item_count.toLocaleString('zh-CN')} 项
+              </Typography>
+            </ListItemButton>
+          ))}
+        </List>
+        {albumSelectionChanged ? (
+          <Typography color="warning.main" role="alert" sx={{ px: 1.5, pt: 0.5 }}>
+            选择范围已变化，请关闭后重新打开相册选择器。
+          </Typography>
+        ) : null}
+        {albumError ? (
+          <Typography color="error" role="alert"
+            sx={{ px: 1.5, pt: 0.5, maxHeight: 72, overflowY: 'auto', overflowWrap: 'anywhere' }}>
+            {albumError}
+          </Typography>
+        ) : null}
+        <Stack direction="row" spacing={1}
+          sx={{ px: 1.5, py: 1, pb: 'calc(8px + env(safe-area-inset-bottom, 0px))',
+            borderTop: 1, borderColor: 'divider', flexShrink: 0,
+            '& .MuiButton-root': { minHeight: 44, flex: 1 } }}>
+          <Button disabled={albumBusy} onClick={closeAlbumPicker}>取消</Button>
+          <Button variant="contained"
+            disabled={albumBusy || busy || albumSelectionChanged || !albumID}
+            onClick={() => { void confirmAlbumPicker() }}>
+            {albumBusy ? '正在添加…' : '添加到相册'}
+          </Button>
+        </Stack>
+      </Drawer>
 
       <Dialog
         open={tagsOpen}

@@ -4763,6 +4763,7 @@ export function XDriveMediaGallery({
       {showPhotoCollection && selectionMode ? (
         <XDriveMediaGallerySelectionToolbar
           selectedCount={selectedMedia.length}
+          selectionIdentity={selectedMediaItems}
           allFavorite={allSelectedFavorite}
           albums={albums}
           trashRootCount={selectedTrashRoots.length}
