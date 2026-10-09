@@ -50,6 +50,15 @@ export function useXDriveFileExplorerClipboard<
     setFromItems('cut', selected)
   }
 
+  // Recents/Favorites can own an authoritative node even when its directory
+  // page is not mounted. Preserve that verified node/revision in this same
+  // session-owned clipboard; do not depend on the active directory projection.
+  const copyNodes = (nodes: readonly TNode[]) => {
+    if (!nodes.length) return
+    generationRef.current += 1
+    setClipboard({ mode: 'copy', nodes: [...nodes] })
+  }
+
   const planPaste = (
     targetParentID: number,
     operationOverride?: XDriveFileExplorerCopyMoveOperation,
@@ -88,6 +97,7 @@ export function useXDriveFileExplorerClipboard<
   return {
     copyItems,
     cutItems,
+    copyNodes,
     planPaste,
     completePaste,
     clearClipboard,

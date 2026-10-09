@@ -479,7 +479,6 @@ function FileManager({
   onLogout: () => void
 }) {
   const compactWorkspace = useMediaQuery('(max-width:899.95px)')
-  const compactChromeOverflow = useMediaQuery('(max-width:349.95px)')
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
@@ -516,12 +515,6 @@ function FileManager({
     setCompactNavigationOpen(false)
     setTransferPopoverOpen(false)
   }, [compactWorkspace, viewerActive])
-
-  useEffect(() => {
-    // Only the extra-narrow transfer trigger belongs to the Drawer.
-    // At other phone widths transfer progress is anchored in the App title bar.
-    if (compactWorkspace && compactChromeOverflow && !compactNavigationOpen) setTransferPopoverOpen(false)
-  }, [compactWorkspace, compactChromeOverflow, compactNavigationOpen])
 
   const trashDialogAdapter = useMemo(() => createWebTrashDialogAdapter(api), [api])
   const versionHistoryDialogAdapter = useMemo(() => createWebVersionHistoryDialogAdapter(api), [api])
@@ -1105,7 +1098,6 @@ function FileManager({
       transfers={transfers}
       sessionKey={`${window.location.origin}:${username}`}
       disabled={viewerActive}
-      compactTrigger={compactWorkspace}
       open={transferPopoverOpen}
       onOpenChange={setTransferPopoverOpen}
       onClearHistory={() => { api.clearTransferHistory('network') }}
@@ -1196,7 +1188,7 @@ function FileManager({
           compactFullscreen
           compactOpen={compactNavigationOpen}
           onCompactOpenChange={setCompactNavigationOpen}
-          compactActions={compactWorkspace ? (compactChromeOverflow ? workspaceActions : accountAction) : undefined}
+          compactActions={compactWorkspace ? accountAction : undefined}
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
@@ -1223,7 +1215,7 @@ function FileManager({
               disabled={viewerActive}
               onBack={exitApp}
               onOpenApps={() => setCompactNavigationOpen(true)}
-              transferAction={compactChromeOverflow ? undefined : transferAction}
+              transferAction={transferAction}
             />
           ) : null}
         <XDriveWorkspaceContent
@@ -1261,10 +1253,7 @@ function FileManager({
               void loadDirectory(id, nextCrumbs)
             }}
             onOpenGallery={() => setAppView('gallery')}
-            onOpenTransfers={() => {
-              if (compactWorkspace && compactChromeOverflow) setCompactNavigationOpen(true)
-              setTransferPopoverOpen(true)
-            }}
+            onOpenTransfers={() => setTransferPopoverOpen(true)}
           />
         ) : appView === 'files' ? (
           <Box

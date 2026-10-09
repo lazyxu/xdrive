@@ -47,7 +47,8 @@ const ui = {
   XDriveFileExplorerThumbnailProvider: 'thumbnail-provider',
   XDriveFilePropertiesDialog: 'properties-dialog',
   XDriveMediaDetailsInspector: 'media-inspector',
-  xDriveFileSupportsThumbnail: () => false,
+  xDriveFileSupportsThumbnail: name => /\.(?:png|jpg|jpeg|livp|mov|mp4)$/i.test(name),
+  xDriveFileExplorerMarkThumbnailScrollActivity() {},
   xDriveFileKind: name => /\.(?:png|jpg|livp)$/i.test(name) ? 'image' : 'file',
   xDriveFileTypeLabel: name => name.includes('.') ? '文件' : '文件夹',
   xDriveCreateFileExplorerGroupLayout: grouped.xDriveCreateFileExplorerGroupLayout,
@@ -459,3 +460,91 @@ test('100k grouped positions keep viewport work bounded while crossing a group b
   assert.ok(segments.some(segment => segment.group.key === 'ext:jpg'))
   assert.equal(layout.itemCount, 100000)
 })
+
+test('Browse home uses distinct location symbols while real folders remain blue', async () => {
+  await withView(async h => {
+    for (const icon of ['CloudRounded', 'DeleteOutlineRounded', 'ManageSearchRounded', 'LabelRounded']) {
+      assert.equal(h.view.root.findAll(node => node.type === icon).length, 1, icon)
+    }
+    assert.equal(count(h.view, 'data-xdrive-mobile-folder-icon') > 0, false,
+      'special locations must not impersonate normal folders')
+  }, { props: {
+    savedSearches: [{ id: 18, name: '照片搜索' }],
+    tags: [{ id: 19, name: '重要' }],
+  } })
+})
+
+test('Recent and Favorites mount shared real thumbnail cells and dispatch contextual file actions', async () => {
+  const actions = []
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const recentThumbnail = h.view.root.findAll(node => node.type === 'file-thumbnail' && node.props?.item?.id === 15)
+    assert.equal(recentThumbnail.length, 1)
+    assert.equal(recentThumbnail[0].props.eligible, true)
+    assert.equal(recentThumbnail[0].props.item.revision, 4)
+    assert.equal(recentThumbnail[0].props.item.updatedAt, '2026-10-09T08:00:00Z')
+
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const favoriteThumbnail = h.view.root.findAll(node => node.type === 'file-thumbnail' && node.props?.item?.id === 15)
+    assert.equal(favoriteThumbnail.length, 1)
+    assert.equal(favoriteThumbnail[0].props.eligible, true)
+    const row = h.view.root.findAll(node => node.props?.role === 'button' && node.props.onContextMenu)
+      .find(node => textOf(node.props.children).includes('photo.jpg'))
+    assert.ok(row)
+    await act(async () => { row.props.onContextMenu({ preventDefault() {}, clientX: 60, clientY: 80 }) })
+    for (const action of ['copy', 'download', 'share']) {
+      await act(async () => { find(h.view, 'data-mobile-files-collection-action', action).props.onClick() })
+      if (action !== 'share') {
+        await act(async () => { row.props.onContextMenu({ preventDefault() {}, clientX: 60, clientY: 80 }) })
+      }
+    }
+    assert.deepEqual(actions, ['copy', 'download', 'share'])
+  }, { props: {
+    recentItems: [{ id: 15, name: 'photo.jpg', kind: 'file', revision: 4, updatedAt: '2026-10-09T08:00:00Z' }],
+    favorites: [{ id: 15, name: 'photo.jpg', kind: 'file', revision: 4 }],
+    onCollectionAction: async (entry, action) => {
+      assert.equal(entry.id, 15)
+      actions.push(action)
+    },
+  } })
+})
+
+test('Selection replaces the category rail and restores it on Finish', async () => {
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(rootLocation)
+    await act(async () => { rootLocation.props.onClick() })
+    await act(async () => {
+      const more = find(h.view, 'aria-label', '文件操作菜单')
+      more.props.onClick({ currentTarget: {} })
+    })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props.onClick)
+    assert.equal(select.length, 1)
+    await act(async () => { select[0].props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-section'), 0, 'category rail must be replaced, not stacked')
+    assert.equal(find(h.view, 'aria-label', '下载已选').props.disabled, true)
+    const file = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    await act(async () => { file.props.onClick() })
+    assert.equal(file.props['aria-pressed'], true)
+    assert.equal(find(h.view, 'aria-label', '下载已选').props.disabled, false)
+    const finish = h.view.root.findAll(node => node.props?.children === '完成' && node.props.onClick)
+    assert.equal(finish.length, 1)
+    await act(async () => { finish[0].props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 0)
+    assert.equal(count(h.view, 'data-mobile-files-section'), 3)
+  })
+})
+
+test('Mobile Files status shows server sort direction and local view without changing sort query', async () => {
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    assert.match(textOf(find(h.view, 'data-mobile-files-arrangement-status', true).props.children), /名称 ↑ · 列表/)
+    await h.update({ sort: { key: 'size', direction: 'desc' } })
+    assert.match(textOf(find(h.view, 'data-mobile-files-arrangement-status', true).props.children), /大小 ↓ · 列表/)
+  })
+})
+
