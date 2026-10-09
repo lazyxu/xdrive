@@ -72,6 +72,9 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   }>())
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
+  // Render-phase ownership is separate from the request generation: clearing
+  // old session items in a passive effect is too late for the first frame.
+  const visibleScopeRef = useRef({ lifecycleKey, enabled })
   const lifecycleGenerationRef = useRef(1)
 
   if (
@@ -120,6 +123,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   }, [enabled, lifecycleKey, loadFresh])
 
   useEffect(() => {
+    visibleScopeRef.current = { lifecycleKey, enabled }
     setItems([])
     setLoading(false)
     setBusyID(null)
@@ -134,7 +138,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     pendingMutationRef.current.clear()
   }, [])
 
-  const favoriteIDs = useMemo(() => new Set(items.map((item) => item.id)), [items])
+  const scopeVisible = enabled && visibleScopeRef.current.lifecycleKey === lifecycleKey &&
+    visibleScopeRef.current.enabled === enabled
+  const visibleItems = scopeVisible ? items : []
+  const favoriteIDs = useMemo(() => new Set(visibleItems.map((item) => item.id)), [visibleItems])
 
   const enqueueMutation = useCallback((
     mutationKey: string,
@@ -241,5 +248,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     }
   }, [enabled, loadFresh])
 
-  return { items, loading, busyID, favoriteIDs, refresh, favorite, unfavorite, toggle, activate }
+  return {
+    items: visibleItems,
+    loading: scopeVisible ? loading : enabled,
+    busyID: scopeVisible ? busyID : null,
+    favoriteIDs, refresh, favorite, unfavorite, toggle, activate,
+  }
 }

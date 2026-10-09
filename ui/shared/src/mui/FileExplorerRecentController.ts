@@ -71,6 +71,9 @@ export function useXDriveFileExplorerRecent<
   const mutationTailRef = useRef<Promise<unknown>>(Promise.resolve())
   const enabledRef = useRef(enabled)
   const lifecycleKeyRef = useRef(lifecycleKey)
+  // Render-phase ownership is separate from the request generation: clearing
+  // old session items in a passive effect is too late for the first frame.
+  const visibleScopeRef = useRef({ lifecycleKey, enabled })
   const lifecycleGenerationRef = useRef(1)
 
   if (
@@ -118,6 +121,7 @@ export function useXDriveFileExplorerRecent<
   }, [enabled, lifecycleKey, loadFresh])
 
   useEffect(() => {
+    visibleScopeRef.current = { lifecycleKey, enabled }
     rawItemsRef.current.clear()
     setItems([])
     setLoading(false)
@@ -232,9 +236,12 @@ export function useXDriveFileExplorerRecent<
     }
   }, [enabled, loadFresh, record])
 
+  const scopeVisible = enabled && visibleScopeRef.current.lifecycleKey === lifecycleKey &&
+    visibleScopeRef.current.enabled === enabled
+
   return {
-    items,
-    loading,
+    items: scopeVisible ? items : [],
+    loading: scopeVisible ? loading : enabled,
     refresh,
     record,
     clear,
