@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -28,6 +28,8 @@ import {
   XDriveShareDialog,
   XDriveStatePanel,
   XDriveStatusAlert,
+  useXDrivePreviewPresentation,
+  useXDrivePreviewSlideshow,
 } from '@xdrive/ui/mui'
 import type {
   MediaGalleryDataSource,
@@ -35,35 +37,28 @@ import type {
 } from '@xdrive/ui/mui'
 import {
   xDriveClassifyFilePreview,
+  xDriveMediaCaptureTimeLabel,
   xDriveWebAppHash,
 } from '../../ui/shared/src'
 import type {
   MediaAlbum,
-  MediaItem,
   Node,
   XDriveFilePreviewTarget,
+  XDriveFilePreviewPresentationState,
   XDriveFileTextPreview,
-  XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
 import {
-  xDriveReadWebAppBrowseSession,
-  xDriveWriteWebAppBrowseSession,
-} from './webAppRuntime'
-import {
-  xDriveCreateWebViewerContextResolver,
   xDriveWebViewerAnyFile,
   xDriveWebViewerMediaFile,
 } from './webViewerContext'
-import type {
-  XDriveWebViewerCandidate,
-  XDriveWebViewerPredicate,
-} from './webViewerContext'
+import { useViewerNode } from './useWebViewerNode'
 import { xDriveWebTextSelection } from './webTextViewer'
 
 function WebViewerFrame({
   title,
+  subtitle,
   positionLabel,
   immersive = false,
   quickLook = false,
@@ -73,10 +68,14 @@ function WebViewerFrame({
   onNext,
   actions,
   slideshow = false,
+  sourceKey = '',
+  presentationState = 'loading',
+  navigationLoading = false,
   onClose,
   children,
 }: {
   title: ReactNode
+  subtitle?: ReactNode
   positionLabel?: ReactNode
   immersive?: boolean
   quickLook?: boolean
@@ -86,11 +85,15 @@ function WebViewerFrame({
   onNext?: () => void
   actions?: ReactNode
   slideshow?: boolean
+  sourceKey?: string
+  presentationState?: XDriveFilePreviewPresentationState
+  navigationLoading?: boolean
   onClose: () => void
   children: ReactNode
 }) {
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const compactImmersive = compactTouch && immersive
+  const hasNavigation = canPrevious || canNext
   const rootRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<number | null>(null)
   const touchTapTimerRef = useRef<number | null>(null)
@@ -204,15 +207,16 @@ function WebViewerFrame({
     }
   }, [clearTouchTapTimer, showChrome])
 
-  useEffect(() => {
-    if (!slideshow || !slideshowPlaying) return
-    if (!canNext || !onNext) {
-      setSlideshowPlaying(false)
-      return
-    }
-    const timer = window.setTimeout(onNext, 5000)
-    return () => window.clearTimeout(timer)
-  }, [canNext, onNext, slideshow, slideshowPlaying, title])
+  useXDrivePreviewSlideshow({
+    enabled: slideshow,
+    playing: slideshowPlaying,
+    sourceKey,
+    presentationState,
+    navigationLoading,
+    canNext,
+    onNext,
+    onStop: () => setSlideshowPlaying(false),
+  })
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     showChrome()
@@ -258,8 +262,8 @@ function WebViewerFrame({
         display: 'flex',
         flexDirection: 'column',
         minWidth: 0,
-        minHeight: compactImmersive ? '100vh' : 0,
-        height: compactImmersive ? '100dvh' : undefined,
+        minHeight: 0,
+        height: compactTouch ? '100dvh' : undefined,
         outline: 0,
         bgcolor: immersive ? 'black' : 'background.default',
         color: immersive ? 'common.white' : 'text.primary',
@@ -270,10 +274,12 @@ function WebViewerFrame({
         alignItems="center"
         spacing={1}
         sx={{
-          minHeight: compactImmersive ? 56 : 52,
-          px: compactImmersive ? 1 : 1.5,
-          pt: compactImmersive ? 'env(safe-area-inset-top)' : 0,
-          '& .MuiIconButton-root': compactImmersive ? { width: 44, height: 44 } : undefined,
+          minHeight: compactTouch ? 56 : 52,
+          px: compactTouch ? 1 : 1.5,
+          pl: compactTouch ? 'max(8px, env(safe-area-inset-left))' : undefined,
+          pr: compactTouch ? 'max(8px, env(safe-area-inset-right))' : undefined,
+          pt: compactTouch ? 'env(safe-area-inset-top)' : 0,
+          '& .MuiIconButton-root': compactTouch ? { width: 44, height: 44, flexShrink: 0 } : undefined,
           flexShrink: 0,
           borderBottom: 1,
           borderColor: immersive ? 'rgba(255,255,255,.18)' : 'divider',
@@ -293,16 +299,17 @@ function WebViewerFrame({
             <ArrowBackRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {title}
-        </Typography>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle2" noWrap>{title}</Typography>
+          {subtitle ? <Typography variant="caption" noWrap sx={{ display: 'block', opacity: 0.72 }}>{subtitle}</Typography> : null}
+        </Box>
         {positionLabel ? (
           <Typography variant="caption" sx={{ opacity: 0.72 }}>
             {positionLabel}
           </Typography>
         ) : null}
-        {!compactImmersive ? actions : null}
-        {!compactImmersive && slideshow && (canPrevious || canNext) ? (
+        {!compactTouch ? actions : null}
+        {!compactTouch && slideshow && (canPrevious || canNext) ? (
           <Tooltip title={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}>
             <IconButton
               size="small"
@@ -320,7 +327,7 @@ function WebViewerFrame({
 
       <Box sx={{ position: 'relative', flex: 1, minHeight: 0, minWidth: 0, display: 'flex' }}>
         {children}
-        {!compactImmersive ? (
+        {!compactTouch && hasNavigation ? (
           <>
           <IconButton
             aria-label="上一个项目"
@@ -365,35 +372,39 @@ function WebViewerFrame({
         ) : null}
       </Box>
 
-      {compactImmersive && (actions || canPrevious || canNext || slideshow) ? (
+      {compactTouch && (actions || hasNavigation || slideshow) ? (
         <Stack
           direction="row"
           alignItems="center"
-          justifyContent="center"
+          justifyContent="flex-start"
           spacing={0.5}
           data-xdrive-web-viewer-mobile-actions
           sx={{
-            position: 'absolute',
+            position: immersive ? 'absolute' : 'relative',
             left: 0,
             right: 0,
             bottom: 0,
             zIndex: 2,
             minHeight: 56,
+            flexShrink: 0,
             px: 1,
+            pl: 'max(8px, env(safe-area-inset-left))',
+            pr: 'max(8px, env(safe-area-inset-right))',
             pb: 'env(safe-area-inset-bottom)',
-            bgcolor: 'rgba(0,0,0,.72)',
-            color: 'common.white',
-            opacity: chromeVisible ? 1 : 0,
-            pointerEvents: chromeVisible ? 'auto' : 'none',
+            overflowX: 'auto',
+            bgcolor: immersive ? 'rgba(0,0,0,.72)' : 'background.paper',
+            color: immersive ? 'common.white' : 'text.primary',
+            opacity: immersive && !chromeVisible ? 0 : 1,
+            pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
             transition: 'opacity 160ms ease',
-            '& .MuiIconButton-root': { width: 44, height: 44, color: 'inherit' },
+            '& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0, color: 'inherit' },
             '& .MuiIconButton-colorError': { color: 'error.main' },
           }}
         >
-          <IconButton aria-label="上一个项目" disabled={!canPrevious} onClick={onPrevious}>
+          {hasNavigation ? <IconButton aria-label="上一个项目" disabled={!canPrevious} onClick={onPrevious}>
             <KeyboardArrowLeftRoundedIcon />
-          </IconButton>
-          <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center' }}>{actions}</Box>
+          </IconButton> : null}
+          <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{actions}</Box>
           {slideshow && (canPrevious || canNext) ? (
             <IconButton
               aria-label={slideshowPlaying ? '暂停幻灯片' : '开始幻灯片'}
@@ -402,9 +413,9 @@ function WebViewerFrame({
               {slideshowPlaying ? <PauseRoundedIcon /> : <PlayArrowRoundedIcon />}
             </IconButton>
           ) : null}
-          <IconButton aria-label="下一个项目" disabled={!canNext} onClick={onNext}>
+          {hasNavigation ? <IconButton aria-label="下一个项目" disabled={!canNext} onClick={onNext}>
             <KeyboardArrowRightRoundedIcon />
-          </IconButton>
+          </IconButton> : null}
         </Stack>
       ) : null}
 
@@ -424,167 +435,6 @@ function WebViewerFrame({
       ) : null}
     </Box>
   )
-}
-
-function useViewerNode({
-  api,
-  gallerySource,
-  nodeID,
-  contextID,
-  predicate,
-  onNavigate,
-}: {
-  api: XDriveApi
-  gallerySource: MediaGalleryDataSource
-  nodeID: number
-  contextID?: string
-  predicate: XDriveWebViewerPredicate
-  onNavigate: (nodeID: number) => void
-}) {
-  const context = useMemo(
-    () => xDriveReadWebAppBrowseSession(contextID),
-    [contextID],
-  )
-  const [node, setNode] = useState<Node | null>(null)
-  const [contextMediaItem, setContextMediaItem] = useState<MediaItem | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [activeIndex, setActiveIndex] = useState(context?.activeIndex ?? 0)
-  const [previous, setPrevious] = useState<XDriveWebViewerCandidate | null>(null)
-  const [next, setNext] = useState<XDriveWebViewerCandidate | null>(null)
-  const [totalCount, setTotalCount] = useState(
-    context?.kind === 'selection'
-      ? context.nodeIDs.length
-      : context?.kind === 'gallery'
-        ? context.totalCount
-        : 0,
-  )
-  const currentCandidateRef = useRef<XDriveWebViewerCandidate | null>(null)
-  const resolver = useMemo(
-    () => context
-      ? xDriveCreateWebViewerContextResolver(api, gallerySource, context)
-      : null,
-    // A fresh resolver per active item keeps range reuse bounded to one Viewer step:
-    // current + previous + next can share pages, but long-lived sessions do not
-    // retain stale directory/Gallery pages indefinitely.
-    [activeIndex, api, context, gallerySource],
-  )
-
-  useEffect(() => {
-    let active = true
-    setError('')
-
-    const preloaded = currentCandidateRef.current
-    if (
-      preloaded &&
-      preloaded.node.id === nodeID &&
-      preloaded.index === activeIndex
-    ) {
-      setNode(preloaded.node)
-      setContextMediaItem(preloaded.mediaItem ?? null)
-      setTotalCount(preloaded.totalCount)
-      setLoading(false)
-      return () => { active = false }
-    }
-
-    setLoading(true)
-    const fallbackTotalCount =
-      context?.kind === 'selection'
-        ? context.nodeIDs.length
-        : context?.kind === 'gallery'
-          ? context.totalCount
-          : 0
-
-    void (async () => {
-      if (resolver) {
-        const candidate = await resolver.resolveCandidateAt(activeIndex)
-        if (candidate?.node.id === nodeID) return candidate
-      }
-      return {
-        node: await api.node(nodeID),
-        index: activeIndex,
-        totalCount: fallbackTotalCount,
-      } satisfies XDriveWebViewerCandidate
-    })().then((candidate) => {
-      if (!active) return
-      currentCandidateRef.current = candidate
-      setNode(candidate.node)
-      setContextMediaItem(candidate.mediaItem ?? null)
-      if (candidate.totalCount > 0) setTotalCount(candidate.totalCount)
-    }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : String(reason))
-    }).finally(() => {
-      if (active) setLoading(false)
-    })
-
-    return () => {
-      active = false
-    }
-  }, [activeIndex, api, context, nodeID, resolver])
-
-  useEffect(() => {
-    if (!context || !resolver) {
-      setPrevious(null)
-      setNext(null)
-      return
-    }
-    let active = true
-    void Promise.all([
-      resolver.findNeighbor(activeIndex, -1, predicate),
-      resolver.findNeighbor(activeIndex, 1, predicate),
-    ]).then(([prev, nextValue]) => {
-      if (!active) return
-      setPrevious(prev)
-      setNext(nextValue)
-      setTotalCount(
-        prev?.totalCount ??
-        nextValue?.totalCount ??
-        (context.kind === 'selection'
-          ? context.nodeIDs.length
-          : context.kind === 'gallery'
-            ? context.totalCount
-            : 0),
-      )
-    }).catch(() => {
-      if (active) {
-        setPrevious(null)
-        setNext(null)
-      }
-    })
-    return () => {
-      active = false
-    }
-  }, [activeIndex, context, predicate, resolver])
-
-  const navigate = (candidate: XDriveWebViewerCandidate | null) => {
-    if (!candidate) return
-    currentCandidateRef.current = candidate
-    setActiveIndex(candidate.index)
-    setNode(candidate.node)
-    setContextMediaItem(candidate.mediaItem ?? null)
-    setTotalCount(candidate.totalCount)
-    if (context && contextID) {
-      xDriveWriteWebAppBrowseSession(contextID, {
-        ...context,
-        activeIndex: candidate.index,
-      } as XDriveWebAppBrowseContext)
-    }
-    onNavigate(candidate.node.id)
-  }
-
-  return {
-    node,
-    contextMediaItem,
-    contextKind: context?.kind,
-    loading,
-    error,
-    activeIndex,
-    totalCount,
-    previous,
-    next,
-    goPrevious: () => navigate(previous),
-    goNext: () => navigate(next),
-  }
 }
 
 function FileViewerActions({
@@ -717,6 +567,7 @@ function WebPreviewApp({
     size: viewer.node.size,
     revision: viewer.node.revision,
   } satisfies XDriveFilePreviewTarget : null
+  const presentation = useXDrivePreviewPresentation(target)
 
   const loadThumbnail = useCallback(async () => {
     if (!viewer.node) return null
@@ -727,34 +578,36 @@ function WebPreviewApp({
     }
   }, [api, viewer.node?.id])
 
-  if (viewer.loading) return <XDriveStatePanel variant="plain" loading message="正在打开预览…" />
-  if (viewer.error || !viewer.node) {
-    return <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
-  }
-
   return (
     <>
       <WebViewerFrame
-        title={viewer.node.name}
+        title={viewer.node?.name ?? '文件预览'}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         quickLook
         slideshow
+        sourceKey={presentation.sourceKey}
+        presentationState={viewer.error ? 'failed' : presentation.presentationState}
+        navigationLoading={viewer.navigationLoading}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
         onNext={viewer.goNext}
-        actions={(
+        actions={viewer.node ? (
           <FileViewerActions
             node={viewer.node}
             api={api}
             onShare={() => setShareOpen(true)}
             onTags={() => setTagsOpen(true)}
           />
-        )}
+        ) : null}
         onClose={() => onClose(viewer.node)}
       >
-        <XDriveFilePreviewSurface
+        {viewer.loading ? (
+          <XDriveStatePanel variant="plain" loading message="正在打开预览…" />
+        ) : viewer.error || !viewer.node ? (
+          <XDriveStatusAlert tone="bad">{viewer.error || '文件不存在或已无法访问。'}</XDriveStatusAlert>
+        ) : <XDriveFilePreviewSurface
           target={target}
           loadTextPreview={() => api.fileTextPreview(viewer.node!.id)}
           loadImagePreview={loadThumbnail}
@@ -764,6 +617,7 @@ function WebPreviewApp({
               : api.filePreviewURL(viewer.node!.id)
           )}
           loadLivePhotoMotion={() => api.mediaLivePhotoMotionURL(viewer.node!.id)}
+          onPresentationStateChange={presentation.onPresentationStateChange}
           interactiveImage
           onSwipePrevious={viewer.previous ? viewer.goPrevious : undefined}
           onSwipeNext={viewer.next ? viewer.goNext : undefined}
@@ -774,9 +628,9 @@ function WebPreviewApp({
           )}
           minHeight={0}
           maxHeight="none"
-        />
+        />}
       </WebViewerFrame>
-      <FileDialogs
+      {viewer.node ? <FileDialogs
         node={viewer.node}
         api={api}
         shareDialogAdapter={shareDialogAdapter}
@@ -785,7 +639,7 @@ function WebPreviewApp({
         onShareClose={() => setShareOpen(false)}
         onTagsClose={() => setTagsOpen(false)}
         onError={onError}
-      />
+      /> : null}
     </>
   )
 }
@@ -813,55 +667,14 @@ function WebMediaViewerApp({
     nodeID: route.params.node,
     contextID: route.params.context,
     predicate: xDriveWebViewerMediaFile,
+    wantsMedia: true,
     onNavigate,
   })
-  const [mediaItem, setMediaItem] = useState<MediaItem | null>(null)
-  const [mediaItemLoading, setMediaItemLoading] = useState(true)
-  const [mediaItemError, setMediaItemError] = useState('')
+  const mediaItem = viewer.mediaItem
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
-
-  useEffect(() => {
-    let active = true
-    setMediaItemError('')
-
-    if (viewer.contextKind === 'gallery') {
-      if (viewer.loading || viewer.node?.id !== route.params.node) {
-        setMediaItemLoading(true)
-        return () => { active = false }
-      }
-      if (viewer.contextMediaItem?.node.id === route.params.node) {
-        setMediaItem(viewer.contextMediaItem)
-        setMediaItemLoading(false)
-        return () => { active = false }
-      }
-    }
-
-    setMediaItem(null)
-    setMediaItemLoading(true)
-    void api.mediaItem(route.params.node)
-      .then((item) => {
-        if (active) setMediaItem(item)
-      })
-      .catch((reason) => {
-        if (!active) return
-        setMediaItem(null)
-        setMediaItemError(reason instanceof Error ? reason.message : String(reason))
-      })
-      .finally(() => {
-        if (active) setMediaItemLoading(false)
-      })
-    return () => { active = false }
-  }, [
-    api,
-    route.params.node,
-    viewer.contextKind,
-    viewer.contextMediaItem,
-    viewer.loading,
-    viewer.node?.id,
-  ])
 
   const openInfo = () => {
     setInfoOpen(true)
@@ -880,10 +693,7 @@ function WebMediaViewerApp({
   if (!['image', 'video', 'live_photo'].includes(previewKind)) {
     return <XDriveStatusAlert tone="warning">此文件不是图片、视频或实况照片。</XDriveStatusAlert>
   }
-  if (mediaItemError) {
-    return <XDriveStatusAlert tone="bad">{mediaItemError}</XDriveStatusAlert>
-  }
-  if (mediaItemLoading || !mediaItem || mediaItem.node.id !== viewer.node.id) {
+  if (!mediaItem || mediaItem.node.id !== viewer.node.id) {
     return <XDriveStatePanel variant="plain" loading message="正在加载媒体信息…" />
   }
 
@@ -897,7 +707,7 @@ function WebMediaViewerApp({
             onClick={() => {
               const favorite = !mediaItem.favorite
               void gallerySource.setFavorite?.(mediaItem.node.id, favorite).then(() => {
-                setMediaItem((current) => current ? { ...current, favorite } : current)
+                viewer.updateMediaItem(mediaItem, { favorite })
               }).catch(onError)
             }}
           >
@@ -927,6 +737,7 @@ function WebMediaViewerApp({
     <>
       <WebViewerFrame
         title={viewer.node.name}
+        subtitle={xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at)}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         canPrevious={Boolean(viewer.previous)}
@@ -967,15 +778,23 @@ function WebMediaViewerApp({
         albums={albums}
         onSetFavorite={gallerySource.setFavorite ? async (item, favorite) => {
           await gallerySource.setFavorite!(item.node.id, favorite)
-          setMediaItem((current) => current ? { ...current, favorite } : current)
+          viewer.updateMediaItem(item, { favorite })
         } : undefined}
         onSetTags={gallerySource.setTags ? async (item, tags) => {
           const normalized = await gallerySource.setTags!(item.node.id, tags)
-          setMediaItem((current) => current ? { ...current, tags: normalized } : current)
+          viewer.updateMediaItem(item, { tags: normalized })
           return normalized
         } : undefined}
-        onSetPeople={gallerySource.setPeople ? (item, people) => gallerySource.setPeople!(item.node.id, people) : undefined}
-        onSetDescription={gallerySource.setDescription ? (item, description) => gallerySource.setDescription!(item.node.id, description) : undefined}
+        onSetPeople={gallerySource.setPeople ? async (item, people) => {
+          const normalized = await gallerySource.setPeople!(item.node.id, people)
+          viewer.updateMediaItem(item, { people: normalized })
+          return normalized
+        } : undefined}
+        onSetDescription={gallerySource.setDescription ? async (item, description) => {
+          const normalized = await gallerySource.setDescription!(item.node.id, description)
+          viewer.updateMediaItem(item, { description: normalized })
+          return normalized
+        } : undefined}
         onAddToAlbum={gallerySource.addToAlbum ? (album, item) =>
           gallerySource.addToAlbum!(album.id, album.revision ?? 0, [item.node.id]) : undefined}
         onRemoveFromAlbum={gallerySource.removeFromAlbum ? (album, item) =>
@@ -995,6 +814,7 @@ function WebTextViewerApp({
   api: XDriveApi
   onClose: (node: Node | null) => void
 }) {
+  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const [node, setNode] = useState<Node | null>(null)
   const [preview, setPreview] = useState<XDriveFileTextPreview | null>(null)
   const [error, setError] = useState('')
@@ -1076,10 +896,11 @@ function WebTextViewerApp({
             bgcolor: 'background.paper',
             color: 'text.primary',
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            fontSize: 13,
+            fontSize: compactTouch ? 16 : 13,
             lineHeight: 1.55,
             whiteSpace: wrap ? 'pre-wrap' : 'pre',
             overflow: 'auto',
+            overscrollBehavior: 'contain',
             outline: 0,
           }}
         />

@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import type { MediaItem } from '../models'
 import type { MediaThumbnailLoader } from './MediaGallery'
@@ -22,17 +23,38 @@ export function XDriveMediaGalleryFilmstrip({
   loadThumbnail: MediaThumbnailLoader
   onSelect: (index: number) => void
 }) {
+  const stripRef = useRef<HTMLDivElement>(null)
+  const entryIDs = entries.map(({ item }) => item.node.id).join(',')
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    if (!strip) return
+    const centerActive = () => {
+      const active = strip.querySelector<HTMLElement>('[aria-current="true"]')
+      if (!active) return
+      const bounds = strip.getBoundingClientRect()
+      const itemBounds = active.getBoundingClientRect()
+      strip.scrollLeft += itemBounds.left - bounds.left - (strip.clientWidth - itemBounds.width) / 2
+    }
+    centerActive()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(centerActive)
+    observer?.observe(strip)
+    return () => observer?.disconnect()
+  }, [activeIndex, entryIDs])
+
   if (entries.length === 0) return null
 
   return (
     <Stack
+      ref={stripRef}
       direction="row"
       spacing={0.75}
       alignItems="center"
-      justifyContent="center"
+      justifyContent="flex-start"
       data-xdrive-gallery-filmstrip
       sx={{
+        width: 'max-content',
         maxWidth: '100%',
+        mx: 'auto',
         overflowX: 'auto',
         px: 0.5,
         py: 0.25,

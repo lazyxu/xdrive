@@ -8,6 +8,7 @@ import type {
   XDriveFilePreviewURLLoader,
 } from './FilePreviewSurface'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
+import { useXDrivePreviewPresentation } from './usePreviewSlideshow'
 import { xDriveMediaFallback } from './MediaGalleryPreviewMedia'
 import type {
   MediaMotionLoader,
@@ -50,6 +51,7 @@ export function XDriveMediaViewerContent({
     item.node.size,
     item.metadata.mime_type,
   ])
+  const presentation = useXDrivePreviewPresentation(target)
 
   const loadOpenPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
     if (
@@ -102,6 +104,7 @@ export function XDriveMediaViewerContent({
       <XDriveLivePhotoSurface
         key={item.node.id}
         label={item.node.name}
+        stillReady={presentation.presentationState === 'ready'}
         loadMotion={loadOpenLivePhotoMotion}
         sourceKey={`${item.node.id}:${item.node.revision}`}
         still={(
@@ -113,6 +116,7 @@ export function XDriveMediaViewerContent({
             minHeight={minHeight}
             maxHeight={maxHeight}
             mediaTransform={mediaTransform}
+            onPresentationStateChange={presentation.onPresentationStateChange}
           />
         )}
       />

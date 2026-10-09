@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent } from 'react'
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
@@ -11,10 +11,13 @@ import type {
   XDriveByteProgressHandler,
   XDriveFilePreviewKind,
   XDriveFilePreviewMediaTransform,
+  XDriveFilePreviewPresentationState,
   XDriveFilePreviewTarget,
   XDriveFileTextPreview,
   XDriveLivePhotoMotionSource,
 } from '../file-preview'
+import { xDriveAnchorPreviewZoom, xDriveClampPreviewViewport } from '../file-preview-viewport'
+import type { XDrivePreviewImageDimensions, XDrivePreviewPoint, XDrivePreviewViewport } from '../file-preview-viewport'
 import { XDriveLivePhotoSurface } from './LivePhotoSurface'
 import { XDriveDecodedImagePreview } from './FilePreviewImage'
 import {
@@ -53,6 +56,7 @@ export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XD
   onSwipePrevious?: () => void
   onSwipeNext?: () => void
   mediaTransform?: XDriveFilePreviewMediaTransform
+  onPresentationStateChange?: (state: XDriveFilePreviewPresentationState) => void
 }
 
 function revokePreviewURL(value: string) {
@@ -73,6 +77,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   onSwipePrevious,
   onSwipeNext,
   mediaTransform,
+  onPresentationStateChange,
 }: XDriveFilePreviewSurfaceProps<T>) {
   const previewKind = useMemo(
     () => target ? xDriveClassifyFilePreview(target) : 'none',
@@ -111,118 +116,151 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
   }
   const previewTargetID = target?.id
   const previewTargetRevision = target?.revision
+  const presentationCallbackRef = useRef(onPresentationStateChange)
+  presentationCallbackRef.current = onPresentationStateChange
+  const sourceIdentity = JSON.stringify([target?.id, target?.revision, previewKind])
+  const currentSourceIdentityRef = useRef(sourceIdentity)
+  currentSourceIdentityRef.current = sourceIdentity
+  const acquiredIdentityRef = useRef('')
   const coarsePointer = useMediaQuery('(pointer: coarse)')
+  const imageViewportElementRef = useRef<HTMLElement | null>(null)
+  const imageDimensionsRef = useRef<XDrivePreviewImageDimensions | null>(null)
+  const imageViewportSizeRef = useRef({ width: 0, height: 0 })
+  const imageViewportRef = useRef<XDrivePreviewViewport>({ scale: 1, offset: { x: 0, y: 0 } })
   const imageDragRef = useRef<{
-    pointerID: number
-    startX: number
-    startY: number
-    originX: number
-    originY: number
+    pointerID: number; startX: number; startY: number; originX: number; originY: number
   } | null>(null)
   const imagePointersRef = useRef(new Map<number, { x: number; y: number }>())
-  const imagePinchRef = useRef<{ distance: number; scale: number } | null>(null)
+  const imagePinchRef = useRef<{
+    distance: number; scale: number; midpoint: XDrivePreviewPoint; offset: XDrivePreviewPoint
+  } | null>(null)
   const imageSwipeRef = useRef<{
-    pointerID: number
-    startX: number
-    startY: number
-    startedAt: number
+    pointerID: number; startX: number; startY: number; startedAt: number
+  } | null>(null)
+  const imageTapRef = useRef<{
+    pointerID: number; startX: number; startY: number; startedAt: number; moved: boolean
   } | null>(null)
   const lastTouchTapRef = useRef<{ at: number; x: number; y: number } | null>(null)
   const touchDoubleTapAtRef = useRef(0)
   const [imageScale, setImageScale] = useState(1)
   const [imageOffset, setImageOffset] = useState({ x: 0, y: 0 })
 
+  const applyImageViewport = useCallback((value: XDrivePreviewViewport) => {
+    const next = xDriveClampPreviewViewport(value, imageViewportSizeRef.current, imageDimensionsRef.current, imageFit)
+    imageViewportRef.current = next
+    setImageScale(next.scale)
+    setImageOffset((current) => current.x === next.offset.x && current.y === next.offset.y ? current : next.offset)
+  }, [imageFit])
+
+  const measureImageViewport = useCallback((element = imageViewportElementRef.current) => {
+    if (!element) return
+    const bounds = element.getBoundingClientRect()
+    imageViewportSizeRef.current = { width: bounds.width, height: bounds.height }
+  }, [])
+  const imageAnchor = useCallback((element: HTMLElement, clientX: number, clientY: number) => {
+    measureImageViewport(element)
+    const bounds = element.getBoundingClientRect()
+    return { x: clientX - bounds.left - bounds.width / 2, y: clientY - bounds.top - bounds.height / 2 }
+  }, [measureImageViewport])
+
   const resetImageViewport = useCallback(() => {
     imageDragRef.current = null
     imagePointersRef.current.clear()
     imagePinchRef.current = null
     imageSwipeRef.current = null
+    imageTapRef.current = null
     lastTouchTapRef.current = null
+    imageViewportRef.current = { scale: 1, offset: { x: 0, y: 0 } }
     setImageScale(1)
     setImageOffset({ x: 0, y: 0 })
   }, [])
 
-  const setImageZoom = useCallback((value: number) => {
+  const setImageZoom = useCallback((value: number, anchor: XDrivePreviewPoint = { x: 0, y: 0 }) => {
     const next = Math.min(6, Math.max(1, Math.round(value * 100) / 100))
-    setImageScale(next)
-    if (next === 1) setImageOffset({ x: 0, y: 0 })
-  }, [])
+    applyImageViewport(xDriveAnchorPreviewZoom(imageViewportRef.current, next, anchor))
+  }, [applyImageViewport])
 
   useEffect(() => {
+    imageDimensionsRef.current = null
     resetImageViewport()
-  }, [resetImageViewport, target?.id, target?.revision])
+  }, [previewKind, resetImageViewport, target?.id, target?.revision])
+
+  useLayoutEffect(() => {
+    const element = imageViewportElementRef.current
+    if (!element || !interactiveImage || previewKind !== 'image') return
+    const remeasure = () => {
+      measureImageViewport(element)
+      applyImageViewport(imageViewportRef.current)
+    }
+    remeasure()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(remeasure)
+    observer?.observe(element)
+    if (typeof window !== 'undefined') window.addEventListener('resize', remeasure)
+    return () => {
+      observer?.disconnect()
+      if (typeof window !== 'undefined') window.removeEventListener('resize', remeasure)
+    }
+  }, [applyImageViewport, interactiveImage, measureImageViewport, previewKind, target?.id, target?.revision])
+
+  const handleImageDimensionsChange = useCallback((dimensions: XDrivePreviewImageDimensions | null) => {
+    if (currentSourceIdentityRef.current !== sourceIdentity) return
+    imageDimensionsRef.current = dimensions
+    measureImageViewport()
+    applyImageViewport(imageViewportRef.current)
+  }, [applyImageViewport, measureImageViewport, sourceIdentity])
+  const handleImagePresentationStateChange = useCallback((state: XDriveFilePreviewPresentationState) => {
+    if (currentSourceIdentityRef.current === sourceIdentity) presentationCallbackRef.current?.(state)
+  }, [sourceIdentity])
 
   const captureImagePointer = (event: ReactPointerEvent<HTMLElement>) => {
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId)
-    } catch {
-      // Pointer capture is best-effort across browsers and Electron.
-    }
+    try { event.currentTarget.setPointerCapture(event.pointerId) } catch { /* Best-effort across browsers and Electron. */ }
   }
-
   const releaseImagePointer = (event: ReactPointerEvent<HTMLElement>) => {
     try {
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
-      }
-    } catch {
-      // Ignore renderers that already released pointer capture.
-    }
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    } catch { /* The renderer may already have released pointer capture. */ }
   }
 
   const handleImagePointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     if (!interactiveImage || event.button !== 0) return
-
+    measureImageViewport(event.currentTarget)
+    const viewport = imageViewportRef.current
     if (event.pointerType === 'touch') {
       event.preventDefault()
       imagePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       captureImagePointer(event)
-
       const points = [...imagePointersRef.current.values()]
       if (points.length >= 2) {
         const [first, second] = points
         imagePinchRef.current = {
           distance: Math.max(1, Math.hypot(second.x - first.x, second.y - first.y)),
-          scale: imageScale,
+          scale: viewport.scale,
+          offset: viewport.offset,
+          midpoint: imageAnchor(event.currentTarget, (first.x + second.x) / 2, (first.y + second.y) / 2),
         }
         imageDragRef.current = null
         imageSwipeRef.current = null
+        imageTapRef.current = null
         lastTouchTapRef.current = null
         return
       }
-
-      if (imageScale > 1) {
-        imageDragRef.current = {
-          pointerID: event.pointerId,
-          startX: event.clientX,
-          startY: event.clientY,
-          originX: imageOffset.x,
-          originY: imageOffset.y,
-        }
-      } else {
-        imageSwipeRef.current = {
-          pointerID: event.pointerId,
-          startX: event.clientX,
-          startY: event.clientY,
-          startedAt: Date.now(),
-        }
-      }
-      return
+      imageTapRef.current = { pointerID: event.pointerId, startX: event.clientX, startY: event.clientY, startedAt: Date.now(), moved: false }
+      if (viewport.scale <= 1.01) imageSwipeRef.current = { ...imageTapRef.current }
     }
-
-    if (imageScale <= 1) return
+    if (viewport.scale <= 1) return
     event.preventDefault()
     captureImagePointer(event)
     imageDragRef.current = {
-      pointerID: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: imageOffset.x,
-      originY: imageOffset.y,
+      pointerID: event.pointerId, startX: event.clientX, startY: event.clientY,
+      originX: viewport.offset.x, originY: viewport.offset.y,
     }
-  }, [imageOffset.x, imageOffset.y, imageScale, interactiveImage])
+  }, [imageAnchor, interactiveImage, measureImageViewport])
 
   const handleImagePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const tap = imageTapRef.current
+    if (tap?.pointerID === event.pointerId && Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) >= 12) {
+      tap.moved = true
+    }
     if (event.pointerType === 'touch' && imagePointersRef.current.has(event.pointerId)) {
       imagePointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
       const pinch = imagePinchRef.current
@@ -231,86 +269,88 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
         event.preventDefault()
         const [first, second] = points
         const distance = Math.max(1, Math.hypot(second.x - first.x, second.y - first.y))
-        setImageZoom(pinch.scale * distance / pinch.distance)
+        const scale = Math.min(6, Math.max(1, Math.round(pinch.scale * distance / pinch.distance * 100) / 100))
+        const midpoint = imageAnchor(event.currentTarget, (first.x + second.x) / 2, (first.y + second.y) / 2)
+        applyImageViewport(xDriveAnchorPreviewZoom({ scale: pinch.scale, offset: pinch.offset }, scale, pinch.midpoint, midpoint))
         return
       }
     }
-
     const drag = imageDragRef.current
     if (!drag || drag.pointerID !== event.pointerId) return
     event.preventDefault()
-    setImageOffset({
+    applyImageViewport({ scale: imageViewportRef.current.scale, offset: {
       x: drag.originX + event.clientX - drag.startX,
       y: drag.originY + event.clientY - drag.startY,
-    })
-  }, [setImageZoom])
+    } })
+  }, [applyImageViewport, imageAnchor])
 
   const handleImagePointerRelease = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const touch = event.pointerType === 'touch'
     const wasPinching = touch && imagePinchRef.current !== null
-
-    if (touch) {
+    if (touch && imagePointersRef.current.has(event.pointerId)) {
       imagePointersRef.current.delete(event.pointerId)
       if (imagePointersRef.current.size < 2) imagePinchRef.current = null
-
       const swipe = imageSwipeRef.current
+      const tap = imageTapRef.current
+      const imageScale = imageViewportRef.current.scale
       if (!wasPinching && swipe?.pointerID === event.pointerId) {
         const dx = event.clientX - swipe.startX
         const dy = event.clientY - swipe.startY
-        const absX = Math.abs(dx)
-        const absY = Math.abs(dy)
+        const absX = Math.abs(dx), absY = Math.abs(dy)
         const elapsed = Date.now() - swipe.startedAt
         const horizontalSwipe = imageScale <= 1.01 && elapsed <= 700 && absX >= 56 && absX > absY * 1.25
-
         if (horizontalSwipe) {
           lastTouchTapRef.current = null
           if (dx < 0) onSwipeNext?.()
           else onSwipePrevious?.()
-        } else if (absX < 12 && absY < 12 && elapsed <= 450) {
-          const now = Date.now()
-          const previous = lastTouchTapRef.current
-          if (
-            previous &&
-            now - previous.at <= 320 &&
-            Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 32
-          ) {
-            lastTouchTapRef.current = null
-            touchDoubleTapAtRef.current = now
-            setImageZoom(imageScale > 1 ? 1 : 2)
-          } else {
-            lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
-          }
         }
       }
+      if (!wasPinching && tap?.pointerID === event.pointerId) {
+        const moved = tap.moved || Math.hypot(event.clientX - tap.startX, event.clientY - tap.startY) >= 12
+        const now = Date.now()
+        if (!moved && now - tap.startedAt <= 450) {
+          const previous = lastTouchTapRef.current
+          if (previous && now - previous.at <= 320 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 32) {
+            lastTouchTapRef.current = null
+            touchDoubleTapAtRef.current = now
+            setImageZoom(imageScale > 1 ? 1 : 2, imageAnchor(event.currentTarget, event.clientX, event.clientY))
+          } else lastTouchTapRef.current = { at: now, x: event.clientX, y: event.clientY }
+        } else lastTouchTapRef.current = null
+      }
       imageSwipeRef.current = null
+      imageTapRef.current = null
+      if (wasPinching && imagePointersRef.current.size === 1) {
+        const [pointerID, point] = [...imagePointersRef.current.entries()][0]
+        const viewport = imageViewportRef.current
+        imageDragRef.current = { pointerID, startX: point.x, startY: point.y, originX: viewport.offset.x, originY: viewport.offset.y }
+      }
     }
-
-    const drag = imageDragRef.current
-    if (drag?.pointerID === event.pointerId) imageDragRef.current = null
+    if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
     releaseImagePointer(event)
-  }, [imageScale, onSwipeNext, onSwipePrevious, setImageZoom])
+  }, [imageAnchor, onSwipeNext, onSwipePrevious, setImageZoom])
 
   const handleImagePointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     imagePointersRef.current.delete(event.pointerId)
     if (imagePointersRef.current.size < 2) imagePinchRef.current = null
     if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
-    if (imageSwipeRef.current?.pointerID === event.pointerId) imageSwipeRef.current = null
+    imageSwipeRef.current = null
+    imageTapRef.current = null
     lastTouchTapRef.current = null
     releaseImagePointer(event)
   }, [])
-
   const handleImagePointerLostCapture = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    imagePointersRef.current.delete(event.pointerId)
-    if (imagePointersRef.current.size < 2) imagePinchRef.current = null
-    if (imageDragRef.current?.pointerID === event.pointerId) imageDragRef.current = null
-    if (imageSwipeRef.current?.pointerID === event.pointerId) imageSwipeRef.current = null
-  }, [])
+    // A normal pointerup also loses capture; keep its completed tap for double-tap detection.
+    if (imagePointersRef.current.has(event.pointerId) || imageDragRef.current?.pointerID === event.pointerId) {
+      handleImagePointerCancel(event)
+    }
+  }, [handleImagePointerCancel])
 
   const handleImageWheel = useCallback((event: WheelEvent<HTMLElement>) => {
     if (!interactiveImage) return
     event.preventDefault()
-    setImageZoom(imageScale * (event.deltaY < 0 ? 1.15 : 1 / 1.15))
-  }, [imageScale, interactiveImage, setImageZoom])
+    const anchor = imageAnchor(event.currentTarget, event.clientX, event.clientY)
+    setImageZoom(imageViewportRef.current.scale * (event.deltaY < 0 ? 1.15 : 1 / 1.15), anchor)
+  }, [imageAnchor, interactiveImage, setImageZoom])
 
   const assignPreviewURL = useCallback((value: string) => {
     const previous = previewURLRef.current
@@ -329,6 +369,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     let active = true
     const generation = previewGenerationRef.current + 1
     previewGenerationRef.current = generation
+    acquiredIdentityRef.current = currentSourceIdentityRef.current
     const currentTarget = previewTargetRef.current
     const loaders = previewLoadersRef.current
     setTextPreview(null)
@@ -396,22 +437,42 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     previewTargetRevision,
   ])
 
+  const mediaGeneration = previewGenerationRef.current
+  const isCurrentMedia = useCallback(() => (
+    acquiredIdentityRef.current === sourceIdentity &&
+    currentSourceIdentityRef.current === sourceIdentity &&
+    previewGenerationRef.current === mediaGeneration
+  ), [mediaGeneration, sourceIdentity])
   const markMediaReady = useCallback(() => {
+    if (!isCurrentMedia()) return
     setMediaReady(true)
     setMediaBuffering(false)
-  }, [])
-  const markMediaWaiting = useCallback(() => setMediaBuffering(true), [])
+  }, [isCurrentMedia])
+  const markMediaWaiting = useCallback(() => {
+    if (isCurrentMedia()) setMediaBuffering(true)
+  }, [isCurrentMedia])
   const markMediaFailed = useCallback(() => {
+    if (!isCurrentMedia()) return
     setMediaReady(false)
     setMediaBuffering(false)
     setFailed(true)
-  }, [])
+  }, [isCurrentMedia])
   const mediaPending = Boolean(
     previewURL &&
     (previewKind === 'video' || previewKind === 'audio' || previewKind === 'pdf') &&
     (!mediaReady || mediaBuffering) &&
     !failed
   )
+  const presentationState: XDriveFilePreviewPresentationState = acquiredIdentityRef.current !== sourceIdentity
+    ? 'loading'
+    : failed || previewKind === 'none' ? 'failed'
+      : loading || mediaPending ? 'loading'
+        : (previewKind === 'text' ? Boolean(textPreview) : Boolean(previewURL && mediaReady)) ? 'ready' : 'failed'
+  useEffect(() => {
+    if (previewKind === 'image' || previewKind === 'live_photo') return
+    presentationCallbackRef.current?.(presentationState)
+  }, [presentationState, previewKind, sourceIdentity])
+
   const mediaLoadingOverlay = mediaPending ? (
     <Box
       data-xdrive-preview-media-loading
@@ -441,6 +502,7 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
           imageFit={imageFit}
           minHeight={minHeight}
           mediaTransform={mediaTransform}
+          onPresentationStateChange={handleImagePresentationStateChange}
         >
           {(still, ready) => (
             <XDriveLivePhotoSurface
@@ -457,13 +519,14 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
     if (target && previewKind === 'image') {
       return (
         <Box
+          ref={interactiveImage ? imageViewportElementRef : undefined}
           data-xdrive-preview-zoom={interactiveImage || undefined}
           data-xdrive-preview-pinch={interactiveImage || undefined}
           data-xdrive-preview-swipe={interactiveImage && Boolean(onSwipePrevious || onSwipeNext) || undefined}
           onWheel={handleImageWheel}
-          onDoubleClick={() => {
+          onDoubleClick={(event) => {
             if (!interactiveImage || Date.now() - touchDoubleTapAtRef.current < 500) return
-            setImageZoom(imageScale > 1 ? 1 : 2)
+            setImageZoom(imageScale > 1 ? 1 : 2, imageAnchor(event.currentTarget, event.clientX, event.clientY))
           }}
           onPointerDown={handleImagePointerDown}
           onPointerMove={handleImagePointerMove}
@@ -491,8 +554,10 @@ export function XDriveFilePreviewSurface<T extends XDriveFilePreviewTarget>({
             imageFit={imageFit}
             minHeight={minHeight}
             mediaTransform={mediaTransform}
+            onPresentationStateChange={handleImagePresentationStateChange}
             viewportTransform={`translate(${imageOffset.x}px, ${imageOffset.y}px) scale(${imageScale})`}
-            viewportTransition={imageDragRef.current ? 'none' : 'transform 100ms ease-out'}
+            onImageDimensionsChange={handleImageDimensionsChange}
+            viewportTransition={imageDragRef.current || imagePinchRef.current ? 'none' : 'transform 100ms ease-out'}
           />
           {interactiveImage && !coarsePointer ? (
             <Stack

@@ -10,6 +10,7 @@ import { Box, Dialog, DialogContent, IconButton, Stack, Tooltip, Typography, use
 export type XDriveOpenPreviewDialogProps = {
   open: boolean
   title?: ReactNode
+  subtitle?: ReactNode
   positionLabel?: ReactNode
   quickLook?: boolean
   canPrevious?: boolean
@@ -29,6 +30,7 @@ export type XDriveOpenPreviewDialogProps = {
 export function XDriveOpenPreviewDialog({
   open,
   title,
+  subtitle,
   positionLabel,
   quickLook = false,
   canPrevious = false,
@@ -46,6 +48,7 @@ export function XDriveOpenPreviewDialog({
 }: XDriveOpenPreviewDialogProps) {
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const effectiveFullScreen = fullScreen || compactTouch
+  const hasNavigation = canPrevious || canNext
   const [chromeVisible, setChromeVisible] = useState(true)
   const chromeTimerRef = useRef<number | null>(null)
   const touchTapTimerRef = useRef<number | null>(null)
@@ -216,7 +219,7 @@ export function XDriveOpenPreviewDialog({
           sx: {
             width: effectiveFullScreen ? '100vw' : 'min(1080px, calc(100vw - 32px))',
             height: effectiveFullScreen ? '100dvh' : { xs: '78vh', sm: '82vh' },
-            minHeight: effectiveFullScreen ? '100vh' : undefined,
+            minHeight: 0,
             maxHeight: effectiveFullScreen ? 'none' : 820,
             borderRadius: effectiveFullScreen ? 0 : { xs: 1.5, sm: 2 },
             overflow: 'hidden',
@@ -233,6 +236,8 @@ export function XDriveOpenPreviewDialog({
         sx={{
           minHeight: compactTouch ? 56 : 48,
           px: compactTouch ? 1 : 1.5,
+          pl: compactTouch ? 'max(8px, env(safe-area-inset-left))' : undefined,
+          pr: compactTouch ? 'max(8px, env(safe-area-inset-right))' : undefined,
           pt: compactTouch ? 'env(safe-area-inset-top)' : 0,
           '& .MuiIconButton-root': compactTouch ? { width: 44, height: 44 } : undefined,
           borderBottom: 1,
@@ -242,9 +247,10 @@ export function XDriveOpenPreviewDialog({
           transition: 'opacity 160ms ease',
         }}
       >
-        <Typography variant="subtitle2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-          {title}
-        </Typography>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle2" noWrap>{title}</Typography>
+          {subtitle ? <Typography variant="caption" noWrap sx={{ display: 'block', opacity: 0.72 }}>{subtitle}</Typography> : null}
+        </Box>
         {positionLabel ? (
           <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
             {positionLabel}
@@ -290,7 +296,7 @@ export function XDriveOpenPreviewDialog({
           {children}
         </Box>
 
-        {!compactTouch ? (
+        {!compactTouch && hasNavigation ? (
           <>
           <Tooltip title="上一个">
             <span>
@@ -364,32 +370,35 @@ export function XDriveOpenPreviewDialog({
           <Stack
             direction="row"
             alignItems="center"
-            justifyContent="center"
+            justifyContent="flex-start"
             spacing={0.5}
             data-xdrive-preview-mobile-actions
             sx={{
               minHeight: 56,
               px: 1,
+              pl: 'max(8px, env(safe-area-inset-left))',
+              pr: 'max(8px, env(safe-area-inset-right))',
               pb: 'env(safe-area-inset-bottom)',
               flexShrink: 0,
+              overflowX: 'auto',
               borderTop: 1,
               borderColor: 'divider',
               bgcolor: 'background.paper',
               opacity: chromeVisible ? 1 : 0,
               pointerEvents: chromeVisible ? 'auto' : 'none',
               transition: 'opacity 160ms ease',
-              '& .MuiIconButton-root': { width: 44, height: 44 },
+              '& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 },
             }}
           >
-            <IconButton aria-label="预览上一个项目" disabled={!canPrevious} onClick={onPrevious}>
+            {hasNavigation ? <IconButton aria-label="预览上一个项目" disabled={!canPrevious} onClick={onPrevious}>
               <KeyboardArrowLeftRoundedIcon />
-            </IconButton>
-            <Box sx={{ minWidth: 0, display: 'flex', alignItems: 'center', '& .MuiStack-root': { flexWrap: 'nowrap' } }}>
+            </IconButton> : null}
+            <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center', '& .MuiStack-root': { flexWrap: 'nowrap' } }}>
               {actions}
             </Box>
-            <IconButton aria-label="预览下一个项目" disabled={!canNext} onClick={onNext}>
+            {hasNavigation ? <IconButton aria-label="预览下一个项目" disabled={!canNext} onClick={onNext}>
               <KeyboardArrowRightRoundedIcon />
-            </IconButton>
+            </IconButton> : null}
           </Stack>
         </>
       ) : (
@@ -410,7 +419,9 @@ export function XDriveOpenPreviewDialog({
         >
           {footer ?? (
             <Typography variant="caption" color="text.secondary">
-              {quickLook ? 'Space / Esc 关闭 · ← / → 切换' : 'Esc 关闭 · ← / → 切换'}
+              {hasNavigation
+                ? quickLook ? 'Space / Esc 关闭 · ← / → 切换' : 'Esc 关闭 · ← / → 切换'
+                : quickLook ? 'Space / Esc 关闭' : 'Esc 关闭'}
             </Typography>
           )}
         </Stack>

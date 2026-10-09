@@ -62,6 +62,9 @@ export type XDriveFilePreviewTarget = {
   revision?: string | number
 }
 
+/** Whether the current target has usable content on screen, independently of its URL ticket. */
+export type XDriveFilePreviewPresentationState = 'loading' | 'ready' | 'failed'
+
 const xDriveTextPreviewExtensions = new Set([
   'asm', 'astro', 'bash', 'bat', 'c', 'cc', 'cfg', 'cjs', 'cljs', 'clj', 'cmd', 'conf',
   'cpp', 'cs', 'css', 'csv', 'cxx', 'dart', 'erl', 'ex', 'exs', 'fish', 'fs', 'fsx',
