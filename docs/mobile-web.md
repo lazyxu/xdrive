@@ -8,7 +8,7 @@ Use one shared business/controller layer and one shared React/MUI component laye
 
 The earlier phase deliveries and measurements below are historical evidence. Their permanent-bottom-navigation geometry is superseded by this contract; do not reintroduce it when adding a new app or updating an existing page.
 
-The separate [iOS comparison and follow-up inventory](mobile-web-ios-comparison.md) records 61 proposed improvements and verification items. Those suggestions are **not implemented by this full-screen change** and do not override the current layout, routing or Preview Engine contracts.
+The separate [iOS comparison and follow-up inventory](mobile-web-ios-comparison.md) records 77 proposed improvements and verification items. Those suggestions are **not implemented by this full-screen change** and do not override the current layout, routing or Preview Engine contracts.
 
 | Priority | Delivery | Acceptance focus |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ remain valid only for the exact environments and paths they measured.
 
 - `XDriveWorkspaceSidebar` is still the only full navigation component consumed by Web and Desktop.
 - Responsive Web uses the full-screen application presentation below the shared MUI `md` breakpoint (900 CSS px), independently of pointer type. At 900 px and above, retain the topbar/sidebar. Desktop's non-responsive shell retains its existing sidebar and 960 px width adjustment.
-- A 44×44 CSS px floating **打开应用导航** button opens **应用导航**. Its lower-left offset clears Files' right-edge More actions and Gallery's tile-left Info targets, including at the end of the list. This trigger and its Drawer are overlays and reserve **zero** header/footer height. No persistent global topbar, bottom navigation, sidebar or compensating spacer is allowed in the mobile app viewport. Validate the last Files item's More with a real tap and check the entire last-row Gallery Info target for overlap at supported thumbnail densities; do not regain button access by adding footer space.
+- A 44×44 CSS px floating **打开应用导航** button opens **应用导航**. Its lower-left offset clears Files' right-edge More actions and Gallery's tile-left **查看属性** targets, including at the end of the list. This trigger and its Drawer are overlays and reserve **zero** header/footer height. No persistent global topbar, bottom navigation, sidebar or compensating spacer is allowed in the mobile app viewport. Validate the last Files item's More with a real tap and check the entire last-row Gallery Properties target for overlap at supported thumbnail densities; do not regain button access by adding footer space.
 - The overlay exposes `overview`, `files`, `gallery`, `transfers`, followed by the remaining core/extension destinations from the same shared model. Home comes from the caller's sections. “任务” remains `transfers` internally and `tasks?scope=mine` in Web routes. Uploads/downloads and their live rates remain the same shared transfer popup, reached beside the account control inside application navigation on mobile and from the topbar on wide Web/Desktop.
 - Administrators also receive “全局任务” (`global-tasks`), opening `tasks?scope=global`; ordinary users do not receive it. Preserve section labels, badges, optional local storage and caller-provided role filtering; the same capability gate applies to wide navigation and the Server API.
 - Application navigation is local overlay state, not a new route. Selection uses the existing `onSelect(destination, event)` callback, preserving Ctrl/Cmd. Opening/dismissing the overlay does not change browser history. Choosing an entry closes it and invokes the callback once.
@@ -76,7 +76,7 @@ No server API, browser-history policy, directory/tab state, selection, persisted
 
 ## Validation
 
-The initial baseline is `92b7d58370542fd0597433fdc4c3969e325a113c`. Before changes, the 32 existing shell/navigation/runtime tests and workspace-surface check pass.
+The historical Phase 1 baseline was `92b7d58370542fd0597433fdc4c3969e325a113c`; its 32 existing shell/navigation/runtime tests and workspace-surface check passed before that phase. The full-viewport reproduction and integration baselines are recorded separately below.
 
 Use behavioral Node tests for model projection, actual Web role-filtered sections, selection, application-navigation lifecycle and event identity. Keep the existing shared ownership and route regression checks. Use a real renderer for viewport bounds, drawer focus/closing, scroll-root identity and preservation of mounted content; a hook mock or SSR is not evidence for layout/reconciliation.
 
@@ -84,7 +84,9 @@ Exercise 360×780, 390×844, 430×932, 844×390, 899×700, 900×700 and wide des
 
 ### Full-viewport delivery record — 2026-10-09
 
-**Status: Implemented; local renderer acceptance passed.** This record supersedes the earlier permanent mobile header/footer geometry. The fixed work baseline is `a7eb62a023180c0bc51aa7d6ff0ad402ab36bcb3`; GitHub PR CI remains the authoritative merge gate, and physical-device acceptance remains separate.
+**Status: Implemented and merged; local renderer acceptance passed. Delivery: [PR #1078](https://github.com/lazyxu/xdrive/pull/1078), merged as `1541d78cc4facafc535bb59cd1bdc7fd3045d3d8`.** This record supersedes the earlier permanent mobile header/footer geometry. The first-red baseline was `a7eb62a023180c0bc51aa7d6ff0ad402ab36bcb3`. Real conflicts required reconstructing the same single work commit first onto `1f888d850fd746644bce6f9a962534e2f62805c2`, then retaining the concurrent PR reconstruction onto `b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68`. Both documentation contracts, #1071's Gallery Properties behavior and #1076's completed FileExplorer media Properties adapter were preserved.
+
+The local measurements below were rerun against the production tree merged in #1078. The later three-document reconciliation in [PR #1080](https://github.com/lazyxu/xdrive/pull/1080) was reconstructed only after confirmed conflicts with #1079's Gallery audit paragraph and the subsequent chronological-sort delivery, selecting `3f4d27db0b9e83579bee42e9904f3cd200572737` as its final fixed base. The upstream file-context paragraph, complete status table and delivery log are retained verbatim; the full-viewport contract is recorded in a separate section. This follow-up changes only the Mobile Web, iOS inventory and canonical Gallery audit documents, and does not claim that those later source changes were part of the earlier browser measurement. GitHub PR CI is the authoritative merge gate, and physical-device acceptance remains separate.
 
 The shared responsive Shell now gives all registered apps the whole mobile viewport. Global account/settings and upload/download controls moved into the on-demand application-navigation Drawer; its controls remain mounted without reserving space and close with navigation, Viewer activation or a breakpoint transition. Wide Web and the non-responsive Desktop Shell retain their existing presentation. Gallery's stacked title no longer uses a desktop width basis as a mobile height. Media, Text, PDF and Audio now retain a full-screen frame and Return while their metadata is pending or fails; Quick Look status content is positioned clear of its overlay header.
 
@@ -99,16 +101,17 @@ The same built real Web App and bounded API fixtures were measured before and af
 | Media/Quick Look content and image zoom container | `y=56`, height 788 px, even with hidden chrome | `y=0`, height 844 px; chrome overlays content |
 | Media/Quick Look landscape content at 844×390 | 334 px high | 390 px high |
 
-Two concrete navigation regressions were also reproduced before acceptance: the moved account trigger was only 36 px high, and a lower-right floating trigger intercepted the final Files row's More action. Centering that trigger then overlapped 12 px of Gallery's right-column Info target. The final shared trigger uses a 56 px left offset and remains 44×44 with safe-area-aware bottom spacing; it adds no footer or scroll padding. At 360×780, the final Files More rectangle `(304, 703, 44, 44)` receives a real touch and opens **文件操作**. Gallery's last Info target has no rectangle intersection or corner/edge interception at default 144 px, minimum 96 px and maximum 240 px thumbnail densities. Density checks use fresh browser contexts rather than conflating an end-of-list resize with control hit testing.
+Two concrete navigation regressions were also reproduced before acceptance: the moved account trigger was only 36 px high, and a lower-right floating trigger intercepted the final Files row's More action. Centering that trigger then overlapped 12 px of Gallery's right-column Info target. The final shared trigger uses a 56 px left offset and remains 44×44 with safe-area-aware bottom spacing; it adds no footer or scroll padding. At 360×780, the final Files More rectangle `(304, 703, 44, 44)` receives a real touch and opens **文件操作**. Gallery's last Properties target (now labelled **查看属性** after #1071) has no rectangle intersection or corner/edge interception at default 144 px, minimum 96 px and maximum 240 px thumbnail densities. Density checks use fresh browser contexts rather than conflating an end-of-list resize with control hit testing.
 
 | Validation | Result and scope |
 | --- | --- |
 | Real App `--scenario=fullscreen` | **901 passed, 0 failed**; all 10 workspace apps, administrator task scope, immersive Media/Quick Look geometry, and loading/error frames for all 5 Viewer apps |
 | Existing real App `--scenario=all` | **367 passed, 0 failed**; directory and caller identity, breakpoints, navigation dismissal/focus, account/settings/update/transfer portals and browser Back/Forward |
-| Desktop `npm run test:main` | **1232 tests: 1231 passed, 0 failed, 1 existing opt-in benchmark skipped** |
+| Desktop `npm run test:main` | **1250 tests: 1249 passed, 0 failed, 1 existing opt-in benchmark skipped** |
 | Desktop `npm run typecheck` | Passed |
 | Web `npm run lint` and `npm run build` | Passed; existing Vite large-chunk warning remains |
 | Independent code/document review | Navigation action size fixed; no outstanding Critical/Important findings in the reviewed full-screen scope |
+| Full-screen PR CI | [#1078 run 37878778427](https://github.com/lazyxu/xdrive/actions/runs/37878778427): **success** before merge |
 
 The full-screen renderer matrix uses **360×780, 390×844, 430×932, 844×390, 899×700, 900×700 and 1280×800**, with Files/Gallery across all sizes and other workspace apps at the representative narrow/breakpoint sizes. Media and Quick Look test portrait/landscape content bounds with chrome shown, hidden and restored. All five Viewer programs additionally hold their actual metadata/text API reads pending, then receive explicit 404 responses; their frame, visible state message and Return remain reachable. The six declared fixture 404s are recorded separately. There were **zero unexpected API requests, page errors or console errors**.
 

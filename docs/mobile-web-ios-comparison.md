@@ -2,13 +2,49 @@
 
 **日期：2026-10-09。状态：建议清单，未实施。**
 
-本文把 Apple 官方使用手册的交互参照与 xDrive Mobile Web 的代码能力审计合并为 **61 条可评估、可排期建议**。优先级表示建议的处理顺序，不表示每项都是已复现缺陷。现状基于 `a7eb62a` 的只读能力审计，并与本次工作区的全屏变更及 `docs/mobile-web.md` 核对。
+本文把 Apple 官方使用手册的交互参照与 xDrive Mobile Web 的代码能力审计合并为 **77 条可评估、可排期建议**。优先级表示建议的处理顺序，不表示每项都是已复现缺陷。初始能力审计固定在 `a7eb62a`；先核对 `1f888d850fd746644bce6f9a962534e2f62805c2`，再随实际集成更新到 `b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68`，并叠加本次独立的全屏变更。已合入的交付不能继续按初始基准列为未修问题。
 
-**本次实现范围仅为全屏呈现，已由独立改动处理；本文列出的后续建议未随报告实施。** 全屏修复的范围、验证环境和完成状态以 [Mobile Web](mobile-web.md) 的当前合同及交付记录为准，本文不代替该修复的验收完成声明。本文不是推翻现有业务、架构、路由、缓存或预览协议的规范，也不把已有实现重新列为缺失。
+文档收口时进一步核对 [#1079](https://github.com/lazyxu/xdrive/pull/1079) / `0078294992938c7bb12f515a17bf8ee26c98a51c` 的文件上下文保留修复；它没有改变本报告的 77 项范围或 F09 的“待验证”性质。全屏浏览器测量对应 #1078 的集成生产树，文档冲突协调与后来源码的验证记录分开。
+
+随后核对 `3f4d27db0b9e83579bee42e9904f3cd200572737` 已交付的拍摄/加入时间排序，将 G12 更新为“已有应优化”；剩余时区和跨排序定位工作仍保留在同一条目。本文未实现这项排序，也不改变既有图库审计的当前状态表或交付记录。
+
+**本次实现范围仅为全屏呈现，已由 [#1078](https://github.com/lazyxu/xdrive/pull/1078) 独立修复并通过本地 renderer 验收；本文列出的后续建议未随报告实施。** 全屏修复的范围、验证环境和完成状态以 [Mobile Web](mobile-web.md) 的当前合同及交付记录为准，PR CI 与真机验收仍分别记录。本文不是推翻现有业务、架构、路由、缓存或预览协议的规范，也不把已有实现重新列为缺失。
+
+### 初始审计与集成交付差异
+
+| 阶段 | 固定基准或交付 | 对本报告的影响 |
+| --- | --- | --- |
+| 初始只读审计 | `a7eb62a023180c0bc51aa7d6ff0ad402ab36bcb3` | 保留原始能力边界；当时 mobile Inspector 未消费 `overlayZIndex` 只能形成静态候选，不能声称已复现。 |
+| 属性与直接打开已交付 | [#1071](https://github.com/lazyxu/xdrive/pull/1071)，合入为 `27fe038ec87c2b2b8ca200f86977e6e8938925da` | Gallery 普通鼠标单击直达 Viewer，统一“打开 / 属性”菜单与“属性”标签；移动 Drawer 已消费 `overlayZIndex`。Viewer 打开属性时保留当前 Viewer，属性关闭冗余预览，Web 明确传 `showPreview={false}`。V01 因此改为真机完整链路验证，不再排期修复旧层级候选。 |
+| 前次集成核对 | master `1f888d850fd746644bce6f9a962534e2f62805c2`，含 [#1077](https://github.com/lazyxu/xdrive/pull/1077) 的图库审计/文档协调 | 采用 [既有图库审计](gallery-ios-kfs-audit.md) 的交付记录与 backlog 作为图库候选来源；#1077 是文档交付，不表示其所有产品建议已实现。 |
+| 共享属性集成基准 | `b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68`，包含 [#1076](https://github.com/lazyxu/xdrive/pull/1076) 的 FileExplorer 共享媒体属性交付 | Web / Desktop FileExplorer 已接通共享 Inspector，按需加载单个 `MediaItem`，合成文件上下文并保留普通属性回退。F09 改为跨入口完整任务验证，不再列为 adapter 接线缺口。 |
+| 本次全 viewport 交付 | #1078，单一工作提交在实际冲突后重建于上述集成基准 | 全 App viewport、按需导航与 Viewer frame 已实现；集成生产树的本地 renderer 验收通过。图库 G02 的剩余范围为 App 内控件优化和真机完整任务验收，不重建 Shell。 |
+| 文档冲突核对 | #1079 / `0078294992938c7bb12f515a17bf8ee26c98a51c` | FileExplorer 的附加文件信息保留 Node ID、来源和 adapter 自定义属性，值支持 React 控件；共享媒体字段仍由同一组件格式化。保留该交付原文，不重新列为新增接线任务。 |
+| 排序阶段核对 | [#1082](https://github.com/lazyxu/xdrive/pull/1082) / [3f4d27db](https://github.com/lazyxu/xdrive/commit/3f4d27db0b9e83579bee42e9904f3cd200572737) | 已有 Server 拍摄/加入时间及升降序排序，Web/Desktop 共用 query，语义搜索保留相关度排序。G12 只完善统一用户时区与重新排序后的原资源定位。 |
+
+本次集成对照了 `git diff a7eb62a origin/master -- ui/shared/src/mui/MediaGalleryInspector.tsx web/src/WebFileViewerApps.tsx ui/shared/src/mui/MediaGallery.tsx` 的实际变更，并核对 `b70ad74b` 的 FileExplorer / Web 接线及 `docs/file-explorer.md` 末尾的共享媒体属性合同。代码交付不代替 iOS Safari/Android Chrome 真机验收；#1071、#1076 的属性交付归属不计入本次全屏实现。[^E02][^E06][^E08][^E17]
 
 ## 范围与使用方式
 
 先复用共同业务/controller 和 `ui/shared/src/mui`，再由 Web adapter 接通平台能力。下列建议不要求引入另一套移动路由、重新实现照片引擎，或一次性替换现有组件。Apple 的 Files、Photos 和 Preview 用于比较任务与交互；不要求逐像素复制其导航或视觉风格。
+
+### 与既有图库审计共用 backlog
+
+[Gallery iOS Photos / KFS 审计](gallery-ios-kfs-audit.md#consolidated-follow-up-backlog) 的 G01–G14 是下表“图库 Gxx”的来源；本报告中的 Gxx 是本页编号，两者不能混用。相同结果只建立一个实施任务，本报告补充移动端入口、验收和明确缺口，不另建竞争规范。已有任务的优先级、产品决策以及 Preview/性能/存储合同继续由其所属文档管理。[^E17]
+
+| 既有图库审计条目 | 本报告对应范围 | 去重方式 |
+| --- | --- | --- |
+| 图库 G01 | F09 | 保留 #1071、#1076 已交付的共享媒体属性；合并 Gallery / Viewer / Files 跨入口完整任务验收。 |
+| 图库 G02 | V01、G01、G02、O06、P05 | 合并全 App → Viewer → 属性 → 返回的移动验收；不重复修复旧 Info 层级。 |
+| 图库 G03 | G03、G12 | 现有时间尺度/定位与排序的时区、跨排序锚点后续分开。 |
+| 图库 G04 | G05、G11、G13、G14 | 现有相册管理、手动封面/顺序、固定集合及照片墙呈现按实际新增结果拆分。 |
+| 图库 G05 / G06 | G10 / G21 | 筛选入口复用已有 query；真实来源路径由权威数据接口提供。 |
+| 图库 G07 | G02、G15 | 工具栏布局不代替大结果集选择契约。 |
+| 图库 G08 | G04、G16 | 现有属性展示/说明编辑不等于拍摄时间和位置纠正。 |
+| 图库 G09 | V02、V13–V15、U08 | 先接通已有编辑，再补缩略图、对比、复制调整和导出，均消费同一配方。 |
+| 图库 G10 | V08、V16、V17、U08 | 播放验收、整组资源编辑、资源检查与输出选择分开。 |
+| 图库 G11 / G12 | G08、G17、G18 / G19、U08 | 已有清理与恢复流程、合并/质量复核、隐藏权限和导出元数据分别定义结果。 |
+| 图库 G13 / G14 | G06–G08、G22 / G20、P01、P04 | 个体宠物是新增能力；协作、离线和接收分享不由现有集合或分享链接自动提供。 |
 
 ### 必须保留的全屏合同
 
@@ -32,9 +68,11 @@
 
 ### 已有能力基线
 
-Files 已有触控单击打开、450 ms 长按/显式多选、52 px 行、44 px More、手机 List/Grid、桌面 columns 偏好的只读移动投影、Tabs、服务端搜索/筛选/分组、Tags、Smart Folders、收藏/最近、Trash、Properties 和版本历史。问题应具体定位到某个移动入口或任务链。[^E02][^E03][^E04]
+Files 已有触控单击打开、450 ms 长按/显式多选、52 px 行、44 px More、手机 List/Grid、桌面 columns 偏好的只读移动投影、Tabs、服务端搜索/筛选/分组、Tags、Smart Folders、收藏/最近、Trash、Properties 和版本历史。#1076 已为单选图片/视频/`.livp` 接通共享媒体属性，普通文件、目录、多选和媒体查询失败保留原属性流程。问题应具体定位到某个移动入口或任务链。[^E02][^E03][^E04]
 
-Gallery 已有年/月/日时间线、密度、日期跳转、结构化筛选、智能相册、人物、宠物、地点、回忆、清理建议与批量操作；tile 的触控打开和 44 px Info/Favorite/selection 入口已有。Info 已按“照片信息 / 整理 / 文件与资源”分区。共享预览已有原图/缩略图解码交接、1–6× 锚点缩放、pinch/pan/双击、1× swipe、Live Photo hold/release、signed Range 和 readiness。共享 Gallery Viewer 已有编辑、创作、删除及有界 filmstrip。[^E05][^E06][^E07][^E09][^E10]
+Gallery 已有年/月/日时间线、密度、日期跳转、结构化筛选、智能相册、人物、猫/狗类型集合、地点、回忆、清理建议与批量操作；tile 的触控打开和 44 px 属性/Favorite/selection 入口已有。属性内容按“照片信息 / 整理 / 文件与资源”分区，当前标签和 Viewer 保留行为采用 #1071 交付。人物建议、命名和合并/拆分不代表已有个体宠物身份；Gallery Shift 选择的索引距离上限为 1000（含两端最多遍历 1001 项），且只消费已保留的稀疏元数据，不等于全日、全相册或全查询结果选择。[^E05][^E06][^E07][^E17]
+
+共享预览已有原图/缩略图解码交接、1–6× 锚点缩放、pinch/pan/双击、1× swipe、Live Photo hold/release、signed Range 和 readiness。共享 Gallery Viewer 已有编辑、创作、删除及有界 filmstrip；已有非破坏配方保留原件，普通下载仍为原件。照片墙 pinch 密度、编辑后缩略图/导出、Live/RAW/Burst 整组编辑不能从这些基础能力推定已完成。[^E09][^E10][^E17]
 
 上传已有 **8 MiB 分块、resume key 与 received chunks**；下载已有普通文件/版本、持久化归档准备及 Public Share 的浏览器下载票据。Settings、Source、Share、Properties 等 compact dialogs、共享 44 px ActionButton、窄屏 Tasks/Storage/Admin cards、Audit 虚拟化和 standalone manifest 也已存在。本文不将这些能力列为“从零补齐”。[^E11][^E12][^E13][^E14][^E15]
 
@@ -52,10 +90,10 @@ Gallery 已有年/月/日时间线、密度、日期跳转、结构化筛选、�
 | F06 | P1 | 已有应优化 | **完善批量选择的状态说明。** 已有长按和显式选择，无需新增平行选择模型。说明选中数量及全选范围，保持滚动取消长按、鼠标实际 pointer 语义；验收跨分页选择、返回保留、退出选择和部分失败反馈，主要操作不必反复打开 More。 | [^E02][^E04] |
 | F07 | P1 | 已有应优化 | **串起移动/复制/重命名与冲突处理。** 复用现有操作 controller 和 dialogs，展示目的位置、同名选择、处理中与结果；验收只读目标、父目录变化、取消、失败重试和刷新后的真实状态，避免 UI 提前宣称服务器操作完成。 | [^E04][^E13] |
 | F08 | P1 | 已有应优化 | **提高标签、智能文件夹、收藏的可发现性。** 在位置面板/更多菜单提供清晰入口，展示智能规则和匹配状态；验收批量标签、保存搜索打开、规则编辑、收藏跳转，保持既有权限与字段定义。 | [^E02][^E04] |
-| F09 | P1 | 已有应优化 | **验收属性、版本历史与回收站的完整链路。** 已有 compact dialogs；重点检查长路径查看、指定版本下载、恢复到变化的目录、同名处理与永久删除。验收键盘/短屏下主操作可达，恢复与永久删除语义不混淆，不虚构回收站保留期限。 | [^E04][^E11][^E13] |
+| F09 | P0 | 待验证 | **验证已有共享属性的跨入口完整任务。** #1076 已让 FileExplorer 单选图片/视频/`.livp` 按需加载 `MediaItem` 并复用共享 Inspector，`showPreview={false}` 避免重复预览；#1079 进一步保留 Node ID、来源及 adapter 自定义属性与 React 控件。验收 Gallery/Viewer/Files 同资产媒体字段、各入口动作边界和文件上下文，覆盖换项/关闭后的迟到响应、未索引/版本变化回退、短屏操作；保留普通文件/目录/多选、版本历史和 Trash 的既有行为。 | [^E02][^E04][^E06][^E11][^E13][^E17] |
 | F10 | P2 | 新增 | **按独立需求增加 touch drag/reorder。** 桌面拖放已有，手机当前以显式操作为主。若立项，复用原移动/排序业务，提供目标高亮、取消及无拖动替代入口；验收拖动不触发长按选择或页面滚动误操作，实际鼠标行为不回归。 | [^E02][^E04] |
 
-## 2. Gallery：11 条
+## 2. Gallery：22 条
 
 原生 Photos 可作为时间轴、集合、相册、媒体类型与信息面板的组织参照。xDrive 已有对应的主要数据和功能，重点应是呈现与流程优化。拍摄时间与加入时间是不同概念；缺少拍摄时间不应静默显示文件修改时间。[^A04][^A05][^A06][^A07][^A12]
 
@@ -63,24 +101,35 @@ Gallery 已有年/月/日时间线、密度、日期跳转、结构化筛选、�
 | --- | --- | --- | --- | --- |
 | G01 | P1 | 已有应优化 | **整理导航与筛选的移动面板。** 次级 UI 仍有 raw MUI Button，Filters 仍用 Popover，不能因共享 ActionButton 已升级就假定全部可用。测量后按需改为 compact 面板，保留同一 query；验收筛选内容、清除/应用、软键盘和横屏短高度均可达。 | [^E05] |
 | G02 | P1 | 已有应优化 | **压缩多选工具占用。** 当前顶部 sticky 整排动作会换行并包含相册 Select。投影为 App 内精简主操作与更多菜单/按需面板，保持选中计数；验收大量选择、相册选择、批量操作与取消，不能重新引入全局常驻底栏。 | [^E05] |
-| G03 | P1 | 已有应优化 | **优化时间线、密度与日期跳转。** 保留已有年/月/日和密度机制，改进日期定位、当前日期提示与控件短屏布局；验收密度变化、跳转、打开 Viewer 后返回及窄宽切换仍定位同一集合，不重建滚动宿主。 | [^E05][^E16] |
-| G04 | P1 | 已有应优化 | **完善照片信息的阅读与编辑路径。** 复用已分区的 Info、说明/标签/人物入口和 canonical capture time；对缺失数据明确显示未记录或不展示。验收长文件名、EXIF、说明文字、资源信息和异步保存反馈，不把导入/修改时间写成拍摄时间。 | [^E06][^E08] |
+| G03 | P1 | 已有应优化 | **优化现有时间线、密度与日期跳转。** 保留年/月/日及各尺度密度记忆，改进日期定位、当前日期提示与短屏布局；验收密度变化、跳转、Viewer 返回及窄宽切换仍定位同一集合，不重建滚动宿主。排序的时区与跨排序锚点后续、照片墙 pinch 分别归 G12、G14。 | [^E05][^E16][^E17] |
+| G04 | P1 | 已有应优化 | **完善现有照片属性阅读与整理路径。** 复用已分区的属性、说明/标签/人物入口和 canonical capture time；缺失数据明确显示未记录或不展示。验收长文件名、EXIF、说明文字、资源信息和保存反馈；新增拍摄时间/GPS 纠正归 G16，不把导入/修改时间写成拍摄时间。 | [^E06][^E08][^E17] |
 | G05 | P1 | 已有应优化 | **检查手动相册与智能相册语义。** 将现有新建、改名、增删成员、智能规则等入口收敛到一致面板；清楚区分删除相册、移除关系和删除资源。验收规则修改、集合内搜索、相册删除后资源保留；当前 Viewer 相册上下文接线另见 V05，相册封面/手动顺序另见 G11。 | [^E05][^E06] |
-| G06 | P1 | 已有应优化 | **改善人物与宠物整理流程。** 已有建议人物、review、命名、合并/拆分等 adapter，不重做识别系统。将支持的纠错与整理操作投影为触控流程；验收误归类修正、长姓名、结果分页、取消及 revision 冲突，宠物能力按实际模型显示。 | [^E06][^E07] |
+| G06 | P1 | 已有应优化 | **改善人物整理及已有宠物类型入口。** 已有人物建议、review、命名、合并/拆分 adapter，宠物当前为猫/狗类型集合，不能称已识别和命名单只宠物。将现有人物纠错投影为触控流程；验收误归类、长姓名、分页、取消及 revision 冲突；个体宠物另见 G22（图库 G13）。 | [^E06][^E07][^E17] |
 | G07 | P1 | 已有应优化 | **完善地点地图与列表互转。** 地点和地图已存在；优化缩放、聚类打开、返回、无位置资料及地图加载失败状态。验收 GPS 缺失、同一地点大量资源、地图/列表互转，不能用当前手机位置替代照片拍摄位置。 | [^E06][^E07] |
-| G08 | P1 | 已有应优化 | **连通回忆、清理建议与既有批量操作。** 回忆、重复组、连拍检查已存在；优化推荐依据、保留选择、处理中和撤销/回收站入口。验收从建议进入预览、返回原组、批量处理部分失败，不因“相似”自动删除文件。 | [^E06][^E07] |
+| G08 | P1 | 已有应优化 | **连通回忆、清理建议与既有批量操作。** 回忆、SHA-256 精确重复组和可解释连拍建议已存在；优化说明、保留选择、处理中和恢复入口。验收预览后回原组、批量处理部分失败及真实 Trash 根范围；新合并/近似质量能力归 G17/G18，不能把当前建议称为完整模糊/闭眼检测。 | [^E06][^E07][^E17] |
 | G09 | P1 | 待验证 | **量测真实手机大集合浏览。** 已有 virtual grid/timeline、缓存与 100k 文档基线。先固定逻辑规模、设备、网络与冷暖缓存，量测滚动、缩略图解码、返回和内存；只对超出预算的已测瓶颈优化，不无证重写虚拟化、缓存或 Range transport。 | [^E05][^E16] |
-| G10 | P1 | 已有应优化 | **让媒体类型和组合条件更易访问。** 基于现有结构化筛选及 facets 展示照片、视频、Live Photo 等实际支持类别和数量；为常用集合提供快捷入口时复用既有状态。验收类型与日期/人物/相册组合、空结果和清除，不仅凭扩展名推断人像/慢动作等语义。 | [^E05][^E06] |
+| G10 | P1 | 已有应优化 | **让媒体类型、组合条件与搜索状态更易理解。** 复用已有 query/facets、词法与可选语义检索，显示范围、有效条件、逻辑资源数量和索引就绪/回退状态。验收类型与日期/人物/相册组合、空结果及清除；不把稀疏保留行数当总数，不仅凭后缀推断人像/慢动作；固定集合另见 G13。 | [^E05][^E06][^E17] |
 | G11 | P2 | 新增 | **评估手动相册封面与自定义顺序。** 当前审计到的 album port 没有相应写入口，展示 `cover_node_id` 或人物“设封面”不能算已有相册封面设置。若立项，先确认并补齐共享业务契约，再提供明确操作；验收换封面、成员删除后的回退、分页重排和跨设备结果，不与全库拍摄时间排序混淆。 | [^E05][^E06] |
+| G12 | P1 | 已有应优化 | **完善已交付排序的时区与跨排序锚点（图库 G03）。** `3f4d27db` 已接通 Server 的拍摄/加入时间、升序/降序排序及 Web/Desktop 入口，语义搜索保留相关度排序。后续增加用户选择的 IANA 时区，统一 Timeline、拍摄日期筛选边界、回忆与 Viewer 标签，并在重新排序后恢复原媒体资源锚点；验收跨午夜、夏令时、缺失原始时区和同时间项，保留现有服务端稳定排序与有界请求。 | [^E05][^E06][^E08][^E17] |
+| G13 | P1 | 新增 | **固定和重排常用集合（图库 G04）。** 为相册、人物及同步文件夹提供用户选定的快捷集合与顺序，复用现有导航对象和账户偏好边界。验收 pin/unpin、重排、对象删除/无权限与切账户，返回保持原集合；不复制媒体或新增另一套 Gallery 导航模型。 | [^E05][^E06][^E17] |
+| G14 | P1 | 新增 | **照片墙 pinch 密度与原始比例呈现（图库 G04）。** Viewer pinch 已有，不能等同照片墙缩放密度。复用现有各尺度密度和逻辑锚点，提供可选不裁切缩略图及显式菜单替代手势；验收捏合/滚动/选择不冲突、切比例和尺度后同一资源可定位，保持有界 DOM 与请求。 | [^E05][^E16][^E17] |
+| G15 | P1 | 新增 | **扩展连续、日/月与全查询结果选择（图库 G07）。** 当前 Shift 只在索引距离 ≤1000 时遍历两端之间至多 1001 项，并只选择已保留的稀疏元数据。拖动选区、选择日期组和“全查询结果+排除项”需明确冻结/实时集合语义；验收未加载项、并发导入/删除、权限变化和部分失败，使用有界 query/snapshot 服务端契约，不把屏幕内选中项称为全选。 | [^E05][^E06][^E17] |
+| G16 | P1 | 新增 | **单张/批量纠正拍摄时间与位置（图库 G08）。** 区分原始 EXIF、用户持久化覆盖和显示时区，提供预览、撤销与恢复原值。验收重新索引/升级后覆盖保留，图库、属性、筛选、回忆一致；无原始值仍明确未知，批量操作可报告冲突和部分失败，不直接改写原件。 | [^E06][^E08][^E17] |
+| G17 | P1 | 新增 | **保留元数据的精确重复合并（图库 G11）。** 精确重复识别和删除已存在，新增的是合并逻辑资产时保留收藏、说明、标签、人物、相册和资源引用。验收较丰富资产不丢信息、确认/恢复与 revision 冲突；区分逻辑条目减少和 CAS 实际释放空间，不能承诺合并必然回收原件字节。 | [^E06][^E07][^E17] |
+| G18 | P2 | 新增 | **独立的近似照片与质量复核（图库 G11）。** 将视觉近似、模糊/闭眼等真实信号与现有主文件 hash 重复、连拍建议分开，提供依据、比较和用户保留选择。验收不同分辨率/编辑版本、误报、资源完整性和批量部分失败，不自动删除“相似”项，不以未测模型声称质量改进。 | [^E06][^E07][^E17] |
+| G19 | P1 | 新增 | **隐藏照片与跨入口权限政策（图库 G12）。** 现有隐藏人物不等于隐藏资产。先定义隐藏与受保护访问的区别，再覆盖 Gallery、搜索、地图、回忆、缩略图、Explorer、直接预览/下载及共享链接。验收各入口、账户切换和缓存一致，不把 CSS 隐藏或浏览器本地开关当访问控制。 | [^E02][^E05][^E06][^E08][^E12][^E17] |
+| G20 | P2 | 新增 | **共享相册协作（图库 G14）。** 现有文件分享链接和个人相册不等于成员协作。定义所有者/成员权限、贡献/移除、撤销访问、并发变更和活动反馈，复用媒体与任务模型；验收退出相册、权限降低、删除关系与删除文件的区别，不复制相册数据库或另造共享认证。 | [^E06][^E12][^E17] |
+| G21 | P1 | 新增 | **真实来源路径与“在文件夹中打开”（图库 G06）。** 已有同步文件夹浏览，但不能从 parent ID 或供应商元数据拼出权威路径。通过 owner-scoped 数据获取路径、同步来源及多来源关系，再接入现有 Explorer；验收移动/重命名、来源失效与无权限，区分拍摄设备和同步来源，当前直接子目录范围不冒充递归。 | [^E02][^E06][^E08][^E17] |
+| G22 | P2 | 新增 | **个体宠物身份与人工纠正（图库 G13）。** 在已有猫/狗类型集合上新增单只宠物的持久身份、命名、候选归组和合并/拆分复核；不把类别标签显示成人名式身份。验收多只相似宠物、误分/取消关联、重建索引和隐藏偏好，区分派生建议与用户确定的决定。 | [^E06][^E07][^E17] |
 
-## 3. Media 与 PDF：12 条
+## 3. Media 与 PDF：17 条
 
 原生照片查看支持连续浏览、缩略图跳转及控件显隐；Preview 提供页码、缩略图、跳页、批注和页面编辑。这些是体验参照，具体实现仍遵守现有 Preview Engine。[^A08][^A09][^A10][^A11]
 
 | 编号 | 优先级 | 现状 | 具体建议与验收要点 | 代码依据 |
 | --- | --- | --- | --- | --- |
-| V01 | P0 | 待验证 | **先实测移动 Info 层级候选。** Web frame 为 `zIndex:1250`，向 Inspector 传 `overlayZIndex:1251`；该 prop 仅 desktop Paper 消费，mobile Drawer 未覆盖 root z-index。实际点 Info，检查可见性、命中、滚动、关闭及焦点后再决定修复；目前不能称“已复现被遮挡”，也不自动扩大本次全屏修复。 | [^E06][^E08] |
-| V02 | P1 | 共享已有Web未接通 | **接通 Web Media 编辑。** Web 的 `onOpenViewer` 走路由，绕过共享 Gallery Viewer；`saveEditRecipe/resetEditRecipe` 与编辑 dialog 已有。接线时保留单一配方/原件语义；验收编辑、恢复、失败、旋转/裁剪后缩放和返回集合刷新，不复制编辑业务。 | [^E06][^E08][^E10] |
+| V01 | P0 | 待验证 | **真机验证“Gallery → Viewer → 属性 → 返回”（图库 G02）。** #1071 已统一属性标签、让移动 Drawer 消费 `overlayZIndex`，并在 Viewer 属性中关闭重复预览（Web 为 `showPreview={false}`）。验收可见/可点击、短屏滚动、焦点、关闭属性后播放/缩放保留和最终返回原集合；旧 a7 层级候选已由 #1071 交付覆盖，不再列为未修缺陷。 | [^E06][^E08][^E17] |
+| V02 | P1 | 共享已有Web未接通 | **接通 Web Media 编辑。** Web 的 `onOpenViewer` 走路由，绕过共享 Gallery Viewer；`saveEditRecipe/resetEditRecipe` 与编辑 dialog 已有。接线时保留单一配方/原件语义；验收编辑、恢复、失败、裁剪后缩放和返回刷新。此项只接线；图库 G09 的缩略图、对比、复制调整与输出分别归 V13–V15、U08。 | [^E06][^E08][^E10][^E17] |
 | V03 | P1 | 共享已有Web未接通 | **接通已有创作入口。** 共享 Viewer 和 adapter 已具备 create/get/cancel generation。按实际支持类型暴露入口，复用任务状态；验收启动、取消、返回任务结果、失败重试与生成副本定位，不把既有创作能力重列为全新 AI 系统。 | [^E06][^E08][^E10] |
 | V04 | P1 | 共享已有Web未接通 | **接通 Viewer 删除。** 共享 Viewer 已有删除及确认，Web route 尚无同等动作。复用删除/回收站业务；验收删除当前项后选择合法邻居或退出、最后一项、部分失败与回到原集合，不让旧 item metadata 留在画面。 | [^E06][^E08][^E10] |
 | V05 | P1 | 共享已有Web未接通 | **补入当前相册上下文。** Web Inspector 未传 `currentAlbum`，无法显示“从当前相册移除”。从已有 route/context 传递准确相册与 revision；验收手动/智能相册、移除关系后当前项与数量更新、深链接无相册时隐藏动作，绝不把移除关系执行成文件删除。 | [^E06][^E08] |
@@ -91,6 +140,11 @@ Gallery 已有年/月/日时间线、密度、日期跳转、结构化筛选、�
 | V10 | P1 | 已有应优化 | **整理视频播放能力与回退。** 已有 native controls，先确认系统已有速度/字幕/音轨入口再补产品入口；按能力处理内联、PiP、系统全屏和 `play()` 拒绝。验收拖动 seek、长视频 Range、切换暂停旧视频、转码失败及下载，不同时维护冲突的两套播放控制。 | [^E08][^E09][^E11] |
 | V11 | P1 | 新增 | **增加必要的 PDF 阅读控制。** 基础为 iframe、`#page` 和下载，已有完整 App frame；评估页码/跳页、缩略图、目录、查找与阅读位置等专用 UI。验收多页、扫描件、密码/不支持文档、内嵌显示失败及下载；原生 PDF 可用性须实测，不以 iframe 成功加载认定全文可读。 | [^E08][^E09] |
 | V12 | P2 | 新增 | **独立立项 PDF 批注、签名与编辑副本。** 在阅读稳定后评估填写、批注、页旋转/排序/拆分合并、OCR 与压缩导出；定义原件、配方或副本保存契约。验收撤销、取消、导出后再打开、可搜索文字及签名位置，不默认覆盖原件。 | [^E08][^E09] |
+| V13 | P1 | 新增 | **编辑结果缩略图（图库 G09）。** 现有 Viewer/属性应用配方、网格标记已编辑；新增与配方一致的网格派生图。按原件指纹/配方版本更新缓存与缩略图，新增持久派生物遵守存储分类；验收裁剪、旋转、视频 poster 与恢复原件，旧缓存不覆盖新版本，不为全库同步生成堵塞首屏。 | [^E05][^E06][^E09][^E16][^E17] |
+| V14 | P1 | 新增 | **编辑前后对比与可撤销会话（图库 G09）。** 复用已有非破坏配方和恢复入口，增加可理解的原始/当前对比及逐步撤销/重做。验收取消编辑、保存失败、重新打开、视口缩放保持与原件字节不变；不得把两套 Viewer 或独立配方存储用于对比。 | [^E06][^E09][^E10][^E17] |
+| V15 | P1 | 新增 | **复制选定调整到多项媒体（图库 G09）。** 提供明确的可复制调整范围与目标预览，复用配方、资源绑定和批量任务。验收尺寸/方向差异、类型不适用、并发 revision、取消和逐项失败；当前基础配方排除的 Live/RAW/Burst 不静默接受部分修改。 | [^E05][^E06][^E10][^E17] |
+| V16 | P2 | 新增 | **Live Photo 关键帧、静音与裁剪（图库 G10）。** V08 只验收已有播放；此项为整逻辑资产新增编辑意图，统一 still/poster、motion 时间和音轨。验收选帧、静音、裁剪边界、恢复与可靠配对，保留原始资源；静态/视频输出复用 U08 的导出路径，不分别编辑成损坏的资源组。 | [^E06][^E09][^E10][^E17] |
+| V17 | P2 | 新增 | **RAW/JPEG 资源操作与 Burst 封面（图库 G10）。** 属性已有只读资源列表，显示角色、名称、MIME 和大小。新增范围为逐资源选择/定位、RAW/JPEG 配对检查与 Burst 封面选择，并定义逻辑资产和实际文件的操作范围；验收成对资源、封面变更/丢失、下载选择及恢复，不能用普通图像配方执行半组编辑。 | [^E06][^E09][^E17] |
 
 ## 4. Text：4 条
 
@@ -126,7 +180,7 @@ Audio 已有 native controls 和独立全屏 frame。增强应保持播放状态
 | U05 | P1 | 已有应优化 | **区分 ZIP 准备重用与下载流重试。** 持久化 archive prepare 已有；ZIP payload 断线本身不支持续传，不能写成全链路断点续传。验收大目录/多选准备、取消、复用已准备归档、票据再获取及 payload 失败说明，服务器任务状态仍为权威。 | [^E11] |
 | U06 | P1 | 已有应优化 | **补真实 Public Share 下载与表单验收。** compact layout、密码/Enter 守卫与票据已有。验收错误密码后重试、到期/撤销、次数限制、文件/归档及手机系统交接；票据 HEAD/Range 重试不重复扣计数，客户端失败不自行消耗成功次数。 | [^E12][^E13] |
 | U07 | P1 | 新增 | **增加“发送文件”系统分享。** 当前 `navigator.share` 仅传 title/url，不能算已有文件分享。按 `canShare({files})` 与用户激活支持，区分分享链接/文件并保留下载回退；验收取消、类型/体积受限、多文件及异步准备后用户重新点击，不保证系统必定出现“存储图像”。 | [^E12][^E11] |
-| U08 | P2 | 新增 | **评估照片导出格式与元数据选择。** 明确原件、兼容副本、编辑结果和可选位置数据处理；Live Photo 静态/视频/配对导出按实际服务能力表达。验收导出后格式、方向、配对、透明度及元数据，不把预览缩略图冒充原件，也不默认改写源文件。 | [^E06][^E09][^E11] |
+| U08 | P2 | 新增 | **照片导出格式与元数据选择（图库 G09/G10/G12）。** 普通 Download 继续返回原件；另行提供真正可渲染的编辑结果、兼容副本和可选位置数据处理，消费与 Viewer 相同配方。验收像素/裁剪/方向、Live 输出、透明度和元数据；高成本导出复用可取消任务，不把缩略图冒充原件或默认覆盖源文件。 | [^E06][^E09][^E11][^E17] |
 | U09 | P2 | 新增 | **评估专用拍摄与多页扫描流程。** 普通文件选择器可能已有相机选项，不能说 Web 无法拍照。新增范围是显式拍摄入口、多页预览/排序/裁边与合并 PDF；验收拒绝权限、重拍、取消、横竖屏、生成上传和原件策略，扫描/OCR 能力独立实现。 | [^E02][^E11][^E14] |
 
 ## 7. Offline 与平台能力：5 条
@@ -157,10 +211,10 @@ Audio 已有 native controls 和独立全屏 frame。增强应保持播放状态
 
 ## 排期建议与去重原则
 
-1. **先验证/闭合 P0。** F01 是明确的入口隐藏；F02/F03 是明确的小触控目标。V01 和 O06 先用实际交互验证，不把静态候选直接当缺陷修。全屏修复已在独立工作中处理，不计入这 61 条后续建议。
-2. **优先复用完成 P1。** V02–V06 使用已有共享 Viewer/adapter；F04–F09、G01–G10 和 U01–U06 主要完善或验证现有能力。PDF/Text/Audio 新控制以实际高频需求选取最小范围，保留独立程序语义。
-3. **P2 单独立项。** touch drag、相册呈现自定义、深度 PDF、富文本呈现、音频队列、导出、扫描、离线 pin 和 incoming Share Target 分别评估，不把“对标 iOS”当作一次实施全部功能的授权。
-4. **一个条目只承担一个排期结果。** Gallery 批量工具布局在 G02，Web Viewer 删除在 V04；相册管理在 G05，Viewer 相册上下文在 V05；上传恢复 UX 在 U01，跨功能后台设备检查在 P03；格式兼容预览在 V09，导出策略在 U08。实施时按这些边界合并重复任务。
+1. **先验证/闭合 P0。** F01 是明确的入口隐藏，F02/F03 是明确的小触控目标；F09 验证 #1076 已交付的跨入口媒体属性，合并图库 G01 的验收。V01 验证 #1071 已交付的属性链路，O06 验证真实辅助功能行为；不能把旧 a7 层级候选或已交付的 adapter 重新当缺口修。全屏修复在独立工作中处理，不计入这 77 条后续建议。
+2. **优先复用完成高频路径。** V02–V06 接通已有共享 Viewer/adapter；F04–F08、G01–G10 和 U01–U06 主要完善或验证现有能力。G12/G16 的排序时区和纠正使用统一数据契约，G15 的全查询选择建立明确范围，不将现有稀疏窗口改名为完整结果集。
+3. **后续流程跟随既有图库 backlog。** G11–G22、V13–V17 和 U08 已映射到图库 G03–G14；按所属任务选择交付，不为两个报告重复开项。PDF/Text/Audio 增强保持独立程序语义，协作、扫描、离线和接收分享单独评估；“对标 iOS”不是一次实施全部功能的授权。
+4. **保持每个结果的边界。** G02 是选择工具布局，G15 是大范围选择；G03 是已有时间尺度/定位，G12 是排序/时区；G04 是现有属性，G16 是元数据覆盖；V02 是编辑接线，V13–V15 是编辑体验/派生物，U08 是输出。上传恢复 UX 在 U01，跨功能后台检查在 P03；格式兼容预览在 V09。相关条目共用模型与任务，不产生平行实现。
 
 ## 验收与平台事实的边界
 
@@ -179,11 +233,11 @@ Audio 已有 native controls 和独立全屏 frame。增强应保持播放状态
 路径均相对于仓库根目录。以下文件用于定位已有能力、实际接线和待验证候选；其存在不等于所有移动设备行为已通过。本报告没有修改这些生产文件。
 
 [^E01]: 全屏与 Shell：`docs/mobile-web.md`、`docs/web-app-runtime.md`、`web/src/App.tsx`、`ui/shared/src/mui/WorkspaceSidebar.tsx`、`ui/shared/src/mui/WorkspaceCompactNavigation.tsx`、`ui/shared/src/mui/WorkspaceContent.tsx`。
-[^E02]: Files 主体与 Web 接线：`web/src/WebFileExplorer.tsx`、`ui/shared/src/mui/FileExplorer.tsx`、`ui/shared/src/mui/FileExplorerSearchFilters.tsx`、`ui/shared/src/mui/FileExplorerSearch.ts`、`docs/file-explorer.md`。关键定位：`commandBarEnd`、`compactTouch`、`touchSelectionMode`、`preferredViewMode`。
+[^E02]: Files 主体与 Web 接线：`web/src/WebFileExplorer.tsx`、`ui/shared/src/mui/FileExplorer.tsx`、`ui/shared/src/mui/FileExplorerSearchFilters.tsx`、`ui/shared/src/mui/FileExplorerSearch.ts`、`docs/file-explorer.md`。关键定位：`commandBarEnd`、`compactTouch`、`touchSelectionMode`、`preferredViewMode`；末尾 One canonical media Properties content (Gallery / FileExplorer / Viewer) 段对应 #1076 已交付的 `loadMediaItem`、请求/版本校验、普通属性回退和 `showPreview={false}`。
 [^E03]: Files 导航与 Tabs：`ui/shared/src/mui/FileExplorerNavigationPane.tsx`、`ui/shared/src/mui/FileExplorerTabs.tsx`。
 [^E04]: Files 既有操作：`ui/shared/src/mui/FileExplorerOperationController.ts`、`ui/shared/src/mui/FileExplorerOrganizationController.ts`、`ui/shared/src/mui/FileExplorerPropertiesController.ts`、`ui/shared/src/mui/FileExplorerTrashController.tsx`、`ui/shared/src/mui/FileExplorerDeleteController.ts`、`ui/shared/src/mui/FileExplorerUploadController.ts`。
 [^E05]: Gallery 交互与布局：`ui/shared/src/mui/MediaGallery.tsx`、`ui/shared/src/mui/MediaGalleryNavigation.tsx`、`ui/shared/src/mui/MediaGalleryFilters.tsx`、`ui/shared/src/mui/MediaGallerySelectionToolbar.tsx`、`ui/shared/src/mui/MediaGalleryVirtualGrid.ts`、`ui/shared/src/mui/MediaGalleryVirtualTimeline.ts`。
-[^E06]: Gallery 业务与 Info：`web/src/mediaGalleryAdapter.ts`、`ui/shared/src/mui/MediaGalleryAdapter.ts`、`ui/shared/src/mui/MediaGalleryDetails.tsx`、`ui/shared/src/mui/MediaGalleryInspector.tsx`。关键定位：`saveEditRecipe`、`resetEditRecipe`、`createCreativeGeneration`、`deleteItems`、`currentAlbum`、`overlayZIndex`。
+[^E06]: Gallery 业务与属性：`web/src/mediaGalleryAdapter.ts`、`ui/shared/src/mui/MediaGalleryAdapter.ts`、`ui/shared/src/mui/MediaGalleryDetails.tsx`、`ui/shared/src/mui/MediaGalleryInspector.tsx`。关键定位：`saveEditRecipe`、`resetEditRecipe`、`createCreativeGeneration`、`deleteItems`、`currentAlbum`；#1071 已让移动 Drawer 消费 `overlayZIndex`，不能继续按旧实现判断。
 [^E07]: Gallery 已有集合：`ui/shared/src/mui/MediaGalleryPlacesMap.tsx`、`ui/shared/src/mui/MediaGalleryPlacesMapModel.ts`、`ui/shared/src/mui/MediaGalleryPets.tsx`、`ui/shared/src/mui/MediaGalleryMemories.tsx`、`ui/shared/src/mui/MediaGalleryCleanup.tsx`。
 [^E08]: Web Viewer：`web/src/App.tsx`、`web/src/WebFileViewerApps.tsx`、`web/src/webViewerContext.ts`、`web/src/useWebViewerNode.ts`、`web/src/webTextViewer.ts`。关键定位：`onOpenViewer`、`WebViewerFrame`、`XDriveMediaDetailsInspector`、只读 textarea、截断提示与独立 Viewer route。
 [^E09]: 共享预览引擎：`ui/shared/src/mui/MediaViewerContent.tsx`、`ui/shared/src/mui/FilePreviewSurface.tsx`、`ui/shared/src/mui/FilePreviewImage.tsx`、`ui/shared/src/mui/FilePreviewTransformedMedia.tsx`、`ui/shared/src/mui/FileOpenPreviewDialog.tsx`、`ui/shared/src/mui/usePreviewSlideshow.ts`、`docs/preview-engine.md`。
@@ -194,6 +248,7 @@ Audio 已有 native controls 和独立全屏 frame。增强应保持播放状态
 [^E14]: 其他 App：`web/src/WebOverviewPage.tsx`、`web/src/App.tsx`、`ui/shared/src/mui/TaskCenterPage.tsx`、`ui/shared/src/mui/CloudStoragePage.tsx`、`ui/shared/src/mui/LocalStoragePage.tsx`、`web/src/AdminUsers.tsx`、`web/src/AdminAudit.tsx`、`docs/storage-inventory.md`。
 [^E15]: Web 安装基础：`assets/icon/web/site.webmanifest`、`web/index.html`、`web/vite.config.ts`、`web/scripts/check-icon-assets.mjs`、`web/src/browserStorage.ts`、`docs/mobile-web.md`。
 [^E16]: 既有性能与可复现验收：`docs/file-explorer-performance.md`、`docs/gallery-performance.md`、`docs/performance/2026-10-09-native-baselines.json`、`docs/performance/2026-10-09-local-baselines.json`、`desktop/scripts/file-explorer-mobile-browser.cjs`、`desktop/scripts/mobile-web-app-browser.cjs`、`docs/mobile-web.md`。
+[^E17]: 集成后的图库审计与交付：`docs/gallery-ios-kfs-audit.md` 的 Scope and evidence baseline、Existing direct-open and Properties work、Consolidated follow-up backlog（图库 G01–G14）及 Delivery log；所属产品/资源合同为 `docs/gallery-product-roadmap.md`、`docs/photo-source-v2-roadmap.md`、`docs/preview-engine.md`、`docs/gallery-performance.md`、`docs/storage-inventory.md`。集成核对从 `1f888d850fd746644bce6f9a962534e2f62805c2` 更新至 `b70ad74bc8eb3435ed3f5001b28c8de0a4a1fc68`；#1071 交付 Gallery/Viewer 属性，#1076 交付 FileExplorer 共享媒体属性（具体合同见 [^E02]），#1077 交付审计文档，不代表其他提出的新产品功能已实现。
 
 ## Apple / WebKit 官方来源
 
