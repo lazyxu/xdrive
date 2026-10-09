@@ -503,28 +503,30 @@ export default function WebFileExplorer({
     }
   }, [api])
 
-  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem) => {
-    if (item.kind !== 'file') return null
+  const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
+    if (item.kind !== 'file' || signal?.aborted) return null
     try {
-      const blob = await api.mediaThumbnail(Number(item.id))
+      const blob = await api.mediaThumbnail(Number(item.id), signal)
+      if (signal?.aborted) return null
       return URL.createObjectURL(blob)
     } catch {
-      if (xDriveFileKind(item.name, item.kind) !== 'video') return null
+      if (signal?.aborted || xDriveFileKind(item.name, item.kind) !== 'video') return null
     }
 
     try {
-      const source = await api.filePreviewURL(Number(item.id))
-      const poster = await xDriveCaptureVideoPosterBlob(source)
-      if (!poster) return null
+      const source = await api.filePreviewURL(Number(item.id), signal)
+      if (signal?.aborted) return null
+      const poster = await xDriveCaptureVideoPosterBlob(source, 0, 0, 0, 512, signal)
+      if (!poster || signal?.aborted) return null
       const revision = Number(item.revision)
       if (Number.isSafeInteger(revision) && revision > 0) {
         try {
-          await api.mediaVideoPoster(Number(item.id), revision, poster)
+          await api.mediaVideoPoster(Number(item.id), revision, poster, signal)
         } catch {
-          // The locally decoded poster is still useful when cache backfill races
-          // with a file revision change or the Server becomes temporarily unavailable.
+          // Backfill failure does not discard the already decoded local poster.
         }
       }
+      if (signal?.aborted) return null
       return URL.createObjectURL(poster)
     } catch {
       return null

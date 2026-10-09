@@ -1308,18 +1308,22 @@ export class XDriveApi {
     )
   }
 
-  async mediaThumbnail(nodeID: number): Promise<Blob> {
-    await this.ensureFresh()
+  async mediaThumbnail(nodeID: number, signal?: AbortSignal): Promise<Blob> {
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
     const path = `/api/v1/media/items/${nodeID}/thumbnail?v=3`
     let response = await fetch(`${API_BASE}${path}`, {
       headers: this.session.accessToken
         ? { Authorization: `Bearer ${this.session.accessToken}` }
         : undefined,
+      signal,
     })
     if (response.status === 401 && this.session.refreshToken) {
-      await this.refresh(true)
+      await this.refresh(true, signal)
+      signal?.throwIfAborted()
       response = await fetch(`${API_BASE}${path}`, {
         headers: { Authorization: `Bearer ${this.session.accessToken}` },
+        signal,
       })
     }
     if (!response.ok) {
@@ -1331,8 +1335,9 @@ export class XDriveApi {
     return response.blob()
   }
 
-  async mediaVideoPoster(nodeID: number, revision: number, poster: Blob): Promise<void> {
-    await this.ensureFresh()
+  async mediaVideoPoster(nodeID: number, revision: number, poster: Blob, signal?: AbortSignal): Promise<void> {
+    await this.ensureFresh(signal)
+    signal?.throwIfAborted()
     const path = `/api/v1/media/items/${nodeID}/video-poster`
     const send = () => fetch(`${API_BASE}${path}`, {
       method: 'PUT',
@@ -1342,10 +1347,12 @@ export class XDriveApi {
         'If-Match': `"${revision}"`,
       },
       body: poster,
+      signal,
     })
     let response = await send()
     if (response.status === 401 && this.session.refreshToken) {
-      await this.refresh(true)
+      await this.refresh(true, signal)
+      signal?.throwIfAborted()
       response = await send()
     }
     if (!response.ok) {
@@ -1551,7 +1558,9 @@ export class XDriveApi {
     order: 'asc' | 'desc' = 'asc',
     includeCount = true,
     grouping?: XDriveFileExplorerGrouping,
+    signal?: AbortSignal,
   ) {
+    signal?.throwIfAborted()
     const query = new URLSearchParams({
       offset: String(Math.max(0, Math.trunc(offset))),
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
@@ -1562,6 +1571,7 @@ export class XDriveApi {
     appendFileExplorerGrouping(query, grouping)
     return this.request<XDriveCloudFilesRange<Node>>(
       `/api/v1/nodes/${parentID}/children?${query.toString()}`,
+      { signal },
     )
   }
 
@@ -1971,13 +1981,15 @@ export class XDriveApi {
     return `${API_BASE}${ticket.url}`
   }
 
-  async filePreviewURL(nodeID: number): Promise<string> {
+  async filePreviewURL(nodeID: number, signal?: AbortSignal): Promise<string> {
+    signal?.throwIfAborted()
     const ticket = await this.request<{
       url: string
       expires_at: string
       kind: 'image' | 'video' | 'audio' | 'pdf'
       mime_type: string
-    }>(`/api/v1/files/${nodeID}/preview-ticket`, { method: 'POST' })
+    }>(`/api/v1/files/${nodeID}/preview-ticket`, { method: 'POST', signal })
+    signal?.throwIfAborted()
     if (
       !ticket.url.startsWith('/api/v1/file-preview/') ||
       ticket.url.startsWith('//')

@@ -531,7 +531,7 @@ jobs:
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
   file-explorer-viewport-cancel-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/viewport-cancel-request-baseline'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'perf/viewport-cancel-request-baseline' || github.head_ref == 'perf/viewport-request-cancel-transport')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

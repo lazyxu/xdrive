@@ -352,7 +352,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-creative', generationID),
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
-  getMediaThumbnail: (nodeID: number) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID),
+  getMediaThumbnail: (nodeID: number, requestID?: string) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID, requestID),
+  cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),
   getMediaLivePhotoStill: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),
   getMediaLivePhotoMotion: (
@@ -460,6 +461,7 @@ const agent = Object.freeze({
     order: 'asc' | 'desc' = 'asc',
     includeCount = true,
     grouping: Record<string, unknown> = {},
+    requestID?: string,
   ) => ipcRenderer.invoke(
     'agent:cloud-children-range',
     parentID,
@@ -469,6 +471,7 @@ const agent = Object.freeze({
     order,
     includeCount,
     grouping,
+    requestID,
   ),
   cloudChanges: (after = 0, limit = 200) =>
     ipcRenderer.invoke('agent:cloud-changes', after, limit),

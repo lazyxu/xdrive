@@ -128,6 +128,7 @@ export interface XDriveCloudFilesPort<
     sort: TSort,
     includeCount: boolean,
     grouping: XDriveFileExplorerGrouping,
+    signal?: AbortSignal,
   ) => Promise<XDriveCloudFilesRange<TNode>>
   getChanges?: (
     after: number,

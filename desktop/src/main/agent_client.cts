@@ -2021,11 +2021,12 @@ export class AgentIPCClient {
     )
   }
 
-  mediaThumbnail(nodeID: number) {
+  mediaThumbnail(nodeID: number, signal?: AbortSignal) {
     const query = new URLSearchParams({ node_id: String(nodeID) })
     return this.requestBinary(
       `/v1/media/thumbnail?${query.toString()}`,
       45_000,
+      signal,
     )
   }
 
@@ -2227,6 +2228,7 @@ export class AgentIPCClient {
     order: 'asc' | 'desc' = 'asc',
     includeCount = true,
     grouping?: AgentFileExplorerGrouping,
+    signal?: AbortSignal,
   ) {
     const query = new URLSearchParams({
       parent_id: String(parentID),
@@ -2237,7 +2239,7 @@ export class AgentIPCClient {
     })
     if (!includeCount) query.set('include_count', 'false')
     appendAgentFileExplorerGrouping(query, grouping)
-    return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`)
+    return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`, undefined, 10_000, signal)
   }
 
   cloudChanges(after = 0, limit = 200) {
@@ -2872,7 +2874,9 @@ export class AgentIPCClient {
   ): Promise<AgentMediaThumbnail> {
     let lastError: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
       const discovery = await this.loadDiscovery(attempt > 0)
+      if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
       const abort = () => controller.abort()
@@ -2989,7 +2993,9 @@ export class AgentIPCClient {
   ): Promise<T> {
     let lastError: unknown
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
       const discovery = await this.loadDiscovery(attempt > 0)
+      if (externalSignal?.aborted) throw new AgentIPCError('aborted', 0, 'Desktop IPC request was cancelled.')
       const controller = new AbortController()
       const timer = setTimeout(() => controller.abort(), timeoutMs)
       const abort = () => controller.abort()

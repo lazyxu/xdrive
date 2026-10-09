@@ -1,3 +1,4 @@
+import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import {
   createXDriveMediaGalleryDataSource,
   xDriveMediaGalleryTrashRoots,
@@ -72,7 +73,7 @@ export function createDesktopMediaGalleryDataSource(
       agent.getMediaAlbumItems(albumID, limit, offset, query),
     listAlbumItemRange: (albumID, limit, offset, query) =>
       agent.getMediaAlbumItemRange(albumID, limit, offset, query),
-    loadThumbnail: (nodeID) => agent.getMediaThumbnail(nodeID),
+    loadThumbnail: (nodeID, signal) => xDriveDesktopViewportRequest(signal, (requestID) => agent.getMediaThumbnail(nodeID, requestID)),
     loadLivePhotoMotion: async (nodeID, onProgress) => {
       const result = await agent.getMediaLivePhotoMotion(nodeID, onProgress)
       if (!result.ok) return result

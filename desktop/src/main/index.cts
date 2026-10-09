@@ -20,6 +20,7 @@ import {
   type NativeImage,
   type OpenDialogOptions,
 } from 'electron'
+import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
@@ -195,6 +196,7 @@ let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
 let sourceRunMonitor: AbortController | null = null
 let updateMonitor: AbortController | null = null
+const viewportRequests = new DesktopViewportRequests()
 const filePropertiesRequests = new Map<string, AbortController>()
 const cancelledFilePropertiesRequests = new Set<string>()
 const mediaItemRequests = new Map<string, AbortController>()
@@ -3034,18 +3036,31 @@ function registerIPCHandlers() {
     }, false),
   )
 
-  ipcMain.handle('agent:get-media-thumbnail', (_event, nodeID: unknown) => runAgentAction<AgentMediaThumbnail>(async () => {
-    const hello = await requireAgentLifecycle().ensureRunning()
-    requireAgentCapability(hello, 'media-gallery')
-    if (
-      typeof nodeID !== 'number' ||
-      !Number.isSafeInteger(nodeID) ||
-      nodeID <= 0
-    ) {
-      throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
-    }
-    return requireAgentClient().mediaThumbnail(nodeID)
-  }, false))
+  ipcMain.handle('agent:cancel-viewport-request', (event, requestID: unknown) =>
+    runAgentAction(async () => {
+      viewportRequests.cancel(event.sender, requestID)
+      return { cancelled: true }
+    }, false),
+  )
+
+  ipcMain.handle('agent:get-media-thumbnail', (event, nodeID: unknown, requestID: unknown) =>
+    runAgentAction<AgentMediaThumbnail>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof nodeID !== 'number' ||
+          !Number.isSafeInteger(nodeID) ||
+          nodeID <= 0
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'Media node id is required.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
+        return requireAgentClient().mediaThumbnail(nodeID, signal)
+      }),
+      false,
+    ),
+  )
 
   ipcMain.handle('agent:put-media-video-poster', (_event, nodeID: unknown, revision: unknown, data: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
@@ -3405,7 +3420,7 @@ function registerIPCHandlers() {
   }
 
   ipcMain.handle('agent:cloud-children-range', (
-    _event,
+    event,
     parentID: unknown,
     offset: unknown,
     limit: unknown,
@@ -3413,7 +3428,9 @@ function registerIPCHandlers() {
     order: unknown,
     includeCount: unknown,
     groupingValue: unknown,
-  ) => runAgentAction<AgentCloudChildrenRange>(async () => {
+    requestID: unknown,
+  ) => runAgentAction<AgentCloudChildrenRange>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'cloud-files')
     if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0) {
@@ -3438,6 +3455,7 @@ function registerIPCHandlers() {
     if (typeof normalizedIncludeCount !== 'boolean') {
       throw new AgentIPCError('invalid_input', 0, 'Directory range includeCount must be boolean.')
     }
+    if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Directory range request was cancelled.')
     return requireAgentClient().cloudChildrenRange(
       parentID,
       offset,
@@ -3446,8 +3464,10 @@ function registerIPCHandlers() {
       normalizedOrder as 'asc' | 'desc',
       normalizedIncludeCount,
       grouping,
+      signal,
     )
-  }, false))
+    }), false,
+  ))
 
   ipcMain.handle('agent:cloud-changes', (
     _event,

@@ -112,6 +112,9 @@ test('Desktop FileExplorer stale video poster decode cannot backfill the new acc
     actionGenerationRef,
     previewStreamSupported: true,
     xDriveFileKind: () => 'video',
+    // This test isolates account-lifecycle fencing; native transport
+    // cancellation has separate actual HTTP assertions in viewport-request-cancel.
+    xDriveDesktopViewportRequest: (_signal, invoke) => invoke(),
     xDriveCaptureVideoPosterBlob: () => posterDecode.promise,
   })
 

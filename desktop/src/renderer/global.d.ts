@@ -604,7 +604,8 @@ declare global {
         cancelMediaCreativeGeneration: (
           generationID: string,
         ) => Promise<DesktopResult<MediaCreativeGeneration>>
-        getMediaThumbnail: (nodeID: number) => Promise<DesktopResult<AgentMediaThumbnail>>
+        getMediaThumbnail: (nodeID: number, requestID?: string) => Promise<DesktopResult<AgentMediaThumbnail>>
+        cancelViewportRequest: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getMediaLivePhotoStill: (nodeID: number) => Promise<DesktopResult<string>>
         putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => Promise<DesktopResult<{ ok: boolean }>>
         getMediaLivePhotoMotion: (
@@ -648,6 +649,7 @@ declare global {
           order?: 'asc' | 'desc',
           includeCount?: boolean,
           grouping?: XDriveFileExplorerGrouping,
+          requestID?: string,
         ) => Promise<DesktopResult<AgentCloudChildrenRange>>
         cloudChanges: (
           after?: number,
