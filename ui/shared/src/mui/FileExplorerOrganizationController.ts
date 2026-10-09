@@ -21,12 +21,14 @@ export function useXDriveFileExplorerOrganization({
   const reorderGenerationRef = useRef(0)
   const tagNodeRefreshGenerationRef = useRef(0)
   const reorderTailRef = useRef<Promise<void>>(Promise.resolve())
-  const mutationRef = useRef<{
+  // Track the latest pending intent *per resource key*. A single global
+  // holder loses singleflight ownership when an unrelated mutation starts.
+  const mutationByKeyRef = useRef(new Map<string, {
     key: string
     intent: string
     lifecycleGeneration: number
     promise: Promise<unknown>
-  } | null>(null)
+  }>())
   // Different intents for the same resource key are serialized; exact
   // duplicate intents remain single-flight and unrelated keys stay parallel.
   const mutationTailsRef = useRef(new Map<string, Promise<unknown>>())
@@ -78,7 +80,7 @@ export function useXDriveFileExplorerOrganization({
     tagNodeRefreshGenerationRef.current += 1
     reorderTailRef.current = Promise.resolve()
     mutationTailsRef.current.clear()
-    mutationRef.current = null
+    mutationByKeyRef.current.clear()
     setTags([])
     setSavedSearches([])
     setBusyKey('')
@@ -90,7 +92,7 @@ export function useXDriveFileExplorerOrganization({
       tagNodeRefreshGenerationRef.current += 1
       reorderTailRef.current = Promise.resolve()
       mutationTailsRef.current.clear()
-      mutationRef.current = null
+      mutationByKeyRef.current.clear()
     }
   }, [lifecycleKey])
 
@@ -108,7 +110,7 @@ export function useXDriveFileExplorerOrganization({
     intent = key,
   ): Promise<T> => {
     const lifecycleGeneration = lifecycleGenerationRef.current
-    const active = mutationRef.current
+    const active = mutationByKeyRef.current.get(key)
     if (
       active &&
       active.lifecycleGeneration === lifecycleGeneration &&
@@ -150,10 +152,12 @@ export function useXDriveFileExplorerOrganization({
       .finally(() => {
         if (
           lifecycleGenerationRef.current === lifecycleGeneration &&
-          mutationRef.current === holder
+          mutationByKeyRef.current.get(key) === holder
         ) {
-          mutationRef.current = null
-          setBusyKey((current) => current === key ? '' : current)
+          mutationByKeyRef.current.delete(key)
+          // An unrelated key may still be running after this task settles.
+          // Keep shared controls busy until the last owned mutation finishes.
+          setBusyKey(Array.from(mutationByKeyRef.current.keys()).at(-1) ?? '')
         }
         if (mutationTailsRef.current.get(key) === operation) {
           mutationTailsRef.current.delete(key)
@@ -161,7 +165,9 @@ export function useXDriveFileExplorerOrganization({
       })
 
     holder.promise = operation
-    mutationRef.current = holder
+    // Reinsert to keep the most recently submitted active key last.
+    mutationByKeyRef.current.delete(key)
+    mutationByKeyRef.current.set(key, holder)
     mutationTailsRef.current.set(key, operation)
     return operation
   }, [])
