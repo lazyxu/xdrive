@@ -1,6 +1,6 @@
 # M09: shared media Properties acceptance
 
-Status: local acceptance and independent review complete. M06–M08 merged through PR #1105 after successful CI; the one M09 work commit was rebased without conflicts onto `eff2cd922ad644b7007bd00375aa0d8ad9769768`. The accepted implementation checkpoint is `f69876fa178b20ea45fd6302412b4d5441fdab10`; final amendments only add evidence and documentation. PR #1111, complete PR CI, linear merge and cleanup remain the delivery gate. The approved scope is M09 in `docs/mobile-web-followups.md`, with M49 evidence maintained alongside it.
+Status: merged through PR #1111 after successful complete PR CI `37902685808`, including PostgreSQL-backed `go-linux-api`. Merge `43426b4eca6bb4186cbf95add679a83d1be0e42e` at 2026-10-09T08:13:42Z; remote and local work branches removed. The final tested implementation checkpoint is `d8e6dc98ac4edb6cd3e4a8728d4842c5f7dd4770`; final GitHub head `774c4aa509372d4787869c08e59b30b3d103aafe` has the same accepted implementation plus evidence and documentation. The approved scope is M09 in `docs/mobile-web-followups.md`, with M49 evidence maintained alongside it.
 
 ## Design and observed boundary
 
@@ -17,7 +17,7 @@ Upstream `747f7d39` already aligns LIVP Properties still/motion rendering with V
 - [x] Exercise the actual built routed Viewer with common still/video/Live fixtures. The unchanged170-check suite first exposed eight compact Close target failures and one delayed-read focus failure; all170 pass after making Close44px below900px and retaining Viewer chrome while Properties is open. The exact player/preview DOM and state survive, with no additional original/motion read.
 - [x] Compare all nine ordered information/file/resource sections across three actual surfaces, retain source/fixture/build identities, reconcile canonical docs and M49.V07, and pass normal gates: Desktop1557/0fail/1existing optional skip, typecheck, Web lint/build, actual Search-return48/48.
 - [x] Independent review accepts the scoped fix. A real Gallery Refresh→same-Node revision7→8 probe passes8/8 while preserving Node-scoped annotation ownership; a byte revision alone does not justify a revision guard.
-- [ ] Exactly-one-work-commit PR CI, linear merge and cleanup. Do not reopen the previously rejected GitLab direct-master action.
+- [x] Exactly-one-work-commit PR CI, linear merge and cleanup. PR #1111 / CI `37902685808` / merge `43426b4e`; remote ref absence verified and local refs removed. Do not reopen the previously rejected GitLab direct-master action.
 
 ## Evidence and boundaries
 
@@ -25,7 +25,7 @@ Initial actual Gallery source `84f7021331b75bc7cc7d26f9d8d110b8c4682f4ce38cdd04f
 
 The local environment has no Go executable, PostgreSQL, Docker or `XD_TEST_DATABASE_URL`; real Server/DB acceptance is not claimed from renderer or Agent JavaScript probes. Existing PR CI separately runs `go-linux-api` with PostgreSQL17 and the real media integration test. Record the actual resulting CI gate rather than relabelling a skipped local integration as a pass. Native iOS/Android ordinary/installed modes, physical keyboards/safe areas and VoiceOver/TalkBack remain explicit not-run entries in M49.
 
-The durable acceptance ledger is [mobile-shared-properties-2026-10-09.json](../../validation/mobile-shared-properties-2026-10-09.json). The active routed build is `index-LaWk9B7O.js`, SHA-256 `a95a8ef9c8735434558f088af2cccb1de9e7fcd825a26fed7b14d73e95ee2d9b`. Files evidence is reused after exact dependency-hash verification; Gallery, routed Viewer and normal gates were rerun on the rebased candidate. Counts from overlapping unit/focused suites are not added together.
+The durable acceptance ledger is [mobile-shared-properties-2026-10-09.json](../../validation/mobile-shared-properties-2026-10-09.json). The final active routed build is `index-oWQk1Pnn.js`, SHA-256 `ef3569e49df95b66da5b8850d7adf0cbc2c272d09d77808e379609acb4afe0f5`. Final Files, Gallery, routed Viewer and normal gates are recorded under `latestAcceptedIntegration`; earlier accepted checkpoints remain historical receipts. Counts from overlapping unit/focused suites are not added together.
 
 ## Shared RAW integration checkpoint
 

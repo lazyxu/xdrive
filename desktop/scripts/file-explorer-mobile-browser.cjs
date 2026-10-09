@@ -22,13 +22,21 @@ const sourceRoot = path.resolve(options['source-root'] || repoRoot)
 const outputDir = path.resolve(options['output-dir'])
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright')
 const results = { sourceRoot, checks: [], samples: {}, errors: [] }
+const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+const sourceNames = ['FileExplorer.tsx', 'usePointerDrag.ts', 'AppearanceThemeProvider.tsx']
 
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true })
+  results.startedAt = new Date().toISOString()
   results.sourceCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: sourceRoot, encoding: 'utf8' }).trim()
   results.sourceDirty = Boolean(execFileSync('git', ['status', '--porcelain', '--untracked-files=no'], { cwd: sourceRoot, encoding: 'utf8' }).trim())
   results.fileExplorerSha256 = createHash('sha256')
     .update(fs.readFileSync(path.join(sourceRoot, 'ui/shared/src/mui/FileExplorer.tsx'))).digest('hex')
+  results.sourceHashes = Object.fromEntries(sourceNames.filter((name) => fs.existsSync(path.join(sourceRoot, 'ui/shared/src/mui', name)))
+    .map((name) => [name, hash(path.join(sourceRoot, 'ui/shared/src/mui', name))]))
+  results.fixtureHashes = Object.fromEntries(['file-explorer-mobile-browser.cjs', 'file-explorer-mobile-browser.tsx']
+    .map((name) => [name, hash(path.join(__dirname, name))]))
+  for (const name of Object.keys(results.fixtureHashes)) fs.copyFileSync(path.join(__dirname, name), path.join(outputDir, name))
   const bundlePath = path.join(outputDir, 'bundle.js')
   await esbuild.build({
     entryPoints: [path.join(__dirname, 'file-explorer-mobile-browser.tsx')],
@@ -42,6 +50,7 @@ async function main() {
     },
     define: { 'process.env.NODE_ENV': '"production"' },
   })
+  results.bundleHash = hash(bundlePath)
   const server = http.createServer((request, response) => {
     response.setHeader('Cache-Control', 'no-store')
     const url = new URL(request.url, 'http://localhost')
@@ -190,7 +199,7 @@ async function main() {
         check(`${mode}: selection taps never open a file`, await opened(), [])
         await page.getByRole('button', { name: '复制所选项目', exact: true }).tap()
         check(`${mode}: copy receives the complete selection`, (await state()).events.filter((event) => event.type === 'copy').map((event) => event.ids.map(String).sort()), [['1', '2']])
-        await page.getByRole('button', { name: '完成', exact: true }).tap()
+        await page.getByRole('button', { name: '完成选择', exact: true }).tap()
         check(`${mode}: Done leaves selection empty`, (await state()).selectedIDs, [])
         await sample(`${mode}-touch-selection`)
       }
@@ -236,7 +245,7 @@ async function main() {
       await settle()
       check('450ms hold enters selection with the held item', (await state()).selectedIDs.map(String), ['1'])
       check('long-press release does not also open the item', await opened(), [])
-      check('long press exposes Done for explicit selection mode', await page.getByRole('button', { name: '完成', exact: true }).isVisible(), true)
+      check('long press exposes Done for explicit selection mode', await page.getByRole('button', { name: '完成选择', exact: true }).isVisible(), true)
       await sample('details-long-press')
 
       await reset()
@@ -266,18 +275,25 @@ async function main() {
         assert.ok(box, 'touch drag target must exist')
         return { x: box.x + box.width / 2, y: box.y + box.height / 2 }
       }
-      const enterTouchSelection = async (mode) => {
+      const enterTouchSelection = async (mode, ancestorTarget = false) => {
         await reset(mode)
+        if (ancestorTarget) {
+          // Moving to an ancestor is meaningful; the current-directory crumb
+          // is deliberately not a valid destination for an ordinary listing.
+          await page.evaluate(() => window.fileExplorerHarness.useParentDropContext())
+          await settle()
+        }
         await page.getByRole('button', { name: '选择', exact: true }).tap()
+        await tapRow('alpha.txt')
         await settle()
       }
-      const touchDragFrom = async (itemName, destination) => {
-        const handle = row(itemName).locator('[data-xdrive-file-explorer-touch-drag-handle]')
+      const touchDragTo = async (destination) => {
+        const handle = page.getByRole('button', { name: '拖动所选项目', exact: true })
         await handle.waitFor({ state: 'visible' })
         const targetArea = destination === 'folder'
           ? row('文件夹')
           : destination === 'crumb'
-            ? page.locator('[data-xdrive-file-explorer-drop-crumb-index="0"]')
+            ? page.locator('[data-xdrive-file-explorer-crumb="number:0"]')
             : row('beta.txt')
         const from = await dragPoint(handle)
         const to = await dragPoint(targetArea)
@@ -292,7 +308,7 @@ async function main() {
         return { handle, from, to, targetArea }
       }
       await enterTouchSelection('details')
-      await touchDragFrom('alpha.txt', 'folder')
+      await touchDragTo('folder')
       check('touch drag highlights the live destination folder', await row('文件夹').evaluate((element) =>
         getComputedStyle(element).outlineStyle), 'solid')
       await touchAt('touchEnd')
@@ -301,30 +317,31 @@ async function main() {
         event.type === 'drop').map((event) => ({ ids: event.ids, value: event.value })), [
         { ids: [1, 3], value: 'move' },
       ])
-      check('completed drag clears its overlay', await page.locator('[data-xdrive-file-explorer-touch-drag-status]').count(), 0)
+      check('completed drag clears active status and target highlight',
+        await page.locator('[data-xdrive-file-explorer-touch-drag-status]').getAttribute('data-xdrive-file-explorer-touch-drag-status') === 'idle'
+        && await page.locator('[data-xdrive-file-explorer-drop-target]').count() === 0, true)
       await sample('details-touch-folder-drop')
 
       await enterTouchSelection('details')
-      await tapRow('alpha.txt')
       await tapRow('beta.txt')
       await page.evaluate(() => window.fileExplorerHarness.clearEvents())
-      await touchDragFrom('alpha.txt', 'folder')
+      await touchDragTo('folder')
       await touchAt('touchEnd')
       await settle()
-      check('dragging one selected item carries the full selection', (await state()).events.filter((event) =>
+      check('the persistent handle carries the full selection', (await state()).events.filter((event) =>
         event.type === 'drop').map((event) => event.ids), [[1, 2, 3]])
       check('after drop selected identities remain intact', (await state()).selectedIDs.map(String).sort(), ['1', '2'])
 
       await enterTouchSelection('grid')
-      await touchDragFrom('alpha.txt', 'folder')
+      await touchDragTo('folder')
       await touchAt('touchEnd')
       await settle()
       check('grid touch drop uses same callback without remount', (await state()).events.filter((event) =>
         event.type === 'drop').map((event) => event.ids), [[1, 3]])
 
-      await enterTouchSelection('details')
-      await touchDragFrom('alpha.txt', 'crumb')
-      check('touch drag highlights breadcrumb target', await page.locator('[data-xdrive-file-explorer-drop-crumb-index="0"]').evaluate((element) =>
+      await enterTouchSelection('details', true)
+      await touchDragTo('crumb')
+      check('touch drag highlights breadcrumb target', await page.locator('[data-xdrive-file-explorer-crumb="number:0"]').evaluate((element) =>
         getComputedStyle(element).outlineStyle), 'solid')
       await touchAt('touchEnd')
       await settle()
@@ -332,25 +349,25 @@ async function main() {
         event.type === 'crumb-drop').map((event) => event.ids), [[1, 0]])
 
       await enterTouchSelection('details')
-      await touchDragFrom('alpha.txt', 'invalid')
+      await touchDragTo('invalid')
       await touchAt('touchEnd')
       await settle()
       check('releasing over ordinary file cancels instead of moving', (await state()).events.filter((event) =>
         event.type === 'drop' || event.type === 'crumb-drop'), [])
 
       await enterTouchSelection('details')
-      await touchDragFrom('alpha.txt', 'folder')
+      await touchDragTo('folder')
       await page.keyboard.press('Escape')
       await touchAt('touchEnd')
       await settle()
       check('Escape cancels an in-flight touch drag', (await state()).events.filter((event) =>
         event.type === 'drop'), [])
-      check('Escape clears drop highlight and overlay', await row('文件夹').evaluate((element) =>
+      check('Escape clears drop highlight and active status', await row('文件夹').evaluate((element) =>
         getComputedStyle(element).outlineStyle !== 'solid') &&
-        await page.locator('[data-xdrive-file-explorer-touch-drag-status]').count() === 0, true)
+        await page.locator('[data-xdrive-file-explorer-touch-drag-status]').getAttribute('data-xdrive-file-explorer-touch-drag-status') === 'idle', true)
 
       await enterTouchSelection('details')
-      await touchDragFrom('alpha.txt', 'folder')
+      await touchDragTo('folder')
       await touchAt('touchCancel')
       await settle()
       check('pointer cancellation never dispatches a file move', (await state()).events.filter((event) =>
@@ -377,13 +394,15 @@ async function main() {
       check('900px touch retains desktop single-click selection semantics', (await state()).selectedIDs.map(String), ['1'])
       check('900px touch does not direct-open a file', await opened(), [])
       check('900px desktop items retain native drag capability', await row('alpha.txt').getAttribute('draggable'), 'true')
-      await context.close()
-    } else {
-      await context.close()
     }
   } catch (error) {
     results.errors.push(error.stack || String(error))
   } finally {
+    results.sourceHashesAfter = Object.fromEntries(Object.keys(results.sourceHashes || {})
+      .map((name) => [name, hash(path.join(sourceRoot, 'ui/shared/src/mui', name))]))
+    results.sourceHashMatch = JSON.stringify(results.sourceHashes) === JSON.stringify(results.sourceHashesAfter)
+    if (!results.sourceHashMatch) results.errors.push('Renderer source changed during the browser run')
+    results.finishedAt = new Date().toISOString()
     results.passed = results.checks.length > 0 && results.checks.every((entry) => entry.passed) && results.errors.length === 0
     fs.writeFileSync(path.join(outputDir, 'results.json'), JSON.stringify(results, null, 2))
     console.log(JSON.stringify({

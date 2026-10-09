@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, or files-organization.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, or mobile-panels.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -34,6 +34,10 @@ const folderChildren = Array.from({ length: 64 }, (_, index) =>
 const searchReturnScenario = options.scenario === 'search-return';
 const filesOperationsScenario = options.scenario === 'files-operations';
 const filesOrganizationScenario = options.scenario === 'files-organization';
+const filesTouchDragScenario = options.scenario === 'files-touch-drag';
+if (filesTouchDragScenario) rootChildren.push(makeNode(3, '触控目标甲', 1, 'dir'), makeNode(4, '触控目标乙', 1, 'dir'));
+const touchFixture = { quickOrder: [2, 3, 4], savedOrder: [17, 18, 19], quickWrites: [], savedWrites: [] };
+const mobilePanelsScenario = options.scenario === 'mobile-panels';
 let operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
 const organizationFixture = { tags: [], savedSearches: [], tagCreates: [], savedCreates: [], assignments: [], tagQueries: [], assignedNodeIDs: new Set(), rejectTagRead: true };
 const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : filesOrganizationScenario ? 24 : 240 }, (_, index) => ({
@@ -77,17 +81,17 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/nodes/root': return plain(rootNode);
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
     case 'GET /api/v1/file-operations':
-      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesOperationsScenario ? operationFixture.operations : [];
+      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
     case 'POST /api/v1/file-operations': {
-      assert(filesOperationsScenario, 'File-operation writes belong to the explicit operation scenario');
+      assert(filesOperationsScenario || filesTouchDragScenario, 'File-operation writes belong to the explicit operation/drag scenarios');
       queryOnly(url, []);
       const body = jsonBody(request);
       assert.deepEqual(Object.keys(body).sort(), ['items', 'parent_id', 'type']);
-      assert.equal(body.type, 'copy');
+      assert.equal(body.type, filesTouchDragScenario ? 'move' : 'copy');
       assert.equal(body.parent_id, 2);
-      assert.deepEqual(body.items, [{ id: 100, revision: 2 }, { id: 101, revision: 1 }]);
+      assert.deepEqual(body.items, [{ id: 100, revision: filesTouchDragScenario ? 1 : 2 }, { id: 101, revision: 1 }]);
       operationFixture.creates.push(body);
-      const operation = { id: 'qa-copy-1', type: body.type, parent_id: body.parent_id, status: 'queued',
+      const operation = { id: filesTouchDragScenario ? 'qa-touch-move-1' : 'qa-copy-1', type: body.type, parent_id: body.parent_id, status: 'queued',
         conflict_policy: 'fail', total_items: body.items.length, processed_items: 0, total_bytes: 8192,
         processed_bytes: 0, percent: 0, retryable: false, created_at: stamp, updated_at: stamp };
       operationFixture.operations = [operation];
@@ -96,7 +100,13 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/changes':
       queryOnly(url, ['after', 'limit']); integerQuery(url, 'after', 0, 100); integerQuery(url, 'limit', 200, 1000);
       return { changes: [], next_cursor: 1, latest_cursor: 1, has_more: false, reset_required: false };
-    case 'GET /api/v1/file-quick-access': return plain([]);
+    case 'GET /api/v1/file-quick-access': return plain(filesTouchDragScenario ? touchFixture.quickOrder.map((id, position) => ({ node: allNodes.get(id), path: `我的文件/${allNodes.get(id).name}`, crumbs: [rootNode, allNodes.get(id)], position, created_at: stamp, updated_at: stamp })) : []);
+    case 'PUT /api/v1/file-quick-access/order': {
+      assert(filesTouchDragScenario); queryOnly(url, []);
+      const body = jsonBody(request); assert.deepEqual(Object.keys(body), ['node_ids']);
+      assert.deepEqual([...body.node_ids].sort((a, b) => a - b), [2, 3, 4]);
+      touchFixture.quickWrites.push(body); touchFixture.quickOrder = [...body.node_ids]; return {};
+    }
     case 'GET /api/v1/file-tags':
       if (filesOrganizationScenario) {
         queryOnly(url, []);
@@ -115,7 +125,13 @@ function fixtureFor(request, role) {
       organizationFixture.tags = [tag];
       return tag;
     }
-    case 'GET /api/v1/file-saved-searches': return plain(filesOrganizationScenario ? organizationFixture.savedSearches : []);
+    case 'GET /api/v1/file-saved-searches': return plain(filesTouchDragScenario ? touchFixture.savedOrder.map((id, position) => ({ id, name: `触控搜索${id}`, query: `document-${id}`, filters: {}, position, created_at: stamp, updated_at: stamp })) : filesOrganizationScenario ? organizationFixture.savedSearches : []);
+    case 'PUT /api/v1/file-saved-searches/order': {
+      assert(filesTouchDragScenario); queryOnly(url, []);
+      const body = jsonBody(request); assert.deepEqual(Object.keys(body), ['ids']);
+      assert.deepEqual([...body.ids].sort((a, b) => a - b), [17, 18, 19]);
+      touchFixture.savedWrites.push(body); touchFixture.savedOrder = [...body.ids]; return {};
+    }
     case 'POST /api/v1/file-saved-searches': {
       assert(filesOrganizationScenario, 'Saved-search writes belong to the organization scenario');
       queryOnly(url, []);
@@ -182,7 +198,7 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/file-recent':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50); return [];
     case 'GET /api/v1/search': {
-      if (filesOrganizationScenario) {
+      if (filesOrganizationScenario || mobilePanelsScenario) {
         queryOnly(url, ['q', 'offset', 'limit', 'sort', 'order', 'kind', 'tag_id', 'group', 'folders_first']);
         const query = url.searchParams.get('q') || '';
         assert(['photo', 'invoice', ''].includes(query));
@@ -233,7 +249,8 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin');
       return plain({ supported: true, state: 'idle', source: 'github', channel: 'master', backup_file_data: false });
     case 'GET /api/v1/media/items': {
-      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone']);
+      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone', ...(mobilePanelsScenario ? ['tag'] : [])]);
+      if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       // The shared Gallery already sends its persisted chronological sort.
       // This viewport fixture exercises the default captured/descending state.
       assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
@@ -248,7 +265,10 @@ function fixtureFor(request, role) {
       return { items, total_count: mediaItems.length, offset, limit,
         timeline_group_sets: { year: group('2026'), month: group('2026-10'), day: group('2026-10-08') } };
     }
-    case 'GET /api/v1/media/facets': return plain({ cameras: [], formats: [{ value: 'png', label: 'PNG', item_count: mediaItems.length }] });
+    case 'GET /api/v1/media/facets':
+      queryOnly(url, mobilePanelsScenario ? ['tag'] : []);
+      if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
+      return { cameras: [], formats: [{ value: 'png', label: 'PNG', item_count: mediaItems.length }] };
     case 'GET /api/v1/media/albums': return plain([]);
     case 'GET /api/v1/media/pets': return plain([]);
     case 'GET /api/v1/media/places':
@@ -344,7 +364,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario)) {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -726,6 +746,135 @@ async function filesOperationsAcceptance(role) {
   result.samples[`${role}-operation-payloads`] = JSON.parse(JSON.stringify(operationFixture));
 }
 
+async function filesTouchDragAcceptance() {
+  const session = await page.context().newCDPSession(page);
+  const send = (type, point) => session.send('Input.dispatchTouchEvent', { type, touchPoints: point ? [{ x: point.x, y: point.y, id: 1 }] : [] });
+  const center = async (locator, fraction = 0.5) => {
+    const rect = await locator.boundingBox();
+    assert(rect && rect.width > 0 && rect.height > 0, 'The actual gesture target is laid out');
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height * fraction };
+  };
+  const drag = async (handle, target, hold) => {
+    const start = await center(handle), end = await center(target, 0.25);
+    await send('touchStart', start);
+    for (let step = 1; step <= 8; step += 1) {
+      await send('touchMove', { x: start.x + (end.x - start.x) * step / 8, y: start.y + (end.y - start.y) * step / 8 });
+      await settle();
+    }
+    await hold?.();
+    await send('touchEnd'); await settle();
+  };
+  activeStage = 'user-touch-drag-files';
+  const files = page.locator('[data-xdrive-file-explorer]');
+  const sourceURL = page.url(), sourceHistory = await page.evaluate(() => history.length);
+  await page.evaluate(() => { window.__touchDragCaller = { files: document.querySelector('[data-xdrive-file-explorer]'), scroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]') }; });
+  const callerRetained = () => page.evaluate(({ sourceURL, sourceHistory }) => location.href === sourceURL && history.length === sourceHistory && window.__touchDragCaller.files === document.querySelector('[data-xdrive-file-explorer]') && window.__touchDragCaller.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]'), { sourceURL, sourceHistory });
+  await page.getByRole('button', { name: '选择', exact: true }).tap();
+  for (const name of ['document-001.txt', 'document-002.txt']) await files.locator('[data-xdrive-file-explorer-item]').filter({ hasText: name }).tap();
+  await page.getByText('已选择 2 项', { exact: true }).waitFor();
+  const handle = files.getByRole('button', { name: '拖动所选项目', exact: true });
+  const hasHandle = await handle.count() === 1;
+  check(`${activeStage}: actual App exposes the selected-items touch handle`, hasHandle);
+  if (hasHandle) {
+    const size = await handle.boundingBox();
+    check(`${activeStage}: real handle target is at least44px`, size.width >= 44 && size.height >= 44, size);
+    const folder = files.locator('[data-xdrive-file-explorer-item]').filter({ hasText: '验收目录' });
+    const moved = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/file-operations');
+    await drag(handle, folder, async () => {
+      check(`${activeStage}: actual accepted folder target is highlighted`, await files.locator('[data-xdrive-file-explorer-drop-target]').count() === 1);
+    });
+    check(`${activeStage}: the controlled operation endpoint accepts the actual write`, (await moved).status() === 200);
+    await page.waitForFunction(() => document.querySelector('[data-xdrive-file-explorer-action-feedback]')?.textContent.includes('查看任务'));
+    check(`${activeStage}: actual API receives one complete revision-preserving move`, operationFixture.creates.length === 1 && operationFixture.creates[0].type === 'move', operationFixture.creates);
+    check(`${activeStage}: release retains Files history and mounted scroll owner`, await callerRetained());
+    check(`${activeStage}: release creates no extra dialog or surviving drag target`, await page.getByRole('dialog').count() === 0 && await files.locator('[data-xdrive-file-explorer-drop-target]').count() === 0);
+  }
+  const finish = page.getByRole('button', { name: '完成选择', exact: true });
+  if (await finish.isVisible()) await finish.tap();
+  activeStage = 'user-touch-drag-sidebar';
+  await page.getByRole('button', { name: '位置', exact: true }).tap();
+  const drawer = page.locator('[data-xdrive-file-explorer-touch-navigation-drawer]');
+  await drawer.waitFor();
+  for (const entry of [
+    { section: 'quickAccess', source: 4, first: 2, expected: [4, 2, 3], writes: 'quickWrites', order: 'quickOrder', field: 'node_ids' },
+    { section: 'savedSearches', source: 18, first: 17, expected: [18, 17, 19], writes: 'savedWrites', order: 'savedOrder', field: 'ids' },
+  ]) {
+    const row = id => drawer.locator(`[data-xdrive-sidebar-order-section="${entry.section}"][data-xdrive-sidebar-order-id="${id}"]`);
+    const source = row(entry.source).locator('[data-xdrive-sidebar-order-handle]');
+    const present = await source.count() === 1;
+    check(`${activeStage}-${entry.section}: actual adapter exposes a reorder handle`, present);
+    if (!present) continue;
+    await source.scrollIntoViewIfNeeded();
+    // Both rows are adjacent or within the same visible section. Geometry is
+    // sampled after scrolling, before trusted pointer input starts.
+    await row(entry.first).scrollIntoViewIfNeeded();
+    const orderPath = entry.section === 'quickAccess' ? '/api/v1/file-quick-access/order' : '/api/v1/file-saved-searches/order';
+    const reordered = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === orderPath);
+    await drag(source, row(entry.first), async () => {
+      check(`${activeStage}-${entry.section}: one actual insertion target is shown`, await drawer.locator('[data-xdrive-sidebar-order-target]').count() === 1);
+    });
+    check(`${activeStage}-${entry.section}: the actual reorder endpoint accepts this gesture`, (await reordered).status() === 200);
+    await page.waitForFunction(({ section, id }) => document.querySelector(`[data-xdrive-sidebar-order-section="${section}"]`)?.getAttribute('data-xdrive-sidebar-order-id') === String(id), { section: entry.section, id: entry.source });
+    check(`${activeStage}-${entry.section}: one full ordered-ID write reaches the existing API`, touchFixture[entry.writes].length === 1 && JSON.stringify(touchFixture[entry.order]) === JSON.stringify(entry.expected), touchFixture[entry.writes]);
+    check(`${activeStage}-${entry.section}: drag release does not open its tap menu or navigate`, await page.getByRole('menu').count() === 0 && await callerRetained());
+    const menuHandle = row(entry.source).locator('[data-xdrive-sidebar-order-handle]');
+    await menuHandle.tap();
+    const down = page.getByRole('menuitem', { name: '下移', exact: true });
+    await down.waitFor();
+    const movedDown = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === orderPath);
+    await down.tap();
+    await movedDown;
+    await page.getByRole('menu').waitFor({ state: 'hidden' });
+    const expectedDown = [entry.expected[1], entry.expected[0], ...entry.expected.slice(2)];
+    check(`${activeStage}-${entry.section}: a new intentional tap opens Up/Down and persists one full order`, touchFixture[entry.writes].length === 2 && JSON.stringify(touchFixture[entry.writes][1][entry.field]) === JSON.stringify(expectedDown), touchFixture[entry.writes]);
+    await row(entry.source).locator('[data-xdrive-sidebar-order-handle]').waitFor();
+  }
+  await drawer.getByRole('button', { name: '关闭位置', exact: true }).tap();
+  await drawer.waitFor({ state: 'hidden' });
+  check(`${activeStage}: closing returns to the same Files caller without global chrome`, await callerRetained());
+  if (hasHandle) {
+    activeStage = 'user-touch-drag-short-text-mixed-input';
+    await page.getByRole('button', { name: '选择', exact: true }).tap();
+    for (const name of ['document-001.txt', 'document-002.txt']) await files.locator('[data-xdrive-file-explorer-item]').filter({ hasText: name }).tap();
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.evaluate(() => { document.documentElement.style.fontSize = '32px'; });
+    await settle();
+    const hitTarget = locator => locator.evaluate(element => {
+      const r = element.getBoundingClientRect(), hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return { width: r.width, height: r.height, left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+        hittable: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && Boolean(hit && element.contains(hit)) };
+    });
+    const shortHandle = await hitTarget(handle);
+    check(`${activeStage}: short landscape with200% root text retains a visible44px handle`, shortHandle.width >= 44 && shortHandle.height >= 44 && shortHandle.hittable, shortHandle);
+    const start = await center(handle), writesBefore = operationFixture.creates.length;
+    await page.mouse.move(start.x, start.y); await page.mouse.down();
+    await page.mouse.move(start.x + 10, start.y); await settle();
+    const cancel = page.getByRole('button', { name: '取消拖动', exact: true });
+    const shortCancel = await hitTarget(cancel);
+    check(`${activeStage}: an actual mouse gesture in the touch-capable App keeps Cancel reachable`, shortCancel.width >= 44 && shortCancel.height >= 44 && shortCancel.hittable, shortCancel);
+    await page.keyboard.press('Escape'); await page.mouse.up(); await settle();
+    check(`${activeStage}: Escape and release submit no move and retain the caller`, operationFixture.creates.length === writesBefore && await callerRetained());
+    await geometry('user-touch-drag-short-text');
+    await page.getByRole('button', { name: '完成选择', exact: true }).tap();
+    await page.getByRole('button', { name: '位置', exact: true }).tap();
+    await drawer.waitFor();
+    const close = drawer.getByRole('button', { name: '关闭位置', exact: true });
+    const closeBounds = await hitTarget(close);
+    check(`${activeStage}: short navigation panel keeps its44px close target visible`, closeBounds.width >= 44 && closeBounds.height >= 44 && closeBounds.hittable, closeBounds);
+    const orderHandle = drawer.locator('[data-xdrive-sidebar-order-handle]').first();
+    await orderHandle.scrollIntoViewIfNeeded();
+    const orderBounds = await hitTarget(orderHandle);
+    check(`${activeStage}: internal navigation scrolling reaches the44px order entry`, orderBounds.width >= 44 && orderBounds.height >= 44 && orderBounds.hittable, orderBounds);
+    await page.screenshot({ path: path.join(outputDir, 'user-touch-drag-short-text-navigation.png') });
+    await close.tap(); await drawer.waitFor({ state: 'hidden' });
+    await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+    await page.setViewportSize({ width: 390, height: 844 }); await settle();
+    check(`${activeStage}: restoring the viewport keeps the mounted caller and history`, await callerRetained());
+  }
+  await geometry('user-touch-drag-final');
+  result.samples['touch-drag-api-payloads'] = JSON.parse(JSON.stringify({ move: operationFixture.creates, ...touchFixture }));
+}
+
 async function filesOrganizationAcceptance() {
   const drawer = page.locator('[data-xdrive-file-explorer-touch-navigation-drawer]');
   const openNavigation = async () => {
@@ -1027,6 +1176,98 @@ async function searchReturnAcceptance() {
   await page.screenshot({ path: path.join(outputDir, `${activeStage}.png`) });
   check(`${activeStage}: actual Files status text does not overlap app navigation`, statusGeometry.visibleNavigation && statusGeometry.textRects.length > 0 && statusGeometry.overlaps.length === 0, statusGeometry);
   await page.screenshot({ path: path.join(outputDir, 'user-search-return.png') });
+}
+
+
+async function mobilePanelsAcceptance() {
+  activeStage = 'user-mobile-panels';
+  const rect = async (locator) => locator.evaluate((element) => {
+    const r = element.getBoundingClientRect();
+    let left = Math.max(0, r.left), right = Math.min(innerWidth, r.right);
+    let top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
+    for (let p = element.parentElement; p; p = p.parentElement) {
+      const css = getComputedStyle(p), pr = p.getBoundingClientRect();
+      if (/(auto|scroll|hidden|clip)/.test(css.overflowX)) { left = Math.max(left, pr.left); right = Math.min(right, pr.right); }
+      if (/(auto|scroll|hidden|clip)/.test(css.overflowY)) { top = Math.max(top, pr.top); bottom = Math.min(bottom, pr.bottom); }
+    }
+    return { ...r.toJSON(), visibleWidth: Math.max(0, right-left), visibleHeight: Math.max(0, bottom-top),
+      viewport: { width: innerWidth, height: innerHeight, visualHeight: visualViewport?.height, visualOffset: visualViewport?.offsetTop } };
+  });
+  const target = async (name, locator) => {
+    await locator.scrollIntoViewIfNeeded(); await settle();
+    const r = await rect(locator); result.samples[name] = r;
+    check(`${name}: at least44px visible target`, r.visibleWidth >= 43.9 && r.visibleHeight >= 43.9, r);
+  };
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.evaluate(() => { window.__panelsMain = document.querySelector('main'); window.__panelsFiles = document.querySelector('[data-xdrive-file-explorer]'); });
+  const filesTrigger = page.getByRole('button', { name: '筛选文件', exact: true });
+  await filesTrigger.tap();
+  const files = page.getByRole('dialog', { name: '文件筛选', exact: true });
+  await files.waitFor(); await files.getByRole('button', { name: '类型', exact: true }).tap();
+  await page.getByRole('menuitem', { name: '图片', exact: true }).tap();
+  await page.getByRole('menu').waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 844, height: 200 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await target('files-short200-type', files.getByRole('button', { name: '类型：图片', exact: true }));
+  await target('files-short200-close', files.getByRole('button', { name: '关闭筛选', exact: true }));
+  await target('files-short200-save', files.getByRole('button', { name: '保存搜索', exact: true }));
+  await target('files-short200-clear', files.getByRole('button', { name: '清除全部', exact: true }));
+  await page.screenshot({ path: path.join(outputDir, 'files-panels-short200.png') });
+  await files.getByRole('button', { name: '清除全部', exact: true }).tap();
+  check('Files clears actual applied conditions without leaving its panel', await files.isVisible() && await files.getByRole('button', { name: '清除全部', exact: true }).isDisabled());
+  await files.getByRole('button', { name: '关闭筛选', exact: true }).tap();
+  await files.waitFor({ state: 'hidden' });
+  check('Files close restores trigger focus', await filesTrigger.evaluate((e) => document.activeElement === e));
+  await page.getByRole('button', { name: '位置', exact: true }).tap();
+  const navigation = page.locator('[data-xdrive-file-explorer-touch-navigation-drawer]');
+  await navigation.waitFor();
+  await target('files-short200-location-close', navigation.getByRole('button', { name: '关闭位置', exact: true }));
+  await navigation.getByRole('button', { name: '关闭位置', exact: true }).tap();
+  await navigation.waitFor({ state: 'hidden' });
+  check('Location close preserves mounted Files and main', await page.evaluate(() => Boolean(window.__panelsMain && window.__panelsFiles) && window.__panelsMain === document.querySelector('main') && window.__panelsFiles === document.querySelector('[data-xdrive-file-explorer]')));
+  check('Location close returns focus to its trigger', await page.getByRole('button', { name: '位置', exact: true }).evaluate((e) => document.activeElement === e));
+  await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await navigateWorkspace('图库', 'gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  const nav = await page.locator('[data-xdrive-gallery-section]').evaluateAll((elements) => elements.map(e => ({ section: e.dataset.xdriveGallerySection, ...e.getBoundingClientRect().toJSON() })));
+  result.samples['gallery-navigation-targets'] = nav;
+  check('Gallery all nine compact navigation targets are44px', nav.length === 9 && nav.every(r => r.width >= 44 && r.height >= 44), nav);
+  const galleryTrigger = page.getByRole('button', { name: /^图库筛选/ });
+  await target('gallery-filter-trigger', galleryTrigger);
+  await galleryTrigger.tap();
+  const gallery = page.getByRole('dialog', { name: '图库筛选', exact: true });
+  await gallery.waitFor();
+  const tag = gallery.getByRole('textbox', { name: '标签', exact: true });
+  await tag.fill('  面板验收  ');
+  await tag.evaluate(e => { window.__panelTag = e; });
+  await page.setViewportSize({ width: 390, height: 260 }); await settle();
+  check('Focused Gallery draft survives reduced layout viewport in the same input', await tag.evaluate(e => e === window.__panelTag && document.activeElement === e && e.value === '  面板验收  '));
+  await target('gallery-reduced-close', gallery.getByRole('button', { name: '关闭图库筛选', exact: true }));
+  await target('gallery-reduced-apply', gallery.getByRole('button', { name: '应用', exact: true }));
+  await target('gallery-reduced-clear', gallery.getByRole('button', { name: '清除', exact: true }));
+  await target('gallery-reduced-save', gallery.getByRole('button', { name: '保存为智能相册', exact: true }));
+  await page.screenshot({ path: path.join(outputDir, 'gallery-panels-reduced.png') });
+  await gallery.getByRole('button', { name: '应用', exact: true }).tap();
+  await gallery.waitFor({ state: 'hidden' }); await settle();
+  check('Gallery Apply reaches its actual query with trimmed tag', Object.keys(result.requests).some(key => key.includes(' GET /api/v1/media/items?') && new URLSearchParams(key.split('?')[1]).get('tag') === '面板验收'));
+  check('Gallery Apply restores filter-trigger focus', await galleryTrigger.evaluate(e => document.activeElement === e));
+  check('Filter Apply never opens Viewer', !page.url().includes('/media-viewer'));
+  await page.setViewportSize({ width: 844, height: 390 });
+  await galleryTrigger.tap(); await gallery.waitFor();
+  check('Reopened Gallery filter retains committed condition', (await gallery.getByRole('textbox', { name: '标签', exact: true }).inputValue()).trim() === '面板验收');
+  await page.setViewportSize({ width: 844, height: 200 });
+  await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; });
+  await target('gallery-short200-tag', gallery.getByRole('textbox', { name: '标签', exact: true }));
+  await target('gallery-short200-save', gallery.getByRole('button', { name: '保存为智能相册', exact: true }));
+  await target('gallery-short200-close', gallery.getByRole('button', { name: '关闭图库筛选', exact: true }));
+  await page.screenshot({ path: path.join(outputDir, 'gallery-panels-short200.png') });
+  await page.keyboard.press('Escape'); await gallery.waitFor({ state: 'hidden' });
+  check('Gallery Escape returns focus without a navigation change', await galleryTrigger.evaluate(e => document.activeElement === e) && page.url().includes('/gallery'));
+  await page.evaluate(() => { document.documentElement.style.fontSize = ''; });
+  await page.setViewportSize({ width: 844, height: 390 });
+  const final = await geometry('user-mobile-panels-final');
+  check('Panels leave the app occupying the full compact viewport', final.main.x === 0 && final.main.y === 0 && final.main.width === 844 && final.main.height === 390, final.main);
 }
 
 async function navigateWorkspace(label, app) {
@@ -1338,7 +1579,7 @@ async function fullscreenAcceptance(role) {
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
-  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario) {
+  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario) {
     const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     result.runnerSHA256 = hash(__filename);
     result.builtWebSHA256 = {
@@ -1365,13 +1606,13 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
           : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
     for (const { role, viewMode, galleryDensity } of cases) {
-      if (filesOperationsScenario) {
+      if (filesOperationsScenario || filesTouchDragScenario) {
         operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
         Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });
       }
@@ -1430,7 +1671,9 @@ async function main() {
       } else if (options.scenario === 'fullscreen') await fullscreenAcceptance(role);
       else if (searchReturnScenario) await searchReturnAcceptance();
       else if (filesOperationsScenario) await filesOperationsAcceptance(role);
+      else if (filesTouchDragScenario) await filesTouchDragAcceptance();
       else if (filesOrganizationScenario) await filesOrganizationAcceptance();
+      else if (mobilePanelsScenario) await mobilePanelsAcceptance();
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);

@@ -41,29 +41,3 @@ export function xDriveFileExplorerDecodeDragIDs(
     return []
   }
 }
-
-/**
- * Only the dedicated 44px touch drag handle disables native scrolling.
- * Ordinary file rows keep their browser-owned pan gesture.
- */
-export const XDRIVE_FILE_EXPLORER_TOUCH_DRAG_START_DISTANCE = 10
-
-export function xDriveFileExplorerTouchDragActivated(
-  startX: number,
-  startY: number,
-  currentX: number,
-  currentY: number,
-) {
-  if (![startX, startY, currentX, currentY].every(Number.isFinite)) return false
-  return Math.hypot(currentX - startX, currentY - startY) >=
-    XDRIVE_FILE_EXPLORER_TOUCH_DRAG_START_DISTANCE
-}
-
-export function xDriveFileExplorerTouchDropAllowed(
-  items: readonly { id: XDriveFileExplorerDragID }[],
-  target: { id: XDriveFileExplorerDragID },
-) {
-  const key = (id: XDriveFileExplorerDragID) =>
-    typeof id === 'number' ? `n:${id}` : `s:${id}`
-  return !items.some((item) => key(item.id) === key(target.id))
-}

@@ -396,3 +396,9 @@ unchanged. Web/Desktop use the same classifier/Preview Engine, and missing RAW
 embedded JPEG remains an explicit compatibility limitation. Final resolution,
 resource use and real Safari/Electron decode must be measured with identical
 fixtures before claiming high-resolution parity.
+
+## M11 compact panels — renderer acceptance (2026-10-09)
+
+Reused merged PR #1122's shared VisualViewport observer and in-app filter Drawer. A measured 844×200/200% text case exposed only23px of a63px first field beneath sticky actions; removing only compact sticky positioning makes the field and existing actions reachable through one scroller while fixed44px Close remains. Gallery navigation is at least44px below900CSSpx independent of pointer type. Existing draft/applied query, on-demand index status, album selection, IANA boundaries and adapters remain intact.
+
+The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37 all pass after preserving merged M12bd96. FullDesktop1594pass/0fail/1existing skip, typecheck/lint/build pass. Exact scope and hashes are in [M11 evidence](validation/mobile-panels-short-viewport-2026-10-09.json). Updated PR1125 CI/merge are pending; physical keyboards, installed modes and screen readers are not-run. This does not certify later Gallery follow-up items.

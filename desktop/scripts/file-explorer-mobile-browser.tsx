@@ -52,7 +52,7 @@ function Fixture() {
   const [crumbs, setCrumbs] = useState<XDriveFileExplorerCrumb[]>([rootCrumb])
   const [generation, setGeneration] = useState(0)
   const [searchValue, setSearchValue] = useState('')
-  const items = crumbs.length > 1 ? folderItems : rootItems
+  const items = String(crumbs[crumbs.length - 1]?.id) === String(folder.id) ? folderItems : rootItems
 
   useEffect(() => { localStorage.setItem(storageKey, viewMode) }, [viewMode])
   const onSelectionChange = useCallback((ids: XDriveFileExplorerID[]) => {
@@ -74,6 +74,7 @@ function Fixture() {
 
   harness.state = { viewMode, selectedIDs: [...selectedIDs], crumbs: crumbs.map((crumb) => crumb.id) }
   harness.clearEvents = () => { harness.events = [] }
+  harness.useParentDropContext = () => setCrumbs([rootCrumb, { id: 99, name: '当前目录' }])
   harness.reset = (mode: XDriveFileExplorerViewMode = 'details') => flushSync(() => {
     harness.events = []
     setViewMode(mode)

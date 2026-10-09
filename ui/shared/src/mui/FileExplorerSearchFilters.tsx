@@ -239,37 +239,38 @@ export function XDriveFileExplorerSearchFilters({
               <CloseRoundedIcon />
             </IconButton>
           </Stack>
-          <Stack
-            spacing={1}
+          <Box
             data-xdrive-file-explorer-search-filters
-            sx={{ p: 1.5, minHeight: 0, flex: '1 1 auto', overflowY: 'auto', overscrollBehavior: 'contain' }}
+            sx={{ minHeight: 0, flex: '1 1 auto', overflowY: 'auto', overscrollBehavior: 'contain' }}
           >
-            {mobileField('kind', '类型', filterLabels.kind, Boolean(filters.kind), { kind: undefined })}
-            {mobileField('modified', '修改时间', filterLabels.modified, Boolean(filters.modifiedFrom || filters.modifiedTo), { modifiedFrom: undefined, modifiedTo: undefined })}
-            {mobileField('size', '大小', filterLabels.size, filters.minSize !== undefined || filters.maxSize !== undefined, { minSize: undefined, maxSize: undefined })}
-            {availabilityOptions.length > 0 || filters.availability ? mobileField('availability', '可用性', filterLabels.availability, Boolean(filters.availability), { availability: undefined }) : null}
-            {mobileField('source', '同步文件夹', filterLabels.source, Boolean(filters.sourceID), { sourceID: undefined })}
-            {tagOptions.length > 0 || filters.tagID ? mobileField('tag', '标签', filterLabels.tag, Boolean(filters.tagID), { tagID: undefined }) : null}
-          </Stack>
-          <Stack
-            direction="row"
-            spacing={1}
-            sx={{
-              p: 1.5,
-              pb: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-              flexShrink: 0,
-              borderTop: 1,
-              borderColor: 'divider',
-              '& .MuiButton-root': { minHeight: 44, minWidth: 0, flex: 1, whiteSpace: 'normal' },
-            }}
-          >
-            {onSaveSearch ? (
-              <Button startIcon={<BookmarkAddOutlinedIcon />} disabled={!canSaveSearch} onClick={saveSearch}>
-                保存搜索
-              </Button>
-            ) : null}
-            <Button disabled={filterCount === 0} onClick={clearFilters}>清除全部</Button>
-          </Stack>
+            <Stack spacing={1} sx={{ p: 1.5 }}>
+              {mobileField('kind', '类型', filterLabels.kind, Boolean(filters.kind), { kind: undefined })}
+              {mobileField('modified', '修改时间', filterLabels.modified, Boolean(filters.modifiedFrom || filters.modifiedTo), { modifiedFrom: undefined, modifiedTo: undefined })}
+              {mobileField('size', '大小', filterLabels.size, filters.minSize !== undefined || filters.maxSize !== undefined, { minSize: undefined, maxSize: undefined })}
+              {availabilityOptions.length > 0 || filters.availability ? mobileField('availability', '可用性', filterLabels.availability, Boolean(filters.availability), { availability: undefined }) : null}
+              {mobileField('source', '同步文件夹', filterLabels.source, Boolean(filters.sourceID), { sourceID: undefined })}
+              {tagOptions.length > 0 || filters.tagID ? mobileField('tag', '标签', filterLabels.tag, Boolean(filters.tagID), { tagID: undefined }) : null}
+            </Stack>
+            <Stack
+              direction="row"
+              spacing={1}
+              sx={{
+                p: 1.5,
+                pb: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+                flexShrink: 0,
+                borderTop: 1,
+                borderColor: 'divider',
+                '& .MuiButton-root': { minHeight: 44, minWidth: 0, flex: 1, whiteSpace: 'normal' },
+              }}
+            >
+              {onSaveSearch ? (
+                <Button startIcon={<BookmarkAddOutlinedIcon />} disabled={!canSaveSearch} onClick={saveSearch}>
+                  保存搜索
+                </Button>
+              ) : null}
+              <Button disabled={filterCount === 0} onClick={clearFilters}>清除全部</Button>
+            </Stack>
+          </Box>
         </Drawer>
       ) : (
       <Popover

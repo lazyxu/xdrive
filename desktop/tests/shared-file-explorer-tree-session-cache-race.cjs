@@ -131,6 +131,16 @@ function loadNavigationPane(runtime) {
   const localRequire = (request) => {
     if (request === 'react') return runtime.react
     if (request === 'react/jsx-runtime') return jsxRuntime
+    if (request === './usePointerDrag') {
+      const hookFile = path.join(path.dirname(filename), 'usePointerDrag.ts')
+      const hookCode = ts.transpileModule(fs.readFileSync(hookFile, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        fileName: hookFile,
+      }).outputText
+      const hookModule = { exports: {} }
+      new Function('exports', 'module', 'require', hookCode)(hookModule.exports, hookModule, localRequire)
+      return hookModule.exports
+    }
     if (request === '@mui/material') return mui
     if (request.startsWith('@mui/icons-material/')) {
       return { __esModule: true, default: stubDefault }

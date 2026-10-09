@@ -39,7 +39,7 @@ test('a mobile panel observes and tears down visualViewport resize/scroll withou
   assert.doesNotMatch(source, /window\.scrollTo\(/)
 })
 
-test('Files/Gallery compact filter and navigation panels honor visible viewport and keep actions reachable', () => {
+test('Files/Gallery bind the shared viewport observer and retain filter entry points', () => {
   const fileFilters = read('ui/shared/src/mui/FileExplorerSearchFilters.tsx')
   const explorer = read('ui/shared/src/mui/FileExplorer.tsx')
   const gallery = read('ui/shared/src/mui/MediaGalleryFilters.tsx')
@@ -52,7 +52,8 @@ test('Files/Gallery compact filter and navigation panels honor visible viewport 
   assert.match(gallery, /data-xdrive-gallery-mobile-filters/)
   assert.match(gallery, /data-xdrive-gallery-recent-search/, 'M11 must retain existing G05 recent search')
   assert.match(gallery, /compactScrollable=\{mobile\}/)
-  assert.match(gallery, /position: 'sticky', bottom: 0/)
+  // Actual short-height field/action reachability is exercised by the mounted
+  // Files/Gallery panel browser fixtures; sticky positioning obscured fields.
   assert.match(gallery, /overflowY: 'auto'/)
   assert.match(gallery, /aria-label="关闭图库筛选"/)
   assert.match(gallery, /triggerRef\.current\?\.focus\(\)/)
