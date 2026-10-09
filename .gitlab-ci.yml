@@ -479,6 +479,84 @@ file-explorer-media-renderer-trace:
     paths:
       - desktop/perf-results/
 
+large-transfer-web-performance:
+  image: $XDRIVE_CI_NODE_IMAGE
+  extends: .electron-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+  before_script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        xvfb \
+        libasound2 \
+        libatk-bridge2.0-0 \
+        libgbm1 \
+        libgtk-3-0 \
+        libnss3
+      rm -rf /var/lib/apt/lists/*
+  script:
+    - |
+      set -euo pipefail
+      (cd desktop && npm install --no-audit --no-fund)
+      (cd web && npm install --no-audit --no-fund)
+      VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build
+      cd desktop
+      rm -rf large-transfer-perf-results
+      mkdir -p large-transfer-perf-results
+      for scenario in upload download download-discard; do
+        for sample in 1 2 3; do
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/large-transfer-performance-main.cjs "$scenario" "sample-$sample"
+        done
+      done
+      test "$(find large-transfer-perf-results -maxdepth 1 -type f -name 'web-*.json' | wc -l)" -eq 9
+  artifacts:
+    name: "web-large-transfer-1gib-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/large-transfer-perf-results/
+
+large-transfer-agent-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/large-transfer-1gib-baseline"'
+    - if: '$CI_COMMIT_BRANCH == "perf/large-transfer-1gib-baseline"'
+  script:
+    - |
+      set -euo pipefail
+      out="$CI_PROJECT_DIR/large-transfer-agent-results"
+      rm -rf "$out"
+      mkdir -p "$out"
+      for scenario in upload download; do
+        for sample in 1 2 3; do
+          XD_LARGE_TRANSFER_PERF=1 \
+          XD_LARGE_TRANSFER_SCENARIO="$scenario" \
+          XD_LARGE_TRANSFER_SAMPLE="sample-$sample" \
+          XD_LARGE_TRANSFER_PERF_OUTPUT="$out" \
+            go test -run '^TestLargeTransferPerformanceBaseline1GiB$' -count=1 -v ./cmd/xdrive-agent
+        done
+      done
+      test "$(find "$out" -maxdepth 1 -type f -name 'agent-*.json' | wc -l)" -eq 6
+  artifacts:
+    name: "agent-large-transfer-1gib-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - large-transfer-agent-results/
+
 gallery-renderer-first-paint-performance:
   image: $XDRIVE_CI_NODE_IMAGE
   extends: .electron-linux-cache

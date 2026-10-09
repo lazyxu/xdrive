@@ -52,6 +52,7 @@ This table is the durable status index for the FileExplorer performance track. A
 | Windows local file-rename baseline fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 independent file renames in a 100k-entry baseline: prefix-wide baseline scans **2,400 -> 0**; directory rename and directory-target fallback retain subtree semantics. |
 | Windows full-reconcile local-file delete baseline fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1,200 locally missing flat files with unchanged remote revisions: successful-delete baseline prefix scans **1,200 -> 0**; directory/type-mismatch cleanup retains subtree semantics. |
 | Windows empty always-local policy fast path | **Accepted / structural contract** | Structural / unmeasured wall-clock | Default policy with a 100,000-entry baseline: `applyAlwaysLocal` baseline inspections **100,000 -> 0** when no normalized `AlwaysLocalPaths` exist; configured always-local pin/hydrate behavior is unchanged. |
+| Web/Desktop 1 GiB transfer throughput + RSS | **Measured / Web optimization approved** | Measured wall-clock + memory | Desktop/Agent stays bounded (upload **2.373 s / +19.3 MiB RSS**, download **6.175 s / +3.2 MiB RSS**, medians). Web is red: upload **7.914 s / +471.8 MiB JS heap / +927.1 MiB renderer WS**; download **3.814 s / +313.8 MiB heap / +369.1 MiB WS**. A no-storage download sink still exceeds memory budgets, so a Web streaming/allocation follow-up is approved. |
 | Resumable upload chunk-buffer reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 1 GiB path upload at 8 MiB/chunk: explicit large payload buffers **256 -> 2** across pre-hash + upload verification; stream upload **128 -> 1**. Integrity double-read/double-hash semantics unchanged. |
 | Upload finalize reused-source handle reuse | **Accepted / structural contract** | Structural / unmeasured wall-clock | 128-chunk overwrite with 1 changed chunk and 127 reused chunks from one prior CAS object: reused source-object opens **127 -> 1**; the changed staging-object open remains **1**. |
 | Upload conflict preflight batching | **Accepted / structural contract** | Structural / unmeasured wall-clock | 120 unique upload targets: pre-transfer conflict discovery **120 sequential requests / ~240 handler DB queries -> 1 request / 1 SQL statement**; requests are capped at 200 targets and ordered single-preflight fallback is retained. |
@@ -2706,3 +2707,56 @@ Regression command:
 
 Next action: continue ordinary FileExplorer **upload-finalize / download / sync / delete** performance auditing; do not optimize 100k first-open behavior.
 
+
+
+### Web/Desktop 1 GiB large-transfer baseline
+
+Status: **Measured / Web optimization follow-up approved**.
+
+This benchmark is measurement-only. It follows the performance policy: establish the current production-path baseline first, then change production code only if the same stable workload exposes a material bottleneck.
+
+Stable workload:
+
+- payload: **1 GiB**, one file, loopback HTTP to remove Internet variance;
+- Web upload: real production `XDriveApi.uploadWithConflictPolicy`, a real OS sparse 1 GiB file injected into a Chromium file input, 8 MiB resumable chunks, production pre-hash plus upload-time rehash retained;
+- Web download: real production `XDriveApi.download` and `xDriveWriteWebDownloadToSink`, writing the 1 GiB response into a real OPFS `FileSystemWritableFileStream`;
+- additional Web `download-discard`: identical production fetch/progress/sink call chain with a no-storage writable, used only to separate renderer/fetch allocation from OPFS storage cost;
+- Desktop/Agent upload: real shared Go resumable-upload client plus Transfer Manager progress and the production `agentUploadTransferContext` network observer on a sparse 1 GiB filesystem file;
+- Desktop/Agent download: real Agent `downloadAgentCloudFileIntoPath` staging path, including temporary-file write, `fsync`, close and final replace;
+- fixture creation is outside the timed interval;
+- **3 fresh processes per primary surface/direction**, plus 3 Web discard diagnostics.
+
+Predeclared red signals, set before results:
+
+- Web renderer peak working set **>512 MiB**;
+- Web renderer working-set increase **>256 MiB**;
+- Web JS heap increase **>128 MiB**;
+- Desktop/Agent RSS increase **>128 MiB**;
+- any 1 GiB loopback sample **>=60 s**;
+- upload must transfer exactly **128 x 8 MiB** chunks with no retries; download must stream exactly **1 GiB**.
+
+Measured BEFORE medians [min, max]:
+
+| Surface / scenario | Elapsed | Throughput | Process / renderer memory delta | JS heap delta | Dominant phase |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Desktop/Agent upload | **2.373 s** [2.347, 2.390] | **431.6 MiB/s** [428.5, 436.3] | **+19.3 MiB RSS** [19.3, 19.4] | n/a | pre-hash **1.301 s** [1.298, 1.311] |
+| Desktop/Agent download | **6.175 s** [5.875, 6.411] | **165.8 MiB/s** [159.7, 174.3] | **+3.2 MiB RSS** [3.1, 3.2] | n/a | streamed file write/fsync path |
+| Web upload | **7.914 s** [7.558, 7.974] | **129.4 MiB/s** [128.4, 135.5] | **+927.1 MiB renderer WS** [747.9, 934.3] | **+471.8 MiB** [384.4, 472.5] | chunks **5.841 s** [5.496, 5.968]; pre-hash **2.056 s** [2.000, 2.067] |
+| Web download / OPFS | **3.814 s** [3.757, 3.816] | **268.5 MiB/s** [268.3, 272.6] | **+369.1 MiB renderer WS** [361.4, 373.8] | **+313.8 MiB** [290.4, 314.4] | response-stream/write **3.810 s** [3.754, 3.812] |
+| Web download / discard diagnostic | **1.142 s** [1.126, 1.193] | **896.4 MiB/s** [858.7, 909.2] | **+975.9 MiB renderer WS** [715.6, 1407.9] | **+227.9 MiB** [208.0, 476.1] | response-stream/write **1.139 s** [1.123, 1.189] |
+
+Payload correctness held in every sample:
+
+- Web/Agent upload transferred exactly **1,073,741,824 bytes**;
+- upload emitted exactly **128 x 8 MiB chunks** with no retry/extra payload;
+- every download streamed exactly **1,073,741,824 bytes**.
+
+Decision:
+
+- **Desktop/Agent: Accepted / no production change.** RSS is comfortably bounded and runtime is far below the 60 s diagnostic red signal. The upload pre-hash is the largest single Agent phase but there is no memory/runtime red signal that justifies weakening the intentional pre-hash + upload-time rehash integrity contract.
+- **Web: red / production follow-up approved.** Upload exceeds both Web memory-delta budgets by a wide margin. Normal download also exceeds both memory-delta budgets.
+- The discard diagnostic still exceeds the Web memory budgets even without OPFS writes. Therefore the Web issue cannot be attributed solely to the File System Access storage backend; the next experiment should isolate renderer fetch/chunk allocation and backpressure/GC behavior.
+- The next production PR must preserve direct-to-disk behavior, byte progress, resumable upload semantics, full pre-hash plus upload-time integrity verification, and exact payload counts. It must rerun this **same 1 GiB workload** and only be kept if the memory reduction is material and repeatable without a meaningful throughput regression.
+- **Do not run 4 GiB yet.** The 1 GiB Web renderer is not memory-bounded enough to justify scaling the workload.
+
+Branch-scoped commands are implemented by the GitHub/GitLab `large-transfer-web-performance` and `large-transfer-agent-performance` jobs on `perf/large-transfer-1gib-baseline`.
