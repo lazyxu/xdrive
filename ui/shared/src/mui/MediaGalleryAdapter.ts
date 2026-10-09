@@ -94,11 +94,13 @@ export interface XDriveMediaGalleryPort {
   listMemories?: (
     anchorDate?: string,
     limit?: number,
+    timeZone?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaMemory[]>>
   listMemoryItemRange?: (
     memoryID: string,
     limit: number,
     offset: number,
+    timeZone?: string,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaItemRange>>
   listDuplicateGroups?: (
     limit?: number,
@@ -391,13 +393,13 @@ export function createXDriveMediaGalleryDataSource(
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
       : undefined,
     listMemories: port.listMemories
-      ? (anchorDate, limit) => resolveXDriveTransport(
-          port.listMemories!(anchorDate, limit),
+      ? (anchorDate, limit, timeZone) => resolveXDriveTransport(
+          port.listMemories!(anchorDate, limit, timeZone),
         )
       : undefined,
     listMemoryItemRange: port.listMemoryItemRange
-      ? (memoryID, limit, offset) => resolveXDriveTransport(
-          port.listMemoryItemRange!(memoryID, limit, offset),
+      ? (memoryID, limit, offset, timeZone) => resolveXDriveTransport(
+          port.listMemoryItemRange!(memoryID, limit, offset, timeZone),
         )
       : undefined,
     listDuplicateGroups: port.listDuplicateGroups
