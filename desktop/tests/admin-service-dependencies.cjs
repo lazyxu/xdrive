@@ -140,3 +140,40 @@ test('Baidu AK reveal reuses the Yike Cookie temporary reveal UI and a privilege
   assert.ok(page.includes('主动点击“显示”'))
   assert.ok(page.includes('30 秒后自动隐藏'))
 })
+
+test('All service rows disclose a grounded configuration and activation mode', () => {
+  const contracts = read('internal', 'api', 'admin_service_config_contract.go')
+  const model = read('ui', 'shared', 'src', 'service-dependencies.ts')
+  const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+  assert.ok(backend.includes('serviceDependencyConfigContract(services[i].ID)'))
+  for (const id of [
+    'baidu-map', 'geonames', 'photo-face', 'photo-smart', 'photo-semantic',
+    'photo-creative', 'media-worker', 'database', 'storage',
+    'background-worker', 'caddy',
+  ]) {
+    assert.ok(contracts.includes('"' + id + '"'), 'missing configuration contract: ' + id)
+  }
+  for (const mode of ["'in-app'", "'deployment'", "'planned'"]) {
+    assert.ok(model.includes(mode), 'missing config mode ' + mode)
+  }
+  for (const mode of ["'immediate'", "'controlled-restart'", "'not-available'"]) {
+    assert.ok(model.includes(mode), 'missing activation mode ' + mode)
+  }
+  assert.equal(model.includes("'connectors'"), false)
+  assert.equal(model.includes("'managed'"), false)
+  assert.equal(model.includes("'sync-folder'"), false)
+  assert.ok(agentClient.includes("group: 'core' | 'media' | 'intelligence' | 'location'"))
+  assert.ok(page.includes('config_hint'))
+  assert.ok(page.includes('applyModeLabels'))
+  assert.equal(page.includes('openSyncFolders'), false)
+  assert.equal(app.includes('openSyncFolders'), false)
+  assert.equal(desktop.includes('openSyncFolders'), false)
+  for (const connector of ['yike', 'synology-photos', 'synology-files']) {
+    assert.equal(backend.includes('ID: "' + connector + '"'), false, 'per-user connector leaked into admin inventory')
+    assert.equal(contracts.includes('case "' + connector + '"'), false, 'user connector has admin configuration')
+  }
+  assert.ok(page.includes('systemServices'))
+  assert.ok(page.includes('groups.some((group) => group.id === item.group)'))
+  assert.equal(page.includes('docker.sock'), false)
+  assert.equal(page.includes('docker restart'), false)
+})

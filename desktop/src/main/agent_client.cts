@@ -509,6 +509,9 @@ export type AgentServiceDependenciesSnapshot = {
     detail: string
     version?: string
     model?: string
+    config_mode?: 'in-app' | 'deployment' | 'planned'
+    apply_mode?: 'immediate' | 'controlled-restart' | 'not-available'
+    config_hint?: string
   }>
 }
 
