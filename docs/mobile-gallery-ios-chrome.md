@@ -44,3 +44,8 @@ Web 宽屏与 Mobile Web 继续只挂载同一 `XDriveMediaGalleryPage`、同一
 ### P0-1 分组「查看全部」入口（2026-10-10）
 
 当真实回忆/相册/人物预览超过 8 张卡片时，手机精选集仍须能打开 Web 共用的完整集合索引。现为「回忆 / 相册 / 人物与宠物 / 地点 / 同步文件夹」分组显式提供`查看全部`，调用现有 onSectionChange 路由；不能把截断的 8 条误当成全部资产，也不能新建移动专用列表接口。新增 React 回归验证 12 条预览被有界裁剪后仍可进入完整集合；本地/CI/真机结果按实际执行状态分别记录。
+
+
+## P0-2 · KFS column-first Gallery density (2026-10-10)
+
+**Candidate, PR CI and iOS 27 device acceptance pending.** Read the user-approved [iOS 27 Gallery contract](mobile-gallery-ios27.md#p0-2--kfs-网格公式与-ios-27-照片墙2026-10-10) and [Gallery performance baseline](gallery-performance.md). KFS uses `max(minCols, floor(available / 256))`; xDrive now offers this as an optional mode in the existing shared GridMetrics/Timeline, not a replacement list. Mobile defaults are Year 6 / Month 5 / Day 3 / All 3, with a narrower growth threshold, 4px gap and 44px Year tap target at 320px; Desktop/Web retain the original pixel-minimum mode. Two-finger density adjustment is photo-wall-only, commits once on lift, and restores the logical-index anchor. Same Web REST adapter, Server Range, VirtualCollection, thumbnail pipeline, Gallery operations and Viewer. No claims of native screenshot parity or measured performance speedup before real acceptance.

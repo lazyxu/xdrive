@@ -333,9 +333,10 @@ export function XDriveMobileGalleryChrome({
                 onClick={() => onAspectModeChange('contain')}>完整比例</Button>
             </Stack>
             <Typography variant="caption" color="text.secondary">
-              照片墙密度
+              照片墙最少列数：{density} 列
             </Typography>
             <Slider size="small" aria-label="移动图库缩略图密度"
+              valueLabelDisplay="auto"
               min={densityMin} max={densityMax} step={densityStep}
               value={density} onChange={(_event, value) => {
                 if (typeof value === 'number') onDensityChange(value)

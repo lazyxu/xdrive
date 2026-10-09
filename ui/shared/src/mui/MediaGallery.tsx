@@ -1,6 +1,6 @@
 import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
   ArrowBack as ArrowBackIcon,
   FolderOutlined as FolderOutlinedIcon,
@@ -150,6 +150,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import {
+  xDriveMediaGalleryPinchColumnCount,
   XDRIVE_MEDIA_GALLERY_GRID_GAP,
   xDriveMediaGalleryGridMetrics,
   xDriveMediaGalleryGridWindow,
@@ -3026,6 +3027,41 @@ const mediaGalleryTimeScaleValues: readonly MediaGalleryTimeScale[] = [
   'all',
 ]
 
+// KFS uses year=10/month=5/day=3 mobile thumbnails. xDrive's Year
+// items are independently tappable; cap its default at 6 columns so the
+// 320px viewport still has >=44px targets (with the existing 4px gap).
+// iOS 27 physical-device screenshot comparison remains the final visual gate.
+type MobileGalleryColumns = Record<MediaGalleryTimeScale, number>
+const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY = 'xdrive.gallery.mobile.columns.v1'
+const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT: MobileGalleryColumns = {
+  year: 6, month: 5, day: 3, all: 3,
+}
+const XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH = 144
+const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN = 2
+const XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX = 10
+
+function xDriveReadMobileGalleryColumns(): MobileGalleryColumns {
+  const fallback = { ...XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT }
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY)
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw) as Partial<MobileGalleryColumns>
+    for (const scale of mediaGalleryTimeScaleValues) {
+      const n = parsed[scale]
+      if (typeof n === 'number' && Number.isFinite(n)) {
+        fallback[scale] = Math.min(
+          XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+          Math.max(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN, Math.round(n)),
+        )
+      }
+    }
+  } catch {
+    // Storage can be denied in private browsing; keep the same media query.
+  }
+  return fallback
+}
+
 function mediaGalleryNormalizeDensity(value: unknown, fallback: number) {
   if (typeof value !== 'number' || !Number.isFinite(value)) return fallback
   const snapped = XDRIVE_MEDIA_GALLERY_DENSITY_MIN +
@@ -3595,6 +3631,8 @@ function mediaGalleryScrollParent(element: HTMLElement) {
 function MediaVirtualTileGrid({
   collection,
   minTileWidth,
+  minColumns,
+  referenceColumnWidth,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -3614,6 +3652,8 @@ function MediaVirtualTileGrid({
 }: {
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
+  minColumns?: number
+  referenceColumnWidth?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -3638,6 +3678,8 @@ function MediaVirtualTileGrid({
       width: 0,
       itemCount: collection.itemCount,
       minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
     }),
     window: { start: 0, end: 0, startRow: 0, endRow: 0 },
     visibleWindow: { start: 0, end: 0, startRow: 0, endRow: 0 },
@@ -3661,6 +3703,8 @@ function MediaVirtualTileGrid({
           width: currentHost.clientWidth,
           itemCount: collection.itemCount,
           minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -3724,7 +3768,7 @@ function MediaVirtualTileGrid({
         frameRef.current = null
       }
     }
-  }, [collection.itemCount, collection.onRangeChange, minTileWidth, onVisibleAnchorChange])
+  }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
     if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
@@ -3734,6 +3778,8 @@ function MediaVirtualTileGrid({
       width: host.clientWidth,
       itemCount: collection.itemCount,
       minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
     })
     const index = Math.max(
       0,
@@ -3747,6 +3793,8 @@ function MediaVirtualTileGrid({
   }, [
     collection.itemCount,
     minTileWidth,
+    minColumns,
+    referenceColumnWidth,
     restoreAnchorIndex,
     restoreAnchorRevision,
   ])
@@ -3867,6 +3915,8 @@ function MediaVirtualTimeline({
   groups,
   collection,
   minTileWidth,
+  minColumns,
+  referenceColumnWidth,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -3886,6 +3936,8 @@ function MediaVirtualTimeline({
   groups: MediaTimelineGroupIndex[]
   collection: XDriveMediaGalleryVirtualCollection
   minTileWidth: number
+  minColumns?: number
+  referenceColumnWidth?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -3909,6 +3961,8 @@ function MediaVirtualTimeline({
       width: 0,
       groups,
       minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
     })
     const window = xDriveMediaGalleryTimelineWindow({
       layout,
@@ -3936,6 +3990,8 @@ function MediaVirtualTimeline({
           width: currentHost.clientWidth,
           groups,
           minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -3998,7 +4054,7 @@ function MediaVirtualTimeline({
         frameRef.current = null
       }
     }
-  }, [collection.onRangeChange, groups, minTileWidth, onVisibleAnchorChange])
+  }, [collection.onRangeChange, groups, minTileWidth, minColumns, referenceColumnWidth, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
     if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
@@ -4008,6 +4064,8 @@ function MediaVirtualTimeline({
       width: host.clientWidth,
       groups,
       minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
     })
     const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
     if (offset === null) return
@@ -4018,6 +4076,8 @@ function MediaVirtualTimeline({
   }, [
     groups,
     minTileWidth,
+    minColumns,
+    referenceColumnWidth,
     restoreAnchorIndex,
     restoreAnchorRevision,
   ])
@@ -4339,6 +4399,9 @@ export function XDriveMediaGallery({
   const [viewPreferences, setViewPreferences] = useState<MediaGalleryViewPreferences>(
     xDriveReadMediaGalleryViewPreferences,
   )
+  const [mobileColumnsByScale, setMobileColumnsByScale] = useState<MobileGalleryColumns>(
+    xDriveReadMobileGalleryColumns,
+  )
   const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
   const overviewTransitionRef = useRef({ showing: mobileCollectionsOverview, section })
   useEffect(() => {
@@ -4361,6 +4424,7 @@ export function XDriveMediaGallery({
   const effectiveTimeScale: MediaGalleryTimeScale =
     searchActive || currentCleanupReview ? 'all' : timeScale
   const minTileWidth = viewPreferences.densityByScale[effectiveTimeScale]
+  const mobileColumns = mobileColumnsByScale[effectiveTimeScale]
   const aspectMode = viewPreferences.aspectMode
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
@@ -4384,6 +4448,17 @@ export function XDriveMediaGallery({
   useEffect(() => {
     xDriveWriteMediaGalleryViewPreferences(viewPreferences)
   }, [viewPreferences])
+  useEffect(() => {
+    if (!mobileWebChrome || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(
+        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_KEY,
+        JSON.stringify(mobileColumnsByScale),
+      )
+    } catch {
+      // Denied browser storage must not prevent photo browsing.
+    }
+  }, [mobileColumnsByScale, mobileWebChrome])
 
   // The existing virtual Grid/Timeline anchor restoration supports an external
   // logical index; only a new sort generation should apply it.
@@ -4508,6 +4583,19 @@ export function XDriveMediaGallery({
   }, [timeScale])
 
   const updateGalleryDensity = useCallback((value: number) => {
+    if (compactGallery) {
+      if (!Number.isFinite(value)) return
+      const columns = Math.min(
+        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+        Math.max(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN, Math.round(value)),
+      )
+      if (columns === mobileColumns) return
+      setViewAnchorRevision((current) => current + 1)
+      setMobileColumnsByScale((current) => ({
+        ...current, [effectiveTimeScale]: columns,
+      }))
+      return
+    }
     const normalized = mediaGalleryNormalizeDensity(value, minTileWidth)
     if (normalized === minTileWidth) return
     setViewAnchorRevision((current) => current + 1)
@@ -4518,7 +4606,7 @@ export function XDriveMediaGallery({
         [effectiveTimeScale]: normalized,
       },
     }))
-  }, [effectiveTimeScale, minTileWidth])
+  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns])
 
   const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
     if (nextMode === aspectMode) return
@@ -4723,6 +4811,88 @@ export function XDriveMediaGallery({
   }, [])
 
   useEffect(() => () => clearGalleryTouchPress(), [clearGalleryTouchPress, section])
+
+  // The mobile photo wall alone owns pinch-to-change-columns. Native one-
+  // finger vertical scroll and Viewer gestures must remain unaffected.
+  const galleryPhotoWallRef = useRef<HTMLDivElement | null>(null)
+  const galleryPinchRef = useRef<{
+    startDistance: number
+    lastDistance: number
+    initialColumns: number
+    active: boolean
+  } | null>(null)
+  const galleryPinchSuppressClickUntilRef = useRef(0)
+
+  const clearGalleryPinch = () => {
+    galleryPinchRef.current = null
+    galleryPhotoWallRef.current?.style.removeProperty('--xdrive-gallery-pinch-preview')
+  }
+  useEffect(() => () => clearGalleryPinch(), [
+    compactGallery, mobileCollectionsOverview, selectionMode,
+  ])
+
+  const handleGalleryTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (!compactGallery || selectionMode || mobileCollectionsOverview ||
+        event.touches.length !== 2 ||
+        !(event.target instanceof Element) ||
+        !event.target.closest('[data-xdrive-media-tile]')) return
+    const distance = Math.hypot(
+      event.touches[0].clientX - event.touches[1].clientX,
+      event.touches[0].clientY - event.touches[1].clientY,
+    )
+    if (distance < 24) return
+    clearGalleryTouchPress()
+    galleryHoldClickRef.current = null
+    const center = galleryPhotoWallRef.current?.ownerDocument.elementFromPoint(
+      (event.touches[0].clientX + event.touches[1].clientX) / 2,
+      (event.touches[0].clientY + event.touches[1].clientY) / 2,
+    )
+    const tile = center?.closest<HTMLElement>('[data-xdrive-media-tile]')
+    const index = Number(tile?.dataset.xdriveMediaIndex)
+    if (tile && Number.isSafeInteger(index) && index >= 0) {
+      viewAnchorIndexRef.current = index
+    }
+    galleryPinchRef.current = {
+      startDistance: distance, lastDistance: distance,
+      initialColumns: mobileColumns, active: false,
+    }
+  }
+
+  const handleGalleryTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const pinch = galleryPinchRef.current
+    if (!pinch || event.touches.length !== 2) return
+    const distance = Math.hypot(
+      event.touches[0].clientX - event.touches[1].clientX,
+      event.touches[0].clientY - event.touches[1].clientY,
+    )
+    if (!Number.isFinite(distance) || distance < 24) return
+    pinch.lastDistance = distance
+    const zoom = distance / pinch.startDistance
+    if (!pinch.active && Math.abs(zoom - 1) < 0.08) return
+    pinch.active = true
+    // CSS-only feedback; the shared VirtualCollection is recalculated once
+    // when fingers lift, never per touchmove.
+    galleryPhotoWallRef.current?.style.setProperty(
+      '--xdrive-gallery-pinch-preview',
+      String(Math.max(0.8, Math.min(1.2, zoom))),
+    )
+  }
+
+  const finishGalleryPinch = (commit: boolean) => {
+    const pinch = galleryPinchRef.current
+    if (!pinch) return
+    clearGalleryPinch()
+    galleryPinchSuppressClickUntilRef.current = Date.now() + 350
+    if (!commit || !pinch.active) return
+    updateGalleryDensity(xDriveMediaGalleryPinchColumnCount(
+      pinch.initialColumns, pinch.startDistance, pinch.lastDistance,
+      XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
+      XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+    ))
+  }
+  const handleGalleryTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) finishGalleryPinch(true)
+  }
 
   const handleGalleryPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'touch' && !event.isPrimary) {
@@ -5385,6 +5555,13 @@ export function XDriveMediaGallery({
       onPointerUpCapture={handleGalleryPointerUp}
       onPointerCancelCapture={handleGalleryPointerCancel}
       onClickCapture={(event) => {
+        if (compactGallery && Date.now() < galleryPinchSuppressClickUntilRef.current &&
+            event.target instanceof Element &&
+            event.target.closest('[data-xdrive-media-tile]')) {
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         consumeGalleryHoldClick(event)
         if (!event.isPropagationStopped()) handleFoldExpandClick(event)
       }}
@@ -5395,6 +5572,8 @@ export function XDriveMediaGallery({
         // cropping the already-decoded still/video/Live thumbnail image.
         '& [data-xdrive-media-tile] img': {
           objectFit: aspectMode === 'contain' ? 'contain' : 'cover',
+          transform: compactGallery ? 'scale(var(--xdrive-gallery-pinch-preview, 1))' : undefined,
+          transformOrigin: 'center',
         },
         pr: { lg: selected && !previewItem ? '380px' : 0 },
         pb: compactGallery ? (selectionMode ? '156px' : '84px') : 0,
@@ -5435,10 +5614,10 @@ export function XDriveMediaGallery({
           onTimeZoneChange={onTimeZoneChange}
           aspectMode={aspectMode}
           onAspectModeChange={updateGalleryAspectMode}
-          density={minTileWidth}
-          densityMin={XDRIVE_MEDIA_GALLERY_DENSITY_MIN}
-          densityMax={XDRIVE_MEDIA_GALLERY_DENSITY_MAX}
-          densityStep={XDRIVE_MEDIA_GALLERY_DENSITY_STEP}
+          density={mobileColumns}
+          densityMin={XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN}
+          densityMax={XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX}
+          densityStep={1}
           onDensityChange={updateGalleryDensity}
           foldDuplicates={foldDuplicates}
           onFoldDuplicatesChange={onToggleFoldDuplicates}
@@ -6567,7 +6746,12 @@ export function XDriveMediaGallery({
       ) : null}
 
       {showPhotoCollection ? (
-        <Box>
+        <Box ref={galleryPhotoWallRef} data-xdrive-gallery-photo-wall
+          onTouchStartCapture={handleGalleryTouchStart}
+          onTouchMoveCapture={handleGalleryTouchMove}
+          onTouchEndCapture={handleGalleryTouchEnd}
+          onTouchCancelCapture={() => finishGalleryPinch(false)}
+          sx={{ touchAction: compactGallery ? 'pan-y' : undefined }}>
         {blockingCollectionError ? (
           <Paper
             variant="outlined"
@@ -6624,6 +6808,8 @@ export function XDriveMediaGallery({
               groups={activeTimelineGroups}
               collection={virtualCollection}
               minTileWidth={minTileWidth}
+              minColumns={compactGallery ? mobileColumns : undefined}
+              referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
               loadThumbnail={loadThumbnail}
               thumbnailScheduler={thumbnailScheduler}
               loadPreviewURL={collectionPreviewURL}
@@ -6689,6 +6875,8 @@ export function XDriveMediaGallery({
           <MediaVirtualTileGrid
             collection={virtualCollection}
             minTileWidth={minTileWidth}
+            minColumns={compactGallery ? mobileColumns : undefined}
+            referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
             selectionMode={selectionMode}
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
