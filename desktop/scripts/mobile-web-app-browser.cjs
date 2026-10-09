@@ -14,7 +14,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, or inherited-columns.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, or fullscreen.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -37,6 +37,8 @@ const mediaItems = Array.from({ length: 240 }, (_, index) => ({
   favorite: false, tags: [], people: [],
 }));
 const mediaByID = new Map(mediaItems.map((item) => [item.node.id, item]));
+// One image in the real Files API enables the actual Quick Look caller route.
+if (options.scenario === 'fullscreen') rootChildren.push(mediaItems[0].node);
 const allNodes = new Map([rootNode, ...rootChildren, ...folderChildren, ...mediaItems.map((item) => item.node)].map((node) => [node.id, node]));
 // A small, valid 80x80 PNG exercises the real thumbnail/preview decode path.
 const imagePNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAc0lEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNew7gDdvwGf2GYUOgAAAABJRU5ErkJggg==', 'base64');
@@ -77,6 +79,35 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/file-saved-searches': return plain([]);
     case 'GET /api/v1/file-favorites': return plain([]);
     case 'GET /api/v1/sources': return plain([]);
+    case 'GET /api/v1/sources/overview': return plain([]);
+    case 'GET /api/v1/me/storage':
+    case 'GET /api/v1/admin/storage':
+      assert(!key.includes('/admin/') || role === 'admin', 'Ordinary user reached administrator API');
+      return plain({ scope: key.includes('/admin/') ? 'global' : 'self', generated_at: stamp,
+        file_count: rootChildren.length, logical_file_bytes: 1048576, file_buckets: [], buckets: [] });
+    case 'GET /api/v1/admin/users':
+      assert.equal(role, 'admin'); return plain([]);
+    case 'GET /api/v1/admin/audit': {
+      assert.equal(role, 'admin'); queryOnly(url, ['range', 'limit', 'offset']);
+      assert.equal(url.searchParams.get('range'), 'true');
+      const limit = integerQuery(url, 'limit', 100, 100);
+      const offset = integerQuery(url, 'offset', 0, 0);
+      return { items: [], total_count: 0, snapshot_max_id: 0, offset, limit };
+    }
+    case 'GET /api/v1/admin/storage/health':
+      assert.equal(role, 'admin');
+      return plain({ status: 'ok', healthy: true, ready_blobs: 0, deleting_blobs: 0,
+        stale_deleting_blobs: 0, missing_metadata: 0, refcount_mismatches: 0, state_mismatches: 0,
+        size_mismatches: 0, key_hash_mismatches: 0, invalid_states: 0, generated_at: stamp });
+    case 'GET /api/v1/admin/storage/history':
+      assert.equal(role, 'admin'); queryOnly(url, ['days']); integerQuery(url, 'days', 30, 30);
+      return { samples: [], anomalies: [], sampling_interval_hours: 24, retention_days: 90,
+        decision: { priority: 'collecting', confidence: 'low', sample_count: 0, span_hours: 0, window_hours: 168,
+          average_small_lt64_kib_count_share: 0, average_small_lt256_kib_count_share: 0,
+          average_large_ge16_mib_byte_share: 0, average_dedup_ratio: 1, reason_codes: [] } };
+    case 'GET /api/v1/admin/storage/staging/cleanup-runs':
+      assert.equal(role, 'admin'); queryOnly(url, ['limit', 'offset']);
+      integerQuery(url, 'limit', 20, 20); integerQuery(url, 'offset', 0, 0); return [];
     case 'GET /api/v1/file-recent':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50); return [];
     case 'POST /api/v1/nodes/tags/query': {
@@ -151,12 +182,21 @@ function fixtureFor(request, role) {
 const result = {
   sourceRoot, distRoot, startedAt: new Date().toISOString(), scenario: options.scenario || 'all',
   fixture: { rootItems: rootChildren.length, nestedItems: folderChildren.length, galleryItems: mediaItems.length, network: 'local bounded fixtures only' },
-  checks: [], samples: {}, requests: {}, unknownRequests: [], consoleErrors: [], pageErrors: [], failures: [],
+  checks: [], samples: {}, requests: {}, unknownRequests: [], consoleErrors: [], expectedConsoleErrors: [], expectedApiErrors: [], pageErrors: [], failures: [],
 };
 let activeStage = 'startup';
 let page;
+let metadataGate;
+const expectedConsoleURLs = new Set();
 function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
+  // Collect independent layout failures so a baseline records every viewport;
+  // a failed contract still makes the command fail and appears in results.json.
+  if (!passed && options.scenario === 'fullscreen') {
+    result.failures.push({ stage: activeStage, message: name, evidence });
+    process.exitCode = 1;
+    return;
+  }
   assert(passed, name);
 }
 async function settle() {
@@ -171,39 +211,62 @@ async function geometry(name) {
       return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom,
         clientWidth: element.clientWidth, clientHeight: element.clientHeight,
         scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop,
-        overflowX: getComputedStyle(element).overflowX, overflowY: getComputedStyle(element).overflowY };
+        overflowX: getComputedStyle(element).overflowX, overflowY: getComputedStyle(element).overflowY,
+        padding: ['Top', 'Right', 'Bottom', 'Left'].map((side) => parseFloat(getComputedStyle(element)[`padding${side}`])),
+        flexDirection: getComputedStyle(element).flexDirection, flexBasis: getComputedStyle(element).flexBasis };
     };
     return { viewport: { width: innerWidth, height: innerHeight }, hash: location.hash,
       document: bounds(document.documentElement), body: bounds(document.body), main: bounds(document.querySelector('main')),
       files: bounds(document.querySelector('[data-xdrive-file-explorer]')),
       filesScroll: bounds(document.querySelector('[data-xdrive-file-explorer-scroll-host]')),
+      workspacePage: bounds([...document.querySelector('main').children].find((element) => {
+        const rect = element.getBoundingClientRect();
+        return element.tagName !== 'STYLE' && rect.width > 0 && rect.height > 0;
+      })),
+      galleryHeader: bounds(document.querySelector('[data-xdrive-gallery-header]')),
+      galleryTitle: bounds(document.querySelector('[data-xdrive-gallery-header] > :not(style)')),
       navigation: bounds(document.querySelector('nav[aria-label="网页端功能区导航"]')),
-      coarse: matchMedia('(pointer: coarse)').matches, compact: !!document.querySelector('.MuiBottomNavigation-root'),
+      globalHeader: bounds(document.querySelector('[data-xdrive-workspace-background] .MuiAppBar-root')),
+      floatingNavigation: bounds(document.querySelector('button[aria-label="打开应用导航"]')),
+      bottomNavigation: bounds(document.querySelector('.MuiBottomNavigation-root')),
+      coarse: matchMedia('(pointer: coarse)').matches, compact: matchMedia('(max-width:899.95px)').matches,
     };
   });
   result.samples[name] = sample;
+  await page.screenshot({ path: path.join(outputDir, `${name}.png`) });
   check(`${name}: requested CSS viewport`, sample.viewport.width === page.viewportSize().width && sample.viewport.height === page.viewportSize().height, sample.viewport);
   check(`${name}: no document overflow`, sample.document.scrollWidth <= sample.viewport.width + 1 && sample.document.scrollHeight <= sample.viewport.height + 1, sample.document);
   check(`${name}: workspace within viewport`, sample.main && sample.main.width > 0 && sample.main.height > 0 && sample.main.right <= sample.viewport.width + 1 && sample.main.bottom <= sample.viewport.height + 1, sample.main);
   check(`${name}: correct navigation breakpoint`, sample.compact === (sample.viewport.width < 900));
-  if (sample.compact) check(`${name}: bottom navigation outside content`, sample.navigation.y >= sample.main.bottom - 1 && sample.navigation.bottom <= sample.viewport.height + 1);
+  if (sample.compact) {
+    check(`${name}: mobile main fills the entire viewport`, Math.abs(sample.main.x) <= 1 && Math.abs(sample.main.y) <= 1 && Math.abs(sample.main.width - sample.viewport.width) <= 1 && Math.abs(sample.main.height - sample.viewport.height) <= 1, sample.main);
+    check(`${name}: global chrome does not reserve viewport space`, (!sample.globalHeader || sample.globalHeader.height === 0) && (!sample.bottomNavigation || sample.bottomNavigation.height === 0), { header: sample.globalHeader, bottomNavigation: sample.bottomNavigation });
+  } else check(`${name}: desktop header and sidebar are retained`, sample.globalHeader && sample.globalHeader.height > 0 && sample.main.x > 0 && Math.abs(sample.main.y - sample.globalHeader.bottom) <= 1, { header: sample.globalHeader, main: sample.main });
   if (sample.files) check(`${name}: Files fills available main`, Math.abs(sample.files.height - sample.main.height) <= 1 && Math.abs(sample.files.y - sample.main.y) <= 1 && sample.files.right <= sample.main.right + 1, sample.files);
   if (sample.filesScroll) check(`${name}: Files scroll viewport remains visible`, sample.filesScroll.height > 0 && sample.filesScroll.bottom <= sample.main.bottom + 1, sample.filesScroll);
-  await page.screenshot({ path: path.join(outputDir, `${name}.png`) });
+  if (sample.compact) check(`${name}: mobile workspace has no outer padding`, sample.main.padding.every((value) => value === 0), sample.main);
+  if (sample.compact && sample.workspacePage) check(`${name}: workspace page meets available edges`, Math.abs(sample.workspacePage.x - sample.main.x) <= 1 && Math.abs(sample.workspacePage.right - sample.main.right) <= 1 && Math.abs(sample.workspacePage.y + sample.main.scrollTop - sample.main.y) <= 1, sample.workspacePage);
+  if (!sample.compact && !sample.files) check(`${name}: desktop page padding is retained`, Math.abs(sample.main.padding[0] - 32) <= 1 && Math.abs(sample.main.padding[2] - 32) <= 1 && Math.abs(sample.main.padding[1] - Math.min(56, Math.max(16, sample.viewport.width * 0.04))) <= 1, sample.main.padding);
+  if (sample.galleryHeader && sample.compact) check(`${name}: Gallery title does not reserve a 320px column`, sample.galleryTitle.height < 100, sample.galleryTitle);
   return sample;
 }
 async function loadFiles(context, origin, role) {
   page = await context.newPage();
   page.setDefaultTimeout(10000);
   page.on('pageerror', (error) => result.pageErrors.push({ role, stage: activeStage, message: error.message }));
-  page.on('console', (message) => { if (message.type() === 'error') result.consoleErrors.push({ role, stage: activeStage, message: message.text() }); });
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    const entry = { role, stage: activeStage, message: message.text(), url: message.location().url };
+    if (expectedConsoleURLs.has(entry.url) && /Failed to load resource:.*404/.test(entry.message)) result.expectedConsoleErrors.push(entry);
+    else result.consoleErrors.push(entry);
+  });
   await page.goto(`${origin}/#/app/files`, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).waitFor();
   await settle();
 }
 async function moreDismissals(role) {
-  const more = page.getByRole('button', { name: '更多', exact: true });
-  const dialog = page.getByRole('dialog', { name: '更多', exact: true });
+  const more = page.getByRole('button', { name: '打开应用导航', exact: true });
+  const dialog = page.getByRole('dialog', { name: '应用导航', exact: true });
   const initialURL = page.url();
   const initialHistory = await page.evaluate(() => history.length);
   for (const method of ['button', 'escape', 'backdrop']) {
@@ -216,20 +279,24 @@ async function moreDismissals(role) {
     for (const label of ['全局任务', '用户管理', '审计日志', '全局存储']) {
       check(`${activeStage}: ${label} role gate`, (await dialog.getByRole('button', { name: label, exact: true }).count() > 0) === (role === 'admin'));
     }
-    check(`${activeStage}: targets at least 44px`, await dialog.getByRole('button').evaluateAll((elements) => elements.every((element) => element.getBoundingClientRect().height >= 44)));
-    if (method === 'button') await page.getByRole('button', { name: '关闭更多导航' }).click();
+    const targets = await dialog.getByRole('button').evaluateAll((elements) => elements.map((element) => ({
+      label: element.getAttribute('aria-label') || element.textContent,
+      height: element.getBoundingClientRect().height,
+    })));
+    check(`${activeStage}: targets at least 44px`, targets.every((target) => target.height >= 44), targets);
+    if (method === 'button') await page.getByRole('button', { name: '关闭应用导航' }).click();
     else if (method === 'escape') await page.keyboard.press('Escape');
     else await page.locator('.MuiDrawer-root .MuiBackdrop-root').click({ position: { x: 8, y: 8 } });
     await dialog.waitFor({ state: 'hidden' });
-    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-haspopup') === 'dialog' && document.activeElement?.textContent === '更多');
-    check(`${activeStage}: focus returns to More`, await more.evaluate((element) => document.activeElement === element));
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '打开应用导航');
+    check(`${activeStage}: focus returns to application navigation`, await more.evaluate((element) => document.activeElement === element));
     check(`${activeStage}: no navigation`, page.url() === initialURL && await page.evaluate(() => history.length) === initialHistory);
   }
 }
 async function moreLifecycle(role) {
   activeStage = `${role}-more-lifecycle`;
-  const more = page.getByRole('button', { name: '更多', exact: true });
-  const dialog = page.getByRole('dialog', { name: '更多', exact: true });
+  const more = page.getByRole('button', { name: '打开应用导航', exact: true });
+  const dialog = page.getByRole('dialog', { name: '应用导航', exact: true });
   const initialURL = page.url();
   await more.click();
   await dialog.waitFor();
@@ -253,7 +320,7 @@ async function moreLifecycle(role) {
 
 async function galleryAcceptance(role) {
   activeStage = `${role}-gallery`;
-  await page.getByRole('button', { name: '图库', exact: true }).click();
+  await navigateWorkspace('图库', 'gallery');
   await page.waitForURL(/\/gallery(?:\?section=library)?$/);
   await page.locator('[data-xdrive-media-tile]').first().waitFor();
   const initial = await geometry(`${role}-gallery-390`);
@@ -313,7 +380,8 @@ async function galleryAcceptance(role) {
   // No update/account mutation fixture exists: an accidental action fails closed.
   for (const portal of ['more', 'account', 'settings', 'transfers', ...(role === 'admin' ? ['update-confirmation'] : [])]) {
     activeStage = `${role}-viewer-forward-${portal}`;
-    if (portal === 'more') await page.getByRole('button', { name: '更多', exact: true }).click();
+    await page.getByRole('button', { name: '打开应用导航', exact: true }).click();
+    if (portal === 'more') await page.getByRole('dialog', { name: '应用导航', exact: true }).waitFor();
     else if (portal === 'transfers') await page.getByRole('button', { name: /^上传与下载/ }).click();
     else {
       await page.getByRole('button', { name: '账户菜单', exact: true }).click();
@@ -327,11 +395,11 @@ async function galleryAcceptance(role) {
         }
       }
     }
-    await page.getByRole(portal === 'account' ? 'menu' : 'dialog').waitFor();
+    await page.getByRole(portal === 'account' ? 'menu' : 'dialog').first().waitFor();
     await page.goForward();
     await page.waitForURL(viewerURL);
     await returnButton.waitFor();
-    await page.getByRole('dialog').waitFor({ state: 'hidden' });
+    await page.getByRole('dialog').first().waitFor({ state: 'hidden' });
     await page.getByRole('menu').waitFor({ state: 'hidden' });
     check(`${activeStage}: portal closed in Viewer`, await backgroundRetained());
     await page.goBack();
@@ -399,6 +467,312 @@ async function filesAcceptance(role) {
   }
 }
 
+async function navigateWorkspace(label, app) {
+  await settle();
+  let button = page.getByRole('button', { name: label, exact: true });
+  if (!await button.isVisible()) {
+    const floating = page.getByRole('button', { name: '打开应用导航', exact: true });
+    await (await floating.isVisible() ? floating : page.getByRole('button', { name: '更多', exact: true })).click();
+    button = page.getByRole('dialog').getByRole('button', { name: label, exact: true });
+  }
+  await button.click();
+  await page.waitForURL((url) => url.hash === `#/app/${app}` || url.hash.startsWith(`#/app/${app}?`));
+  // Wait for the real Drawer exit transition before measuring/clicking the
+  // destination. A still visible backdrop makes Playwright scroll/retry taps.
+  await page.locator('.MuiDrawer-root').waitFor({ state: 'hidden' });
+  await settle();
+}
+
+async function viewerGeometry(name) {
+  await settle();
+  const sample = await page.evaluate(() => {
+    const rect = (element) => element ? element.getBoundingClientRect().toJSON() : null;
+    const viewer = document.querySelector('[data-xdrive-web-viewer]');
+    const header = [...viewer.children].find((element) => element.querySelector('button[aria-label="返回"]'));
+    const surface = viewer.querySelector('[data-xdrive-file-preview-kind]');
+    const zoom = viewer.querySelector('[data-xdrive-preview-zoom]');
+    const returnButton = header.querySelector('button[aria-label="返回"]');
+    const buttonRect = returnButton.getBoundingClientRect();
+    const hit = document.elementFromPoint(buttonRect.x + buttonRect.width / 2, buttonRect.y + buttonRect.height / 2);
+    return { viewport: { width: innerWidth, height: innerHeight }, hash: location.hash,
+      viewer: rect(viewer), content: rect(surface), zoom: rect(zoom), header: rect(header),
+      headerPosition: getComputedStyle(header).position, headerOpacity: +getComputedStyle(header).opacity,
+      headerPointerEvents: getComputedStyle(header).pointerEvents,
+      returnHit: !!hit && (hit === returnButton || returnButton.contains(hit)),
+      imageDecoded: [...viewer.querySelectorAll('img')].some((image) => image.complete && image.naturalWidth === 80),
+      document: { width: document.documentElement.scrollWidth, height: document.documentElement.scrollHeight },
+    };
+  });
+  result.samples[name] = sample;
+  await page.screenshot({ path: path.join(outputDir, `${name}.png`) });
+  for (const part of ['viewer', 'content', 'zoom']) {
+    const rect = sample[part];
+    check(`${name}: ${part} uses the entire viewport`, rect && Math.abs(rect.x) <= 1 && Math.abs(rect.y) <= 1 && Math.abs(rect.width - sample.viewport.width) <= 1 && Math.abs(rect.height - sample.viewport.height) <= 1, rect);
+  }
+  check(`${name}: chrome overlays the media`, ['absolute', 'fixed'].includes(sample.headerPosition), { position: sample.headerPosition, header: sample.header });
+  check(`${name}: real image decoded`, sample.imageDecoded);
+  check(`${name}: no document overflow`, sample.document.width <= sample.viewport.width + 1 && sample.document.height <= sample.viewport.height + 1, sample.document);
+  return sample;
+}
+
+async function immersiveGeometryAcceptance(role, kind) {
+  activeStage = `${role}-${kind}-fullscreen`;
+  await page.waitForURL((url) => url.hash.startsWith(`#/app/${kind}?node=`));
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-xdrive-file-preview-kind] img')].some((image) => image.complete && image.naturalWidth === 80));
+  const retained = async (phase) => {
+    const state = await page.evaluate(() => {
+      const saved = window.__fullscreenCaller;
+      const mainRect = saved.main.getBoundingClientRect();
+      const visibleAnchor = [...document.querySelectorAll('[data-xdrive-media-tile]')].map((tile) => ({
+        index: Number(tile.getAttribute('data-xdrive-media-index')), rect: tile.getBoundingClientRect().toJSON(),
+      })).find((tile) => tile.rect.bottom > mainRect.y && tile.rect.y < mainRect.bottom);
+      return { sameMain: saved.main === document.querySelector('main'), itemConnected: saved.element.isConnected,
+        sameBackground: saved.background === document.querySelector('[data-xdrive-workspace-background]'),
+        expectedScroll: saved.scroll, actualScroll: saved.scrollElement.scrollTop,
+        currentURL: location.href, callerURL: saved.url,
+        visibleGalleryAnchor: visibleAnchor ?? null,
+        savedItemRect: saved.itemRect, currentItemRect: saved.element.getBoundingClientRect().toJSON() };
+    });
+    result.samples[`${role}-${kind}-caller-${phase}`] = state;
+    return state;
+  };
+  const isRetained = (state, expectedScroll = state.expectedScroll) => state.sameMain && state.itemConnected && state.sameBackground && expectedScroll === state.actualScroll;
+  const behind = await retained('behind');
+  check(`${activeStage}: caller DOM and scroll retained behind viewer`, isRetained(behind), behind);
+  check(`${activeStage}: caller is inert`, await page.locator('[data-xdrive-workspace-background]').evaluate((element) => element.inert && element.getAttribute('aria-hidden') === 'true'));
+  for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+    await page.setViewportSize(viewport);
+    await settle();
+    const resized = await retained(`resize-${viewport.width}`);
+    check(`${activeStage}-${viewport.width}: caller remains mounted during resize`, resized.sameMain && resized.itemConnected && resized.sameBackground, resized);
+    const name = `${role}-${kind}-${viewport.width}x${viewport.height}`;
+    // This is the actual auto-hide timer. No style or component substitution.
+    const visible = await viewerGeometry(`${name}-visible`);
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-xdrive-web-viewer] button[aria-label="返回"]');
+      return button && getComputedStyle(button.parentElement).opacity === '0';
+    });
+    const hidden = await viewerGeometry(`${name}-hidden`);
+    check(`${name}: hidden chrome releases pointer input`, hidden.headerPointerEvents === 'none' && hidden.headerOpacity === 0);
+    for (const part of ['viewer', 'content', 'zoom']) check(`${name}: ${part} geometry stable after chrome hides`, ['x', 'y', 'width', 'height'].every((key) => Math.abs(visible[part][key] - hidden[part][key]) <= 1), { visible: visible[part], hidden: hidden[part] });
+    await page.touchscreen.tap(viewport.width / 2, viewport.height / 2);
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('[data-xdrive-web-viewer] button[aria-label="返回"]').parentElement).opacity === '1');
+    const shown = await viewerGeometry(`${name}-reshown`);
+    check(`${name}: overlay return button receives input`, shown.returnHit && shown.headerPointerEvents === 'auto');
+    if (viewport.width === 390) {
+      const viewerURL = page.url();
+      const callerURL = await page.evaluate(() => window.__fullscreenCaller.url);
+      await page.getByRole('button', { name: '返回', exact: true }).click();
+      await page.waitForURL(callerURL);
+      await settle();
+      const fixedReturn = await retained('fixed-viewport-return');
+      check(`${activeStage}: fixed viewport return preserves exact caller scroll`, isRetained(fixedReturn), fixedReturn);
+      await page.goForward();
+      await page.waitForURL(viewerURL);
+      await page.waitForFunction(() => [...document.querySelectorAll('[data-xdrive-file-preview-kind] img')].some((image) => image.complete && image.naturalWidth === 80));
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await settle();
+  const beforeReturn = await retained('before-return');
+  const callerURL = await page.evaluate(() => window.__fullscreenCaller.url);
+  await page.getByRole('button', { name: '返回', exact: true }).click();
+  await page.waitForURL(callerURL);
+  await settle();
+  const returned = await retained('returned');
+  // A responsive Gallery may reflow and browser scroll anchoring may adjust
+  // its offset during rotation. Closing must preserve that exact live offset.
+  check(`${activeStage}: return restores caller DOM and scroll`, isRetained(returned, beforeReturn.actualScroll), { before: beforeReturn, after: returned });
+  check(`${activeStage}: return restores caller input`, await page.locator('[data-xdrive-workspace-background]').evaluate((element) => !element.inert && !element.hasAttribute('aria-hidden')));
+}
+
+async function rememberCaller(element, scrollSelector) {
+  await element.evaluate((node, selector) => {
+    const scrollElement = document.querySelector(selector);
+    window.__fullscreenCaller = { main: document.querySelector('main'), element: node,
+      background: document.querySelector('[data-xdrive-workspace-background]'),
+      scrollElement, scroll: scrollElement.scrollTop, url: location.href,
+      itemRect: node.getBoundingClientRect().toJSON() };
+  }, scrollSelector);
+}
+
+async function viewerMetadataAcceptance(role, app, loadingMessage) {
+  activeStage = `${role}-${app}-metadata`;
+  const paths = app === 'media-viewer' ? ['/api/v1/media/items/1000']
+    : app === 'text-viewer' ? ['/api/v1/nodes/1000', '/api/v1/files/1000/preview/text']
+      : ['/api/v1/nodes/1000'];
+  let release;
+  metadataGate = { paths, hits: 0, wait: new Promise((resolve) => { release = resolve; }) };
+  await page.evaluate(() => { window.__metadataCaller = { main: document.querySelector('main'), files: document.querySelector('[data-xdrive-file-explorer]') }; });
+  // Real standalone routes intentionally have no browse context, so the actual
+  // metadata boundary remains pending instead of using a cached directory row.
+  await page.evaluate((hash) => { location.hash = hash; }, `#/app/${app}?node=1000`);
+  await page.waitForURL((url) => url.hash === `#/app/${app}?node=1000`);
+  const stateGeometry = async (state, message) => {
+    const text = page.getByText(message, { exact: true });
+    await text.waitFor();
+    await settle();
+    const sample = await text.evaluate((element) => {
+      const viewer = element.closest('[data-xdrive-web-viewer]');
+      const button = viewer?.querySelector('button[aria-label="返回"]');
+      const header = viewer && [...viewer.children].find((child) => child.contains(button));
+      const buttonRect = button?.getBoundingClientRect();
+      const hit = buttonRect && document.elementFromPoint(buttonRect.x + buttonRect.width / 2, buttonRect.y + buttonRect.height / 2);
+      return { viewport: { width: innerWidth, height: innerHeight }, viewer: viewer?.getBoundingClientRect().toJSON() ?? null,
+        message: element.getBoundingClientRect().toJSON(), header: header?.getBoundingClientRect().toJSON() ?? null,
+        returnVisible: !!header && +getComputedStyle(header).opacity === 1 && !!hit && (hit === button || button.contains(hit)) };
+    });
+    result.samples[`${role}-${app}-${state}`] = sample;
+    await page.screenshot({ path: path.join(outputDir, `${role}-${app}-${state}.png`) });
+    check(`${activeStage}-${state}: frame fills viewport`, sample.viewer && sample.viewer.x === 0 && sample.viewer.y === 0 && sample.viewer.width === sample.viewport.width && sample.viewer.height === sample.viewport.height, sample);
+    check(`${activeStage}-${state}: return remains visible and receives input`, sample.returnVisible, sample);
+    check(`${activeStage}-${state}: status message is below overlay header and inside viewport`, sample.header && sample.message.y >= sample.header.bottom && sample.message.bottom <= sample.viewport.height && sample.message.x >= 0 && sample.message.right <= sample.viewport.width, sample);
+  };
+  try {
+    await stateGeometry('loading', loadingMessage);
+    check(`${activeStage}: loading is held at the real metadata API`, metadataGate.hits === paths.length, { endpoints: paths, requests: metadataGate.hits });
+    release();
+    await stateGeometry('error', 'QA metadata unavailable');
+    const back = page.getByRole('button', { name: '返回', exact: true });
+    if (await back.isVisible()) await back.click();
+    else await page.goBack(); // Allows an unframed baseline to record every route.
+    await page.waitForURL(/\/files(?:\?dir=1)?$/);
+    check(`${activeStage}: error return restores mounted Files`, await page.evaluate(() => window.__metadataCaller.main === document.querySelector('main') && window.__metadataCaller.files === document.querySelector('[data-xdrive-file-explorer]')));
+  } finally {
+    release();
+    metadataGate = undefined;
+  }
+}
+
+async function filesOverlayAcceptance(role) {
+  activeStage = `${role}-files-floating-entry`;
+  await page.setViewportSize({ width: 360, height: 780 });
+  await settle();
+  await page.locator('[data-xdrive-file-explorer-scroll-host]').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const more = page.getByRole('button', { name: '更多操作：photo-001.png', exact: true });
+  await more.waitFor();
+  await settle();
+  const target = await more.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    const hit = document.elementFromPoint(point.x, point.y);
+    return { rect: rect.toJSON(), point, receivesInput: !!hit && (hit === element || element.contains(hit)),
+      hitLabel: hit?.closest('button')?.getAttribute('aria-label'),
+      scroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]').scrollTop };
+  });
+  result.samples[`${role}-files-last-row-more`] = target;
+  check(`${activeStage}: last row More center is not covered by application navigation`, target.receivesInput, target);
+  await page.touchscreen.tap(target.point.x, target.point.y);
+  await settle();
+  const closeActions = page.getByRole('button', { name: '关闭文件操作', exact: true });
+  const opened = await closeActions.isVisible();
+  check(`${activeStage}: physical tap opens last row actions`, opened);
+  await page.screenshot({ path: path.join(outputDir, `${role}-files-last-row-actions.png`) });
+  if (opened) await closeActions.tap();
+  else if (await page.getByRole('button', { name: '关闭应用导航', exact: true }).isVisible()) await page.getByRole('button', { name: '关闭应用导航', exact: true }).tap();
+  await page.locator('[data-xdrive-file-explorer-touch-action-sheet]').waitFor({ state: 'hidden' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await settle();
+}
+
+async function galleryOverlayAcceptance(role, density = 144) {
+  activeStage = `${role}-gallery-floating-entry-${density}`;
+  await page.setViewportSize({ width: 360, height: 780 });
+  await settle();
+  await page.locator('main').evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const info = page.locator('[data-xdrive-media-index="239"] [data-xdrive-gallery-touch-info]');
+  await info.waitFor();
+  await settle();
+  const target = await info.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const point = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+    const hit = document.elementFromPoint(point.x, point.y);
+    const navigation = document.querySelector('button[aria-label="打开应用导航"]');
+    const navRect = navigation?.getBoundingClientRect();
+    const overlap = navRect ? { width: Math.max(0, Math.min(rect.right, navRect.right) - Math.max(rect.left, navRect.left)),
+      height: Math.max(0, Math.min(rect.bottom, navRect.bottom) - Math.max(rect.top, navRect.top)) } : { width: 0, height: 0 };
+    // Include edge midpoints as well as inset corners: two round controls can
+    // overlap through their middle edges while all four corners remain clear.
+    const probes = [
+      ['top-left', rect.left + 1, rect.top + 1], ['top-right', rect.right - 1, rect.top + 1],
+      ['bottom-left', rect.left + 1, rect.bottom - 1], ['bottom-right', rect.right - 1, rect.bottom - 1],
+      ['left', rect.left + 1, point.y], ['right', rect.right - 1, point.y],
+      ['top', point.x, rect.top + 1], ['bottom', point.x, rect.bottom - 1],
+    ].map(([label, x, y]) => {
+      const top = document.elementFromPoint(x, y);
+      return { label, x, y, interceptedByNavigation: !!navigation && !!top && (top === navigation || navigation.contains(top)),
+        hitLabel: top?.closest('button')?.getAttribute('aria-label') };
+    });
+    return { rect: rect.toJSON(), point, receivesInput: !!hit && (hit === element || element.contains(hit)),
+      hitLabel: hit?.closest('button')?.getAttribute('aria-label'), scroll: document.querySelector('main').scrollTop,
+      navigation: navRect?.toJSON() ?? null, overlap, probes };
+  });
+  result.samples[`${role}-gallery-last-row-info-${density}`] = target;
+  check(`${activeStage}: last Gallery Info center is not covered by application navigation`, target.receivesInput, target);
+  check(`${activeStage}: last Gallery Info 44px target does not overlap application navigation`, target.overlap.width * target.overlap.height === 0 && target.probes.every((probe) => !probe.interceptedByNavigation), target);
+  await page.screenshot({ path: path.join(outputDir, `${role}-gallery-last-row-info-${density}.png`) });
+}
+
+async function fullscreenAcceptance(role) {
+  await page.evaluate(() => { window.__fullscreenMain = document.querySelector('main'); });
+  const workspaces = [
+    { label: '文件', app: 'files' }, { label: '图库', app: 'gallery' },
+    { label: '主页', app: 'overview' }, { label: '同步文件夹', app: 'sync-folders' },
+    { label: '任务', app: 'tasks' }, { label: '本地存储', app: 'local-storage' },
+    { label: '云端存储', app: 'cloud-storage' },
+    ...(role === 'admin' ? [
+      { label: '全局任务', app: 'tasks?scope=global' }, { label: '用户管理', app: 'admin-users' },
+      { label: '审计日志', app: 'admin-audit' }, { label: '全局存储', app: 'admin-storage' },
+    ] : []),
+  ];
+  for (const workspace of workspaces) {
+    activeStage = `${role}-fullscreen-${workspace.app}`;
+    if (workspace.app !== 'files') await navigateWorkspace(workspace.label, workspace.app);
+    if (workspace.app === 'gallery') await page.locator('[data-xdrive-media-tile]').first().waitFor();
+    else if (workspace.app !== 'files') await page.waitForFunction(() => document.querySelector('main')?.innerText.trim() && !document.querySelector('main').innerText.includes('正在切换工作区'));
+    await page.locator('main').evaluate((element) => { element.scrollTop = 0; });
+    const viewports = workspace.app === 'files' || workspace.app === 'gallery'
+      ? [{ width: 360, height: 780 }, { width: 390, height: 844 }, { width: 430, height: 932 }, { width: 899, height: 700 }, { width: 900, height: 700 }, { width: 1280, height: 800 }, { width: 844, height: 390 }]
+      : [{ width: 390, height: 844 }, { width: 899, height: 700 }, { width: 900, height: 700 }];
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      const sample = await geometry(`${role}-fullscreen-${workspace.app.replace('?', '-')}-${viewport.width}x${viewport.height}`);
+      check(`${activeStage}-${viewport.width}: one mounted main across apps and breakpoints`, await page.evaluate(() => window.__fullscreenMain === document.querySelector('main')));
+      if (workspace.app === 'files') check(`${activeStage}-${viewport.width}: Files owns internal scroll`, sample.filesScroll && ['auto', 'scroll'].includes(sample.filesScroll.overflowY) && sample.filesScroll.scrollHeight > sample.filesScroll.clientHeight + 200 && sample.main.scrollHeight <= sample.main.clientHeight + 1, sample.filesScroll);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+  }
+  await navigateWorkspace('图库', 'gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('main').evaluate((element) => { element.scrollTop = 620; });
+  await settle();
+  const index = await page.locator('[data-xdrive-media-tile]').evaluateAll((tiles) => tiles.findIndex((tile) => {
+    const rect = tile.getBoundingClientRect();
+    return rect.y >= 100 && rect.bottom <= innerHeight - 100;
+  }));
+  assert(index >= 0, 'Fixture must expose a real Gallery tile');
+  const tile = page.locator('[data-xdrive-media-tile]').nth(index);
+  await rememberCaller(tile, 'main');
+  await tile.tap();
+  await immersiveGeometryAcceptance(role, 'media-viewer');
+  await navigateWorkspace('文件', 'files');
+  await filesOverlayAcceptance(role);
+  const filesScroll = page.locator('[data-xdrive-file-explorer-scroll-host]');
+  await filesScroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
+  const image = page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'photo-001.png' });
+  await image.waitFor();
+  await rememberCaller(image, '[data-xdrive-file-explorer-scroll-host]');
+  await image.press('Space');
+  await immersiveGeometryAcceptance(role, 'preview');
+  if (role === 'user') for (const [app, message] of [
+    ['preview', '正在打开预览…'], ['media-viewer', '正在打开媒体…'],
+    ['text-viewer', '正在加载文本…'], ['pdf-viewer', '正在打开文件…'], ['audio-player', '正在打开文件…'],
+  ]) await viewerMetadataAcceptance(role, app, message);
+  await navigateWorkspace('图库', 'gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await galleryOverlayAcceptance(role);
+}
+
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
@@ -419,9 +793,10 @@ async function main() {
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = options.scenario === 'smoke' ? [{ role: 'user' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
-        : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
-    for (const { role, viewMode } of cases) {
-      const scenarioLabel = viewMode ? `${role}-inherited-${viewMode}` : role;
+        : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
+          : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
+    for (const { role, viewMode, galleryDensity } of cases) {
+      const scenarioLabel = viewMode ? `${role}-inherited-${viewMode}` : galleryDensity ? `${role}-gallery-density-${galleryDensity}` : role;
       activeStage = `${scenarioLabel}-startup`;
       // A new process also supports single-process portable Chromium, which
       // cannot reliably create a second context after its first context closes.
@@ -429,13 +804,14 @@ async function main() {
         env: process.env.XDRIVE_BROWSER_FONTCONFIG ? { ...process.env, FONTCONFIG_PATH: process.env.XDRIVE_BROWSER_FONTCONFIG } : process.env });
       result.browserVersion = browser.version();
       const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1, serviceWorkers: 'block' });
-      await context.addInitScript(({ role, origin, viewMode }) => {
+      await context.addInitScript(({ role, origin, viewMode, galleryDensity }) => {
         if (location.origin !== origin) return;
         localStorage.setItem('xdrive.access_token', 'local-browser-qa-token');
         localStorage.setItem('xdrive.access_expires_at', String(Date.now() + 86400000));
         localStorage.setItem('xdrive.username', `qa-${role}`);
         if (viewMode) localStorage.setItem('xdrive.files.view_mode', viewMode);
-      }, { role, origin, viewMode });
+        if (galleryDensity) localStorage.setItem('xdrive.gallery.view-preferences.v1', JSON.stringify({ timeScale: 'all', densityByScale: { all: galleryDensity } }));
+      }, { role, origin, viewMode, galleryDensity });
       await context.route('**/*', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -444,6 +820,16 @@ async function main() {
         result.requests[key] = (result.requests[key] || 0) + 1;
         try {
           assert.equal(url.origin, origin, 'App attempted an external network request');
+          if (metadataGate && request.method() === 'GET' && metadataGate.paths.includes(url.pathname)) {
+            const gate = metadataGate;
+            queryOnly(url, []);
+            gate.hits += 1;
+            await gate.wait;
+            expectedConsoleURLs.add(request.url());
+            result.expectedApiErrors.push({ request: key, status: 404, purpose: 'viewer metadata loading/error layout' });
+            await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'QA metadata unavailable' }) });
+            return;
+          }
           const body = fixtureFor(request, role);
           await route.fulfill({ status: 200, contentType: Buffer.isBuffer(body) ? 'image/png' : 'application/json', body: Buffer.isBuffer(body) ? body : JSON.stringify(body) });
         } catch (error) {
@@ -452,7 +838,12 @@ async function main() {
         }
       });
       await loadFiles(context, origin, role);
-      if (viewMode) await inheritedColumnsAcceptance();
+      if (galleryDensity) {
+        await navigateWorkspace('图库', 'gallery');
+        await page.locator('[data-xdrive-media-tile]').first().waitFor();
+        await galleryOverlayAcceptance(role, galleryDensity);
+      } else if (options.scenario === 'fullscreen') await fullscreenAcceptance(role);
+      else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);
         if (options.scenario !== 'smoke') {
@@ -481,7 +872,7 @@ async function main() {
     result.finishedAt = new Date().toISOString();
     result.passed = result.failures.length === 0 && result.unknownRequests.length === 0 && result.pageErrors.length === 0 && result.consoleErrors.length === 0;
     fs.writeFileSync(path.join(outputDir, 'results.json'), `${JSON.stringify(result, null, 2)}\n`);
-    console.log(JSON.stringify({ passed: result.passed, checks: result.checks.length, failures: result.failures, unknownRequests: result.unknownRequests, outputDir }, null, 2));
+    console.log(JSON.stringify({ passed: result.passed, checks: result.checks.length, failures: result.failures.map(({ stage, message }) => ({ stage, message })), unknownRequests: result.unknownRequests, outputDir }, null, 2));
   }
 }
 main().catch((error) => { console.error(error); process.exitCode = 1; });

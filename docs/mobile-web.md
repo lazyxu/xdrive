@@ -4,7 +4,11 @@
 
 Use one shared business/controller layer and one shared React/MUI component layer, with an adaptive presentation for a narrow Web viewport. Keep Web routing, authentication and platform APIs in `web`; keep common navigation and workspace layout in `ui/shared/src/mui`.
 
-The first delivery is the shared workspace shell. It does not change file selection/open gestures, Gallery gestures, upload/download capabilities or desktop preferences. Those follow after the shell provides stable space and navigation.
+**Current mandatory contract — 2026-10-09:** every registered Mobile Web App occupies the **entire browser-available dynamic viewport**, including the area previously reserved for the global header and footer. Filling only the middle content area is insufficient. The global AppBar and bottom navigation do not remain in layout flow on mobile. An on-demand shared application-navigation overlay provides app switching, account/settings and upload/download access. App-specific controls remain inside their own app; Desktop and wide Web retain their existing shell.
+
+The earlier phase deliveries and measurements below are historical evidence. Their permanent-bottom-navigation geometry is superseded by this contract; do not reintroduce it when adding a new app or updating an existing page.
+
+The separate [iOS comparison and follow-up inventory](mobile-web-ios-comparison.md) records 61 proposed improvements and verification items. Those suggestions are **not implemented by this full-screen change** and do not override the current layout, routing or Preview Engine contracts.
 
 | Priority | Delivery | Acceptance focus |
 | --- | --- | --- |
@@ -38,25 +42,26 @@ keyboard/safe-area, background/foreground and native media/download results sepa
 from Chromium emulation and pure controller tests. Existing acceptance records below
 remain valid only for the exact environments and paths they measured.
 
-## Phase 1 contract
+## Current shell contract
 
 ### Navigation
 
 - `XDriveWorkspaceSidebar` is still the only full navigation component consumed by Web and Desktop.
-- Responsive Web uses compact navigation below the shared MUI `md` breakpoint (900 CSS px). At 900 px and above, retain the sidebar. Desktop's non-responsive shell retains its existing sidebar and 960 px width adjustment.
-- The compact primary destinations are `overview`, `files`, `gallery`, `transfers`, followed by a More button. Home comes from the caller's sections. “任务” contains file operations, sync runs and other background/local work; the existing internal workspace key remains `transfers` and the Web route remains `tasks?scope=mine`. Uploads and downloads are in the shared top-right transfer popup, with live upload/download rates.
-- Administrators also receive “全局任务” (`global-tasks`) in More, opening `tasks?scope=global`; ordinary users do not receive this destination. The same capability gate applies to the wide sidebar and the server administrator API.
-- More derives all remaining destinations from the same core model and extension sections. Preserve ordering, section labels, badges, optional local storage and caller-provided role filtering. More is local UI state, not a new route.
-- Selection flows through the existing `onSelect(destination, event)` callback, preserving Ctrl/Cmd. Opening or dismissing More does not navigate. Choosing an entry closes More and invokes the callback once.
-- New compact navigation targets are at least 44 CSS px tall. The bottom navigation is in layout flow, outside the content scroll container, with safe-area padding.
-- Close More when the selected workspace changes, navigation becomes disabled, or compact navigation unmounts on a wide viewport.
+- Responsive Web uses the full-screen application presentation below the shared MUI `md` breakpoint (900 CSS px), independently of pointer type. At 900 px and above, retain the topbar/sidebar. Desktop's non-responsive shell retains its existing sidebar and 960 px width adjustment.
+- A 44×44 CSS px floating **打开应用导航** button opens **应用导航**. Its lower-left offset clears Files' right-edge More actions and Gallery's tile-left Info targets, including at the end of the list. This trigger and its Drawer are overlays and reserve **zero** header/footer height. No persistent global topbar, bottom navigation, sidebar or compensating spacer is allowed in the mobile app viewport. Validate the last Files item's More with a real tap and check the entire last-row Gallery Info target for overlap at supported thumbnail densities; do not regain button access by adding footer space.
+- The overlay exposes `overview`, `files`, `gallery`, `transfers`, followed by the remaining core/extension destinations from the same shared model. Home comes from the caller's sections. “任务” remains `transfers` internally and `tasks?scope=mine` in Web routes. Uploads/downloads and their live rates remain the same shared transfer popup, reached beside the account control inside application navigation on mobile and from the topbar on wide Web/Desktop.
+- Administrators also receive “全局任务” (`global-tasks`), opening `tasks?scope=global`; ordinary users do not receive it. Preserve section labels, badges, optional local storage and caller-provided role filtering; the same capability gate applies to wide navigation and the Server API.
+- Application navigation is local overlay state, not a new route. Selection uses the existing `onSelect(destination, event)` callback, preserving Ctrl/Cmd. Opening/dismissing the overlay does not change browser history. Choosing an entry closes it and invokes the callback once.
+- Overlay controls retain at least 44 CSS px touch targets and safe-area spacing. Close the overlay on a selected-workspace change, Viewer activation, or a responsive transition to wide Web. Reopening or returning from Viewer must not restore an old account, settings, update-confirmation or transfer portal.
 
 ### Viewport and scrolling
 
-- The authenticated Web workspace fills the dynamic viewport, with a `100vh` fallback. Keep `minHeight: 0` through the flex/grid chain, prevent a second document scroll container, and retain safe areas without suppressing browser zoom.
+- The authenticated Web **app/main itself** fills the dynamic viewport, with a `100vh` fallback. At mobile widths its bounds are x=0, y=0, width=viewport width and height=viewport height; safe-area treatment protects controls without restoring a global bar. Keep `minHeight: 0` through the flex/grid chain and prevent a second document scroll container.
+- All mobile page workspaces use zero desktop outer padding. Never reserve 48/56px global chrome offsets, fixed card heights, or a desktop width `flex-basis` on a vertical mobile stack. Gallery's title uses content height when stacked; its desktop width basis applies only to the horizontal layout.
 - The same `WorkspaceContent` main element remains mounted across responsive breakpoints. Page workspaces, including Gallery, scroll this element at every width. Gallery virtualization discovers this scroll ancestor once, so breakpoints must not replace it.
-- Files use the full remaining content area, without the old 560 px mobile height or the WebFileExplorer's 420 px minimum. The shared explorer owns its internal scrolling.
-- Viewer remains a sibling overlay over the existing workspace. Its background retains layout and DOM but is inert while Viewer is active. The More portal is closed/disabled. Do not key or replace the workspace by Viewer route.
+- Files occupy the entire mobile app viewport, without global header/footer subtraction, the old 560 px mobile height, or WebFileExplorer's 420 px minimum. The shared explorer owns its internal command/address/status bars and scrolling.
+- Viewer remains a sibling overlay over the existing workspace. Its background retains layout and DOM but is inert while Viewer is active. Application navigation is closed/disabled and its floating trigger hidden. Do not key or replace the workspace by Viewer route.
+- Every Viewer owns its full-screen frame and a reachable Return action during metadata loading, missing/unsupported-file and error states as well as successful display. Image/video/Live Photo/Quick Look compact immersive header and action chrome overlay the media area; hiding chrome must not leave a reserved blank strip. Text/PDF/Audio may keep their own reading controls in flow within the full-screen app and do not gain neighbor navigation.
 - `100dvh` is a viewport layout choice, not a claim that virtual-keyboard behavior is solved on every browser. Native iOS/Android keyboard and safe-area validation remains part of device acceptance.
 - Retain the existing viewport metadata in this phase. Enabling `viewport-fit=cover` changes the coordinate space for Viewer, authentication and public-share surfaces too; enable it only with those surfaces' safe-area acceptance. Shell padding already respects any safe-area insets the browser reports.
 - Viewer also closes the transfer popup, account menu, settings and account update-confirmation portals. These are part of Shell chrome and must not survive above the Viewer or reopen on return.
@@ -65,7 +70,7 @@ remain valid only for the exact environments and paths they measured.
 
 Shared files own the core navigation model, compact navigation, Shell and Content. `web/src/App.tsx` continues to own route mapping, role-filtered administration and the authenticated viewport/Viewer boundary. The password-change surface also consumes shared Content; its document scrolling must remain usable.
 
-The topbar transfer popup uses the same shared MUI component as Desktop. At narrow widths its paper is constrained to the viewport, its list scrolls internally, and touch controls retain 44 px targets. Opening the popup preserves the current workspace and browser history. See [Transfers and tasks](transfers-and-tasks.md) for transfer scope, rate semantics and history separation.
+The transfer popup uses the same shared MUI component as Desktop. Its mobile trigger lives in application navigation, not a persistent topbar. At narrow widths its paper is constrained to the viewport, its list scrolls internally, and touch controls retain 44 px targets. Opening it preserves the workspace and browser history. See [Transfers and tasks](transfers-and-tasks.md) for transfer scope, rate semantics and history separation.
 
 No server API, browser-history policy, directory/tab state, selection, persisted desktop pane width or column preferences change in this phase. Do not duplicate navigation rules or introduce a mobile router.
 
@@ -73,9 +78,45 @@ No server API, browser-history policy, directory/tab state, selection, persisted
 
 The initial baseline is `92b7d58370542fd0597433fdc4c3969e325a113c`. Before changes, the 32 existing shell/navigation/runtime tests and workspace-surface check pass.
 
-Use behavioral Node tests for model projection, actual Web role-filtered sections, selection, More lifecycle and event identity. Keep the existing shared ownership and route regression checks. Use a real renderer for viewport bounds, drawer focus/closing, scroll-root identity and preservation of mounted content; a hook mock or SSR is not evidence for layout/reconciliation.
+Use behavioral Node tests for model projection, actual Web role-filtered sections, selection, application-navigation lifecycle and event identity. Keep the existing shared ownership and route regression checks. Use a real renderer for viewport bounds, drawer focus/closing, scroll-root identity and preservation of mounted content; a hook mock or SSR is not evidence for layout/reconciliation.
 
-Exercise 390×844, 899×700, 900×700 and a wide desktop viewport, including narrow → wide → narrow. Check both ordinary and administrator navigation; short/landscape heights; Files internal scrolling; Gallery's main scrolling; Viewer open/close with an unchanged background DOM. Record tested environments and any remaining device-only checks with the delivery.
+Exercise 360×780, 390×844, 430×932, 844×390, 899×700, 900×700 and wide desktop, including narrow → wide → narrow. For **all 15 registered apps**, check app/main bounds against the entire available viewport, not a header/footer-subtracted rectangle. Check ordinary/admin overlay navigation, account/settings/transfer access, Files internal scrolling, Gallery's main scroll owner, loading/failure/unsupported Viewer states and Viewer return with unchanged caller DOM. Record tested environments and device-only checks separately.
+
+### Full-viewport delivery record — 2026-10-09
+
+**Status: Implemented; local renderer acceptance passed.** This record supersedes the earlier permanent mobile header/footer geometry. The fixed work baseline is `a7eb62a023180c0bc51aa7d6ff0ad402ab36bcb3`; GitHub PR CI remains the authoritative merge gate, and physical-device acceptance remains separate.
+
+The shared responsive Shell now gives all registered apps the whole mobile viewport. Global account/settings and upload/download controls moved into the on-demand application-navigation Drawer; its controls remain mounted without reserving space and close with navigation, Viewer activation or a breakpoint transition. Wide Web and the non-responsive Desktop Shell retain their existing presentation. Gallery's stacked title no longer uses a desktop width basis as a mobile height. Media, Text, PDF and Audio now retain a full-screen frame and Return while their metadata is pending or fails; Quick Look status content is positioned clear of its overlay header.
+
+The same built real Web App and bounded API fixtures were measured before and after using **Chromium 153.0.8010.0**, with 240 Gallery images, 98 root Files entries and 64 child-directory files. Rectangles below are CSS pixels in a **390×844** viewport; these are layout measurements, not a latency or performance-speedup claim.
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| Files and Gallery main `(x, y, width, height)` | `(0, 49, 390, 738)` | `(0, 0, 390, 844)` |
+| Global header/footer height reserved outside the app | 106 px, including dividers | 0 px |
+| Gallery outer page padding | 16 px on each side | 0 px |
+| Gallery stacked title block | 320 px high; 358 px wide | 52.03 px high for this fixture; 390 px wide |
+| Media/Quick Look content and image zoom container | `y=56`, height 788 px, even with hidden chrome | `y=0`, height 844 px; chrome overlays content |
+| Media/Quick Look landscape content at 844×390 | 334 px high | 390 px high |
+
+Two concrete navigation regressions were also reproduced before acceptance: the moved account trigger was only 36 px high, and a lower-right floating trigger intercepted the final Files row's More action. Centering that trigger then overlapped 12 px of Gallery's right-column Info target. The final shared trigger uses a 56 px left offset and remains 44×44 with safe-area-aware bottom spacing; it adds no footer or scroll padding. At 360×780, the final Files More rectangle `(304, 703, 44, 44)` receives a real touch and opens **文件操作**. Gallery's last Info target has no rectangle intersection or corner/edge interception at default 144 px, minimum 96 px and maximum 240 px thumbnail densities. Density checks use fresh browser contexts rather than conflating an end-of-list resize with control hit testing.
+
+| Validation | Result and scope |
+| --- | --- |
+| Real App `--scenario=fullscreen` | **901 passed, 0 failed**; all 10 workspace apps, administrator task scope, immersive Media/Quick Look geometry, and loading/error frames for all 5 Viewer apps |
+| Existing real App `--scenario=all` | **367 passed, 0 failed**; directory and caller identity, breakpoints, navigation dismissal/focus, account/settings/update/transfer portals and browser Back/Forward |
+| Desktop `npm run test:main` | **1232 tests: 1231 passed, 0 failed, 1 existing opt-in benchmark skipped** |
+| Desktop `npm run typecheck` | Passed |
+| Web `npm run lint` and `npm run build` | Passed; existing Vite large-chunk warning remains |
+| Independent code/document review | Navigation action size fixed; no outstanding Critical/Important findings in the reviewed full-screen scope |
+
+The full-screen renderer matrix uses **360×780, 390×844, 430×932, 844×390, 899×700, 900×700 and 1280×800**, with Files/Gallery across all sizes and other workspace apps at the representative narrow/breakpoint sizes. Media and Quick Look test portrait/landscape content bounds with chrome shown, hidden and restored. All five Viewer programs additionally hold their actual metadata/text API reads pending, then receive explicit 404 responses; their frame, visible state message and Return remain reachable. The six declared fixture 404s are recorded separately. There were **zero unexpected API requests, page errors or console errors**.
+
+The same main, caller and scroll host remain mounted. Fixed-viewport Gallery open/return preserves `scrollTop=620`. During orientation changes Chromium scroll anchoring can adjust that value with the new layout; the measured rotated case is `665` immediately before and after closing Viewer. Do not force the old numerical scroll offset across different geometries or confuse Playwright's auto-scroll behind an exiting Drawer with a caller remount. The runner waits for the actual Drawer exit before interacting with the destination.
+
+Reproduce against a freshly built `web/dist` with `desktop/scripts/mobile-web-app-browser.cjs --scenario=fullscreen --output-dir=<results-directory>` and repeat with `--scenario=all`; configure `XDRIVE_PLAYWRIGHT_MODULE` and `XDRIVE_BROWSER_EXECUTABLE` when those runtimes are supplied outside the repository. The runner consumes the built application, rejects undeclared API traffic and writes its JSON measurements and screenshots to the requested output directory.
+
+This acceptance uses local API fixtures and Chromium touch emulation. It does **not** certify a deployed Server, physical iOS/Android safe areas and keyboard, OS-owned download completion, or native PDF/video/audio decoding. Successful native-format rendering retains its existing separate acceptance matrix; this change specifically certifies app geometry, state framing, controls and caller continuity. The [iOS comparison inventory](mobile-web-ios-comparison.md) remains a proposal list only.
 
 ### Phase 1 delivery record — 2026-10-08
 

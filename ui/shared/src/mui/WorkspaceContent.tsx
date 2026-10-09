@@ -40,12 +40,9 @@ export function XDriveWorkspaceContent({
               }
             : responsive
               ? {
-                  px: 'clamp(16px, 4vw, 56px)',
-                  py: 4,
+                  px: { xs: 0, md: 'clamp(16px, 4vw, 56px)' },
+                  py: { xs: 0, md: 4 },
                   overflowY: 'auto',
-                  '@media (max-width: 720px)': {
-                    p: 2,
-                  },
                 }
               : {
                   p: '34px 40px 48px',

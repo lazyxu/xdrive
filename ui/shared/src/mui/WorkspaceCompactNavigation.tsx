@@ -1,5 +1,6 @@
-import { useEffect, useId, useState } from 'react'
-import type { MouseEvent } from 'react'
+import { useCallback, useEffect, useId, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import {
@@ -30,6 +31,10 @@ export function XDriveWorkspaceCompactNavigation({
   ariaLabel,
   navAriaLabel,
   disabled = false,
+  fullscreen = false,
+  open,
+  onOpenChange,
+  actions,
   onSelect,
 }: {
   primary: XDriveSidebarDestinationModel[]
@@ -41,18 +46,30 @@ export function XDriveWorkspaceCompactNavigation({
   ariaLabel: string
   navAriaLabel: string
   disabled?: boolean
+  fullscreen?: boolean
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  actions?: ReactNode
   onSelect: (key: string, event: MouseEvent<HTMLElement>) => void
 }) {
-  const [moreOpen, setMoreOpen] = useState(false)
+  const [internalOpen, setInternalOpen] = useState(false)
+  const moreOpen = open ?? internalOpen
+  const setMoreOpen = useCallback((value: boolean) => {
+    setInternalOpen(value)
+    onOpenChange?.(value)
+  }, [onOpenChange])
   const drawerID = useId()
   const titleID = useId()
   const dark = appearance === 'dark'
   const selectedInMore = moreSections.some((section) => section.items.some((item) => item.key === selected))
   const value = primary.some((item) => item.key === selected) ? selected : selectedInMore ? 'more' : false
+  const drawerSections = fullscreen
+    ? [{ key: 'primary', items: primary }, ...moreSections]
+    : moreSections
 
   useEffect(() => {
     setMoreOpen(false)
-  }, [selected, disabled])
+  }, [selected, disabled, setMoreOpen])
 
   const selectDestination = (key: string, event: MouseEvent<HTMLElement>) => {
     if (disabled) return
@@ -65,7 +82,16 @@ export function XDriveWorkspaceCompactNavigation({
       component="aside"
       aria-label={ariaLabel}
       className={className}
-      sx={{
+      data-xdrive-compact-navigation={fullscreen ? 'fullscreen' : 'bar'}
+      sx={fullscreen ? {
+        position: 'fixed',
+        // Clear Files' right-edge More actions and Gallery's left-edge Info
+        // targets, including the final row where users cannot scroll farther.
+        left: 'max(56px, env(safe-area-inset-left))',
+        bottom: 'max(12px, env(safe-area-inset-bottom))',
+        zIndex: 1100,
+        display: disabled ? 'none' : undefined,
+      } : {
         order: 1,
         flexShrink: 0,
         minWidth: 0,
@@ -75,7 +101,28 @@ export function XDriveWorkspaceCompactNavigation({
         pb: 'env(safe-area-inset-bottom)',
       }}
     >
-      <BottomNavigation
+      {fullscreen ? (
+        <IconButton
+          aria-label="打开应用导航"
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen && !disabled}
+          aria-controls={moreOpen && !disabled ? drawerID : undefined}
+          disabled={disabled}
+          onClick={() => setMoreOpen(true)}
+          sx={{
+            width: 44,
+            height: 44,
+            bgcolor: 'background.paper',
+            color: 'text.primary',
+            border: 1,
+            borderColor: 'divider',
+            boxShadow: 3,
+            '&:hover': { bgcolor: 'background.paper' },
+          }}
+        >
+          <AppsRoundedIcon />
+        </IconButton>
+      ) : <BottomNavigation
         component="nav"
         aria-label={navAriaLabel}
         showLabels
@@ -124,11 +171,12 @@ export function XDriveWorkspaceCompactNavigation({
             if (!disabled) setMoreOpen(true)
           }}
         />
-      </BottomNavigation>
+      </BottomNavigation>}
       <Drawer
         anchor="bottom"
         open={moreOpen && !disabled}
         onClose={() => setMoreOpen(false)}
+        ModalProps={{ keepMounted: fullscreen }}
         slotProps={{
           paper: {
             id: drawerID,
@@ -150,13 +198,18 @@ export function XDriveWorkspaceCompactNavigation({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, flexShrink: 0 }}>
-          <Typography id={titleID} component="h2" variant="subtitle1" fontWeight={600}>更多</Typography>
-          <IconButton aria-label="关闭更多导航" onClick={() => setMoreOpen(false)} sx={{ width: 44, height: 44, color: 'inherit' }}>
+          <Typography id={titleID} component="h2" variant="subtitle1" fontWeight={600}>{fullscreen ? '应用导航' : '更多'}</Typography>
+          <IconButton aria-label={fullscreen ? '关闭应用导航' : '关闭更多导航'} onClick={() => setMoreOpen(false)} sx={{ width: 44, height: 44, color: 'inherit' }}>
             <CloseRoundedIcon />
           </IconButton>
         </Box>
         <Box sx={{ minHeight: 0, overflowY: 'auto' }}>
-          {moreSections.map((section) => (
+          {actions ? (
+            <Box sx={{ py: 1, '& .MuiButtonBase-root': { minWidth: 44, minHeight: 44 } }}>
+              {actions}
+            </Box>
+          ) : null}
+          {drawerSections.map((section) => (
             <Box key={section.key} sx={{ pt: section.label ? 1 : 0 }}>
               {section.label ? (
                 <Typography variant="caption" sx={{ px: 1, color: dark ? '#9baac2' : 'text.secondary' }}>
