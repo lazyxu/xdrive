@@ -80,7 +80,7 @@ func mediaMemoryDate(value time.Time) time.Time {
 func parseMediaMemoryAnchorDate(raw string, now time.Time) (time.Time, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return mediaMemoryDate(now), nil
+		raw = now.Format("2006-01-02")
 	}
 	value, err := time.Parse("2006-01-02", raw)
 	if err != nil {
@@ -226,6 +226,11 @@ func listMemoryThumbnailMIMEs() []string {
 }
 
 func (s *Server) listMediaMemories(c *gin.Context) {
+	location, zone, zoneErr := mediaIANAZone(c.Query("time_zone"))
+	if zoneErr != nil {
+		fail(c, 400, zoneErr.Error())
+		return
+	}
 	if err := s.refreshMediaIndexForOwner(
 		c.Request.Context(),
 		userID(c),
@@ -234,7 +239,7 @@ func (s *Server) listMediaMemories(c *gin.Context) {
 		fail(c, 500, "refresh media projection failed")
 		return
 	}
-	anchor, err := parseMediaMemoryAnchorDate(c.Query("anchor_date"), time.Now().UTC())
+	anchor, err := parseMediaMemoryAnchorDate(c.Query("anchor_date"), time.Now().In(location))
 	if err != nil {
 		fail(c, 400, err.Error())
 		return
@@ -249,6 +254,7 @@ func (s *Server) listMediaMemories(c *gin.Context) {
 		userID(c),
 		anchor,
 		limit,
+		zone,
 	)
 	if err != nil {
 		fail(c, 500, "list media memories failed")
@@ -259,6 +265,11 @@ func (s *Server) listMediaMemories(c *gin.Context) {
 }
 
 func (s *Server) listMediaMemoryItems(c *gin.Context) {
+	_, zone, zoneErr := mediaIANAZone(c.Query("time_zone"))
+	if zoneErr != nil {
+		fail(c, 400, zoneErr.Error())
+		return
+	}
 	memoryID := strings.TrimSpace(c.Param("memoryID"))
 	spec, ok := parseMediaMemoryID(memoryID)
 	if !ok {
@@ -279,6 +290,7 @@ func (s *Server) listMediaMemoryItems(c *gin.Context) {
 		spec,
 		limit,
 		offset,
+		zone,
 	)
 	if err != nil {
 		fail(c, 500, "list media memory items failed")
@@ -298,6 +310,7 @@ func queryMediaMemories(
 	ownerID uint64,
 	anchor time.Time,
 	limit int,
+	zoneName ...string,
 ) ([]mediaMemoryDTO, error) {
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("media memories query is not configured")
@@ -306,16 +319,17 @@ func queryMediaMemories(
 		limit = mediaMemoryDefaultLimit
 	}
 	anchor = mediaMemoryDate(anchor)
+	zone := mediaMemoryZoneName(zoneName)
 
-	onThisDay, err := queryMediaOnThisDayMemory(ctx, db, ownerID, anchor)
+	onThisDay, err := queryMediaOnThisDayMemory(ctx, db, ownerID, anchor, zone)
 	if err != nil {
 		return nil, err
 	}
-	recent, err := queryMediaRecentDayMemories(ctx, db, ownerID, anchor)
+	recent, err := queryMediaRecentDayMemories(ctx, db, ownerID, anchor, zone)
 	if err != nil {
 		return nil, err
 	}
-	trips, err := queryMediaTripMemories(ctx, db, ownerID)
+	trips, err := queryMediaTripMemories(ctx, db, ownerID, zone)
 	if err != nil {
 		return nil, err
 	}
@@ -337,9 +351,12 @@ func queryMediaRecentDayMemories(
 	db *gorm.DB,
 	ownerID uint64,
 	anchor time.Time,
+	zoneName ...string,
 ) ([]mediaMemoryDTO, error) {
-	start := anchor.AddDate(0, 0, -(mediaMemoryRecentWindowDays - 1))
-	end := anchor.AddDate(0, 0, 1)
+	zone := mediaMemoryZoneName(zoneName)
+	location, _, _ := mediaIANAZone(zone)
+	start := mediaMemoryLocalMidnight(anchor.AddDate(0, 0, -(mediaMemoryRecentWindowDays-1)), location)
+	end := mediaMemoryLocalMidnight(anchor.AddDate(0, 0, 1), location)
 	type row struct {
 		DayKey      string     `gorm:"column:day_key"`
 		ItemCount   int64      `gorm:"column:item_count"`
@@ -350,7 +367,7 @@ func queryMediaRecentDayMemories(
 	if err := db.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
 		Select(
-			"TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day_key, "+
+			mediaIANAZoneExpression("TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')", zone)+" AS day_key, "+
 				"COUNT(DISTINCT pa.id) AS item_count, "+
 				"MAX(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
 				"MAX(xd_media_metadata.captured_at) AS updated_at",
@@ -403,7 +420,10 @@ func queryMediaOnThisDayMemory(
 	db *gorm.DB,
 	ownerID uint64,
 	anchor time.Time,
+	zoneName ...string,
 ) (*mediaMemoryDTO, error) {
+	zone := mediaMemoryZoneName(zoneName)
+	location, _, _ := mediaIANAZone(zone)
 	type row struct {
 		ItemCount   int64      `gorm:"column:item_count"`
 		YearCount   int64      `gorm:"column:year_count"`
@@ -411,12 +431,12 @@ func queryMediaOnThisDayMemory(
 		UpdatedAt   *time.Time `gorm:"column:updated_at"`
 	}
 	var value row
-	currentYearStart := time.Date(anchor.Year(), 1, 1, 0, 0, 0, 0, time.UTC)
+	currentYearStart := time.Date(anchor.Year(), 1, 1, 0, 0, 0, 0, location).UTC()
 	if err := db.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
 		Select(
 			"COUNT(DISTINCT pa.id) AS item_count, "+
-				"COUNT(DISTINCT EXTRACT(YEAR FROM xd_media_metadata.captured_at)) AS year_count, "+
+				"COUNT(DISTINCT EXTRACT(YEAR FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+"))) AS year_count, "+
 				"MAX(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
 				"MAX(xd_media_metadata.captured_at) AS updated_at",
 			listMemoryThumbnailMIMEs(),
@@ -430,8 +450,8 @@ func queryMediaOnThisDayMemory(
 			"xd_media_metadata.owner_id = ? AND xd_media_metadata.index_state = ? AND "+
 				"xd_media_metadata.media_kind IN ? AND xd_media_metadata.captured_at IS NOT NULL AND "+
 				"xd_media_metadata.captured_at < ? AND "+
-				"EXTRACT(MONTH FROM xd_media_metadata.captured_at) = ? AND "+
-				"EXTRACT(DAY FROM xd_media_metadata.captured_at) = ?",
+				"EXTRACT(MONTH FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+")) = ? AND "+
+				"EXTRACT(DAY FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+")) = ?",
 			ownerID,
 			meta.MediaIndexStateReady,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
@@ -462,7 +482,9 @@ func queryMediaTripDays(
 	ctx context.Context,
 	db *gorm.DB,
 	ownerID uint64,
+	zoneName ...string,
 ) ([]mediaMemoryTripDay, error) {
+	zone := mediaMemoryZoneName(zoneName)
 	type row struct {
 		DayKey        string     `gorm:"column:day_key"`
 		LatitudeCell  int64      `gorm:"column:latitude_cell"`
@@ -484,7 +506,7 @@ func queryMediaTripDays(
 	if err := db.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
 		Select(
-			"TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day_key, "+
+			mediaIANAZoneExpression("TO_CHAR(xd_media_metadata.captured_at AT TIME ZONE 'UTC', 'YYYY-MM-DD')", zone)+" AS day_key, "+
 				latExpr+" AS latitude_cell, "+lonExpr+" AS longitude_cell, "+
 				"COUNT(DISTINCT pa.id) AS item_count, "+
 				"MAX(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
@@ -679,8 +701,11 @@ func queryMediaTripMemories(
 	ctx context.Context,
 	db *gorm.DB,
 	ownerID uint64,
+	zoneName ...string,
 ) ([]mediaMemoryDTO, error) {
-	days, err := queryMediaTripDays(ctx, db, ownerID)
+	zone := mediaMemoryZoneName(zoneName)
+	location, _, _ := mediaIANAZone(zone)
+	days, err := queryMediaTripDays(ctx, db, ownerID, zone)
 	if err != nil {
 		return nil, err
 	}
@@ -696,8 +721,8 @@ func queryMediaTripMemories(
 			ctx,
 			db,
 			ownerID,
-			start,
-			end.AddDate(0, 0, 1),
+			mediaMemoryLocalMidnight(start, location),
+			mediaMemoryLocalMidnight(end.AddDate(0, 0, 1), location),
 		)
 		if summaryErr != nil {
 			return nil, summaryErr
@@ -736,7 +761,10 @@ func (s *Server) mediaMemoryItemsBaseQuery(
 	ctx context.Context,
 	ownerID uint64,
 	spec mediaMemorySpec,
+	zoneName ...string,
 ) (*gorm.DB, error) {
+	zone := mediaMemoryZoneName(zoneName)
+	location, _, _ := mediaIANAZone(zone)
 	base, err := s.mediaItemsBaseQuery(
 		ctx,
 		ownerID,
@@ -751,15 +779,15 @@ func (s *Server) mediaMemoryItemsBaseQuery(
 	case mediaMemoryKindRecentDay, mediaMemoryKindTrip:
 		return base.Where(
 			"xd_media_metadata.captured_at >= ? AND xd_media_metadata.captured_at < ?",
-			spec.Start,
-			spec.End,
+			mediaMemoryLocalMidnight(spec.Start, location),
+			mediaMemoryLocalMidnight(spec.End, location),
 		), nil
 	case mediaMemoryKindOnThisDay:
 		return base.Where(
 			"xd_media_metadata.captured_at IS NOT NULL AND "+
-				"EXTRACT(YEAR FROM xd_media_metadata.captured_at) < ? AND "+
-				"EXTRACT(MONTH FROM xd_media_metadata.captured_at) = ? AND "+
-				"EXTRACT(DAY FROM xd_media_metadata.captured_at) = ?",
+				"EXTRACT(YEAR FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+")) < ? AND "+
+				"EXTRACT(MONTH FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+")) = ? AND "+
+				"EXTRACT(DAY FROM ("+mediaIANAZoneExpression("xd_media_metadata.captured_at AT TIME ZONE 'UTC'", zone)+")) = ?",
 			spec.AnchorYear,
 			int(spec.Month),
 			spec.Day,
@@ -774,8 +802,9 @@ func (s *Server) queryMediaMemoryItemRange(
 	ownerID uint64,
 	spec mediaMemorySpec,
 	limit, offset int,
+	zoneName ...string,
 ) (mediaItemRangeDTO, error) {
-	query, err := s.mediaMemoryItemsBaseQuery(ctx, ownerID, spec)
+	query, err := s.mediaMemoryItemsBaseQuery(ctx, ownerID, spec, zoneName...)
 	if err != nil {
 		return mediaItemRangeDTO{}, err
 	}

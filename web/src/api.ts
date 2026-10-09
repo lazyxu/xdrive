@@ -265,6 +265,7 @@ function appendMediaGalleryQuery(
   if (Number.isSafeInteger(query.anchor_node_id) && (query.anchor_node_id ?? 0) > 0) {
     values.set('anchor_node_id', String(query.anchor_node_id))
   }
+  if (query.time_zone) values.set('time_zone', query.time_zone)
   if (query.sort_by) values.set('sort_by', query.sort_by)
   if (query.sort_dir) values.set('sort_dir', query.sort_dir)
   if (query.search?.trim()) values.set('q', query.search.trim())
@@ -825,9 +826,10 @@ export class XDriveApi {
     return this.request<MediaPlaceFacet[]>(`/api/v1/media/places?${query.toString()}`)
   }
 
-  mediaMemories(anchorDate = '', limit = 24) {
+  mediaMemories(anchorDate = '', limit = 24, timeZone = 'UTC') {
     const query = new URLSearchParams({
       limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      time_zone: timeZone,
     })
     if (anchorDate.trim()) query.set('anchor_date', anchorDate.trim())
     return this.request<MediaMemory[]>(
@@ -839,8 +841,10 @@ export class XDriveApi {
     memoryID: string,
     limit = 200,
     offset = 0,
+    timeZone = 'UTC',
   ) {
     const query = new URLSearchParams({
+      time_zone: timeZone,
       range: 'true',
       limit: String(Math.min(500, Math.max(1, Math.trunc(limit)))),
       offset: String(Math.max(0, Math.trunc(offset))),

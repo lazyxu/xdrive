@@ -26,10 +26,10 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     },
     listAlbums: () => api.mediaAlbums(),
     listPlaces: (limit = 24) => api.mediaPlaces(limit),
-    listMemories: (anchorDate = '', limit = 24) =>
-      api.mediaMemories(anchorDate, limit),
-    listMemoryItemRange: (memoryID, limit, offset) =>
-      api.mediaMemoryItemRange(memoryID, limit, offset),
+    listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
+      api.mediaMemories(anchorDate, limit, timeZone),
+    listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>
+      api.mediaMemoryItemRange(memoryID, limit, offset, timeZone),
     listDuplicateGroups: (limit = 24) => api.mediaDuplicateGroups(limit),
     listDuplicateItemRange: (duplicateID, limit, offset) =>
       api.mediaDuplicateItemRange(duplicateID, limit, offset),

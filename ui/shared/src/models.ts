@@ -629,6 +629,7 @@ export interface MediaAlbum {
 }
 
 export interface MediaGalleryQuery {
+  time_zone?: string
   anchor_node_id?: number
   sort_by?: 'captured' | 'added'
   sort_dir?: 'asc' | 'desc'

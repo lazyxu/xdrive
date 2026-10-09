@@ -54,12 +54,19 @@ logical index through their existing layout anchors. It is not a new pagination
 service or a permanent smart-album/Viewer query field. Missing, deleted or
 newly filtered-away originals fall back to the new collection beginning.
 
-**G03 is not complete** until one user-selected IANA timezone governs
-Timeline, captured-date filter boundaries, Memories and Viewer labels, and sort
-the anchor behavior above is verified together with the selected timezone,
-including actual account scope and 10k/100k sparse-range acceptance. The remaining work is tracked in the
-[Gallery audit](gallery-ios-kfs-audit.md). Web/Desktop continue to share
-the same query model and platform adapters.
+**G03 timezone stage is under CI validation.** Use the selected, validated
+`time_zone` identifier for the Server's Year/Month/Day grouping, Memory day
+IDs/queries and historical-day matching, capture-date filter UTC boundaries,
+and Gallery/Viewer/Properties labels. This is a named IANA zone, not a fixed
+offset; midnight in New York can be separated by 23 or 25 hours across DST.
+Unknown capture time stays unknown, not import time. A legacy client omitting
+`time_zone` keeps the existing UTC Server behavior. Older Desktop Agents must
+report an unsupported zone capability rather than silently return UTC groups.
+The same-item anchor remains a transient request-only field. Account/device
+and 10k/100k sparse-range acceptance stay separate from source-contract checks.
+Mark G03 complete only after this timezone stage's full CI and integration
+tests pass; record missing physical-device testing separately. See the
+[Gallery audit](gallery-ios-kfs-audit.md).
 
 ## Fixed implementation order
 

@@ -34,5 +34,5 @@ test('G03 query parameters propagate through Web and Desktop without local sorti
   assert.match(gallery, /data-xdrive-gallery-sort-dir/)
   assert.match(gallery, /sort_by: gallerySortRef\.current\.by/)
   assert.match(gallery, /sort_dir: gallerySortRef\.current\.dir/)
-  assert.match(gallery, /mediaTimelineGroups\(items, effectiveTimeScale, sortBy, sortDir\)/)
+  assert.match(gallery, /mediaTimelineGroups\(items, effectiveTimeScale, sortBy, sortDir, timeZone\)/)
 })

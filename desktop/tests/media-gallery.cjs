@@ -167,8 +167,8 @@ test('Gallery IA keeps photo browsing primary and moves advanced controls behind
     'data-xdrive-media-gallery-memory',
     "kind: 'memory'",
     'source.listMemoryItemRange',
-    'xDriveMediaGalleryUTCDateKey()',
-    'now.toISOString().slice(0, 10)',
+    'xDriveMediaDayKey(new Date(), mediaTimeZoneRef.current)',
+    'mediaTimeZoneRef.current',
   ]) {
     assert.ok(sharedGallery.includes(token), `Gallery Memories contract missing: ${token}`)
   }
@@ -1539,7 +1539,7 @@ test('Gallery time scales map compact group indexes onto the shared sparse Virtu
   ]) {
     assert.ok(sharedGalleryVirtualTimeline.includes(token), `Gallery Timeline helper missing: ${token}`)
   }
-  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir)'), 'standalone dense fallback uses current order without materializing the sparse collection')
+  assert.ok(sharedGalleryMain.includes('mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir, timeZone)'), 'standalone dense fallback uses current order without materializing the sparse collection')
   assert.equal(sharedGalleryMain.includes('const loadMore = useCallback'), false, 'Gallery controller must not append dense pages')
   for (const token of [
     'searchActive={Boolean(query.search?.trim())}',

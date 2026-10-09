@@ -1277,6 +1277,23 @@ function normalizeCloudFileOperationConflictPolicy(value: unknown): 'skip' | 'ke
   )
 }
 
+function normalizeGalleryTimeZone(value: unknown): string {
+  if (value === undefined || value === null || value === '') return 'UTC'
+  if (
+    typeof value !== 'string' || value.length > 80 ||
+    !/^[A-Za-z0-9_+\/-]+$/.test(value) ||
+    (value !== 'UTC' && !value.includes('/'))
+  ) {
+    throw new AgentIPCError('invalid_input', 0, 'Media time zone must be a valid IANA name.')
+  }
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value })
+    return value
+  } catch {
+    throw new AgentIPCError('invalid_input', 0, 'Media time zone must be a valid IANA name.')
+  }
+}
+
 function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
   if (value === undefined || value === null) return {}
   if (typeof value !== 'object' || Array.isArray(value)) {
@@ -1285,6 +1302,9 @@ function normalizeMediaGalleryQuery(value: unknown): AgentMediaQuery {
 
   const input = value as Record<string, unknown>
   const out: AgentMediaQuery = {}
+  if (input.time_zone !== undefined) {
+    out.time_zone = normalizeGalleryTimeZone(input.time_zone)
+  }
   if (input.search !== undefined) {
     if (typeof input.search !== 'string' || [...input.search].length > 200) {
       throw new AgentIPCError('invalid_input', 0, 'Media search must be at most 200 characters.')
@@ -1950,11 +1970,15 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media offset must be zero or greater.')
     }
+    const mediaQuery = normalizeMediaGalleryQuery(query)
+    if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
+      requireAgentCapability(hello, 'media-timezone')
+    }
     return requireAgentClient().mediaItems(
       kind.trim(),
       requestedLimit,
       requestedOffset,
-      normalizeMediaGalleryQuery(query),
+      mediaQuery,
     )
   }, false))
 
@@ -1974,11 +1998,15 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Media kind must be image or video.')
     }
     const window = normalizeMediaRangeWindow(limit, offset)
+    const mediaQuery = normalizeMediaGalleryQuery(query)
+    if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
+      requireAgentCapability(hello, 'media-timezone')
+    }
     return requireAgentClient().mediaItemRange(
       kind.trim(),
       window.limit,
       window.offset,
-      normalizeMediaGalleryQuery(query),
+      mediaQuery,
     )
   }, false))
 
@@ -2001,8 +2029,12 @@ function registerIPCHandlers() {
     ) {
       throw new AgentIPCError('invalid_input', 0, 'Media album id is invalid.')
     }
+    const mediaQuery = normalizeMediaGalleryQuery(query)
+    if (mediaQuery.time_zone && mediaQuery.time_zone !== 'UTC') {
+      requireAgentCapability(hello, 'media-timezone')
+    }
     return requireAgentClient().mediaFacets(
-      normalizeMediaGalleryQuery(query),
+      mediaQuery,
       albumID.trim(),
     )
   }, false))
@@ -2074,9 +2106,12 @@ function registerIPCHandlers() {
       _event,
       anchorDate: unknown = '',
       limit: unknown = 24,
+      timeZone: unknown = 'UTC',
     ) => runAgentAction<AgentMediaMemory[]>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
+      const zone = normalizeGalleryTimeZone(timeZone)
+      if (zone !== 'UTC') requireAgentCapability(hello, 'media-timezone')
       const requestedAnchorDate = typeof anchorDate === 'string' ? anchorDate.trim() : ''
       if (
         requestedAnchorDate &&
@@ -2093,7 +2128,7 @@ function registerIPCHandlers() {
       ) {
         throw new AgentIPCError('invalid_input', 0, 'Memory limit must be between 1 and 100.')
       }
-      return requireAgentClient().mediaMemories(requestedAnchorDate, requestedLimit)
+      return requireAgentClient().mediaMemories(requestedAnchorDate, requestedLimit, zone)
     }, false),
   )
 
@@ -2104,9 +2139,12 @@ function registerIPCHandlers() {
       memoryID: unknown,
       limit: unknown = 200,
       offset: unknown = 0,
+      timeZone: unknown = 'UTC',
     ) => runAgentAction<AgentMediaItemRange>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'media-gallery')
+      const zone = normalizeGalleryTimeZone(timeZone)
+      if (zone !== 'UTC') requireAgentCapability(hello, 'media-timezone')
       if (
         typeof memoryID !== 'string' ||
         memoryID.trim() === '' ||
@@ -2119,6 +2157,7 @@ function registerIPCHandlers() {
         memoryID.trim(),
         window.limit,
         window.offset,
+        zone,
       )
     }, false),
   )

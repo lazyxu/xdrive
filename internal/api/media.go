@@ -777,6 +777,7 @@ func queryMediaTimelineGroupSets(query *gorm.DB, sorts ...mediaQueryOptions) (me
 	if options.SortBy == "added" {
 		expression = mediaAddedDayGroupExpression
 	}
+	expression = mediaIANAZoneExpression(expression, options.TimeZone)
 	direction := "group_key DESC"
 	if options.SortDir == "asc" {
 		direction = "group_key ASC"

@@ -13,6 +13,7 @@ import {
   StarBorder as StarBorderIcon,
 } from '@mui/icons-material'
 import {
+  Autocomplete,
   Box,
   Breadcrumbs,
   Button,
@@ -33,6 +34,13 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material'
+import {
+  xDriveMediaDayKey,
+  xDriveMediaTimeZoneChoices,
+  xDriveReadMediaTimeZone,
+  xDriveValidMediaTimeZone,
+  xDriveWriteMediaTimeZone,
+} from '../media-timezone'
 import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
@@ -165,11 +173,12 @@ export interface MediaGalleryDataSource {
   permanentlyDeleteTrashItems?: (items: MediaItem[]) => Promise<void>
   listAlbums: () => Promise<MediaAlbum[]>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
-  listMemories?: (anchorDate?: string, limit?: number) => Promise<MediaMemory[]>
+  listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
     memoryID: string,
     limit: number,
     offset: number,
+    timeZone?: string,
   ) => Promise<MediaItemRange>
   listDuplicateGroups?: (limit?: number) => Promise<MediaDuplicateGroupList>
   listDuplicateItemRange?: (
@@ -484,6 +493,8 @@ export function XDriveMediaGalleryPage({
     }
   })
   const gallerySortRef = useRef(gallerySort)
+  const [mediaTimeZone, setMediaTimeZone] = useState(xDriveReadMediaTimeZone)
+  const mediaTimeZoneRef = useRef(mediaTimeZone)
   const pendingSortAnchorRef = useRef(0)
   const [sortAnchorRestoration, setSortAnchorRestoration] =
     useState<{ index: number; requestID: number } | null>(null)
@@ -531,7 +542,9 @@ export function XDriveMediaGalleryPage({
         if (!target.id || !source.listMemoryItemRange) {
           throw new Error('当前客户端不支持回忆范围加载')
         }
-        return source.listMemoryItemRange(target.id, limit, offset)
+        return source.listMemoryItemRange(
+          target.id, limit, offset, target.query.time_zone ?? mediaTimeZoneRef.current,
+        )
       case 'duplicate-review':
         if (!target.id || !source.listDuplicateItemRange) {
           throw new Error('当前客户端不支持重复项审查范围加载')
@@ -658,7 +671,7 @@ export function XDriveMediaGalleryPage({
             requestID: request,
           }
         : memory
-          ? { kind: 'memory', id: memory.id, query: {}, requestID: request }
+          ? { kind: 'memory', id: memory.id, query: { time_zone: mediaTimeZoneRef.current }, requestID: request }
           : pet
             ? { kind: 'pet', id: pet.id, query: {}, requestID: request }
             : mediaGalleryTarget(
@@ -666,6 +679,7 @@ export function XDriveMediaGalleryPage({
           album,
           {
             ...nextQuery,
+            time_zone: mediaTimeZoneRef.current,
             sort_by: gallerySortRef.current.by,
             sort_dir: gallerySortRef.current.dir,
             ...(anchorNodeID > 0 ? { anchor_node_id: anchorNodeID } : {}),
@@ -819,8 +833,9 @@ export function XDriveMediaGalleryPage({
     setError('')
     try {
       const nextMemories = await source.listMemories(
-        xDriveMediaGalleryUTCDateKey(),
+        xDriveMediaDayKey(new Date(), mediaTimeZoneRef.current),
         48,
+        mediaTimeZoneRef.current,
       )
       if (request !== requestID.current) return
       setMemories(nextMemories)
@@ -1060,6 +1075,27 @@ export function XDriveMediaGalleryPage({
     // A new server range order owns a new sparse-collection generation.
     void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson)
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, query])
+
+  const changeGalleryTimeZone = useCallback((nextZone: string) => {
+    if (!xDriveValidMediaTimeZone(nextZone) || mediaTimeZoneRef.current === nextZone) return
+    // Update the preference before recomputing capture-date boundaries.
+    xDriveWriteMediaTimeZone(nextZone)
+    mediaTimeZoneRef.current = nextZone
+    setMediaTimeZone(nextZone)
+    if (section === 'memories') {
+      void loadMemories()
+      return
+    }
+    const nextQuery: MediaGalleryQuery = {
+      ...mediaGalleryQueryFromDraft(draftFilters),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+    }
+    setQuery(nextQuery)
+    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
+  }, [
+    currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson,
+    draftFilters, loadFirstPage, loadMemories, section,
+  ])
 
   const clearFilters = useCallback(() => {
     if (currentAlbum?.kind === 'smart') {
@@ -1837,6 +1873,8 @@ export function XDriveMediaGalleryPage({
         searchActive={Boolean(query.search?.trim())}
         sortBy={gallerySort.by}
         sortDir={gallerySort.dir}
+        timeZone={mediaTimeZone}
+        onTimeZoneChange={changeGalleryTimeZone}
         onSortChange={changeGallerySort}
         sortAnchorIndex={sortAnchorRestoration?.index}
         sortAnchorRevision={sortAnchorRestoration?.requestID}
@@ -2133,6 +2171,8 @@ export interface XDriveMediaGalleryProps {
   searchActive?: boolean
   sortBy?: 'captured' | 'added'
   sortDir?: 'asc' | 'desc'
+  timeZone?: string
+  onTimeZoneChange?: (zone: string) => void
   onSortChange?: (
     by: 'captured' | 'added',
     dir: 'asc' | 'desc',
@@ -2394,6 +2434,7 @@ function mediaTimelineGroups(
   scale: Exclude<MediaGalleryTimeScale, 'all'>,
   sortBy: 'captured' | 'added' = 'captured',
   sortDir: 'asc' | 'desc' = 'desc',
+  timeZone = 'UTC',
 ): MediaTimelineGroup[] {
   const groups = new Map<string, MediaTimelineGroup>()
   const unknown: MediaItem[] = []
@@ -2403,9 +2444,10 @@ function mediaTimelineGroups(
       unknown.push(item)
       continue
     }
-    const year = String(date.getUTCFullYear())
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0')
-    const day = String(date.getUTCDate()).padStart(2, '0')
+    const localDay = xDriveMediaDayKey(date, timeZone)
+    const year = localDay.slice(0, 4)
+    const month = localDay.slice(5, 7)
+    const day = localDay.slice(8, 10)
     const key = scale === 'year'
       ? year
       : scale === 'month'
@@ -2423,7 +2465,7 @@ function mediaTimelineGroups(
         : { year: 'numeric', month: 'long', day: 'numeric' }
     groups.set(key, {
       key,
-      label: new Intl.DateTimeFormat('zh-CN', { ...formatOptions, timeZone: 'UTC' }).format(date),
+      label: new Intl.DateTimeFormat('zh-CN', { ...formatOptions, timeZone }).format(date),
       items: [item],
       startIndex: 0,
     })
@@ -3437,6 +3479,8 @@ export function XDriveMediaGallery({
   searchActive = false,
   sortBy = 'captured',
   sortDir = 'desc',
+  timeZone = xDriveReadMediaTimeZone(),
+  onTimeZoneChange,
   onSortChange,
   sortAnchorIndex,
   sortAnchorRevision = 0,
@@ -3499,6 +3543,7 @@ export function XDriveMediaGallery({
     () => new XDriveMediaThumbnailScheduler(loadThumbnail),
     [loadThumbnail],
   )
+  const availableTimeZones = useMemo(xDriveMediaTimeZoneChoices, [])
   useEffect(() => () => {
     thumbnailScheduler.dispose()
   }, [thumbnailScheduler])
@@ -3682,8 +3727,8 @@ export function XDriveMediaGallery({
   const denseTimelineGroups = useMemo(
     () => effectiveTimeScale === 'all'
       ? []
-      : mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir),
-    [effectiveTimeScale, items, sortBy, sortDir],
+      : mediaTimelineGroups(items, effectiveTimeScale, sortBy, sortDir, timeZone),
+    [effectiveTimeScale, items, sortBy, sortDir, timeZone],
   )
   const logicalItemCount = virtualCollection?.itemCount ?? items.length
 
@@ -4264,6 +4309,23 @@ export function XDriveMediaGallery({
             >
               {selectionMode ? '完成' : '选择'}
             </Button>
+            {((showPhotoCollection && !isTrashSection) || section === 'memories') && onTimeZoneChange ? (
+              <Autocomplete
+                freeSolo
+                size="small"
+                options={availableTimeZones}
+                value={timeZone}
+                onChange={(_event, value) => {
+                  if (typeof value === 'string') onTimeZoneChange(value)
+                }}
+                renderInput={(params) => (
+                  <TextField {...params} label="日期时区" aria-label="图库日期时区"
+                    helperText="拍摄、筛选和回忆共用" />
+                )}
+                sx={{ minWidth: 176, maxWidth: 260 }}
+                data-xdrive-gallery-time-zone
+              />
+            ) : null}
             {showPhotoCollection && !isTrashSection && !searchActive &&
              !currentMemory && !currentPet && !currentCleanupReview && onSortChange ? (
               <Stack direction="row" spacing={0.75}>

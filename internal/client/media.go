@@ -369,6 +369,7 @@ type UpdateMediaPersonIdentityInput struct {
 }
 
 type MediaQuery struct {
+	TimeZone       string
 	AnchorNodeID   uint64
 	SortBy         string
 	SortDir        string
@@ -390,6 +391,9 @@ type MediaQuery struct {
 }
 
 func (q MediaQuery) add(values url.Values) {
+	if zone := strings.TrimSpace(q.TimeZone); zone != "" {
+		values.Set("time_zone", zone)
+	}
 	if q.AnchorNodeID > 0 {
 		values.Set("anchor_node_id", strconv.FormatUint(q.AnchorNodeID, 10))
 	}
@@ -609,10 +613,14 @@ func (c *Client) MediaMemories(
 	ctx context.Context,
 	anchorDate string,
 	limit int,
+	zoneName ...string,
 ) ([]MediaMemory, error) {
 	values := url.Values{}
 	if value := strings.TrimSpace(anchorDate); value != "" {
 		values.Set("anchor_date", value)
+	}
+	if len(zoneName) > 0 && strings.TrimSpace(zoneName[0]) != "" {
+		values.Set("time_zone", strings.TrimSpace(zoneName[0]))
 	}
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
@@ -630,6 +638,7 @@ func (c *Client) MediaMemoryItemsRange(
 	ctx context.Context,
 	memoryID string,
 	limit, offset int,
+	zoneName ...string,
 ) (MediaItemRange, error) {
 	if offset < 0 {
 		return MediaItemRange{}, fmt.Errorf("offset must be zero or greater")
@@ -640,6 +649,9 @@ func (c *Client) MediaMemoryItemsRange(
 		values.Set("limit", strconv.Itoa(limit))
 	}
 	values.Set("offset", strconv.Itoa(offset))
+	if len(zoneName) > 0 && strings.TrimSpace(zoneName[0]) != "" {
+		values.Set("time_zone", strings.TrimSpace(zoneName[0]))
+	}
 	path := "/api/v1/media/memories/" +
 		url.PathEscape(strings.TrimSpace(memoryID)) + "/items?" + values.Encode()
 	var out MediaItemRange
