@@ -14,6 +14,7 @@ export function createDesktopMediaGalleryDataSource(
     listItems: (limit, offset, query) => agent.getMediaItems('', limit, offset, query),
     listItemRange: (limit, offset, query) => agent.getMediaItemRange('', limit, offset, query),
     listFacets: (query, albumID) => agent.getMediaFacets(query, albumID),
+    getIndexStatus: () => agent.getMediaIndexStatus(),
     listSyncFolders: () => agent.getMediaSyncFolders(),
     getSyncFolder: (sourceID, folderID) => agent.getMediaSyncFolder(sourceID, folderID),
     listTrashItemRange: (limit, offset) => agent.getMediaTrash(limit, offset),

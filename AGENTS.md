@@ -89,6 +89,11 @@ Provider delivery rules:
 
 ## Gallery documentation and product-contract policy
 
+- G05 index coverage is explicitly on-demand and owner-scoped to **known
+  non-trashed logical PhotoAssets**, reporting missing/failed/unsupported
+  metadata. Never claim this equals whole-file-scan completion. The first
+  sparse media range must not wait on index coverage, and Desktop must
+  reject missing Agent capability instead of silently claiming success.
 - G05 distinguish an editable filter/search draft from the last successfully
   applied Server query. Active chips and counts must describe the applied query;
   query changes invalidate the sparse range generation. The first image must

@@ -168,13 +168,19 @@ The search order reflects the Server's `search_order=relevance` when present,
 or labels basic matching otherwise. Local recent search suggestions are bounded
 and per-account; unavailable storage must never block browsing.
 
-**Still missing:** real index-coverage state (including failures and unindexed
-assets) must be supplied separately from the filtered result count. The UI
-explicitly says `索引覆盖尚未核验`; it must never interpret zero matched assets
-as evidence that the full library was indexed. Add an owner-scoped on-demand
-Server index status rather than scanning all assets or recomputing facets on
-first image. Changes in G05 must preserve facets' own-filter exclusion,
-Server-owned sort/ranges and Viewer browsing context.
+**On-demand index coverage (separate candidate):** Authenticated
+`GET /media/index-status` aggregates only **already known, active logical
+PhotoAssets** for the selected owner and their primary media index metadata,
+with ready/error/unsupported/missing/other counts and checked timestamp.
+It is *not* a claim that every file has been scanned: unseen items have no
+PhotoAsset record and must not be included in the denominator.
+Search's Server `total_count` remains scoped to the submitted query, whereas
+the optional status is global to that owner's known assets. A zero search
+match must never mean a completely indexed library. The button explicitly
+starts the status request; first-image fetch and camera/format facets remain
+independent. The implementation requires full CI and PostgreSQL owner,
+trash and missing-metadata integration verification before G05 can be
+marked complete. Keep the Server-owned sort/ranges and Viewer context.
 
 ## Fixed implementation order
 

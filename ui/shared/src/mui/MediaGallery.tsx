@@ -49,6 +49,7 @@ import type {
   MediaAlbum,
   MediaAlbumFolder,
   MediaGalleryFacets,
+  MediaGalleryIndexStatus,
   MediaGalleryQuery,
   MediaSyncFolder,
   MediaFolderBreadcrumb,
@@ -176,6 +177,7 @@ export interface MediaGalleryDataSource {
     query?: MediaGalleryQuery,
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
+  getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
   listSyncFolders?: () => Promise<MediaSyncFolder[]>
   getSyncFolder?: (sourceID: number, folderID: number) => Promise<MediaFolderView>
   listTrashItemRange?: (
@@ -468,6 +470,10 @@ export function XDriveMediaGalleryPage({
   const [facetsLoading, setFacetsLoading] = useState(false)
   const [facetsError, setFacetsError] = useState('')
   const facetRequestID = useRef(0)
+  const indexRequestID = useRef(0)
+  const [indexStatus, setIndexStatus] = useState<MediaGalleryIndexStatus | null>(null)
+  const [indexStatusLoading, setIndexStatusLoading] = useState(false)
+  const [indexStatusError, setIndexStatusError] = useState('')
   const syncFolderRequestID = useRef(0)
   const [syncFolders, setSyncFolders] = useState<MediaSyncFolder[]>([])
   const [syncFoldersLoading, setSyncFoldersLoading] = useState(false)
@@ -503,6 +509,13 @@ export function XDriveMediaGalleryPage({
   const [draftFilters, setDraftFilters] = useState<MediaGalleryFilterDraft>(
     emptyMediaGalleryFilterDraft,
   )
+  useEffect(() => {
+    indexRequestID.current += 1
+    setIndexStatus(null)
+    setIndexStatusLoading(false)
+    setIndexStatusError('')
+  }, [preferenceScope])
+
   const [query, setQuery] = useState<MediaGalleryQuery>({})
   const [recentSearches, setRecentSearches] = useState(
     () => xDriveGalleryRecentSearches(preferenceScope),
@@ -1089,6 +1102,23 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders, onSectionRouteChange])
+
+  const requestIndexStatus = useCallback(async () => {
+    if (!source.getIndexStatus) return
+    const request = ++indexRequestID.current
+    setIndexStatusLoading(true)
+    setIndexStatusError('')
+    try {
+      const status = await source.getIndexStatus()
+      if (request === indexRequestID.current) setIndexStatus(status)
+    } catch (error) {
+      if (request !== indexRequestID.current) return
+      setIndexStatusError(xDriveMediaGalleryErrorMessage(error))
+      onError?.(error)
+    } finally {
+      if (request === indexRequestID.current) setIndexStatusLoading(false)
+    }
+  }, [onError, source])
 
   const requestFacets = useCallback(async (
     nextDraft: MediaGalleryFilterDraft = draftFilters,
@@ -2041,6 +2071,10 @@ export function XDriveMediaGalleryPage({
         appliedScopeLabel={appliedScopeLabel}
         draftPending={draftPending}
         searchOrder={searchOrder}
+        indexStatus={indexStatus}
+        indexStatusLoading={indexStatusLoading}
+        indexStatusError={indexStatusError}
+        onRequestIndexStatus={source.getIndexStatus ? requestIndexStatus : undefined}
         onRemoveAppliedFilter={
           currentAlbum?.kind === 'smart' ? undefined : removeAppliedFilter
         }
@@ -2355,6 +2389,10 @@ export interface XDriveMediaGalleryProps {
   appliedScopeLabel?: string
   draftPending?: boolean
   searchOrder?: string
+  indexStatus?: MediaGalleryIndexStatus | null
+  indexStatusLoading?: boolean
+  indexStatusError?: string
+  onRequestIndexStatus?: () => void
   onRemoveAppliedFilter?: (key: XDriveGalleryAppliedFilterKey) => void
   sortBy?: 'captured' | 'added'
   sortDir?: 'asc' | 'desc'
@@ -3696,6 +3734,10 @@ export function XDriveMediaGallery({
   appliedScopeLabel,
   draftPending = false,
   searchOrder = '',
+  indexStatus = null,
+  indexStatusLoading = false,
+  indexStatusError = '',
+  onRequestIndexStatus,
   onRemoveAppliedFilter,
   sortBy = 'captured',
   sortDir = 'desc',
@@ -4749,7 +4791,39 @@ export function XDriveMediaGallery({
           {searchActive ? (
             <Typography variant="caption" color="text.secondary">
               {searchOrder === 'relevance' ? '按语义相关度排列' : '按基础匹配结果排列'}
-              {' · 索引覆盖尚未核验'}
+            </Typography>
+          ) : null}
+          {onRequestIndexStatus ? (
+            <Button
+              size="small"
+              variant="text"
+              disabled={indexStatusLoading}
+              onClick={onRequestIndexStatus}
+              data-xdrive-gallery-index-status-request
+            >
+              {indexStatusLoading ? '检查索引中…' : indexStatus ? '刷新索引状态' : '查看索引状态'}
+            </Button>
+          ) : null}
+          {indexStatus ? (
+            <Typography variant="caption" color="text.secondary" data-xdrive-gallery-index-status>
+              {'已识别资产索引：' + indexStatus.ready_assets.toLocaleString('zh-CN') +
+                ' / ' + indexStatus.known_assets.toLocaleString('zh-CN') + ' 就绪'}
+              {indexStatus.failed_assets > 0 ? ' · 失败 ' + indexStatus.failed_assets : ''}
+              {indexStatus.unsupported_assets > 0 ? ' · 不支持 ' + indexStatus.unsupported_assets : ''}
+              {indexStatus.missing_metadata_assets > 0
+                ? ' · 缺少元数据 ' + indexStatus.missing_metadata_assets : ''}
+              {indexStatus.other_unready_assets > 0
+                ? ' · 其他未就绪 ' + indexStatus.other_unready_assets : ''}
+              {' · 仅已识别照片资产，不表示全库文件已扫描'}
+            </Typography>
+          ) : searchActive ? (
+            <Typography variant="caption" color="text.secondary">
+              索引覆盖尚未核验
+            </Typography>
+          ) : null}
+          {indexStatusError ? (
+            <Typography variant="caption" color="error" data-xdrive-gallery-index-status-error>
+              {'索引检查失败：' + indexStatusError}
             </Typography>
           ) : null}
           {appliedChips.some((chip) => chip.removable) && onClearFilters ? (

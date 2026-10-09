@@ -854,6 +854,17 @@ export type AgentMediaGalleryFacets = {
   formats: AgentMediaFacetOption[]
 }
 
+export type AgentMediaGalleryIndexStatus = {
+  known_assets: number
+  ready_assets: number
+  failed_assets: number
+  unsupported_assets: number
+  missing_metadata_assets: number
+  other_unready_assets: number
+  scope: 'known_photo_assets'
+  checked_at: string
+}
+
 export type AgentMediaSyncFolder = {
   source_id: number
   source_name: string
@@ -1540,6 +1551,10 @@ export class AgentIPCClient {
       'GET',
       `/v1/media/facets${encoded ? `?${encoded}` : ''}`,
     )
+  }
+
+  mediaIndexStatus() {
+    return this.request<AgentMediaGalleryIndexStatus>('GET', '/v1/media/index-status')
   }
 
   mediaSyncFolders() {

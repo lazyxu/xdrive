@@ -111,6 +111,7 @@ import {
   type AgentMediaItem,
   type AgentMediaItemRange,
   type AgentMediaGalleryFacets,
+  type AgentMediaGalleryIndexStatus,
   type AgentMediaSyncFolder,
   type AgentMediaFolderView,
   type AgentMediaAlbum,
@@ -2039,6 +2040,14 @@ function registerIPCHandlers() {
       albumID.trim(),
     )
   }, false))
+
+  ipcMain.handle('agent:get-media-index-status', () =>
+    runAgentAction<AgentMediaGalleryIndexStatus>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-index-status')
+      return requireAgentClient().mediaIndexStatus()
+    }, false),
+  )
 
   ipcMain.handle('agent:get-media-sync-folders', () =>
     runAgentAction<AgentMediaSyncFolder[]>(async () => {
