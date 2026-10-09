@@ -9,17 +9,23 @@ const scenarios = new Set(['upload', 'download', 'download-discard'])
 const scenario = process.argv.find((value) => scenarios.has(value))
 const sample = process.argv.find((value) => /^sample-\d+$/.test(value)) || 'sample-unknown'
 if (!scenario) {
-  console.error('Usage: electron scripts/large-transfer-performance-main.cjs <upload|download|download-discard> sample-N')
+  console.error('Usage: electron scripts/large-transfer-performance-main.cjs <upload|download|download-discard> sample-N [--size-gib=1|4]')
   process.exit(2)
 }
 
-const sizeBytes = 1 << 30
+const sizeArgument = process.argv.find((value) => value.startsWith('--size-gib'))
+const sizeGiB = sizeArgument === undefined ? 1 : Number(sizeArgument.slice('--size-gib='.length))
+if (sizeArgument !== undefined && !/^--size-gib=(1|4)$/.test(sizeArgument)) {
+  console.error('large-transfer size must be --size-gib=1 or --size-gib=4')
+  process.exit(2)
+}
+const sizeBytes = sizeGiB * 2 ** 30
 const chunkSize = 8 * 1024 * 1024
 const desktopRoot = path.resolve(__dirname, '..')
 const repoRoot = path.resolve(desktopRoot, '..')
 const webRoot = path.join(repoRoot, 'web', 'dist')
 const resultsDir = path.join(desktopRoot, 'large-transfer-perf-results')
-const metricsPath = path.join(resultsDir, `web-${scenario}-${sample}.json`)
+const metricsPath = path.join(resultsDir, `web-${scenario}-${sample}${sizeGiB === 1 ? '' : '-4gib'}.json`)
 const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-large-transfer-'))
 const uploadFixture = path.join(userData, `upload-${sample}.bin`)
 if (scenario === 'upload') {
@@ -205,6 +211,7 @@ async function waitForResult(win) {
   const deadline = Date.now() + 5 * 60_000
   let workingSetStartKB = null
   let workingSetPeakKB = null
+  let started = false
   let lastState = null
   while (Date.now() < deadline) {
     const state = await win.webContents.executeJavaScript(
@@ -214,6 +221,7 @@ async function waitForResult(win) {
         boot: window.__xdriveLargeTransferPerfBoot ?? null,
         bootError: window.__xdriveLargeTransferPerfBootError || null,
         running: Boolean(window.__xdriveLargeTransferPerfRunning),
+        ready: Boolean(window.__xdriveLargeTransferPerfReady),
         href: location.href,
       })`,
       true,
@@ -221,16 +229,27 @@ async function waitForResult(win) {
     lastState = state
     if (state.bootError) throw new Error(state.bootError)
     if (state.error) throw new Error(state.error)
+    if (state.ready && !started) {
+      const workingSet = await rendererWorkingSetKB()
+      if (workingSet === null || workingSet <= 0) {
+        throw new Error('renderer working-set memory metrics are unavailable')
+      }
+      workingSetStartKB = workingSet
+      workingSetPeakKB = workingSet
+      await win.webContents.executeJavaScript('window.__xdriveLargeTransferPerfStart = true', true)
+      started = true
+    }
     if (state.running) {
       const workingSet = await rendererWorkingSetKB()
-      if (workingSet !== null) {
-        if (workingSetStartKB === null) workingSetStartKB = workingSet
-        workingSetPeakKB = Math.max(workingSetPeakKB ?? workingSet, workingSet)
-      }
+      if (!started) throw new Error('renderer started before the launcher sampled its memory baseline')
+      if (workingSet === null || workingSet <= 0) throw new Error('renderer working-set memory metrics are unavailable')
+      workingSetPeakKB = Math.max(workingSetPeakKB, workingSet)
     }
     if (state.result) {
       const workingSet = await rendererWorkingSetKB()
-      if (workingSet !== null) workingSetPeakKB = Math.max(workingSetPeakKB ?? workingSet, workingSet)
+      if (!started) throw new Error('renderer finished before the launcher sampled its memory baseline')
+      if (workingSet === null || workingSet <= 0) throw new Error('renderer working-set memory metrics are unavailable')
+      workingSetPeakKB = Math.max(workingSetPeakKB, workingSet)
       return { result: state.result, workingSetStartKB, workingSetPeakKB }
     }
     await new Promise((resolve) => setTimeout(resolve, 25))
@@ -274,7 +293,7 @@ app.whenReady().then(async () => {
     })
 
     await win.loadURL(
-      `http://127.0.0.1:${port}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}`,
+      `http://127.0.0.1:${port}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}`,
     )
     if (scenario === 'upload') {
       await waitForSelector(win, '[data-xdrive-large-transfer-upload-file]')
@@ -298,6 +317,7 @@ app.whenReady().then(async () => {
     const combined = {
       ...measured.result,
       surface: 'web',
+      runtimeVersions: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
       rendererWorkingSetStartKB: measured.workingSetStartKB,
       rendererWorkingSetPeakKB: measured.workingSetPeakKB,
       rendererWorkingSetDeltaKB:

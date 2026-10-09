@@ -1,0 +1,62 @@
+✔ Web direct-to-disk sink streams a large logical response with one in-flight write (104.490926ms)
+✔ Web download sink treats save-picker cancellation as a non-transfer outcome (14.236651ms)
+✔ Web download sink preserves Blob fallback when File System Access is unavailable (10.515084ms)
+✔ Web direct-to-disk sink aborts the destination when a chunk write fails (9.130995ms)
+✔ Web download wiring opens the save sink before archive work and skips success feedback on cancel (21.11127ms)
+✔ Web download progress reporter coalesces fast chunk bookkeeping and preserves time/flush visibility (22.410232ms)
+✔ Web authenticated download wires one coalesced progress reporter across direct and Blob paths (0.632531ms)
+✔ React effect replay preserves a shared startup refresh while actual unmount disposes transfers (395.84657ms)
+✔ wire rates ignore resumed logical bytes and preserve independent freshness (165.120511ms)
+✔ native file download reports server send progress without fetching a Blob (139.263817ms)
+✔ native progress uses server sample times and ignores unchanged polling snapshots (118.84664ms)
+✔ native polling survives same-account API renewal and cannot update a replacement account (121.416599ms)
+✔ logout fences a shared token refresh first started by a normal API request (126.049095ms)
+▶ refresh started before session registration cannot restore a disposed lifecycle
+  ✔ none (106.502785ms)
+  ✔ new-api (106.470802ms)
+  ✔ same-api (117.94591ms)
+✔ refresh started before session registration cannot restore a disposed lifecycle (331.622273ms)
+✔ first registration and same-account API renewal preserve a pending ordinary refresh (103.948319ms)
+▶ logout while acquiring a save destination aborts its writable before transport starts
+  ✔ file: picker (147.080081ms)
+  ✔ file: writable (127.820972ms)
+  ✔ version: picker (99.701847ms)
+  ✔ version: writable (116.666446ms)
+  ✔ archive: picker (80.13223ms)
+  ✔ archive: writable (96.59224ms)
+✔ logout while acquiring a save destination aborts its writable before transport starts (669.077958ms)
+▶ download failures before streaming settle every owned save destination exactly once
+  ✔ file (78.179656ms)
+  ✔ version (87.314987ms)
+  ✔ archive (90.674485ms)
+✔ download failures before streaming settle every owned save destination exactly once (256.671235ms)
+✔ native launch timeout and server failure finish the task instead of polling forever (77.932878ms)
+✔ upload in-flight bytes update rate before an 8 MiB chunk response arrives (130.062918ms)
+✔ folder wire counters include simultaneous children once without replacing business totals (93.202857ms)
+✔ unavailable native tracking preserves browser handoff without claiming download failure (426.428423ms)
+✔ native archive tracking fallback hands off the entire group without inventing success or failure (425.63597ms)
+✔ native archive wire observation remains authoritative when process-local child progress is unavailable (76.295098ms)
+✔ native archive speed uses response bytes while file children keep source progress (94.853631ms)
+✔ direct-to-disk downloads report received stream bytes independently of file completion (123.533677ms)
+✔ clearing network history preserves active hierarchies and local task history (97.023606ms)
+✔ upload auth retry sends the raw chunk with the renewed token and counts both actual attempts (158.474478ms)
+▶ Blob upload hashes partial BYOB reads with one bounded scratch buffer and preserves fallback
+  ✔ partial reads and tail (201.463732ms)
+  ✔ unsupported byte-reader fallback (126.00759ms)
+✔ Blob upload hashes partial BYOB reads with one bounded scratch buffer and preserves fallback (328.224622ms)
+▶ Blob upload rejects short hash streams and changed bytes while releasing its reader
+  ✔ short stream (119.48056ms)
+  ✔ changed bytes (115.232498ms)
+✔ Blob upload rejects short hash streams and changed bytes while releasing its reader (235.432478ms)
+✔ identity disposal aborts an in-flight upload and suppresses its late response (103.30358ms)
+✔ native polling uses refreshed API credentials without restarting the transfer (93.778736ms)
+✔ an API from a disposed identity cannot launch transfers after that account signs in again (73.401156ms)
+✔ direct-to-disk archive measures the ZIP stream without adding a second root transfer (99.235121ms)
+ℹ tests 49
+ℹ suites 0
+ℹ pass 49
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5396.504967

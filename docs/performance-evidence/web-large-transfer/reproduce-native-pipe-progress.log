@@ -1,0 +1,2 @@
+before {"progress":[],"error":"sink failed before writing bytes","settled":true}
+candidate {"progress":[3],"error":"sink failed before writing bytes","settled":true}

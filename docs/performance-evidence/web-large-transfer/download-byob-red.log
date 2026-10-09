@@ -1,0 +1,28 @@
+✖ Web download consumes a real byte stream through bounded BYOB reads with exact tail and post-write progress (143.067434ms)
+✔ Web BYOB download handles empty byte-stream EOF without a write (13.586943ms)
+✔ Web BYOB write failure cancels the reader and never publishes failed bytes (11.465629ms)
+✔ Web BYOB read failure preserves the error and aborts destination (8.664874ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 3
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 434.139478
+
+✖ failing tests:
+
+test at desktop/tests/web-download-byob.cjs:51:1
+✖ Web download consumes a real byte stream through bounded BYOB reads with exact tail and post-write progress (143.067434ms)
+  AssertionError [ERR_ASSERTION]: supported byte stream must use BYOB
+      at TestContext.<anonymous> (/workspace/scratch/4fa175e5d1c9/xdrive-transfer/desktop/tests/web-download-byob.cjs:72:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

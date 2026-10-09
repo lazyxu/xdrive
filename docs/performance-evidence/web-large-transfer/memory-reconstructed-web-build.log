@@ -1,0 +1,23 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> xdrive-web@0.1.0 build
+> tsc -b && vite build --config vite.config.ts
+
+vite v6.4.3 building for production...
+transforming...
+✓ 12838 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                              0.79 kB │ gzip:   0.44 kB
+dist/assets/yike-photos-BAVDOHgk.png                         5.46 kB
+dist/assets/synology-photos-BbjN8h_5.png                    27.73 kB
+dist/assets/synology-file-station-Cy2dVLMI.png              42.19 kB
+dist/assets/index-BAElkkhY.css                               0.10 kB │ gzip:   0.09 kB
+dist/assets/LargeTransferPerformanceHarness-CVCd54Op.js      5.25 kB │ gzip:   2.14 kB
+dist/assets/index-CfpuJ8j8.js                            1,835.50 kB │ gzip: 553.54 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 9.58s

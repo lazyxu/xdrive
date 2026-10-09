@@ -1813,11 +1813,12 @@ export class XDriveApi {
       const chunkSize = 8 * 1024 * 1024
       const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
       const chunkHashes: string[] = []
+      const hashScratch: UploadHashScratch = { buffer: null, byob: true }
       for (let index = 0; index < chunkCount; index += 1) {
         tracking.check()
         const start = index * chunkSize
         const end = Math.min(file.size, start + chunkSize)
-        chunkHashes.push(await sha256Buffer(await file.slice(start, end).arrayBuffer()))
+        chunkHashes.push(await sha256Blob(file.slice(start, end), hashScratch))
       }
 
       const resumeIdentity = conflictPolicy === 'fail'
@@ -1868,11 +1869,11 @@ export class XDriveApi {
           continue
         }
 
-        const data = await file.slice(start, end).arrayBuffer()
-        const actualHash = await sha256Buffer(data)
+        const chunk = file.slice(start, end)
+        const actualHash = await sha256Blob(chunk, hashScratch)
         if (actualHash !== hash) throw new Error(`File changed while uploading chunk ${index}`)
         let reported = 0
-        await this.putUploadChunk(session.id, index, hash, data, tracking, (loaded, delta) => {
+        await this.putUploadChunk(session.id, index, hash, chunk, tracking, (loaded, delta) => {
           tracking.check()
           networkBytes += delta
           reported = Math.max(reported, loaded)
@@ -1882,8 +1883,8 @@ export class XDriveApi {
           })
         })
         tracking.check()
-        completed += data.byteLength
-        transferredBytes += data.byteLength
+        completed += expectedSize
+        transferredBytes += expectedSize
         reportProgress(completed)
       }
 
@@ -1908,7 +1909,7 @@ export class XDriveApi {
   }
 
   private async putUploadChunk(
-    sessionID: string, index: number, hash: string, data: ArrayBuffer,
+    sessionID: string, index: number, hash: string, data: Blob,
     tracking: ReturnType<XDriveApi['transferContext']>,
     onProgress: (loaded: number, delta: number) => void,
   ) {
@@ -2774,7 +2775,44 @@ export class XDriveApi {
   }
 }
 
-async function sha256Buffer(data: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', data)
+type UploadHashScratch = { buffer: ArrayBuffer | null; byob: boolean }
+
+async function sha256Blob(blob: Blob, scratch: UploadHashScratch): Promise<string> {
+  if (!scratch.byob || typeof blob.stream !== 'function' || blob.size === 0 || blob.size > 8 * 1024 * 1024) {
+    return sha256Buffer(await blob.arrayBuffer())
+  }
+  let reader: ReadableStreamBYOBReader
+  try {
+    reader = blob.stream().getReader({ mode: 'byob' })
+  } catch (error) {
+    if (!(error instanceof TypeError) && !(error && typeof error === 'object' && 'name' in error && error.name === 'TypeError')) throw error
+    scratch.byob = false
+    return sha256Buffer(await blob.arrayBuffer())
+  }
+  try {
+    const minReader = reader as ReadableStreamBYOBReader & {
+      read(view: Uint8Array, options: { min: number }): Promise<ReadableStreamReadResult<Uint8Array>>
+    }
+    scratch.buffer ??= new ArrayBuffer(blob.size)
+    let filled = 0
+    while (filled < blob.size) {
+      const remaining = blob.size - filled
+      const { done, value } = await minReader.read(new Uint8Array(scratch.buffer, filled, remaining), { min: remaining })
+      if (value) {
+        scratch.buffer = value.buffer as ArrayBuffer
+        filled += value.byteLength
+      }
+      if (done && filled < blob.size) throw new Error(`Upload hash stream ended at ${filled} of ${blob.size} bytes`)
+    }
+    // The digest settles before the next chunk takes ownership of the scratch.
+    return await sha256Buffer(scratch.buffer, blob.size)
+  } finally {
+    try { await reader.cancel() } catch { /* Preserve any original read/hash error. */ }
+    reader.releaseLock()
+  }
+}
+
+async function sha256Buffer(data: ArrayBuffer, byteLength = data.byteLength): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new Uint8Array(data, 0, byteLength))
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join('')
 }

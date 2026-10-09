@@ -1,0 +1,27 @@
+{
+  "scenario": "download-discard",
+  "sample": "sample-1",
+  "sizeBytes": 1073741824,
+  "elapsedMs": 758.0999999999767,
+  "throughputMiBps": 1350.7452842633313,
+  "heapStartBytes": 4843917,
+  "heapPeakBytes": 8936060,
+  "heapDeltaBytes": 4092143,
+  "downloadHeadersMs": 2,
+  "downloadStreamWriteMs": 755.3999999999942,
+  "surface": "web",
+  "runtimeVersions": {
+    "electron": "44.4.5",
+    "chromium": "152.0.7977.130",
+    "node": "24.21.0"
+  },
+  "rendererWorkingSetStartKB": 108260,
+  "rendererWorkingSetPeakKB": 121844,
+  "rendererWorkingSetDeltaKB": 13584,
+  "server": {
+    "uploadBytes": 0,
+    "uploadChunks": 0,
+    "uploadInitSize": 0,
+    "downloadBytes": 1073741824
+  }
+}

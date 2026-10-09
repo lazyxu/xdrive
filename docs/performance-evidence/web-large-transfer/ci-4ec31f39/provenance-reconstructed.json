@@ -1,0 +1,47 @@
+{
+  "status": "Reconstructed from immutable Git objects and exact checkout log; original artifact provenance.json not materialized",
+  "beforeCommit": "deab56e2f7b3489bcc88dea3ed94b5f93fdbcb8e",
+  "afterCommit": "4ec31f39ec151cd45642ba2c9603d2f78cf82899",
+  "measurementHarness": "4ec31f39ec151cd45642ba2c9603d2f78cf82899",
+  "productionSHA256": {
+    "before": {
+      "web/src/api.ts": "b830790c6e0011b72aff88911bcab96b1e934b5855342770e834413301a50018",
+      "web/src/downloadSink.ts": "58cbe0438b1a100f75122c88cf7f7d6ae6cb87d4dae540f58e247010d544612a",
+      "web/src/transferTransport.ts": "b580190548394c6f78247469dcffe672427e41ff9184aa72bd8e3173ee8d6b26"
+    },
+    "after": {
+      "web/src/api.ts": "795155b2c048a9b015c43c9855a2e73a54053fca096e32f532dc8e54151c5bfa",
+      "web/src/downloadSink.ts": "c82adaa33e8f83504d40c0af0698428e1f0ffc83fe318b71b46e2682c0a9c245",
+      "web/src/transferTransport.ts": "ead8220081b35d770b0b637e3b880debd27ea54b68e24b3608295a43364a0154"
+    }
+  },
+  "harnessSHA256": {
+    "web/src/LargeTransferPerformanceHarness.tsx": "51f7df133324eed62e78b5b067b6d90c72c25f7e430c59f8f1fac6a268844577",
+    "desktop/scripts/large-transfer-performance-main.cjs": "edb3918065e74627c477d88f82e58672e8cc27768c9a331e677f786aaac508bd"
+  },
+  "comparisonScriptSHA256": "5675f8e5c109be019f84931fb85c1eb7da49955d12bad967b2736e516c696340",
+  "order": "before/after odd samples; after/before even samples; current4GiB only after accepted1GiB gate",
+  "forcedGC": false,
+  "run": 37870615110,
+  "job": 113627600871,
+  "jobStartedAt": "2026-10-09T01:37:15Z",
+  "jobCompletedAt": "2026-10-09T01:41:28Z",
+  "runtimeVersions": {
+    "electron": "44.4.5",
+    "chromium": "152.0.7977.130",
+    "node": "24.21.0"
+  },
+  "artifact": {
+    "id": 11590172527,
+    "name": "web-large-transfer-1gib-4gib",
+    "sizeInBytes": 15451,
+    "digest": "sha256:410171ed8de680fbac1290ccf93f63acb59b8ba4ffddb404e017bcff660aaee4",
+    "materialization": "MCP returned ZIP file reference; temporary URL returnedHTTP403. Not bypassed; original ZIP contents not read."
+  },
+  "limits": [
+    "GitHub job log confirms actual checkout4ec; scriptHEAD^ resolves immutabledeab",
+    "Sample-index side mapping reconstructed from exact immutable script loop; labels were not printed per result",
+    "Original artifact provenance.json/host CPU fields not read; do not claim this reconstructed file is that original artifact",
+    "Post-conflict final delivery reconstructed ontoa1f04f4681dba8e1d55307e09d292ecb880039dc requires freshCI; these results remain attributed to4ec/deab"
+  ]
+}

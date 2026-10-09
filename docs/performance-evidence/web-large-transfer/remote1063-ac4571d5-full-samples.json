@@ -1,0 +1,212 @@
+{
+  "head": "ac4571d5e101d943f341afe83655dcdd4625c1ec",
+  "run": 37866968455,
+  "job": 113615882517,
+  "source": "All nine complete launcher RESULT JSON records including renderer working-set and payload counters, parsed from the preserved GitHub job log",
+  "web_samples": [
+    {
+      "scenario": "upload",
+      "sample": "sample-1",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 6195.100000000006,
+      "throughputMiBps": 165.29192426272363,
+      "heapStartBytes": 4877132,
+      "heapPeakBytes": 407922960,
+      "heapDeltaBytes": 403045828,
+      "prehashMs": 1705.699999999997,
+      "uploadSessionMs": 3.900000000008731,
+      "uploadChunksMs": 4483.5,
+      "uploadFinalizeMs": 2,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 134552,
+      "rendererWorkingSetPeakKB": 517576,
+      "rendererWorkingSetDeltaKB": 383024,
+      "server": {
+        "uploadBytes": 1073741824,
+        "uploadChunks": 128,
+        "uploadInitSize": 1073741824,
+        "downloadBytes": 0
+      }
+    },
+    {
+      "scenario": "upload",
+      "sample": "sample-2",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 5392.599999999991,
+      "throughputMiBps": 189.88984905240545,
+      "heapStartBytes": 4847664,
+      "heapPeakBytes": 483508914,
+      "heapDeltaBytes": 478661250,
+      "prehashMs": 1841,
+      "uploadSessionMs": 4,
+      "uploadChunksMs": 3545.699999999997,
+      "uploadFinalizeMs": 1.8999999999941792,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 132680,
+      "rendererWorkingSetPeakKB": 580344,
+      "rendererWorkingSetDeltaKB": 447664,
+      "server": {
+        "uploadBytes": 1073741824,
+        "uploadChunks": 128,
+        "uploadInitSize": 1073741824,
+        "downloadBytes": 0
+      }
+    },
+    {
+      "scenario": "upload",
+      "sample": "sample-3",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 5294.800000000003,
+      "throughputMiBps": 193.39729545969618,
+      "heapStartBytes": 4820061,
+      "heapPeakBytes": 559121350,
+      "heapDeltaBytes": 554301289,
+      "prehashMs": 1696.5999999999913,
+      "uploadSessionMs": 3.5,
+      "uploadChunksMs": 3592.9000000000087,
+      "uploadFinalizeMs": 1.8000000000029104,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 118392,
+      "rendererWorkingSetPeakKB": 664252,
+      "rendererWorkingSetDeltaKB": 545860,
+      "server": {
+        "uploadBytes": 1073741824,
+        "uploadChunks": 128,
+        "uploadInitSize": 1073741824,
+        "downloadBytes": 0
+      }
+    },
+    {
+      "scenario": "download",
+      "sample": "sample-1",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 3216.199999999997,
+      "throughputMiBps": 318.3881599403025,
+      "heapStartBytes": 4794754,
+      "heapPeakBytes": 555014414,
+      "heapDeltaBytes": 550219660,
+      "downloadHeadersMs": 2.1000000000058208,
+      "downloadStreamWriteMs": 3212.800000000003,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 123984,
+      "rendererWorkingSetPeakKB": 720348,
+      "rendererWorkingSetDeltaKB": 596364,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    },
+    {
+      "scenario": "download",
+      "sample": "sample-2",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 3660.600000000006,
+      "throughputMiBps": 279.7355624760964,
+      "heapStartBytes": 4807015,
+      "heapPeakBytes": 336946101,
+      "heapDeltaBytes": 332139086,
+      "downloadHeadersMs": 2.900000000008731,
+      "downloadStreamWriteMs": 3656.399999999994,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 112576,
+      "rendererWorkingSetPeakKB": 498900,
+      "rendererWorkingSetDeltaKB": 386324,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    },
+    {
+      "scenario": "download",
+      "sample": "sample-3",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 3319,
+      "throughputMiBps": 308.5266646580295,
+      "heapStartBytes": 4775663,
+      "heapPeakBytes": 420551308,
+      "heapDeltaBytes": 415775645,
+      "downloadHeadersMs": 2,
+      "downloadStreamWriteMs": 3315.800000000003,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 114888,
+      "rendererWorkingSetPeakKB": 596696,
+      "rendererWorkingSetDeltaKB": 481808,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    },
+    {
+      "scenario": "download-discard",
+      "sample": "sample-1",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 1038.800000000003,
+      "throughputMiBps": 985.7527916827081,
+      "heapStartBytes": 4815565,
+      "heapPeakBytes": 403334557,
+      "heapDeltaBytes": 398518992,
+      "downloadHeadersMs": 2.6000000000058208,
+      "downloadStreamWriteMs": 1035.300000000003,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 124244,
+      "rendererWorkingSetPeakKB": 1274572,
+      "rendererWorkingSetDeltaKB": 1150328,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    },
+    {
+      "scenario": "download-discard",
+      "sample": "sample-2",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 1139.5,
+      "throughputMiBps": 898.6397542781922,
+      "heapStartBytes": 4794059,
+      "heapPeakBytes": 231077925,
+      "heapDeltaBytes": 226283866,
+      "downloadHeadersMs": 2,
+      "downloadStreamWriteMs": 1136.699999999997,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 124460,
+      "rendererWorkingSetPeakKB": 916796,
+      "rendererWorkingSetDeltaKB": 792336,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    },
+    {
+      "scenario": "download-discard",
+      "sample": "sample-3",
+      "sizeBytes": 1073741824,
+      "elapsedMs": 1139.800000000003,
+      "throughputMiBps": 898.4032286366007,
+      "heapStartBytes": 4774074,
+      "heapPeakBytes": 285999906,
+      "heapDeltaBytes": 281225832,
+      "downloadHeadersMs": 1.8999999999941792,
+      "downloadStreamWriteMs": 1137.199999999997,
+      "surface": "web",
+      "rendererWorkingSetStartKB": 120944,
+      "rendererWorkingSetPeakKB": 953352,
+      "rendererWorkingSetDeltaKB": 832408,
+      "server": {
+        "uploadBytes": 0,
+        "uploadChunks": 0,
+        "uploadInitSize": 0,
+        "downloadBytes": 1073741824
+      }
+    }
+  ]
+}

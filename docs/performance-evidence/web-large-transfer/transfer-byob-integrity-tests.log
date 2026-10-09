@@ -1,0 +1,59 @@
+✔ React effect replay preserves a shared startup refresh while actual unmount disposes transfers (315.407847ms)
+✔ wire rates ignore resumed logical bytes and preserve independent freshness (145.060211ms)
+✔ native file download reports server send progress without fetching a Blob (121.066376ms)
+✔ native progress uses server sample times and ignores unchanged polling snapshots (113.0462ms)
+✔ native polling survives same-account API renewal and cannot update a replacement account (103.270447ms)
+✔ logout fences a shared token refresh first started by a normal API request (121.481765ms)
+▶ refresh started before session registration cannot restore a disposed lifecycle
+  ✔ none (102.276846ms)
+  ✔ new-api (103.318884ms)
+  ✔ same-api (102.442873ms)
+✔ refresh started before session registration cannot restore a disposed lifecycle (308.830589ms)
+✔ first registration and same-account API renewal preserve a pending ordinary refresh (84.230663ms)
+▶ logout while acquiring a save destination aborts its writable before transport starts
+  ✔ file: picker (94.816436ms)
+  ✔ file: writable (100.17891ms)
+  ✔ version: picker (80.719678ms)
+  ✔ version: writable (128.956166ms)
+  ✔ archive: picker (104.90486ms)
+  ✔ archive: writable (109.102449ms)
+✔ logout while acquiring a save destination aborts its writable before transport starts (619.636241ms)
+▶ download failures before streaming settle every owned save destination exactly once
+  ✔ file (85.97251ms)
+  ✔ version (100.935284ms)
+  ✔ archive (92.701684ms)
+✔ download failures before streaming settle every owned save destination exactly once (280.215338ms)
+✔ native launch timeout and server failure finish the task instead of polling forever (78.59327ms)
+✔ upload in-flight bytes update rate before an 8 MiB chunk response arrives (134.089511ms)
+✔ folder wire counters include simultaneous children once without replacing business totals (94.938998ms)
+✔ unavailable native tracking preserves browser handoff without claiming download failure (455.236428ms)
+✔ native archive tracking fallback hands off the entire group without inventing success or failure (433.586036ms)
+✔ native archive wire observation remains authoritative when process-local child progress is unavailable (96.145495ms)
+✔ native archive speed uses response bytes while file children keep source progress (92.680093ms)
+✔ direct-to-disk downloads report received stream bytes independently of file completion (117.785911ms)
+✔ clearing network history preserves active hierarchies and local task history (84.656876ms)
+✔ upload auth retry sends the raw chunk with the renewed token and counts both actual attempts (110.227159ms)
+▶ Blob upload hashes partial BYOB reads with one bounded scratch buffer and preserves fallback
+  ✔ partial reads and tail (161.414069ms)
+  ✔ unsupported byte-reader fallback (123.365928ms)
+✔ Blob upload hashes partial BYOB reads with one bounded scratch buffer and preserves fallback (285.480158ms)
+▶ Blob upload preserves independently verified chunk hashes and varied payload bytes with native and partial BYOB readers
+  ✔ native Blob byte reader and reused tail buffer (120.109312ms)
+  ✔ forced partial reads and reused tail buffer (176.836916ms)
+✔ Blob upload preserves independently verified chunk hashes and varied payload bytes with native and partial BYOB readers (604.461643ms)
+▶ Blob upload rejects short hash streams and changed bytes while releasing its reader
+  ✔ short stream (104.652249ms)
+  ✔ changed bytes (90.729496ms)
+✔ Blob upload rejects short hash streams and changed bytes while releasing its reader (195.926715ms)
+✔ identity disposal aborts an in-flight upload and suppresses its late response (97.868448ms)
+✔ native polling uses refreshed API credentials without restarting the transfer (82.946536ms)
+✔ an API from a disposed identity cannot launch transfers after that account signs in again (101.284297ms)
+✔ direct-to-disk archive measures the ZIP stream without adding a second root transfer (94.39541ms)
+ℹ tests 45
+ℹ suites 0
+ℹ pass 45
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5629.845083

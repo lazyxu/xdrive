@@ -25,7 +25,7 @@ export function xDriveUploadBytes(
   url: string,
   input: {
     headers: Record<string, string>
-    body: ArrayBuffer
+    body: ArrayBuffer | Blob
     signal?: AbortSignal
     onProgress: (loaded: number) => void
   },
@@ -38,8 +38,9 @@ export function xDriveUploadBytes(
     const cleanup = () => input.signal?.removeEventListener('abort', abort)
     xhr.open('PUT', url)
     for (const [name, value] of Object.entries(input.headers)) xhr.setRequestHeader(name, value)
+    const bodySize = input.body instanceof Blob ? input.body.size : input.body.byteLength
     xhr.upload.onprogress = (event) => {
-      progress.progress(Math.min(input.body.byteLength, Math.max(0, event.loaded)))
+      progress.progress(Math.min(bodySize, Math.max(0, event.loaded)))
     }
     xhr.onload = () => {
       cleanup()

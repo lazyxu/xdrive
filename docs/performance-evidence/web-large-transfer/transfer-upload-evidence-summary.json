@@ -1,0 +1,117 @@
+{
+  "measurement_status": "accepted locally; hosted Electron paired gate remains required",
+  "worktree_commit": "8cfdcd71",
+  "original_production_revision": "2ca7f021be433f08db428b87a0d4dbb4c21c8887",
+  "corrected_harness_revision": "8cfdcd71",
+  "candidate": "working-tree Blob XHR body + per-upload <=8 MiB reusable BYOB hash scratch, no detach(0), no timed GC",
+  "original_production_reconstructed_sha256": {
+    "web/src/api.ts": "b830790c6e0011b72aff88911bcab96b1e934b5855342770e834413301a50018",
+    "web/src/transferTransport.ts": "b580190548394c6f78247469dcffe672427e41ff9184aa72bd8e3173ee8d6b26"
+  },
+  "current_source_sha256": {
+    "web/src/api.ts": "795155b2c048a9b015c43c9855a2e73a54053fca096e32f532dc8e54151c5bfa",
+    "web/src/transferTransport.ts": "ead8220081b35d770b0b637e3b880debd27ea54b68e24b3608295a43364a0154",
+    "desktop/tests/web-transfer-live-metrics.cjs": "b40b7d7acb2e05f0b43866dbf07ee79f2dffc2cd09a18c586040ebed38bd9e61",
+    "web/src/LargeTransferPerformanceHarness.tsx": "a8419a10902965f2d923ad66b5824bd563c4358a91fc6fb3150d8a254336cf60",
+    "desktop/scripts/large-transfer-performance-main.cjs": "46dadfd8f3deab839fcce3206e24d507590630d26399a7441c557a977b9282ac"
+  },
+  "driver_reconstructed_sha256": "697591dba07caf18f74316c0bac44dc7773fd3f43bc6df9fd1044d0f61369bc2",
+  "provenance_limit": "Hashes recorded after samples; not contemporaneous run manifests. Driver diagnostics after result do not contribute acceptance metrics. API production unchanged since candidate measurements; test-only independent digest assertions added after samples.",
+  "baseline": {
+    "sample_count": 3,
+    "metrics": {
+      "elapsedMs": {
+        "median": 36114.10000000149,
+        "min": 35509.30000000447,
+        "max": 40743.09999999404
+      },
+      "rendererRSSPeakKiB": {
+        "median": 1701740,
+        "min": 1438860,
+        "max": 1703796
+      },
+      "rendererRSSDeltaKiB": {
+        "median": 1579540,
+        "min": 1316956,
+        "max": 1582192
+      },
+      "heapDeltaBytes": {
+        "median": 662894843,
+        "min": 536685442,
+        "max": 662952339
+      }
+    },
+    "samples": [
+      "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-1.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-2.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-baseline-headless/web-upload-sample-3.json"
+    ]
+  },
+  "blob_only": {
+    "sample_count": 3,
+    "metrics": {
+      "elapsedMs": {
+        "median": 6610.79999999702,
+        "min": 6490.60000000149,
+        "max": 8106.10000000149
+      },
+      "rendererRSSPeakKiB": {
+        "median": 1057720,
+        "min": 834836,
+        "max": 1065132
+      },
+      "rendererRSSDeltaKiB": {
+        "median": 935752,
+        "min": 713388,
+        "max": 943008
+      },
+      "heapDeltaBytes": {
+        "median": 948565476,
+        "min": 721755731,
+        "max": 948570188
+      }
+    },
+    "samples": [
+      "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-1.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-2.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-remote-candidate-verified/web-upload-sample-3.json"
+    ]
+  },
+  "bounded_byob": {
+    "sample_count": 3,
+    "metrics": {
+      "elapsedMs": {
+        "median": 6082.30000000447,
+        "min": 5831,
+        "max": 6347
+      },
+      "rendererRSSPeakKiB": {
+        "median": 176572,
+        "min": 175736,
+        "max": 176788
+      },
+      "rendererRSSDeltaKiB": {
+        "median": 55164,
+        "min": 54232,
+        "max": 56344
+      },
+      "heapDeltaBytes": {
+        "median": 20175029,
+        "min": 19859146,
+        "max": 20250677
+      }
+    },
+    "samples": [
+      "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-1.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-2.json",
+      "/workspace/scratch/4fa175e5d1c9/transfer-byob-upload/web-upload-sample-3.json"
+    ]
+  },
+  "validation": {
+    "tests_passed": 45,
+    "tests_log": "/workspace/scratch/4fa175e5d1c9/transfer-byob-integrity-tests.log",
+    "varied_fixture": "8 MiB + 17 bytes, native and forced partial BYOB, Node crypto SHA-256 and XHR payload parity",
+    "patch_original": "/workspace/scratch/4fa175e5d1c9/byob-upload-original-production.patch",
+    "patch_remote": "/workspace/scratch/4fa175e5d1c9/byob-upload-delta.patch"
+  }
+}

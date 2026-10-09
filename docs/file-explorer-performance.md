@@ -2868,3 +2868,185 @@ Job **113622480003**, same Ubuntu runner image, Go **1.25.14 linux/amd64**; **th
 RSS is a **10 ms `/proc/self/status` process sampler**, synchronized at start/end, including final RSS. Initial GC occurs before timing; no forced GC occurs during timing. The existing **<=128 MiB process RSS delta** budget passes in **all six samples**. Byte/chunk correctness is enforced by the test; the memory budget is independently evaluated from emitted rows rather than inferred from a green job. **Decision: keep Agent production unchanged.** Different runtime/filesystem conditions prevent a paired timing comparison against the local 4 GiB or historical 1 GiB results. This does not qualify the separately red Web baseline or authorize a Web 4 GiB run.
 
 Command per scenario/sample: `XD_LARGE_TRANSFER_PERF=1 XD_LARGE_TRANSFER_SIZE_GIB=4 XD_LARGE_TRANSFER_SCENARIO=<upload|download> XD_LARGE_TRANSFER_SAMPLE=sample-<1|2|3> XD_LARGE_TRANSFER_PERF_OUTPUT=<results> go test -run '^TestLargeTransferPerformanceBaselineLargeFile$' -count=1 -v ./cmd/xdrive-agent`. Artifact **11589288631**, SHA-256 `07a42da57edf57d080ba4b5ec14bb4ff4947f31e8f3b48663c8672140fbc918c`, expires 2026-10-16; all six raw rows and provenance remain committed after artifact expiry. The updated evidence must be amended into the same measurement commit and pass the resulting full PR CI before merge.
+
+## Web 1 GiB renderer-memory A/B gate
+
+Status: **Rejected / original Blob-body and native-pipeTo experiment**. The following proposal and 10% timing rule are preserved as historical declarations for `ac4571d5`; the final continuation below uses the stricter fixed 5% median nonregression gate.
+
+The accepted 1 GiB baseline is repeatably red only on Web. Before this production experiment, the acceptance rule is fixed:
+
+- rerun the exact same 1 GiB Web upload / OPFS download / discard workload with **3 fresh renderer processes per scenario**;
+- Web median **JS-heap delta must improve by at least 50%** for the scenario whose production path changed;
+- Web median **renderer working-set delta must improve by at least 50%** for that scenario;
+- preferred steady-state budget remains **<=128 MiB JS heap delta** and **<=256 MiB renderer working-set delta**;
+- throughput must not regress materially; a median regression above **10%** rejects the candidate unless paired repeat samples demonstrate hosted-runner noise;
+- upload must remain exactly **128 x 8 MiB / 1 GiB** with full pre-hash and upload-time rehash;
+- download must remain exactly **1 GiB**, direct-to-disk, cancellable, and progress-visible;
+- each candidate is judged separately. A successful upload change cannot justify retaining an ineffective download change, or vice versa.
+
+Candidate A / upload: keep the temporary ArrayBuffer only inside SHA-256 calculation and send the original 8 MiB File-slice Blob through XHR. This preserves the two-pass integrity contract while avoiding deliberate retention of the hash ArrayBuffer as the request body.
+
+Candidate B / download: when the destination is a native WritableStream (the File System Access path), let the browser's Streams pipeline own pull/backpressure via `pipeTo`; a progress TransformStream was intended to preserve byte reporting. The failed-write probe below demonstrated premature progress publication in that candidate. The manual one-write-at-a-time loop remains as the compatibility/test fallback.
+
+If either candidate misses the declared improvement gate, revert that candidate and record it as rejected rather than keeping a speculative production change.
+
+
+## PR #1063 continuation: reusable Web BYOB buffers
+
+Status: **Accepted / initial paired CI and current 4 GiB passed**. Continue the existing [PR #1063](https://github.com/lazyxu/xdrive/pull/1063), replacing its rejected production candidates; no new parallel implementation is implied. Original baseline PR #1053 merged as `62e399f4fd257a49f318e6c223cd697339ca2a27`. Its measured heads were `e1faa4881417cf5bbdf95ccc346e01f1fbcd3642` and `2ca7f021be433f08db428b87a0d4dbb4c21c8887`; their production and harness trees are identical, with only the recorded performance documentation changed. Final experiments reconstruct original production from immutable `2ca7f021`, then use the corrected ready/start measurement harness identified by `8cfdcd71`.
+
+### Frozen final acceptance before final CI
+
+For each changed upload/OPFS-download scenario, three fresh BEFORE/AFTER renderer samples must satisfy **all** of these requirements: median JS+external heap delta and renderer RSS/working-set delta each decrease **at least 50%**; median peak RSS/working set decreases **at least 25%**; **every** sample-index pair has lower RSS peak and delta; median elapsed does not increase by more than **5%**; heap-delta nonregression remains required (the 50% reduction gate is stricter than the 5% allowance); every 1 GiB sample remains **<60 s**; and **every** candidate sample stays within **512 MiB peak RSS/WS, 256 MiB RSS/WS delta, and 128 MiB heap delta**. Exact payload/chunk counts, upload integrity, awaited-write-before-progress/reuse, cancellation and primary-error preservation remain required. A passing upload cannot justify a failed download. These fixed gates supersede the historical 10% timing declaration above without changing old results. Do not relax a gate after seeing final CI.
+
+No forced GC or artificial `ArrayBuffer.transfer(0)` is used by the final candidate or during measured windows. `performance.memory.usedJSHeapSize` includes V8-accounted external backing storage in this Chromium runtime (the [Chromium memory-info implementation](https://chromium.googlesource.com/chromium/src/+/abe0507666c40/third_party/blink/renderer/core/timing/memory_info.cc) sums used heap and external memory); it is not only object memory and is not identical to process RSS. Older optional **post-result** GC diagnostics are retained in raw records but excluded from every acceptance calculation. Heap and RSS must both improve; reducing one while inflating the other is a rejection.
+
+### Historical hosted runs, including the rejected remote candidate
+
+The table below preserves three samples per scenario from each exact head, including all failed memory values. These are **different workflow runs**, not a same-machine alternating A/B experiment. No speedup is attributed from comparing their timings. The original `ac4571d5e101d943f341afe83655dcdd4625c1ec` Blob upload/native-pipeTo download candidate is **Rejected**, even though the workflow executed successfully.
+
+| Case | n | Elapsed ms median [min,max] | RSS/WS peak MiB | RSS/WS delta MiB | JS + external delta MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original e1faa488 / run37865189440 / upload | 3 | 7914.300 [7557.600, 7973.600] | 1056.844 [879.406, 1057.207] | 927.090 [747.906, 934.328] | 471.837 [384.412, 472.494] |
+| Original e1faa488 / run37865189440 / download | 3 | 3814.000 [3757.000, 3816.100] | 487.770 [471.336, 489.305] | 368.887 [361.387, 373.785] | 313.765 [290.358, 314.422] |
+| Original e1faa488 / run37865189440 / download-discard | 3 | 1142.400 [1126.300, 1192.500] | 1090.891 [827.941, 1534.000] | 975.879 [715.637, 1407.949] | 227.929 [207.948, 476.118] |
+| Baseline 2ca7f021 / run37865523278 / upload | 3 | 6185.800 [6178.900, 6542.300] | 1199.781 [1182.863, 1329.910] | 1068.422 [1055.316, 1196.277] | 536.620 [528.608, 600.427] |
+| Baseline 2ca7f021 / run37865523278 / download | 3 | 3094.900 [3076.000, 3225.800] | 528.910 [387.871, 608.527] | 412.621 [273.523, 494.375] | 348.462 [210.206, 430.620] |
+| Baseline 2ca7f021 / run37865523278 / download-discard | 3 | 870.400 [862.700, 934.300] | 1416.660 [813.180, 1674.551] | 1294.430 [694.316, 1555.133] | 468.169 [308.685, 520.165] |
+| Rejected ac4571d5 / run37866968455 / upload | 3 | 5392.600 [5294.800, 6195.100] | 566.742 [505.445, 648.684] | 437.172 [374.047, 533.066] | 456.487 [384.374, 528.623] |
+| Rejected ac4571d5 / run37866968455 / download | 3 | 3319.000 [3216.200, 3660.600] | 582.711 [487.207, 703.465] | 470.516 [377.270, 582.387] | 396.515 [316.753, 524.730] |
+| Rejected ac4571d5 / run37866968455 / download-discard | 3 | 1139.500 [1038.800, 1139.800] | 931.008 [895.309, 1244.699] | 812.898 [773.766, 1123.367] | 268.198 [215.801, 380.057] |
+
+On ac4571d5 OPFS download, heap delta was **396.515 MiB** versus the original e1faa488 **313.765 MiB** (approximately +26.4%), and renderer delta **470.516 MiB** versus **368.887 MiB** (approximately +27.6%). Neither meets the declared dual-50% reduction gate. Hosted upload heap remained **456.487 MiB**, also below the required improvement. These cross-run numbers establish rejection signals, not causal throughput estimates. Exact source: [run37866968455/job113615882517](https://github.com/lazyxu/xdrive/actions/runs/37866968455/job/113615882517). Complete original launcher JSON and the original job log are archived below.
+
+### Local diagnosis and rejected experiments
+
+The comparable local baseline uses original production plus the ready/start handshake correction, Chromium **153.0.8010.0** headless, Node **24.19.0**, Linux overlayfs, loopback sparse-zero 1 GiB payloads, reused dependencies, and one renderer process. OPFS uses fresh persistent browser contexts to avoid off-record quota limits; discard uses off-record no-storage sinks. RSS is sampled every 25 ms after the initial RSS snapshot and before transfer activation. Existing harness heap sampling and payload counters are retained. Builds and benchmarks are serialized under `perf-bench.lock`. Local numbers do not replace hosted Electron/Xvfb results. Baseline runner/source hashes reconstructed after the runs are labeled as reconstructed, not contemporaneous captures; newer size-parameterized samples carry source/dist hashes.
+
+| Case | n | Elapsed ms median [min,max] | RSS/WS peak MiB | RSS/WS delta MiB | JS + external delta MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| XHR handler cleanup | 1 | 33998.200 [33998.200, 33998.200] | 1626.723 [1626.723, 1626.723] | 1508.160 [1508.160, 1508.160] | 616.216 [616.216, 616.216] |
+| ArrayBuffer transfer(0) after hash/request | 1 | 40904.500 [40904.500, 40904.500] | 2930.137 [2930.137, 2930.137] | 2812.035 [2812.035, 2812.035] | 9.222 [9.222, 9.222] |
+| Blob body + hash-buffer transfer(0) | 1 | 8613.800 [8613.800, 8613.800] | 2176.355 [2176.355, 2176.355] | 2057.445 [2057.445, 2057.445] | 1.280 [1.280, 1.280] |
+| Native pipeTo OPFS, verified local | 1 | 4409.000 [4409.000, 4409.000] | 772.750 [772.750, 772.750] | 655.430 [655.430, 655.430] | 640.311 [640.311, 640.311] |
+
+- **XHR terminal/upload-handler cleanup: Rejected**, n=1. Clearing handlers and capturing primitive body length/signal reduced memory only about 2%, below the 25% minimum. Reverted without expanding a low-value sample.
+- **Owned ArrayBuffer transfer(0) after hash or completed XHR/retry: Rejected**, n=1. Heap accounting decreased but RSS and elapsed increased substantially. Reverted; not retained as a final memory mechanism.
+- **Blob request body plus hash-buffer transfer(0) in finally: Rejected**, n=1. Low reported heap did not compensate for worse RSS/time. Reverted.
+- **Verified native pipeTo OPFS: Rejected**, local n=1. Elapsed 4409 ms was 29.3% above the local original 3409 ms median, with essentially unchanged RSS/heap. This local observation is separate from hosted CI; the 29.3% value must not be attributed to the hosted run. A first-write-failure probe also produced premature progress `[3]` before a failed sink write. The final manual awaited-write loop restores the original contract.
+- **Blob-body only upload: Rejected**, verified local n=3. Measured source was the remote `0004927a` candidate. RSS delta improved about 40.8%, while heap delta increased about 43.1%, failing the dual-50% gate. The earlier `transfer-remote-candidate/` directory used an incorrect bundle path and is **invalid** candidate evidence; it is intentionally excluded from this archive.
+
+### Final local 1 GiB BEFORE/AFTER qualification
+
+Upload uses a per-upload **at most 8 MiB reusable BYOB scratch** for hashing while retaining immutable File-slice Blob request bodies. Full pre-hash and upload-time digest checks remain; independent varied-content tests compare native and forced-partial BYOB digests and XHR payloads with Node crypto. Download uses a **1 MiB reusable BYOB backing buffer with default minimum read size (1 byte)**. Each returned view is fully consumed by an awaited destination write before progress or reuse; unsupported byte readers preserve the default-reader path. Partial tails, EOF, abort, lock release, close failure and primary-error preservation are covered. There is no aggregate chunk array.
+
+| Case | n | Elapsed ms median [min,max] | RSS/WS peak MiB | RSS/WS delta MiB | JS + external delta MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original local upload | 3 | 36114.100 [35509.300, 40743.100] | 1661.855 [1405.137, 1663.863] | 1542.520 [1286.090, 1545.109] | 632.186 [511.823, 632.241] |
+| Blob-body only, rejected | 3 | 6610.800 [6490.600, 8106.100] | 1032.930 [815.270, 1040.168] | 913.820 [696.668, 920.906] | 904.623 [688.320, 904.627] |
+| Final reusable BYOB upload | 3 | 6082.300 [5831.000, 6347.000] | 172.434 [171.617, 172.645] | 53.871 [52.961, 55.023] | 19.240 [18.939, 19.313] |
+| Original local OPFS | 3 | 3409.000 [3312.100, 3818.200] | 773.938 [757.230, 778.117] | 656.336 [640.062, 660.742] | 638.639 [572.465, 642.702] |
+| Full-min BYOB, replaced for latency | 3 | 3240.700 [2953.800, 3632.100] | 186.770 [186.613, 187.164] | 69.574 [69.035, 69.602] | 3.073 [2.990, 3.075] |
+| Final default-min BYOB OPFS | 3 | 3305.500 [3114.200, 3828.700] | 189.004 [187.270, 189.395] | 71.910 [70.621, 72.145] | 3.175 [3.173, 3.368] |
+
+Final upload median RSS peak/delta decrease approximately **89.6% / 96.5%**, and heap delta decreases **97.0%**. Final default-min OPFS download median peak/delta decrease **75.58% / 89.04%**, and heap delta decreases **99.50%**. Every sample-index RSS peak/delta pair decreases; all three final samples in each direction satisfy the absolute budgets and exact 1 GiB / 128-chunk upload counts. Upload elapsed is 6082.3 ms and download 3305.5 ms; their median timing gates pass. This is original-then-candidate local measurement, not alternating execution order. Timing is diagnostic; no Internet, physical-disk, Windows or native Electron throughput claim is made.
+
+The initial 1 MiB **minimum-fill** download variant passed memory/timing gates but was **Replaced for measured publication latency**, not kept as a product optimization. On controlled delivery of **32 KiB every 50 ms** (about 5.24 Mbit/s), original first write/progress publication were **52.079 / 102.662 ms**, while full-min first write/publication were **1612.100 / 1612.148 ms**. Removing only the minimum-read option restored **51.502 / 101.906 ms**, matching a fresh original control **51.590 / 102.162 ms**. No adaptive batching policy was introduced. The latency regression first failed at 1619.7 ms and then passed; 14 new/existing download tests pass. Keep the replaced full-min raw samples to explain the choice.
+
+Validation: upload's initial related suite **49/49** passed; independent native/partial varied-fixture integrity suite **45/45** passed. Download's final related suite **14/14** passed, and Web full TypeScript/Vite build passed. A full Desktop suite ran on the full-min predecessor: **1101 passed, 2 failed, 1 skipped**; both failed test files (`shared-image-preview-decode.cjs`, `shared-media-preview-lifecycle.cjs`) could not load absent `react-test-renderer` in the reused install and never reached assertions. This is not a green full-suite claim for final delivery; root's full validation/CI remains required.
+
+Final local delivery validation resolved the already-declared `react-test-renderer` 18.3.1 test dependency and reran the complete normal Desktop suite against the final default-min/download and reusable-upload sources: **1131 passed, 0 failed, 1 skipped** (`node --test --test-concurrency=4 tests/*.cjs`, after the main build). Web TypeScript/performance build, both Desktop TypeScript checks, the CI parity suite, and shell/diff checks passed. Eleven comparator tests cover rejected memory/timing gates, runtime mismatch, exact payloads, nonzero CI exit with retained evidence, and the current 4 GiB budgets. Independent review verified the production source hashes against the measured candidates and found no remaining blocker. Hosted same-run paired CI is still the authoritative acceptance gate.
+
+### Current bounded Web 4 GiB coverage
+
+After bounded 1 GiB qualification, current Web upload and default-min OPFS download each ran **three fresh processes at exactly 4,294,967,296 bytes**. Upload emitted **512 x 8 MiB chunks**, retaining full pre-hash/integrity. Each direction passes all absolute memory budgets and the fixed **<=240 s per-sample 4 GiB elapsed cap**. OPFS quota was preflighted, temporary fixtures cleaned, and about 23 GiB free disk remained. The upload and download bundles have separate hashes because the download-only minimum changed between builds; upload API/transport hashes stayed fixed. Raw records distinguish executed bundle hashes from concurrently observed source hashes.
+
+| Case | n | Elapsed ms median [min,max] | RSS/WS peak MiB | RSS/WS delta MiB | JS + external delta MiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Final Web 4 GiB upload | 3 | 25946.000 [25738.700, 25970.200] | 199.852 [199.137, 200.348] | 80.398 [79.605, 81.758] | 29.977 [22.155, 30.670] |
+| Final Web 4 GiB OPFS download | 3 | 13487.800 [13071.200, 14365.100] | 201.656 [201.234, 203.910] | 84.238 [83.914, 85.895] | 5.904 [5.182, 5.905] |
+
+Upload pre-hash median is **8394.5 ms**; download includes production OPFS writing. These are current bounded-workload baselines only: **original Web 4 GiB was not run**, so there is no 4 GiB before/after reduction or extrapolated speedup claim. This is local zero-filled loopback/overlayfs, not native Server/CAS, physical disk, Internet, Desktop IPC or Windows CfAPI. Earlier Linux Agent 4 GiB results are separately documented by the Gallery/Agent measurement follow-up and are not relabeled as Web evidence.
+
+### Authoritative paired CI and durable evidence
+
+**Initial same-run comparison passed on 4ec/deab; reconstructed-head revalidation is required before merge:** same-run Electron/Xvfb original-vs-candidate comparison, using exact immutable baseline/candidate provenance, shared corrected harness, three fresh samples for each upload/OPFS-download/discard scenario (**nine BEFORE + nine AFTER**) and alternating order. Upload and OPFS-download must pass the strict final gates; discard remains a separately reported diagnostic. Only after these gates pass does the same CI job run current-candidate **4 GiB upload/download, three samples each**, with the fixed absolute memory caps and **<=240 s per sample**. Record all original and candidate results plus failed gates here before this performance PR merges. The final size-parameterized 1/4 GiB harness must preserve the 1 GiB comparison workload; larger coverage is additional qualification, not substituted BEFORE data.
+
+All complete local sample JSON, original e1/2ca CI records, nine full ac4571d5 launcher records and original job log, rejection/progress logs, slow-stream probes, full-min replacement evidence, final source/dist hashes, and current 4 GiB samples are archived under [performance-evidence/web-large-transfer](performance-evidence/web-large-transfer/README.md). [manifest.json](performance-evidence/web-large-transfer/manifest.json) records SHA-256 for every evidence file. Copied summaries retain original scratch paths as provenance; the archive's relative paths are the durable locations. Numeric sample values remain unrounded in JSON. Do not use optional post-result GC fields as acceptance evidence or silently omit rejected samples.
+
+### Authoritative paired CI on 4ec31f39 — 2026-10-09
+
+Status: **Accepted / paired performance gate passed**. The [large-transfer-web-performance job](https://github.com/lazyxu/xdrive/actions/runs/37870615110/job/113627600871) completed **successfully at 01:41:28 UTC**, after starting at 01:37:15 UTC. Actual checkout was **AFTER `4ec31f39ec151cd45642ba2c9603d2f78cf82899`**. Immutable `HEAD^` was **BEFORE `deab56e2f7b3489bcc88dea3ed94b5f93fdbcb8e`**; do not relabel this run with the later reconstruction base.
+
+The exact immutable paired script archives that BEFORE tree and overlays **only** the AFTER measurement harness TSX and Electron launcher. It does not overlay the production API, sink or transport. Both builds reuse the same installed dependencies, with the baseline shared-UI package resolving to the archived baseline source. Samples alternate BEFORE/AFTER on odd indices and AFTER/BEFORE on even indices. There were **nine BEFORE + nine AFTER 1 GiB samples**, then **six current 4 GiB samples** only after the strict primary gate passed. Every complete sample reports identical timed runtime versions: **Electron 44.4.5 / Chromium 152.0.7977.130 / Node 24.21.0**. This hosted Electron/Xvfb runtime is separate from the local Chromium153 headless evidence.
+
+All **24** complete launcher records were extracted from the original job log. Scenario/index order was independently matched to the immutable script. Exact payload validation held: each 1 GiB transfer was **1,073,741,824 bytes**, each 4 GiB transfer **4,294,967,296 bytes**, with **128 / 512 upload chunks** respectively. Runtime, byte/chunk checks and both comparison objects were independently recomputed using the **4ec31f39 comparison implementation**; the recomputed JSON exactly equals the original logged comparisons, and both top-level `accepted` values are **true**.
+
+#### Complete same-run 1 GiB comparison
+
+Every distribution below is median [minimum,maximum], n=3; units are stated per row. Values remain unrounded in the archived original sample JSON.
+
+**upload, n=3 per side**
+
+| Metric | BEFORE median [min,max] | AFTER median [min,max] | Change |
+| --- | ---: | ---: | ---: |
+| Elapsed ms | 7150.900 [7116.000, 7312.700] | 5582.600 [5353.300, 6055.900] | 21.932% decrease |
+| Throughput MiB/s | 143.199 [140.030, 143.901] | 183.427 [169.091, 191.284] | 28.093% increase |
+| JS + external delta MiB | 464.174 [423.592, 464.185] | 20.320 [20.270, 20.483] | 95.622% decrease |
+| Renderer WS peak MiB | 1040.875 [960.973, 1041.871] | 158.961 [157.594, 160.656] | 84.728% decrease |
+| Renderer WS delta MiB | 928.008 [847.613, 928.070] | 46.410 [46.027, 46.938] | 94.999% decrease |
+
+**download, n=3 per side**
+
+| Metric | BEFORE median [min,max] | AFTER median [min,max] | Change |
+| --- | ---: | ---: | ---: |
+| Elapsed ms | 3682.100 [3636.800, 3745.800] | 3450.100 [3449.300, 3509.700] | 6.301% decrease |
+| Throughput MiB/s | 278.102 [273.373, 281.566] | 296.803 [291.763, 296.872] | 6.724% increase |
+| JS + external delta MiB | 344.146 [330.143, 366.185] | 2.699 [2.670, 2.745] | 99.216% decrease |
+| Renderer WS peak MiB | 519.887 [513.840, 541.668] | 183.699 [180.609, 184.160] | 64.666% decrease |
+| Renderer WS delta MiB | 412.941 [404.508, 434.957] | 76.012 [71.969, 77.590] | 81.593% decrease |
+
+**download-discard, n=3 per side**
+
+| Metric | BEFORE median [min,max] | AFTER median [min,max] | Change |
+| --- | ---: | ---: | ---: |
+| Elapsed ms | 1106.100 [1088.500, 1123.800] | 764.700 [758.100, 775.600] | 30.865% decrease |
+| Throughput MiB/s | 925.775 [911.194, 940.744] | 1339.087 [1320.268, 1350.745] | 44.645% increase |
+| JS + external delta MiB | 429.750 [284.800, 461.761] | 3.310 [3.184, 3.903] | 99.230% decrease |
+| Renderer WS peak MiB | 1621.492 [1529.719, 1629.523] | 120.367 [118.988, 120.699] | 92.577% decrease |
+| Renderer WS delta MiB | 1514.469 [1422.348, 1522.238] | 13.039 [12.863, 13.266] | 99.139% decrease |
+
+The fixed gates were not relaxed. Upload and OPFS download exceed the required **50% heap/delta and 25% peak reductions**, every individual paired peak/delta is lower, the **5% median elapsed** gate passes, and every AFTER sample meets the **512/256/128 MiB** memory caps and 60 s elapsed cap. The discard path also passes every check, while retaining its diagnostic-only role.
+
+| Scenario | Memory reductions + all paired RSS lower | Heap nonregression | Median elapsed gate | Every sample memory caps | Every sample elapsed cap | Assessment |
+| --- | --- | --- | --- | --- | --- | --- |
+| upload | true | true | true | true | true | Accepted |
+| download | true | true | true | true | true | Accepted |
+| download-discard | true | true | true | true | true | Diagnostic, passed |
+
+#### Current-candidate 4 GiB hosted coverage
+
+No original 4 GiB path was measured. These distributions qualify the current bounded implementation and do not claim a 4 GiB before/after percentage improvement.
+
+| Scenario | Elapsed ms median [min,max] | Throughput MiB/s | JS + external delta MiB | WS peak MiB | WS delta MiB | Every sample memory caps / <=240 s |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| upload | 22019.500 [21691.700, 22337.700] | 186.017 [183.367, 188.828] | 32.654 [24.471, 32.669] | 189.070 [187.305, 191.027] | 76.312 [76.027, 79.414] | true / true |
+| download | 13507.800 [13498.600, 14300.500] | 303.232 [286.424, 303.439] | 4.582 [4.564, 4.590] | 187.484 [186.887, 188.090] | 80.844 [79.277, 82.301] | true / true |
+
+All six samples pass the unchanged absolute memory budgets and fixed **<=240 s** elapsed cap. Exact bytes, chunk counts and runtime were independently checked above.
+
+#### Provenance and materialization limits
+
+The original artifact is **11590172527**, `web-large-transfer-1gib-4gib`, 15,451 bytes, digest **`sha256:410171ed8de680fbac1290ccf93f63acb59b8ba4ffddb404e017bcff660aaee4`**, associated with this exact head/run. The connector returned a ZIP reference, but its temporary download URL returned **HTTP 403**; the original ZIP and its `provenance.json` were not read. No authentication workaround was attempted.
+
+The durable archive therefore preserves the **complete original job log**, all **24 complete original RESULT records**, both original/recomputed comparison JSON objects, and an explicitly named **`provenance-reconstructed.json`**. That provenance derives from the checkout log, immutable parent/AFTER Git objects, exact paired script and production/harness source hashes. It is **not** represented as the artifact's original provenance file; original artifact host/CPU fields remain unavailable. In particular, baseline API/sink/transport hashes match the original 2ca production, and AFTER API/sink/transport hashes match the locally measured final candidate. Source hashes and limits are retained in JSON.
+
+Archive: [ci-4ec31f39](performance-evidence/web-large-transfer/ci-4ec31f39/provenance-reconstructed.json), [comparison.json](performance-evidence/web-large-transfer/ci-4ec31f39/comparison.json), [current-4gib.json](performance-evidence/web-large-transfer/ci-4ec31f39/current-4gib.json), and [audit-verification.json](performance-evidence/web-large-transfer/ci-4ec31f39/audit-verification.json). Original runtime/error/metric logs and per-side sample directories are alongside them; the global manifest verifies every file.
+
+#### Post-conflict delivery verification remains separate
+
+After Gallery #1067 merged, GitHub reported a genuine canonical-document conflict. The same single work commit was reconstructed on fixed parent **`a1f04f4681dba8e1d55307e09d292ecb880039dc`**, preserving both performance chapters and the final upload/download changes. Parent API additions are MediaSyncFolder methods/types; the transfer changes remain intact. These **4ec/deab** results do not validate that newer commit by attribution alone.
+
+Fresh normal local checks after reconstruction passed Web performance TypeScript/build, both Desktop TypeScript checks/main build, Go CI parity and shell/diff checks. The complete normal Desktop suite is now **1212 passed, 0 failed, 1 skipped** (new parent adds ordinary tests); its log is archived separately from the earlier 1131-pass validation. **Final reconstructed-head full PR CI is mandatory before merge.** Keep this initial successful pair as its own exact-head measurement record; the final run must identify its own BEFORE/AFTER source provenance and strict gates before merge.
+
+Next named performance workloads after this delivery: real 100k subtree delete/trash/restore and Client change-feed consumption; real FileExplorer video/LIVP HTTP+decode in Details/Grid; and the 4 GiB Agent controller/IPC boundary. Existing 100k metadata, replay renderer, and Agent-core results remain labeled by their actual measured layer. Start each extension with a measured baseline before considering a production optimization.

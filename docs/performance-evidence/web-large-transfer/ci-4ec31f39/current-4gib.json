@@ -1,0 +1,76 @@
+{
+  "sizeBytes": 4294967296,
+  "samplesPerScenario": 3,
+  "comparison": "current baseline only; original 4 GiB path not measured",
+  "memoryBudgets": {
+    "rendererWorkingSetPeakKB": 524288,
+    "rendererWorkingSetDeltaKB": 262144,
+    "heapDeltaBytes": 134217728
+  },
+  "maximumElapsedMs": 240000,
+  "scenarios": {
+    "upload": {
+      "metrics": {
+        "elapsedMs": {
+          "median": 22019.5,
+          "min": 21691.699999999983,
+          "max": 22337.70000000001
+        },
+        "throughputMiBps": {
+          "median": 186.01693953087036,
+          "min": 183.36713269495058,
+          "max": 188.8279848974494
+        },
+        "heapDeltaBytes": {
+          "median": 34240025,
+          "min": 25660143,
+          "max": 34256207
+        },
+        "rendererWorkingSetPeakKB": {
+          "median": 193608,
+          "min": 191800,
+          "max": 195612
+        },
+        "rendererWorkingSetDeltaKB": {
+          "median": 78144,
+          "min": 77852,
+          "max": 81320
+        }
+      },
+      "allMemoryBudgetsSatisfied": true,
+      "allElapsedBudgetsSatisfied": true
+    },
+    "download": {
+      "metrics": {
+        "elapsedMs": {
+          "median": 13507.799999999988,
+          "min": 13498.600000000035,
+          "max": 14300.5
+        },
+        "throughputMiBps": {
+          "median": 303.232206576941,
+          "min": 286.4235516240691,
+          "max": 303.4388751426066
+        },
+        "heapDeltaBytes": {
+          "median": 4804861,
+          "min": 4785787,
+          "max": 4812525
+        },
+        "rendererWorkingSetPeakKB": {
+          "median": 191984,
+          "min": 191372,
+          "max": 192604
+        },
+        "rendererWorkingSetDeltaKB": {
+          "median": 82784,
+          "min": 81180,
+          "max": 84276
+        }
+      },
+      "allMemoryBudgetsSatisfied": true,
+      "allElapsedBudgetsSatisfied": true
+    }
+  },
+  "accepted": true
+}

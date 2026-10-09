@@ -1,0 +1,31 @@
+✔ Web download consumes a real byte stream through bounded BYOB reads with exact tail and post-write progress (183.524774ms)
+✔ Web BYOB download handles empty byte-stream EOF without a write (12.879667ms)
+✔ Web BYOB write failure cancels the reader and never publishes failed bytes (11.590052ms)
+✔ Web BYOB read failure preserves the error and aborts destination (13.357479ms)
+✔ Web BYOB download preserves a write error when stream cancel and destination abort also fail (13.530426ms)
+✔ Web BYOB download reports only written bytes and aborts if destination close fails (9.880402ms)
+✖ Web reusable BYOB download publishes slow-stream progress before waiting for a full MiB (1671.03617ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 6
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2183.722985
+
+✖ failing tests:
+
+test at desktop/tests/web-download-byob.cjs:144:1
+✖ Web reusable BYOB download publishes slow-stream progress before waiting for a full MiB (1671.03617ms)
+  AssertionError [ERR_ASSERTION]: first valid byte progress waited 1619.6646489999998ms for a full buffer
+      at TestContext.<anonymous> (/workspace/scratch/4fa175e5d1c9/xdrive-transfer/desktop/tests/web-download-byob.cjs:171:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

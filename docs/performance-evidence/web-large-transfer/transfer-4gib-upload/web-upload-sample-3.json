@@ -1,0 +1,57 @@
+{
+  "scenario": "upload",
+  "sample": "sample-3",
+  "sizeBytes": 4294967296,
+  "elapsedMs": 25738.70000000298,
+  "throughputMiBps": 159.13779639218475,
+  "heapStartBytes": 5971999,
+  "heapPeakBytes": 29202773,
+  "heapDeltaBytes": 23230774,
+  "prehashMs": 8394.5,
+  "uploadSessionMs": 4.300000004470348,
+  "uploadChunksMs": 17337.10000000149,
+  "uploadFinalizeMs": 2.7999999970197678,
+  "context": "off-record",
+  "environment": "local Chromium 153 headless, multiprocess, Linux overlayfs; same production API and 4 GiB sparse fixture; separate from Electron CI",
+  "runtimeVersions": {
+    "chromium": "153.0.8010.0",
+    "node": "24.19.0"
+  },
+  "storageEstimate": {
+    "quota": 2147483648,
+    "usage": 0,
+    "usageDetails": {}
+  },
+  "measurementSourceHashes": {
+    "web/src/api.ts": "795155b2c048a9b015c43c9855a2e73a54053fca096e32f532dc8e54151c5bfa",
+    "web/src/transferTransport.ts": "ead8220081b35d770b0b637e3b880debd27ea54b68e24b3608295a43364a0154",
+    "web/src/downloadSink.ts": "c82adaa33e8f83504d40c0af0698428e1f0ffc83fe318b71b46e2682c0a9c245",
+    "web/src/LargeTransferPerformanceHarness.tsx": "51f7df133324eed62e78b5b067b6d90c72c25f7e430c59f8f1fac6a268844577",
+    "desktop/scripts/large-transfer-performance-main.cjs": "edb3918065e74627c477d88f82e58672e8cc27768c9a331e677f786aaac508bd"
+  },
+  "distAssetHashes": {
+    "LargeTransferPerformanceHarness-DRbJ1GDh.js": "f320f40e2a8d577706e19819798f43ae0d8d5ed554742336601bf2a0b6df564a",
+    "index-n42-_xr2.js": "359e0ede120daa116ec0ab62f7006fc09754add6450c9863ee0d41fd1186c181"
+  },
+  "rendererRSSStartKiB": 122320,
+  "rendererRSSPeakKiB": 204648,
+  "rendererRSSDeltaKiB": 82328,
+  "heapBefore": {
+    "usedSize": 4492288,
+    "totalSize": 6930432,
+    "embedderHeapUsedSize": 1506288,
+    "backingStorageSize": 1477259
+  },
+  "heapAfter": {
+    "usedSize": 4723604,
+    "totalSize": 14794752,
+    "embedderHeapUsedSize": 1541328,
+    "backingStorageSize": 9899441
+  },
+  "server": {
+    "uploadBytes": 4294967296,
+    "uploadChunks": 512,
+    "uploadInitSize": 4294967296,
+    "downloadBytes": 0
+  }
+}
