@@ -148,6 +148,8 @@ export type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video' | 'live_photo',
   signal?: AbortSignal,
+  fileName?: string,
+  revision?: number,
 ) => Promise<string | null>
 export type MediaVideoPosterSaver = (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
 

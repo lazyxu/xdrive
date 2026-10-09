@@ -40,6 +40,7 @@ export type XDriveFilePreviewMotionLoader<T extends XDriveFilePreviewTarget = XD
 export type XDriveFilePreviewURLLoader<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = (
   target: T,
   kind: Exclude<XDriveFilePreviewKind, 'none' | 'text'>,
+  signal?: AbortSignal,
 ) => Promise<string | null | undefined>
 
 export type XDriveFilePreviewSurfaceProps<T extends XDriveFilePreviewTarget = XDriveFilePreviewTarget> = {

@@ -86,8 +86,15 @@ const xDriveTextPreviewBasenames = new Set([
 ])
 
 const xDriveImagePreviewExtensions = new Set([
-  'avif', 'bmp', 'gif', 'heic', 'heif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp',
+  'arw', 'avif', 'bmp', 'cr3', 'dng', 'gif', 'heic', 'heif', 'jpeg', 'jpg',
+  'nef', 'png', 'tif', 'tiff', 'webp',
 ])
+
+const xDriveEmbeddedRawPreviewExtensions = new Set(['arw', 'cr3', 'dng', 'nef'])
+
+export function xDriveFileUsesRawCompatibilityPreview(name: string): boolean {
+  return xDriveEmbeddedRawPreviewExtensions.has(xDrivePreviewExtension(name))
+}
 
 const xDriveVideoPreviewExtensions = new Set([
   'avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm',
@@ -126,9 +133,9 @@ export function xDriveClassifyFilePreview(
   const extension = xDrivePreviewExtension(target.name)
   if (extension === 'livp') return 'live_photo'
 
-  // Binary previewability must stay aligned with the Server's strict extension
-  // allowlist. MIME metadata may describe a file, but must never broaden the
-  // set of originals that can receive a signed preview ticket.
+  // MIME metadata never broadens eligibility. RAW extensions use the existing
+  // authenticated 1280px derived-JPEG endpoint, NOT an original-file ticket.
+  // Other binary image extensions use the Server's strict original allowlist.
   if (extension === 'pdf') return 'pdf'
   if (xDriveImagePreviewExtensions.has(extension)) return 'image'
   if (xDriveVideoPreviewExtensions.has(extension)) return 'video'

@@ -156,6 +156,7 @@ test('generic preview transport is allowlisted, ticketed, range-capable, with PD
   assert.ok(desktopApp.includes("capabilities.includes('file-preview-stream')"), 'Desktop preview stream capability gate is missing')
   assert.ok(preload.includes('cloudFilePreviewURL'), 'Desktop preload preview URL bridge is missing')
   assert.ok(desktopMain.includes('agent:cloud-file-preview-url'), 'Electron main preview URL bridge is missing')
+  assert.ok(desktopMain.includes('agent:get-media-analysis-preview'), 'Desktop RAW derivative preview must use request-scoped IPC')
   assert.ok(agentClient.includes('cloudFilePreviewTicket(nodeID: number)'), 'Desktop Agent client preview ticket method is missing')
   assert.ok(agentIPC.includes('/v1/cloud/file-preview-ticket'), 'Agent preview ticket bridge is missing')
   assert.ok(agentCloud.includes('CloudFilePreviewTicket'), 'Agent preview ticket controller is missing')

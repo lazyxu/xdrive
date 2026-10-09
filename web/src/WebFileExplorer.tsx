@@ -45,6 +45,7 @@ import {
   xDriveFileExplorerSearchFiltersActive,
   xDriveFileExplorerSearchFiltersSignature,
   xDriveFileExplorerSearchFilterLabels,
+  xDriveFileUsesRawCompatibilityPreview,
 } from '../../ui/shared/src'
 import type {
   Node,
@@ -576,14 +577,18 @@ export default function WebFileExplorer({
   const loadPreviewURL = useCallback(async (
     item: XDriveFileExplorerItem,
     kind: 'image' | 'video' | 'audio' | 'pdf' | 'live_photo',
+    signal?: AbortSignal,
   ) => {
     if (item.kind !== 'file') return null
     try {
       if (kind === 'live_photo') {
         return await api.mediaLivePhotoStillURL(Number(item.id))
       }
+      if (kind === 'image' && xDriveFileUsesRawCompatibilityPreview(item.name)) {
+        return await api.mediaAnalysisPreviewURL(Number(item.id), signal, Number(item.revision))
+      }
       if (!['pdf', 'video', 'audio', 'image'].includes(kind)) return null
-      return await api.filePreviewURL(Number(item.id))
+      return await api.filePreviewURL(Number(item.id), signal)
     } catch {
       return null
     }

@@ -355,6 +355,7 @@ const agent = Object.freeze({
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
   getMediaThumbnail: (nodeID: number, requestID?: string) => ipcRenderer.invoke('agent:get-media-thumbnail', nodeID, requestID),
+  getMediaAnalysisPreview: (nodeID: number, requestID?: string) => ipcRenderer.invoke('agent:get-media-analysis-preview', nodeID, requestID),
   cancelViewportRequest: (requestID: string) => ipcRenderer.invoke('agent:cancel-viewport-request', requestID),
   getMediaLivePhotoStill: (nodeID: number) => ipcRenderer.invoke('agent:get-media-live-photo-still', nodeID),
   putMediaVideoPoster: (nodeID: number, revision: number, data: ArrayBuffer) => ipcRenderer.invoke('agent:put-media-video-poster', nodeID, revision, data),

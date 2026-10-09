@@ -3116,6 +3116,25 @@ function registerIPCHandlers() {
     ),
   )
 
+  ipcMain.handle('agent:get-media-analysis-preview', (event, nodeID: unknown, requestID: unknown) =>
+    runAgentAction<AgentMediaThumbnail>(
+      () => viewportRequests.run(event.sender, requestID, async (signal) => {
+        const hello = await requireAgentLifecycle().ensureRunning()
+        requireAgentCapability(hello, 'media-gallery')
+        if (
+          typeof nodeID !== 'number' ||
+          !Number.isSafeInteger(nodeID) ||
+          nodeID <= 0
+        ) {
+          throw new AgentIPCError('invalid_input', 0, 'RAW preview node id is required.')
+        }
+        if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'RAW preview was cancelled.')
+        return requireAgentClient().mediaAnalysisPreview(nodeID, signal)
+      }),
+      false,
+    ),
+  )
+
   ipcMain.handle('agent:put-media-video-poster', (_event, nodeID: unknown, revision: unknown, data: unknown) => runAgentAction<{ ok: boolean }>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'media-gallery')

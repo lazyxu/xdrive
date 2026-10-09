@@ -47,6 +47,9 @@ type MediaMotionLoader = (
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video' | 'live_photo',
+  signal?: AbortSignal,
+  fileName?: string,
+  revision?: number,
 ) => Promise<string | null>
 
 function formatMediaBytes(bytes?: number) {
@@ -271,10 +274,10 @@ export function XDriveMediaDetailsContent({
   ])
   const previewKind = previewTarget ? xDriveClassifyFilePreview(previewTarget) : 'none'
   const presentation = useXDrivePreviewPresentation(previewTarget)
-  const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind) => {
+  const loadSelectedPreview = useCallback<XDriveFilePreviewURLLoader>(async (_target, kind, signal) => {
     if (!item || !loadPreviewURL || (kind !== 'image' && kind !== 'video' && kind !== 'live_photo')) return null
-    return loadPreviewURL(item.node.id, kind)
-  }, [item?.node.id, loadPreviewURL])
+    return loadPreviewURL(item.node.id, kind, signal, item.node.name, item.node.revision)
+  }, [item?.node.id, item?.node.name, loadPreviewURL])
   const loadSelectedThumbnail = useCallback<XDriveFilePreviewImageLoader>(async () => {
     if (!item?.metadata.has_thumbnail) return null
     return loadThumbnail(item.node.id)

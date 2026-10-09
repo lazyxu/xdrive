@@ -325,6 +325,7 @@ type desktopIPCController interface {
 	CloudMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
 	CloudCancelMediaCreativeGeneration(context.Context, string) (client.MediaCreativeGeneration, error)
 	CloudMediaThumbnail(context.Context, uint64) (agentMediaThumbnail, error)
+	CloudMediaAnalysisPreview(context.Context, uint64) (agentMediaThumbnail, error)
 	CloudMediaLivePhotoStillTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudMediaLivePhotoMotionTicket(context.Context, uint64) (client.FilePreviewTicket, error)
 	CloudSources(context.Context) ([]client.Source, error)
@@ -663,6 +664,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/creative", h.mediaCreativeGeneration)
 	mux.HandleFunc("POST /v1/media/creative/cancel", h.cancelMediaCreativeGeneration)
 	mux.HandleFunc("GET /v1/media/thumbnail", h.mediaThumbnail)
+	mux.HandleFunc("GET /v1/media/analysis-preview", h.mediaAnalysisPreview)
 	mux.HandleFunc("PUT /v1/media/video-poster", h.mediaVideoPoster)
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
@@ -3892,6 +3894,29 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Length", strconv.Itoa(len(thumbnail.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(thumbnail.Data)
+}
+
+// mediaAnalysisPreview forwards only the bounded JPEG derivative; RAW bytes are never exposed.
+func (h *desktopIPCHandler) mediaAnalysisPreview(w http.ResponseWriter, r *http.Request) {
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	preview, err := h.ctrl.CloudMediaAnalysisPreview(r.Context(), nodeID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(preview.ContentType), "image/jpeg") {
+		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_preview", "analysis preview must be JPEG")
+		return
+	}
+	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("Content-Length", strconv.Itoa(len(preview.Data)))
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(preview.Data)
 }
 
 func (h *desktopIPCHandler) mediaVideoPoster(w http.ResponseWriter, r *http.Request) {

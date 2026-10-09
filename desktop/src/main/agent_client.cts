@@ -2049,6 +2049,15 @@ export class AgentIPCClient {
     )
   }
 
+  mediaAnalysisPreview(nodeID: number, signal?: AbortSignal) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.requestBinary(
+      `/v1/media/analysis-preview?${query.toString()}`,
+      45_000,
+      signal,
+    )
+  }
+
   mediaVideoPoster(nodeID: number, revision: number, data: ArrayBuffer) {
     const query = new URLSearchParams({
       node_id: String(nodeID),

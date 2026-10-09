@@ -192,6 +192,39 @@ allowlist merely because a browser can display them.
 If a new format needs special sanitization or conversion, add a safe derived-preview
 resource instead of weakening the raw-preview allowlist.
 
+
+### RAW compatibility preview (1280px, embedded JPEG only)
+
+Status: **In progress / CI pending**. The normal Viewer and FileExplorer use the
+*existing authenticated* `GET /api/v1/media/items/:id/analysis-preview`
+derivative for locally supported embedded-JPEG RAW extensions
+(`.dng`, `.nef`, `.arw`, `.cr3`). This is a JPEG compatibility
+rendering, **not Bayer/RAW demosaicing or an original RAW image stream**.
+The source resource remains the original unchanged RAW Node, and ordinary
+download continues to return the canonical RAW file. RAW originals do not
+enter the `/files/:id/preview-ticket` original-image allowlist.
+
+Only the shared Preview Engine renders the image: its thumbnail role still
+fetches the 512px cache, and its high-resolution role receives the 1280px
+revision/SHA/version-scoped analysis derivative (Web URLs also key by the
+current Node revision so the browser cannot serve cached bytes across overwrite). The existing decode-gated
+handoff, 2-source bound and failure behavior remain unchanged. When a RAW
+has no safe embedded JPEG or generation fails, no fabricated high-resolution
+preview is shown; the validated 512px thumbnail may remain visible if present.
+FileExplorer/Quick Look, Gallery Viewer/Properties and standalone Web Viewer
+reuse platform adapters and the shared decoder. An abandoned image source
+request carries a viewport AbortSignal to Web fetch or Desktop IPC/Agent GET.
+
+The original signed ticket, user/session scope, `nosniff`, Server ownership,
+2048px creative preview, and physical derivative storage classes are unchanged.
+The existing `analysis_preview` storage class includes this 1280px output;
+no new cache subtree is created. CI and physical sample tests must distinguish
+pre-existing thumbnails from 1280px derivatives, image orientation and
+image-only JPEG output. Real-device end-to-end before/after latency and bytes
+are **not measured by this structural integration**. HEIC's native original
+decode still uses existing thumbnail fallback; separate HEIC HD compatibility
+routing, no-preview RAW formats and full RAW processing remain follow-up work.
+
 ## Renderer behavior
 
 ### Image
