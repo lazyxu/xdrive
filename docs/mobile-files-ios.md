@@ -52,6 +52,16 @@ Decision date: 2026-10-09. The six user-approved choices are normative.
 
 **Out of this PR:** Native iPhone Safari / VoiceOver / soft-keyboard evidence, PDF first-page thumbnail generation, configurable Browse-home sections, on-device file byte sharing, inline folder expansion, per-folder colors / emoji and 10k/100k physical throughput measurement. These require their own acceptance/dependency work; a source-level contract test or Chromium simulation is not a physical-device pass.
 
+## 2026-10-10 Browse home folding and editing follow-up
+
+Follow-up to #1183; this phase reuses the existing Server-owned order of Quick Access folders and Saved Searches.
+
+- The **Browse** home screen has 44px collapsible headings for pinned folders and the combined smart-search/tag section. The collapsed state is stored per signed-in account in the separate `xdrive.mobile.files.sections.v1:<session>` browser preference. Location links and the Cloud Files root remain directly reachable, regardless of that preference. This preference never reorders or deletes Server resources.
+- The Files-only **··· → 整理浏览首页** edit mode exposes explicit 44px Up/Down buttons for the currently authorized Quick Access folders and Saved Searches. Both actions pass the full ID order to `quickAccess.reorder` or `organization.reorderSavedSearches`; the shared controllers own optimistic UI, rollback and Server error handling. Tags stay visible but do not falsely claim unsupported Server ordering.
+- The edit mode has a top-level **完成** action; clicking editable location rows does not navigate unexpectedly during edit. Outside edit mode existing Browse/Recent/Favorites navigation and one-viewer behavior are unchanged.
+- No additional backend endpoints, no extra tabs, no duplicate Web state or Desktop view-preference changes. Reordering and folding tests must preserve 100k windowing (without expanding nested folder contents) and verify per-account isolation.
+- **Not claimed:** native drag-to-reorder gesture, true iOS platform icon bytes, on-device screenshots or assistive-technology pass.
+
 ## Acceptance requirements
 
 1. Web build and typecheck, Desktop full tests, required PR CI / final gate; no change to Desktop or wide-Web FileExplorer. Mobile App Header must reuse the exact same noncompact `XDriveTransferPopover` as wide Web at **all mobile widths**, including real-time upload/download rates, active/history, retry and clearing; never move or duplicate it in the sidebar. The App title can truncate before the transfer trigger.

@@ -969,6 +969,8 @@ export default function WebFileExplorer({
             const intent = beginNavigationIntent()
             return quickAccess.navigate(id, next => navigateTo(next, true, intent))
           }}
+          onReorderQuickAccess={ids => quickAccess.reorder(ids)}
+          onReorderSavedSearches={ids => organization.reorderSavedSearches(ids)}
           onClearRecent={() => recent.clear()}
           onUnfavorite={id => favorites.unfavorite(id)}
           onCollectionAction={collectionAction}
