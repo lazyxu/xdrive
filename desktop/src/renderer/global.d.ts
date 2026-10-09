@@ -434,6 +434,17 @@ declare global {
       setCloseToTray: (enabled: boolean) => Promise<DesktopResult<DesktopPreferences>>
       setAppearance: (appearance: 'system' | 'light' | 'dark') => Promise<DesktopResult<DesktopPreferences>>
       selectDirectory: (defaultPath?: string) => Promise<string | null>
+      authorizeLocalFolder: (sourceID: number) => Promise<DesktopResult<{
+        cancelled: boolean
+        grant?: {
+          source_id: number
+          device_id: string
+          root_id: string
+          path: string
+          status: 'awaiting_executor' | 'device_revoked'
+          strong_identity: boolean
+        }
+      }>>
       openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void

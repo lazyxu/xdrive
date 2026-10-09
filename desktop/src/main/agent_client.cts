@@ -227,6 +227,15 @@ export type AgentSource = {
   updated_at: string
 }
 
+export type AgentLocalFolderGrant = {
+  source_id: number
+  device_id: string
+  root_id: string
+  path: string
+  status: 'awaiting_executor' | 'device_revoked'
+  strong_identity: boolean
+}
+
 export type AgentCreateSourceInput = {
   name: string
   kind: string
@@ -2494,6 +2503,13 @@ export class AgentIPCClient {
       revision,
       payload,
     })
+  }
+
+  authorizeLocalFolder(sourceID: number, nativeSelectedPath: string) {
+    return this.request<AgentLocalFolderGrant>('POST', '/v1/local-folder/authorize', {
+      source_id: sourceID,
+      path: nativeSelectedPath,
+    }, 60_000)
   }
 
   createSource(input: AgentCreateSourceInput) {

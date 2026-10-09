@@ -131,6 +131,9 @@ var desktopIPCCapabilities = []string{
 
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
+	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
+		capabilities = append(capabilities, "local-folder-root-grants")
+	}
 	if openWithSupportedPlatform() {
 		capabilities = append(capabilities, "open-with")
 	}
@@ -705,6 +708,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
+	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
 	mux.HandleFunc("DELETE /v1/sources", h.deleteSource)
@@ -5079,6 +5083,38 @@ func desktopIPCUint64Query(w http.ResponseWriter, r *http.Request, name string) 
 		return 0, false
 	}
 	return value, true
+}
+
+type localFolderAuthorizer interface {
+	AuthorizeLocalFolder(context.Context, uint64, string) (localFolderGrantResult, error)
+}
+
+// authorizeLocalFolder is a loopback/Agent-token-protected endpoint for the
+// Desktop MAIN process, never a remote Web path selection API. The path
+// originates from Electron's native folder picker, not from renderer input.
+func (h *desktopIPCHandler) authorizeLocalFolder(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		SourceID uint64 `json:"source_id"`
+		Path     string `json:"path"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.SourceID == 0 || len(input.Path) > 4096 || !filepath.IsAbs(input.Path) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_local_root", "Source ID and absolute local directory are required")
+		return
+	}
+	authorizer, ok := h.ctrl.(localFolderAuthorizer)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "local_root_unsupported", "Agent has no local folder authorization capability")
+		return
+	}
+	grant, err := authorizer.AuthorizeLocalFolder(r.Context(), input.SourceID, input.Path)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusCreated, grant)
 }
 
 func (h *desktopIPCHandler) sources(w http.ResponseWriter, r *http.Request) {
