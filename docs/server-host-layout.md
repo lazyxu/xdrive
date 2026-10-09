@@ -142,6 +142,27 @@ The supported flow is:
 
 The runner is installed as `bin/server-control.sh`, is started by the installer, and is registered in the user's crontab with an `@reboot` entry when crontab is available. The bridge uses setgid mode `2770`: the installing host user remains the owner and the configured server GID receives bridge access solely so the API can create the restricted request file. It is not world-writable. Parent xDrive directories remain private to the installing user.
 
+
+### Web/Desktop update-controller concurrency
+
+The shared Server Update controller uses latest-request ownership for overlapping
+status polls: a poll completing after a newer read cannot roll back progress or
+turn the accepted status into a stale error (including an old HTTP 403).
+Submitting `Start Update` invalidates earlier status reads; while the start
+request is in flight, subsequent polling does not own the not-yet-accepted
+task state. The start action has immediate in-flight ownership, so two
+submissions in the same React render cannot issue duplicate update commands.
+This client-side fence does not replace the host installer lock or stop the
+durable server-side update transaction.
+
+Four controlled-Promise interleaving regressions extract the actual shared
+`refresh` and `start` callbacks in
+`desktop/tests/server-update-async-race.cjs`. Before the fix: 4 failures
+(old idle after new running, old 403 after new queued, pre-start poll overwriting
+request ID, duplicate same-tick start). After the fix: 4 passing under the
+same schedules. CI still owns Web/Desktop builds and the normal validation
+gate.
+
 ## Docker modes
 
 xDrive supports both of these modes.
