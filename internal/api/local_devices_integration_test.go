@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func TestLocalFolderSourceRunDeviceProofIsRequiredOnEveryWriteStage(t *testing.T) {
@@ -106,11 +109,66 @@ func TestLocalFolderSourceRunDeviceProofIsRequiredOnEveryWriteStage(t *testing.T
 	if count != 0 {
 		t.Fatalf("local folder started %d runs without native executor", count)
 	}
+	// Authoritative transaction proof is rechecked under device + Source locks.
+	txContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+	txContext.Request = httptest.NewRequest(http.MethodPost, prefix, nil)
+	txContext.Request.Header.Set("X-XDrive-Device-Token", deviceToken)
+	txContext.Request.Header.Set("X-XDrive-Local-Root-Fingerprint", fingerprint)
+	txContext.Set("userID", owner.ID)
+	txContext.Set(localSourceExecutorContextKey, localSourceExecutorProof{
+		DeviceID: device.ID, RootID: rootID, SourceRevision: 1,
+	})
+	checkTransaction := func(shouldPass bool) {
+		t.Helper()
+		err := db.Transaction(func(tx *gorm.DB) error {
+			return server.requireLocalSourceExecutorTx(tx, txContext, source.ID, "")
+		})
+		if shouldPass && err != nil {
+			t.Fatalf("current device proof rejected inside transaction: %v", err)
+		}
+		if !shouldPass && !errors.Is(err, errLocalSourceExecutorTransactionUnauthorized) {
+			t.Fatalf("obsolete device proof accepted inside transaction: %v", err)
+		}
+	}
+	checkTransaction(true)
+	// A run accepted under a different Source revision cannot be mutated even
+	// if the current binding/device credential is otherwise valid.
+	run := meta.SyncRun{
+		ID: uuid.NewString(), SourceID: source.ID, RunNumber: 1,
+		SourceRevision: 1, SyncMode: meta.SourceSyncModeBackup,
+		Mode: meta.SourceRunModeSync, Trigger: meta.SyncRunTriggerManual,
+		Status: meta.SyncRunStatusRunning, StartedAt: now,
+	}
+	if err := db.Create(&run).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return server.requireLocalSourceExecutorTx(tx, txContext, source.ID, run.ID)
+	}); err != nil {
+		t.Fatalf("matching run source revision rejected: %v", err)
+	}
+	if err := db.Model(&meta.SyncRun{}).Where("id = ?", run.ID).
+		Update("source_revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return server.requireLocalSourceExecutorTx(tx, txContext, source.ID, run.ID)
+	}); !errors.Is(err, errLocalSourceExecutorTransactionUnauthorized) {
+		t.Fatalf("mismatched run source revision was accepted: %v", err)
+	}
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Update("revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkTransaction(false)
+	if err := db.Model(&meta.Source{}).Where("id = ?", source.ID).Update("revision", 1).Error; err != nil {
+		t.Fatal(err)
+	}
 	revokedAt := now.Add(time.Second)
 	if err := db.Model(&meta.ClientDevice{}).Where("id = ?", device.ID).
 		Update("revoked_at", revokedAt).Error; err != nil {
 		t.Fatal(err)
 	}
+	checkTransaction(false)
 	requestWithHeaders(t, router, http.MethodPost, prefix, ownerToken,
 		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())),
 		http.StatusForbidden, valid)
