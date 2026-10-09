@@ -224,8 +224,13 @@ func (s *Server) Router() *gin.Engine {
 		"/media/people/identities/:personID/suggestions/:clusterID",
 		s.addMediaSuggestedPersonToIdentity,
 	)
+	authed.GET("/media/album-folders", s.listMediaAlbumFolders)
+	authed.POST("/media/album-folders", s.createMediaAlbumFolder)
+	authed.PATCH("/media/album-folders/:folderID", s.updateMediaAlbumFolder)
+	authed.DELETE("/media/album-folders/:folderID", s.deleteMediaAlbumFolder)
 	authed.POST("/media/albums", s.createMediaAlbum)
 	authed.PATCH("/media/albums/:albumID", s.renameMediaAlbum)
+	authed.PATCH("/media/albums/:albumID/folder", s.moveMediaAlbumToFolder)
 	authed.PUT("/media/albums/:albumID/cover", s.setMediaAlbumCover)
 	authed.DELETE("/media/albums/:albumID", s.deleteMediaAlbum)
 	authed.GET("/media/albums/:albumID/items", s.listMediaAlbumItems)
