@@ -9,13 +9,21 @@ The currently implemented L01-A is **Server-only, fail-closed**: the kind `local
 | Phase | Deliverable | Status |
 | --- | --- | --- |
 | L01-A | local_folder push/paused activation gate; integration regression; AGENTS progress rule | implemented in this change; CI/merge separate |
-| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | not implemented |
+| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | registration/credential + Root identity binding implemented separately; native approval/execution and run-level device proof not implemented |
 | L02 | Windows/Linux streaming scan, stable local identity, per-root journal/state | not implemented |
 | L03 | Planner + resumable upload + SourceItem commit, crash/idempotency recovery | not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | not implemented |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
+
+## L01-B identity/binding staging (non-operational)
+
+The Server maintains `xd_client_devices` with an owner-scoped installation identity and a SHA-256 hash of a random credential. The raw credential is only returned on initial `POST /api/v1/devices` enrollment and must be saved to the Agent's OS credential store; it is not returned by `GET /api/v1/devices`. A client can be revoked without revoking the owner's other sessions. Revocation also pauses linked local-folder Sources and resets pending Mirror evidence.
+
+An owner can bind one paused `local_folder` Source to a device + UUID local Root ID + opaque SHA-256 Root fingerprint via `POST /api/v1/sources/:id/local-binding`, passing its device credential in `X-XDrive-Device-Token`. The binding is version-checked and owner scoped; a different binding requires explicit unbind first. Neither the binding nor the device DTO contains an absolute OS path, and a remote Web request alone cannot authorize a local path.
+
+**L01-B is not yet an executable local-folder sync feature.** A later native Agent must verify the user-selected Root on the host and safely hold its path permission. Source activation and BeginSourceRun remain deliberately denied by L01-A. The next bounded deliverable adds Agent native root approval plus proof checks on all run mutation stages before lifting those gates.
 
 ## Non-negotiable invariants
 
