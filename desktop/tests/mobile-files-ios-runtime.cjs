@@ -24,6 +24,21 @@ function loadState() {
   return mod.exports
 }
 const state = loadState()
+function loadGrouping() {
+  const source = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/file-explorer-grouping.ts'))(
+    source, source.exports,
+  )
+  const layout = { exports: {} }
+  new Function('module', 'exports', 'require', compile('ui/shared/src/mui/FileExplorerGroupingLayout.ts'))(
+    layout, layout.exports, name => {
+      if (name === '../file-explorer-grouping') return source.exports
+      throw Error('Unexpected grouping dependency: ' + name)
+    },
+  )
+  return layout.exports
+}
+const grouped = loadGrouping()
 const material = new Proxy({}, { get: (_, name) => String(name) })
 const ui = {
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
@@ -35,6 +50,8 @@ const ui = {
   xDriveFileSupportsThumbnail: () => false,
   xDriveFileKind: name => /\.(?:png|jpg|livp)$/i.test(name) ? 'image' : 'file',
   xDriveFileTypeLabel: name => name.includes('.') ? '文件' : '文件夹',
+  xDriveCreateFileExplorerGroupLayout: grouped.xDriveCreateFileExplorerGroupLayout,
+  xDriveFileExplorerVisibleGroupSegments: grouped.xDriveFileExplorerVisibleGroupSegments,
 }
 const dragCalls = []
 const imports = {
@@ -366,4 +383,79 @@ test('Trash folder tap cannot navigate into a deleted folder or persist it as Br
     trashActive: true,
     onOpenItem: () => { opened += 1; return false },
   } })
+})
+
+test('reopening Files prioritizes the last Browse directory over the old Recent/Favorites tab', async () => {
+  const opened = []
+  await withView(async h => {
+    assert.deepEqual(opened, [42])
+    assert.equal(find(h.view, 'data-mobile-files-section', 'browse').props['aria-current'], 'page')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    const persisted = state.mobileFilesDecodeState(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(persisted.section, 'browse')
+    assert.equal(persisted.folderID, 42)
+    assert.equal(persisted.scrollTop, 688)
+  }, {
+    saved: { section: 'favorites', folderID: 42, scrollTop: 688, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '照片备份' }],
+      onRestoreFolder: async id => { opened.push(id) },
+    },
+  })
+})
+
+test('mounted Mobile Files projects Server-backed group headers in list and grid without local regrouping', async () => {
+  const entries = [
+    { id: 2, name: '照片备份', kind: 'dir', revision: 1 },
+    { id: 3, name: '说明.txt', kind: 'file', revision: 1, size: 256 },
+  ]
+  const requests = []
+  const source = {
+    itemCount: entries.length,
+    loadedItems: new Map(entries.map((item, index) => [index, item])),
+    itemAt: index => entries[index],
+    onRangeChange: (start, end) => requests.push([start, end]),
+    groups: [
+      { key: 'folder', start_index: 0, item_count: 1 },
+      { key: 'ext:txt', start_index: 1, item_count: 1 },
+    ],
+  }
+  await withView(async h => {
+    const headers = () => h.view.root.findAll(
+      node => Object.hasOwn(node.props ?? {}, 'data-xdrive-mobile-files-group-header'),
+    )
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-grouped'), 1)
+    assert.deepEqual(headers().map(node => node.props['data-xdrive-mobile-files-group-header']), ['folder', 'ext:txt'])
+    assert.deepEqual(headers().map(node => node.children.join('')), ['文件夹', 'TXT'])
+    assert.deepEqual(requests.at(-1), [0, 1])
+    await h.update({ grouping: { groupBy: 'none', foldersFirst: true } })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-grouped'), 0)
+    assert.equal(headers().length, 0)
+  }, { props: {
+    requestedDirectoryID: 1,
+    items: entries,
+    virtualCollection: source,
+    grouping: { groupBy: 'type', foldersFirst: true },
+  } })
+})
+
+test('100k grouped positions keep viewport work bounded while crossing a group boundary', () => {
+  const layout = grouped.xDriveCreateFileExplorerGroupLayout({
+    groups: [
+      { key: 'folder', start_index: 0, item_count: 50000 },
+      { key: 'ext:jpg', start_index: 50000, item_count: 50000 },
+    ],
+    groupBy: 'type', itemCount: 100000, rowHeight: 68,
+    groupHeaderHeight: 30, groupGap: 6,
+  })
+  assert.ok(layout)
+  const segments = grouped.xDriveFileExplorerVisibleGroupSegments(
+    layout, 50000 * 68 + 30, 844, 68 * 4,
+  )
+  assert.ok(segments.length >= 1)
+  const projected = segments.reduce((sum, segment) => sum + segment.endIndex - segment.startIndex, 0)
+  assert.ok(projected > 0 && projected <= 28, 'only viewport rows and overscan may mount')
+  assert.ok(segments.some(segment => segment.group.key === 'ext:jpg'))
+  assert.equal(layout.itemCount, 100000)
 })

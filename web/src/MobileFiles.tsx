@@ -21,7 +21,8 @@ import {
   XDriveFileExplorerAvailabilityBadge, XDriveFileExplorerItemIcon,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
   XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
-  xDriveFileKind, xDriveFileTypeLabel,
+  xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
+  xDriveFileExplorerVisibleGroupSegments,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb, XDriveFileExplorerItem, XDriveFileExplorerMenuItem,
@@ -133,7 +134,9 @@ export default function MobileFiles(props: Props) {
         : previous
     } catch { return mobileFilesDecodeState(null) }
   }, [storageKey, props.requestedDirectoryID])
-  const [section, setSection] = useState<MobileFilesSection>(initial.section)
+  // A new Files launch resumes the last Browse location, not a different
+  // Recent/Favorites rail tab that happened to be visible before exit.
+  const [section, setSection] = useState<MobileFilesSection>('browse')
   const [browseHome, setBrowseHome] = useState(initial.folderID === null)
   const [viewPreference, setViewPreference] = useState<'details' | 'grid'>(initial.view)
   const [ready, setReady] = useState(initial.folderID === null || Boolean(props.requestedDirectoryID))
@@ -193,6 +196,23 @@ export default function MobileFiles(props: Props) {
   const end = Math.min(totalCount, windowRows.end * (effectiveGrid ? columns : 1))
   const sectionItems = section === 'recent' ? props.recentItems : props.favorites
   const sectionWindow = mobileFilesWindow(sectionItems.length, scrollTop, viewport.height, MOBILE_FILES_ROW_HEIGHT)
+  // Grouping is still the authoritative Server ordering/index. Never invent
+  // local group membership from the loaded portion of a paged collection.
+  const groupedLayout = useMemo(() => {
+    if (!props.grouping || props.trashActive) return null
+    return xDriveCreateFileExplorerGroupLayout({
+      groups: props.virtualCollection?.groups ?? [],
+      groupBy: props.grouping.groupBy,
+      itemCount: totalCount,
+      columns: effectiveGrid ? columns : 1,
+      rowHeight,
+      groupHeaderHeight: 30,
+      groupGap: 6,
+    })
+  }, [props.grouping?.groupBy, props.trashActive, props.virtualCollection?.groups, totalCount, effectiveGrid, columns, rowHeight])
+  const groupedSegments = useMemo(() => groupedLayout
+    ? xDriveFileExplorerVisibleGroupSegments(groupedLayout, scrollTop, Math.max(1, viewport.height), rowHeight * 4)
+    : [], [groupedLayout, scrollTop, viewport.height, rowHeight])
 
   const persist = useCallback((next: Partial<{
     section: MobileFilesSection; folderID: number | null; scrollTop: number; view: 'details' | 'grid'
@@ -203,6 +223,11 @@ export default function MobileFiles(props: Props) {
       window.localStorage.setItem(storageKey, mobileFilesEncodeState({ ...old, ...next }))
     } catch { /* Private browsing must still work without persistent storage. */ }
   }, [storageKey])
+
+  useEffect(() => {
+    // One historical app-tab preference must not supersede Q2's resume policy.
+    if (initial.section !== 'browse') persist({ section: 'browse' })
+  }, [initial.section, persist])
 
   useEffect(() => {
     if (initial.folderID === null || props.requestedDirectoryID) return
@@ -284,8 +309,16 @@ export default function MobileFiles(props: Props) {
 
   useEffect(() => {
     if (!ready || !showDirectory || !props.virtualCollection?.onRangeChange || !totalCount) return
+    if (groupedLayout) {
+      const visible = groupedSegments.filter(segment => segment.endIndex > segment.startIndex)
+      if (!visible.length) return
+      // The viewport may cross headers, but a single bounded Server range
+      // covers only the visible logical IDs; never request all 100k items.
+      props.virtualCollection.onRangeChange(visible[0].startIndex, visible[visible.length - 1].endIndex - 1)
+      return
+    }
     props.virtualCollection.onRangeChange(start, Math.max(start, end - 1))
-  }, [ready, showDirectory, props.virtualCollection, start, end, totalCount])
+  }, [ready, showDirectory, props.virtualCollection, groupedLayout, groupedSegments, start, end, totalCount])
 
   useEffect(() => {
     setSelected(new Map())
@@ -686,6 +719,16 @@ export default function MobileFiles(props: Props) {
       </Box>
     </Box>
   )
+  const renderLogicalCell = (index: number) => {
+    const item = props.virtualCollection?.itemAt(index) ?? props.items[index]
+    return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`) : (
+      <Box key={index} data-mobile-files-placeholder aria-label="正在加载文件"
+        sx={{ minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
+          p: 2, color: 'text.disabled' }}>
+        <Typography variant="caption">加载中…</Typography>
+      </Box>
+    )
+  }
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
     showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const overflowAction = (label: string, action: () => void, disabled = false) => (
@@ -813,24 +856,54 @@ export default function MobileFiles(props: Props) {
                 </Stack>
               ) : null}
               <Typography variant="caption" color="text.secondary" sx={{ px: 2, display: 'block', pb: 1 }}>
-                {props.loading ? '正在加载…' : `${totalCount} 个项目`}{props.grouping?.groupBy && props.grouping.groupBy !== 'none' ? ' · 已分组' : ''}
+                {props.loading ? '正在加载…' : `${totalCount} 个项目`}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {props.loading && totalCount === 0 ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress size={24}/></Box> : null}
               {totalCount === 0 && !props.loading ? <Typography sx={{ p: 4 }} color="text.secondary">这里还没有文件</Typography> : null}
-              <Box sx={{ height: windowRows.before }} />
-              <Box sx={effectiveGrid ? { display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}>
-                {Array.from({ length: end - start }, (_, offset) => {
-                  const index = start + offset
-                  const item = props.virtualCollection?.itemAt(index) ?? props.items[index]
-                  return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`) : (
-                    <Box key={index} data-mobile-files-placeholder aria-label="正在加载文件"
-                      sx={{ minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT, p: 2, color: 'text.disabled' }}>
-                      <Typography variant="caption">加载中…</Typography>
+              {groupedLayout ? (
+                <Box data-xdrive-mobile-files-grouped sx={{
+                  position: 'relative', height: groupedLayout.totalHeight, minWidth: 0,
+                }}>
+                  {groupedSegments.map(segment => (
+                    <Box key={segment.group.key} sx={{
+                      position: 'absolute', top: segment.group.top, left: 0, right: 0,
+                    }}>
+                      {segment.headerVisible ? (
+                        <Typography data-xdrive-mobile-files-group-header={segment.group.key}
+                          variant="caption" fontWeight={700}
+                          sx={{ position: 'absolute', top: 0, left: 0, right: 0,
+                            px: 2, height: groupedLayout.groupHeaderHeight,
+                            display: 'flex', alignItems: 'center', color: 'text.secondary',
+                            bgcolor: 'background.default' }}>
+                          {segment.group.label}
+                        </Typography>
+                      ) : null}
+                      {segment.endIndex > segment.startIndex ? (
+                        <Box sx={{
+                          position: 'absolute', top: segment.itemsTop - segment.group.top,
+                          left: 0, right: 0,
+                          display: effectiveGrid ? 'grid' : 'block',
+                          gridTemplateColumns: effectiveGrid
+                            ? `repeat(${columns}, minmax(0, 1fr))` : undefined,
+                        }}>
+                          {Array.from({ length: segment.endIndex - segment.startIndex },
+                            (_, offset) => renderLogicalCell(segment.startIndex + offset))}
+                        </Box>
+                      ) : null}
                     </Box>
-                  )
-                })}
-              </Box>
-              <Box sx={{ height: windowRows.after }}/>
+                  ))}
+                </Box>
+              ) : (
+                <>
+                  <Box sx={{ height: windowRows.before }} />
+                  <Box sx={effectiveGrid ? {
+                    display: 'grid', gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+                  } : undefined}>
+                    {Array.from({ length: end - start }, (_, offset) => renderLogicalCell(start + offset))}
+                  </Box>
+                  <Box sx={{ height: windowRows.after }}/>
+                </>
+              )}
             </>
           ) : (
             <Box data-xdrive-mobile-files-collection>

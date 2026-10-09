@@ -172,3 +172,15 @@ test('one shared media Inspector follows the opened identity and G06 location se
   assert.match(mobileSource, /loadNodeLocation=\{props\.loadNodeLocation\}/)
   assert.match(mobileSource, /onShowInFolder=\{props\.onShowInFolder\}/)
 })
+
+test('grouped Mobile Files uses the shared authoritative layout and bounded range', () => {
+  assert.match(mobileSource, /xDriveCreateFileExplorerGroupLayout\(/)
+  assert.match(mobileSource, /groups: props\.virtualCollection\?\.groups \?\? \[\]/)
+  assert.match(mobileSource, /xDriveFileExplorerVisibleGroupSegments\(/)
+  assert.match(mobileSource, /data-xdrive-mobile-files-group-header=\{segment\.group\.key\}/)
+  assert.match(mobileSource, /height: groupedLayout\.totalHeight/)
+  assert.match(mobileSource, /groupedSegments\.map\(segment =>/)
+  assert.match(mobileSource, /onRangeChange\(visible\[0\]\.startIndex, visible\[visible\.length - 1\]\.endIndex - 1\)/)
+  assert.match(mobileSource, /useState<MobileFilesSection>\('browse'\)/)
+  assert.doesNotMatch(mobileSource, /useState<MobileFilesSection>\(initial\.section\)/)
+})
