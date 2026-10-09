@@ -1437,3 +1437,18 @@ token, page size, Node ID, exclusion Boolean, optimistic version, and
 query scope. No direct Desktop renderer authentication or duplicate player
 was introduced. This does not enable durable query-wide batch edits.
 Go/Windows, Desktop, 10k/100k and real-device tests remain acceptance gates.
+
+### G07 Phase 3a — durable query-selection favorites (candidate, 2026-10-09)
+
+The first **real** query-wide write is deliberately restricted to reversible
+favorite/unfavorite. A confirmed, version-matched owner snapshot is atomically
+promoted to normalized PostgreSQL job/item tables in batches of 100 (not a
+100k-element JSON blob); the 15-minute token is consumed only after commit.
+The server worker locks and rechecks owner, live Node revision, PhotoAsset and
+PhotoMetadata before mutating each bounded batch transaction. Outcomes and
+counters commit in the same transaction and survive process restart. An owner
+can list jobs, page failures, request cancellation, or retry only failed/
+cancelled immutable revisions. Revision mismatches never auto-rebase. A
+partial result remains **partial**, not complete. These server endpoints do
+not enable all-query delete/download/album/tag until matching Task Center
+UI, cancellation and 10k/100k verification land. No physical device claim.
