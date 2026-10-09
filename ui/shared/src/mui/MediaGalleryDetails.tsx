@@ -12,7 +12,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
-import type { MediaAlbum, MediaItem } from '../models'
+import type { MediaAlbum, MediaItem, NodeLocation } from '../models'
 import type {
   XDriveByteProgressHandler,
   XDriveLivePhotoMotionSource,
@@ -38,6 +38,7 @@ import {
   xDriveMediaGalleryErrorMessage,
 } from './MediaGalleryUtils'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveMediaNodeLocationSection } from './MediaNodeLocationSection'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 type MediaMotionLoader = (
@@ -241,6 +242,8 @@ export interface XDriveMediaDetailsContentProps {
   item: MediaItem | null
   showPreview?: boolean
   extraFileRows?: Array<[label: string, value: ReactNode]>
+  loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
+  onShowInFolder?: (location: NodeLocation) => void
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
@@ -258,6 +261,8 @@ export function XDriveMediaDetailsContent({
   item,
   showPreview = true,
   extraFileRows = [],
+  loadNodeLocation,
+  onShowInFolder,
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
@@ -729,6 +734,15 @@ export function XDriveMediaDetailsContent({
           </Box>
         ) : null}
       </Box>
+      {loadNodeLocation ? (
+        <XDriveMediaNodeLocationSection
+          key={`${item.node.id}:${item.node.revision}`}
+          nodeID={item.node.id}
+          revision={item.node.revision}
+          loadNodeLocation={loadNodeLocation}
+          onShowInFolder={onShowInFolder}
+        />
+      ) : null}
     </Stack>
   )
 }

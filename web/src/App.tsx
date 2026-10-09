@@ -1296,6 +1296,9 @@ function FileManager({
         ) : appView === 'gallery' ? (
           <XDriveMediaGalleryPage
             source={gallerySource}
+            onShowInFolder={(location) => {
+              if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+            }}
             preferenceScope={`web:${profile?.id ?? username}`}
             initialSection={route.app === 'gallery'
               ? route.params.section as MediaGallerySection | undefined
@@ -1383,6 +1386,9 @@ function FileManager({
           gallerySource={gallerySource}
           shareDialogAdapter={shareDialogAdapter}
           onReplaceRoute={(next) => launchWebApp(next, { replace: true, viewerReturn: true })}
+          onShowInFolder={(location) => {
+            if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+          }}
           onClose={(node) => closeViewer({
             app: 'files',
             params: { dir: node?.parent_id },

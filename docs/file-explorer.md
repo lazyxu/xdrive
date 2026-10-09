@@ -658,3 +658,16 @@ reconstruct arbitrary external-provider paths. The implementation is a
 backend-only candidate until Properties and 显示所在位置 are wired in shared
 Web/Desktop UI and accepted; direct/recursive scope remains explicitly
 pending. Keep the 100k sparse-directory/thumbnail read paths unchanged.
+
+### G06 phase 2a — media Properties on Web (candidate, 2026-10-09)
+
+Web FileExplorer, Gallery and the routed Viewer reuse the same on-demand owner-scoped
+Node Location section within media Properties. The authoritative response separates
+current xDrive path, synchronization-folder target containment and SourceItem
+original path; "显示所在位置" navigates by the current parent Node ID or verified
+breadcrumbs, never the historical remote path. Changing/closing Properties cancels
+its Web request and the section does not create a second media player.
+The related React/source contract is `desktop/tests/media-gallery-node-location.cjs`.
+Desktop transport, direct-versus-recursive Gallery scope and real-device acceptance
+remain pending. Do not claim G06 complete until those are implemented and verified.
+

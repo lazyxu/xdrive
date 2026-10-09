@@ -45,6 +45,7 @@ import {
 import type {
   MediaAlbum,
   Node,
+  NodeLocation,
   XDriveFilePreviewTarget,
   XDriveFilePreviewPresentationState,
   XDriveFileTextPreview,
@@ -673,6 +674,7 @@ function WebMediaViewerApp({
   gallerySource,
   shareDialogAdapter,
   onNavigate,
+  onShowInFolder,
   onClose,
   onError,
 }: {
@@ -681,6 +683,7 @@ function WebMediaViewerApp({
   gallerySource: MediaGalleryDataSource
   shareDialogAdapter: XDriveShareDialogAdapter
   onNavigate: (nodeID: number) => void
+  onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
   onError: (error: unknown) => void
 }) {
@@ -817,6 +820,8 @@ function WebMediaViewerApp({
         item={infoOpen ? mediaItem : null}
         overlayZIndex={1251}
         showPreview={false}
+        loadNodeLocation={gallerySource.getNodeLocation}
+        onShowInFolder={onShowInFolder}
         loadThumbnail={gallerySource.loadThumbnail}
         loadLivePhotoMotion={gallerySource.loadLivePhotoMotion}
         loadPreviewURL={gallerySource.loadPreviewURL}
@@ -1030,6 +1035,7 @@ export function WebFileViewerApps({
   gallerySource,
   shareDialogAdapter,
   onReplaceRoute,
+  onShowInFolder,
   onClose,
   onError,
 }: {
@@ -1038,6 +1044,7 @@ export function WebFileViewerApps({
   gallerySource: MediaGalleryDataSource
   shareDialogAdapter: XDriveShareDialogAdapter
   onReplaceRoute: (route: XDriveWebAppRoute) => void
+  onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
   onError: (error: unknown) => void
 }) {
@@ -1068,6 +1075,7 @@ export function WebFileViewerApps({
           app: 'media-viewer',
           params: { ...route.params, node: nodeID },
         })}
+        onShowInFolder={onShowInFolder}
         onClose={onClose}
         onError={onError}
       />

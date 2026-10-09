@@ -66,7 +66,7 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
-import type { MediaItem } from '../models'
+import type { MediaItem, NodeLocation } from '../models'
 import { formatBytes } from '../format'
 import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
 import type {
@@ -932,6 +932,8 @@ export function XDriveFileExplorer({
   loadPropertiesStats,
   loadMediaDetails,
   loadMediaItem,
+  loadNodeLocation,
+  onShowInFolder,
   getItemStatus,
   getItemAvailability,
   externallySorted = false,
@@ -1049,6 +1051,8 @@ export function XDriveFileExplorer({
     item: XDriveFileExplorerItem,
     signal: AbortSignal,
   ) => Promise<MediaItem | null>
+  loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
+  onShowInFolder?: (location: NodeLocation) => void
   getItemStatus?: (
     item: XDriveFileExplorerItem,
   ) => string | undefined
@@ -6624,6 +6628,8 @@ export function XDriveFileExplorer({
         loadThumbnail={async () => null}
         albums={[]}
         extraFileRows={mediaFileRows}
+        loadNodeLocation={showMediaProperties ? loadNodeLocation : undefined}
+        onShowInFolder={onShowInFolder}
         onClose={() => setPropertiesItems([])}
       />
 

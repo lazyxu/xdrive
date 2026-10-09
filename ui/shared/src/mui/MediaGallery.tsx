@@ -50,6 +50,7 @@ import type {
   MediaAlbumFolder,
   MediaGalleryFacets,
   MediaGalleryIndexStatus,
+  NodeLocation,
   MediaDuplicateOrganizePlan,
   MediaGalleryQuery,
   MediaSyncFolder,
@@ -185,6 +186,7 @@ export interface MediaGalleryDataSource {
   ) => Promise<MediaItemRange>
   listFacets?: (query?: MediaGalleryQuery, albumID?: string) => Promise<MediaGalleryFacets>
   getIndexStatus?: () => Promise<MediaGalleryIndexStatus>
+  getNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   getDuplicateOrganizePlan?: (keeperNodeID: number, nodeIDs: number[]) => Promise<MediaDuplicateOrganizePlan>
   listSyncFolders?: () => Promise<MediaSyncFolder[]>
   getSyncFolder?: (sourceID: number, folderID: number) => Promise<MediaFolderView>
@@ -451,6 +453,7 @@ export interface XDriveMediaGalleryPageProps {
   initialSection?: MediaGallerySection
   onSectionRouteChange?: (section: MediaGallerySection) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
+  onShowInFolder?: (location: NodeLocation) => void
   onError?: (error: unknown) => void
 }
 
@@ -462,6 +465,7 @@ export function XDriveMediaGalleryPage({
   initialSection,
   onSectionRouteChange,
   onOpenViewer,
+  onShowInFolder,
   onError,
 }: XDriveMediaGalleryPageProps) {
   const [facets, setFacets] = useState<MediaGalleryFacets>({ cameras: [], formats: [] })
@@ -2185,6 +2189,8 @@ export function XDriveMediaGalleryPage({
           />
         )}
         loadThumbnail={source.loadThumbnail}
+        loadNodeLocation={source.getNodeLocation}
+        onShowInFolder={onShowInFolder}
         loadMusicRoot={source.loadMusicRoot}
         listMusicChildren={source.listMusicChildren}
         loadLivePhotoMotion={source.loadLivePhotoMotion}
@@ -2478,6 +2484,8 @@ export type XDriveMediaGalleryVirtualCollection = {
 }
 
 export interface XDriveMediaGalleryProps {
+  loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
+  onShowInFolder?: (location: NodeLocation) => void
   preferenceScope?: string
   items: MediaItem[]
   virtualCollection?: XDriveMediaGalleryVirtualCollection
@@ -3891,6 +3899,8 @@ export function XDriveMediaGallery({
   onClearFilters,
   filters,
   loadThumbnail,
+  loadNodeLocation,
+  onShowInFolder,
   loadMusicRoot,
   listMusicChildren,
   loadLivePhotoMotion,
@@ -6161,6 +6171,8 @@ export function XDriveMediaGallery({
         overlayZIndex={previewItem ? 1400 : undefined}
         showPreview={!previewItem}
         loadThumbnail={loadThumbnail}
+        loadNodeLocation={isTrashSection ? undefined : loadNodeLocation}
+        onShowInFolder={isTrashSection ? undefined : onShowInFolder}
         loadLivePhotoMotion={isTrashSection ? undefined : loadLivePhotoMotion}
         loadPreviewURL={isTrashSection ? undefined : loadPreviewURL}
         albums={albums}
