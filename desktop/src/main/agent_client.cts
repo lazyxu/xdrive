@@ -797,6 +797,7 @@ export type AgentMediaQuery = {
   cameras?: string[]
   formats?: string[]
   folder_id?: number
+  include_descendants?: boolean
   captured_from?: string
   captured_to?: string
   has_location?: boolean
@@ -832,6 +833,7 @@ function appendAgentMediaQuery(
   }
   if (filters.folder_id && Number.isSafeInteger(filters.folder_id) && filters.folder_id > 0) {
     query.set('folder_id', String(filters.folder_id))
+    if (filters.include_descendants) query.set('include_descendants', 'true')
   }
   if (filters.captured_from) query.set('captured_from', filters.captured_from)
   if (filters.captured_to) query.set('captured_to', filters.captured_to)

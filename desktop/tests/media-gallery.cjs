@@ -323,7 +323,7 @@ test('Gallery camera and format facets stay lazy, shared, and wired across Web/D
   assert.match(sharedGalleryMain, /facetRequestID\.current \+= 1/)
 })
 
-test('Gallery sync-folder browser stays lazy, direct-directory scoped, and shared', () => {
+test('Gallery sync-folder browser stays lazy, defaults to direct scope and supports explicit descendants', () => {
   for (const token of [
     'folder_id?: number',
     'MediaSyncFolder',
@@ -339,7 +339,7 @@ test('Gallery sync-folder browser stays lazy, direct-directory scoped, and share
     'const openSyncFolderDirectory = useCallback',
     "if (nextSection === 'albums') void loadSyncFolders()",
     'folder_id: view.current.id',
-    'currentFolderView ? { folder_id: currentFolderView.current.id } : {}',
+    'currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}',
     'data-xdrive-gallery-sync-folders',
     'data-xdrive-gallery-folder-browser',
     '同步文件夹',
@@ -386,7 +386,7 @@ test('Gallery sync-folder browser stays lazy, direct-directory scoped, and share
   const createAlbumStart = sharedGalleryMain.indexOf('const createAlbum = useCallback', clearFiltersStart)
   assert.match(
     sharedGalleryMain.slice(clearFiltersStart, createAlbumStart),
-    /currentFolderView \? \{ folder_id: currentFolderView\.current\.id \} : \{\}/,
+    /currentFolderView \? \{ folder_id: currentFolderView\.current\.id, include_descendants: query\.include_descendants \} : \{\}/,
     'clearing filters inside a synchronization folder must retain the directory scope',
   )
 

@@ -16,7 +16,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(
 		"GET",
-		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&folder_id=42&camera=SONY%20ILCE-7M4&camera=Apple%20iPhone%2015%20Pro&format=VIDEO%2FQUICKTIME&format=image%2Fjpeg&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
+		"/api/v1/media/items?q=iPhone&asset_kind=live_photo&category=panorama&folder_id=42&include_descendants=true&camera=SONY%20ILCE-7M4&camera=Apple%20iPhone%2015%20Pro&format=VIDEO%2FQUICKTIME&format=image%2Fjpeg&captured_from=2026-09-01T00:00:00Z&captured_to=2026-10-01T00:00:00Z&has_location=true&favorite=true&tag=Travel&person=Alice",
 		nil,
 	)
 	ctx.Request = req
@@ -29,6 +29,7 @@ func TestMediaQueryFromRequest(t *testing.T) {
 		query.AssetKind != "live_photo" ||
 		query.Category != "panorama" ||
 		query.FolderID == nil || *query.FolderID != 42 ||
+		!query.IncludeDescendants ||
 		query.HasLocation == nil || !*query.HasLocation ||
 		query.Favorite == nil || !*query.Favorite ||
 		query.Tag != "Travel" ||
@@ -63,6 +64,42 @@ func TestMediaQueryFromRequestRejectsInvalidFolderID(t *testing.T) {
 			}
 			if recorder.Code != http.StatusBadRequest {
 				t.Fatalf("folder_id=%q status=%d body=%s", raw, recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestMediaQueryDescendantScopeValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		query   string
+		valid   bool
+		enabled bool
+	}{
+		{query: "folder_id=4&include_descendants=true", valid: true, enabled: true},
+		{query: "folder_id=4&include_descendants=false", valid: true, enabled: false},
+		{query: "folder_id=4", valid: true, enabled: false},
+		{query: "include_descendants=true", valid: false},
+		{query: "folder_id=4&include_descendants=not-a-bool", valid: false},
+		{query: "folder_id=4&include_descendants=yes", valid: false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.query, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest("GET", "/api/v1/media/items?"+tt.query, nil)
+			result, ok := mediaQueryFromRequest(ctx)
+			if ok != tt.valid {
+				t.Fatalf("valid=%v expected=%v response=%s", ok, tt.valid, recorder.Body.String())
+			}
+			if !ok {
+				if recorder.Code != http.StatusBadRequest {
+					t.Fatalf("expected 400 for %s: %d", tt.query, recorder.Code)
+				}
+				return
+			}
+			if result.IncludeDescendants != tt.enabled {
+				t.Fatalf("recursive scope=%v expected=%v", result.IncludeDescendants, tt.enabled)
 			}
 		})
 	}

@@ -27,6 +27,7 @@ import {
   Paper,
   Slider,
   Stack,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -1116,6 +1117,7 @@ export function XDriveMediaGalleryPage({
       const nextQuery: MediaGalleryQuery = {
         ...mediaGalleryQueryFromDraft(nextDraft),
         folder_id: view.current.id,
+        ...(resetFilters ? {} : { include_descendants: query.include_descendants }),
       }
       setCurrentFolderView(view)
       setCurrentAlbum(null)
@@ -1136,7 +1138,7 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === syncFolderRequestID.current) setSyncFoldersLoading(false)
     }
-  }, [draftFilters, loadFirstPage, onError, source])
+  }, [draftFilters, loadFirstPage, onError, query.include_descendants, source])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     onSectionRouteChange?.(nextSection)
@@ -1206,7 +1208,7 @@ export function XDriveMediaGalleryPage({
     try {
       const facetQuery: MediaGalleryQuery = {
         ...mediaGalleryQueryFromDraft(nextDraft),
-        ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+        ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
       }
       const albumID = currentAlbum && currentAlbum.kind !== 'smart' ? currentAlbum.id : undefined
       const nextFacets = await source.listFacets(facetQuery, albumID)
@@ -1219,12 +1221,12 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === facetRequestID.current) setFacetsLoading(false)
     }
-  }, [currentAlbum, currentCleanupReview, currentFolderView, currentMemory, currentPet, currentSuggestedPerson, draftFilters, onError, source])
+  }, [currentAlbum, currentCleanupReview, currentFolderView, currentMemory, currentPet, currentSuggestedPerson, draftFilters, onError, query.include_descendants, source])
 
   const applyFilters = useCallback(() => {
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(draftFilters),
-      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     if (currentAlbum?.kind === 'smart') {
       if (!source.updateSmartAlbum || !currentAlbum.revision) {
@@ -1263,6 +1265,7 @@ export function XDriveMediaGalleryPage({
     loadFirstPage,
     onError,
     replaceAlbum,
+    query.include_descendants,
     source,
   ])
 
@@ -1294,13 +1297,13 @@ export function XDriveMediaGalleryPage({
     }
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(draftFilters),
-      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
   }, [
     currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson,
-    draftFilters, loadFirstPage, loadMemories, section,
+    draftFilters, loadFirstPage, loadMemories, query.include_descendants, section,
   ])
 
   const clearFilters = useCallback(() => {
@@ -1316,7 +1319,7 @@ export function XDriveMediaGalleryPage({
       : baseDraft
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(nextDraft),
-      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
@@ -1328,6 +1331,7 @@ export function XDriveMediaGalleryPage({
     currentPerson,
     currentSuggestedPerson,
     loadFirstPage,
+    query.include_descendants,
     section,
   ])
 
@@ -2076,7 +2080,7 @@ export function XDriveMediaGalleryPage({
     const nextDraft = mediaGalleryDraftFromQuery(nextApplied)
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(nextDraft),
-      ...(currentFolderView ? { folder_id: currentFolderView.current.id } : {}),
+      ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
@@ -2085,7 +2089,8 @@ export function XDriveMediaGalleryPage({
 
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
-      ' · ' + currentFolderView.current.path + '（仅当前目录）'
+      ' · ' + currentFolderView.current.path +
+      (query.include_descendants ? '（包含子目录）' : '（仅当前目录）')
     : undefined
 
   return (
@@ -2109,6 +2114,16 @@ export function XDriveMediaGalleryPage({
         } : undefined}
         syncFolders={syncFolders}
         currentFolderView={currentFolderView}
+        includeDescendants={Boolean(query.include_descendants)}
+        onIncludeDescendantsChange={currentFolderView ? (enabled) => {
+          const nextQuery: MediaGalleryQuery = {
+            ...query,
+            folder_id: currentFolderView.current.id,
+            include_descendants: enabled || undefined,
+          }
+          setQuery(nextQuery)
+          void loadFirstPage(null, nextQuery)
+        } : undefined}
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
@@ -2501,6 +2516,8 @@ export interface XDriveMediaGalleryProps {
   albumFolderActions?: XDriveMediaGalleryAlbumFolderActions
   syncFolders?: MediaSyncFolder[]
   currentFolderView?: MediaFolderView | null
+  includeDescendants?: boolean
+  onIncludeDescendantsChange?: (enabled: boolean) => void
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
@@ -3876,6 +3893,8 @@ export function XDriveMediaGallery({
   albumFolderActions,
   syncFolders = [],
   currentFolderView = null,
+  includeDescendants = false,
+  onIncludeDescendantsChange,
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
@@ -5985,6 +6004,19 @@ export function XDriveMediaGallery({
 
       {currentFolderView ? (
         <Stack spacing={1.25} data-xdrive-gallery-folder-browser>
+          {onIncludeDescendantsChange ? (
+            <FormControlLabel
+              control={(
+                <Switch
+                  checked={includeDescendants}
+                  onChange={(event) => onIncludeDescendantsChange(event.target.checked)}
+                  inputProps={{ 'aria-label': '包含子目录中的照片与视频' }}
+                />
+              )}
+              label="包含子目录"
+              sx={{ alignSelf: 'flex-start', minHeight: 44 }}
+            />
+          ) : null}
           <Breadcrumbs aria-label="同步文件夹路径" maxItems={6}>
             {currentFolderView.breadcrumbs.map((breadcrumb, index) => (
               index === currentFolderView.breadcrumbs.length - 1 ? (

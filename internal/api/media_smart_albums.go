@@ -478,7 +478,7 @@ func (s *Server) smartMediaAlbumStats(
 			ownerID,
 			[]string{meta.MediaKindImage, meta.MediaKindVideo},
 		)
-	base = applyMediaQueryFilters(base, query.options())
+	base = applyMediaQueryFilters(base, query.options(), ownerID)
 
 	var count int64
 	if err := base.Session(&gorm.Session{}).
