@@ -78,10 +78,13 @@ export function XDriveSourceSettingsDialog({
   credentialTest,
   credentialTestError,
   connectorConfigLoaded,
+  connectorConfigLoading,
+  connectorConfigError,
   clearingCredential,
   browseDirectories,
   onRequestClose,
   onCancel,
+  onRetryConnectorConfig,
   onSubmit,
   onChange,
   onCredentialChange,
@@ -107,10 +110,13 @@ export function XDriveSourceSettingsDialog({
   credentialTest: ExternalSourceCredentialTestResult | null
   credentialTestError: string
   connectorConfigLoaded: boolean
+  connectorConfigLoading: boolean
+  connectorConfigError: string
   clearingCredential: boolean
   browseDirectories?: ExternalSourceDirectoryBrowser
   onRequestClose: () => void
   onCancel: () => void
+  onRetryConnectorConfig: () => void
   onSubmit: FormEventHandler<HTMLFormElement>
   onChange: (patch: Partial<XDriveSourceSettingsValues>) => void
   onCredentialChange: (patch: Partial<XDriveSourceSettingsValues>) => void
@@ -150,7 +156,7 @@ export function XDriveSourceSettingsDialog({
           <MuiBox id="external-source-settings-form" component="form" onSubmit={onSubmit}>
             <Stack spacing={2}>
               <XDriveSourceNameField
-                autoFocus
+                autoFocus={!compactTouch}
                 value={values.name}
                 error={Boolean(nameError)}
                 helperText={nameError || ' '}
@@ -299,24 +305,37 @@ export function XDriveSourceSettingsDialog({
                     onUsernameChange={(value) => onCredentialChange({ username: value })}
                     onPasswordChange={(value) => onCredentialChange({ password: value })}
                   />
+                  {connectorConfigError ? (
+                    <XDriveStatusAlert tone="bad">
+                      <Stack spacing={1} alignItems="flex-start">
+                        <MuiTypography variant="body2">{connectorConfigError}</MuiTypography>
+                        <XDriveActionButton
+                          compact
+                          disabled={saving || connectorConfigLoading}
+                          onClick={onRetryConnectorConfig}
+                        >
+                          重试加载配置
+                        </XDriveActionButton>
+                      </Stack>
+                    </XDriveStatusAlert>
+                  ) : connectorConfigLoading ? (
+                    <XDriveStatusAlert tone="neutral">正在读取当前同步范围，完成后才能保存设置。</XDriveStatusAlert>
+                  ) : null}
                   {setting.source.kind === 'synology_photos' ? (
                     <>
-                      <XDriveSynologyPhotoSpacesField
-                        value={values.spaces ?? []}
-                        error={Boolean(spacesError)}
-                        helperText={spacesError || '至少选择一个照片空间'}
-                        onChange={(value) => {
-                          onChange({ spaces: value })
-                          if (spacesError) onClearSpacesError()
-                        }}
-                      />
-                      {!connectorConfigLoaded ? (
-                        <MuiTypography variant="caption" color="text.secondary">
-                          正在读取当前空间配置；未配置时默认同步个人空间和共享空间。
-                        </MuiTypography>
+                      {connectorConfigLoaded ? (
+                        <XDriveSynologyPhotoSpacesField
+                          value={values.spaces ?? []}
+                          error={Boolean(spacesError)}
+                          helperText={spacesError || '至少选择一个照片空间'}
+                          onChange={(value) => {
+                            onChange({ spaces: value })
+                            if (spacesError) onClearSpacesError()
+                          }}
+                        />
                       ) : null}
                     </>
-                  ) : (
+                  ) : connectorConfigLoaded ? (
                     <XDriveSynologyFileRootsField
                       value={values.roots ?? []}
                       error={Boolean(rootsError)}
@@ -327,7 +346,7 @@ export function XDriveSourceSettingsDialog({
                         if (rootsError) onClearRootsError()
                       }}
                     />
-                  )}
+                  ) : null}
                   <MuiBox>
                     <XDriveActionButton
                       compact
@@ -373,11 +392,12 @@ export function XDriveSourceSettingsDialog({
             删除同步文件夹
           </XDriveActionButton>
           <XDriveDialogActionSpacer />
-          <XDriveActionButton onClick={onCancel}>取消</XDriveActionButton>
+          <XDriveActionButton disabled={saving} onClick={onCancel}>取消</XDriveActionButton>
           <XDriveActionButton
             intent="primary"
             type="submit"
             form="external-source-settings-form"
+            disabled={profile?.credential === 'synology_dsm' && (!connectorConfigLoaded || connectorConfigLoading || Boolean(connectorConfigError))}
             loading={saving}
             loadingLabel="正在保存…"
           >

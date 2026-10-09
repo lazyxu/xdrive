@@ -229,6 +229,9 @@ export function XDriveSourceManager({
   const [clearCookieConfirmOpen, setClearCookieConfirmOpen] = useState(false)
   const [clearingCookie, setClearingCookie] = useState(false)
   const [settingsConnectorConfig, setSettingsConnectorConfig] = useState<ExternalSourceConnectorConfig | null>(null)
+  const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
+  const [settingsConnectorError, setSettingsConnectorError] = useState('')
+  const settingsSessionRef = useRef(0)
   const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(initialCreateSourceValues)
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
@@ -668,10 +671,45 @@ export function XDriveSourceManager({
     }
   }
 
+  const loadSettingsConnectorConfig = (row: ExternalSourceRow) => {
+    const requestID = ++settingsSessionRef.current
+    setSettingsConnectorLoading(true)
+    setSettingsConnectorError('')
+    void adapter.sourceConnectorConfig(row.source.id)
+      .then((config) => {
+        // A dismissed or replaced settings session must not receive an older
+        // connector's roots/spaces (or its error and loading state).
+        if (requestID !== settingsSessionRef.current) return
+        setSettingsConnectorConfig(config)
+        if (row.source.kind === 'synology_files') {
+          const roots = Array.isArray(config.payload.roots)
+            ? config.payload.roots.filter((root): root is string => typeof root === 'string')
+            : []
+          setSettingsValues((current) => ({ ...current, roots }))
+        } else {
+          const spaces = Array.isArray(config.payload.spaces)
+            ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
+            : []
+          setSettingsValues((current) => ({ ...current, spaces: spaces.length ? spaces : ['personal', 'shared'] }))
+        }
+      })
+      .catch((error) => {
+        if (requestID !== settingsSessionRef.current) return
+        setSettingsConnectorError(sourceActionErrorMessage(error, '读取群晖连接配置失败'))
+      })
+      .finally(() => {
+        if (requestID === settingsSessionRef.current) setSettingsConnectorLoading(false)
+      })
+  }
+
   const openSettings = (row: ExternalSourceRow) => {
+    if (savingSettings) return
+    ++settingsSessionRef.current
     const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
     setSetting(row)
     setSettingsConnectorConfig(null)
+    setSettingsConnectorLoading(false)
+    setSettingsConnectorError('')
     setSettingsValues({
       name: row.source.name,
       sync_mode: row.source.sync_mode,
@@ -692,28 +730,28 @@ export function XDriveSourceManager({
     setSettingsSpacesError('')
     setSettingsRootsError('')
     setSettingsCredentialReveal(null)
+    setRevealingSettingsCredential(false)
+    setTestingSettingsCredential(false)
     setSettingsCredentialTest(null)
     setSettingsCredentialTestError('')
-    if (profile.credential === 'synology_dsm') {
-      void adapter.sourceConnectorConfig(row.source.id)
-        .then((config) => {
-          setSettingsConnectorConfig(config)
-          if (row.source.kind === 'synology_files') {
-            const roots = Array.isArray(config.payload.roots)
-              ? config.payload.roots.filter((root): root is string => typeof root === 'string')
-              : []
-            setSettingsValues((current) => ({ ...current, roots }))
-          } else {
-            const spaces = Array.isArray(config.payload.spaces)
-              ? config.payload.spaces.filter((space): space is SynologyPhotoSpace => space === 'personal' || space === 'shared')
-              : []
-            setSettingsValues((current) => ({ ...current, spaces: spaces.length ? spaces : ['personal', 'shared'] }))
-          }
-        })
-        .catch((error) => {
-          setSettingsCredentialTestError(sourceActionErrorMessage(error, '读取群晖连接配置失败'))
-        })
-    }
+    if (profile.credential === 'synology_dsm') loadSettingsConnectorConfig(row)
+  }
+
+  const closeSettings = () => {
+    if (savingSettings) return
+    ++settingsSessionRef.current
+    setClearCookieConfirmOpen(false)
+    setSettingsCredentialReveal(null)
+    setRevealingSettingsCredential(false)
+    setTestingSettingsCredential(false)
+    setSetting(null)
+    setSettingsConnectorConfig(null)
+    setSettingsConnectorLoading(false)
+    setSettingsConnectorError('')
+    setSettingsValues(emptySourceSettingsValues())
+    setSettingsRootsError('')
+    setSettingsNameError('')
+    setSettingsSpacesError('')
   }
 
   const settingsCredentialPayload = () => {
@@ -742,20 +780,23 @@ export function XDriveSourceManager({
 
   const revealSettingsCredential = async () => {
     if (!setting?.credential?.configured) return
+    const session = settingsSessionRef.current
     setRevealingSettingsCredential(true)
     try {
       const revealed = await adapter.revealSourceCredential(setting.source.id)
-      setSettingsCredentialReveal(revealed)
+      if (session === settingsSessionRef.current) setSettingsCredentialReveal(revealed)
     } catch (error) {
+      if (session !== settingsSessionRef.current) return
       setSettingsCredentialReveal(null)
       showActionError('显示凭据失败', error, '无法读取已保存凭据，请稍后重试。')
     } finally {
-      setRevealingSettingsCredential(false)
+      if (session === settingsSessionRef.current) setRevealingSettingsCredential(false)
     }
   }
 
   const testSettingsCredential = async () => {
     if (!setting) return null
+    const session = settingsSessionRef.current
     const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     if (!profile.credential) return null
     const pending = settingsCredentialPayload()
@@ -770,9 +811,11 @@ export function XDriveSourceManager({
       const result = pending
         ? await adapter.testSourceCredential(setting.source.kind, pending)
         : await adapter.testStoredSourceCredential(setting.source.id)
+      if (session !== settingsSessionRef.current) return null
       setSettingsCredentialTest(result)
       return result
     } catch (error) {
+      if (session !== settingsSessionRef.current) return null
       setSettingsCredentialTest(null)
       setSettingsCredentialTestError(externalSourceCredentialTestErrorLabel(
         error instanceof Error ? error.message : String(error),
@@ -780,17 +823,21 @@ export function XDriveSourceManager({
       ))
       return null
     } finally {
-      setTestingSettingsCredential(false)
+      if (session === settingsSessionRef.current) setTestingSettingsCredential(false)
     }
   }
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!setting) return
+    if (!setting || savingSettings) return
+    const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
+    // Never write guessed/default roots or spaces before the persisted connector
+    // scope is known; this guard also protects keyboard/native form submission.
+    if (profile.credential === 'synology_dsm' &&
+        (settingsConnectorLoading || Boolean(settingsConnectorError) || !settingsConnectorConfig)) return
     const values = settingsValues
     const normalizedName = values.name.trim()
     const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
-    const profile = externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
     const spacesError = setting.source.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
@@ -884,9 +931,12 @@ export function XDriveSourceManager({
       }
 
       setFeedback('同步文件夹设置已保存')
+      ++settingsSessionRef.current
       setSettingsCredentialReveal(null)
       setSetting(null)
       setSettingsConnectorConfig(null)
+      setSettingsConnectorLoading(false)
+      setSettingsConnectorError('')
       setSettingsValues(emptySourceSettingsValues())
       setSettingsNameError('')
       setSettingsSpacesError('')
@@ -939,8 +989,12 @@ export function XDriveSourceManager({
       setFeedback('同步文件夹已删除；已同步到 xDrive 的文件已保留')
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
+        ++settingsSessionRef.current
         setSettingsCredentialReveal(null)
         setSetting(null)
+        setSettingsConnectorConfig(null)
+        setSettingsConnectorLoading(false)
+        setSettingsConnectorError('')
         setSettingsValues(emptySourceSettingsValues())
         setSettingsNameError('')
         setSettingsSpacesError('')
@@ -1187,24 +1241,14 @@ export function XDriveSourceManager({
         credentialTest={settingsCredentialTest}
         credentialTestError={settingsCredentialTestError}
         connectorConfigLoaded={Boolean(settingsConnectorConfig)}
+        connectorConfigLoading={settingsConnectorLoading}
+        connectorConfigError={settingsConnectorError}
         clearingCredential={clearingCookie}
         browseDirectories={settingsBrowseDirectories}
-        onRequestClose={() => {
-          if (savingSettings) return
-          setClearCookieConfirmOpen(false)
-          setSettingsCredentialReveal(null)
-          setSetting(null)
-          setSettingsValues(emptySourceSettingsValues())
-          setSettingsRootsError('')
-        }}
-        onCancel={() => {
-          setClearCookieConfirmOpen(false)
-          setSettingsCredentialReveal(null)
-          setSetting(null)
-          setSettingsValues(emptySourceSettingsValues())
-          setSettingsRootsError('')
-          setSettingsNameError('')
-          setSettingsSpacesError('')
+        onRequestClose={closeSettings}
+        onCancel={closeSettings}
+        onRetryConnectorConfig={() => {
+          if (setting && !savingSettings) loadSettingsConnectorConfig(setting)
         }}
         onSubmit={(event) => {
           void saveSettings(event)
