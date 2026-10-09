@@ -182,6 +182,24 @@ independent. The implementation requires full CI and PostgreSQL owner,
 trash and missing-metadata integration verification before G05 can be
 marked complete. Keep the Server-owned sort/ranges and Viewer context.
 
+## Authoritative location/provenance contract (G06)
+
+The phase-1 source-of-truth is the owner-scoped live xDrive Node tree:
+`GET /api/v1/nodes/:id/location` reports current full path, parent
+directory, ID-based breadcrumbs, matching synchronization-folder root
+membership, and separate original connector provenance from SourceItem.
+An old remote `SourceItem.Path` is not an xDrive current file path;
+a matching source target ancestor is not proof that the connector created
+that individual Node. A moved file retains its original source evidence
+but its current folder path and container membership change.
+
+The endpoint is read-only and lazily requested. The Gallery's 100k sparse
+list should never pay per-node ancestry or source provenance queries.
+The next G06 steps are shared Properties UI, Web/Desktop FileExplorer
+"显示所在位置" using owner-authorized parent IDs, and a clearly labeled
+current-folder versus descendant scope. Do not mark G06 complete until
+all of those and device tests are actually verified.
+
 ## Fixed implementation order
 
 | Phase | Scope | Status |

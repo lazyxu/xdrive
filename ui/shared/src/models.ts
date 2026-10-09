@@ -723,6 +723,41 @@ export interface MediaFolderView {
   children: MediaFolderEntry[]
 }
 
+// On-demand, owner-authorized xDrive Node-tree location. Provenance from SourceItem
+// and current synchronization-folder containment are independent facts.
+export interface NodeLocationBreadcrumb {
+  id: number
+  name: string
+  path: string
+}
+
+export interface NodeLocationSource {
+  source_id: number
+  source_name: string
+  source_kind: string
+  source_item_path?: string
+  original_path?: string
+}
+
+export interface NodeLocationSyncFolder {
+  source_id: number
+  source_name: string
+  source_kind: string
+  target_node_id: number
+}
+
+export interface NodeLocation {
+  node_id: number
+  revision: number
+  node_type: 'file' | 'dir' | string
+  path: string
+  parent_id?: number
+  parent_path: string
+  breadcrumbs: NodeLocationBreadcrumb[]
+  sources: NodeLocationSource[]
+  sync_folders: NodeLocationSyncFolder[]
+}
+
 export interface MediaPlaceFacet {
   id: string
   name: string

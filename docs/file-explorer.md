@@ -636,3 +636,15 @@ Web 与 Desktop 的普通“打开”语义不同，但 FileExplorer 本体仍�
 - When an older Agent does not advertise the new `media-item-properties` capability, Desktop keeps the ordinary file-property dialog. The feature does not make 100k FileExplorer thumbnails eagerly query EXIF data.
 
 M09 acceptance on 2026-10-09 records121 passing real shared Files checks,38 related/adapter tests and3 actual Agent JavaScript HTTP checks. Common still/video/Live rows match Gallery and the actual routed Web Viewer. Scope replacement, close, directory/account change and unmount reject old completions; reopening captures the new selected revision. These tests preserve the existing Files implementation and distinguish controlled renderer/HTTP boundaries from live Server indexing and physical-device acceptance. See [the source and result ledger](validation/mobile-shared-properties-2026-10-09.json).
+
+
+## Node path and Gallery source location (G06 follow-up)
+
+A new on-demand owner-scoped Node location contract is being developed for
+Gallery and FileExplorer Properties. Its current xDrive path and parent ID
+must come from Node ancestry; SourceItem evidence, if present, is a separate
+original-connector fact. Do not derive origin from a parent folder name or
+reconstruct arbitrary external-provider paths. The implementation is a
+backend-only candidate until Properties and 显示所在位置 are wired in shared
+Web/Desktop UI and accepted; direct/recursive scope remains explicitly
+pending. Keep the 100k sparse-directory/thumbnail read paths unchanged.
