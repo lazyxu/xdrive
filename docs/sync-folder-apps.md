@@ -73,6 +73,11 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 
 Do not block unrelated Race/Gallery/FileExplorer PRs for this UI task. Related PR branches remain exactly one work commit per fixed base; merge only after their exact-head CI, then clean branches via `.github/workflows/cleanup-merged-branches.yml`.
 
+
+## P0-B1 progress: owner-scoped safe backup read API (pending CI)
+
+This phase introduces two **read-only** endpoints, `GET /api/v1/device-backups` and `GET /api/v1/device-backups/:sourceID/runs`. Both scope records to the logged-in owner and bind only actual `local_folder` Push Source records to registered devices; NAS is still a placeholder. The response is a narrow allowlist with safe folder names, Server-resolved cloud target, numeric real progress and paginated history. It never serializes Root fingerprints, Agent tokens, filesystem paths, Source ignore rules/checkpoints, or unrestricted failure details; legacy registered devices without an authenticated heartbeat report `connection_state=unknown` rather than a fictitious online status. It is the data foundation for Web and other-Desktop read-only scope B, **not** proof that the UI exists or that Source mutation endpoints are locked down. Requires PostgreSQL/SQLite-backed CI, owner isolation, pagination/redaction and Pull regression gates before merge.
+
 ## 6. Acceptance matrix (release-blocking for the new features)
 
 1. With the same owner account, Desktop A edits and runs its locally authorized A-folder; Desktop B can see A's aggregate status/history but **cannot** create, edit, trigger, cancel, delete or unbind A. Raw HTTP requests from B and Web return forbidden even with spoofed device headers.

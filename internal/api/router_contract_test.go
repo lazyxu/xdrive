@@ -32,6 +32,8 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/public/share/download-ticket", suite: "shares"},
 		{method: "GET", path: "/api/v1/public-share-download/:id", suite: "shares"},
 		{method: "HEAD", path: "/api/v1/public-share-download/:id", suite: "shares"},
+		{method: "GET", path: "/api/v1/device-backups", suite: "local-source-devices"},
+		{method: "GET", path: "/api/v1/device-backups/:sourceID/runs", suite: "local-source-devices"},
 		{method: "GET", path: "/api/v1/devices", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/devices", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/devices/:id/revoke", suite: "local-source-devices"},
