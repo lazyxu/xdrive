@@ -267,3 +267,25 @@ The sample key combines transfer ID and attempt start time so new attempts do
 not inherit old speed. Queued/finalizing/cancelling transfers never advertise
 wire throughput. Neither this change nor the shared UI throttle delays bytes,
 upload/download work or transport progress events.
+ 
+
+## Direct Web transfer cancellation (2026-10-10)
+
+Scoped P0 phase: explicit **cancel only**, not pause/resume. The shared Header
+transfer popover renders `取消传输` only for a real, currently registered
+abortable request. Web's ordinary standalone chunk upload and its
+direct-to-disk streamed download use a transfer-specific `AbortController`
+composed with the existing account/session abort boundary. Cancellation
+immediately sets `cancelling`, aborts that exact network request, and marks
+`cancelled` only when the original execution acknowledges the abort. The
+request's finalization and late results cannot become a successful task.
+Other concurrent requests are not aborted, and the cancellation callbacks
+are ephemeral and never serialized with the history data.
+
+Not yet cancellable: browser-native download handed to the browser,
+archive/folder group transfers, retries owned by an Agent, and Desktop Agent
+upload/download requests. These do not expose a fake cancel control. Closing
+an app/view is not a durable cancel operation, and changing accounts retains
+the existing session-wide safety fence. Tests exercise actual XHR abort,
+stream/sink abort and handoff exclusion. Exact-head PR CI is required before
+this candidate can be marked merged.
