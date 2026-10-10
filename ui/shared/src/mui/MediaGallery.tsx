@@ -149,6 +149,7 @@ import {
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
+import { xDriveMediaGalleryAnchorScrollDelta } from './MediaGalleryScrollAnchor'
 import {
   xDriveMediaGalleryPinchColumnCount,
   XDRIVE_MEDIA_GALLERY_GRID_GAP,
@@ -3120,15 +3121,28 @@ function xDriveWriteMediaGalleryViewPreferences(
   }
 }
 
-function scrollMediaGalleryHostToOffset(host: HTMLElement, offset: number) {
+function scrollMediaGalleryHostToOffset(host: HTMLElement, offset: number, anchorViewportTop = 0) {
   const scrollParent = mediaGalleryScrollParent(host)
   const hostRect = host.getBoundingClientRect()
   if (scrollParent) {
     const parentRect = scrollParent.getBoundingClientRect()
-    scrollParent.scrollTop += hostRect.top - parentRect.top + Math.max(0, offset)
+    scrollParent.scrollTop += xDriveMediaGalleryAnchorScrollDelta({
+      hostTop: hostRect.top,
+      scrollViewportTop: parentRect.top,
+      logicalRowTop: offset,
+      anchorViewportTop,
+    })
     return
   }
-  window.scrollBy({ top: hostRect.top + Math.max(0, offset), behavior: 'auto' })
+  window.scrollBy({
+    top: xDriveMediaGalleryAnchorScrollDelta({
+      hostTop: hostRect.top,
+      scrollViewportTop: 0,
+      logicalRowTop: offset,
+      anchorViewportTop,
+    }),
+    behavior: 'auto',
+  })
 }
 
 function mediaGalleryTimelineOffsetForIndex(
@@ -3689,6 +3703,7 @@ function MediaVirtualTileGrid({
   recommendedNodeID,
   restoreAnchorIndex,
   restoreAnchorRevision = 0,
+  restoreAnchorViewportOffset,
   onVisibleAnchorChange,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
@@ -3710,6 +3725,7 @@ function MediaVirtualTileGrid({
   recommendedNodeID?: number
   restoreAnchorIndex?: number
   restoreAnchorRevision?: number
+  restoreAnchorViewportOffset?: number
   onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -3827,10 +3843,24 @@ function MediaVirtualTileGrid({
       Math.min(collection.itemCount - 1, Math.trunc(restoreAnchorIndex)),
     )
     const offset = Math.floor(index / Math.max(1, metrics.columns)) * metrics.rowStep
+    // Wait for the new row/total-height layout before restoring the position
+    // of a pinched tile; other navigation retains its previous timing.
+    let afterLayout: number | null = null
     const frame = window.requestAnimationFrame(() => {
-      if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+      if (restoreAnchorViewportOffset === undefined) {
+        if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+      } else {
+        afterLayout = window.requestAnimationFrame(() => {
+          if (hostRef.current) {
+            scrollMediaGalleryHostToOffset(hostRef.current, offset, restoreAnchorViewportOffset)
+          }
+        })
+      }
     })
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+    }
   }, [
     collection.itemCount,
     minTileWidth,
@@ -3838,6 +3868,7 @@ function MediaVirtualTileGrid({
     referenceColumnWidth,
     restoreAnchorIndex,
     restoreAnchorRevision,
+    restoreAnchorViewportOffset,
   ])
 
   useEffect(() => {
@@ -3972,6 +4003,7 @@ function MediaVirtualTimeline({
   onToggleFavorite,
   restoreAnchorIndex,
   restoreAnchorRevision = 0,
+  restoreAnchorViewportOffset,
   onVisibleAnchorChange,
 }: {
   groups: MediaTimelineGroupIndex[]
@@ -3993,6 +4025,7 @@ function MediaVirtualTimeline({
   onToggleFavorite: (item: MediaItem) => void
   restoreAnchorIndex?: number
   restoreAnchorRevision?: number
+  restoreAnchorViewportOffset?: number
   onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -4110,10 +4143,24 @@ function MediaVirtualTimeline({
     })
     const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
     if (offset === null) return
+    // Wait for the new row/total-height layout before restoring the position
+    // of a pinched tile; other navigation retains its previous timing.
+    let afterLayout: number | null = null
     const frame = window.requestAnimationFrame(() => {
-      if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+      if (restoreAnchorViewportOffset === undefined) {
+        if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
+      } else {
+        afterLayout = window.requestAnimationFrame(() => {
+          if (hostRef.current) {
+            scrollMediaGalleryHostToOffset(hostRef.current, offset, restoreAnchorViewportOffset)
+          }
+        })
+      }
     })
-    return () => window.cancelAnimationFrame(frame)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+    }
   }, [
     groups,
     minTileWidth,
@@ -4121,6 +4168,7 @@ function MediaVirtualTimeline({
     referenceColumnWidth,
     restoreAnchorIndex,
     restoreAnchorRevision,
+    restoreAnchorViewportOffset,
   ])
 
   useEffect(() => {
@@ -4444,6 +4492,12 @@ export function XDriveMediaGallery({
     xDriveReadMobileGalleryColumns,
   )
   const [viewAnchorRevision, setViewAnchorRevision] = useState(0)
+  // A pinch carries its screen-space position for only one restore revision.
+  // Other navigation and density-slider changes stay top-aligned.
+  const [pinchViewportRestore, setPinchViewportRestore] = useState<{
+    revision: number
+    viewportTop: number
+  } | null>(null)
   const overviewTransitionRef = useRef({ showing: mobileCollectionsOverview, section })
   useEffect(() => {
     const previous = overviewTransitionRef.current
@@ -4623,7 +4677,7 @@ export function XDriveMediaGallery({
     setViewPreferences((current) => ({ ...current, timeScale: nextScale }))
   }, [timeScale])
 
-  const updateGalleryDensity = useCallback((value: number) => {
+  const updateGalleryDensity = useCallback((value: number, anchorViewportTop?: number) => {
     if (compactGallery) {
       if (!Number.isFinite(value)) return
       const columns = Math.min(
@@ -4631,6 +4685,11 @@ export function XDriveMediaGallery({
         Math.max(XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN, Math.round(value)),
       )
       if (columns === mobileColumns) return
+      setPinchViewportRestore(
+        anchorViewportTop !== undefined && Number.isFinite(anchorViewportTop)
+          ? { revision: viewAnchorRevision + 1, viewportTop: anchorViewportTop }
+          : null,
+      )
       setViewAnchorRevision((current) => current + 1)
       setMobileColumnsByScale((current) => ({
         ...current, [effectiveTimeScale]: columns,
@@ -4647,7 +4706,7 @@ export function XDriveMediaGallery({
         [effectiveTimeScale]: normalized,
       },
     }))
-  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns])
+  }, [compactGallery, effectiveTimeScale, minTileWidth, mobileColumns, viewAnchorRevision])
 
   const updateGalleryAspectMode = useCallback((nextMode: MediaGalleryAspectMode) => {
     if (nextMode === aspectMode) return
@@ -4860,6 +4919,7 @@ export function XDriveMediaGallery({
     startDistance: number
     lastDistance: number
     initialColumns: number
+    anchorViewportTop?: number
     active: boolean
   } | null>(null)
   const galleryPinchSuppressClickUntilRef = useRef(0)
@@ -4888,14 +4948,19 @@ export function XDriveMediaGallery({
       (event.touches[0].clientX + event.touches[1].clientX) / 2,
       (event.touches[0].clientY + event.touches[1].clientY) / 2,
     )
-    const tile = center?.closest<HTMLElement>('[data-xdrive-media-tile]')
+    const tile = center?.closest<HTMLElement>('[data-xdrive-media-tile]') ??
+      event.target.closest<HTMLElement>('[data-xdrive-media-tile]')
     const index = Number(tile?.dataset.xdriveMediaIndex)
+    let anchorViewportTop: number | undefined
     if (tile && Number.isSafeInteger(index) && index >= 0) {
       viewAnchorIndexRef.current = index
+      const scrollParent = mediaGalleryScrollParent(galleryPhotoWallRef.current ?? tile)
+      anchorViewportTop = tile.getBoundingClientRect().top -
+        (scrollParent?.getBoundingClientRect().top ?? 0)
     }
     galleryPinchRef.current = {
       startDistance: distance, lastDistance: distance,
-      initialColumns: mobileColumns, active: false,
+      initialColumns: mobileColumns, anchorViewportTop, active: false,
     }
   }
 
@@ -4925,11 +4990,14 @@ export function XDriveMediaGallery({
     clearGalleryPinch()
     galleryPinchSuppressClickUntilRef.current = Date.now() + 350
     if (!commit || !pinch.active) return
-    updateGalleryDensity(xDriveMediaGalleryPinchColumnCount(
-      pinch.initialColumns, pinch.startDistance, pinch.lastDistance,
-      XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
-      XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
-    ))
+    updateGalleryDensity(
+      xDriveMediaGalleryPinchColumnCount(
+        pinch.initialColumns, pinch.startDistance, pinch.lastDistance,
+        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MIN,
+        XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_MAX,
+      ),
+      pinch.anchorViewportTop,
+    )
   }
   const handleGalleryTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
     if (event.touches.length < 2) finishGalleryPinch(true)
@@ -6865,6 +6933,10 @@ export function XDriveMediaGallery({
               onToggleFavorite={toggleMediaFavorite}
               restoreAnchorIndex={viewAnchorIndexRef.current}
               restoreAnchorRevision={viewAnchorRevision}
+              restoreAnchorViewportOffset={
+                pinchViewportRestore?.revision === viewAnchorRevision
+                  ? pinchViewportRestore.viewportTop : undefined
+              }
               onVisibleAnchorChange={captureVisibleAnchor}
             />
           ) : (
@@ -6935,6 +7007,10 @@ export function XDriveMediaGallery({
             recommendedNodeID={cleanupRecommendedNodeID}
             restoreAnchorIndex={viewAnchorIndexRef.current}
             restoreAnchorRevision={viewAnchorRevision}
+            restoreAnchorViewportOffset={
+              pinchViewportRestore?.revision === viewAnchorRevision
+                ? pinchViewportRestore.viewportTop : undefined
+            }
             onVisibleAnchorChange={captureVisibleAnchor}
           />
         ) : (

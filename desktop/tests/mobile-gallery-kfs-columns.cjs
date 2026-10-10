@@ -175,7 +175,7 @@ test('P0-2 mobile gesture has one root, preserves Gallery anchor and uses same v
   assert.match(gallerySource, /onTouchEndCapture=\{handleGalleryTouchEnd\}/)
   assert.match(gallerySource, /clearGalleryTouchPress\(\)/)
   assert.match(gallerySource, /viewAnchorIndexRef\.current = index/)
-  assert.match(gallerySource, /updateGalleryDensity\(xDriveMediaGalleryPinchColumnCount\(/)
+  assert.match(gallerySource, /updateGalleryDensity\(\s*xDriveMediaGalleryPinchColumnCount\(/)
   const virtualCallSites = gallerySource.match(/<(?:MediaVirtualTileGrid|MediaVirtualTimeline)\b[\s\S]*?\/>/g) || []
   assert.equal(virtualCallSites.length, 2, 'one shared virtual grid and one virtual timeline')
   for (const call of virtualCallSites) {
