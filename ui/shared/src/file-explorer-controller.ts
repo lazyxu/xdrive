@@ -244,6 +244,12 @@ export function xDriveFileExplorerSelectionActionDisabledReason<
   requireRevision?: boolean
 }): string | null {
   if (selectedCount <= 0) return '请先选择项目。'
+  // Bulk selection may contain 10k/100k logical IDs while the virtual
+  // workspace deliberately retains only actionable Node metadata. Report
+  // the Server operation limit before testing sparse loaded identities.
+  if (maxItems !== undefined && selectedCount > maxItems) {
+    return `一次操作最多 ${maxItems} 个项目，请缩小选择范围。`
+  }
   const nodes = xDriveFileExplorerResolveSelectionNodes(selected, nodeByID)
   if (!nodes || nodes.length !== selectedCount) {
     return '所选项目信息尚未完整加载，请稍后重试。'

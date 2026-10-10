@@ -30,7 +30,7 @@ import {
 import {
   formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerInlineLayout,
   xDriveFileExplorerInlineCellAt, xDriveFileExplorerInlineVisibleRanges,
-  xDriveFileExplorerInlineGroupIndex,
+  xDriveFileExplorerInlineGroupIndex, XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE,
 } from '../../ui/shared/src'
 import type {
   MediaItem, NodeLocation, XDriveFileExplorerGrouping,
@@ -350,6 +350,7 @@ export default function MobileFiles(props: Props) {
     typeof navigator.canShare === 'function',
   )
   const [selectionMode, setSelectionMode] = useState(false)
+  const [selectionLoad, setSelectionLoad] = useState<{ intent: number; loaded: number; total: number } | null>(null)
   const [selectionMoreAnchor, setSelectionMoreAnchor] = useState<HTMLElement | null>(null)
   const [selectionFeedback, setSelectionFeedback] = useState('')
   const [selected, setSelected] = useState<Map<string, XDriveFileExplorerItem>>(() => new Map())
@@ -367,6 +368,7 @@ export default function MobileFiles(props: Props) {
   const [dropFolderID, setDropFolderID] = useState<string | null>(null)
   const [dropCrumbID, setDropCrumbID] = useState<string | null>(null)
   const externalDropGenerationRef = useRef(0)
+  const selectionIntentRef = useRef(0)
   const ownerRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const lastRequestedDirectoryRef = useRef(props.requestedDirectoryID)
@@ -388,6 +390,13 @@ export default function MobileFiles(props: Props) {
   const cancelClickRef = useRef(false)
   const selection = [...selected.values()]
   const directoryID = Number(props.crumbs.at(-1)?.id ?? 0) || null
+  const selectionScopeKey = [
+    props.lifecycleKey, directoryID ?? 0, section,
+    props.trashActive, props.searchActive,
+    props.virtualCollection?.interactionKey ?? '',
+  ].join(':')
+  const selectionScopeRef = useRef(selectionScopeKey)
+  selectionScopeRef.current = selectionScopeKey
   const showDirectory = section === 'browse' && (!browseHome || props.trashActive || props.searchActive)
   const selectionActive = selectionMode && showDirectory
   const effectiveGrid = viewPreference === 'grid'
@@ -651,6 +660,8 @@ export default function MobileFiles(props: Props) {
   }, [showDirectory, props.trashActive, props.searchActive, props.onClearInline])
 
   useEffect(() => {
+    selectionIntentRef.current += 1
+    setSelectionLoad(null)
     setSelected(new Map())
     setSelectionMode(false)
     setSelectionFeedback('')
@@ -798,6 +809,9 @@ export default function MobileFiles(props: Props) {
     // disabled ordinary Open must never persist a trashed folder as Browse.
     if (props.trashActive) return
     if (selectionMode) {
+      // A manual selection supersedes an in-flight Select All range intent.
+      selectionIntentRef.current += 1
+      setSelectionLoad(null)
       setSelected(current => {
         const next = new Map(current)
         const key = mobileItemKey(item)
@@ -1087,7 +1101,7 @@ export default function MobileFiles(props: Props) {
     finally { setRenameBusy(false) }
   }
   const selectedAction = (kind: 'copy' | 'cut' | 'move' | 'copy-to' | 'download' | 'delete') => {
-    if (!selection.length) return
+    if (!selection.length || selectionLoad) return
     // Do not discard selection before a server-side validation, destination
     // choice or delete confirmation has actually succeeded.
     if (kind === 'copy') props.onCopy(selection)
@@ -1097,21 +1111,60 @@ export default function MobileFiles(props: Props) {
     if (kind === 'download') props.onDownload(selection)
     if (kind === 'delete') props.onDelete(selection)
   }
-  const selectAllCurrent = async () => {
-    if (totalCount === 0) return
-    if (totalCount > 200) {
-      setSelectionFeedback('当前范围超过单次文件操作的 200 项上限，请缩小范围后选择。')
-      return
-    }
-    const all = props.virtualCollection?.collectRange
-      ? await props.virtualCollection.collectRange(0, totalCount - 1)
-      : props.items
-    if (!all || all.length !== totalCount) {
-      setSelectionFeedback('部分文件尚未加载，无法完成全选。请重试。')
-      return
-    }
+  const cancelSelectAll = () => {
+    if (!selectionLoad) return
+    selectionIntentRef.current += 1
+    setSelectionLoad(null)
+    setSelectionFeedback('已取消全选加载，保留原选择。')
+    // The shared virtual collection retains previously selected identities
+    // and cancels obsolete viewport requests through its existing lifecycle.
+    props.virtualCollection?.retainInteractionIDs?.([...selected.keys()])
+  }
+  const selectAllCurrent = () => {
+    if (!Number.isSafeInteger(totalCount) || totalCount <= 0 || props.loading || selectionLoad) return
+    const intent = ++selectionIntentRef.current
+    const scope = selectionScopeRef.current
+    const count = totalCount
+    const collection = props.virtualCollection
+    const isCurrent = () => (
+      selectionIntentRef.current === intent && selectionScopeRef.current === scope
+    )
     setSelectionFeedback('')
-    setSelected(new Map(all.map(item => [mobileItemKey(item), item])))
+    setSelectionLoad({ intent, loaded: 0, total: count })
+    // Match wide Web's shared Server-backed VirtualCollection page contract.
+    // No dense 100k range is issued as one HTTP request. Commit atomically
+    // only after every page and every unique Node ID has been validated.
+    void (async () => {
+      const results: XDriveFileExplorerItem[] = []
+      try {
+        for (let start = 0; start < count; start += XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE) {
+          if (!isCurrent()) return
+          const end = Math.min(count - 1, start + XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE - 1)
+          const page = collection?.collectRange
+            ? await collection.collectRange(start, end)
+            : Array.from({ length: end - start + 1 },
+                (_, offset) => collection?.itemAt(start + offset) ?? props.items[start + offset])
+          if (!isCurrent()) return
+          if (!page || page.length !== end - start + 1 ||
+              page.some(item => !item || !Number.isSafeInteger(Number(item.id)) || Number(item.id) <= 0)) {
+            setSelectionFeedback('未能完成全选，已保留原选择。请重试全选。')
+            return
+          }
+          results.push(...page)
+          setSelectionLoad({ intent, loaded: results.length, total: count })
+        }
+        if (!isCurrent()) return
+        if (new Set(results.map(mobileItemKey)).size !== count) {
+          setSelectionFeedback('结果在加载期间发生变化，已保留原选择。请刷新后重试全选。')
+          return
+        }
+        setSelected(new Map(results.map(item => [mobileItemKey(item), item])))
+      } catch {
+        if (isCurrent()) setSelectionFeedback('未能完成全选，已保留原选择。请重试全选。')
+      } finally {
+        if (isCurrent()) setSelectionLoad(null)
+      }
+    })()
   }
   const renderEntry = (
     item: XDriveFileExplorerItem, key: string, depth = 0,
@@ -1387,11 +1440,17 @@ export default function MobileFiles(props: Props) {
           </Typography>
           {selectionActive ? (
             <>
-              <Button size="small" onClick={() => void selectAllCurrent()}
-                disabled={props.loading || totalCount === 0} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>
-                全选
-              </Button>
+              {selectionLoad ? (
+                <Button data-mobile-files-select-cancel size="small" onClick={cancelSelectAll}
+                  sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>取消</Button>
+              ) : (
+                <Button data-mobile-files-select-all aria-label="全选当前目录或搜索结果"
+                  size="small" onClick={selectAllCurrent}
+                  disabled={props.loading || totalCount === 0}
+                  sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>全选</Button>
+              )}
               <Button size="small" onClick={() => {
+                selectionIntentRef.current += 1; setSelectionLoad(null)
                 setSelectionMode(false); setSelected(new Map())
                 setSelectionFeedback(''); setSelectionMoreAnchor(null)
               }} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
@@ -1640,6 +1699,10 @@ export default function MobileFiles(props: Props) {
           )}
         </Box>
         {props.actionFeedback ? <Box data-mobile-files-operation-feedback sx={{ flexShrink: 0 }}>{props.actionFeedback}</Box> : null}
+        {selectionLoad ? <Typography data-mobile-files-select-progress role="status"
+          variant="caption" sx={{ px: 2, py: 0.5, flexShrink: 0 }}>
+          正在选择 {selectionLoad.loaded} / {selectionLoad.total} 项
+        </Typography> : null}
         {selectionFeedback ? <Typography role="status" variant="caption" color="warning.main"
           sx={{ px: 2, py: 0.5, flexShrink: 0 }}>{selectionFeedback}</Typography> : null}
         {selectionActive ? (

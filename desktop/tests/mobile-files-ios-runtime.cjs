@@ -95,6 +95,7 @@ const imports = {
   '@xdrive/ui/mui': ui,
   '../../ui/shared/src': {
     ...inline,
+    XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE: 200,
     formatBytes: n => n + ' B',
     xDriveFileExplorerDragAutoScrollDelta: () => 0,
     xDriveFileKind: name => /\.(?:png|jpg|livp)$/i.test(name) ? 'image' : 'file',
@@ -1378,5 +1379,102 @@ test('F-PARITY-07E: mounted selected child survives 100k sparse-page eviction wi
     inlineBranches: [firstBranch], onToggleInlineFolder() {},
     onCopy: items => actions.push(items.map(item => [item.id, item.revision])),
     onSelectedItemsChange: items => retained.push(items.map(item => [item.id, item.revision])),
+  } })
+})
+
+
+test('F-PARITY-07F: mounted Mobile Select All fetches 257 root/search Nodes through same bounded Server ranges', async () => {
+  const requests = []
+  const retained = []
+  const makeNodes = (first, last) => Array.from({ length: last - first + 1 }, (_, i) => ({
+    id: first + i + 1000, kind: 'file', name: 'file-' + (first + i) + '.txt', revision: 7,
+  }))
+  const source = {
+    interactionKey: '257-owner-root', itemCount: 257, loadedItems: new Map(),
+    itemAt() { return undefined },
+    collectRange: async (start, end) => {
+      requests.push([start, end])
+      return makeNodes(start, end)
+    },
+    onRangeChange() {},
+    retainInteractionIDs() {},
+  }
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    assert.equal(select.length, 1)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+    assert.deepEqual(requests, [[0, 199], [200, 256]],
+      'Mobile uses wide Web shared VirtualCollection 200-item logical chunks, not one giant fetch')
+    assert.equal(retained.at(-1).length, 257, 'Mobile must not refuse 201+ logical selections')
+    assert.deepEqual(retained.at(-1).slice(-1), [[1256, 7]])
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0, 'progress clears after successful commit')
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    onSelectedItemsChange: items => retained.push(items.map(i => [i.id, i.revision])),
+  } })
+})
+
+test('F-PARITY-07F: 100k Mobile Select All cancel fences an in-flight page and stops future ranges', async () => {
+  let finishPage
+  const requests = []
+  const observed = []
+  const source = {
+    interactionKey: '100k-selection', itemCount: 100000, loadedItems: new Map(),
+    itemAt() {},
+    collectRange: (start, end) => {
+      requests.push([start, end])
+      return new Promise(resolve => { finishPage = resolve })
+    },
+    retainInteractionIDs() {}, onRangeChange() {},
+  }
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+    assert.deepEqual(requests, [[0, 199]], '100k selection cannot eagerly request the complete collection')
+    const progress = find(h.view, 'data-mobile-files-select-progress', true)
+    assert.match(textOf(progress.props.children), /0\s*\/\s*100000/)
+    await act(async () => { find(h.view, 'data-mobile-files-select-cancel', true).props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0)
+    await act(async () => { finishPage(Array.from({ length: 200 }, (_, i) => ({
+      id: i + 10, name: 'file.txt', kind: 'file', revision: 9,
+    }))) })
+    assert.deepEqual(requests, [[0, 199]], 'cancel must ignore old completion and never request page 2')
+    assert.deepEqual(observed.at(-1), [], 'cancel preserves existing empty selection')
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    onSelectedItemsChange: items => observed.push(items.map(i => i.id)),
+  } })
+})
+
+test('F-PARITY-07F: stale Select All after account switch cannot commit 100k old IDs', async () => {
+  let resolveRange
+  const observed = []
+  const source = {
+    interactionKey: '100k-old-scope', itemCount: 100000,
+    loadedItems: new Map(), itemAt() {}, onRangeChange() {},
+    collectRange: () => new Promise(resolve => { resolveRange = resolve }),
+  }
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+    await h.update({ lifecycleKey: 'new-account-B', virtualCollection: {
+      ...source, interactionKey: '100k-new-scope',
+    } })
+    await act(async () => {
+      resolveRange(Array.from({ length: 200 }, (_, i) => ({
+        id: i + 50, name: 'old.txt', kind: 'file', revision: 8,
+      })))
+    })
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0)
+    assert.deepEqual(observed.at(-1), [], 'old account completion must never repopulate new account selection')
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    onSelectedItemsChange: items => observed.push(items.map(i => i.id)),
   } })
 })

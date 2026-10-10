@@ -223,22 +223,43 @@ test('F-PARITY-07E: selected root and nested Node IDs survive real 100k sparse-r
 })
 
 
-test('F-PARITY-07E: owner-scoped selected cache remains <=200 and clears when user/session changes', () => {
+test('F-PARITY-07F: selected cache honors wide-Web 1000 download bound, then narrows massive selection to 200', () => {
   const render = actualWebInlineProjection()
   const root = { id: 1, name: '我的文件', type: 'dir', revision: 1 }
   const folders = [{ id: 2, name: 'Work', type: 'dir', revision: 1 }]
-  const files = Array.from({ length: 240 }, (_, i) => ({
+  const files = Array.from({ length: 1100 }, (_, i) => ({
     id: i + 1000, name: 'file-' + i, type: 'file', revision: 1, parent_id: 1,
   }))
   let view = render({ branches: [] }, [root, ...folders, ...files], 'account-A:root')
-  view.notifySelection?.(files.map(node => ({
+  const items = files.map(node => ({
     id: node.id, name: node.name, kind: 'file', revision: node.revision,
-  })))
+  }))
+  view.notifySelection?.(items.slice(0, 1000))
   view = render({ branches: [] }, [root, ...folders], 'account-A:root')
-  assert.equal(view.retainedCount, 200, 'retain at most 200 selected Node records, never an entire 100k page')
+  assert.equal(view.retainedCount, 1000, '1000 selected downloads remain supported')
+  assert.equal(view.nodeByID.has(1999), true)
+  view.notifySelection?.(items.slice(0, 1001))
+  view = render({ branches: [] }, [root, ...folders], 'account-A:root')
+  assert.equal(view.retainedCount, 200, 'over-limit 1001+ selections never pin an entire 100k collection')
   assert.equal(view.nodeByID.has(1000), true)
-  assert.equal(view.nodeByID.has(1239), false)
+  assert.equal(view.nodeByID.has(1999), false)
   view = render({ branches: [] }, [root, ...folders], 'account-B:root')
   assert.equal(view.retainedCount, 0, 'a new login must drop all prior-account identities')
   assert.equal(view.nodeByID.has(1000), false)
+})
+
+
+test('F-PARITY-07F: operation limit precedes sparse Node metadata failure for 100k selected IDs', () => {
+  const validation = actualSelectionController()
+  const selected = Array.from({ length: 100000 }, (_, i) => ({ id: i + 1 }))
+  for (const [maxItems, label] of [[200, '修改操作'], [1000, '下载']]) {
+    assert.match(validation.xDriveFileExplorerSelectionActionDisabledReason({
+      selected, selectedCount: 100000, nodeByID: new Map(),
+      requireRevision: maxItems === 200, maxItems,
+    }), new RegExp(String(maxItems)), label + ' must explain its real shared Server limit first')
+  }
+  assert.match(validation.xDriveFileExplorerSelectionActionDisabledReason({
+    selected: [{ id: 9 }], selectedCount: 1, nodeByID: new Map(),
+    requireRevision: true, maxItems: 200,
+  }), /尚未完整加载/, 'within the limit missing Node metadata must still be rejected')
 })
