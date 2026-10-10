@@ -469,6 +469,10 @@ type AdminGeoNamesConfig struct {
 	ReplicaStatusTruncated bool                        `json:"replica_status_truncated"`
 	DatasetConsistent      bool                        `json:"dataset_versions_consistent"`
 	DatasetVersions        []AdminGeoNamesVersionGroup `json:"dataset_versions"`
+	SnapshotSupported      bool                        `json:"snapshot_supported"`
+	SnapshotRequirement    string                      `json:"snapshot_requirement"`
+	SnapshotHistoryKnown   bool                        `json:"snapshot_history_known"`
+	Snapshots              []AdminGeoNamesSnapshot     `json:"snapshots"`
 }
 
 type AdminGeoNamesSnapshot struct {
