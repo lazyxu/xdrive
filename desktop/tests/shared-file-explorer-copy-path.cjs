@@ -66,13 +66,18 @@ test('shared FileExplorer owns single and multi-selection Copy Path context-menu
 test('Web and Desktop keep only clipboard adapters and share path semantics', () => {
   for (const token of [
     'xDriveFileExplorerCopyPath',
-    '.map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))',
     ".join('\\n')",
     'onCopyPaths=',
   ]) {
     assert.ok(web.includes(token), 'Web Copy Path adapter missing: ' + token)
     assert.ok(desktop.includes(token), 'Desktop Copy Path adapter missing: ' + token)
   }
+  assert.ok(web.includes('.map((item) => xDriveFileExplorerCopyPath(item, inlineCrumbsForItem(item)))'),
+    'Web Copy Path must resolve expanded children through authoritative inline ancestor crumbs')
+  assert.ok(web.includes('inlineParentCrumbs(inlineOwnerByNodeID.get(Number(item.id))'),
+    'Web nested paths must use child owner lineage, not the root browsing crumbs')
+  assert.ok(desktop.includes('.map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))'),
+    'Desktop must retain unchanged local FileExplorer path semantics')
 
   assert.ok(web.includes('navigator.clipboard?.writeText'), 'Web must use the browser clipboard adapter')
   assert.ok(desktop.includes('window.xdriveDesktop.copyText(text)'), 'Desktop must use the Electron clipboard adapter')
@@ -82,4 +87,26 @@ test('Web and Desktop keep only clipboard adapters and share path semantics', ()
     'Desktop preload clipboard bridge is missing')
   assert.ok(rendererTypes.includes('copyText: (text: string) => void'),
     'Desktop renderer clipboard type is missing')
+})
+
+test('F-PARITY-07D: nested inline file Copy Paths keep containing folders and global Search paths', () => {
+  const ts = require('typescript')
+  const start = controller.indexOf('export function xDriveFileExplorerCopyPath(')
+  const end = controller.indexOf('\nexport async function xDriveFileExplorerSubmitPath', start)
+  assert.ok(start >= 0 && end > start, 'real shared path helper must be used')
+  const compiled = ts.transpileModule(controller.slice(start, end), {
+    fileName: 'file-explorer-controller.ts',
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const mod = { exports: {} }
+  new Function('exports', compiled)(mod.exports)
+  const copy = mod.exports.xDriveFileExplorerCopyPath
+  const root = [{ id: 1, name: '我的文件' }]
+  const nested = [...root, { id: 2, name: 'Work' }, { id: 3, name: '2026' }]
+  const item = { id: 41, name: 'inside.txt', path: '我的文件/Work/2026/inside.txt' }
+  assert.equal(copy(item, root), '/inside.txt', 'old current-directory-only adapter loses the inline ancestors')
+  assert.equal(copy(item, nested), '/Work/2026/inside.txt')
+  assert.equal(copy({ name: 'another.txt' }, nested), '/Work/2026/another.txt')
+  assert.equal(copy({ name: 'search.txt', secondaryLabel: 'Elsewhere/search.txt' }, nested),
+    '/Elsewhere/search.txt', 'Server-authoritative global Search path must retain precedence')
 })
