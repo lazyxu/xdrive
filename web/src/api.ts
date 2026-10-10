@@ -2144,6 +2144,7 @@ export class XDriveApi {
     const activeTransferID = transferID || webTransferStore.create({
       fileName: file.name,
       path: file.name,
+      cloudParentID: parentID,
       kind: 'upload',
       bytesTotal: file.size,
       speedSource: 'client',
@@ -2624,10 +2625,15 @@ export class XDriveApi {
     return `${API_BASE}${path}`
   }
 
-  private async startNativeDownload(ticketPath: string, filename: string, bytesTotal = 0) {
+  private async startNativeDownload(
+    ticketPath: string, filename: string, bytesTotal = 0,
+    cloudParentID?: number, cloudNodeID?: number,
+  ) {
     const tracking = this.transferContext()
     const transferID = webTransferStore.create({
       fileName: filename,
+      cloudParentID,
+      cloudNodeID,
       kind: 'download',
       bytesTotal,
       speedSource: 'server',
@@ -2767,6 +2773,8 @@ export class XDriveApi {
           `/api/v1/files/${node.id}/versions/${version.id}/download-ticket`,
           node.name,
           version.size,
+          node.parent_id,
+          node.id,
         )
       }
       await this.downloadAuthenticated(
@@ -2775,6 +2783,9 @@ export class XDriveApi {
         {},
         true,
         downloadSink,
+        '',
+        node.parent_id,
+        node.id,
       )
       return true
     } catch (error) {
@@ -2794,6 +2805,8 @@ export class XDriveApi {
           `/api/v1/files/${node.id}/download-ticket`,
           node.name,
           node.size,
+          node.parent_id,
+          node.id,
         )
       }
       await this.downloadAuthenticated(
@@ -2802,6 +2815,9 @@ export class XDriveApi {
         {},
         true,
         downloadSink,
+        '',
+        node.parent_id,
+        node.id,
       )
       return true
     } catch (error) {
@@ -3065,11 +3081,15 @@ export class XDriveApi {
     trackTransfer = true,
     downloadSink: XDriveWebActiveDownloadSink = { kind: 'blob' },
     networkTransferID = '',
+    cloudParentID?: number,
+    cloudNodeID?: number,
   ) {
     const tracking = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
       path: filename,
+      cloudParentID,
+      cloudNodeID,
       kind: 'download',
       speedSource: 'client',
     }) : ''

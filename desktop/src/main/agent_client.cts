@@ -137,6 +137,8 @@ export type AgentTransfer = {
   file_name: string
   path?: string
   relative_path?: string
+  cloud_parent_id?: number
+  cloud_node_id?: number
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
   direction: 'upload' | 'download' | 'local' | string
   state: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'retrying' | 'cancelling' | 'cancelled' | string
