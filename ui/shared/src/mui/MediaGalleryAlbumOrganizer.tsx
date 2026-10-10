@@ -205,24 +205,34 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const [targetFolderID, setTargetFolderID] = useState(0)
   const [folderBusy, setFolderBusy] = useState(false)
   const folderBusyRef = useRef(false)
+  // A Server folder read is valid only until a newer read or committed write.
+  // React rendering Busy alone cannot protect an older Promise completion.
+  const folderListVersionRef = useRef(0)
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
   useEffect(() => setPrefs(readMediaAlbumPreferences(accountScope)), [accountScope])
   useEffect(() => {
     const load = folderActions?.list
+    const readVersion = ++folderListVersionRef.current
     if (!load) { setFolders([]); setFolderError(''); return }
     let active = true
     setFoldersLoading(true)
     setFolderError('')
     void load().then((nextFolders) => {
-      if (!active) return
+      if (!active || readVersion !== folderListVersionRef.current) return
       setFolders(nextFolders)
       setActiveFolderID((current) => (
         current === 0 || nextFolders.some(folder => folder.id === current) ? current : 0
       ))
     }).catch((error: unknown) => {
-      if (active) setFolderError(error instanceof Error ? error.message : String(error))
-    }).finally(() => { if (active) setFoldersLoading(false) })
+      if (active && readVersion === folderListVersionRef.current) {
+        setFolderError(error instanceof Error ? error.message : String(error))
+      }
+    }).finally(() => {
+      if (active && readVersion === folderListVersionRef.current) {
+        setFoldersLoading(false)
+      }
+    })
     return () => { active = false }
   }, [accountScope, folderActions?.list])
 
@@ -261,22 +271,27 @@ export function XDriveMediaGalleryAlbumOrganizer({
     folderBusyRef.current = true
     setFolderBusy(true)
     setFolderError('')
+    let folderHierarchyChanged = false
     try {
       if (folderDialog.kind === 'create' && folderActions?.create) {
         const created = await folderActions.create(folderName.trim(), folderDialog.parentID)
+        folderHierarchyChanged = true
         setFolders((current) => [...current, created])
       } else if (folderDialog.kind === 'rename' && folderActions?.update) {
         const updated = await folderActions.update(
           folderDialog.folder.id, folderDialog.folder.revision, { name: folderName.trim() },
         )
+        folderHierarchyChanged = true
         setFolders((current) => current.map(folder => folder.id === updated.id ? updated : folder))
       } else if (folderDialog.kind === 'move-folder' && folderActions?.update) {
         const updated = await folderActions.update(
           folderDialog.folder.id, folderDialog.folder.revision, { parent_id: targetFolderID },
         )
+        folderHierarchyChanged = true
         setFolders((current) => current.map(folder => folder.id === updated.id ? updated : folder))
       } else if (folderDialog.kind === 'delete' && folderActions?.remove) {
         await folderActions.remove(folderDialog.folder.id, folderDialog.folder.revision)
+        folderHierarchyChanged = true
         setFolders((current) => current.filter(folder => folder.id !== folderDialog.folder.id))
         setActiveFolderID((current) => current === folderDialog.folder.id ? folderDialog.folder.parent_id : current)
       } else if (folderDialog.kind === 'move-album' && folderActions?.moveAlbum) {
@@ -288,12 +303,22 @@ export function XDriveMediaGalleryAlbumOrganizer({
       } else {
         throw new Error('当前客户端不支持该相册文件夹操作')
       }
+      if (folderHierarchyChanged) {
+        // An earlier list may contain a pre-write snapshot. Invalidate it
+        // even if the pending response or error arrives after this commit.
+        folderListVersionRef.current += 1
+        setFoldersLoading(false)
+        setFolderError('')
+      }
       setFolderDialog(null)
     } catch (error) {
       setFolderError(error instanceof Error ? error.message : String(error))
       // After a revision conflict, refresh canonical folder revisions if possible.
       if (folderActions?.list) {
-        void folderActions.list().then(setFolders).catch(() => undefined)
+        const readVersion = ++folderListVersionRef.current
+        void folderActions.list().then((nextFolders) => {
+          if (readVersion === folderListVersionRef.current) setFolders(nextFolders)
+        }).catch(() => undefined)
       }
     } finally {
       folderBusyRef.current = false
