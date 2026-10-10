@@ -117,6 +117,13 @@ export function useXDriveFileExplorerSearch<
 }) {
   const requestRef = useRef<Record<string, number>>({})
   const nextRequestRef = useRef(0)
+  // Only one first-page Search request owns the shared sparse collection at a
+  // time. Viewport page requests retain their separate VirtualCollection owner.
+  const initialPageControllerRef = useRef<AbortController | null>(null)
+  const abortInitialPage = useCallback(() => {
+    initialPageControllerRef.current?.abort()
+    initialPageControllerRef.current = null
+  }, [])
   const workspaceKeyRef = useRef(workspaceKey)
   workspaceKeyRef.current = workspaceKey
   const targetRef = useRef<XDriveFileExplorerSearchTarget | null>(null)
@@ -164,10 +171,19 @@ export function useXDriveFileExplorerSearch<
   }, [])
 
   const nextRequestID = useCallback((key: string) => {
+    // New searches, clear and filter replacement must stop the old in-flight
+    // HTTP request, not merely ignore its result after it consumes Go work.
+    abortInitialPage()
     const next = ++nextRequestRef.current
     requestRef.current[key] = next
     return next
-  }, [])
+  }, [abortInitialPage])
+
+  // An inactive history entry does not own the active browser Search request.
+  // React also runs this cleanup on unmount/account lifecycle replacement.
+  useEffect(() => () => {
+    abortInitialPage()
+  }, [abortInitialPage, workspaceKey])
 
   const targetIsCurrent = useCallback((candidate: XDriveFileExplorerSearchTarget) => (
     workspaceKeyRef.current === candidate.workspaceKey &&
@@ -225,6 +241,8 @@ export function useXDriveFileExplorerSearch<
     targetSort: XDriveFileExplorerSort,
   ) => {
     const requestID = nextRequestID(key)
+    const controller = new AbortController()
+    initialPageControllerRef.current = controller
     const nextTarget: XDriveFileExplorerSearchTarget = {
       workspaceKey: key,
       query,
@@ -258,15 +276,16 @@ export function useXDriveFileExplorerSearch<
         targetSort,
         0,
         XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,
+        controller.signal,
       )
-      if (!targetIsCurrent(nextTarget)) return
+      if (controller.signal.aborted || !targetIsCurrent(nextTarget)) return
       virtualCollection.primePage(page)
       updateEntry(key, (current) => ({
         ...current,
         groups: page.groups ? [...page.groups] : [],
       }))
     } catch (error) {
-      if (targetIsCurrent(nextTarget)) {
+      if (!controller.signal.aborted && targetIsCurrent(nextTarget)) {
         updateEntry(key, (current) => ({
           ...current,
           error: error instanceof Error ? error.message : String(error),
@@ -274,7 +293,10 @@ export function useXDriveFileExplorerSearch<
         onError(error)
       }
     } finally {
-      if (targetIsCurrent(nextTarget)) {
+      if (initialPageControllerRef.current === controller) {
+        initialPageControllerRef.current = null
+      }
+      if (!controller.signal.aborted && targetIsCurrent(nextTarget)) {
         updateEntry(key, (current) => ({
           ...current,
           loading: false,

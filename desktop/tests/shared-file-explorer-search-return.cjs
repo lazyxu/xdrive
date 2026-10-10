@@ -69,8 +69,8 @@ async function createWorkspace(options = {}) {
     updateDirectory({ crumbs, items: id === 1 ? [folder] : [] })
     return true
   }
-  const loadSearchRange = async (query, filters, grouping, sort, offset, limit) => {
-    const request = { type: 'search', query, filters, grouping, sort, offset, limit }
+  const loadSearchRange = async (query, filters, grouping, sort, offset, limit, signal) => {
+    const request = { type: 'search', query, filters, grouping, sort, offset, limit, signal }
     requests.push(request)
     if (driver.loadSearch) return driver.loadSearch(request)
     return {
@@ -659,4 +659,123 @@ test('M07: re-submitting an identical Search is a newer intent than an older pen
     assert.equal(cleared, false, 'an older completion must not erase the explicitly resubmitted Search')
     assert.equal(h.current.searchState.query, 'same-query')
   } finally { await h.dispose() }
+})
+
+
+function firstPageResult(request) {
+  return {
+    items: [searchResult(1, request.query)],
+    offset: request.offset,
+    limit: request.limit,
+    totalCount: 1,
+    groups: [],
+  }
+}
+
+function cancelledSearchError() {
+  return Object.assign(new Error('Search request aborted'), { name: 'AbortError' })
+}
+
+test('F-iOS27-08E: a new Search aborts the previous first HTTP page and ignores its late success', async () => {
+  const oldPage = deferred()
+  const h = await createWorkspace({
+    loadSearch: (request) => request.query === 'old-query' ? oldPage.promise : firstPageResult(request),
+  })
+  try {
+    await h.run((workspace) => { void workspace.submitSearch('old-query') })
+    const original = h.requests.find((request) => request.type === 'search' && request.query === 'old-query')
+    assert.ok(original?.signal instanceof AbortSignal, 'first Search page must carry the browser AbortSignal')
+    assert.equal(original.signal.aborted, false)
+
+    await h.run((workspace) => workspace.submitSearch('new-query'))
+    assert.equal(original.signal.aborted, true, 'submitting a newer query must cancel old Server work')
+    assert.equal(h.current.searchState.query, 'new-query')
+    assert.equal(h.current.searchReady, true)
+
+    await h.run(async () => {
+      oldPage.resolve(firstPageResult(original))
+      await oldPage.promise
+    })
+    assert.equal(h.current.searchState.query, 'new-query')
+    assert.equal(h.current.searchResults[0].node.name, 'new-query-1.jpg')
+    assert.equal(h.errors.length, 0, 'cancelled first page must not show a failure')
+  } finally {
+    oldPage.resolve({ items: [], totalCount: 0, offset: 0, limit: 200, groups: [] })
+    await h.dispose()
+  }
+})
+
+test('F-iOS27-08E: Clear Search aborts its first Server HTTP request with no error toast', async () => {
+  const pending = deferred()
+  const h = await createWorkspace({ loadSearch: () => pending.promise })
+  try {
+    await h.run((workspace) => { void workspace.submitSearch('clear-me') })
+    const request = h.requests.find((item) => item.type === 'search')
+    assert.ok(request?.signal)
+    assert.equal(request.signal.aborted, false)
+
+    await h.run((workspace) => workspace.clearSearch())
+    assert.equal(request.signal.aborted, true)
+    await h.run(async () => {
+      pending.reject(cancelledSearchError())
+      try { await pending.promise } catch { /* the hook owns the cancellation */ }
+    })
+    assert.equal(h.current.searchResults, null)
+    assert.equal(h.current.searchState.query, '')
+    assert.equal(h.current.searchLoading, false)
+    assert.equal(h.errors.length, 0)
+  } finally {
+    pending.resolve({ items: [], totalCount: 0, offset: 0, limit: 200, groups: [] })
+    await h.dispose()
+  }
+})
+
+test('F-iOS27-08E: changing account aborts first-page Search for the previous workspace', async () => {
+  const pending = deferred()
+  const h = await createWorkspace({ loadSearch: () => pending.promise })
+  try {
+    await h.run((workspace) => { void workspace.submitSearch('account-a-query') })
+    const request = h.requests.find((item) => item.type === 'search')
+    assert.ok(request?.signal)
+
+    await h.replaceAccount('account-b')
+    assert.equal(request.signal.aborted, true, 'old account must not retain active Search work')
+    await h.run(async () => {
+      pending.resolve(firstPageResult(request))
+      await pending.promise
+    })
+    assert.equal(h.current.searchResults, null)
+    assert.equal(h.current.searchState.query, '')
+    assert.equal(h.errors.length, 0)
+  } finally {
+    pending.resolve({ items: [], totalCount: 0, offset: 0, limit: 200, groups: [] })
+    await h.dispose()
+  }
+})
+
+test('F-iOS27-08E: unmount aborts initial Search without affecting existing result state', async () => {
+  const pending = deferred()
+  const h = await createWorkspace({ loadSearch: () => pending.promise })
+  await h.run((workspace) => { void workspace.submitSearch('unmount-query') })
+  const request = h.requests.find((item) => item.type === 'search')
+  assert.ok(request?.signal)
+  await h.dispose()
+  assert.equal(request.signal.aborted, true)
+  pending.reject(cancelledSearchError())
+  try { await pending.promise } catch { /* deliberate abort */ }
+  assert.equal(h.errors.length, 0)
+})
+
+test('F-iOS27-08E: first-page Search signal reaches the existing shared Web REST transport', () => {
+  const web = fs.readFileSync(path.join(repo, 'web', 'src', 'WebFileExplorer.tsx'), 'utf8')
+  const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
+  const mobile = fs.readFileSync(path.join(repo, 'web', 'src', 'MobileFiles.tsx'), 'utf8')
+  const source = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts'), 'utf8')
+  assert.match(source, /XDRIVE_FILE_EXPLORER_SEARCH_PAGE_SIZE,\s*controller\.signal/)
+  assert.match(source, /abortInitialPage\(\)/)
+  assert.match(web, /loadSearchRange: async \(query, filters, searchGrouping, searchSort, offset, limit, signal\)/)
+  assert.match(web, /searchGrouping,\s*signal,\s*\)/)
+  assert.ok(api.includes('`/api/v1/search?${params.toString()}`, { signal })'), 'Search REST transport must pass AbortSignal to fetch')
+  assert.match(web, /compactMobile \? \(\s*<MobileFiles/)
+  assert.ok(!mobile.includes('fetch('), 'Mobile presentation must reuse Web API and Search controller')
 })
