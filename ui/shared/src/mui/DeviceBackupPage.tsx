@@ -7,7 +7,11 @@ import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { XDriveDeviceBackupLocalCreateDialog } from './DeviceBackupLocalCreateDialog'
+import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
+import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
@@ -49,16 +53,31 @@ function platformLabel(platform: string) {
   return names[platform] ?? platform
 }
 
-// No create/trigger/pause/cancel/delete or local-path access is accepted.
-// Web and other Desktops share this intentionally limited presentation.
+// All devices share the strictly redacted read model. The optional local
+// creator exists only in the owning Desktop and is separately Agent-gated;
+// Web/Mobile Web never receive it and cannot mutate or obtain a local Root.
 export function XDriveDeviceBackupPage({
   source,
   initialSourceID,
+  localCreate,
+  targetBrowser,
 }: {
   source?: XDriveDeviceBackupDataSource
   initialSourceID?: number
+  localCreate?: XDriveLocalBackupCreateActions
+  targetBrowser?: XDriveSourceTargetBrowser
 }) {
   const [refreshID, refresh] = useState(0)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [localMessage, setLocalMessage] = useState('')
+  // Late wizard completions must never publish messages into a different
+  // account/server's Device Backup page.
+  const activeSourceRef = useRef(source)
+  activeSourceRef.current = source
+  useEffect(() => {
+    setCreateOpen(false)
+    setLocalMessage('')
+  }, [source])
   // The data source identity is the account/server boundary. Never display
   // another session's cached overview while its replacement request starts.
   const [snapshot, setSnapshot] = useState<OverviewState>({
@@ -173,11 +192,20 @@ export function XDriveDeviceBackupPage({
       title="设备备份"
       subtitle="查看各设备的同步文件夹、进度与历史；所有操作只能在所属设备本机进行。"
       pageActions={source ? (
-        <Button size="small" startIcon={<RefreshRoundedIcon />} onClick={() => refresh((n) => n + 1)}>
-          刷新
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button size="small" startIcon={<RefreshRoundedIcon />} onClick={() => refresh((n) => n + 1)}>
+            刷新
+          </Button>
+          {localCreate && targetBrowser ? (
+            <Button size="small" variant="contained" startIcon={<AddRoundedIcon />}
+              onClick={() => setCreateOpen(true)}>
+              新增本机备份
+            </Button>
+          ) : null}
+        </Stack>
       ) : undefined}
     >
+      {localMessage ? <XDriveStatusAlert tone="neutral">{localMessage}</XDriveStatusAlert> : null}
       {!source ? (
         <XDriveStatusAlert tone="neutral">
           当前 Desktop Agent 暂不支持读取脱敏设备备份数据。请更新 Agent；不能从普通 Source 接口读取异机私有路径。
@@ -296,6 +324,19 @@ export function XDriveDeviceBackupPage({
           </Box>
         </Stack>
       </Box>
+      {localCreate && targetBrowser && source ? (
+        <XDriveDeviceBackupLocalCreateDialog
+          open={createOpen}
+          targetBrowser={targetBrowser}
+          actions={localCreate}
+          onClose={() => setCreateOpen(false)}
+          onFinished={(message) => {
+            if (activeSourceRef.current !== source) return
+            setLocalMessage(message)
+            refresh((n) => n + 1)
+          }}
+        />
+      ) : null}
     </XDriveWorkspaceSurface>
   )
 }
