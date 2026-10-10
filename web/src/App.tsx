@@ -1176,6 +1176,12 @@ function FileManager({
       open={transferPopoverOpen}
       onOpenChange={setTransferPopoverOpen}
       onClearHistory={() => { api.clearTransferHistory('network') }}
+      canCancel={(id) => api.canCancelTransfer(id)}
+      onCancel={(id) => {
+        if (!api.cancelTransfer(id)) {
+          setFeedback({ tone: 'warning', message: '这项传输不能从当前页面取消，或已经结束。' })
+        }
+      }}
       onShowInCloud={(task) => {
         const parentID = task.cloud_parent_id
         if (typeof parentID === 'number' && Number.isSafeInteger(parentID) && parentID > 0) {

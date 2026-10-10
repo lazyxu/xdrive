@@ -411,8 +411,46 @@ export class XDriveApi {
     }
   }
 
+  private cancellableTransferContext(
+    id: string,
+    session: ReturnType<XDriveApi['transferContext']>,
+  ) {
+    const controller = new AbortController()
+    const abortOnSessionChange = () => controller.abort()
+    if (session.signal.aborted) controller.abort()
+    else session.signal.addEventListener('abort', abortOnSessionChange, { once: true })
+    let requestedByUser = false
+    webTransferStore.registerCancellation(id, () => {
+      requestedByUser = true
+      controller.abort()
+    })
+    return {
+      tracking: {
+        signal: controller.signal,
+        check: () => {
+          session.check()
+          if (controller.signal.aborted) throw xDriveTransferAbortError()
+        },
+        api: session.api,
+      },
+      requestedByUser: () => requestedByUser,
+      release: () => {
+        session.signal.removeEventListener('abort', abortOnSessionChange)
+        webTransferStore.unregisterCancellation(id)
+      },
+    }
+  }
+
   transfers() {
     return webTransferStore.snapshot()
+  }
+
+  canCancelTransfer(id: string) {
+    return webTransferStore.canCancel(id)
+  }
+
+  cancelTransfer(id: string) {
+    return webTransferStore.cancel(id)
   }
 
   onTransfers(listener: (items: XDriveTransferTask[]) => void) {
@@ -2156,7 +2194,7 @@ export class XDriveApi {
     onProgress?: (percent: number) => void,
     transferID = '',
   ): Promise<XDriveUploadResult> {
-    const tracking = this.transferContext()
+    const session = this.transferContext()
     const managedExternally = Boolean(transferID)
     const activeTransferID = transferID || webTransferStore.create({
       fileName: file.name,
@@ -2166,6 +2204,8 @@ export class XDriveApi {
       bytesTotal: file.size,
       speedSource: 'client',
     })
+    const owned = managedExternally ? null : this.cancellableTransferContext(activeTransferID, session)
+    const tracking = owned?.tracking ?? session
     webTransferStore.trackNetwork(activeTransferID, 'client')
     const reportProgress = (completed: number) => {
       tracking.check()
@@ -2267,8 +2307,13 @@ export class XDriveApi {
         transferred_bytes: transferredBytes,
       }
     } catch (error) {
-      if (!managedExternally && !tracking.signal.aborted) webTransferStore.fail(activeTransferID, error)
+      if (!managedExternally && !session.signal.aborted) {
+        if (owned?.requestedByUser()) webTransferStore.finishLifecycle(activeTransferID, { state: 'cancelled' })
+        else webTransferStore.fail(activeTransferID, error)
+      }
       throw error
+    } finally {
+      owned?.release()
     }
   }
 
@@ -3101,7 +3146,7 @@ export class XDriveApi {
     cloudParentID?: number,
     cloudNodeID?: number,
   ) {
-    const tracking = this.transferContext()
+    const session = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
       fileName: filename,
       path: filename,
@@ -3110,6 +3155,8 @@ export class XDriveApi {
       kind: 'download',
       speedSource: 'client',
     }) : ''
+    const owned = transferID ? this.cancellableTransferContext(transferID, session) : null
+    const tracking = owned?.tracking ?? session
     const wireID = transferID || networkTransferID
     let transferProgress: ReturnType<typeof xDriveCreateWebDownloadProgressReporter> | null = null
 
@@ -3194,11 +3241,14 @@ export class XDriveApi {
       if (trackTransfer) webTransferStore.complete(transferID, completed, total || completed)
     } catch (error) {
       await xDriveAbortWebDownloadSink(downloadSink, error)
-      if (trackTransfer && !tracking.signal.aborted) {
+      if (trackTransfer && !session.signal.aborted) {
         transferProgress?.flush()
-        webTransferStore.fail(transferID, error)
+        if (owned?.requestedByUser()) webTransferStore.finishLifecycle(transferID, { state: 'cancelled' })
+        else webTransferStore.fail(transferID, error)
       }
       throw error
+    } finally {
+      owned?.release()
     }
   }
 }

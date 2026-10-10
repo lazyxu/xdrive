@@ -100,6 +100,8 @@ class WebTransferStore {
   private sessionKey = ''
   private storageKey = STORAGE_KEY
   private networkSamples = new Map<string, NetworkSample>()
+  // Ephemeral actions are intentionally not persisted with transfer history.
+  private cancellations = new Map<string, () => void>()
 
   setSessionKey(key: string) {
     if (key === this.sessionKey && this.storageKey !== STORAGE_KEY) return
@@ -111,12 +113,50 @@ class WebTransferStore {
     this.sessionKey = key
     this.storageKey = key ? `${STORAGE_KEY}:${encodeURIComponent(key)}` : ''
     this.networkSamples.clear()
+    this.cancellations.clear()
     this.items = key ? loadTransferHistory(this.storageKey) : []
     this.emit()
   }
 
   snapshot() {
     return [...this.items]
+  }
+
+  registerCancellation(id: string, cancel: () => void) {
+    if (!this.items.some((task) => task.id === id)) {
+      throw new Error('传输记录不存在，不能注册取消操作。')
+    }
+    if (this.cancellations.has(id)) {
+      throw new Error('该传输已经注册取消操作。')
+    }
+    this.cancellations.set(id, cancel)
+  }
+
+  unregisterCancellation(id: string) {
+    this.cancellations.delete(id)
+  }
+
+  canCancel(id: string) {
+    const task = this.items.find((item) => item.id === id)
+    return Boolean(task && xDriveTransferActive(task) && task.state !== 'cancelling' &&
+      this.cancellations.has(id))
+  }
+
+  cancel(id: string) {
+    if (!this.canCancel(id)) return false
+    const cancel = this.cancellations.get(id)
+    if (!cancel) return false
+    // A visible cancelling state must never masquerade as an acknowledged
+    // terminal cancellation. The transport owner finalizes it after abort.
+    this.patch(id, (item) => ({
+      ...item,
+      state: 'cancelling',
+      phase: 'finalizing',
+      instant_bytes_per_second: 0,
+      updated_at: nowISO(),
+    }))
+    cancel()
+    return true
   }
 
   subscribe(listener: (items: XDriveTransferTask[]) => void) {

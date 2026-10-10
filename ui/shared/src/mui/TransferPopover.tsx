@@ -10,6 +10,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Button,
   Popover,
   Stack,
   Tab,
@@ -46,6 +47,8 @@ export type XDriveTransferPopoverProps = {
   retryDisabled?: boolean
   onRetry?: (id: string) => void
   onShowInCloud?: (task: XDriveTransferTask) => void
+  canCancel?: (id: string) => boolean
+  onCancel?: (id: string) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -88,6 +91,8 @@ function TransferPopoverSession({
   retryDisabled = false,
   onRetry,
   onShowInCloud,
+  canCancel,
+  onCancel,
   open,
   onOpenChange,
 }: XDriveTransferPopoverProps) {
@@ -292,6 +297,17 @@ function TransferPopoverSession({
                     onRetry(id)
                   } : undefined}
                   />
+                  {onCancel && canCancel?.(node.task.id) ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5 }}>
+                      <Button
+                        size="small"
+                        color="warning"
+                        onClick={() => onCancel(node.task.id)}
+                      >
+                        取消传输
+                      </Button>
+                    </Box>
+                  ) : null}
                 </Box>
               ))}
             </Stack>

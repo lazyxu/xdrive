@@ -871,3 +871,76 @@ test('direct-to-disk archive measures the ZIP stream without adding a second roo
   assert.equal(finished.average_bytes_per_second, 1120, 'final same-tick bytes must be included in the measured average')
   assert.equal(finished.instant_bytes_per_second, 0)
 })
+
+// Transfer Center cancellation tests exercise the real Web API, XHR/stream
+// transport, Store, and session boundary, not a mock cancel button.
+test('cancelling a direct Web upload aborts the in-flight XHR and cannot finalize it', async () => {
+  const browser = createBrowser((url, init) => {
+    if (url === '/api/v1/uploads') {
+      return json({ ...JSON.parse(init.body), id: 'cancel-upload', status: 'uploading', chunk_count: 1, received_chunks: [] })
+    }
+    throw new Error('Aborted upload must never finalize: ' + url)
+  })
+  const api = browser.makeApi()
+  api.setTransferSessionKey('server:cancel-web')
+  const done = api.uploadWithConflictPolicy(11, new File([new Uint8Array(4096)], 'cancel.bin'), 'fail')
+  const xhr = await waitForUpload(browser)
+  const transfer = browser.store.snapshot()[0]
+  assert.equal(api.canCancelTransfer(transfer.id), true)
+  assert.equal(api.cancelTransfer(transfer.id), true)
+  assert.equal(browser.store.snapshot()[0].state, 'cancelling')
+  assert.equal(api.cancelTransfer(transfer.id), false, 'duplicate cancellation cannot execute twice')
+  await assert.rejects(done, (error) => error.name === 'AbortError')
+  assert.equal(xhr.aborted, true, 'the HTTP request must actually abort')
+  assert.equal(browser.store.snapshot()[0].state, 'cancelled')
+  assert.equal(browser.store.snapshot()[0].instant_bytes_per_second, 0)
+  assert.equal(api.canCancelTransfer(transfer.id), false)
+  assert.equal(browser.requests.some((request) => request.url.includes('finalize')), false)
+})
+
+test('cancelling direct-to-disk Web download aborts the source and settles its sink', async () => {
+  let source
+  let abortedOnNetwork = false
+  let sinkAborts = 0
+  const browser = createBrowser((url, init) => {
+    assert.equal(url, '/api/v1/files/7/content')
+    const response = new Response(new ReadableStream({
+      start(controller) { source = controller },
+    }), { headers: { 'Content-Length': '16384' } })
+    init.signal.addEventListener('abort', () => {
+      abortedOnNetwork = true
+      source.error(new DOMException('Transfer canceled', 'AbortError'))
+    }, { once: true })
+    return response
+  })
+  browser.context.showSaveFilePicker = async () => ({ createWritable: async () => ({
+    write: async () => {}, close: async () => {},
+    abort: async () => { sinkAborts += 1 },
+  }) })
+  const api = browser.makeApi()
+  api.setTransferSessionKey('server:cancel-download')
+  const done = api.download({ id: 7, name: 'disk.bin', size: 16384 })
+  await browser.flush()
+  const transfer = browser.store.snapshot()[0]
+  assert.ok(transfer && api.canCancelTransfer(transfer.id))
+  assert.equal(api.cancelTransfer(transfer.id), true)
+  await assert.rejects(done, (error) => error.name === 'AbortError')
+  assert.equal(abortedOnNetwork, true)
+  assert.equal(sinkAborts, 1)
+  assert.equal(browser.store.snapshot()[0].state, 'cancelled')
+})
+
+test('browser handoff downloads stay explicitly non-cancellable in the popover', async () => {
+  const browser = createBrowser((url) => {
+    if (url.endsWith('/download-ticket')) return json({ url: '/signed/file' })
+    throw new Error('Unexpected native handoff request: ' + url)
+  })
+  const api = browser.makeApi()
+  api.setTransferSessionKey('server:native')
+  await api.download({ id: 42, name: 'native.pdf', size: 1234 })
+  const item = browser.store.snapshot()[0]
+  assert.equal(item.state, 'handed_off')
+  assert.equal(api.canCancelTransfer(item.id), false)
+  assert.equal(api.cancelTransfer(item.id), false)
+  assert.equal(browser.downloads.length, 1)
+})
