@@ -71,7 +71,7 @@ const flush = async () => {
 const words = node => Array.isArray(node) ? node.map(words).join('') :
   typeof node === 'string' || typeof node === 'number' ? String(node) :
   node?.children ? words(node.children) : ''
-async function fixture(getJob) {
+async function fixture(getJob, extraActions = {}) {
   const originalSetInterval = globalThis.setInterval
   const originalClearInterval = globalThis.clearInterval
   const interval = { id: Symbol('G07-job-poll-1700'), tick: null, cleared: false }
@@ -84,7 +84,7 @@ async function fixture(getJob) {
     return originalSetInterval(fn, ms, ...rest)
   }
   globalThis.clearInterval = id => {
-    if (id === interval.id) { interval.cleared = true; return }
+    if (id === interval.id) { interval.cleared = true; interval.tick = null; return }
     return originalClearInterval(id)
   }
   const actions = {
@@ -96,6 +96,7 @@ async function fixture(getJob) {
     release: async () => {},
     submitFavorite: async () => job(0),
     getJob,
+    ...extraActions,
   }
   let view
   try {
@@ -182,5 +183,71 @@ test('G07 job polling: one current response still updates progress', async () =>
     await h.poll()
     await h.settle(pending, job(16))
     assert.match(h.text, /已处理 16\s*\/\s*230/)
+  } finally { await h.dispose() }
+})
+
+test('G07 cancel vs poll: accepted Cancel cannot be reverted by older running response in one batch', async () => {
+  const olderPoll = deferred()
+  const acceptedCancel = deferred()
+  let cancelCalls = 0
+  const h = await fixture(() => olderPoll.promise, {
+    cancelJob: () => { cancelCalls++; return acceptedCancel.promise },
+  })
+  const cancelButtons = () => h.view.root.findAll(el =>
+    el.type === 'button' && el.props.children === '取消任务')
+  try {
+    await h.poll()
+    assert.equal(cancelButtons().length, 1, 'test starts with a running job')
+    await act(async () => { cancelButtons()[0].props.onClick(); await flush() })
+    assert.equal(cancelCalls, 1, 'the real Cancel handler made one durable command')
+    // Complete the accepted mutation first and the old in-flight poll second.
+    // Both Promise continuations execute before React commits this update batch.
+    await act(async () => {
+      acceptedCancel.resolve()
+      olderPoll.resolve(job(2, { status: 'running' }))
+      await flush()
+    })
+    assert.equal(cancelButtons().length, 0,
+      'an older pre-Cancel poll must not restore the Cancel button after accepted cancellation')
+    assert.match(h.text, /正在取消/,
+      'accepted Cancel must remain visible until a newer authoritative poll')
+  } finally { await h.dispose() }
+})
+
+test('G07 cancel vs poll: obsolete poll failure cannot display error after accepted Cancel', async () => {
+  const olderPoll = deferred()
+  const acceptedCancel = deferred()
+  const h = await fixture(() => olderPoll.promise, {
+    cancelJob: () => acceptedCancel.promise,
+  })
+  try {
+    await h.poll()
+    const cancelButton = h.view.root.findAll(el =>
+      el.type === 'button' && el.props.children === '取消任务')[0]
+    assert.ok(cancelButton)
+    await act(async () => { cancelButton.props.onClick(); await flush() })
+    await act(async () => {
+      acceptedCancel.resolve()
+      olderPoll.reject(new Error('obsolete pre-cancel poll failure'))
+      await flush()
+    })
+    assert.doesNotMatch(h.text, /obsolete pre-cancel poll failure/,
+      'a poll initiated before accepted Cancel must not surface its obsolete error')
+    assert.match(h.text, /正在取消/)
+  } finally { await h.dispose() }
+})
+
+test('G07 cancel control: a single accepted Cancel without an in-flight poll remains correct', async () => {
+  const h = await fixture(() => Promise.resolve(job(0)), {
+    cancelJob: async () => {},
+  })
+  try {
+    const cancelButton = h.view.root.findAll(el =>
+      el.type === 'button' && el.props.children === '取消任务')[0]
+    assert.ok(cancelButton)
+    await act(async () => { cancelButton.props.onClick(); await flush() })
+    assert.match(h.text, /正在取消/)
+    assert.equal(h.view.root.findAll(el =>
+      el.type === 'button' && el.props.children === '取消任务').length, 0)
   } finally { await h.dispose() }
 })
