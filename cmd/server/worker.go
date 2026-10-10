@@ -161,6 +161,12 @@ func runWorker(args []string) error {
 		return runImmediate(ctx)
 	}
 
+	// The standalone Pull Worker advertises only its own liveness. It does
+	// not impersonate the Server's background scheduler or expose Source data.
+	startSourceWorkerPresence(ctx, db, sourceWorkerPresenceConfig{
+		scanInterval: interval, pollInterval: pollInterval, maxConcurrency: concurrency,
+	})
+
 	wakeups := sourceRunWakeups(ctx, cfg.DatabaseURL)
 
 	slog.Info("source_pull_worker_started",
