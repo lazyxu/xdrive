@@ -82,6 +82,13 @@ test('iOS 27 Mobile Gallery keeps top actions and gives Library/Collections sepa
   assert.ok(find(view, 'data-xdrive-mobile-gallery-actions'))
   assert.ok(find(view, 'data-xdrive-mobile-gallery-bottom'))
   assert.ok(find(view, 'data-xdrive-mobile-gallery-primary-tabs'))
+  const timeDock = find(view, 'data-xdrive-mobile-gallery-time-scale')
+  assert.ok(timeDock)
+  assert.equal(timeDock.props.sx.position, 'fixed', 'native Years/Months/All is not a top sticky toolbar')
+  assert.equal(timeDock.props.sx.bottom, 'calc(64px + env(safe-area-inset-bottom, 0px))')
+  assert.equal(timeDock.props.sx.minHeight, 52)
+  assert.equal(timeDock.props.sx.zIndex, 7)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-bottom').props.sx.bottom, 0)
   assert.ok(find(view, 'data-xdrive-mobile-gallery-select'))
   const combined = find(view, 'data-xdrive-mobile-gallery-sort-filter')
   assert.ok(combined, 'native-style sort/filter shares a single header action')
@@ -349,4 +356,60 @@ test('P0-3h Collections transition removes stale Library View Options before ano
   } finally {
     if(view) await act(async () => { view.unmount() })
   }
+})
+
+
+test('P0-3i floating library scale remains one shared view controller across tab and selection changes', async () => {
+  const scales = []
+  const make = overrides => React.createElement(MobileChrome, props({
+    canGoBack: false,
+    onTimeScale: next => scales.push(next),
+    ...overrides,
+  }))
+  let view
+  try {
+    await act(async () => { view = renderer.create(make({primaryTab:'library',showCollection:true})) })
+    const scalesIn = () => view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-scale'] !== undefined)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-time-scale']).length,1)
+    assert.deepEqual(scalesIn().map(x => x.props['data-xdrive-mobile-gallery-scale']), ['year','month','all'])
+    assert.deepEqual(scalesIn().map(x => x.props.sx.minHeight), [44,44,44])
+    await act(async () => {
+      for (const option of scalesIn()) option.props.onClick()
+    })
+    assert.deepEqual(scales, ['year','month','all'],
+      'the floating buttons must still invoke exactly the existing Gallery onTimeScale')
+    await act(async () => {
+      view.update(make({primaryTab:'collections',showCollection:false}))
+    })
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-time-scale']).length,0,
+      'Collections overview must not retain orphaned library time controls')
+    await act(async () => {
+      view.update(make({primaryTab:'library',showCollection:true,selectionMode:true}))
+    })
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-time-scale']).length,0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-bottom']).length,0,
+      'selection owns its own toolbar without being covered by library chrome')
+    await act(async () => {
+      view.update(make({primaryTab:'library',showCollection:true,selectionMode:false,timeScale:'month'}))
+    })
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-time-scale']).length,1)
+    assert.equal(scalesIn().filter(x => x.props['aria-pressed'] === true)[0]?.props['data-xdrive-mobile-gallery-scale'],'month')
+  } finally {
+    if (view) await act(async () => { view.unmount() })
+  }
+})
+
+test('P0-3i bottom time controls add safe scroll clearance without forking Web range or App Frame', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const chrome = read(sourcePath)
+  const appHeader = read('ui/shared/src/mui/MobileAppHeader.tsx')
+  assert.match(gallery, /!mobileCollectionsOverview && section === 'library' && showPhotoCollection/)
+  assert.match(gallery, /calc\(140px \+ env\(safe-area-inset-bottom, 0px\)\)/)
+  assert.match(chrome, /bottom: 'calc\(64px \+ env\(safe-area-inset-bottom, 0px\)\)'/)
+  assert.equal((chrome.match(/data-xdrive-mobile-gallery-time-scale/g) || []).length,1)
+  assert.match(gallery, /useXDriveVirtualCollection/)
+  assert.match(gallery, /<MediaVirtualTileGrid/)
+  assert.match(gallery, /<MediaVirtualTimeline/)
+  assert.match(appHeader, /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+  assert.doesNotMatch(chrome, /listItemRange\(|fetch\(|new.*DataSource/)
 })
