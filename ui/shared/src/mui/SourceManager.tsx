@@ -87,6 +87,7 @@ export interface XDriveSourceTargetBrowser {
 
 export interface XDriveSourceManagerProps {
   adapter: XDriveSourceManagerAdapter
+  directionFilter?: 'pull'
   initialSourceID?: number
   defaultTargetNodeID?: number
   defaultTargetLabel: string
@@ -175,6 +176,7 @@ function emptySourceSettingsValues(): XDriveSourceSettingsValues {
 
 export function XDriveSourceManager({
   adapter,
+  directionFilter,
   initialSourceID,
   defaultTargetNodeID,
   defaultTargetLabel,
@@ -233,7 +235,7 @@ export function XDriveSourceManager({
   const [settingsConnectorLoading, setSettingsConnectorLoading] = useState(false)
   const [settingsConnectorError, setSettingsConnectorError] = useState('')
   const settingsSessionRef = useRef(0)
-  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(initialCreateSourceValues)
+  const [createValues, setCreateValues] = useState<XDriveSourceCreateValues>(() => initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
   const [createNameError, setCreateNameError] = useState('')
   const [createSpacesError, setCreateSpacesError] = useState('')
   const [createRootsError, setCreateRootsError] = useState('')
@@ -260,7 +262,9 @@ export function XDriveSourceManager({
     if (!silent) setLoading(true)
     try {
       const overview = await adapter.sourceOverview()
-      const next: ExternalSourceRow[] = overview.map((item) => ({
+      const next: ExternalSourceRow[] = overview
+        .filter((item) => directionFilter !== 'pull' || item.source.direction === 'pull')
+        .map((item) => ({
         source: item.source,
         latestRun: item.latest_run,
         credential: item.credential,
@@ -274,7 +278,7 @@ export function XDriveSourceManager({
     } finally {
       if (!silent) setLoading(false)
     }
-  }, [adapter, onError])
+  }, [adapter, directionFilter, onError])
 
   const loadRunFailures = useCallback(async (sourceID: number, runID: string, page = 1) => {
     const nextPage = Math.max(1, Math.trunc(page))
@@ -432,7 +436,7 @@ export function XDriveSourceManager({
   }
 
   const openCreate = async () => {
-    setCreateValues(initialCreateSourceValues())
+    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -455,6 +459,7 @@ export function XDriveSourceManager({
 
   const changeCreatePreset = (preset: ExternalSourceCreatePreset) => {
     const option = externalSourceCreateOption(preset)
+    if (directionFilter === 'pull' && option.direction !== 'pull') return
     const defaults = externalSourceDefaults(option.kind, option.direction)
     setCreateValues((current) => ({
       ...current,
@@ -534,6 +539,10 @@ export function XDriveSourceManager({
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
+    if (directionFilter === 'pull' && option.direction !== 'pull') {
+      setErrorDialog({ title: '无法添加同步文件夹', message: '远程拉取只支持 Pull 同步文件夹。' })
+      return
+    }
     const roots = normalizeSynologyFileRoots(values.roots ?? [])
     const spacesError = option.kind === 'synology_photos' && profile.credential === 'synology_dsm' && !(values.spaces?.length)
       ? '至少选择一个照片空间'
@@ -647,7 +656,7 @@ export function XDriveSourceManager({
       ? '群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹'
       : '同步文件夹已添加')
     setCreateOpen(false)
-    setCreateValues(initialCreateSourceValues())
+    setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
     setCreateNameError('')
     setCreateSpacesError('')
     setCreateRootsError('')
@@ -1158,6 +1167,8 @@ export function XDriveSourceManager({
   return (
     <>
       <XDriveSourceManagerListPage
+        title={directionFilter === 'pull' ? '远程拉取' : '同步文件夹'}
+        subtitle={directionFilter === 'pull' ? '由 xDrive Server 管理远程连接、扫描和下载。' : undefined}
         rows={rows}
         loading={loading}
         failedItemsLoading={failedItemsLoading}
@@ -1212,6 +1223,7 @@ export function XDriveSourceManager({
       />
 
       <XDriveSourceCreateDialog
+        directionFilter={directionFilter}
         open={createOpen}
         allowLocalPush={Boolean(adapter.authorizeLocalFolder)}
         creating={creating}
@@ -1232,11 +1244,11 @@ export function XDriveSourceManager({
         onRequestClose={() => {
           if (creating) return
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues())
+          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
         }}
         onCancel={() => {
           setCreateOpen(false)
-          setCreateValues(initialCreateSourceValues())
+          setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
           setCreateNameError('')
           setCreateSpacesError('')
           setCreateRootsError('')

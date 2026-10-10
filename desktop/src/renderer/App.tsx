@@ -69,6 +69,7 @@ import {
   XDriveStatusAlert,
   XDriveStatusBadge,
   XDriveSourceManager,
+  XDriveDeviceBackupPage,
   useXDriveCloudFilesController,
   useXDriveFileExplorerDeleteController,
   useXDriveFileOperationLifecycle,
@@ -841,6 +842,12 @@ export default function App({
       }
       if (target === 'transfers') {
         setTransferPopoverOpen(true)
+        return
+      }
+      // Old tray/main navigation still sends "sources"; the new two-App
+      // architecture routes that legacy action to the full Pull manager.
+      if (target === 'sources') {
+        setView('remote-pull')
         return
       }
       setView(target)
@@ -2170,9 +2177,12 @@ export default function App({
           />
         )}
 
-        {view === 'sources' && (
+        {view === 'device-backup' && <XDriveDeviceBackupPage />}
+
+        {view === 'remote-pull' && (
           agent.hello?.capabilities.includes('external-sources') ? (
             <XDriveSourceManager
+              directionFilter="pull"
               adapter={sourceManagerAdapter}
               defaultTargetLabel="我的文件"
               defaultTargetPath=""
@@ -2183,7 +2193,7 @@ export default function App({
               )}
             />
           ) : (
-            <XDriveStatePanel message="当前 xdrive-agent 不支持同步文件夹，请更新客户端核心组件。" />
+            <XDriveStatePanel message="当前 xdrive-agent 不支持远程拉取，请更新客户端核心组件。" />
           )
         )}
 

@@ -3,7 +3,8 @@ import type { XDriveWorkspaceContentPresentation } from './WorkspaceContent'
 export const XDRIVE_CORE_WORKSPACE_KEYS = [
   'files',
   'gallery',
-  'sources',
+  'device-backup',
+  'remote-pull',
   'transfers',
   'global-tasks',
   'local-storage',

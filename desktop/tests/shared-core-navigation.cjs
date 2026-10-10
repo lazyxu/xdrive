@@ -31,7 +31,8 @@ test('shared core navigation owns common destinations and capability-gates local
   const labels = [
     "label: '文件'",
     "label: '图库'",
-    "label: '同步文件夹'",
+    "label: '设备备份'",
+    "label: '远程拉取'",
     "label: '任务'",
     "label: '本地存储'",
     "label: '云端存储'",

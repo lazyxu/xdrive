@@ -20,12 +20,14 @@ const sourceManager = read('ui', 'shared', 'src', 'mui', 'SourceManager.tsx')
 const gallery = read('ui', 'shared', 'src', 'mui', 'MediaGallery.tsx')
 const docs = read('docs', 'web-app-runtime.md')
 
-test('Web App Registry contains the sixteen registered applications', () => {
+test('Web App Registry contains the eighteen programs including legacy sync-folders route', () => {
   for (const id of [
     'overview',
     'files',
     'gallery',
     'sync-folders',
+    'device-backup',
+    'remote-pull',
     'tasks',
     'local-storage',
     'cloud-storage',
@@ -122,10 +124,11 @@ test('Text/Code Viewer is read-only textarea with common source/config allowlist
 test('optional deep-link arguments are consumed by their owning apps', () => {
   assert.ok(app.includes("initialDirectoryID={route.app === 'files' ? route.params.dir : undefined}"))
   assert.ok(app.includes("initialSection={route.app === 'gallery'"))
-  assert.ok(app.includes("initialSourceID={route.app === 'sync-folders' ? route.params.source : undefined}"))
+  assert.ok(app.includes("initialSourceID={route.app === 'remote-pull' ? route.params.source : undefined}"))
   assert.ok(app.includes("focusUserID={route.app === 'admin-users' ? route.params.user : undefined}"))
   assert.ok(app.includes("focusSection={route.app === 'admin-storage' ? route.params.section : undefined}"))
   assert.ok(app.includes("route.app === 'admin-storage' && route.params.task"))
+  assert.ok(app.includes("source.direction === 'push' ? 'device-backup' : 'remote-pull'"))
   assert.ok(sourceManager.includes('onSelectedSourceChange?.(row.source.id)'))
   assert.ok(gallery.includes('routeSectionAppliedRef'))
   assert.ok(gallery.includes("const nextSection = initialSection ?? 'library'"))
@@ -134,7 +137,7 @@ test('optional deep-link arguments are consumed by their owning apps', () => {
 
 test('Web App Runtime design document records the navigation and platform boundary', () => {
   for (const token of [
-    '16 个 Web 程序',
+    '18 个 Web 程序',
     '浏览器历史只负责程序级跳转',
     'FileExplorer 自己维护目录与内部标签历史',
     'Desktop',

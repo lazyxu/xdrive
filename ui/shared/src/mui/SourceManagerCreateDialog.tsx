@@ -75,6 +75,7 @@ export function XDriveSourceCreateDialog({
   open,
   creating,
   allowLocalPush = false,
+  directionFilter,
   values,
   nameError,
   spacesError,
@@ -104,6 +105,7 @@ export function XDriveSourceCreateDialog({
   open: boolean
   creating: boolean
   allowLocalPush?: boolean
+  directionFilter?: 'pull'
   values: XDriveSourceCreateValues
   nameError: string
   spacesError: string
@@ -232,6 +234,7 @@ export function XDriveSourceCreateDialog({
         <MuiBox id="external-source-create-form" component="form" onSubmit={onSubmit}>
           <Stack spacing={2}>
             <XDriveSourcePresetField
+              directionFilter={directionFilter}
               allowLocalPush={allowLocalPush}
               value={values.preset}
               onChange={onPresetChange}

@@ -13,7 +13,9 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
   overview: { id: 'overview', title: '主页', presentation: 'workspace', workspaceKey: 'overview', sidebar: true },
   files: { id: 'files', title: '文件', presentation: 'workspace', workspaceKey: 'files', sidebar: true },
   gallery: { id: 'gallery', title: '图库', presentation: 'workspace', workspaceKey: 'gallery', sidebar: true },
-  'sync-folders': { id: 'sync-folders', title: '同步文件夹', presentation: 'workspace', workspaceKey: 'sources', sidebar: true },
+  'sync-folders': { id: 'sync-folders', title: '同步文件夹', presentation: 'workspace', sidebar: false }, // compatibility route
+  'device-backup': { id: 'device-backup', title: '设备备份', presentation: 'workspace', workspaceKey: 'device-backup', sidebar: true },
+  'remote-pull': { id: 'remote-pull', title: '远程拉取', presentation: 'workspace', workspaceKey: 'remote-pull', sidebar: true },
   tasks: { id: 'tasks', title: '任务', presentation: 'workspace', workspaceKey: 'transfers', sidebar: true },
   'local-storage': { id: 'local-storage', title: '本地存储', presentation: 'workspace', workspaceKey: 'local-storage', sidebar: true },
   'cloud-storage': { id: 'cloud-storage', title: '云端存储', presentation: 'workspace', workspaceKey: 'cloud-storage', sidebar: true },
@@ -29,6 +31,7 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
 }
 
 export function xDriveWebAppWorkspaceKey(app: XDriveWebAppID, params?: XDriveWebAppRoute['params']) {
+  if (app === 'sync-folders') return 'remote-pull' // legacy route resolved by persisted direction
   if (app === 'tasks' && params && 'scope' in params && params.scope === 'global') return 'global-tasks'
   return XDRIVE_WEB_APPS[app].workspaceKey
 }

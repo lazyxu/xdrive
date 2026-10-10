@@ -245,7 +245,8 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   for (const icon of [
     'CloudOutlinedIcon',
     'PhotoLibraryRoundedIcon',
-    'CloudSyncRoundedIcon',
+    'BackupRoundedIcon',
+    'CloudDownloadRoundedIcon',
     'AssignmentOutlinedIcon',
     'StorageRoundedIcon',
     'CloudRoundedIcon',

@@ -6,7 +6,9 @@ export const XDRIVE_WEB_APP_IDS = [
   'overview',
   'files',
   'gallery',
-  'sync-folders',
+  'sync-folders', // legacy hashes only; no visible navigation item
+  'device-backup',
+  'remote-pull',
   'tasks',
   'local-storage',
   'cloud-storage',
@@ -87,6 +89,8 @@ export interface XDriveWebAppLaunchMap {
   files: { dir?: number }
   gallery: { section?: XDriveWebGallerySection }
   'sync-folders': { source?: number }
+  'device-backup': { source?: number }
+  'remote-pull': { source?: number }
   tasks: { scope?: 'mine' | 'global'; task?: string }
   'local-storage': Record<string, never>
   'cloud-storage': Record<string, never>
@@ -148,6 +152,8 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
       return { app, params: { section } }
     }
     case 'sync-folders':
+    case 'device-backup':
+    case 'remote-pull':
       return { app, params: { source: positiveInteger(query.get('source')) } }
     case 'tasks': {
       const scopeValue = query.get('scope')

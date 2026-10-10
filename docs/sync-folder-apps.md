@@ -63,9 +63,9 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L01 | source type, device credentials, Root approval & binding | merged #1204/#1208/#1214/#1216/#1219/#1223 |
 | L02 | Windows/Linux bounded metadata scan, native identity, crash-safe journal | merged #1227/#1235/#1240 |
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
-| Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | this documentation PR; not merged until CI |
-| UI P0-A | two app routes/sidebar, Push/Pull controllers, migrate deep links and Pull parity | not implemented |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | not implemented |
+| Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
+| UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 proposed; full Push read UI and controller separation still pending |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; device mutation guards and spoof tests pending |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | partial prior picker; rest not implemented |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -74,9 +74,14 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 Do not block unrelated Race/Gallery/FileExplorer PRs for this UI task. Related PR branches remain exactly one work commit per fixed base; merge only after their exact-head CI, then clean branches via `.github/workflows/cleanup-merged-branches.yml`.
 
 
-## P0-B1 progress: owner-scoped safe backup read API (pending CI)
+## P0-B1 progress: owner-scoped safe backup read API (merged #1270)
 
 This phase introduces two **read-only** endpoints, `GET /api/v1/device-backups` and `GET /api/v1/device-backups/:sourceID/runs`. Both scope records to the logged-in owner and bind only actual `local_folder` Push Source records to registered devices; NAS is still a placeholder. The response is a narrow allowlist with safe folder names, Server-resolved cloud target, numeric real progress and paginated history. It never serializes Root fingerprints, Agent tokens, filesystem paths, Source ignore rules/checkpoints, or unrestricted failure details; legacy registered devices without an authenticated heartbeat report `connection_state=unknown` rather than a fictitious online status. It is the data foundation for Web and other-Desktop read-only scope B, **not** proof that the UI exists or that Source mutation endpoints are locked down. Requires PostgreSQL/SQLite-backed CI, owner isolation, pagination/redaction and Pull regression gates before merge.
+
+
+## UI P0-A1 progress: separate applications (pending full PR CI)
+
+Shared navigation now has two *top-level* destinations, `设备备份` and `远程拉取`; the old `sync-folders` Web hash is retained only as a compatibility route, resolving persisted Source `direction` by ID. Pull UI filters to `direction=pull`, including creation presets, without disabling existing Yike/DSM credential and scan controls. The Push app is deliberately a **non-operational placeholder** for local folder execution and NAS `待支持` while the server's read-only projection is wired into Web/Desktop adapters in the next phase. This stage does not let a foreign device (or a browser) configure, start or cancel a Push. It does **not** satisfy the complete B-scope viewer nor Server mutation fencing yet.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 
