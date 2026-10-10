@@ -5,6 +5,8 @@ import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
   XDriveBaiduMapAKReveal,
+  XDrivePhotoAutoConfig,
+  XDrivePhotoAutoUpdate,
   XDriveGeoNamesConfig,
   XDriveGeoNamesReloadResult,
   XDriveGeoNamesUpdate,
@@ -24,6 +26,8 @@ export type XDriveServiceDependenciesPort = {
   loadBaiduMapConfig?: () => Promise<XDriveBaiduMapAdminConfig>
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
+  loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
+  savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
   loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
   saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
@@ -115,6 +119,12 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesBusy, setGeoNamesBusy] = useState(false)
   const [geoNamesError, setGeoNamesError] = useState('')
   const [geoNamesNotice, setGeoNamesNotice] = useState('')
+  const photoPolicyEpochRef = useRef(0)
+  const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
+  const [photoAutoDraft, setPhotoAutoDraft] = useState(true)
+  const [photoPolicyBusy, setPhotoPolicyBusy] = useState(false)
+  const [photoPolicyError, setPhotoPolicyError] = useState('')
+  const [photoPolicyNotice, setPhotoPolicyNotice] = useState('')
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -138,6 +148,12 @@ export function XDriveServiceDependenciesPage({
     let active = true
     ++revealEpochRef.current
     ++geoNamesEpochRef.current
+    ++photoPolicyEpochRef.current
+    setPhotoPolicy(null)
+    setPhotoAutoDraft(true)
+    setPhotoPolicyBusy(false)
+    setPhotoPolicyError('')
+    setPhotoPolicyNotice('')
     setBaiduReveal(null)
     setRevealingAK(false)
     setGeoNamesBusy(false)
@@ -154,6 +170,15 @@ export function XDriveServiceDependenciesPage({
     setBaiduAK('')
     setBaiduError('')
     setBaiduNotice('')
+    if (source.loadPhotoAutoConfig) {
+      void source.loadPhotoAutoConfig().then((policy) => {
+        if (!active) return
+        setPhotoPolicy(policy)
+        setPhotoAutoDraft(policy.auto_enabled)
+      }).catch(() => {
+        if (active) setPhotoPolicyError('无法读取照片智能分析策略，请检查 Server 或更新客户端。')
+      })
+    }
     if (source.loadBaiduMapConfig) {
       void source.loadBaiduMapConfig().then((config) => {
         if (!active) return
@@ -184,6 +209,7 @@ export function XDriveServiceDependenciesPage({
       active = false
       ++revealEpochRef.current
       ++geoNamesEpochRef.current
+      ++photoPolicyEpochRef.current
     }
   }, [source, refreshID])
 
@@ -306,6 +332,32 @@ export function XDriveServiceDependenciesPage({
     }
   }
 
+  const savePhotoAutoPolicy = async () => {
+    if (!photoPolicy?.editable || !source.savePhotoAutoConfig || photoPolicyBusy) return
+    const epoch = ++photoPolicyEpochRef.current
+    setPhotoPolicyBusy(true)
+    setPhotoPolicyError('')
+    setPhotoPolicyNotice('')
+    try {
+      const next = await source.savePhotoAutoConfig({
+        revision: photoPolicy.revision,
+        auto_enabled: photoAutoDraft,
+      })
+      if (epoch !== photoPolicyEpochRef.current) return
+      setPhotoPolicy(next)
+      setPhotoAutoDraft(next.auto_enabled)
+      setPhotoPolicyNotice(next.apply_state === 'applied'
+        ? '设置已持久化并审计，当前 Server 的新自动分析任务立即遵循此策略；其他实例将定期同步。'
+        : '设置已保存，但当前 Server 尚未确认生效，请刷新状态。')
+    } catch (err) {
+      if (epoch === photoPolicyEpochRef.current) {
+        setPhotoPolicyError(err instanceof Error ? err.message : '保存失败，当前运行策略未确认更新。')
+      }
+    } finally {
+      if (epoch === photoPolicyEpochRef.current) setPhotoPolicyBusy(false)
+    }
+  }
+
   const checkedAt = snapshot?.checked_at
     ? new Date(snapshot.checked_at).toLocaleString()
     : ''
@@ -352,6 +404,50 @@ export function XDriveServiceDependenciesPage({
               <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 {items.map((service) => <ServiceRow key={service.id} service={service} />)}
               </Paper>
+              {group.id === 'intelligence' && (
+                <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
+                  <Stack spacing={1.5}>
+                    <Typography variant="subtitle2" fontWeight={700}>全局自动分析调度</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      仅控制新的人脸检测、人物聚类、动物/物体与 OCR、语义分析自动任务。
+                      已运行的任务正常完成；手动重分析和独立 GeoNames 地名解析不受影响。
+                      此开关不会安装、启动或停止 AI 容器。
+                    </Typography>
+                    {photoPolicy ? (
+                      <Typography variant="body2" color={photoPolicy.apply_state === 'pending' ? 'warning.main' : 'text.secondary'}>
+                        期望状态：{photoPolicy.auto_enabled ? '自动分析开启' : '自动分析暂停'}
+                        {' · '}当前实例：{photoPolicy.effective_auto_enabled ? '开启' : '暂停'}
+                        {' · '}修订号：{photoPolicy.revision}
+                        {' · '}{photoPolicy.apply_state === 'applied' ? '当前实例已生效' : '当前实例待生效'}
+                        {' · '}来源：{photoPolicy.source === 'saved' ? '管理员持久化设置' : '默认策略'}
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        当前 Server/Agent 暂不支持管理全局自动分析策略；请检查版本。
+                      </Typography>
+                    )}
+                    <FormControlLabel
+                      label="自动安排照片智能分析"
+                      control={<Switch checked={photoAutoDraft}
+                        onChange={(_event, value) => setPhotoAutoDraft(value)}
+                        disabled={!photoPolicy?.editable || !source.savePhotoAutoConfig || photoPolicyBusy} />}
+                    />
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Button variant="contained" size="small"
+                        disabled={!photoPolicy?.editable || !source.savePhotoAutoConfig || photoPolicyBusy ||
+                          photoPolicy.auto_enabled === photoAutoDraft}
+                        onClick={() => { void savePhotoAutoPolicy() }}>
+                        {photoPolicyBusy ? '正在保存…' : '保存并应用到当前实例'}
+                      </Button>
+                      <Typography variant="caption" color="text.secondary">
+                        模型和部署资源仍由受控部署管理；其他 Server 实例最多在下一轮策略刷新后应用。
+                      </Typography>
+                    </Stack>
+                    {photoPolicyError && <XDriveStatusAlert tone="bad">{photoPolicyError}</XDriveStatusAlert>}
+                    {photoPolicyNotice && <XDriveStatusAlert tone="good">{photoPolicyNotice}</XDriveStatusAlert>}
+                  </Stack>
+                </Paper>
+              )}
               {group.id === 'location' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>

@@ -485,6 +485,23 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminPhotoAutoConfig = {
+  auto_enabled: boolean
+  effective_auto_enabled: boolean
+  revision: number
+  effective_revision: number
+  source: 'default' | 'saved'
+  apply_state: 'applied' | 'pending'
+  editable: boolean
+  requires_restart: boolean
+  updated_at?: string
+}
+
+export type AgentAdminPhotoAutoUpdate = {
+  revision: number
+  auto_enabled: boolean
+}
+
 export type AgentAdminGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
@@ -2773,6 +2790,13 @@ export class AgentIPCClient {
 
   cloudRevealAdminBaiduMapAK(revision: number) {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminPhotoAutoConfig() {
+    return this.request<AgentAdminPhotoAutoConfig>('GET', '/v1/cloud/admin-photo-intelligence')
+  }
+  cloudSetAdminPhotoAutoConfig(input: AgentAdminPhotoAutoUpdate) {
+    return this.request<AgentAdminPhotoAutoConfig>('PUT', '/v1/cloud/admin-photo-intelligence', input)
   }
 
   cloudAdminGeoNamesConfig() {

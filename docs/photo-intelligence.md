@@ -156,6 +156,12 @@ The canonical persistence/search contract is:
 The in-memory index is an implementation detail and may later become HNSW only behind
 the same contract when measured large-library workloads justify it.
 
+## Global automatic analysis scheduling policy (P1-C1)
+
+The administrator-only **服务与依赖** page may pause new automatic face detection, person clustering, visual/OCR, and semantic-analysis tasks without uninstalling or stopping the shared Photo Intelligence container. Desired policy is persisted with revision-guarded audited writes; this Server hot-applies after commit and other instances reconcile at most every 30 seconds. Previously queued automatic tasks re-check the policy before running, while already running analyses finish. Explicit user/admin reanalysis continues to work. Place labels/GeoNames have an independent lifecycle. Pausing does not delete persisted derived state or per-user data and never cancels durable upload, download, synchronization or deletion tasks.
+
+The switch is not a container toggle, model installer, per-model GPU/CPU resource slider or assertion of replica-wide configuration. Future changes to deployment resources require a restricted Host Manager and health-verified lifecycle.
+
 ## Face/person analysis policy
 
 Face analysis is optional and disabled unless an implementation is explicitly enabled by the product configuration.

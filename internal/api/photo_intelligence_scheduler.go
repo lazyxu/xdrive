@@ -98,6 +98,12 @@ func (s *Server) StartPhotoIntelligence(ctx context.Context) {
 		return
 	}
 
+	// Do not dispatch new automatic jobs with unreadable startup policy.
+	if err := s.refreshPhotoAutoPolicy(ctx); err != nil {
+		s.photoAutoPolicy.Store(&photoAutoRuntime{AutoEnabled: false})
+		slog.Warn("photo_intelligence_policy_initial_read_failed", "error", err)
+	}
+
 	s.photoIntelligenceMu.Lock()
 	if s.photoIntelligenceOwners == nil {
 		s.photoIntelligenceOwners = make(map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState)
@@ -172,6 +178,10 @@ func (s *Server) runPhotoIntelligenceReconcileLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if err := s.refreshPhotoAutoPolicy(ctx); err != nil {
+				slog.Warn("photo_intelligence_policy_refresh_failed", "error", err)
+				continue
+			}
 			s.schedulePhotoIntelligenceCandidates(ctx)
 		}
 	}
@@ -231,6 +241,9 @@ func (s *Server) schedulePhotoIntelligenceCandidates(ctx context.Context) {
 	}
 
 	for _, source := range sources {
+		if !s.photoAutoAllows(source.kind, background.TriggerReconcile) {
+			continue // Pausing automatic work also skips expensive candidate scans.
+		}
 		owners, err := source.owners(ctx, photoIntelligenceOwnerScanLimit)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
@@ -311,6 +324,9 @@ func (s *Server) requestPhotoIntelligenceOwner(
 ) error {
 	if ownerID == 0 || s.BackgroundScheduler == nil {
 		return errPhotoIntelligenceUnavailable
+	}
+	if !s.photoAutoAllows(kind, trigger) {
+		return nil // Paused automatic work is deliberately not submitted.
 	}
 	if !s.photoIntelligenceAvailable(kind) {
 		return errPhotoIntelligenceUnavailable
@@ -432,6 +448,19 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 		),
 		HeartbeatInterval: backgroundOwnerLeaseHeartbeatInterval,
 		Run: func(taskCtx context.Context) error {
+			// Previously queued automatic work is skipped after disablement.
+			// A manual promotion of the same owner task still runs.
+			s.photoIntelligenceMu.Lock()
+			activeTrigger := trigger
+			if state := s.photoIntelligenceOwners[key]; state != nil &&
+				state.generation == generation {
+				activeTrigger = state.currentTrigger
+			}
+			s.photoIntelligenceMu.Unlock()
+			if !s.photoAutoAllows(key.Kind, activeTrigger) {
+				s.finishPhotoIntelligenceOwner(key, generation, 0, nil)
+				return nil
+			}
 			if _, err := s.consumePhotoIntelligenceReanalyzeIntent(
 				taskCtx,
 				key.Kind,

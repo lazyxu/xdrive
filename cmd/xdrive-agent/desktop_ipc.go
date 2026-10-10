@@ -598,6 +598,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence", h.cloudAdminPhotoAuto)
+	mux.HandleFunc("PUT /v1/cloud/admin-photo-intelligence", h.cloudSetAdminPhotoAuto)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
 	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
@@ -1800,6 +1802,52 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+type desktopIPCAdminPhotoAutoController interface {
+	CloudAdminPhotoAutoConfig(context.Context) (client.AdminPhotoAutoConfig, error)
+	CloudSetAdminPhotoAutoConfig(context.Context, client.AdminPhotoAutoUpdate) (client.AdminPhotoAutoConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminPhotoAuto(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoAutoController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_auto_unavailable", "Photo Intelligence policy is unsupported")
+		return
+	}
+	result, err := provider.CloudAdminPhotoAutoConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudSetAdminPhotoAuto(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoAutoController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_auto_unavailable", "Photo Intelligence policy is unsupported")
+		return
+	}
+	var input struct {
+		Revision    *uint64 `json:"revision"`
+		AutoEnabled *bool   `json:"auto_enabled"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.AutoEnabled == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_auto_policy", "Revision and auto_enabled are required")
+		return
+	}
+	result, err := provider.CloudSetAdminPhotoAutoConfig(r.Context(), client.AdminPhotoAutoUpdate{
+		Revision: *input.Revision, AutoEnabled: *input.AutoEnabled,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 type desktopIPCAdminGeoNamesController interface {

@@ -310,6 +310,35 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+type AdminPhotoAutoConfig struct {
+	AutoEnabled          bool       `json:"auto_enabled"`
+	EffectiveAutoEnabled bool       `json:"effective_auto_enabled"`
+	Revision             uint64     `json:"revision"`
+	EffectiveRevision    uint64     `json:"effective_revision"`
+	Source               string     `json:"source"`
+	ApplyState           string     `json:"apply_state"`
+	Editable             bool       `json:"editable"`
+	RequiresRestart      bool       `json:"requires_restart"`
+	UpdatedAt            *time.Time `json:"updated_at,omitempty"`
+}
+
+type AdminPhotoAutoUpdate struct {
+	Revision    uint64 `json:"revision"`
+	AutoEnabled bool   `json:"auto_enabled"`
+}
+
+func (c *Client) AdminPhotoAutoConfig(ctx context.Context) (AdminPhotoAutoConfig, error) {
+	var out AdminPhotoAutoConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence", nil, &out)
+	return out, err
+}
+
+func (c *Client) UpdateAdminPhotoAutoConfig(ctx context.Context, input AdminPhotoAutoUpdate) (AdminPhotoAutoConfig, error) {
+	var out AdminPhotoAutoConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/photo-intelligence", input, &out)
+	return out, err
+}
+
 type AdminGeoNamesConfig struct {
 	DatasetConfigured bool       `json:"dataset_configured"`
 	ReloadSupported   bool       `json:"reload_supported"`

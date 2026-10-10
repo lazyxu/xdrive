@@ -32,6 +32,23 @@ export type XDriveServiceDependenciesSnapshot = {
   services: XDriveServiceDependency[]
 }
 
+export type XDrivePhotoAutoConfig = {
+  auto_enabled: boolean
+  effective_auto_enabled: boolean
+  revision: number
+  effective_revision: number
+  source: 'default' | 'saved'
+  apply_state: 'applied' | 'pending'
+  editable: boolean
+  requires_restart: boolean
+  updated_at?: string
+}
+
+export type XDrivePhotoAutoUpdate = {
+  revision: number
+  auto_enabled: boolean
+}
+
 export type XDriveGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean

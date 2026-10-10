@@ -14,7 +14,10 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 	case "geonames":
 		return "in-app", "immediate",
 			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。每个 Server 实例报告自己的生效状态，不代表集群全部完成；GeoNames 仅提供地名标签"
-	case "photo-face", "photo-smart", "photo-semantic", "photo-creative":
+	case "photo-face", "photo-smart", "photo-semantic":
+		return "deployment", "controlled-restart",
+			"模型容器、Socket 和资源参数由受控部署管理；本页另有可持久化且立即生效的全局自动分析调度策略，不会启动/停止容器或取消运行中任务"
+	case "photo-creative":
 		return "deployment", "controlled-restart",
 			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"
 	case "media-worker":

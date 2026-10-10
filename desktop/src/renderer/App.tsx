@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate } from '@xdrive/shared'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDrivePhotoAutoUpdate } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
@@ -1371,6 +1371,16 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadPhotoAutoConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPhotoAutoConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    savePhotoAutoConfig: async (input: XDrivePhotoAutoUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminPhotoAutoConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     saveGeoNamesConfig: async (input: XDriveGeoNamesUpdate) => {
       const result = await window.xdriveDesktop.agent.cloudSetAdminGeoNamesConfig(input)
       if (!result.ok) throw new Error(result.error.message)
