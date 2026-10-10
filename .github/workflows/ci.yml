@@ -2656,3 +2656,77 @@ jobs:
     with:
       publish: true
     secrets: inherit
+
+  trash-range-go-context-cancel-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/trash-range-go-context-cancel-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_TRASH_RANGE_GO_CONTEXT_CANCEL_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Compare 100k Trash range SQL cancel BEFORE/AFTER in alternating isolated PostgreSQL runs
+        run: |
+          set -euo pipefail
+          mkdir -p performance-results
+          results_dir="$PWD/performance-results"
+          before_dir="$(mktemp -d)"
+          git worktree add --detach "$before_dir" HEAD^
+          cp internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go "$before_dir/internal/api/"
+          for sample in 1 2 3; do
+            if [ "$sample" -eq 2 ]; then
+              phases=(after before)
+            else
+              phases=(before after)
+            fi
+            for phase in "${phases[@]}"; do
+              if [ "$phase" = before ]; then
+                target="$before_dir"
+                expected=0
+              else
+                target="$PWD"
+                expected=1
+              fi
+              (
+                cd "$target"
+                XD_TRASH_RANGE_GO_CONTEXT_CANCEL_EXPECT_FIXED="$expected" \
+                  go test -run '^TestTrashRangeRequestContextCancellation100K$' -count=1 -timeout=8m -v ./internal/api \
+                  | tee "$results_dir/sample-$sample-$phase.log"
+              )
+            done
+          done
+          test "$(grep -l TRASH_RANGE_GO_CONTEXT_CANCEL_100K performance-results/sample-*-*.log | wc -l)" -eq 6
+          git rev-parse HEAD > performance-results/after-sha.txt
+          git rev-parse HEAD^ > performance-results/before-sha.txt
+          sha256sum internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+          git worktree remove --force "$before_dir"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trash-range-go-context-cancel-100k-paired
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 7
+

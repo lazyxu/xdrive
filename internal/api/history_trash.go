@@ -152,6 +152,7 @@ func (s *Server) trashListRange(c *gin.Context) {
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
 	newQuery := func() *gorm.DB {
 		return s.DB.
+			WithContext(c.Request.Context()).
 			Table("xd_nodes").
 			Joins("LEFT JOIN xd_files AS trash_file ON trash_file.node_id = xd_nodes.id").
 			Where("xd_nodes.owner_id = ? AND xd_nodes.deleted_at IS NOT NULL AND xd_nodes.trash_root_id = xd_nodes.id", userID(c))

@@ -1,0 +1,72 @@
+{
+  "status": "valid-source-exact-first-red-before-only",
+  "source_sha": "b3d13fb1c74023ee82cd254368d22ad310462b14",
+  "unchanged_production_parent": "a63fe51e2f16c132c1be76b690a72165a44de5c0",
+  "ci_url": "https://github.com/lazyxu/xdrive/actions/runs/38015359424/job/114104358503",
+  "workload": "trash-range-go-context-cancel-100k",
+  "boundary": "real authenticated Gin HTTP + native PostgreSQL17 locked virtual Trash range; 100k deleted metadata-only Nodes; 6 canceled requests",
+  "sampler": "three fresh isolated-schema Go test invocations, observation after cancel 160ms",
+  "outcome": "3/3 first-red confirmed; 6/6 native SQL waits and 6/6 handlers retained after abort, despite 6/6 Go contexts Done; independent counted page passed",
+  "samples": [
+    {
+      "sample": 1,
+      "logical_files": 100000,
+      "requests": 6,
+      "observation_ms": 160,
+      "context_done_at_160ms": 6,
+      "postgres_lock_waiters_at_160ms": 6,
+      "handler_active_at_160ms": 6,
+      "client_payload_bytes_at_160ms": 0,
+      "server_context_latency_ms": [
+        0.163,
+        0.169,
+        0.171,
+        0.174,
+        0.176,
+        0.189
+      ],
+      "max_server_context_done_ms": 0.189,
+      "seed_ms": 2748.073
+    },
+    {
+      "sample": 2,
+      "logical_files": 100000,
+      "requests": 6,
+      "observation_ms": 160,
+      "context_done_at_160ms": 6,
+      "postgres_lock_waiters_at_160ms": 6,
+      "handler_active_at_160ms": 6,
+      "client_payload_bytes_at_160ms": 0,
+      "server_context_latency_ms": [
+        0.127,
+        0.132,
+        0.134,
+        0.136,
+        0.138,
+        0.139
+      ],
+      "max_server_context_done_ms": 0.139,
+      "seed_ms": 1987.59
+    },
+    {
+      "sample": 3,
+      "logical_files": 100000,
+      "requests": 6,
+      "observation_ms": 160,
+      "context_done_at_160ms": 6,
+      "postgres_lock_waiters_at_160ms": 6,
+      "handler_active_at_160ms": 6,
+      "client_payload_bytes_at_160ms": 0,
+      "server_context_latency_ms": [
+        0.103,
+        0.11,
+        0.118,
+        0.126,
+        0.131,
+        0.136
+      ],
+      "max_server_context_done_ms": 0.136,
+      "seed_ms": 1964.017
+    }
+  ]
+}

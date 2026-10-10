@@ -1882,3 +1882,68 @@ gallery-desktop-signed-video-proxy:
       - desktop/perf-results/gallery-desktop-signed-video-proxy.json
       - desktop/perf-results/gallery-real-gin.log
       - desktop/perf-results/real-production-agent.log
+
+trash-range-go-context-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+    XD_TRASH_RANGE_GO_CONTEXT_CANCEL_PERF: "1"
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/trash-range-go-context-cancel-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/trash-range-go-context-cancel-100k"'
+  script:
+    - |
+      set -euo pipefail
+      mkdir -p performance-results
+      results_dir="$PWD/performance-results"
+      before_dir="$(mktemp -d)"
+      git worktree add --detach "$before_dir" HEAD^
+      cp internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go "$before_dir/internal/api/"
+      for sample in 1 2 3; do
+        if [ "$sample" -eq 2 ]; then
+          phases=(after before)
+        else
+          phases=(before after)
+        fi
+        for phase in "${phases[@]}"; do
+          if [ "$phase" = before ]; then
+            target="$before_dir"
+            expected=0
+          else
+            target="$PWD"
+            expected=1
+          fi
+          (
+            cd "$target"
+            XD_TRASH_RANGE_GO_CONTEXT_CANCEL_EXPECT_FIXED="$expected" \
+              go test -run '^TestTrashRangeRequestContextCancellation100K$' -count=1 -timeout=8m -v ./internal/api \
+              | tee "$results_dir/sample-$sample-$phase.log"
+          )
+        done
+      done
+      test "$(grep -l TRASH_RANGE_GO_CONTEXT_CANCEL_100K performance-results/sample-*-*.log | wc -l)" -eq 6
+      git rev-parse HEAD > performance-results/after-sha.txt
+      git rev-parse HEAD^ > performance-results/before-sha.txt
+      sha256sum internal/api/trash_range_go_context_cancel_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      git worktree remove --force "$before_dir"
+  artifacts:
+    name: "trash-range-go-context-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    when: always
+    expire_in: 7 days
+    paths:
+      - performance-results/
+
