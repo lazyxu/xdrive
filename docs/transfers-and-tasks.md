@@ -409,3 +409,32 @@ implement pause/resume. Tests cover real XHR and preflight AbortSignals,
 queued sibling prevention, partial-success preservation, enumeration
 cancellation and unchanged normal session-lifecycle regressions. Exact-head
 GitHub CI and physical Web/Windows checks remain separate acceptance gates.
+
+
+## Desktop Agent ZIP/archive download task cancellation (2026-10-10)
+
+**Status: exact-head CI candidate.** Following merged Desktop folder-tree cancellation
+PR #1320, ordinary Desktop Gallery multi-selection and archive downloads reuse
+the existing Agent archive transfer handle. That handle now binds an owned
+context.WithCancel to the existing task-ID-only cancellation IPC. Cancelling
+this task aborts the actual archive HTTP request and checks context throughout
+local ZIP extraction and recursive file copy, independent of other transfers.
+
+The ZIP uses an Agent-private temporary file. Extracted files are staged in
+a .xdrive-extract-* directory. Context checks before file entry, between read
+chunks and before promotion prevent cancelled work from appearing successful.
+If cancellation happens during promotion, rollback removes only newly created
+destination roots and the current partial target. Existing files and their
+names remain intact. Network speed becomes zero while the Agent finalizes
+local extraction, and historical average speed remains persisted as before.
+
+Go cancellation-reader and pre-cancel destination integrity tests and Desktop
+source-contract tests cover this narrow change. Existing archive path checks,
+symlink rejection and safe collision naming remain in place. Browser-native
+handoffs, Desktop renderer-owned folder uploads, FUSE hydration and true
+pause/resume are not covered by this action; fake cancel buttons are forbidden.
+Physical large-ZIP/network-loss/low-disk testing is separately outstanding.
+No local clone tests or GitLab push are claimed by this connector delivery.
+
+Collision safety: failed exclusive destination creation never removes an
+externally existing target; only successfully owned creations are rolled back.
