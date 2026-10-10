@@ -530,6 +530,8 @@ export interface XDriveMediaGalleryPageProps {
   mobileWebChrome?: boolean
   fileOperations?: readonly MediaGalleryDeleteOperation[]
   onFileOperationQueued?: (operation: MediaGalleryDeleteOperation) => void
+  onUploadRequested?: () => void
+  uploadRevision?: number
   preferenceScope?: string
   pageSize?: number
   shareDialog?: XDriveMediaGalleryShareDialogOptions
@@ -545,6 +547,8 @@ export function XDriveMediaGalleryPage({
   mobileWebChrome = false,
   fileOperations,
   onFileOperationQueued,
+  onUploadRequested,
+  uploadRevision = 0,
   preferenceScope = '',
   pageSize = 100,
   shareDialog,
@@ -2376,6 +2380,15 @@ export function XDriveMediaGalleryPage({
     )
   }
 
+  // The owner uploads via the existing platform FileExplorer transport.
+  // Refresh the mounted sparse Gallery in-place after that upload settles.
+  const seenUploadRevision = useRef(uploadRevision)
+  useEffect(() => {
+    if (seenUploadRevision.current === uploadRevision) return
+    seenUploadRevision.current = uploadRevision
+    refreshGallery()
+  }, [uploadRevision])
+
   const appliedScopeLabel = currentFolderView
     ? '同步文件夹：' + currentFolderView.source.source_name +
       ' · ' + currentFolderView.current.path +
@@ -2388,6 +2401,7 @@ export function XDriveMediaGalleryPage({
         key={preferenceScope || 'gallery-default'}
         preferenceScope={preferenceScope}
         mobileWebChrome={mobileWebChrome}
+        onUploadRequested={onUploadRequested}
         mobileCollectionsOverview={mobileCollectionsOverview}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onMobilePrimaryTabChange={(tab) => {
@@ -2896,6 +2910,7 @@ export interface XDriveMediaGalleryProps {
   onAddItemsToAlbum?: (album: MediaAlbum, items: MediaItem[]) => Promise<void>
   onDeleteItems?: (items: MediaItem[]) => Promise<void>
   onDownloadItems?: (items: MediaItem[]) => Promise<void>
+  onUploadRequested?: () => void
   onExportLivePhoto?: (item: MediaItem) => Promise<void>
   onShareItem?: (item: MediaItem) => void
   onOpenViewer?: (item: MediaItem, logicalIndex: number) => void
@@ -4441,6 +4456,7 @@ export function XDriveMediaGallery({
   onAddItemsToAlbum,
   onDeleteItems,
   onDownloadItems,
+  onUploadRequested,
   onExportLivePhoto,
   onShareItem,
   onOpenViewer,
@@ -5556,6 +5572,17 @@ export function XDriveMediaGallery({
           justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
           sx={{ flex: '1 1 auto', minWidth: 0 }}
         >
+          {onUploadRequested && !isTrashSection ? (
+            <Button
+              size="small"
+              variant="outlined"
+              data-xdrive-gallery-upload
+              onClick={onUploadRequested}
+              sx={personTouchTargetSx}
+            >
+              上传照片或视频
+            </Button>
+          ) : null}
           {showCollectionFilters && filters && !compactGallery ? (
             <Box sx={{ flex: '1 1 360px', minWidth: { xs: 0, sm: 300 }, maxWidth: 560 }}>
               {filters}

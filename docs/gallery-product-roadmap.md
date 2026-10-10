@@ -1737,3 +1737,24 @@ The original three failing component tests remain unchanged for green
 reproduction on the patched code. The supplemental test checks current-Port
 interactivity while an older Port has a pending write. Require exact-head
 Web/Desktop tests, Go race, and complete GitHub PR final-gate before merging.
+
+## Gallery direct upload and existing batch download (2026-10-10)
+
+Web, Mobile Web and Desktop share the **same** `XDriveMediaGalleryPage`
+upload affordance, with an explicit "上传照片或视频" button in wide Gallery
+actions and the existing Mobile Gallery More drawer. Web uses the existing
+multi-file `useXDriveFileExplorerUploadController` and uploads to the
+authenticated cloud root, retaining the existing conflict policies, progress
+and Transfer Center tracking. Desktop reuses the existing Agent native
+multi-file picker/`cloudUploadFiles`, rather than creating an independent
+Gallery upload protocol. Successful uploads trigger a sparse Gallery refresh
+in place; media can appear once the normal Server index has processed them.
+The control is hidden in Gallery Trash.
+
+Existing Gallery **batch downloads are retained, not duplicated**:
+Web `downloadItems(items)` creates a ZIP archive for multiple selections,
+and Desktop delegates to `cloudDownloadArchive(ids)`. Single items keep
+their existing download paths. Selection/query scopes and virtualization
+stay owned by the existing Gallery controller. Support for particular
+RAW/Live originals follows the existing upload/download source contracts,
+not a new media copy.
