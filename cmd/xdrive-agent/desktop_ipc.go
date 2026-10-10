@@ -121,6 +121,7 @@ var desktopIPCCapabilities = []string{
 	"transfers",
 	"transfer-events",
 	"transfer-retry",
+	"transfer-cancel",
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
@@ -752,6 +753,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/transfers", h.transfers)
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
+	mux.HandleFunc("POST /v1/transfers/cancel", h.cancelTransfer)
 	mux.HandleFunc("POST /v1/transfers/lifecycle", h.transferLifecycle)
 	mux.HandleFunc("DELETE /v1/transfers", h.clearTransferHistory)
 	mux.HandleFunc("GET /v1/diagnostics", h.diagnostics)
@@ -6155,6 +6157,32 @@ func (h *desktopIPCHandler) retryTransfer(w http.ResponseWriter, r *http.Request
 	}
 	if err := h.ctrl.RetryTransfer(r.Context(), input.ID); err != nil {
 		writeDesktopIPCError(w, http.StatusConflict, "transfer_retry_failed", err.Error())
+		return
+	}
+	revision, items := h.ctrl.Transfers()
+	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) cancelTransfer(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+		return
+	}
+	// Local Agent owns the context; renderer/browser supplied paths are ignored.
+	canceller, ok := h.ctrl.(interface{ CancelTransfer(string) error })
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "transfer_cancel_unsupported", "Agent does not support transfer cancellation")
+		return
+	}
+	if err := canceller.CancelTransfer(input.ID); err != nil {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_cancel_not_available", err.Error())
 		return
 	}
 	revision, items := h.ctrl.Transfers()

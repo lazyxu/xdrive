@@ -5555,6 +5555,18 @@ function registerIPCHandlers() {
       return next
     }, false)
   })
+  ipcMain.handle('agent:cancel-transfer', (_event, id: unknown) => {
+    if (typeof id !== 'string' || !id.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Transfer id is required.' } }
+    }
+    return runAgentAction<AgentTransfers>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'transfer-cancel')
+      const next = await requireAgentClient().cancelTransfer(id)
+      publishAgentTransfers(next)
+      return next
+    }, false)
+  })
   ipcMain.handle('agent:transfer-lifecycle', (_event, input: unknown) =>
     runAgentAction<{ id?: string; ids?: string[]; ok?: boolean }>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

@@ -911,6 +911,7 @@ declare global {
         openConflict: (id: string, both?: boolean) => Promise<DesktopResult<{ ok: boolean }>>
         resolveConflict: (id: string, choice: 'server' | 'local') => Promise<DesktopResult<{ ok: boolean }>>
         retryTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
+        cancelTransfer: (id: string) => Promise<DesktopResult<AgentTransfers>>
         transferLifecycle: (input: AgentTransferLifecycleInput) => Promise<DesktopResult<{ id?: string; ids?: string[]; ok?: boolean }>>
         clearTransferHistory: (scope?: 'all' | 'network' | 'local') => Promise<DesktopResult<AgentTransfers>>
         openFolder: () => Promise<DesktopResult<{ ok: boolean }>>

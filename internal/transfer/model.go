@@ -108,6 +108,7 @@ type Task struct {
 	Error                 string     `json:"error,omitempty"`
 	RetryCount            int        `json:"retry_count"`
 	Retryable             bool       `json:"retryable"`
+	Cancelable            bool       `json:"cancelable,omitempty"`
 	StartedAt             time.Time  `json:"started_at"`
 	UpdatedAt             time.Time  `json:"updated_at"`
 	CompletedAt           *time.Time `json:"completed_at,omitempty"`
@@ -116,6 +117,7 @@ type Task struct {
 type entry struct {
 	task              Task
 	retry             RetryFunc
+	cancel            context.CancelFunc
 	lastBytes         int64
 	lastAt            time.Time
 	rateBaseBytes     int64
@@ -463,6 +465,54 @@ func (h *Handle) Fail(err error) {
 		err = errors.New("transfer failed")
 	}
 	h.manager.finish(h.id, err)
+}
+
+// BindCancel connects only the actual Agent-owned operation to its handle.
+func (h *Handle) BindCancel(cancel context.CancelFunc) bool {
+	if h == nil || h.manager == nil || cancel == nil {
+		return false
+	}
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[h.id]
+	if e == nil || !activeState(e.task.State) || e.task.State == StateCancelling {
+		return false
+	}
+	e.cancel = cancel
+	e.task.Cancelable = true
+	m.touchLocked()
+	return true
+}
+
+// Cancel requests abort of exactly one bound request. Only its original
+// worker may confirm a terminal state after the I/O has stopped.
+func (m *Manager) Cancel(id string) error {
+	if m == nil {
+		return errors.New("transfer manager is unavailable")
+	}
+	now := time.Now()
+	m.mu.Lock()
+	e := m.entries[id]
+	if e == nil {
+		m.mu.Unlock()
+		return errors.New("transfer not found")
+	}
+	if e.cancel == nil || !activeState(e.task.State) || e.task.State == StateCancelling {
+		m.mu.Unlock()
+		return errors.New("this transfer does not support cancellation")
+	}
+	cancel := e.cancel
+	e.cancel = nil
+	e.task.Cancelable = false
+	e.task.State = StateCancelling
+	e.task.Phase = PhaseFinalizing
+	e.task.InstantBytesPerSecond = 0
+	e.task.UpdatedAt = now
+	m.touchLocked()
+	m.mu.Unlock()
+	cancel()
+	return nil
 }
 
 func (m *Manager) Clear() {
@@ -865,6 +915,8 @@ func (m *Manager) finishSkipped(id string) {
 	if e == nil {
 		return
 	}
+	e.cancel = nil
+	e.task.Cancelable = false
 	e.task.State = StateCompleted
 	e.task.Phase = PhaseFinalizing
 	e.task.Error = ""
@@ -902,6 +954,8 @@ func (m *Manager) finishState(id, state string, err error) error {
 	if e == nil {
 		return errors.New("transfer not found")
 	}
+	e.cancel = nil
+	e.task.Cancelable = false
 	e.task.State = state
 	e.task.Phase = PhaseFinalizing
 	e.task.ItemsRunning = 0
@@ -947,6 +1001,8 @@ func (m *Manager) finish(id string, err error) {
 	if e == nil {
 		return
 	}
+	e.cancel = nil
+	e.task.Cancelable = false
 	if err == nil {
 		e.task.State = StateCompleted
 		e.task.Phase = PhaseFinalizing

@@ -158,6 +158,7 @@ export type AgentTransfer = {
   error?: string
   retry_count: number
   retryable: boolean
+  cancelable?: boolean
   started_at: string
   updated_at: string
   completed_at?: string
@@ -3290,6 +3291,10 @@ export class AgentIPCClient {
 
   retryTransfer(id: string) {
     return this.request<AgentTransfers>('POST', '/v1/transfers/retry', { id }, 130_000)
+  }
+
+  cancelTransfer(id: string) {
+    return this.request<AgentTransfers>('POST', '/v1/transfers/cancel', { id }, 30_000)
   }
 
   transferLifecycle(input: AgentTransferLifecycleInput) {

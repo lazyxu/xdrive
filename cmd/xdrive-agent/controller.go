@@ -730,6 +730,10 @@ func (c *agentController) RetryTransfer(ctx context.Context, id string) error {
 	return c.transfers.Retry(ctx, id)
 }
 
+func (c *agentController) CancelTransfer(id string) error {
+	return c.transfers.Cancel(id)
+}
+
 func (c *agentController) StartTransferGroup(spec transfer.Spec) (string, error) {
 	handle := c.transfers.StartGroup(spec)
 	if handle == nil {
