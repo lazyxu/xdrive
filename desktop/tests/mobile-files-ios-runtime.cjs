@@ -66,7 +66,26 @@ const propertiesHook = (() => {
   return mod.exports.useXDriveFileExplorerPropertiesController
 })()
 const material = new Proxy({}, { get: (_, name) => String(name) })
+const sharedNameDialog = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', 'require',
+    compile('ui/shared/src/mui/FileNameDialog.tsx', true))(
+    mod, mod.exports, name => {
+      if (name === 'react') return React
+      if (name === 'react/jsx-runtime') return require('react/jsx-runtime')
+      if (name === '@mui/material') return material
+      if (name === './ActionButton') return { XDriveActionButton: 'Button' }
+      if (name === './DialogContent') return { XDriveDialogContent: 'DialogContent' }
+      if (name === './DialogTitle') return {
+        XDriveDialogTitle: 'DialogTitle', xDriveDialogPaperProps: { sx: {} },
+      }
+      throw Error('Unexpected shared name dialog import: ' + name)
+    },
+  )
+  return mod.exports.XDriveFileNameDialog
+})()
 const ui = {
+  XDriveFileNameDialog: sharedNameDialog,
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
   XDriveFileExplorerItemIcon: 'file-icon',
   XDriveFileExplorerThumbnail: 'file-thumbnail',
@@ -1873,5 +1892,108 @@ test('F-iOS27-08B: collection ContextMenu and Shift+F10 open same 44px native me
     onOpenFavorite: async id => { opens.push('favorite:' + id); return true },
     onCollectionAction: async (entry, action) => { actions.push({ id: entry.id, action }) },
     onUnfavorite: async id => { actions.push({ id, action: 'unfavorite' }) },
+  } })
+})
+
+
+async function openMobileRename(h, name = '说明.txt') {
+  const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+    .find(node => textOf(node.props.children).includes('云端文件'))
+  assert.ok(root)
+  await act(async () => { root.props.onClick() })
+  const file = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+    .find(node => node.props?.['aria-label'] === name)
+  assert.ok(file, 'expected backed Mobile Files item: ' + name)
+  await act(async () => { file.props.onContextMenu({
+    preventDefault() {}, clientX: 48, clientY: 90,
+    nativeEvent: { pointerType: 'mouse' },
+  }) })
+  await act(async () => { find(h.view, 'data-mobile-files-item-rename', true).props.onClick() })
+  const dialog = () => find(h.view, 'aria-label', '重命名')
+  assert.equal(dialog().props.open, true)
+  return dialog
+}
+
+async function submitMobileRename(h) {
+  const dialog = find(h.view, 'aria-label', '重命名')
+  const form = dialog.findAll(node => node.type === 'Box' && node.props?.component === 'form')[0]
+  assert.ok(form, 'shared name Dialog owns the one form submission')
+  await act(async () => {
+    form.props.onSubmit({ preventDefault() {} })
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+
+test('F-iOS27-08C: Mobile rename reuses actual wide-Web shared dialog for 403 denial, inline error and exact-revision retry', async () => {
+  const attempts = []
+  await withView(async h => {
+    const dialog = await openMobileRename(h)
+    const input = () => dialog().findAll(node => node.type === 'TextField' && node.props?.label === '名称')[0]
+    assert.equal(input().props.value, '说明.txt')
+    await act(async () => { input().props.onChange({ target: { value: '新名字.txt' } }) })
+    await submitMobileRename(h)
+    assert.equal(dialog().props.open, true, '403 from real Web adapter keeps dialog open')
+    assert.equal(input().props.value, '新名字.txt', 'rejected draft is not discarded')
+    assert.equal(input().props.error, true)
+    assert.match(input().props.helperText, /403.*禁止重命名/)
+    assert.deepEqual(attempts, [{ id: 3, revision: 1, name: '新名字.txt' }])
+    await submitMobileRename(h)
+    assert.equal(dialog().props.open, false, 'authorized retry closes the same dialog')
+    assert.deepEqual(attempts, [
+      { id: 3, revision: 1, name: '新名字.txt' },
+      { id: 3, revision: 1, name: '新名字.txt' },
+    ])
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onRename: async (item, name) => {
+      attempts.push({ id: item.id, revision: item.revision, name })
+      if (attempts.length === 1) throw new Error('403 禁止重命名')
+    },
+  } })
+})
+
+test('F-iOS27-08C: shared 255 UTF-8 byte rule blocks invalid Mobile rename before Server action and clears error on edit', async () => {
+  const mutations = []
+  await withView(async h => {
+    const dialog = await openMobileRename(h)
+    const input = () => dialog().findAll(node => node.type === 'TextField' && node.props?.label === '名称')[0]
+    const oversized = '相'.repeat(86) // 258 UTF-8 bytes
+    await act(async () => { input().props.onChange({ target: { value: oversized } }) })
+    await submitMobileRename(h)
+    assert.equal(mutations.length, 0, 'invalid name must never reach Web/Server')
+    assert.equal(dialog().props.open, true)
+    assert.equal(input().props.value, oversized)
+    assert.match(input().props.helperText, /255.*UTF-8/)
+    await act(async () => { input().props.onChange({ target: { value: '短名称.txt' } }) })
+    assert.equal(input().props.error, false, 'typing clears previous validation error')
+    await submitMobileRename(h)
+    assert.deepEqual(mutations, [{ id: 3, revision: 1, name: '短名称.txt' }])
+    assert.equal(dialog().props.open, false)
+  }, { props: {
+    onRename: async (item, name) => { mutations.push({ id: item.id, revision: item.revision, name }) },
+  } })
+})
+
+test('F-iOS27-08C: Mobile rename closes on account scope switch and old denied completion cannot change next dialog', async () => {
+  let rejectOld
+  const pending = new Promise((resolve, reject) => { rejectOld = reject })
+  let calls = 0
+  await withView(async h => {
+    const dialog = await openMobileRename(h)
+    const input = () => dialog().findAll(node => node.type === 'TextField' && node.props?.label === '名称')[0]
+    await act(async () => { input().props.onChange({ target: { value: '旧账户改名.txt' } }) })
+    const form = dialog().findAll(node => node.type === 'Box' && node.props?.component === 'form')[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }); await Promise.resolve() })
+    assert.equal(calls, 1)
+    assert.equal(input().props.disabled, true, 'pending Server write owns the name form')
+    await h.update({ lifecycleKey: 'ios-files-userB' })
+    assert.equal(dialog().props.open, false, 'old-owner rename must close')
+    await act(async () => { rejectOld(new Error('旧账户 403')); await Promise.resolve(); await Promise.resolve() })
+    assert.equal(dialog().props.open, false)
+    assert.equal(input().props.error, false, 'late rejection cannot re-open an owner-scoped dialog')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onRename: async () => { calls += 1; await pending },
   } })
 })

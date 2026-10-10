@@ -42,7 +42,7 @@ import type {
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
-  XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
+  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments, xDriveFileExplorerReadExternalDrop,
@@ -364,8 +364,6 @@ export default function MobileFiles(props: Props) {
   const [selectionFeedback, setSelectionFeedback] = useState('')
   const [selected, setSelected] = useState<Map<string, XDriveFileExplorerItem>>(() => new Map())
   const [renaming, setRenaming] = useState<XDriveFileExplorerItem | null>(null)
-  const [renameDraft, setRenameDraft] = useState('')
-  const [renameBusy, setRenameBusy] = useState(false)
   // Single and multi-item Properties share the same Server-owned stats hook,
   // MUI dialog, and selection identity as wide Web. Keep only one inspector.
   const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
@@ -680,6 +678,9 @@ export default function MobileFiles(props: Props) {
     setClearRecentConfirm(false)
     setItemMenu(null)
     setCollectionMenu(null)
+    // A pending rename belongs to the original account/directory/Search
+    // scope; the shared FileNameDialog fences any late Server response.
+    setRenaming(null)
     // Owner/scope changes close the inspector and abort old Server stats
     // through the existing shared PropertiesController cleanup.
     setPropertiesItems([])
@@ -1126,14 +1127,8 @@ export default function MobileFiles(props: Props) {
     if (task) void task.catch(props.onOpenError)
   }
   const beginRename = (item: XDriveFileExplorerItem) => {
-    setItemMenu(null); setRenameDraft(item.name); setRenaming(item)
-  }
-  const submitRename = async () => {
-    if (!renaming || !renameDraft.trim() || renameBusy) return
-    setRenameBusy(true)
-    try { await props.onRename(renaming, renameDraft.trim()); setRenaming(null) }
-    catch { /* The Web adapter already provides the actionable error. */ }
-    finally { setRenameBusy(false) }
+    setItemMenu(null)
+    setRenaming(item)
   }
   // Reuse the exact Wide Web/Server operation eligibility contract. A large
   // logical selection does not make an over-limit mutation actionable.
@@ -2060,7 +2055,8 @@ export default function MobileFiles(props: Props) {
               <ListItemIcon><InfoOutlinedIcon fontSize="small" /></ListItemIcon>快速预览
             </MenuItem>
           ) : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => beginRename(itemMenu.item)}
+          {itemMenu && !props.trashActive ? <MenuItem data-mobile-files-item-rename
+            onClick={() => beginRename(itemMenu.item)}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
           {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onMove([itemMenu.item]); setItemMenu(null) }}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><DriveFileMoveOutlinedIcon fontSize="small"/></ListItemIcon>移动到…</MenuItem> : null}
@@ -2173,14 +2169,20 @@ export default function MobileFiles(props: Props) {
             }}>清空记录</Button>
           </DialogActions>
         </Dialog>
-        <Dialog open={Boolean(renaming)} onClose={() => { if (!renameBusy) setRenaming(null) }} fullWidth maxWidth="xs">
-          <DialogTitle>重命名</DialogTitle>
-          <DialogContent><TextField autoFocus fullWidth size="small" value={renameDraft}
-            onChange={event => setRenameDraft(event.target.value)}
-            onKeyDown={event => { if (event.key === 'Enter') void submitRename() }} /></DialogContent>
-          <DialogActions><Button disabled={renameBusy} onClick={() => setRenaming(null)}>取消</Button>
-            <Button disabled={renameBusy || !renameDraft.trim()} onClick={() => void submitRename()}>保存</Button></DialogActions>
-        </Dialog>
+        <XDriveFileNameDialog
+          open={Boolean(renaming)}
+          mode="rename"
+          initialValue={renaming?.name ?? ''}
+          lifecycleKey={selectionScopeKey + ':rename:' + String(renaming?.id ?? 0) + ':' + String(renaming?.revision ?? 0)}
+          onSubmit={async name => {
+            if (!renaming) throw new Error('当前文件选择已失效，请重新打开重命名。')
+            // One authoritative Web Controller owns the Node id/revision,
+            // conflict handling and Server permissions for both layouts.
+            // Let the shared dialog retain draft and show rejected mutations.
+            await props.onRename(renaming, name)
+          }}
+          onClose={() => setRenaming(null)}
+        />
         {properties && mediaEligible && (activeMediaState?.status !== 'done' || activeMediaState.item) ? (
           <XDriveMediaDetailsInspector open item={activeMediaState?.item ?? null}
             fallbackName={properties.name} showPreview={false} onClose={() => setPropertiesItems([])}
