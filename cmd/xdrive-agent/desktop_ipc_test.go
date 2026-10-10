@@ -3123,6 +3123,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		res.Body.String() != "fake-jpeg" {
 		t.Fatalf("media thumbnail status=%d content_type=%q body=%q", res.Code, res.Header().Get("Content-Type"), res.Body.String())
 	}
+	if got := res.Header().Get("Content-Length"); got != fmt.Sprint(len("fake-jpeg")) {
+		t.Fatalf("media thumbnail Content-Length=%q want=%d", got, len("fake-jpeg"))
+	}
 	if ctrl.cloudMediaThumbnailID != 31 {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)
 	}
@@ -3133,6 +3136,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		res.Body.String() != "fake-jpeg" ||
 		ctrl.cloudMediaAnalysisPreviewID != 31 {
 		t.Fatalf("media analysis preview status=%d id=%d body=%q", res.Code, ctrl.cloudMediaAnalysisPreviewID, res.Body.String())
+	}
+	if got := res.Header().Get("Content-Length"); got != fmt.Sprint(len("fake-jpeg")) {
+		t.Fatalf("media analysis preview Content-Length=%q want=%d", got, len("fake-jpeg"))
 	}
 	res = desktopIPCRequest(t, handler, http.MethodGet, "/v1/media/analysis-preview?node_id=0", "")
 	if res.Code != http.StatusBadRequest {

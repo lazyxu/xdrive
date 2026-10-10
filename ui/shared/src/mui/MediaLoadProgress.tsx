@@ -84,8 +84,9 @@ export function XDriveMediaLoadingProgress({
         : stage === 'poster_lookup' ? '正在读取封面…'
           : stage === 'video_read' ? '正在读取视频…' : '正在生成封面…'
   if (compact) {
-    // Filled sector from centre to rim (not a stroke-only progress ring).
-    // Fast cached thumbnails disappear before the 160ms reveal delay.
+    // Paint the entire visible thumbnail placeholder, not a small circular ring.
+    // The hosting thumbnail is clipped to its own shape; there is no second
+    // ongoing animation for each item in a large virtualized photo wall.
     return (
       <Box
         data-xdrive-media-loading-progress
@@ -96,7 +97,9 @@ export function XDriveMediaLoadingProgress({
         aria-label={measured ? `已下载 ${Math.round(percent)}%，${label}` : label}
         sx={{
           position: 'absolute', inset: 0, minWidth: 0,
-          display: 'grid', placeItems: 'center', pointerEvents: 'none',
+          display: 'grid', placeItems: 'center',
+          overflow: 'hidden', borderRadius: 'inherit',
+          pointerEvents: 'none',
           animation: 'xdriveMediaPieReveal 120ms ease-out 160ms backwards',
           '@keyframes xdriveMediaPieReveal': {
             from: { opacity: 0 },
@@ -107,34 +110,33 @@ export function XDriveMediaLoadingProgress({
       >
         <Box
           data-xdrive-media-solid-pie
+          data-xdrive-media-progress-coverage="full-surface"
+          aria-hidden
           sx={{
-            width: 34, height: 34, borderRadius: '50%',
-            display: 'grid', placeItems: 'center',
-            color: 'common.white',
-            // Both sectors cover the whole disk, with no hollow middle.
+            position: 'absolute', inset: 0, borderRadius: 'inherit',
+            // conic-gradient has no hole: the downloaded sector reaches every
+            // edge of the nontransparent thumbnail placeholder, even in a
+            // rectangular FileExplorer cell. Parent clipping preserves corners.
             background: measured
-              ? `conic-gradient(from -90deg, #0A84FF 0% ${percent}%, rgba(24, 30, 44, 0.56) ${percent}% 100%)`
-              : 'rgba(24, 30, 44, 0.42)',
-            border: '1px solid rgba(255, 255, 255, 0.3)',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
+              ? `conic-gradient(from -90deg at 50% 50%, rgba(10, 132, 255, 0.86) 0% ${percent}%, rgba(24, 30, 44, 0.42) ${percent}% 100%)`
+              : 'rgba(24, 30, 44, 0.08)',
           }}
-        >
-          {measured ? (
-            <Typography
-              aria-hidden
-              sx={{
-                color: 'common.white',
-                fontSize: 9.5, lineHeight: 1,
-                fontWeight: 700, fontVariantNumeric: 'tabular-nums',
-                textShadow: '0 1px 2px rgba(0, 0, 0, 0.75)',
-              }}
-            >{Math.round(percent)}%</Typography>
-          ) : (
-            <CircularProgress aria-hidden size={16} color="inherit" thickness={4} />
-          )}
-        </Box>
+        />
+        {measured ? (
+          <Typography
+            aria-hidden
+            sx={{
+              position: 'relative',
+              color: 'common.white',
+              fontSize: 10, lineHeight: 1.1, fontWeight: 700,
+              fontVariantNumeric: 'tabular-nums',
+              borderRadius: 0.75,
+              px: 0.5, py: 0.25,
+              bgcolor: 'rgba(0, 0, 0, 0.4)',
+              textShadow: '0 1px 2px rgba(0, 0, 0, 0.55)',
+            }}
+          >{Math.round(percent)}%</Typography>
+        ) : null}
       </Box>
     )
   }
