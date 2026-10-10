@@ -170,19 +170,20 @@ func (s *Server) StartPostgresPoolReconciliation(ctx context.Context) {
 }
 
 type adminPostgresPoolConfigDTO struct {
-	Desired           postgresPoolValues  `json:"desired"`
-	Effective         *postgresPoolValues `json:"effective,omitempty"`
-	Revision          uint64              `json:"revision"`
-	EffectiveRevision uint64              `json:"effective_revision"`
-	Source            string              `json:"source"`
-	ApplyState        string              `json:"apply_state"`
-	Editable          bool                `json:"editable"`
-	RequiresRestart   bool                `json:"requires_restart"`
-	UpdatedAt         *time.Time          `json:"updated_at,omitempty"`
-	CurrentMaxOpen    int                 `json:"current_max_open_connections"`
-	OpenConnections   int                 `json:"open_connections"`
-	InUseConnections  int                 `json:"in_use_connections"`
-	IdleConnections   int                 `json:"idle_connections"`
+	Desired           postgresPoolValues         `json:"desired"`
+	Effective         *postgresPoolValues        `json:"effective,omitempty"`
+	Revision          uint64                     `json:"revision"`
+	EffectiveRevision uint64                     `json:"effective_revision"`
+	Source            string                     `json:"source"`
+	ApplyState        string                     `json:"apply_state"`
+	Editable          bool                       `json:"editable"`
+	RequiresRestart   bool                       `json:"requires_restart"`
+	UpdatedAt         *time.Time                 `json:"updated_at,omitempty"`
+	CurrentMaxOpen    int                        `json:"current_max_open_connections"`
+	OpenConnections   int                        `json:"open_connections"`
+	InUseConnections  int                        `json:"in_use_connections"`
+	IdleConnections   int                        `json:"idle_connections"`
+	Replicas          postgresPoolReplicaSummary `json:"replicas"`
 }
 
 func (s *Server) adminPostgresPoolConfig(c *gin.Context) {
@@ -208,6 +209,7 @@ func (s *Server) adminPostgresPoolConfig(c *gin.Context) {
 		UpdatedAt: desired.UpdatedAt, Editable: true, RequiresRestart: false,
 		CurrentMaxOpen: stats.MaxOpenConnections, OpenConnections: stats.OpenConnections,
 		InUseConnections: stats.InUse, IdleConnections: stats.Idle,
+		Replicas: s.readPostgresPoolReplicaSummary(c.Request.Context(), desired),
 	}
 	if desired.Revision == 0 {
 		result.ApplyState = "unmanaged"
