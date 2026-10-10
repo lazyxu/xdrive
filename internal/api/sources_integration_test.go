@@ -29,7 +29,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceConnectorConfig{}, &meta.SourceCredential{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.LocalSourceBinding{}, &meta.ClientDevice{}, &meta.SourceConnectorConfig{}, &meta.SourceCredential{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -38,6 +38,7 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.ClientDevice{}, &meta.LocalSourceBinding{},
 		&meta.SourceCredential{}, &meta.SourceConnectorConfig{},
 	); err != nil {
 		t.Fatal(err)
@@ -153,9 +154,9 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	}
 	localURL := fmt.Sprintf("/api/v1/sources/%d", localCreated.ID)
 	requestWithHeaders(t, router, http.MethodPatch, localURL, tokenA,
-		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
+		strings.NewReader(`{"status":"active"}`), http.StatusForbidden,
 		map[string]string{"If-Match": `"1"`})
-	request(t, router, http.MethodPost, localURL+"/trigger", tokenA, nil, http.StatusConflict)
+	request(t, router, http.MethodPost, localURL+"/trigger", tokenA, nil, http.StatusForbidden)
 	request(t, router, http.MethodPost, localURL+"/runs", tokenA,
 		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusForbidden)
 	// Even an accidentally forced "active" status must not let a local-folder
@@ -173,8 +174,14 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	if localRunCount != 0 {
 		t.Fatalf("unbound local folder unexpectedly started %d runs", localRunCount)
 	}
+	// Remote owner JWT alone cannot remove an unbound local Push Source.
 	requestWithHeaders(t, router, http.MethodDelete, localURL, tokenA, nil,
-		http.StatusNoContent, map[string]string{"If-Match": `"1"`})
+		http.StatusForbidden, map[string]string{"If-Match": `"1"`})
+	// Integration fixture cleanup bypasses the HTTP API intentionally: the
+	// public mutation remains forbidden until native device ownership is proven.
+	if err := db.Delete(&meta.Source{}, localCreated.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	createBody := fmt.Sprintf(`{
 		"name":"Synology Photos",

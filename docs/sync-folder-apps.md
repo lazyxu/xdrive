@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a run cancellation guard pending exact-head CI #1301; other local Source mutation guards pending |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a run cancellation merged #1301; P0-B2b1 bound Source mutation guards pending CI; unbound creation ownership remains separate |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -97,11 +97,17 @@ Desktop uses the owning Agent's per-Server/account OS-stored device registration
 
 The shared presenter groups "本机" and "其他设备" **only after verified identity matches an owner-scoped device row**. On unavailable Agent capability, missing registration, revoked credentials, failed verification, or account/Server transition, it remains neutral/fully read-only rather than trusting a stale label. The Agent credential, local path, Root ID/fingerprint and per-file details never enter the renderer or Web. Pull and NAS behavior are unchanged. Local-only mutation guards, own-device actions, upload executor, trusted heartbeat, full pagination and real 100k/4GiB E2E are still pending.
 
-## P0-B2a: local-folder Source Run cancellation fencing (proposed; CI pending)
+## P0-B2a: local-folder Source Run cancellation fencing (merged #1301; exact-head CI green)
 
 A local-folder Push run's `POST /sources/:id/runs/:runID/cancel` now uses the same device credential, Root ID/fingerprint, owner, Source revision and unrevoked binding admission as the already-protected execution stages. The handler repeats authorization **inside the cancellation write transaction**, acquiring the device lock before Source/Root/run locks to fence a concurrent device revoke or Source revision change. An owner JWT alone, forged device headers, wrong Root, revoked device or stale run revision cannot set `cancel_requested_at` on an active local Push run. Internal cancellation without local proof also fails closed. The existing `local_folder` execution/activation hard-denial remains; **this does not enable any uploader or UI button**.
 
 Server-managed Pull and legacy NAS Source Run cancellation retain their pre-existing owner-scoped behavior. This is **only the cancellation boundary** of P0-B2. Generic local-folder Source creation/update/delete/trigger/unbind and binding-management permissions remain separate unimplemented gaps, and Agent-native explicit cancel with context propagation remains future work.
+
+## P0-B2b1: bound local-folder configuration mutation fencing (pending PR CI)
+
+The Server now requires a registered, unrevoked owning device credential plus the exact Root ID/fingerprint and current Source revision for **already-bound** `local_folder` PATCH, DELETE, trigger and unbind operations. A shared read-only owner JWT or another Desktop using the same account is insufficient. Preflight uses the existing Source execution guard, then every write transaction rechecks the proof while locking device before Source/binding so revocation and revision changes fail closed. Paused Sources may be edited/removed by their authorized owning device; no generic unbound Source mutation is permitted yet. A synthetically forced active local Source also cannot be triggered before a proven native executor exists. Pull and legacy NAS behavior is unchanged.
+
+**Remaining:** Creating an unbound `local_folder` still lacks a durable creating-device claim; the existing create/bind staging flow is not proof of owning device creation. Device-native configuration IPC must attach Root proof and provide safe cleanup/rebind rules for unbound/revoked legacy Sources. Do not claim those flows complete, and do not activate any local run/upload/schedule. The existing generic source read DTO still requires path/error redaction work.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

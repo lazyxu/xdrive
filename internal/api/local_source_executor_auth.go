@@ -112,6 +112,31 @@ var errLocalSourceExecutorTransactionUnauthorized = errors.New("local source exe
 // SAME PostgreSQL transaction as the Source Run mutation. Revoke locks the
 // device row before Sources; matching this order fences concurrent revocation.
 func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourceID uint64, runID string) error {
+	return s.requireLocalSourceProofTx(tx, c, sourceID, runID, true)
+}
+
+// Mutations on an already-bound local folder require the same device and Root
+// proof as a run, but may occur while the Source is paused. In particular,
+// unbind and delete cannot be authorized by the owner JWT alone. This helper
+// must run before any Source row lock, to preserve revoke's device-first order.
+func (s *Server) requireLocalSourceMutationTx(tx *gorm.DB, c *gin.Context, sourceID uint64) error {
+	if _, hasProof := c.Get(localSourceExecutorContextKey); !hasProof {
+		var source meta.Source
+		if err := tx.Select("kind").Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+			return err
+		}
+		if source.Kind == meta.SourceKindLocalFolder {
+			return errLocalSourceExecutorTransactionUnauthorized
+		}
+		return nil
+	}
+	return s.requireLocalSourceProofTx(tx, c, sourceID, "", false)
+}
+
+// The shared proof check is intentionally stricter for an executing run:
+// editing a paused Source is allowed only with owning-device proof, whereas
+// active status is additionally required at every execution boundary.
+func (s *Server) requireLocalSourceProofTx(tx *gorm.DB, c *gin.Context, sourceID uint64, runID string, requireActive bool) error {
 	raw, exists := c.Get(localSourceExecutorContextKey)
 	if !exists {
 		// Only local_folder Sources have this middleware-provided proof.
@@ -143,7 +168,7 @@ func (s *Server) requireLocalSourceExecutorTx(tx *gorm.DB, c *gin.Context, sourc
 		return err
 	}
 	if source.Kind != meta.SourceKindLocalFolder || source.Direction != meta.SourceDirectionPush ||
-		source.Revision != proof.SourceRevision || source.Status != meta.SourceStatusActive {
+		source.Revision != proof.SourceRevision || (requireActive && source.Status != meta.SourceStatusActive) {
 		return errLocalSourceExecutorTransactionUnauthorized
 	}
 	var binding meta.LocalSourceBinding
