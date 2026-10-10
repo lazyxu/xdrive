@@ -206,7 +206,7 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3d · 长按快速固定与移除确认（2026-10-10）
 
-**状态：候选，需精确提交 GitHub PR 完整 CI 后方可交付，真实 iOS 27 Safari 真机验收仍待完成。** Apple 官方 [iOS 27「照片」浏览精选集](https://support.apple.com/guide/iphone/browse-your-photo-collections-iph4f36c4148/27/ios/27) 明确要求：长按任意可固定的集合快捷键进入「固定／取消固定」操作；编辑固定栏目时先点移除图标，再确认「删除」（**只移除固定入口，不删除照片或相册**）。
+**状态：[#1279](https://github.com/lazyxu/xdrive/pull/1279) 已通过精确提交完整 GitHub CI `final-gate`，单工作提交线性合并（`9d0b0dd`）；真实 iOS 27 Safari 真机验收仍待完成。** Apple 官方 [iOS 27「照片」浏览精选集](https://support.apple.com/guide/iphone/browse-your-photo-collections-iph4f36c4148/27/ios/27) 明确要求：长按任意可固定的集合快捷键进入「固定／取消固定」操作；编辑固定栏目时先点移除图标，再确认「删除」（**只移除固定入口，不删除照片或相册**）。
 
 - **复用共享相册偏好：** 只对现有合法入口（收藏、相册、人物与宠物、媒体类型、回忆、地点、清理建议、回收站，以及已加载、已有 `onOpenAlbum` 的真实相册）打开快速固定菜单。一个 `CollectionGroup` 中普通 `album:<id>` 和固定项 `pinned-album:<id>` 指向同一现有 `changeAlbumPin/readMediaAlbumPreferences/writeMediaAlbumPreferences`；Web/Desktop 相册组织器仍是相册固定及相对顺序的唯一权威。动态单个回忆/人物/宠物/地点与同步文件夹未获得通用跨端固定模型，本轮保守不展示虚假固定菜单，仍可按原流程打开。
 - **iOS 类长按：** 可操作项目的移动端触控/触笔保持 **450ms、移动 ≥8px 取消**，横向滚动也会取消；右键与键盘原生 context-menu 事件走同一快速菜单。成功长按只吞掉该次合成短按，不能把固定意图和打开集合同时执行。组件没有在每项叠加按钮，也不接管图库主滚动宿主、网格双指缩放、Live Photo 按住播放或 Viewer 路由。真机 Safari/Android 长按的菜单动画、手势竞争和浏览器默认菜单仍待实测。
@@ -214,3 +214,12 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 - **测试：** 真实 React 组件回归覆盖已加载真实相册快捷菜单、再次取消固定、跨账号不泄漏、450ms 长按、移动取消、合成点击抑制、删除确认/取消/保全真实相册、非法身份不露入口；同步保持 Web/Mobile 共用页面/API/`VirtualCollection`/Viewer/权限验证。未执行真实 iOS 27 真机、实际 10k/100k HTTP 取消/滚动/帧率或截图像素比较，不能称 1:1 已验收。
 
 **延续边界：** xDrive 全动态视口 App Frame、52px 独立全局应用标题栏、Web/Desktop 共用 Server、一个 Web `XDriveMediaGalleryPage` 和 REST `MediaGalleryDataSource`、共享 `VirtualCollection/Grid/Timeline`、原始 Node/PhotoAsset/RAW/Live/Viewer 身份以及相册、筛选与传输流程全部保持不变。后续单独完善动态人物/回忆等可固定身份，及真实 iOS 27 对照验收。
+
+
+## P0-3e · iOS 27 精选集标题直接打开完整内容（2026-10-10）
+
+**状态：单提交候选，需精确提交的 GitHub PR 完整 CI；真实 iOS 27 截图与 Safari 交互尚未验收。** Apple 官方 [iOS 27「在 iPhone 上浏览照片精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27) 明确要求：在分类标题下水平滚动以浏览项目，或**轻点分类标题直接打开该类别的全部项目**。此前 xDrive Mobile 分类标题只是静态文本，右侧另有小「查看全部」按钮，产生额外的导航操作并与原生结构不一致。
+
+- **单导航入口：** 只有已经拥有真实 `onViewAll` 业务回调的分类，才把原有 `<h3>` 标题内嵌至少 44px 的单一文本+右箭头按钮：回忆 → 原 `memories`、相册 → 原 `albums`、人物与宠物 → 原 `people`、地点 → 原 `places`、同步文件夹 → 原相册入口中已有的同步文件夹区（真实完整聚合页仍属 Albums）。分类仍可水平扫卡片，折叠后文字入口继续存在，不额外发起 Range 或 Viewer 读取；移除右侧重复「查看全部」按钮。
+- **不伪造页面：** Pinned 的「查看全部」原先直接进入 Albums，但 Albums **不是**全部固定项目，包含收藏、人物、媒体类型及相册混合项；取消这种误导的聚合链接，只保留原生标题旁 ≥44px「编辑」及可横向浏览的预览。完整固定项通过现有可搜索编辑器可达；实用工具也没有合法的独立聚合页，标题保持普通文字。若以后交付真正的「全部固定项目」阅读页，再添加相应真实入口。
+- **可验收边界：** 在真正渲染的共享 React 组件测试中，验证五种可点击标题的路由回调、44px 目标及 `aria-label`、折叠状态、仅有一个对应动作、Pinned 的完整编辑入口仍可达以及 Album/Node 身份不变。仍保持 Web 与 Mobile Web 一套 `XDriveMediaGalleryPage`、`MediaGalleryDataSource`、`VirtualCollection` / `VirtualGrid` / `VirtualTimeline`，使用相同 Server Range、权限、批量任务和 Viewer。全屏 App Frame 与 **52px** 全局应用标题栏不变。物理设备照片墙列数/间距/动效、真实 Safari、10k/100k 浏览器 FPS、HTTP cancel 均需另行实测。

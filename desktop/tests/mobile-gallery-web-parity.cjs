@@ -147,3 +147,16 @@ test('P0-3d quick Pin and remove confirmation keep common Gallery semantics',()=
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
 })
+
+
+test('P0-3e native collection heading is the only View All affordance, using original callbacks',()=>{
+  assert.match(collections,/data-xdrive-mobile-gallery-section-heading=\{id\}/)
+  assert.match(collections,/aria-label=\{'查看全部' \+ title\} onClick=\{onViewAll\}/)
+  assert.match(collections,/minHeight: 44, minWidth: 0, maxWidth: '100%'/)
+  assert.match(collections,/onEdit: enterPinEdit/)
+  assert.doesNotMatch(collections,/onViewAll: pinnedAlbumCount/)
+  assert.doesNotMatch(collections,/listItemRange\(|fetch\(|new XMLHttpRequest\(/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
+    /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+})

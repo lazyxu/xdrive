@@ -172,9 +172,22 @@ test('P0-3a Mobile pinned albums use the same account-scoped Web album order', a
     assert.ok(view.root.findAll(x=>x.type==='thumbnail'&&x.props.nodeID===109).length)
     await act(async()=>{pinned()[0].props.onClick()})
     assert.deepEqual(opened,['a9'])
-    const all=view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-view-all']==='固定项目')[0]
-    assert.ok(all,'bounded pinned preview retains the shared full Albums route')
-    await act(async()=>{all.props.onClick()})
+    assert.equal(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-view-all']==='固定项目').length,0,
+      'Pinned has its own Edit action; it must not masquerade as the full Albums route')
+    const edit=view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0]
+    assert.ok(edit,'all pinned items remain accessible from the existing editor')
+    await act(async()=>{edit.props.onClick()})
+    assert.deepEqual(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-row'])
+      .map(x=>x.props['data-xdrive-mobile-gallery-pin-row']).slice(-2),[
+      'pinned-album-a9','pinned-album-a2',
+    ])
+    await act(async()=>{view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-pinned-done'])[0].props.onClick()})
+    const albumsHeading=view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-view-all']==='相册')[0]
+    assert.ok(albumsHeading,'native Albums heading retains the canonical Albums route')
+    await act(async()=>{albumsHeading.props.onClick()})
     assert.deepEqual(sections,['albums'])
     await act(async()=>{view.update(render('owner-B'))})
     assert.deepEqual(pinned().map(c=>c.props['data-xdrive-mobile-gallery-collection-card']),[
@@ -824,5 +837,78 @@ test('P0-3d unsupported People/Memory and folder previews retain original tap ac
       x.props?.['aria-label']==='精选集快速固定菜单'&&x.props.open).length,0)
     await act(async()=>{memory.props.onClick()})
     assert.deepEqual(opened,['m1'])
+  }finally{if(view)await act(async()=>{view.unmount()})}
+})
+
+
+test('P0-3e iOS 27 tappable section headings open the existing full collection route',async()=>{
+  const sections=[]
+  const places=[{id:'geo1',name:'苏州',latitude:31.3,longitude:120.6,
+    item_count:2,cover_node_id:109}]
+  const folders=[{source_id:9,source_name:'本机备份',source_kind:'local_folder',
+    source_status:'ready',target_node_id:99,target_name:'照片',
+    target_path:'/Photos',direct_media_count:5,child_folder_count:0}]
+  let view
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,places,syncFolders:folders,onOpenSection:s=>sections.push(s),
+      onOpenAlbum:()=>{},onOpenPerson:()=>{},onOpenPlace:()=>{},
+      onOpenSyncFolder:()=>{},
+    }))})
+    const heading=(id)=>view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-section-heading']===id)[0]
+    const expected=[
+      ['memories','回忆','memories'],
+      ['albums','相册','albums'],
+      ['people','人物与宠物','people'],
+      ['places','地点','places'],
+      ['sync-folders','同步文件夹','albums'],
+    ]
+    for(const [id,title,section] of expected){
+      const button=heading(id)
+      assert.ok(button,'missing real aggregate heading '+id)
+      assert.equal(button.props['data-xdrive-mobile-gallery-view-all'],title)
+      assert.equal(button.props['aria-label'],'查看全部'+title)
+      assert.equal(button.props.sx.minHeight,44)
+      assert.equal(button.props.sx.textTransform,'none')
+      await act(async()=>{button.props.onClick()})
+      assert.equal(sections.at(-1),section)
+    }
+    assert.deepEqual(sections,['memories','albums','people','places','albums'])
+    assert.equal(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-section-heading']==='pinned').length,0)
+    assert.equal(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-section-heading']==='utilities').length,0)
+    assert.ok(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-edit-pinned']).length,
+      'Pinned remains editable even without an invented full-Pinned route')
+    const albumGroup=view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-collection-group-id']==='albums')[0]
+    const actions=albumGroup.findAll(x=>x.props?.['data-xdrive-mobile-gallery-view-all']==='相册')
+    assert.equal(actions.length,1,'a section must not have a second redundant View All action')
+  }finally {if(view)await act(async()=>{view.unmount()})}
+})
+
+test('P0-3e collapsed section title remains a 44px reachable route without waking covers',async()=>{
+  const sections=[]
+  let view
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,onOpenSection:s=>sections.push(s),onOpenAlbum:()=>{},
+    }))})
+    const albums=()=>view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-section-heading']==='albums')[0]
+    const fold=view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-collapse-group']==='albums')[0]
+    await act(async()=>{fold.props.onClick()})
+    assert.equal(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-collapse-group']==='albums')[0]
+      .props['aria-expanded'],false)
+    assert.equal(albums().props.sx.minHeight,44)
+    await act(async()=>{albums().props.onClick()})
+    assert.deepEqual(sections,['albums'])
+    assert.ok(view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-collection-card']==='album-a1').length,
+      'the album identity remains present in the collapsed text-only view')
   }finally{if(view)await act(async()=>{view.unmount()})}
 })
