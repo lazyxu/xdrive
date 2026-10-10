@@ -1,6 +1,37 @@
 import type { AgentTransfer, AgentTransfers } from './agent_client.cjs'
 import { formatBytesPerSecond } from './byte_format.cjs'
 
+/** A rate sample's original freshness timestamp must never be renewed by
+ * unrelated progress or a tray-menu rebuild. */
+export type TrayTransferSpeedSample = Pick<
+  AgentTransfer,
+  'instant_bytes_per_second' | 'speed_updated_at' | 'updated_at'
+>
+
+export const TRAY_TRANSFER_RATE_DISPLAY_MS = 2000
+const TRAY_TRANSFER_RATE_MAX_AGE_MS = 3000
+
+export function trayTransferRateKey(item: Pick<AgentTransfer, 'id' | 'started_at'>) {
+  return `${item.id}\u0000${item.started_at}`
+}
+
+function currentRate(
+  item: AgentTransfer,
+  now: number,
+  samples?: ReadonlyMap<string, TrayTransferSpeedSample>,
+) {
+  if (item.state !== 'running' && item.state !== 'retrying') return 0
+  if (item.phase === 'queued' || item.phase === 'finalizing') return 0
+  const sample = samples ? samples.get(trayTransferRateKey(item)) : item
+  if (!sample) return 0
+  const timestamp = Date.parse(sample.speed_updated_at ?? sample.updated_at)
+  const age = now - timestamp
+  if (!Number.isFinite(age) || age < -1000 || age >= TRAY_TRANSFER_RATE_MAX_AGE_MS) return 0
+  if (item.state === 'retrying' && timestamp < Date.parse(item.started_at)) return 0
+  const speed = sample.instant_bytes_per_second
+  return Number.isFinite(speed) && speed > 0 ? speed : 0
+}
+
 export type TrayTransferItem = {
   label: string
 }
@@ -36,7 +67,7 @@ function transferItemProgress(item: AgentTransfer) {
   return { total, processed: Math.min(total, completed + failed) }
 }
 
-function transferLine(item: AgentTransfer) {
+function transferLine(item: AgentTransfer, now: number, samples?: ReadonlyMap<string, TrayTransferSpeedSample>) {
   const parts = [transferDirection(item), compactName(item.file_name || item.path || item.id)]
   const group = item.scope === 'group'
   const progress = transferItemProgress(item)
@@ -55,12 +86,17 @@ function transferLine(item: AgentTransfer) {
   if (group && progress.total > 0 && item.scan_complete !== false) {
     parts.push(`${progress.processed}/${progress.total} 文件`)
   }
-  const speed = formatBytesPerSecond(item.instant_bytes_per_second)
+  const speed = formatBytesPerSecond(currentRate(item, now, samples))
   if (speed) parts.push(speed)
   return parts.join(' · ')
 }
 
-export function trayTransferPresentation(transfers: AgentTransfers, maxItems = 3): TrayTransferPresentation {
+export function trayTransferPresentation(
+  transfers: AgentTransfers,
+  maxItems = 3,
+  now = Date.now(),
+  rateSamples?: ReadonlyMap<string, TrayTransferSpeedSample>,
+): TrayTransferPresentation {
   const roots = rootTransfers(transfers.transfers)
   const active = roots.filter((item) => (
     item.state === 'queued' ||
@@ -69,7 +105,7 @@ export function trayTransferPresentation(transfers: AgentTransfers, maxItems = 3
     item.state === 'cancelling'
   ))
   const failed = roots.filter((item) => item.state === 'failed').length
-  const totalSpeed = active.reduce((sum, item) => sum + Math.max(0, item.instant_bytes_per_second || 0), 0)
+  const totalSpeed = active.reduce((sum, item) => sum + currentRate(item, now, rateSamples), 0)
 
   let label = '传输 · 空闲'
   if (active.length > 0) {
@@ -81,7 +117,7 @@ export function trayTransferPresentation(transfers: AgentTransfers, maxItems = 3
 
   return {
     label,
-    items: active.slice(0, Math.max(0, maxItems)).map((item) => ({ label: transferLine(item) })),
+    items: active.slice(0, Math.max(0, maxItems)).map((item) => ({ label: transferLine(item, now, rateSamples) })),
     extraActive: Math.max(0, active.length - Math.max(0, maxItems)),
     failed,
   }

@@ -24,7 +24,12 @@ import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
 import { trayUpdatePresentation } from './tray_update.cjs'
-import { trayTransferPresentation } from './tray_transfers.cjs'
+import {
+  trayTransferPresentation,
+  trayTransferRateKey,
+  TRAY_TRANSFER_RATE_DISPLAY_MS,
+  type TrayTransferSpeedSample,
+} from './tray_transfers.cjs'
 import { desktopTaskbarProgress } from './taskbar_progress.cjs'
 import { taskbarOverlayKind, taskbarOverlayPNG } from './taskbar_attention.cjs'
 import { editContextMenuTemplate } from './edit_context_menu.cjs'
@@ -216,6 +221,9 @@ let agentLifecycle: AgentLifecycle | null = null
 let filePreviewProxy: DesktopFilePreviewProxy | null = null
 let agentState: AgentConnectionState = { connected: false, error: 'Connecting to xdrive-agent…' }
 let agentTransfers: AgentTransfers = { revision: 0, transfers: [] }
+let trayTransferRateSamples = new Map<string, TrayTransferSpeedSample>()
+let trayTransferSampledAt = 0
+let trayTransferRateTimer: NodeJS.Timeout | null = null
 let agentUpdateState: AgentUpdateState | null = null
 let agentMonitor: AbortController | null = null
 let transferMonitor: AbortController | null = null
@@ -991,11 +999,38 @@ function updateTrayIcon() {
 
 function rebuildTrayMenu() {
   if (!tray) return
+  // Byte/progress updates may arrive much faster than the numeric rate UI.
+  // Snapshot only the rates on a 2s clock; preserve their real freshness.
+  const now = Date.now()
+  const hasActiveTransfer = agentTransfers.transfers.some((item) =>
+    item.state === 'queued' || item.state === 'running' ||
+    item.state === 'retrying' || item.state === 'cancelling'
+  )
+  if (hasActiveTransfer && !trayTransferRateTimer) {
+    trayTransferRateTimer = setInterval(() => rebuildTrayMenu(), TRAY_TRANSFER_RATE_DISPLAY_MS)
+  } else if (!hasActiveTransfer && trayTransferRateTimer) {
+    clearInterval(trayTransferRateTimer)
+    trayTransferRateTimer = null
+  }
+  if (!hasActiveTransfer) {
+    trayTransferSampledAt = 0
+    trayTransferRateSamples.clear()
+  } else if (now - trayTransferSampledAt >= TRAY_TRANSFER_RATE_DISPLAY_MS) {
+    trayTransferSampledAt = now
+    trayTransferRateSamples = new Map(agentTransfers.transfers.map((item) => [
+      trayTransferRateKey(item),
+      {
+        instant_bytes_per_second: item.instant_bytes_per_second,
+        speed_updated_at: item.speed_updated_at,
+        updated_at: item.updated_at,
+      },
+    ]))
+  }
   updateTrayIcon()
   const status = agentState.status
   const configured = !!status?.configured
   const update = trayUpdatePresentation(agentUpdateState)
-  const transfer = trayTransferPresentation(agentTransfers)
+  const transfer = trayTransferPresentation(agentTransfers, 3, now, trayTransferRateSamples)
   const updateSupported = agentState.connected && (agentState.hello?.capabilities.includes('client-update') ?? false)
   tray.setToolTip(`xDrive — ${statusLabel()}`)
   tray.setContextMenu(Menu.buildFromTemplate([
@@ -5588,6 +5623,8 @@ if (!primaryInstance) {
     lifecycleLog?.record('before_quit', { reason: quitReason })
     agentMonitor?.abort()
     transferMonitor?.abort()
+    if (trayTransferRateTimer) clearInterval(trayTransferRateTimer)
+    trayTransferRateTimer = null
     sourceRunMonitor?.abort()
     updateMonitor?.abort()
     void filePreviewProxy?.close()
