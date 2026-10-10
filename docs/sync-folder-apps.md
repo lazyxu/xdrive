@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup under PR verification |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -154,7 +154,7 @@ SourceRun, upload, scheduling, preview, cancel or Mirror delete. Recovering
 legacy unbound Sources and securely removing orphan unbound Sources will
 require an explicit owning-Agent flow; do not silently reclaim or delete them.
 
-## P0-B2b3: owning-Agent cleanup for empty unbound drafts (PR verification)
+## P0-B2b3: owning-Agent cleanup for empty unbound drafts (merged #1325)
 
 An authenticated `DELETE /api/v1/sources/:id/local-draft` requires the
 unrevoked **creating** Agent enrollment token, matching owner and Source
@@ -178,7 +178,7 @@ Revoked-device recovery requires an explicit separate reclaim contract; it
 is NOT implemented by bypassing creator identity. Local activation/SourceRun,
 upload, automatic scheduling, and Mirror deletion remain blocked.
 
-## UI P0-C4a: owning Desktop local-backup creation (stacked PR review)
+## UI P0-C4a: owning Desktop local-backup creation (merged #1328)
 
 The first-level `设备备份` page accepts optional own-device-only
 creation capability and a cloud directory browser. The Desktop supplies
@@ -198,6 +198,34 @@ This is **only the create/bind slice** of P0-C4: own-device bound Source
 edit/remove/rebind, legacy orphan discovery/recovery, local preview and
 run controls require subsequent stages. No actual upload or schedule is
 enabled; B-scope history remains read-only for all devices.
+
+## UI P0-C4b1: discover/recover own never-bound drafts (PR verification)
+
+The owner Desktop can now re-open a paused, never-bound `local_folder`
+draft left by a dismissed picker, Agent restart or lost response. The
+`GET /api/v1/device-backups/local-drafts` endpoint requires **both** an
+authenticated owner session and the exact unrevoked creating-device
+enrollment credential; an owner JWT, same-account Desktop B or forged
+device ID cannot list A's drafts. The bounded cursor page returns only
+Source ID, display name, revision and creation time. It excludes
+previously bound, revised, historical, non-local and legacy-unclaimed
+Sources, and exposes no OS Root identifiers/paths or unrestricted Source
+configuration. The Agent loads its credential from OS storage without
+auto-enrolling merely for a read; Electron Main/Preload add a private,
+validated `device-backup-local-drafts` capability.
+
+Only a **credential-verified local device** with Agent support receives
+the recovery panel and its actions. A user can retry the existing native
+Root picker (without creating a new Source), or request the P0-B2b3
+empty-draft cleanup with confirmation; Server continues to fence binding,
+history, revision and concurrent revocation. Listing uses bounded
+`limit` and `after_id` cursor with `has_more`; account/server
+changes discard old local draft state and late responses.
+
+Web/Mobile Web and another Desktop keep their B-scope read-only
+experience. No activation, SourceRun, watcher, uploading, Mirror deletion,
+bound-Source editing/rebinding or revoked-device recovery is enabled.
+These are distinct follow-on stages P0-C4b2 and L03-D2–G.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

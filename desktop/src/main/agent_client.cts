@@ -259,6 +259,17 @@ export interface AgentDeviceBackupRunPage {
   has_more: boolean
 }
 
+export type AgentLocalSourceDraftPage = {
+  items: Array<{
+    source_id: number
+    name: string
+    revision: number
+    created_at: string
+  }>
+  has_more: boolean
+  next_after_id: number
+}
+
 export type AgentVerifiedLocalDevice = {
   device_id: string
 }
@@ -2604,6 +2615,11 @@ export class AgentIPCClient {
 
   verifiedLocalDevice() {
     return this.request<AgentVerifiedLocalDevice>('GET', '/v1/device-backups/local-device')
+  }
+
+  deviceBackupLocalDrafts(limit = 20, afterID = 0) {
+    const query = new URLSearchParams({ limit: String(limit), after_id: String(afterID) })
+    return this.request<AgentLocalSourceDraftPage>('GET', `/v1/device-backups/local-drafts?${query.toString()}`)
   }
 
   deviceBackupRuns(sourceID: number, limit = 20, offset = 0) {

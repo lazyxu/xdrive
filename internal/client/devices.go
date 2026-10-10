@@ -119,6 +119,45 @@ func (c *Client) BindLocalSource(ctx context.Context, sourceID, revision uint64,
 	return out, nil
 }
 
+// LocalSourceDraft contains only fields necessary to resume an Agent-owned
+// never-bound Source. It is not a generic Source or mutation contract.
+type LocalSourceDraft struct {
+	SourceID  uint64    `json:"source_id"`
+	Name      string    `json:"name"`
+	Revision  uint64    `json:"revision"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type LocalSourceDraftPage struct {
+	Items       []LocalSourceDraft `json:"items"`
+	HasMore     bool               `json:"has_more"`
+	NextAfterID uint64             `json:"next_after_id"`
+}
+
+// LocalSourceDrafts only runs inside the owning Agent. Both the current
+// account session and device's OS-protected enrollment secret are necessary.
+func (c *Client) LocalSourceDrafts(ctx context.Context, deviceID, deviceToken string, limit int, afterID uint64) (LocalSourceDraftPage, error) {
+	var out LocalSourceDraftPage
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+	query.Set("after_id", strconv.FormatUint(afterID, 10))
+	req, err := c.request(ctx, http.MethodGet, "/api/v1/device-backups/local-drafts?"+query.Encode(), nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("X-XDrive-Device-ID", deviceID)
+	req.Header.Set("X-XDrive-Device-Token", deviceToken)
+	resp, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer resp.Body.Close()
+	if err := decodeResponse(resp, &out); err != nil {
+		return LocalSourceDraftPage{}, err
+	}
+	return out, nil
+}
+
 type VerifiedLocalDevice struct {
 	DeviceID string `json:"device_id"`
 }
