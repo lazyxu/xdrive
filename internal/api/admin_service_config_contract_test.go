@@ -11,7 +11,7 @@ func TestServiceDependencyConfigurationModesAreTruthful(t *testing.T) {
 		{"database", "deployment", "controlled-restart"},
 		{"storage", "deployment", "controlled-restart"},
 		{"caddy", "deployment", "controlled-restart"},
-		{"background-worker", "deployment", "controlled-restart"},
+		{"background-worker", "in-app", "task-boundary"},
 		{"media-worker", "planned", "not-available"},
 		{"photo-face", "deployment", "controlled-restart"},
 		{"photo-smart", "deployment", "controlled-restart"},

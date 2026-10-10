@@ -88,6 +88,10 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminSourceWorkerConfig,
+  type AgentAdminSourceWorkerUpdate,
+  type AgentAdminSourceWorkerRevisionPage,
+  type AgentAdminSourceWorkerRollbackInput,
   type AgentAdminPhotoAutoConfig,
   type AgentAdminPhotoAutoUpdate,
   type AgentAdminPhotoAutoRevisionPage,
@@ -4347,6 +4351,53 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
   }, false))
+  ipcMain.handle('agent:cloud-admin-source-worker', () => runAgentAction<AgentAdminSourceWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminSourceWorkerConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-source-worker', (_event, value: unknown) => runAgentAction<AgentAdminSourceWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Pull Worker policy must be an object.')
+    }
+    const input = value as Partial<AgentAdminSourceWorkerUpdate>
+    const v = input.desired
+    if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+      !v || typeof v !== 'object' || Array.isArray(v) ||
+      Object.keys(v).sort().join(',') !== 'max_concurrency,poll_interval_seconds,scan_interval_seconds' ||
+      !Number.isSafeInteger(v.scan_interval_seconds) || v.scan_interval_seconds < 60 || v.scan_interval_seconds > 604800 ||
+      !Number.isSafeInteger(v.poll_interval_seconds) || v.poll_interval_seconds < 10 || v.poll_interval_seconds > 3600 ||
+      !Number.isSafeInteger(v.max_concurrency) || v.max_concurrency < 1 || v.max_concurrency > 8) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Pull Worker revision or scheduling parameters.')
+    }
+    return requireAgentClient().cloudSetAdminSourceWorkerConfig({
+      revision: input.revision, desired: v,
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-source-worker-revisions', () => runAgentAction<AgentAdminSourceWorkerRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminSourceWorkerRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-source-worker', (_event, value: unknown) => runAgentAction<AgentAdminSourceWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Pull Worker rollback must be an object.')
+    }
+    const input = value as Partial<AgentAdminSourceWorkerRollbackInput>
+    if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision <= 0 ||
+      typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+      input.target_revision < 0 || input.target_revision >= input.revision) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Pull Worker rollback revisions.')
+    }
+    return requireAgentClient().cloudRollbackAdminSourceWorker({
+      revision: input.revision, target_revision: input.target_revision,
+    })
+  }, false))
+
   ipcMain.handle('agent:cloud-admin-photo-intelligence', () => runAgentAction<AgentAdminPhotoAutoConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

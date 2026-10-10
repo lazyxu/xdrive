@@ -67,6 +67,7 @@ type Server struct {
 	mediaIndexOwners               map[uint64]*mediaIndexOwnerState
 	mediaSelectionMu               sync.Mutex
 	mediaSelections                map[string]*mediaSelectionSnapshot
+	sourceWorkerConfigSaveMu       sync.Mutex
 	photoAutoSaveMu                sync.Mutex
 	photoAutoPolicy                atomic.Pointer[photoAutoRuntime]
 	photoIntelligenceMu            sync.Mutex
@@ -329,6 +330,10 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/source-worker", s.adminSourceWorkerConfig)
+	admin.PUT("/services/source-worker", s.adminSaveSourceWorkerConfig)
+	admin.GET("/services/source-worker/revisions", s.adminSourceWorkerRevisions)
+	admin.POST("/services/source-worker/rollback", s.adminRollbackSourceWorkerConfig)
 	admin.GET("/services/photo-intelligence", s.adminPhotoAutoConfig)
 	admin.PUT("/services/photo-intelligence", s.adminSavePhotoAutoConfig)
 	admin.GET("/services/photo-intelligence/revisions", s.adminPhotoAutoRevisions)

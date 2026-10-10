@@ -1,6 +1,6 @@
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage } from '../../ui/shared/src'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
-import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
+import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
   AdminUser,
   AuditEvent,
@@ -628,6 +628,23 @@ export class XDriveApi {
 
   adminServices() {
     return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
+  }
+
+  adminSourceWorkerConfig() {
+    return this.request<XDriveSourceWorkerConfig>('/api/v1/admin/services/source-worker', { cache: 'no-store' })
+  }
+  adminSaveSourceWorkerConfig(input: XDriveSourceWorkerUpdate) {
+    return this.request<XDriveSourceWorkerConfig>('/api/v1/admin/services/source-worker', {
+      method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+    })
+  }
+  adminSourceWorkerRevisions() {
+    return this.request<XDriveSourceWorkerRevisionPage>('/api/v1/admin/services/source-worker/revisions', { cache: 'no-store' })
+  }
+  adminRollbackSourceWorker(input: XDriveSourceWorkerRollbackInput) {
+    return this.request<XDriveSourceWorkerConfig>('/api/v1/admin/services/source-worker/rollback', {
+      method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+    })
   }
 
   adminPhotoAutoConfig() {

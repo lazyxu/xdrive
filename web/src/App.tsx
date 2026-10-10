@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
@@ -849,6 +849,10 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
+    loadSourceWorkerConfig: () => api.adminSourceWorkerConfig(),
+    saveSourceWorkerConfig: (input: XDriveSourceWorkerUpdate) => api.adminSaveSourceWorkerConfig(input),
+    loadSourceWorkerRevisions: () => api.adminSourceWorkerRevisions(),
+    rollbackSourceWorker: (input: XDriveSourceWorkerRollbackInput) => api.adminRollbackSourceWorker(input),
     loadPhotoAutoConfig: () => api.adminPhotoAutoConfig(),
     savePhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => api.adminSavePhotoAutoConfig(input),
     loadPhotoAutoRevisions: () => api.adminPhotoAutoRevisions(),

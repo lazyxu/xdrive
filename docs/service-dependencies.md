@@ -130,7 +130,7 @@ Every system-wide dependency in this inventory must ultimately support a truthfu
 - Live Server reads use the effective persisted configuration on every Baidu map request, so rotating, enabling, disabling or clearing the AK needs **no container restart** and does not interrupt file services.
 
 
-### P1-D1: independent Pull Worker heartbeat status (implementation PR)
+### P1-D1: independent Pull Worker heartbeat status (merged #1289)
 
 The standard Compose `worker` service already runs the server binary in standalone `worker` mode. Previously the admin page always reported its separate process status as `unknown`, even if the worker was healthy. This phase adds a narrow, real liveness contract without introducing remote restart or changing per-user Source settings:
 
@@ -141,3 +141,15 @@ The standard Compose `worker` service already runs the server binary in standalo
 - This is **observability only**, not the final Baidu-style edit/validate/save/apply/rollback controller. Worker polling and concurrency are still deployment-owned, `config_mode=deployment` / `apply_mode=controlled-restart`. A follow-up must implement a restricted configuration owner, versioned desired/effective runtime policy and acknowledgement before enabling any editor. Media Worker/FFmpeg, Caddy, PostgreSQL and storage settings remain separate.
 
 **Validation:** unit test for the exact missing/fresh/expired/retired statuses and PostgreSQL integration test for publisher upsert/expiry and admin reader. Require full exact-head PR CI before merging. No local full Go 1.25 / PostgreSQL suite is claimed in connector-only execution.
+
+
+### P1-D2: audited Pull Worker runtime scheduling policy (implementation)
+
+The independent Pull Worker now supports administrator-only, version-guarded desired scheduling settings: scan interval in seconds (60..604800), poll interval (10..3600), and per-process network concurrency (1..8). This is a global scheduling policy, **not** a per-user Sync Folder schedule, a Push permission, or a container resource controller.
+
+- `GET/PUT /api/v1/admin/services/source-worker` and `GET .../revisions`, `POST .../rollback` persist immutable revisions (including a default revision-zero snapshot on first edit) with audit inside the same PostgreSQL transaction. Invalid/full-object inputs return 400, stale writes 409; historical rollback creates a new revision. The default shown before the first save is the **code default only**, never an assertion about deployed environment flags.
+- Saving produces desired state, **not** activation. A running Pull Worker reads new saved revisions at startup and between completed Source batches (with ten-second idle checks), changes polling/scan intervals without interrupting work and swaps its own network scheduler only at a completed batch boundary if concurrency changes. `worker --once` retains its CLI/deployment flags; no media, Push or durable tasks are cancelled by an administrator update.
+- The Worker heartbeat publishes its effective scheduling values and applied revision. The administrator endpoint aggregates only **fresh** Worker leases by values/revision; no process IDs, hostnames, per-user Source records, credentials or paths leave the Server. `applied` requires at least one live Worker and **all observed live instances** match desired revision and values. If the snapshot was capped, it cannot claim applied. Pending/mixed instances are displayed truthfully; no live Workers is unavailable; no saved revision is unmanaged, not falsely green. Failed Worker config reads leave last-good settings active.
+- `config_mode=in-app` and `apply_mode=task-boundary` apply only to these three scheduling settings. Installing/restarting/upgrading container images, CPU/memory limits, storage, PostgreSQL, Caddy or FFmpeg Media Worker still needs a restricted deployment controller that this phase does not add. No Docker socket is exposed.
+
+**Tests and delivery:** bound validation; real PostgreSQL revision/audit/rollback and worker acknowledgement; safe Worker scheduler rebuild; shared Web/Desktop port, Go Client, Desktop IPC and Electron transport; exact-head GitHub CI. Do not claim runtime application merely because the Server saved a revision or green build exists; effective status requires a live Worker heartbeat.

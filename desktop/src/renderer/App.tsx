@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput } from '@xdrive/shared'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
@@ -1434,6 +1434,26 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadSourceWorkerConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminSourceWorkerConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveSourceWorkerConfig: async (input: XDriveSourceWorkerUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminSourceWorkerConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadSourceWorkerRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminSourceWorkerRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackSourceWorker: async (input: XDriveSourceWorkerRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminSourceWorker(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadPhotoAutoConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminPhotoAutoConfig()
       if (!result.ok) throw new Error(result.error.message)

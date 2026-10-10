@@ -27,9 +27,14 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStoredCredentialField } from './SourceCredentialFields'
+import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
 
 export type XDriveServiceDependenciesPort = {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
+  loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
+  saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
+  loadSourceWorkerRevisions?: () => Promise<import('../service-dependencies').XDriveSourceWorkerRevisionPage>
+  rollbackSourceWorker?: (input: import('../service-dependencies').XDriveSourceWorkerRollbackInput) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   loadBaiduMapConfig?: () => Promise<XDriveBaiduMapAdminConfig>
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
@@ -78,6 +83,7 @@ const statusLabels: Record<XDriveServiceDependencyState, { label: string; color:
 
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
+  'task-boundary': '运行批次完成后安全生效',
   'manual-reload': '管理员校验后手动热加载',
   'controlled-restart': '受控重启／重新部署后生效',
   'not-available': '尚无安全配置执行接口',
@@ -615,6 +621,7 @@ export function XDriveServiceDependenciesPage({
               <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 {items.map((service) => <ServiceRow key={service.id} service={service} />)}
               </Paper>
+              {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'intelligence' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>

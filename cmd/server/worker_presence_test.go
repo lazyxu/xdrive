@@ -33,6 +33,7 @@ func TestPublishSourceWorkerPresencePostgres(t *testing.T) {
 	}
 	cfg.pollInterval = 30 * time.Second
 	cfg.maxConcurrency = 4
+	cfg.revision = 2
 	if err := publishSourceWorkerPresence(context.Background(), db, id, cfg, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func TestPublishSourceWorkerPresencePostgres(t *testing.T) {
 	if err := db.Where("instance_id = ?", id).Take(&presence).Error; err != nil {
 		t.Fatal(err)
 	}
-	if presence.ScanIntervalSeconds != 21600 || presence.PollIntervalSeconds != 30 || presence.MaxConcurrency != 4 ||
+	if presence.ScanIntervalSeconds != 21600 || presence.PollIntervalSeconds != 30 || presence.MaxConcurrency != 4 || presence.AppliedRevision != 2 ||
 		!presence.HeartbeatAt.Equal(now.Add(time.Second)) ||
 		!presence.ExpiresAt.Equal(now.Add(time.Second).Add(sourceWorkerPresenceTTL)) {
 		t.Fatalf("upserted lease does not reflect effective Worker settings: %+v", presence)

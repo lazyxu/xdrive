@@ -618,6 +618,12 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudAdminSourceWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-source-worker'),
+  cloudSetAdminSourceWorkerConfig: (input: { revision: number; desired: { scan_interval_seconds: number; poll_interval_seconds: number; max_concurrency: number } }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-source-worker', input),
+  cloudAdminSourceWorkerRevisions: () => ipcRenderer.invoke('agent:cloud-admin-source-worker-revisions'),
+  cloudRollbackAdminSourceWorker: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-source-worker', input),
   cloudAdminPhotoAutoConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence'),
   cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean; kinds?: { face: boolean; smart: boolean; semantic: boolean; person_cluster: boolean } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-photo-intelligence', input),
