@@ -146,6 +146,12 @@ function desktopActiveHydrationProgress(transfers: readonly AgentTransfer[]) {
   return byPath
 }
 
+function throwDesktopUploadError(error: { code?: string; message: string }): never {
+  const failure = new Error(error.message)
+  if (error.code === 'transfer_cancelled') failure.name = 'AbortError'
+  throw failure
+}
+
 export default function DesktopFileExplorer({
   items,
   crumbs,
@@ -191,6 +197,7 @@ export default function DesktopFileExplorer({
   recentSupported = false,
   transferLifecycleSupported = false,
   transferLifecycleBatchSupported = false,
+  transferGroupUploadCancelSupported = false,
   transfers = [],
   actionIntent,
   onActionIntentConsumed,
@@ -251,6 +258,7 @@ export default function DesktopFileExplorer({
   recentSupported?: boolean
   transferLifecycleSupported?: boolean
   transferLifecycleBatchSupported?: boolean
+  transferGroupUploadCancelSupported?: boolean
   transfers?: readonly AgentTransfer[]
   actionIntent?: DesktopFileExplorerActionIntent | null
   onActionIntentConsumed?: (id: number) => void
@@ -645,6 +653,9 @@ export default function DesktopFileExplorer({
     onError: (error) => onError(error instanceof Error ? error.message : String(error)),
   })
 
+  const liveTransferTasks = useRef(transfers)
+  liveTransferTasks.current = transfers
+
   const {
     busy: uploadBusy,
     busyAction: uploadBusyAction,
@@ -657,16 +668,19 @@ export default function DesktopFileExplorer({
     continueOnUploadError: true,
     fileName: (file) => file.name,
     fileSize: (file) => file.size,
-    preflight: async (parentID, file) => {
-      const result = await window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)
-      if (!result.ok) throw new Error(result.error.message)
+    preflight: async (parentID, file, _signal, groupID) => {
+      const result = await window.xdriveDesktop.agent.cloudUploadPreflight(
+        parentID, file.name, transferGroupUploadCancelSupported ? groupID : undefined,
+      )
+      if (!result.ok) throwDesktopUploadError(result.error)
       return result.data
     },
-    preflightBatch: async (targets) => {
+    preflightBatch: async (targets, _signal, groupID) => {
       const result = await window.xdriveDesktop.agent.cloudUploadPreflightBatch(
         targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
+        transferGroupUploadCancelSupported ? groupID : undefined,
       )
-      if (!result.ok) throw new Error(result.error.message)
+      if (!result.ok) throwDesktopUploadError(result.error)
       return result.data
     },
     upload: async (parentID, file, conflictPolicy, _onProgress, transferID) => {
@@ -676,10 +690,14 @@ export default function DesktopFileExplorer({
         conflictPolicy,
         transferID,
       )
-      if (!result.ok) throw new Error(result.error.message)
+      if (!result.ok) throwDesktopUploadError(result.error)
       return result.data
     },
     transferLifecycle: transferLifecycleSupported ? {
+      isCancelled: transferGroupUploadCancelSupported
+        ? (groupID) => liveTransferTasks.current.some((task) => task.id === groupID &&
+          (task.state === 'cancelling' || task.state === 'cancelled'))
+        : undefined,
       startGroup: async (input) => {
         const result = await window.xdriveDesktop.agent.transferLifecycle({
           action: 'start_group',

@@ -122,6 +122,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-events",
 	"transfer-retry",
 	"transfer-cancel",
+	"transfer-upload-group-cancel",
 	"transfer-open-local",
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
@@ -2587,6 +2588,7 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, 
 	var input struct {
 		ParentID uint64 `json:"parent_id"`
 		Name     string `json:"name"`
+		GroupID  string `json:"group_id,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -2601,7 +2603,29 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, 
 		)
 		return
 	}
-	result, err := h.ctrl.CloudUploadConflictPreflight(r.Context(), input.ParentID, input.Name)
+	input.GroupID = strings.TrimSpace(input.GroupID)
+	if len(input.GroupID) > 128 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_group_id", "invalid group id")
+		return
+	}
+	var result client.UploadConflictPreflight
+	var err error
+	if input.GroupID != "" {
+		owner, ok := h.ctrl.(interface {
+			CloudUploadConflictPreflightTracked(context.Context, uint64, string, string) (client.UploadConflictPreflight, error)
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "group_cancel_unsupported", "upgrade Agent to cancel folder uploads")
+			return
+		}
+		result, err = owner.CloudUploadConflictPreflightTracked(r.Context(), input.ParentID, input.Name, input.GroupID)
+	} else {
+		result, err = h.ctrl.CloudUploadConflictPreflight(r.Context(), input.ParentID, input.Name)
+	}
+	if errors.Is(err, context.Canceled) {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_cancelled", "folder upload cancelled")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -2611,7 +2635,8 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflight(w http.ResponseWriter, 
 
 func (h *desktopIPCHandler) cloudUploadConflictPreflightBatch(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		Items []client.UploadConflictPreflightRequest `json:"items"`
+		Items   []client.UploadConflictPreflightRequest `json:"items"`
+		GroupID string                                  `json:"group_id,omitempty"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -2623,7 +2648,29 @@ func (h *desktopIPCHandler) cloudUploadConflictPreflightBatch(w http.ResponseWri
 	for index := range input.Items {
 		input.Items[index].Name = strings.TrimSpace(input.Items[index].Name)
 	}
-	results, err := h.ctrl.CloudUploadConflictPreflightBatch(r.Context(), input.Items)
+	input.GroupID = strings.TrimSpace(input.GroupID)
+	if len(input.GroupID) > 128 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_group_id", "invalid group id")
+		return
+	}
+	var results []client.UploadConflictPreflight
+	var err error
+	if input.GroupID != "" {
+		owner, ok := h.ctrl.(interface {
+			CloudUploadConflictPreflightBatchTracked(context.Context, []client.UploadConflictPreflightRequest, string) ([]client.UploadConflictPreflight, error)
+		})
+		if !ok {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "group_cancel_unsupported", "upgrade Agent to cancel folder uploads")
+			return
+		}
+		results, err = owner.CloudUploadConflictPreflightBatchTracked(r.Context(), input.Items, input.GroupID)
+	} else {
+		results, err = h.ctrl.CloudUploadConflictPreflightBatch(r.Context(), input.Items)
+	}
+	if errors.Is(err, context.Canceled) {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_cancelled", "folder upload cancelled")
+		return
+	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
@@ -2681,6 +2728,10 @@ func (h *desktopIPCHandler) cloudUploadWithConflictPolicy(w http.ResponseWriter,
 			input.Name,
 			input.ConflictPolicy,
 		)
+	}
+	if errors.Is(err, context.Canceled) {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_cancelled", "folder upload cancelled")
+		return
 	}
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)

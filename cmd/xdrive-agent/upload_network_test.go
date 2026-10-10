@@ -124,8 +124,14 @@ func TestAgentCloudUploadReportsNetworkBeforeChunkCompletion(t *testing.T) {
 			controller := newAgentController(ctx, cancel)
 			var child *transfer.Handle
 			if mode == "folder_child" {
-				group := controller.transfers.StartGroup(transfer.Spec{Kind: transfer.KindUpload, Direction: "upload"})
-				child = controller.transfers.StartChild(group, transfer.Spec{Kind: transfer.KindUpload, Direction: "upload", TotalBytes: 64 << 10})
+				groupID, err := controller.StartTransferGroup(transfer.Spec{Kind: transfer.KindUpload, Direction: "upload"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				child = controller.transfers.StartChildByID(groupID, transfer.Spec{Kind: transfer.KindUpload, Direction: "upload", TotalBytes: 64 << 10})
+				if child == nil {
+					t.Fatal("folder child transfer not registered")
+				}
 			}
 			finished := make(chan struct{})
 			var uploadErr error

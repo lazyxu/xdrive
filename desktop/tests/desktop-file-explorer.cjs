@@ -277,7 +277,7 @@ test('Desktop upload conflicts use the shared upload controller with capability-
   for (const token of [
     'useXDriveFileExplorerUploadController<File>({',
     'continueOnUploadError: true',
-    'window.xdriveDesktop.agent.cloudUploadPreflight(parentID, file.name)',
+    'window.xdriveDesktop.agent.cloudUploadPreflight(',
     'window.xdriveDesktop.agent.cloudUploadPreflightBatch(',
     'window.xdriveDesktop.agent.cloudUploadFile(',
     'runTargets: runUploadTargets,',
