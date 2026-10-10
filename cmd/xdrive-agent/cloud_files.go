@@ -1633,6 +1633,12 @@ func (c *agentController) CloudDownloadArchive(
 		destination,
 		0,
 	)
+	// The task ID cancels this exact archive, including local extraction.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if handle != nil {
+		handle.BindCancel(cancel)
+	}
 	tmp, err := os.CreateTemp(destination, ".xdrive-archive-*.zip")
 	if err != nil {
 		finishAgentCloudTransfer(handle, err)
@@ -1660,7 +1666,14 @@ func (c *agentController) CloudDownloadArchive(
 		return agentCloudArchiveDownloadResult{}, err
 	}
 
-	downloaded, err := extractDownloadedArchive(tmpPath, destination)
+	if err := ctx.Err(); err != nil {
+		finishAgentCloudTransfer(handle, err)
+		return agentCloudArchiveDownloadResult{}, err
+	}
+	if handle != nil {
+		handle.SetPhase(transfer.PhaseFinalizing)
+	}
+	downloaded, err := extractDownloadedArchiveContext(ctx, tmpPath, destination)
 	finishAgentCloudTransfer(handle, err)
 	if err != nil {
 		return agentCloudArchiveDownloadResult{}, err
@@ -1725,7 +1738,15 @@ func validateDownloadedArchive(reader *zip.ReadCloser) ([]validatedArchiveEntry,
 	return entries, roots, nil
 }
 
+// Preserve the old helper while the Agent uses a context-aware extraction.
 func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
+	return extractDownloadedArchiveContext(context.Background(), zipPath, destination)
+}
+
+func extractDownloadedArchiveContext(ctx context.Context, zipPath, destination string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return nil, err
@@ -1743,6 +1764,9 @@ func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
 	defer os.RemoveAll(staging)
 
 	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		target := filepath.Join(staging, filepath.FromSlash(entry.path))
 		rel, err := filepath.Rel(staging, target)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -1766,7 +1790,10 @@ func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
 			_ = input.Close()
 			return nil, err
 		}
-		written, copyErr := io.Copy(output, input)
+		written, copyErr := io.Copy(output, archiveCancellationReader{ctx: ctx, src: input})
+		if copyErr == nil {
+			copyErr = ctx.Err()
+		}
 		syncErr := output.Sync()
 		closeOutErr := output.Close()
 		closeInErr := input.Close()
@@ -1790,6 +1817,9 @@ func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	existing, err := os.ReadDir(destination)
 	if err != nil {
 		return nil, err
@@ -1804,28 +1834,42 @@ func extractDownloadedArchive(zipPath, destination string) ([]string, error) {
 
 	downloaded := make([]string, 0, len(roots))
 	promoted := make([]string, 0, len(roots))
+	rollback := func(err error) ([]string, error) {
+		for _, path := range promoted {
+			_ = os.RemoveAll(path)
+		}
+		return nil, err
+	}
 	for _, root := range roots {
+		if err := ctx.Err(); err != nil {
+			return rollback(err)
+		}
 		source := filepath.Join(staging, root)
 		info, err := os.Lstat(source)
 		if err != nil {
-			return nil, err
+			return rollback(err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 || (!info.IsDir() && !info.Mode().IsRegular()) {
-			return nil, fmt.Errorf("unsupported extracted root %q", root)
+			return rollback(fmt.Errorf("unsupported extracted root %q", root))
 		}
 		name, err := allocateDownloadedArchiveName(root, info.IsDir(), reserved)
 		if err != nil {
-			return nil, err
+			return rollback(err)
 		}
 		target := filepath.Join(destination, name)
-		if err := copyDownloadedArchiveRoot(source, target); err != nil {
-			for _, path := range promoted {
-				_ = os.RemoveAll(path)
-			}
-			return nil, err
+		if err := copyDownloadedArchiveRootContext(ctx, source, target); err != nil {
+			// The copy function cleans only destinations that it created. Never
+			// remove an externally-created conflicting destination on failure.
+			return rollback(err)
 		}
 		promoted = append(promoted, target)
+		if err := ctx.Err(); err != nil {
+			return rollback(err)
+		}
 		downloaded = append(downloaded, name)
+	}
+	if err := ctx.Err(); err != nil {
+		return rollback(err)
 	}
 	return downloaded, nil
 }
@@ -1863,7 +1907,27 @@ func allocateDownloadedArchiveName(
 	return "", fmt.Errorf("cannot allocate archive destination name for %q", name)
 }
 
+// Checking the context between copy chunks is essential after HTTP completes.
+type archiveCancellationReader struct {
+	ctx context.Context
+	src io.Reader
+}
+
+func (r archiveCancellationReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.src.Read(p)
+}
+
 func copyDownloadedArchiveRoot(source, destination string) error {
+	return copyDownloadedArchiveRootContext(context.Background(), source, destination)
+}
+
+func copyDownloadedArchiveRootContext(ctx context.Context, source, destination string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	info, err := os.Lstat(source)
 	if err != nil {
 		return err
@@ -1881,13 +1945,21 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 			return err
 		}
 		for _, entry := range entries {
-			if err := copyDownloadedArchiveRoot(
-				filepath.Join(source, entry.Name()),
+			if err := ctx.Err(); err != nil {
+				_ = os.RemoveAll(destination)
+				return err
+			}
+			if err := copyDownloadedArchiveRootContext(
+				ctx, filepath.Join(source, entry.Name()),
 				filepath.Join(destination, entry.Name()),
 			); err != nil {
 				_ = os.RemoveAll(destination)
 				return err
 			}
+		}
+		if err := ctx.Err(); err != nil {
+			_ = os.RemoveAll(destination)
+			return err
 		}
 		return nil
 	}
@@ -1903,7 +1975,10 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(output, input)
+	_, copyErr := io.Copy(output, archiveCancellationReader{ctx: ctx, src: input})
+	if copyErr == nil {
+		copyErr = ctx.Err()
+	}
 	syncErr := output.Sync()
 	closeErr := output.Close()
 	if copyErr != nil {
@@ -1918,7 +1993,11 @@ func copyDownloadedArchiveRoot(source, destination string) error {
 		_ = os.Remove(destination)
 		return closeErr
 	}
-	return os.Chmod(destination, 0o644)
+	if err := os.Chmod(destination, 0o644); err != nil {
+		_ = os.Remove(destination)
+		return err
+	}
+	return nil
 }
 
 func (c *agentController) CloudSearch(
