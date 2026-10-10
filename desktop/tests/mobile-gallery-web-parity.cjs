@@ -76,3 +76,15 @@ test('The mobile appearance preserves the 52px App header and delegates all muta
   assert.match(page, /onRemoveFromAlbum/)
   assert.doesNotMatch(collections, /create.*DataSource|new.*VirtualCollection/)
 })
+
+
+test('P0-3a Mobile Collections reuses wide Web album pin preferences and same callback',()=>{
+  const organizer=read('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx')
+  const organization=read('ui/shared/src/mui/MediaGalleryAlbumOrganization.ts')
+  assert.match(organizer,/readMediaAlbumPreferences\(accountScope\)/)
+  assert.match(organizer,/writeMediaAlbumPreferences\(accountScope, next\)/)
+  assert.match(organization,/export function sortedMediaAlbums\(/)
+  assert.match(collections,/sortedMediaAlbums\(albums, readMediaAlbumPreferences\(accountScope\)\)/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.doesNotMatch(collections,/create.*DataSource|new.*VirtualCollection|fetch\(/)
+})

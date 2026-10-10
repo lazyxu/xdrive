@@ -8,6 +8,7 @@ import type {
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { readMediaAlbumPreferences, sortedMediaAlbums } from './MediaGalleryAlbumOrganization'
 
 type CollectionCard = {
   key: string
@@ -18,6 +19,7 @@ type CollectionCard = {
 }
 
 export interface XDriveMobileGalleryCollectionsProps {
+  accountScope?: string
   albums: readonly MediaAlbum[]
   memories: readonly MediaMemory[]
   people: readonly MediaPersonIdentity[]
@@ -127,11 +129,23 @@ function CollectionGroup({
 
 /** Presentation only: consumes existing Gallery collection data and callbacks. */
 export function XDriveMobileGalleryCollections({
-  albums, memories, people, pets, places, syncFolders, loadThumbnail,
+  accountScope = '', albums, memories, people, pets, places, syncFolders, loadThumbnail,
   onOpenSection, onOpenAlbum, onOpenMemory, onOpenPerson,
   onOpenPet, onOpenPlace, onOpenSyncFolder,
 }: XDriveMobileGalleryCollectionsProps) {
   const open = (section: MediaGallerySection) => () => onOpenSection(section)
+  // Reuse the exact account-scoped album pin order from the shared Web/Desktop
+  // Album Organizer. These are previews only; all pinned albums remain in Albums.
+  const pinnedAlbums: CollectionCard[] = onOpenAlbum
+    ? sortedMediaAlbums(albums, readMediaAlbumPreferences(accountScope))
+        .pinned.slice(0, 8).map((album) => ({
+          key: 'pinned-album-' + album.id,
+          title: album.name,
+          detail: album.item_count.toLocaleString('zh-CN') + ' 项',
+          coverNodeID: album.cover_node_id,
+          activate: () => onOpenAlbum(album),
+        }))
+    : []
   const pinned: CollectionCard[] = [
     { key: 'favorites', title: '收藏', activate: open('favorites') },
     { key: 'albums', title: '相册',
@@ -141,9 +155,10 @@ export function XDriveMobileGalleryCollections({
       coverNodeID: people.find((person) => !person.hidden && person.cover_node_id)?.cover_node_id,
       activate: open('people') },
     { key: 'media-types', title: '媒体类型', activate: open('media-types') },
+    ...pinnedAlbums,
   ]
   const recent: CollectionCard[] = onOpenMemory
-    ? memories.slice(0, 8).filter((m) => m.item_count > 0)
+    ? memories.filter((m) => m.item_count > 0).slice(0, 8)
       .map((m) => ({
       key: 'memory-' + m.id, title: m.title,
       detail: m.subtitle || m.item_count.toLocaleString('zh-CN') + ' 项',
@@ -198,7 +213,7 @@ export function XDriveMobileGalleryCollections({
     <Stack id="xdrive-mobile-gallery-collections" data-xdrive-mobile-gallery-collections
       role="tabpanel" aria-label="精选集"
       spacing={2.75} sx={{ minWidth: 0, pt: 0.75, pb: 1 }}>
-      <CollectionGroup title="固定项目" cards={pinned} loadThumbnail={loadThumbnail} />
+      <CollectionGroup title="固定项目" cards={pinned} loadThumbnail={loadThumbnail} onViewAll={pinnedAlbums.length ? open('albums') : undefined} />
       <CollectionGroup title="回忆" cards={recent} loadThumbnail={loadThumbnail} onViewAll={open('memories')} />
       <CollectionGroup title="相册" cards={ownedAlbums} loadThumbnail={loadThumbnail} onViewAll={open('albums')} />
       <CollectionGroup title="人物与宠物" cards={identities} loadThumbnail={loadThumbnail} onViewAll={open('people')} />
