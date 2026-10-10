@@ -1,0 +1,28 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.join(__dirname, '..', '..')
+const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
+
+test('own Desktop local rename keeps credential and Root inside Agent', () => {
+  const server = read('internal', 'api', 'local_source_executor_auth.go')
+  const client = read('internal', 'client', 'local_bound_rename.go')
+  const agent = read('cmd', 'xdrive-agent', 'device_backup_local_config.go')
+  const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const app = read('desktop', 'src', 'renderer', 'App.tsx')
+  const page = read('ui', 'shared', 'src', 'mui', 'DeviceBackupPage.tsx')
+  const web = read('web', 'src', 'App.tsx')
+  assert.match(server, /requireLocalSourceMutationTx\(/)
+  for (const header of ['X-XDrive-Device-ID','X-XDrive-Device-Token','X-XDrive-Local-Root-ID','X-XDrive-Local-Root-Fingerprint']) {
+    assert.ok(client.includes(header), header)
+  }
+  assert.match(agent, /localpush\.LoadRootGrant\(/)
+  assert.match(agent, /cli\.LocalSourceBindingWithToken\(/)
+  assert.doesNotMatch(agent, /localpush\.EnsureDevice\(/)
+  assert.match(ipc, /device-backup-local-config/)
+  assert.match(app, /localSettings=\{localBackupSettings\}/)
+  assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
+  assert.doesNotMatch(web, /localSettings=/)
+  assert.doesNotMatch(web, /renameDeviceBackupLocalSource/)
+})
