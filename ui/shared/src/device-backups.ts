@@ -1,0 +1,57 @@
+// This is a strict API allowlist for *viewing* a remote device's Push,
+// never the unrestricted Source/SourceItem/SyncRun contract.
+export interface XDriveDeviceBackupRun {
+  id: string
+  source_id: number
+  run_number: number
+  mode: string
+  trigger: string
+  status: string
+  scanned_items: number
+  scanned_bytes: number
+  ignored_items: number
+  new_items: number
+  changed_items: number
+  moved_items: number
+  unchanged_items: number
+  planned_transfer_bytes: number
+  transferred_items: number
+  transferred_bytes: number
+  failed_items: number
+  active_transfer_bytes: number
+  active_transfer_total_bytes: number
+  cancel_requested_at?: string
+  started_at: string
+  finished_at?: string
+}
+export interface XDriveDeviceBackupFolder {
+  source_id: number
+  name: string
+  target_path?: string
+  sync_mode: 'backup' | 'mirror'
+  status: string
+  latest_run?: XDriveDeviceBackupRun
+}
+export interface XDriveDeviceBackupDevice {
+  id: string
+  name: string
+  platform: string
+  client_version?: string
+  last_seen_at?: string
+  connection_state: 'unknown' | 'online' | 'offline'
+  revoked: boolean
+  folders: XDriveDeviceBackupFolder[]
+}
+export interface XDriveDeviceBackupOverview {
+  devices: XDriveDeviceBackupDevice[]
+  has_more: boolean
+  has_more_folders: boolean
+}
+export interface XDriveDeviceBackupRunPage {
+  items: XDriveDeviceBackupRun[]
+  has_more: boolean
+}
+export interface XDriveDeviceBackupDataSource {
+  list(): Promise<XDriveDeviceBackupOverview>
+  runs(sourceID: number, limit: number, offset: number): Promise<XDriveDeviceBackupRunPage>
+}
