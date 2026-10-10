@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume in PR |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -199,7 +199,7 @@ edit/remove/rebind, legacy orphan discovery/recovery, local preview and
 run controls require subsequent stages. No actual upload or schedule is
 enabled; B-scope history remains read-only for all devices.
 
-## UI P0-C4b1: discover/recover own never-bound drafts (PR verification)
+## UI P0-C4b1: discover/recover own never-bound drafts (merged #1332)
 
 The owner Desktop can now re-open a paused, never-bound `local_folder`
 draft left by a dismissed picker, Agent restart or lost response. The
@@ -226,6 +226,24 @@ Web/Mobile Web and another Desktop keep their B-scope read-only
 experience. No activation, SourceRun, watcher, uploading, Mirror deletion,
 bound-Source editing/rebinding or revoked-device recovery is enabled.
 These are distinct follow-on stages P0-C4b2 and L03-D2–G.
+
+## UI P0-C4b2a: owning Desktop bound local Source rename (PR verification)
+
+The owning Agent resolves an OS-protected enrollment secret, retrieves the
+Server's device-verified binding, verifies the native Root grant against the
+current filesystem, and sends four device/Root headers and If-Match revision
+for the preexisting Server PATCH. The Server enforces device, Root, owner,
+revocation and revision again inside the write transaction. Missing/replaced
+Root, foreign or revoked device and stale revision fail closed. New Agent
+loopback GET/PATCH capabilities reveal only Source ID/name/revision.
+
+The shared B-scope presenter offers renaming only on credential-verified
+own-Desktop rows. Web/Mobile Web and other Desktop remain read-only. A
+server/account change closes the action and ignores late UI completions.
+This stage does not activate local Push, permit run controls, Root rebind,
+target/ignore-rule edits, upload, schedule or Mirror deletion; NAS Push stays
+a placeholder. Exact-head CI and native-device verification are required
+before claiming completion. L03-D2-G/L05-L07 remain future work.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

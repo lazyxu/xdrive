@@ -71,3 +71,10 @@ export interface XDriveLocalSourceDraftPage {
   has_more: boolean
   next_after_id: number
 }
+
+// Owning-Desktop-only minimal config, separate from the foreign-device DTO.
+export interface XDriveLocalBoundBackupSettings {
+  source_id: number
+  name: string
+  revision: number
+}

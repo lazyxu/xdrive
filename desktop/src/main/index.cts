@@ -178,6 +178,7 @@ import {
   type AgentDeviceBackupOverview,
   type AgentVerifiedLocalDevice,
   type AgentLocalSourceDraftPage,
+  type AgentLocalBoundBackupSettings,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
@@ -1996,6 +1997,28 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Local draft limit or cursor is invalid.')
       }
       return requireAgentClient().deviceBackupLocalDrafts(limit, afterID)
+    }, false))
+  // Root and enrollment proof are loaded by Agent, never from Renderer.
+  ipcMain.handle('agent:get-device-backup-local-source', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-config')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local Source ID must be positive.')
+      }
+      return requireAgentClient().localBoundBackupSettings(sourceID)
+    }, false))
+  ipcMain.handle('agent:rename-device-backup-local-source', (_event, sourceID: unknown, revision: unknown, name: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-config')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        typeof name !== 'string' || Buffer.byteLength(name.trim(), 'utf8') < 1 ||
+        Buffer.byteLength(name.trim(), 'utf8') > 128) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local Source revision or name.')
+      }
+      return requireAgentClient().renameLocalBoundBackup(sourceID, revision, name.trim())
     }, false))
   ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

@@ -137,7 +137,7 @@ var desktopIPCCapabilities = []string{
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
-		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts")
+		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config")
 	}
 	if openWithSupportedPlatform() {
 		capabilities = append(capabilities, "open-with")
@@ -736,6 +736,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/device-backups", h.deviceBackups)
 	mux.HandleFunc("GET /v1/device-backups/local-device", h.deviceBackupLocalDevice)
 	mux.HandleFunc("GET /v1/device-backups/local-drafts", h.deviceBackupLocalDrafts)
+	mux.HandleFunc("GET /v1/device-backups/local-source", h.localBoundBackupSettings)
+	mux.HandleFunc("PATCH /v1/device-backups/local-source", h.renameLocalBoundBackup)
 	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
 	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)
 	mux.HandleFunc("POST /v1/sources", h.createSource)

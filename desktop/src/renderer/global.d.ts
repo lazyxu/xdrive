@@ -5,6 +5,7 @@ import type {
   XDriveDeviceBackupOverview,
   XDriveDeviceBackupRunPage,
   XDriveLocalSourceDraftPage,
+  XDriveLocalBoundBackupSettings,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialReveal,
   ExternalSourceCredentialTestResult,
@@ -705,6 +706,8 @@ declare global {
         getDeviceBackups: () => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
         getDeviceBackupLocalDrafts: (limit?: number, afterID?: number) => Promise<DesktopResult<XDriveLocalSourceDraftPage>>
+        getDeviceBackupLocalSource: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
+        renameDeviceBackupLocalSource: (sourceID: number, revision: number, name: string) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>

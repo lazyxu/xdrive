@@ -270,6 +270,12 @@ export type AgentLocalSourceDraftPage = {
   next_after_id: number
 }
 
+export type AgentLocalBoundBackupSettings = {
+  source_id: number
+  name: string
+  revision: number
+}
+
 export type AgentVerifiedLocalDevice = {
   device_id: string
 }
@@ -2662,6 +2668,17 @@ export class AgentIPCClient {
   deviceBackupLocalDrafts(limit = 20, afterID = 0) {
     const query = new URLSearchParams({ limit: String(limit), after_id: String(afterID) })
     return this.request<AgentLocalSourceDraftPage>('GET', `/v1/device-backups/local-drafts?${query.toString()}`)
+  }
+
+  localBoundBackupSettings(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBoundBackupSettings>('GET', `/v1/device-backups/local-source?${query.toString()}`)
+  }
+
+  renameLocalBoundBackup(sourceID: number, revision: number, name: string) {
+    return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-source', {
+      source_id: sourceID, revision, name,
+    })
   }
 
   deviceBackupRuns(sourceID: number, limit = 20, offset = 0) {
