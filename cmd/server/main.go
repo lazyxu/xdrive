@@ -240,6 +240,7 @@ func main() {
 	srv.StartStorageSampler(serverCtx)
 	srv.StartSystemMaintenanceTasks(serverCtx)
 	srv.StartArchivePrepareTasks(serverCtx)
+	srv.StartGeoNamesReplicaReconciliation(serverCtx)
 	srv.StartPhotoIntelligence(serverCtx)
 	srv.StartMediaCreativeGenerations(serverCtx)
 	srv.StartMediaIndexer(serverCtx)

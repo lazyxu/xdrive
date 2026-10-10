@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status:** Shared Web/Desktop **服务与依赖** page has read-only dependency health plus a narrowly scoped, encrypted **Baidu Server AK** editor. It is **not** a Docker controller, Compose editor, secret viewer, or general-purpose credentials service.
+**Status:** Shared Web/Desktop **服务与依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.
 
 ### Contract
 
@@ -49,7 +49,7 @@ This page must **not** treat a service's configuration form, process presence an
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
 
-### P1-C1: Photo Intelligence automatic task policy (implementation PR)
+### P1-C1: Photo Intelligence automatic task policy (merged #1253)
 
 The administrator can save a **single instance-wide automatic-analysis scheduling switch** with optimistic revision checking and a metadata-only audit in the same transaction. The default is enabled for backward compatibility. On successful save, the current Server atomically uses the new setting for future automatic face detection/embedding, smart visual/OCR classification, semantic embeddings and person clustering. New system-event and reconciliation admissions are blocked while paused; automatic tasks queued before the change check policy again before processing. In-flight work is not interrupted. Explicit user/admin reanalysis remains available, as does independent GeoNames place-label reconciliation. This does **not** manage the Photo Intelligence container, installed models, sockets or CPU limits.
 
@@ -63,18 +63,24 @@ The administrator-only `GET /api/v1/admin/services/geonames` reports the loaded 
 
 **B1 historical scope (merged after CI run #38009959801):** This delivers real reload of the existing deployment-provided data, not an in-app directory editor or remote GeoNames download. The radius editor and persisted desired/effective distinction arrive in P1-B2a. Automatic multi-replica coordination, upload/staging and rollback UI remain outstanding; production-dataset memory/latency evidence has not been recorded as completed.
 
-### P1-B2a: persisted matching radius and per-instance hot apply (in review)
+### P1-B2a: persisted matching radius and per-instance hot apply (merged #1236)
 
 The administrator may update the GeoNames matching radius in `(0, 500]` km with a mandatory optimistic revision and an explicit applied-versus-pending indication. The Server rebuilds the full candidate from the existing trusted read-only mount **before** updating `xd_admin_geonames_settings`. Saving and a metadata-only audit are one transaction; only after commit is the new immutable resolver published in the current Server. Failed validation, stale revision (409), or failed audit leaves the previous effective resolver intact. Startup reads the persisted override before loading the resolver. An administrator may use the existing manual reload action on a replica to pick up a pending saved radius. This is **not** an arbitrary dataset-path editor, automatic cluster broadcast, or global all-replicas success guarantee. User-level Sync Folder credentials remain excluded.
 
-### P1-B2b-R1: revision journal and auditable rollback (staged)
+### P1-B2b-R1/R2: revision journal and auditable rollback, shared UI (merged #1252 / #1260)
 
 The administrator can review an immutable history of the last 40 GeoNames matching-distance revisions and roll back to an older value. The first setting edit stores the old deployment default as revision 0. Every rollback creates a new revision, not a history rewrite. Complete dataset verification precedes database changes; settings, immutable history and a metadata-only audit commit atomically before this Server swaps the resolver. Stale revisions return 409, missing targets 404 and invalid datasets 422. Other replicas may remain pending. This is a radius rollback, **not** automatic dataset-file or multi-replica rollback.
 
-**Remaining P1-B2b:** safe managed dataset staging and validation, application across all Server instances with actual status acknowledgments, and rollback of persisted desired revisions. These are not declared delivered by radius hot-apply.
+**After merged P1-B2b:** historical radius rollback is delivered through the shared administrator UI. Managed dataset upload/staging, application acknowledgments across every Server instance, and restoring an earlier mounted dataset remain unimplemented. A past *radius* revision is not an earlier on-disk dataset.
+
+### P1-B2c: automatic GeoNames radius reconciliation on each Server instance (implementation PR)
+
+A configured Server instance checks the administrator-persisted radius every 30 seconds. An unchanged radius does not trigger another full index build. For a pending radius, it takes the existing reload mutex, loads and validates the complete immutable candidate from its trusted read-only deployment mount, re-reads the desired revision to reject stale candidates, and only then atomically publishes it. Missing/invalid files, database read errors and interrupted validation leave the previous index intact. In-flight PlaceRunner batches keep their previously pinned snapshot. Foreground configuration/reload/rollback commands take priority; a busy instance retries on the next interval.
+
+The existing admin save/rollback transaction is the durable audited source of truth; passive replicas only apply the committed desired state and report their **own** effective radius. Every replica can remain `pending` after validation failure, so this is **best-effort eventual apply**, **not** a cluster-wide success acknowledgment or automatic dataset-file replacement. The UI reports the 30-second retry cadence without claiming a completion deadline. Changes to mounts, secrets, worker processes and user Sync Folder configuration remain out of scope. Acceptance: PostgreSQL integration for pending → applied and invalid mount → last-good retention → repaired retry, Go API and shared Web/Desktop CI.
 
 **Next real control-plane stages:**
-1. Extend the already delivered GeoNames immutable-index reload with safe managed dataset staging/upload, versioned apply acknowledgments across replicas and rollback. Keep the existing batch snapshot-pinning contract.
+1. Complete GeoNames per-replica automatic radius reconciliation, then separately add safe managed dataset staging/upload, versioned apply acknowledgments across replicas and mounted-dataset rollback. Keep the existing batch snapshot-pinning contract.
 2. Add Photo Intelligence enable/disable and per-model resource controls with a real analyzer lifecycle and safe task semantics. Separate container installation/profile/CPU/memory from runtime job policy.
 3. Implement optional FFmpeg Media Worker with signed byte access, cancellation and resource isolation before introducing its configuration endpoint.
 4. Reuse the restricted Host Manager for deployment-only changes after implementing permissioned status/backup/diff/rollback and exact runtime-health checks. Never grant Server general Docker socket permissions.
@@ -92,7 +98,7 @@ Every system-wide dependency in this inventory must ultimately support a truthfu
 1. Finish server-side Media Worker signed preview input and output verification, worker cancellation and short-video cache; **measure production baseline first** per `AGENTS.md`.
 2. Add actual FFmpeg worker health and queue/capacity to the status endpoint when the runtime is shipped.
 3. Baidu Maps Server API is documented in `docs/baidu-map-server-api.md`. It serves a bounded static PNG from a fixed upstream host. No offline fallback or other provider is allowed; any later interactive functionality requires a separate Baidu API/licensing/coordinate review.
-4. Baidu AK can be updated, disabled or cleared using the scoped admin-only endpoint with authenticated encryption, audit and optimistic revision checking. All other service settings remain read-only until separately designed. Secret values must never be returned in status JSON.
+4. Baidu AK can be updated, disabled or cleared using the scoped admin-only endpoint with authenticated encryption, audit and optimistic revision checking. Other deployment-controlled service settings remain read-only until separately designed. Secret values must never be returned in status JSON.
 
 ### Baidu Server AK precedence and hot reload
 

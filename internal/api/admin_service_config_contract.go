@@ -13,7 +13,7 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 			"在本页配置、启用或更换 Server AK；加密保存后新请求直接生效，无须重启。已配置不等于远端服务健康"
 	case "geonames":
 		return "in-app", "immediate",
-			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。每个 Server 实例报告自己的生效状态，不代表集群全部完成；GeoNames 仅提供地名标签"
+			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。其他 Server 实例每 30 秒尝试读取最新匹配距离、校验现有只读数据集并热生效；失败保留旧索引并显示待生效。状态仅代表当前实例，不是集群确认；GeoNames 仅提供地名标签"
 	case "photo-face", "photo-smart", "photo-semantic":
 		return "deployment", "controlled-restart",
 			"模型容器、Socket 和资源参数由受控部署管理；本页另有可持久化且立即生效的全局自动分析调度策略，不会启动/停止容器或取消运行中任务"
