@@ -2025,6 +2025,23 @@ export default function App({
         clearHistoryLoading={busy === 'clear-transfer-history'}
         clearHistoryDisabled={Boolean(busy) || !agent.hello?.capabilities.includes('transfer-history-scope')}
         onClearHistory={() => { void clearNetworkTransferHistory() }}
+        onShowInCloud={(task) => {
+          const locatorID = task.cloud_parent_id || task.cloud_node_id
+          if (typeof locatorID !== 'number' || !Number.isSafeInteger(locatorID) || locatorID <= 0) return
+          void window.xdriveDesktop.agent.getNodeLocation(locatorID).then((result) => {
+            if (!result.ok) { setError(result.error.message); return }
+            const location = result.data
+            const dir = task.cloud_parent_id || location.parent_id
+            if (typeof dir !== 'number' || !Number.isSafeInteger(dir) || dir <= 0) return
+            const ancestry = (task.cloud_parent_id
+              ? location.breadcrumbs
+              : location.breadcrumbs.filter((crumb) => crumb.id !== location.node_id)
+            ).map((crumb) => ({ id: crumb.id, name: crumb.name }))
+            if (!ancestry.length || ancestry[ancestry.length - 1].id !== dir) return
+            setView('files')
+            void loadCloudDirectory(dir, ancestry)
+          }).catch((error) => setError(error instanceof Error ? error.message : String(error)))
+        }}
         retryingID={busy.startsWith('retry-transfer-') ? busy.slice('retry-transfer-'.length) : ''}
         retryDisabled={Boolean(busy)}
         onRetry={(id) => { void retryTransfer(id) }}

@@ -47,6 +47,8 @@ type Spec struct {
 	FileName       string
 	Path           string
 	RelativePath   string
+	CloudParentID  uint64
+	CloudNodeID    uint64
 	Kind           string
 	Direction      string
 	ParentID       string
@@ -85,6 +87,8 @@ type Task struct {
 	FileName              string     `json:"file_name"`
 	Path                  string     `json:"path,omitempty"`
 	RelativePath          string     `json:"relative_path,omitempty"`
+	CloudParentID         uint64     `json:"cloud_parent_id,omitempty"`
+	CloudNodeID           uint64     `json:"cloud_node_id,omitempty"`
 	Kind                  string     `json:"kind"`
 	Direction             string     `json:"direction"`
 	State                 string     `json:"state"`
@@ -217,6 +221,8 @@ func (m *Manager) startLocked(spec Spec, now time.Time) *Handle {
 		FileName:       spec.FileName,
 		Path:           spec.Path,
 		RelativePath:   spec.RelativePath,
+		CloudParentID:  spec.CloudParentID,
+		CloudNodeID:    spec.CloudNodeID,
 		Kind:           spec.Kind,
 		Direction:      spec.Direction,
 		State:          state,

@@ -8,6 +8,8 @@ import {
   Box,
   ButtonBase,
   IconButton,
+  Menu,
+  MenuItem,
   Popover,
   Stack,
   Tab,
@@ -43,6 +45,7 @@ export type XDriveTransferPopoverProps = {
   retryingID?: string
   retryDisabled?: boolean
   onRetry?: (id: string) => void
+  onShowInCloud?: (task: XDriveTransferTask) => void
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }
@@ -84,6 +87,7 @@ function TransferPopoverSession({
   retryingID = '',
   retryDisabled = false,
   onRetry,
+  onShowInCloud,
   open,
   onOpenChange,
 }: XDriveTransferPopoverProps) {
@@ -92,6 +96,9 @@ function TransferPopoverSession({
   const id = useId()
   const [internalOpen, setInternalOpen] = useState(false)
   const [section, setSection] = useState<'active' | 'history'>('active')
+  const [contextMenu, setContextMenu] = useState<{
+    task: XDriveTransferTask; mouseX: number; mouseY: number
+  } | null>(null)
   // Snapshot only the speed numbers every two seconds; byte progress and
   // status remain live. Clock ticks also expire stalled rates without events.
   const display = useXDriveTransferDisplayedRates(transfers)
@@ -263,8 +270,18 @@ function TransferPopoverSession({
           ) : (
             <Stack spacing={1}>
               {items.map((node) => (
-                <XDriveTransferTreeItem
+                <Box
                   key={node.task.id}
+                  onContextMenu={(event) => {
+                    const task = node.task
+                    const canShow = (typeof task.cloud_parent_id === 'number' && Number.isSafeInteger(task.cloud_parent_id) && task.cloud_parent_id > 0) ||
+                      (typeof task.cloud_node_id === 'number' && Number.isSafeInteger(task.cloud_node_id) && task.cloud_node_id > 0)
+                    if (!canShow || !onShowInCloud || disabled) return
+                    event.preventDefault()
+                    setContextMenu({ task, mouseX: event.clientX, mouseY: event.clientY })
+                  }}
+                >
+                  <XDriveTransferTreeItem
                   node={node}
                   compact
                   now={now}
@@ -274,12 +291,26 @@ function TransferPopoverSession({
                     closeButtonRef.current?.focus()
                     onRetry(id)
                   } : undefined}
-                />
+                  />
+                </Box>
               ))}
             </Stack>
           )}
         </Box>
       </Popover>
+      <Menu
+        open={Boolean(contextMenu) && isOpen}
+        onClose={() => setContextMenu(null)}
+        anchorReference="anchorPosition"
+        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
+      >
+        <MenuItem onClick={() => {
+          if (contextMenu) onShowInCloud?.(contextMenu.task)
+          setContextMenu(null)
+        }}>
+          在云端文件管理器中显示
+        </MenuItem>
+      </Menu>
     </>
   )
 }

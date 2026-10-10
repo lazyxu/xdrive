@@ -117,21 +117,32 @@ type agentMediaThumbnail struct {
 	Data        []byte
 }
 
+type agentCloudTransferLocation struct {
+	ParentID uint64
+	NodeID   uint64
+}
+
 func startAgentCloudTransfer(
 	manager *transfer.Manager,
 	kind, direction, fileName, path string,
 	total int64,
+	locations ...agentCloudTransferLocation,
 ) (*transfer.Handle, func(done, total int64)) {
 	if manager == nil {
 		return nil, nil
 	}
-	handle := manager.Start(transfer.Spec{
+	spec := transfer.Spec{
 		FileName:   fileName,
 		Path:       filepath.ToSlash(path),
 		Kind:       kind,
 		Direction:  direction,
 		TotalBytes: total,
-	})
+	}
+	if len(locations) > 0 {
+		spec.CloudParentID = locations[0].ParentID
+		spec.CloudNodeID = locations[0].NodeID
+	}
+	handle := manager.Start(spec)
 	first := true
 	progress := func(done, total int64) {
 		if handle == nil {
@@ -869,6 +880,7 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 			name,
 			localPath,
 			info.Size(),
+			agentCloudTransferLocation{ParentID: parentID},
 		)
 	}
 
@@ -923,6 +935,7 @@ func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, loca
 		name,
 		localPath,
 		info.Size(),
+		agentCloudTransferLocation{ParentID: parentID},
 	)
 	node, err := cli.UploadFileResumable(agentUploadTransferContext(ctx, handle), parentID, localPath, name, progress)
 	finishAgentCloudTransfer(handle, err)
@@ -974,6 +987,7 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		filepath.Base(destination),
 		destination,
 		0,
+		agentCloudTransferLocation{NodeID: id},
 	)
 	tmp, err := os.CreateTemp(parent, ".xdrive-download-*")
 	if err != nil {

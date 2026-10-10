@@ -142,6 +142,8 @@ class WebTransferStore {
   create(input: {
     fileName: string
     path?: string
+    cloudParentID?: number
+    cloudNodeID?: number
     kind: 'upload' | 'download'
     bytesTotal?: number
     speedSource?: 'client' | 'server'
@@ -156,6 +158,8 @@ class WebTransferStore {
       scan_complete: true,
       file_name: input.fileName,
       path: input.path || input.fileName,
+      cloud_parent_id: input.cloudParentID,
+      cloud_node_id: input.cloudNodeID,
       kind: input.kind,
       direction: input.kind,
       state: 'running',

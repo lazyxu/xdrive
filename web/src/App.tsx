@@ -1172,6 +1172,19 @@ function FileManager({
       open={transferPopoverOpen}
       onOpenChange={setTransferPopoverOpen}
       onClearHistory={() => { api.clearTransferHistory('network') }}
+      onShowInCloud={(task) => {
+        const parentID = task.cloud_parent_id
+        if (typeof parentID === 'number' && Number.isSafeInteger(parentID) && parentID > 0) {
+          launchWebApp({ app: 'files', params: { dir: parentID } })
+          return
+        }
+        const nodeID = task.cloud_node_id
+        if (typeof nodeID === 'number' && Number.isSafeInteger(nodeID) && nodeID > 0) {
+          void api.nodeLocation(Number(nodeID)).then((location) => {
+            if (location.parent_id) launchWebApp({ app: 'files', params: { dir: location.parent_id } })
+          }).catch(handleError)
+        }
+      }}
     />
   )
   const accountAction = (
