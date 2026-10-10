@@ -981,3 +981,65 @@ test('F-PARITY-04: browser-tab action survives Mobile menu but internal file tab
     { id: 'open-browser-tab', label: '在新浏览器标签页打开', onSelect: () => calls.push('browser') },
   ] } })
 })
+
+test('F-PARITY-05: Mobile path dialog preloads authoritative workspace path and submits it once', async () => {
+  const paths = []
+  const search = []
+  await withView(async h => {
+    const more = find(h.view, 'aria-label', '文件操作菜单')
+    await act(async () => { more.props.onClick({ currentTarget: {} }) })
+    const action = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    assert.ok(action)
+    await act(async () => { action.props.onClick() })
+    const dialog = find(h.view, 'data-mobile-files-go-to-path', true)
+    assert.equal(dialog.props.open, true)
+    const field = h.view.root.findAll(node => node.type === 'TextField' &&
+      node.props?.['aria-label'] === '文件夹路径')[0]
+    assert.ok(field)
+    assert.equal(field.props.value, '我的文件/旧目录')
+    await act(async () => { field.props.onChange({ target: { value: ' 我的文件/新目录 ' } }) })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    assert.ok(form)
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.deepEqual(paths, ['我的文件/新目录'])
+    assert.deepEqual(search, [], 'typed path must not be converted into a fake global Search query')
+    assert.equal(find(h.view, 'data-mobile-files-go-to-path', true).props.open, false)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1, 'navigation does not remount scroll owner')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0, 'path submission reveals Browse, not Home')
+  }, { props: {
+    pathValue: '我的文件/旧目录',
+    onPathSubmit: value => paths.push(value),
+    onSearch: value => search.push(value),
+  } })
+})
+
+test('F-PARITY-05: empty path cannot navigate and Trash never exposes the operation', async () => {
+  const calls = []
+  await withView(async h => {
+    const more = find(h.view, 'aria-label', '文件操作菜单')
+    await act(async () => { more.props.onClick({ currentTarget: {} }) })
+    const action = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    assert.ok(action)
+    await act(async () => { action.props.onClick() })
+    const field = h.view.root.findAll(node => node.type === 'TextField' &&
+      node.props?.['aria-label'] === '文件夹路径')[0]
+    await act(async () => { field.props.onChange({ target: { value: '    ' } }) })
+    assert.equal(find(h.view, 'data-mobile-files-go-to-path-submit', true).props.disabled, true)
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.deepEqual(calls, [])
+    assert.equal(find(h.view, 'data-mobile-files-go-to-path', true).props.open, true)
+    await h.update({ trashActive: true })
+    assert.equal(find(h.view, 'data-mobile-files-go-to-path', true).props.open, false)
+    const actions = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')
+    assert.equal(actions.length, 0)
+  }, { props: {
+    pathValue: '我的文件',
+    onPathSubmit: value => calls.push(value),
+  } })
+})

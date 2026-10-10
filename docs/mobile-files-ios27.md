@@ -48,14 +48,24 @@
 
 ## 2026-10-10 F-PARITY-03 · Mobile Smart Folder management parity
 
-**In development; CI and merge pending.** Mobile Browse edit mode now exposes 44 CSS px action targets for a saved Smart Folder's Rename / Replace-with-current-Search / Delete through the same Web organization controller and shared `XDriveFileNameDialog`. The mounted rules remain a bounded owner-scoped list rather than independently scanning a 100k directory. The current applied global Search, not a draft text string or stale folder path, is the only source for replacement. The replacement action is available from Search's More menu with an explicit target picker and confirmation. Delete prompts before permanently removing **only the saved query definition**, never matching Nodes or physical bytes; a rejected mutation preserves the rule and dialog for retry. Source/rule labels, loading/error and retry feedback use the same Web controller.
+**Merged:** [PR #1222](https://github.com/lazyxu/xdrive/pull/1222), full CI [#37985494553](https://github.com/lazyxu/xdrive/actions/runs/37985494553), linear merge `dd8c7aab`. Mobile Browse edit mode now exposes 44 CSS px action targets for a saved Smart Folder's Rename / Replace-with-current-Search / Delete through the same Web organization controller and shared `XDriveFileNameDialog`. The mounted rules remain a bounded owner-scoped list rather than independently scanning a 100k directory. The current applied global Search, not a draft text string or stale folder path, is the only source for replacement. The replacement action is available from Search's More menu with an explicit target picker and confirmation. Delete prompts before permanently removing **only the saved query definition**, never matching Nodes or physical bytes; a rejected mutation preserves the rule and dialog for retry. Source/rule labels, loading/error and retry feedback use the same Web controller.
 
-No extra Mobile REST endpoint, no separate Server Search engine, no second virtual collection or tab state is introduced. Physical iOS 27 screenshot, genuine native Share/Browser state, inline-folder disclosure and native Browse drag-reorder remain not verified. After tests and CI, mark this phase `Merged`; until then do not call parity complete.
+No extra Mobile REST endpoint, no separate Server Search engine, no second virtual collection or tab state is introduced. Physical iOS 27 screenshot, genuine native Share/Browser state, inline-folder disclosure and native Browse drag-reorder remain not verified. This phase is merged; physical iOS 27 visual and interaction verification remain outstanding.
 
 ## 2026-10-10 F-PARITY-04 · existing Web Quick Look and browser tabs
 
-**Status: implemented in a one-work-commit PR; complete CI/merge and real iOS 27 interactions remain pending.**
+**Merged:** [PR #1224](https://github.com/lazyxu/xdrive/pull/1224), full CI [#37987118818](https://github.com/lazyxu/xdrive/actions/runs/37987118818), merged and branch deleted. Real iOS 27 interactions remain pending.
 - Files rows retain normal short tap and Enter to the canonical Web Open resolver. Space on an unselected/ordinary browsing row and the explicit **快速预览** item in its context menu launch the already registered Web `preview` app, using the same `openWebQuickLook` browse context, adjacent range and Viewer return, with no duplicate player/request API. Selection mode keeps Space for selection; Trash remains non-previewable.
 - The existing wide Web `在新浏览器标签页打开` action is visible on Mobile, distinct from **internal FileExplorer tabs**, whose new-tab command remains absent below 900px. Browser popup behavior retains the original Web owner and its security/session rules.
 - Web and Mobile continue sharing the same Server APIs, operation controller, virtual collection and thumbnail provider; changing the preview action must not fetch originals on long-hold hover or unmount the caller's scroll host.
 - Static and mounted tests cover Space vs Enter, mouse/long-press context, single renderer scroll host, routed preview callbacks and preservation of external browser tabs.
+ 
+## 2026-10-10 F-PARITY-05 · Go to folder path
+
+**Implementation submitted for PR validation, not yet merged or verified on physical iOS 27.**
+
+Wide Web supports a typed FileExplorer address/path through `useXDriveFileExplorerWorkspace.submitPath`, backed by the existing owner-authorized `xDriveFileExplorerSubmitPath` resolver. Mobile Files now exposes the *same operation* as `··· → 前往文件夹路径…`, with a 44 CSS px touch-ready input form prefilled from the same Web workspace `pathValue`. A requested path transitions to Mobile's single Browse context; the shared workspace resolves and validates directories, owns navigation intent/history and publishes errors. No Mobile directory enumeration, path-specific REST or separate tab navigation was added.
+
+The typed path is explicitly **not** a folder-scoped Search. Blank paths cannot submit, Trash cannot start the operation, and normal Open/Viewer and global Search remain separate. Preserve full-height App Frame, 52px app header, shared Server/API, virtual collection and thumbnail ownership.
+
+**Acceptance:** React mounted tests for Browse Home and Recent, current path prefill, trimmed submission, empty path rejection, Trash suppression and preserved scroll owner; source tests for shared resolver reuse. Full PR CI is the merge gate; real iOS 27 screenshots, software keyboard, installed mode and 100k end-to-end measurements remain not-run.

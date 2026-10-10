@@ -74,6 +74,8 @@ type Props = {
   onBrowseRoot: () => void
   onGoUp: () => void
   onCrumbClick: (index: number) => void
+  pathValue?: string
+  onPathSubmit?: (path: string) => void
   onRestoreFolder: (id: number) => Promise<void>
   onOpenItem: (item: XDriveFileExplorerItem) => boolean | void | Promise<boolean | void>
   onQuickLookItem?: (item: XDriveFileExplorerItem) => void
@@ -308,6 +310,8 @@ export default function MobileFiles(props: Props) {
   const [viewport, setViewport] = useState({ width: 375, height: 600 })
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [arrangeAnchor, setArrangeAnchor] = useState<HTMLElement | null>(null)
+  const [goToPathOpen, setGoToPathOpen] = useState(false)
+  const [goToPathDraft, setGoToPathDraft] = useState('')
   const [itemMenu, setItemMenu] = useState<{ item: XDriveFileExplorerItem; x: number; y: number } | null>(null)
   const [collectionMenu, setCollectionMenu] = useState<{
     entry: SectionEntry; owner: 'recent' | 'favorites'; x: number; y: number
@@ -510,6 +514,10 @@ export default function MobileFiles(props: Props) {
     setReplaceSavedSearchOpen(false)
     setReplaceSavedSearchTargetID(null)
   }, [props.searchActive])
+  useEffect(() => {
+    // Path navigation is a Files operation, never a Trash mutation.
+    if (props.trashActive) setGoToPathOpen(false)
+  }, [props.trashActive])
   // Navigation invalidates the prepared bytes, even if the parent app remains
   // mounted behind a sibling viewer.
   useEffect(() => {
@@ -682,6 +690,21 @@ export default function MobileFiles(props: Props) {
     restoredScrollRef.current = true
     persist({ section: 'browse', folderID: id, scrollTop: 0 })
     scrollHostRef.current?.scrollTo({ top: 0 })
+  }
+  const openGoToPath = () => {
+    if (!props.onPathSubmit || props.trashActive) return
+    setGoToPathDraft(props.pathValue ?? props.crumbs.map(crumb => crumb.name).join('/'))
+    setGoToPathOpen(true)
+  }
+  const submitGoToPath = () => {
+    const target = goToPathDraft.trim()
+    if (!target || !props.onPathSubmit || props.trashActive) return
+    setGoToPathOpen(false)
+    // This is navigation, not Search and not an internal FileExplorer tab.
+    // Show the existing Browse context; the shared workspace resolves the
+    // canonical path, authorizes it and owns errors and navigation history.
+    beginBrowse(directoryID)
+    props.onPathSubmit(target)
   }
   const onOpenEntry = (item: XDriveFileExplorerItem) => {
     // Trash actions stay in the existing restore/delete Context Menu. A
@@ -1514,6 +1537,8 @@ export default function MobileFiles(props: Props) {
           {showDirectory && !props.trashActive ? overflowAction('上传文件', props.onUpload) : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件夹', props.onUploadFolder) : null}
           {showDirectory && !props.trashActive ? overflowAction('粘贴', props.onPaste, !props.canPaste) : null}
+          {!props.trashActive && props.onPathSubmit
+            ? overflowAction('前往文件夹路径…', openGoToPath) : null}
           {!props.trashActive ? <Divider sx={{ my: 0.5 }} /> : null}
           {!props.trashActive ? overflowAction('撤销', () => props.onUndo?.(), !props.canUndo || !props.onUndo) : null}
           {!props.trashActive ? overflowAction('重做', () => props.onRedo?.(), !props.canRedo || !props.onRedo) : null}
@@ -1538,6 +1563,29 @@ export default function MobileFiles(props: Props) {
             })
             : null}
         </Menu>
+        <Dialog data-mobile-files-go-to-path open={goToPathOpen && !props.trashActive}
+          onClose={() => setGoToPathOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>前往文件夹</DialogTitle>
+          <Box component="form" onSubmit={event => {
+            event.preventDefault()
+            submitGoToPath()
+          }}>
+            <DialogContent>
+              <TextField autoFocus fullWidth size="small"
+                label="文件夹路径" aria-label="文件夹路径"
+                value={goToPathDraft}
+                onChange={event => setGoToPathDraft(event.target.value)}
+                helperText="使用与 Web 文件管理器相同的目录路径；不是全库搜索。"
+                sx={{ '& .MuiOutlinedInput-root': { minHeight: MIN_TOUCH } }} />
+            </DialogContent>
+            <DialogActions>
+              <Button sx={{ minHeight: MIN_TOUCH }} onClick={() => setGoToPathOpen(false)}>取消</Button>
+              <Button data-mobile-files-go-to-path-submit type="submit"
+                disabled={!goToPathDraft.trim() || !props.onPathSubmit}
+                sx={{ minHeight: MIN_TOUCH }}>前往</Button>
+            </DialogActions>
+          </Box>
+        </Dialog>
         <Menu data-mobile-files-saved-search-menu anchorEl={savedSearchMenu?.anchor ?? null}
           open={Boolean(savedSearchMenu)} onClose={() => setSavedSearchMenu(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(65dvh, 420px)' } } }}>

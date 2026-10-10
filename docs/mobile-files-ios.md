@@ -110,10 +110,16 @@ This document overrides older Mobile clauses in `docs/file-explorer.md` and the 
 
 ## 2026-10-10 F-PARITY-03 · saved searches in Mobile Browse
 
-**Status: implemented on a one-work-commit GitHub branch; full CI/merge pending.** Wide Web already supports saved-search Rename, Replace and Delete. Mobile Browse's explicit Edit mode now reaches these exact Web-owned operations from a 44px Smart Folder options trigger and shared `XDriveFileNameDialog`. Update Existing Smart Folder is additionally accessible while the **committed Server all-files Search** is active; an explicit target picker prevents replacing a rule with an empty non-search Home state.
+**Merged:** PR #1222 after full CI #37985494553; work branch deleted. Wide Web already supports saved-search Rename, Replace and Delete. Mobile Browse's explicit Edit mode now reaches these exact Web-owned operations from a 44px Smart Folder options trigger and shared `XDriveFileNameDialog`. Update Existing Smart Folder is additionally accessible while the **committed Server all-files Search** is active; an explicit target picker prevents replacing a rule with an empty non-search Home state.
 
 A modal confirms that deleting a saved rule does not remove matching files, guards double-clicks, and retains the draft and error after failure. Loading/failed organization reads are not mislabeled as an empty list; a Retry uses the existing `organization.refresh` controller. The subtitle derives from the same shared readable search-rule labels as wide Web. One owner-scoped `XDriveApi`, operation controller and virtual collection remain unchanged. Add mounted behavior tests plus source contract, and retain physical-device iOS 27 acceptance as not-run.
 
 ## 2026-10-10 F-PARITY-04 · shared Preview and external browser-tab actions
 
-**Status: submitted code; authoritative PR CI/merge pending.** Mobile Files adds a keyboard Space and explicit context-menu Quick Look through the existing wide Web `openWebQuickLook` callback and Web App Runtime `preview` route; Enter and short tap remain the normal file Open. It never instantiates a second file/media viewer or new preview API. Mobile no longer suppresses the shared `open-browser-tab` action; internal `open-new-tab` and the tab strip remain the only omitted tab concepts. Tests cover the exact commands, action ownership and unchanged mounted scroll host.
+**Merged:** PR #1224 after full CI #37987118818; branch deleted. Mobile Files adds a keyboard Space and explicit context-menu Quick Look through the existing wide Web `openWebQuickLook` callback and Web App Runtime `preview` route; Enter and short tap remain the normal file Open. It never instantiates a second file/media viewer or new preview API. Mobile no longer suppresses the shared `open-browser-tab` action; internal `open-new-tab` and the tab strip remain the only omitted tab concepts. Tests cover the exact commands, action ownership and unchanged mounted scroll host.
+ 
+## 2026-10-10 F-PARITY-05 · Mobile Go to Folder path
+
+**Pending PR CI/merge.** Bring the wide Web FileExplorer address entry to Mobile's More menu without adding a new backend request or a second directory walker. The mobile dialog is prefilled from Web's shared `pathValue`; it calls the same `submitPath`, and browsing stays on the single Mobile context. Search remains explicitly `全部文件`. Empty values are rejected, Trash hides the action, and all 44px touch targets and the existing 52px App Frame title bar remain unchanged.
+
+Tests verify callback delegation and state/viewport ownership. This is a functional parity increment, **not** an iOS 27 pixel-fidelity signoff.
