@@ -416,7 +416,35 @@ export function useXDriveTaskCenterController({
   const activeOperationCount = xDriveActiveFileOperationCount(operations)
   const hasHistory = xDriveTransferHasHistory(localTransfers) || xDriveFileOperationHasHistory(operations)
   const [backgroundScope, setBackgroundScope] = useState<XDriveBackgroundTaskScope>('mine')
-  const [backgroundControlKey, setBackgroundControlKey] = useState('')
+  // Server control commands are durable. Only UI ownership changes when the
+  // authenticated transport/session changes; an old command is not cancelled.
+  const controlScopeRef = useRef<{
+    port?: XDriveBackgroundTaskPort
+    lifecycleKey: string
+    busyKey: string
+  }>({
+    port: backgroundTaskPort,
+    lifecycleKey: backgroundTasksLifecycleKey,
+    busyKey: '',
+  })
+  if (
+    controlScopeRef.current.port !== backgroundTaskPort ||
+    controlScopeRef.current.lifecycleKey !== backgroundTasksLifecycleKey
+  ) {
+    controlScopeRef.current = {
+      port: backgroundTaskPort,
+      lifecycleKey: backgroundTasksLifecycleKey,
+      busyKey: '',
+    }
+  }
+  const controlScope = controlScopeRef.current
+  const [controlState, setControlState] = useState<{
+    owner: typeof controlScope
+    key: string
+  }>({ owner: controlScope, key: '' })
+  // Never display or inherit the previous account's Busy on the first frame.
+  const backgroundControlKey = controlState.owner === controlScope
+    ? controlState.key : ''
 
   useEffect(() => {
     if (!globalTasksEnabled && backgroundScope === 'global') {
@@ -452,27 +480,41 @@ export function useXDriveTaskCenterController({
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
   ) => {
-    if (!backgroundTaskPort?.control || backgroundControlKey) return
+    if (
+      !backgroundTaskPort?.control ||
+      controlScopeRef.current !== controlScope ||
+      controlScope.busyKey
+    ) return
     const global = background.effectiveScope === 'global'
     const key = `${task.id}:${action}`
-    setBackgroundControlKey(key)
+    // Claim before React publishes state: callbacks retained from the same
+    // render cannot issue duplicate Cancel/Retry commands.
+    controlScope.busyKey = key
+    setControlState({ owner: controlScope, key })
     try {
       await backgroundTaskPort.control(task.id, action, global)
+      if (controlScopeRef.current !== controlScope) return
       await Promise.all([
         background.refresh(),
         backgroundSummary.refresh(),
       ])
     } catch (error) {
-      onBackgroundTaskError?.(error)
+      if (controlScopeRef.current === controlScope) {
+        onBackgroundTaskError?.(error)
+      }
     } finally {
-      setBackgroundControlKey('')
+      controlScope.busyKey = ''
+      // Detached old-account completions must not clear the current Busy.
+      if (controlScopeRef.current === controlScope) {
+        setControlState({ owner: controlScope, key: '' })
+      }
     }
   }, [
     background.effectiveScope,
     background.refresh,
-    backgroundControlKey,
     backgroundTaskPort,
     backgroundSummary.refresh,
+    controlScope,
     onBackgroundTaskError,
   ])
 
