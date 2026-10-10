@@ -1834,6 +1834,12 @@ func (h *desktopIPCHandler) cloudSetAdminPhotoAuto(w http.ResponseWriter, r *htt
 	var input struct {
 		Revision    *uint64 `json:"revision"`
 		AutoEnabled *bool   `json:"auto_enabled"`
+		Kinds       *struct {
+			Face          *bool `json:"face"`
+			Smart         *bool `json:"smart"`
+			Semantic      *bool `json:"semantic"`
+			PersonCluster *bool `json:"person_cluster"`
+		} `json:"kinds"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
@@ -1842,8 +1848,20 @@ func (h *desktopIPCHandler) cloudSetAdminPhotoAuto(w http.ResponseWriter, r *htt
 		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_auto_policy", "Revision and auto_enabled are required")
 		return
 	}
+	var kinds *client.AdminPhotoAutoKinds
+	if input.Kinds != nil {
+		if input.Kinds.Face == nil || input.Kinds.Smart == nil ||
+			input.Kinds.Semantic == nil || input.Kinds.PersonCluster == nil {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_auto_kinds", "All four photo intelligence kind switches are required")
+			return
+		}
+		kinds = &client.AdminPhotoAutoKinds{
+			Face: *input.Kinds.Face, Smart: *input.Kinds.Smart,
+			Semantic: *input.Kinds.Semantic, PersonCluster: *input.Kinds.PersonCluster,
+		}
+	}
 	result, err := provider.CloudSetAdminPhotoAutoConfig(r.Context(), client.AdminPhotoAutoUpdate{
-		Revision: *input.Revision, AutoEnabled: *input.AutoEnabled,
+		Revision: *input.Revision, AutoEnabled: *input.AutoEnabled, Kinds: kinds,
 	})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)

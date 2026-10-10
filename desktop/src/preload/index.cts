@@ -616,7 +616,7 @@ const agent = Object.freeze({
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
   cloudAdminPhotoAutoConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence'),
-  cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean }) =>
+  cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean; kinds?: { face: boolean; smart: boolean; semantic: boolean; person_cluster: boolean } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-photo-intelligence', input),
   cloudAdminGeoNamesConfig: () => ipcRenderer.invoke('agent:cloud-admin-geonames'),
   cloudSetAdminGeoNamesConfig: (input: { revision: number; max_distance_km: number }) =>

@@ -32,9 +32,18 @@ export type XDriveServiceDependenciesSnapshot = {
   services: XDriveServiceDependency[]
 }
 
+export type XDrivePhotoAutoKinds = {
+  face: boolean
+  smart: boolean
+  semantic: boolean
+  person_cluster: boolean
+}
+
 export type XDrivePhotoAutoConfig = {
   auto_enabled: boolean
   effective_auto_enabled: boolean
+  kinds?: XDrivePhotoAutoKinds
+  effective_kinds?: XDrivePhotoAutoKinds
   revision: number
   effective_revision: number
   source: 'default' | 'saved'
@@ -47,6 +56,7 @@ export type XDrivePhotoAutoConfig = {
 export type XDrivePhotoAutoUpdate = {
   revision: number
   auto_enabled: boolean
+  kinds?: XDrivePhotoAutoKinds
 }
 
 export type XDriveGeoNamesConfig = {

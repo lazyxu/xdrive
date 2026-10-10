@@ -174,4 +174,57 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 2 {
 		t.Fatalf("expected exactly two committed audits, count %d, err %v", auditCount, err)
 	}
+	// New clients can save all four automatic task groups in one audited revision.
+	// The current instance uses it immediately, while another replica remains pending.
+	rec = request(http.MethodPut, adminToken,
+		`{"revision":2,"auto_enabled":true,"kinds":{"face":false,"smart":true,"semantic":false,"person_cluster":true}}`)
+	if rec.Code != http.StatusOK ||
+		!strings.Contains(rec.Body.String(), `"face":false`) ||
+		!strings.Contains(rec.Body.String(), `"effective_kinds"`) ||
+		!strings.Contains(rec.Body.String(), `"apply_state":"applied"`) {
+		t.Fatalf("per-kind policy not applied: %d %s", rec.Code, rec.Body.String())
+	}
+	if s.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) ||
+		!s.photoAutoAllows(photoIntelligenceSmartSearch, background.TriggerReconcile) ||
+		s.photoAutoAllows(photoIntelligenceSemanticSearch, background.TriggerSystemEvent) ||
+		!s.photoAutoAllows(photoIntelligencePersonCluster, background.TriggerSystemEvent) {
+		t.Fatal("runtime task admission does not match persisted per-kind policy")
+	}
+	if err := db.Where("name = ?", photoAutoSettingName).Take(&row).Error; err != nil ||
+		row.Revision != 3 || row.KindsJSON == "" {
+		t.Fatalf("missing persisted per-kind policy: %+v err=%v", row, err)
+	}
+	recorder = httptest.NewRecorder()
+	ginCtx, _ = gin.CreateTestContext(recorder)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	replica.adminPhotoAutoConfig(ginCtx)
+	if !strings.Contains(recorder.Body.String(), `"apply_state":"pending"`) {
+		t.Fatalf("another instance incorrectly claimed apply: %s", recorder.Body.String())
+	}
+	if err := replica.refreshPhotoAutoPolicy(context.Background()); err != nil ||
+		replica.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) {
+		t.Fatalf("replica policy did not apply: %v", err)
+	}
+	// A malformed or partial set never mutates the running policy, revision or audit.
+	for _, body := range []string{
+		`{"revision":3,"auto_enabled":true,"kinds":{"face":false}}`,
+		`{"revision":3,"auto_enabled":true,"kinds":{"face":null,"smart":true,"semantic":true,"person_cluster":true}}`,
+	} {
+		if response := request(http.MethodPut, adminToken, body); response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid kind switches accepted: %d %s", response.Code, response.Body.String())
+		}
+	}
+	response := request(http.MethodPut, adminToken,
+		`{"revision":2,"auto_enabled":true,"kinds":{"face":true,"smart":true,"semantic":true,"person_cluster":true}}`)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stale switch update accepted: %d", response.Code)
+	}
+	// Legacy clients may still change the global switch without clearing kinds.
+	rec = request(http.MethodPut, adminToken, `{"revision":3,"auto_enabled":false}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"face":false`) {
+		t.Fatalf("legacy write reset per-kind settings: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 4 {
+		t.Fatalf("invalid/stale writes changed audit history: count %d, err %v", auditCount, err)
+	}
 }
