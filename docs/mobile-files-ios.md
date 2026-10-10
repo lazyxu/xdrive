@@ -152,6 +152,13 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 
 ## 2026-10-10 F-PARITY-07F-A · Mobile 全选范围和宽屏 Web 一致
 
-**单提交实现已准备，仍待完整 PR CI、合并和远端分支清理。** 此前 Mobile 文件管理器的全选在当前目录／搜索结果超过 200 项时直接拒绝，宽屏 Web 则可通过共享 `VirtualCollection.collectRange` 分批选择整个逻辑集合。现把 Mobile 全选接入相同 200 项分页常量，增加加载进度、取消、请求范围/重复 ID 校验及跨账户/目录/搜索状态的意图隔离。已选项目在失败或取消时保持原样，不回写半成品。
+**已合入：** [PR #1285](https://github.com/lazyxu/xdrive/pull/1285)，完整 PR CI [#38031123253](https://github.com/lazyxu/xdrive/actions/runs/38031123253) 成功，线性提交 `34036439`，工作分支已清理。此前 Mobile 文件管理器的全选在当前目录／搜索结果超过 200 项时直接拒绝，宽屏 Web 则可通过共享 `VirtualCollection.collectRange` 分批选择整个逻辑集合。现把 Mobile 全选接入相同 200 项分页常量，增加加载进度、取消、请求范围/重复 ID 校验及跨账户/目录/搜索状态的意图隔离。已选项目在失败或取消时保持原样，不回写半成品。
 
 选择数量不同于操作限额：批量复制/移动/删除仍遵守 200 项上限，下载仍遵守 1000 项上限；不要通过截断选择列表伪装操作成功。符合可执行限额的选中项元数据只做有界保留，不保留 100k 个虚拟页。取消后不会继续拉取后续分页并忽略迟到结果，但目前未证明在途 HTTP 已同步调用后端 Go `ctx.cancel`，需要单独做取消链路测试。保留全屏 App Frame、52px 全局标题栏、Web/Desktop 共享后端和 Mobile 无内部多标签页的唯一例外。
+
+
+## 2026-10-10 F-PARITY-07F-B · 批量操作可用状态与宽屏 Web 对齐
+
+**单提交 PR 实现，等待 CI/合并验收。** Mobile 现在可全选 257/100k 个逻辑节点，但超过批量操作上限时仍将复制、移动、删除和更多菜单误标为可用。现将宽屏 Web 已用的 `getSelectionActionDisabledReason` 传入 Mobile 展示层，统一按钮禁用、菜单禁用、直接调用拦截及实际提示。写操作 200 项、下载 1000 项、标签 500 项的上限分别生效；选中、下载和文件修改仍走原 Web/Server 授权、版本验证和任务链路，不复制 REST 或控制器。补充 257 项挂载交互回归测试。
+
+真实 iOS 27 像素、触控/VoiceOver、375/390/899/900px 权限错误矩阵与 10k/100k 真实资源测量仍未验收；全选在途 HTTP→Go `ctx.cancel` 另行专项测试。保留全屏 App Frame、52px 标题栏、共用虚拟化与 Mobile 仅省略内部多标签页的规则。

@@ -46,6 +46,7 @@ import {
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb, XDriveFileExplorerItem, XDriveFileExplorerMenuItem,
+  XDriveFileExplorerSelectionAction,
   XDriveFileExplorerSearchSummary, XDriveFileExplorerSort, XDriveFileExplorerVirtualCollection,
   XDriveFileExplorerPropertiesLoader, XDriveFilePropertiesDialogProperty,
   XDriveFileExplorerExternalDropPayload,
@@ -80,6 +81,11 @@ type Props = {
   onInlineViewport?: (ranges: readonly XDriveFileExplorerInlineVisibleRange[]) => void
   onClearInline?: () => void
   onSelectedItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
+  getSelectionActionDisabledReason?: (
+    action: XDriveFileExplorerSelectionAction,
+    items: readonly XDriveFileExplorerItem[],
+    count: number,
+  ) => string | null
   crumbs: XDriveFileExplorerCrumb[]
   loading: boolean
   trashActive: boolean
@@ -1100,8 +1106,17 @@ export default function MobileFiles(props: Props) {
     catch { /* The Web adapter already provides the actionable error. */ }
     finally { setRenameBusy(false) }
   }
+  // Reuse the exact Wide Web/Server operation eligibility contract. A large
+  // logical selection does not make an over-limit mutation actionable.
+  const selectionDisabledReason = (action: XDriveFileExplorerSelectionAction) => (
+    !selection.length ? '请先选择项目' :
+      props.getSelectionActionDisabledReason?.(action, selection, selection.length) ?? null
+  )
+  const selectedMutationReason = selection.length ? selectionDisabledReason('copy') : null
+  const selectedDownloadReason = selection.length ? selectionDisabledReason('download') : null
   const selectedAction = (kind: 'copy' | 'cut' | 'move' | 'copy-to' | 'download' | 'delete') => {
-    if (!selection.length || selectionLoad) return
+    const action: XDriveFileExplorerSelectionAction = kind === 'move' ? 'move-to' : kind
+    if (selectionLoad || selectionDisabledReason(action)) return
     // Do not discard selection before a server-side validation, destination
     // choice or delete confirmation has actually succeeded.
     if (kind === 'copy') props.onCopy(selection)
@@ -1705,28 +1720,37 @@ export default function MobileFiles(props: Props) {
         </Typography> : null}
         {selectionFeedback ? <Typography role="status" variant="caption" color="warning.main"
           sx={{ px: 2, py: 0.5, flexShrink: 0 }}>{selectionFeedback}</Typography> : null}
+        {selectionActive && !selectionLoad && selection.length > 0 &&
+          (selectedMutationReason || selectedDownloadReason) ? (
+          <Typography data-mobile-files-selection-limits role="status" variant="caption"
+            color="text.secondary" sx={{ px: 2, py: 0.5, flexShrink: 0 }}>
+            {selectedMutationReason ? `批量操作：${selectedMutationReason}` : ''}
+            {selectedMutationReason && selectedDownloadReason ? '；' : ''}
+            {selectedDownloadReason ? `下载：${selectedDownloadReason}` : ''}
+          </Typography>
+        ) : null}
         {selectionActive ? (
           <Stack data-xdrive-mobile-selection-toolbar direction="row" alignItems="stretch" sx={{
             px: 0.5, pt: 0.5, pb: 'max(env(safe-area-inset-bottom), 4px)',
             borderTop: 1, borderColor: 'divider', flexShrink: 0, bgcolor: 'background.paper',
           }}>
-            <Button aria-label="复制已选" disabled={!selection.length} onClick={() => selectedAction('copy')}
+            <Button aria-label="复制已选" disabled={Boolean(selectionLoad || selectionDisabledReason('copy'))} onClick={() => selectedAction('copy')}
               sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
               <ContentCopyOutlinedIcon fontSize="small"/>复制
             </Button>
-            <Button aria-label="移动已选" disabled={!selection.length} onClick={() => selectedAction('move')}
+            <Button aria-label="移动已选" disabled={Boolean(selectionLoad || selectionDisabledReason('move-to'))} onClick={() => selectedAction('move')}
               sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
               <DriveFileMoveOutlinedIcon fontSize="small"/>移动
             </Button>
-            <Button aria-label="下载已选" disabled={!selection.length} onClick={() => selectedAction('download')}
+            <Button aria-label="下载已选" disabled={Boolean(selectionLoad || selectionDisabledReason('download'))} onClick={() => selectedAction('download')}
               sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
               <DownloadRoundedIcon fontSize="small"/>下载
             </Button>
-            <Button aria-label="删除已选" disabled={!selection.length} onClick={() => selectedAction('delete')}
+            <Button aria-label="删除已选" disabled={Boolean(selectionLoad || selectionDisabledReason('delete'))} onClick={() => selectedAction('delete')}
               sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11, color: 'error.main' }}>
               <DeleteOutlineRoundedIcon fontSize="small"/>删除
             </Button>
-            <Button aria-label="更多已选操作" disabled={!selection.length}
+            <Button aria-label="更多已选操作" disabled={!selection.length || Boolean(selectionLoad)}
               onClick={event => setSelectionMoreAnchor(event.currentTarget)}
               sx={{ minWidth: 0, minHeight: 54, flex: 1, display: 'flex', flexDirection: 'column', gap: 0, fontSize: 11 }}>
               <MoreHorizRoundedIcon fontSize="small"/>更多
@@ -1760,13 +1784,21 @@ export default function MobileFiles(props: Props) {
         )}
         <Menu anchorEl={selectionMoreAnchor} open={Boolean(selectionMoreAnchor)}
           onClose={() => setSelectionMoreAnchor(null)}>
-          <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
-          <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('copy-to') }}>复制到…</MenuItem>
-          <MenuItem onClick={() => { setSelectionMoreAnchor(null); selectedAction('download') }}>下载所选</MenuItem>
-          {props.onCopyPaths ? <MenuItem disabled={!selection.length} onClick={() => {
+          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('cut'))}
+            onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
+          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('copy-to'))}
+            onClick={() => { setSelectionMoreAnchor(null); selectedAction('copy-to') }}>复制到…</MenuItem>
+          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('download'))}
+            onClick={() => { setSelectionMoreAnchor(null); selectedAction('download') }}>下载所选</MenuItem>
+          {props.onCopyPaths ? <MenuItem disabled={!selection.length || Boolean(selectionLoad)} onClick={() => {
             setSelectionMoreAnchor(null); props.onCopyPaths?.(selection)
           }}>复制所选路径</MenuItem> : null}
-          <MenuItem onClick={() => { setSelectionMoreAnchor(null); props.onManageTags(selection) }}>添加/管理标签</MenuItem>
+          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('manage-tags'))}
+            onClick={() => {
+              if (selectionDisabledReason('manage-tags')) return
+              setSelectionMoreAnchor(null)
+              props.onManageTags(selection)
+            }}>添加/管理标签</MenuItem>
         </Menu>
         <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 520px)' } } }}>

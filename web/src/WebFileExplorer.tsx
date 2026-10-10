@@ -1049,6 +1049,7 @@ export default function WebFileExplorer({
           onInlineViewport={ranges => inlineStore.ensureViewport(ranges)}
           onClearInline={() => inlineStore.clear()}
           onSelectedItemsChange={retainMobileSelection}
+          getSelectionActionDisabledReason={getSelectionActionDisabledReason}
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
           trashActive={trashActive}
