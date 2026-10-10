@@ -754,7 +754,7 @@ export default function WebFileExplorer({
   const copyItemPaths = async (selected: XDriveFileExplorerItem[]) => {
     if (selected.length === 0) return
     const text = selected
-      .map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))
+      .map((item) => xDriveFileExplorerCopyPath(item, inlineCrumbsForItem(item)))
       .join('\n')
     try {
       if (!navigator.clipboard?.writeText) {
