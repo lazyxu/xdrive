@@ -1,0 +1,66 @@
+name: Gallery 100k Worker Node Asset PostgreSQL EXPLAIN
+
+on:
+  push:
+    branches: ["perf/gallery-worker-node-asset-plan-100k"]
+  pull_request:
+    branches: ["master", "perf/gallery-worker-select-profile-100k"]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-worker-query-plan-native-100k:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/perf/gallery-worker-node-asset-plan-100k') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-worker-node-asset-plan-100k')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --shm-size=256m
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_WORKER_QUERY_PLAN_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Check Go format
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/gallery_worker_query_plan_performance_integration_test.go)"
+      - name: Execute three native PostgreSQL plan samples
+        run: |
+          set -euo pipefail
+          mkdir -p perf-results/gallery-worker-query-plan-n3
+          for sample in 1 2 3; do
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+              -o "perf-results/gallery-worker-query-plan-n3/sample-$sample.time" \
+              go test -mod=readonly -run '^TestGalleryWorkerNodeAssetQueryPlan100K$' -timeout=12m -count=1 -v ./internal/api \
+              | tee "perf-results/gallery-worker-query-plan-n3/sample-$sample.log"
+          done
+          python3 scripts/ci/parse-gallery-worker-query-plans-n3.py perf-results/gallery-worker-query-plan-n3
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-100k-worker-node-asset-query-plans
+          path: perf-results/gallery-worker-query-plan-n3/
+          if-no-files-found: warn
+          retention-days: 14
