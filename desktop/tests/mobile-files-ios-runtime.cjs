@@ -1438,13 +1438,15 @@ test('F-PARITY-07F: mounted Mobile Select All fetches 257 root/search Nodes thro
 
 test('F-PARITY-07F: 100k Mobile Select All cancel fences an in-flight page and stops future ranges', async () => {
   let finishPage
+  let selectSignal
   const requests = []
   const observed = []
   const source = {
     interactionKey: '100k-selection', itemCount: 100000, loadedItems: new Map(),
     itemAt() {},
-    collectRange: (start, end) => {
+    collectRange: (start, end, signal) => {
       requests.push([start, end])
+      selectSignal = signal
       return new Promise(resolve => { finishPage = resolve })
     },
     retainInteractionIDs() {}, onRangeChange() {},
@@ -1458,6 +1460,7 @@ test('F-PARITY-07F: 100k Mobile Select All cancel fences an in-flight page and s
     const progress = find(h.view, 'data-mobile-files-select-progress', true)
     assert.match(textOf(progress.props.children), /0\s*\/\s*100000/)
     await act(async () => { find(h.view, 'data-mobile-files-select-cancel', true).props.onClick() })
+    assert.equal(selectSignal?.aborted, true, 'Mobile cancel must reach the shared request signal immediately')
     assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0)
     await act(async () => { finishPage(Array.from({ length: 200 }, (_, i) => ({
       id: i + 10, name: 'file.txt', kind: 'file', revision: 9,

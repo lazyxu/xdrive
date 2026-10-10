@@ -46,6 +46,7 @@ export type XDriveFileExplorerSearchLoader<
   sort: XDriveFileExplorerSort,
   offset: number,
   limit: number,
+  signal?: AbortSignal,
 ) => Promise<XDriveFileExplorerSearchRange<TResult>>
 
 type XDriveFileExplorerWorkspaceSearchEntry = {
@@ -177,6 +178,7 @@ export function useXDriveFileExplorerSearch<
 
   const loadVirtualRange = useCallback(async (
     range: { offset: number; limit: number },
+    signal: AbortSignal,
   ) => {
     const active = targetRef.current
     if (!active) {
@@ -195,9 +197,10 @@ export function useXDriveFileExplorerSearch<
         active.sort,
         range.offset,
         range.limit,
+        signal,
       )
     } catch (error) {
-      if (targetIsCurrent(active)) {
+      if (!signal.aborted && targetIsCurrent(active)) {
         updateEntry(active.workspaceKey, (current) => ({
           ...current,
           error: error instanceof Error ? error.message : String(error),

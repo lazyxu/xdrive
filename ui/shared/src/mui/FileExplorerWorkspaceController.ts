@@ -60,7 +60,7 @@ export type XDriveFileExplorerWorkspaceVirtualDirectory<
   loadedItems: ReadonlyMap<number, TNode>
   itemAt: (index: number) => TNode | undefined
   ensureViewport: (startIndex: number, endIndex: number) => Promise<void>
-  collectRange: (startIndex: number, endIndex: number) => Promise<TNode[] | null>
+  collectRange: (startIndex: number, endIndex: number, signal?: AbortSignal) => Promise<TNode[] | null>
   groups: readonly XDriveFileExplorerGroupIndex[]
 }
 
@@ -315,8 +315,8 @@ export function useXDriveFileExplorerWorkspace<
           if (!retained.has(id)) interactionSearchCacheRef.current.delete(id)
         }
       },
-      collectRange: async (startIndex, endIndex) => {
-        const rawItems = await activeCollection.collectRange(startIndex, endIndex)
+      collectRange: async (startIndex, endIndex, signal?) => {
+        const rawItems = await activeCollection.collectRange(startIndex, endIndex, signal)
         if (
           !rawItems ||
           interactionCacheKeyRef.current !== interactionCacheKey

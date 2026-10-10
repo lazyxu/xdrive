@@ -91,7 +91,7 @@ test('shared FileExplorer controller owns search normalization and validation de
     assert.equal(source.includes('const normalized = query.trim()'), false, `${label} must not normalize search locally`)
     assert.equal(source.includes('搜索关键字至少需要 2 个字符。'), false, `${label} must not duplicate the minimum-search message`)
   }
-  assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web must keep REST Search range execution local')
+  assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) =>'), 'Web must keep REST Search range execution local')
   assert.ok(web.includes('api.searchRange('), 'Web Search adapter must use range transport')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop must keep Agent Search range execution local')
 })
@@ -350,7 +350,7 @@ test('Web and Desktop keep Search ranges bound to the submitted active query', (
     assert.ok(source.includes('searchStatusText'), `${label} status must consume the shared workspace search status`)
     assert.ok(source.includes('useXDriveFileExplorerWorkspace<'), `${label} must get active-query lifecycle from the shared workspace controller`)
   }
-  assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) =>'), 'Web must inject REST Search range loading')
+  assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) =>'), 'Web must inject REST Search range loading')
   assert.ok(web.includes('api.searchRange('), 'Web must use the Search range REST adapter')
   assert.ok(desktop.includes('window.xdriveDesktop.agent.cloudSearchRange('), 'Desktop must use the Agent Search range adapter')
   assert.ok(workspaceController.includes('sort: navigation.sort'), 'shared workspace must bind Search requests to active-tab sort')

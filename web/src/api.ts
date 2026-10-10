@@ -2203,6 +2203,7 @@ export class XDriveApi {
     sort: 'name' | 'updated' | 'size' | 'type' = 'name',
     order: 'asc' | 'desc' = 'asc',
     grouping?: XDriveFileExplorerGrouping,
+    signal?: AbortSignal,
   ): Promise<XDriveCloudFilesSearchRange<Node>> {
     const params = new URLSearchParams({
       q: query.trim(),
@@ -2221,7 +2222,7 @@ export class XDriveApi {
       sort: 'name' | 'updated' | 'size' | 'type'
       order: 'asc' | 'desc'
       groups?: XDriveCloudFilesSearchRange<Node>['groups']
-    }>(`/api/v1/search?${params.toString()}`)
+    }>(`/api/v1/search?${params.toString()}`, { signal })
     return {
       items: page.items.map((item) => ({
         node: item.node,

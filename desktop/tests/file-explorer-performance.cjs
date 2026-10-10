@@ -361,7 +361,7 @@ test('FileExplorer sparse interactions keep render metadata bounded while resolv
   assert.match(shared, /command === 'select-all'[\s\S]*?selectAllItems\(\)/, 'Ctrl+A must use the complete logical selection controller')
   const selectAll = shared.slice(shared.indexOf('const selectAllItems ='), shared.indexOf('const cancelSelectionLoad ='))
   assert.ok(selectAll.includes('start < total'), 'complete selection must visit every logical chunk')
-  assert.ok(selectAll.includes('await virtualCollection.collectRange(start, end)'), 'complete selection must collect bounded logical chunks')
+  assert.ok(selectAll.includes('await virtualCollection.collectRange(start, end, controller.signal)'), 'complete selection must collect bounded logical chunks')
   assert.ok(selectAll.includes('commitSelectionIntent(intent, resolved.map'), 'complete selection must commit after resolving all requested metadata')
   assert.ok(shared.includes('virtualCollection?.retainInteractionIDs?.(ids)'), 'interaction metadata must be pruned back to the selected IDs')
   assert.equal(shared.includes('new Array<XDriveFileExplorerItem>(logicalItemCount)'), false, 'render lookup must not allocate a logical placeholder array')

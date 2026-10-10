@@ -468,6 +468,7 @@ export type XDriveFileExplorerVirtualCollection = {
   collectRange?: (
     startIndex: number,
     endIndex: number,
+    signal?: AbortSignal,
   ) => Promise<readonly XDriveFileExplorerItem[] | null>
   retainInteractionIDs?: (ids: readonly XDriveFileExplorerID[]) => void
   groups?: readonly XDriveFileExplorerGroupIndex[]
@@ -1104,6 +1105,8 @@ export function XDriveFileExplorer({
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
   const [selectionLoad, setSelectionLoad] = useState<FileExplorerSelectionLoad | null>(null)
   const selectionLoadRef = useRef<FileExplorerSelectionLoad | null>(null)
+  const selectionAbortRef = useRef<AbortController | null>(null)
+  useEffect(() => () => { selectionAbortRef.current?.abort() }, [])
   const [selectionLoadFeedback, setSelectionLoadFeedback] = useState('')
   const selectionToggleRef = useRef<HTMLButtonElement | null>(null)
   const restoreSelectionFocusRef = useRef(false)
@@ -1317,6 +1320,8 @@ export function XDriveFileExplorer({
     setRenameError('')
     typeSelectRef.current = { query: '', updatedAt: 0 }
     typeSelectIntentRef.current += 1
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     updateSelectionLoad(null)
     setSelectionLoadFeedback('')
@@ -1700,6 +1705,8 @@ export function XDriveFileExplorer({
     ids: XDriveFileExplorerID[],
     resolvedItems: readonly XDriveFileExplorerItem[] = [],
   ) => {
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     updateSelectionLoad(null)
     setSelectionLoadFeedback('')
@@ -1707,6 +1714,8 @@ export function XDriveFileExplorer({
   }
 
   const beginSelectionIntent = () => {
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     updateSelectionLoad(null)
     setSelectionLoadFeedback('')
@@ -1769,12 +1778,14 @@ export function XDriveFileExplorer({
       }
       return
     }
+    const controller = new AbortController()
+    selectionAbortRef.current = controller
     updateSelectionLoad({ intent, scope, loaded: 0, total })
     void (async () => {
       const resolved: XDriveFileExplorerItem[] = []
       let committed = false
       const isCurrent = () => (
-        selectionIntentRef.current === intent && interactionScopeKeyRef.current === scope
+        !controller.signal.aborted && selectionIntentRef.current === intent && interactionScopeKeyRef.current === scope
       )
       try {
         for (let start = 0; start < total; start += XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE) {
@@ -1783,7 +1794,7 @@ export function XDriveFileExplorer({
           // The Workspace range bridge retains raw metadata, including pages
           // already in view, until the complete identity set can be committed.
           const chunk = virtualCollection?.collectRange
-            ? await virtualCollection.collectRange(start, end)
+            ? await virtualCollection.collectRange(start, end, controller.signal)
             : await resolveLogicalRange(start, end)
           if (!isCurrent()) return
           if (!chunk || chunk.length !== end - start + 1) {
@@ -1806,6 +1817,7 @@ export function XDriveFileExplorer({
       } catch {
         if (isCurrent()) setSelectionLoadFeedback('未能完成全选，已保留原选择。请重试全选。')
       } finally {
+        if (selectionAbortRef.current === controller) selectionAbortRef.current = null
         if (selectionLoadRef.current?.intent === intent) updateSelectionLoad(null)
         if (!committed && !selectionLoadRef.current && interactionScopeKeyRef.current === scope) {
           virtualCollection?.retainInteractionIDs?.(selectedIDsRef.current)
@@ -1816,6 +1828,8 @@ export function XDriveFileExplorer({
 
   const cancelSelectionLoad = () => {
     if (!selectionLoadRef.current) return
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     updateSelectionLoad(null)
     setSelectionLoadFeedback('已取消全选加载，保留原选择。')
