@@ -135,7 +135,7 @@ func (c *agentController) AuthorizeLocalFolder(ctx context.Context, sourceID uin
 	if err != nil {
 		// A timed-out bind may already have committed remotely. Only keep
 		// this grant when the Server explicitly confirms our exact binding.
-		confirmed, checkErr := cli.LocalSourceBinding(ctx, sourceID)
+		confirmed, checkErr := cli.LocalSourceBindingWithToken(ctx, sourceID, secret)
 		if checkErr != nil || confirmed.DeviceID != deviceID || confirmed.RootID != grant.RootID {
 			_ = localpush.RemoveRootGrant(configDir, cfg.Server, cfg.Username, grant.RootID)
 			return out, err

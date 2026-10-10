@@ -33,8 +33,12 @@ func (s *Server) listSourceRunFailures(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid run id")
 		return
 	}
-	if _, err := s.ownedSource(userID(c), sourceID); err != nil {
+	source, err := s.ownedSource(userID(c), sourceID)
+	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if denyLocalSourceDetailRead(c, source) {
 		return
 	}
 	var run meta.SyncRun

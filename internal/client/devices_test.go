@@ -12,6 +12,7 @@ import (
 func TestLocalDeviceAndBindingHTTPTransport(t *testing.T) {
 	token := "opaque-local-device-secret"
 	var called []string
+	tokenRead := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = append(called, r.Method+" "+r.URL.Path)
 		if r.Header.Get("Authorization") != "Bearer account-token" {
@@ -40,6 +41,9 @@ func TestLocalDeviceAndBindingHTTPTransport(t *testing.T) {
 				w.WriteHeader(http.StatusCreated)
 				w.Write([]byte(`{"source_id":42,"device_id":"device-1","root_id":"root-id","status":"awaiting_executor"}`))
 			case http.MethodGet:
+				if r.Header.Get("X-XDrive-Device-Token") == token {
+					tokenRead = true
+				}
 				w.Write([]byte(`{"source_id":42,"device_id":"device-1","root_id":"root-id","status":"awaiting_executor"}`))
 			case http.MethodDelete:
 				if r.Header.Get("If-Match") != `"8"` {
@@ -72,13 +76,16 @@ func TestLocalDeviceAndBindingHTTPTransport(t *testing.T) {
 	if _, err := c.LocalSourceBinding(ctx, 42); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := c.LocalSourceBindingWithToken(ctx, 42, token); err != nil || !tokenRead {
+		t.Fatalf("bound Root recovery must send owning device token: %v", err)
+	}
 	if err := c.UnbindLocalSource(ctx, 42, 8); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.RevokeClientDevice(ctx, "device-1"); err != nil {
 		t.Fatal(err)
 	}
-	if len(called) != 6 {
-		t.Fatalf("expected six device/root requests, got %d", len(called))
+	if len(called) != 7 {
+		t.Fatalf("expected seven device/root requests, got %d", len(called))
 	}
 }

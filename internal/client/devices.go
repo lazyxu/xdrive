@@ -68,6 +68,27 @@ func (c *Client) LocalSourceBinding(ctx context.Context, sourceID uint64) (Local
 	return out, err
 }
 
+// LocalSourceBindingWithToken is restricted to the Agent's OS-stored device
+// secret. It is used to confirm the exact Root after a possibly committed
+// binding request whose HTTP response was lost.
+func (c *Client) LocalSourceBindingWithToken(ctx context.Context, sourceID uint64, token string) (LocalSourceBinding, error) {
+	var out LocalSourceBinding
+	req, err := c.request(ctx, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d/local-binding", sourceID), nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("X-XDrive-Device-Token", token)
+	response, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer response.Body.Close()
+	if err := decodeResponse(response, &out); err != nil {
+		return LocalSourceBinding{}, err
+	}
+	return out, nil
+}
+
 func (c *Client) UnbindLocalSource(ctx context.Context, sourceID, revision uint64) error {
 	return c.jsonRevision(ctx, http.MethodDelete,
 		fmt.Sprintf("/api/v1/sources/%d/local-binding", sourceID), revision, nil, nil)
