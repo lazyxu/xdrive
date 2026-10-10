@@ -66,6 +66,10 @@ import type {
   XDriveByteProgressHandler,
   XDriveBackgroundTaskActiveSummary,
   XDriveServiceDependenciesSnapshot,
+  XDriveSourceWorkerConfig,
+  XDriveSourceWorkerUpdate,
+  XDriveSourceWorkerRevisionPage,
+  XDriveSourceWorkerRollbackInput,
   XDriveBaiduMapAdminConfig,
   XDrivePhotoAutoConfig,
   XDrivePhotoAutoUpdate,
@@ -776,6 +780,10 @@ declare global {
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudAdminSourceWorkerConfig: () => Promise<DesktopResult<XDriveSourceWorkerConfig>>
+        cloudSetAdminSourceWorkerConfig: (input: XDriveSourceWorkerUpdate) => Promise<DesktopResult<XDriveSourceWorkerConfig>>
+        cloudAdminSourceWorkerRevisions: () => Promise<DesktopResult<XDriveSourceWorkerRevisionPage>>
+        cloudRollbackAdminSourceWorker: (input: XDriveSourceWorkerRollbackInput) => Promise<DesktopResult<XDriveSourceWorkerConfig>>
         cloudAdminPhotoAutoConfig: () => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudSetAdminPhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudAdminPhotoAutoRevisions: () => Promise<DesktopResult<XDrivePhotoAutoRevisionPage>>

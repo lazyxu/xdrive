@@ -12,7 +12,7 @@ export type XDriveServiceDependencyGroup =
   | 'location'
 
 export type XDriveServiceConfigMode = 'in-app' | 'deployment' | 'planned'
-export type XDriveServiceApplyMode = 'immediate' | 'manual-reload' | 'controlled-restart' | 'not-available'
+export type XDriveServiceApplyMode = 'immediate' | 'task-boundary' | 'manual-reload' | 'controlled-restart' | 'not-available'
 
 export type XDriveServiceDependency = {
   id: string
@@ -136,3 +136,44 @@ export type XDriveBaiduMapAdminUpdate = {
   ak?: string
   clear_ak?: boolean
 }
+
+export type XDriveSourceWorkerValues = {
+  scan_interval_seconds: number
+  poll_interval_seconds: number
+  max_concurrency: number
+}
+
+export type XDriveSourceWorkerEffectiveGroup = {
+  config: XDriveSourceWorkerValues
+  revision: number
+  count: number
+}
+
+export type XDriveSourceWorkerConfig = {
+  desired: XDriveSourceWorkerValues
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  effective: XDriveSourceWorkerEffectiveGroup[]
+  active_instances: number
+  applied_instances: number
+  truncated: boolean
+  apply_state: 'unmanaged' | 'unavailable' | 'pending' | 'applied'
+  editable: boolean
+  requires_restart: boolean
+}
+
+export type XDriveSourceWorkerUpdate = {
+  revision: number
+  desired: XDriveSourceWorkerValues
+}
+
+export type XDriveSourceWorkerRevision = {
+  revision: number
+  desired: XDriveSourceWorkerValues
+  origin: 'default' | 'saved' | 'rollback'
+  created_at: string
+}
+
+export type XDriveSourceWorkerRevisionPage = { items: XDriveSourceWorkerRevision[] }
+export type XDriveSourceWorkerRollbackInput = { revision: number; target_revision: number }

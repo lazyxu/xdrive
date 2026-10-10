@@ -485,6 +485,30 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminSourceWorkerValues = {
+  scan_interval_seconds: number
+  poll_interval_seconds: number
+  max_concurrency: number
+}
+export type AgentAdminSourceWorkerConfig = {
+  desired: AgentAdminSourceWorkerValues
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  effective: Array<{ config: AgentAdminSourceWorkerValues; revision: number; count: number }>
+  active_instances: number
+  applied_instances: number
+  truncated: boolean
+  apply_state: 'unmanaged' | 'unavailable' | 'pending' | 'applied'
+  editable: boolean
+  requires_restart: boolean
+}
+export type AgentAdminSourceWorkerUpdate = { revision: number; desired: AgentAdminSourceWorkerValues }
+export type AgentAdminSourceWorkerRevisionPage = {
+  items: Array<{ revision: number; desired: AgentAdminSourceWorkerValues; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+}
+export type AgentAdminSourceWorkerRollbackInput = { revision: number; target_revision: number }
+
 export type AgentPhotoAutoKinds = {
   face: boolean
   smart: boolean
@@ -591,7 +615,7 @@ export type AgentServiceDependenciesSnapshot = {
     version?: string
     model?: string
     config_mode?: 'in-app' | 'deployment' | 'planned'
-    apply_mode?: 'immediate' | 'manual-reload' | 'controlled-restart' | 'not-available'
+    apply_mode?: 'immediate' | 'task-boundary' | 'manual-reload' | 'controlled-restart' | 'not-available'
     config_hint?: string
   }>
 }
@@ -2819,6 +2843,19 @@ export class AgentIPCClient {
 
   cloudRevealAdminBaiduMapAK(revision: number) {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminSourceWorkerConfig() {
+    return this.request<AgentAdminSourceWorkerConfig>('GET', '/v1/cloud/admin-source-worker')
+  }
+  cloudSetAdminSourceWorkerConfig(input: AgentAdminSourceWorkerUpdate) {
+    return this.request<AgentAdminSourceWorkerConfig>('PUT', '/v1/cloud/admin-source-worker', input)
+  }
+  cloudAdminSourceWorkerRevisions() {
+    return this.request<AgentAdminSourceWorkerRevisionPage>('GET', '/v1/cloud/admin-source-worker/revisions')
+  }
+  cloudRollbackAdminSourceWorker(input: AgentAdminSourceWorkerRollbackInput) {
+    return this.request<AgentAdminSourceWorkerConfig>('POST', '/v1/cloud/admin-source-worker/rollback', input)
   }
 
   cloudAdminPhotoAutoConfig() {

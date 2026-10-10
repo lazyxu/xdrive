@@ -598,6 +598,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-source-worker", h.cloudAdminSourceWorker)
+	mux.HandleFunc("PUT /v1/cloud/admin-source-worker", h.cloudSetAdminSourceWorker)
+	mux.HandleFunc("GET /v1/cloud/admin-source-worker/revisions", h.cloudAdminSourceWorkerRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-source-worker/rollback", h.cloudRollbackAdminSourceWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence", h.cloudAdminPhotoAuto)
 	mux.HandleFunc("PUT /v1/cloud/admin-photo-intelligence", h.cloudSetAdminPhotoAuto)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence/revisions", h.cloudAdminPhotoAutoRevisions)
@@ -1806,6 +1810,110 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+// Optional controller interface keeps older Agent implementations explicit.
+type desktopIPCAdminSourceWorkerController interface {
+	CloudAdminSourceWorkerConfig(context.Context) (client.AdminSourceWorkerConfig, error)
+	CloudSetAdminSourceWorkerConfig(context.Context, client.AdminSourceWorkerUpdate) (client.AdminSourceWorkerConfig, error)
+	CloudAdminSourceWorkerRevisions(context.Context) (client.AdminSourceWorkerRevisionPage, error)
+	CloudRollbackAdminSourceWorker(context.Context, client.AdminSourceWorkerRollbackInput) (client.AdminSourceWorkerConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminSourceWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminSourceWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_source_worker_unavailable", "Pull Worker configuration is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminSourceWorkerConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudSetAdminSourceWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminSourceWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_source_worker_unavailable", "Pull Worker configuration is unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Desired  *struct {
+			ScanIntervalSeconds *int64 `json:"scan_interval_seconds"`
+			PollIntervalSeconds *int64 `json:"poll_interval_seconds"`
+			MaxConcurrency      *int   `json:"max_concurrency"`
+		} `json:"desired"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.Desired == nil ||
+		input.Desired.ScanIntervalSeconds == nil || input.Desired.PollIntervalSeconds == nil ||
+		input.Desired.MaxConcurrency == nil ||
+		*input.Desired.ScanIntervalSeconds < 60 || *input.Desired.ScanIntervalSeconds > 604800 ||
+		*input.Desired.PollIntervalSeconds < 10 || *input.Desired.PollIntervalSeconds > 3600 ||
+		*input.Desired.MaxConcurrency < 1 || *input.Desired.MaxConcurrency > 8 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_worker_settings", "Complete valid Pull Worker settings and revision are required")
+		return
+	}
+	out, err := provider.CloudSetAdminSourceWorkerConfig(r.Context(), client.AdminSourceWorkerUpdate{
+		Revision: *input.Revision,
+		Desired: client.AdminSourceWorkerValues{
+			ScanIntervalSeconds: *input.Desired.ScanIntervalSeconds,
+			PollIntervalSeconds: *input.Desired.PollIntervalSeconds,
+			MaxConcurrency:      *input.Desired.MaxConcurrency,
+		},
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudAdminSourceWorkerRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminSourceWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_source_worker_unavailable", "Pull Worker history is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminSourceWorkerRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudRollbackAdminSourceWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminSourceWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_source_worker_unavailable", "Pull Worker rollback is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil || *input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_worker_rollback", "Current and older target revisions are required")
+		return
+	}
+	out, err := provider.CloudRollbackAdminSourceWorker(r.Context(), client.AdminSourceWorkerRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, out)
 }
 
 type desktopIPCAdminPhotoAutoController interface {

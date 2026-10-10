@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,14 +21,17 @@ type sourceWorkerPresenceConfig struct {
 	scanInterval   time.Duration
 	pollInterval   time.Duration
 	maxConcurrency int
+	revision       uint64
 }
 
 // Heartbeats run independently of RunDue, which can block for a long pull.
 // Publishing a heartbeat proves a process is alive, not that any task succeeded.
-func startSourceWorkerPresence(ctx context.Context, db *gorm.DB, cfg sourceWorkerPresenceConfig) {
+func startSourceWorkerPresence(ctx context.Context, db *gorm.DB, cfg sourceWorkerPresenceConfig) func(sourceWorkerPresenceConfig) {
 	if db == nil {
-		return
+		return func(sourceWorkerPresenceConfig) {}
 	}
+	var current atomic.Pointer[sourceWorkerPresenceConfig]
+	current.Store(&cfg)
 	id := uuid.NewString()
 	go func() {
 		defer func() {
@@ -52,7 +56,7 @@ func startSourceWorkerPresence(ctx context.Context, db *gorm.DB, cfg sourceWorke
 		publish := func() {
 			pulseCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
-			if err := publishSourceWorkerPresence(pulseCtx, db, id, cfg, time.Now().UTC()); err != nil && ctx.Err() == nil {
+			if err := publishSourceWorkerPresence(pulseCtx, db, id, *current.Load(), time.Now().UTC()); err != nil && ctx.Err() == nil {
 				slog.Warn("source_worker_heartbeat_publish_failed", "error", err)
 			}
 		}
@@ -68,6 +72,7 @@ func startSourceWorkerPresence(ctx context.Context, db *gorm.DB, cfg sourceWorke
 			}
 		}
 	}()
+	return func(next sourceWorkerPresenceConfig) { current.Store(&next) }
 }
 
 func publishSourceWorkerPresence(
@@ -79,13 +84,14 @@ func publishSourceWorkerPresence(
 		ScanIntervalSeconds: int64(cfg.scanInterval / time.Second),
 		PollIntervalSeconds: int64(cfg.pollInterval / time.Second),
 		MaxConcurrency:      cfg.maxConcurrency,
+		AppliedRevision:     cfg.revision,
 		HeartbeatAt:         now,
 		ExpiresAt:           now.Add(sourceWorkerPresenceTTL),
 	}
 	return db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "instance_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"scan_interval_seconds", "poll_interval_seconds", "max_concurrency", "heartbeat_at", "expires_at",
+			"scan_interval_seconds", "poll_interval_seconds", "max_concurrency", "applied_revision", "heartbeat_at", "expires_at",
 		}),
 	}).Create(&row).Error
 }

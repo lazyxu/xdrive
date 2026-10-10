@@ -30,8 +30,8 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 		return "deployment", "controlled-restart",
 			"本地存储根目录和挂载由宿主部署管理；迁移、重新挂载或存储引擎切换应经过备份与受控维护，不提供在线假开关"
 	case "background-worker":
-		return "deployment", "controlled-restart",
-			"独立 Pull Worker 通过有过期时间的数据库心跳报告存活状态；轮询间隔、扫描间隔、并发、镜像和资源限制仍由部署管理。心跳不代表同步任务成功，本页尚不能在线修改或启动 Worker"
+		return "in-app", "task-boundary",
+			"管理员可保存、审计、回滚独立 Pull Worker 的扫描周期、轮询周期和并发。Worker 在已运行批次结束后的安全边界热应用，心跳确认前只显示待生效；容器镜像、CPU/RAM 和启动停止仍由部署管理"
 	case "caddy":
 		return "deployment", "controlled-restart",
 			"Caddy、HTTPS 证书、域名与端口由部署配置和受限 Host Manager 管理；修改可能要求网关重载或重建，不能从 Server 直接调用 Docker"

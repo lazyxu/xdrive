@@ -575,6 +575,38 @@ func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revisi
 	return cli.RevealAdminBaiduMapAK(ctx, revision)
 }
 
+func (c *agentController) CloudAdminSourceWorkerConfig(ctx context.Context) (client.AdminSourceWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminSourceWorkerConfig{}, err
+	}
+	return cli.AdminSourceWorkerConfig(ctx)
+}
+
+func (c *agentController) CloudSetAdminSourceWorkerConfig(ctx context.Context, input client.AdminSourceWorkerUpdate) (client.AdminSourceWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminSourceWorkerConfig{}, err
+	}
+	return cli.UpdateAdminSourceWorker(ctx, input)
+}
+
+func (c *agentController) CloudAdminSourceWorkerRevisions(ctx context.Context) (client.AdminSourceWorkerRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminSourceWorkerRevisionPage{}, err
+	}
+	return cli.AdminSourceWorkerRevisions(ctx)
+}
+
+func (c *agentController) CloudRollbackAdminSourceWorker(ctx context.Context, input client.AdminSourceWorkerRollbackInput) (client.AdminSourceWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminSourceWorkerConfig{}, err
+	}
+	return cli.RollbackAdminSourceWorker(ctx, input)
+}
+
 func (c *agentController) CloudAdminPhotoAutoConfig(ctx context.Context) (client.AdminPhotoAutoConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

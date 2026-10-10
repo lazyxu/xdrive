@@ -310,6 +310,72 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+// AdminSourceWorkerValues controls the standalone Pull Worker scheduler only.
+type AdminSourceWorkerValues struct {
+	ScanIntervalSeconds int64 `json:"scan_interval_seconds"`
+	PollIntervalSeconds int64 `json:"poll_interval_seconds"`
+	MaxConcurrency      int   `json:"max_concurrency"`
+}
+
+type AdminSourceWorkerEffectiveGroup struct {
+	Config   AdminSourceWorkerValues `json:"config"`
+	Revision uint64                  `json:"revision"`
+	Count    int                     `json:"count"`
+}
+
+type AdminSourceWorkerConfig struct {
+	Desired          AdminSourceWorkerValues           `json:"desired"`
+	Revision         uint64                            `json:"revision"`
+	Source           string                            `json:"source"`
+	UpdatedAt        *time.Time                        `json:"updated_at,omitempty"`
+	Effective        []AdminSourceWorkerEffectiveGroup `json:"effective"`
+	ActiveInstances  int                               `json:"active_instances"`
+	AppliedInstances int                               `json:"applied_instances"`
+	Truncated        bool                              `json:"truncated"`
+	ApplyState       string                            `json:"apply_state"`
+	Editable         bool                              `json:"editable"`
+	RequiresRestart  bool                              `json:"requires_restart"`
+}
+
+type AdminSourceWorkerUpdate struct {
+	Revision uint64                  `json:"revision"`
+	Desired  AdminSourceWorkerValues `json:"desired"`
+}
+type AdminSourceWorkerRevision struct {
+	Revision  uint64                  `json:"revision"`
+	Desired   AdminSourceWorkerValues `json:"desired"`
+	Origin    string                  `json:"origin"`
+	CreatedAt time.Time               `json:"created_at"`
+}
+type AdminSourceWorkerRevisionPage struct {
+	Items []AdminSourceWorkerRevision `json:"items"`
+}
+type AdminSourceWorkerRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminSourceWorkerConfig(ctx context.Context) (AdminSourceWorkerConfig, error) {
+	var out AdminSourceWorkerConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/source-worker", nil, &out)
+	return out, err
+}
+func (c *Client) UpdateAdminSourceWorker(ctx context.Context, input AdminSourceWorkerUpdate) (AdminSourceWorkerConfig, error) {
+	var out AdminSourceWorkerConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/source-worker", input, &out)
+	return out, err
+}
+func (c *Client) AdminSourceWorkerRevisions(ctx context.Context) (AdminSourceWorkerRevisionPage, error) {
+	var out AdminSourceWorkerRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/source-worker/revisions", nil, &out)
+	return out, err
+}
+func (c *Client) RollbackAdminSourceWorker(ctx context.Context, input AdminSourceWorkerRollbackInput) (AdminSourceWorkerConfig, error) {
+	var out AdminSourceWorkerConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/source-worker/rollback", input, &out)
+	return out, err
+}
+
 type AdminPhotoAutoKinds struct {
 	Face          bool `json:"face"`
 	Smart         bool `json:"smart"`

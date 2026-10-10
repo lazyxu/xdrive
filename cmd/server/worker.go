@@ -90,16 +90,7 @@ func runWorker(args []string) error {
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	schedulerConfig := background.DefaultConfig()
-	networkQueueCapacity := schedulerConfig.QueueCapacity[background.ResourceNetwork]
-	schedulerConfig.Capacity = map[background.ResourceClass]int{
-		background.ResourceNetwork: concurrency,
-	}
-	schedulerConfig.QueueCapacity = map[background.ResourceClass]int{
-		background.ResourceNetwork: networkQueueCapacity,
-	}
-	backgroundScheduler := background.NewScheduler(ctx, schedulerConfig)
-	defer backgroundScheduler.Close()
+	backgroundScheduler := newSourceWorkerScheduler(ctx, concurrency)
 
 	yikeRunner := &yikeworker.Runner{
 		DB:        db,
@@ -145,8 +136,9 @@ func runWorker(args []string) error {
 		)
 		return err
 	}
+	var runtime *sourceWorkerRuntimePolicy
 	runDue := func(ctx context.Context) error {
-		report, err := runner.RunDue(ctx, time.Now().UTC(), interval)
+		report, err := runner.RunDue(ctx, time.Now().UTC(), runtime.scanInterval)
 		slog.Info("source_pull_cycle_finished",
 			"mode", "scheduled",
 			"eligible", report.Eligible,
@@ -158,43 +150,78 @@ func runWorker(args []string) error {
 	}
 
 	if *once {
+		defer backgroundScheduler.Close()
 		return runImmediate(ctx)
 	}
 
-	// The standalone Pull Worker advertises only its own liveness. It does
-	// not impersonate the Server's background scheduler or expose Source data.
-	startSourceWorkerPresence(ctx, db, sourceWorkerPresenceConfig{
+	// Never swap the resource scheduler during an active Pull batch.
+	runtime = &sourceWorkerRuntimePolicy{
+		db: db, parent: ctx, runner: runner, scheduler: backgroundScheduler,
 		scanInterval: interval, pollInterval: pollInterval, maxConcurrency: concurrency,
-	})
+	}
+	defer func() { runtime.scheduler.Close() }()
+	if changed, err := runtime.apply(ctx); err != nil {
+		slog.Warn("source_worker_policy_startup_read_failed", "error", err)
+	} else if changed {
+		slog.Info("source_worker_policy_startup_applied", "revision", runtime.revision)
+	}
+	runtime.report = startSourceWorkerPresence(ctx, db, runtime.presence())
 
 	wakeups := sourceRunWakeups(ctx, cfg.DatabaseURL)
 
 	slog.Info("source_pull_worker_started",
 		"server_url", serverURL,
-		"scan_interval", interval.String(),
-		"poll_interval", pollInterval.String(),
-		"max_source_concurrency", concurrency,
+		"scan_interval", runtime.scanInterval.String(),
+		"poll_interval", runtime.pollInterval.String(),
+		"max_source_concurrency", runtime.maxConcurrency,
 		"background_resource", background.ResourceNetwork,
 	)
 	if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("source_pull_cycle_failed", "error", err)
 	}
 
-	ticker := time.NewTicker(pollInterval)
+	ticker := time.NewTicker(runtime.pollInterval)
 	defer ticker.Stop()
+	configTicker := time.NewTicker(10 * time.Second)
+	defer configTicker.Stop()
+	refresh := func() {
+		changed, err := runtime.apply(ctx)
+		if err != nil {
+			if ctx.Err() == nil {
+				slog.Warn("source_worker_policy_reconcile_failed", "error", err)
+			}
+			return
+		}
+		if changed {
+			ticker.Reset(runtime.pollInterval)
+			slog.Info("source_worker_policy_applied",
+				"revision", runtime.revision,
+				"scan_interval", runtime.scanInterval,
+				"poll_interval", runtime.pollInterval,
+				"max_concurrency", runtime.maxConcurrency)
+		}
+	}
+	// Also reconcile any admin change committed during the startup batch.
+	refresh()
 	for {
 		select {
 		case <-ctx.Done():
 			slog.Info("source_pull_worker_stopping")
 			return nil
+		case <-configTicker.C:
+			refresh()
 		case <-ticker.C:
+			refresh()
 			if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("source_pull_cycle_failed", "error", err)
 			}
+			refresh()
 		case <-wakeups:
+			refresh()
 			if err := runDue(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("source_pull_wakeup_cycle_failed", "error", err)
 			}
+			refresh()
 		}
 	}
 }

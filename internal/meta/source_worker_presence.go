@@ -10,6 +10,7 @@ type SourceWorkerPresence struct {
 	ScanIntervalSeconds int64     `gorm:"not null"`
 	PollIntervalSeconds int64     `gorm:"not null"`
 	MaxConcurrency      int       `gorm:"not null"`
+	AppliedRevision     uint64    `gorm:"not null;default:0"`
 	HeartbeatAt         time.Time `gorm:"not null"`
 	ExpiresAt           time.Time `gorm:"not null;index"`
 }
