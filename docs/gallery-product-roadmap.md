@@ -1683,3 +1683,27 @@ exercise confirmation/version validation, malformed identifiers, paging and
 legacy capability fallback. This is **not G07 final acceptance**: all-query
 deletion/download/album/tag operations, PostgreSQL 10k/100k runtime metrics,
 physical iOS/Android acceptance, and full CI remain separate gates.
+
+## G04 Race · album-folder stale read vs successful mutation (2026-10-10, PR #1247)
+
+Album-folder lists and writes in shared Web/Desktop `XDriveMediaGalleryAlbumOrganizer`
+must preserve **server-acknowledged** create/rename/move/delete results even
+when a previously issued `folderActions.list()` resolves later with an older
+folder snapshot. An obsolete read failure must not surface an error after a
+successful mutation. Folder-list errors/loading finalizers and revision-conflict
+recovery reads are generation-scoped. Committing a folder hierarchy write
+invalidates pre-write list responses and clears a stale loading indicator.
+The mutation itself remains server-authoritative and revision-checked;
+ordinary load-then-create still preserves existing and newly created folders.
+An album membership-only move does not invalidate folder hierarchy loading.
+
+**First red, with production unmodified:** GitHub Actions run
+`38017884327`, desktop tests **#463** (old empty list erased a newly
+created visible folder) and **#464** (obsolete list error appeared after
+successful create). Existing normal-case control **#465** passed. The
+initial #464 harness-only JSON circular reference was corrected *before*
+this verified second test-only run. Tests execute actual shared React
+component handlers and controlled Server Port Promises, with unchanged
+failing assertions for the fix's green retest. Require the original tests,
+other Gallery tests, Web/Desktop builds, Go race and exact-head GitHub
+`final-gate` before merging. No native physical-device acceptance claimed.
