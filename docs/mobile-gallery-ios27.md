@@ -246,10 +246,20 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3h · 原生「排序和筛选 → 显示选项」菜单层级（2026-10-10）
 
-**状态：[#1294](https://github.com/lazyxu/xdrive/pull/1294) 已在 #1293 合并后重建为独立 `master` 单工作提交候选；最终精确提交 CI、合并及真机验收均待完成。** Apple iOS 27 官方 [浏览照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确要求从图库的「排序和筛选」进入「显示选项」后再放大/缩小、切换网格呈现。
+**状态：[#1294](https://github.com/lazyxu/xdrive/pull/1294) 精确单提交完整 GitHub CI `final-gate` 成功，已线性合并（`68e4c9ac`），仅 iOS 27 真机视觉/触控验收仍待完成。** Apple iOS 27 官方 [浏览照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确要求从图库的「排序和筛选」进入「显示选项」后再放大/缩小、切换网格呈现。
 
 - **本轮实现边界：** 现有 `XDriveMobileGalleryChrome` 的「图库排序和筛选」菜单增加「显示选项」子级，并在同一原菜单内显示「放大、缩小、方形裁切、完整比例（方形网格）」；返回能回到排序和筛选。删除「更多」面板重复的缩放与长宽比入口，保留 xDrive 的精确列数 Slider、时区、跳转、折叠副本和扩展操作。每项实际调用已存在的 `onDensityChange/onAspectModeChange`，禁用状态与原边界一致，不改 Server 查询和媒体身份。
 - **严格不伪称原生功能：** `aspectMode=contain` 只改变**方形单元内的图片完整显示**，不是 iOS 27 的真正「原始比例网格」（可变单元高度/行布局）。菜单必须使用「完整比例（方形网格）」而非「原始比例网格」，后者需另行设计共享虚拟布局、锚点与 10k/100k 可见范围测试，真机图像校准前保持未交付状态。
 - **验收：** 原 React 组件测试移至真实菜单层级，验证 44px 触达、密度回调及 2/10 列边界；扩展回归测试验证显示模式回调、菜单返回与现有筛选 Drawer；新状态保持共用 `MediaGalleryDataSource`、VirtualGrid/Timeline、52px App Header 与完整 App Frame，不另建移动端后端或 Viewer。测试、CI 和 iOS 27 Safari 原生截屏的状态分开报告。
 
-- **首轮 CI 边界回归：** 原有 `Collections overview does not expose the Library zoom controls` 在 Test Renderer 中发现“未展开但仍挂载的排序菜单”包含 Library 显示选项；第一轮 Desktop 统计 2002 pass / 1 fail / 1 skip。通过只在 `showCollection` 为真时挂载菜单项、离开 Gallery 列表时关闭/清空菜单状态，补充从打开的 View Options 跳至 Collections 总览的真实 React 回归。该问题属于展示/生命周期隔离，不改变 Server 查询或 100k 虚拟列表；修订后的完整 CI 结果另计。
+- **首轮 CI 边界回归：** 原有 `Collections overview does not expose the Library zoom controls` 在 Test Renderer 中发现“未展开但仍挂载的排序菜单”包含 Library 显示选项；第一轮 Desktop 统计 2002 pass / 1 fail / 1 skip。通过只在 `showCollection` 为真时挂载菜单项、离开 Gallery 列表时关闭/清空菜单状态，补充从打开的 View Options 跳至 Collections 总览的真实 React 回归。该问题属于展示/生命周期隔离，不改变 Server 查询或 100k 虚拟列表；修订后的精确提交完整 CI `final-gate` 成功并已合并。
+
+
+## P0-3i · iOS 27 图库底部「年／月／全部」时间视图（2026-10-10）
+
+**状态：单工作提交候选，完整 GitHub PR CI 尚未完成；iOS 27 真机截图与浏览器动态视口待验收。** Apple iOS 27 [官方照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确展示底部按年、月、全部切换。xDrive 目前将这三项放在 Gallery 顶部 48px sticky 条，属于信息层级错位。
+
+- 仅将同一个 `XDriveMobileGalleryChrome` 的 **一份**「年／月／全部」按键组从顶部 sticky 移至 **Gallery 内部**底部浮层，位于原图库／精选集／搜索底部 Dock 的上方，保留时间尺度 `onTimeScale`、原年/月/全部偏好与稀疏 Timeline/VirtualGrid。原「日」仍从更多操作访问，不添加第四个原生底部标签，不改变 52px 全局 App Header 或第二套全局导航。
+- CSS 采用可复核的候选双层底部几何：主 Dock bottom=0，时间视图 bottom=`calc(64px + env(safe-area-inset-bottom, 0px))`，时间控件触控高度至少 44px；图库最后一屏预留 `calc(140px + env(safe-area-inset-bottom, 0px))` 真实滚动空间，避免最后一行照片被两层浮动控件遮住。仅当移动端正在浏览 Library 照片集合且未进入选择模式时显示，不在精选集总览、Viewer 或宽屏 Web 展示。
+- 这不是 Apple 27 已验收的精确双 Dock 层级、圆角/模糊数值或动态显隐：官方截图展示底部年/月/全部与搜索，而 xDrive 仍保留已确定的独立图库／精选集主 Dock；目前先以操作层级和可用性对齐，真机成对截图后再校准两层的排列与动画。原生 Year/Month 的精选内容语义与当前 xDrive 的时间线逻辑资产范围也需单独比对，不能只因按钮位置对齐就宣称原生 1:1。
+- React 组件测试检查单一入口、真实 `onTimeScale`、选中态、44px 操作目标、底部 safe-area、精选集/选择状态的隐藏，以及共享 Web REST、`VirtualCollection/Grid/Timeline`、Viewer 和 App Frame 不变。真实 iOS 27 Safari/安装模式、390/430/899/900 几何、10k/100k FPS/取消及最终截图差异仍是后续验收门槛。

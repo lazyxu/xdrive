@@ -169,26 +169,6 @@ export function XDriveMobileGalleryChrome({
         </Stack>
       </Stack>
 
-      {!selectionMode && primaryTab === 'library' && showCollection ? (
-        <Stack data-xdrive-mobile-gallery-time-scale
-          direction="row" role="group" aria-label="图库时间尺度"
-          justifyContent="center" spacing={0.5}
-          sx={{ position: 'sticky', top: 48, zIndex: 5, py: 0.25,
-            bgcolor: 'background.paper', mx: -0.5 }}>
-          {([
-            ['year', '年'], ['month', '月'], ['all', '全部'],
-          ] as const).map(([value, label]) => (
-            <Button key={value} size="small"
-              variant={timeScale === value ? 'contained' : 'text'}
-              aria-pressed={timeScale === value}
-              data-xdrive-mobile-gallery-scale={value}
-              onClick={() => onTimeScale(value)}
-              sx={{ minWidth: 58, minHeight: 44, borderRadius: 99 }}>
-              {label}
-            </Button>
-          ))}
-        </Stack>
-      ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
         onClose={closeSortMenu}
@@ -245,6 +225,40 @@ export function XDriveMobileGalleryChrome({
           </>
         ))}
       </Menu>
+
+      {!selectionMode && primaryTab === 'library' && showCollection ? (
+        <Stack data-xdrive-mobile-gallery-time-scale
+          direction="row" role="group" aria-label="图库时间尺度"
+          justifyContent="center" spacing={0.5}
+          sx={{
+            // Photos' Years / Months / All live in the Gallery-local bottom
+            // chrome, above the existing Library / Collections / Search dock.
+            position: 'fixed', left: '50%', transform: 'translateX(-50%)',
+            bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 7, minHeight: 52, p: 0.5,
+            maxWidth: 'calc(100vw - 24px)',
+            borderRadius: 99, border: '1px solid', borderColor: 'divider',
+            boxShadow: 2,
+            backgroundColor: (theme) => theme.palette.mode === 'dark'
+              ? 'rgba(37,37,41,0.84)' : 'rgba(250,250,252,0.84)',
+            backdropFilter: 'blur(22px) saturate(1.45)',
+            WebkitBackdropFilter: 'blur(22px) saturate(1.45)',
+            pointerEvents: 'auto',
+          }}>
+          {([
+            ['year', '年'], ['month', '月'], ['all', '全部'],
+          ] as const).map(([value, label]) => (
+            <Button key={value} size="small"
+              variant={timeScale === value ? 'contained' : 'text'}
+              aria-pressed={timeScale === value}
+              data-xdrive-mobile-gallery-scale={value}
+              onClick={() => onTimeScale(value)}
+              sx={{ minWidth: 58, minHeight: 44, borderRadius: 99 }}>
+              {label}
+            </Button>
+          ))}
+        </Stack>
+      ) : null}
 
       {!selectionMode ? (
         <Stack data-xdrive-mobile-gallery-bottom direction="row"

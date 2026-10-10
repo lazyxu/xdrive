@@ -5728,7 +5728,15 @@ export function XDriveMediaGallery({
           transformOrigin: 'center',
         },
         pr: { lg: selected && !previewItem ? '380px' : 0 },
-        pb: compactGallery ? (selectionMode ? '156px' : '84px') : 0,
+        // The Mobile Library has two Gallery-local floating dock tiers:
+        // Years/Months/All above Library/Collections/Search. Leave real scroll
+        // space below the last photo; all sparse ranges and anchors stay shared.
+        pb: compactGallery ? (
+          selectionMode ? '156px'
+            : !mobileCollectionsOverview && section === 'library' && showPhotoCollection
+              ? 'calc(140px + env(safe-area-inset-bottom, 0px))'
+              : '84px'
+        ) : 0,
         transition: 'padding-right 160ms ease',
       }}
     >
