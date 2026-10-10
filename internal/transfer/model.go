@@ -126,14 +126,15 @@ type entry struct {
 }
 
 type Manager struct {
-	mu       sync.Mutex
-	nextID   uint64
-	revision uint64
-	changed  chan struct{}
-	limit    int
-	order    []string
-	entries  map[string]*entry
-	roots    map[string]struct{}
+	mu           sync.Mutex
+	nextID       uint64
+	revision     uint64
+	changed      chan struct{}
+	historyDirty chan struct{}
+	limit        int
+	order        []string
+	entries      map[string]*entry
+	roots        map[string]struct{}
 }
 
 type Handle struct {
@@ -146,11 +147,12 @@ func NewManager(limit int) *Manager {
 		limit = DefaultHistoryLimit
 	}
 	return &Manager{
-		revision: 1,
-		changed:  make(chan struct{}),
-		limit:    limit,
-		entries:  make(map[string]*entry),
-		roots:    make(map[string]struct{}),
+		revision:     1,
+		changed:      make(chan struct{}),
+		historyDirty: make(chan struct{}, 1),
+		limit:        limit,
+		entries:      make(map[string]*entry),
+		roots:        make(map[string]struct{}),
 	}
 }
 
@@ -596,6 +598,7 @@ func (m *Manager) ClearHistory(scopes ...string) {
 		delete(m.roots, rootID)
 	}
 	m.touchLocked()
+	m.markHistoryDirtyLocked()
 }
 
 func (m *Manager) Snapshot() (uint64, []Task) {
@@ -675,6 +678,7 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	e.rateStartedAt = now
 	e.networkGeneration++
 	m.touchLocked()
+	m.markHistoryDirtyLocked()
 	m.mu.Unlock()
 
 	err := retry(ctx)
@@ -939,6 +943,7 @@ func (m *Manager) finishSkipped(id string) {
 	e.task.CompletedAt = &now
 	m.trimLocked()
 	m.touchLocked()
+	m.markHistoryDirtyForLocked(id)
 }
 
 func (m *Manager) finishState(id, state string, err error) error {
@@ -990,6 +995,7 @@ func (m *Manager) finishState(id, state string, err error) error {
 	e.task.CompletedAt = &now
 	m.trimLocked()
 	m.touchLocked()
+	m.markHistoryDirtyForLocked(id)
 	return nil
 }
 
@@ -1038,6 +1044,7 @@ func (m *Manager) finish(id string, err error) {
 	e.task.CompletedAt = &now
 	m.trimLocked()
 	m.touchLocked()
+	m.markHistoryDirtyForLocked(id)
 }
 
 func (m *Manager) snapshotLocked() []Task {
@@ -1100,6 +1107,7 @@ func (m *Manager) trimLocked() {
 		}
 		m.order = kept
 		delete(m.roots, removeRoot)
+		m.markHistoryDirtyLocked()
 	}
 }
 

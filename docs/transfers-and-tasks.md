@@ -311,3 +311,39 @@ tracked uploads, handed-off browser downloads, and real resume/pause. Avoid
 terminating durable background tasks on window close. Further phase must cover
 folder ownership and supported local file reveal; do not expose controls in an
 old Agent without `transfer-cancel`. Test and exact-head CI required.
+
+
+## Desktop Agent transfer history persistence (2026-10-10)
+
+Prior to this change, the Go Agent's `transfer.Manager` retained its terminal
+speed averages in process memory only; a restart erased the list. Desktop now
+stores terminal task snapshots, including `average_bytes_per_second`,
+`elapsed_ms`, `completed_at`, direction and group progress, in a private
+per-device/per-server/per-account JSON file:
+
+```text
+<os.UserConfigDir()>/xdrive/transfer-history-v1-<SHA256(server + NUL + username)>.json
+```
+
+Typical OS configuration roots are Windows `%APPDATA%\xdrive`, Linux
+`$XDG_CONFIG_HOME/xdrive` (default `~/.config/xdrive`), and macOS
+`~/Library/Application Support/xdrive`. The exact path comes from
+`internal/userconfig.Dir()` and the system account environment. It is **not**
+a Server or shared history database.
+
+Disk writes use a private `0600` file, private `0700` directory, sync +
+atomic replacement. The Agent coalesces **terminal/root history changes**
+rather than writing on every network-progress callback. Normal Agent shutdown
+flushes the latest snapshot. Account/logout boundaries persist old history
+before clearing active state; login loads only the matching Server/account key.
+`清除历史` also writes an empty/filtered disk snapshot to prevent reappearance
+after restart. A corrupt/mismatched file is rejected and reported in Agent
+logs, not interpreted as somebody else's history.
+
+Only complete terminal roots and terminal children are restored, with a maximum
+of 200 roots in the running manager and 10,000 rows in the serialized file.
+A huge folder retains its root summary even if child details exceed the cap;
+live/aborted-in-progress work is **not** revived as an active transfer on Agent
+restart. Go retry callbacks and cancellation actions are always disabled on
+restored records. Completed average speed is preserved verbatim; this is not a
+promise of re-downloading browser-native handoffs.

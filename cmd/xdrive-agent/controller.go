@@ -53,6 +53,9 @@ type agentController struct {
 	recovery chan agentRecoveryRequest
 
 	localFolderGrantMu sync.Mutex
+	historyMu          sync.Mutex
+	historyPath        string
+	historyKey         string
 	mu                 sync.RWMutex
 	snap               agentSnapshot
 	snapshotRevision   uint64
@@ -64,7 +67,7 @@ type agentController struct {
 }
 
 func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentController {
-	return &agentController{
+	c := &agentController{
 		ctx:                ctx,
 		cancel:             cancel,
 		wake:               make(chan struct{}, 1),
@@ -81,6 +84,9 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 			Version:    version.String(),
 		},
 	}
+	c.loadInitialTransferHistory()
+	go c.runTransferHistoryWriter(ctx)
+	return c
 }
 
 func (c *agentController) Snapshot() agentSnapshot {
@@ -657,7 +663,7 @@ func (c *agentController) Authenticate(server, username, password, mountPath str
 	if err := userconfig.Save(cfg); err != nil {
 		return err
 	}
-	c.transfers.Clear()
+	c.switchTransferHistory(cfg)
 	c.setSnapshot(func(s *agentSnapshot) {
 		s.Configured = true
 		s.Username = resp.Username
@@ -815,7 +821,13 @@ func (c *agentController) FinishTransfer(id, state, message string, skipped bool
 }
 
 func (c *agentController) ClearTransferHistory(scopes ...string) (uint64, []transfer.Task) {
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 	c.transfers.ClearHistory(scopes...)
+	// Clearing the UI and clearing the durable file must happen together.
+	if err := c.persistTransferHistoryLocked(); err != nil {
+		log.Printf("xDrive transfer history clear persistence failed: %v", err)
+	}
 	return c.transfers.Snapshot()
 }
 
@@ -1155,7 +1167,7 @@ func (c *agentController) Logout() error {
 	if err := userconfig.Remove(); err != nil {
 		return err
 	}
-	c.transfers.Clear()
+	c.stopTransferHistory()
 	c.setSnapshot(func(s *agentSnapshot) {
 		*s = agentSnapshot{
 			AuthStatus: "未登录",
