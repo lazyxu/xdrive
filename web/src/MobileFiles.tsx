@@ -27,8 +27,14 @@ import {
   Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, IconButton, InputAdornment, ListItemIcon, Menu, MenuItem, Stack, TextField, Typography,
 } from '@mui/material'
-import { formatBytes, xDriveFileExplorerDragAutoScrollDelta } from '../../ui/shared/src'
-import type { MediaItem, NodeLocation, XDriveFileExplorerGrouping } from '../../ui/shared/src'
+import {
+  formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerInlineLayout,
+  xDriveFileExplorerInlineCellAt, xDriveFileExplorerInlineVisibleRanges,
+} from '../../ui/shared/src'
+import type {
+  MediaItem, NodeLocation, XDriveFileExplorerGrouping,
+  XDriveFileExplorerInlineBranchSnapshot, XDriveFileExplorerInlineVisibleRange,
+} from '../../ui/shared/src'
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
@@ -67,6 +73,11 @@ type Props = {
   requestedDirectoryID?: number
   items: XDriveFileExplorerItem[]
   virtualCollection?: XDriveFileExplorerVirtualCollection
+  inlineBranches?: readonly XDriveFileExplorerInlineBranchSnapshot<XDriveFileExplorerItem>[]
+  onToggleInlineFolder?: (item: XDriveFileExplorerItem, parentID: number, parentIndex: number) => void
+  onRetryInlineFolder?: (ownerID: number) => void
+  onInlineViewport?: (ranges: readonly XDriveFileExplorerInlineVisibleRange[]) => void
+  onClearInline?: () => void
   crumbs: XDriveFileExplorerCrumb[]
   loading: boolean
   trashActive: boolean
@@ -78,8 +89,8 @@ type Props = {
   pathValue?: string
   onPathSubmit?: (path: string) => void
   onRestoreFolder: (id: number) => Promise<void>
-  onOpenItem: (item: XDriveFileExplorerItem) => boolean | void | Promise<boolean | void>
-  onQuickLookItem?: (item: XDriveFileExplorerItem) => void
+  onOpenItem: (item: XDriveFileExplorerItem, parentID?: number) => boolean | void | Promise<boolean | void>
+  onQuickLookItem?: (item: XDriveFileExplorerItem, parentID?: number) => void
   onOpenError: (error: unknown) => void
   recentItems: SectionEntry[]
   favorites: SectionEntry[]
@@ -381,10 +392,34 @@ export default function MobileFiles(props: Props) {
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
   const rowHeight = effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
   const totalCount = props.virtualCollection?.itemCount ?? props.items.length
-  const logicalRows = effectiveGrid ? Math.ceil(totalCount / columns) : totalCount
+  const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
+    !props.searchActive && props.grouping?.groupBy === 'none' &&
+    directoryID !== null && Boolean(props.onToggleInlineFolder)
+  // Run-length projection: no full-directory materialization at 100k items.
+  const inlineLayout = useMemo(() => {
+    if (!inlineEnabled || directoryID === null) return null
+    return xDriveFileExplorerInlineLayout<XDriveFileExplorerItem>({
+      ownerID: directoryID,
+      itemCount: totalCount,
+      itemAt: index => props.virtualCollection?.itemAt(index) ?? props.items[index],
+    }, (props.inlineBranches ?? []).filter(branch => branch.itemCount !== null).map(branch => ({
+      ownerID: branch.ownerID, parentID: branch.parentID,
+      parentIndex: branch.parentIndex, itemCount: branch.itemCount ?? 0,
+      itemAt: index => branch.items.get(index),
+    })))
+  }, [inlineEnabled, directoryID, totalCount, props.virtualCollection, props.items, props.inlineBranches])
+  const displayedCount = inlineLayout?.itemCount ?? totalCount
+  const logicalRows = effectiveGrid ? Math.ceil(displayedCount / columns) : displayedCount
   const windowRows = mobileFilesWindow(logicalRows, scrollTop, viewport.height, rowHeight)
   const start = windowRows.start * (effectiveGrid ? columns : 1)
-  const end = Math.min(totalCount, windowRows.end * (effectiveGrid ? columns : 1))
+  const end = Math.min(displayedCount, windowRows.end * (effectiveGrid ? columns : 1))
+  const inlineItemByID = useMemo(() => {
+    const index = new Map<string, XDriveFileExplorerItem>()
+    for (const branch of props.inlineBranches ?? []) {
+      for (const item of branch.items.values()) index.set(String(item.id), item)
+    }
+    return index
+  }, [props.inlineBranches])
   const sectionItems = section === 'recent' ? props.recentItems : props.favorites
   const sectionWindow = mobileFilesWindow(sectionItems.length, scrollTop, viewport.height, MOBILE_FILES_ROW_HEIGHT)
   const sortLabel = ({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[props.sort.key]
@@ -569,17 +604,31 @@ export default function MobileFiles(props: Props) {
   }, [section, browseHome, props.trashActive, props.searchActive])
 
   useEffect(() => {
-    if (!ready || !showDirectory || !props.virtualCollection?.onRangeChange || !totalCount) return
+    if (!ready || !showDirectory || !totalCount) return
+    if (inlineLayout && directoryID !== null) {
+      const ranges = xDriveFileExplorerInlineVisibleRanges(inlineLayout, start, Math.max(start, end - 1))
+      const roots = ranges.filter(range => range.ownerID === directoryID)
+      if (roots.length && props.virtualCollection?.onRangeChange) {
+        props.virtualCollection.onRangeChange(roots[0].startIndex, roots[roots.length - 1].endIndex)
+      }
+      props.onInlineViewport?.(ranges.filter(range => range.ownerID !== directoryID))
+      return
+    }
+    if (!props.virtualCollection?.onRangeChange) return
     if (groupedLayout) {
       const visible = groupedSegments.filter(segment => segment.endIndex > segment.startIndex)
       if (!visible.length) return
-      // The viewport may cross headers, but a single bounded Server range
-      // covers only the visible logical IDs; never request all 100k items.
       props.virtualCollection.onRangeChange(visible[0].startIndex, visible[visible.length - 1].endIndex - 1)
       return
     }
     props.virtualCollection.onRangeChange(start, Math.max(start, end - 1))
-  }, [ready, showDirectory, props.virtualCollection, groupedLayout, groupedSegments, start, end, totalCount])
+    props.onInlineViewport?.([])
+  }, [ready, showDirectory, directoryID, props.virtualCollection, props.onInlineViewport,
+    groupedLayout, groupedSegments, inlineLayout, start, end, totalCount])
+
+  useEffect(() => {
+    if (!showDirectory || props.trashActive || props.searchActive) props.onClearInline?.()
+  }, [showDirectory, props.trashActive, props.searchActive, props.onClearInline])
 
   useEffect(() => {
     setSelected(new Map())
@@ -717,7 +766,7 @@ export default function MobileFiles(props: Props) {
     beginBrowse(directoryID)
     props.onPathSubmit(target)
   }
-  const onOpenEntry = (item: XDriveFileExplorerItem) => {
+  const onOpenEntry = (item: XDriveFileExplorerItem, ownerID?: number) => {
     // Trash actions stay in the existing restore/delete Context Menu. A
     // disabled ordinary Open must never persist a trashed folder as Browse.
     if (props.trashActive) return
@@ -732,7 +781,7 @@ export default function MobileFiles(props: Props) {
       return
     }
     const intent = ++navigationIntentRef.current
-    void Promise.resolve(props.onOpenItem(item)).then(accepted => {
+    void Promise.resolve(props.onOpenItem(item, ownerID)).then(accepted => {
       if (accepted !== false && intent === navigationIntentRef.current && item.kind === 'dir') {
         beginBrowse(Number(item.id))
       }
@@ -788,7 +837,7 @@ export default function MobileFiles(props: Props) {
   const refresh = () => {
     if (section === 'recent') props.onRefreshRecent()
     else if (section === 'favorites') props.onRefreshFavorites()
-    else props.onRefresh()
+    else { props.onClearInline?.(); props.onRefresh() }
     setMoreAnchor(null)
   }
   const closeHold = () => {
@@ -811,9 +860,12 @@ export default function MobileFiles(props: Props) {
     const targetCrumb = props.crumbs.find(c => String(c.id) === crumbID)
     if (targetCrumb && !sourceIDs.has(String(targetCrumb.id))) return { kind: 'crumb' as const, crumb: targetCrumb }
     const folder = hit.closest<HTMLElement>('[data-mobile-files-folder-id]')
-    const target = folder && props.virtualCollection
-      ? [...props.virtualCollection.loadedItems.values()].find(x => String(x.id) === folder.dataset.mobileFilesFolderId)
-      : props.items.find(x => String(x.id) === folder?.dataset.mobileFilesFolderId)
+    const target = folder && (
+      inlineItemByID.get(folder.dataset.mobileFilesFolderId ?? '') ??
+      (props.virtualCollection
+        ? [...props.virtualCollection.loadedItems.values()].find(x => String(x.id) === folder.dataset.mobileFilesFolderId)
+        : props.items.find(x => String(x.id) === folder.dataset.mobileFilesFolderId))
+    )
     if (target?.kind === 'dir' && !sourceIDs.has(String(target.id))) return { kind: 'folder' as const, folder: target }
     return null
   }
@@ -1034,18 +1086,24 @@ export default function MobileFiles(props: Props) {
     setSelectionFeedback('')
     setSelected(new Map(all.map(item => [mobileItemKey(item), item])))
   }
-  const renderEntry = (item: XDriveFileExplorerItem, key: string) => {
+  const renderEntry = (
+    item: XDriveFileExplorerItem, key: string, depth = 0,
+    ownerID = directoryID ?? 0, sourceIndex = -1,
+  ) => {
     const chosen = selected.has(mobileItemKey(item))
+    const inlineBranch = props.inlineBranches?.find(branch => branch.ownerID === Number(item.id))
+    const canDisclose = inlineEnabled && !selectionMode && item.kind === 'dir' && sourceIndex >= 0
     return (
       <Box
         key={key}
         data-mobile-files-item
         data-mobile-files-folder-id={item.kind === 'dir' ? String(item.id) : undefined}
+        data-mobile-files-depth={depth}
         role="button"
         tabIndex={0}
         aria-label={selectionMode ? `${chosen ? '已选' : '未选'}，${item.name}` : item.name}
         aria-pressed={selectionMode ? chosen : undefined}
-        onClick={() => { if (!cancelClickRef.current) onOpenEntry(item); else cancelClickRef.current = false }}
+        onClick={() => { if (!cancelClickRef.current) onOpenEntry(item, ownerID); else cancelClickRef.current = false }}
         onDragOver={item.kind === 'dir' ? event => externalDragOver(event, { kind: 'folder', item }) : undefined}
         onDrop={item.kind === 'dir' ? event => externalDrop(event, { kind: 'folder', item }) : undefined}
         onContextMenu={event => {
@@ -1066,16 +1124,18 @@ export default function MobileFiles(props: Props) {
           } else if (event.key === ' ' && !selectionMode && !props.trashActive && props.onQuickLookItem) {
             // Desktop Space uses Quick Look. Retain Enter/tap Open and explicit selection.
             event.preventDefault()
-            props.onQuickLookItem(item)
+            props.onQuickLookItem(item, ownerID)
           } else if (event.key === 'Enter' || event.key === ' ') {
             event.preventDefault()
-            onOpenEntry(item)
+            onOpenEntry(item, ownerID)
           }
         }}
         sx={{
           minWidth: 0, minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           display: 'flex', flexDirection: effectiveGrid ? 'column' : 'row', alignItems: 'center',
-          gap: effectiveGrid ? 0.5 : 1.5, py: effectiveGrid ? 1 : 0.6, px: effectiveGrid ? 0.5 : 2,
+          gap: effectiveGrid ? 0.5 : 1.5, py: effectiveGrid ? 1 : 0.6,
+          px: effectiveGrid ? 0.5 : 2,
+          pl: !effectiveGrid && depth > 0 ? 'calc(16px + ' + Math.min(depth, 4) * 16 + 'px)' : undefined,
           position: 'relative', cursor: 'pointer',
           bgcolor: chosen || dropFolderID === String(item.id) ? 'action.selected' :
             effectiveGrid ? 'transparent' : (theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff'),
@@ -1105,11 +1165,34 @@ export default function MobileFiles(props: Props) {
         <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
           <Typography variant="body2" fontWeight={500} noWrap textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
           <Typography variant="caption" color="text.secondary" noWrap display="block" textAlign={effectiveGrid ? 'center' : 'left'}>
-            {item.secondaryLabel || [labelOf(item), item.kind === 'file' && item.size !== undefined ? formatBytes(item.size) : ''].filter(Boolean).join(' · ')}
+            {inlineBranch?.error ?? (inlineBranch?.itemCount === 0 ? '空文件夹' :
+              item.secondaryLabel || [labelOf(item), item.kind === 'file' && item.size !== undefined ? formatBytes(item.size) : ''].filter(Boolean).join(' · '))}
           </Typography>
         </Box>
         {!effectiveGrid && item.availability ? <XDriveFileExplorerAvailabilityBadge availability={item.availability} compact /> : null}
-        {!effectiveGrid && item.kind === 'dir' ? <ArrowBackIosNewRoundedIcon sx={{ fontSize: 13, transform: 'rotate(180deg)', color: 'text.disabled' }}/> : null}
+        {canDisclose ? (
+          <IconButton data-mobile-files-folder-disclosure={String(item.id)}
+            aria-label={inlineBranch?.error ? '重试展开 ' + item.name :
+              inlineBranch ? '收起 ' + item.name : '展开 ' + item.name}
+            aria-expanded={Boolean(inlineBranch)}
+            disabled={Boolean(inlineBranch?.loading)}
+            onClick={event => {
+              event.stopPropagation()
+              if (inlineBranch?.error) props.onRetryInlineFolder?.(Number(item.id))
+              else props.onToggleInlineFolder?.(item, ownerID, sourceIndex)
+            }}
+            onPointerDown={event => event.stopPropagation()}
+            onPointerUp={event => event.stopPropagation()}
+            onKeyDown={event => event.stopPropagation()}
+            sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0,
+              color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
+            {inlineBranch?.loading ? <CircularProgress size={18}/> :
+              <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
+                transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>}
+          </IconButton>
+        ) : !effectiveGrid && item.kind === 'dir' ? (
+          <ArrowBackIosNewRoundedIcon sx={{ fontSize: 13, transform: 'rotate(180deg)', color: 'text.disabled' }}/>
+        ) : null}
       </Box>
     )
   }
@@ -1230,8 +1313,10 @@ export default function MobileFiles(props: Props) {
   }
 
   const renderLogicalCell = (index: number) => {
-    const item = props.virtualCollection?.itemAt(index) ?? props.items[index]
-    return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`) : (
+    const inline = inlineLayout ? xDriveFileExplorerInlineCellAt(inlineLayout, index) : undefined
+    const item = inlineLayout ? inline?.item : props.virtualCollection?.itemAt(index) ?? props.items[index]
+    return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`,
+      inline?.depth ?? 0, inline?.ownerID ?? directoryID ?? 0, inline?.sourceIndex ?? index) : (
       <Box key={index} data-mobile-files-placeholder aria-label="正在加载文件"
         sx={{ minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           p: 2, color: 'text.disabled' }}>

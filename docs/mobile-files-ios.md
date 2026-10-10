@@ -120,12 +120,18 @@ A modal confirms that deleting a saved rule does not remove matching files, guar
  
 ## 2026-10-10 F-PARITY-05 · Mobile Go to Folder path
 
-**Pending PR CI/merge.** Bring the wide Web FileExplorer address entry to Mobile's More menu without adding a new backend request or a second directory walker. The mobile dialog is prefilled from Web's shared `pathValue`; it calls the same `submitPath`, and browsing stays on the single Mobile context. Search remains explicitly `全部文件`. Empty values are rejected, Trash hides the action, and all 44px touch targets and the existing 52px App Frame title bar remain unchanged.
+**Merged:** [PR #1229](https://github.com/lazyxu/xdrive/pull/1229), full CI successful and work branch cleaned. This phase brings the wide Web FileExplorer address entry to Mobile's More menu without adding a new backend request or a second directory walker. The mobile dialog is prefilled from Web's shared `pathValue`; it calls the same `submitPath`, and browsing stays on the single Mobile context. Search remains explicitly `全部文件`. Empty values are rejected, Trash hides the action, and all 44px touch targets and the existing 52px App Frame title bar remain unchanged.
 
 Tests verify callback delegation and state/viewport ownership. This is a functional parity increment, **not** an iOS 27 pixel-fidelity signoff.
 
 ## 2026-10-10 F-PARITY-06 · 外部文件/文件夹拖入
 
-**开发分支已实现，PR CI/合并待验收。** 将现有宽屏 Web 的外部文件、文件夹、空目录和嵌套目录拖放能力接入 Mobile Files 的列表背景、真实文件夹行与上方祖先路径，统一调用共享 `xDriveFileExplorerReadExternalDrop` 和现有 Web 上传控制器。移动端的静止长按菜单与内部拖动仍使用原来的指针拖动组件，不得把外部拖入伪装成内部移动。后台账户、导航上下文或 Search 变化后，过期的异步目录读取结果不得触发上传；Trash 不允许拖入更改。
+**已合并：[PR #1233](https://github.com/lazyxu/xdrive/pull/1233)；完整 CI #38014316056 通过，工作分支已清理。** 将现有宽屏 Web 的外部文件、文件夹、空目录和嵌套目录拖放能力接入 Mobile Files 的列表背景、真实文件夹行与上方祖先路径，统一调用共享 `xDriveFileExplorerReadExternalDrop` 和现有 Web 上传控制器。移动端的静止长按菜单与内部拖动仍使用原来的指针拖动组件，不得把外部拖入伪装成内部移动。后台账户、导航上下文或 Search 变化后，过期的异步目录读取结果不得触发上传；Trash 不允许拖入更改。
 
 本阶段保留动态视口、52px App Header、共享后端、虚拟列表和缩略图调度。真实 iOS 27 设备的跨应用拖放、Safari/安装模式和 10k/100k 负载验收仍未执行。
+
+## 2026-10-10 F-PARITY-07B · iOS 27 列表内展开
+
+**当前为 PR 待 CI/合并阶段。** 已在独立代码分支完成 44px 独立展开按钮、父/子目录单虚拟窗口、可取消的现有 Server `listRange` 子目录分页、稀疏子节点注册至共享 Web 工作区 `nodeByID`，并支持展开、收起、错误/重试、帐户/视图变化后清理。普通点击与展开分离，移动端仍不创建自己的 FileExplorer REST API。FileExplorer 内部多标签页仍仅在宽屏可用。
+
+待验收项目：完整 PR CI、真实 iOS 27 截图和触控/VoiceOver、100k 真实浏览器资源指标，以及分组列表内嵌展开。**保持全屏 App Frame 和独立的 52px 全局应用标题栏。**

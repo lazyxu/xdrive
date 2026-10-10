@@ -48,6 +48,13 @@ function loadGrouping() {
   return layout.exports
 }
 const grouped = loadGrouping()
+const inline = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/file-explorer-inline.ts'))(
+    mod, mod.exports,
+  )
+  return mod.exports
+})()
 const propertiesHook = (() => {
   const mod = { exports: {} }
   new Function('module', 'exports', 'require', compile('ui/shared/src/mui/FileExplorerPropertiesController.ts'))(
@@ -87,6 +94,7 @@ const imports = {
   '@mui/material': material,
   '@xdrive/ui/mui': ui,
   '../../ui/shared/src': {
+    ...inline,
     formatBytes: n => n + ' B',
     xDriveFileExplorerDragAutoScrollDelta: () => 0,
     xDriveFileKind: name => /\.(?:png|jpg|livp)$/i.test(name) ? 'image' : 'file',
@@ -1144,4 +1152,106 @@ test('F-PARITY-06: stale directory reads never upload to a later account; Trash 
     assert.equal(prevented, 1)
     assert.deepEqual(uploads, [], 'Trash never accepts a dropped external file')
   }, { props: { onExternalFilesDrop: async files => uploads.push(files.map(file => file.name)) } })
+})
+
+test('F-PARITY-07B: List disclosure is independent of row Open and uses a 44px button', async () => {
+  const toggles = []
+  const opens = []
+  const group = { groupBy: 'none', foldersFirst: true }
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    const arrow = find(h.view, 'data-mobile-files-folder-disclosure', '2')
+    assert.equal(arrow.props['aria-expanded'], false)
+    assert.equal(arrow.props.sx.width, 44)
+    assert.equal(arrow.props.sx.height, 44)
+    let stopped = 0
+    await act(async () => { arrow.props.onClick({ stopPropagation() { stopped++ } }) })
+    assert.equal(stopped, 1)
+    assert.deepEqual(toggles, [[2, 1, 0]])
+    assert.deepEqual(opens, [], 'disclosure never navigates')
+    const branch = { ownerID: 2, parentID: 1, parentIndex: 0, name: '照片文件夹',
+      itemCount: 2, loading: false, error: null,
+      items: new Map([[0, { id: 4, name: 'inside.txt', kind: 'file', revision: 7, size: 42 }],
+        [1, { id: 5, name: 'Nested', kind: 'dir', revision: 9 }]]) }
+    await h.update({ inlineBranches: [branch] })
+    assert.equal(find(h.view, 'data-mobile-files-folder-disclosure', '2').props['aria-expanded'], true)
+    const child = h.view.root.findAll(node => node.props?.['data-mobile-files-depth'] === 1
+      && node.props?.['data-mobile-files-item'] === true).find(node =>
+        node.props['aria-label'] === 'inside.txt')
+    assert.ok(child, 'real projected child row must appear')
+    await act(async () => { child.props.onClick() })
+    assert.deepEqual(opens, [[4, 2]], 'child opens through shared owner API')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: { grouping: group,
+    onToggleInlineFolder: (item, owner, index) => toggles.push([item.id, owner, index]),
+    onOpenItem: (item, owner) => { opens.push([item.id, owner]); return false },
+  } })
+})
+
+test('F-PARITY-07B: child error retry never navigates or starts a second API', async () => {
+  const retries = []
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    const arrow = find(h.view, 'data-mobile-files-folder-disclosure', '2')
+    assert.match(arrow.props['aria-label'], /重试展开/)
+    await act(async () => { arrow.props.onClick({ stopPropagation() {} }) })
+    assert.deepEqual(retries, [2])
+  }, { props: {
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onToggleInlineFolder() { throw Error('retry unexpectedly toggled the branch') },
+    onRetryInlineFolder: id => retries.push(id),
+    inlineBranches: [{ ownerID: 2, parentID: 1, parentIndex: 0,
+      name: '照片文件夹', itemCount: null, items: new Map(),
+      loading: false, error: '403 Forbidden' }],
+  } })
+})
+
+test('F-PARITY-07B: 100k root plus 100k child renders only one shared visible window', async () => {
+  const rootRange = []
+  const childRange = []
+  const folder = { id: 2, name: 'Large folder', kind: 'dir', revision: 3 }
+  const root = { interactionKey: '100k-index', itemCount: 100000,
+    loadedItems: new Map([[0, folder]]), itemAt: index => index === 0 ? folder : undefined,
+    onRangeChange: (start, end) => rootRange.push([start, end]) }
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    assert.ok(count(h.view, 'data-mobile-files-placeholder') < 30)
+    assert.ok(count(h.view, 'data-mobile-files-item') < 30)
+    assert.ok(rootRange.length > 0)
+    assert.ok(childRange.some(ranges => ranges.some(range => range.ownerID === 2)))
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    items: [folder], virtualCollection: root,
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onToggleInlineFolder() {},
+    onInlineViewport: ranges => childRange.push(ranges),
+    inlineBranches: [{ ownerID: 2, parentID: 1, parentIndex: 0, name: folder.name,
+      itemCount: 100000, loading: false, error: null,
+      items: new Map([[0, { id: 3, name: 'visible.txt', kind: 'file', revision: 1 }]]) }],
+  } })
+})
+
+test('F-PARITY-07B: Trash and Search do not expose inline folder disclosures', async () => {
+  let cleared = 0
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-folder-disclosure'), 1)
+    await h.update({ trashActive: true })
+    assert.equal(count(h.view, 'data-mobile-files-folder-disclosure'), 0)
+    await h.update({ trashActive: false, searchActive: true })
+    assert.equal(count(h.view, 'data-mobile-files-folder-disclosure'), 0)
+    assert.ok(cleared > 0)
+  }, { props: {
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onToggleInlineFolder() {},
+    onClearInline: () => { cleared++ },
+  } })
 })
