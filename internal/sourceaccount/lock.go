@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,6 +17,7 @@ import (
 var ErrBusy = errors.New("source provider account is busy")
 
 type Lease struct {
+	mu   sync.Mutex
 	conn *sql.Conn
 	key  int64
 }
@@ -100,7 +102,12 @@ func IsHeld(
 }
 
 func (l *Lease) Heartbeat(ctx context.Context) error {
-	if l == nil || l.conn == nil {
+	if l == nil {
+		return fmt.Errorf("source account lease is closed")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.conn == nil {
 		return fmt.Errorf("source account lease is closed")
 	}
 	heartbeatCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -120,7 +127,12 @@ func (l *Lease) Heartbeat(ctx context.Context) error {
 }
 
 func (l *Lease) Close() {
-	if l == nil || l.conn == nil {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.conn == nil {
 		return
 	}
 	conn := l.conn
