@@ -17,6 +17,19 @@ export function xDriveMediaGalleryKfsColumnCount(
   return Math.max(minimum, Math.floor(available / reference))
 }
 
+/** Manual Mobile zoom applies its step to the visible KFS responsive default. */
+export function xDriveMediaGalleryKfsVisibleColumnCount(
+  width: number, preferredColumns: number, baselineColumns: number,
+  referenceWidth = XDRIVE_MEDIA_GALLERY_KFS_REFERENCE_WIDTH,
+) {
+  const base = Number.isFinite(baselineColumns)
+    ? Math.max(1, Math.ceil(baselineColumns)) : 1
+  const preferred = Number.isFinite(preferredColumns)
+    ? Math.max(1, Math.ceil(preferredColumns)) : base
+  return Math.max(1,
+    xDriveMediaGalleryKfsColumnCount(width, base, referenceWidth) + preferred - base)
+}
+
 /** Gestures change a column preference once on release; no per-frame relayout. */
 export function xDriveMediaGalleryPinchColumnCount(
   initialColumns: number,
@@ -67,6 +80,7 @@ export function xDriveMediaGalleryGridMetrics({
   minColumnWidth = XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH,
   gap = XDRIVE_MEDIA_GALLERY_GRID_GAP,
   minColumns,
+  baselineColumns,
   referenceColumnWidth = XDRIVE_MEDIA_GALLERY_KFS_REFERENCE_WIDTH,
 }: {
   width: number
@@ -74,6 +88,7 @@ export function xDriveMediaGalleryGridMetrics({
   minColumnWidth?: number
   gap?: number
   minColumns?: number
+  baselineColumns?: number
   referenceColumnWidth?: number
 }): XDriveMediaGalleryGridMetrics {
   const available = nonNegative(width)
@@ -84,7 +99,11 @@ export function xDriveMediaGalleryGridMetrics({
   // existing minimum-pixel-width behavior without changing their density.
   const columns = minColumns === undefined
     ? Math.max(1, Math.floor((available + normalizedGap) / (minWidth + normalizedGap)))
-    : xDriveMediaGalleryKfsColumnCount(available, minColumns, referenceColumnWidth)
+    : baselineColumns === undefined
+      ? xDriveMediaGalleryKfsColumnCount(available, minColumns, referenceColumnWidth)
+      : xDriveMediaGalleryKfsVisibleColumnCount(
+          available, minColumns, baselineColumns, referenceColumnWidth,
+        )
   const columnWidth = available > 0
     ? Math.max(1, (available - normalizedGap * (columns - 1)) / columns)
     : minWidth

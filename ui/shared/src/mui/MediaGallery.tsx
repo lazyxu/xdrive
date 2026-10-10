@@ -3573,6 +3573,7 @@ function MediaTileGrid({
   minTileWidth,
   minColumns,
   referenceColumnWidth,
+  baselineColumns,
   loadThumbnail,
   loadPreviewURL,
   saveVideoPoster,
@@ -3591,6 +3592,7 @@ function MediaTileGrid({
   minTileWidth: number
   minColumns?: number
   referenceColumnWidth?: number
+  baselineColumns?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -3623,6 +3625,7 @@ function MediaTileGrid({
         minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
       }).columns
       setMeasuredColumns((current) => current === next ? current : next)
     }
@@ -3636,7 +3639,7 @@ function MediaTileGrid({
     if (typeof window === 'undefined') return
     window.addEventListener('resize', update)
     return () => window.removeEventListener('resize', update)
-  }, [items.length, minTileWidth, minColumns, referenceColumnWidth])
+  }, [items.length, minTileWidth, minColumns, referenceColumnWidth, baselineColumns])
 
   return (
     <Box
@@ -3688,6 +3691,7 @@ function MediaVirtualTileGrid({
   minTileWidth,
   minColumns,
   referenceColumnWidth,
+  baselineColumns,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -3710,6 +3714,7 @@ function MediaVirtualTileGrid({
   minTileWidth: number
   minColumns?: number
   referenceColumnWidth?: number
+  baselineColumns?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -3737,6 +3742,7 @@ function MediaVirtualTileGrid({
       minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
     }),
     window: { start: 0, end: 0, startRow: 0, endRow: 0 },
     visibleWindow: { start: 0, end: 0, startRow: 0, endRow: 0 },
@@ -3762,6 +3768,7 @@ function MediaVirtualTileGrid({
           minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -3825,7 +3832,7 @@ function MediaVirtualTileGrid({
         frameRef.current = null
       }
     }
-  }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, onVisibleAnchorChange])
+  }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
     if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
@@ -3837,6 +3844,7 @@ function MediaVirtualTileGrid({
       minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
     })
     const index = Math.max(
       0,
@@ -3866,6 +3874,7 @@ function MediaVirtualTileGrid({
     minTileWidth,
     minColumns,
     referenceColumnWidth,
+    baselineColumns,
     restoreAnchorIndex,
     restoreAnchorRevision,
     restoreAnchorViewportOffset,
@@ -3989,6 +3998,7 @@ function MediaVirtualTimeline({
   minTileWidth,
   minColumns,
   referenceColumnWidth,
+  baselineColumns,
   loadThumbnail,
   thumbnailScheduler,
   loadPreviewURL,
@@ -4011,6 +4021,7 @@ function MediaVirtualTimeline({
   minTileWidth: number
   minColumns?: number
   referenceColumnWidth?: number
+  baselineColumns?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -4037,6 +4048,7 @@ function MediaVirtualTimeline({
       minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
     })
     const window = xDriveMediaGalleryTimelineWindow({
       layout,
@@ -4066,6 +4078,7 @@ function MediaVirtualTimeline({
           minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
         })
         const hostRect = currentHost.getBoundingClientRect()
         const viewportTop = scrollParent
@@ -4128,7 +4141,7 @@ function MediaVirtualTimeline({
         frameRef.current = null
       }
     }
-  }, [collection.onRangeChange, groups, minTileWidth, minColumns, referenceColumnWidth, onVisibleAnchorChange])
+  }, [collection.onRangeChange, groups, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
     if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
@@ -4140,6 +4153,7 @@ function MediaVirtualTimeline({
       minColumnWidth: minTileWidth,
         minColumns,
         referenceColumnWidth,
+        baselineColumns,
     })
     const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
     if (offset === null) return
@@ -4166,6 +4180,7 @@ function MediaVirtualTimeline({
     minTileWidth,
     minColumns,
     referenceColumnWidth,
+    baselineColumns,
     restoreAnchorIndex,
     restoreAnchorRevision,
     restoreAnchorViewportOffset,
@@ -4520,6 +4535,7 @@ export function XDriveMediaGallery({
     searchActive || currentCleanupReview ? 'all' : timeScale
   const minTileWidth = viewPreferences.densityByScale[effectiveTimeScale]
   const mobileColumns = mobileColumnsByScale[effectiveTimeScale]
+  const mobileBaselineColumns = XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT[effectiveTimeScale]
   const aspectMode = viewPreferences.aspectMode
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectionBusy, setSelectionBusy] = useState(false)
@@ -6919,6 +6935,7 @@ export function XDriveMediaGallery({
               minTileWidth={minTileWidth}
               minColumns={compactGallery ? mobileColumns : undefined}
               referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
+               baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
               loadThumbnail={loadThumbnail}
               thumbnailScheduler={thumbnailScheduler}
               loadPreviewURL={collectionPreviewURL}
@@ -6969,6 +6986,7 @@ export function XDriveMediaGallery({
                     minTileWidth={minTileWidth}
                     minColumns={compactGallery ? mobileColumns : undefined}
                     referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
+               baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
                     indexOffset={group.startIndex}
                     selectionMode={selectionMode}
                     selectedNodeIDs={selectedNodeIDs}
@@ -6992,6 +7010,7 @@ export function XDriveMediaGallery({
             minTileWidth={minTileWidth}
             minColumns={compactGallery ? mobileColumns : undefined}
             referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
+               baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
             selectionMode={selectionMode}
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
@@ -7019,6 +7038,7 @@ export function XDriveMediaGallery({
             minTileWidth={minTileWidth}
             minColumns={compactGallery ? mobileColumns : undefined}
             referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
+               baselineColumns={compactGallery ? mobileBaselineColumns : undefined}
             selectionMode={selectionMode}
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
