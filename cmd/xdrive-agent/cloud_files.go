@@ -1353,6 +1353,10 @@ func downloadAgentCloudFileIntoPath(
 		_ = os.Remove(tmpPath)
 		return err
 	}
+	if err := ctx.Err(); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
 	if err := replaceDownloadedFile(tmpPath, destination); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
@@ -1414,34 +1418,50 @@ func (c *agentController) CloudDownloadFolder(
 	if group == nil {
 		return agentCloudFolderDownloadResult{}, fmt.Errorf("transfer manager is unavailable")
 	}
+	// This group owns the actual HTTP scan and each child download. The Agent
+	// can now cancel the entire folder without touching other transfers.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	group.BindCancel(cancel)
+	finishFolderFailure := func(err error) {
+		state := transfer.StateFailed
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			state = transfer.StateCancelled
+		}
+		_ = group.Finish(state, err)
+	}
 
 	manifest, err := scanAgentCloudDownloadFolder(ctx, root, cli.ListPage)
 	if err != nil {
-		_ = group.Finish(transfer.StateFailed, err)
+		finishFolderFailure(err)
 		return agentCloudFolderDownloadResult{}, err
 	}
 
 	reserved, err := existingAgentCloudDownloadRootNames(destination)
 	if err != nil {
-		_ = group.Finish(transfer.StateFailed, err)
+		finishFolderFailure(err)
 		return agentCloudFolderDownloadResult{}, err
 	}
 	rootName, err := allocateDownloadedArchiveName(root.Name, true, reserved)
 	if err != nil {
-		_ = group.Finish(transfer.StateFailed, err)
+		finishFolderFailure(err)
 		return agentCloudFolderDownloadResult{}, err
 	}
 	rootPath := filepath.Join(destination, rootName)
 	if err := os.Mkdir(rootPath, 0o755); err != nil {
-		_ = group.Finish(transfer.StateFailed, err)
+		finishFolderFailure(err)
 		return agentCloudFolderDownloadResult{}, err
 	}
 	for _, relativeDir := range manifest.Directories {
+		if err := ctx.Err(); err != nil {
+			finishFolderFailure(err)
+			return agentCloudFolderDownloadResult{}, err
+		}
 		if relativeDir == "" {
 			continue
 		}
 		if err := os.MkdirAll(filepath.Join(rootPath, filepath.FromSlash(relativeDir)), 0o755); err != nil {
-			_ = group.Finish(transfer.StateFailed, err)
+			finishFolderFailure(err)
 			return agentCloudFolderDownloadResult{}, err
 		}
 	}
@@ -1463,7 +1483,7 @@ func (c *agentController) CloudDownloadFolder(
 		childHandles = c.transfers.StartChildrenByID(group.ID(), childSpecs)
 		if len(childHandles) != len(childSpecs) {
 			err := fmt.Errorf("cannot create folder download child transfers")
-			_ = group.Finish(transfer.StateFailed, err)
+			finishFolderFailure(err)
 			return agentCloudFolderDownloadResult{}, err
 		}
 	}
@@ -1489,13 +1509,37 @@ func (c *agentController) CloudDownloadFolder(
 	group.UpdateGroup(groupProgress())
 
 	result := agentCloudFolderDownloadResult{Root: rootName}
+	if err := ctx.Err(); err != nil {
+		for _, child := range childHandles {
+			_ = child.Finish(transfer.StateCancelled, nil)
+		}
+		finishFolderFailure(err)
+		return result, err
+	}
 	if len(manifest.Files) == 0 {
 		_ = group.Finish(transfer.StateCompleted, nil)
 		return result, nil
 	}
 
 	var firstFailure error
+	cancelRemaining := func(from int, cause error) {
+		for next := from; next < len(childHandles); next++ {
+			_ = childHandles[next].Finish(transfer.StateCancelled, nil)
+		}
+		running = 0
+		processed = int64(len(childHandles))
+		group.UpdateGroup(groupProgress())
+		state := transfer.StateCancelled
+		if completed > 0 {
+			state = transfer.StatePartial
+		}
+		_ = group.Finish(state, cause)
+	}
 	for index, file := range manifest.Files {
+		if err := ctx.Err(); err != nil {
+			cancelRemaining(index, err)
+			return result, err
+		}
 		child := childHandles[index]
 		running = 1
 		child.SetPhase(transfer.PhaseTransferring)
@@ -1522,11 +1566,7 @@ func (c *agentController) CloudDownloadFolder(
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
 				_ = child.Finish(transfer.StateCancelled, err)
-				for next := index + 1; next < len(childHandles); next++ {
-					_ = childHandles[next].Finish(transfer.StateCancelled, nil)
-				}
-				group.UpdateGroup(groupProgress())
-				_ = group.Finish(transfer.StateCancelled, err)
+				cancelRemaining(index+1, err)
 				return result, err
 			}
 			failed++
