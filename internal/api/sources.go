@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	sourcepkg "github.com/lazyxu/xdrive/internal/source"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
@@ -268,6 +269,8 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 	c.JSON(http.StatusOK, out)
 }
 
+var errLocalSourceCreateDeviceUnauthorized = errors.New("local source creation requires the owning device")
+
 func (s *Server) createSource(c *gin.Context) {
 	var req struct {
 		Name               string `json:"name"`
@@ -318,6 +321,15 @@ func (s *Server) createSource(c *gin.Context) {
 		return
 	}
 	isLocalFolder := req.Kind == meta.SourceKindLocalFolder
+	var creatorDeviceID string
+	if isLocalFolder && req.Direction == meta.SourceDirectionPush {
+		parsed, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
+		if err != nil {
+			fail(c, http.StatusForbidden, "owning device credential required to create local backup")
+			return
+		}
+		creatorDeviceID = parsed.String()
+	}
 	if isLocalFolder && req.Direction != meta.SourceDirectionPush {
 		fail(c, http.StatusBadRequest, "local folder only supports push direction")
 		return
@@ -379,13 +391,42 @@ func (s *Server) createSource(c *gin.Context) {
 		ScheduleType: schedule.Type, ScheduleExpression: schedule.Expression, ScheduleTimezone: schedule.Timezone,
 		Revision: 1, TargetNodeID: target, IgnoreRules: req.IgnoreRules,
 	}
-	if err := s.DB.Create(&source).Error; err != nil {
-		if isDuplicate(err) {
+	// Lock enrollment before inserting this Source so a concurrent revoke
+	// cannot authorize an orphan unbound Source with a stale credential.
+	var createErr error
+	if isLocalFolder {
+		source.LocalCreatorDeviceID = &creatorDeviceID
+		createErr = s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+			var device meta.ClientDevice
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Where("id = ? AND owner_id = ?", creatorDeviceID, userID(c)).
+				Take(&device).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return errLocalSourceCreateDeviceUnauthorized
+				}
+				return err
+			}
+			if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+				return errLocalSourceCreateDeviceUnauthorized
+			}
+			return tx.Create(&source).Error
+		})
+	} else {
+		createErr = s.DB.WithContext(c.Request.Context()).Create(&source).Error
+	}
+	if createErr != nil {
+		switch {
+		case errors.Is(createErr, errLocalSourceCreateDeviceUnauthorized):
+			fail(c, http.StatusForbidden, "owning device credential invalid or revoked")
+		case isDuplicate(createErr):
 			fail(c, http.StatusConflict, "source name already exists")
-		} else {
+		default:
 			fail(c, http.StatusInternalServerError, "create source failed")
 		}
 		return
+	}
+	if isLocalFolder {
+		c.Header("Cache-Control", "private, no-store")
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(source.Revision, 10)))
 	c.JSON(http.StatusCreated, s.sourceDTO(source))

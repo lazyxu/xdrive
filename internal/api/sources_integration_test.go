@@ -142,7 +142,20 @@ func TestSourceControlPlaneAndIsolation(t *testing.T) {
 	localPull := fmt.Sprintf(`{"name":"Local invalid pull","kind":"local_folder","direction":"pull","target_node_id":%d}`, targetA.ID)
 	request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(localPull), http.StatusBadRequest)
 	localCreateBody := fmt.Sprintf(`{"name":"Local Desktop Files","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, targetA.ID)
-	localCreate := request(t, router, http.MethodPost, "/api/v1/sources", tokenA, strings.NewReader(localCreateBody), http.StatusCreated)
+	request(t, router, http.MethodPost, "/api/v1/sources", tokenA,
+		strings.NewReader(localCreateBody), http.StatusForbidden)
+	deviceResp := request(t, router, http.MethodPost, "/api/v1/devices", tokenA,
+		strings.NewReader(`{"name":"Source test Desktop","platform":"linux","client_version":"test"}`),
+		http.StatusCreated)
+	var enrollment registeredClientDeviceDTO
+	if err := json.Unmarshal(deviceResp.Body.Bytes(), &enrollment); err != nil {
+		t.Fatal(err)
+	}
+	localCreate := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", tokenA,
+		strings.NewReader(localCreateBody), http.StatusCreated, map[string]string{
+			"X-XDrive-Device-ID":    enrollment.Device.ID,
+			"X-XDrive-Device-Token": enrollment.DeviceToken,
+		})
 	var localCreated sourceDTO
 	if err := json.Unmarshal(localCreate.Body.Bytes(), &localCreated); err != nil {
 		t.Fatal(err)

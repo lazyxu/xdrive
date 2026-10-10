@@ -111,6 +111,11 @@ func (s *Server) bindLocalSource(c *gin.Context) {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		// Existing legacy bindings may be replayed above, but an unbound
+		// Source cannot be claimed by an arbitrary same-account Desktop.
+		if source.LocalCreatorDeviceID == nil || *source.LocalCreatorDeviceID != device.ID {
+			return errLocalBindingDeviceInvalid
+		}
 		now := time.Now().UTC()
 		binding := meta.LocalSourceBinding{
 			SourceID: source.ID, OwnerID: source.OwnerID, DeviceID: device.ID,
