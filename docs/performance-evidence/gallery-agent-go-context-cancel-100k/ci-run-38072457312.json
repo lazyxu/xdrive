@@ -1,0 +1,454 @@
+{
+  "status": "Accepted / CURRENT-BEFORE within preset budget; production unchanged; AFTER N/A",
+  "provenance": {
+    "repo": "lazyxu/xdrive",
+    "original_measured_sha": "d3ebf4fd1f00f51467a2e9cefd4226fda15668bd",
+    "run_id": 38072457312,
+    "job_id": 114272514459,
+    "url": "https://github.com/lazyxu/xdrive/actions/runs/38072457312",
+    "job_url": "https://github.com/lazyxu/xdrive/actions/runs/38072457312/job/114272514459",
+    "artifact_id": 11677456286,
+    "artifact_name": "gallery-agent-go-context-cancel-100k",
+    "source": "native Github ubuntu-latest, Go1.25.x, Node22, PostgreSQL17-alpine, actual production Agent IPC & Gin local CAS",
+    "sampling": "3 fresh independent PG17 schemas and Agent processes; 2 request-owner cancellation modes per sample",
+    "command": "XD_TEST_DATABASE_URL=postgres://... XD_GALLERY_AGENT_BINARY=<built Go Agent> node desktop/scripts/gallery-agent-go-context-cancel-100k.cjs",
+    "notes": "GitHub logs retain full benchmark output; ephemeral workflow artifact contains native Gin/Agent logs and individual JSON. The original stage produced these numbers on the exact SHA above; later evidence amendments require new CI before merge."
+  },
+  "invalid_first_attempt": {
+    "run_id": 38072259583,
+    "head_sha": "9e6ec1f4ada72461de705068b48eb89af6c2ed86",
+    "cause": "test-only workflow environment name corrupted, Agent guard terminated before fixture startup; no valid 100k measurement"
+  },
+  "scope": {
+    "logical_photo_assets": 100000,
+    "physical_nodes": 115000,
+    "live_photo_pairs": 15000,
+    "actual_jpeg_first_viewport_requests_per_sample": 12,
+    "no_actual_electron_renderer_or_preload": true,
+    "test_only_slow_writer_ms": 1500,
+    "first_real_jpeg_bytes_per_request": 256
+  },
+  "frozen_budgets": {
+    "independent_samples": 3,
+    "groups_per_sample": 2,
+    "requests_per_group": 6,
+    "request_ctx_and_handler_release_deadline_ms": 160,
+    "stale_response_body_bytes_at_160ms": 0,
+    "active_handlers_at_160ms": 0,
+    "recovered_range_count": 100000,
+    "recovered_range_returned": 200,
+    "agent_rss_growth_limit_bytes": 134217728
+  },
+  "unrounded_samples": [
+    {
+      "sample": 1,
+      "logical": 100000,
+      "physicalNodes": 115000,
+      "livePairs": 15000,
+      "firstRangeMs": 971.3954319999975,
+      "seedMsExcluded": 35446.145,
+      "groups": [
+        {
+          "sample": 1,
+          "mode": "viewport-cancel",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 3.827,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        },
+        {
+          "sample": 1,
+          "mode": "sender-destroyed",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 1.626,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        }
+      ],
+      "recovered": {
+        "offset": 50000,
+        "count": 100000,
+        "returned": 200
+      },
+      "agentRssStartBytes": 17571840,
+      "agentRssEndBytes": 20938752,
+      "agentRssDeltaBytes": 3366912
+    },
+    {
+      "sample": 2,
+      "logical": 100000,
+      "physicalNodes": 115000,
+      "livePairs": 15000,
+      "firstRangeMs": 958.1024999999936,
+      "seedMsExcluded": 34212.928,
+      "groups": [
+        {
+          "sample": 2,
+          "mode": "viewport-cancel",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 1.01,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        },
+        {
+          "sample": 2,
+          "mode": "sender-destroyed",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 1.237,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        }
+      ],
+      "recovered": {
+        "offset": 50000,
+        "count": 100000,
+        "returned": 200
+      },
+      "agentRssStartBytes": 15486976,
+      "agentRssEndBytes": 19955712,
+      "agentRssDeltaBytes": 4468736
+    },
+    {
+      "sample": 3,
+      "logical": 100000,
+      "physicalNodes": 115000,
+      "livePairs": 15000,
+      "firstRangeMs": 948.3935530000017,
+      "seedMsExcluded": 31140.561,
+      "groups": [
+        {
+          "sample": 3,
+          "mode": "viewport-cancel",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 1.41,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        },
+        {
+          "sample": 3,
+          "mode": "sender-destroyed",
+          "requested": 6,
+          "receivedFirstBytes": 1536,
+          "canceled": 6,
+          "contextDone": 6,
+          "activeHandlersAt160ms": 0,
+          "additionalBytesAt160ms": 0,
+          "maxGoContextNotifyMs": 1.082,
+          "rejectedAgentRequests": 6,
+          "errorExamples": [
+            "Desktop IPC request was cancelled."
+          ]
+        }
+      ],
+      "recovered": {
+        "offset": 50000,
+        "count": 100000,
+        "returned": 200
+      },
+      "agentRssStartBytes": 17563648,
+      "agentRssEndBytes": 20946944,
+      "agentRssDeltaBytes": 3383296
+    }
+  ],
+  "unrounded_groups": [
+    {
+      "sample": 1,
+      "mode": "viewport-cancel",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 3.827,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    },
+    {
+      "sample": 1,
+      "mode": "sender-destroyed",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 1.626,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    },
+    {
+      "sample": 2,
+      "mode": "viewport-cancel",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 1.01,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    },
+    {
+      "sample": 2,
+      "mode": "sender-destroyed",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 1.237,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    },
+    {
+      "sample": 3,
+      "mode": "viewport-cancel",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 1.41,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    },
+    {
+      "sample": 3,
+      "mode": "sender-destroyed",
+      "requested": 6,
+      "receivedFirstBytes": 1536,
+      "canceled": 6,
+      "contextDone": 6,
+      "activeHandlersAt160ms": 0,
+      "additionalBytesAt160ms": 0,
+      "maxGoContextNotifyMs": 1.082,
+      "rejectedAgentRequests": 6,
+      "errorExamples": [
+        "Desktop IPC request was cancelled."
+      ]
+    }
+  ],
+  "unrounded_summary": {
+    "name": "gallery-agent-go-context-cancel-100k",
+    "status": "measured-current-before-only",
+    "boundary": "Desktop Main request-owner shim -> real token-protected Go Agent IPC -> signed Go Server/Gin/PostgreSQL/local CAS; NOT renderer/preload or actual OS window",
+    "workload": {
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "livePhotoPairs": 15000,
+      "physicalJpegs": "12 first viewport JPEGs, NOT 100k individual CAS payloads"
+    },
+    "samples": [
+      {
+        "sample": 1,
+        "logical": 100000,
+        "physicalNodes": 115000,
+        "livePairs": 15000,
+        "firstRangeMs": 971.3954319999975,
+        "seedMsExcluded": 35446.145,
+        "groups": [
+          {
+            "sample": 1,
+            "mode": "viewport-cancel",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 3.827,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          },
+          {
+            "sample": 1,
+            "mode": "sender-destroyed",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 1.626,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          }
+        ],
+        "recovered": {
+          "offset": 50000,
+          "count": 100000,
+          "returned": 200
+        },
+        "agentRssStartBytes": 17571840,
+        "agentRssEndBytes": 20938752,
+        "agentRssDeltaBytes": 3366912
+      },
+      {
+        "sample": 2,
+        "logical": 100000,
+        "physicalNodes": 115000,
+        "livePairs": 15000,
+        "firstRangeMs": 958.1024999999936,
+        "seedMsExcluded": 34212.928,
+        "groups": [
+          {
+            "sample": 2,
+            "mode": "viewport-cancel",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 1.01,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          },
+          {
+            "sample": 2,
+            "mode": "sender-destroyed",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 1.237,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          }
+        ],
+        "recovered": {
+          "offset": 50000,
+          "count": 100000,
+          "returned": 200
+        },
+        "agentRssStartBytes": 15486976,
+        "agentRssEndBytes": 19955712,
+        "agentRssDeltaBytes": 4468736
+      },
+      {
+        "sample": 3,
+        "logical": 100000,
+        "physicalNodes": 115000,
+        "livePairs": 15000,
+        "firstRangeMs": 948.3935530000017,
+        "seedMsExcluded": 31140.561,
+        "groups": [
+          {
+            "sample": 3,
+            "mode": "viewport-cancel",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 1.41,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          },
+          {
+            "sample": 3,
+            "mode": "sender-destroyed",
+            "requested": 6,
+            "receivedFirstBytes": 1536,
+            "canceled": 6,
+            "contextDone": 6,
+            "activeHandlersAt160ms": 0,
+            "additionalBytesAt160ms": 0,
+            "maxGoContextNotifyMs": 1.082,
+            "rejectedAgentRequests": 6,
+            "errorExamples": [
+              "Desktop IPC request was cancelled."
+            ]
+          }
+        ],
+        "recovered": {
+          "offset": 50000,
+          "count": 100000,
+          "returned": 200
+        },
+        "agentRssStartBytes": 17563648,
+        "agentRssEndBytes": 20946944,
+        "agentRssDeltaBytes": 3383296
+      }
+    ],
+    "groups": 6,
+    "goCanceled": 36,
+    "goContextDone": 36,
+    "maxGoContextNotifyMs": 3.827,
+    "medianFirstRangeMs": 958.1024999999936,
+    "maxAgentRssGrowthBytes": 4468736,
+    "limits": {
+      "samples": 3,
+      "groupsPerSample": 2,
+      "requestsPerGroup": 6,
+      "observeAfterMs": 160,
+      "maxAgentRssGrowthMiB": 128
+    },
+    "passed": true,
+    "exclusions": "No actual Electron Renderer/Preload, browser/window lifecycle, 1/4GiB transfer, 100k physical JPEG decode, network WAN or Task Center durable cancel"
+  },
+  "decision": "Accepted unchanged production: Go Context cancel works for this measured Desktop Main shim -> real Agent IPC -> signed Gin/CAS viewport test. No speculative synchronization/locks/race. Product BEFORE/current measured; production AFTER not applicable; no speedup percentage claimed.",
+  "limitations": "This does NOT include an actual Electron Renderer/Preload window, physical iOS or Windows, 100k distinct JPEG/RAW/HEVC decode, 4GiB real Server/CAS uploads/downloads, global CPU/peak memory, durable task cancellation, or terminating detached shared derivative jobs."
+}
