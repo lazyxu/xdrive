@@ -52,6 +52,8 @@ export type XDriveTransferTask = {
   error?: string
   retry_count: number
   retryable: boolean
+  // True only while a transport owner can actually abort the request.
+  cancelable?: boolean
   started_at: string
   updated_at: string
   completed_at?: string

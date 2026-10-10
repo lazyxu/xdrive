@@ -162,6 +162,10 @@ func finishAgentCloudTransfer(handle *transfer.Handle, err error) {
 	if handle == nil {
 		return
 	}
+	if errors.Is(err, context.Canceled) {
+		_ = handle.Finish(transfer.StateCancelled, err)
+		return
+	}
 	if err != nil {
 		handle.Fail(err)
 		return
@@ -916,8 +920,15 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 		)
 	}
 
+	transportCtx := ctx
+	if !managedExternally && handle != nil {
+		var cancel context.CancelFunc
+		transportCtx, cancel = context.WithCancel(ctx)
+		defer cancel()
+		handle.BindCancel(cancel)
+	}
 	result, err := cli.UploadFileResumableWithConflictPolicyResult(
-		agentUploadTransferContext(ctx, handle), parentID, localPath, name, policy, progress,
+		agentUploadTransferContext(transportCtx, handle), parentID, localPath, name, policy, progress,
 	)
 	if err != nil {
 		if !managedExternally {
@@ -969,7 +980,12 @@ func (c *agentController) CloudUpload(ctx context.Context, parentID uint64, loca
 		info.Size(),
 		agentCloudTransferLocation{ParentID: parentID},
 	)
-	node, err := cli.UploadFileResumable(agentUploadTransferContext(ctx, handle), parentID, localPath, name, progress)
+	transportCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if handle != nil {
+		handle.BindCancel(cancel)
+	}
+	node, err := cli.UploadFileResumable(agentUploadTransferContext(transportCtx, handle), parentID, localPath, name, progress)
 	finishAgentCloudTransfer(handle, err)
 	if err == nil {
 		c.requestCloudSync(cfg)
@@ -1021,6 +1037,11 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		0,
 		agentCloudTransferLocation{NodeID: id},
 	)
+	downloadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if handle != nil {
+		handle.BindCancel(cancel)
+	}
 	tmp, err := os.CreateTemp(parent, ".xdrive-download-*")
 	if err != nil {
 		finishAgentCloudTransfer(handle, err)
@@ -1036,7 +1057,7 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		cleanup()
 		return err
 	}
-	if err := cli.DownloadToProgress(ctx, id, tmp, progress); err != nil {
+	if err := cli.DownloadToProgress(downloadCtx, id, tmp, progress); err != nil {
 		finishAgentCloudTransfer(handle, err)
 		cleanup()
 		return err
@@ -1047,6 +1068,11 @@ func (c *agentController) CloudDownload(ctx context.Context, id uint64, destinat
 		return err
 	}
 	if err := tmp.Close(); err != nil {
+		finishAgentCloudTransfer(handle, err)
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := downloadCtx.Err(); err != nil {
 		finishAgentCloudTransfer(handle, err)
 		_ = os.Remove(tmpPath)
 		return err

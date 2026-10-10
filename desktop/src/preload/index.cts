@@ -774,6 +774,7 @@ const agent = Object.freeze({
   openConflict: (id: string, both = false) => ipcRenderer.invoke('agent:open-conflict', id, both),
   resolveConflict: (id: string, choice: 'server' | 'local') => ipcRenderer.invoke('agent:resolve-conflict', id, choice),
   retryTransfer: (id: string) => ipcRenderer.invoke('agent:retry-transfer', id),
+  cancelTransfer: (id: string) => ipcRenderer.invoke('agent:cancel-transfer', id),
   transferLifecycle: (input: unknown) => ipcRenderer.invoke('agent:transfer-lifecycle', input),
   clearTransferHistory: (scope?: 'all' | 'network' | 'local') => ipcRenderer.invoke('agent:clear-transfer-history', scope),
   openFolder: () => ipcRenderer.invoke('agent:open-folder'),

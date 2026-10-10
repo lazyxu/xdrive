@@ -289,3 +289,25 @@ an app/view is not a durable cancel operation, and changing accounts retains
 the existing session-wide safety fence. Tests exercise actual XHR abort,
 stream/sink abort and handoff exclusion. Exact-head PR CI is required before
 this candidate can be marked merged.
+ 
+
+## Desktop Agent-owned transfer cancellation (2026-10-10)
+
+Desktop's direct single-file upload and download now bind the actual Go
+`context.CancelFunc` for that request to its unique transfer handle. Agent IPC
+advertises `transfer-cancel` only on new Agents; the Electron Main process
+requires that capability and invokes an authenticated local
+`POST /v1/transfers/cancel`. The Server is **not** told to cancel arbitrary
+durable jobs. The shared header only offers cancellation while its trusted
+Agent snapshot reports `cancelable=true`. A click moves the task into
+`cancelling`, causes the specific owned context to be cancelled, and marks
+it `cancelled` once the worker sees `context.Canceled` and finishes any
+temporary-file cleanup. A completion that already committed before
+cancellation remains a genuine completion, not a fake cancellation.
+A second cancellation or unbound task yields a clear error.
+
+Excluded: FUSE hydration, sync-folder runs, folder/ZIP group work, externally
+tracked uploads, handed-off browser downloads, and real resume/pause. Avoid
+terminating durable background tasks on window close. Further phase must cover
+folder ownership and supported local file reveal; do not expose controls in an
+old Agent without `transfer-cancel`. Test and exact-head CI required.

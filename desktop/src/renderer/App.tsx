@@ -1343,6 +1343,11 @@ export default function App({
     if (data) acceptTransferSnapshot(data)
   }
 
+  const cancelTransfer = async (id: string) => {
+    const data = await run(`cancel-transfer-${id}`, () => window.xdriveDesktop.agent.cancelTransfer(id), '已向 Agent 请求取消传输。')
+    if (data) acceptTransferSnapshot(data)
+  }
+
   const clearNetworkTransferHistory = async () => {
     const data = await run('clear-transfer-history', () => window.xdriveDesktop.agent.clearTransferHistory('network'), '已清空传输历史。')
     if (data) acceptTransferSnapshot(data)
@@ -2053,6 +2058,10 @@ export default function App({
         clearHistoryLoading={busy === 'clear-transfer-history'}
         clearHistoryDisabled={Boolean(busy) || !agent.hello?.capabilities.includes('transfer-history-scope')}
         onClearHistory={() => { void clearNetworkTransferHistory() }}
+        canCancel={(id) => Boolean(agent.hello?.capabilities.includes('transfer-cancel')) &&
+          transfers.transfers.some((task) => task.id === id && task.cancelable === true &&
+            task.state !== 'cancelling' && (task.state === 'running' || task.state === 'retrying'))}
+        onCancel={(id) => { void cancelTransfer(id) }}
         onShowInCloud={(task) => {
           const locatorID = task.cloud_parent_id || task.cloud_node_id
           if (typeof locatorID !== 'number' || !Number.isSafeInteger(locatorID) || locatorID <= 0) return
