@@ -11,6 +11,8 @@ const types = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'renderer', 
 const ipc = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'desktop_ipc.go'), 'utf8')
 const controller = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'controller.go'), 'utf8')
 const windowsPlatform = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'platform_windows.go'), 'utf8')
+const windowsForeground = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'platform_windows_foreground.go'), 'utf8')
+const windowMatcher = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'explorer_foreground.go'), 'utf8')
 const otherPlatform = fs.readFileSync(path.join(repoRoot, 'cmd', 'xdrive-agent', 'platform_other.go'), 'utf8')
 const sharedActions = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerActions.tsx'), 'utf8')
 const workspaceController = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'FileExplorerWorkspaceController.ts'), 'utf8')
@@ -49,6 +51,30 @@ test('renderer only receives relative-path shell contracts through preload/main 
 test('platform reveal semantics use the native file manager', () => {
   assert.ok(windowsPlatform.includes('exec.Command("explorer.exe", "/select,"+path)'), 'Windows reveal must select the file in Explorer')
   assert.ok(otherPlatform.includes('openFolderPlatform(filepath.Dir(path))'), 'non-Windows reveal should open the containing folder')
+})
+
+test('Desktop Windows reveal brings the specific Explorer window to the foreground', () => {
+  assert.ok(windowsPlatform.includes('startExplorerForeground(exec.Command("explorer.exe", "/select,"+path)'),
+    'Windows reveal should retain the existing /select file identity and focus the opened window')
+  assert.ok(windowsPlatform.includes('startExplorerForeground(exec.Command("explorer.exe", path)'),
+    'opening a local folder should likewise focus Explorer')
+  for (const contract of [
+    'EnumWindows', 'CabinetWClass', 'GetForegroundWindow', 'SetForegroundWindow',
+    'ShowWindow', 'swExplorerRestore', 'swExplorerMinimize',
+    'originalForeground', '1500 * time.Millisecond', 'command.Process.Release()',
+  ]) assert.ok(windowsForeground.includes(contract), 'Windows native Explorer focus boundary missing: ' + contract)
+  assert.ok(windowsForeground.includes('syscall.NewCallback(collectExplorerWindow)'),
+    'Explorer enumeration must reuse a single native callback rather than leak callbacks')
+  assert.ok(windowsForeground.includes('chooseExplorerWindowToActivate(previous, windows, folder)'),
+    'Explorer focus must select its own matched window instead of activating arbitrary windows')
+  assert.ok(windowMatcher.includes('ambiguous folder names: do not focus a random Explorer'),
+    'ambiguous existing Explorer windows must never be focused by accident')
+  assert.equal(windowsForeground.includes('powershell.exe'), false,
+    'native activation must not spawn an untrusted PowerShell command')
+  assert.ok(windowsPlatform.includes('exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", path).Start()'),
+    'ordinary Open must keep the OS default application path rather than focusing Explorer')
+  assert.ok(otherPlatform.includes('exec.Command("open", "-R", path).Start()'),
+    'macOS must retain Finder-native reveal')
 })
 
 test('Desktop archive downloads stay behind a dedicated Agent capability and directory picker', () => {
