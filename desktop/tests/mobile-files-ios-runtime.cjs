@@ -1255,3 +1255,71 @@ test('F-PARITY-07B: Trash and Search do not expose inline folder disclosures', a
     onClearInline: () => { cleared++ },
   } })
 })
+
+for (const [groupBy, firstKey, secondKey] of [
+  ['type', 'folder', 'ext:txt'],
+  ['modified', 'month:2026-10', 'month:2026-09'],
+  ['size', 'folder', 'tiny'],
+]) {
+  test('F-PARITY-07C: grouped ' + groupBy +
+    ' List disclosure keeps Server group labels, child IDs, one scroll host', async () => {
+    const items = [
+      { id: 2, name: 'Work', kind: 'dir', revision: 2 },
+      { id: 5, name: 'Other', kind: 'dir', revision: 1 },
+      { id: 7, name: 'a.txt', kind: 'file', revision: 3 },
+      { id: 8, name: 'b.txt', kind: 'file', revision: 4 },
+    ]
+    const opens = []
+    const ranges = []
+    const source = {
+      interactionKey: 'grouped-' + groupBy,
+      itemCount: items.length,
+      loadedItems: new Map(items.map((item, index) => [index, item])),
+      itemAt: index => items[index],
+      groups: [
+        { key: firstKey, item_count: 2, start_index: 0 },
+        { key: secondKey, item_count: 2, start_index: 2 },
+      ],
+      onRangeChange: (start, end) => ranges.push(['root', start, end]),
+    }
+    const branch = {
+      ownerID: 2, parentID: 1, parentIndex: 0, name: 'Work',
+      itemCount: 3, loading: false, error: null,
+      items: new Map([
+        [0, { id: 20, name: 'inside.txt', kind: 'file', revision: 7 }],
+        [1, { id: 21, name: 'inside-2.txt', kind: 'file', revision: 8 }],
+        [2, { id: 22, name: 'Nested', kind: 'dir', revision: 9 }],
+      ]),
+    }
+    await withView(async h => {
+      const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+        .find(node => textOf(node.props.children).includes('云端文件'))
+      await act(async () => { location.props.onClick() })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-grouped'), 1)
+      assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+      assert.ok(find(h.view, 'data-xdrive-mobile-files-group-header', firstKey))
+      assert.ok(find(h.view, 'data-xdrive-mobile-files-group-header', secondKey))
+      assert.equal(find(h.view, 'data-mobile-files-folder-disclosure', '2').props['aria-expanded'], true)
+      const nested = h.view.root.findAll(node =>
+        node.props?.['data-mobile-files-depth'] === 1 &&
+        node.props?.['aria-label'] === 'inside.txt')
+      assert.equal(nested.length, 1, 'nested file is positioned within its real parent group')
+      await act(async () => nested[0].props.onClick())
+      assert.deepEqual(opens, [[20, 2]], 'shared Open receives authoritative child owner')
+      assert.ok(ranges.some(range => range[0] === 'child' &&
+        range[1].some(x => x.ownerID === 2 && x.startIndex === 0)))
+      await h.update({ inlineBranches: [] })
+      assert.equal(h.view.root.findAll(node =>
+        node.props?.['aria-label'] === 'inside.txt').length, 0)
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-grouped'), 1)
+      assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    }, { props: {
+      items, virtualCollection: source,
+      grouping: { groupBy, foldersFirst: true },
+      inlineBranches: [branch],
+      onToggleInlineFolder() {},
+      onInlineViewport: values => ranges.push(['child', values]),
+      onOpenItem: (item, ownerID) => { opens.push([item.id, ownerID]); return false },
+    } })
+  })
+}

@@ -30,6 +30,7 @@ import {
 import {
   formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerInlineLayout,
   xDriveFileExplorerInlineCellAt, xDriveFileExplorerInlineVisibleRanges,
+  xDriveFileExplorerInlineGroupIndex,
 } from '../../ui/shared/src'
 import type {
   MediaItem, NodeLocation, XDriveFileExplorerGrouping,
@@ -393,8 +394,7 @@ export default function MobileFiles(props: Props) {
   const rowHeight = effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
   const totalCount = props.virtualCollection?.itemCount ?? props.items.length
   const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
-    !props.searchActive && props.grouping?.groupBy === 'none' &&
-    directoryID !== null && Boolean(props.onToggleInlineFolder)
+    !props.searchActive && directoryID !== null && Boolean(props.onToggleInlineFolder)
   // Run-length projection: no full-directory materialization at 100k items.
   const inlineLayout = useMemo(() => {
     if (!inlineEnabled || directoryID === null) return null
@@ -431,16 +431,23 @@ export default function MobileFiles(props: Props) {
   // local group membership from the loaded portion of a paged collection.
   const groupedLayout = useMemo(() => {
     if (!props.grouping || props.trashActive) return null
+    // Retain Server group membership/order: children are inserted under their
+    // parent's section, without regrouping the sparse loaded subset.
+    const groups = inlineLayout && directoryID !== null
+      ? xDriveFileExplorerInlineGroupIndex(
+          inlineLayout, directoryID, props.virtualCollection?.groups ?? [], totalCount)
+      : (props.virtualCollection?.groups ?? [])
     return xDriveCreateFileExplorerGroupLayout({
-      groups: props.virtualCollection?.groups ?? [],
+      groups: groups ?? [],
       groupBy: props.grouping.groupBy,
-      itemCount: totalCount,
+      itemCount: displayedCount,
       columns: effectiveGrid ? columns : 1,
       rowHeight,
       groupHeaderHeight: 30,
       groupGap: 6,
     })
-  }, [props.grouping?.groupBy, props.trashActive, props.virtualCollection?.groups, totalCount, effectiveGrid, columns, rowHeight])
+  }, [props.grouping?.groupBy, props.trashActive, props.virtualCollection?.groups,
+    inlineLayout, directoryID, totalCount, displayedCount, effectiveGrid, columns, rowHeight])
   const groupedSegments = useMemo(() => groupedLayout
     ? xDriveFileExplorerVisibleGroupSegments(groupedLayout, scrollTop, Math.max(1, viewport.height), rowHeight * 4)
     : [], [groupedLayout, scrollTop, viewport.height, rowHeight])
@@ -606,7 +613,19 @@ export default function MobileFiles(props: Props) {
   useEffect(() => {
     if (!ready || !showDirectory || !totalCount) return
     if (inlineLayout && directoryID !== null) {
-      const ranges = xDriveFileExplorerInlineVisibleRanges(inlineLayout, start, Math.max(start, end - 1))
+      // When Server groups are visible, use the group's positioned virtual
+      // segments rather than the ungrouped scrollTop/window approximation.
+      const visible = groupedLayout
+        ? groupedSegments.filter(segment => segment.endIndex > segment.startIndex)
+        : []
+      if (groupedLayout && visible.length === 0) {
+        props.onInlineViewport?.([])
+        return
+      }
+      const from = groupedLayout ? visible[0].startIndex : start
+      const through = groupedLayout
+        ? visible[visible.length - 1].endIndex - 1 : Math.max(start, end - 1)
+      const ranges = xDriveFileExplorerInlineVisibleRanges(inlineLayout, from, through)
       const roots = ranges.filter(range => range.ownerID === directoryID)
       if (roots.length && props.virtualCollection?.onRangeChange) {
         props.virtualCollection.onRangeChange(roots[0].startIndex, roots[roots.length - 1].endIndex)

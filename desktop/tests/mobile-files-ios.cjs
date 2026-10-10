@@ -234,7 +234,9 @@ test('one shared media Inspector follows the opened identity and G06 location se
 
 test('grouped Mobile Files uses the shared authoritative layout and bounded range', () => {
   assert.match(mobileSource, /xDriveCreateFileExplorerGroupLayout\(/)
-  assert.match(mobileSource, /groups: props\.virtualCollection\?\.groups \?\? \[\]/)
+  assert.match(mobileSource, /props\.virtualCollection\?\.groups \?\? \[\]/)
+  assert.match(mobileSource, /xDriveFileExplorerInlineGroupIndex\(/)
+  assert.match(mobileSource, /groups: groups \?\? \[\]/)
   assert.match(mobileSource, /xDriveFileExplorerVisibleGroupSegments\(/)
   assert.match(mobileSource, /data-xdrive-mobile-files-group-header=\{segment\.group\.key\}/)
   assert.match(mobileSource, /height: groupedLayout\.totalHeight/)
@@ -563,4 +565,31 @@ test('F-PARITY-07B: no extra app bar, screen owner or internal tab', () => {
   assert.match(webAdapter, /compactMobile \? \(/)
   assert.match(mobileSource, /action\.id !== 'open-new-tab'/)
   assert.match(ios, /52px/)
+})
+
+
+test('F-PARITY-07C: grouped List keeps authoritative Server sections and shared child viewport', () => {
+  const grouped = read('ui/shared/src/mui/FileExplorerGroupingLayout.ts')
+  const inline = read('ui/shared/src/file-explorer-inline.ts')
+  assert.match(mobileSource, /xDriveFileExplorerInlineGroupIndex\(/)
+  assert.match(mobileSource, /inlineLayout && directoryID !== null/)
+  assert.match(mobileSource, /props\.virtualCollection\?\.groups/)
+  assert.match(mobileSource, /itemCount: displayedCount/)
+  assert.match(mobileSource, /groupedSegments\.filter\(segment => segment\.endIndex > segment\.startIndex\)/)
+  assert.match(mobileSource, /xDriveFileExplorerInlineVisibleRanges\(inlineLayout, from, through\)/)
+  assert.match(mobileSource, /data-xdrive-file-explorer-scroll-host/)
+  assert.match(inline, /export function xDriveFileExplorerInlineGroupIndex/)
+  assert.match(grouped, /xDriveFileExplorerGroupIndexValid\(groups, count\)/)
+  assert.doesNotMatch(mobileSource, /!props\.searchActive && props\.grouping\?\.groupBy === 'none'/)
+  assert.doesNotMatch(mobileSource, /api\.listRange|new XDriveApi|<XDriveFileExplorer\b/)
+})
+
+test('F-PARITY-07C: iOS Files grouped child disclosure changes no global app architecture', () => {
+  const ios = read('docs/mobile-files-ios27.md')
+  const app = read('web/src/WebFileExplorer.tsx')
+  assert.match(ios, /F-PARITY-07C/)
+  assert.match(ios, /52px/)
+  assert.match(app, /compactMobile \? \(/)
+  assert.match(app, /api\.listRange\(parentID, offset, limit, sort\.key, sort\.direction, true, grouping, signal\)/)
+  assert.match(mobileSource, /action\.id !== 'open-new-tab'/)
 })
