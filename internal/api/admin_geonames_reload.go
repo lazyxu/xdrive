@@ -39,6 +39,9 @@ type adminGeoNamesConfigDTO struct {
 	ActiveDatasetSource      string                 `json:"active_dataset_source"`
 	ActiveDatasetPersistent  bool                   `json:"active_dataset_persistent"`
 	SnapshotApplySupported   bool                   `json:"snapshot_apply_supported"`
+	MissingArchiveState      string                 `json:"missing_archive_state"`
+	RestoreMissingEnabled    bool                   `json:"restore_missing_enabled"`
+	RestoreMissingHint       string                 `json:"restore_missing_hint"`
 }
 
 // GeoNames dataset paths are deliberately not accepted from HTTP. A trusted,
@@ -98,6 +101,7 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 	if snapshotSupported {
 		snapshotRequirement = "仅将受信任挂载的数据校验并暂存到此 Server 的持久目录；不会激活或分发到其他实例。"
 	}
+	missingArchiveState, restoreMissingEnabled, restoreMissingHint := s.geoNamesMissingArchiveRecoveryStatus(c, desired, snapshotSupported)
 	c.JSON(http.StatusOK, adminGeoNamesConfigDTO{
 		DatasetConfigured:        configured,
 		ReloadSupported:          s.DB != nil && configured,
@@ -128,6 +132,9 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 		ActiveDatasetPersistent: configured && effectiveRevision == desired.Revision &&
 			activeFingerprint == desired.Fingerprint,
 		SnapshotApplySupported: snapshotSupported,
+		MissingArchiveState:    missingArchiveState,
+		RestoreMissingEnabled:  restoreMissingEnabled,
+		RestoreMissingHint:     restoreMissingHint,
 	})
 }
 

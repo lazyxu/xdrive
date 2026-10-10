@@ -20,6 +20,7 @@ import type {
   XDriveGeoNamesSnapshotInput,
   XDriveGeoNamesSnapshotResult,
   XDriveGeoNamesDatasetApplyInput,
+  XDriveGeoNamesRestoreMissingInput,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -50,6 +51,7 @@ export type XDriveServiceDependenciesPort = {
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
   stageGeoNamesSnapshot?: (input: XDriveGeoNamesSnapshotInput) => Promise<XDriveGeoNamesSnapshotResult>
   applyGeoNamesDataset?: (input: XDriveGeoNamesDatasetApplyInput) => Promise<XDriveGeoNamesConfig>
+  restoreMissingGeoNamesSnapshot?: (input: XDriveGeoNamesRestoreMissingInput) => Promise<XDriveGeoNamesConfig>
   loadGeoNamesRevisions?: () => Promise<XDriveGeoNamesRevisionPage>
   rollbackGeoNames?: (input: XDriveGeoNamesRollbackInput) => Promise<XDriveGeoNamesConfig>
 }
@@ -165,6 +167,7 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesSnapshotConfirmOpen, setGeoNamesSnapshotConfirmOpen] = useState(false)
   const [geoNamesDatasetTarget, setGeoNamesDatasetTarget] = useState('')
   const [geoNamesDatasetConfirmOpen, setGeoNamesDatasetConfirmOpen] = useState(false)
+  const [geoNamesRestoreConfirmOpen, setGeoNamesRestoreConfirmOpen] = useState(false)
   const photoPolicyEpochRef = useRef(0)
   const photoHistoryEpochRef = useRef(0)
   const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
@@ -226,6 +229,7 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesSnapshotConfirmOpen(false)
     setGeoNamesDatasetTarget('')
     setGeoNamesDatasetConfirmOpen(false)
+    setGeoNamesRestoreConfirmOpen(false)
     setLoading(true)
     setError('')
     // Do not retain an old server/account snapshot while a different source loads.
@@ -432,6 +436,42 @@ export function XDriveServiceDependenciesPage({
       if (epoch === geoNamesEpochRef.current) {
         setGeoNamesBusy(false)
         setGeoNamesDatasetConfirmOpen(false)
+      }
+    }
+  }
+
+  const restoreMissingGeoNamesSnapshot = async () => {
+    if (!geoNamesConfig?.restore_missing_enabled || !geoNamesConfig.desired_dataset_fingerprint ||
+        !source.restoreMissingGeoNamesSnapshot || geoNamesBusy) return
+    const epoch = ++geoNamesEpochRef.current
+    const expected = geoNamesConfig.desired_dataset_fingerprint
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const next = await source.restoreMissingGeoNamesSnapshot({
+        revision: geoNamesConfig.revision,
+        expected_version: geoNamesConfig.current_version,
+        expected_fingerprint: geoNamesConfig.active_dataset_fingerprint ?? '',
+      })
+      if (epoch !== geoNamesEpochRef.current) return
+      if (next.desired_dataset_fingerprint !== expected ||
+          next.active_dataset_fingerprint !== expected || next.apply_state !== 'applied' ||
+          next.active_dataset_persistent !== true || next.restore_missing_enabled !== false) {
+        throw new Error('恢复接口尚未确认当前 Server 的持久目标归档已正确重建及实际生效。')
+      }
+      setGeoNamesConfig(next)
+      setGeoNamesNotice('受信任部署挂载与原归档审计指纹完全一致；缺失目录已恢复，当前 Server 热生效。未覆盖已有目录、未改变期望修订；其他实例未被自动修复。')
+      const latest = await source.load()
+      if (epoch === geoNamesEpochRef.current) setSnapshot(latest)
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : '缺失归档未恢复；当前生效索引与历史记录保持不变。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesBusy(false)
+        setGeoNamesRestoreConfirmOpen(false)
       }
     }
   }
@@ -1026,6 +1066,36 @@ export function XDriveServiceDependenciesPage({
                           {' · '}当前实例：{geoNamesConfig.apply_state === 'applied' ? '已校验生效' : '待验证或未生效'}
                           {' · '}重启重新校验，归档缺失时不得标记为已生效。
                         </Typography>
+                      )}
+                      {geoNamesConfig?.desired_dataset_fingerprint &&
+                        geoNamesConfig.missing_archive_state !== undefined &&
+                        geoNamesConfig.missing_archive_state !== 'present-unverified' && (
+                        <Stack spacing={1}>
+                          <Typography variant="body2" color="warning.main">
+                            当前期望归档：{geoNamesConfig.missing_archive_state === 'missing' ? '本实例缺失' :
+                              geoNamesConfig.missing_archive_state === 'invalid' ? '路径存在但不可信' : '恢复条件不可用'}。
+                            {' '}{geoNamesConfig.restore_missing_hint}
+                          </Typography>
+                          {geoNamesConfig.missing_archive_state === 'missing' && (
+                            <>
+                              <Button variant="outlined" size="small"
+                                disabled={geoNamesBusy || !geoNamesConfig.restore_missing_enabled ||
+                                  !source.restoreMissingGeoNamesSnapshot}
+                                onClick={() => setGeoNamesRestoreConfirmOpen(true)}>
+                                {geoNamesBusy ? '正在验证恢复…' : '从受信任挂载恢复缺失的目标归档'}
+                              </Button>
+                              <XDriveConfirmDialog
+                                open={geoNamesRestoreConfirmOpen}
+                                title="确认恢复当前 Server 的缺失 GeoNames 归档"
+                                description="只复制部署已挂载的三个固定文件，并严格校验与期望 SHA-256 及审计字节数一致后，恢复缺失目录、写入审计并热应用当前实例。目录存在但损坏时不会覆盖；不会分发到其他 Server。"
+                                confirmLabel="校验并恢复缺失归档"
+                                loading={geoNamesBusy}
+                                onCancel={() => setGeoNamesRestoreConfirmOpen(false)}
+                                onConfirm={() => { void restoreMissingGeoNamesSnapshot() }}
+                              />
+                            </>
+                          )}
+                        </Stack>
                       )}
                       <Button variant="outlined" size="small"
                         disabled={geoNamesBusy || !geoNamesConfig?.snapshot_supported ||

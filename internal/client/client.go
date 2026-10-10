@@ -474,6 +474,9 @@ type AdminGeoNamesConfig struct {
 	SnapshotHistoryKnown     bool                        `json:"snapshot_history_known"`
 	Snapshots                []AdminGeoNamesSnapshot     `json:"snapshots"`
 	SnapshotApplySupported   bool                        `json:"snapshot_apply_supported"`
+	MissingArchiveState      string                      `json:"missing_archive_state"`
+	RestoreMissingEnabled    bool                        `json:"restore_missing_enabled"`
+	RestoreMissingHint       string                      `json:"restore_missing_hint"`
 	DesiredFingerprint       string                      `json:"desired_dataset_fingerprint"`
 	ActiveDatasetFingerprint string                      `json:"active_dataset_fingerprint"`
 	ActiveDatasetSource      string                      `json:"active_dataset_source"`
@@ -500,6 +503,12 @@ type AdminGeoNamesDatasetApplyInput struct {
 	ExpectedVersion     string `json:"expected_version"`
 	ExpectedFingerprint string `json:"expected_fingerprint"`
 	Target              string `json:"target"`
+}
+
+type AdminGeoNamesRestoreMissingInput struct {
+	Revision            uint64 `json:"revision"`
+	ExpectedVersion     string `json:"expected_version"`
+	ExpectedFingerprint string `json:"expected_fingerprint"`
 }
 
 type AdminGeoNamesSnapshotResult struct {
@@ -534,6 +543,12 @@ func (c *Client) UpdateAdminGeoNames(ctx context.Context, input AdminGeoNamesUpd
 func (c *Client) ApplyAdminGeoNamesDataset(ctx context.Context, input AdminGeoNamesDatasetApplyInput) (AdminGeoNamesConfig, error) {
 	var out AdminGeoNamesConfig
 	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/dataset-snapshots/apply", input, &out)
+	return out, err
+}
+
+func (c *Client) RestoreMissingAdminGeoNamesSnapshot(ctx context.Context, input AdminGeoNamesRestoreMissingInput) (AdminGeoNamesConfig, error) {
+	var out AdminGeoNamesConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/dataset-snapshots/restore-missing", input, &out)
 	return out, err
 }
 

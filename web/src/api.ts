@@ -761,6 +761,13 @@ export class XDriveApi {
       },
     )
   }
+  adminRestoreMissingGeoNamesSnapshot(input: import('../../ui/shared/src').XDriveGeoNamesRestoreMissingInput) {
+    return this.request<XDriveGeoNamesConfig>(
+      '/api/v1/admin/services/geonames/dataset-snapshots/restore-missing', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
   adminStageGeoNamesSnapshot(input: import('../../ui/shared/src').XDriveGeoNamesSnapshotInput) {
     return this.request<import('../../ui/shared/src').XDriveGeoNamesSnapshotResult>(
       '/api/v1/admin/services/geonames/dataset-snapshots', {

@@ -1524,6 +1524,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    restoreMissingGeoNamesSnapshot: async (input: import('../../../ui/shared/src').XDriveGeoNamesRestoreMissingInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRestoreMissingAdminGeoNamesSnapshot(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     stageGeoNamesSnapshot: async (input: import('../../../ui/shared/src').XDriveGeoNamesSnapshotInput) => {
       const result = await window.xdriveDesktop.agent.cloudStageAdminGeoNamesSnapshot(input)
       if (!result.ok) throw new Error(result.error.message)

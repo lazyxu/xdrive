@@ -615,6 +615,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots", h.cloudStageAdminGeoNamesSnapshot)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots/apply", h.cloudApplyAdminGeoNamesDataset)
+	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots/restore-missing", h.cloudRestoreMissingAdminGeoNamesSnapshot)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames/revisions", h.cloudAdminGeoNamesRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/rollback", h.cloudRollbackAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
@@ -2181,6 +2182,43 @@ func (h *desktopIPCHandler) cloudApplyAdminGeoNamesDataset(w http.ResponseWriter
 	out, err := provider.CloudApplyAdminGeoNamesDataset(r.Context(), client.AdminGeoNamesDatasetApplyInput{
 		Revision: *input.Revision, ExpectedVersion: input.ExpectedVersion,
 		ExpectedFingerprint: input.ExpectedFingerprint, Target: input.Target,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+// Optional Agent feature: the Server remains responsible for administrator
+// authorization and for matching the exact audited desired dataset address.
+type desktopIPCAdminGeoNamesRestoreMissingController interface {
+	CloudRestoreMissingAdminGeoNamesSnapshot(context.Context, client.AdminGeoNamesRestoreMissingInput) (client.AdminGeoNamesConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudRestoreMissingAdminGeoNamesSnapshot(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesRestoreMissingController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_restore_missing_unavailable", "GeoNames missing-archive restore is unsupported")
+		return
+	}
+	var input struct {
+		Revision            *uint64 `json:"revision"`
+		ExpectedVersion     string  `json:"expected_version"`
+		ExpectedFingerprint string  `json:"expected_fingerprint"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || len(input.ExpectedVersion) == 0 || len(input.ExpectedVersion) > 128 ||
+		(input.ExpectedFingerprint != "" && !validDesktopGeoNamesSnapshotFingerprint(input.ExpectedFingerprint)) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_restore_missing", "GeoNames current revision or expected version is invalid")
+		return
+	}
+	out, err := provider.CloudRestoreMissingAdminGeoNamesSnapshot(r.Context(), client.AdminGeoNamesRestoreMissingInput{
+		Revision: *input.Revision, ExpectedVersion: input.ExpectedVersion,
+		ExpectedFingerprint: input.ExpectedFingerprint,
 	})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
