@@ -148,3 +148,10 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 **已编写实现与回归测试，待 GitHub 完整 CI、线性合并和分支清理。** 已展开文件夹中的文件或根目录文件，在 100k 列表快速滚动时可能从虚拟页缓存释放，但选中仍应保留：共享 Web 工作区仅按已选 ID/Revision（上限 200）保留真实 Node/所属目录信息，不能为了选中状态保留全部文件页。Mobile 使用一个新增的选择通知属性，不新增独立业务 API；Copy/Cut/Move/Download/Delete、授权、冲突和报错仍由原 Web/Server 控制器判定。完成选择或切换账户必须释放该记录。
 
 本阶段的节点映射回归及 100k 逻辑测试不是 iOS 27 真机像素级/VoiceOver 验收，也不是实测浏览器 CPU、RSS、请求或取消速度。保持全屏 App Frame、52px 顶栏、共享后端；Mobile Web 唯一允许缺失的功能仍是内部多标签页。
+
+
+## 2026-10-10 F-PARITY-07F-A · Mobile 全选范围和宽屏 Web 一致
+
+**单提交实现已准备，仍待完整 PR CI、合并和远端分支清理。** 此前 Mobile 文件管理器的全选在当前目录／搜索结果超过 200 项时直接拒绝，宽屏 Web 则可通过共享 `VirtualCollection.collectRange` 分批选择整个逻辑集合。现把 Mobile 全选接入相同 200 项分页常量，增加加载进度、取消、请求范围/重复 ID 校验及跨账户/目录/搜索状态的意图隔离。已选项目在失败或取消时保持原样，不回写半成品。
+
+选择数量不同于操作限额：批量复制/移动/删除仍遵守 200 项上限，下载仍遵守 1000 项上限；不要通过截断选择列表伪装操作成功。符合可执行限额的选中项元数据只做有界保留，不保留 100k 个虚拟页。取消后不会继续拉取后续分页并忽略迟到结果，但目前未证明在途 HTTP 已同步调用后端 Go `ctx.cancel`，需要单独做取消链路测试。保留全屏 App Frame、52px 全局标题栏、Web/Desktop 共享后端和 Mobile 无内部多标签页的唯一例外。

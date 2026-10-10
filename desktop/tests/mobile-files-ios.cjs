@@ -202,12 +202,17 @@ test('recent and pinned folders navigate only after the existing Web controller 
   assert.match(mobileSource, /props\.onOpenQuickAccess\(entry\.id\)\.then\(accepted =>/)
 })
 
-test('mobile batch actions retain selection until Done and never pretend all 100k are loaded', () => {
-  const action = mobileSource.slice(mobileSource.indexOf('const selectedAction ='), mobileSource.indexOf('const selectAllCurrent ='))
+test('F-PARITY-07F: Mobile bulk selection uses shared chunks, progress, cancel and preserves previous state', () => {
+  const action = mobileSource.slice(mobileSource.indexOf('const selectedAction ='), mobileSource.indexOf('const cancelSelectAll ='))
   assert.match(action, /props\.onCopy\(selection\)/)
   assert.doesNotMatch(action, /setSelected\(/)
-  assert.match(mobileSource, /if \(totalCount > 200\)/)
-  assert.match(mobileSource, /props\.virtualCollection\?\.collectRange/)
+  assert.doesNotMatch(mobileSource, /if \(totalCount > 200\)/)
+  assert.match(mobileSource, /XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE/)
+  assert.match(mobileSource, /collection\?\.collectRange/)
+  assert.match(mobileSource, /selectionIntentRef\.current === intent && selectionScopeRef\.current === scope/)
+  assert.match(mobileSource, /new Set\(results\.map\(mobileItemKey\)\)\.size !== count/)
+  assert.match(mobileSource, /data-mobile-files-select-cancel/)
+  assert.match(mobileSource, /data-mobile-files-select-progress/)
   assert.match(mobileSource, /已选 \$\{selection\.length\} 项/)
   assert.match(mobileSource, /更多已选操作/)
   assert.match(mobileSource, /props\.onManageTags\(selection\)/)

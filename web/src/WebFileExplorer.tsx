@@ -587,9 +587,12 @@ export default function WebFileExplorer({
   }
   const retainMobileSelection = (items: readonly XDriveFileExplorerItem[]) => {
     const next = new Map<number, { node: Node; ownerID: number; crumbs: Crumb[] }>()
-    // Ordinary UI selection/actions are limited to 200; never retain 100k
-    // off-screen Nodes or pages just because a viewport was traversed.
-    for (const item of items.slice(0, 200)) {
+    // Mutations have a 200-item limit, but the existing shared download
+    // action permits up to 1000. Retain exactly that bounded identity set
+    // when actionable; for a 10k/100k Select All retain only a small
+    // representative prefix, never the entire virtual collection.
+    const pinCount = items.length <= 1000 ? items.length : 200
+    for (const item of items.slice(0, pinCount)) {
       const id = Number(item.id)
       if (!Number.isSafeInteger(id) || id <= 0) continue
       const previous = selectedMobileNodesRef.current.get(id)
