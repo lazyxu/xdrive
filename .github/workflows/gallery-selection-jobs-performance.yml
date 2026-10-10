@@ -1,4 +1,4 @@
-name: G07 Durable Selection 10k 100k Baseline
+name: G07 Durable Selection 10k 100k SQL Profile
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   gallery-selection-jobs-real-10k-100k-performance:
-    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-selection-durable-10k-100k-g07'
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-100k-worker-sql-profile'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -37,7 +37,7 @@ jobs:
         with:
           go-version: "1.25.x"
           cache: true
-      - name: Measure G07 durable jobs on 10k and 100k PostgreSQL items
+      - name: Measure actual G07 SQL stage costs on 10k and 100k
         run: |
           set -euo pipefail
           mkdir -p perf-results/gallery-selection-enqueue-n3
@@ -48,7 +48,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gallery-selection-jobs-10k-100k-n3
+          name: gallery-selection-sql-profile-10k-100k-n3
           path: perf-results/gallery-selection-enqueue-n3/
           if-no-files-found: warn
           retention-days: 14

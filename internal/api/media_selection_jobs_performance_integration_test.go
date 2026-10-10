@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 // Deliberately only PostgreSQL/Go metadata; never claim original CAS, Web
@@ -57,7 +58,8 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 			setupMS := time.Since(setup).Milliseconds()
 			token := uuid.NewString()
 			session := &mediaSelectionSnapshot{ownerID: owner.ID, nodes: nodes, memberIDs: memberIDs, excluded: map[uint64]struct{}{}, version: 1, createdAt: time.Now(), expiresAt: time.Now().Add(15 * time.Minute)}
-			server := &Server{DB: db, mediaSelections: map[string]*mediaSelectionSnapshot{token: session}}
+			profile := newGallerySelectionSQLProfiler()
+			server := &Server{DB: db.Session(&gorm.Session{Logger: profile}), mediaSelections: map[string]*mediaSelectionSnapshot{token: session}}
 			c, rec := newDurableJobContext(owner.ID, http.MethodPost, "/api/v1/media/selection-snapshots/"+token+"/jobs", `{"version":1,"action":"favorite","favorite":true,"confirm":true}`)
 			c.Params = gin.Params{{Key: "token", Value: token}}
 			runtime.GC()
@@ -76,6 +78,7 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 			if job.TotalItems != int64(scale) || server.mediaSelections[token] != nil {
 				t.Fatalf("enqueue frozen mismatch: %+v", job)
 			}
+			profile.setPhase("worker")
 			runStarted := time.Now()
 			chunks := 0
 			for ; chunks < (scale/mediaSelectionJobChunk)+5; chunks++ {
@@ -103,16 +106,22 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 			if changed != int64(scale) {
 				t.Fatalf("changed=%d wanted=%d", changed, scale)
 			}
+			sqlProfile := profile.snapshot()
+			if sqlProfile["enqueue"]["INSERT"].Statements < int64(scale/mediaSelectionJobChunk) ||
+				sqlProfile["worker"]["UPDATE"].Statements == 0 {
+				t.Fatalf("missing production enqueue/worker SQL observations: %+v", sqlProfile)
+			}
 			result := struct {
-				Scale      int    `json:"scale"`
-				Samples    int    `json:"samples"`
-				SetupMS    int64  `json:"fixture_ms"`
-				EnqueueMS  int64  `json:"enqueue_ms"`
-				WorkerMS   int64  `json:"worker_ms"`
-				Chunks     int    `json:"chunks"`
-				HeapBefore uint64 `json:"heap_before_bytes"`
-				HeapAfter  uint64 `json:"heap_after_bytes"`
-			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc}
+				Scale      int                                             `json:"scale"`
+				Samples    int                                             `json:"samples"`
+				SetupMS    int64                                           `json:"fixture_ms"`
+				EnqueueMS  int64                                           `json:"enqueue_ms"`
+				WorkerMS   int64                                           `json:"worker_ms"`
+				Chunks     int                                             `json:"chunks"`
+				HeapBefore uint64                                          `json:"heap_before_bytes"`
+				HeapAfter  uint64                                          `json:"heap_after_bytes"`
+				SQLProfile map[string]map[string]gallerySelectionSQLBucket `json:"sql_profile"`
+			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc, sqlProfile}
 			b, _ := json.Marshal(result)
 			t.Logf("G07_SELECTION_JOB_BASELINE %s", b)
 		})
