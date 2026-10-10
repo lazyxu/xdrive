@@ -1,0 +1,151 @@
+{
+  "status": "accepted-measured-baseline-no-production-change",
+  "workload": "100k mixed Gallery native thumbnail ownership HTTP request cancellation",
+  "source_exact_original_sha": "01bfee5ffcba9d7a63f98aec5ae1acf9715cc62f",
+  "ci_run_url": "https://github.com/lazyxu/xdrive/actions/runs/38020454037",
+  "ci_job_url": "https://github.com/lazyxu/xdrive/actions/runs/38020454037/job/114120095116",
+  "environment": {
+    "github_runner": "ubuntu-latest",
+    "postgresql": "17.11 native PostgreSQL service",
+    "go": "actions/setup-go 1.25.x",
+    "http": "authenticated production Gin route via httptest.NewServer",
+    "database": "three fresh isolated native PostgreSQL schemas"
+  },
+  "input": {
+    "logical_photoassets": 100000,
+    "physical_media_nodes": 115000,
+    "live_photo_groups": 15000,
+    "requests_per_sample": 6,
+    "types": "two JPEG images, two video cached-poster lookups, two genuine Live Photo still images",
+    "actual_codec_decode": false,
+    "underlying_lock": "xd_nodes ACCESS EXCLUSIVE",
+    "observation_ms": 160
+  },
+  "sample_count": 3,
+  "raw_samples": [
+    {
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "handler_active_at_160ms": 0,
+      "live_photo_groups": 15000,
+      "logical_assets": 100000,
+      "max_server_context_done_ms": 0.155,
+      "observation_ms": 160,
+      "physical_media_nodes": 115000,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requested_thumbnail_nodes": 6,
+      "requests": 6,
+      "scope": "authenticated Gin thumbnail ownership SQL cancel on 100k mixed photo/video/paired Live assets; no actual decoding, derivative-worker termination, Desktop IPC, WAN or browser paint",
+      "seed_ms": 26731.844,
+      "server_context_latency_ms": [
+        0.103,
+        0.103,
+        0.108,
+        0.112,
+        0.115,
+        0.155
+      ],
+      "started_sql_waits": 6,
+      "thumbnail_shapes": "2 photos / 2 videos / 2 paired live stills",
+      "workload": "gallery-thumbnail-http-go-context-cancel-100k"
+    },
+    {
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "handler_active_at_160ms": 0,
+      "live_photo_groups": 15000,
+      "logical_assets": 100000,
+      "max_server_context_done_ms": 0.096,
+      "observation_ms": 160,
+      "physical_media_nodes": 115000,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requested_thumbnail_nodes": 6,
+      "requests": 6,
+      "scope": "authenticated Gin thumbnail ownership SQL cancel on 100k mixed photo/video/paired Live assets; no actual decoding, derivative-worker termination, Desktop IPC, WAN or browser paint",
+      "seed_ms": 25734.731,
+      "server_context_latency_ms": [
+        0.084,
+        0.084,
+        0.084,
+        0.089,
+        0.093,
+        0.096
+      ],
+      "started_sql_waits": 6,
+      "thumbnail_shapes": "2 photos / 2 videos / 2 paired live stills",
+      "workload": "gallery-thumbnail-http-go-context-cancel-100k"
+    },
+    {
+      "client_payload_bytes_at_160ms": 0,
+      "context_done_at_160ms": 6,
+      "handler_active_at_160ms": 0,
+      "live_photo_groups": 15000,
+      "logical_assets": 100000,
+      "max_server_context_done_ms": 0.096,
+      "observation_ms": 160,
+      "physical_media_nodes": 115000,
+      "postgres_lock_waiters_at_160ms": 0,
+      "requested_thumbnail_nodes": 6,
+      "requests": 6,
+      "scope": "authenticated Gin thumbnail ownership SQL cancel on 100k mixed photo/video/paired Live assets; no actual decoding, derivative-worker termination, Desktop IPC, WAN or browser paint",
+      "seed_ms": 23653.923,
+      "server_context_latency_ms": [
+        0.085,
+        0.088,
+        0.089,
+        0.09,
+        0.092,
+        0.096
+      ],
+      "started_sql_waits": 6,
+      "thumbnail_shapes": "2 photos / 2 videos / 2 paired live stills",
+      "workload": "gallery-thumbnail-http-go-context-cancel-100k"
+    }
+  ],
+  "summary": {
+    "started_sql_waits": [
+      6,
+      6,
+      6
+    ],
+    "server_context_done": [
+      6,
+      6,
+      6
+    ],
+    "active_handlers_at_160ms": [
+      0,
+      0,
+      0
+    ],
+    "sql_waiters_at_160ms": [
+      0,
+      0,
+      0
+    ],
+    "stale_bytes_at_160ms": [
+      0,
+      0,
+      0
+    ],
+    "max_server_context_done_ms_per_run": [
+      0.155,
+      0.096,
+      0.096
+    ],
+    "max_server_context_done_p50_ms": 0.096,
+    "max_server_context_done_min_ms": 0.096,
+    "max_server_context_done_max_ms": 0.155,
+    "seed_ms": [
+      26731.844,
+      25734.731,
+      23653.923
+    ],
+    "accepted": true
+  },
+  "before": "measured unchanged production n=3, already within declared 160ms budget",
+  "after": "not applicable; no runtime change",
+  "delta": "N/A; no matched product A/B optimization",
+  "decision": "Accepted current production. No changes to mediaThumbnail, Agent, shared derivative scheduler, or Task Center.",
+  "limits": "This only measures request-owned SQL lookup cancellation, not active image/HEVC decode, generation-worker shutdown, renderer paint, Electron Main IPC, WAN, physical iOS/Android or durable job cancellation."
+}

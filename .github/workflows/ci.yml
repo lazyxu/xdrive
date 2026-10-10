@@ -2849,3 +2849,50 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  gallery-thumbnail-go-context-cancel-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-thumbnail-http-cancel-100k-baseline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_THUMBNAIL_GO_CONTEXT_CANCEL_100K_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Measure three real 100k mixed media thumbnail cancellation samples
+        run: |
+          set -euo pipefail
+          mkdir -p performance-results
+          for sample in 1 2 3; do
+            go test -run '^TestGalleryThumbnailRequestContextCancellation100K$' -count=1 -timeout=6m -v ./internal/api \
+              | tee "performance-results/sample-${sample}.log"
+          done
+          test "$(grep -l 'GALLERY_THUMBNAIL_GO_CONTEXT_CANCEL_100K' performance-results/sample-*.log | wc -l)" -eq 3
+          git rev-parse HEAD > performance-results/source-sha.txt
+          sha256sum internal/api/gallery_thumbnail_http_go_context_cancel_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-thumbnail-http-cancel-100k
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 7
