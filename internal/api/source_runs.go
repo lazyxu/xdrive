@@ -872,15 +872,33 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+// Internal callers have no device proof and must never cancel a local Push.
 func (s *Server) requestSourceRunCancel(
 	ctx context.Context,
 	ownerID, sourceID uint64,
 	runID string,
 ) (meta.SyncRun, bool, error) {
+	return s.requestSourceRunCancelWithGuard(ctx, ownerID, sourceID, runID, nil)
+}
+
+// For local_folder, the guarded path first locks the registered device,
+// Source and Root binding in that order, fencing a concurrent device revoke.
+// Other Source families retain their existing owner-scoped cancellation flow.
+func (s *Server) requestSourceRunCancelWithGuard(
+	ctx context.Context,
+	ownerID, sourceID uint64,
+	runID string,
+	guard func(*gorm.DB) error,
+) (meta.SyncRun, bool, error) {
 	now := time.Now().UTC()
 	accepted := false
 	var out meta.SyncRun
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if guard != nil {
+			if err := guard(tx); err != nil {
+				return err
+			}
+		}
 		var source meta.Source
 		if err := tx.Where(
 			"id = ? AND owner_id = ?",
@@ -888,6 +906,9 @@ func (s *Server) requestSourceRunCancel(
 			ownerID,
 		).First(&source).Error; err != nil {
 			return err
+		}
+		if source.Kind == meta.SourceKindLocalFolder && guard == nil {
+			return errLocalSourceExecutorTransactionUnauthorized
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND source_id = ?", runID, sourceID).
@@ -927,11 +948,16 @@ func (s *Server) cancelSourceRun(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid run id")
 		return
 	}
-	out, accepted, err := s.requestSourceRunCancel(
-		c.Request.Context(),
-		userID(c),
-		sourceID,
-		runID,
+	// Middleware only stores proof for local_folder. Without it, the
+	// transactional helper must deny local Push while preserving Pull/NAS.
+	var guard func(*gorm.DB) error
+	if _, hasProof := c.Get(localSourceExecutorContextKey); hasProof {
+		guard = func(tx *gorm.DB) error {
+			return s.requireLocalSourceExecutorTx(tx, c, sourceID, runID)
+		}
+	}
+	out, accepted, err := s.requestSourceRunCancelWithGuard(
+		c.Request.Context(), userID(c), sourceID, runID, guard,
 	)
 	if err != nil {
 		writeSourceRunError(c, err)
