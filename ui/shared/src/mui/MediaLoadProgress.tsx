@@ -31,6 +31,13 @@ export function xDriveMediaByteProgressLabel(loadedBytes: number, totalBytes?: n
     : `${numerator} / ${byteAmount(total, scale, decimals)} ${unit}`
 }
 
+/** The transferred HTTP body, not the original asset size, owns the pie. */
+export function xDriveMediaPiePercent(loadedBytes: number, totalBytes?: number): number | null {
+  if (!Number.isFinite(loadedBytes) || totalBytes === undefined ||
+    !Number.isFinite(totalBytes) || totalBytes <= 0) return null
+  return Math.max(0, Math.min(100, (Math.max(0, loadedBytes) / totalBytes) * 100))
+}
+
 function clock(seconds: number) {
   const s = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
   const minutes = Math.floor(s / 60)
@@ -66,15 +73,71 @@ export function XDriveMediaLoadingProgress({
   durationSeconds?: number
   compact?: boolean
 }) {
-  const measured = stage === 'transfer' && totalBytes !== undefined &&
-    Number.isFinite(totalBytes) && totalBytes > 0
-  const percent = measured ? Math.max(0, Math.min(100, (loadedBytes / totalBytes!) * 100)) : 0
+  const measuredPercent = stage === 'transfer'
+    ? xDriveMediaPiePercent(loadedBytes, totalBytes) : null
+  const measured = measuredPercent !== null
+  const percent = measuredPercent ?? 0
   const label = stage === 'transfer'
     ? loadedBytes > 0 || measured ? xDriveMediaByteProgressLabel(loadedBytes, totalBytes) : '正在加载…'
     : stage === 'decode' ? '正在解码…'
       : stage === 'buffering' ? xDriveMediaBufferProgressLabel(bufferedSeconds, durationSeconds, bufferedStartSeconds)
         : stage === 'poster_lookup' ? '正在读取封面…'
           : stage === 'video_read' ? '正在读取视频…' : '正在生成封面…'
+  if (compact) {
+    // Filled sector from centre to rim (not a stroke-only progress ring).
+    // Fast cached thumbnails disappear before the 160ms reveal delay.
+    return (
+      <Box
+        data-xdrive-media-loading-progress
+        data-xdrive-media-loading-stage={stage}
+        data-xdrive-media-loading-style={measured ? 'solid-pie' : 'indeterminate'}
+        data-xdrive-media-loading-percent={measured ? Math.round(percent) : undefined}
+        role="status"
+        aria-label={measured ? `已下载 ${Math.round(percent)}%，${label}` : label}
+        sx={{
+          position: 'absolute', inset: 0, minWidth: 0,
+          display: 'grid', placeItems: 'center', pointerEvents: 'none',
+          animation: 'xdriveMediaPieReveal 120ms ease-out 160ms backwards',
+          '@keyframes xdriveMediaPieReveal': {
+            from: { opacity: 0 },
+            to: { opacity: 1 },
+          },
+          '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
+        }}
+      >
+        <Box
+          data-xdrive-media-solid-pie
+          sx={{
+            width: 34, height: 34, borderRadius: '50%',
+            display: 'grid', placeItems: 'center',
+            color: 'common.white',
+            // Both sectors cover the whole disk, with no hollow middle.
+            background: measured
+              ? `conic-gradient(from -90deg, #0A84FF 0% ${percent}%, rgba(24, 30, 44, 0.56) ${percent}% 100%)`
+              : 'rgba(24, 30, 44, 0.42)',
+            border: '1px solid rgba(255, 255, 255, 0.3)',
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.18)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+          }}
+        >
+          {measured ? (
+            <Typography
+              aria-hidden
+              sx={{
+                color: 'common.white',
+                fontSize: 9.5, lineHeight: 1,
+                fontWeight: 700, fontVariantNumeric: 'tabular-nums',
+                textShadow: '0 1px 2px rgba(0, 0, 0, 0.75)',
+              }}
+            >{Math.round(percent)}%</Typography>
+          ) : (
+            <CircularProgress aria-hidden size={16} color="inherit" thickness={4} />
+          )}
+        </Box>
+      </Box>
+    )
+  }
   return (
     <Box
       data-xdrive-media-loading-progress
