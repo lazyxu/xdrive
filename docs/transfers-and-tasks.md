@@ -195,3 +195,37 @@ are not terminalized by UI detachment. Do not claim strongly guaranteed
 cleanup when the old Agent is unavailable or cancellation of durable uploads.
 Require exact-head Desktop/Web builds, Go race, Windows artifact tests, and
 GitHub PR final gate before merge.
+
+## Mixed completed and unstarted grouped uploads at session detach (2026-10-10, PR #1281)
+
+The shared Web/Desktop grouped upload Hook must distinguish **an upload
+currently dispatched and unsettled** from **any earlier file that once
+uploaded successfully**. The old permanent \`fileUploadStarted\` latch protected
+genuinely in-flight Server/Agent uploads but mistakenly suppressed closure of
+later, never-dispatched children after a previous child reached its terminal
+state. The fix releases that guard only after the initiating Port confirms
+that child's terminal completion/failure; old real uploads and their unsettled
+terminal acknowledgements remain outside UI-triggered cancellation.
+
+On an obsolete lifecycle with **no actual child upload in flight**, the
+originating transfer Port finishes only nonterminal child records:
+\`cancelled\` for siblings not yet uploaded, without altering earlier
+\`completed\` or \`failed\` children. The group reaches \`partial\` if any
+prior child succeeded or was skipped, \`failed\` if only failed children
+preceded detach, and \`cancelled\` if no file completed. This is a
+**best-effort tracking cleanup**, not an authoritative cancellation of
+already-running durable Server/Agent work. It never changes new-account
+records or sends an upload cancel across the session boundary.
+
+**Original unchanged-production first-red:** GitHub Actions
+\`38030327193\`, test-only commit
+\`e1b20d925156dfc91d7d79f13960adca1c1be53e\`:
+real shared React Hook tests #1439–#1443 failed deterministically because
+only the first \`completed\`/\`failed\` child had a terminal event; the pending
+second child and root were left active. Controls #1444 (second real upload
+dispatched at detach must NOT be terminalized) and #1445 (ordinary two-file
+completion) passed. Full first-red Desktop: 1965 passed / 5 failed / 1
+skipped. Preserve all seven original tests unchanged for the same-interleaving
+green retest. An additional test covers first-child terminal acknowledgement
+crossing the session boundary. Verify exact-head full Desktop/Web/Go race/
+Windows artefacts and GitHub \`final-gate\` before merge.
