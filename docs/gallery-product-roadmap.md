@@ -1707,3 +1707,33 @@ component handlers and controlled Server Port Promises, with unchanged
 failing assertions for the fix's green retest. Require the original tests,
 other Gallery tests, Web/Desktop builds, Go race and exact-head GitHub
 `final-gate` before merging. No native physical-device acceptance claimed.
+
+## G04 Race · album-folder Port ownership across reconnect (2026-10-10, PR #1254)
+
+Shared Web/Desktop album-folder operations must keep their async completion
+bound to the Server/Agent Port that started them. The Gallery organizer is
+keyed by accountScope, which covers account switching, but a Port's list
+function can change without changing the accountScope (session refresh or
+Agent capability reconnect). A newer Port's revision/collection wins over a
+detached older Port's rename/create/delete/move completion; an obsolete
+failure cannot emit a new error or start a recovery list under the former
+Port. Server-accepted writes are not cancelled by this UI ownership rule.
+
+The Port-scope Busy claim is synchronous, preventing same-render duplicate
+writes. Changing Port detaches stale Busy/dialog ownership and allows current
+operations; old finalizers cannot clear the new Port's Busy. Normal same-Port
+revision-checked create/update/delete/move and list-generation fencing from
+PR #1247 remain intact; no Server/Agent API or polling cadence changes.
+
+**Actual first-red BEFORE product changes:** GitHub Actions
+`38019022469` on test-only commit
+`b60fe10b40360fda939b064e52db28449de3ba52`:
+- #466 older Port rename overwrote new Port revision (RED)
+- #467 stale mutation failure invoked an A recovery and overwrote B (RED)
+- #468 stale Port create appended its folder to B (RED)
+- #469 ordinary current Port rename (GREEN)
+
+The original three failing component tests remain unchanged for green
+reproduction on the patched code. The supplemental test checks current-Port
+interactivity while an older Port has a pending write. Require exact-head
+Web/Desktop tests, Go race, and complete GitHub PR final-gate before merging.
