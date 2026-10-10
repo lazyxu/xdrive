@@ -267,9 +267,9 @@ test('Web upload batches use the shared upload controller before transferring by
   for (const token of [
     'useXDriveFileExplorerUploadController<File>({',
     'trackProgress: true',
-    'preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name)',
-    'preflightBatch: (targets) => api.uploadConflictPreflightBatch(',
-    'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID)',
+    'preflight: (parentID, file, signal) => api.uploadConflictPreflight(parentID, file.name, signal)',
+    'preflightBatch: (targets, signal) => api.uploadConflictPreflightBatch(',
+    'api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID, groupID)',
     'fileUploads.runTargets(targets, action)',
     '<XDriveUploadConflictDialog {...fileUploads.dialogProps}',
     'uploadProgress={fileUploads.progress}',

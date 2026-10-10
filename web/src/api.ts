@@ -354,6 +354,15 @@ const transferSession = {
   controller: new AbortController(),
 }
 
+// A grouped Web upload has one owner even when an authenticated API instance
+// is renewed. Never serialize cancellation callbacks with persisted history.
+type WebUploadGroupOwner = {
+  tracking: { signal: AbortSignal; check: () => void; api: () => XDriveApi }
+  requestedByUser: () => boolean
+  release: () => void
+}
+const webUploadGroupOwners = new Map<string, WebUploadGroupOwner>()
+
 export class XDriveApi {
   private session: AuthSession
   private readonly onSession?: (session: AuthSession) => void
@@ -374,6 +383,8 @@ export class XDriveApi {
   setTransferSessionKey(key: string) {
     if (transferSession.key !== key) {
       transferSession.controller.abort()
+      for (const owner of webUploadGroupOwners.values()) owner.release()
+      webUploadGroupOwners.clear()
       transferSession.controller = new AbortController()
       transferSession.key = key
       webTransferStore.setSessionKey(key)
@@ -389,6 +400,8 @@ export class XDriveApi {
   disposeTransfers() {
     if (transferSession.api && transferSession.api !== this) return
     transferSession.controller.abort()
+    for (const owner of webUploadGroupOwners.values()) owner.release()
+    webUploadGroupOwners.clear()
     transferSession.controller = new AbortController()
     transferSession.api = null
     transferSession.key = ''
@@ -453,6 +466,14 @@ export class XDriveApi {
     return webTransferStore.cancel(id)
   }
 
+  isTransferCancelRequested(id: string) {
+    return webUploadGroupOwners.get(id)?.requestedByUser() === true
+  }
+
+  uploadGroupSignal(id: string) {
+    return webUploadGroupOwners.get(id)?.tracking.signal
+  }
+
   onTransfers(listener: (items: XDriveTransferTask[]) => void) {
     return webTransferStore.subscribe(listener)
   }
@@ -470,7 +491,17 @@ export class XDriveApi {
     direction?: 'upload' | 'download'
     speedSource?: 'client' | 'server'
   }) {
-    return webTransferStore.startGroup({ ...input, speedSource: input.speedSource ?? 'client' })
+    const session = this.transferContext()
+    const id = webTransferStore.startGroup({ ...input, speedSource: input.speedSource ?? 'client' })
+    if ((input.kind ?? 'upload') === 'upload') {
+      try {
+        webUploadGroupOwners.set(id, this.cancellableTransferContext(id, session))
+      } catch (error) {
+        webTransferStore.finishLifecycle(id, { state: 'failed', error: String(error) })
+        throw error
+      }
+    }
+    return id
   }
 
   startTransferChild(groupID: string, input: {
@@ -516,6 +547,11 @@ export class XDriveApi {
     skipped?: boolean
   }) {
     webTransferStore.finishLifecycle(id, input)
+    const owner = webUploadGroupOwners.get(id)
+    if (owner) {
+      owner.release()
+      webUploadGroupOwners.delete(id)
+    }
   }
 
   batchTransferUpdates<T>(run: () => T) {
@@ -2172,19 +2208,21 @@ export class XDriveApi {
     })
   }
 
-  uploadConflictPreflight(parentID: number, name: string) {
+  uploadConflictPreflight(parentID: number, name: string, signal?: AbortSignal) {
     return this.request<XDriveUploadConflictPreflight>('/api/v1/uploads/preflight', {
       method: 'POST',
       body: JSON.stringify({ parent_id: parentID, name }),
+      signal,
     })
   }
 
   async uploadConflictPreflightBatch(
     items: readonly { parent_id: number; name: string }[],
+    signal?: AbortSignal,
   ) {
     const result = await this.request<{ items: XDriveUploadConflictPreflight[] }>(
       '/api/v1/uploads/preflight/batch',
-      { method: 'POST', body: JSON.stringify({ items }) },
+      { method: 'POST', body: JSON.stringify({ items }), signal },
     )
     return result.items
   }
@@ -2200,6 +2238,7 @@ export class XDriveApi {
     conflictPolicy: XDriveUploadConflictPolicy,
     onProgress?: (percent: number) => void,
     transferID = '',
+    groupID = '',
   ): Promise<XDriveUploadResult> {
     const session = this.transferContext()
     const managedExternally = Boolean(transferID)
@@ -2212,7 +2251,9 @@ export class XDriveApi {
       speedSource: 'client',
     })
     const owned = managedExternally ? null : this.cancellableTransferContext(activeTransferID, session)
-    const tracking = owned?.tracking ?? session
+    const groupOwner = groupID ? webUploadGroupOwners.get(groupID) : undefined
+    if (groupID && !groupOwner) throw xDriveTransferAbortError()
+    const tracking = groupOwner?.tracking ?? owned?.tracking ?? session
     webTransferStore.trackNetwork(activeTransferID, 'client')
     const reportProgress = (completed: number) => {
       tracking.check()

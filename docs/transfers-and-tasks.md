@@ -347,3 +347,36 @@ live/aborted-in-progress work is **not** revived as an active transfer on Agent
 restart. Go retry callbacks and cancellation actions are always disabled on
 restored records. Completed average speed is preserved verbatim; this is not a
 promise of re-downloading browser-native handoffs.
+
+
+## Web grouped-file uploads: task-ID scoped real cancellation (2026-10-10)
+
+**Status: CI candidate, not yet merged.** Following the merged standalone
+Web/Agent cancel handlers (#1302/#1307), Web FileExplorer's grouped/folder
+upload no longer has an inert cancel gap. A group root registers one ephemeral
+`AbortController` tied to its existing account/session `AbortSignal`.
+Its `取消传输` button triggers the owning controller, aborts the currently
+dispatched child XHR/chunk session, and prevents every not-yet-dispatched child
+from starting. Web preflight HTTP requests also consume this exact abort
+signal, so cancellation releases an in-flight preflight request rather than
+merely dropping its result. Local asynchronous directory enumeration has
+no remote HTTP connection to cancel; its final result is discarded before
+opening any new uploads.
+
+The shared folder Upload Controller uses an **optional** `isCancelled` and
+`abortSignal` lifecycle contract. Desktop or old Agent adapters without this
+capability do not claim grouped cancellation. The active child is terminalized
+only after its actual network request rejects/settles. Queued children become
+`cancelled` without dispatch; already committed children remain `completed`.
+The root becomes `cancelled` if nothing committed, or `partial` if one or more
+files were already uploaded or skipped. Group speed and byte metrics remain
+source-derived and no upload throttle is added. Cancellation callbacks are
+removed at the terminal receipt or account disposal and never persisted with
+browser history.
+
+This phase **does not** control handed-off native browser downloads, Agent
+folder/ZIP transfers, FUSE hydration, durable device backup/sync, or pretend to
+implement pause/resume. Tests cover real XHR and preflight AbortSignals,
+queued sibling prevention, partial-success preservation, enumeration
+cancellation and unchanged normal session-lifecycle regressions. Exact-head
+GitHub CI and physical Web/Windows checks remain separate acceptance gates.

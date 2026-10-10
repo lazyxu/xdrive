@@ -590,12 +590,13 @@ function FileManager({
     trackProgress: true,
     fileName: (file) => file.name,
     fileSize: (file) => file.size,
-    preflight: (parentID, file) => api.uploadConflictPreflight(parentID, file.name),
-    preflightBatch: (targets) => api.uploadConflictPreflightBatch(
+    preflight: (parentID, file, signal) => api.uploadConflictPreflight(parentID, file.name, signal),
+    preflightBatch: (targets, signal) => api.uploadConflictPreflightBatch(
       targets.map((target) => ({ parent_id: target.parentID, name: target.file.name })),
+      signal,
     ),
-    upload: (parentID, file, conflictPolicy, onProgress, transferID) =>
-      api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID),
+    upload: (parentID, file, conflictPolicy, onProgress, transferID, groupID) =>
+      api.uploadWithConflictPolicy(parentID, file, conflictPolicy, onProgress, transferID, groupID),
     transferLifecycle: {
       startGroup: (input) => api.startTransferGroup(input),
       startChild: (groupID, input) => api.startTransferChild(groupID, input),
@@ -607,6 +608,8 @@ function FileManager({
       progress: (id, done, total) => api.progressTransfer(id, done, total),
       updateGroup: (id, progress) => api.updateTransferGroup(id, progress),
       finish: (id, input) => api.finishTransfer(id, input),
+      isCancelled: (groupID) => api.isTransferCancelRequested(groupID),
+      abortSignal: (groupID) => api.uploadGroupSignal(groupID),
     },
     onError: handleError,
     onFeedback: (tone, message) => setFeedback({ tone, message }),

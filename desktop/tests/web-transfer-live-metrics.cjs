@@ -944,3 +944,68 @@ test('browser handoff downloads stay explicitly non-cancellable in the popover',
   assert.equal(api.cancelTransfer(item.id), false)
   assert.equal(browser.downloads.length, 1)
 })
+
+test('cancelled Web folder root actually aborts its active child XHR without touching sibling tasks', async () => {
+  const browser = createBrowser((url, init) => {
+    if (url === '/api/v1/uploads') {
+      return json({ ...JSON.parse(init.body), id: 'group-upload-1',
+        status: 'uploading', chunk_count: 1, received_chunks: [] })
+    }
+    throw new Error('Canceled grouped upload must not finalize: ' + url)
+  })
+  const api = browser.makeApi()
+  api.setTransferSessionKey('server:folder-cancel')
+  const group = api.startTransferGroup({ fileName: 'folder', bytesTotal: 8192, itemsTotal: 2 })
+  const [a, b] = api.startTransferChildren(group, [
+    { fileName: 'a.bin', relativePath: 'folder/a.bin', bytesTotal: 4096 },
+    { fileName: 'b.bin', relativePath: 'folder/b.bin', bytesTotal: 4096 },
+  ])
+  const task = api.uploadWithConflictPolicy(12,
+    new File([new Uint8Array(4096)], 'a.bin'), 'fail', undefined, a, group)
+  const xhr = await waitForUpload(browser)
+  assert.equal(api.canCancelTransfer(group), true)
+  assert.equal(api.cancelTransfer(group), true)
+  assert.equal(browser.store.snapshot().find(x => x.id === group)?.state, 'cancelling')
+  assert.equal(api.cancelTransfer(group), false, 'a group can only receive one cancel request')
+  await assert.rejects(task, (error) => error.name === 'AbortError')
+  assert.equal(xhr.aborted, true, 'active grouped upload must actually abort its network XHR')
+  assert.equal(api.isTransferCancelRequested(group), true)
+  api.finishTransfer(a, { state: 'cancelled' })
+  api.finishTransfer(b, { state: 'cancelled' })
+  api.finishTransfer(group, { state: 'cancelled' })
+  assert.equal(api.canCancelTransfer(group), false)
+  assert.equal(api.isTransferCancelRequested(group), false)
+  assert.equal(browser.store.snapshot().find(x => x.id === group)?.state, 'cancelled')
+  assert.equal(browser.requests.some(x => x.url.includes('/finalize')), false)
+})
+
+test('Web grouped preflight propagates cancellation to the upstream HTTP signal immediately', async () => {
+  let preflightSignal
+  const browser = createBrowser((url, init) => {
+    if (url === '/api/v1/uploads/preflight/batch') {
+      preflightSignal = init.signal
+      return new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => {
+          reject(new DOMException('preflight cancelled', 'AbortError'))
+        }, { once: true })
+      })
+    }
+    throw new Error('Unexpected grouped preflight URL: ' + url)
+  })
+  const api = browser.makeApi()
+  api.setTransferSessionKey('server:preflight-abort')
+  const groupID = api.startTransferGroup({
+    fileName: 'scan', bytesTotal: 100, itemsTotal: 2,
+  })
+  const pending = api.uploadConflictPreflightBatch([
+    { parent_id: 10, name: 'one.jpg' },
+    { parent_id: 10, name: 'two.jpg' },
+  ], api.uploadGroupSignal(groupID))
+  await browser.flush()
+  assert.ok(preflightSignal && !preflightSignal.aborted)
+  assert.equal(api.cancelTransfer(groupID), true)
+  assert.equal(preflightSignal.aborted, true, 'preflight HTTP context should abort now, not after scanning finishes')
+  await assert.rejects(pending, (error) => error.name === 'AbortError')
+  api.finishTransfer(groupID, { state: 'cancelled' })
+  assert.equal(api.canCancelTransfer(groupID), false)
+})
