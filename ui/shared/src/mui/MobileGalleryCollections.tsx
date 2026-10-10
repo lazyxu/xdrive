@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import { Box, Button, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
 import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type {
@@ -70,6 +74,60 @@ export function xDriveMobileGalleryCollectionTileWidth(
   if (group === 'memories') return 184
   if (group === 'pinned' || group === 'utilities') return 132
   return 144
+}
+
+
+const ORDER_KEY = 'xdrive.gallery.mobile.collections.group-order.v1'
+export function xDriveNormalizeMobileGalleryGroupOrder(value: unknown): GalleryCollectionGroupID[] {
+  const valid: GalleryCollectionGroupID[] = []
+  if (Array.isArray(value)) {
+    for (const id of value) {
+      if (GROUP_IDS.includes(id as GalleryCollectionGroupID) &&
+          !valid.includes(id as GalleryCollectionGroupID)) {
+        valid.push(id as GalleryCollectionGroupID)
+      }
+    }
+  }
+  return [...valid, ...GROUP_IDS.filter((id) => !valid.includes(id))]
+}
+export function xDriveReadMobileGalleryGroupOrder(accountScope: string): GalleryCollectionGroupID[] {
+  if (!accountScope || typeof window === 'undefined') return [...GROUP_IDS]
+  try {
+    return xDriveNormalizeMobileGalleryGroupOrder(JSON.parse(
+      window.localStorage.getItem(ORDER_KEY + ':' + encodeURIComponent(accountScope)) || 'null',
+    ))
+  } catch {
+    return [...GROUP_IDS]
+  }
+}
+export function xDriveWriteMobileGalleryGroupOrder(accountScope: string, order: readonly GalleryCollectionGroupID[]) {
+  if (!accountScope || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      ORDER_KEY + ':' + encodeURIComponent(accountScope),
+      JSON.stringify(xDriveNormalizeMobileGalleryGroupOrder(order)),
+    )
+  } catch {
+    // Browsing remains functional if storage is disabled.
+  }
+}
+export function xDriveMoveMobileGalleryGroup(
+  order: readonly GalleryCollectionGroupID[], source: GalleryCollectionGroupID,
+  target: GalleryCollectionGroupID,
+): GalleryCollectionGroupID[] {
+  const current = xDriveNormalizeMobileGalleryGroupOrder(order)
+  if (source === target || !current.includes(source) || !current.includes(target)) return current
+  const from = current.indexOf(source)
+  const to = current.indexOf(target)
+  const result = current.filter((id) => id !== source)
+  result.splice(result.indexOf(target) + (from < to ? 1 : 0), 0, source)
+  return result
+}
+type GalleryCollectionGroupModel = {
+  id: GalleryCollectionGroupID
+  title: string
+  cards: readonly CollectionCard[]
+  onViewAll?: () => void
 }
 
 type CollectionCard = {
@@ -234,6 +292,23 @@ export function XDriveMobileGalleryCollections({
 }: XDriveMobileGalleryCollectionsProps) {
   const open = (section: MediaGallerySection) => () => onOpenSection(section)
   const [layoutAnchor, setLayoutAnchor] = useState<HTMLElement | null>(null)
+  const [reorderMode, setReorderMode] = useState(false)
+  const [draggingID, setDraggingID] = useState<GalleryCollectionGroupID | null>(null)
+  const dragRef = useRef<{ id: GalleryCollectionGroupID; pointerId: number;
+    kind: string; started: number; x: number; y: number } | null>(null)
+  const [orderState, setOrderState] = useState(() => ({
+    accountScope, order: xDriveReadMobileGalleryGroupOrder(accountScope),
+  }))
+  const groupOrder = orderState.accountScope === accountScope
+    ? orderState.order : xDriveReadMobileGalleryGroupOrder(accountScope)
+  const currentOrderRef = useRef<GalleryCollectionGroupID[]>(groupOrder)
+  currentOrderRef.current = groupOrder
+  const updateOrder = (order: GalleryCollectionGroupID[]) => {
+    const next = xDriveNormalizeMobileGalleryGroupOrder(order)
+    currentOrderRef.current = next
+    setOrderState({ accountScope, order: next })
+    xDriveWriteMobileGalleryGroupOrder(accountScope, next)
+  }
   const [savedPresentation, setSavedPresentation] = useState(() => ({
     accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope),
   }))
@@ -241,6 +316,11 @@ export function XDriveMobileGalleryCollections({
     setSavedPresentation((current) => current.accountScope === accountScope
       ? current : { accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope) })
     setLayoutAnchor(null)
+    setReorderMode(false)
+    setDraggingID(null)
+    dragRef.current = null
+    setOrderState((current) => current.accountScope === accountScope
+      ? current : { accountScope, order: xDriveReadMobileGalleryGroupOrder(accountScope) })
   }, [accountScope])
   const presentation = savedPresentation.accountScope === accountScope
     ? savedPresentation
@@ -343,6 +423,74 @@ export function XDriveMobileGalleryCollections({
     { key: 'trash', title: '回收站', activate: open('trash') },
   ]
 
+  const groupModels: GalleryCollectionGroupModel[] = [
+    { id: 'pinned', title: '固定项目', cards: pinned,
+      onViewAll: pinnedAlbums.length ? open('albums') : undefined },
+    { id: 'memories', title: '回忆', cards: recent, onViewAll: open('memories') },
+    { id: 'albums', title: '相册', cards: ownedAlbums, onViewAll: open('albums') },
+    { id: 'people', title: '人物与宠物', cards: identities, onViewAll: open('people') },
+    { id: 'places', title: '地点', cards: placesCards,
+      onViewAll: placesCards.length ? open('places') : undefined },
+    { id: 'sync-folders', title: '同步文件夹', cards: folderCards,
+      onViewAll: folderCards.length ? open('albums') : undefined },
+    { id: 'utilities', title: '实用工具', cards: utilities },
+  ]
+  const visibleGroups = groupOrder
+    .map((id) => groupModels.find((group) => group.id === id))
+    .filter((group): group is GalleryCollectionGroupModel =>
+      Boolean(group && (group.cards.length || group.onViewAll)))
+  const moveGroup = (source: GalleryCollectionGroupID, target: GalleryCollectionGroupID) =>
+    updateOrder(xDriveMoveMobileGalleryGroup(currentOrderRef.current, source, target))
+  const shiftGroup = (source: GalleryCollectionGroupID, delta: -1 | 1) => {
+    const ids = visibleGroups.map((group) => group.id)
+    const index = ids.indexOf(source)
+    const target = ids[index + delta]
+    if (index >= 0 && target) moveGroup(source, target)
+  }
+  const enterReorder = () => {
+    dragRef.current = null
+    setDraggingID(null)
+    setLayoutAnchor(null)
+    setReorderMode(true)
+  }
+  const exitReorder = () => {
+    dragRef.current = null
+    setDraggingID(null)
+    setReorderMode(false)
+  }
+  const startDrag = (id: GalleryCollectionGroupID, e: ReactPointerEvent<HTMLButtonElement>) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || dragRef.current) return
+    dragRef.current = {
+      id, pointerId: e.pointerId, kind: e.pointerType, started: Date.now(),
+      x: e.clientX, y: e.clientY,
+    }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setDraggingID(id)
+  }
+  const moveDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const active = dragRef.current
+    if (!active || active.pointerId !== e.pointerId) return
+    // Touch requires a 220ms hold, with a 6px dead zone.
+    if (active.kind === 'touch' && Date.now() - active.started < 220) return
+    if (Math.hypot(e.clientX - active.x, e.clientY - active.y) < 6) return
+    const underPointer = typeof document === 'undefined' ? null
+      : document.elementFromPoint?.(e.clientX, e.clientY)
+        ?.closest<HTMLElement>('[data-xdrive-mobile-gallery-reorder-row]')
+    const id = underPointer?.getAttribute('data-xdrive-mobile-gallery-reorder-row')
+    if (!id || !visibleGroups.some((group) => group.id === id)) return
+    e.preventDefault()
+    if (id !== active.id) moveGroup(active.id, id as GalleryCollectionGroupID)
+  }
+  const stopDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (dragRef.current?.pointerId !== e.pointerId) return
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    dragRef.current = null
+    setDraggingID(null)
+  }
+
+
 
   return (
     <Stack id="xdrive-mobile-gallery-collections" data-xdrive-mobile-gallery-collections
@@ -373,21 +521,69 @@ export function XDriveMobileGalleryCollections({
         <MenuItem data-xdrive-mobile-gallery-layout-expand-all
           onClick={() => changePresentation({ collapsed: [] })}
           sx={{ minHeight: 44 }}>全部展开</MenuItem>
+        <MenuItem data-xdrive-mobile-gallery-layout-reorder
+          onClick={enterReorder} sx={{ minHeight: 44 }}>重新排序</MenuItem>
       </Menu>
-      <CollectionGroup {...groupProps('pinned')} title="固定项目" cards={pinned}
-        loadThumbnail={loadThumbnail} onViewAll={pinnedAlbums.length ? open('albums') : undefined} />
-      <CollectionGroup {...groupProps('memories')} title="回忆" cards={recent}
-        loadThumbnail={loadThumbnail} onViewAll={open('memories')} />
-      <CollectionGroup {...groupProps('albums')} title="相册" cards={ownedAlbums}
-        loadThumbnail={loadThumbnail} onViewAll={open('albums')} />
-      <CollectionGroup {...groupProps('people')} title="人物与宠物" cards={identities}
-        loadThumbnail={loadThumbnail} onViewAll={open('people')} />
-      <CollectionGroup {...groupProps('places')} title="地点" cards={placesCards}
-        loadThumbnail={loadThumbnail} onViewAll={placesCards.length ? open('places') : undefined} />
-      <CollectionGroup {...groupProps('sync-folders')} title="同步文件夹" cards={folderCards}
-        loadThumbnail={loadThumbnail} onViewAll={folderCards.length ? open('albums') : undefined} />
-      <CollectionGroup {...groupProps('utilities')} title="实用工具" cards={utilities}
-        loadThumbnail={loadThumbnail} />
+      {reorderMode ? (
+        <Stack role="list" data-xdrive-mobile-gallery-reorder-editor
+          sx={{ px: 1.5 }} spacing={1}>
+          <Typography variant="body2" color="text.secondary">
+            按住右侧手柄拖动，也可以使用上移和下移按钮。
+          </Typography>
+          {visibleGroups.map((group, index) => (
+            <Stack role="listitem" key={group.id} direction="row" spacing={0.5}
+              alignItems="center" data-xdrive-mobile-gallery-reorder-row={group.id}
+              sx={{ px: 1, minHeight: 52, borderRadius: 2,
+                bgcolor: draggingID === group.id ? 'action.selected' : 'action.hover' }}>
+              <Typography noWrap variant="body2" sx={{ flex: 1, minWidth: 0 }}>
+                {group.title}
+              </Typography>
+              <IconButton aria-label={'上移' + group.title}
+                data-xdrive-mobile-gallery-reorder-up={group.id}
+                disabled={index === 0} onClick={() => shiftGroup(group.id, -1)}
+                sx={{ minHeight: 44, minWidth: 44 }}>
+                <ArrowUpwardRoundedIcon fontSize="small" />
+              </IconButton>
+              <IconButton aria-label={'下移' + group.title}
+                data-xdrive-mobile-gallery-reorder-down={group.id}
+                disabled={index === visibleGroups.length - 1}
+                onClick={() => shiftGroup(group.id, 1)}
+                sx={{ minHeight: 44, minWidth: 44 }}>
+                <ArrowDownwardRoundedIcon fontSize="small" />
+              </IconButton>
+              <IconButton aria-label={'按住并拖动' + group.title + '调整顺序'}
+                aria-grabbed={draggingID === group.id}
+                data-xdrive-mobile-gallery-reorder-handle={group.id}
+                onPointerDown={(event) => startDrag(group.id, event)}
+                onPointerMove={moveDrag} onPointerUp={stopDrag}
+                onPointerCancel={stopDrag} onLostPointerCapture={stopDrag}
+                onKeyDown={(event) => {
+                  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    shiftGroup(group.id, event.key === 'ArrowUp' ? -1 : 1)
+                  }
+                }}
+                sx={{ minHeight: 44, minWidth: 44, touchAction: 'none', userSelect: 'none' }}>
+                <DragIndicatorRoundedIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          ))}
+          <Button data-xdrive-mobile-gallery-reorder-done
+            onClick={exitReorder} sx={{ minHeight: 44 }}>完成</Button>
+        </Stack>
+      ) : (
+        <>
+          {visibleGroups.map((group) => (
+            <CollectionGroup key={group.id} {...groupProps(group.id)}
+              title={group.title} cards={group.cards} loadThumbnail={loadThumbnail}
+              onViewAll={group.onViewAll} />
+          ))}
+          <Button data-xdrive-mobile-gallery-reorder-bottom
+            onClick={enterReorder} sx={{ minHeight: 44, mx: 1.5, alignSelf: 'flex-start' }}>
+            重新排序精选集
+          </Button>
+        </>
+      )}
     </Stack>
   )
 }
