@@ -289,6 +289,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/device-backups", s.listDeviceBackupOverview)
 	authed.GET("/device-backups/:sourceID/runs", s.listDeviceBackupRunSummaries)
 	authed.GET("/devices", s.listClientDevices)
+	authed.GET("/devices/self", s.verifyCurrentClientDevice)
 	authed.POST("/devices", s.registerClientDevice)
 	authed.POST("/devices/:id/revoke", s.revokeClientDevice)
 	authed.GET("/sources", s.listSources)

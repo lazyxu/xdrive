@@ -159,6 +159,7 @@ import {
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentDeviceBackupOverview,
+  type AgentVerifiedLocalDevice,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
@@ -1933,6 +1934,11 @@ function registerIPCHandlers() {
   }, false))
   // Read-only, owner-scoped B projection. Never feed another device through
   // generic Source, RunFailure or SourceItem IPC.
+  ipcMain.handle('agent:get-device-backup-local-device', () => runAgentAction<AgentVerifiedLocalDevice>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-local-device')
+    return requireAgentClient().verifiedLocalDevice()
+  }, false))
   ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'device-backup-read')

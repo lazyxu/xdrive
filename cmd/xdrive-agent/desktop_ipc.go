@@ -114,6 +114,7 @@ var desktopIPCCapabilities = []string{
 	"media-album-folders",
 	"external-sources",
 	"device-backup-read",
+	"device-backup-local-device",
 	"storage-intelligence",
 	"storage-cache-cleanup",
 	"conflicts",
@@ -719,6 +720,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("GET /v1/device-backups", h.deviceBackups)
+	mux.HandleFunc("GET /v1/device-backups/local-device", h.deviceBackupLocalDevice)
 	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
 	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
@@ -5368,6 +5370,26 @@ func (h *desktopIPCHandler) authorizeLocalFolder(w http.ResponseWriter, r *http.
 type desktopIPCDeviceBackupReader interface {
 	CloudDeviceBackupOverview(context.Context) (client.DeviceBackupOverview, error)
 	CloudDeviceBackupRuns(context.Context, uint64, int, int) (client.DeviceBackupRunPage, error)
+}
+
+// Local identity is queried without any caller-supplied ID or Root path.
+// An Agent that lacks a verified OS credential must fail closed.
+type desktopIPCDeviceBackupLocalVerifier interface {
+	CloudVerifiedLocalDevice(context.Context) (client.VerifiedLocalDevice, error)
+}
+
+func (h *desktopIPCHandler) deviceBackupLocalDevice(w http.ResponseWriter, r *http.Request) {
+	verifier, ok := h.ctrl.(desktopIPCDeviceBackupLocalVerifier)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "device_backup_local_identity_unavailable", "local device verification is unavailable")
+		return
+	}
+	verified, err := verifier.CloudVerifiedLocalDevice(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, verified)
 }
 
 func (h *desktopIPCHandler) deviceBackups(w http.ResponseWriter, r *http.Request) {

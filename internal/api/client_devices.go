@@ -112,6 +112,35 @@ func (s *Server) registerClientDevice(c *gin.Context) {
 	})
 }
 
+// verifyCurrentClientDevice proves the current owner's possession of the
+// registered, unrevoked installation credential. It is identity for *display*
+// only: no local Root permission, Source mutation, or execution capability.
+func (s *Server) verifyCurrentClientDevice(c *gin.Context) {
+	deviceID, err := uuid.Parse(strings.TrimSpace(c.GetHeader("X-XDrive-Device-ID")))
+	if err != nil {
+		fail(c, http.StatusForbidden, "local device credential required")
+		return
+	}
+	var device meta.ClientDevice
+	err = s.DB.WithContext(c.Request.Context()).
+		Where("id = ? AND owner_id = ?", deviceID.String(), userID(c)).
+		Take(&device).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fail(c, http.StatusForbidden, "local device credential invalid or revoked")
+		} else {
+			fail(c, http.StatusInternalServerError, "local device verification failed")
+		}
+		return
+	}
+	if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+		fail(c, http.StatusForbidden, "local device credential invalid or revoked")
+		return
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.JSON(http.StatusOK, gin.H{"device_id": device.ID})
+}
+
 func (s *Server) listClientDevices(c *gin.Context) {
 	var devices []meta.ClientDevice
 	if err := s.DB.WithContext(c.Request.Context()).

@@ -255,6 +255,10 @@ export interface AgentDeviceBackupRunPage {
   has_more: boolean
 }
 
+export type AgentVerifiedLocalDevice = {
+  device_id: string
+}
+
 export type AgentSource = {
   id: number
   name: string
@@ -2529,6 +2533,10 @@ export class AgentIPCClient {
 
   deviceBackups() {
     return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups')
+  }
+
+  verifiedLocalDevice() {
+    return this.request<AgentVerifiedLocalDevice>('GET', '/v1/device-backups/local-device')
   }
 
   deviceBackupRuns(sourceID: number, limit = 20, offset = 0) {

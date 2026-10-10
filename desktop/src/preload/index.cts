@@ -509,6 +509,7 @@ const agent = Object.freeze({
   },
   getSources: () => ipcRenderer.invoke('agent:get-sources'),
   getDeviceBackups: () => ipcRenderer.invoke('agent:get-device-backups'),
+  getDeviceBackupLocalDevice: () => ipcRenderer.invoke('agent:get-device-backup-local-device'),
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),

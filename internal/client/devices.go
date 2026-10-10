@@ -97,3 +97,29 @@ func (c *Client) BindLocalSource(ctx context.Context, sourceID, revision uint64,
 	}
 	return out, nil
 }
+
+type VerifiedLocalDevice struct {
+	DeviceID string `json:"device_id"`
+}
+
+// VerifyLocalDevice proves possession of this installation's registered device
+// credential to the current user's Server. This is display identity only;
+// it never authorizes a local Root or any Source mutation.
+func (c *Client) VerifyLocalDevice(ctx context.Context, deviceID, deviceToken string) (VerifiedLocalDevice, error) {
+	var out VerifiedLocalDevice
+	req, err := c.request(ctx, http.MethodGet, "/api/v1/devices/self", nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("X-XDrive-Device-ID", deviceID)
+	req.Header.Set("X-XDrive-Device-Token", deviceToken)
+	response, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer response.Body.Close()
+	if err := decodeResponse(response, &out); err != nil {
+		return VerifiedLocalDevice{}, err
+	}
+	return out, nil
+}

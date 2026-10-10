@@ -52,6 +52,8 @@ export interface XDriveDeviceBackupRunPage {
   has_more: boolean
 }
 export interface XDriveDeviceBackupDataSource {
+  // Optional Desktop-only verified installation identity. No Root authority.
+  verifiedLocalDevice?(): Promise<string | null>
   list(): Promise<XDriveDeviceBackupOverview>
   runs(sourceID: number, limit: number, offset: number): Promise<XDriveDeviceBackupRunPage>
 }

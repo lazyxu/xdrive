@@ -26,6 +26,10 @@ type HistoryState = {
   source?: XDriveDeviceBackupDataSource
   pages: Record<number, HistoryPage>
 }
+type VerifiedLocalIdentityState = {
+  source?: XDriveDeviceBackupDataSource
+  deviceID: string | null
+}
 const emptyHistory: Record<number, HistoryPage> = {}
 const pageSize = 20
 function timeLabel(value?: string) {
@@ -72,6 +76,29 @@ export function XDriveDeviceBackupPage({
   const histories = historyState.source === source ? historyState.pages : emptyHistory
   const [historyError, setHistoryError] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const requests = useRef<Record<number, number>>({})
+  const [localIdentity, setLocalIdentity] = useState<VerifiedLocalIdentityState>({ deviceID: null })
+  const verifiedLocalDeviceID = localIdentity.source === source ? localIdentity.deviceID : null
+  const groupedDevices = overview && verifiedLocalDeviceID &&
+    overview.devices.some((device) => device.id === verifiedLocalDeviceID)
+    ? [
+      { label: '本机', devices: overview.devices.filter((device) => device.id === verifiedLocalDeviceID) },
+      { label: '其他设备', devices: overview.devices.filter((device) => device.id !== verifiedLocalDeviceID) },
+    ].filter((group) => group.devices.length > 0)
+    : [{ label: '', devices: overview?.devices ?? [] }]
+
+  // Account/Server and Agent capability changes replace the datasource.
+  // Never label another account's device as local while verification is pending.
+  useEffect(() => {
+    if (!source?.verifiedLocalDevice) return
+    let active = true
+    setLocalIdentity({ source, deviceID: null })
+    void source.verifiedLocalDevice().then((deviceID) => {
+      if (active) setLocalIdentity({ source, deviceID: deviceID || null })
+    }).catch(() => {
+      if (active) setLocalIdentity({ source, deviceID: null })
+    })
+    return () => { active = false }
+  }, [source, refreshID])
 
   useEffect(() => {
     if (!source) return
@@ -163,7 +190,10 @@ export function XDriveDeviceBackupPage({
         <XDriveStatePanel variant="plain" message="当前账号尚未登记电脑备份设备。" />
       ) : (
         <Stack spacing={2}>
-          {overview.devices.map((device) => (
+          {groupedDevices.map((group) => (
+            <Stack key={group.label || 'all'} spacing={1}>
+              {group.label ? <Typography variant="subtitle2" fontWeight={700}>{group.label}</Typography> : null}
+              {group.devices.map((device) => (
             <Box key={device.id} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
               <Stack direction="row" spacing={1} alignItems="center">
                 <DevicesRoundedIcon color="action" />
@@ -247,6 +277,8 @@ export function XDriveDeviceBackupPage({
                 )
               })}
             </Box>
+              ))}
+            </Stack>
           ))}
           {overview.has_more || overview.has_more_folders ? (
             <XDriveStatusAlert tone="neutral">设备或文件夹超过当前返回范围，后续将提供连续分页。</XDriveStatusAlert>

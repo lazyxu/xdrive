@@ -64,9 +64,9 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L02 | Windows/Linux bounded metadata scan, native identity, crash-safe journal | merged #1227/#1235/#1240 |
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
-| UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 proposed; full Push read UI and controller separation still pending |
+| UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
 | Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; device mutation guards and spoof tests pending |
-| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web redacted B-scope viewer proposed in P0-C1; Desktop Agent safe read IPC, local controls pending |
+| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; local identity verification P0-C3 and owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
@@ -79,17 +79,23 @@ Do not block unrelated Race/Gallery/FileExplorer PRs for this UI task. Related P
 This phase introduces two **read-only** endpoints, `GET /api/v1/device-backups` and `GET /api/v1/device-backups/:sourceID/runs`. Both scope records to the logged-in owner and bind only actual `local_folder` Push Source records to registered devices; NAS is still a placeholder. The response is a narrow allowlist with safe folder names, Server-resolved cloud target, numeric real progress and paginated history. It never serializes Root fingerprints, Agent tokens, filesystem paths, Source ignore rules/checkpoints, or unrestricted failure details; legacy registered devices without an authenticated heartbeat report `connection_state=unknown` rather than a fictitious online status. It is the data foundation for Web and other-Desktop read-only scope B, **not** proof that the UI exists or that Source mutation endpoints are locked down. Requires PostgreSQL/SQLite-backed CI, owner isolation, pagination/redaction and Pull regression gates before merge.
 
 
-## UI P0-A1 progress: separate applications (pending full PR CI)
+## UI P0-A1 progress: separate applications (merged #1276)
 
 Shared navigation now has two *top-level* destinations, `设备备份` and `远程拉取`; the old `sync-folders` Web hash is retained only as a compatibility route, resolving persisted Source `direction` by ID. Pull UI filters to `direction=pull`, including creation presets, without disabling existing Yike/DSM credential and scan controls. The Push app is deliberately a **non-operational placeholder** for local folder execution and NAS `待支持` while the server's read-only projection is wired into Web/Desktop adapters in the next phase. This stage does not let a foreign device (or a browser) configure, start or cancel a Push. It does **not** satisfy the complete B-scope viewer nor Server mutation fencing yet.
 
-## UI P0-C1 progress: Web and Mobile Web read-only B-scope (pending CI)
+## UI P0-C1 progress: Web and Mobile Web read-only B-scope (merged #1277)
 
 Web now consumes **only** the allowlisted `GET /device-backups` and `GET /device-backups/:sourceID/runs` responses for device/folder names, trusted-safe cloud target, aggregate progress and paginated summary history. No local path or uncontrolled Source DTO enters this presentation, and it contains no mutation controls. The signed-in owner remains scope of both Server endpoints; online status is explicitly unknown until a separate trusted heartbeat feature is complete. For Desktop, the owning Agent does not yet have a safe read IPC; the UI remains a truthful unsupported placeholder until that port is added. NAS Push remains `待支持`. Source mutation protections and true local executor are separate deliverables.
 
-## UI P0-C2 progress: Desktop read-only Agent IPC (proposed; CI pending)
+## UI P0-C2 progress: Desktop read-only Agent IPC (merged #1290)
 
 Desktop reads the same narrow owner-scoped Device Backup DTO as Web/Mobile Web, but through an explicitly authenticated loopback Agent IPC (`device-backup-read` capability). This path passes through Electron Main/Preload, with strict Source ID and run-page bounds. Generic Source/SourceItem/run-failure endpoints are **not** a fallback. The shared presenter isolates overview, history and late responses by account/server datasource identity. Until the configured Agent advertises this read capability, Desktop remains a truthful, non-operational placeholder. This phase adds **no** Root picker/run controls, server mutation authority, heartbeat or uploader; Desktop own-device vs foreign-device action splitting remains future work.
+
+## UI P0-C3 progress: credential-verified own-device identity (proposed; CI pending)
+
+Desktop uses the owning Agent's per-Server/account OS-stored device registration and secret, never a caller-supplied renderer device ID. An owner-scoped Server `GET /devices/self` verifies the device's exact ID and enrollment secret, including revocation; it returns only `device_id` and disables caching. No enrollment occurs merely by opening a read-only page. The identity check is separate from the device backup B-scope read API, and does not grant access to a local Root or authorize any Source mutation.
+
+The shared presenter groups "本机" and "其他设备" **only after verified identity matches an owner-scoped device row**. On unavailable Agent capability, missing registration, revoked credentials, failed verification, or account/Server transition, it remains neutral/fully read-only rather than trusting a stale label. The Agent credential, local path, Root ID/fingerprint and per-file details never enter the renderer or Web. Pull and NAS behavior are unchanged. Local-only mutation guards, own-device actions, upload executor, trusted heartbeat, full pagination and real 100k/4GiB E2E are still pending.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 
