@@ -88,7 +88,7 @@ function lifecycle(overrides = {}) {
 }
 const finishedState = l => l.finished.map(([id, state]) => id + ':' + state).sort()
 
-async function mount(transferLifecycle) {
+async function mount(transferLifecycle, overrides = {}) {
   const errors = [], feedback = []
   const holder = { controller: null }
   const defaults = {
@@ -101,6 +101,7 @@ async function mount(transferLifecycle) {
     onError: error => errors.push(error),
     onFeedback: (tone, message) => feedback.push([tone, message]),
     transferLifecycle,
+    ...overrides,
   }
   function Harness(props) {
     holder.controller = useUploadController(props)
@@ -243,6 +244,166 @@ test('Group lifecycle control: normal registered group and children finish compl
     ])
     assert.deepEqual(h.errors, [])
   } finally {
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload: old session delayed child begin closes registered group and both children', async () => {
+  const waiting = deferred(), old = lifecycle()
+  let uploads = 0
+  old.begin = async id => {
+    old.started.push(id)
+    if (id === 'child-1') return waiting.promise
+  }
+  const h = await mount(old, { upload: async () => { uploads++; return { skipped: false } } })
+  try {
+    const run = h.controller.runGroup(request(async () => targets()))
+    await act(async () => { await flush() })
+    assert.deepEqual(old.started, ['group-A', 'child-1'])
+    await h.switchSession()
+    await settle(waiting)
+    assert.equal((await run).cancelled, true)
+    assert.equal(uploads, 0)
+    assert.deepEqual(finishedState(old), [
+      'child-1:cancelled', 'child-2:cancelled', 'group-A:cancelled',
+    ], 'late begin(child) must close all unstarted tracking records via their original Port')
+    assert.deepEqual(h.errors, [])
+  } finally {
+    waiting.resolve()
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload: old session late group update closes initialized child and queued sibling', async () => {
+  const waiting = deferred(), old = lifecycle()
+  old.updateGroup = () => waiting.promise
+  let uploads = 0
+  const h = await mount(old, { upload: async () => { uploads++; return { skipped: false } } })
+  try {
+    const run = h.controller.runGroup(request(async () => targets()))
+    await act(async () => { await flush() })
+    assert.deepEqual(old.started, ['group-A', 'child-1'])
+    await h.switchSession()
+    await settle(waiting)
+    assert.equal((await run).cancelled, true)
+    assert.equal(uploads, 0)
+    assert.deepEqual(finishedState(old), [
+      'child-1:cancelled', 'child-2:cancelled', 'group-A:cancelled',
+    ], 'late updateGroup must terminate pre-upload old-Port records')
+  } finally {
+    waiting.resolve()
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload: old session preflight completion closes running child and queued sibling', async () => {
+  const waiting = deferred(), old = lifecycle()
+  let uploads = 0
+  const h = await mount(old, {
+    preflight: () => waiting.promise,
+    upload: async () => { uploads++; return { skipped: false } },
+  })
+  try {
+    const run = h.controller.runGroup(request(async () => targets()))
+    await act(async () => { await flush() })
+    assert.deepEqual(old.started, ['group-A', 'child-1'])
+    await h.switchSession()
+    await settle(waiting, { conflict: false })
+    assert.equal((await run).cancelled, true)
+    assert.equal(uploads, 0)
+    assert.deepEqual(finishedState(old), [
+      'child-1:cancelled', 'child-2:cancelled', 'group-A:cancelled',
+    ], 'detached first-file preflight must close old-Port queue before any upload')
+    assert.deepEqual(h.errors, [])
+  } finally {
+    waiting.resolve({ conflict: false })
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload: failed old-session directory scan still terminates created group', async () => {
+  const waiting = deferred(), old = lifecycle()
+  const h = await mount(old)
+  try {
+    const run = h.controller.runGroup(request(() => waiting.promise))
+    await act(async () => { await flush() })
+    assert.ok(old.events.includes('start-group'))
+    await h.switchSession()
+    await act(async () => {
+      waiting.reject(new Error('disconnected old scanner'))
+      await flush()
+    })
+    assert.equal((await run).cancelled, true)
+    assert.deepEqual(finishedState(old), ['group-A:cancelled'],
+      'old-session scan failure must close its registered group')
+    assert.deepEqual(h.errors, [], 'obsolete scan failure cannot leak to new session')
+  } finally {
+    waiting.resolve(targets())
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload: failed old-session child registration still terminates root group', async () => {
+  const waiting = deferred(), old = lifecycle({ startChildren: () => waiting.promise })
+  const h = await mount(old)
+  try {
+    const run = h.controller.runGroup(request(async () => targets()))
+    await act(async () => { await flush() })
+    await h.switchSession()
+    await act(async () => {
+      waiting.reject(new Error('disconnected old Agent child registrar'))
+      await flush()
+    })
+    assert.equal((await run).cancelled, true)
+    assert.deepEqual(finishedState(old), ['group-A:cancelled'],
+      'old-session rejected child creation must close its parent group')
+    assert.deepEqual(h.errors, [])
+  } finally {
+    waiting.resolve([])
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload control: current-session preflight failure reports failed child and root', async () => {
+  const old = lifecycle()
+  const h = await mount(old, {
+    preflight: async () => { throw new Error('current-session preflight denied') },
+  })
+  try {
+    const result = await h.controller.runGroup(request(async () => targets()))
+    assert.equal(result.failed, 1)
+    assert.equal(result.cancelled, false)
+    assert.deepEqual(finishedState(old), [
+      'child-1:failed', 'child-2:cancelled', 'group-A:failed',
+    ], 'a current preflight error must remain failed, not be relabelled cancelled')
+    assert.equal(h.errors.length, 1)
+  } finally {
+    await h.dispose()
+  }
+})
+
+test('Group pre-upload control: a dispatched file upload is not cancelled on UI session change', async () => {
+  const waiting = deferred(), old = lifecycle()
+  let uploadCalls = 0
+  const h = await mount(old, {
+    upload: () => {
+      uploadCalls++
+      return waiting.promise
+    },
+  })
+  try {
+    const run = h.controller.runGroup(request(async () => targets()))
+    await act(async () => { await flush() })
+    assert.equal(uploadCalls, 1, 'the first real upload must be dispatched before detachment')
+    await h.switchSession()
+    await settle(waiting, { skipped: false })
+    const result = await run
+    assert.equal(result.cancelled, true, 'the obsolete UI action must exit')
+    assert.deepEqual(finishedState(old), [],
+      'UI detachment cannot terminalize an actual dispatched Server/Agent upload')
+    assert.deepEqual(h.errors, [])
+  } finally {
+    waiting.resolve({ skipped: false })
     await h.dispose()
   }
 })
