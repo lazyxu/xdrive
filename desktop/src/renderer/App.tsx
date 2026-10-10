@@ -361,9 +361,17 @@ export default function App({
     agent.connected && status?.configured &&
     agent.hello?.capabilities.includes('device-backup-read'),
   )
+  const localIdentityReadSupported = agent.hello?.capabilities.includes('device-backup-local-device') ?? false
   const deviceBackupSource = useMemo<XDriveDeviceBackupDataSource | undefined>(() => {
     if (!deviceBackupReadSupported) return undefined
     return {
+      ...(localIdentityReadSupported ? {
+        verifiedLocalDevice: async () => {
+          const result = await window.xdriveDesktop.agent.getDeviceBackupLocalDevice()
+          if (!result.ok) throw new Error(result.error.message)
+          return result.data.device_id || null
+        },
+      } : {}),
       list: async () => {
         const result = await window.xdriveDesktop.agent.getDeviceBackups()
         if (!result.ok) throw new Error(result.error.message)
@@ -375,7 +383,7 @@ export default function App({
         return result.data
       },
     }
-  }, [deviceBackupReadSupported, status?.server, status?.username, status?.auth_status])
+  }, [deviceBackupReadSupported, localIdentityReadSupported, status?.server, status?.username, status?.auth_status])
 
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
