@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box, Button, CircularProgress, Divider, LinearProgress, Paper,
   Stack, Typography,
@@ -28,34 +28,86 @@ const jobStatusLabels: Record<MediaSelectionJob['status'], string> = {
   cancelled: '已取消',
 }
 
+type MediaJobCenterScope = {
+  port: XDriveMediaSelectionJobPort
+  inFlight: boolean
+  listGeneration: number
+}
+
+type MediaJobCenterState = {
+  owner: MediaJobCenterScope
+  jobs: MediaSelectionJob[]
+  loading: boolean
+  error: string
+  busyID: string
+  failureJobID: string
+  failurePage: MediaSelectionJobFailurePage | null
+  failureOffset: number
+}
+
+function emptyMediaJobCenterState(owner: MediaJobCenterScope): MediaJobCenterState {
+  return {
+    owner, jobs: [], loading: true, error: '', busyID: '',
+    failureJobID: '', failurePage: null, failureOffset: 0,
+  }
+}
+
 export function XDriveMediaSelectionJobCenter({
   port,
 }: {
   port: XDriveMediaSelectionJobPort
 }) {
-  const [jobs, setJobs] = useState<MediaSelectionJob[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [busyID, setBusyID] = useState('')
-  const [failureJobID, setFailureJobID] = useState('')
-  const [failurePage, setFailurePage] = useState<MediaSelectionJobFailurePage | null>(null)
-  const [failureOffset, setFailureOffset] = useState(0)
+  // A task read, failure page and mutation belong to exactly one authenticated
+  // transport scope. Re-selecting an earlier transport creates a fresh owner.
+  const scopeRef = useRef<MediaJobCenterScope>({
+    port, inFlight: false, listGeneration: 0,
+  })
+  if (scopeRef.current.port !== port) {
+    scopeRef.current = { port, inFlight: false, listGeneration: 0 }
+  }
+  const scope = scopeRef.current
+  const [stored, setStored] = useState<MediaJobCenterState>(
+    () => emptyMediaJobCenterState(scope),
+  )
+  // Do not render previous-account task names, errors or failures even for one
+  // frame while the new transport performs its initial asynchronous read.
+  const visible = stored.owner === scope
+    ? stored : emptyMediaJobCenterState(scope)
+  const {
+    jobs, loading, error, busyID, failureJobID, failurePage, failureOffset,
+  } = visible
+
+  const update = (patch: Partial<Omit<MediaJobCenterState, 'owner'>>) => {
+    if (scopeRef.current !== scope) return
+    setStored((current) => {
+      if (scopeRef.current !== scope) return current
+      return {
+        ...(current.owner === scope
+          ? current : emptyMediaJobCenterState(scope)),
+        ...patch,
+      }
+    })
+  }
 
   useEffect(() => {
     let alive = true
     let fetching = false
     const refresh = () => {
-      if (fetching) return
+      if (fetching || scopeRef.current !== scope || scope.inFlight) return
       fetching = true
+      const request = ++scope.listGeneration
       void port.list().then((list) => {
-        if (!alive) return
-        setJobs(list)
-        setError('')
+        if (!alive || scopeRef.current !== scope || scope.inFlight ||
+          request !== scope.listGeneration) return
+        update({ jobs: list, error: '' })
       }).catch((reason) => {
-        if (alive) setError(xDriveMediaGalleryErrorMessage(reason))
+        if (alive && scopeRef.current === scope && !scope.inFlight &&
+          request === scope.listGeneration) {
+          update({ error: xDriveMediaGalleryErrorMessage(reason) })
+        }
       }).finally(() => {
         fetching = false
-        if (alive) setLoading(false)
+        if (alive && scopeRef.current === scope) update({ loading: false })
       })
     }
     refresh()
@@ -65,36 +117,56 @@ export function XDriveMediaSelectionJobCenter({
     return () => { alive = false; clearInterval(timer) }
   }, [port])
 
+  const claim = (jobID: string) => {
+    if (scopeRef.current !== scope || scope.inFlight) return false
+    // Claim synchronously before React publishes Busy. This also invalidates
+    // any older polling snapshot started before the mutation was accepted.
+    scope.inFlight = true
+    scope.listGeneration += 1
+    update({ busyID: jobID, error: '' })
+    return true
+  }
+
+  const release = () => {
+    scope.inFlight = false
+    update({ busyID: '' })
+  }
+
   const act = async (jobID: string, action: 'cancel' | 'retry') => {
-    if (busyID) return
-    setBusyID(jobID)
-    setError('')
+    if (!claim(jobID)) return
     try {
       if (action === 'cancel') await port.cancel(jobID)
       else await port.retry(jobID)
-      setJobs(await port.list())
-      setFailurePage(null)
-      setFailureJobID('')
+      if (scopeRef.current !== scope) return
+      const list = await port.list()
+      if (scopeRef.current !== scope) return
+      update({
+        jobs: list, error: '',
+        failurePage: null, failureJobID: '', failureOffset: 0,
+      })
     } catch (reason) {
-      setError(xDriveMediaGalleryErrorMessage(reason))
+      if (scopeRef.current === scope) {
+        update({ error: xDriveMediaGalleryErrorMessage(reason) })
+      }
     } finally {
-      setBusyID('')
+      release()
     }
   }
 
   const showFailures = async (jobID: string, offset: number) => {
-    if (busyID) return
-    setBusyID(jobID)
-    setError('')
+    if (!claim(jobID)) return
     try {
       const result = await port.failures(jobID, offset, failurePageSize)
-      setFailureJobID(jobID)
-      setFailurePage(result)
-      setFailureOffset(offset)
+      if (scopeRef.current !== scope) return
+      update({
+        failureJobID: jobID, failurePage: result, failureOffset: offset,
+      })
     } catch (reason) {
-      setError(xDriveMediaGalleryErrorMessage(reason))
+      if (scopeRef.current === scope) {
+        update({ error: xDriveMediaGalleryErrorMessage(reason) })
+      }
     } finally {
-      setBusyID('')
+      release()
     }
   }
 
