@@ -1,5 +1,25 @@
 # Gallery performance
 
+## P0 Gallery native thumbnail SQL cancellation in 100k mixed Gallery (2026-10-10)
+
+**Status: Accepted / measured current production, n=3 native PostgreSQL17; no production optimization needed; exact evidence-amended final PR CI pending.** Fixed baseline `28da4c800e5fe88569edb909bb5692d1da309a31`, benchmark-only PR #1262. The unrelated blocked Desktop IPC progress #1185 remains Draft. Existing #1138/#1144 qualify Gallery range cancellation, not thumbnail ownership SQL.
+
+**Frozen workload:** real PostgreSQL 17.11, signed production Gin HTTP `GET /api/v1/media/items/:id/thumbnail?revision=1`; 100,000 logical PhotoAssets, 115,000 media Nodes, 15,000 real paired Live Photos. Six started thumbnail ownership GETs (2 JPEG, 2 video cached-poster lookup, 2 Live still); real `xd_nodes ACCESS EXCLUSIVE` diagnostic lock, observed 6 actual PostgreSQL lock waiters and six live handlers **before** cancellation. At +160ms measure server `Request.Context().Done()`, active Gin Handlers, PostgreSQL waiters, response bytes and maximum notification delay. Release lock, require fresh 100-item Gallery range with authoritative 100k count. Three independent fresh-schema trials, seed time excluded.
+
+**Acceptance frozen before measurements:** each sample 6 authentic SQL waits, 6/6 Context notifications, **0** live Handlers, **0** SQL waits, **0 bytes** stale payload at +160ms, worst Context-notification ≤160ms, six canceled HTTP clients and healthy new Gallery range. If passed, keep production as-is; do not claim a timing speedup. This does not cancel detached/shared derivative-generation jobs, uploads, downloads, sync or deletion.
+
+**BEFORE/current unchanged source `01bfee5ffcba9d7a63f98aec5ae1acf9715cc62f` — first native job [38020454037 / 114120095116](https://github.com/lazyxu/xdrive/actions/runs/38020454037/job/114120095116): n=3, all source-exact test runs green.**
+
+| Native PostgreSQL17 sample | SQL waits before | Context Done at +160ms | Active handlers at +160ms | SQL waits at +160ms | Wasted HTTP payload | Worst Context notification | Fixture seed excluded |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 6 | 6 / 6 | **0** | **0** | **0 B** | **0.155 ms** | 26,731.844 ms |
+| 2 | 6 | 6 / 6 | **0** | **0** | **0 B** | **0.096 ms** | 25,734.731 ms |
+| 3 | 6 | 6 / 6 | **0** | **0** | **0 B** | **0.096 ms** | 23,653.923 ms |
+
+**AFTER:** not applicable — no product code changed. **Delta:** no wall-clock speedup claim. **Decision: Accepted current behavior; no speculative optimization.** Median of per-run worst server-Context notifications **0.096 ms**, range **0.096–0.155 ms**, all within +160ms. Exact six-context raw latency lists and unrounded fixture timings: [source-exact JSON](performance-evidence/gallery-thumbnail-http-cancel-100k/ci-run-38020454037.json). These are *notification* times, not backend decode, SQL success latency or end-to-end thumbnail-render timing.
+
+**Command:** `XD_GALLERY_THUMBNAIL_GO_CONTEXT_CANCEL_100K_PERF=1 XD_TEST_DATABASE_URL=postgres://... go test -run '^TestGalleryThumbnailRequestContextCancellation100K$' -count=1 -timeout=6m -v ./internal/api`. Opt-in branch-scoped GitHub/GitLab CI. Final single-commit evidence amendment needs fresh full source-exact PR CI before merge. This SQL cancellation benchmark does not exercise active codec/FFmpeg work, real Web/Desktop/Agent IPC, whole-viewport rendering, physical mobile, WAN, peak RSS, or durable jobs.
+
 This document is the canonical performance contract for the shared Web/Desktop Gallery.
 
 Only comparable measurements should be presented as timing improvements. Structural changes without stable BEFORE/AFTER timing are recorded as complexity-only evidence.
