@@ -73,6 +73,12 @@ const ui = {
   xDriveFileTypeLabel: name => name.includes('.') ? '文件' : '文件夹',
   xDriveCreateFileExplorerGroupLayout: grouped.xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments: grouped.xDriveFileExplorerVisibleGroupSegments,
+  xDriveFileExplorerReadExternalDrop: async transfer => transfer.read
+    ? transfer.read()
+    : transfer.payload ?? {
+      files: Array.from(transfer.files).map(file => ({ file, relativePath: file.name })),
+      directories: [],
+    },
 }
 const dragCalls = []
 const imports = {
@@ -1042,4 +1048,100 @@ test('F-PARITY-05: empty path cannot navigate and Trash never exposes the operat
     pathValue: '我的文件',
     onPathSubmit: value => calls.push(value),
   } })
+})
+
+test('F-PARITY-06: external files drop only once into the existing Browse root', async () => {
+  const calls = []
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(location)
+    await act(async () => { location.props.onClick() })
+    const host = find(h.view, 'data-xdrive-mobile-files-scroll', true)
+    const file = { name: 'incoming.txt' }
+    const transfer = { types: ['Files'], files: [file], items: [] }
+    let prevented = 0
+    await act(async () => {
+      host.props.onDragOver({ dataTransfer: transfer, preventDefault() { prevented++ } })
+      host.props.onDrop({ dataTransfer: transfer, preventDefault() { prevented++ } })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    assert.equal(prevented, 2)
+    assert.deepEqual(calls, [{ ids: ['incoming.txt'], parent: undefined }])
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onExternalFilesDrop: async (files, target) => {
+      calls.push({ ids: files.map(file => file.name), parent: target?.id })
+    },
+  } })
+})
+
+test('F-PARITY-06: folder and ancestor drop do not also upload to Browse background', async () => {
+  const calls = []
+  await withView(async h => {
+    const folder = find(h.view, 'data-mobile-files-folder-id', '2')
+    const payload = { files: [{ file: { name: 'child.txt' }, relativePath: 'Tree/child.txt' }], directories: ['Tree'] }
+    const transfer = { types: ['Files'], files: [], items: [], payload }
+    let stopped = 0
+    await act(async () => {
+      folder.props.onDrop({ dataTransfer: transfer, preventDefault() {}, stopPropagation() { stopped++ } })
+      await Promise.resolve(); await Promise.resolve()
+    })
+    assert.equal(stopped, 1)
+    assert.deepEqual(calls, [{ kind: 'folder', target: 2, directories: ['Tree'] }])
+    const rootCrumb = find(h.view, 'data-mobile-files-crumb-id', '1')
+    await act(async () => {
+      rootCrumb.props.onDrop({
+        dataTransfer: { types: ['Files'], files: [{ name: 'drop.txt' }], items: [] },
+        preventDefault() {}, stopPropagation() { stopped++ },
+      })
+      await Promise.resolve(); await Promise.resolve()
+    })
+    assert.equal(stopped, 2)
+    assert.deepEqual(calls[1], { kind: 'crumb', target: 1, files: ['drop.txt'] })
+    assert.equal(calls.length, 2, 'no bubbled duplicate parent upload')
+  }, { props: {
+    requestedDirectoryID: 2,
+    crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    onExternalFilesDrop: async () => calls.push({ kind: 'wrong-background' }),
+    onExternalFolderDrop: async (payload, target) =>
+      calls.push({ kind: 'folder', target: target?.id, directories: payload.directories }),
+    onExternalFilesDropToCrumb: async (files, crumb) =>
+      calls.push({ kind: 'crumb', target: crumb.id, files: files.map(file => file.name) }),
+  } })
+})
+
+test('F-PARITY-06: stale directory reads never upload to a later account; Trash rejects external uploads', async () => {
+  const uploads = []
+  let finishRead
+  const deferred = new Promise(resolve => { finishRead = resolve })
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    const host = find(h.view, 'data-xdrive-mobile-files-scroll', true)
+    await act(async () => {
+      host.props.onDrop({ dataTransfer: {
+        types: ['Files'], items: [], files: [],
+        read: () => deferred,
+      }, preventDefault() {} })
+      await Promise.resolve()
+    })
+    await h.update({ lifecycleKey: 'ios-files-userB' })
+    await act(async () => {
+      finishRead({ files: [{ file: { name: 'old.txt' }, relativePath: 'old.txt' }], directories: [] })
+      await Promise.resolve(); await Promise.resolve()
+    })
+    assert.deepEqual(uploads, [], 'outdated account cannot receive an earlier file drop')
+    await h.update({ trashActive: true })
+    let prevented = 0
+    await act(async () => {
+      host.props.onDrop({ dataTransfer: { types: ['Files'], files: [{ name: 'trash.txt' }], items: [] },
+        preventDefault() { prevented++ } })
+      await Promise.resolve(); await Promise.resolve()
+    })
+    assert.equal(prevented, 1)
+    assert.deepEqual(uploads, [], 'Trash never accepts a dropped external file')
+  }, { props: { onExternalFilesDrop: async files => uploads.push(files.map(file => file.name)) } })
 })
