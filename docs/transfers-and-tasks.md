@@ -81,3 +81,27 @@ handler in a ref so only current requests report errors; replacing the
 handler must not restart the list polling effect. The executable regression
 uses React-style `useCallback` identity comparison on the real callback.
 
+
+## Background Task Center control ownership (2026-10-10, PR #1242)
+
+The shared Web/Desktop background-task control callback owns one synchronous
+Cancel/Retry command lane per authenticated transport and lifecycle identity.
+React's next-render Busy presentation is **not** the duplicate-submission
+guard: a second handler invoked from the same render must be rejected before
+issuing any other Server command. An in-flight command remains a durable
+Server-owned operation when the user changes accounts or Agent capabilities;
+the new identity gets an independent, immediately available UI control lane.
+
+An obsolete operation completion must not clear the new account's Busy,
+refresh its task lists, or publish the old account's error. Current-scope
+commands still refresh the authoritative task page and summary after success;
+neither polling intervals nor long-running Server execution semantics change.
+
+**Product first-red:** GitHub Actions run 38016434165, real React hook tests
+1505–1507: two Server Cancel commands for same-render double-click, old A
+Busy blocking account B, and old A error leaking into B. The independent
+single-command control 1508 passed. Regression suite
+`desktop/tests/shared-task-center-control-race.cjs` preserves the original
+three failing tests unchanged for green retest. Require original interleavings,
+the existing Task Center async race/role tests, Web/Desktop validation,
+Go race, and exact-head full GitHub CI before merge.
