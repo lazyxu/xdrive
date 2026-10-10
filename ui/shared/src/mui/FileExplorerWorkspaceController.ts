@@ -387,11 +387,12 @@ export function useXDriveFileExplorerWorkspace<
   const openItem = async (
     item: XDriveFileExplorerItem,
     openFile: (node: TNode) => void | Promise<void>,
+    parentCrumbs: XDriveFileExplorerWorkspaceCrumb[] = crumbs,
   ) => {
     await xDriveFileExplorerDispatchOpenItem({
       item,
       nodeByID: projection.nodeByID,
-      currentCrumbs: crumbs,
+      currentCrumbs: parentCrumbs,
       searchCrumbsForNode,
       openFile,
       navigate: navigation.navigateTo,

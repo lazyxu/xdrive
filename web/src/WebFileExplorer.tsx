@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress, useMediaQuery } from '@mui/material'
@@ -47,6 +47,7 @@ import {
   xDriveFileExplorerResolveSelectionNodes,
   xDriveFileExplorerSelectionActionDisabledReason,
   xDriveFileExplorerWebDownloadFeedback,
+  XDriveFileExplorerInlineRangeStore,
   xDriveFileExplorerPersistedSearchFilters,
   xDriveFileExplorerOrganizationSearchState,
   xDriveFileExplorerSavedSearchRuleLabels,
@@ -496,6 +497,82 @@ export default function WebFileExplorer({
     onChanged: onTrashChanged,
   })
 
+  // Expanded List rows use the same authenticated Server range contract as
+  // the root virtual collection. Scope every child page to this one workspace,
+  // sort, grouping, account and presentation; never start Mobile-specific REST.
+  const inlineScopeKey = [
+    navigationSessionStorageKey ?? '', current?.id ?? 0,
+    sort.key, sort.direction, grouping.groupBy, grouping.foldersFirst,
+    trashActive, searchState.results !== null, compactMobile,
+  ].join(':')
+  const inlineLoaderRef = useRef((
+    parentID: number, offset: number, limit: number, signal: AbortSignal,
+  ) => api.listRange(parentID, offset, limit, sort.key, sort.direction, true, grouping, signal)
+    .then(page => ({
+      items: page.items, offset: page.offset, limit: page.limit,
+      totalCount: page.total_count,
+    })))
+  inlineLoaderRef.current = (
+    parentID: number, offset: number, limit: number, signal: AbortSignal,
+  ) => api.listRange(parentID, offset, limit, sort.key, sort.direction, true, grouping, signal)
+    .then(page => ({
+      items: page.items, offset: page.offset, limit: page.limit,
+      totalCount: page.total_count,
+    }))
+  const inlineErrorRef = useRef(onError)
+  inlineErrorRef.current = onError
+  const inlineStore = useMemo(() => new XDriveFileExplorerInlineRangeStore<Node>(
+    (parentID, offset, limit, signal) => inlineLoaderRef.current(parentID, offset, limit, signal),
+    error => inlineErrorRef.current(error),
+  ), [inlineScopeKey])
+  const inlineSnapshot = useSyncExternalStore(
+    inlineStore.subscribe, inlineStore.getSnapshot, inlineStore.getSnapshot,
+  )
+  useEffect(() => () => inlineStore.destroy(), [inlineStore])
+
+  // Shared FileExplorer operations resolve real Node IDs/revisions through
+  // nodeByID. Register sparse child Node pages before operation hooks/menus
+  // read the projection; projected display items alone are not sufficient.
+  const inlineOwnerByNodeID = new Map<number, number>()
+  const priorInlineNodesRef = useRef(new Map<number, Node>())
+  const liveInlineNodes = new Map<number, Node>()
+  for (const branch of inlineSnapshot.branches) {
+    for (const node of branch.items.values()) {
+      liveInlineNodes.set(node.id, node)
+      inlineOwnerByNodeID.set(node.id, branch.ownerID)
+    }
+  }
+  for (const [id, previous] of priorInlineNodesRef.current) {
+    if (!liveInlineNodes.has(id) && nodeByID.get(id) === previous) nodeByID.delete(id)
+  }
+  for (const node of liveInlineNodes.values()) nodeByID.set(node.id, node)
+  priorInlineNodesRef.current = liveInlineNodes
+  const inlineParentCrumbs = (ownerID: number): Crumb[] => {
+    if (!current || ownerID === current.id) return crumbs
+    const trail: Crumb[] = []
+    const seen = new Set<number>()
+    let id = ownerID
+    while (id !== current.id && !seen.has(id)) {
+      seen.add(id)
+      const branch = inlineSnapshot.branches.find(entry => entry.ownerID === id)
+      if (!branch) return crumbs
+      trail.unshift({ id, name: branch.name || nodeByID.get(id)?.name || String(id) })
+      id = branch.parentID
+    }
+    return id === current.id ? [...crumbs, ...trail] : crumbs
+  }
+  const inlineCrumbsForItem = (item: XDriveFileExplorerItem) =>
+    inlineParentCrumbs(inlineOwnerByNodeID.get(Number(item.id)) ?? current?.id ?? 0)
+  const inlineMobileBranches = inlineSnapshot.branches.map(branch => {
+    const parentPath = inlineParentCrumbs(branch.ownerID).map(crumb => crumb.name).join('/')
+    const prefix = parentPath ? parentPath + '/' : ''
+    return {
+      ...branch,
+      items: new Map([...branch.items].map(([index, node]) =>
+        [index, xDriveProjectFileExplorerNode(node, prefix)] as const)),
+    }
+  })
+
   const {
     busy: fileOperationBusy,
     canPaste: fileOperationCanPaste,
@@ -657,7 +734,7 @@ export default function WebFileExplorer({
   const openWebNode = (node: Node, item?: XDriveFileExplorerItem) => {
     onOpenFile(
       node,
-      item
+      item && !inlineOwnerByNodeID.has(node.id)
         ? browseContextForItem(item)
         : { kind: 'selection', nodeIDs: [node.id], activeIndex: 0 },
     )
@@ -668,7 +745,9 @@ export default function WebFileExplorer({
     if (!node) return
     onOpenQuickLook(
       node,
-      browseContextForItem(request.item, request.sessionIDs, request.logicalIndex),
+      inlineOwnerByNodeID.has(node.id)
+        ? { kind: 'selection', nodeIDs: [node.id], activeIndex: 0 }
+        : browseContextForItem(request.item, request.sessionIDs, request.logicalIndex),
     )
   }
 
@@ -720,7 +799,7 @@ export default function WebFileExplorer({
 
     const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
-      onOpen: () => { void openItem(item, (opened) => openWebNode(opened, item)) },
+      onOpen: () => { void openItem(item, (opened) => openWebNode(opened, item), inlineCrumbsForItem(item)) },
       onShowContainingFolder: searchState.results !== null
         ? () => { void showItemInContainingFolder(item) }
         : undefined,
@@ -915,6 +994,13 @@ export default function WebFileExplorer({
           requestedDirectoryID={initialDirectoryID}
           items={trashActive ? trash.items : explorerItems}
           virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+          inlineBranches={inlineMobileBranches}
+          onToggleInlineFolder={(item, ownerID, parentIndex) => {
+            inlineStore.toggle(Number(item.id), ownerID, parentIndex, item.name)
+          }}
+          onRetryInlineFolder={ownerID => inlineStore.retry(ownerID)}
+          onInlineViewport={ranges => inlineStore.ensureViewport(ranges)}
+          onClearInline={() => inlineStore.clear()}
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
           trashActive={trashActive}
@@ -929,9 +1015,10 @@ export default function WebFileExplorer({
           pathValue={trashActive ? undefined : pathValue}
           onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
           onRestoreFolder={restoreMobileDirectory}
-          onOpenItem={item => {
+          onOpenItem={(item, ownerID) => {
             if (trashActive) return false
-            return openItem(item, node => openWebNode(node, item))
+            return openItem(item, node => openWebNode(node, item),
+              inlineParentCrumbs(ownerID ?? current?.id ?? 0))
           }}
           onQuickLookItem={trashActive ? undefined : item => {
             void recent.record(Number(item.id))
@@ -1052,7 +1139,10 @@ export default function WebFileExplorer({
           onGroupingChange={trashActive ? undefined : changeGrouping}
           actionFeedback={actionFeedback}
           viewMode={viewMode}
-          onViewModeChange={setViewMode}
+          onViewModeChange={view => {
+            if (view === 'grid') inlineStore.clear()
+            setViewMode(view)
+          }}
           onCreateFolder={onCreateFolder}
           onUpload={openUploadPicker}
           onUploadFolder={openFolderUploadPicker}
