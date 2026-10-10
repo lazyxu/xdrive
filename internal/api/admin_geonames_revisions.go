@@ -122,7 +122,7 @@ func (s *Server) adminRollbackGeoNamesConfig(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames historical configuration is invalid")
 		return
 	}
-	candidate, err := s.loadCurrentGeoNamesResolver(ctx, target.MaxDistanceKM)
+	candidate, err := s.loadGeoNamesResolverForFingerprint(ctx, desired.Fingerprint, target.MaxDistanceKM)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active settings unchanged")
 		return
@@ -139,7 +139,7 @@ func (s *Server) adminRollbackGeoNamesConfig(c *gin.Context) {
 			}
 			return err
 		}
-		if current.Revision != *input.Revision {
+		if current.Revision != *input.Revision || current.Fingerprint != desired.Fingerprint {
 			return errGeoNamesRevisionConflict
 		}
 		if err := recordGeoNamesRevisionTx(tx, current.Revision, current.MaxDistanceKM, "saved"); err != nil {
@@ -181,6 +181,7 @@ func (s *Server) adminRollbackGeoNamesConfig(c *gin.Context) {
 		return
 	}
 	s.GeoNamesRuntime.Swap(candidate)
+	s.SetGeoNamesStartupDataset(desired.Fingerprint)
 	s.GeoNamesAppliedRevision.Store(*input.Revision + 1)
 	s.adminGeoNamesConfig(c)
 }

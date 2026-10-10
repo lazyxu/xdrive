@@ -651,6 +651,7 @@ export type AgentAdminGeoNamesConfig = {
   snapshot_history_known?: boolean
   snapshots?: AgentAdminGeoNamesSnapshot[]
   snapshot_apply_supported?: boolean
+  desired_dataset_fingerprint?: string
   active_dataset_fingerprint?: string
   active_dataset_source?: 'deployment' | 'snapshot'
   active_dataset_persistent?: boolean

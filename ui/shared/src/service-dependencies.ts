@@ -120,6 +120,7 @@ export type XDriveGeoNamesConfig = {
   snapshot_history_known?: boolean
   snapshots?: XDriveGeoNamesSnapshot[]
   snapshot_apply_supported?: boolean
+  desired_dataset_fingerprint?: string
   active_dataset_fingerprint?: string
   active_dataset_source?: 'deployment' | 'snapshot'
   active_dataset_persistent?: boolean

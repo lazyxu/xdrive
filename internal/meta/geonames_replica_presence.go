@@ -9,6 +9,7 @@ type GeoNamesReplicaPresence struct {
 	InstanceID      string    `gorm:"size:64;primaryKey"`
 	Configured      bool      `gorm:"not null"`
 	ResolverVersion string    `gorm:"size:128;not null"`
+	Fingerprint     string    `gorm:"size:64;not null;default:''"`
 	MaxDistanceKM   float64   `gorm:"not null"`
 	AppliedRevision uint64    `gorm:"not null;default:0"`
 	HeartbeatAt     time.Time `gorm:"not null"`

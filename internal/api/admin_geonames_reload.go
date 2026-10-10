@@ -34,6 +34,7 @@ type adminGeoNamesConfigDTO struct {
 	SnapshotRequirement      string                 `json:"snapshot_requirement"`
 	SnapshotHistoryKnown     bool                   `json:"snapshot_history_known"`
 	Snapshots                []geoNamesSnapshotDTO  `json:"snapshots"`
+	DesiredFingerprint       string                 `json:"desired_dataset_fingerprint"`
 	ActiveDatasetFingerprint string                 `json:"active_dataset_fingerprint"`
 	ActiveDatasetSource      string                 `json:"active_dataset_source"`
 	ActiveDatasetPersistent  bool                   `json:"active_dataset_persistent"`
@@ -60,7 +61,8 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 	applyState := "unavailable"
 	if configured {
 		applyState = "pending"
-		if effectiveDistance == desired.MaxDistanceKM && effectiveRevision == desired.Revision {
+		if effectiveDistance == desired.MaxDistanceKM && effectiveRevision == desired.Revision &&
+			s.currentGeoNamesDatasetFingerprint() == desired.Fingerprint {
 			applyState = "applied"
 		}
 	}
@@ -120,10 +122,12 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 		SnapshotRequirement:      snapshotRequirement,
 		SnapshotHistoryKnown:     snapshotHistoryKnown,
 		Snapshots:                snapshots,
+		DesiredFingerprint:       desired.Fingerprint,
 		ActiveDatasetFingerprint: activeFingerprint,
 		ActiveDatasetSource:      datasetSource,
-		ActiveDatasetPersistent:  activeFingerprint == "",
-		SnapshotApplySupported:   snapshotSupported,
+		ActiveDatasetPersistent: configured && effectiveRevision == desired.Revision &&
+			activeFingerprint == desired.Fingerprint,
+		SnapshotApplySupported: snapshotSupported,
 	})
 }
 
@@ -161,8 +165,8 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "GeoNames settings are unavailable")
 		return
 	}
-	next, err := s.loadCurrentGeoNamesResolver(
-		c.Request.Context(), desired.MaxDistanceKM,
+	next, err := s.loadGeoNamesResolverForFingerprint(
+		c.Request.Context(), desired.Fingerprint, desired.MaxDistanceKM,
 	)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active version retained")
@@ -172,7 +176,17 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 		return
 	}
 	previousVersion := current.Version()
-	changed := next.Version() != previousVersion
+	changed := next.Version() != previousVersion || s.currentGeoNamesDatasetFingerprint() != desired.Fingerprint
+	confirmed, err := geoNamesDesiredSettings(c.Request.Context(), s.DB, s.GeoNamesMaxDistanceKM)
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "GeoNames desired state verification unavailable")
+		return
+	}
+	if confirmed.Revision != desired.Revision || confirmed.MaxDistanceKM != desired.MaxDistanceKM ||
+		confirmed.Fingerprint != desired.Fingerprint {
+		fail(c, http.StatusConflict, "GeoNames desired state changed; refresh and retry")
+		return
+	}
 	// Persist a no-secret admin audit BEFORE changing the live pointer. Without
 	// a working audit database, the reload is not authorized to take effect.
 	if err := recordAuditTx(s.DB.WithContext(c.Request.Context()), auditEventFromContext(
@@ -186,6 +200,7 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 	if changed {
 		s.GeoNamesRuntime.Swap(next)
 	}
+	s.SetGeoNamesStartupDataset(desired.Fingerprint)
 	s.GeoNamesAppliedRevision.Store(desired.Revision)
 	c.JSON(http.StatusOK, gin.H{
 		"applied": true, "changed": changed, "previous_version": previousVersion,

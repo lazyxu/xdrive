@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
@@ -17,9 +18,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-// GeoNames data-file activation in this phase is intentionally volatile and
-// scoped to the responding Server process. Startup always loads the trusted
-// deployment mount; a future phase will persist/coordinate dataset selection.
+// GeoNames data-file activation is local to the responding Server. Its desired
+// content address is persisted with the global GeoNames configuration revision.
+// Each replica separately verifies bytes before it can acknowledge activation.
 type geoNamesActiveDataset struct {
 	Fingerprint string
 }
@@ -90,16 +91,43 @@ func (s *Server) verifiedGeoNamesSnapshotResolver(
 	return candidate, nil
 }
 
-// All existing radius/edit/reload/reconcile handlers use this helper. After a
-// temporary local snapshot activation, a later radius edit must NOT silently
-// switch back to the unrelated deployment dataset.
-func (s *Server) loadCurrentGeoNamesResolver(
-	ctx context.Context, radius float64,
+// A candidate always comes from the recorded content address or the trusted
+// deployment mount, never from a renderer-provided directory.
+func (s *Server) loadGeoNamesResolverForFingerprint(
+	ctx context.Context, fingerprint string, radius float64,
 ) (*photointelligence.GeoNamesResolver, error) {
-	if fingerprint := s.currentGeoNamesDatasetFingerprint(); fingerprint != "" {
+	if fingerprint != "" {
 		return s.verifiedGeoNamesSnapshotResolver(ctx, fingerprint, radius)
 	}
 	return photointelligence.LoadGeoNamesResolver(s.GeoNamesDataDir, radius)
+}
+
+// Preserve the current-runtime loader for compatibility with existing callers.
+func (s *Server) loadCurrentGeoNamesResolver(
+	ctx context.Context, radius float64,
+) (*photointelligence.GeoNamesResolver, error) {
+	return s.loadGeoNamesResolverForFingerprint(ctx, s.currentGeoNamesDatasetFingerprint(), radius)
+}
+
+// Only the verified, selected fingerprint is attached to the running process.
+func (s *Server) SetGeoNamesStartupDataset(fingerprint string) {
+	if s == nil {
+		return
+	}
+	if fingerprint == "" {
+		s.geoNamesActiveDataset.Store(nil)
+	} else {
+		s.geoNamesActiveDataset.Store(&geoNamesActiveDataset{Fingerprint: fingerprint})
+	}
+}
+
+// Before constructing the Server, bootstrap can verify a persisted selected
+// archive via the same content-address and immutable-index validation path.
+func GeoNamesStartupVerifiedSnapshot(
+	ctx context.Context, db *gorm.DB, deploymentDir, archiveDir, fingerprint string, radius float64,
+) (*photointelligence.GeoNamesResolver, error) {
+	s := &Server{DB: db, GeoNamesDataDir: deploymentDir, GeoNamesSnapshotDir: archiveDir}
+	return s.verifiedGeoNamesSnapshotResolver(ctx, fingerprint, radius)
 }
 
 func (s *Server) adminApplyGeoNamesDatasetSnapshot(c *gin.Context) {
@@ -168,8 +196,9 @@ func (s *Server) adminApplyGeoNamesDatasetSnapshot(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "GeoNames revision verification unavailable")
 		return
 	}
-	if confirmed.Revision != desired.Revision || confirmed.MaxDistanceKM != desired.MaxDistanceKM {
-		fail(c, http.StatusConflict, "GeoNames desired radius changed during validation")
+	if confirmed.Revision != desired.Revision || confirmed.MaxDistanceKM != desired.MaxDistanceKM ||
+		confirmed.Fingerprint != desired.Fingerprint {
+		fail(c, http.StatusConflict, "GeoNames desired configuration changed during validation")
 		return
 	}
 	targetFingerprint := ""
@@ -178,9 +207,9 @@ func (s *Server) adminApplyGeoNamesDatasetSnapshot(c *gin.Context) {
 	}
 	previousVersion := current.Version()
 	changed := previousVersion != candidate.Version() || input.ExpectedFingerprint != targetFingerprint
-	// Recheck the committed desired radius under the same pessimistic row
-	// lock as administrator radius edits. An audit must not authorize apply
-	// against an already replaced configuration.
+	nextRevision := desired.Revision + 1
+	// The desired content address and audit must commit together before any
+	// runtime swap. Unconfigured replicas are never falsely acknowledged.
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row meta.AdminGeoNamesSetting
 		readErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -188,40 +217,70 @@ func (s *Server) adminApplyGeoNamesDatasetSnapshot(c *gin.Context) {
 		if readErr != nil && !errors.Is(readErr, gorm.ErrRecordNotFound) {
 			return readErr
 		}
-		if (desired.Revision == 0 && readErr == nil) ||
-			(desired.Revision != 0 && (readErr != nil ||
-				row.Revision != desired.Revision || row.MaxDistanceKM != desired.MaxDistanceKM)) {
+		exists := readErr == nil
+		if (exists && (row.Revision != desired.Revision ||
+			row.MaxDistanceKM != desired.MaxDistanceKM || row.Fingerprint != desired.Fingerprint)) ||
+			(!exists && desired.Revision != 0) {
 			return errGeoNamesRevisionConflict
 		}
+		if exists {
+			write := tx.Model(&meta.AdminGeoNamesSetting{}).
+				Where("name = ? AND revision = ?", geoNamesSettingName, row.Revision).
+				Updates(map[string]any{
+					"fingerprint": targetFingerprint,
+					"revision":    nextRevision,
+					"updated_at":  time.Now().UTC(),
+				})
+			if write.Error != nil {
+				return write.Error
+			}
+			if write.RowsAffected != 1 {
+				return errGeoNamesRevisionConflict
+			}
+		} else {
+			write := tx.Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&meta.AdminGeoNamesSetting{
+					Name: geoNamesSettingName, MaxDistanceKM: desired.MaxDistanceKM,
+					Fingerprint: targetFingerprint, Revision: nextRevision,
+				})
+			if write.Error != nil {
+				return write.Error
+			}
+			if write.RowsAffected != 1 {
+				return errGeoNamesRevisionConflict
+			}
+		}
+		if err := recordGeoNamesRevisionTx(tx, desired.Revision, desired.MaxDistanceKM, desired.Source); err != nil {
+			return err
+		}
+		if err := recordGeoNamesRevisionTx(tx, nextRevision, desired.MaxDistanceKM, "saved"); err != nil {
+			return err
+		}
 		return recordAuditTx(tx, auditEventFromContext(
-			c, "admin.service.geonames.dataset_apply_local", "service", "geonames",
-			"GeoNames 数据集当前实例临时应用", auditpkg.ResultSuccess,
+			c, "admin.service.geonames.dataset_select", "service", geoNamesSettingName,
+			"GeoNames 数据集持久目标配置与当前实例热应用", auditpkg.ResultSuccess,
 			map[string]any{
 				"target_fingerprint":   targetFingerprint,
-				"previous_fingerprint": input.ExpectedFingerprint,
+				"previous_fingerprint": desired.Fingerprint,
 				"previous_version":     previousVersion,
 				"next_version":         candidate.Version(),
-				"revision":             desired.Revision,
-				"persistent":           false,
+				"revision":             nextRevision,
+				"persistent":           true,
 				"changed":              changed,
 			},
 		))
 	})
 	if errors.Is(err, errGeoNamesRevisionConflict) {
-		fail(c, http.StatusConflict, "GeoNames desired radius changed; refresh and retry")
+		fail(c, http.StatusConflict, "GeoNames desired revision changed; refresh and retry")
 		return
 	}
 	if err != nil {
-		fail(c, http.StatusServiceUnavailable, "GeoNames dataset apply audit is unavailable; active index preserved")
+		fail(c, http.StatusServiceUnavailable, "GeoNames dataset preference or audit could not be persisted; active index preserved")
 		return
 	}
 	// Pinned in-flight PlaceRunner snapshots remain valid after atomic swap.
 	s.GeoNamesRuntime.Swap(candidate)
-	if targetFingerprint == "" {
-		s.geoNamesActiveDataset.Store(nil)
-	} else {
-		s.geoNamesActiveDataset.Store(&geoNamesActiveDataset{Fingerprint: targetFingerprint})
-	}
-	s.GeoNamesAppliedRevision.Store(desired.Revision)
+	s.SetGeoNamesStartupDataset(targetFingerprint)
+	s.GeoNamesAppliedRevision.Store(nextRevision)
 	s.adminGeoNamesConfig(c)
 }

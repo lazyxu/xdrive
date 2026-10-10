@@ -40,6 +40,14 @@ func TestGeoNamesReplicaSummaryOnlyTrustsMatchingObservedRevisionAndDataset(t *t
 	}
 	check("no heartbeats", nil, false, "unavailable", 0, false)
 	check("two verified replicas", []meta.GeoNamesReplicaPresence{good, good2}, false, "applied", 2, true)
+	// Equal radius/revision/version alone cannot acknowledge an archived
+	// desired dataset unless the instance reports the exact fingerprint.
+	archived := desired
+	archived.Fingerprint = strings.Repeat("a", 64)
+	wrong := summarizeGeoNamesReplicas(archived, []meta.GeoNamesReplicaPresence{good, good2}, false)
+	if wrong.State != "pending" || wrong.AppliedInstances != 0 {
+		t.Fatalf("archive provenance wrongly marked applied: %+v", wrong)
+	}
 
 	stale := good2
 	stale.AppliedRevision = 1

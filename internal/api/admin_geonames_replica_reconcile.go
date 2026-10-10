@@ -10,8 +10,8 @@ import (
 
 const geoNamesReplicaReconcileInterval = 30 * time.Second
 
-// StartGeoNamesReplicaReconciliation observes only the persisted matching
-// radius. Dataset paths remain deployment-owned and cannot be changed here.
+// Each replica reconciles persisted radius and content-addressed dataset;
+// actual bytes must pass integrity checks before a revision is acknowledged.
 // Every instance validates and publishes its own resolver; no fleet success
 // or managed dataset-file rollout is implied.
 func (s *Server) StartGeoNamesReplicaReconciliation(ctx context.Context) {
@@ -54,7 +54,8 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 	if s.GeoNamesRuntime.Snapshot() == nil {
 		return nil
 	}
-	if s.GeoNamesRuntime.MaxDistanceKM() == desired.MaxDistanceKM {
+	if s.GeoNamesRuntime.MaxDistanceKM() == desired.MaxDistanceKM &&
+		s.currentGeoNamesDatasetFingerprint() == desired.Fingerprint {
 		// A newer audit revision can intentionally carry the same radius.
 		// This instance actually has the desired immutable resolver settings,
 		// so acknowledge the revision without an unnecessary full rebuild.
@@ -64,8 +65,8 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 
 	// Build completely before publication. Failure leaves the last-good
 	// immutable index and in-flight PlaceRunner batches untouched.
-	candidate, err := s.loadCurrentGeoNamesResolver(
-		ctx, desired.MaxDistanceKM,
+	candidate, err := s.loadGeoNamesResolverForFingerprint(
+		ctx, desired.Fingerprint, desired.MaxDistanceKM,
 	)
 	if err != nil {
 		return fmt.Errorf("validate GeoNames replica dataset: %w", err)
@@ -81,10 +82,12 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 		return fmt.Errorf("confirm committed GeoNames settings: %w", err)
 	}
 	if confirmed.Revision != desired.Revision ||
-		confirmed.MaxDistanceKM != desired.MaxDistanceKM {
+		confirmed.MaxDistanceKM != desired.MaxDistanceKM ||
+		confirmed.Fingerprint != desired.Fingerprint {
 		return nil
 	}
 	s.GeoNamesRuntime.Swap(candidate)
+	s.SetGeoNamesStartupDataset(confirmed.Fingerprint)
 	s.GeoNamesAppliedRevision.Store(confirmed.Revision)
 	slog.Info("geonames_replica_radius_applied",
 		"revision", confirmed.Revision,

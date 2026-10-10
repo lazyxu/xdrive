@@ -474,6 +474,7 @@ type AdminGeoNamesConfig struct {
 	SnapshotHistoryKnown     bool                        `json:"snapshot_history_known"`
 	Snapshots                []AdminGeoNamesSnapshot     `json:"snapshots"`
 	SnapshotApplySupported   bool                        `json:"snapshot_apply_supported"`
+	DesiredFingerprint       string                      `json:"desired_dataset_fingerprint"`
 	ActiveDatasetFingerprint string                      `json:"active_dataset_fingerprint"`
 	ActiveDatasetSource      string                      `json:"active_dataset_source"`
 	ActiveDatasetPersistent  bool                        `json:"active_dataset_persistent"`

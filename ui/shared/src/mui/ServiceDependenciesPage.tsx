@@ -395,7 +395,8 @@ export function XDriveServiceDependenciesPage({
   }
 
   const applyGeoNamesDataset = async () => {
-    if (!geoNamesConfig || !geoNamesDatasetTarget || !source.applyGeoNamesDataset || geoNamesBusy ||
+    if (!geoNamesConfig || geoNamesConfig.desired_dataset_fingerprint === undefined ||
+        !geoNamesDatasetTarget || !source.applyGeoNamesDataset || geoNamesBusy ||
         (!geoNamesConfig.snapshot_apply_supported && geoNamesDatasetTarget !== 'deployment')) return
     const epoch = ++geoNamesEpochRef.current
     setGeoNamesBusy(true)
@@ -411,15 +412,16 @@ export function XDriveServiceDependenciesPage({
       if (epoch !== geoNamesEpochRef.current) return
       const expected = geoNamesDatasetTarget === 'deployment' ? '' : geoNamesDatasetTarget
       if (next.active_dataset_fingerprint !== expected ||
-          next.active_dataset_persistent !== (geoNamesDatasetTarget === 'deployment')) {
+          next.desired_dataset_fingerprint !== expected || next.active_dataset_persistent !== true ||
+          next.apply_state !== 'applied') {
         throw new Error('GeoNames 数据集未能确认当前 Server 实际热加载状态。')
       }
       setGeoNamesConfig(next)
       setGeoNamesDraftDistance(String(next.max_distance_km))
       setGeoNamesDatasetTarget('')
       setGeoNamesNotice(geoNamesDatasetTarget === 'deployment'
-        ? '当前 Server 已验证并恢复部署数据集；重启后继续使用部署挂载，其他实例不受影响。'
-        : '已重新验证数据集指纹、审计并热应用到当前 Server。运行中地名解析保持旧快照；重启后恢复部署挂载，其他 Server 不受此操作影响。')
+        ? '已持久保存部署数据源为目标，当前实例校验后热生效；其他实例仍需分别确认。'
+        : '已持久保存归档指纹并热应用到当前实例；重启会重新验证快照完整性，缺失时保持待生效，其他实例仍需单独校验。')
       const latest = await source.load()
       if (epoch === geoNamesEpochRef.current) setSnapshot(latest)
     } catch (err) {
@@ -1005,17 +1007,24 @@ export function XDriveServiceDependenciesPage({
                       <Typography variant="body2" color="text.secondary">
                         只对已挂载的受信任 GeoNames 三文件进行限额复制和完整索引校验，
                         保存为本 Server 可读取的历史快照。创建快照不会切换当前索引；
-                        在线上传、跨实例文件分发和从历史文件恢复仍待后续安全控制。
+                        在线上传及跨实例文件分发仍待后续安全控制；历史快照可经验证后选为持久化目标。
                       </Typography>
                       {geoNamesConfig?.active_dataset_source && (
                         <Typography variant="body2" color="text.secondary">
-                          当前 Server 数据来源：{geoNamesConfig.active_dataset_source === 'snapshot'
+                          当前 Server 实际数据来源：{geoNamesConfig.active_dataset_source === 'snapshot'
                             ? '历史快照' : '部署只读挂载'}
                           {geoNamesConfig.active_dataset_fingerprint
                             ? ` · 指纹 ${geoNamesConfig.active_dataset_fingerprint.slice(0, 16)}…` : ''}
-                          {' · '}{geoNamesConfig.active_dataset_source === 'snapshot'
-                            ? '仅当前进程临时生效，重启后恢复部署数据集'
-                            : '部署默认数据集，重启后保持'}
+                          {' · '}{geoNamesConfig.active_dataset_persistent
+                            ? '已匹配持久化目标；重启后重新校验' : '与期望配置不一致，等待本实例校验应用'}
+                        </Typography>
+                      )}
+                      {geoNamesConfig?.desired_dataset_fingerprint !== undefined && (
+                        <Typography variant="body2" color={geoNamesConfig.apply_state === 'applied' ? 'text.secondary' : 'warning.main'}>
+                          期望版本：{geoNamesConfig.desired_dataset_fingerprint
+                            ? '已存档指纹 ' + geoNamesConfig.desired_dataset_fingerprint.slice(0, 16) + '…' : '部署只读挂载'}
+                          {' · '}当前实例：{geoNamesConfig.apply_state === 'applied' ? '已校验生效' : '待验证或未生效'}
+                          {' · '}重启重新校验，归档缺失时不得标记为已生效。
                         </Typography>
                       )}
                       <Button variant="outlined" size="small"
@@ -1041,7 +1050,8 @@ export function XDriveServiceDependenciesPage({
                           <Typography variant="caption" fontWeight={700}>
                             数据集指纹 {entry.fingerprint.slice(0, 16)}…
                             {' · '}{entry.fingerprint === geoNamesConfig?.active_dataset_fingerprint
-                              ? '当前 Server 已临时应用' : '已暂存，未应用'}
+                              ? (geoNamesConfig.active_dataset_persistent ? '当前实例已生效且目标持久化' : '当前实例已生效')
+                              : entry.fingerprint === geoNamesConfig?.desired_dataset_fingerprint ? '目标已保存，本实例待生效' : '已暂存，未应用'}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                             {entry.total_bytes} 字节 · 验证时匹配距离 {entry.checked_radius_km} km
@@ -1051,14 +1061,15 @@ export function XDriveServiceDependenciesPage({
                           </Typography>
                         </Box>
                       ))}
-                      {source.applyGeoNamesDataset && geoNamesConfig?.snapshot_apply_supported && (
+                      {source.applyGeoNamesDataset && geoNamesConfig?.snapshot_apply_supported &&
+                        geoNamesConfig.desired_dataset_fingerprint !== undefined && (
                         <Stack spacing={1}>
                           <TextField select fullWidth size="small"
-                            label="校验并临时应用数据集到当前 Server"
+                            label="校验并持久保存目标版本，应用到当前 Server"
                             value={geoNamesDatasetTarget}
                             onChange={(event) => setGeoNamesDatasetTarget(event.target.value)}
                             disabled={geoNamesBusy}
-                            helperText="不会写入部署数据目录、不会跨实例分发。进程重启会恢复部署数据集。">
+                            helperText="目标与审计持久保存，当前实例热应用；重启需重新验证。不会修改部署目录或跨实例分发。">
                             <MenuItem value="">选择要重新验证并加载的数据源</MenuItem>
                             <MenuItem value="deployment">恢复部署只读数据集</MenuItem>
                             {geoNamesConfig.snapshots?.filter((entry) => entry.locally_present)
@@ -1071,16 +1082,18 @@ export function XDriveServiceDependenciesPage({
                           <Button variant="outlined" size="small"
                             disabled={geoNamesBusy || !geoNamesDatasetTarget ||
                               (geoNamesDatasetTarget === 'deployment'
-                                ? geoNamesConfig.active_dataset_source !== 'snapshot'
-                                : geoNamesDatasetTarget === geoNamesConfig.active_dataset_fingerprint)}
+                                ? geoNamesConfig.active_dataset_source !== 'snapshot' &&
+                                  geoNamesConfig.desired_dataset_fingerprint === ''
+                                : geoNamesDatasetTarget === geoNamesConfig.active_dataset_fingerprint &&
+                                  geoNamesDatasetTarget === geoNamesConfig.desired_dataset_fingerprint)}
                             onClick={() => setGeoNamesDatasetConfirmOpen(true)}>
                             校验并应用到当前 Server
                           </Button>
                           <XDriveConfirmDialog
                             open={geoNamesDatasetConfirmOpen}
-                            title="确认临时热应用 GeoNames 数据集"
-                            description="重新读取并校验目标数据集的真实字节，审计后仅在当前 Server 原子切换。运行中批次保留旧索引；不会修改其他实例，且重启后恢复部署数据目录。"
-                            confirmLabel="确认校验并临时应用"
+                            title="确认持久保存并热应用 GeoNames 数据集"
+                            description="校验目标归档真实内容，在一个事务内保存目标指纹与审计，再热切换当前实例。重启会重新校验；缺失时保持待生效，不代表其他实例已应用。"
+                            confirmLabel="确认保存并热应用"
                             loading={geoNamesBusy}
                             onCancel={() => setGeoNamesDatasetConfirmOpen(false)}
                             onConfirm={() => { void applyGeoNamesDataset() }}
