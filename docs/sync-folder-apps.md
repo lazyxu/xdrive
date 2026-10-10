@@ -65,8 +65,8 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; device mutation guards and spoof tests pending |
-| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; local identity verification P0-C3 and owning-device controls pending |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a run cancellation guard pending exact-head CI #1301; other local Source mutation guards pending |
+| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
@@ -85,17 +85,23 @@ Shared navigation now has two *top-level* destinations, `设备备份` and `远�
 
 ## UI P0-C1 progress: Web and Mobile Web read-only B-scope (merged #1277)
 
-Web now consumes **only** the allowlisted `GET /device-backups` and `GET /device-backups/:sourceID/runs` responses for device/folder names, trusted-safe cloud target, aggregate progress and paginated summary history. No local path or uncontrolled Source DTO enters this presentation, and it contains no mutation controls. The signed-in owner remains scope of both Server endpoints; online status is explicitly unknown until a separate trusted heartbeat feature is complete. For Desktop, the owning Agent does not yet have a safe read IPC; the UI remains a truthful unsupported placeholder until that port is added. NAS Push remains `待支持`. Source mutation protections and true local executor are separate deliverables.
+Web now consumes **only** the allowlisted `GET /device-backups` and `GET /device-backups/:sourceID/runs` responses for device/folder names, trusted-safe cloud target, aggregate progress and paginated summary history. No local path or uncontrolled Source DTO enters this presentation, and it contains no mutation controls. The signed-in owner remains scope of both Server endpoints; online status is explicitly unknown until a separate trusted heartbeat feature is complete. Desktop now uses the same redacted DTO through its separately delivered safe Agent IPC (#1290); this P0-C1 stage alone did not implement Desktop support. NAS Push remains `待支持`. Source mutation protections and true local executor are separate deliverables.
 
 ## UI P0-C2 progress: Desktop read-only Agent IPC (merged #1290)
 
 Desktop reads the same narrow owner-scoped Device Backup DTO as Web/Mobile Web, but through an explicitly authenticated loopback Agent IPC (`device-backup-read` capability). This path passes through Electron Main/Preload, with strict Source ID and run-page bounds. Generic Source/SourceItem/run-failure endpoints are **not** a fallback. The shared presenter isolates overview, history and late responses by account/server datasource identity. Until the configured Agent advertises this read capability, Desktop remains a truthful, non-operational placeholder. This phase adds **no** Root picker/run controls, server mutation authority, heartbeat or uploader; Desktop own-device vs foreign-device action splitting remains future work.
 
-## UI P0-C3 progress: credential-verified own-device identity (proposed; CI pending)
+## UI P0-C3 progress: credential-verified own-device identity (merged #1296; full PR CI green)
 
 Desktop uses the owning Agent's per-Server/account OS-stored device registration and secret, never a caller-supplied renderer device ID. An owner-scoped Server `GET /devices/self` verifies the device's exact ID and enrollment secret, including revocation; it returns only `device_id` and disables caching. No enrollment occurs merely by opening a read-only page. The identity check is separate from the device backup B-scope read API, and does not grant access to a local Root or authorize any Source mutation.
 
 The shared presenter groups "本机" and "其他设备" **only after verified identity matches an owner-scoped device row**. On unavailable Agent capability, missing registration, revoked credentials, failed verification, or account/Server transition, it remains neutral/fully read-only rather than trusting a stale label. The Agent credential, local path, Root ID/fingerprint and per-file details never enter the renderer or Web. Pull and NAS behavior are unchanged. Local-only mutation guards, own-device actions, upload executor, trusted heartbeat, full pagination and real 100k/4GiB E2E are still pending.
+
+## P0-B2a: local-folder Source Run cancellation fencing (proposed; CI pending)
+
+A local-folder Push run's `POST /sources/:id/runs/:runID/cancel` now uses the same device credential, Root ID/fingerprint, owner, Source revision and unrevoked binding admission as the already-protected execution stages. The handler repeats authorization **inside the cancellation write transaction**, acquiring the device lock before Source/Root/run locks to fence a concurrent device revoke or Source revision change. An owner JWT alone, forged device headers, wrong Root, revoked device or stale run revision cannot set `cancel_requested_at` on an active local Push run. Internal cancellation without local proof also fails closed. The existing `local_folder` execution/activation hard-denial remains; **this does not enable any uploader or UI button**.
+
+Server-managed Pull and legacy NAS Source Run cancellation retain their pre-existing owner-scoped behavior. This is **only the cancellation boundary** of P0-B2. Generic local-folder Source creation/update/delete/trigger/unbind and binding-management permissions remain separate unimplemented gaps, and Agent-native explicit cancel with context propagation remains future work.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

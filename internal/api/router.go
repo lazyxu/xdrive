@@ -322,7 +322,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/runs/:runID/commit", s.requireLocalSourceExecutor(), s.commitSourceRun)
 	authed.POST("/sources/:id/runs/:runID/failures", s.requireLocalSourceExecutor(), s.failSourceRunItems)
 	authed.POST("/sources/:id/runs/:runID/progress", s.requireLocalSourceExecutor(), s.progressSourceRun)
-	authed.POST("/sources/:id/runs/:runID/cancel", s.cancelSourceRun)
+	authed.POST("/sources/:id/runs/:runID/cancel", s.requireLocalSourceExecutor(), s.cancelSourceRun)
 	authed.POST("/sources/:id/runs/:runID/heartbeat", s.requireLocalSourceExecutor(), s.heartbeatSourceRun)
 	authed.POST("/sources/:id/runs/:runID/finish", s.requireLocalSourceExecutor(), s.finishSourceRun)
 
