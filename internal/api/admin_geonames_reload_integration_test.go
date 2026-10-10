@@ -48,7 +48,7 @@ func TestAdminGeoNamesReloadValidatesAuditsAndKeepsOldVersionOnFailure(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminGeoNamesSetting{}); err != nil {
 		t.Fatal(err)
 	}
 

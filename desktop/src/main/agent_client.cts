@@ -488,10 +488,20 @@ export type AgentBackgroundTaskControlResult = {
 export type AgentAdminGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
-  source: 'deployment'
+  source: 'environment' | 'saved'
   current_version: string
   max_distance_km: number
+  effective_max_distance_km: number
+  editable: boolean
+  revision: number
+  apply_state: 'applied' | 'pending' | 'unavailable'
+  updated_at?: string
   requires_restart: boolean
+}
+
+export type AgentAdminGeoNamesUpdate = {
+  max_distance_km: number
+  revision: number
 }
 export type AgentAdminGeoNamesReloadResult = {
   applied: boolean
@@ -2767,6 +2777,9 @@ export class AgentIPCClient {
 
   cloudAdminGeoNamesConfig() {
     return this.request<AgentAdminGeoNamesConfig>('GET', '/v1/cloud/admin-geonames')
+  }
+  cloudSetAdminGeoNamesConfig(input: AgentAdminGeoNamesUpdate) {
+    return this.request<AgentAdminGeoNamesConfig>('PUT', '/v1/cloud/admin-geonames', input, 120_000)
   }
   cloudReloadAdminGeoNames(expectedVersion: string) {
     return this.request<AgentAdminGeoNamesReloadResult>(

@@ -66,8 +66,8 @@ func LoadGeoNamesResolver(dir string, maxDistanceKM float64) (*GeoNamesResolver,
 	if maxDistanceKM <= 0 {
 		maxDistanceKM = defaultGeoNamesMaxDistance
 	}
-	if maxDistanceKM > 500 {
-		return nil, fmt.Errorf("GeoNames maximum distance must be <= 500 km")
+	if math.IsNaN(maxDistanceKM) || math.IsInf(maxDistanceKM, 0) || maxDistanceKM > 500 {
+		return nil, fmt.Errorf("GeoNames maximum distance must be finite and <= 500 km")
 	}
 
 	resolver := &GeoNamesResolver{
@@ -173,6 +173,14 @@ func LoadGeoNamesResolver(dir string, maxDistanceKM float64) (*GeoNamesResolver,
 	sum := sha256.Sum256([]byte(versionSeed))
 	resolver.version = geoNamesAlgorithmVersion + ":" + hex.EncodeToString(sum[:])
 	return resolver, nil
+}
+
+// MaxDistanceKM is part of this immutable index snapshot.
+func (r *GeoNamesResolver) MaxDistanceKM() float64 {
+	if r == nil {
+		return 0
+	}
+	return r.maxDistanceKM
 }
 
 func (r *GeoNamesResolver) Name() string {

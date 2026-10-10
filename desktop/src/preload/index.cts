@@ -616,6 +616,8 @@ const agent = Object.freeze({
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
   cloudAdminGeoNamesConfig: () => ipcRenderer.invoke('agent:cloud-admin-geonames'),
+  cloudSetAdminGeoNamesConfig: (input: { revision: number; max_distance_km: number }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-geonames', input),
   cloudReloadAdminGeoNames: (expectedVersion: string) => ipcRenderer.invoke('agent:cloud-reload-admin-geonames', expectedVersion),
   cloudRevealAdminBaiduMapAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-map-ak', revision),
   cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>

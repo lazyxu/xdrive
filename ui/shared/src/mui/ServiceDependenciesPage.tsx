@@ -7,6 +7,7 @@ import type {
   XDriveBaiduMapAKReveal,
   XDriveGeoNamesConfig,
   XDriveGeoNamesReloadResult,
+  XDriveGeoNamesUpdate,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -24,6 +25,7 @@ export type XDriveServiceDependenciesPort = {
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
   loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
+  saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
 }
 
@@ -109,6 +111,7 @@ export function XDriveServiceDependenciesPage({
   const revealEpochRef = useRef(0)
   const geoNamesEpochRef = useRef(0)
   const [geoNamesConfig, setGeoNamesConfig] = useState<XDriveGeoNamesConfig | null>(null)
+  const [geoNamesDraftDistance, setGeoNamesDraftDistance] = useState('')
   const [geoNamesBusy, setGeoNamesBusy] = useState(false)
   const [geoNamesError, setGeoNamesError] = useState('')
   const [geoNamesNotice, setGeoNamesNotice] = useState('')
@@ -139,6 +142,7 @@ export function XDriveServiceDependenciesPage({
     setRevealingAK(false)
     setGeoNamesBusy(false)
     setGeoNamesConfig(null)
+    setGeoNamesDraftDistance('')
     setGeoNamesError('')
     setGeoNamesNotice('')
     setLoading(true)
@@ -161,7 +165,10 @@ export function XDriveServiceDependenciesPage({
     }
     if (source.loadGeoNamesConfig) {
       void source.loadGeoNamesConfig().then((config) => {
-        if (active) setGeoNamesConfig(config)
+        if (active) {
+          setGeoNamesConfig(config)
+          setGeoNamesDraftDistance(String(config.max_distance_km))
+        }
       }).catch(() => {
         if (active) setGeoNamesError('无法读取 GeoNames 管理配置，请检查 Server 或更新客户端。')
       })
@@ -234,6 +241,39 @@ export function XDriveServiceDependenciesPage({
   // This administrator command validates the deployment-mounted dataset and
   // swaps the fully loaded resolver. It does not edit a user sync folder, choose
   // an arbitrary Server filesystem path, or claim online env-variable editing.
+  const saveGeoNamesConfig = async () => {
+    if (!geoNamesConfig?.editable || !source.saveGeoNamesConfig || geoNamesBusy) return
+    const distance = Number(geoNamesDraftDistance)
+    if (!geoNamesDraftDistance.trim() || !Number.isFinite(distance) || distance <= 0 || distance > 500) {
+      setGeoNamesError('匹配距离必须大于 0 且不超过 500 km。')
+      return
+    }
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const updated = await source.saveGeoNamesConfig({
+        revision: geoNamesConfig.revision,
+        max_distance_km: distance,
+      })
+      if (epoch !== geoNamesEpochRef.current) return
+      setGeoNamesConfig(updated)
+      setGeoNamesDraftDistance(String(updated.max_distance_km))
+      setGeoNamesNotice(updated.apply_state === 'applied'
+        ? '已持久化配置并写入审计，当前 Server 新索引立即生效；其他实例可能仍待生效。'
+        : '配置已保存，但当前 Server 尚未确认生效，请校验并热加载。')
+      const next = await source.load()
+      if (epoch === geoNamesEpochRef.current) setSnapshot(next)
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 配置未保存，原索引继续生效。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
+    }
+  }
+
   const reloadGeoNames = async () => {
     if (!geoNamesConfig?.reload_supported || !source.reloadGeoNames || geoNamesBusy) return
     const epoch = ++geoNamesEpochRef.current
@@ -244,7 +284,14 @@ export function XDriveServiceDependenciesPage({
       const result = await source.reloadGeoNames(geoNamesConfig.current_version)
       if (epoch !== geoNamesEpochRef.current) return
       if (!result.applied || !result.current_version) throw new Error('GeoNames 未能完成生效校验。')
-      setGeoNamesConfig((old) => old ? { ...old, current_version: result.current_version } : old)
+      const effective = source.loadGeoNamesConfig ? await source.loadGeoNamesConfig() : null
+      if (epoch !== geoNamesEpochRef.current) return
+      if (effective) {
+        setGeoNamesConfig(effective)
+        setGeoNamesDraftDistance(String(effective.max_distance_km))
+      } else {
+        setGeoNamesConfig((old) => old ? { ...old, current_version: result.current_version } : old)
+      }
       setGeoNamesNotice(result.changed
         ? '已验证并热加载新索引。后续地名任务使用新版本，运行中的任务保持旧快照。'
         : '数据集验证通过，版本未变化，无需替换当前索引。')
@@ -398,31 +445,56 @@ export function XDriveServiceDependenciesPage({
                   <Stack spacing={1.5}>
                     <Typography variant="subtitle2" fontWeight={700}>GeoNames 地名索引</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      数据目录与匹配距离仍由管理员部署配置提供。本页可以验证只读挂载中的完整数据集，
-                      并将新索引热加载到本实例；不会重启 Server，也不会中断已有地名处理批次。
+                      GeoNames 只负责地名标签，地图仍只使用百度地图。数据文件位置保持受信任的只读部署挂载；
+                      匹配距离可在本页修改并持久化，验证完整索引后在当前 Server 热生效，运行中批次不受影响。
                     </Typography>
                     {geoNamesConfig ? (
-                      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
-                        {geoNamesConfig.dataset_configured ? '索引已加载' : '未加载地名索引'}
-                        {' · '}当前生效版本：{geoNamesConfig.current_version || '无'}
-                        {' · '}匹配距离：{geoNamesConfig.max_distance_km} km
-                        {' · '}数据来源：部署挂载
-                      </Typography>
+                      <Stack spacing={1}>
+                        <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                          {geoNamesConfig.dataset_configured ? '索引已加载' : '未加载地名索引'}
+                          {' · '}当前索引版本：{geoNamesConfig.current_version || '无'}
+                          {' · '}配置来源：{geoNamesConfig.source === 'saved' ? '管理员持久化设置' : '部署环境'}
+                          {' · '}修订号：{geoNamesConfig.revision}
+                        </Typography>
+                        <Typography variant="body2" color={geoNamesConfig.apply_state === 'pending' ? 'warning.main' : 'text.secondary'}>
+                          期望匹配距离：{geoNamesConfig.max_distance_km} km
+                          {' · '}当前实例实际距离：{geoNamesConfig.effective_max_distance_km || '不可用'} km
+                          {' · '}{geoNamesConfig.apply_state === 'applied'
+                            ? '当前实例已生效（不代表其他实例）'
+                            : geoNamesConfig.apply_state === 'pending' ? '当前实例待生效' : '索引不可用'}
+                        </Typography>
+                      </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary">
-                        当前 Server/Agent 暂不支持 GeoNames 在线重载，或尚未获取配置状态。
+                        当前 Server/Agent 尚未提供 GeoNames 配置状态，请检查版本或连接。
                       </Typography>
                     )}
-                    <Box>
+                    <TextField
+                      label="地名匹配最大距离（km）"
+                      size="small"
+                      type="number"
+                      fullWidth
+                      value={geoNamesDraftDistance}
+                      onChange={(event) => setGeoNamesDraftDistance(event.target.value)}
+                      inputProps={{ min: 0.001, max: 500, step: 'any' }}
+                      disabled={geoNamesBusy || !geoNamesConfig?.editable || !source.saveGeoNamesConfig}
+                      helperText="范围 (0, 500] km；保存会验证只读数据集并立即应用到当前实例，不改变百度地图。"
+                    />
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Button variant="contained" size="small"
+                        disabled={geoNamesBusy || !geoNamesConfig?.editable || !source.saveGeoNamesConfig}
+                        onClick={() => { void saveGeoNamesConfig() }}>
+                        {geoNamesBusy ? '正在验证并保存…' : '保存距离并应用'}
+                      </Button>
                       <Button variant="outlined" size="small"
                         disabled={geoNamesBusy || !geoNamesConfig?.reload_supported || !source.reloadGeoNames}
                         onClick={() => { void reloadGeoNames() }}>
                         {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
                       </Button>
-                    </Box>
+                    </Stack>
                     {!geoNamesConfig?.reload_supported && (
                       <Typography variant="caption" color="text.secondary">
-                        需先部署只读 GeoNames 数据集，并由 Server 加载初始索引；本阶段不支持从浏览器修改宿主路径。
+                        需先部署只读 GeoNames 数据集并加载初始索引。本页不提供任意宿主路径修改，也不宣称所有 Server 实例已同时生效。
                       </Typography>
                     )}
                     {geoNamesError && <XDriveStatusAlert tone="bad">{geoNamesError}</XDriveStatusAlert>}

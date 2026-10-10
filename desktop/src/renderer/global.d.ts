@@ -68,6 +68,7 @@ import type {
   XDriveServiceDependenciesSnapshot,
   XDriveBaiduMapAdminConfig,
   XDriveGeoNamesConfig,
+  XDriveGeoNamesUpdate,
   XDriveGeoNamesReloadResult,
   XDriveBaiduMapAKReveal,
   XDriveBaiduMapAdminUpdate,
@@ -770,6 +771,7 @@ declare global {
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudAdminGeoNamesConfig: () => Promise<DesktopResult<XDriveGeoNamesConfig>>
+        cloudSetAdminGeoNamesConfig: (input: XDriveGeoNamesUpdate) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudReloadAdminGeoNames: (expectedVersion: string) => Promise<DesktopResult<XDriveGeoNamesReloadResult>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
         cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>

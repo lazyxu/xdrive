@@ -311,12 +311,22 @@ type ServiceDependency struct {
 }
 
 type AdminGeoNamesConfig struct {
-	DatasetConfigured bool    `json:"dataset_configured"`
-	ReloadSupported   bool    `json:"reload_supported"`
-	Source            string  `json:"source"`
-	CurrentVersion    string  `json:"current_version"`
-	MaxDistanceKM     float64 `json:"max_distance_km"`
-	RequiresRestart   bool    `json:"requires_restart"`
+	DatasetConfigured bool       `json:"dataset_configured"`
+	ReloadSupported   bool       `json:"reload_supported"`
+	Source            string     `json:"source"`
+	CurrentVersion    string     `json:"current_version"`
+	MaxDistanceKM     float64    `json:"max_distance_km"`
+	RequiresRestart   bool       `json:"requires_restart"`
+	Editable          bool       `json:"editable"`
+	Revision          uint64     `json:"revision"`
+	EffectiveDistance float64    `json:"effective_max_distance_km"`
+	ApplyState        string     `json:"apply_state"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+}
+
+type AdminGeoNamesUpdate struct {
+	Revision      uint64  `json:"revision"`
+	MaxDistanceKM float64 `json:"max_distance_km"`
 }
 type AdminGeoNamesReloadResult struct {
 	Applied         bool   `json:"applied"`
@@ -331,6 +341,12 @@ func (c *Client) AdminGeoNamesConfig(ctx context.Context) (AdminGeoNamesConfig, 
 	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/geonames", nil, &out)
 	return out, err
 }
+func (c *Client) UpdateAdminGeoNames(ctx context.Context, input AdminGeoNamesUpdate) (AdminGeoNamesConfig, error) {
+	var out AdminGeoNamesConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/geonames", input, &out)
+	return out, err
+}
+
 func (c *Client) ReloadAdminGeoNames(ctx context.Context, expectedVersion string) (AdminGeoNamesReloadResult, error) {
 	var out AdminGeoNamesReloadResult
 	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/reload", map[string]string{"expected_version": expectedVersion}, &out)

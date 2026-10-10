@@ -599,6 +599,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
+	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
@@ -1803,6 +1804,7 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 
 type desktopIPCAdminGeoNamesController interface {
 	CloudAdminGeoNamesConfig(context.Context) (client.AdminGeoNamesConfig, error)
+	CloudSetAdminGeoNamesConfig(context.Context, client.AdminGeoNamesUpdate) (client.AdminGeoNamesConfig, error)
 	CloudReloadAdminGeoNames(context.Context, string) (client.AdminGeoNamesReloadResult, error)
 }
 
@@ -1819,6 +1821,38 @@ func (h *desktopIPCHandler) cloudAdminGeoNames(w http.ResponseWriter, r *http.Re
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
+func (h *desktopIPCHandler) cloudSetAdminGeoNames(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_unavailable", "GeoNames management is unsupported")
+		return
+	}
+	var input struct {
+		Revision      *uint64  `json:"revision"`
+		MaxDistanceKM *float64 `json:"max_distance_km"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.MaxDistanceKM == nil ||
+		!validGeoNamesIPCMaxDistance(*input.MaxDistanceKM) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_setting", "invalid radius or revision")
+		return
+	}
+	result, err := provider.CloudSetAdminGeoNamesConfig(r.Context(), client.AdminGeoNamesUpdate{
+		Revision: *input.Revision, MaxDistanceKM: *input.MaxDistanceKM,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func validGeoNamesIPCMaxDistance(value float64) bool {
+	return value > 0 && value <= 500
+}
+
 func (h *desktopIPCHandler) cloudReloadAdminGeoNames(w http.ResponseWriter, r *http.Request) {
 	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesController)
 	if !ok {

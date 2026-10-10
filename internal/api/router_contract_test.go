@@ -243,6 +243,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/users", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/geonames", suite: "admin"},
+		{method: "PUT", path: "/api/v1/admin/services/geonames", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/geonames/reload", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/baidu-map", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/baidu-map", suite: "admin"},

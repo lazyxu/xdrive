@@ -84,6 +84,7 @@ import {
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
   type AgentAdminGeoNamesConfig,
+  type AgentAdminGeoNamesUpdate,
   type AgentAdminGeoNamesReloadResult,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
@@ -4278,6 +4279,22 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')
     return requireAgentClient().cloudAdminGeoNamesConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-geonames', (_event, input: unknown) => runAgentAction<AgentAdminGeoNamesConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new AgentIPCError('invalid_input', 0, 'GeoNames settings must be an object.')
+    }
+    const data = input as Partial<AgentAdminGeoNamesUpdate>
+    if (typeof data.revision !== 'number' || !Number.isSafeInteger(data.revision) || data.revision < 0 ||
+        typeof data.max_distance_km !== 'number' || !Number.isFinite(data.max_distance_km) ||
+        data.max_distance_km <= 0 || data.max_distance_km > 500) {
+      throw new AgentIPCError('invalid_input', 0, 'GeoNames radius or revision is invalid.')
+    }
+    return requireAgentClient().cloudSetAdminGeoNamesConfig({
+      revision: data.revision, max_distance_km: data.max_distance_km,
+    })
   }, false))
   ipcMain.handle('agent:cloud-reload-admin-geonames', (_event, version: unknown) => runAgentAction<AgentAdminGeoNamesReloadResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
