@@ -753,6 +753,9 @@ type Scheduler struct {
 
 	metrics metrics
 	wg      sync.WaitGroup
+
+	// Closed only when all workers have exited and shutdown bookkeeping is done.
+	shutdownDone chan struct{}
 }
 
 func NewScheduler(parent context.Context, cfg Config) *Scheduler {
@@ -780,6 +783,7 @@ func NewScheduler(parent context.Context, cfg Config) *Scheduler {
 		leaseRetryDelay: cfg.LeaseRetryDelay,
 		entries:         make(map[Identity]*taskEntry),
 		queues:          make(map[ResourceClass]*resourceQueue),
+		shutdownDone:    make(chan struct{}),
 	}
 	s.metrics.running = make(map[ResourceClass]int)
 	for resource, capacity := range cfg.Capacity {
@@ -987,10 +991,13 @@ func (s *Scheduler) shutdown(cause error) {
 	}
 	s.mu.Lock()
 	if s.closed {
+		done := s.shutdownDone
 		s.mu.Unlock()
+		<-done // Joining callers must not outlive a running task's finalizer.
 		return
 	}
 	s.closed = true
+	defer close(s.shutdownDone)
 	queued := make([]*taskEntry, 0)
 	runningCancels := make([]context.CancelCauseFunc, 0)
 	for key, entry := range s.entries {
