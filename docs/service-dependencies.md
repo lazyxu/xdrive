@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status:** Shared Web/Desktop **服务与依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.
+**Status:** Shared Web/Desktop **服务与依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Independent Pull Worker liveness is now observable through expiring PostgreSQL heartbeats (P1-D1), while its settings remain deployment-owned. Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.
 
 ### Contract
 
@@ -10,7 +10,7 @@
 - Response: `{ checked_at, services: [{ id, group, label, status, detail, version?, model? }] }`.
 - States are intentionally distinct: `ready` means a real probe succeeded; `unavailable` means configured/expected but the probe failed; `disabled` means no analyzer/resolver is configured; `unknown` means a store implementation lacks a readiness probe; `planned` means integration or probing is not implemented.
 - PostgreSQL checks `PingContext` with bounded deadline. Storage reuses `Store.Ready(ctx)` when implemented. Face, visual/OCR, and semantic analyzers call existing local `Info(ctx)` contracts, without exposing sockets, secrets, or raw errors. GeoNames reports the actually loaded resolver and version.
-- Video Media Worker remains `planned`. Baidu Server Static Map v2 is the **only supported map provider**: `disabled` without AK/opt-in; `unknown` (configured but not actively probed) when enabled; maps stay unavailable rather than rendering an alternate map. GeoNames label resolution is independent.
+- The standalone background Pull Worker reports `ready` only with a fresh database heartbeat, `unavailable` for a recently expired heartbeat, and `unknown` when no worker has ever reported or the database read fails. Heartbeat health is not a statement that individual sync runs succeed. Video Media Worker remains `planned`. Baidu Server Static Map v2 is the **only supported map provider**: `disabled` without AK/opt-in; `unknown` (configured but not actively probed) when enabled; maps stay unavailable rather than rendering an alternate map. GeoNames label resolution is independent.
 - Probes run on explicit page load/refresh, are bounded by a shared two-second context, and have no side effects. The page does not poll when hidden.
 - Backend permission, not sidebar visibility, is the authority. Desktop forwards the existing session via Agent IPC; it does not send user credentials into the Renderer.
 
@@ -45,7 +45,8 @@ This page must **not** treat a service's configuration form, process presence an
 | Creative analyzer (cutout/erase/movie/collage) | Same optional Photo Intelligence runtime | Controlled deployment; independent model/info probe |
 | Media Worker / FFmpeg | Not yet integrated | Planned; **no enable button** or fabricated status |
 | PostgreSQL and file storage | Deployment volumes/database connection and backup policy | Restricted maintenance / controlled restart, not changed by web admin Server self-operation |
-| Caddy/HTTPS and background Worker | Deployment parameters/Host Manager when explicitly supported | Controlled redeploy/restart; do not mount or expose Docker socket |
+| Background Pull Worker | Deployment-owned worker polling, scheduling and concurrency parameters | Fresh PostgreSQL heartbeat is visible; configuration remains deployment-only and restart-controlled, not editable from this page |
+| Caddy/HTTPS | Deployment parameters/Host Manager when explicitly supported | Controlled redeploy/restart; do not mount or expose Docker socket |
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
 
@@ -71,7 +72,7 @@ Backend-only control plane: append immutable global+four-kind policy revisions t
 
 This restores only automatic **task admission policy**, not analyzer models, container images/sockets, model/CPU/RAM limits, running tasks or user connections. The back end was merged as #1280 after full CI; the Web/Desktop revision selector, confirmation and transport are the separate P1-C3-R2 followup. Existing global/per-kind editors continue working unchanged.
 
-### P1-C3-R2: shared Web/Desktop Photo Intelligence revision rollback (implementation PR)
+### P1-C3-R2: shared Web/Desktop Photo Intelligence revision rollback (merged #1283)
 
 Add typed GET/POST history and rollback transport through Web REST, Go Client, Desktop Agent HTTP IPC, Electron Main/Preload and the canonical shared MUI **服务与依赖** page. The administrator chooses an immutable historical revision showing its global setting and all four effective admission flags, reviews the exact scope in an explicit confirmation dialog, and sends both the current and target revisions. Only on Server-confirmed response is desired/effective configuration and the edit draft updated; the page refreshes revision history after saves/rollbacks, reports unsupported older Server/Agent versions, handles stale 409/errors and discards stale requests on account/view change. The page **does not** claim container/model resource changes, cancellation of in-flight analyses, multi-replica convergence, or rollback of user Sync Folder state. Completion requires exact-head Go/Web/Desktop CI, history transport regression, and source authorization contracts.
 
@@ -127,3 +128,16 @@ Every system-wide dependency in this inventory must ultimately support a truthfu
 - The shared `XDriveStoredCredentialField` (also used by Yike Cookies and Synology DSM password) provides an explicit “显示 / 隐藏” control for the configured AK. Its optional description adapts the stored/environment source; no plaintext enters the replace-AK input.
 - `POST /api/v1/admin/services/baidu-map/reveal` is admin-only, bound to the current config revision, and requires a successful metadata-only reveal audit before returning the AK. Response is uncached; the UI hides the value after **30 seconds**, on visibility loss, save/clear, account/source switch and unmount. The ordinary status endpoint still contains no secret.
 - Live Server reads use the effective persisted configuration on every Baidu map request, so rotating, enabling, disabling or clearing the AK needs **no container restart** and does not interrupt file services.
+
+
+### P1-D1: independent Pull Worker heartbeat status (implementation PR)
+
+The standard Compose `worker` service already runs the server binary in standalone `worker` mode. Previously the admin page always reported its separate process status as `unknown`, even if the worker was healthy. This phase adds a narrow, real liveness contract without introducing remote restart or changing per-user Source settings:
+
+- Server startup migrates `xd_source_worker_presence` before the worker starts (Compose depends on a healthy Server). A normal long-running worker publishes a random process-instance ID, current scan/poll intervals and maximum concurrency to PostgreSQL every five seconds, expiring after 20 seconds. The one-shot CLI mode does not register as a persistent worker.
+- Publication runs independently of a long-running Pull cycle. A graceful exit expires the row immediately; a killed/disconnected process ages out via its lease. Old records are pruned when another Worker starts. Errors are logged without preventing the existing pull loop from running.
+- Existing admin-only `GET /api/v1/admin/services` reads actual persisted heartbeats with its two-second request timeout. A fresh heartbeat yields `ready` with the number of live Pull Workers; a recently expired heartbeat yields `unavailable`; no reports or unreadable records yield `unknown`. Records older than a day do not imply a currently configured deployment.
+- The shared Web/Desktop status row requires no independent UI/controller. No hostname, process ID, credentials, per-user Source name/path or raw database error is exposed. Server-internal background scheduler tasks are not conflated with the independent Pull Worker process. No Docker socket or arbitrary host control is added.
+- This is **observability only**, not the final Baidu-style edit/validate/save/apply/rollback controller. Worker polling and concurrency are still deployment-owned, `config_mode=deployment` / `apply_mode=controlled-restart`. A follow-up must implement a restricted configuration owner, versioned desired/effective runtime policy and acknowledgement before enabling any editor. Media Worker/FFmpeg, Caddy, PostgreSQL and storage settings remain separate.
+
+**Validation:** unit test for the exact missing/fresh/expired/retired statuses and PostgreSQL integration test for publisher upsert/expiry and admin reader. Require full exact-head PR CI before merging. No local full Go 1.25 / PostgreSQL suite is claimed in connector-only execution.

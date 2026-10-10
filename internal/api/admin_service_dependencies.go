@@ -44,7 +44,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		{ID: "geonames", Group: "location", Label: "GeoNames 离线地名", Status: "disabled", Detail: "未配置离线地名数据"},
 		{ID: "baidu-map", Group: "location", Label: "百度地图 Server API", Status: "disabled", Detail: "尚未启用百度地图；不使用其他地图底图"},
 		{ID: "photo-creative", Group: "intelligence", Label: "照片创作处理", Status: "disabled", Detail: "未配置抠图、照片电影与拼图分析器"},
-		{ID: "background-worker", Group: "core", Label: "后台 Worker", Status: "unknown", Detail: "当前 Server 未提供独立 Worker 进程健康探针"},
+		{ID: "background-worker", Group: "core", Label: "后台 Worker", Status: "unknown", Detail: "尚未确认独立 Pull Worker 的心跳状态"},
 		{ID: "caddy", Group: "core", Label: "Caddy / HTTPS 网关", Status: "unknown", Detail: "当前 Server 未提供独立网关进程健康探针"},
 	}
 
@@ -162,6 +162,13 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			services[8].Detail = "抠图、照片电影与拼图分析器已连接"
 			services[8].Version = info.PipelineVersion
 			services[8].Model = info.SegmentModel.Name
+		}()
+	}
+	if s.DB != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			services[9].Status, services[9].Detail = s.sourceWorkerServiceStatus(ctx, time.Now().UTC())
 		}()
 	}
 	wg.Wait()
