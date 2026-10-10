@@ -349,6 +349,35 @@ restored records. Completed average speed is preserved verbatim; this is not a
 promise of re-downloading browser-native handoffs.
 
 
+## Desktop folder-tree download cancellation (2026-10-10)
+
+**Status: exact-head CI candidate.** Desktop's Agent-owned cloud folder
+download now binds the existing group transfer root to one real Go
+`context.WithCancel`. Cancelling the group through the already-shipped,
+ID-only Agent IPC `POST /v1/transfers/cancel` interrupts the ongoing
+paged folder scan or file download, instead of changing a UI label only.
+The group can only affect its own request context; other downloads, uploads,
+mount hydration and scheduled synchronization continue.
+
+The Agent's on-disk temporary file is removed if cancellation arrives after
+network response but before the destination file rename. A folder cancellation
+closes remaining queued child tasks without initiating further downloads.
+An already committed child remains completed and yields a `partial` group;
+a group with zero completed children becomes `cancelled`. Directory scans
+that abort with `context.Canceled` are marked cancelled, not failed. Root
+progress reflects zero queued/running children at the terminal acknowledgement.
+
+This phase intentionally does **not** claim archive ZIP extraction,
+Desktop-renderer-orchestrated folder uploads, or browser-native handed-off
+downloads are cancellable. Future phases must provide an owning cancellable
+context and cleanup at each of those boundaries before showing buttons.
+
+Validation: root-owned Go cancel/snapshot unit tests, Desktop IPC and shared
+transfer contract tests, and exact-head full CI. Actual large-folder remote
+abort should be checked on physical Desktop/Agent; the code-level tests are
+not equivalent to that manual observation.
+
+
 ## Web grouped-file uploads: task-ID scoped real cancellation (2026-10-10)
 
 **Status: CI candidate, not yet merged.** Following the merged standalone
