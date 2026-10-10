@@ -1782,3 +1782,96 @@ test('F-iOS27-08A: native-like More keeps real backed sort/group actions and tou
     onGroupingChange: value => groupChanges.push(value),
   } })
 })
+
+
+test('F-iOS27-08B: Recent/Favorites 68px row geometry matches the shared virtual viewport and file-name dividers', async () => {
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const recent = find(h.view, 'data-mobile-files-collection-row', 'recent')
+    assert.equal(recent.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
+    assert.equal(recent.props.sx['&:not(:last-child)::after'].left, 72)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const favorite = find(h.view, 'data-mobile-files-collection-row', 'favorites')
+    assert.equal(favorite.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
+    assert.equal(favorite.props.sx['&:not(:last-child)::after'].left, 72)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'browse').props.onClick() })
+    const cloud = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(cloud)
+    await act(async () => { cloud.props.onClick() })
+    let item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    assert.ok(item)
+    assert.equal(item.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 72)
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '选择')[0]
+    assert.ok(select)
+    await act(async () => { select.props.onClick() })
+    item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 108,
+      'selected circle adds exactly its true 36px slot to the separator inset')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  })
+})
+
+test('F-iOS27-08B: collection ContextMenu and Shift+F10 open same 44px native menu without opening the file', async () => {
+  const actions = []
+  const opens = []
+  let prevented = 0
+  await withView(async h => {
+    // Browse-home locations do not expose an invented collection context.
+    assert.equal(h.view.root.findAll(node => node.props?.['data-mobile-files-collection-row'] !== undefined).length, 0)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const recent = find(h.view, 'data-mobile-files-collection-row', 'recent')
+    assert.equal(recent.props['aria-keyshortcuts'], 'Shift+F10')
+    const rect = { getBoundingClientRect: () => ({ left: 30, top: 60 }) }
+    await act(async () => { recent.props.onKeyDown({
+      key: 'ContextMenu', target: rect, currentTarget: rect, shiftKey: false,
+      preventDefault() { prevented += 1 },
+    }) })
+    let menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    assert.equal(menu.props.open, true)
+    assert.deepEqual(menu.props.anchorPosition, { left: 44, top: 88 })
+    assert.deepEqual(opens, [], 'opening a keyboard menu does not dispatch File Open')
+    for (const option of menu.findAll(node => node.type === 'MenuItem')) {
+      assert.equal(option.props.sx.minHeight, 44)
+    }
+    const download = menu.findAll(node => node.props?.['data-mobile-files-collection-action'] === 'download')[0]
+    assert.ok(download)
+    await act(async () => { download.props.onClick() })
+    assert.deepEqual(actions, [{ id: 2, action: 'download' }])
+    assert.equal(find(h.view, 'data-mobile-files-collection-menu', true).props.open, false)
+
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const favorite = find(h.view, 'data-mobile-files-collection-row', 'favorites')
+    await act(async () => { favorite.props.onKeyDown({
+      key: 'F10', shiftKey: true, target: rect, currentTarget: rect,
+      preventDefault() { prevented += 1 },
+    }) })
+    menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    assert.equal(menu.props.open, true)
+    const unfavorite = menu.findAll(node => node.props?.children === '取消收藏')[0]
+    assert.ok(unfavorite)
+    await act(async () => { unfavorite.props.onClick() })
+    assert.deepEqual(actions.at(-1), { id: 3, action: 'unfavorite' })
+
+    await act(async () => { favorite.props.onKeyDown({
+      key: 'ContextMenu', shiftKey: false, target: {}, currentTarget: rect,
+      preventDefault() { throw Error('nested edit control must retain keyboard ownership') },
+    }) })
+    assert.equal(find(h.view, 'data-mobile-files-collection-menu', true).props.open, false)
+    await act(async () => { favorite.props.onKeyDown({
+      key: 'Enter', shiftKey: false, target: rect, currentTarget: rect,
+      preventDefault() { prevented += 1 },
+    }) })
+    assert.deepEqual(opens, ['favorite:3'], 'ordinary Enter still invokes original backed activation')
+    assert.equal(prevented, 3)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onOpenRecent: async id => { opens.push('recent:' + id); return false },
+    onOpenFavorite: async id => { opens.push('favorite:' + id); return true },
+    onCollectionAction: async (entry, action) => { actions.push({ id: entry.id, action }) },
+    onUnfavorite: async id => { actions.push({ id, action: 'unfavorite' }) },
+  } })
+})

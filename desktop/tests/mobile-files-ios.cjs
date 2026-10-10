@@ -26,7 +26,8 @@ new Function('module', 'exports', 'require', transpiled)(pkg, pkg.exports, modul
   assert.equal(moduleName, '../../ui/shared/src/mui/FileExplorerVirtualSurface')
   return virtualPkg.exports
 })
-const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved } = pkg.exports
+const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved,
+  mobileFilesRowTextInset } = pkg.exports
 
 test('Mobile Files centralizes Apple-reference blue and document palette across views', () => {
   const start = mobileSource.indexOf('const IOS_FILES_ICON_COLORS =')
@@ -348,7 +349,7 @@ test('F-iOS-01A: Mobile-only large-title chrome and grouped iOS surfaces preserv
     assert.ok(mobileSource.includes(`data-mobile-files-group="${group}"`), 'missing Mobile-only native grouped section: ' + group)
   }
   assert.match(mobileSource, /borderRadius: '13px'/)
-  assert.match(mobileSource, /left: 60, right: 0/)
+  assert.match(mobileSource, /left: mobileFilesRowTextInset\(selectionMode, depth\)/)
   assert.match(mobileSource, /MOBILE_FILES_ROW_HEIGHT/)
   assert.match(mobileSource, /MOBILE_FILES_GRID_ROW_HEIGHT/)
   assert.match(mobileSource, /xDriveFileExplorerVisibleGroupSegments/)
@@ -613,4 +614,46 @@ test('F-iOS27-08A: Files More has explicit paired native view actions and one sh
   assert.doesNotMatch(mobileSource, /切换到列表|切换到图标/)
   assert.match(mobileSource, /data-xdrive-file-explorer-scroll-host/)
   assert.doesNotMatch(mobileSource, /props\.onViewModeChange\(next\)/)
+})
+
+
+test('F-iOS27-08B: iOS List dividers follow real text indentation without changing virtual row geometry', () => {
+  for (const [depth, normal, selected] of [
+    [0, 72, 108], [1, 88, 124], [2, 104, 140], [4, 136, 172], [99, 136, 172],
+    [-2, 72, 108], [NaN, 72, 108],
+  ]) {
+    assert.equal(mobileFilesRowTextInset(false, depth), normal)
+    assert.equal(mobileFilesRowTextInset(true, depth), selected)
+  }
+  assert.match(mobileSource, /left: mobileFilesRowTextInset\(selectionMode, depth\)/)
+  assert.match(mobileSource, /left: mobileFilesRowTextInset\(false\)/)
+  assert.match(mobileSource, /flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'/)
+  assert.match(mobileSource, /minHeight: MOBILE_FILES_ROW_HEIGHT, px: 2, gap: 1\.5/)
+  assert.match(mobileSource, /data-mobile-files-collection-title/)
+  assert.match(mobileSource, /data-mobile-files-collection-meta/)
+  assert.match(mobileSource, /data-mobile-files-item-title/)
+  assert.match(mobileSource, /data-mobile-files-item-meta/)
+  assert.doesNotMatch(mobileSource, /minHeight: 64, px: 2, gap: 1\.5/)
+  // The exact same 68px logical row is consumed by the shared Details virtual
+  // window for Recent/Favorites; no independent mobile pagination is created.
+  for (const count of [10_000, 100_000]) {
+    const w = mobileFilesWindow(count, count * 68 / 2, 600, 68)
+    assert.equal(w.before + (w.end - w.start) * 68 + w.after, count * 68)
+  }
+})
+
+test('F-iOS27-08B: Recent/Favorites keyboard context uses existing authorized menu', () => {
+  assert.match(mobileSource, /data-mobile-files-collection-row=\{owner\}/)
+  assert.match(mobileSource, /aria-keyshortcuts=\{owner \? 'Shift\+F10'/)
+  assert.match(mobileSource, /event\.key === 'ContextMenu'/)
+  assert.match(mobileSource, /event\.key === 'F10' && event\.shiftKey/)
+  assert.match(mobileSource, /event\.target !== event\.currentTarget/)
+  assert.match(mobileSource, /data-mobile-files-collection-menu/)
+  const start = mobileSource.indexOf('<Menu data-mobile-files-collection-menu')
+  const end = mobileSource.indexOf('</Menu>', start)
+  assert.ok(start > 0 && end > start)
+  const menu = mobileSource.slice(start, end)
+  assert.equal((menu.match(/<MenuItem /g) || []).length, 8)
+  assert.equal((menu.match(/sx=\{\{ minHeight: MIN_TOUCH \}\}/g) || []).length, 8)
+  assert.doesNotMatch(mobileSource, /api\.node\(|fetch\(['"]\/api/)
 })
