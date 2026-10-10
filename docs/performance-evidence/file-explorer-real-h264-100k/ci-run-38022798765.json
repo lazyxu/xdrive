@@ -1,0 +1,307 @@
+{
+  "status": "Accepted / measured unchanged current production; no runtime change",
+  "source_exact_measured_head": "3450e343537c6c8246e5ab88485dc7b99a5931df",
+  "baseline_commit": "f6b0bf66826573fd8e2e577c2e6ccb497f4110b1",
+  "ci_run_url": "https://github.com/lazyxu/xdrive/actions/runs/38022798765",
+  "scoped_job_url": "https://github.com/lazyxu/xdrive/actions/runs/38022798765/job/114127268467",
+  "benchmark": "file-explorer-real-h264-100k",
+  "tool_environment": "GitHub Actions ubuntu-latest native PostgreSQL17-alpine authenticated Gin and local CAS, Electron Chromium via Linux Xvfb",
+  "sampling": "3 fresh PostgreSQL schemas/Go test processes + separate Electron Chromium renderer partitions",
+  "workload": "100000 .mp4 Node/File/MediaMetadata records, only six physically populated H264/MP4 assets (2970 bytes each); others metadata only; offsets 0,50000,99998; real authenticated 200-item counted range",
+  "before": "unchanged production behavior; n=3 independent real native first benchmark",
+  "after": "N/A, no production optimization",
+  "code_improvement_delta": "N/A; cold versus warm are different cache states, not product BEFORE/AFTER speedup",
+  "acceptance": {
+    "all_3_runs_pass": true,
+    "per_run_6_unique_contents": true,
+    "per_run_cold_404": 6,
+    "per_run_h264_capture_jpeg": 6,
+    "per_run_revision_fenced_poster_put": 6,
+    "per_run_warm_http_200_etag_jpeg": 6,
+    "per_run_warm_original_store_open": 0,
+    "per_run_warm_poster_store_open": 6,
+    "each_cold_capture_less_than_ms": 15000
+  },
+  "summary": {
+    "status": "measured-current-production-real-h264-100k",
+    "sampleCount": 3,
+    "coldP50MsAcrossRuns": 17.69999999999709,
+    "warmP50MsAcrossRuns": 3.599999999991269,
+    "originalsWarm": [
+      0,
+      0,
+      0
+    ],
+    "jpegOutputBytes": [
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ]
+    ],
+    "seedMsExcluded": [
+      6368.031,
+      7548.288,
+      6120.15
+    ],
+    "workingSetKiBSnapshots": [
+      155208,
+      155624,
+      153604
+    ],
+    "accepted": true,
+    "scope": "real signed H264-to-JPEG poster lifecycle in 100k metadata; not full FileExplorer UI, Agent IPC, HEVC or 4K"
+  },
+  "raw_samples": [
+    {
+      "workload": "real-chromium-h264-poster-signed-server-100k",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        22.40000000000873,
+        13.89999999999418,
+        12.80000000000291,
+        17.69999999999709,
+        16.5,
+        18.30000000000291
+      ],
+      "warmMs": [
+        4,
+        3.6000000000058208,
+        4,
+        3.599999999991269,
+        3.3000000000029104,
+        3.8000000000029104
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 17.69999999999709,
+      "warmP50Ms": 3.8000000000029104,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 330,
+      "seedMs": 6368.031,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 155208,
+      "sample": 1
+    },
+    {
+      "workload": "real-chromium-h264-poster-signed-server-100k",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        21.80000000000291,
+        21.10000000000582,
+        13.5,
+        19.80000000000291,
+        16.19999999999709,
+        17
+      ],
+      "warmMs": [
+        4.099999999991269,
+        3.400000000008731,
+        3,
+        3.1999999999970896,
+        3.099999999991269,
+        3.1000000000058208
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 19.80000000000291,
+      "warmP50Ms": 3.1999999999970896,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 334.6999999999971,
+      "seedMs": 7548.288,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 155624,
+      "sample": 2
+    },
+    {
+      "workload": "real-chromium-h264-poster-signed-server-100k",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        20.30000000000291,
+        14.60000000000582,
+        12.5,
+        20.19999999999709,
+        16.90000000000873,
+        17
+      ],
+      "warmMs": [
+        4.099999999991269,
+        3.6000000000058208,
+        3.599999999991269,
+        3.400000000008731,
+        3.1999999999970896,
+        3.3000000000029104
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 17,
+      "warmP50Ms": 3.599999999991269,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 328.1000000000058,
+      "seedMs": 6120.15,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 153604,
+      "sample": 3
+    }
+  ],
+  "initial_invalid_fixture": {
+    "ci_run_url": "https://github.com/lazyxu/xdrive/actions/runs/38022441586",
+    "scoped_job_url": "https://github.com/lazyxu/xdrive/actions/runs/38022441586/job/114126136063",
+    "reason": "Six node IDs shared identical H264 bytes/SHA; SHA-indexed poster intentionally de-duplicates, only first cold GET was 404. Valid H264 free box introduced per node to obtain unique SHA; not product performance red."
+  },
+  "limitations": "Original H264 asset 2970 bytes 96x64; not 4K/HEVC/long video, actual mounted FileExplorer Grid/Details, Desktop Agent IPC, mobile hardware, WAN, full 100k physical media, peak RSS/CPU, fast-scroll cancellation, durable upload/download/sync/delete."
+}
