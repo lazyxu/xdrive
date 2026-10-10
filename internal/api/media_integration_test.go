@@ -487,6 +487,12 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	if contentType := thumbnailResponse.Header().Get("Content-Type"); contentType != "image/jpeg" {
 		t.Fatalf("thumbnail content-type=%q", contentType)
 	}
+	// ServeContent must expose the exact response-body length so the shared
+	// Web/Agent thumbnail observers can render an honest circular pie.
+	thumbnailLength := thumbnailResponse.Body.Len()
+	if got := thumbnailResponse.Header().Get("Content-Length"); got != fmt.Sprint(thumbnailLength) {
+		t.Fatalf("cold/generated thumbnail Content-Length=%q want=%d", got, thumbnailLength)
+	}
 	thumbnailConfig, err := jpeg.DecodeConfig(
 		bytes.NewReader(thumbnailResponse.Body.Bytes()),
 	)
@@ -511,6 +517,33 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	)
 	if !bytes.Equal(matchedRevisionThumbnail.Body.Bytes(), thumbnailResponse.Body.Bytes()) {
 		t.Fatal("same-revision thumbnail GET changed the original cache bytes")
+	}
+	if got := matchedRevisionThumbnail.Header().Get("Content-Length"); got != fmt.Sprint(thumbnailLength) {
+		t.Fatalf("cached revision thumbnail Content-Length=%q want=%d", got, thumbnailLength)
+	}
+	thumbnailPartial := requestWithHeaders(
+		t, router, http.MethodGet, originalRevisionThumbnail, token, nil,
+		http.StatusPartialContent, map[string]string{"Range": "bytes=0-9"},
+	)
+	if got := thumbnailPartial.Header().Get("Content-Length"); got != "10" {
+		t.Fatalf("thumbnail 206 Content-Length=%q want=10", got)
+	}
+	if got := thumbnailPartial.Header().Get("Content-Range"); got != fmt.Sprintf("bytes 0-9/%d", thumbnailLength) {
+		t.Fatalf("thumbnail 206 Content-Range=%q", got)
+	}
+	if thumbnailPartial.Body.Len() != 10 {
+		t.Fatalf("thumbnail 206 body=%d want=10", thumbnailPartial.Body.Len())
+	}
+	thumbnailETag := thumbnailResponse.Header().Get("ETag")
+	if thumbnailETag == "" {
+		t.Fatal("thumbnail ETag is empty")
+	}
+	thumbnailNotModified := requestWithHeaders(
+		t, router, http.MethodGet, originalRevisionThumbnail, token, nil,
+		http.StatusNotModified, map[string]string{"If-None-Match": thumbnailETag},
+	)
+	if thumbnailNotModified.Body.Len() != 0 {
+		t.Fatalf("thumbnail 304 has unexpected %d body bytes", thumbnailNotModified.Body.Len())
 	}
 	// This real Server request currently returns 200; first-red requires
 	// conflict before it could cache stale bytes under a future version URL.
@@ -545,6 +578,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	)
 	if contentType := analysisPreviewResponse.Header().Get("Content-Type"); contentType != "image/jpeg" {
 		t.Fatalf("analysis preview content-type=%q", contentType)
+	}
+	if got := analysisPreviewResponse.Header().Get("Content-Length"); got != fmt.Sprint(analysisPreviewResponse.Body.Len()) {
+		t.Fatalf("analysis-preview 200 Content-Length=%q want=%d", got, analysisPreviewResponse.Body.Len())
 	}
 	if got := analysisPreviewResponse.Header().Get("X-XDrive-Analysis-Preview-Version"); got != fmt.Sprint(mediapkg.AnalysisPreviewVersion) {
 		t.Fatalf("analysis preview version=%q", got)
@@ -1365,6 +1401,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	)
 	if !bytes.Equal(posterResponse.Body.Bytes(), posterBytes) {
 		t.Fatal("cached video poster bytes changed")
+	}
+	if got := posterResponse.Header().Get("Content-Length"); got != fmt.Sprint(len(posterBytes)) {
+		t.Fatalf("video poster Content-Length=%q want=%d", got, len(posterBytes))
 	}
 	requestWithHeaders(
 		t,

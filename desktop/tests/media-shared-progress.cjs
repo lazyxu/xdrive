@@ -19,7 +19,10 @@ function compile(relative) {
 }
 
 const { xDriveMediaResponseBlob } = compile('web/src/mediaBinaryProgress.ts')
-const { xDriveMediaBufferProgressLabel } = compile('ui/shared/src/mui/MediaLoadProgress.tsx')
+const { xDriveMediaBufferProgressLabel, xDriveMediaPiePercent, XDriveMediaLoadingProgress } =
+  compile('ui/shared/src/mui/MediaLoadProgress.tsx')
+const React = require('react')
+const { create } = require('react-test-renderer')
 const { XDriveMediaThumbnailScheduler } =
   compile('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
 
@@ -40,6 +43,59 @@ function fixture(size = 512 * 1024, opts = {}) {
   if (opts.encoding) headers['Content-Encoding'] = opts.encoding
   return new Response(body, { headers })
 }
+
+test('App Store-style full-pie uses only the measured HTTP response size', () => {
+  assert.equal(xDriveMediaPiePercent(42, 100), 42)
+  assert.equal(xDriveMediaPiePercent(150, 100), 100)
+  assert.equal(xDriveMediaPiePercent(-10, 100), 0)
+  for (const [loaded, total] of [[42, undefined], [42, 0], [NaN, 100], [42, Infinity]]) {
+    assert.equal(xDriveMediaPiePercent(loaded, total), null,
+      'unknown or invalid Content-Length never becomes a fabricated percentage')
+  }
+})
+
+test('compact Gallery draws a filled circular sector from centre to rim, not an annular stroke', () => {
+  for (const percent of [0, 42, 100]) {
+    const view = create(React.createElement(XDriveMediaLoadingProgress, {
+      compact: true, stage: 'transfer', loadedBytes: percent, totalBytes: 100,
+    }))
+    try {
+      const root = view.root.findByProps({ 'data-xdrive-media-loading-style': 'solid-pie' })
+      const disk = view.root.findAll(node => node.props?.['data-xdrive-media-solid-pie'])[0]
+      assert.ok(disk)
+      assert.equal(root.props['data-xdrive-media-loading-percent'], percent)
+      assert.ok(root.props['aria-label'].includes(percent + '%'))
+      assert.ok(disk.props.sx.background.startsWith('conic-gradient(from -90deg,'))
+      assert.ok(disk.props.sx.background.includes('#0A84FF 0% ' + percent + '%'))
+      assert.equal(disk.props.sx.borderRadius, '50%')
+      assert.equal(view.root.findAll(n => n.props?.variant === 'determinate').length, 0,
+        'a measured compact thumbnail must never render an additional progress ring')
+      assert.equal(root.props.sx.pointerEvents, 'none')
+      assert.ok(root.props.sx.animation.includes('160ms'))
+    } finally { view.unmount() }
+  }
+})
+
+test('unknown-length thumbs remain indeterminate while full Viewer keeps its original ring', () => {
+  const gallery = create(React.createElement(XDriveMediaLoadingProgress, {
+    compact: true, stage: 'transfer', loadedBytes: 65536,
+  }))
+  try {
+    const root = gallery.root.findByProps({ 'data-xdrive-media-loading-style': 'indeterminate' })
+    const disk = gallery.root.findAll(n => n.props?.['data-xdrive-media-solid-pie'])[0]
+    assert.ok(disk)
+    assert.equal(root.props['data-xdrive-media-loading-percent'], undefined)
+    assert.ok(!disk.props.sx.background.includes('conic-gradient'))
+    assert.equal(gallery.root.findAll(n => n.props?.variant === 'determinate').length, 0)
+  } finally { gallery.unmount() }
+  const viewer = create(React.createElement(XDriveMediaLoadingProgress, {
+    compact: false, stage: 'transfer', loadedBytes: 42, totalBytes: 100,
+  }))
+  try {
+    assert.equal(viewer.root.findAll(n => n.props?.variant === 'determinate').length, 1)
+    assert.equal(viewer.root.findAll(n => n.props?.['data-xdrive-media-solid-pie']).length, 0)
+  } finally { viewer.unmount() }
+})
 
 test('Web media stream preserves JPEG bytes and reports actual response length', async () => {
   const sizes = []
