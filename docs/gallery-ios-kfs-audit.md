@@ -578,7 +578,7 @@ Work branch: `fix/gallery-thumbnail-full-surface-pie-20261010`.
 
 ### 2026-10-11 alpha mask at thumbnail byte-progress time
 
-**In progress, CI pending:** alpha-aware thumbnail support is prepared for
+**Delivered:** [#1337](https://github.com/lazyxu/xdrive/pull/1337) passed complete GitHub PR CI (run 38069742887) and merged as `4242b6e5`; alpha-aware thumbnail support is implemented for
 Web/Mobile Web/Desktop's common progress surface. It does not rely on decoding
 a file after its download is complete. Transparent PNG derived thumbnails
 retain original per-pixel alpha; a strictly bounded same-raster mask is supplied
@@ -588,3 +588,10 @@ contain/cover display modes. Legacy/missing/oversized proofs hide the overlay,
 not paint a rectangle. JPEG v3 identity and analysis preview remain supported.
 True iOS 27 visual parity and 100k alpha-heavy loading costs are not yet
 measured.
+
+### 2026-10-11 · P1-1a Mobile Collections upload affordance parity
+
+**Presentation/permission gap addressed in this change; physical-device and actual upload-byte acceptance pending.** The existing Wide Web Gallery header rendered its upload action for every non-trash Gallery context, but Mobile Collections overview hid its only `More` access path. The shared Gallery controller now grants an overview More entry only when the same `onUploadRequested` is present and the global overview is active, even if navigated from Trash; the Trash content view remains blocked; the nested button and underlying Web multi-file input stay identical. Library-only density, timeline settings, duplicate folding and query-wide selection remain absent from Collections overview, and the shared upload button alone is projected there to avoid leaking stale album/person contextual actions from nested scopes; its own layout editor keeps its current identity. The global Collections overview can upload even after navigation from Trash while the Trash content view itself remains upload-disabled; the wide-Web 900px breakpoint must never inherit this Mobile-only overview exception. The header remains Gallery-local beneath xDrive's fixed 52px App Frame bar, and the original REST/Agent transport, task receipts, VirtualCollection/Grid/Timeline, media identities and Viewer are untouched. Review the real-Chromium filechooser and React permission-transition evidence on this exact feature PR before labeling the scope delivered; do not promote Chromium to Apple iOS 27 screenshot or device acceptance.
+
+
+**P1-1a first-real-Chromium red (CI 38072959971):** The 50 completed layout/interaction and native multi-file-picker checks succeeded; the final strict network audit failed because the old fixture asserted thumbnail `v=3` for its PNG items although merged alpha-thumbnail #1337 uses the authoritative v4 identity. Raw artifact 11677456824 preserves the `v=4&revision=1` 501s and console errors. The only correction is MIME-scoped fixture validation (PNG v4, JPEG v3) and an accompanying contract assertion; do not alter production Gallery, disable network audit, or call the old red run green. Exact new-head Web Chrome and full PR CI remain required.

@@ -48,6 +48,8 @@ export interface XDriveMobileGalleryChromeProps {
   canReturnToPosition?: boolean
   onReturnToPosition?: () => void
   onRefresh?: () => void
+  // Only real shared Gallery actions may expose More on Collections overview.
+  showOverviewActions?: boolean
   extraActions?: ReactNode
 }
 
@@ -62,7 +64,7 @@ export function XDriveMobileGalleryChrome({
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
-  canReturnToPosition, onReturnToPosition, onRefresh, extraActions,
+  canReturnToPosition, onReturnToPosition, onRefresh, showOverviewActions, extraActions,
 }: XDriveMobileGalleryChromeProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchFocus, setSearchFocus] = useState(false)
@@ -72,6 +74,8 @@ export function XDriveMobileGalleryChrome({
   const [jumpDay, setJumpDay] = useState('')
   const searchHost = useRef<HTMLDivElement>(null)
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
+  const collectionsOverview = primaryTab === 'collections' && !showCollection && !canGoBack
+  const canShowMore = !collectionsOverview || Boolean(showOverviewActions)
 
   useEffect(() => {
     if (!searchOpen || !searchFocus) return
@@ -105,6 +109,12 @@ export function XDriveMobileGalleryChrome({
       setViewOptionsOpen(false)
     }
   }, [showCollection])
+
+  // If an authorized Collections action disappears, its open action sheet must
+  // not outlive the visible trigger or retain a stale mutation affordance.
+  useEffect(() => {
+    if (!canShowMore) setMoreOpen(false)
+  }, [canShowMore])
 
   const sheetSx = (maxHeight: string) => ({
     maxHeight: panelViewport ? panelViewport.height + 'px' : '100dvh',
@@ -160,9 +170,11 @@ export function XDriveMobileGalleryChrome({
               </IconButton>
             </>
           ) : null}
-          {primaryTab !== 'collections' || showCollection || canGoBack ? (
-            <IconButton aria-label="图库更多操作"
-              onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more>
+          {canShowMore ? (
+            <IconButton aria-label="图库更多操作" aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen(true)} data-xdrive-mobile-gallery-more
+              sx={{ minWidth: 44, minHeight: 44 }}>
               <MoreHorizRoundedIcon />
             </IconButton>
           ) : null}
@@ -339,7 +351,7 @@ export function XDriveMobileGalleryChrome({
           flex: 1, minHeight: 0, overflowY: 'auto', px: 2,
           pb: 'max(16px, env(safe-area-inset-bottom, 0px))',
         }}>
-          {currentDateLabel ? (
+          {!collectionsOverview && currentDateLabel ? (
             <Typography variant="caption" color="text.secondary">
               当前浏览：{currentDateLabel}
             </Typography>
@@ -381,7 +393,7 @@ export function XDriveMobileGalleryChrome({
                 }}
               />
             ) : null}
-            {onTimeZoneChange ? (
+            {!collectionsOverview && onTimeZoneChange ? (
               <Autocomplete freeSolo size="small"
                 options={xDriveMediaTimeZoneChoices()} value={timeZone}
                 onChange={(_event, value) => {
@@ -392,20 +404,24 @@ export function XDriveMobileGalleryChrome({
                 )}
               />
             ) : null}
-            <Typography variant="caption" color="text.secondary">
-              照片墙最少列数：{density} 列
-            </Typography>
-            <Slider size="small" aria-label="移动图库缩略图密度"
-              valueLabelDisplay="auto"
-              min={densityMin} max={densityMax} step={densityStep}
-              value={density} onChange={(_event, value) => {
-                if (typeof value === 'number') onDensityChange(value)
-              }} />
-            {onFoldDuplicatesChange ? (
-              <Button variant={foldDuplicates ? 'contained' : 'outlined'}
-                onClick={() => onFoldDuplicatesChange(!foldDuplicates)}>
-                {foldDuplicates ? '取消折叠重复副本' : '折叠重复副本'}
-              </Button>
+            {!collectionsOverview ? (
+              <>
+                <Typography variant="caption" color="text.secondary">
+                  照片墙最少列数：{density} 列
+                </Typography>
+                <Slider size="small" aria-label="移动图库缩略图密度"
+                  valueLabelDisplay="auto"
+                  min={densityMin} max={densityMax} step={densityStep}
+                  value={density} onChange={(_event, value) => {
+                    if (typeof value === 'number') onDensityChange(value)
+                  }} />
+                {onFoldDuplicatesChange ? (
+                  <Button variant={foldDuplicates ? 'contained' : 'outlined'}
+                    onClick={() => onFoldDuplicatesChange(!foldDuplicates)}>
+                    {foldDuplicates ? '取消折叠重复副本' : '折叠重复副本'}
+                  </Button>
+                ) : null}
+              </>
             ) : null}
             {onRefresh ? <Button onClick={onRefresh}>刷新图库</Button> : null}
             {extraActions}

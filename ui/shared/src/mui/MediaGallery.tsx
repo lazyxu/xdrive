@@ -5560,6 +5560,22 @@ export function XDriveMediaGallery({
     </>
   )
 
+  // The single authorized upload action is shared by Wide Gallery and
+  // Mobile Collections. Never carry album/person context actions into the
+  // Collections overview when it was opened from a nested Gallery scope.
+  const galleryUploadAction = onUploadRequested &&
+    (!isTrashSection || (compactGallery && mobileCollectionsOverview)) ? (
+    <Button
+      size="small"
+      variant="outlined"
+      data-xdrive-gallery-upload
+      onClick={onUploadRequested}
+      sx={personTouchTargetSx}
+    >
+      上传照片或视频
+    </Button>
+  ) : null
+
   // Existing contextual album/person commands are moved, not duplicated.
   // The global App Header remains the only owner of app switching/transfers.
   const contextualHeaderActions = (
@@ -5572,17 +5588,7 @@ export function XDriveMediaGallery({
           justifyContent={{ xs: 'flex-start', lg: 'flex-end' }}
           sx={{ flex: '1 1 auto', minWidth: 0 }}
         >
-          {onUploadRequested && !isTrashSection ? (
-            <Button
-              size="small"
-              variant="outlined"
-              data-xdrive-gallery-upload
-              onClick={onUploadRequested}
-              sx={personTouchTargetSx}
-            >
-              上传照片或视频
-            </Button>
-          ) : null}
+          {galleryUploadAction}
           {showCollectionFilters && filters && !compactGallery ? (
             <Box sx={{ flex: '1 1 360px', minWidth: { xs: 0, sm: 300 }, maxWidth: 560 }}>
               {filters}
@@ -5799,10 +5805,15 @@ export function XDriveMediaGallery({
           canReturnToPosition={timelineReturnAnchor !== null}
           onReturnToPosition={returnToTimelineAnchor}
           onRefresh={onRefresh}
-          extraActions={<>
-            {contextualHeaderActions}
-            {querySelectionControls}
-          </>}
+          // Collections overview must not hide the Wide Web upload action.
+          // The same callback opens the existing Web multi-file picker.
+          showOverviewActions={Boolean(galleryUploadAction)}
+          extraActions={mobileCollectionsOverview ? galleryUploadAction : (
+            <>
+              {contextualHeaderActions}
+              {querySelectionControls}
+            </>
+          )}
         />
       ) : null}
 

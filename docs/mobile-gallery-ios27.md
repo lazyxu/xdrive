@@ -267,7 +267,7 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-4a · Web Gallery 双层底栏真实 Chromium 验收（2026-10-10）
 
-**状态：测试优先，分支候选；未获得实测证据前不改变产品 UI/Server。** P0-3i #1303 将年／月／全部放到 Gallery 内部底部，但此前只有 React 测试和源代码断言，缺少真实已构建 Web 的多视口 DOM、点击命中与末行无遮挡证据。
+**状态：[#1309](https://github.com/lazyxu/xdrive/pull/1309) 已通过完整 PR CI 并合并；真实 Chromium 240 项多视口/交互验收已交付，iOS 27 物理设备验收仍待完成。** P0-3i #1303 将年／月／全部放到 Gallery 内部底部，但此前只有 React 测试和源代码断言，缺少真实已构建 Web 的多视口 DOM、点击命中与末行无遮挡证据。
 
 - 复用 `desktop/scripts/mobile-web-app-browser.cjs` 的真实 Web build、原 `MediaGalleryDataSource` 与有界的 240 张照片 API fixture；新增 `--scenario=gallery-ios27-chrome`，不增加移动端业务接口、控制器或 Viewer。
 - 同一 Gallery DOM 依次测量 360×780、390×844、430×932、844×390、899×700、900×700、390×844；保存 App Frame 52px 标题栏、时间视图/主 Dock bounds、44px 按钮 hit-test、共享 KFS 实际列数及宽屏退出移动模式。
@@ -284,3 +284,11 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 - **第四轮跨断点（run 38038095042 / artifact 11665200752）：** 同一真实 Chrome Gallery 从 360 到 900px 并返回 390px 的 **38/38 已执行布局断言均通过**；在宽屏 900px 不保留任何 Mobile-only 底栏，返回后 Header/缩略图网格与滚动容器身份仍符合现有设计。但滚至末张前触发已合入的“返回原位置” API：`anchor_node_id=1000`，旧 fixture 未允许它，导致 501、后续末张图片与选择动作尚未验收，非 Gallery 产品故障。本轮仅在此验收场景按真实 Node 身份验证 `anchor_node_id` 为授权范围内的正整数，返回对应的绝对 `anchor_index`（ID1000→index0），并拒绝与 `initial_position` 同时设置；完整原 UI/交互断言保留不动。第一次真正的产品 first-red 仍待测。源证据与截图继续保留，绝不声称物理 iOS 27 已达到 1:1。
 
 - **第五轮真实浏览器进度（run 38038427444）：** 真实 DOM 的 7 个响应式视口、最后一张可点击照片和真实时间/精选集操作均已执行，唯独精选集预览触发两个之前未建模的**正常读取**：`GET /api/v1/media/memories?limit=8&time_zone=UTC&anchor_date=<当日>` 和 `GET /api/v1/media/sync-folders`，原 fixture 返回 501 导致最终网络审计失败。仅为当前测试场景加严格 query 验证、返回真实空集合 `[]`，不调整生产代码，不禁用未知请求审计。此前通过的几何和交互断言保留。后续仍以精确提交全 CI 及网络审计为合并门槛。
+
+## P1-1a · Mobile 精选集首页直达图库上传（2026-10-11）
+
+**范围：共享操作可达性修复与测试；不声称 iOS 27 真机像素验收完成。** 原来宽 Web `contextualHeaderActions` 能直接调用 `onUploadRequested`，移动图库在「精选集」首页却隐藏「更多」入口；底部图库／精选集／搜索并不能代替真实上传入口。现在仅当共享 Gallery 上传回调在当前范围合法存在时，允许精选集首页展示至少 44px 的「更多」；点击后使用原 `data-xdrive-gallery-upload` 和 Web `galleryUploadInputRef` 的原生 `multiple` 文件选择器，不创建另一套 Mobile API、上传控制器、任务或 Viewer。回收站内容页仍禁止上传；从回收站返回全局「精选集」首页则恢复共享上传入口，900px 宽屏断点重新应用当前范围限制；未提供上传回调时不新增入口。权限/账号改变使入口消失时，已打开的 More 操作面板会随之关闭。精选集首页 More 只复用同一共享上传按钮，不继承从相册、人物等嵌套范围切换而来的专属操作；不显示属于图库照片墙的列数、时间设置、重复副本折叠和查询级全选。精选集自身的布局与固定项目编辑仍使用其现有入口。
+
+测试分层：现有 React `mobile-gallery-ios-chrome.cjs` 检查启用/禁用、真实同一回调、44px 与回收权限收回；`mobile-gallery-web-parity.cjs` 保护 REST/VirtualCollection 与 Web 多文件 picker 的唯一绑定；分支命名 `test/mobile-gallery-ios27-real-chrome-*` 启动已构建 Web 的 `gallery-ios27-chrome`，在原 360–900px / 240 张 fixture 之后实际触发浏览器 `filechooser` 并验证 `multiple`，保留严格未知网络请求审计。该测试不提交文件，因此不冒充真实上传完成、批量任务收据或 100k 性能数据。真实 iOS 27 Safari/主屏幕、语音辅助、图片像素与完整文件传输验收继续待办。
+
+**P1-1a 首轮真实 Chromium 红灯，2026-10-11：** [PR #1347 源码提交 `e7b204ca`，CI run 38072959971](https://github.com/lazyxu/xdrive/actions/runs/38072959971) 的真实 Web 测试完成 50 项布局、交互与多文件选择器检查，失败仅发生在末尾严格网络审计：本测试 fixture 对 `photo-*.png` 的 thumbnail URL 仍硬编码 `v=3`，而已合并 #1337 的 Go Server、共享前端对可透明的 PNG 使用 `v=4`；浏览器实际发起 `?v=4&revision=1`，老 mock 返回 501，连带 console error。原始 Chrome artifacts ID `11677456824`。这是**测试夹具陈旧**而非已证明的产品功能 bug；在同一工作提交内按源 MIME 严格校验 PNG=v4 / JPEG=v3，原 50 项交互、原生 filechooser 和未知请求失败门禁保持不变。修订后必须以新 HEAD 再跑 Web Chrome 及完整 PR CI，不借用旧运行作为通过证据。

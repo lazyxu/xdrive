@@ -16,7 +16,11 @@ test('Gallery directs multi-file upload from wide and mobile shared actions', ()
   assert.ok(gallery.includes('data-xdrive-gallery-upload'))
   assert.ok(gallery.includes('onClick={onUploadRequested}'))
   assert.ok(gallery.includes('onUploadRequested={onUploadRequested}'))
-  assert.ok(gallery.includes('onUploadRequested && !isTrashSection'))
+  assert.ok(gallery.includes('const galleryUploadAction = onUploadRequested &&'))
+  assert.ok(gallery.includes('!isTrashSection || (compactGallery && mobileCollectionsOverview)'),
+    'Trash remains upload-disabled on Wide Web, but Mobile Collections overview is a global Gallery destination')
+  assert.ok(gallery.includes('mobileCollectionsOverview ? galleryUploadAction : ('),
+    'Collections must never inherit nested album/person contextual actions')
   assert.ok(gallery.includes('const seenUploadRevision = useRef(uploadRevision)'))
   assert.ok(mobile.includes('{extraActions}'),
     'Mobile More drawer must expose the same shared upload control')
