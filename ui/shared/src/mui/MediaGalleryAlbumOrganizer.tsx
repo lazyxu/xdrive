@@ -203,14 +203,40 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const [folderDialog, setFolderDialog] = useState<FolderDialog | null>(null)
   const [folderName, setFolderName] = useState('')
   const [targetFolderID, setTargetFolderID] = useState(0)
-  const [folderBusy, setFolderBusy] = useState(false)
-  const folderBusyRef = useRef(false)
+  // A renewed Server/Agent Port can have the same accountScope, while an old
+  // folder write is still pending. Keep its completion tied to its Port.
+  // The list function is the Port identity, matching the list effect below.
+  const folderActionScopeRef = useRef({
+    accountScope, list: folderActions?.list, busy: false,
+  })
+  if (
+    folderActionScopeRef.current.accountScope !== accountScope ||
+    folderActionScopeRef.current.list !== folderActions?.list
+  ) {
+    folderActionScopeRef.current = {
+      accountScope, list: folderActions?.list, busy: false,
+    }
+  }
+  const folderActionScope = folderActionScopeRef.current
+  const [folderBusyState, setFolderBusyState] = useState<{
+    scope: typeof folderActionScope
+    busy: boolean
+  }>({ scope: folderActionScope, busy: false })
+  const folderBusy = folderBusyState.scope === folderActionScope &&
+    folderBusyState.busy
   // A Server folder read is valid only until a newer read or committed write.
   // React rendering Busy alone cannot protect an older Promise completion.
   const folderListVersionRef = useRef(0)
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
   useEffect(() => setPrefs(readMediaAlbumPreferences(accountScope)), [accountScope])
+  useEffect(() => {
+    // A dialog started under an obsolete capability/Port must not be
+    // re-submitted against the replacement Port.
+    setFolderDialog(null)
+    setFolderError('')
+    setFolderBusyState({ scope: folderActionScope, busy: false })
+  }, [folderActionScope])
   useEffect(() => {
     const load = folderActions?.list
     const readVersion = ++folderListVersionRef.current
@@ -267,30 +293,39 @@ export function XDriveMediaGalleryAlbumOrganizer({
       : next.kind === 'move-folder' ? next.folder.parent_id : activeFolderID)
   }
   const confirmFolderDialog = async () => {
-    if (!folderDialog || folderBusyRef.current) return
-    folderBusyRef.current = true
-    setFolderBusy(true)
+    const actionScope = folderActionScope
+    if (
+      !folderDialog || folderActionScopeRef.current !== actionScope ||
+      actionScope.busy
+    ) return
+    // Claim synchronously: same-render double click cannot duplicate a write.
+    actionScope.busy = true
+    setFolderBusyState({ scope: actionScope, busy: true })
     setFolderError('')
     let folderHierarchyChanged = false
     try {
       if (folderDialog.kind === 'create' && folderActions?.create) {
         const created = await folderActions.create(folderName.trim(), folderDialog.parentID)
+        if (folderActionScopeRef.current !== actionScope) return
         folderHierarchyChanged = true
         setFolders((current) => [...current, created])
       } else if (folderDialog.kind === 'rename' && folderActions?.update) {
         const updated = await folderActions.update(
           folderDialog.folder.id, folderDialog.folder.revision, { name: folderName.trim() },
         )
+        if (folderActionScopeRef.current !== actionScope) return
         folderHierarchyChanged = true
         setFolders((current) => current.map(folder => folder.id === updated.id ? updated : folder))
       } else if (folderDialog.kind === 'move-folder' && folderActions?.update) {
         const updated = await folderActions.update(
           folderDialog.folder.id, folderDialog.folder.revision, { parent_id: targetFolderID },
         )
+        if (folderActionScopeRef.current !== actionScope) return
         folderHierarchyChanged = true
         setFolders((current) => current.map(folder => folder.id === updated.id ? updated : folder))
       } else if (folderDialog.kind === 'delete' && folderActions?.remove) {
         await folderActions.remove(folderDialog.folder.id, folderDialog.folder.revision)
+        if (folderActionScopeRef.current !== actionScope) return
         folderHierarchyChanged = true
         setFolders((current) => current.filter(folder => folder.id !== folderDialog.folder.id))
         setActiveFolderID((current) => current === folderDialog.folder.id ? folderDialog.folder.parent_id : current)
@@ -299,6 +334,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
         const moved = await folderActions.moveAlbum(
           folderDialog.album.id, folderDialog.album.revision, targetFolderID,
         )
+        if (folderActionScopeRef.current !== actionScope) return
         folderActions.onAlbumMoved?.(moved)
       } else {
         throw new Error('当前客户端不支持该相册文件夹操作')
@@ -312,17 +348,23 @@ export function XDriveMediaGalleryAlbumOrganizer({
       }
       setFolderDialog(null)
     } catch (error) {
+      if (folderActionScopeRef.current !== actionScope) return
       setFolderError(error instanceof Error ? error.message : String(error))
       // After a revision conflict, refresh canonical folder revisions if possible.
       if (folderActions?.list) {
         const readVersion = ++folderListVersionRef.current
         void folderActions.list().then((nextFolders) => {
-          if (readVersion === folderListVersionRef.current) setFolders(nextFolders)
+          if (folderActionScopeRef.current === actionScope &&
+              readVersion === folderListVersionRef.current) {
+            setFolders(nextFolders)
+          }
         }).catch(() => undefined)
       }
     } finally {
-      folderBusyRef.current = false
-      setFolderBusy(false)
+      actionScope.busy = false
+      if (folderActionScopeRef.current === actionScope) {
+        setFolderBusyState({ scope: actionScope, busy: false })
+      }
     }
   }
   const store = (next: MediaAlbumOrganizePreferences) => {
