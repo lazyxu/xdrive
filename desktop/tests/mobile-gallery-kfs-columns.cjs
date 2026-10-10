@@ -189,3 +189,44 @@ test('P0-2 mobile gesture has one root, preserves Gallery anchor and uses same v
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
 })
+
+
+test('P0-2e visible zoom parity in 10k/100k shared Grid and Timeline', () => {
+  const defaults = { year: 6, month: 5, day: 3, all: 3 }
+  for (const itemCount of [10000, 100000]) {
+    const groups = [
+      { key: '2026-09', start_index: 0, item_count: itemCount / 2 },
+      { key: '2026-10', start_index: itemCount / 2, item_count: itemCount / 2 },
+    ]
+    for (const width of [320, 360, 390, 430, 899]) {
+      for (const baselineColumns of Object.values(defaults)) {
+        const natural = grid.xDriveMediaGalleryKfsColumnCount(width, baselineColumns, 144)
+        for (const preferred of [Math.max(2, baselineColumns-1), baselineColumns, Math.min(10, baselineColumns+1), 10]) {
+          const opts = { width, baselineColumns, minColumns: preferred, referenceColumnWidth: 144 }
+          const g = grid.xDriveMediaGalleryGridMetrics({ ...opts, itemCount })
+          const t = timeline.xDriveMediaGalleryTimelineLayout({ ...opts, groups })
+          assert.equal(g.columns, Math.max(1, natural + preferred - baselineColumns))
+          assert.equal(t.columns, g.columns)
+          assert.equal(t.columnWidth, g.columnWidth)
+          const w = grid.xDriveMediaGalleryGridWindow({
+            itemCount, columns: g.columns, rowStep: g.rowStep,
+            visibleTop: g.totalHeight * 0.5, visibleBottom: g.totalHeight * 0.5 + 720,
+          })
+          assert.ok(w.end > w.start && w.end - w.start <= 350)
+        }
+      }
+    }
+  }
+  const visible = (width,pref) => grid.xDriveMediaGalleryGridMetrics({
+    width, minColumns: pref, baselineColumns: 3, referenceColumnWidth: 144, itemCount: 100000,
+  }).columns
+  assert.deepEqual([2,3,4].map(p=>visible(390,p)), [2,3,4])
+  assert.deepEqual([2,3,4].map(p=>visible(899,p)), [5,6,7])
+  assert.equal(grid.xDriveMediaGalleryGridMetrics({
+    width: 900, minColumnWidth: 144, itemCount: 100000,
+  }).columns, 6)
+  const callSites = gallerySource.match(/<(?:MediaTileGrid|MediaVirtualTileGrid|MediaVirtualTimeline)\b[\s\S]*?\/>/g)||[]
+  assert.equal(callSites.length,4)
+  callSites.forEach(site=>assert.match(site,
+    /baselineColumns=\{compactGallery \? mobileBaselineColumns : undefined\}/))
+})

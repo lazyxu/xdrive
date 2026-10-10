@@ -73,12 +73,14 @@ export function xDriveMediaGalleryTimelineLayout({
   groups,
   minColumnWidth = XDRIVE_MEDIA_GALLERY_MIN_TILE_WIDTH,
   minColumns,
+  baselineColumns,
   referenceColumnWidth,
 }: {
   width: number
   groups: readonly MediaTimelineGroupIndex[]
   minColumnWidth?: number
   minColumns?: number
+  baselineColumns?: number
   referenceColumnWidth?: number
 }): XDriveMediaGalleryTimelineLayout {
   const grid = xDriveMediaGalleryGridMetrics({
@@ -86,6 +88,7 @@ export function xDriveMediaGalleryTimelineLayout({
     itemCount: 1,
     minColumnWidth,
     minColumns,
+    baselineColumns,
     referenceColumnWidth,
   })
   const layoutGroups: XDriveMediaGalleryTimelineLayoutGroup[] = []

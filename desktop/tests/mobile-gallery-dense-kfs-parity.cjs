@@ -156,3 +156,38 @@ test('P0-2b dense and sparse geometry agree across KFS 320-899px and 10k/100k', 
     }
   }
 })
+
+
+test('P0-2e rendered dense grid responds to visible 899px zoom', async () => {
+  const previous = global.ResizeObserver
+  const node = { clientWidth: 899 }
+  let observer
+  global.ResizeObserver = class {
+    constructor(callback) { observer=this; this.callback=callback }
+    observe(host) { assert.equal(host,node) }
+    disconnect() { this.disconnected=true }
+  }
+  const render = pref => React.createElement(DenseGrid, {
+    ...baseProps, minColumns: pref, baselineColumns: 3, referenceColumnWidth: 144,
+  })
+  let view
+  try {
+    await act(async () => {
+      view=renderer.create(render(3), {
+        createNodeMock: el=>el.type==='gallery-test-box' ? node : null,
+      })
+    })
+    const cols = ()=>view.root.findByType('gallery-test-box').props.sx.gridTemplateColumns
+    assert.equal(cols(),'repeat(6, minmax(0, 1fr))')
+    await act(async () => { view.update(render(2)) })
+    assert.equal(cols(),'repeat(5, minmax(0, 1fr))')
+    await act(async () => { view.update(render(4)) })
+    assert.equal(cols(),'repeat(7, minmax(0, 1fr))')
+    assert.deepEqual(
+      view.root.findAllByType('gallery-test-tile').map(t=>t.props['data-node-id']),
+      items.map(item=>item.node.id),
+    )
+    await act(async () => { view.unmount() })
+    assert.equal(observer.disconnected,true)
+  } finally { global.ResizeObserver=previous }
+})
