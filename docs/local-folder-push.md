@@ -61,6 +61,14 @@ The local JSON registry stores paths under a per-Server/account hash with user-o
 
 A completed metadata enumeration is NOT yet authority to infer deletions: `missing_inference_safe=false` until reliable per-item identities, complete-inventory reconciliation and agent/run protocol are implemented. No Mirror, scan-only formal SourceRun or cloud file mutation is enabled. Tests cover 1043 files with batched delivery, ignored files, cancellation, Root replacement and symlink skipping; a dedicated 10k/100k process-level performance baseline still needs native execution.
 
+## L02-B native per-entry filesystem identity (candidate metadata only)
+
+Opt-in `InventoryScanner.IncludeNativeIdentity` now emits a **root-scoped, opaque SHA-256 key** for each eligible file or directory, plus `strong`, `link_count` and `rename_candidate`. It does not hash file contents. Linux derives native identity from device/inode and birth time (where exposed by `statx`); absence of birth time deliberately yields a weak key. Windows derives identity from volume serial, file index and creation time, refusing reparse points. Root UUID is part of the hash scope, so identities from different authorized Sources never accidentally collide.
+
+**Important:** Native object identity does **not** equal logical SourceItem identity. Hard links share the same key while representing separate paths; a link count over one makes file rename candidates unsafe. Even strong single-link candidates are only evidence for the future journal/reconciliation layer, not authority for move, overwrite or deletion. The caller must revalidate Root and file identity around real byte reads in L03, reject ambiguous reuse and preserve the original file's logical identity if safe. The default scanner keeps native identity disabled for existing read-only previews and their original IO budget.
+
+Tests verify rename stability, hard-link ambiguity, per-Root scoping, opt-in behavior and cancelled inventories. This phase does **not** add an on-disk index or enable a SourceRun. `missing_inference_safe` remains false; Mirror and all upload operations remain disabled.
+
 ## Non-negotiable invariants
 
 - The Device binds one explicitly authorized local Root to one Source ID for a specific Server and owner. Never let Web specify arbitrary paths to read on the client.
