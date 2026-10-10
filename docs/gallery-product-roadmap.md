@@ -1628,6 +1628,37 @@ for exact-head post-fix acceptance alongside all original G07 tests,
 Web/Desktop builds, Go race and final PR CI gate. Do not claim native
 physical-device acceptance from these controlled tests.
 
+### G07 Task Center request ownership and owner-scope isolation (2026-10-10, PR #1230)
+
+The shared `MediaSelectionJobCenter` task list is scoped to the current
+authenticated Web/Desktop job Port. Changing that Port hides the previous
+account's jobs, failure details and errors immediately, without waiting for
+the new asynchronous list response. A request started in an older Port
+scope must never restore those records after the new Port becomes current.
+
+Cancel, retry, and failure-page actions claim one synchronous in-flight
+owner; React Busy presentation alone must not permit duplicate same-render
+mutations, particularly retries of immutable failed revisions. Starting an
+action invalidates earlier Task Center poll snapshots; polling pauses while
+an action owns the list. After an action resolves, the current Port's
+authoritative list is rendered without a superseded poll overwriting it.
+The existing 2500ms poll cadence, server-owned durable task lifecycle,
+cancel semantics, bounded 100-row failure pages, and 100k first-paint
+constraints are unchanged.
+
+First-red evidence: GitHub Actions `desktop-tests` run 38013745891,
+tests 661–664 (four actual failures): duplicate Cancel, duplicate Retry,
+old in-flight poll restoring `running` after successful Cancel, and
+old account A Cancel completion overwriting new account B's jobs.
+The unchanged single-Cancel control passed (test 665). The same executable
+real React component tests in
+`desktop/tests/media-selection-job-center-request-race.cjs` are preserved
+and extended with first-frame account isolation, same-tick failure paging,
+and stale failure error checks. Require the same test cases to turn green,
+the existing G07 Task Center/QuerySelection tests, exact-head Web/Desktop
+builds, Go race and the full GitHub final CI gate before merging.
+Native browser/device validation is separate from these controlled tests.
+
 ### G07 Phase 3c — Web Task Center persistence visibility (candidate)
 
 Web Task Center now loads the authenticated durable media-selection job
