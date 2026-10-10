@@ -1,0 +1,66 @@
+name: Gallery 100k Agent Go Context cancel
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-agent-go-context-cancel-100k:
+    if: github.head_ref == 'perf/gallery-agent-go-cancel-100k-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-agent-go-cancel-bin/xdrive-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build actual production Agent and existing Gin PostgreSQL CAS fixture
+        run: |
+          set -euo pipefail
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build:main
+          mkdir -p desktop/gallery-agent-go-cancel-bin
+          go build -o desktop/gallery-agent-go-cancel-bin/xdrive-agent ./cmd/xdrive-agent
+          node --check desktop/scripts/gallery-agent-go-context-cancel-100k.cjs
+      - name: Real six Gin contexts per mode across three fresh 100k samples
+        run: |
+          set -euo pipefail
+          node desktop/scripts/gallery-agent-go-context-cancel-100k.cjs
+          test "$(find desktop/gallery-agent-go-cancel-results -maxdepth 1 -type f -name 'sample-*.json' | wc -l)" -eq 3
+          cat desktop/gallery-agent-go-cancel-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-agent-go-context-cancel-100k
+          path: desktop/gallery-agent-go-cancel-results/
+          if-no-files-found: warn
+          retention-days: 14
