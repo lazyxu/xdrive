@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"unsafe"
 
@@ -25,7 +26,7 @@ type openAsInfo struct {
 }
 
 func openFolderPlatform(path string) error {
-	return exec.Command("explorer.exe", path).Start()
+	return startExplorerForeground(exec.Command("explorer.exe", path), filepath.Base(path))
 }
 
 func openFilePlatform(path string) error {
@@ -33,7 +34,7 @@ func openFilePlatform(path string) error {
 }
 
 func selectFilePlatform(path string) error {
-	return exec.Command("explorer.exe", "/select,"+path).Start()
+	return startExplorerForeground(exec.Command("explorer.exe", "/select,"+path), filepath.Base(filepath.Dir(path)))
 }
 
 func openWithSupportedPlatform() bool { return true }
