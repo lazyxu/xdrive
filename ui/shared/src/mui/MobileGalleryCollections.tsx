@@ -326,17 +326,29 @@ function CollectionGroup({
     <Stack spacing={1} data-xdrive-mobile-gallery-collection-group={title}
       data-xdrive-mobile-gallery-collection-group-id={id}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5 }}>
-        <Typography component="h3" fontWeight={750} variant="h6">
-          {title}
-        </Typography>
-        <Stack direction="row" spacing={0.25} alignItems="center">
+        <Typography component="h3" fontWeight={750} variant="h6"
+          sx={{ flex: 1, minWidth: 0 }}>
           {onViewAll ? (
             <Button size="small" data-xdrive-mobile-gallery-view-all={title}
-              aria-label={'查看全部' + title}
-              onClick={onViewAll} sx={{ minHeight: 44, minWidth: 72 }}>
-              查看全部
+              data-xdrive-mobile-gallery-section-heading={id}
+              aria-label={'查看全部' + title} onClick={onViewAll}
+              sx={{
+                minHeight: 44, minWidth: 0, maxWidth: '100%', px: 0,
+                display: 'inline-flex', justifyContent: 'flex-start',
+                textAlign: 'left', textTransform: 'none',
+                color: 'text.primary', fontSize: 'inherit', fontWeight: 750,
+              }}>
+              <Box component="span" sx={{
+                overflow: 'hidden', textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap', minWidth: 0,
+              }}>{title}</Box>
+              <KeyboardArrowRightRoundedIcon sx={{
+                ml: 0.25, fontSize: 22, flexShrink: 0, color: 'text.secondary',
+              }} />
             </Button>
-          ) : null}
+          ) : title}
+        </Typography>
+        <Stack direction="row" spacing={0.25} alignItems="center">
           {onEdit ? (
             <Button size="small" onClick={onEdit}
               data-xdrive-mobile-gallery-edit-pinned
@@ -546,7 +558,6 @@ export function XDriveMobileGalleryCollections({
     .map((key) => cardByKey.get(key))
     .filter((card): card is CollectionCard => Boolean(card))
   const pinnedPreview = pinned.slice(0, 12)
-  const pinnedAlbumCount = pinnedAlbumRecords.length
   const resolveQuickPinKey = (key: string): string | null => {
     const canonical = key.startsWith('album-') ? 'pinned-' + key : key
     return cardByKey.has(canonical) ? canonical : null
@@ -690,8 +701,9 @@ export function XDriveMobileGalleryCollections({
   ]
 
   const groupModels: GalleryCollectionGroupModel[] = [
-    { id: 'pinned', title: '固定项目', cards: pinnedPreview,
-      onViewAll: pinnedAlbumCount ? open('albums') : undefined, onEdit: enterPinEdit },
+    // Pinned has its own Edit surface, not an aggregate Albums route.
+    // "View all Pinned" must never silently navigate to unrelated Albums.
+    { id: 'pinned', title: '固定项目', cards: pinnedPreview, onEdit: enterPinEdit },
     { id: 'memories', title: '回忆', cards: recent, onViewAll: open('memories') },
     { id: 'albums', title: '相册', cards: ownedAlbums, onViewAll: open('albums') },
     { id: 'people', title: '人物与宠物', cards: identities, onViewAll: open('people') },
