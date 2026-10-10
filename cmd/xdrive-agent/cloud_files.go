@@ -591,6 +591,22 @@ func (c *agentController) CloudSetAdminPhotoAutoConfig(ctx context.Context, inpu
 	return cli.UpdateAdminPhotoAutoConfig(ctx, input)
 }
 
+func (c *agentController) CloudAdminPhotoAutoRevisions(ctx context.Context) (client.AdminPhotoAutoRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoAutoRevisionPage{}, err
+	}
+	return cli.AdminPhotoAutoRevisions(ctx)
+}
+
+func (c *agentController) CloudRollbackAdminPhotoAuto(ctx context.Context, input client.AdminPhotoAutoRollbackInput) (client.AdminPhotoAutoConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoAutoConfig{}, err
+	}
+	return cli.RollbackAdminPhotoAuto(ctx, input)
+}
+
 func (c *agentController) CloudAdminGeoNamesConfig(ctx context.Context) (client.AdminGeoNamesConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -349,6 +349,35 @@ func (c *Client) UpdateAdminPhotoAutoConfig(ctx context.Context, input AdminPhot
 	return out, err
 }
 
+type AdminPhotoAutoRevision struct {
+	Revision    uint64              `json:"revision"`
+	AutoEnabled bool                `json:"auto_enabled"`
+	Kinds       AdminPhotoAutoKinds `json:"kinds"`
+	Origin      string              `json:"origin"`
+	CreatedAt   time.Time           `json:"created_at"`
+}
+
+type AdminPhotoAutoRevisionPage struct {
+	Items []AdminPhotoAutoRevision `json:"items"`
+}
+
+type AdminPhotoAutoRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminPhotoAutoRevisions(ctx context.Context) (AdminPhotoAutoRevisionPage, error) {
+	var out AdminPhotoAutoRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/revisions", nil, &out)
+	return out, err
+}
+
+func (c *Client) RollbackAdminPhotoAuto(ctx context.Context, input AdminPhotoAutoRollbackInput) (AdminPhotoAutoConfig, error) {
+	var out AdminPhotoAutoConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/photo-intelligence/rollback", input, &out)
+	return out, err
+}
+
 type AdminGeoNamesConfig struct {
 	DatasetConfigured bool       `json:"dataset_configured"`
 	ReloadSupported   bool       `json:"reload_supported"`

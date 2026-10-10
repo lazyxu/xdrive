@@ -1,5 +1,5 @@
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
-import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate } from '../../ui/shared/src'
+import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
   AdminUser,
   AuditEvent,
@@ -635,6 +635,14 @@ export class XDriveApi {
   adminSavePhotoAutoConfig(input: XDrivePhotoAutoUpdate) {
     return this.request<XDrivePhotoAutoConfig>('/api/v1/admin/services/photo-intelligence', {
       method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+    })
+  }
+  adminPhotoAutoRevisions() {
+    return this.request<XDrivePhotoAutoRevisionPage>('/api/v1/admin/services/photo-intelligence/revisions', { cache: 'no-store' })
+  }
+  adminRollbackPhotoAuto(input: XDrivePhotoAutoRollbackInput) {
+    return this.request<XDrivePhotoAutoConfig>('/api/v1/admin/services/photo-intelligence/rollback', {
+      method: 'POST', body: JSON.stringify(input), cache: 'no-store',
     })
   }
 

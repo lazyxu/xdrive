@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate } from '@xdrive/shared'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
@@ -1378,6 +1378,16 @@ export default function App({
     },
     savePhotoAutoConfig: async (input: XDrivePhotoAutoUpdate) => {
       const result = await window.xdriveDesktop.agent.cloudSetAdminPhotoAutoConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadPhotoAutoRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPhotoAutoRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackPhotoAuto: async (input: XDrivePhotoAutoRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminPhotoAuto(input)
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },

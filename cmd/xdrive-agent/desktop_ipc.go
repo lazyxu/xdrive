@@ -600,6 +600,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence", h.cloudAdminPhotoAuto)
 	mux.HandleFunc("PUT /v1/cloud/admin-photo-intelligence", h.cloudSetAdminPhotoAuto)
+	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence/revisions", h.cloudAdminPhotoAutoRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-photo-intelligence/rollback", h.cloudRollbackAdminPhotoAuto)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
 	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
@@ -1862,6 +1864,54 @@ func (h *desktopIPCHandler) cloudSetAdminPhotoAuto(w http.ResponseWriter, r *htt
 	}
 	result, err := provider.CloudSetAdminPhotoAutoConfig(r.Context(), client.AdminPhotoAutoUpdate{
 		Revision: *input.Revision, AutoEnabled: *input.AutoEnabled, Kinds: kinds,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+// History is optional for older Agent test doubles; Server requireAdmin remains authoritative.
+type desktopIPCAdminPhotoAutoHistoryController interface {
+	CloudAdminPhotoAutoRevisions(context.Context) (client.AdminPhotoAutoRevisionPage, error)
+	CloudRollbackAdminPhotoAuto(context.Context, client.AdminPhotoAutoRollbackInput) (client.AdminPhotoAutoConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminPhotoAutoRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoAutoHistoryController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_auto_history_unavailable", "Photo Intelligence history is unsupported")
+		return
+	}
+	result, err := provider.CloudAdminPhotoAutoRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudRollbackAdminPhotoAuto(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoAutoHistoryController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_auto_rollback_unavailable", "Photo Intelligence rollback is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil ||
+		*input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_auto_revision", "An older Photo Intelligence revision is required")
+		return
+	}
+	result, err := provider.CloudRollbackAdminPhotoAuto(r.Context(), client.AdminPhotoAutoRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
 	})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)

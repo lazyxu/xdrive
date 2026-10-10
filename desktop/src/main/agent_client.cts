@@ -512,6 +512,16 @@ export type AgentAdminPhotoAutoUpdate = {
   kinds?: AgentPhotoAutoKinds
 }
 
+export type AgentAdminPhotoAutoRevision = {
+  revision: number
+  auto_enabled: boolean
+  kinds: AgentPhotoAutoKinds
+  origin: 'default' | 'saved' | 'rollback'
+  created_at: string
+}
+export type AgentAdminPhotoAutoRevisionPage = { items: AgentAdminPhotoAutoRevision[] }
+export type AgentAdminPhotoAutoRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
@@ -2816,6 +2826,12 @@ export class AgentIPCClient {
   }
   cloudSetAdminPhotoAutoConfig(input: AgentAdminPhotoAutoUpdate) {
     return this.request<AgentAdminPhotoAutoConfig>('PUT', '/v1/cloud/admin-photo-intelligence', input)
+  }
+  cloudAdminPhotoAutoRevisions() {
+    return this.request<AgentAdminPhotoAutoRevisionPage>('GET', '/v1/cloud/admin-photo-intelligence/revisions')
+  }
+  cloudRollbackAdminPhotoAuto(input: AgentAdminPhotoAutoRollbackInput) {
+    return this.request<AgentAdminPhotoAutoConfig>('POST', '/v1/cloud/admin-photo-intelligence/rollback', input)
   }
 
   cloudAdminGeoNamesConfig() {

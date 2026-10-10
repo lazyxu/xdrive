@@ -85,6 +85,8 @@ import {
   type AgentAdminBaiduMapConfig,
   type AgentAdminPhotoAutoConfig,
   type AgentAdminPhotoAutoUpdate,
+  type AgentAdminPhotoAutoRevisionPage,
+  type AgentAdminPhotoAutoRollbackInput,
   type AgentAdminGeoNamesConfig,
   type AgentAdminGeoNamesUpdate,
   type AgentAdminGeoNamesReloadResult,
@@ -4304,6 +4306,27 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudSetAdminPhotoAutoConfig({
       revision: data.revision, auto_enabled: data.auto_enabled,
       ...(kinds ? { kinds } : {}),
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-photo-intelligence-revisions', () => runAgentAction<AgentAdminPhotoAutoRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminPhotoAutoRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-photo-intelligence', (_event, value: unknown) => runAgentAction<AgentAdminPhotoAutoConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Photo Intelligence rollback requires two revisions.')
+    }
+    const input = value as Partial<AgentAdminPhotoAutoRollbackInput>
+    if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+        input.target_revision < 0 || input.revision <= input.target_revision) {
+      throw new AgentIPCError('invalid_input', 0, 'Photo Intelligence target revision must be older.')
+    }
+    return requireAgentClient().cloudRollbackAdminPhotoAuto({
+      revision: input.revision, target_revision: input.target_revision,
     })
   }, false))
   ipcMain.handle('agent:cloud-admin-geonames', () => runAgentAction<AgentAdminGeoNamesConfig>(async () => {

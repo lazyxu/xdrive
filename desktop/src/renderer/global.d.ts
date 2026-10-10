@@ -69,6 +69,8 @@ import type {
   XDriveBaiduMapAdminConfig,
   XDrivePhotoAutoConfig,
   XDrivePhotoAutoUpdate,
+  XDrivePhotoAutoRevisionPage,
+  XDrivePhotoAutoRollbackInput,
   XDriveGeoNamesConfig,
   XDriveGeoNamesUpdate,
   XDriveGeoNamesReloadResult,
@@ -776,6 +778,8 @@ declare global {
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudAdminPhotoAutoConfig: () => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudSetAdminPhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => Promise<DesktopResult<XDrivePhotoAutoConfig>>
+        cloudAdminPhotoAutoRevisions: () => Promise<DesktopResult<XDrivePhotoAutoRevisionPage>>
+        cloudRollbackAdminPhotoAuto: (input: XDrivePhotoAutoRollbackInput) => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudAdminGeoNamesConfig: () => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudSetAdminGeoNamesConfig: (input: XDriveGeoNamesUpdate) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudReloadAdminGeoNames: (expectedVersion: string) => Promise<DesktopResult<XDriveGeoNamesReloadResult>>
