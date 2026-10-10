@@ -341,6 +341,24 @@ export function XDriveMobileGalleryChrome({
               value={density} onChange={(_event, value) => {
                 if (typeof value === 'number') onDensityChange(value)
               }} />
+            {showCollection ? (
+              <Stack direction="row" spacing={1} data-xdrive-mobile-gallery-view-zoom>
+                <Button size="small" variant="outlined"
+                  aria-label="放大照片缩略图" data-xdrive-mobile-gallery-zoom-in
+                  disabled={density <= densityMin}
+                  onClick={() => onDensityChange(Math.max(densityMin, density - densityStep))}
+                  sx={{ minHeight: 44, minWidth: 44, flex: 1 }}>
+                  放大
+                </Button>
+                <Button size="small" variant="outlined"
+                  aria-label="缩小照片缩略图" data-xdrive-mobile-gallery-zoom-out
+                  disabled={density >= densityMax}
+                  onClick={() => onDensityChange(Math.min(densityMax, density + densityStep))}
+                  sx={{ minHeight: 44, minWidth: 44, flex: 1 }}>
+                  缩小
+                </Button>
+              </Stack>
+            ) : null}
             {onFoldDuplicatesChange ? (
               <Button variant={foldDuplicates ? 'contained' : 'outlined'}
                 onClick={() => onFoldDuplicatesChange(!foldDuplicates)}>
