@@ -34,6 +34,8 @@ const realGalleryFoldPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_FOLD_PERF =
   && perfSearch.get('xdriveGalleryRealFold') === '1'
 const realGalleryColdPerf = import.meta.env.VITE_XDRIVE_GALLERY_REAL_COLD_PERF === '1'
   && perfSearch.get('xdriveGalleryRealCold') === '1'
+const fileExplorerRealScrollPerf = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF === '1'
+  && perfSearch.get('xdriveFileExplorerRealScroll') === '1'
 const fileExplorerPerfScenario = import.meta.env.VITE_XDRIVE_FILE_EXPLORER_PERF === '1'
   ? perfSearch.get('xdriveFileExplorerPerf')
   : null
@@ -81,6 +83,17 @@ if (realGalleryFoldPerf) {
     const message = error instanceof Error ? error.stack || error.message : String(error)
     perfWindow.__xdriveGalleryRealColdError = message
     console.error('__XDRIVE_GALLERY_REAL_COLD_BOOT_ERROR__' + message)
+  })
+} else if (fileExplorerRealScrollPerf) {
+  void import('./FileExplorerRealScrollPerformanceHarness').then((module) => {
+    root.render(
+      <XDriveAppearanceThemeProvider appearance="light">
+        <module.XDriveFileExplorerRealScrollPerformanceHarness />
+      </XDriveAppearanceThemeProvider>,
+    )
+  }).catch((error) => {
+    const message = error instanceof Error ? error.stack || error.message : String(error)
+    console.error('__XDRIVE_FILE_EXPLORER_REAL_SCROLL_BOOT_ERROR__' + message)
   })
 } else if (largeTransferPerfScenario) {
   void import('./LargeTransferPerformanceHarness').then((module) => {
