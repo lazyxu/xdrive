@@ -8,6 +8,9 @@ import type {
   XDrivePhotoAutoConfig,
   XDrivePhotoAutoKinds,
   XDrivePhotoAutoUpdate,
+  XDrivePhotoAutoRevision,
+  XDrivePhotoAutoRevisionPage,
+  XDrivePhotoAutoRollbackInput,
   XDriveGeoNamesConfig,
   XDriveGeoNamesReloadResult,
   XDriveGeoNamesUpdate,
@@ -32,6 +35,8 @@ export type XDriveServiceDependenciesPort = {
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
   loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
   savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
+  loadPhotoAutoRevisions?: () => Promise<XDrivePhotoAutoRevisionPage>
+  rollbackPhotoAuto?: (input: XDrivePhotoAutoRollbackInput) => Promise<XDrivePhotoAutoConfig>
   loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
   saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
@@ -51,6 +56,10 @@ const photoAutoKindChoices = [
   { key: 'semantic', title: '语义向量与搜索索引', description: '仅限制后续自动语义分析' },
   { key: 'person_cluster', title: '人物聚类', description: '仅限制后续自动人物整理' },
 ] as const
+
+function photoAutoKindSummary(kinds: XDrivePhotoAutoKinds): string {
+  return photoAutoKindChoices.map((kind) => `${kind.title}：${kinds[kind.key] ? '开启' : '暂停'}`).join('、')
+}
 
 const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; description: string }> = [
   { id: 'core', label: '基础服务', description: '核心数据库与文件存储的实时就绪探针。' },
@@ -143,12 +152,17 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesRollbackTarget, setGeoNamesRollbackTarget] = useState('')
   const [geoNamesRollbackConfirmOpen, setGeoNamesRollbackConfirmOpen] = useState(false)
   const photoPolicyEpochRef = useRef(0)
+  const photoHistoryEpochRef = useRef(0)
   const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
   const [photoAutoDraft, setPhotoAutoDraft] = useState(true)
   const [photoKindsDraft, setPhotoKindsDraft] = useState<XDrivePhotoAutoKinds>(defaultPhotoAutoKinds)
   const [photoPolicyBusy, setPhotoPolicyBusy] = useState(false)
   const [photoPolicyError, setPhotoPolicyError] = useState('')
   const [photoPolicyNotice, setPhotoPolicyNotice] = useState('')
+  const [photoRevisions, setPhotoRevisions] = useState<XDrivePhotoAutoRevision[]>([])
+  const [photoHistoryError, setPhotoHistoryError] = useState('')
+  const [photoRollbackTarget, setPhotoRollbackTarget] = useState('')
+  const [photoRollbackConfirmOpen, setPhotoRollbackConfirmOpen] = useState(false)
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -173,12 +187,17 @@ export function XDriveServiceDependenciesPage({
     ++revealEpochRef.current
     ++geoNamesEpochRef.current
     ++photoPolicyEpochRef.current
+    const photoHistoryEpoch = ++photoHistoryEpochRef.current
     setPhotoPolicy(null)
     setPhotoAutoDraft(true)
     setPhotoKindsDraft(defaultPhotoAutoKinds)
     setPhotoPolicyBusy(false)
     setPhotoPolicyError('')
     setPhotoPolicyNotice('')
+    setPhotoRevisions([])
+    setPhotoHistoryError('')
+    setPhotoRollbackTarget('')
+    setPhotoRollbackConfirmOpen(false)
     setBaiduReveal(null)
     setRevealingAK(false)
     setGeoNamesBusy(false)
@@ -207,6 +226,18 @@ export function XDriveServiceDependenciesPage({
         setPhotoKindsDraft(policy.kinds ?? defaultPhotoAutoKinds)
       }).catch(() => {
         if (active) setPhotoPolicyError('无法读取照片智能分析策略，请检查 Server 或更新客户端。')
+      })
+    }
+    if (source.loadPhotoAutoRevisions) {
+      void source.loadPhotoAutoRevisions().then((page) => {
+        if (active && photoHistoryEpoch === photoHistoryEpochRef.current) {
+          setPhotoRevisions(page.items)
+          setPhotoHistoryError('')
+        }
+      }).catch(() => {
+        if (active && photoHistoryEpoch === photoHistoryEpochRef.current) {
+          setPhotoHistoryError('无法读取照片智能分析配置历史，请检查 Server/Agent 版本。')
+        }
       })
     }
     if (source.loadBaiduMapConfig) {
@@ -247,6 +278,7 @@ export function XDriveServiceDependenciesPage({
       ++revealEpochRef.current
       ++geoNamesEpochRef.current
       ++photoPolicyEpochRef.current
+      ++photoHistoryEpochRef.current
     }
   }, [source, refreshID])
 
@@ -393,15 +425,97 @@ export function XDriveServiceDependenciesPage({
       setPhotoPolicy(next)
       setPhotoAutoDraft(next.auto_enabled)
       setPhotoKindsDraft(next.kinds ?? defaultPhotoAutoKinds)
+      setPhotoRollbackTarget('')
+      setPhotoRollbackConfirmOpen(false)
       setPhotoPolicyNotice(next.apply_state === 'applied'
         ? '设置已持久化并审计，当前 Server 的新自动分析任务立即遵循此策略；其他实例将定期同步。'
         : '设置已保存，但当前 Server 尚未确认生效，请刷新状态。')
+      if (source.loadPhotoAutoRevisions) {
+        const historyEpoch = ++photoHistoryEpochRef.current
+        try {
+          const history = await source.loadPhotoAutoRevisions()
+          if (epoch === photoPolicyEpochRef.current && historyEpoch === photoHistoryEpochRef.current) {
+            setPhotoRevisions(history.items)
+            setPhotoHistoryError('')
+          }
+        } catch {
+          if (epoch === photoPolicyEpochRef.current && historyEpoch === photoHistoryEpochRef.current) {
+            setPhotoHistoryError('策略已保存，但无法刷新历史修订。请刷新页面后重试。')
+          }
+        }
+      }
     } catch (err) {
       if (epoch === photoPolicyEpochRef.current) {
         setPhotoPolicyError(err instanceof Error ? err.message : '保存失败，当前运行策略未确认更新。')
       }
     } finally {
       if (epoch === photoPolicyEpochRef.current) setPhotoPolicyBusy(false)
+    }
+  }
+
+  const rollbackPhotoAuto = async () => {
+    if (!photoPolicy?.editable || !source.rollbackPhotoAuto || photoPolicyBusy) return
+    const target = photoRevisions.find(
+      (item) => String(item.revision) === photoRollbackTarget && item.revision < photoPolicy.revision,
+    )
+    if (!target) {
+      setPhotoPolicyError('请选择一个比当前配置更早的有效修订。')
+      setPhotoRollbackConfirmOpen(false)
+      return
+    }
+    const epoch = ++photoPolicyEpochRef.current
+    const historyEpoch = ++photoHistoryEpochRef.current
+    setPhotoPolicyBusy(true)
+    setPhotoPolicyError('')
+    setPhotoPolicyNotice('')
+    try {
+      const effective = await source.rollbackPhotoAuto({
+        revision: photoPolicy.revision,
+        target_revision: target.revision,
+      })
+      if (epoch !== photoPolicyEpochRef.current) return
+      setPhotoPolicy(effective)
+      setPhotoAutoDraft(effective.auto_enabled)
+      setPhotoKindsDraft(effective.kinds ?? defaultPhotoAutoKinds)
+      setPhotoRollbackTarget('')
+      setPhotoHistoryError('')
+      setPhotoPolicyNotice(effective.apply_state === 'applied'
+        ? '历史自动分析策略已写入新修订并通过审计，当前 Server 已热生效；其他实例需按策略周期刷新。'
+        : '历史策略已保存为新修订，但当前实例仍待生效，请刷新检查。')
+      if (source.loadPhotoAutoRevisions) {
+        try {
+          const history = await source.loadPhotoAutoRevisions()
+          if (epoch === photoPolicyEpochRef.current && historyEpoch === photoHistoryEpochRef.current) {
+            setPhotoRevisions(history.items)
+            setPhotoHistoryError('')
+          }
+        } catch {
+          if (epoch === photoPolicyEpochRef.current && historyEpoch === photoHistoryEpochRef.current) {
+            setPhotoHistoryError('回滚已完成，但历史记录刷新失败。请手动刷新页面。')
+          }
+        }
+      }
+      const status = await source.load().catch(() => null)
+      if (status && epoch === photoPolicyEpochRef.current) setSnapshot(status)
+    } catch (err) {
+      if (epoch === photoPolicyEpochRef.current) {
+        setPhotoPolicyError(err instanceof Error ? err.message : '历史策略回滚失败，请刷新后重试。')
+        // A 409 or an interrupted response makes the displayed revision stale.
+        // Read the authoritative desired/effective policy again, never assume rollback succeeded.
+        if (source.loadPhotoAutoConfig) {
+          const actual = await source.loadPhotoAutoConfig().catch(() => null)
+          if (actual && epoch === photoPolicyEpochRef.current) {
+            setPhotoPolicy(actual)
+            setPhotoAutoDraft(actual.auto_enabled)
+            setPhotoKindsDraft(actual.kinds ?? defaultPhotoAutoKinds)
+          }
+        }
+      }
+    } finally {
+      if (epoch === photoPolicyEpochRef.current) {
+        setPhotoPolicyBusy(false)
+        setPhotoRollbackConfirmOpen(false)
+      }
     }
   }
 
@@ -456,6 +570,9 @@ export function XDriveServiceDependenciesPage({
   const systemServices = snapshot?.services.filter((item) => groups.some((group) => group.id === item.group)) ?? []
   const photoKindsChanged = !!photoPolicy?.kinds && photoAutoKindChoices.some(
     (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
+  )
+  const selectedPhotoRevision = photoRevisions.find(
+    (item) => String(item.revision) === photoRollbackTarget && item.revision < (photoPolicy?.revision ?? 0),
   )
   const healthy = systemServices.filter((item) => item.status === 'ready').length
 
@@ -562,6 +679,55 @@ export function XDriveServiceDependenciesPage({
                         保存后当前 Server 立即按新的准入策略执行；其他实例在周期刷新后尝试生效。模型与资源仍由受控部署管理。
                       </Typography>
                     </Stack>
+                    {source.loadPhotoAutoRevisions && source.rollbackPhotoAuto && (
+                      <Stack spacing={1.25}>
+                        <Typography variant="subtitle2" fontWeight={700}>配置历史与安全回滚</Typography>
+                        <TextField select fullWidth size="small" label="回滚至历史自动分析策略"
+                          value={photoRollbackTarget}
+                          onChange={(event) => setPhotoRollbackTarget(event.target.value)}
+                          disabled={photoPolicyBusy || !photoPolicy?.editable || !photoPolicy.kinds ||
+                            !photoRevisions.some((item) => item.revision < (photoPolicy?.revision ?? 0))}
+                          helperText="回滚完整的全局与四类任务准入配置，另存为新修订并审计；不会重启模型或停止运行中任务。">
+                          <MenuItem value="">请选择较早的配置版本</MenuItem>
+                          {photoRevisions.filter((item) => item.revision < (photoPolicy?.revision ?? 0))
+                            .map((item) => (
+                              <MenuItem key={item.revision} value={String(item.revision)}>
+                                <Stack spacing={0}>
+                                  <Typography variant="body2">
+                                    修订 #{item.revision} · {item.auto_enabled ? '全局自动开启' : '全局自动暂停'}
+                                    {' · '}{item.origin === 'default' ? '初始默认' : item.origin === 'rollback' ? '历史回滚' : '管理员保存'}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {photoAutoKindSummary(item.kinds)} · {new Date(item.created_at).toLocaleString()}
+                                  </Typography>
+                                </Stack>
+                              </MenuItem>
+                            ))}
+                        </TextField>
+                        <Button variant="outlined" size="small"
+                          disabled={photoPolicyBusy || !photoPolicy?.editable || !selectedPhotoRevision}
+                          onClick={() => setPhotoRollbackConfirmOpen(true)}>
+                          确认回滚自动分析策略
+                        </Button>
+                        {photoHistoryError && (
+                          <Typography variant="caption" color="warning.main">{photoHistoryError}</Typography>
+                        )}
+                        <XDriveConfirmDialog
+                          open={photoRollbackConfirmOpen}
+                          title="确认回滚照片智能分析调度策略"
+                          description={selectedPhotoRevision
+                            ? `将回滚到修订 #${selectedPhotoRevision.revision}：
+全局自动分析${selectedPhotoRevision.auto_enabled ? '开启' : '暂停'}；${photoAutoKindSummary(selectedPhotoRevision.kinds)}。
+将重新保存完整策略、写入审计并应用到当前 Server，之前未保存的编辑会被覆盖。
+已运行分析任务不会中断，用户/管理员手动重分析及 GeoNames 不受影响；其他实例可能尚待刷新。`
+                            : '历史修订已失效，请刷新配置后重新选择。'}
+                          confirmLabel="确认并回滚完整策略"
+                          loading={photoPolicyBusy}
+                          onCancel={() => setPhotoRollbackConfirmOpen(false)}
+                          onConfirm={() => { void rollbackPhotoAuto() }}
+                        />
+                      </Stack>
+                    )}
                     {photoPolicyError && <XDriveStatusAlert tone="bad">{photoPolicyError}</XDriveStatusAlert>}
                     {photoPolicyNotice && <XDriveStatusAlert tone="good">{photoPolicyNotice}</XDriveStatusAlert>}
                   </Stack>

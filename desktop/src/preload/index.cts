@@ -618,6 +618,9 @@ const agent = Object.freeze({
   cloudAdminPhotoAutoConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence'),
   cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean; kinds?: { face: boolean; smart: boolean; semantic: boolean; person_cluster: boolean } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-photo-intelligence', input),
+  cloudAdminPhotoAutoRevisions: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence-revisions'),
+  cloudRollbackAdminPhotoAuto: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-photo-intelligence', input),
   cloudAdminGeoNamesConfig: () => ipcRenderer.invoke('agent:cloud-admin-geonames'),
   cloudSetAdminGeoNamesConfig: (input: { revision: number; max_distance_km: number }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-geonames', input),

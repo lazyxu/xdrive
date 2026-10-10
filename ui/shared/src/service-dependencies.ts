@@ -59,6 +59,21 @@ export type XDrivePhotoAutoUpdate = {
   kinds?: XDrivePhotoAutoKinds
 }
 
+export type XDrivePhotoAutoRevision = {
+  revision: number
+  auto_enabled: boolean
+  kinds: XDrivePhotoAutoKinds
+  origin: 'default' | 'saved' | 'rollback'
+  created_at: string
+}
+
+export type XDrivePhotoAutoRevisionPage = { items: XDrivePhotoAutoRevision[] }
+
+export type XDrivePhotoAutoRollbackInput = {
+  revision: number
+  target_revision: number
+}
+
 export type XDriveGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean

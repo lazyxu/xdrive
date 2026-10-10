@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate } from '../../ui/shared/src'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
@@ -845,6 +845,8 @@ function FileManager({
     load: () => api.adminServices(),
     loadPhotoAutoConfig: () => api.adminPhotoAutoConfig(),
     savePhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => api.adminSavePhotoAutoConfig(input),
+    loadPhotoAutoRevisions: () => api.adminPhotoAutoRevisions(),
+    rollbackPhotoAuto: (input: XDrivePhotoAutoRollbackInput) => api.adminRollbackPhotoAuto(input),
     loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
     saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),
     revealBaiduMapAK: (revision: number) => api.adminRevealBaiduMapAK(revision),
