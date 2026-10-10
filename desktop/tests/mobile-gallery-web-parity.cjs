@@ -177,3 +177,23 @@ test('P0-3f mounted Web and Mobile share same account-pinned album notifications
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
 })
+
+test('P1-1a Mobile Collections overview reuses the Wide Web Gallery upload entry and native picker', () => {
+  assert.match(page, /const galleryUploadAction = onUploadRequested &&/)
+  assert.match(page, /!isTrashSection \|\| \(compactGallery && mobileCollectionsOverview\)/)
+  assert.match(page, /showOverviewActions=\{Boolean\(galleryUploadAction\)\}/)
+  assert.match(page, /extraActions=\{mobileCollectionsOverview \? galleryUploadAction :/)
+  assert.match(page, /\{contextualHeaderActions\}/)
+  assert.match(page, /data-xdrive-gallery-upload/)
+  assert.match(page, /\{querySelectionControls\}/)
+  assert.match(page, /extraActions=\{mobileCollectionsOverview \? galleryUploadAction :/)
+  assert.doesNotMatch(page, /mobileCollectionsOverview \? contextualHeaderActions/)
+  assert.match(web, /ref=\{galleryUploadInputRef\}[\s\S]*?multiple[\s\S]*?onUploadRequested=\{\(\) => galleryUploadInputRef\.current\?\.click\(\)\}/)
+  assert.match(chrome, /const canShowMore =/)
+  assert.match(chrome, /if \(!canShowMore\) setMoreOpen\(false\)/)
+  assert.doesNotMatch(chrome, /fetch\(|listItemRange\(|new XMLHttpRequest\(/)
+  const realWebFixture = read('desktop/scripts/mobile-web-app-browser.cjs')
+  assert.match(realWebFixture, /const expectedVersion = sourceMIME === 'image\/png' \? '4' : '3'/)
+  assert.match(realWebFixture, /thumbnail URL version must match the fixture source MIME/)
+})
+

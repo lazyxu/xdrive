@@ -414,7 +414,13 @@ function fixtureFor(request, role) {
   match = /^GET \/api\/v1\/media\/items\/(\d+)\/thumbnail$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) {
     queryOnly(url, galleryIos27ChromeScenario ? ['v', 'revision'] : ['v']);
-    assert.equal(url.searchParams.get('v'), '3');
+    // The real Go Server selects transparent-capable PNG v4 cache keys,
+    // while ordinary JPEG retains v3. Do not resurrect a stale global v3
+    // fixture or waive unknown-request auditing to make Chrome appear green.
+    const sourceMIME = mediaByID.get(Number(match[1])).metadata.mime_type;
+    const expectedVersion = sourceMIME === 'image/png' ? '4' : '3';
+    assert.equal(url.searchParams.get('v'), expectedVersion,
+      'thumbnail URL version must match the fixture source MIME');
     if (url.searchParams.has('revision')) {
       assert.equal(url.searchParams.get('revision'),
         String(mediaByID.get(Number(match[1])).node.revision),
@@ -1894,6 +1900,33 @@ async function galleryIos27ChromeAcceptance() {
   check('Collections hides Year/Month/All without unmounting shared Gallery',
     await page.locator('[data-xdrive-mobile-gallery-time-scale]').count() === 0
     && await page.evaluate(() => document.querySelector('#xdrive-mobile-gallery-main') === window.__iosGalleryRoot));
+
+  // P1-1a: exercise the actual built Web Gallery's original multi-file picker,
+  // not a second mobile upload callback or an invented successful transfer.
+  activeStage = 'user-gallery-ios27-collections-upload';
+  const more = page.locator('[data-xdrive-mobile-gallery-more]');
+  await more.waitFor();
+  const moreTarget = await more.boundingBox();
+  check('Collections overview has a 44px More target for authorized Gallery actions',
+    !!moreTarget && moreTarget.width >= 43.9 && moreTarget.height >= 43.9, moreTarget);
+  await more.tap();
+  const morePanel = page.locator('[data-xdrive-mobile-gallery-more-panel]');
+  await morePanel.waitFor();
+  const upload = morePanel.locator('[data-xdrive-gallery-upload]');
+  await upload.waitFor();
+  check('Collections More hides Library-only density, fold and query-wide selection controls',
+    await morePanel.locator('[aria-label="移动图库缩略图密度"]').count() === 0
+    && await morePanel.getByText('照片墙最少列数', {exact:false}).count() === 0
+    && await morePanel.getByText('折叠重复副本',{exact:false}).count() === 0);
+  check('Collections More exposes the exact shared Gallery upload action',
+    await upload.count() === 1
+    && await page.locator('[data-xdrive-gallery-upload-picker][multiple]').count() === 1);
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), upload.tap()]);
+  check('Collections upload opens the existing native multi-file chooser',
+    chooser.isMultiple() === true);
+  await page.screenshot({path:path.join(outputDir,'user-gallery-ios27-collections-upload.png')});
+  await page.getByRole('button',{name:'完成',exact:true}).tap();
+  await morePanel.waitFor({state:'hidden'});
   await page.locator('[data-xdrive-mobile-gallery-tab="library"]').tap();
   await page.locator('[data-xdrive-mobile-gallery-time-scale]').waitFor();
   check('Returning Library restores exactly one bottom time dock',

@@ -399,6 +399,60 @@ test('P0-3i floating library scale remains one shared view controller across tab
   }
 })
 
+test('P1-1a Collections overview exposes only authorized shared upload through its 44px More entry', async () => {
+  let uploadCalls = 0
+  const sharedUpload = React.createElement('button', {
+    'data-xdrive-gallery-upload': true,
+    onClick: () => { uploadCalls++ },
+  }, '上传照片或视频')
+  const render = (enabled) => React.createElement(MobileChrome, props({
+    primaryTab: 'collections', showCollection: false, canGoBack: false,
+    showOverviewActions: enabled,
+    currentDateLabel: '2026-10',
+    onTimeZoneChange: () => {},
+    onFoldDuplicatesChange: () => {},
+    extraActions: enabled ? sharedUpload : undefined,
+  }))
+  let view
+  try {
+    await act(async () => { view = renderer.create(render(true)) })
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-select']).length, 0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-sort-filter']).length, 0)
+    const more = find(view, 'data-xdrive-mobile-gallery-more')
+    assert.ok(more, 'a valid Wide Web Gallery action must be reachable from Collections')
+    assert.equal(more.props.sx.minHeight, 44)
+    assert.equal(more.props.sx.minWidth, 44)
+    assert.equal(more.props['aria-haspopup'], 'dialog')
+    await act(async () => { more.props.onClick() })
+    const openDrawers = () => view.root.findAll(x => x.type === 'drawer' && x.props.open)
+    assert.equal(openDrawers().length, 1)
+    assert.equal(view.root.findAll(x => x.type === 'slider').length, 0,
+      'Collections must not show Library thumbnail density')
+    assert.equal(view.root.findAll(x => x.type === 'autocomplete').length, 0,
+      'Collections must not show Library timeline timezone')
+    assert.equal(view.root.findAll(x => x.type === 'button' &&
+      x.props?.children === '折叠重复副本').length, 0,
+      'Collections must not show Library duplicate-fold commands')
+    const upload = find(view, 'data-xdrive-gallery-upload')
+    assert.ok(upload, 'More must reuse the exact shared upload control')
+    await act(async () => { upload.props.onClick() })
+    assert.equal(uploadCalls, 1, 'no second mobile upload handler is allowed')
+
+    // Permissions or account changes revoke the entry and dismiss its stale
+    // sheet instead of leaving an invisible live mutation UI mounted.
+    await act(async () => { view.update(render(false)) })
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-more']).length, 0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-gallery-upload']).length, 0)
+    assert.equal(openDrawers().length, 0)
+
+    await act(async () => { view.update(React.createElement(MobileChrome, props())) })
+    assert.ok(find(view, 'data-xdrive-mobile-gallery-more'),
+      'Library More remains available independently of overview upload permissions')
+  } finally {
+    if (view) await act(async () => { view.unmount() })
+  }
+})
+
 test('P0-3i bottom time controls add safe scroll clearance without forking Web range or App Frame', () => {
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   const chrome = read(sourcePath)
