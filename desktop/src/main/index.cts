@@ -158,6 +158,8 @@ import {
   type AgentBaiduMapProvider,
   type AgentMediaThumbnail,
   type AgentSource,
+  type AgentDeviceBackupOverview,
+  type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
   type AgentUpdateSourceInput,
@@ -1929,6 +1931,30 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'external-sources')
     return requireAgentClient().sources()
   }, false))
+  // Read-only, owner-scoped B projection. Never feed another device through
+  // generic Source, RunFailure or SourceItem IPC.
+  ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-read')
+    return requireAgentClient().deviceBackups()
+  }, false))
+  ipcMain.handle('agent:get-device-backup-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentDeviceBackupRunPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-read')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Backup source id must be positive.')
+    }
+    const requestedLimit = limit === undefined ? 20 : limit
+    if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+      throw new AgentIPCError('invalid_input', 0, 'Backup run limit must be between 1 and 100.')
+    }
+    const requestedOffset = offset === undefined ? 0 : offset
+    if (typeof requestedOffset !== 'number' || !Number.isSafeInteger(requestedOffset) || requestedOffset < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Backup run offset must be zero or greater.')
+    }
+    return requireAgentClient().deviceBackupRuns(sourceID, requestedLimit, requestedOffset)
+  }, false))
+
   ipcMain.handle('agent:get-source-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentSourceRun[]>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'external-sources')

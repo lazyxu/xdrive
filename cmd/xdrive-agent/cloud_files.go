@@ -2044,6 +2044,22 @@ func (c *agentController) CloudSources(ctx context.Context) ([]client.Source, er
 	return cli.Sources(ctx)
 }
 
+func (c *agentController) CloudDeviceBackupOverview(ctx context.Context) (client.DeviceBackupOverview, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.DeviceBackupOverview{}, err
+	}
+	return cli.DeviceBackupOverview(ctx)
+}
+
+func (c *agentController) CloudDeviceBackupRuns(ctx context.Context, sourceID uint64, limit, offset int) (client.DeviceBackupRunPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.DeviceBackupRunPage{}, err
+	}
+	return cli.DeviceBackupRunSummaries(ctx, sourceID, limit, offset)
+}
+
 func (c *agentController) CloudSourceRuns(ctx context.Context, sourceID uint64, limit, offset int) ([]client.SyncRun, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
