@@ -616,6 +616,12 @@ export type AgentAdminGeoNamesSnapshot = {
   locally_present: boolean
 }
 export type AgentAdminGeoNamesSnapshotInput = { revision: number; expected_version: string }
+export type AgentAdminGeoNamesDatasetApplyInput = {
+  revision: number
+  expected_version: string
+  expected_fingerprint: string
+  target: string
+}
 export type AgentAdminGeoNamesSnapshotResult = {
   staged: boolean
   applied: boolean
@@ -644,6 +650,10 @@ export type AgentAdminGeoNamesConfig = {
   snapshot_requirement?: string
   snapshot_history_known?: boolean
   snapshots?: AgentAdminGeoNamesSnapshot[]
+  snapshot_apply_supported?: boolean
+  active_dataset_fingerprint?: string
+  active_dataset_source?: 'deployment' | 'snapshot'
+  active_dataset_persistent?: boolean
   updated_at?: string
   requires_restart: boolean
 }
@@ -2987,6 +2997,11 @@ export class AgentIPCClient {
   }
   cloudRollbackAdminGeoNames(input: AgentAdminGeoNamesRollbackInput) {
     return this.request<AgentAdminGeoNamesConfig>('POST', '/v1/cloud/admin-geonames/rollback', input, 120_000)
+  }
+  cloudApplyAdminGeoNamesDataset(input: AgentAdminGeoNamesDatasetApplyInput) {
+    return this.request<AgentAdminGeoNamesConfig>(
+      'POST', '/v1/cloud/admin-geonames/dataset-snapshots/apply', input, 180_000,
+    )
   }
   cloudStageAdminGeoNamesSnapshot(input: AgentAdminGeoNamesSnapshotInput) {
     return this.request<AgentAdminGeoNamesSnapshotResult>(

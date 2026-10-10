@@ -101,6 +101,7 @@ import {
   type AgentAdminGeoNamesReloadResult,
   type AgentAdminGeoNamesSnapshotInput,
   type AgentAdminGeoNamesSnapshotResult,
+  type AgentAdminGeoNamesDatasetApplyInput,
   type AgentAdminGeoNamesRevisionPage,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
@@ -4491,6 +4492,28 @@ function registerIPCHandlers() {
       revision: input.revision, target_revision: input.target_revision,
     })
   }, false))
+  ipcMain.handle('agent:cloud-apply-admin-geonames-dataset', (_event, data: unknown) =>
+    runAgentAction<AgentAdminGeoNamesConfig>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new AgentIPCError('invalid_input', 0, 'GeoNames apply expects a dataset revision and target.')
+      }
+      const input = data as Partial<AgentAdminGeoNamesDatasetApplyInput>
+      const validFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value)
+      if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+          typeof input.expected_version !== 'string' || !input.expected_version ||
+          input.expected_version.length > 128 || typeof input.expected_fingerprint !== 'string' ||
+          (input.expected_fingerprint !== '' && !validFingerprint(input.expected_fingerprint)) ||
+          typeof input.target !== 'string' ||
+          (input.target !== 'deployment' && !validFingerprint(input.target))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid GeoNames dataset apply target or stale revision.')
+      }
+      return requireAgentClient().cloudApplyAdminGeoNamesDataset({
+        revision: input.revision, expected_version: input.expected_version,
+        expected_fingerprint: input.expected_fingerprint, target: input.target,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-stage-admin-geonames-snapshot', (_event, data: unknown) =>
     runAgentAction<AgentAdminGeoNamesSnapshotResult>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

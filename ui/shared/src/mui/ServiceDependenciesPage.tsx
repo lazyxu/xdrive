@@ -19,6 +19,7 @@ import type {
   XDriveGeoNamesRollbackInput,
   XDriveGeoNamesSnapshotInput,
   XDriveGeoNamesSnapshotResult,
+  XDriveGeoNamesDatasetApplyInput,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -48,6 +49,7 @@ export type XDriveServiceDependenciesPort = {
   saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
   stageGeoNamesSnapshot?: (input: XDriveGeoNamesSnapshotInput) => Promise<XDriveGeoNamesSnapshotResult>
+  applyGeoNamesDataset?: (input: XDriveGeoNamesDatasetApplyInput) => Promise<XDriveGeoNamesConfig>
   loadGeoNamesRevisions?: () => Promise<XDriveGeoNamesRevisionPage>
   rollbackGeoNames?: (input: XDriveGeoNamesRollbackInput) => Promise<XDriveGeoNamesConfig>
 }
@@ -161,6 +163,8 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesRollbackTarget, setGeoNamesRollbackTarget] = useState('')
   const [geoNamesRollbackConfirmOpen, setGeoNamesRollbackConfirmOpen] = useState(false)
   const [geoNamesSnapshotConfirmOpen, setGeoNamesSnapshotConfirmOpen] = useState(false)
+  const [geoNamesDatasetTarget, setGeoNamesDatasetTarget] = useState('')
+  const [geoNamesDatasetConfirmOpen, setGeoNamesDatasetConfirmOpen] = useState(false)
   const photoPolicyEpochRef = useRef(0)
   const photoHistoryEpochRef = useRef(0)
   const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
@@ -220,6 +224,8 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesRollbackTarget('')
     setGeoNamesRollbackConfirmOpen(false)
     setGeoNamesSnapshotConfirmOpen(false)
+    setGeoNamesDatasetTarget('')
+    setGeoNamesDatasetConfirmOpen(false)
     setLoading(true)
     setError('')
     // Do not retain an old server/account snapshot while a different source loads.
@@ -385,6 +391,46 @@ export function XDriveServiceDependenciesPage({
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
+    }
+  }
+
+  const applyGeoNamesDataset = async () => {
+    if (!geoNamesConfig || !geoNamesDatasetTarget || !source.applyGeoNamesDataset || geoNamesBusy ||
+        (!geoNamesConfig.snapshot_apply_supported && geoNamesDatasetTarget !== 'deployment')) return
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const next = await source.applyGeoNamesDataset({
+        revision: geoNamesConfig.revision,
+        expected_version: geoNamesConfig.current_version,
+        expected_fingerprint: geoNamesConfig.active_dataset_fingerprint ?? '',
+        target: geoNamesDatasetTarget,
+      })
+      if (epoch !== geoNamesEpochRef.current) return
+      const expected = geoNamesDatasetTarget === 'deployment' ? '' : geoNamesDatasetTarget
+      if (next.active_dataset_fingerprint !== expected ||
+          next.active_dataset_persistent !== (geoNamesDatasetTarget === 'deployment')) {
+        throw new Error('GeoNames 数据集未能确认当前 Server 实际热加载状态。')
+      }
+      setGeoNamesConfig(next)
+      setGeoNamesDraftDistance(String(next.max_distance_km))
+      setGeoNamesDatasetTarget('')
+      setGeoNamesNotice(geoNamesDatasetTarget === 'deployment'
+        ? '当前 Server 已验证并恢复部署数据集；重启后继续使用部署挂载，其他实例不受影响。'
+        : '已重新验证数据集指纹、审计并热应用到当前 Server。运行中地名解析保持旧快照；重启后恢复部署挂载，其他 Server 不受此操作影响。')
+      const latest = await source.load()
+      if (epoch === geoNamesEpochRef.current) setSnapshot(latest)
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 数据集校验或热应用失败，原索引继续生效。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesBusy(false)
+        setGeoNamesDatasetConfirmOpen(false)
+      }
     }
   }
 
@@ -961,6 +1007,17 @@ export function XDriveServiceDependenciesPage({
                         保存为本 Server 可读取的历史快照。创建快照不会切换当前索引；
                         在线上传、跨实例文件分发和从历史文件恢复仍待后续安全控制。
                       </Typography>
+                      {geoNamesConfig?.active_dataset_source && (
+                        <Typography variant="body2" color="text.secondary">
+                          当前 Server 数据来源：{geoNamesConfig.active_dataset_source === 'snapshot'
+                            ? '历史快照' : '部署只读挂载'}
+                          {geoNamesConfig.active_dataset_fingerprint
+                            ? ` · 指纹 ${geoNamesConfig.active_dataset_fingerprint.slice(0, 16)}…` : ''}
+                          {' · '}{geoNamesConfig.active_dataset_source === 'snapshot'
+                            ? '仅当前进程临时生效，重启后恢复部署数据集'
+                            : '部署默认数据集，重启后保持'}
+                        </Typography>
+                      )}
                       <Button variant="outlined" size="small"
                         disabled={geoNamesBusy || !geoNamesConfig?.snapshot_supported ||
                           !source.stageGeoNamesSnapshot}
@@ -982,7 +1039,9 @@ export function XDriveServiceDependenciesPage({
                           overflowWrap: 'anywhere',
                         }}>
                           <Typography variant="caption" fontWeight={700}>
-                            数据集指纹 {entry.fingerprint.slice(0, 16)}… · 已暂存，未应用
+                            数据集指纹 {entry.fingerprint.slice(0, 16)}…
+                            {' · '}{entry.fingerprint === geoNamesConfig?.active_dataset_fingerprint
+                              ? '当前 Server 已临时应用' : '已暂存，未应用'}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                             {entry.total_bytes} 字节 · 验证时匹配距离 {entry.checked_radius_km} km
@@ -992,6 +1051,42 @@ export function XDriveServiceDependenciesPage({
                           </Typography>
                         </Box>
                       ))}
+                      {source.applyGeoNamesDataset && geoNamesConfig?.snapshot_apply_supported && (
+                        <Stack spacing={1}>
+                          <TextField select fullWidth size="small"
+                            label="校验并临时应用数据集到当前 Server"
+                            value={geoNamesDatasetTarget}
+                            onChange={(event) => setGeoNamesDatasetTarget(event.target.value)}
+                            disabled={geoNamesBusy}
+                            helperText="不会写入部署数据目录、不会跨实例分发。进程重启会恢复部署数据集。">
+                            <MenuItem value="">选择要重新验证并加载的数据源</MenuItem>
+                            <MenuItem value="deployment">恢复部署只读数据集</MenuItem>
+                            {geoNamesConfig.snapshots?.filter((entry) => entry.locally_present)
+                              .map((entry) => (
+                                <MenuItem key={entry.fingerprint} value={entry.fingerprint}>
+                                  历史版本 {entry.fingerprint.slice(0, 16)}… · {entry.total_bytes} 字节
+                                </MenuItem>
+                              ))}
+                          </TextField>
+                          <Button variant="outlined" size="small"
+                            disabled={geoNamesBusy || !geoNamesDatasetTarget ||
+                              (geoNamesDatasetTarget === 'deployment'
+                                ? geoNamesConfig.active_dataset_source !== 'snapshot'
+                                : geoNamesDatasetTarget === geoNamesConfig.active_dataset_fingerprint)}
+                            onClick={() => setGeoNamesDatasetConfirmOpen(true)}>
+                            校验并应用到当前 Server
+                          </Button>
+                          <XDriveConfirmDialog
+                            open={geoNamesDatasetConfirmOpen}
+                            title="确认临时热应用 GeoNames 数据集"
+                            description="重新读取并校验目标数据集的真实字节，审计后仅在当前 Server 原子切换。运行中批次保留旧索引；不会修改其他实例，且重启后恢复部署数据目录。"
+                            confirmLabel="确认校验并临时应用"
+                            loading={geoNamesBusy}
+                            onCancel={() => setGeoNamesDatasetConfirmOpen(false)}
+                            onConfirm={() => { void applyGeoNamesDataset() }}
+                          />
+                        </Stack>
+                      )}
                       <XDriveConfirmDialog
                         open={geoNamesSnapshotConfirmOpen}
                         title="建立 GeoNames 数据集历史快照"

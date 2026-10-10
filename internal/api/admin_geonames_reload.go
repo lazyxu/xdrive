@@ -8,33 +8,36 @@ import (
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
-	"github.com/lazyxu/xdrive/internal/photointelligence"
 )
 
 type adminGeoNamesConfigDTO struct {
-	DatasetConfigured      bool                   `json:"dataset_configured"`
-	ReloadSupported        bool                   `json:"reload_supported"`
-	Source                 string                 `json:"source"`
-	CurrentVersion         string                 `json:"current_version"`
-	MaxDistanceKM          float64                `json:"max_distance_km"`
-	RequiresRestart        bool                   `json:"requires_restart"`
-	Editable               bool                   `json:"editable"`
-	Revision               uint64                 `json:"revision"`
-	EffectiveDistance      float64                `json:"effective_max_distance_km"`
-	EffectiveRevision      uint64                 `json:"effective_revision"`
-	ApplyState             string                 `json:"apply_state"`
-	UpdatedAt              *time.Time             `json:"updated_at,omitempty"`
-	ReplicaApplyState      string                 `json:"replica_apply_state"`
-	ObservedInstances      int                    `json:"observed_instances"`
-	AppliedInstances       int                    `json:"applied_instances"`
-	UnconfiguredInstances  int                    `json:"unconfigured_instances"`
-	ReplicaStatusTruncated bool                   `json:"replica_status_truncated"`
-	DatasetConsistent      bool                   `json:"dataset_versions_consistent"`
-	DatasetVersions        []geoNamesVersionGroup `json:"dataset_versions"`
-	SnapshotSupported      bool                   `json:"snapshot_supported"`
-	SnapshotRequirement    string                 `json:"snapshot_requirement"`
-	SnapshotHistoryKnown   bool                   `json:"snapshot_history_known"`
-	Snapshots              []geoNamesSnapshotDTO  `json:"snapshots"`
+	DatasetConfigured        bool                   `json:"dataset_configured"`
+	ReloadSupported          bool                   `json:"reload_supported"`
+	Source                   string                 `json:"source"`
+	CurrentVersion           string                 `json:"current_version"`
+	MaxDistanceKM            float64                `json:"max_distance_km"`
+	RequiresRestart          bool                   `json:"requires_restart"`
+	Editable                 bool                   `json:"editable"`
+	Revision                 uint64                 `json:"revision"`
+	EffectiveDistance        float64                `json:"effective_max_distance_km"`
+	EffectiveRevision        uint64                 `json:"effective_revision"`
+	ApplyState               string                 `json:"apply_state"`
+	UpdatedAt                *time.Time             `json:"updated_at,omitempty"`
+	ReplicaApplyState        string                 `json:"replica_apply_state"`
+	ObservedInstances        int                    `json:"observed_instances"`
+	AppliedInstances         int                    `json:"applied_instances"`
+	UnconfiguredInstances    int                    `json:"unconfigured_instances"`
+	ReplicaStatusTruncated   bool                   `json:"replica_status_truncated"`
+	DatasetConsistent        bool                   `json:"dataset_versions_consistent"`
+	DatasetVersions          []geoNamesVersionGroup `json:"dataset_versions"`
+	SnapshotSupported        bool                   `json:"snapshot_supported"`
+	SnapshotRequirement      string                 `json:"snapshot_requirement"`
+	SnapshotHistoryKnown     bool                   `json:"snapshot_history_known"`
+	Snapshots                []geoNamesSnapshotDTO  `json:"snapshots"`
+	ActiveDatasetFingerprint string                 `json:"active_dataset_fingerprint"`
+	ActiveDatasetSource      string                 `json:"active_dataset_source"`
+	ActiveDatasetPersistent  bool                   `json:"active_dataset_persistent"`
+	SnapshotApplySupported   bool                   `json:"snapshot_apply_supported"`
 }
 
 // GeoNames dataset paths are deliberately not accepted from HTTP. A trusted,
@@ -84,34 +87,43 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 	snapshots, snapshotHistoryKnown := s.geoNamesSnapshotHistory(c.Request.Context())
 	snapshotSupported := configured && snapshotHistoryKnown &&
 		geoNamesSnapshotStorageConfigured(s.GeoNamesSnapshotDir, s.GeoNamesDataDir)
+	activeFingerprint := s.currentGeoNamesDatasetFingerprint()
+	datasetSource := "deployment"
+	if activeFingerprint != "" {
+		datasetSource = "snapshot"
+	}
 	snapshotRequirement := "需先在部署中配置 XD_GEONAMES_SNAPSHOT_DIR 为独立可写的持久目录，并完成数据库迁移。"
 	if snapshotSupported {
 		snapshotRequirement = "仅将受信任挂载的数据校验并暂存到此 Server 的持久目录；不会激活或分发到其他实例。"
 	}
 	c.JSON(http.StatusOK, adminGeoNamesConfigDTO{
-		DatasetConfigured:      configured,
-		ReloadSupported:        s.DB != nil && configured,
-		Source:                 desired.Source,
-		CurrentVersion:         version,
-		MaxDistanceKM:          desired.MaxDistanceKM,
-		RequiresRestart:        false,
-		Editable:               s.DB != nil && configured,
-		Revision:               desired.Revision,
-		EffectiveDistance:      effectiveDistance,
-		EffectiveRevision:      effectiveRevision,
-		ApplyState:             applyState,
-		UpdatedAt:              desired.UpdatedAt,
-		ReplicaApplyState:      replicas.State,
-		ObservedInstances:      replicas.ObservedInstances,
-		AppliedInstances:       replicas.AppliedInstances,
-		UnconfiguredInstances:  replicas.UnconfiguredInstances,
-		ReplicaStatusTruncated: replicas.Truncated,
-		DatasetConsistent:      replicas.DatasetConsistent,
-		DatasetVersions:        replicas.Versions,
-		SnapshotSupported:      snapshotSupported,
-		SnapshotRequirement:    snapshotRequirement,
-		SnapshotHistoryKnown:   snapshotHistoryKnown,
-		Snapshots:              snapshots,
+		DatasetConfigured:        configured,
+		ReloadSupported:          s.DB != nil && configured,
+		Source:                   desired.Source,
+		CurrentVersion:           version,
+		MaxDistanceKM:            desired.MaxDistanceKM,
+		RequiresRestart:          false,
+		Editable:                 s.DB != nil && configured,
+		Revision:                 desired.Revision,
+		EffectiveDistance:        effectiveDistance,
+		EffectiveRevision:        effectiveRevision,
+		ApplyState:               applyState,
+		UpdatedAt:                desired.UpdatedAt,
+		ReplicaApplyState:        replicas.State,
+		ObservedInstances:        replicas.ObservedInstances,
+		AppliedInstances:         replicas.AppliedInstances,
+		UnconfiguredInstances:    replicas.UnconfiguredInstances,
+		ReplicaStatusTruncated:   replicas.Truncated,
+		DatasetConsistent:        replicas.DatasetConsistent,
+		DatasetVersions:          replicas.Versions,
+		SnapshotSupported:        snapshotSupported,
+		SnapshotRequirement:      snapshotRequirement,
+		SnapshotHistoryKnown:     snapshotHistoryKnown,
+		Snapshots:                snapshots,
+		ActiveDatasetFingerprint: activeFingerprint,
+		ActiveDatasetSource:      datasetSource,
+		ActiveDatasetPersistent:  activeFingerprint == "",
+		SnapshotApplySupported:   snapshotSupported,
 	})
 }
 
@@ -149,8 +161,8 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "GeoNames settings are unavailable")
 		return
 	}
-	next, err := photointelligence.LoadGeoNamesResolver(
-		s.GeoNamesDataDir, desired.MaxDistanceKM,
+	next, err := s.loadCurrentGeoNamesResolver(
+		c.Request.Context(), desired.MaxDistanceKM,
 	)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active version retained")

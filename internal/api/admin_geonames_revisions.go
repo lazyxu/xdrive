@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
-	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -123,7 +122,7 @@ func (s *Server) adminRollbackGeoNamesConfig(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames historical configuration is invalid")
 		return
 	}
-	candidate, err := photointelligence.LoadGeoNamesResolver(s.GeoNamesDataDir, target.MaxDistanceKM)
+	candidate, err := s.loadCurrentGeoNamesResolver(ctx, target.MaxDistanceKM)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active settings unchanged")
 		return
