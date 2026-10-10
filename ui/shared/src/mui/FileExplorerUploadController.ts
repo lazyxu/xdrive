@@ -359,13 +359,30 @@ export function useXDriveFileExplorerUploadController<TFile>({
     const knownItems = Math.max(0, itemsTotal)
     const knownBytes = Math.max(0, bytesTotal)
     if (!transferLifecycle) {
+      // An older Agent may not support hierarchical transfer records. Claim
+      // the same upload lane before asynchronous directory enumeration: a
+      // second same-render intent must not scan or overtake this upload.
+      busyActionRef.current = action
+      setBusyAction(action)
+      let handedToTargets = false
       try {
         const targets = await resolveTargets()
         if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        // Handoff is synchronous. No other UI handler runs between releasing
+        // the scan claim and runTargets claiming its upload/conflict batch.
+        busyActionRef.current = ''
+        setBusyAction('')
+        if (targets.length === 0) return idleResult()
+        handedToTargets = true
         return runTargets(targets, action)
       } catch (error) {
         if (isCurrentLifecycle(lifecycleGeneration)) onError(error)
         return idleResult(true)
+      } finally {
+        if (!handedToTargets && isCurrentLifecycle(lifecycleGeneration)) {
+          busyActionRef.current = ''
+          setBusyAction('')
+        }
       }
     }
 
