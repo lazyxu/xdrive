@@ -32,8 +32,9 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStoredCredentialField } from './SourceCredentialFields'
 import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
+import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
 
-export type XDriveServiceDependenciesPort = {
+export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
   loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
@@ -745,6 +746,7 @@ export function XDriveServiceDependenciesPage({
               <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 {items.map((service) => <ServiceRow key={service.id} service={service} />)}
               </Paper>
+              {group.id === 'core' && <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'intelligence' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>

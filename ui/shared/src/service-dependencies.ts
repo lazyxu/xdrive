@@ -32,6 +32,36 @@ export type XDriveServiceDependenciesSnapshot = {
   services: XDriveServiceDependency[]
 }
 
+export type XDrivePostgresPoolValues = {
+  max_open_connections: number
+  max_idle_connections: number
+}
+export type XDrivePostgresPoolConfig = {
+  desired: XDrivePostgresPoolValues
+  effective?: XDrivePostgresPoolValues
+  revision: number
+  effective_revision: number
+  source: 'default' | 'saved'
+  apply_state: 'unmanaged' | 'pending' | 'applied'
+  editable: boolean
+  requires_restart: boolean
+  updated_at?: string
+  current_max_open_connections: number
+  open_connections: number
+  in_use_connections: number
+  idle_connections: number
+}
+export type XDrivePostgresPoolUpdate = { revision: number; desired: XDrivePostgresPoolValues }
+export type XDrivePostgresPoolRevisionPage = {
+  items: Array<{
+    revision: number
+    desired: XDrivePostgresPoolValues
+    origin: 'default' | 'saved' | 'rollback'
+    created_at: string
+  }>
+}
+export type XDrivePostgresPoolRollbackInput = { revision: number; target_revision: number }
+
 export type XDrivePhotoAutoKinds = {
   face: boolean
   smart: boolean

@@ -598,6 +598,38 @@ func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revisi
 	return cli.RevealAdminBaiduMapAK(ctx, revision)
 }
 
+func (c *agentController) CloudAdminPostgresPoolConfig(ctx context.Context) (client.AdminPostgresPoolConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPostgresPoolConfig{}, err
+	}
+	return cli.AdminPostgresPoolConfig(ctx)
+}
+
+func (c *agentController) CloudSetAdminPostgresPool(ctx context.Context, input client.AdminPostgresPoolUpdate) (client.AdminPostgresPoolConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPostgresPoolConfig{}, err
+	}
+	return cli.UpdateAdminPostgresPool(ctx, input)
+}
+
+func (c *agentController) CloudAdminPostgresPoolRevisions(ctx context.Context) (client.AdminPostgresPoolRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPostgresPoolRevisionPage{}, err
+	}
+	return cli.AdminPostgresPoolRevisions(ctx)
+}
+
+func (c *agentController) CloudRollbackAdminPostgresPool(ctx context.Context, input client.AdminPostgresPoolRollbackInput) (client.AdminPostgresPoolConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPostgresPoolConfig{}, err
+	}
+	return cli.RollbackAdminPostgresPool(ctx, input)
+}
+
 func (c *agentController) CloudAdminSourceWorkerConfig(ctx context.Context) (client.AdminSourceWorkerConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

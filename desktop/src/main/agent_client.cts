@@ -556,6 +556,39 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminPostgresPoolValues = {
+  max_open_connections: number
+  max_idle_connections: number
+}
+export type AgentAdminPostgresPoolConfig = {
+  desired: AgentAdminPostgresPoolValues
+  effective?: AgentAdminPostgresPoolValues
+  revision: number
+  effective_revision: number
+  source: 'default' | 'saved'
+  apply_state: 'unmanaged' | 'pending' | 'applied'
+  editable: boolean
+  requires_restart: boolean
+  updated_at?: string
+  current_max_open_connections: number
+  open_connections: number
+  in_use_connections: number
+  idle_connections: number
+}
+export type AgentAdminPostgresPoolUpdate = {
+  revision: number
+  desired: AgentAdminPostgresPoolValues
+}
+export type AgentAdminPostgresPoolRevisionPage = {
+  items: Array<{
+    revision: number
+    desired: AgentAdminPostgresPoolValues
+    origin: 'default' | 'saved' | 'rollback'
+    created_at: string
+  }>
+}
+export type AgentAdminPostgresPoolRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminSourceWorkerValues = {
   scan_interval_seconds: number
   poll_interval_seconds: number
@@ -2983,6 +3016,19 @@ export class AgentIPCClient {
 
   cloudRevealAdminBaiduMapAK(revision: number) {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminPostgresPoolConfig() {
+    return this.request<AgentAdminPostgresPoolConfig>('GET', '/v1/cloud/admin-postgres-pool')
+  }
+  cloudSetAdminPostgresPool(input: AgentAdminPostgresPoolUpdate) {
+    return this.request<AgentAdminPostgresPoolConfig>('PUT', '/v1/cloud/admin-postgres-pool', input)
+  }
+  cloudAdminPostgresPoolRevisions() {
+    return this.request<AgentAdminPostgresPoolRevisionPage>('GET', '/v1/cloud/admin-postgres-pool/revisions')
+  }
+  cloudRollbackAdminPostgresPool(input: AgentAdminPostgresPoolRollbackInput) {
+    return this.request<AgentAdminPostgresPoolConfig>('POST', '/v1/cloud/admin-postgres-pool/rollback', input)
   }
 
   cloudAdminSourceWorkerConfig() {

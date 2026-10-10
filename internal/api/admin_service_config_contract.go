@@ -24,8 +24,8 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 		return "planned", "not-available",
 			"独立可选 Media Worker（FFmpeg/FFprobe）仍待实现真实协议、队列、取消、资源隔离及健康探针；当前不能在页面启用"
 	case "database":
-		return "deployment", "controlled-restart",
-			"PostgreSQL 连接、版本和数据卷由部署配置管理；迁移或更新前需要备份及维护窗口，不允许应用在运行中修改自己的数据库连接"
+		return "in-app", "immediate",
+			"本页仅支持配置 xDrive Server 的 database/sql 最大打开连接数与最大空闲连接数，经版本校验和审计后当前实例热生效；其他 Server 定期协调并独立确认。PostgreSQL 地址、密码、版本、数据卷和服务重启仍由受控部署管理。此配置不改变数据库服务端参数"
 	case "storage":
 		return "deployment", "controlled-restart",
 			"本地存储根目录和挂载由宿主部署管理；迁移、重新挂载或存储引擎切换应经过备份与受控维护，不提供在线假开关"

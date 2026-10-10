@@ -852,6 +852,12 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
+    loadPostgresPoolConfig: () => api.adminPostgresPoolConfig(),
+    savePostgresPoolConfig: (input: import('../../ui/shared/src').XDrivePostgresPoolUpdate) =>
+      api.adminSavePostgresPoolConfig(input),
+    loadPostgresPoolRevisions: () => api.adminPostgresPoolRevisions(),
+    rollbackPostgresPool: (input: import('../../ui/shared/src').XDrivePostgresPoolRollbackInput) =>
+      api.adminRollbackPostgresPool(input),
     loadSourceWorkerConfig: () => api.adminSourceWorkerConfig(),
     saveSourceWorkerConfig: (input: XDriveSourceWorkerUpdate) => api.adminSaveSourceWorkerConfig(input),
     loadSourceWorkerRevisions: () => api.adminSourceWorkerRevisions(),
