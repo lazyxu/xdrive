@@ -322,10 +322,24 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Find(&versions).Error; err != nil {
+		// The validated subtree may exceed PostgreSQL's 65,535 bind limit.
+		// Keep the small-folder path unchanged; one bigint[] binds large sets.
+		idsArg := any(ids)
+		filePredicate := "node_id IN ?"
+		nodePredicate := "id IN ?"
+		if len(ids) > 32000 {
+			literal, arrayErr := fileOperationDeleteIDArrayLiteral(ids)
+			if arrayErr != nil {
+				return arrayErr
+			}
+			idsArg = literal
+			filePredicate = "node_id = ANY(CAST(? AS bigint[]))"
+			nodePredicate = "id = ANY(CAST(? AS bigint[]))"
+		}
+		if err := tx.Where(filePredicate, idsArg).Find(&versions).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Find(&files).Error; err != nil {
+		if err := tx.Where(filePredicate, idsArg).Find(&files).Error; err != nil {
 			return err
 		}
 		var releaseErr error
@@ -333,13 +347,13 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 		if releaseErr != nil {
 			return releaseErr
 		}
-		if err := tx.Where("node_id IN ?", ids).Delete(&meta.Share{}).Error; err != nil {
+		if err := tx.Where(filePredicate, idsArg).Delete(&meta.Share{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Delete(&meta.FileVersion{}).Error; err != nil {
+		if err := tx.Where(filePredicate, idsArg).Delete(&meta.FileVersion{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("node_id IN ?", ids).Delete(&meta.File{}).Error; err != nil {
+		if err := tx.Where(filePredicate, idsArg).Delete(&meta.File{}).Error; err != nil {
 			return err
 		}
 		if err := recordAuditTx(tx, auditEventFromContext(c, auditpkg.ActionPermanentDelete, "node",
@@ -348,7 +362,7 @@ func (s *Server) trashDeletePermanently(c *gin.Context) {
 			})); err != nil {
 			return err
 		}
-		return tx.Where("id IN ? AND owner_id = ?", ids, userID(c)).Delete(&meta.Node{}).Error
+		return tx.Where(nodePredicate+" AND owner_id = ?", idsArg, userID(c)).Delete(&meta.Node{}).Error
 	})
 	if err != nil {
 		switch {

@@ -1156,6 +1156,74 @@ jobs:
       - name: Measure FileExplorer 100k sparse-range count cost
         run: go test -run '^TestFileExplorerRangeCountPerformanceBaseline100K$' -count=1 -v ./internal/api
 
+  file-explorer-trash-permanent-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-trash-permanent-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_TRASH_PERMANENT_HTTP_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Three alternating 10k/100k real HTTP permanent Trash DELETE BEFORE and AFTER pairs
+        run: |
+          set -euo pipefail
+          mkdir -p performance-results
+          results_dir="$PWD/performance-results"
+          after_dir="$PWD"
+          before_dir="$(mktemp -d)"
+          git archive HEAD^ | tar -x -C "$before_dir"
+          cp internal/api/trash_permanent_real_http_100k_performance_integration_test.go "$before_dir/internal/api/"
+          for count in 10000 100000; do
+            for sample in 1 2 3; do
+              order="before after"
+              if [ "$sample" -eq 2 ]; then order="after before"; fi
+              for arm in $order; do
+                target="$after_dir"
+                expected=1
+                if [ "$arm" = before ]; then target="$before_dir"; expected=0; fi
+                (
+                  cd "$target"
+                  XD_TRASH_PERMANENT_HTTP_COUNT="$count" XD_TRASH_PERMANENT_HTTP_EXPECT_FIXED="$expected" \
+                    go test -run '^TestTrashPermanentDeleteRealHTTPPerformance10K100K$' -count=1 -timeout=8m -v ./internal/api
+                ) | tee "$results_dir/$count-$sample-$arm.log"
+              done
+            done
+            test "$(grep -l TRASH_PERMANENT_REAL_HTTP_PERF "performance-results/$count"-*-*.log | wc -l)" -eq 6
+          done
+          git rev-parse HEAD > performance-results/after-sha.txt
+          git rev-parse HEAD^ > performance-results/before-sha.txt
+          sha256sum internal/api/trash_permanent_real_http_100k_performance_integration_test.go > performance-results/harness-sha256.txt
+          rm -rf -- "$before_dir"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-trash-permanent-100k-paired
+          path: performance-results/
+          if-no-files-found: warn
+          retention-days: 7
+
   file-explorer-trash-restore-100k-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-trash-restore-100k-baseline'
     runs-on: ubuntu-latest

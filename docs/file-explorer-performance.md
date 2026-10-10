@@ -1,5 +1,51 @@
 # FileExplorer performance roadmap
 
+## P0 10k/100k authenticated HTTP permanent Trash deletion — measurement-first (2026-10-10)
+
+**Status: Accepted / matched native PostgreSQL17 full HTTP metadata deletion A/B passed (n=3 per scale); final evidence-amended exact-head CI pending; not yet merged.** Related 100k queued soft-delete fixes #1210/#1213, restore measurement #1231, and viewport SQL cancellation #1237 already merged. The open Desktop Gallery IPC progress benchmark #1185 is blocked on source-exact event delivery and is deliberately not modified by this FileExplorer track. No active permanent-delete performance branch/PR existed at selection time.
+
+**Source audit / first-red hypothesis:** production `internal/api/history_trash.go::trashDeletePermanently` computes a complete deleted-subtree ID slice, then passes it as a GORM `IN ?` slice to FileVersion/File/Share deletion and final Node deletion. With 100,001 subtree IDs, PostgreSQL extended-protocol parameter count may exceed 65,535 and atomically fail. That remains a hypothesis until the real HTTP+PG17 baseline below finishes. Already accepted source helper `fileOperationDeleteIDArrayLiteral` supports a bounded single `bigint[]` SQL parameter in the separate queued soft-delete worker, but must not be applied speculatively before first red.
+
+**Frozen workload:** three independent fresh PostgreSQL17 schema/Go processes at **10,000 and 100,000 file-type child Nodes**, one trashed selected directory, matching `xd_files` and `xd_file_versions` metadata rows per file, one in-subtree Share, one out-of-subtree Share and live sibling, owner and foreign signed users. Drive the **actual authenticated Gin DELETE /api/v1/trash/:id** with `If-Match: "2"`, and foreign-user 404 and stale-revision 409 controls. Measure HTTP response status/bytes, wall time in milliseconds, Go `TotalAlloc` delta bytes, exact subtree/metadata/Share row counts and matching audit event count after the request; report whether a native SQL error includes a 65,535-parameter overflow. Seed/ANALYZE excluded from elapsed. Empty storage keys deliberately exclude physical CAS/legacy bytes, actual media thumbnails, browser/Agent transport, and disk GC.
+
+**Confirmed native HTTP baseline (n=3 per scale, original production unchanged):** [CI run 38018185939 / job 114113078678](https://github.com/lazyxu/xdrive/actions/runs/38018185939/job/114113078678); source-exact branch head `11a894f79a105d7f0c16b0a6f6c2bf03a62d257a`, fixed production parent `9ab6fac1e5dcef97dff2d30149d3e8ddd17245ee`. All 6 full-run harness cases passed their original BEFORE contract. [Six complete unrounded rows](performance-evidence/trash-permanent-100k/first-red-ci-38018185939.json).
+
+| Unchanged production | HTTP times for 3 fresh native PG17 schemas (ms) | Median (ms) | Go TotalAlloc delta bytes | Outcome |
+| --- | --- | ---: | --- | --- |
+| 10,000 selected files + 10,000 File + 10,000 FileVersion rows | 372.623 / 442.903 / 378.705 | **378.705** | 42,222,712 / 42,252,912 / 42,258,736 | HTTP 204, correctly deleted; 3/3 within 5s |
+| 100,000 selected files + 100,000 File + 100,000 FileVersion rows | 102.117 / 112.926 / 109.906 | **109.906** | 54,767,048 / 54,800,976 / 54,769,152 | **HTTP 500 and PostgreSQL 65,535-bind error, 3/3** |
+
+**First-red correctness:** The 100k failure returned no partial commit: **100,001/100,001 Nodes, 100,000/100,000 File rows, 100,000/100,000 FileVersion rows and the in-scope Share remained; out-of-scope Share and sibling unchanged; zero success audit.** Foreign-account 404 and stale-revision 409 tests passed. A failed-request 109.906ms median must **never** be reported as successful 100k delete throughput or compared as a wall-clock speedup. The 10k successful median is valid but should not change the existing small-subtree query plan.
+
+**Minimal AFTER experiment (no race change):** for more than 32,000 validated subtree IDs in `trashDeletePermanently`, pass one array literal from the already-tested `fileOperationDeleteIDArrayLiteral` helper into `node_id = ANY(CAST(? AS bigint[]))` for FileVersion/File/Share predicates and `id = ANY(CAST(? AS bigint[]))` for the final Node predicate. Under that threshold preserve the original `IN ?`. Scope remains the current ownership/revision/transaction/audit boundary; no changes to actual CAS references, Task Center, client cancellation or UI. A matched same-runner alternating n=3 per scale BEFORE/AFTER CI must pass the original failure predicate and AFTER success budgets before claiming Accepted. Timing from failing BEFORE 100k is not valid throughput evidence. **After actual paired verification, archive six-arm raw results per scale and amend this document before merge, then rerun full exact-head CI.**
+
+**Matched same-runner BEFORE/AFTER verified (n=3 each arm at each scale):** [CI run 38018552161 / job 114114280127](https://github.com/lazyxu/xdrive/actions/runs/38018552161/job/114114280127), candidate source `ce97d3f36c4d6ad2a2d36ec5b0e0962ed6fc710a`, original fixed master parent `9ab6fac1e5dcef97dff2d30149d3e8ddd17245ee`; alternating arm order (BEFORE/AFTER, AFTER/BEFORE, BEFORE/AFTER). Every test used the same benchmark source and independent native PostgreSQL17 schema. [All 12 unrounded source-exact arms and acceptance gates](performance-evidence/trash-permanent-100k/paired-ci-38018552161.json).
+
+| Workload / wall-clock | BEFORE n=3 (ms) | AFTER n=3 (ms) | P50 BEFORE | P50 AFTER | Assessment |
+| --- | --- | --- | ---: | ---: | --- |
+| 10k file+history permanent deletion | 445.183 / 444.296 / 470.133 | 447.963 / 470.396 / 444.633 | 445.183ms, HTTP 204 | **447.963ms**, HTTP 204 | **+0.624% elapsed**, small path unchanged; no material regression |
+| 100k file+history permanent deletion | 138.698 / 131.736 / 145.644 | 3,831.826 / 3,829.607 / 3,986.548 | **138.698ms failed HTTP 500**, not throughput | **3,831.826ms**, HTTP 204 | 3/3 correctly completed, max **3,986.548ms** |
+
+| 100k per-arm resource/correctness | BEFORE original | AFTER candidate |
+| --- | --- | --- |
+| Go `TotalAlloc` delta (bytes) | 54,769,328 / 54,802,648 / 54,765,024 (**failed requests**) | **176,800,176 / 176,801,040 / 176,802,864**, median 176,801,040 B ≈168.6 MiB |
+| Native PG bind-limit overflow | 3/3 | **0/3** |
+| HTTP status | 500/500/500 | **204/204/204** |
+| Target Nodes left | 100,001 | **0** |
+| Target File/FileVersion rows left | 100,000/100,000 | **0/0** |
+| In-scope Share left | 1 | **0** |
+| Out-of-scope Share left | 1 | **1** |
+| Success audit | 0 | **1** |
+
+**Decision: Accepted minimal large-subtree SQL parameter fix.** The 100k AFTER result stays below the frozen per-sample 40,000ms/512 MiB Go `TotalAlloc` gates and all source/Share/audit/revision/ownership guards pass; 10k measured latency differs by just +0.624% median on the same run and remains well within 5s. This is a **functional scale restoration with measured successful completion**. No 100k speedup percentage can be claimed, as the 100k BEFORE never successfully deleted data. Peak RSS/real disk CAS/legacy cleanup, full browser/Electron IPC and cross-network 4GiB transfer remain separate unmeasured P0 workloads. The evidence-amended final work commit must pass the entire exact-head CI before marking Merged. No Race code or durable Task Center cancellation was changed.
+
+**Before/after decision thresholds fixed before measurement:** 10k unchanged production must finish authenticated HTTP 204 with every selected File/FileVersion, Node and Share deleted, audit written, foreign/sibling unchanged; each response ≤5,000ms. 100k must also produce HTTP 204, with **each successful AFTER sample ≤40,000ms and Go `TotalAlloc` delta ≤512MiB**. If 100k BEFORE reproduces 65,535-bind error, it must return HTTP 500 with no partial subtree/metadata/Share deletion and no success audit; **failure latency must not be compared as successful deletion throughput**. Only after three valid native first-red samples, use the smallest bounded-parameter SQL fix, compare three alternating BEFORE/AFTER pairs using the same harness/machine, and keep the fix only if all correctness/resource gates pass without important regression. Otherwise preserve unchanged production and document Accepted current/Rejected candidate. Do not claim throughput speedup against failed original requests.
+
+**Benchmark command:** `XD_TEST_DATABASE_URL=postgres://... XD_TRASH_PERMANENT_HTTP_PERF=1 XD_TRASH_PERMANENT_HTTP_COUNT=<10000|100000> XD_TRASH_PERMANENT_HTTP_EXPECT_FIXED=<0|1> go test -run '^TestTrashPermanentDeleteRealHTTPPerformance10K100K$' -count=1 -timeout=8m -v ./internal/api`. GitHub/GitLab branch-scoped job `file-explorer-trash-permanent-100k-performance`. If native first-red holds, archive all source-exact rows under `docs/performance-evidence/trash-permanent-100k/`, then rerun full exact-head CI after evidence documentation before merge.
+
+**Unmeasured here:** physical CAS refcount/GC, network or local 4GiB upload/download, Task Center cancellation, actual Web/Desktop 100k UI, photo/video/Live decoding. This test cannot establish those separate P0 performance goals.
+
+
 ## P0 10k/100k authenticated HTTP Trash restore baseline (2026-10-10)
 
 **Status: Accepted / n=3 per size real authenticated HTTP baseline passed; production unchanged; full evidence-amended PR CI pending.** The relevant 100k DELETE fixes #1210/#1213 merged; #1185 remains an unrelated real Desktop IPC progress benchmark. No open/active dedicated Trash restore performance PR or branch existed at the start.
