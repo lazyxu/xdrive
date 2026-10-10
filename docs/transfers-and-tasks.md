@@ -105,3 +105,27 @@ single-command control 1508 passed. Regression suite
 three failing tests unchanged for green retest. Require original interleavings,
 the existing Task Center async race/role tests, Web/Desktop validation,
 Go race, and exact-head full GitHub CI before merge.
+
+## Legacy Agent folder-upload scan ownership race (2026-10-10, PR #1261)
+
+The shared FileExplorer upload controller supports older Desktop Agents
+without `transfer-lifecycle`. This compatibility path resolves the folder
+targets asynchronously before calling the existing flat `runTargets` upload
+pipeline. It must synchronously own the same upload Busy lane **before**
+directory scanning starts. A second same-render folder action must not scan
+the same 10k/100k tree again, and a flat upload must not overtake a pending
+folder scan. The UI keeps Busy visible through the scan-to-upload handoff,
+including no-target and scan-error cleanup. Handoff to the existing flat
+upload conflict batch occurs synchronously with no event-loop gap, and
+session/lifecycle generations continue to reject old work.
+
+**Original production first-red:** CI run `38020325878` on test-only
+commit `fb84970ac02bdcdc8f55ea420fdafb4bd3a9930a`,
+real React hook tests `desktop/tests/shared-upload-legacy-folder-scan-race.cjs`:
+#1584 twice-scanned one folder (2 vs expected 1); #1585 failed the
+pending-scan Busy contract; single upload and old-session controls #1586
+and #1587 were green. The same four tests must turn green on the amended
+fix commit; retain the existing hierarchical group lifecycle, conflict
+resolution, error reporting, Web/Desktop build and Go race contracts.
+This is a correctness/lifecycle fix, **not** a measured throughput gain;
+do not claim 100k performance improvements without separate benchmarks.
