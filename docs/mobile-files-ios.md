@@ -142,3 +142,9 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 **实现已提交到单工作提交短期 PR，待完整 CI 和合并。** #1243 的共享稀疏树索引及已合并的 #1249 实际展开/子目录分页保持不变。当前继续将按类型/日期/大小分组的列表接入相同的展开控制，后代项目插在父文件夹所属的 Server 权威分组内部；显示的分组名称和顺序不由已加载的部分数据自行推算。共享虚拟窗口、Server `listRange`、真实 Node 身份、文件操作、取消/重试/错误与 Web 一致。Mobile 仍没有内部多标签页；保留全屏 App Frame 和 52px 标题栏。
 
 此项的 10k/100k 索引验证与实际 Chromium/iOS 设备、真实网络/内存、VoiceOver 和原生截图差异验收分开记录，不能标记为像素级 1:1 完成。
+
+## 2026-10-10 F-PARITY-07E · 已选项目与虚拟页回收
+
+**已编写实现与回归测试，待 GitHub 完整 CI、线性合并和分支清理。** 已展开文件夹中的文件或根目录文件，在 100k 列表快速滚动时可能从虚拟页缓存释放，但选中仍应保留：共享 Web 工作区仅按已选 ID/Revision（上限 200）保留真实 Node/所属目录信息，不能为了选中状态保留全部文件页。Mobile 使用一个新增的选择通知属性，不新增独立业务 API；Copy/Cut/Move/Download/Delete、授权、冲突和报错仍由原 Web/Server 控制器判定。完成选择或切换账户必须释放该记录。
+
+本阶段的节点映射回归及 100k 逻辑测试不是 iOS 27 真机像素级/VoiceOver 验收，也不是实测浏览器 CPU、RSS、请求或取消速度。保持全屏 App Frame、52px 顶栏、共享后端；Mobile Web 唯一允许缺失的功能仍是内部多标签页。

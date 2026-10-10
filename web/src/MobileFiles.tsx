@@ -79,6 +79,7 @@ type Props = {
   onRetryInlineFolder?: (ownerID: number) => void
   onInlineViewport?: (ranges: readonly XDriveFileExplorerInlineVisibleRange[]) => void
   onClearInline?: () => void
+  onSelectedItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
   crumbs: XDriveFileExplorerCrumb[]
   loading: boolean
   trashActive: boolean
@@ -658,6 +659,13 @@ export default function MobileFiles(props: Props) {
     setItemMenu(null)
     setCollectionMenu(null)
   }, [section, props.trashActive, props.searchActive, props.virtualCollection?.interactionKey, props.lifecycleKey, directoryID])
+
+  // Notify the same Web workspace of selected sparse Nodes before their pages
+  // can be evicted by scrolling. The callback retains IDs/revisions only;
+  // Mobile never owns a second API, permission check or mutation controller.
+  useEffect(() => {
+    props.onSelectedItemsChange?.([...selected.values()])
+  }, [selected, props.onSelectedItemsChange])
 
   useEffect(() => {
     if (!ready || !showDirectory || props.searchActive || props.trashActive || directoryID === null) return

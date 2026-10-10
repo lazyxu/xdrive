@@ -74,8 +74,9 @@ test('Web and Desktop keep only clipboard adapters and share path semantics', ()
   }
   assert.ok(web.includes('.map((item) => xDriveFileExplorerCopyPath(item, inlineCrumbsForItem(item)))'),
     'Web Copy Path must resolve expanded children through authoritative inline ancestor crumbs')
-  assert.ok(web.includes('inlineParentCrumbs(inlineOwnerByNodeID.get(Number(item.id))'),
-    'Web nested paths must use child owner lineage, not the root browsing crumbs')
+  assert.ok(web.includes('retained?.crumbs ?? inlineParentCrumbs(') &&
+    web.includes('inlineOwnerByNodeID.get(Number(item.id))'),
+    'Web nested paths must use child owner lineage or retained selection ancestry')
   assert.ok(desktop.includes('.map((item) => xDriveFileExplorerCopyPath(item, explorerCrumbs))'),
     'Desktop must retain unchanged local FileExplorer path semantics')
 

@@ -533,6 +533,18 @@ export default function WebFileExplorer({
   // Shared FileExplorer operations resolve real Node IDs/revisions through
   // nodeByID. Register sparse child Node pages before operation hooks/menus
   // read the projection; projected display items alone are not sufficient.
+  // Keep at most the user's selected Node identities independently from
+  // sparse page retention, while one authenticated Files scope is active.
+  // A selected file may scroll out of a 100k parent/child virtual range, but
+  // selection actions still need its original Server ID + revision.
+  const selectedMobileNodesRef = useRef(new Map<number, {
+    node: Node; ownerID: number; crumbs: Crumb[]
+  }>())
+  const selectedMobileScopeRef = useRef(inlineScopeKey)
+  if (selectedMobileScopeRef.current !== inlineScopeKey) {
+    selectedMobileScopeRef.current = inlineScopeKey
+    selectedMobileNodesRef.current.clear()
+  }
   const inlineOwnerByNodeID = new Map<number, number>()
   const priorInlineNodesRef = useRef(new Map<number, Node>())
   const liveInlineNodes = new Map<number, Node>()
@@ -543,10 +555,17 @@ export default function WebFileExplorer({
     }
   }
   for (const [id, previous] of priorInlineNodesRef.current) {
-    if (!liveInlineNodes.has(id) && nodeByID.get(id) === previous) nodeByID.delete(id)
+    if (!liveInlineNodes.has(id) && nodeByID.get(id) === previous &&
+        !selectedMobileNodesRef.current.has(id)) nodeByID.delete(id)
   }
   for (const node of liveInlineNodes.values()) nodeByID.set(node.id, node)
   priorInlineNodesRef.current = liveInlineNodes
+  // The shared Web action map, not a Mobile-only mutation controller, owns
+  // selected objects. Pin only IDs: never hold an evicted 100-item page.
+  for (const [id, record] of selectedMobileNodesRef.current) {
+    if (!nodeByID.has(id)) nodeByID.set(id, record.node)
+    if (record.ownerID !== current?.id) inlineOwnerByNodeID.set(id, record.ownerID)
+  }
   const inlineParentCrumbs = (ownerID: number): Crumb[] => {
     if (!current || ownerID === current.id) return crumbs
     const trail: Crumb[] = []
@@ -561,8 +580,33 @@ export default function WebFileExplorer({
     }
     return id === current.id ? [...crumbs, ...trail] : crumbs
   }
-  const inlineCrumbsForItem = (item: XDriveFileExplorerItem) =>
-    inlineParentCrumbs(inlineOwnerByNodeID.get(Number(item.id)) ?? current?.id ?? 0)
+  const inlineCrumbsForItem = (item: XDriveFileExplorerItem) => {
+    const retained = selectedMobileNodesRef.current.get(Number(item.id))
+    return retained?.crumbs ?? inlineParentCrumbs(
+      inlineOwnerByNodeID.get(Number(item.id)) ?? current?.id ?? 0)
+  }
+  const retainMobileSelection = (items: readonly XDriveFileExplorerItem[]) => {
+    const next = new Map<number, { node: Node; ownerID: number; crumbs: Crumb[] }>()
+    // Ordinary UI selection/actions are limited to 200; never retain 100k
+    // off-screen Nodes or pages just because a viewport was traversed.
+    for (const item of items.slice(0, 200)) {
+      const id = Number(item.id)
+      if (!Number.isSafeInteger(id) || id <= 0) continue
+      const previous = selectedMobileNodesRef.current.get(id)
+      const node = nodeByID.get(id) ?? previous?.node
+      if (!node || node.id !== id || node.type !== item.kind ||
+          (item.revision !== undefined && node.revision !== Number(item.revision))) continue
+      const ownerID = inlineOwnerByNodeID.get(id) ?? previous?.ownerID ?? current?.id ?? 0
+      const parentCrumbs = previous?.crumbs ?? inlineParentCrumbs(ownerID)
+      next.set(id, { node, ownerID, crumbs: parentCrumbs })
+    }
+    selectedMobileNodesRef.current = next
+    for (const [id, record] of next) {
+      if (!nodeByID.has(id)) nodeByID.set(id, record.node)
+    }
+    // Existing shared workspace retention handles root/Search selections.
+    explorerVirtualCollection?.retainInteractionIDs?.([...next.keys()])
+  }
   const inlineMobileBranches = inlineSnapshot.branches.map(branch => {
     const parentPath = inlineParentCrumbs(branch.ownerID).map(crumb => crumb.name).join('/')
     const prefix = parentPath ? parentPath + '/' : ''
@@ -1001,6 +1045,7 @@ export default function WebFileExplorer({
           onRetryInlineFolder={ownerID => inlineStore.retry(ownerID)}
           onInlineViewport={ranges => inlineStore.ensureViewport(ranges)}
           onClearInline={() => inlineStore.clear()}
+          onSelectedItemsChange={retainMobileSelection}
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
           trashActive={trashActive}
