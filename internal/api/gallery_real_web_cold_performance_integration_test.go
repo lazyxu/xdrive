@@ -101,6 +101,24 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
 			len(images), len(videos), liveCount)
 	}
+	// A branch-only real-scroll benchmark prewarms the genuine JPEG files
+	// outside the measured request window so its +160ms test is about actual
+	// HTTP/Go cancellation rather than first-time background JPEG generation.
+	viewportCancelMode := os.Getenv("XD_GALLERY_REAL_VIEWPORT_CANCEL_PERF") == "1"
+	var viewportProbe *galleryRealWebScrollCancelProbe
+	if viewportCancelMode {
+		warming := httptest.NewServer(router)
+		warmClient := &http.Client{Timeout: 30 * time.Second}
+		metrics, warmErr := galleryFirstVisibleFetchThumbnails(
+			warmClient, warming.URL, token, images, 6,
+		)
+		warming.Close()
+		if warmErr != nil || metrics.RequestCount != len(images) {
+			t.Fatalf("prewarm real viewport JPEGs: count=%d want=%d err=%v",
+				metrics.RequestCount, len(images), warmErr)
+		}
+		viewportProbe = newGalleryRealWebScrollCancelProbe(images)
+	}
 	foldEnabled := os.Getenv("XD_GALLERY_REAL_WEB_FOLD_PERF") == "1"
 	if foldEnabled {
 		galleryRealWebFoldSeed100K(t, db, ownerRoot.OwnerID, page.Items)
@@ -128,6 +146,21 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		case "/__perf/stats":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(countingStore.Snapshot())
+		case "/__perf/viewport-cancel-stats":
+			if viewportProbe == nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(viewportProbe.snapshot())
+		case "/__perf/viewport-cancel-mark":
+			if viewportProbe == nil || r.Method != http.MethodPost {
+				http.Error(w, "native viewport benchmark only", http.StatusMethodNotAllowed)
+				return
+			}
+			viewportProbe.mark()
+			w.WriteHeader(http.StatusNoContent)
 		case "/__perf/stop":
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -136,6 +169,11 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
+			if viewportProbe != nil && r.Method == http.MethodGet &&
+				viewportProbe.matches(r.URL.Path) {
+				viewportProbe.serve(w, r, router)
+				return
+			}
 			if strings.HasPrefix(r.URL.Path, "/api/") {
 				router.ServeHTTP(w, r)
 				return

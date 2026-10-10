@@ -1,0 +1,244 @@
+{
+  "status": "Accepted CURRENT/BEFORE baseline; product unchanged; final evidence-amended CI pending",
+  "decision": "Accept unchanged production: all original resource-release and recovery gates passed; AFTER and product speedup not applicable",
+  "measured_work_commit": "6fd8e9b3078fa731ec279685c81d563320743a6f",
+  "fixed_parent_commit": "e964907976fb5894864e1946e568ec34d40f3fc0",
+  "ci": {
+    "run_id": 38031855529,
+    "job_id": 114154393382,
+    "workflow_job_url": "https://github.com/lazyxu/xdrive/actions/runs/38031855529/job/114154393382",
+    "job_conclusion": "success",
+    "test_driver": "desktop/scripts/gallery-real-web-scroll-cancel-100k-main.cjs",
+    "production_runtime_changed": false
+  },
+  "workload": {
+    "logical_photo_assets": 100000,
+    "physical_media_nodes": 115000,
+    "paired_live_photos": 15000,
+    "visible_real_JPEG_chunks_per_sample": 6,
+    "initial_real_bytes_each": 256,
+    "slow_writer_pause_ms": 1500,
+    "postgres_docker_shm_size_mib": 256,
+    "chromium_real_mounted_web_gallery": true,
+    "fixture_seed_excluded": true,
+    "scope_limitation": "Only first-visible JPEG working set physically seeded; test-only HTTP pacing; no FileExplorer UI, actual Desktop IPC, full media decoding, WAN or peak CPU/RSS"
+  },
+  "predeclared_gate": {
+    "max_context_notification_ms": 160,
+    "active_handlers_at_160_ms": 0,
+    "extra_emitted_bytes_at_160_ms": 0,
+    "canceled_requests_per_sample": 6,
+    "context_done_per_sample": 6,
+    "min_real_scroll_px": 10000,
+    "max_mounted_tiles_exclusive": 1000,
+    "recovered_range_total_count": 100000,
+    "recovered_range_items": 100
+  },
+  "pre_range_diagnostics": [
+    {
+      "sample": 1,
+      "actualScroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "started": 6,
+      "contextDone": 6,
+      "cancelled": 6,
+      "active": 0,
+      "afterCancelBytes": 0,
+      "worstContextNotificationMs": 41.247
+    },
+    {
+      "sample": 2,
+      "actualScroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "started": 6,
+      "contextDone": 6,
+      "cancelled": 6,
+      "active": 0,
+      "afterCancelBytes": 0,
+      "worstContextNotificationMs": 38.556
+    },
+    {
+      "sample": 3,
+      "actualScroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "started": 6,
+      "contextDone": 6,
+      "cancelled": 6,
+      "active": 0,
+      "afterCancelBytes": 0,
+      "worstContextNotificationMs": 45.74
+    }
+  ],
+  "samples": [
+    {
+      "sample": 1,
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 33471.959,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 6,
+        "canceled": 6,
+        "contextDone": 6,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1536,
+        "worstContextNotificationMs": 41.247,
+        "totalRequestBytesAfterCancel": 1536
+      },
+      "scope": "Actual mounted Web shared Gallery VirtualGrid; real Chromium scrollTop/scroll event -> real Gin/PG17/local CAS request cancellation, test-only slow authentic JPEG body. Not Desktop Agent IPC/video decode/real network."
+    },
+    {
+      "sample": 2,
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 32472.148,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 6,
+        "canceled": 6,
+        "contextDone": 6,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1536,
+        "worstContextNotificationMs": 38.556,
+        "totalRequestBytesAfterCancel": 1536
+      },
+      "scope": "Actual mounted Web shared Gallery VirtualGrid; real Chromium scrollTop/scroll event -> real Gin/PG17/local CAS request cancellation, test-only slow authentic JPEG body. Not Desktop Agent IPC/video decode/real network."
+    },
+    {
+      "sample": 3,
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 30788.361,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 881823,
+        "extent": 1763646,
+        "initialMountedTiles": 63,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 1763646,
+            "viewport": 873
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 6,
+        "canceled": 6,
+        "contextDone": 6,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1536,
+        "worstContextNotificationMs": 45.74,
+        "totalRequestBytesAfterCancel": 1536
+      },
+      "scope": "Actual mounted Web shared Gallery VirtualGrid; real Chromium scrollTop/scroll event -> real Gin/PG17/local CAS request cancellation, test-only slow authentic JPEG body. Not Desktop Agent IPC/video decode/real network."
+    }
+  ],
+  "native_summary": {
+    "status": "measured-actual-Web-Gallery-100k-VirtualGrid-scroll-Go-cancellation",
+    "sampleCount": 3,
+    "budgetMs": 160,
+    "worstGoContextP50Ms": 41.247,
+    "worstGoContextMaxMs": 45.74,
+    "passed": true,
+    "limits": "100k Gallery logical assets, 115k nodes, only initial images contain actual JPEG bytes. True mounted UI Chromium scroll/Go cancellation; no real 100k physical decode, FileExplorer, Desktop Agent, 4K/Live playback, WAN/CPU/RSS peak."
+  },
+  "rejected_or_invalid_prior_runs": [
+    {
+      "run_id": 38030715804,
+      "reason": "DOM scroll diagnostics missing, no valid cancellation sample"
+    },
+    {
+      "run_id": 38031096682,
+      "reason": "First-paint-only benchmark shell overflow hidden, no real scroll"
+    },
+    {
+      "run_id": 38031438876,
+      "reason": "Docker PostgreSQL 64MiB shared-memory exhaustion at independent 50k counted range"
+    }
+  ]
+}
