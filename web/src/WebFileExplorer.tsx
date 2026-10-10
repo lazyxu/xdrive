@@ -926,6 +926,8 @@ export default function WebFileExplorer({
           }}
           onGoUp={() => { void goUp() }}
           onCrumbClick={index => { void navigateToCrumb(index) }}
+          pathValue={trashActive ? undefined : pathValue}
+          onPathSubmit={trashActive ? undefined : (path) => { void submitPath(path) }}
           onRestoreFolder={restoreMobileDirectory}
           onOpenItem={item => {
             if (trashActive) return false

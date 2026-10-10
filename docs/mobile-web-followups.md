@@ -2,6 +2,8 @@
 
 **2026-10-10 Mobile Files F-iOS-01A delivery:** [PR #1207](https://github.com/lazyxu/xdrive/pull/1207) passed full CI and was linearly merged as `51464cb3`; its merged branch was automatically cleaned. It implements scroll-owned titles, grouped surfaces and context-action metadata, not full native pixel/interaction acceptance.
 
+**Merged parity follow-ups (2026-10-10):** #1211, #1215, #1222 and #1224 passed their exact-head full PR CI and merged; associated short-lived branches were deleted. Files has shared recursive Properties, Web undo/redo/history/path-copy, virtual-window kernel, saved Smart Folder editing, Web Quick Look and external browser tabs. These do not establish native iOS 27 1:1 screenshot or physical-device acceptance. The next bounded parity step is the shared typed folder path from wide Web; external file drops and native folder disclosure remain gaps.
+
 **New approved F-iOS27-02 target:** [iOS 27「文件」1:1 visual and interaction benchmark](mobile-files-ios27.md) supersedes generic iOS-style comparison. Keep the full-screen App Frame, **52px App Header** (with shared Web transfer actions), Server/API/controllers and shared virtual collection/windowing. Mobile/width-Web business features must be equivalent except internal multi-file tabs. New shared-action/windowing work follows the already-merged F-iOS-01A and currently-open #1211; Apple-native capabilities missing from xDrive remain explicitly unimplemented, never visual impostors.
 
 
