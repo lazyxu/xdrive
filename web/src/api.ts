@@ -754,6 +754,13 @@ export class XDriveApi {
       method: 'POST', body: JSON.stringify(input), cache: 'no-store',
     })
   }
+  adminApplyGeoNamesDataset(input: import('../../ui/shared/src').XDriveGeoNamesDatasetApplyInput) {
+    return this.request<XDriveGeoNamesConfig>(
+      '/api/v1/admin/services/geonames/dataset-snapshots/apply', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
   adminStageGeoNamesSnapshot(input: import('../../ui/shared/src').XDriveGeoNamesSnapshotInput) {
     return this.request<import('../../ui/shared/src').XDriveGeoNamesSnapshotResult>(
       '/api/v1/admin/services/geonames/dataset-snapshots', {

@@ -614,6 +614,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots", h.cloudStageAdminGeoNamesSnapshot)
+	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots/apply", h.cloudApplyAdminGeoNamesDataset)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames/revisions", h.cloudAdminGeoNamesRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/rollback", h.cloudRollbackAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
@@ -2135,6 +2136,58 @@ func (h *desktopIPCHandler) cloudSetAdminGeoNames(w http.ResponseWriter, r *http
 
 func validGeoNamesIPCMaxDistance(value float64) bool {
 	return value > 0 && value <= 500
+}
+
+// Instance-local versioned GeoNames activation is a distinct optional
+// capability; the Server remains the administrator authorization boundary.
+type desktopIPCAdminGeoNamesDatasetApplyController interface {
+	CloudApplyAdminGeoNamesDataset(context.Context, client.AdminGeoNamesDatasetApplyInput) (client.AdminGeoNamesConfig, error)
+}
+
+func validDesktopGeoNamesSnapshotFingerprint(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, ch := range value {
+		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func (h *desktopIPCHandler) cloudApplyAdminGeoNamesDataset(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesDatasetApplyController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_dataset_apply_unavailable", "GeoNames dataset apply is unsupported")
+		return
+	}
+	var input struct {
+		Revision            *uint64 `json:"revision"`
+		ExpectedVersion     string  `json:"expected_version"`
+		ExpectedFingerprint string  `json:"expected_fingerprint"`
+		Target              string  `json:"target"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || len(input.ExpectedVersion) == 0 ||
+		len(input.ExpectedVersion) > 128 ||
+		(input.ExpectedFingerprint != "" && !validDesktopGeoNamesSnapshotFingerprint(input.ExpectedFingerprint)) ||
+		(input.Target != "deployment" && !validDesktopGeoNamesSnapshotFingerprint(input.Target)) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_dataset_apply", "GeoNames dataset target or expected revision is invalid")
+		return
+	}
+	out, err := provider.CloudApplyAdminGeoNamesDataset(r.Context(), client.AdminGeoNamesDatasetApplyInput{
+		Revision: *input.Revision, ExpectedVersion: input.ExpectedVersion,
+		ExpectedFingerprint: input.ExpectedFingerprint, Target: input.Target,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
 }
 
 // Optional to preserve compatibility with older test double controllers.

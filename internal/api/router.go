@@ -34,6 +34,7 @@ type Server struct {
 	GeoNamesSnapshotDir            string
 	GeoNamesMaxDistanceKM          float64
 	GeoNamesAppliedRevision        atomic.Uint64
+	geoNamesActiveDataset          atomic.Pointer[geoNamesActiveDataset]
 	geoNamesReloadMu               sync.Mutex
 	geoNamesSnapshotMu             sync.Mutex
 	BaiduMapAK                     string
@@ -348,6 +349,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
 	admin.POST("/services/geonames/dataset-snapshots", s.adminStageGeoNamesSnapshot)
+	admin.POST("/services/geonames/dataset-snapshots/apply", s.adminApplyGeoNamesDatasetSnapshot)
 	admin.GET("/services/geonames/revisions", s.adminGeoNamesRevisions)
 	admin.POST("/services/geonames/rollback", s.adminRollbackGeoNamesConfig)
 	admin.GET("/audit", s.adminAuditEvents)

@@ -450,29 +450,33 @@ type AdminGeoNamesVersionGroup struct {
 }
 
 type AdminGeoNamesConfig struct {
-	DatasetConfigured      bool                        `json:"dataset_configured"`
-	ReloadSupported        bool                        `json:"reload_supported"`
-	Source                 string                      `json:"source"`
-	CurrentVersion         string                      `json:"current_version"`
-	MaxDistanceKM          float64                     `json:"max_distance_km"`
-	RequiresRestart        bool                        `json:"requires_restart"`
-	Editable               bool                        `json:"editable"`
-	Revision               uint64                      `json:"revision"`
-	EffectiveDistance      float64                     `json:"effective_max_distance_km"`
-	EffectiveRevision      uint64                      `json:"effective_revision"`
-	ApplyState             string                      `json:"apply_state"`
-	UpdatedAt              *time.Time                  `json:"updated_at,omitempty"`
-	ReplicaApplyState      string                      `json:"replica_apply_state"`
-	ObservedInstances      int                         `json:"observed_instances"`
-	AppliedInstances       int                         `json:"applied_instances"`
-	UnconfiguredInstances  int                         `json:"unconfigured_instances"`
-	ReplicaStatusTruncated bool                        `json:"replica_status_truncated"`
-	DatasetConsistent      bool                        `json:"dataset_versions_consistent"`
-	DatasetVersions        []AdminGeoNamesVersionGroup `json:"dataset_versions"`
-	SnapshotSupported      bool                        `json:"snapshot_supported"`
-	SnapshotRequirement    string                      `json:"snapshot_requirement"`
-	SnapshotHistoryKnown   bool                        `json:"snapshot_history_known"`
-	Snapshots              []AdminGeoNamesSnapshot     `json:"snapshots"`
+	DatasetConfigured        bool                        `json:"dataset_configured"`
+	ReloadSupported          bool                        `json:"reload_supported"`
+	Source                   string                      `json:"source"`
+	CurrentVersion           string                      `json:"current_version"`
+	MaxDistanceKM            float64                     `json:"max_distance_km"`
+	RequiresRestart          bool                        `json:"requires_restart"`
+	Editable                 bool                        `json:"editable"`
+	Revision                 uint64                      `json:"revision"`
+	EffectiveDistance        float64                     `json:"effective_max_distance_km"`
+	EffectiveRevision        uint64                      `json:"effective_revision"`
+	ApplyState               string                      `json:"apply_state"`
+	UpdatedAt                *time.Time                  `json:"updated_at,omitempty"`
+	ReplicaApplyState        string                      `json:"replica_apply_state"`
+	ObservedInstances        int                         `json:"observed_instances"`
+	AppliedInstances         int                         `json:"applied_instances"`
+	UnconfiguredInstances    int                         `json:"unconfigured_instances"`
+	ReplicaStatusTruncated   bool                        `json:"replica_status_truncated"`
+	DatasetConsistent        bool                        `json:"dataset_versions_consistent"`
+	DatasetVersions          []AdminGeoNamesVersionGroup `json:"dataset_versions"`
+	SnapshotSupported        bool                        `json:"snapshot_supported"`
+	SnapshotRequirement      string                      `json:"snapshot_requirement"`
+	SnapshotHistoryKnown     bool                        `json:"snapshot_history_known"`
+	Snapshots                []AdminGeoNamesSnapshot     `json:"snapshots"`
+	SnapshotApplySupported   bool                        `json:"snapshot_apply_supported"`
+	ActiveDatasetFingerprint string                      `json:"active_dataset_fingerprint"`
+	ActiveDatasetSource      string                      `json:"active_dataset_source"`
+	ActiveDatasetPersistent  bool                        `json:"active_dataset_persistent"`
 }
 
 type AdminGeoNamesSnapshot struct {
@@ -488,6 +492,13 @@ type AdminGeoNamesSnapshot struct {
 type AdminGeoNamesSnapshotInput struct {
 	Revision        uint64 `json:"revision"`
 	ExpectedVersion string `json:"expected_version"`
+}
+
+type AdminGeoNamesDatasetApplyInput struct {
+	Revision            uint64 `json:"revision"`
+	ExpectedVersion     string `json:"expected_version"`
+	ExpectedFingerprint string `json:"expected_fingerprint"`
+	Target              string `json:"target"`
 }
 
 type AdminGeoNamesSnapshotResult struct {
@@ -516,6 +527,12 @@ func (c *Client) AdminGeoNamesConfig(ctx context.Context) (AdminGeoNamesConfig, 
 func (c *Client) UpdateAdminGeoNames(ctx context.Context, input AdminGeoNamesUpdate) (AdminGeoNamesConfig, error) {
 	var out AdminGeoNamesConfig
 	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/geonames", input, &out)
+	return out, err
+}
+
+func (c *Client) ApplyAdminGeoNamesDataset(ctx context.Context, input AdminGeoNamesDatasetApplyInput) (AdminGeoNamesConfig, error) {
+	var out AdminGeoNamesConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/dataset-snapshots/apply", input, &out)
 	return out, err
 }
 

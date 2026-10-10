@@ -677,6 +677,14 @@ func (c *agentController) CloudSetAdminGeoNamesConfig(ctx context.Context, input
 	return cli.UpdateAdminGeoNames(ctx, input)
 }
 
+func (c *agentController) CloudApplyAdminGeoNamesDataset(ctx context.Context, input client.AdminGeoNamesDatasetApplyInput) (client.AdminGeoNamesConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminGeoNamesConfig{}, err
+	}
+	return cli.ApplyAdminGeoNamesDataset(ctx, input)
+}
+
 func (c *agentController) CloudStageAdminGeoNamesSnapshot(ctx context.Context, input client.AdminGeoNamesSnapshotInput) (client.AdminGeoNamesSnapshotResult, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

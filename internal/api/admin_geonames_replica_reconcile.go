@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"strings"
 	"time"
-
-	"github.com/lazyxu/xdrive/internal/photointelligence"
 )
 
 const geoNamesReplicaReconcileInterval = 30 * time.Second
@@ -66,8 +64,8 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 
 	// Build completely before publication. Failure leaves the last-good
 	// immutable index and in-flight PlaceRunner batches untouched.
-	candidate, err := photointelligence.LoadGeoNamesResolver(
-		s.GeoNamesDataDir, desired.MaxDistanceKM,
+	candidate, err := s.loadCurrentGeoNamesResolver(
+		ctx, desired.MaxDistanceKM,
 	)
 	if err != nil {
 		return fmt.Errorf("validate GeoNames replica dataset: %w", err)

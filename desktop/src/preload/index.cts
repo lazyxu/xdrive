@@ -636,6 +636,9 @@ const agent = Object.freeze({
   cloudReloadAdminGeoNames: (expectedVersion: string) => ipcRenderer.invoke('agent:cloud-reload-admin-geonames', expectedVersion),
   cloudStageAdminGeoNamesSnapshot: (input: { revision: number; expected_version: string }) =>
     ipcRenderer.invoke('agent:cloud-stage-admin-geonames-snapshot', input),
+  cloudApplyAdminGeoNamesDataset: (input: {
+    revision: number; expected_version: string; expected_fingerprint: string; target: string
+  }) => ipcRenderer.invoke('agent:cloud-apply-admin-geonames-dataset', input),
   cloudAdminGeoNamesRevisions: () => ipcRenderer.invoke('agent:cloud-admin-geonames-revisions'),
   cloudRollbackAdminGeoNames: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-geonames', input),

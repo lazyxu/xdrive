@@ -11,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
-	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -111,7 +110,7 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 		return
 	}
 	// Fully validate and build an immutable candidate before database writes.
-	candidate, err := photointelligence.LoadGeoNamesResolver(s.GeoNamesDataDir, *input.MaxDistanceKM)
+	candidate, err := s.loadCurrentGeoNamesResolver(ctx, *input.MaxDistanceKM)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active settings unchanged")
 		return
