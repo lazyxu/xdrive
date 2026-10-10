@@ -358,6 +358,7 @@ Required behavior:
 - File operations from a virtual selection must retain enough node metadata for every selected item even if its render page is later evicted.
 - Logical range resolution must stay bounded. Never fan out every page of a 100k-item selection concurrently; load small page groups and allow ordinary viewport retention to evict old render metadata after interaction metadata has been captured.
 - Directory/search/tab/sort/grouping generation changes invalidate in-flight interaction resolution so stale results cannot change current selection or Quick Look state.
+- A cancelled in-flight Select All must abort its own active browser range request (propagating via fetch to the Server request context), not merely fence later UI results. Selection requests must not borrow or abort viewport-owned requests; preserve the previous atomic selection and report no cancellation error toast. The same semantics apply to wide Web and Mobile Web, including global Search.
 
 These are correctness requirements, not a FileExplorer performance specialization. Performance work remains governed separately by `docs/file-explorer-performance.md`.
 

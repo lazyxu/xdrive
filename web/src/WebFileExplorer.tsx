@@ -273,7 +273,7 @@ export default function WebFileExplorer({
     viewModeStorageKey: FILE_VIEW_KEY,
     navigationSessionStorageKey,
     onLoadDirectory,
-    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit) => {
+    loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) => {
       const page = await api.searchRange(
         query,
         filters,
@@ -282,6 +282,7 @@ export default function WebFileExplorer({
         searchSort.key,
         searchSort.direction,
         searchGrouping,
+        signal,
       )
       return {
         items: page.items,

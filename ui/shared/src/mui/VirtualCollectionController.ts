@@ -221,7 +221,9 @@ export function useXDriveVirtualCollection<TItem>({
   const collectRange = useCallback(async (
     startIndex: number,
     endIndex: number,
+    signal?: AbortSignal,
   ): Promise<TItem[] | null> => {
+    if (signal?.aborted) return null
     const generation = generationRef.current
     const activeQueryKey = queryKeyRef.current
     const totalCount = snapshotRef.current.totalCount
@@ -239,11 +241,54 @@ export function useXDriveVirtualCollection<TItem>({
 
     for (let chunkStart = start; chunkStart <= end; chunkStart += chunkSize) {
       if (
+        signal?.aborted ||
         generation !== generationRef.current ||
         activeQueryKey !== queryKeyRef.current
       ) return null
 
       const chunkEnd = Math.min(end, chunkStart + chunkSize - 1)
+      if (signal) {
+        // Explicit user selection owns its requests. Reuse cached page values
+        // when complete, but never attach its cancel signal to a viewport
+        // request: scrolling must survive the user's Select All cancellation.
+        for (let offset = chunkStart; offset <= chunkEnd; offset += pageSize) {
+          if (
+            signal.aborted ||
+            generation !== generationRef.current ||
+            activeQueryKey !== queryKeyRef.current
+          ) return null
+          const range = { offset, limit: Math.min(pageSize, chunkEnd - offset + 1) }
+          const cached: TItem[] = []
+          for (let index = range.offset; index < range.offset + range.limit; index += 1) {
+            const item = snapshotRef.current.items.get(index)
+            if (item === undefined) break
+            cached.push(item)
+          }
+          if (cached.length === range.limit) {
+            result.push(...cached)
+            continue
+          }
+          let page: XDriveVirtualCollectionPage<TItem>
+          try {
+            page = await loadRange(range, signal)
+          } catch (error) {
+            if (signal.aborted) return null
+            throw error
+          }
+          if (
+            signal.aborted ||
+            generation !== generationRef.current ||
+            activeQueryKey !== queryKeyRef.current
+          ) return null
+          if (
+            page.offset !== range.offset ||
+            page.items.length !== range.limit ||
+            (totalCount !== null && page.totalCount !== null && page.totalCount !== totalCount)
+          ) return null
+          result.push(...page.items)
+        }
+        continue
+      }
       await ensureViewport(chunkStart, chunkEnd)
 
       if (
@@ -259,7 +304,7 @@ export function useXDriveVirtualCollection<TItem>({
     }
 
     return result
-  }, [ensureViewport, pageSize])
+  }, [ensureViewport, loadRange, pageSize])
 
   const updateLoadedItems = useCallback((
     updater: (item: TItem, index: number) => TItem,

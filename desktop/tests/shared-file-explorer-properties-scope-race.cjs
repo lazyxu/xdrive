@@ -81,6 +81,8 @@ test('FileExplorer interaction scope change clears stale Properties session and 
   let selectionLoad = { intent: 3, scope: 'account-a:/same', loaded: 200, total: 1024 }
   let selectionLoadFeedback = 'previous scope selection feedback'
   const selectionLoadRef = { current: selectionLoad }
+  let selectionRequestAborted = false
+  const selectionAbortRef = { current: { abort: () => { selectionRequestAborted = true } } }
 
   const dependencies = {
     interactionScopeKeyRef: { current: 'account-a:/same' },
@@ -110,6 +112,7 @@ test('FileExplorer interaction scope change clears stale Properties session and 
     typeSelectRef: { current: { query: 'x', updatedAt: 1 } },
     typeSelectIntentRef: { current: 2 },
     selectionIntentRef: { current: 3 },
+    selectionAbortRef,
     updateSelectionLoad: compileEffect(filename, selectionLoadCallback, {
       selectionLoadRef,
       setSelectionLoad: (value) => { selectionLoad = value },
@@ -139,6 +142,8 @@ test('FileExplorer interaction scope change clears stale Properties session and 
   const effect = compileEffect(filename, callback, dependencies)
   effect()
 
+  assert.equal(selectionRequestAborted, true, 'scope change must abort the old in-flight selection request')
+  assert.equal(selectionAbortRef.current, null, 'scope change must release the request controller')
   assert.equal(selectionLoad, null, 'scope change must clear the old selection-load state')
   assert.equal(selectionLoadRef.current, null, 'scope change must release the old selection-load owner')
   assert.equal(selectionLoadFeedback, '', 'scope change must clear selection feedback from the previous scope')

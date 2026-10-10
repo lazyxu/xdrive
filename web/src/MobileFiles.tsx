@@ -378,6 +378,7 @@ export default function MobileFiles(props: Props) {
   const [dropCrumbID, setDropCrumbID] = useState<string | null>(null)
   const externalDropGenerationRef = useRef(0)
   const selectionIntentRef = useRef(0)
+  const selectionAbortRef = useRef<AbortController | null>(null)
   const ownerRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const lastRequestedDirectoryRef = useRef(props.requestedDirectoryID)
@@ -574,6 +575,7 @@ export default function MobileFiles(props: Props) {
 
   useEffect(() => () => {
     nativeShareControllerRef.current?.abort()
+    selectionAbortRef.current?.abort()
     deleteSavedSearchGenerationRef.current += 1
   }, [props.lifecycleKey])
   // A dropped directory may still be reading on another browser task. Fence
@@ -669,6 +671,8 @@ export default function MobileFiles(props: Props) {
   }, [showDirectory, props.trashActive, props.searchActive, props.onClearInline])
 
   useEffect(() => {
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     setSelectionLoad(null)
     setSelected(new Map())
@@ -843,6 +847,8 @@ export default function MobileFiles(props: Props) {
     if (props.trashActive) return
     if (selectionMode) {
       // A manual selection supersedes an in-flight Select All range intent.
+      selectionAbortRef.current?.abort()
+      selectionAbortRef.current = null
       selectionIntentRef.current += 1
       setSelectionLoad(null)
       setSelected(current => {
@@ -1152,6 +1158,8 @@ export default function MobileFiles(props: Props) {
   }
   const cancelSelectAll = () => {
     if (!selectionLoad) return
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
     selectionIntentRef.current += 1
     setSelectionLoad(null)
     setSelectionFeedback('已取消全选加载，保留原选择。')
@@ -1161,12 +1169,15 @@ export default function MobileFiles(props: Props) {
   }
   const selectAllCurrent = () => {
     if (!Number.isSafeInteger(totalCount) || totalCount <= 0 || props.loading || selectionLoad) return
+    selectionAbortRef.current?.abort()
+    const controller = new AbortController()
+    selectionAbortRef.current = controller
     const intent = ++selectionIntentRef.current
     const scope = selectionScopeRef.current
     const count = totalCount
     const collection = props.virtualCollection
     const isCurrent = () => (
-      selectionIntentRef.current === intent && selectionScopeRef.current === scope
+      !controller.signal.aborted && selectionIntentRef.current === intent && selectionScopeRef.current === scope
     )
     setSelectionFeedback('')
     setSelectionLoad({ intent, loaded: 0, total: count })
@@ -1180,7 +1191,7 @@ export default function MobileFiles(props: Props) {
           if (!isCurrent()) return
           const end = Math.min(count - 1, start + XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE - 1)
           const page = collection?.collectRange
-            ? await collection.collectRange(start, end)
+            ? await collection.collectRange(start, end, controller.signal)
             : Array.from({ length: end - start + 1 },
                 (_, offset) => collection?.itemAt(start + offset) ?? props.items[start + offset])
           if (!isCurrent()) return
@@ -1201,6 +1212,7 @@ export default function MobileFiles(props: Props) {
       } catch {
         if (isCurrent()) setSelectionFeedback('未能完成全选，已保留原选择。请重试全选。')
       } finally {
+        if (selectionAbortRef.current === controller) selectionAbortRef.current = null
         if (isCurrent()) setSelectionLoad(null)
       }
     })()
@@ -1516,6 +1528,7 @@ export default function MobileFiles(props: Props) {
                   sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>全选</Button>
               )}
               <Button size="small" onClick={() => {
+                selectionAbortRef.current?.abort(); selectionAbortRef.current = null
                 selectionIntentRef.current += 1; setSelectionLoad(null)
                 setSelectionMode(false); setSelected(new Map())
                 setSelectionFeedback(''); setSelectionMoreAnchor(null)

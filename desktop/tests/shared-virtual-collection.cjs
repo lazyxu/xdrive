@@ -647,3 +647,75 @@ test('VirtualCollection collectRange abandons stale generations', async () => {
   })
   assert.equal(await stale, null)
 })
+
+
+test('explicit Select All abort cancels only its own in-flight HTTP range, not viewport work', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  const requests = []
+  const loadRange = (range, signal) => new Promise(resolve => {
+    requests.push({ range, signal, resolve })
+  })
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'abort-isolated',
+    loadRange,
+    onError: (error) => { throw error },
+    pageSize: 2,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+  let collection = render()
+  collection.primePage({
+    offset: 0, limit: 2, totalCount: 4,
+    items: [{ id: 1 }, { id: 2 }],
+  })
+  collection = render()
+  const selectController = new AbortController()
+  const selectPromise = collection.collectRange(2, 3, selectController.signal)
+  const viewportPromise = collection.ensureViewport(2, 3)
+  assert.equal(requests.length, 2, 'explicit selection must not attach to a viewport request')
+  assert.equal(requests[0].signal, selectController.signal)
+  assert.notEqual(requests[1].signal, selectController.signal)
+  assert.equal(requests[1].signal.aborted, false)
+  selectController.abort()
+  assert.equal(requests[0].signal.aborted, true)
+  assert.equal(requests[1].signal.aborted, false, 'viewport data must remain usable after selection cancel')
+  for (const request of requests) request.resolve({
+    offset: request.range.offset,
+    limit: request.range.limit,
+    totalCount: 4,
+    items: Array.from({ length: request.range.limit }, (_, i) => ({ id: request.range.offset + i + 1 })),
+  })
+  assert.equal(await selectPromise, null, 'aborted selection cannot commit stale results')
+  await viewportPromise
+  collection = render()
+  assert.equal(collection.itemAt(2)?.id, 3, 'viewport request survives independently')
+})
+
+test('Select All cancels a waiting Server response without emitting a user-visible failure', async () => {
+  const runtime = createHookRuntime()
+  const useVirtualCollection = loadVirtualCollectionHook(runtime.react)
+  let receivedSignal
+  let rejectRange
+  const render = () => runtime.render(() => useVirtualCollection({
+    queryKey: 'aborted-fetch',
+    loadRange: (range, signal) => {
+      receivedSignal = signal
+      return new Promise((_, reject) => { rejectRange = reject })
+    },
+    onError: () => { throw new Error('Cancelled request must not report an error') },
+    pageSize: 200,
+    overscanPages: 0,
+    retentionOverscanPages: 0,
+  }))
+  let collection = render()
+  collection.primePage({ offset: 0, limit: 200, totalCount: 400,
+    items: Array.from({ length: 200 }, (_, i) => ({ id: i + 1 })) })
+  collection = render()
+  const controller = new AbortController()
+  const result = collection.collectRange(200, 399, controller.signal)
+  assert.equal(receivedSignal, controller.signal)
+  controller.abort()
+  rejectRange(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }))
+  assert.equal(await result, null)
+})

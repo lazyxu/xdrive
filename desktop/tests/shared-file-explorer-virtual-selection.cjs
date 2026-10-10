@@ -26,12 +26,12 @@ test('VirtualCollection exposes one awaitable logical-range interaction contract
 
   assert.ok(cloud.includes('collectRange: virtualCollection.collectRange'), 'directory VirtualCollection must expose collectRange')
   assert.ok(search.includes('collectRange: virtualCollection.collectRange'), 'search VirtualCollection must expose collectRange')
-  assert.ok(workspace.includes('collectRange: async (startIndex, endIndex) =>'), 'workspace must project logical ranges')
+  assert.ok(workspace.includes('collectRange: async (startIndex, endIndex, signal?) =>'), 'workspace must project logical ranges')
 })
 
 test('VirtualCollection Ctrl+A and Shift selection resolve unloaded logical items', () => {
   assert.ok(
-    explorer.includes('collectRange?: (\n    startIndex: number,\n    endIndex: number,'),
+    explorer.includes('collectRange?: (\n    startIndex: number,\n    endIndex: number,\n    signal?: AbortSignal,'),
     'FileExplorer virtual contract must expose collectRange',
   )
   assert.match(
@@ -42,7 +42,7 @@ test('VirtualCollection Ctrl+A and Shift selection resolve unloaded logical item
   const selectAllBlock = explorer.slice(explorer.indexOf('const selectAllItems ='), explorer.indexOf('const cancelSelectionLoad ='))
   assert.ok(
     selectAllBlock.includes('start < total') &&
-      selectAllBlock.includes('await virtualCollection.collectRange(start, end)') &&
+      selectAllBlock.includes('await virtualCollection.collectRange(start, end, controller.signal)') &&
       selectAllBlock.includes('commitSelectionIntent(intent, resolved.map'),
     'complete selection must collect all bounded ranges before committing the full identity set',
   )
@@ -358,4 +358,26 @@ test('interaction-scope change clears stale background-click suppression', () =>
       scopeBlock.indexOf('onSelectionChange?.([])'),
     'old background-click suppression must be cleared before the new workspace publishes interaction state',
   )
+})
+
+
+test('Wide and Mobile Web Select All propagate owned AbortSignals across shared directory/search transport', () => {
+  const mobile = read('web', 'src', 'MobileFiles.tsx')
+  const web = read('web', 'src', 'WebFileExplorer.tsx')
+  const api = read('web', 'src', 'api.ts')
+  const cloud = read('ui', 'shared', 'src', 'mui', 'CloudFilesController.ts')
+  const search = read('ui', 'shared', 'src', 'mui', 'FileExplorerSearch.ts')
+  assert.ok(virtual.includes('page = await loadRange(range, signal)'))
+  assert.ok(virtual.includes('if (signal.aborted) return null'))
+  assert.ok(virtual.includes('const cached: TItem[] = []'))
+  assert.ok(cloud.includes('signal?: AbortSignal) => Promise<TNode[] | null>'))
+  assert.ok(workspace.includes('activeCollection.collectRange(startIndex, endIndex, signal)'))
+  assert.ok(search.includes('range.limit,') && search.includes('        signal,'))
+  assert.ok(web.includes('loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal)'))
+  assert.ok(api.includes('async searchRange(') && api.includes('`/api/v1/search?${params.toString()}`, { signal }'))
+  assert.ok(explorer.includes('await virtualCollection.collectRange(start, end, controller.signal)'))
+  assert.ok(explorer.includes('selectionAbortRef.current?.abort()'))
+  assert.ok(mobile.includes('await collection.collectRange(start, end, controller.signal)'))
+  assert.ok(mobile.includes('selectionAbortRef.current?.abort()'))
+  assert.ok(!mobile.includes('fetch('), 'Mobile presentation must not fork request transport')
 })
