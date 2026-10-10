@@ -1,3 +1,4 @@
+import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage } from '../../ui/shared/src'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
@@ -1703,6 +1704,15 @@ export class XDriveApi {
       throw new ApiError(500, 'Invalid Live Photo motion URL')
     }
     return `${API_BASE}${ticket.url}`
+  }
+
+  deviceBackups() {
+    return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups')
+  }
+
+  deviceBackupRunSummaries(sourceID: number, limit = 20, offset = 0) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    return this.request<XDriveDeviceBackupRunPage>(`/api/v1/device-backups/${sourceID}/runs?${params.toString()}`)
   }
 
   sources() {

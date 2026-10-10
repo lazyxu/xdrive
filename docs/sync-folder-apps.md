@@ -66,7 +66,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 proposed; full Push read UI and controller separation still pending |
 | Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; device mutation guards and spoof tests pending |
-| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | partial prior picker; rest not implemented |
+| UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web redacted B-scope viewer proposed in P0-C1; Desktop Agent safe read IPC, local controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
@@ -82,6 +82,10 @@ This phase introduces two **read-only** endpoints, `GET /api/v1/device-backups` 
 ## UI P0-A1 progress: separate applications (pending full PR CI)
 
 Shared navigation now has two *top-level* destinations, `设备备份` and `远程拉取`; the old `sync-folders` Web hash is retained only as a compatibility route, resolving persisted Source `direction` by ID. Pull UI filters to `direction=pull`, including creation presets, without disabling existing Yike/DSM credential and scan controls. The Push app is deliberately a **non-operational placeholder** for local folder execution and NAS `待支持` while the server's read-only projection is wired into Web/Desktop adapters in the next phase. This stage does not let a foreign device (or a browser) configure, start or cancel a Push. It does **not** satisfy the complete B-scope viewer nor Server mutation fencing yet.
+
+## UI P0-C1 progress: Web and Mobile Web read-only B-scope (pending CI)
+
+Web now consumes **only** the allowlisted `GET /device-backups` and `GET /device-backups/:sourceID/runs` responses for device/folder names, trusted-safe cloud target, aggregate progress and paginated summary history. No local path or uncontrolled Source DTO enters this presentation, and it contains no mutation controls. The signed-in owner remains scope of both Server endpoints; online status is explicitly unknown until a separate trusted heartbeat feature is complete. For Desktop, the owning Agent does not yet have a safe read IPC; the UI remains a truthful unsupported placeholder until that port is added. NAS Push remains `待支持`. Source mutation protections and true local executor are separate deliverables.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

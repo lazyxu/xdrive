@@ -551,6 +551,10 @@ function FileManager({
 
   const gallerySource = useMemo(() => createWebMediaGalleryDataSource(api), [api])
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
+  const deviceBackupSource = useMemo(() => ({
+    list: () => api.deviceBackups(),
+    runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
+  }), [api])
 
   useEffect(() => {
     if (workspaceRouteKey) setLastWorkspaceView(workspaceRouteKey as AppView)
@@ -1409,7 +1413,10 @@ function FileManager({
             onError={handleError}
           />
         ) : appView === 'device-backup' ? (
-          <XDriveDeviceBackupPage />
+          <XDriveDeviceBackupPage
+            source={deviceBackupSource}
+            initialSourceID={route.app === 'device-backup' ? route.params.source : undefined}
+          />
         ) : appView === 'remote-pull' ? (
           route.app === 'sync-folders' ? (
             <XDriveStatePanel
