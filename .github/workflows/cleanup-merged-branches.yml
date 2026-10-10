@@ -1,6 +1,8 @@
 name: Cleanup redundant branches
 
 on:
+  push:
+    branches: [master]
   pull_request_target:
     types: [closed, labeled]
   workflow_dispatch:
@@ -10,14 +12,15 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Serialize cleanup for one PR without letting unrelated PR events replace it.
-  group: cleanup-redundant-branches-${{ github.event_name }}-${{ github.event.pull_request.number || 'manual' }}
+  # Serialize master push scans and PR events; never race when deleting remote refs.
+  group: cleanup-redundant-branches
   cancel-in-progress: false
 
 jobs:
   cleanup:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
       (
         github.event_name == 'pull_request_target' &&
         github.event.pull_request.head.repo.full_name == github.repository &&
@@ -52,7 +55,7 @@ jobs:
           --expected-sha "$XD_CLEANUP_EXPECTED_SHA"
 
       - name: Scan redundant branches
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/cleanup-merged-branches.sh

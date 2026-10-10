@@ -9,6 +9,7 @@ GIT_BIN="${GIT_BIN:-git}"
 dry_run=0
 exact_branch=""
 expected_sha=""
+retired_manifest="${XD_CLEANUP_RETIRED_MANIFEST:-.github/retired-branches.tsv}"
 
 usage() {
   cat <<'EOF'
@@ -26,7 +27,8 @@ Scan mode deletes only remote branches that are provably redundant:
   2. a PR from this repository is closed without merge, is explicitly labeled
      "superseded", and the current branch tip still exactly matches that PR's
      recorded head SHA; or
-  3. the current branch tip is already an ancestor of origin/master.
+  3. the current branch tip is already an ancestor of origin/master; or
+  4. a reviewed retirement manifest exactly matches the current branch tip SHA.
 
 A branch used by any open PR from this repository is never deleted, even if it
 otherwise matches one of the rules above. The default branch is never deleted.
@@ -178,6 +180,29 @@ done < <(
       | @tsv
     '
 )
+
+# Review-owned SHA-pinned retirement entries cover abandoned branches without PRs.
+# Never delete by branch-name alone; open PR and default-branch guards are shared.
+if [[ -f "$retired_manifest" ]]; then
+  while IFS=$'\t' read -r branch retired_sha reason || [[ -n "$branch" ]]; do
+    [[ -n "$branch" && "${branch:0:1}" != "#" ]] || continue
+    if [[ ! "$retired_sha" =~ ^[0-9a-fA-F]{40}$ ]] ||
+       ! "$GIT_BIN" check-ref-format "refs/heads/$branch" >/dev/null 2>&1; then
+      echo "cleanup: invalid retired branch entry: $branch" >&2
+      exit 2
+    fi
+    if [[ "$branch" == "$default_branch" ]]; then
+      echo "cleanup: keep $branch — default branch is never deleted"
+      continue
+    fi
+    current_sha="$(current_ref_sha "$branch")"
+    if [[ "$current_sha" == "$retired_sha" ]]; then
+      delete_branch "$branch" "tip matches reviewed retired head $retired_sha"
+    elif [[ -n "$current_sha" ]]; then
+      echo "cleanup: keep $branch — current tip differs from reviewed retired head"
+    fi
+  done < "$retired_manifest"
+fi
 
 # Also catch branches that were merged without a PR or fast-forwarded into
 # master. Fetch after the PR cleanup so deleted refs disappear from origin/*.

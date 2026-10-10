@@ -1,0 +1,8 @@
+# SHA-pinned audited retired branches; an advanced branch or open PR is never deleted.
+# branch\tverified head\tsuperseded evidence
+feat/gallery-cutout-mask	8dffe63cda405e6e2cebda81017c8d064003e4d4	obsolete standalone PhotoEditMask experiment superseded by #957 #964 #1003
+feat/gallery-cutout	3d3d691bb430be29cdf811c7c73865a97241357c	obsolete cutout endpoint superseded by durable Creative pipeline #957 #964
+feat/gallery-creative-cutout	bb221d2ab0f18a5887332907bcb139b68219baa9	obsolete creative backend prototype superseded by #957 #1003
+feat/gallery-ai-cutout	b02d2958606fd808e97bdf060d6917fca726e20f	obsolete standalone UI and IPC superseded by shared Creative UI #964 #1003
+perf/gallery-selection-jobs-10k-100k	476c9936be201d779223be7d4758fddab12bb0f2	unmeasured duplicate of merged Desktop G07 #1180 and PostgreSQL baseline #1182
+perf/gallery-go-context-cancel-100k-baseline	f4df69854f1b80b719e7bab21e20b33b898cdec9	already ancestor of master; #1144 and #1147

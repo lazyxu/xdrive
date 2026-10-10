@@ -6,12 +6,13 @@ SCRIPT="$ROOT/scripts/cleanup-merged-branches.sh"
 WORKFLOW="$ROOT/.github/workflows/cleanup-merged-branches.yml"
 
 grep -Fq "types: [closed, labeled]" "$WORKFLOW"
-! grep -Fq '  push:' "$WORKFLOW"
-grep -Fq "group: cleanup-redundant-branches-\${{ github.event_name }}-\${{ github.event.pull_request.number || 'manual' }}" "$WORKFLOW"
+grep -Fq '  push:' "$WORKFLOW"
+grep -Fq '    branches: [master]' "$WORKFLOW"
+grep -Fq "group: cleanup-redundant-branches" "$WORKFLOW"
 grep -Fq "if: github.event_name == 'pull_request_target'" "$WORKFLOW"
 grep -Fq -- '--branch "$XD_CLEANUP_BRANCH"' "$WORKFLOW"
 grep -Fq -- '--expected-sha "$XD_CLEANUP_EXPECTED_SHA"' "$WORKFLOW"
-grep -Fq "if: github.event_name == 'workflow_dispatch'" "$WORKFLOW"
+grep -Fq "if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'" "$WORKFLOW"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -50,6 +51,12 @@ if [[ "${1:-}" == "--paginate" ]]; then
     "number": 203,
     "merged_at": null,
     "head": {"ref": "fork-open", "sha": "fork-open-tip", "repo": {"full_name": "someone/fork"}},
+    "labels": []
+  },
+  {
+    "number": 204,
+    "merged_at": null,
+    "head": {"ref": "retired/open", "sha": "open-retired-tip", "repo": {"full_name": "lazyxu/xdrive"}},
     "labels": []
   }
 ]
@@ -128,6 +135,9 @@ case "$endpoint" in
   */git/ref/heads/superseded/advanced) printf '%s\n' uuuu ;;
   */git/ref/heads/superseded/reused) printf '%s\n' rrrr ;;
   */git/ref/heads/ordinary/closed) printf '%s\n' vvvv ;;
+  */git/ref/heads/retired/good) printf '%s\n' 0123456789012345678901234567890123456789 ;;
+  */git/ref/heads/retired/advanced) printf '%s\n' ffffffffffffffffffffffffffffffffffffffff ;;
+  */git/ref/heads/retired/open) printf '%s\n' 2345678901234567890123456789012345678901 ;;
   *) exit 1 ;;
 esac
 SH
@@ -165,6 +175,9 @@ origin/ordinary/closed
 origin/superseded/advanced
 origin/superseded/closed
 origin/superseded/reused
+origin/retired/good
+origin/retired/advanced
+origin/retired/open
 EOF
     ;;
   merge-base)
@@ -186,13 +199,19 @@ export PUSH_LOG
 export GITHUB_REPOSITORY="lazyxu/xdrive"
 export GH_BIN="$TMP/bin/mock-gh"
 export GIT_BIN="$TMP/bin/mock-git"
+export XD_CLEANUP_RETIRED_MANIFEST="$TMP/retired.tsv"
+printf "%s\t%s\t%s\n" "retired/good" "0123456789012345678901234567890123456789" "obsolete" > "$XD_CLEANUP_RETIRED_MANIFEST"
+printf "%s\t%s\t%s\n" "retired/advanced" "1234567890123456789012345678901234567890" "changed head" >> "$XD_CLEANUP_RETIRED_MANIFEST"
+printf "%s\t%s\t%s\n" "retired/open" "2345678901234567890123456789012345678901" "open PR" >> "$XD_CLEANUP_RETIRED_MANIFEST"
+printf "%s\t%s\t%s\n" "master" "3456789012345678901234567890123456789012" "default protected" >> "$XD_CLEANUP_RETIRED_MANIFEST"
 
 bash "$SCRIPT" > "$TMP/out"
 
 grep -qx 'repos/lazyxu/xdrive/git/refs/heads/merged/rebased' "$DELETE_LOG"
 grep -qx 'repos/lazyxu/xdrive/git/refs/heads/superseded/closed' "$DELETE_LOG"
 grep -qx 'repos/lazyxu/xdrive/git/refs/heads/ancestor-only' "$DELETE_LOG"
-[[ "$(wc -l < "$DELETE_LOG" | tr -d ' ')" == "3" ]]
+grep -qx 'repos/lazyxu/xdrive/git/refs/heads/retired/good' "$DELETE_LOG"
+[[ "$(wc -l < "$DELETE_LOG" | tr -d ' ')" == "4" ]]
 
 ! grep -q 'advanced-branch' "$DELETE_LOG"
 ! grep -q 'active-branch' "$DELETE_LOG"
@@ -200,11 +219,16 @@ grep -qx 'repos/lazyxu/xdrive/git/refs/heads/ancestor-only' "$DELETE_LOG"
 ! grep -q 'superseded/advanced' "$DELETE_LOG"
 ! grep -q 'superseded/reused' "$DELETE_LOG"
 ! grep -q 'external-branch' "$DELETE_LOG"
+! grep -q 'retired/advanced' "$DELETE_LOG"
+! grep -q 'retired/open' "$DELETE_LOG"
+! grep -q 'refs/heads/master' "$DELETE_LOG"
 ! grep -q 'fork-superseded' "$DELETE_LOG"
 
 grep -q 'keep active-branch — branch is used by an open PR' "$TMP/out"
 grep -q 'keep superseded/reused — branch is used by an open PR' "$TMP/out"
-grep -q 'removed 3 redundant branch(es)' "$TMP/out"
+grep -q 'keep retired/open — branch is used by an open PR' "$TMP/out"
+grep -q 'current tip differs from reviewed retired head' "$TMP/out"
+grep -q 'removed 4 redundant branch(es)' "$TMP/out"
 
 : > "$DELETE_LOG"
 bash "$SCRIPT" --dry-run > "$TMP/dry-run.out"
@@ -212,7 +236,8 @@ bash "$SCRIPT" --dry-run > "$TMP/dry-run.out"
 grep -q 'cleanup: merged/rebased — tip matches merged PR head aaaa' "$TMP/dry-run.out"
 grep -q 'cleanup: superseded/closed — tip matches closed superseded PR #104 head ssss' "$TMP/dry-run.out"
 grep -q 'cleanup: ancestor-only — tip is already contained in master' "$TMP/dry-run.out"
-grep -q 'removed 3 redundant branch(es)' "$TMP/dry-run.out"
+grep -q 'tip matches reviewed retired head 0123456789012345678901234567890123456789' "$TMP/dry-run.out"
+grep -q 'removed 4 redundant branch(es)' "$TMP/dry-run.out"
 
 # Event mode must not depend on GitHub REST availability and must delete only
 # the exact unchanged PR head.
