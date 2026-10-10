@@ -603,6 +603,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
 	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
+	mux.HandleFunc("GET /v1/cloud/admin-geonames/revisions", h.cloudAdminGeoNamesRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-geonames/rollback", h.cloudRollbackAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
@@ -1854,6 +1856,54 @@ type desktopIPCAdminGeoNamesController interface {
 	CloudAdminGeoNamesConfig(context.Context) (client.AdminGeoNamesConfig, error)
 	CloudSetAdminGeoNamesConfig(context.Context, client.AdminGeoNamesUpdate) (client.AdminGeoNamesConfig, error)
 	CloudReloadAdminGeoNames(context.Context, string) (client.AdminGeoNamesReloadResult, error)
+}
+
+// Optional for older Agent test doubles; Server remains the admin authority.
+type desktopIPCAdminGeoNamesHistoryController interface {
+	CloudAdminGeoNamesRevisions(context.Context) (client.AdminGeoNamesRevisionPage, error)
+	CloudRollbackAdminGeoNames(context.Context, client.AdminGeoNamesRollbackInput) (client.AdminGeoNamesConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminGeoNamesRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesHistoryController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_history_unavailable", "GeoNames revision history is unsupported")
+		return
+	}
+	result, err := provider.CloudAdminGeoNamesRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudRollbackAdminGeoNames(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesHistoryController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_rollback_unavailable", "GeoNames rollback is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil ||
+		*input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_revision", "An older GeoNames target revision is required")
+		return
+	}
+	result, err := provider.CloudRollbackAdminGeoNames(r.Context(), client.AdminGeoNamesRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudAdminGeoNames(w http.ResponseWriter, r *http.Request) {
