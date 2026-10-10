@@ -1349,19 +1349,19 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render the Gallery label from its destination')
 })
 
-test('Web exposes Home, files, Gallery, Sync Folders, Local Storage, and Cloud Storage as first-class workspace views', () => {
+test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local Storage, and Cloud Storage as first-class workspace views', () => {
   assert.ok(webApp.includes('type AppView = XDriveWorkspaceViewKey<'), 'Web workspace view type must include Local Storage')
   assert.ok(webApp.includes('useXDriveWebAppRuntime()'), 'Web workspace selection must come from the Web App Runtime')
   assert.ok(webApp.includes("?? 'overview'"), 'Home should remain the fallback initial Web workspace')
   assert.ok(webApp.includes("key: 'overview'") && webApp.includes("label: '主页'"), 'Web must expose Home before the shared core')
-  for (const view of ['files', 'gallery', 'sources', 'local-storage', 'cloud-storage']) {
+  for (const view of ['files', 'gallery', 'device-backup', 'remote-pull', 'local-storage', 'cloud-storage']) {
     assert.ok(sharedRoute.includes(`'${view}'`), `shared workspace route missing first-class workspace: ${view}`)
   }
   assert.ok(webApp.includes('<XDriveWorkspaceSidebar'), 'Web must expose first-class workspaces through the shared workspace sidebar')
   assert.ok(webApp.includes('selected={appView}'), 'Web must pass its active workspace to shared core navigation')
   assert.ok(sharedSidebar.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sharedSidebar.includes('primary={destination.label}'), 'shared sidebar must render each label from its core destination')
-  for (const label of ['文件', '图库', '同步文件夹', '本地存储', '云端存储']) {
+  for (const label of ['文件', '图库', '设备备份', '远程拉取', '本地存储', '云端存储']) {
     assert.ok(sharedWorkspaceNavigation.includes(`label: '${label}'`), `shared core navigation model missing label: ${label}`)
   }
   assert.match(webApp, /<XDriveSourceManager[\s\S]*defaultTargetNodeID=/)

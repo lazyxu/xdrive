@@ -20,6 +20,8 @@ import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
 
 export function XDriveSourceManagerListPage({
+  title = '同步文件夹',
+  subtitle = '统一管理同步文件夹、凭据、调度方式与运行状态。',
   rows,
   loading,
   failedItemsLoading,
@@ -34,6 +36,8 @@ export function XDriveSourceManagerListPage({
   onCancelRun,
   onOpenSettings,
 }: {
+  title?: string
+  subtitle?: string
   rows: ExternalSourceRow[]
   loading: boolean
   failedItemsLoading: boolean
@@ -51,8 +55,8 @@ export function XDriveSourceManagerListPage({
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title="同步文件夹"
-      subtitle="统一管理同步文件夹、凭据、调度方式与运行状态。"
+      title={title}
+      subtitle={subtitle}
       pageActions={
         <>
           <XDriveActionButton

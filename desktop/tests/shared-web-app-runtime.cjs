@@ -16,7 +16,7 @@ const desktop = read('desktop', 'src', 'renderer', 'DesktopFileExplorer.tsx')
 
 test('Web App Registry includes all current first-party programs', () => {
   for (const id of [
-    'overview', 'files', 'gallery', 'sync-folders', 'tasks',
+    'overview', 'files', 'gallery', 'sync-folders', 'device-backup', 'remote-pull', 'tasks',
     'local-storage', 'cloud-storage', 'preview', 'media-viewer',
     'text-viewer', 'pdf-viewer', 'audio-player',
     'admin-users', 'admin-audit', 'admin-storage',

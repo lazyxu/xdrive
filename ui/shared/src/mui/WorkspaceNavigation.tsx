@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
-import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
+import BackupRoundedIcon from '@mui/icons-material/BackupRounded'
+import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
@@ -40,7 +41,8 @@ export function xDriveCoreWorkspaceDestinations({
   return [
     { key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize="small" /> },
     { key: 'gallery', label: '图库', icon: <PhotoLibraryRoundedIcon fontSize="small" /> },
-    { key: 'sources', label: '同步文件夹', icon: <CloudSyncRoundedIcon fontSize="small" /> },
+    { key: 'device-backup', label: '设备备份', icon: <BackupRoundedIcon fontSize="small" /> },
+    { key: 'remote-pull', label: '远程拉取', icon: <CloudDownloadRoundedIcon fontSize="small" /> },
     {
       key: 'transfers',
       label: '任务',

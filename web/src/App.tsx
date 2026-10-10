@@ -39,6 +39,7 @@ import {
   XDriveMediaGalleryPage,
   XDriveShareDialog,
   XDriveSourceManager,
+  XDriveDeviceBackupPage,
   createXDriveSourceManagerAdapter,
   XDriveStatePanel,
   XDriveTaskCenterPage,
@@ -494,6 +495,33 @@ function FileManager({
     const next = xDriveWebAppRouteForWorkspaceKey(view)
     if (next) launchWebApp(next)
   }, [launchWebApp])
+  const [legacySourceMissing, setLegacySourceMissing] = useState(false)
+  useEffect(() => {
+    if (route.app !== 'sync-folders') return
+    const sourceID = route.params.source
+    if (!sourceID) {
+      launchWebApp({ app: 'remote-pull', params: {} }, { replace: true })
+      return
+    }
+    let active = true
+    setLegacySourceMissing(false)
+    void api.sources().then((sources) => {
+      if (!active) return
+      const source = sources.find((item) => item.id === sourceID)
+      if (!source) {
+        setLegacySourceMissing(true)
+        return
+      }
+      launchWebApp({
+        app: source.direction === 'push' ? 'device-backup' : 'remote-pull',
+        params: { source: sourceID },
+      }, { replace: true })
+    }).catch(() => {
+      if (active) setLegacySourceMissing(true)
+    })
+    return () => { active = false }
+  }, [api, route, launchWebApp])
+
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [compactNavigationOpen, setCompactNavigationOpen] = useState(false)
@@ -1134,7 +1162,7 @@ function FileManager({
     </Stack>
   )
   const mobileAppTitles: Record<string, string> = {
-    overview: '主页', files: '文件', gallery: '图库', sources: '同步文件夹',
+    overview: '主页', files: '文件', gallery: '图库', 'device-backup': '设备备份', 'remote-pull': '远程拉取',
     transfers: '任务', 'global-tasks': '全局任务', 'local-storage': '本地存储',
     'cloud-storage': '云端存储', 'admin-users': '用户管理',
     'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '服务与依赖',
@@ -1378,20 +1406,33 @@ function FileManager({
             }}
             onError={handleError}
           />
-        ) : appView === 'sources' ? (
-          <XDriveSourceManager
-            adapter={sourceManagerAdapter}
-            initialSourceID={route.app === 'sync-folders' ? route.params.source : undefined}
-            onSelectedSourceChange={(sourceID) => {
-              if (route.app === 'sync-folders' && route.params.source !== sourceID) {
-                launchWebApp({ app: 'sync-folders', params: { source: sourceID } }, { replace: true })
-              }
-            }}
-            defaultTargetNodeID={current?.id}
-            defaultTargetLabel={current?.name ?? '我的文件'}
-            defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
-            onError={handleError}
-          />
+        ) : appView === 'device-backup' ? (
+          <XDriveDeviceBackupPage />
+        ) : appView === 'remote-pull' ? (
+          route.app === 'sync-folders' ? (
+            <XDriveStatePanel
+              variant="plain"
+              loading={!legacySourceMissing}
+              message={legacySourceMissing
+                ? '该同步文件夹不存在或没有查看权限。请从设备备份或远程拉取重新打开。'
+                : '正在根据原同步文件夹 ID 确认 Push/Pull 归属…'}
+            />
+          ) : (
+            <XDriveSourceManager
+              directionFilter="pull"
+              adapter={sourceManagerAdapter}
+              initialSourceID={route.app === 'remote-pull' ? route.params.source : undefined}
+              onSelectedSourceChange={(sourceID) => {
+                if (route.app === 'remote-pull' && route.params.source !== sourceID) {
+                  launchWebApp({ app: 'remote-pull', params: { source: sourceID } }, { replace: true })
+                }
+              }}
+              defaultTargetNodeID={current?.id}
+              defaultTargetLabel={current?.name ?? '我的文件'}
+              defaultTargetPath={crumbs.slice(1).map((crumb) => crumb.name).join('/')}
+              onError={handleError}
+            />
+          )
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}

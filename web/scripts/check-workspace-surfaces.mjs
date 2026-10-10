@@ -209,10 +209,22 @@ requireText(sources, [
   'XDriveWorkspaceSurface',
   '<XDriveWorkspaceSurface',
   'presentation="page"',
-  'title="同步文件夹"',
-  'subtitle="统一管理同步文件夹、凭据、调度方式与运行状态。"',
+  'title={title}',
+  'subtitle={subtitle}',
   'pageActions={',
-], 'ExternalSources')
+], 'RemotePull SourceManager workspace')
+
+requireText(app, [
+  "appView === 'device-backup'",
+  '<XDriveDeviceBackupPage',
+  "appView === 'remote-pull'",
+  '<XDriveSourceManager',
+  'directionFilter="pull"',
+], 'Separate first-level Device Backup and Remote Pull apps')
+if (app.includes("appView === 'sources'")) {
+  throw new Error('Legacy mixed Push/Pull workspace must not remain a first-level app')
+}
+
 
 requireText(storage, [
   'XDriveWorkspaceSurface',

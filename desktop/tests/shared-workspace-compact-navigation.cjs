@@ -242,9 +242,9 @@ function clickEvent(modifiers = {}) {
 test('core destinations omit unsupported local storage and retain the task badge on the existing key', () => {
   const { xDriveCoreWorkspaceDestinations } = createLoader()(modelPath)
   const withoutLocal = xDriveCoreWorkspaceDestinations({ transferBadge: 7 })
-  assert.deepEqual(keys(withoutLocal), ['files', 'gallery', 'sources', 'transfers', 'cloud-storage'])
+  assert.deepEqual(keys(withoutLocal), ['files', 'gallery', 'device-backup', 'remote-pull', 'transfers', 'cloud-storage'])
   const withLocal = xDriveCoreWorkspaceDestinations({ transferBadge: 7, showLocalStorage: true })
-  assert.deepEqual(keys(withLocal), ['files', 'gallery', 'sources', 'transfers', 'local-storage', 'cloud-storage'])
+  assert.deepEqual(keys(withLocal), ['files', 'gallery', 'device-backup', 'remote-pull', 'transfers', 'local-storage', 'cloud-storage'])
   const tasks = withLocal.find((item) => item.key === 'transfers')
   assert.equal(tasks.label, '任务')
   assert.equal(tasks.compactLabel, '任务')
@@ -257,7 +257,7 @@ test('compact primary destinations promote Home from caller sections without inv
     sections: [{ key: 'home', placement: 'bottom', items: [{ key: 'overview', label: '主页', icon: null }] }],
   })
   assert.deepEqual(keys(withHome.primary), ['overview', 'files', 'gallery', 'transfers'])
-  assert.deepEqual(withHome.moreSections.flatMap((section) => keys(section.items)), ['sources', 'cloud-storage'])
+  assert.deepEqual(withHome.moreSections.flatMap((section) => keys(section.items)), ['device-backup', 'remote-pull', 'cloud-storage'])
   const withoutHome = xDriveCompactWorkspaceNavigation({})
   assert.deepEqual(keys(withoutHome.primary), ['files', 'gallery', 'transfers'])
 })
@@ -276,7 +276,7 @@ test('More preserves extension placement and metadata while removing promoted an
   const before = JSON.stringify(sections)
   const result = xDriveCompactWorkspaceNavigation({ sections, showLocalStorage: true })
   assert.deepEqual(result.moreSections.map((section) => keys(section.items)), [
-    ['before-only'], ['sources', 'local-storage', 'cloud-storage'], ['after-only'], ['bottom-only'],
+    ['before-only'], ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'], ['after-only'], ['bottom-only'],
   ])
   assert.equal(result.moreSections[0].label, '快捷位置')
   assert.deepEqual(result.moreSections[0].items[0], sections[3].items[1])
@@ -287,9 +287,9 @@ test('More preserves extension placement and metadata while removing promoted an
 test('the actual Web role-filtered sections feed the same compact menu for administrators and ordinary users', () => {
   const { xDriveCompactWorkspaceNavigation } = createLoader()(modelPath)
   for (const { profile, expectedMore } of [
-    { profile: undefined, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'user' }, expectedMore: ['sources', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['sources', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services'] },
+    { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
+    { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
+    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])
@@ -300,7 +300,9 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
 test('compact destination keys continue to resolve through the existing Web app registry', () => {
   const { xDriveWebAppForWorkspaceKey } = createLoader()('web/src/webApps.ts')
   assert.equal(xDriveWebAppForWorkspaceKey('transfers'), 'tasks')
-  assert.equal(xDriveWebAppForWorkspaceKey('sources'), 'sync-folders')
+  assert.equal(xDriveWebAppForWorkspaceKey('device-backup'), 'device-backup')
+  assert.equal(xDriveWebAppForWorkspaceKey('remote-pull'), 'remote-pull')
+  assert.equal(xDriveWebAppForWorkspaceKey('sources'), null)
   assert.equal(xDriveWebAppForWorkspaceKey('files'), 'files')
   assert.equal(xDriveWebAppForWorkspaceKey('more'), null)
 })
