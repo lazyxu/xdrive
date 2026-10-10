@@ -1,5 +1,37 @@
 # Gallery performance
 
+## P0 · 100k Gallery durable-selection SQL stage attribution (2026-10-10)
+
+**Status: Measured CURRENT / test-only SQL profile accepted; 100k enqueue still over budget; production unchanged.** Initial source-exact SQL benchmark and full CI passed on measured head `65274c5d239560dff470af9eab1937370be46898`; after writing durable evidence, the amended head must pass new exact-head full CI. Fixed GitHub master base `8fcff4d9f7407d345bbd1d235cc5e609176a1c68`; exactly one work commit is required on `perf/gallery-100k-worker-sql-profile`. Unrelated #1185 Desktop real IPC progress benchmark remains blocked/Draft; do not merge or close it as a performance success. #1304 rejected the 100→1000-row enqueue batch candidate and reverted it; that experiment must not be relabeled or repeated unchanged.
+
+**Existing measured uninstrumented CURRENT/BEFORE:** authoritative native independent n=3 [CI 38037815471](https://github.com/lazyxu/xdrive/actions/runs/38037815471/job/114171824612): 10k enqueue P50 **255ms** versus ≤750ms budget; 100k enqueue P50 **3,582ms** versus ≤3,000ms budget; 100k Worker P50 **105,980ms** versus ≤60,000ms budget. These results justify profiling but do **not** establish a valid matched AFTER comparison with instrumented execution.
+
+**Named workload and tool:** reuse production `TestGallerySelectionJobsReal10k100k` with actual Go/Gin/GORM and native PostgreSQL17, 10,000/100,000 Node+PhotoAsset+PhotoMetadata rows, 100-item Worker checkpoints, fully verified favorite-state results. Three independent Go processes each seed isolated schemas. A **test-only GORM Trace logger** attaches to the actual Server DB only *after* fixture creation, labels `enqueue` vs `worker`, and accumulates SQL statement count, client-observed SQL wall ms and slowest SQL ms by SELECT/INSERT/UPDATE/DELETE. Benchmark records the existing operation timers, 100/1000 successful chunks and point-in-time heap. Commands: the branch-scoped `.github/workflows/gallery-selection-jobs-performance.yml` job, which runs `XD_GALLERY_SELECTION_JOB_PERF=1 go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k
+### Verified native n=3 SQL stage measurements (2026-10-10)
+
+**Measured fixed work head:** `65274c5d239560dff470af9eab1937370be46898`, authentic PostgreSQL17/Gin/GORM; [opt-in job 114177104128 / CI 38039626703](https://github.com/lazyxu/xdrive/actions/runs/38039626703/job/114177104128) **success**, 3 independent Go processes and fresh schema per run, six full 10k/100k jobs with exact expected item states/chunks. The measured-head [normal full CI 38039626787](https://github.com/lazyxu/xdrive/actions/runs/38039626787) **success** including one-work-commit, Go, Web, Desktop and Windows checks. The new evidence amendment changes only documentation/evidence and requires **another** complete source-exact CI success before merge. No physical original bytes, thumbnail/video/Live decode or Web/Desktop UI included.
+
+| Scale/stage | Three elapsed samples (ms) | P50 (ms) | Existing P50 budget | Decision |
+| --- | --- | ---: | ---: | --- |
+| 10k enqueue | 260 / 252 / 321 | **260** | ≤750 | Pass current |
+| 10k Worker | 2,203 / 2,128 / 2,054 | **2,128** | diagnostic | 10k/10k correct |
+| **100k enqueue** | 4,583 / 3,662 / 3,843 | **3,843** | **≤3,000** | **Red, needs different measured experiment** |
+| 100k Worker | 53,346 / 106,756 / 45,522 | **53,346** | ≤60,000 | P50 passes, but **extreme variance** (one sample 106.8s) |
+
+| Original unmodified production stage | SQL verb and statement count *per run* | Client-observed cumulative SQL P50 (ms) | Per-run SQL cumulative time (ms) |
+| --- | --- | ---: | --- |
+| 10k enqueue | 101 INSERT | 255.265 | 258.412 / 250.504 / 255.265 |
+| 10k Worker | 500 SELECT / 301 UPDATE | 1,718.280 / 268.134 | SELECT 1,729.521 / 1,718.280 / 1,714.797 |
+| 100k enqueue | **1,001 INSERT** | **3,730.787** | 4,566.553 / 3,584.242 / 3,730.787 |
+| 100k Worker | **5,000 SELECT** | **48,865.673** | 48,865.673 / 102,322.661 / 41,740.887 |
+| 100k Worker | 3,001 UPDATE | 3,019.085 | 3,042.059 / 3,019.085 / 2,975.220 |
+
+100k Worker performs five SELECTs and approximately three UPDATEs per 100-row checkpoint (the extra statements are job state transitions). SELECT accounts for most observed wall time and its swings track the highly variable overall Worker time. The highest *individual* SELECT time per 100k run was 92.796 / 128.024 / 110.834 ms; counts and per-statement max values are preserved unrounded in the source-exact JSON.
+
+**Decision:** accept only the **profiling evidence**, with **AFTER=N/A, material speedup=N/A, production code unchanged**. This instrumented CURRENT run must **not** be treated as an AFTER speedup relative to historical uninstrumented [run 38037815471](https://github.com/lazyxu/xdrive/actions/runs/38037815471). GORM Trace includes client/observer overhead and omits implicit COMMIT time, so it is not EXPLAIN ANALYZE or PostgreSQL CPU/I/O. The prior simple 100→1000 INSERT batch trial #1304 was rejected and remains reverted. A new optimization must target a **distinct cause**, use at least three matched alternating PostgreSQL BEFORE/AFTER runs and retain all correctness, cancellation/revision semantics, SQL resource limits and CPU/RSS budgets.
+
+**Durable evidence:** [unrounded six per-process actual rows, native parser summary, SQL stage aggregate, source/run provenance and measurement limits](performance-evidence/gallery-selection-worker-sql-100k/ci-run-38039626703.json). Seed time is excluded. Next separate measured task: identify Worker SELECT plan/cache variability and/or a non-batch-size 100k enqueue cost with matched A/B; do not change production based solely on noisy P50. Do not touch race专项, durable cancel or #1185 while landing this bounded measurement.
+
 ## P0 · Real mounted Web Gallery 100k virtual scrolling → native Go thumbnail cancellation (2026-10-10)
 
 **Status: Accepted current native n=3 baseline / no production optimization; evidence-amended full exact-head CI pending.** Fixed master baseline `e964907976fb5894864e1946e568ec34d40f3fc0`, branch `perf/gallery-real-web-viewport-scroll-100k`. Previous #1274 proved simulated viewport-owner AbortSignal and real BrowserWindow destruction for six genuine H264 MP4 signed Preview Engine requests; it **did not perform a real scroll of the mounted Gallery UI**. #1271 qualified only genuine video decode/persistent cache. Gallery's shared scheduler has previously passed isolated Node HTTP abort benchmarks. The only related open performance PR #1185 is blocked real Desktop IPC progress delivery; leave it untouched, and do not conflate progress event ordering with this request-cancellation performance task. AGENTS.md already mandates current baseline → material optimization only if red → same-workload AFTER; no policy change needed.
