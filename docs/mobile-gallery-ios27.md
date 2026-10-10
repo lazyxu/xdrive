@@ -175,10 +175,19 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3b · iOS 27 精选集布局与收起（2026-10-10）
 
-**状态：候选，等待新 PR 精确提交的完整 CI；真机视觉验收未完成。** 对照 [Apple iOS 27 官方「在 iPhone 上浏览照片精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27)：原生支持大图标、小图标、混合图标、全部折叠和单组隐藏图片。Mobile Web 当前「精选集」原为不可调整的 144px 横向卡片，本项只补显示层的布局与折叠，不改变相册/回忆/人物/地点/同步文件夹或清理业务能力。
+**状态：[#1265](https://github.com/lazyxu/xdrive/pull/1265) 精确提交完整 CI `final-gate` 成功并单提交线性合并（`3b328c2`）；真实 iOS 27 真机验收仍待完成。** 对照 [Apple iOS 27 官方「在 iPhone 上浏览照片精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27)：原生支持大图标、小图标、混合图标、全部折叠和单组隐藏图片。Mobile Web 当前「精选集」原为不可调整的 144px 横向卡片，本项只补显示层的布局与折叠，不改变相册/回忆/人物/地点/同步文件夹或清理业务能力。
 
 - **布局：** 在已有精选集内容顶部增加可访问的「布局」菜单，提供大图标 196 CSS px、小图标 104 CSS px、混合模式按组 132/144/184 CSS px 的候选宽度；实际最终像素值须以 iOS 27 同设备同视口截图校准。选择仅变更卡片宽度，保留原集合 NodeID、封面身份、媒体加载器与点击回调。
 - **折叠：** 每个可见分组均提供至少 44×44 CSS px、正确 `aria-expanded` 的单组折叠按钮；「全部折叠／展开全部」从同一布局菜单触发。折叠时不再挂载图片封面，保留轻量文字入口、打开集合及「查看全部」操作，既降低无效封面消费也不隐藏功能。现有 Observer 生命周期由共享缩略图封面组件负责；此条是结构性结果，**并未实测性能提升**。
 - **偏好：** `xdrive.gallery.mobile.collections.layout.v1:<accountScope>` 仅存储移动端展示偏好（布局与分组收起），按账号隔离，验证枚举值、去重非法组名；空身份和禁止存储环境使用默认值。既有宽屏 Web/Desktop 的固定相册偏好 `MediaGalleryAlbumOrganization` 完全保持原样，P0-3a 的固定相册仍按同一个业务排序。
 - **架构：** 仍只有一个 `XDriveMediaGalleryPage` / Web REST `MediaGalleryDataSource`，共享 `VirtualCollection` / `VirtualGrid` / `VirtualTimeline` / Range、Viewer、Live、RAW、任务权限与错误语义；不建立 Mobile 专属数据控制器、服务端索引或 Viewer。全屏 App Frame 和 **52px** 应用标题栏不动。
 - **测试与界限：** 真实 React 组件级覆盖三种布局、个别/全部折叠、卡片入口在折叠后的可达性、账户切换恢复、无效数据/存储保护，以及共享 Web/桌面契约。iOS 27 的**长按拖动分组重排**、固定项目编辑、真机视觉截图/安全区/系统触感和实际 10k/100k 浏览器内存/FPS/HTTP 取消均单列后续阶段；不要将本次声明为 1:1 全部完成。
+
+
+## P0-3c1 · 精选集分组排序（2026-10-10）
+
+**状态：候选，完整精确提交 GitHub PR CI 与真实 iOS 27 Safari 触控验收待完成。** 参照 [Apple iOS 27「重新排序精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27)：精选集布局菜单和列表末尾均可进入「重新排序」，排序模式只展示现有有内容（或有合法「查看全部」入口）的分组名称，不创建假集合。每项拥有最小 44px 触控手柄；触控按住至少 220ms 后拖动，通过手指命中的分组行更新顺序；提供独立上移/下移和方向键替代方案，再点「完成」回到同一 Gallery 页面。一般浏览不拦截上下滚动、Collection Cover 仍使用原来的懒加载、原来的 Click 打开操作。
+
+**偏好与身份：** 分组顺序的唯一新存储是 `xdrive.gallery.mobile.collections.group-order.v1:<accountScope>`，其内容仅为七种固定的展示分组 ID 的有界、去重、合法化排列。账号不同不能相互读取，存储失败退回默认展示；后续新增分组自动追加。没有内容的分组可在排序编辑器中暂时隐藏，但其 ID 仍然保留于偏好，不得删除其排序位置。相册内部固定项及其由 Web/Desktop 共用的 `MediaGalleryAlbumOrganization` 完全不改，这是另一个 P0-3c2 范围。
+
+**不变量：** 全屏 App Frame、52px 全局标题栏、一个 Web `XDriveMediaGalleryPage`、Web REST `MediaGalleryDataSource`、同一 Server Range 与共享 `VirtualCollection/VirtualGrid/VirtualTimeline`、Viewer、Live、RAW、Properties、任务和权限均不修改。加入真实 React 组件的 pointer 长按/拖动、键盘/按钮、账号边界和完成后顺序恢复回归。相关性能没有对比样本，无加速声明。iOS 27 真机像素级位置、触感、drag 动画、边缘自动滚动、真实 10k/100k Browser 请求取消和滚动帧率仍需后续验收。

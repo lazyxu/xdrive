@@ -32,6 +32,9 @@ const mocks={
   '@mui/icons-material/PhotoLibraryOutlined':'icon',
   '@mui/icons-material/GridViewRounded':'icon',
   '@mui/icons-material/KeyboardArrowRightRounded':'icon',
+  '@mui/icons-material/DragIndicatorRounded':'icon',
+  '@mui/icons-material/ArrowUpwardRounded':'icon',
+  '@mui/icons-material/ArrowDownwardRounded':'icon',
   './MediaGalleryPreviewMedia': {XDriveMediaAsyncThumbnail:'thumbnail'},
   './MediaGalleryAlbumOrganization': sharedAlbumOrganization,
 }
@@ -332,4 +335,120 @@ test('P0-3b bounded collection widths do not depend on media count or viewport',
   }
   assert.match(file(sourcePath),/COLLECTIONS_LAYOUT_KEY/)
   assert.doesNotMatch(file(sourcePath),/listItemRange\(|new XMLHttpRequest\(|fetch\(/)
+})
+
+
+test('P0-3c1 normalized group order is scoped, forwards compatible and movable',()=>{
+  const normalize=output.exports.xDriveNormalizeMobileGalleryGroupOrder
+  const move=output.exports.xDriveMoveMobileGalleryGroup
+  const read=output.exports.xDriveReadMobileGalleryGroupOrder
+  const write=output.exports.xDriveWriteMobileGalleryGroupOrder
+  const defaultOrder=['pinned','memories','albums','people','places','sync-folders','utilities']
+  assert.deepEqual(normalize(['albums','albums','invalid','pinned']),[
+    'albums','pinned','memories','people','places','sync-folders','utilities',
+  ])
+  assert.deepEqual(move(defaultOrder,'albums','pinned'),[
+    'albums','pinned','memories','people','places','sync-folders','utilities',
+  ])
+  assert.deepEqual(move(defaultOrder,'pinned','albums'),[
+    'memories','albums','pinned','people','places','sync-folders','utilities',
+  ])
+  assert.deepEqual(move(defaultOrder,'pinned','pinned'),defaultOrder)
+  const oldWindow=global.window,storage=new Map()
+  global.window={localStorage:{
+    getItem:k=>storage.get(k)||null,
+    setItem:(k,v)=>storage.set(k,String(v)),
+  }}
+  try{
+    write('owner-A',['albums','pinned','memories'])
+    assert.deepEqual(read('owner-A').slice(0,3),['albums','pinned','memories'])
+    assert.deepEqual(read('owner-B'),defaultOrder)
+    write('',['albums','pinned'])
+    assert.equal(storage.has('xdrive.gallery.mobile.collections.group-order.v1:'),false)
+    storage.set('xdrive.gallery.mobile.collections.group-order.v1:broken','{broken')
+    assert.deepEqual(read('broken'),defaultOrder)
+    assert.deepEqual(read(''),defaultOrder)
+  }finally{global.window=oldWindow}
+})
+
+test('P0-3c1 rendered editor supports long-touch drag, keyboard and account restore',async()=>{
+  const oldWindow=global.window,oldDocument=global.document,oldNow=Date.now
+  const storage=new Map()
+  let clock=1000,view
+  Date.now=()=>clock
+  global.window={localStorage:{
+    getItem:k=>storage.get(k)||null,
+    setItem:(k,v)=>storage.set(k,String(v)),
+  }}
+  const render=accountScope=>React.createElement(Collections,{
+    ...data,accountScope,onOpenAlbum:()=>{},onOpenSection:()=>{},
+  })
+  const rows=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-row'])
+    .map(x=>x.props['data-xdrive-mobile-gallery-reorder-row'])
+  const control=(name,id)=>view.root.findAll(x=>x.props?.[name]===id)[0]
+  const e={
+    pointerId:9,pointerType:'touch',button:0,clientX:20,clientY:40,
+    currentTarget:{
+      setPointerCapture:()=>{},hasPointerCapture:()=>true,
+      releasePointerCapture:()=>{},
+    },preventDefault:()=>{},
+  }
+  try {
+    await act(async()=>{view=renderer.create(render('owner-A'))})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-bottom'])[0].props.onClick()})
+    assert.deepEqual(rows(),['pinned','memories','albums','people','utilities'])
+    await act(async()=>{control('data-xdrive-mobile-gallery-reorder-down','pinned').props.onClick()})
+    assert.deepEqual(rows(),['memories','pinned','albums','people','utilities'])
+    const handle=control('data-xdrive-mobile-gallery-reorder-handle','albums')
+    assert.equal(handle.props.sx.minHeight,44)
+    assert.equal(handle.props.sx.minWidth,44)
+    global.document={elementFromPoint:()=>({closest:()=>({
+      getAttribute:()=> 'pinned',
+    })})}
+    await act(async()=>{handle.props.onPointerDown(e)})
+    clock+=100
+    await act(async()=>{control('data-xdrive-mobile-gallery-reorder-handle','albums')
+      .props.onPointerMove({...e,clientY:100})})
+    assert.deepEqual(rows(),['memories','pinned','albums','people','utilities'],
+      'drag before touch hold threshold must not move')
+    clock+=200
+    await act(async()=>{control('data-xdrive-mobile-gallery-reorder-handle','albums')
+      .props.onPointerMove({...e,clientY:100})})
+    assert.deepEqual(rows(),['memories','albums','pinned','people','utilities'])
+    await act(async()=>{control('data-xdrive-mobile-gallery-reorder-handle','albums')
+      .props.onPointerUp(e)})
+    const keyHandle=control('data-xdrive-mobile-gallery-reorder-handle','pinned')
+    await act(async()=>{keyHandle.props.onKeyDown({key:'ArrowUp',preventDefault:()=>{}})})
+    assert.deepEqual(rows(),['memories','pinned','albums','people','utilities'])
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-done'])[0].props.onClick()})
+    const groups=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-collection-group-id'])
+      .map(x=>x.props['data-xdrive-mobile-gallery-collection-group-id'])
+    assert.deepEqual(groups(),['memories','pinned','albums','people','utilities'])
+    assert.ok(cards(view).find(x=>x.props['data-xdrive-mobile-gallery-collection-card']==='favorites'))
+    await act(async()=>{view.update(render('owner-B'))})
+    assert.deepEqual(groups(),['pinned','memories','albums','people','utilities'])
+    await act(async()=>{view.update(render('owner-A'))})
+    assert.deepEqual(groups(),['memories','pinned','albums','people','utilities'])
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    global.document=oldDocument
+    global.window=oldWindow
+    Date.now=oldNow
+  }
+})
+
+test('P0-3c1 Layout menu and bottom action open the exact same reorder editor',async()=>{
+  let view
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,onOpenSection:()=>{},
+    }))})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-trigger'])[0]
+      .props.onClick({currentTarget:{}})})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-reorder'])[0]
+      .props.onClick()})
+    assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-editor']).length)
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-done'])[0].props.onClick()})
+    assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-bottom']).length)
+  }finally{if(view)await act(async()=>{view.unmount()})}
 })

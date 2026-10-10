@@ -101,3 +101,16 @@ test('P0-3b mobile layout and per-group collapse are presentation-only',()=>{
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
   assert.doesNotMatch(collections,/listItemRange\(|new XMLHttpRequest\(|fetch\(/)
 })
+
+
+test('P0-3c1 Collections reorder is presentation state, not a new media controller',()=>{
+  assert.match(collections,/xdrive\.gallery\.mobile\.collections\.group-order\.v1/)
+  assert.match(collections,/data-xdrive-mobile-gallery-reorder-handle/)
+  assert.match(collections,/onPointerMove=\{moveDrag\}/)
+  assert.match(collections,/data-xdrive-mobile-gallery-reorder-done/)
+  assert.match(collections,/xDriveReadMobileGalleryGroupOrder\(accountScope\)/)
+  assert.doesNotMatch(collections,/listItemRange\(|fetch\(|new XMLHttpRequest\(/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
+    /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+})
