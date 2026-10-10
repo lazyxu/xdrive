@@ -1478,3 +1478,83 @@ test('F-PARITY-07F: stale Select All after account switch cannot commit 100k old
     onSelectedItemsChange: items => observed.push(items.map(i => i.id)),
   } })
 })
+
+
+test('F-PARITY-07F-B: Mobile selected-action disabled states use the same Wide Web limits', async () => {
+  const performed = []
+  const calls = []
+  const source = {
+    interactionKey: '257-action-limit', itemCount: 257, loadedItems: new Map(),
+    itemAt() {}, onRangeChange() {}, retainInteractionIDs() {},
+    collectRange: async (start, end) => Array.from({ length: end - start + 1 }, (_, index) => ({
+      id: 1000 + start + index, kind: 'file', name: 'file-' + (start + index) + '.txt', revision: 3,
+    })),
+  }
+  const mutationActions = new Set(['copy', 'cut', 'delete', 'move-to', 'copy-to'])
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+
+    assert.equal(find(h.view, 'aria-label', '复制已选').props.disabled, true)
+    assert.equal(find(h.view, 'aria-label', '移动已选').props.disabled, true)
+    assert.equal(find(h.view, 'aria-label', '删除已选').props.disabled, true)
+    assert.equal(find(h.view, 'aria-label', '下载已选').props.disabled, false,
+      '257 files are below the shared 1000-item download cap')
+    assert.match(textOf(find(h.view, 'data-mobile-files-selection-limits', true).props.children), /200/)
+    await act(async () => { find(h.view, 'aria-label', '复制已选').props.onClick() })
+    assert.deepEqual(performed, [], 'even an invoked disabled handler cannot bypass shared validation')
+
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    const menu = (text) => h.view.root.findAll(node => node.props?.children === text)[0]
+    assert.equal(menu('剪切所选').props.disabled, true)
+    assert.equal(menu('复制到…').props.disabled, true)
+    assert.equal(menu('下载所选').props.disabled, false)
+    assert.equal(menu('添加/管理标签').props.disabled, false,
+      'tags retain their independent shared 500-item limit')
+    assert.ok(calls.some(([action, count]) => action === 'move-to' && count === 257))
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    getSelectionActionDisabledReason: (action, _items, count) => {
+      calls.push([action, count])
+      return count > 200 && mutationActions.has(action) ? '单次批量操作最多 200 项' : null
+    },
+    onCopy: items => performed.push(['copy', items.length]),
+    onMove: items => performed.push(['move', items.length]),
+    onDelete: items => performed.push(['delete', items.length]),
+  } })
+})
+
+
+test('F-PARITY-07F-B: 1001 selected Nodes disable download and tagging at their shared limits', async () => {
+  const source = {
+    interactionKey: '1001-action-limits', itemCount: 1001, loadedItems: new Map(),
+    itemAt() {}, onRangeChange() {}, retainInteractionIDs() {},
+    collectRange: async (start, end) => Array.from({ length: end - start + 1 }, (_, index) => ({
+      id: 1000 + start + index, kind: 'file', name: 'file-' + (start + index) + '.txt', revision: 3,
+    })),
+  }
+  const mutationActions = new Set(['copy', 'cut', 'delete', 'move-to', 'copy-to'])
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+    assert.equal(find(h.view, 'aria-label', '复制已选').props.disabled, true)
+    assert.equal(find(h.view, 'aria-label', '下载已选').props.disabled, true)
+    const feedback = textOf(find(h.view, 'data-mobile-files-selection-limits', true).props.children)
+    assert.match(feedback, /200/)
+    assert.match(feedback, /1000/)
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    const tag = h.view.root.findAll(node => node.props?.children === '添加/管理标签')[0]
+    assert.equal(tag.props.disabled, true)
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    getSelectionActionDisabledReason: (action, _items, count) => {
+      const cap = mutationActions.has(action) ? 200 :
+        action === 'download' ? 1000 : action === 'manage-tags' ? 500 : Infinity
+      return count > cap ? '单次最多 ' + cap + ' 项' : null
+    },
+  } })
+})
