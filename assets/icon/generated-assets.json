@@ -2,20 +2,20 @@
   "version": 2,
   "source": {
     "path": "assets/icon/master/xdrive-icon-master.svg",
-    "git_blob_sha": "36e2626f604ef917a873141faf98719c156da45a"
+    "git_blob_sha": "4ac04a6b8bf968d55b574951440715a7bbf6be27"
   },
   "generated": {
-    "assets/icon/web/favicon.svg": "36e2626f604ef917a873141faf98719c156da45a",
-    "assets/icon/web/favicon.ico": "512a2b5758582666339f2fe47e36dc12b528fbcb",
-    "assets/icon/web/apple-touch-icon.png": "40640360fe05597a57bfc2a794b442c4e0d05633",
-    "assets/icon/web/pwa-192.png": "ab5c0efdbd9717b6815f80e601abfc915a52825c",
-    "assets/icon/web/pwa-512.png": "232637397f1377a66c6f0bfc366ad73c9fca3b2a",
-    "assets/icon/web/site.webmanifest": "81dd35a20338066ca4cc8c697b020aa8c7767f73",
-    "assets/icon/windows/app.ico": "bf418b2404940f06dbc7f960d51eb67ba2fd6bc0",
-    "assets/icon/tray/tray-normal.png": "e90476687b754fc343998b5718ee7fa45e24335f",
-    "assets/icon/tray/tray-syncing.png": "a264b916c3691f6cb65f5d00714638fe2e5de899",
-    "assets/icon/tray/tray-paused.png": "632b98e0bf44e23605e609c8cfb839809f0b217a",
-    "assets/icon/tray/tray-conflict.png": "773a15bce8524c769543bd1f1fdf6d85c0db4a83",
-    "assets/icon/tray/tray-offline.png": "f565a4a590e34095bef094d3dd64d7c22aeaf1d0"
+    "assets/icon/web/favicon.svg": "4ac04a6b8bf968d55b574951440715a7bbf6be27",
+    "assets/icon/web/favicon.ico": "ddeffceb0210e84ab0f8cd34aa3a66fd8086b1a8",
+    "assets/icon/web/apple-touch-icon.png": "42843906fe56abb4f47dba15414cd1f42b35b3a1",
+    "assets/icon/web/pwa-192.png": "67b0f27f2827524615d4d2b7d3cac66fcdc057f6",
+    "assets/icon/web/pwa-512.png": "a096bea9286d596a443d0183746b19fb707a7797",
+    "assets/icon/web/site.webmanifest": "25ee9bb9ecd93080dc28184cfdba98d3a10d3cf7",
+    "assets/icon/windows/app.ico": "a8740166acb9d5dac753534c9d8dd1f5ae2e79f1",
+    "assets/icon/tray/tray-normal.png": "f0e173f55ad6295b039c62fac77433ece842a0b5",
+    "assets/icon/tray/tray-syncing.png": "a218daacc7ad265738ecae373141abcc3d927949",
+    "assets/icon/tray/tray-paused.png": "8f14d57f81768368e70505b7b307f2c894f613a2",
+    "assets/icon/tray/tray-conflict.png": "0f589620e2bee54bbb27afecb1c02b87e2dd7fdc",
+    "assets/icon/tray/tray-offline.png": "8f6232656c59572b5426ec6b657a07596d220c0d"
   }
 }

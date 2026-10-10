@@ -18,6 +18,10 @@ test('application icon has one SVG source of truth and platform wiring', () => {
   assert.ok(master.includes('viewBox="0 0 1024 1024"'), 'master icon must use the approved 1024 viewBox')
   assert.ok(master.includes('<linearGradient id="bg"'), 'master icon must retain the approved blue gradient')
   assert.ok(master.includes('x/infinity symbol'), 'master icon description should identify the xDrive mark')
+  assert.equal((master.match(/<rect x="0" y="0" width="1024" height="1024" rx="242"/g) || []).length, 2,
+    'master blue backgrounds must fully occupy the 1024 canvas')
+  assert.ok(!master.includes('<rect x="48" y="48" width="928" height="928"'),
+    'the old 48px transparent margin caused undersized app icons')
 
   const builder = text('desktop/electron-builder.yml')
   const masterRef = '../assets/icon/master/xdrive-icon-master.svg'
@@ -154,6 +158,9 @@ test('icon derivatives have one-command regeneration tooling', () => {
   const generator = text('scripts/generate-icon-assets.mjs')
   assert.ok(generator.includes("['inkscape', 'rsvg-convert', 'magick']"), 'icon generator must provide portable renderer fallbacks')
   assert.ok(generator.includes('rendererCompatibleSvg'), 'icon generator must preserve the master while normalizing renderer compatibility')
+  assert.ok(generator.includes('opaqueLauncherSvg'), 'iOS/PWA icons must remove rounded transparent source corners before rasterization')
+  assert.ok(generator.includes('[180, 192, 512].includes(size) ? opaqueSourceSvg : sourceSvg'),
+    'Apple Touch and PWA PNGs must use an opaque full-bleed source, other platforms the rounded master')
   assert.ok(generator.includes('[16, 32, 48, 64, 180, 192, 256, 512]'), 'icon generator must render every required derivative size')
   assert.ok(generator.includes("[16, 32, 48, 64, 256]"), 'icon generator must build every Windows ICO frame')
   assert.ok(generator.includes("[16, 32, 48]"), 'icon generator must build every favicon ICO frame')

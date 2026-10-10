@@ -4,7 +4,7 @@
 
 ## Usage
 
-- Web: generated derivatives live in `assets/icon/web/` — SVG/ICO favicon, Apple Touch 180 px, PWA 192 px and PWA 512 px. In-app Web brand lockups import the master SVG directly.
+- Web: generated derivatives live in `assets/icon/web/` — SVG/ICO favicon, Apple Touch 180 px, PWA 192 px and PWA 512 px. In-app Web brand lockups import the master SVG directly. **Apple Touch/PWA PNGs are rendered from a temporary fully opaque square background** because iOS/Android supply their own launcher masks; the master SVG and desktop/ICO/tray derivatives retain the brand's rounded silhouette.
 - Electron Desktop: Linux consumes the master SVG directly. Windows uses the generated multi-size `assets/icon/windows/app.ico` for both the executable and runtime taskbar/window icon so Explorer can re-resolve the icon reliably while taskbar progress/overlay state changes. Renderer brand lockups still import the same master SVG.
 - Linux DEB: installs the master SVG as `hicolor/scalable/apps/xdrive.svg`.
 - Windows Inno Setup: uses `assets/icon/windows/app.ico`, a generated derivative of the master SVG.
@@ -33,7 +33,9 @@ Current Web derivatives are:
 - `pwa-512.png`: 512 × 512;
 - `site.webmanifest`: references the 192 and 512 PNGs, shared xDrive theme color, and the stable root install identity (`id`, `start_url`, `scope`) used by the mobile Web app.
 
-The approved master canvas is 1024 × 1024 with a 1024 × 1024 SVG viewBox.
+The approved master canvas is 1024 × 1024 with a 1024 × 1024 SVG viewBox. Both blue rounded background rectangles span the full `(0,0) → (1024,1024)` canvas (no 48 px transparent inset), and the original x/infinity symbol is enlarged uniformly 8%. The generator temporarily omits only the `rx` attribute for the Apple Touch/PWA exports so **every launcher PNG pixel is opaque**; the Web icon checker reconstructs PNG alpha to reject transparent margins. The manifest declares the launcher PNGs `any maskable`.
+
+**Updating an installed iOS PWA:** Safari/iOS may cache a Home Screen icon across website deployments. After deploying new Web assets, remove the old Home Screen shortcut and add xDrive to the Home Screen again to force a fresh Apple Touch icon. This is an icon-cache operation, not a Server restart or file/data reset.
 
 ## Tray/status icons
 

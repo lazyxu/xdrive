@@ -26,12 +26,14 @@
       <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0064E6" flood-opacity="0.16"/>
     </filter>
   </defs>
-  <rect x="48" y="48" width="928" height="928" rx="220" fill="url(#bg)"/>
-  <rect x="48" y="48" width="928" height="928" rx="220" fill="url(#bgGlow)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="242" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1024" height="1024" rx="242" fill="url(#bgGlow)"/>
+  <g transform="translate(512 512) scale(1.08) translate(-512 -512)">
   <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="78" filter="url(#softShadow)">
     <path d="M 690 356 L 405 647 C 357 696 271 704 213 656 C 156 608 157 517 213 469 C 244 443 282 429 326 429" stroke="url(#strokeIce)"/>
     <path d="M 334 356 L 619 647 C 667 696 753 704 811 656 C 868 608 867 517 811 469 C 780 443 742 429 698 429" stroke="url(#strokeWhite)"/>
   </g>
   <path d="M 486 510 L 538 563" stroke="#FFFFFF" stroke-width="80" stroke-linecap="round" opacity="0.92"/>
   <path d="M 538 510 L 486 563" stroke="#E7F9FF" stroke-width="80" stroke-linecap="round" opacity="0.78"/>
+  </g>
 </svg>
