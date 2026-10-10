@@ -154,6 +154,20 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 				return errGeoNamesRevisionConflict
 			}
 		}
+		// Include the previous value and the new value in an immutable journal.
+		// Revision zero snapshots the original deployment default.
+		previousRadius := desired.MaxDistanceKM
+		previousOrigin := "environment"
+		if exists {
+			previousRadius = row.MaxDistanceKM
+			previousOrigin = "saved"
+		}
+		if err := recordGeoNamesRevisionTx(tx, *input.Revision, previousRadius, previousOrigin); err != nil {
+			return err
+		}
+		if err := recordGeoNamesRevisionTx(tx, nextRevision, *input.MaxDistanceKM, "saved"); err != nil {
+			return err
+		}
 		return recordAuditTx(tx, auditEventFromContext(
 			c, "admin.service.geonames.configure", "service", geoNamesSettingName,
 			"GeoNames 地名索引", auditpkg.ResultSuccess,

@@ -329,6 +329,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
+	admin.GET("/services/geonames/revisions", s.adminGeoNamesRevisions)
+	admin.POST("/services/geonames/rollback", s.adminRollbackGeoNamesConfig)
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/background-tasks", s.adminListBackgroundTasks)
 	admin.GET("/background-tasks/page", s.adminListBackgroundTaskPage)

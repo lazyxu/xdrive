@@ -63,7 +63,7 @@ func TestAdminGeoNamesRadiusPersistedHotApplyAndPendingReplica(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminGeoNamesSetting{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminGeoNamesSetting{}, &meta.AdminGeoNamesRevision{}); err != nil {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
