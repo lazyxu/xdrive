@@ -524,6 +524,8 @@ function FileManager({
 
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
+  const galleryUploadInputRef = useRef<HTMLInputElement>(null)
+  const [galleryUploadRevision, setGalleryUploadRevision] = useState(0)
   const [compactNavigationOpen, setCompactNavigationOpen] = useState(false)
   const [trashOpen, setTrashOpen] = useState(false)
   const [historyNode, setHistoryNode] = useState<Node | null>(null)
@@ -984,6 +986,29 @@ function FileManager({
     await uploadFilesTo(parentID, Array.from(files))
   }
 
+  const uploadGalleryFiles = async (files: File[]) => {
+    if (files.length === 0) return
+    try {
+      // Gallery media are files in the authenticated owner's cloud root,
+      // not a separate media ingest/store or a connector-specific endpoint.
+      const root = await api.root()
+      const result = await uploadTargets(
+        files.map((file) => ({ parentID: root.id, file })),
+        false,
+        'upload',
+      )
+      if (result.uploaded > 0 || result.skipped > 0) {
+        setGalleryUploadRevision((revision) => revision + 1)
+        setFeedback({
+          tone: result.failed > 0 ? 'warning' : 'good',
+          message: `图库文件上传完成：成功 ${result.uploaded}，跳过 ${result.skipped}，失败 ${result.failed}。媒体索引完成后将显示。`,
+        })
+      }
+    } catch (error) {
+      handleError(error)
+    }
+  }
+
   const uploadFolderEntriesTo = async (
     parentID: number,
     entries: XDriveFileExplorerExternalDropPayload['files'],
@@ -1376,9 +1401,26 @@ function FileManager({
               />
           </Box>
         ) : appView === 'gallery' ? (
+          <>
+          <input
+            ref={galleryUploadInputRef}
+            type="file"
+            multiple
+            accept="image/*,video/*,.heic,.heif,.dng,.arw,.nef,.cr2,.cr3,.raf,.rw2,.orf,.livp"
+            aria-label="选择上传到图库的照片或视频"
+            data-xdrive-gallery-upload-picker
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const selected = Array.from(event.currentTarget.files || [])
+              event.currentTarget.value = ''
+              void uploadGalleryFiles(selected)
+            }}
+          />
           <XDriveMediaGalleryPage
             mobileWebChrome
             source={gallerySource}
+            uploadRevision={galleryUploadRevision}
+            onUploadRequested={() => galleryUploadInputRef.current?.click()}
             fileOperations={fileOperations}
             onFileOperationQueued={() => { void refreshFileOperations() }}
             onShowInFolder={(location) => {
@@ -1412,6 +1454,7 @@ function FileManager({
             }}
             onError={handleError}
           />
+          </>
         ) : appView === 'device-backup' ? (
           <XDriveDeviceBackupPage
             source={deviceBackupSource}

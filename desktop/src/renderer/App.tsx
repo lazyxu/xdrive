@@ -215,6 +215,8 @@ export default function App({
   const [updateCancelling, setUpdateCancelling] = useState(false)
   const [conflicts, setConflicts] = useState<AgentConflict[]>([])
   const [transfers, setTransfers] = useState<AgentTransfers>({ revision: 0, transfers: [] })
+  const [galleryUploadRevision, setGalleryUploadRevision] = useState(0)
+  const galleryUploadBusyRef = useRef(false)
   const transfersRevisionRef = useRef(0)
   const acceptTransferSnapshot = useCallback((value: AgentTransfers) => {
     if (value.revision < transfersRevisionRef.current) return false
@@ -245,6 +247,30 @@ export default function App({
     [mediaSelectionJobsSupported],
   )
 
+  const uploadGalleryFiles = async () => {
+    if (galleryUploadBusyRef.current) return
+    galleryUploadBusyRef.current = true
+    try {
+      const root = await window.xdriveDesktop.agent.cloudRoot()
+      if (!root.ok) throw new Error(root.error.message)
+      // Reuse the authenticated Agent's native multi-file picker.
+      const result = await window.xdriveDesktop.agent.cloudUploadFiles(root.data.id)
+      if (!result.ok) throw new Error(result.error.message)
+      if (result.data.canceled) return
+      const uploaded = result.data.uploaded.length
+      const failed = result.data.failures.length
+      if (uploaded > 0) {
+        setGalleryUploadRevision((revision) => revision + 1)
+      }
+      if (uploaded > 0 || failed > 0) {
+        setNotice(`图库文件上传完成：成功 ${uploaded}，失败 ${failed}。媒体索引完成后将显示。`)
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+    } finally {
+      galleryUploadBusyRef.current = false
+    }
+  }
 
   const requestConfirmation = (
     title: string,
@@ -2163,6 +2189,8 @@ export default function App({
         {view === 'gallery' && (
           <XDriveMediaGalleryPage
             source={mediaGallerySource}
+            uploadRevision={galleryUploadRevision}
+            onUploadRequested={() => { void uploadGalleryFiles() }}
             fileOperations={cloudFileOperations}
             onFileOperationQueued={() => { void refreshCloudFileOperations() }}
             onShowInFolder={(location) => {

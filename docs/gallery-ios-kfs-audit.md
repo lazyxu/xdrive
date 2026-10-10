@@ -550,3 +550,17 @@ The same57-check first-red is52pass/5fail; final57 and actual built-Web panels37
   counters as Web. Cancelling does not claim successful rollback of committed
   chunks; partial failures remain reviewable, and retries preserve revisions.
   New Go and Desktop contract tests included; real 100k/device QA outstanding.
+
+## 2026-10-10 · Direct Gallery upload / batch-download verification
+
+**Candidate implementation, exact-head GitHub PR CI required:** shared
+`XDriveMediaGalleryPage` supports a Gallery-local upload action on both
+wide Web and Mobile Web More and the Desktop layout. Web calls its existing
+FileExplorer batch upload transport for selected native files; Desktop
+calls its existing authenticated Agent native multi-file picker. The
+Gallery remains a single controller with one Server media index and
+sparse virtualized reads; successful uploads refresh the currently
+mounted collection. Existing Web ZIP and Desktop archive batch downloads
+were already wired; this extension does **not** replace those services.
+Physical iOS 27 gesture/visual acceptance and real Agent native-dialog
+testing remain separate from source/CI checks.
