@@ -72,6 +72,10 @@ type Source struct {
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 
+	// The enrolled creating device may first bind this paused local Source.
+	// Nil is an unclaimed legacy record, not a remotely transferrable grant.
+	LocalCreatorDeviceID *string `json:"-" gorm:"size:36;index"`
+
 	Owner      User  `gorm:"foreignKey:OwnerID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
 	TargetNode *Node `gorm:"foreignKey:TargetNodeID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:SET NULL;"`
 }

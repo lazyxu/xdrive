@@ -19,6 +19,21 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
 
+## P0-B2b2 native creating-device claim (pending PR CI)
+
+Staged local-folder creation is initiated via the Desktop Agent and requires
+its OS-protected enrolled device secret. The Server validates and locks that
+device record while saving the new paused Source's private creating-device
+claim; the first Root binding must be performed by the same device. Old
+already-bound Source IDs keep their existing identity and can replay their
+binding, but orphan legacy **unbound** Sources are not adopted without
+verifiable prior ownership. The device secret never leaves the Agent for
+Renderer/Web; the Root still requires native picker authorization. This
+does not enable local Push execution, scheduling, Mirror deletion or 4 GiB
+uploads. The owner-JWT device-registration bootstrap is not a physical-device
+attestation and remains a separate trust consideration; unbound cleanup and
+reclaim need a later bounded stage.
+
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 
 The canonical Web/Desktop navigation, local-vs-other Desktop capabilities, read-only projection and compatibility acceptance matrix are in [sync-folder-apps.md](./sync-folder-apps.md). These are approved requirements, **not proof of currently implemented Server/UI restrictions**.

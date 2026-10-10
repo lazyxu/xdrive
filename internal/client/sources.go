@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -145,6 +146,32 @@ func (c *Client) CreateSource(ctx context.Context, input CreateSourceInput) (Sou
 	var out Source
 	err := c.json(ctx, http.MethodPost, "/api/v1/sources", input, &out)
 	return out, err
+}
+
+// CreateLocalSource includes a credential from the owning Agent's OS store.
+// Renderer and Web adapters must never be passed this secret.
+func (c *Client) CreateLocalSource(ctx context.Context, input CreateSourceInput, deviceID, token string) (Source, error) {
+	var out Source
+	body, err := json.Marshal(input)
+	if err != nil {
+		return out, err
+	}
+	req, err := c.request(ctx, http.MethodPost, "/api/v1/sources", bytes.NewReader(body))
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-XDrive-Device-ID", deviceID)
+	req.Header.Set("X-XDrive-Device-Token", token)
+	response, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer response.Body.Close()
+	if err := decodeResponse(response, &out); err != nil {
+		return Source{}, err
+	}
+	return out, nil
 }
 
 func (c *Client) Source(ctx context.Context, id uint64) (Source, error) {

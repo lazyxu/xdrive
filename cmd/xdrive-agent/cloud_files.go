@@ -10,13 +10,16 @@ import (
 	"os"
 	pathpkg "path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/lazyxu/xdrive/internal/client"
+	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/mount"
 	"github.com/lazyxu/xdrive/internal/transfer"
 	"github.com/lazyxu/xdrive/internal/userconfig"
+	"github.com/lazyxu/xdrive/internal/version"
 )
 
 const cloudSearchLimit = 200
@@ -3237,11 +3240,41 @@ func (c *agentController) CloudPutSourceConnectorConfig(ctx context.Context, sou
 }
 
 func (c *agentController) CloudCreateSource(ctx context.Context, input client.CreateSourceInput) (client.Source, error) {
-	cli, _, err := c.cloudClient()
+	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return client.Source{}, err
 	}
-	return cli.CreateSource(ctx, input)
+	if input.Kind != meta.SourceKindLocalFolder || input.Direction != meta.SourceDirectionPush {
+		return cli.CreateSource(ctx, input)
+	}
+	// Match the native picker lock: first enrollment for a server/account
+	// must not race another Root authorizer on this Agent.
+	c.localFolderGrantMu.Lock()
+	defer c.localFolderGrantMu.Unlock()
+	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
+		return client.Source{}, errors.New("login required for local backup creation")
+	}
+	configDir, err := userconfig.Dir()
+	if err != nil {
+		return client.Source{}, err
+	}
+	deviceID, token, err := localpush.EnsureDevice(ctx, configDir, cfg.Server, cfg.Username,
+		"xDrive "+runtime.GOOS, runtime.GOOS, version.String(), cli)
+	if err != nil {
+		return client.Source{}, err
+	}
+	created, err := cli.CreateLocalSource(ctx, input, deviceID, token)
+	if err != nil {
+		return client.Source{}, err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return client.Source{}, err
+	}
+	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return client.Source{}, errors.New("account changed during local backup creation; source remains paused")
+	}
+	return created, nil
 }
 
 func (c *agentController) CloudUpdateSource(ctx context.Context, sourceID, revision uint64, input client.UpdateSourceInput) (client.Source, error) {

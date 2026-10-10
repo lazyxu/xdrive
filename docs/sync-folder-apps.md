@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic local read redaction under review; unbound creation ownership remains separate |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 authenticated local creation/creator claim pending its own PR CI |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -109,7 +109,7 @@ The Server now requires a registered, unrevoked owning device credential plus th
 
 **Remaining:** Creating an unbound `local_folder` still lacks a durable creating-device claim; the existing create/bind staging flow is not proof of owning device creation. Device-native configuration IPC must attach Root proof and provide safe cleanup/rebind rules for unbound/revoked legacy Sources. Do not claim those flows complete, and do not activate any local run/upload/schedule. The existing generic source read DTO still requires path/error redaction work.
 
-## P0-B2c1: prevent generic local-folder read bypass (PR review; not yet merged)
+## P0-B2c1: prevent generic local-folder read bypass (merged #1313)
 
 The legacy owner-JWT Source and Run overview/detail APIs are shared with Pull/NAS.
 They must not disclose local Push ignore rules, checkpoints, raw errors or active
@@ -126,6 +126,33 @@ response; it must not discard an already-committed Root on a timeout.
 This hardening does **not** authorize local-folder creation, expose write
 controls, add heartbeat, run an uploader, infer deletions, or complete the
 1k/10k/100k and >=4GiB physical acceptance tests.
+
+## P0-B2b2: authenticated local Source creation and creator-device claim (pending PR CI)
+
+A new paused `local_folder/push` Source requires the registered unrevoked
+Agent credential and creator device ID in addition to the user session.
+The Server locks the device row before atomically inserting the Source with
+internal `LocalCreatorDeviceID`. The creator claim is omitted from generic
+Source JSON. An initially unbound Source may only acquire a local Root binding
+from that same creating device. Existing bound legacy Sources remain
+idempotently recoverable; legacy unbound Sources without a reliable creator
+claim remain fail-closed, not automatically adopted by the next logged-in
+Desktop.
+
+Desktop's existing Source creation IPC performs first enrollment inside the
+Agent and presents the credential only to the Server transport. Neither the
+Renderer nor Web/Mobile Web is given a token or local Root fingerprint.
+**Limitation:** an enrollment token alone is not cryptographic remote
+attestation of a physical machine or its filesystem. The owner-authenticated
+device registration bootstrap remains a separate trust boundary; enrolling
+an identity cannot itself authorize an existing Root or execute a backup.
+The native picker and server-side Root/Source revision fences continue to
+gate the initial bind and all later writes.
+
+This phase creates Source identity/ownership only: it does NOT enable a
+SourceRun, upload, scheduling, preview, cancel or Mirror delete. Recovering
+legacy unbound Sources and securely removing orphan unbound Sources will
+require an explicit owning-Agent flow; do not silently reclaim or delete them.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

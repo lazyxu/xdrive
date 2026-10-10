@@ -191,18 +191,6 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "Backup")
-	create := fmt.Sprintf(`{"name":"Laptop Photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, target.ID)
-	created := request(t, router, http.MethodPost, "/api/v1/sources", ownerToken, strings.NewReader(create), http.StatusCreated)
-	var source sourceDTO
-	if err := json.Unmarshal(created.Body.Bytes(), &source); err != nil {
-		t.Fatal(err)
-	}
-	if source.Status != meta.SourceStatusPaused || source.Revision != 1 {
-		t.Fatalf("local source must start paused: %+v", source)
-	}
-	sourceURL := fmt.Sprintf("/api/v1/sources/%d", source.ID)
-
 	// Device registration is owner-scoped and returns its secret exactly once.
 	registration := request(t, router, http.MethodPost, "/api/v1/devices", ownerToken,
 		strings.NewReader(`{"name":"My Windows PC","platform":"windows","client_version":"0.1"}`),
@@ -234,6 +222,21 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	if strings.Contains(otherList.Body.String(), enrolled.Device.ID) {
 		t.Fatal("another owner saw registered device")
 	}
+
+	target := createFilePropertiesDir(t, db, owner.ID, root.ID, "Backup")
+	create := fmt.Sprintf(`{"name":"Laptop Photos","kind":"local_folder","direction":"push","sync_mode":"backup","run_mode":"sync","schedule_type":"manual","target_node_id":%d}`, target.ID)
+	created := requestWithHeaders(t, router, http.MethodPost, "/api/v1/sources", ownerToken,
+		strings.NewReader(create), http.StatusCreated, map[string]string{
+			"X-XDrive-Device-ID": enrolled.Device.ID, "X-XDrive-Device-Token": enrolled.DeviceToken,
+		})
+	var source sourceDTO
+	if err := json.Unmarshal(created.Body.Bytes(), &source); err != nil {
+		t.Fatal(err)
+	}
+	if source.Status != meta.SourceStatusPaused || source.Revision != 1 {
+		t.Fatalf("local source must start paused: %+v", source)
+	}
+	sourceURL := fmt.Sprintf("/api/v1/sources/%d", source.ID)
 
 	rootID := uuid.NewString()
 	fingerprint := strings.Repeat("a", 64)
