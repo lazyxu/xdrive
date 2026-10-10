@@ -1,0 +1,154 @@
+{
+  "status": "accepted_unchanged_production_native_PostgreSQL17_authenticated_HTTP_trash_restore",
+  "repository": "lazyxu/xdrive",
+  "workload": "real Gin authenticated HTTP POST /api/v1/trash/:id/restore + real GORM native PostgreSQL17; 10k and 100k file-type Nodes, matching File metadata; three isolated database processes per size",
+  "source_original_master": "2d00ffca46496c5d9be6998f56b500d387493211",
+  "benchmark_first_ci_commit": "6795888d5856255b82e597883086fe58f1ddefda",
+  "ci_run_id": 38013902607,
+  "job_id": 114099858517,
+  "job_url": "https://github.com/lazyxu/xdrive/actions/runs/38013902607/job/114099858517",
+  "acceptance": {
+    "count_scales": [
+      10000,
+      100000
+    ],
+    "samples_per_scale": 3,
+    "http_code": 200,
+    "foreign_owner_http": 404,
+    "p50_10k_ms_max": 1500,
+    "all_10k_ms_max": 3000,
+    "p50_100k_ms_max": 5000,
+    "all_100k_ms_max": 8000,
+    "each_go_total_alloc_bytes_max": 134217728
+  },
+  "matrix": {
+    "10000": {
+      "n": 3,
+      "elapsed_ms": {
+        "p50": 109.156,
+        "min": 107.631,
+        "max": 109.792
+      },
+      "allocation_bytes": {
+        "p50": 84312,
+        "min": 83432,
+        "max": 86104
+      },
+      "accepted": true
+    },
+    "100000": {
+      "n": 3,
+      "elapsed_ms": {
+        "p50": 1077.999,
+        "min": 1070.399,
+        "max": 1142.614
+      },
+      "allocation_bytes": {
+        "p50": 86080,
+        "min": 85000,
+        "max": 86104
+      },
+      "accepted": true
+    }
+  },
+  "rows": [
+    {
+      "sample": 1,
+      "count": 10000,
+      "file_rows": 10000,
+      "go_total_alloc_delta_bytes": 86104,
+      "http_error": "<nil>",
+      "http_ms": 109.792,
+      "invalid": 0,
+      "response_bytes": 165,
+      "restored": 10000,
+      "root_restored": true,
+      "seed_ms": 989.225,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    },
+    {
+      "sample": 2,
+      "count": 10000,
+      "file_rows": 10000,
+      "go_total_alloc_delta_bytes": 84312,
+      "http_error": "<nil>",
+      "http_ms": 109.156,
+      "invalid": 0,
+      "response_bytes": 165,
+      "restored": 10000,
+      "root_restored": true,
+      "seed_ms": 403.723,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    },
+    {
+      "sample": 3,
+      "count": 10000,
+      "file_rows": 10000,
+      "go_total_alloc_delta_bytes": 83432,
+      "http_error": "<nil>",
+      "http_ms": 107.631,
+      "invalid": 0,
+      "response_bytes": 165,
+      "restored": 10000,
+      "root_restored": true,
+      "seed_ms": 378.208,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    },
+    {
+      "sample": 1,
+      "count": 100000,
+      "file_rows": 100000,
+      "go_total_alloc_delta_bytes": 86104,
+      "http_error": "<nil>",
+      "http_ms": 1077.999,
+      "invalid": 0,
+      "response_bytes": 165,
+      "restored": 100000,
+      "root_restored": true,
+      "seed_ms": 3783.602,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    },
+    {
+      "sample": 2,
+      "count": 100000,
+      "file_rows": 100000,
+      "go_total_alloc_delta_bytes": 85000,
+      "http_error": "<nil>",
+      "http_ms": 1070.399,
+      "invalid": 0,
+      "response_bytes": 165,
+      "restored": 100000,
+      "root_restored": true,
+      "seed_ms": 3743.774,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    },
+    {
+      "sample": 3,
+      "count": 100000,
+      "file_rows": 100000,
+      "go_total_alloc_delta_bytes": 86080,
+      "http_error": "<nil>",
+      "http_ms": 1142.614,
+      "invalid": 0,
+      "response_bytes": 163,
+      "restored": 100000,
+      "root_restored": true,
+      "seed_ms": 3771.174,
+      "sibling_unchanged": true,
+      "status": 200,
+      "workload": "real-Gin-authenticated-PostgreSQL17-trash-restore"
+    }
+  ],
+  "interpretation": "All existing production HTTP restore behavior passes budget and integrity. No production code change or speedup. total_alloc_delta reflects Go allocations only during the HTTP request; database seed, CAS bytes, physical disk RSS, undo, and remote network excluded.",
+  "next": "Amend performance document and raw evidence into original single work commit; rerun full GitHub PR CI on amended head, then linear rebase merge, branch cleanup."
+}
