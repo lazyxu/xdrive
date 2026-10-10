@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename in PR |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -227,7 +227,7 @@ experience. No activation, SourceRun, watcher, uploading, Mirror deletion,
 bound-Source editing/rebinding or revoked-device recovery is enabled.
 These are distinct follow-on stages P0-C4b2 and L03-D2–G.
 
-## UI P0-C4b2a: owning Desktop bound local Source rename (PR verification)
+## UI P0-C4b2a: owning Desktop bound local Source rename (merged #1342; full 75-job CI green)
 
 The owning Agent resolves an OS-protected enrollment secret, retrieves the
 Server's device-verified binding, verifies the native Root grant against the
@@ -244,6 +244,28 @@ This stage does not activate local Push, permit run controls, Root rebind,
 target/ignore-rule edits, upload, schedule or Mirror deletion; NAS Push stays
 a placeholder. Exact-head CI and native-device verification are required
 before claiming completion. L03-D2-G/L05-L07 remain future work.
+
+## UI P0-C4b2b: own Desktop cloud target revision change (PR verification)
+
+This bounded follow-up adds only changing the **Server cloud target directory** of
+an already-bound, paused local Push Source. The existing `PATCH /sources/:id`
+authenticates the exact owning Agent's device token, current Root UUID/fingerprint
+and Source revision *inside the write transaction*, validates the new target
+as a live directory owned by that user, and resets prior Mirror evidence when
+the target changes. The Agent reloads its OS-stored credential, verifies the
+exact bound RootGrant and source state, then passes only a target Node ID. No
+alternate generic JWT-only mutator or arbitrary local path is exposed.
+
+Desktop Main/Preload add a validated, platform-advertised
+`device-backup-local-target` capability. A shared MUI cloud-directory chooser
+is supplied only for the credential-verified local device row; Web/Mobile Web
+and Desktop on another installation remain B-scope redacted observers.
+The settings DTO contains only Source ID/name/revision and the Server-resolved
+cloud target ID/path (not a local absolute path). No cloud bytes are moved or
+deleted, and existing Source IDs/history/CAS remain untouched. Backups remain
+paused: no Source Run, upload, background schedule, Root rebind, Mirror deletion
+or NAS Push UI is enabled. Real Windows/Linux device acceptance, 100k and 4 GiB
+execution remain L07 and are not claimed by source-only tests.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

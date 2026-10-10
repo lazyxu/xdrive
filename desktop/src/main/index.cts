@@ -2020,6 +2020,18 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().renameLocalBoundBackup(sourceID, revision, name.trim())
     }, false))
+  ipcMain.handle('agent:retarget-device-backup-local-source', (
+    _event, sourceID: unknown, revision: unknown, targetNodeID: unknown,
+  ) => runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-local-target')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      typeof targetNodeID !== 'number' || !Number.isSafeInteger(targetNodeID) || targetNodeID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Local Source, revision and target Node IDs must be positive integers.')
+    }
+    return requireAgentClient().retargetLocalBoundBackup(sourceID, revision, targetNodeID)
+  }, false))
   ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'device-backup-read')

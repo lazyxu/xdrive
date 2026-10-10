@@ -12,9 +12,11 @@ import (
 // LocalBoundBackupSettings is the only private configuration data passed to
 // the owning Desktop; no Root, token, local path or Source internals.
 type LocalBoundBackupSettings struct {
-	SourceID uint64 `json:"source_id"`
-	Name     string `json:"name"`
-	Revision uint64 `json:"revision"`
+	SourceID     uint64  `json:"source_id"`
+	Name         string  `json:"name"`
+	Revision     uint64  `json:"revision"`
+	TargetNodeID *uint64 `json:"target_node_id,omitempty"`
+	TargetPath   string  `json:"target_path,omitempty"`
 }
 
 type LocalBoundSourceProof struct {
@@ -29,6 +31,38 @@ type LocalBoundSourceProof struct {
 func (c *Client) RenameLocalBoundSource(ctx context.Context, id, revision uint64, name string, proof LocalBoundSourceProof) (Source, error) {
 	var out Source
 	body, err := json.Marshal(UpdateSourceInput{Name: &name})
+	if err != nil {
+		return out, err
+	}
+	req, err := c.request(ctx, http.MethodPatch, fmt.Sprintf("/api/v1/sources/%d", id), bytes.NewReader(body))
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("If-Match", strconv.Quote(strconv.FormatUint(revision, 10)))
+	req.Header.Set("X-XDrive-Device-ID", proof.DeviceID)
+	req.Header.Set("X-XDrive-Device-Token", proof.DeviceToken)
+	req.Header.Set("X-XDrive-Local-Root-ID", proof.RootID)
+	req.Header.Set("X-XDrive-Local-Root-Fingerprint", proof.RootFingerprint)
+	response, err := c.do(req)
+	if err != nil {
+		return out, err
+	}
+	defer response.Body.Close()
+	if err := decodeResponse(response, &out); err != nil {
+		return Source{}, err
+	}
+	return out, nil
+}
+
+// RetargetLocalBoundSource modifies only the Server-validated cloud target
+// directory; it never moves/deletes cloud bytes or authorizes a local Root.
+func (c *Client) RetargetLocalBoundSource(ctx context.Context, id, revision, targetNodeID uint64, proof LocalBoundSourceProof) (Source, error) {
+	var out Source
+	if id == 0 || revision == 0 || targetNodeID == 0 {
+		return out, fmt.Errorf("positive Source, revision and target Node IDs required")
+	}
+	body, err := json.Marshal(UpdateSourceInput{TargetNodeID: &targetNodeID})
 	if err != nil {
 		return out, err
 	}

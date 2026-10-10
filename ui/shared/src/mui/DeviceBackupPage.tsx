@@ -12,6 +12,8 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveDeviceBackupLocalCreateDialog } from './DeviceBackupLocalCreateDialog'
 import { XDriveDeviceBackupLocalDrafts } from './DeviceBackupLocalDrafts'
 import { XDriveDeviceBackupLocalRenameDialog } from './DeviceBackupLocalRenameDialog'
+import { XDriveDeviceBackupLocalTargetDialog } from './DeviceBackupLocalTargetDialog'
+import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
 import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
 import type { XDriveSourceTargetBrowser } from './SourceManager'
@@ -67,6 +69,7 @@ export function XDriveDeviceBackupPage({
   targetBrowser,
   localDrafts,
   localSettings,
+  localTarget,
 }: {
   source?: XDriveDeviceBackupDataSource
   initialSourceID?: number
@@ -74,10 +77,12 @@ export function XDriveDeviceBackupPage({
   targetBrowser?: XDriveSourceTargetBrowser
   localDrafts?: (limit: number, afterID: number) => Promise<XDriveLocalSourceDraftPage>
   localSettings?: XDriveLocalBackupSettingsActions
+  localTarget?: XDriveLocalBackupTargetActions
 }) {
   const [refreshID, refresh] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [targetChange, setTargetChange] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
   // account/server's Device Backup page.
@@ -86,6 +91,7 @@ export function XDriveDeviceBackupPage({
   useEffect(() => {
     setCreateOpen(false)
     setRenameTarget(null)
+    setTargetChange(null)
     setLocalMessage('')
   }, [source])
   // The data source identity is the account/server boundary. Never display
@@ -303,6 +309,12 @@ export function XDriveDeviceBackupPage({
                             重命名本机同步文件夹
                           </Button>
                         ) : null}
+                        {localTarget && targetBrowser && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="outlined"
+                            onClick={() => setTargetChange({ source, id: folder.source_id })}>
+                            修改本机云端目标
+                          </Button>
+                        ) : null}
                         <Typography variant="subtitle2">同步历史（只读）</Typography>
                         {history?.loading ? (
                           <Typography variant="body2">读取历史中…</Typography>
@@ -377,6 +389,24 @@ export function XDriveDeviceBackupPage({
           onFinished={(message) => {
             if (activeSourceRef.current !== source) return
             setRenameTarget(null)
+            setLocalMessage(message)
+            refresh((n) => n + 1)
+          }}
+        />
+      ) : null}
+      {targetChange && targetChange.source === source && source && localTarget && targetBrowser &&
+        verifiedLocalDeviceID && overview?.devices.some((device) =>
+          device.id === verifiedLocalDeviceID && !device.revoked &&
+          device.folders.some((folder) => folder.source_id === targetChange.id)) ? (
+        <XDriveDeviceBackupLocalTargetDialog
+          key={targetChange.id}
+          sourceID={targetChange.id}
+          actions={localTarget}
+          targetBrowser={targetBrowser}
+          onClose={() => setTargetChange(null)}
+          onFinished={(message) => {
+            if (activeSourceRef.current !== source) return
+            setTargetChange(null)
             setLocalMessage(message)
             refresh((n) => n + 1)
           }}
