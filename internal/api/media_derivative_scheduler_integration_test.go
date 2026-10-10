@@ -41,6 +41,9 @@ func (s *mediaDerivativeCountingStore) Put(
 	case strings.HasSuffix(
 		key,
 		fmt.Sprintf("-%d.jpg", mediapkg.DefaultThumbnailEdge),
+	), strings.HasSuffix(
+		key,
+		fmt.Sprintf("-%d.thumb", mediapkg.DefaultThumbnailEdge),
 	):
 		edge = mediapkg.DefaultThumbnailEdge
 	case strings.HasSuffix(

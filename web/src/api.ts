@@ -1721,7 +1721,7 @@ export class XDriveApi {
     )
   }
 
-  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number) => void): Promise<Blob> {
+  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number, alphaMask?: string | null) => void): Promise<Blob> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()
     // Known source revisions get immutable browser-cache URL identities.
@@ -1730,7 +1730,7 @@ export class XDriveApi {
     const sourceRevision = Number.isSafeInteger(revision) && (revision ?? 0) > 0
       ? revision : undefined
     const revisionQuery = sourceRevision ? `&revision=${sourceRevision}` : ''
-    const path = `/api/v1/media/items/${nodeID}/thumbnail?v=3${revisionQuery}`
+    const path = `/api/v1/media/items/${nodeID}/thumbnail?v=4${revisionQuery}`
     const send = () => fetch(`${API_BASE}${path}`, {
       cache: sourceRevision ? 'default' : 'no-cache',
       headers: this.session.accessToken
@@ -1750,7 +1750,7 @@ export class XDriveApi {
         response.statusText || 'Thumbnail unavailable',
       )
     }
-    return xDriveMediaResponseBlob(response, signal, onProgress)
+    return xDriveMediaResponseBlob(response, signal, onProgress, true)
   }
   /**
    * Authenticated bounded JPEG derivative for RAW images whose canonical

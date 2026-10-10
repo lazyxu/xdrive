@@ -355,7 +355,7 @@ export function XDriveFileExplorerThumbnail({
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState<string | null>(null)
   const [failed, setFailed] = useState(false)
-  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
   const [stage, setStage] = useState<XDriveMediaLoadStage>('transfer')
   const leaseRef = useRef<FileThumbnailLease | null>(null)
   const loadThumbnail = context?.loadThumbnail
@@ -364,7 +364,7 @@ export function XDriveFileExplorerThumbnail({
   useEffect(() => {
     setFailed(false)
     setStage('transfer')
-    setProgress({ loadedBytes: 0 })
+    setProgress({ loadedBytes: 0, alphaMask: null })
     const lease = cache ? fileThumbnailCacheAcquire(cache, cacheKey) : null
     const previous = leaseRef.current
     leaseRef.current = lease
@@ -403,8 +403,8 @@ export function XDriveFileExplorerThumbnail({
     const requestedItem = itemRef.current
     const scheduled = scheduleFileThumbnail((signal) => loadThumbnail(
       requestedItem, signal,
-      (loadedBytes, totalBytes) => {
-        if (active && !signal.aborted) setProgress({ loadedBytes, totalBytes })
+      (loadedBytes, totalBytes, alphaMask) => {
+        if (active && !signal.aborted) setProgress({ loadedBytes, totalBytes, alphaMask: alphaMask ?? null })
       },
       (nextStage) => { if (active && !signal.aborted) setStage(nextStage) },
     ))

@@ -1562,7 +1562,7 @@ func mediaThumbnailETag(node meta.Node, row meta.MediaMetadata) string {
 		return fmt.Sprintf(
 			"\"media-%s-v%d-%d\"",
 			sha,
-			mediapkg.ThumbnailVersion,
+			mediapkg.ThumbnailVersionForSource(row.MIMEType),
 			mediaThumbnailEdge,
 		)
 	}
@@ -1570,7 +1570,7 @@ func mediaThumbnailETag(node meta.Node, row meta.MediaMetadata) string {
 		"\"media-node-%d-%d-v%d-%d\"",
 		node.ID,
 		node.Revision,
-		mediapkg.ThumbnailVersion,
+		mediapkg.ThumbnailVersionForSource(row.MIMEType),
 		mediaThumbnailEdge,
 	)
 }
@@ -1579,11 +1579,12 @@ func mediaThumbnailStorageKey(
 	node meta.Node,
 	row meta.MediaMetadata,
 ) string {
-	return mediapkg.ThumbnailStorageKey(
+	return mediapkg.ThumbnailStorageKeyForSource(
 		node.ID,
 		node.Revision,
 		row.SHA256,
 		mediaThumbnailEdge,
+		row.MIMEType,
 	)
 }
 

@@ -1456,6 +1456,7 @@ export type AgentMediaThumbnail = {
 export type AgentBinaryProgressHandler = (
   loadedBytes: number,
   totalBytes?: number,
+  alphaMask?: string | null,
 ) => void
 
 export type AgentCloudQuota = {
@@ -3642,10 +3643,19 @@ export class AgentIPCClient {
         const encoding = response.headers.get('content-encoding')?.toLowerCase().trim()
         const totalBytes = (!encoding || encoding === 'identity') &&
           Number.isSafeInteger(numericTotal) && numericTotal > 0 ? numericTotal : undefined
-        onProgress(0, totalBytes)
+        // Only verified Server alpha metadata may authorize a thumbnail pie.
+        const state = response.headers.get('x-xdrive-thumbnail-alpha-state')?.trim().toLowerCase()
+        const encodedMask = response.headers.get('x-xdrive-thumbnail-alpha-mask')?.trim()
+        const alphaMask = endpoint.startsWith('/v1/media/thumbnail?')
+          ? state === 'opaque' && contentType.toLowerCase() === 'image/jpeg' ? ''
+            : state === 'masked' && contentType.toLowerCase() === 'image/png' &&
+                encodedMask && encodedMask.length <= 4096 && /^[A-Za-z0-9+/]+={0,2}$/.test(encodedMask)
+              ? `data:image/png;base64,${encodedMask}` : null
+          : undefined
+        onProgress(0, totalBytes, alphaMask)
         if (!response.body) {
           const data = await response.arrayBuffer()
-          onProgress(data.byteLength, totalBytes)
+          onProgress(data.byteLength, totalBytes, alphaMask)
           return { content_type: contentType, data }
         }
 
@@ -3662,7 +3672,7 @@ export class AgentIPCClient {
           const now = Date.now()
           if (now - lastProgressAt >= 100) {
             lastProgressAt = now
-            onProgress(loadedBytes, totalBytes)
+            onProgress(loadedBytes, totalBytes, alphaMask)
           }
         }
 
@@ -3672,7 +3682,7 @@ export class AgentIPCClient {
           data.set(chunk, offset)
           offset += chunk.byteLength
         }
-        onProgress(loadedBytes, totalBytes)
+        onProgress(loadedBytes, totalBytes, alphaMask)
         return {
           content_type: contentType,
           data: data.buffer,

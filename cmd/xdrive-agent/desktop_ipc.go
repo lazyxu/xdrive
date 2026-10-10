@@ -5363,6 +5363,12 @@ func (h *desktopIPCHandler) mediaThumbnail(w http.ResponseWriter, r *http.Reques
 		contentType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", contentType)
+	if state := strings.TrimSpace(thumbnail.AlphaState); state == "opaque" || state == "masked" || state == "unavailable" {
+		w.Header().Set("X-XDrive-Thumbnail-Alpha-State", state)
+	}
+	if strings.EqualFold(contentType, "image/png") && len(thumbnail.AlphaMask) <= 4096 {
+		w.Header().Set("X-XDrive-Thumbnail-Alpha-Mask", thumbnail.AlphaMask)
+	}
 	w.Header().Set("Content-Length", strconv.Itoa(len(thumbnail.Data)))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(thumbnail.Data)

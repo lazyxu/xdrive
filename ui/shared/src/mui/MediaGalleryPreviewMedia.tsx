@@ -40,19 +40,19 @@ export function XDriveMediaAsyncThumbnail({
 }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
-  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
   useEffect(() => {
     let active = true
     let resolved = ''
     setSrc('')
     setFailed(false)
-    setProgress({ loadedBytes: 0 })
+    setProgress({ loadedBytes: 0, alphaMask: null })
     if (!nodeID) return () => undefined
     const controller = new AbortController()
 
-    void loadThumbnail(nodeID, controller.signal, revision, (loadedBytes, totalBytes) => {
-      if (active && !controller.signal.aborted) setProgress({ loadedBytes, totalBytes })
+    void loadThumbnail(nodeID, controller.signal, revision, (loadedBytes, totalBytes, alphaMask) => {
+      if (active && !controller.signal.aborted) setProgress({ loadedBytes, totalBytes, alphaMask: alphaMask ?? null })
     })
       .then((value) => {
         if (!value) {
@@ -222,7 +222,7 @@ export function XDriveMediaAsyncVideoPoster({
   const [visible, setVisible] = useState(false)
   const [src, setSrc] = useState('')
   const [posterStage, setPosterStage] = useState<XDriveMediaLoadStage>('poster_lookup')
-  const [posterProgress, setPosterProgress] = useState<{ loadedBytes: number; totalBytes?: number }>({ loadedBytes: 0 })
+  const [posterProgress, setPosterProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
   useEffect(() => {
     setVisible(false)
@@ -247,7 +247,7 @@ export function XDriveMediaAsyncVideoPoster({
     let resolved = ''
     setSrc('')
     setPosterStage('poster_lookup')
-    setPosterProgress({ loadedBytes: 0 })
+    setPosterProgress({ loadedBytes: 0, alphaMask: null })
     if (!visible) return () => { active = false }
 
     const scheduled = scheduleMediaPoster((signal) => xDriveResolveMediaVideoPoster({
@@ -257,8 +257,8 @@ export function XDriveMediaAsyncVideoPoster({
       save: saveVideoPoster,
       signal,
       onStage: (stage) => { if (active) setPosterStage(stage) },
-      onProgress: (loadedBytes, totalBytes) => {
-        if (active) setPosterProgress({ loadedBytes, totalBytes })
+      onProgress: (loadedBytes, totalBytes, alphaMask) => {
+        if (active) setPosterProgress({ loadedBytes, totalBytes, alphaMask: alphaMask ?? null })
       },
       capture: (signal, onCapturing) => captureVideoPoster(
         nodeID, loadPreviewURL, rotationDegrees, sourceWidth, sourceHeight,

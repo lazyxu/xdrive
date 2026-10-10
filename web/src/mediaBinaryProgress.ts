@@ -3,12 +3,15 @@
  * Streamed responses keep fetch/AbortSignal ownership and never buffer a second
  * JavaScript array of every chunk. Content-Length is only the HTTP body length.
  */
-export type XDriveMediaByteObserver = (loadedBytes: number, totalBytes?: number) => void
+export type XDriveMediaByteObserver = (
+  loadedBytes: number, totalBytes?: number, alphaMask?: string | null,
+) => void
 
 export async function xDriveMediaResponseBlob(
   response: Response,
   signal?: AbortSignal,
   onProgress?: XDriveMediaByteObserver,
+  requireAlphaProof = false,
 ): Promise<Blob> {
   signal?.throwIfAborted()
   if (!onProgress) {
@@ -24,9 +27,21 @@ export async function xDriveMediaResponseBlob(
   // Content-Length header. Do not show a fabricated percentage in that case.
   const totalBytes = (!encoding || encoding === 'identity') &&
     Number.isSafeInteger(numericTotal) && numericTotal > 0 ? numericTotal : undefined
+  // For thumbnails, old/untrusted servers must not let a rectangular pie
+  // cover pixels that might be transparent. The server explicitly proves either
+  // opaque pixels or supplies a bounded exact-alpha PNG before the binary body.
+  const mime = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
+  const state = response.headers.get('x-xdrive-thumbnail-alpha-state')?.trim().toLowerCase()
+  const mask = response.headers.get('x-xdrive-thumbnail-alpha-mask')?.trim()
+  const alphaMask = !requireAlphaProof ? undefined
+    : state === 'opaque' && mime === 'image/jpeg' ? ''
+      : state === 'masked' && mime === 'image/png' && mask &&
+          mask.length <= 4096 && /^[A-Za-z0-9+/]+={0,2}$/.test(mask)
+        ? `data:image/png;base64,${mask}` : null
   const notify = (loadedBytes: number) => {
-    try { onProgress(loadedBytes, totalBytes) } catch { /* UI observers never own I/O */ }
+    try { onProgress(loadedBytes, totalBytes, alphaMask) } catch { /* UI observers never own I/O */ }
   }
+  notify(0)
   if (!response.body) {
     const blob = await response.blob()
     signal?.throwIfAborted()

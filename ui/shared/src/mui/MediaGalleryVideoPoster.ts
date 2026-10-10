@@ -1,3 +1,5 @@
+import type { XDriveByteProgressHandler } from '../file-preview'
+
 export type XDriveMediaVideoPosterRotation = 0 | 90 | 270
 
 export type XDriveMediaVideoPosterGeometry = {
@@ -194,12 +196,12 @@ export async function xDriveResolveMediaVideoPoster({
   nodeID: number
   revision: number
   loadCached: (nodeID: number, signal?: AbortSignal, revision?: number,
-    onProgress?: (loadedBytes: number, totalBytes?: number) => void) => Promise<string | null>
+    onProgress?: XDriveByteProgressHandler) => Promise<string | null>
   capture: (signal?: AbortSignal, onCapturing?: () => void) => Promise<Blob | null>
   save?: (nodeID: number, revision: number, poster: Blob, signal?: AbortSignal) => Promise<void>
   signal?: AbortSignal
   onStage?: (stage: 'poster_lookup' | 'video_read' | 'poster_capture' | 'decode') => void
-  onProgress?: (loadedBytes: number, totalBytes?: number) => void
+  onProgress?: XDriveByteProgressHandler
 }): Promise<string | null> {
   if (signal?.aborted) return null
   try {

@@ -52,8 +52,10 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 	referencedKey := mediapkg.ThumbnailStorageKey(
 		nodes[0].ID, nodes[0].Revision, shaA, mediapkg.DefaultThumbnailEdge,
 	)
-	potentialKey := mediapkg.ThumbnailStorageKey(
-		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.DefaultThumbnailEdge,
+	// A potential transparent derivative is protected even before its
+	// thumbnail_key presentation field is committed.
+	potentialKey := mediapkg.ThumbnailStorageKeyForSource(
+		nodes[1].ID, nodes[1].Revision, shaB, mediapkg.DefaultThumbnailEdge, "image/png",
 	)
 	analysisKey := mediapkg.AnalysisPreviewStorageKey(
 		nodes[1].ID, nodes[1].Revision, shaB,
@@ -71,7 +73,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 		},
 		{
 			NodeID: nodes[1].ID, OwnerID: user.ID, NodeRevision: nodes[1].Revision,
-			SHA256: shaB, MediaKind: meta.MediaKindImage, MIMEType: "image/jpeg",
+			SHA256: shaB, MediaKind: meta.MediaKindImage, MIMEType: "image/png",
 			IndexState: meta.MediaIndexStateReady,
 		},
 		{
@@ -86,7 +88,7 @@ func TestGarbageCollectMediaThumbnailsIsReferenceAndAgeSafe(t *testing.T) {
 
 	old := time.Now().UTC().Add(-MediaThumbnailGCMinAge - time.Hour)
 	young := time.Now().UTC().Add(-time.Hour)
-	orphanKey := mediapkg.ThumbnailStoragePrefix + "dd/" + strings.Repeat("d", 64) + "-512.jpg"
+	orphanKey := mediapkg.ThumbnailStoragePrefix + "dd/" + strings.Repeat("d", 64) + "-v4-512.thumb"
 	youngKey := mediapkg.ThumbnailStoragePrefix + "ee/" + strings.Repeat("e", 64) + "-512.jpg"
 	for _, file := range []struct {
 		key      string

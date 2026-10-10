@@ -42,6 +42,7 @@ type thumbnailGCMetadataRow struct {
 	NodeRevision uint64
 	SHA256       string
 	MediaKind    string
+	MIMEType     string
 	ThumbnailKey string
 }
 
@@ -199,7 +200,7 @@ func loadProtectedThumbnailKeys(
 	var metadata []thumbnailGCMetadataRow
 	if err := db.WithContext(ctx).
 		Model(&meta.MediaMetadata{}).
-		Select("node_id", "node_revision", "sha256", "media_kind", "thumbnail_key").
+		Select("node_id", "node_revision", "sha256", "media_kind", "mime_type", "thumbnail_key").
 		Find(&metadata).Error; err != nil {
 		return nil, fmt.Errorf("query media thumbnail references: %w", err)
 	}
@@ -214,11 +215,12 @@ func loadProtectedThumbnailKeys(
 				mediapkg.DefaultThumbnailEdge,
 				mediapkg.AnalysisPreviewEdge,
 			} {
-				key := mediapkg.ThumbnailStorageKey(
+				key := mediapkg.ThumbnailStorageKeyForSource(
 					row.NodeID,
 					row.NodeRevision,
 					row.SHA256,
 					edge,
+					row.MIMEType,
 				)
 				if edge == mediapkg.AnalysisPreviewEdge {
 					key = mediapkg.AnalysisPreviewStorageKey(

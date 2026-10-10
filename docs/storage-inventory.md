@@ -34,7 +34,7 @@ A normal installation therefore shows paths such as:
 ```text
 /home/<server-user>/.xd/data/files/.xdrive-blobs
 /home/<server-user>/.xd/data/files/.xdrive-uploads
-/home/<server-user>/.xd/data/files/.xdrive-media/thumbnails/*-512.jpg
+/home/<server-user>/.xd/data/files/.xdrive-media/thumbnails/*-512.{jpg,thumb}
 /home/<server-user>/.xd/data/files/.xdrive-media/thumbnails/*-1280.jpg
 /home/<server-user>/.xd/data/postgres
 /home/<server-user>/.xd/backups/snapshots
@@ -89,7 +89,7 @@ The canonical categories are:
 | `cas` | content-addressed canonical file data | `.xdrive-blobs/` | never |
 | `legacy` | legacy canonical file objects outside reserved xDrive prefixes | file-data root | never |
 | `upload_staging` | resumable upload parts/staging | `.xdrive-uploads/` | only existing expiry/orphan-safe candidates |
-| `media_thumbnail` | 512px Gallery/FileExplorer image thumbnail cache | `.xdrive-media/thumbnails/*-512.jpg` | yes |
+| `media_thumbnail` | 512px Gallery/FileExplorer image thumbnail cache (JPEG v3 and alpha-capable PNG/JPEG v4) | `.xdrive-media/thumbnails/*-512.{jpg,thumb}` | yes |
 | `video_poster` | 512px FileExplorer video poster cache | `.xdrive-media/posters/*-512.jpg` | yes |
 | `analysis_preview` | 1280px Photo Intelligence analysis preview + 2048px creative working preview cache | `.xdrive-media/thumbnails/*-1280.jpg`, `*-2048.jpg` | yes |
 | `media_other` | other current/future media-derived files | `.xdrive-media/` | no automatic deletion until classified |
@@ -227,7 +227,7 @@ The only cleanup kinds are:
 
 ### Media caches
 
-512px image thumbnails, 512px video posters, 1280px analysis previews, and 2048px Gallery creative working previews are deterministic, regenerable derivatives of canonical media content.
+512px image thumbnails (including v4 alpha-preserving PNG or opaque JPEG under `.thumb` keys), 512px video posters, 1280px analysis previews, and 2048px Gallery creative working previews are deterministic, regenerable derivatives of canonical media content. No separate alpha-mask sidecar file exists: a size-capped header mask is derived from the thumbnail response payload.
 
 Deleting them is safe:
 

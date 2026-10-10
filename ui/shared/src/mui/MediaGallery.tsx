@@ -5727,6 +5727,12 @@ export function XDriveMediaGallery({
           transform: compactGallery ? 'scale(var(--xdrive-gallery-pinch-preview, 1))' : undefined,
           transformOrigin: 'center',
         },
+        // The progress raster must use the same fitting rule as its final
+        // thumbnail: otherwise transparent edges drift in '完整显示' mode.
+        '& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]': {
+          maskSize: aspectMode === 'contain' ? 'contain' : 'cover',
+          WebkitMaskSize: aspectMode === 'contain' ? 'contain' : 'cover',
+        },
         pr: { lg: selected && !previewItem ? '380px' : 0 },
         // The Mobile Library has two Gallery-local floating dock tiers:
         // Years/Months/All above Library/Collections/Search. Leave real scroll

@@ -3600,10 +3600,11 @@ function registerIPCHandlers() {
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Thumbnail request was cancelled.')
         const notify = reportProgress === true && typeof requestID === 'string'
-          ? (loadedBytes: number, totalBytes?: number) => {
+          ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
               if (signal?.aborted || event.sender.isDestroyed()) return
               event.sender.send('agent:media-binary-progress', {
                 request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
+                alpha_mask: alphaMask,
               })
             }
           : undefined
@@ -3628,10 +3629,11 @@ function registerIPCHandlers() {
         }
         if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'RAW preview was cancelled.')
         const notify = reportProgress === true && typeof requestID === 'string'
-          ? (loadedBytes: number, totalBytes?: number) => {
+          ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
               if (signal?.aborted || event.sender.isDestroyed()) return
               event.sender.send('agent:media-binary-progress', {
                 request_id: requestID, loaded_bytes: loadedBytes, total_bytes: totalBytes,
+                alpha_mask: alphaMask,
               })
             }
           : undefined

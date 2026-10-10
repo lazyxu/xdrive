@@ -29,7 +29,7 @@ test('known Node revision reaches Web and Desktop authenticated thumbnail API', 
   assert.match(poster, /loadCached\(nodeID,\s*signal,\s*revision,\s*onProgress\)/)
   assert.match(web, /api\.mediaThumbnail\(nodeID,\s*signal,\s*revision,\s*onProgress\)/)
   assert.match(api, /cache: sourceRevision \? 'default' : 'no-cache'/)
-  assert.match(api, /thumbnail\?v=3\$\{revisionQuery\}/)
+  assert.match(api, /thumbnail\?v=4\$\{revisionQuery\}/)
   assert.match(desktop, /agent\.getMediaThumbnail\(nodeID,\s*requestID,\s*revision,\s*onProgress\)/)
   assert.match(preload, /invokeMediaBinaryWithProgress\('agent:get-media-thumbnail',\s*\[nodeID, requestID, revision\], onProgress\)/)
   assert.match(main, /mediaThumbnail\(nodeID,\s*signal,\s*[\s\S]*?revision : undefined, notify\)/)
