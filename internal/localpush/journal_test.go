@@ -143,7 +143,7 @@ func TestInventoryJournalRootReplacementCannotPublish(t *testing.T) {
 	}
 }
 
-func TestInventoryJournalReplacesCompletedGenerationAndPrunesOldSnapshot(t *testing.T) {
+func TestInventoryJournalRetainsImmediatePreviousGeneration(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "source")
 	if err := os.Mkdir(root, 0o700); err != nil {
@@ -176,8 +176,12 @@ func TestInventoryJournalReplacesCompletedGenerationAndPrunesOldSnapshot(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, first.SnapshotName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("previous completed generation was not pruned: %v", err)
+	if _, err := os.Stat(filepath.Join(dir, first.SnapshotName)); err != nil {
+		t.Fatalf("previous completed generation was prematurely pruned: %v", err)
+	}
+	previous, err := VerifyPreviousInventoryJournal(context.Background(), configDir, grant)
+	if err != nil || previous.SnapshotName != first.SnapshotName {
+		t.Fatalf("PREVIOUS must be the verified first generation: %+v %v", previous, err)
 	}
 	verified, err := VerifyInventoryJournal(context.Background(), configDir, grant)
 	if err != nil || verified.SnapshotName != second.SnapshotName {

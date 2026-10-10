@@ -22,6 +22,11 @@ import (
 
 const inventoryJournalVersion = 1
 
+const (
+	inventoryJournalCurrent  = "CURRENT.json"
+	inventoryJournalPrevious = "PREVIOUS.json"
+)
+
 // InventoryJournalSnapshot is only a local immutable *read-only* manifest.
 // No snapshot is an accepted xDrive SourceRun or evidence of remote deletion.
 type InventoryJournalSnapshot struct {
@@ -200,13 +205,42 @@ func (w *InventoryJournalWriter) Commit(summary InventorySummary) (InventoryJour
 		_ = os.Remove(target)
 		return InventoryJournalSnapshot{}, fmt.Errorf("validate previous inventory head: %w", previousErr)
 	}
+	var older InventoryJournalSnapshot
+	if old.SnapshotName != "" {
+		if old.SourceID != w.grant.SourceID || old.RootID != w.grant.RootID ||
+			old.DeviceID != w.grant.DeviceID || old.RootFingerprint != w.grant.Fingerprint {
+			_ = os.Remove(target)
+			return InventoryJournalSnapshot{}, errors.New("previous inventory belongs to another Root or Source")
+		}
+		prior, err := loadInventoryJournalManifest(w.dir, inventoryJournalPrevious)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			_ = os.Remove(target)
+			return InventoryJournalSnapshot{}, fmt.Errorf("validate previous generation: %w", err)
+		}
+		if err == nil {
+			older = prior
+			if older.SourceID != w.grant.SourceID || older.RootID != w.grant.RootID ||
+				older.DeviceID != w.grant.DeviceID || older.RootFingerprint != w.grant.Fingerprint {
+				_ = os.Remove(target)
+				return InventoryJournalSnapshot{}, errors.New("previous generation belongs to another Root or Source")
+			}
+		}
+		// Publish PREVIOUS first. A crash before CURRENT then leaves both
+		// pointing to the same old generation rather than a fictitious delta.
+		if err := writeInventoryJournalManifest(w.dir, inventoryJournalPrevious, old); err != nil {
+			_ = os.Remove(target)
+			return InventoryJournalSnapshot{}, err
+		}
+	}
 	if err := writeInventoryJournalHead(w.dir, snapshot); err != nil {
 		_ = os.Remove(target)
 		return InventoryJournalSnapshot{}, err
 	}
 	w.finalized = true
-	if old.SnapshotName != "" && old.SnapshotName != w.snapshot && validJournalSnapshotName(old.SnapshotName) {
-		_ = os.Remove(filepath.Join(w.dir, old.SnapshotName))
+	// Prune only an older, no-longer-referenced third snapshot.
+	if older.SnapshotName != "" && older.SnapshotName != old.SnapshotName &&
+		older.SnapshotName != snapshot.SnapshotName && validJournalSnapshotName(older.SnapshotName) {
+		_ = os.Remove(filepath.Join(w.dir, older.SnapshotName))
 	}
 	return snapshot, nil
 }
@@ -261,8 +295,15 @@ func validJournalSnapshotName(value string) bool {
 }
 
 func loadInventoryJournalHead(dir string) (InventoryJournalSnapshot, error) {
+	return loadInventoryJournalManifest(dir, inventoryJournalCurrent)
+}
+
+func loadInventoryJournalManifest(dir, name string) (InventoryJournalSnapshot, error) {
 	var snap InventoryJournalSnapshot
-	file, err := os.Open(filepath.Join(dir, "CURRENT.json"))
+	if name != inventoryJournalCurrent && name != inventoryJournalPrevious {
+		return snap, errors.New("unsupported inventory manifest")
+	}
+	file, err := os.Open(filepath.Join(dir, name))
 	if err != nil {
 		return snap, err
 	}
@@ -288,6 +329,13 @@ func loadInventoryJournalHead(dir string) (InventoryJournalSnapshot, error) {
 }
 
 func writeInventoryJournalHead(dir string, snapshot InventoryJournalSnapshot) error {
+	return writeInventoryJournalManifest(dir, inventoryJournalCurrent, snapshot)
+}
+
+func writeInventoryJournalManifest(dir, name string, snapshot InventoryJournalSnapshot) error {
+	if name != inventoryJournalCurrent && name != inventoryJournalPrevious {
+		return errors.New("unsupported inventory manifest")
+	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
 		return err
@@ -312,12 +360,22 @@ func writeInventoryJournalHead(dir string, snapshot InventoryJournalSnapshot) er
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(file.Name(), filepath.Join(dir, "CURRENT.json"))
+	return os.Rename(file.Name(), filepath.Join(dir, name))
 }
 
 // VerifyInventoryJournal streams a complete local snapshot through SHA-256;
 // it does not load records into memory or consult/change xDrive Server.
 func VerifyInventoryJournal(ctx context.Context, configDir string, grant RootGrant) (InventoryJournalSnapshot, error) {
+	return verifyInventoryJournalManifest(ctx, configDir, grant, inventoryJournalCurrent)
+}
+
+// VerifyPreviousInventoryJournal independently validates the immediately
+// preceding generation. It confers NO remote deletion or SourceRun authority.
+func VerifyPreviousInventoryJournal(ctx context.Context, configDir string, grant RootGrant) (InventoryJournalSnapshot, error) {
+	return verifyInventoryJournalManifest(ctx, configDir, grant, inventoryJournalPrevious)
+}
+
+func verifyInventoryJournalManifest(ctx context.Context, configDir string, grant RootGrant, name string) (InventoryJournalSnapshot, error) {
 	if ctx == nil {
 		return InventoryJournalSnapshot{}, errors.New("inventory journal verification context is required")
 	}
@@ -331,7 +389,7 @@ func VerifyInventoryJournal(ctx context.Context, configDir string, grant RootGra
 	if err != nil {
 		return InventoryJournalSnapshot{}, err
 	}
-	snap, err := loadInventoryJournalHead(dir)
+	snap, err := loadInventoryJournalManifest(dir, name)
 	if err != nil {
 		return InventoryJournalSnapshot{}, err
 	}

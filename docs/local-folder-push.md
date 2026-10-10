@@ -4,7 +4,7 @@
 
 An ordinary **local folder** selected by the user on Windows or Linux should push original files to an owner-authorized xDrive Source target. Existing xDrive CfAPI/FUSE two-way mount synchronization, Synology NAS Push, and Pull connectors are separate products and remain unchanged.
 
-The local-folder **enrollment and authorization flow is in master** (L01-A/B, Desktop native picker and shared Source Manager). L02-A/B have also delivered a bounded, read-only Windows/Linux inventory and optional native identity hints. L02-C adds only a local crash-safe inventory journal; it does **not** enable SourceRun, upload, deletion inference or automatic sync. The Server still rejects local-folder activation and run execution. Source/CAS/upload protocols remain shared rather than duplicated.
+The local-folder **enrollment and authorization flow is in master** (L01-A/B, Desktop native picker and shared Source Manager). L02-A/B/C have delivered bounded Windows/Linux metadata scans, native identity hints and a crash-safe local journal. L03-A/B/C add verified reading, original-file digest checking and conservative planning candidates; L03-D1 stages retention of two generations for a future read-only reconciler. None of these phases enables SourceRun, upload, deletion inference or automatic sync. The Server still rejects local-folder activation and run execution. Source/CAS/upload protocols remain shared rather than duplicated.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
@@ -13,7 +13,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified local snapshot reader (L03-A), bounded original-file digest preflight (L03-B), then Planner, resumable upload, commit and recovery | L03-A merged #1244; L03-B proposed in this change; upload/runtime not implemented |
+| L03 | Verified local reader/digest/candidates, two-generation history, then Planner, resumable upload, commit and recovery | L03-A merged #1244, L03-B merged #1246; L03-C merged #1250; L03-D1 staged in this change, runtime not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
@@ -96,6 +96,12 @@ The digest is **advisory preflight evidence, not a stable SourceItem ID or uploa
 The L03-C `StreamInventoryCandidates` projection consumes only a completed SHA-256-verified L03-A journal, emitting synchronous batches no larger than 500 records. Each candidate carries two deliberately separate forms of evidence: a **Root- and path-scoped path key** that distinguishes hard-link paths, and a **native object key** for conservative rename hints only where the filesystem reports a strong and uniquely linked identity. Ignored files never request content hashing.
 
 **Neither key is yet a persistent Server SourceItem ExternalID.** Hard links share a native key, weak inode identities cannot authorize moves, and changing link counts can invalidate a rename hint. A later durable path/alias reconciliation index must resolve these facts against Server revision and existing SourceItems before planning remote creates/moves; no remote deletion inference is implied by any candidate. Cancellation and callback errors return no completed projection. This remains read-only Agent code, not a SourceRun or upload path.
+
+## L03-D1 two-generation Root inventory retention (read-only)
+
+A complete Root journal now retains `CURRENT.json` and the immediate `PREVIOUS.json` manifest. On successful inventory commit, PREVIOUS is atomically written before CURRENT; a crash between writes may leave both referring to the same last valid generation, **never evidence of remote deletion**. The oldest third generation is removed only after the new CURRENT has been published. Existing installations with only CURRENT remain valid. `VerifyPreviousInventoryJournal` independently checks grant/Root identity and SHA-256 before exposing the predecessor. Cancelling or failing a scan does not publish an incomplete CURRENT.
+
+Both manifests are Agent-local read-only evidence, not SourceItem identities or SourceRun checkpoints. No candidate delta, upload, Mirror deletion inference, watcher or automatic scheduling is enabled. The later reconciler must validate two **different** complete generations, preserve logical aliases and reject ambiguous hard links or weak identities. The 100k real-device scan/diff performance baseline is still outstanding.
 
 ## Non-negotiable invariants
 
