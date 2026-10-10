@@ -186,6 +186,24 @@ func (c *Client) UpdateSource(ctx context.Context, id, revision uint64, input Up
 	return out, err
 }
 
+// DiscardLocalSourceDraft is only used by an owning Agent with its OS-stored
+// enrollment credential. It can never delete an already-bound Source.
+func (c *Client) DiscardLocalSourceDraft(ctx context.Context, id, revision uint64, deviceID, token string) error {
+	req, err := c.request(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d/local-draft", id), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("If-Match", strconv.Quote(strconv.FormatUint(revision, 10)))
+	req.Header.Set("X-XDrive-Device-ID", deviceID)
+	req.Header.Set("X-XDrive-Device-Token", token)
+	response, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	return decodeResponse(response, nil)
+}
+
 func (c *Client) DeleteSource(ctx context.Context, id, revision uint64) error {
 	return c.jsonRevision(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/sources/%d", id), revision, nil, nil)
 }

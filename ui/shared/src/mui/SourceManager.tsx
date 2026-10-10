@@ -638,6 +638,28 @@ export function XDriveSourceManager({
       try {
         const result = await adapter.authorizeLocalFolder(created.id)
         localAuthorization = result.cancelled ? 'cancelled' : 'bound'
+        if (result.cancelled) {
+          // Only the just-created draft is eligible. The Server refuses
+          // cleanup if a Root was bound or the Source gained history.
+          try {
+            await adapter.deleteSource(created.id, created.revision)
+            setFeedback('已取消创建；本机未绑定的同步文件夹草稿已安全清理')
+            setCreateOpen(false)
+            setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
+            setCreateNameError('')
+            setCreateSpacesError('')
+            setCreateRootsError('')
+            await load()
+            setCreating(false)
+            return
+          } catch (cleanupError) {
+            setErrorDialog({
+              title: '本机文件夹创建已取消，但草稿未清理',
+              message: '云端草稿仍保持暂停，不会扫描或上传。请在所属 Desktop 上重新授权，或稍后重试清理。',
+              detail: sourceActionErrorMessage(cleanupError, '安全清理未完成'),
+            })
+          }
+        }
       } catch (error) {
         localAuthorization = 'error'
         setErrorDialog({

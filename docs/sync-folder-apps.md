@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 authenticated local creation/creator claim pending its own PR CI |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup under PR verification |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -127,7 +127,7 @@ This hardening does **not** authorize local-folder creation, expose write
 controls, add heartbeat, run an uploader, infer deletions, or complete the
 1k/10k/100k and >=4GiB physical acceptance tests.
 
-## P0-B2b2: authenticated local Source creation and creator-device claim (pending PR CI)
+## P0-B2b2: authenticated local Source creation and creator-device claim (merged #1323)
 
 A new paused `local_folder/push` Source requires the registered unrevoked
 Agent credential and creator device ID in addition to the user session.
@@ -153,6 +153,30 @@ This phase creates Source identity/ownership only: it does NOT enable a
 SourceRun, upload, scheduling, preview, cancel or Mirror delete. Recovering
 legacy unbound Sources and securely removing orphan unbound Sources will
 require an explicit owning-Agent flow; do not silently reclaim or delete them.
+
+## P0-B2b3: owning-Agent cleanup for empty unbound drafts (PR verification)
+
+An authenticated `DELETE /api/v1/sources/:id/local-draft` requires the
+unrevoked **creating** Agent enrollment token, matching owner and Source
+revision, and an empty paused local-folder Push Source. The Server locks the
+device row **before** the Source in one transaction to fence revocation and
+first Root binding. Binding, any run/item/failure/collection/credential
+history, scheduled work, changed revision or active state rejects cleanup;
+the endpoint never deletes cloud Nodes/CAS bytes or an authorized Root.
+Existing bound, revoked-device and legacy unclaimed Sources remain protected.
+There is no owner-JWT-only orphan sweep or remote reclamation.
+
+The Agent's existing Source deletion IPC selects this private cleanup path
+only for local Push; ordinary Pull/NAS delete retains its previous behavior.
+The shared create flow attempts safe cleanup **only** when the native picker
+is explicitly cancelled for a just-created draft, reporting any cleanup
+failure without falsely claiming deletion. This does not make the main Device
+Backup page a writable Web/foreign-Desktop surface: the full own-device
+wizard and bound-source edit/remove operations remain P0-C4.
+
+Revoked-device recovery requires an explicit separate reclaim contract; it
+is NOT implemented by bypassing creator identity. Local activation/SourceRun,
+upload, automatic scheduling, and Mirror deletion remain blocked.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

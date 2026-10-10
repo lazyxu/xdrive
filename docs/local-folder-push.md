@@ -19,7 +19,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
 
-## P0-B2b2 native creating-device claim (pending PR CI)
+## P0-B2b2 native creating-device claim (merged #1323)
 
 Staged local-folder creation is initiated via the Desktop Agent and requires
 its OS-protected enrolled device secret. The Server validates and locks that
@@ -31,8 +31,22 @@ verifiable prior ownership. The device secret never leaves the Agent for
 Renderer/Web; the Root still requires native picker authorization. This
 does not enable local Push execution, scheduling, Mirror deletion or 4 GiB
 uploads. The owner-JWT device-registration bootstrap is not a physical-device
-attestation and remains a separate trust consideration; unbound cleanup and
-reclaim need a later bounded stage.
+attestation and remains a separate trust consideration; unbound **legacy** reclaim remains a separate explicit ownership workflow.
+
+## P0-B2b3 native empty-draft cleanup (PR verification)
+
+A newly created paused `local_folder` with an authenticated creator claim
+may be discarded via a dedicated owning-Agent-only endpoint, before any
+Root binding or Source data exists. The Server transaction locks device
+first, rechecks its unrevoked credential, Source revision and absence of
+binding, run, item, collection and credential history, then deletes only
+that Source record. No cloud Node, CAS bytes, local directory or Root grant
+is deleted. A native-picker cancellation after initial creation attempts
+this narrowly fenced cleanup; a failure leaves a visible paused draft for
+later local recovery. Existing bound records, orphan legacy records and
+revoked device records cannot be reclaimed with owner JWT alone. No
+automatic periodic orphan deletion is performed. Actual local Push
+execution remains completely disabled.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 
