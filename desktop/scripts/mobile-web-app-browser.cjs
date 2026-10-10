@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, or gallery-selection.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, or gallery-ios27-chrome.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -39,6 +39,7 @@ if (filesTouchDragScenario) rootChildren.push(makeNode(3, '触控目标甲', 1, 
 const touchFixture = { quickOrder: [2, 3, 4], savedOrder: [17, 18, 19], quickWrites: [], savedWrites: [] };
 const mobilePanelsScenario = options.scenario === 'mobile-panels';
 const gallerySelectionScenario = options.scenario === 'gallery-selection';
+const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const gallerySelectionFixture = {
   albums: [...Array.from({ length: 24 }, (_, index) => ({
     id: `qa-album-${index + 1}`, name: index === 0 ? '验收家庭相册' : `验收相册 ${String(index + 1).padStart(2, '0')} 长名称仍应完整可读`,
@@ -257,26 +258,69 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin');
       return plain({ supported: true, state: 'idle', source: 'github', channel: 'master', backup_file_data: false });
     case 'GET /api/v1/media/items': {
-      queryOnly(url, ['range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone', ...(mobilePanelsScenario ? ['tag'] : [])]);
+      queryOnly(url, [
+        'range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone',
+        ...(mobilePanelsScenario ? ['tag'] : []),
+        ...(galleryIos27ChromeScenario ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
+      ]);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
-      // The shared Gallery already sends its persisted chronological sort.
-      // This viewport fixture exercises the default captured/descending state.
       assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
-      assert.equal(url.searchParams.get('sort_dir') || 'desc', 'desc');
+      if (galleryIos27ChromeScenario) {
+        // Current Mobile Library defaults to ascending captured time with the
+        // newest range initially at the bottom; this is not legacy desktop desc.
+        const direction = url.searchParams.get('sort_dir') || 'asc';
+        assert(['asc', 'desc'].includes(direction),
+          'mobile and wide Web share the Server sort direction contract');
+        if (url.searchParams.has('initial_position')) {
+          assert.equal(direction, 'asc', 'latest-at-bottom requires ascending sort');
+        }
+        if (url.searchParams.has('unknown_first')) {
+          assert.equal(url.searchParams.get('unknown_first'), 'true');
+        }
+      } else {
+        assert.equal(url.searchParams.get('sort_dir') || 'desc', 'desc');
+      }
       assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
-      const offset = integerQuery(url, 'offset', 0, mediaItems.length);
       const limit = integerQuery(url, 'limit', 200, 500);
+      const latest = galleryIos27ChromeScenario && url.searchParams.has('initial_position');
+      if (latest) assert.equal(url.searchParams.get('initial_position'), 'latest');
+      const anchorRaw = galleryIos27ChromeScenario ? url.searchParams.get('anchor_node_id') : null;
+      let anchorIndex = null;
+      if (anchorRaw !== null) {
+        assert.match(anchorRaw, /^[1-9]\d*$/, 'explicit anchor must be a positive canonical Node ID');
+        anchorIndex = mediaItems.findIndex(item => item.node.id === Number(anchorRaw));
+        assert(anchorIndex >= 0, 'anchor must resolve within the authorized fixture range');
+        assert(!latest, 'initial_position and explicit anchor cannot both choose the initial position');
+      }
+      // P0-B Server range uses the final page-aligned offset and an absolute
+      // last-index anchor, rather than walking all preceding sparse pages.
+      const offset = latest && mediaItems.length
+        ? Math.floor((mediaItems.length - 1) / limit) * limit
+        : integerQuery(url, 'offset', 0, mediaItems.length);
       const items = mediaItems.slice(offset, offset + limit);
       if (!url.searchParams.has('range')) return items;
       assert.equal(url.searchParams.get('range'), 'true');
       const group = (key) => [{ key, item_count: mediaItems.length, start_index: 0 }];
       return { items, total_count: mediaItems.length, offset, limit,
+        ...(latest ? { anchor_index: mediaItems.length - 1 }
+          : anchorIndex !== null ? { anchor_index: anchorIndex } : {}),
         timeline_group_sets: { year: group('2026'), month: group('2026-10'), day: group('2026-10-08') } };
     }
     case 'GET /api/v1/media/facets':
       queryOnly(url, mobilePanelsScenario ? ['tag'] : []);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       return { cameras: [], formats: [{ value: 'png', label: 'PNG', item_count: mediaItems.length }] };
+    case 'GET /api/v1/media/memories': {
+      assert(galleryIos27ChromeScenario, 'Memories preview belongs to iOS27 Collections fixture');
+      queryOnly(url, ['limit', 'time_zone', 'anchor_date']);
+      assert.equal(integerQuery(url, 'limit', 8, 100), 8);
+      assert.equal(url.searchParams.get('time_zone'), 'UTC');
+      assert.match(url.searchParams.get('anchor_date') || '', /^\d{4}-\d{2}-\d{2}$/);
+      return [];
+    }
+    case 'GET /api/v1/media/sync-folders':
+      assert(galleryIos27ChromeScenario, 'Sync folder overview belongs to iOS27 Collections fixture');
+      return plain([]);
     case 'GET /api/v1/media/albums': return plain(gallerySelectionScenario ? gallerySelectionFixture.albums : []);
     case 'GET /api/v1/media/pets': return plain([]);
     case 'GET /api/v1/media/places':
@@ -368,7 +412,16 @@ function fixtureFor(request, role) {
   match = /^GET \/api\/v1\/media\/items\/(\d+)$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) return plain(mediaByID.get(Number(match[1])));
   match = /^GET \/api\/v1\/media\/items\/(\d+)\/thumbnail$/.exec(key);
-  if (match && mediaByID.has(Number(match[1]))) { queryOnly(url, ['v']); assert.equal(url.searchParams.get('v'), '3'); return imagePNG; }
+  if (match && mediaByID.has(Number(match[1]))) {
+    queryOnly(url, galleryIos27ChromeScenario ? ['v', 'revision'] : ['v']);
+    assert.equal(url.searchParams.get('v'), '3');
+    if (url.searchParams.has('revision')) {
+      assert.equal(url.searchParams.get('revision'),
+        String(mediaByID.get(Number(match[1])).node.revision),
+        'thumbnail revision must match the fixture node revision');
+    }
+    return imagePNG;
+  }
   match = /^POST \/api\/v1\/files\/(\d+)\/preview-ticket$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) return plain({ url: `/api/v1/file-preview/qa-${match[1]}`, expires_at: '2099-01-01T00:00:00Z', kind: 'image', mime_type: 'image/png' });
   match = /^GET \/api\/v1\/file-preview\/qa-(\d+)$/.exec(key);
@@ -389,7 +442,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario)) {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -461,7 +514,14 @@ async function loadFiles(context, origin, role) {
     else result.consoleErrors.push(entry);
   });
   await page.goto(`${origin}/#/app/files`, { waitUntil: 'domcontentloaded' });
-  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).waitFor();
+  // Mobile Files now has an independent presentation without the wide tile's
+  // data selector. Gallery-only acceptance needs to wait for visible data, not
+  // assert a Files-specific DOM implementation detail.
+  if (galleryIos27ChromeScenario) {
+    await page.getByText('document-001.txt', { exact: true }).first().waitFor();
+  } else {
+    await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).waitFor();
+  }
   await settle();
 }
 async function longPressItem(locator) {
@@ -1732,16 +1792,135 @@ async function fullscreenAcceptance(role) {
   await galleryOverlayAcceptance(role);
 }
 
+async function galleryIos27ChromeAcceptance() {
+  activeStage = 'user-gallery-ios27-chrome';
+  await navigateWorkspace('图库', 'gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.evaluate(() => {
+    window.__iosGalleryMain = document.querySelector('main');
+    window.__iosGalleryRoot = document.querySelector('#xdrive-mobile-gallery-main');
+  });
+
+  const measure = () => page.evaluate(() => {
+    const bounds = element => element?.getBoundingClientRect().toJSON() ?? null;
+    const main = document.querySelector('main');
+    const header = document.querySelector('[data-xdrive-mobile-app-header]');
+    const time = document.querySelector('[data-xdrive-mobile-gallery-time-scale]');
+    const dock = document.querySelector('[data-xdrive-mobile-gallery-bottom]');
+    const grid = document.querySelector('[data-xdrive-media-gallery-virtual-grid] > div');
+    const columns = grid ? getComputedStyle(grid).gridTemplateColumns.split(/\s+/).filter(Boolean).length : null;
+    const buttons = [...(time?.querySelectorAll('[data-xdrive-mobile-gallery-scale]') ?? [])].map(element => {
+      const r = element.getBoundingClientRect();
+      const target = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+      return { scale: element.getAttribute('data-xdrive-mobile-gallery-scale'),
+        bounds: bounds(element), pressed: element.getAttribute('aria-pressed'),
+        hit: !!target && (target === element || element.contains(target)) };
+    });
+    return { viewport: { width: innerWidth, height: innerHeight },
+      header: bounds(header), main: bounds(main), time: bounds(time), dock: bounds(dock),
+      columns, buttons,
+      mainRetained: main === window.__iosGalleryMain,
+      galleryRetained: document.querySelector('#xdrive-mobile-gallery-main') === window.__iosGalleryRoot };
+  });
+
+  for (const vp of [{width:360,height:780},{width:390,height:844},
+    {width:430,height:932},{width:844,height:390},
+    {width:899,height:700},{width:900,height:700},{width:390,height:844}]) {
+    activeStage = 'user-gallery-ios27-' + vp.width + 'x' + vp.height;
+    await page.setViewportSize(vp);
+    await page.locator('main').evaluate(e => { e.scrollTop = 0; });
+    await page.locator('[data-xdrive-media-tile]').first().waitFor();
+    await settle();
+    const s = await measure();
+    result.samples[activeStage] = s;
+    await page.screenshot({path:path.join(outputDir, activeStage+'.png')});
+    check(activeStage+': same mounted Gallery and scroll host', s.galleryRetained && s.mainRetained, s);
+    if (vp.width < 900) {
+      check(activeStage+': 52px App Header above shared main', s.header && s.main
+        && s.header.height >= 52 && Math.abs(s.main.top-s.header.bottom) <= 1, s);
+      check(activeStage+': bottom time controls and Gallery-only dock both mounted', !!s.time && !!s.dock, s);
+      check(activeStage+': no mobile dock overlap, clipping or header interception', s.time && s.dock && s.header
+        && s.time.top >= s.header.bottom+2 && s.time.bottom <= s.dock.top+1
+        && s.time.left >= -1 && s.time.right <= vp.width+1
+        && s.dock.bottom <= vp.height+1, s);
+      check(activeStage+': year/month/all have actual 44px touch hit targets',
+        JSON.stringify(s.buttons.map(x=>x.scale)) === '["year","month","all"]'
+        && s.buttons.every(x=>x.bounds?.width>=44 && x.bounds?.height>=44 && x.hit), s.buttons);
+      const expectedColumns = Math.max(3, Math.floor(vp.width/144));
+      check(activeStage+': shared KFS responsive columns',
+        s.columns === expectedColumns, { actual:s.columns, expected:expectedColumns });
+    } else {
+      check(activeStage+': wide Web has no Mobile-only bottom controls',
+        !s.time && !s.dock, s);
+    }
+  }
+
+  activeStage = 'user-gallery-ios27-last-tile';
+  await page.locator('main').evaluate(e => {e.scrollTop = e.scrollHeight;});
+  await page.waitForFunction(() => !!document.querySelector('[data-xdrive-media-index="239"]'));
+  await settle();
+  const last = await page.evaluate(() => {
+    const tile = document.querySelector('[data-xdrive-media-index="239"]');
+    const time = document.querySelector('[data-xdrive-mobile-gallery-time-scale]');
+    const header = document.querySelector('[data-xdrive-mobile-app-header]');
+    const bounds = el => el?.getBoundingClientRect().toJSON() ?? null;
+    const r = tile?.getBoundingClientRect();
+    const hit = r && document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+    return { tile:bounds(tile), time:bounds(time), header:bounds(header),
+      index:tile?.getAttribute('data-xdrive-media-index'), hit:!!hit && (hit===tile||tile.contains(hit)),
+      scrollTop:document.querySelector('main')?.scrollTop };
+  });
+  result.samples[activeStage] = last;
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+  check('P0-4a last of 240 actual tiles is fully clickable above floating docks',
+    last.index==='239' && last.hit && last.tile && last.time && last.header
+    && last.tile.top >= last.header.bottom-1 && last.tile.bottom <= last.time.top-2, last);
+
+  activeStage = 'user-gallery-ios27-actions';
+  await page.locator('[data-xdrive-mobile-gallery-select]').tap();
+  await settle();
+  const selected = await measure();
+  check('Selection hides both Gallery floating docks', !selected.time && !selected.dock, selected);
+  await page.locator('[data-xdrive-mobile-gallery-select]').tap();
+  await settle();
+  await page.locator('[data-xdrive-mobile-gallery-scale="month"]').tap();
+  await settle();
+  check('Month uses the same onTimeScale state',
+    await page.locator('[data-xdrive-mobile-gallery-scale="month"]').getAttribute('aria-pressed') === 'true');
+  await page.locator('[data-xdrive-mobile-gallery-scale="all"]').tap();
+  await settle();
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  await settle();
+  check('Collections hides Year/Month/All without unmounting shared Gallery',
+    await page.locator('[data-xdrive-mobile-gallery-time-scale]').count() === 0
+    && await page.evaluate(() => document.querySelector('#xdrive-mobile-gallery-main') === window.__iosGalleryRoot));
+  await page.locator('[data-xdrive-mobile-gallery-tab="library"]').tap();
+  await page.locator('[data-xdrive-mobile-gallery-time-scale]').waitFor();
+  check('Returning Library restores exactly one bottom time dock',
+    await page.locator('[data-xdrive-mobile-gallery-time-scale]').count() === 1);
+  await page.screenshot({path:path.join(outputDir,'user-gallery-ios27-actions.png')});
+}
+
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
-  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario) {
+  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario) {
     const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     result.runnerSHA256 = hash(__filename);
     result.builtWebSHA256 = {
       'index.html': hash(path.join(distRoot, 'index.html')),
       ...Object.fromEntries(fs.readdirSync(path.join(distRoot, 'assets')).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => [`assets/${name}`, hash(path.join(distRoot, 'assets', name))])),
     };
+    if (galleryIos27ChromeScenario) {
+      fs.copyFileSync(__filename, path.join(outputDir, path.basename(__filename)));
+      result.fixture.ios27 = { logicalItems: mediaItems.length, physicalDevice: false };
+      result.sourceHashes = Object.fromEntries([
+        'web/src/App.tsx', 'web/src/mediaGalleryAdapter.ts',
+        'ui/shared/src/mui/MediaGallery.tsx', 'ui/shared/src/mui/MobileGalleryChrome.tsx',
+        'ui/shared/src/mui/MediaGalleryVirtualGrid.ts', 'ui/shared/src/mui/MediaGalleryVirtualTimeline.ts',
+        'ui/shared/src/mui/MobileAppHeader.tsx',
+      ].map(file => [file, hash(path.join(sourceRoot, file))]));
+    }
     if (gallerySelectionScenario) {
       fs.copyFileSync(__filename,path.join(outputDir,path.basename(__filename)));
       result.fixture.gallerySelection = { selectedNodeIDs: [1000, 1001, 1002], manualAlbums: 24, smartAlbums: 1, targetAlbumID: 'qa-album-24', initialRevision: 30, refusalStatus: 403 };
@@ -1771,7 +1950,7 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -1840,6 +2019,7 @@ async function main() {
       else if (filesOrganizationScenario) await filesOrganizationAcceptance();
       else if (mobilePanelsScenario) await mobilePanelsAcceptance();
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
+      else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);

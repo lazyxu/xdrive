@@ -2779,6 +2779,55 @@ jobs:
           path: web/dist
           if-no-files-found: error
           retention-days: 2
+      - name: Prepare opt-in native Chrome Gallery geometry test
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-playwright"
+          npm install --prefix "$RUNNER_TEMP/xdrive-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          # Host Chromium without Chinese fonts renders unreadable tofu glyphs.
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends fonts-noto-cjk
+          fc-cache -f
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "No native Chrome available on runner"; exit 1
+          fi
+      - name: Real Web Gallery iOS 27 360-900px browser geometry and actions
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27"
+          echo "$XD_PR_HEAD" > "$RUNNER_TEMP/xdrive-gallery-ios27/pr-head.sha"
+          git rev-parse HEAD > "$RUNNER_TEMP/xdrive-gallery-ios27/tested-checkout.sha"
+          set +e
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+          node ../desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-chrome \
+            --output-dir="$RUNNER_TEMP/xdrive-gallery-ios27"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/xdrive-gallery-ios27/results.json"
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
+        with:
+          name: gallery-ios27-browser-geometry
+          path: ${{ runner.temp }}/xdrive-gallery-ios27/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+
 
 
   final-gate:

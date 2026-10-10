@@ -257,9 +257,30 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3i · iOS 27 图库底部「年／月／全部」时间视图（2026-10-10）
 
-**状态：单工作提交候选，完整 GitHub PR CI 尚未完成；iOS 27 真机截图与浏览器动态视口待验收。** Apple iOS 27 [官方照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确展示底部按年、月、全部切换。xDrive 目前将这三项放在 Gallery 顶部 48px sticky 条，属于信息层级错位。
+**状态：[#1303](https://github.com/lazyxu/xdrive/pull/1303) 精确提交完整 GitHub CI `final-gate` 成功，单提交线性合并（`890b6e7454c8`），旧分支已清理；真实浏览器与 iOS 27 真机视觉验收仍待完成。** Apple iOS 27 [官方照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确展示底部按年、月、全部切换。xDrive 目前将这三项放在 Gallery 顶部 48px sticky 条，属于信息层级错位。
 
 - 仅将同一个 `XDriveMobileGalleryChrome` 的 **一份**「年／月／全部」按键组从顶部 sticky 移至 **Gallery 内部**底部浮层，位于原图库／精选集／搜索底部 Dock 的上方，保留时间尺度 `onTimeScale`、原年/月/全部偏好与稀疏 Timeline/VirtualGrid。原「日」仍从更多操作访问，不添加第四个原生底部标签，不改变 52px 全局 App Header 或第二套全局导航。
 - CSS 采用可复核的候选双层底部几何：主 Dock bottom=0，时间视图 bottom=`calc(64px + env(safe-area-inset-bottom, 0px))`，时间控件触控高度至少 44px；图库最后一屏预留 `calc(140px + env(safe-area-inset-bottom, 0px))` 真实滚动空间，避免最后一行照片被两层浮动控件遮住。仅当移动端正在浏览 Library 照片集合且未进入选择模式时显示，不在精选集总览、Viewer 或宽屏 Web 展示。
 - 这不是 Apple 27 已验收的精确双 Dock 层级、圆角/模糊数值或动态显隐：官方截图展示底部年/月/全部与搜索，而 xDrive 仍保留已确定的独立图库／精选集主 Dock；目前先以操作层级和可用性对齐，真机成对截图后再校准两层的排列与动画。原生 Year/Month 的精选内容语义与当前 xDrive 的时间线逻辑资产范围也需单独比对，不能只因按钮位置对齐就宣称原生 1:1。
 - React 组件测试检查单一入口、真实 `onTimeScale`、选中态、44px 操作目标、底部 safe-area、精选集/选择状态的隐藏，以及共享 Web REST、`VirtualCollection/Grid/Timeline`、Viewer 和 App Frame 不变。真实 iOS 27 Safari/安装模式、390/430/899/900 几何、10k/100k FPS/取消及最终截图差异仍是后续验收门槛。
+
+
+## P0-4a · Web Gallery 双层底栏真实 Chromium 验收（2026-10-10）
+
+**状态：测试优先，分支候选；未获得实测证据前不改变产品 UI/Server。** P0-3i #1303 将年／月／全部放到 Gallery 内部底部，但此前只有 React 测试和源代码断言，缺少真实已构建 Web 的多视口 DOM、点击命中与末行无遮挡证据。
+
+- 复用 `desktop/scripts/mobile-web-app-browser.cjs` 的真实 Web build、原 `MediaGalleryDataSource` 与有界的 240 张照片 API fixture；新增 `--scenario=gallery-ios27-chrome`，不增加移动端业务接口、控制器或 Viewer。
+- 同一 Gallery DOM 依次测量 360×780、390×844、430×932、844×390、899×700、900×700、390×844；保存 App Frame 52px 标题栏、时间视图/主 Dock bounds、44px 按钮 hit-test、共享 KFS 实际列数及宽屏退出移动模式。
+- 390×844 滚动至第 239 张照片，检查磁贴完整位于两层浮动底栏上方且可点；操作选择／完成、月／全部、精选集／图库并验证业务回调、已挂载 DOM 与显示恢复。
+- 为遵守 GitHub/GitLab **核心 job 集合一致性**，在既有 `web` job 中添加仅 `test/mobile-gallery-ios27-real-chrome-*` 分支执行的真实 Chrome 验收步骤，不另建 job；使用同一 Web 构建结果，产出 JSON、screenshots、runner 与源码 SHA-256、请求与错误日志。先记录 first-red，再区别 fixture/CI 与产品缺陷。
+- **边界：** 240 张照片真实 Chromium 浏览器几何验收 ≠ 10k/100k 性能测量，更 ≠ iOS 27 Safari/安装模式、软件键盘、VoiceOver、真实安全区、同内容截图 1:1 验收；这些继续独立记录。
+
+- **首轮 first-red（#1309 run 38037048117）：** `go-windows` 的 `internal/cicontract/TestGitHubAndGitLabCIStayInParity` 明确报新增 GitHub job 未在 GitLab 对应；原独立 Chrome job 则成功启动真实浏览器，但旧启动等待 `[data-xdrive-file-explorer-item]` 超时。截图/DOM 和实际 `GET /nodes/1/children` 证明 Mobile Files 已渲染 `document-001.txt`，无未知 API、PageError 或 ConsoleError；属于已有 Files presentation selector 漂移，并**非** Gallery first-red。本次在同一个工作提交中改为该场景等待实际可见文字，且 Chrome 步骤移入已有 Web job。保留 `results.json` 和 first-red artifact ID `11664064384`；后续要求重新运行同一个 Gallery 几何断言，不能把旧错误规避视为产品修复。
+
+- **第二轮 fixture first-red（#1309 run 38037446695）：** 旧媒体 fixture 只接受 `sort_dir=desc`、不允许 `initial_position/unknown_first`，而当前已合入的移动 `MediaGallery` 首屏真实请求是 `range=true&limit=100&offset=0&time_zone=UTC&initial_position=latest&unknown_first=true&sort_by=captured&sort_dir=asc`；因此返回 501，图库展示失败，原几何断言尚未运行。真实 Chrome 启动、Mobile Files 加载、Web build 与 CI job-parity 均已正常。修正测试 fixture 以遵守现有 Server 合同：仅本 Gallery 验收场景接受这些字段，要求 `latest` 且升序、对 240 个样本返回 page-aligned `offset=200` 的末尾 40 项与 `anchor_index=239`；**未修改产品查询或绕过任何几何检查**。保留失败 artifact `11664528094`；等后续真实浏览器 first-red 才评估是否需要改产品 UI。
+
+- **第三轮真实几何（#1309 run 38037744950 / artifact 11664785625，partial first-red）：** Chromium 在 360×780、390×844、430×932、844×390、899×700 的 **30/30 已执行 DOM 几何和点击断言成功**。实测 390×844：全局 App Header 52px、时间栏 x99/y726/w192/h54、主 Dock y788/h56，间距 8px；列数 3；844 横屏 5 列、899px 6 列。此时尚未跑完 900px 宽屏、最后一张照片与导航，不得声称全场景通过。宽屏阶段合法发送 `sort_dir=desc`，但 fixture 曾过严地只接受移动首屏 `asc`；真实缩略图请求也包含与 Node 版本一致的 `revision=1`，而旧 fixture 只允许 `v=3`，造成 501。修正 fixture 严格验证两种合法排序方向与最新页升序限制，并校验每个缩略图请求的 revision，不修改产品 Server/API。原 Chrome CI 截图的汉字变成方框，现仅该分支 Web 作业安装 `fonts-noto-cjk` 后重新留存截图；此举不是宣称匹配 iOS 27 字体像素。第三轮真实浏览器失败原始工件 ID 为 `11664785625`。
+
+- **第四轮跨断点（run 38038095042 / artifact 11665200752）：** 同一真实 Chrome Gallery 从 360 到 900px 并返回 390px 的 **38/38 已执行布局断言均通过**；在宽屏 900px 不保留任何 Mobile-only 底栏，返回后 Header/缩略图网格与滚动容器身份仍符合现有设计。但滚至末张前触发已合入的“返回原位置” API：`anchor_node_id=1000`，旧 fixture 未允许它，导致 501、后续末张图片与选择动作尚未验收，非 Gallery 产品故障。本轮仅在此验收场景按真实 Node 身份验证 `anchor_node_id` 为授权范围内的正整数，返回对应的绝对 `anchor_index`（ID1000→index0），并拒绝与 `initial_position` 同时设置；完整原 UI/交互断言保留不动。第一次真正的产品 first-red 仍待测。源证据与截图继续保留，绝不声称物理 iOS 27 已达到 1:1。
+
+- **第五轮真实浏览器进度（run 38038427444）：** 真实 DOM 的 7 个响应式视口、最后一张可点击照片和真实时间/精选集操作均已执行，唯独精选集预览触发两个之前未建模的**正常读取**：`GET /api/v1/media/memories?limit=8&time_zone=UTC&anchor_date=<当日>` 和 `GET /api/v1/media/sync-folders`，原 fixture 返回 501 导致最终网络审计失败。仅为当前测试场景加严格 query 验证、返回真实空集合 `[]`，不调整生产代码，不禁用未知请求审计。此前通过的几何和交互断言保留。后续仍以精确提交全 CI 及网络审计为合并门槛。
