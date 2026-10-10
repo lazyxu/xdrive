@@ -161,3 +161,37 @@ terminal updates, in which case reconciliation is a separate responsibility.
 No durable upload, Server API, Agent API, transfer speed or polling cadence
 changes. Require the original tests, related FileExplorer/transfer suites,
 Web/Desktop builds, Go race and authoritative exact-head PR final gate.
+
+## Group upload preflight and error lifecycle races (2026-10-10, PR #1272)
+
+The shared Web/Desktop FileExplorer grouped-upload controller must terminate
+registered old Port tracking records when `lifecycleKey` changes **before**
+a real file upload is invoked. The earlier PR #1266 fixed delayed successful
+group and child registrations; this phase covers post-`begin(child)`,
+initial `updateGroup`, late file preflight/decision, rejected directory scans
+and rejected child registrations. Obsolete transport failures remain silent
+in the newly selected account/session. Use the **initiating** Port for
+best-effort `finish(cancelled)` of the unstarted group and children; do not
+write into the new session.
+
+A `fileUploadStarted` boundary is established immediately before the first
+actual upload invocation. Once dispatched, the Server/Agent owns the transfer:
+old UI completion/error must not call `finish(cancelled)` on that in-flight
+durable operation. This intentionally leaves independent cancellation and
+unreachable old Agent reconciliation to their own established mechanisms.
+
+**Product first-red before production changes:** GitHub Actions
+`38024655089`, test-only commit
+`32e5c3b9f01f92c87198ea6c6ac0246a1dd0ec4d`,
+`desktop/tests/shared-folder-upload-session-terminal-race.cjs`:
+#1429 delayed begin(child), #1430 delayed group update,
+#1431 delayed preflight, #1432 old scan rejection and #1433 old
+child-registration rejection all omitted required terminal calls (RED).
+The current-session preflight-failure control #1434 passed (GREEN).
+Full Desktop: 1942 passed, 5 failed, 1 skipped. All original
+first-red assertions are preserved unchanged for green retest.
+A supplemental control verifies that already-dispatched upload commands
+are not terminalized by UI detachment. Do not claim strongly guaranteed
+cleanup when the old Agent is unavailable or cancellation of durable uploads.
+Require exact-head Desktop/Web builds, Go race, Windows artifact tests, and
+GitHub PR final gate before merge.

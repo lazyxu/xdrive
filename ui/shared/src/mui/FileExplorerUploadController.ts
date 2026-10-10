@@ -392,6 +392,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
     const childIDs: string[] = []
     const terminalChildren = new Set<string>()
     let batchStarted = false
+    // A detached UI may terminalize tracking records only before invoking
+    // the first actual file upload. Once dispatched, Server/Agent owns it.
+    let fileUploadStarted = false
     let aggregate = {
       uploaded: 0,
       skipped: 0,
@@ -422,6 +425,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
     const finishDetachedUnstarted = async (
       extraChildIDs: readonly string[] = [],
     ): Promise<XDriveFileExplorerUploadBatchResult> => {
+      if (fileUploadStarted) return idleResult(true, true)
       for (const id of [...childIDs, ...extraChildIDs]) {
         if (!id || terminalChildren.has(id)) continue
         terminalChildren.add(id)
@@ -517,15 +521,15 @@ export function useXDriveFileExplorerUploadController<TFile>({
 
         aggregate.running = 1
         await transferLifecycle.begin(childID)
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
         await transferLifecycle.updateGroup(groupID, groupProgress())
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
 
         let conflict: XDriveUploadConflictPreflight
         try {
           conflict = await preflightTarget(target, batchPreflights, index)
         } catch (error) {
-          if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+          if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
           aggregate.running = 0
           aggregate.failed += 1
           aggregate.processed += 1
@@ -540,13 +544,13 @@ export function useXDriveFileExplorerUploadController<TFile>({
           stoppedAt = index + 1
           break
         }
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
 
         if (conflict.conflict) {
           const decision = await conflicts.resolveConflict(name, {
             canOverwrite: xDriveUploadConflictCanOverwrite(conflict),
           })
-          if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+          if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
           if (decision === 'cancel') {
             aggregate.running = 0
             aggregate.cancelled = true
@@ -586,6 +590,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
               transferLifecycle.updateGroup(groupID, groupProgress()),
             ).catch(() => {})
           }
+          fileUploadStarted = true
           const result = await upload(
             target.parentID,
             target.file,
@@ -676,7 +681,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       if (summary) onFeedback(summary.tone, summary.message)
       return result
     } catch (error) {
-      if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+      if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
       if (batchStarted) {
         conflicts.endBatch()
         batchStarted = false
