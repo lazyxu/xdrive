@@ -88,3 +88,16 @@ test('P0-3a Mobile Collections reuses wide Web album pin preferences and same ca
   assert.match(page,/accountScope=\{preferenceScope\}/)
   assert.doesNotMatch(collections,/create.*DataSource|new.*VirtualCollection|fetch\(/)
 })
+
+
+test('P0-3b mobile layout and per-group collapse are presentation-only',()=>{
+  assert.match(collections,/xdrive\.gallery\.mobile\.collections\.layout\.v1/)
+  assert.match(collections,/data-xdrive-mobile-gallery-layout-trigger/)
+  assert.match(collections,/data-xdrive-mobile-gallery-collapse-group/)
+  assert.match(collections,/readMediaAlbumPreferences\(accountScope\)/)
+  assert.match(collections,/onOpenAlbum\(album\)/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
+    /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+  assert.doesNotMatch(collections,/listItemRange\(|new XMLHttpRequest\(|fetch\(/)
+})

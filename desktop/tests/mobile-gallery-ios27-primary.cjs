@@ -28,8 +28,10 @@ new Function('exports','module','require',albumOrganizeCompiled)(
 const sharedAlbumOrganization=albumOrganizeModule.exports
 const mocks={
   react:React, 'react/jsx-runtime':require('react/jsx-runtime'),
-  '@mui/material': Object.fromEntries(['Box','Button','Stack','Typography'].map(s=>[s,s.toLowerCase()])),
+  '@mui/material': Object.fromEntries(['Box','Button','IconButton','Menu','MenuItem','Stack','Typography'].map(s=>[s,s.toLowerCase()])),
   '@mui/icons-material/PhotoLibraryOutlined':'icon',
+  '@mui/icons-material/GridViewRounded':'icon',
+  '@mui/icons-material/KeyboardArrowRightRounded':'icon',
   './MediaGalleryPreviewMedia': {XDriveMediaAsyncThumbnail:'thumbnail'},
   './MediaGalleryAlbumOrganization': sharedAlbumOrganization,
 }
@@ -200,4 +202,134 @@ test('P0-3a Collections filters empty memories before bounding preview',async()=
     assert.deepEqual(opened,['m9'])
     assert.equal(cards(view).some(c=>c.props['data-xdrive-mobile-gallery-collection-card']==='memories'),false)
   } finally {if(view)await act(async()=>{view.unmount()})}
+})
+
+
+test('P0-3b iOS 27 Collections layout modes change card geometry and persist per account', async () => {
+  const previousWindow=global.window
+  const values=new Map()
+  global.window={localStorage:{
+    getItem:key=>values.has(key)?values.get(key):null,
+    setItem:(key,v)=>values.set(key,String(v)),
+  }}
+  let view
+  const create=scope=>React.createElement(Collections,{
+    ...data,accountScope:scope,onOpenSection:()=>{},onOpenAlbum:()=>{},
+  })
+  const layouts=view=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-option'])
+  const tileWidth=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-card-width']!==undefined)[0]
+    .props['data-xdrive-mobile-gallery-card-width']
+  const clickOption=async mode=>{
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-trigger'])[0]
+        .props.onClick({currentTarget:{}})
+    })
+    assert.equal(view.root.findAll(x=>x.type==='menu'&&x.props.open).length,1)
+    const option=layouts(view).find(x=>x.props['data-xdrive-mobile-gallery-layout-option']===mode)
+    assert.ok(option)
+    await act(async()=>{option.props.onClick()})
+  }
+  try {
+    await act(async()=>{view=renderer.create(create('owner-A'))})
+    assert.equal(tileWidth(),132,'mixed default is not silently the large/small layout')
+    await clickOption('large')
+    assert.equal(tileWidth(),196)
+    await clickOption('small')
+    assert.equal(tileWidth(),104)
+    await clickOption('mixed')
+    assert.equal(tileWidth(),132)
+    const stored=JSON.parse(values.get(
+      'xdrive.gallery.mobile.collections.layout.v1:owner-A'))
+    assert.equal(stored.layout,'mixed')
+    await clickOption('large')
+    await act(async()=>{view.update(create('owner-B'))})
+    assert.equal(tileWidth(),132,'switching owners must not retain the prior layout')
+    await act(async()=>{view.update(create('owner-A'))})
+    assert.equal(tileWidth(),196,'return restores the account-scoped layout')
+    await act(async()=>{view.unmount()})
+  }finally{
+    global.window=previousWindow
+  }
+})
+
+test('P0-3b individual and all-group collapse hide thumbnails without hiding actions', async()=>{
+  const previousWindow=global.window
+  const storage=new Map()
+  global.window={localStorage:{
+    getItem:key=>storage.get(key)||null,
+    setItem:(key,v)=>storage.set(key,String(v)),
+  }}
+  let view
+  const sections=[]
+  const props={...data,accountScope:'owner-X',onOpenSection:s=>sections.push(s),
+    onOpenAlbum:()=>{}}
+  const toggle=id=>view.root.findAll(x=>
+    x.props?.['data-xdrive-mobile-gallery-collapse-group']===id)[0]
+  const findCard=id=>cards(view).find(x=>x.props['data-xdrive-mobile-gallery-collection-card']===id)
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,props))})
+    assert.ok(view.root.findAll(x=>x.type==='thumbnail').length>0)
+    const pinned=toggle('pinned')
+    assert.equal(pinned.props['aria-expanded'],true)
+    assert.equal(pinned.props.sx.minHeight,44)
+    assert.equal(pinned.props.sx.minWidth,44)
+    await act(async()=>{pinned.props.onClick()})
+    assert.equal(toggle('pinned').props['aria-expanded'],false)
+    assert.ok(findCard('favorites'),'a collapsed group retains its accessible routes')
+    await act(async()=>{findCard('favorites').props.onClick()})
+    assert.deepEqual(sections,['favorites'])
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-trigger'])[0]
+        .props.onClick({currentTarget:{}})
+    })
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-collapse-all'])[0]
+        .props.onClick()
+    })
+    assert.equal(view.root.findAll(x=>x.type==='thumbnail').length,0,
+      'collapsed preview covers must unmount to release image requests')
+    assert.ok(findCard('album-a1'))
+    assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-view-all']==='相册').length)
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-layout-expand-all'])[0]
+        .props.onClick()
+    })
+    assert.ok(view.root.findAll(x=>x.type==='thumbnail').length>0)
+    const saved=JSON.parse(storage.get('xdrive.gallery.mobile.collections.layout.v1:owner-X'))
+    assert.deepEqual(saved.collapsed,[])
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    global.window=previousWindow
+  }
+})
+
+test('P0-3b stored collection layout is bounded and ignores invalid group names',()=>{
+  const read=output.exports.xDriveReadMobileGalleryCollectionsPresentation
+  const write=output.exports.xDriveWriteMobileGalleryCollectionsPresentation
+  const previous=global.window
+  const state=new Map()
+  global.window={localStorage:{
+    getItem:k=>state.get(k)||null,setItem:(k,v)=>state.set(k,String(v)),
+  }}
+  try{
+    state.set('xdrive.gallery.mobile.collections.layout.v1:scope',
+      JSON.stringify({layout:'unknown',collapsed:['bad','pinned','pinned','memories']}))
+    assert.deepEqual(read('scope'),{layout:'mixed',collapsed:['pinned','memories']})
+    write('scope',{layout:'small',collapsed:['albums','bad','albums']})
+    assert.deepEqual(read('scope'),{layout:'small',collapsed:['albums']})
+    write('',{layout:'large',collapsed:[]})
+    assert.equal(state.has('xdrive.gallery.mobile.collections.layout.v1:'),false)
+    assert.deepEqual(read(''),{layout:'mixed',collapsed:[]})
+  }finally{global.window=previous}
+})
+
+test('P0-3b bounded collection widths do not depend on media count or viewport',()=>{
+  const width=output.exports.xDriveMobileGalleryCollectionTileWidth
+  for(const group of ['pinned','memories','albums','people','places','sync-folders','utilities']){
+    assert.equal(width('large',group),196)
+    assert.equal(width('small',group),104)
+    assert.ok(width('mixed',group)>=104 && width('mixed',group)<=196)
+  }
+  assert.match(file(sourcePath),/COLLECTIONS_LAYOUT_KEY/)
+  assert.doesNotMatch(file(sourcePath),/listItemRange\(|new XMLHttpRequest\(|fetch\(/)
 })
