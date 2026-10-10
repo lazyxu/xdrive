@@ -91,6 +91,12 @@ After a complete verified L03-A journal, `HashVerifiedInventoryFile` can stream 
 
 The digest is **advisory preflight evidence, not a stable SourceItem ID or upload authorization**. A future uploader must preserve the verified file handle or reopen and validate equivalent native constraints and must match the Server/CAS-received SHA before committing a SourceItem. The current feature neither publishes plans nor mutates remote files, runs or deletion evidence. Tests cover original bytes, cancellation, content changes, path traversal, symlinks and Root replacement. A 4 GiB Windows/Desktop resumable upload E2E still needs actual execution in a later phase.
 
+## L03-C bounded local planning candidates (non-operational)
+
+The L03-C `StreamInventoryCandidates` projection consumes only a completed SHA-256-verified L03-A journal, emitting synchronous batches no larger than 500 records. Each candidate carries two deliberately separate forms of evidence: a **Root- and path-scoped path key** that distinguishes hard-link paths, and a **native object key** for conservative rename hints only where the filesystem reports a strong and uniquely linked identity. Ignored files never request content hashing.
+
+**Neither key is yet a persistent Server SourceItem ExternalID.** Hard links share a native key, weak inode identities cannot authorize moves, and changing link counts can invalidate a rename hint. A later durable path/alias reconciliation index must resolve these facts against Server revision and existing SourceItems before planning remote creates/moves; no remote deletion inference is implied by any candidate. Cancellation and callback errors return no completed projection. This remains read-only Agent code, not a SourceRun or upload path.
+
 ## Non-negotiable invariants
 
 - The Device binds one explicitly authorized local Root to one Source ID for a specific Server and owner. Never let Web specify arbitrary paths to read on the client.
