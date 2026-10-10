@@ -146,3 +146,46 @@ export function xDriveFileExplorerInlineVisibleRanges<TItem>(
   }
   return ranges
 }
+
+
+/** Map authoritative Server root-group intervals into child-augmented flat
+ * List indices. Expanded descendants remain in their parent root section.
+ * This reads only O(expansion spans + group count), never itemAt(). */
+export function xDriveFileExplorerInlineGroupIndex<TItem>(
+  layout: XDriveFileExplorerInlineLayout<TItem>,
+  rootOwnerID: number,
+  groups: readonly { key: string; item_count: number; start_index: number }[],
+  rootCount: number,
+): Array<{ key: string; item_count: number; start_index: number }> | null {
+  if (!Number.isSafeInteger(rootCount) || rootCount < 0) return null
+  let expected = 0
+  for (const group of groups) {
+    if (!group.key.trim() || !Number.isSafeInteger(group.item_count) || group.item_count <= 0 ||
+        !Number.isSafeInteger(group.start_index) || group.start_index !== expected) return null
+    expected += group.item_count
+  }
+  if (expected !== rootCount) return null
+  if (rootCount === 0) return []
+
+  const rootSegments = layout.segments.filter(segment => segment.ownerID === rootOwnerID)
+  let cursor = 0
+  const flatForRootIndex = (rootIndex: number) => {
+    if (rootIndex === rootCount) return layout.itemCount
+    while (cursor < rootSegments.length) {
+      const segment = rootSegments[cursor]
+      const end = segment.sourceStart + segment.flatEnd - segment.flatStart
+      if (rootIndex < segment.sourceStart) return null
+      if (rootIndex < end) return segment.flatStart + rootIndex - segment.sourceStart
+      cursor += 1
+    }
+    return null
+  }
+  const augmented = [] as Array<{ key: string; item_count: number; start_index: number }>
+  for (const group of groups) {
+    const start = flatForRootIndex(group.start_index)
+    const end = flatForRootIndex(group.start_index + group.item_count)
+    if (start === null || end === null || end <= start) return null
+    augmented.push({ key: group.key, start_index: start, item_count: end - start })
+  }
+  return augmented
+}

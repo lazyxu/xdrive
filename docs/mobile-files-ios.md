@@ -135,3 +135,10 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 **当前为 PR 待 CI/合并阶段。** 已在独立代码分支完成 44px 独立展开按钮、父/子目录单虚拟窗口、可取消的现有 Server `listRange` 子目录分页、稀疏子节点注册至共享 Web 工作区 `nodeByID`，并支持展开、收起、错误/重试、帐户/视图变化后清理。普通点击与展开分离，移动端仍不创建自己的 FileExplorer REST API。FileExplorer 内部多标签页仍仅在宽屏可用。
 
 待验收项目：完整 PR CI、真实 iOS 27 截图和触控/VoiceOver、100k 真实浏览器资源指标，以及分组列表内嵌展开。**保持全屏 App Frame 和独立的 52px 全局应用标题栏。**
+
+
+## 2026-10-10 F-PARITY-07C · 分组列表内展开文件夹
+
+**实现已提交到单工作提交短期 PR，待完整 CI 和合并。** #1243 的共享稀疏树索引及已合并的 #1249 实际展开/子目录分页保持不变。当前继续将按类型/日期/大小分组的列表接入相同的展开控制，后代项目插在父文件夹所属的 Server 权威分组内部；显示的分组名称和顺序不由已加载的部分数据自行推算。共享虚拟窗口、Server `listRange`、真实 Node 身份、文件操作、取消/重试/错误与 Web 一致。Mobile 仍没有内部多标签页；保留全屏 App Frame 和 52px 标题栏。
+
+此项的 10k/100k 索引验证与实际 Chromium/iOS 设备、真实网络/内存、VoiceOver 和原生截图差异验收分开记录，不能标记为像素级 1:1 完成。
