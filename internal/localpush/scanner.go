@@ -21,11 +21,12 @@ const (
 // InventoryItem is metadata only. Scanning must not mint a SourceItem identity,
 // hash a file body, start an upload or alter SyncRun/Mirror deletion evidence.
 type InventoryItem struct {
-	Path       string     `json:"path"`
-	Kind       string     `json:"kind"`
-	Size       int64      `json:"size"`
-	ModifiedAt *time.Time `json:"modified_at,omitempty"`
-	Ignored    bool       `json:"ignored"`
+	Path           string                   `json:"path"`
+	Kind           string                   `json:"kind"`
+	Size           int64                    `json:"size"`
+	ModifiedAt     *time.Time               `json:"modified_at,omitempty"`
+	Ignored        bool                     `json:"ignored"`
+	NativeIdentity *InventoryNativeIdentity `json:"native_identity,omitempty"`
 }
 
 type InventorySummary struct {
@@ -44,6 +45,10 @@ type InventorySummary struct {
 type InventoryScanner struct {
 	IgnoreRules string
 	BatchSize   int
+	// IncludeNativeIdentity uses extra filesystem metadata calls and is
+	// opt-in so existing read-only previews keep their original IO budget.
+	// No SourceItem ExternalID or deletion evidence is minted here.
+	IncludeNativeIdentity bool
 }
 
 // ScanInventory is a synchronous, backpressured, read-only inventory of a
@@ -160,9 +165,17 @@ func (s InventoryScanner) ScanInventory(ctx context.Context, grant RootGrant, yi
 					summary.IgnoredItems++
 					summary.IgnoredBytes += size
 				}
+				var native *InventoryNativeIdentity
+				if s.IncludeNativeIdentity {
+					native, err = readInventoryNativeIdentity(grant.RootID, fullPath, info)
+					if err != nil {
+						_ = f.Close()
+						return summary, fmt.Errorf("read native identity for %q: %w", canonical, err)
+					}
+				}
 				items = append(items, InventoryItem{
 					Path: canonical, Kind: kind, Size: size, ModifiedAt: &modified,
-					Ignored: ignored,
+					Ignored: ignored, NativeIdentity: native,
 				})
 				if len(items) == batchSize {
 					if err := flush(); err != nil {
