@@ -97,8 +97,23 @@ type syncRunDTO struct {
 	FinishedAt             *time.Time `json:"finished_at,omitempty"`
 }
 
+// Local folder Push is readable from any owner session. Only the dedicated
+// device-backup projection may expose its safe summary; generic Source reads
+// must not serialize local ignore rules, checkpoints or raw OS errors.
+func isLocalFolderPush(source meta.Source) bool {
+	return source.Kind == meta.SourceKindLocalFolder && source.Direction == meta.SourceDirectionPush
+}
+
+func denyLocalSourceDetailRead(c *gin.Context, source meta.Source) bool {
+	if !isLocalFolderPush(source) {
+		return false
+	}
+	fail(c, http.StatusForbidden, "local backup details require the owning device")
+	return true
+}
+
 func toSourceDTO(source meta.Source) sourceDTO {
-	return sourceDTO{
+	dto := sourceDTO{
 		ID: source.ID, Name: source.Name, Kind: source.Kind, Direction: source.Direction,
 		SyncMode: source.SyncMode, RunMode: source.RunMode, Status: source.Status,
 		ScheduleType: source.ScheduleType, ScheduleExpression: source.ScheduleExpression, ScheduleTimezone: source.ScheduleTimezone,
@@ -107,6 +122,12 @@ func toSourceDTO(source meta.Source) sourceDTO {
 		LastError: source.LastError, RunRequestedAt: source.RunRequestedAt,
 		CreatedAt: source.CreatedAt, UpdatedAt: source.UpdatedAt,
 	}
+	if isLocalFolderPush(source) {
+		dto.IgnoreRules = ""
+		dto.Checkpoint = ""
+		dto.LastError = ""
+	}
+	return dto
 }
 
 func (s *Server) sourceDTO(source meta.Source) sourceDTO {
@@ -151,6 +172,18 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	}
 }
 
+func sourceRunDTOForRead(run meta.SyncRun, source meta.Source) syncRunDTO {
+	dto := toSyncRunDTO(run)
+	if isLocalFolderPush(source) {
+		dto.IgnoreRules = ""
+		dto.CheckpointBefore = ""
+		dto.CheckpointAfter = ""
+		dto.ActiveTransferPath = ""
+		dto.Error = ""
+	}
+	return dto
+}
+
 func (s *Server) listSources(c *gin.Context) {
 	var sources []meta.Source
 	if err := s.DB.Where("owner_id = ?", userID(c)).Order("lower(name) ASC, id ASC").Find(&sources).Error; err != nil {
@@ -161,6 +194,7 @@ func (s *Server) listSources(c *gin.Context) {
 	for _, source := range sources {
 		out = append(out, s.sourceDTO(source))
 	}
+	c.Header("Cache-Control", "private, no-store")
 	c.JSON(http.StatusOK, out)
 }
 
@@ -215,7 +249,7 @@ func (s *Server) listSourceOverview(c *gin.Context) {
 	for _, source := range sources {
 		row := sourceOverviewDTO{Source: s.sourceDTO(source)}
 		if run, ok := latestBySource[source.ID]; ok {
-			dto := toSyncRunDTO(run)
+			dto := sourceRunDTOForRead(run, source)
 			row.LatestRun = &dto
 		}
 		if sourceUsesStoredCredential(source) {
@@ -367,6 +401,9 @@ func (s *Server) getSource(c *gin.Context) {
 	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
 		return
+	}
+	if isLocalFolderPush(source) {
+		c.Header("Cache-Control", "private, no-store")
 	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(source.Revision, 10)))
 	c.JSON(http.StatusOK, s.sourceDTO(source))
@@ -670,9 +707,13 @@ func (s *Server) listSourceRuns(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source id")
 		return
 	}
-	if _, err := s.ownedSource(userID(c), id); err != nil {
+	source, err := s.ownedSource(userID(c), id)
+	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
 		return
+	}
+	if isLocalFolderPush(source) {
+		c.Header("Cache-Control", "private, no-store")
 	}
 	limit := 50
 	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
@@ -699,7 +740,7 @@ func (s *Server) listSourceRuns(c *gin.Context) {
 	}
 	out := make([]syncRunDTO, 0, len(runs))
 	for _, run := range runs {
-		out = append(out, toSyncRunDTO(run))
+		out = append(out, sourceRunDTOForRead(run, source))
 	}
 	c.JSON(http.StatusOK, out)
 }
@@ -710,9 +751,13 @@ func (s *Server) getSourceRun(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source id")
 		return
 	}
-	if _, err := s.ownedSource(userID(c), id); err != nil {
+	source, err := s.ownedSource(userID(c), id)
+	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
 		return
+	}
+	if isLocalFolderPush(source) {
+		c.Header("Cache-Control", "private, no-store")
 	}
 	runID := strings.TrimSpace(c.Param("runID"))
 	if runID == "" {
@@ -724,7 +769,7 @@ func (s *Server) getSourceRun(c *gin.Context) {
 		fail(c, http.StatusNotFound, "source run not found")
 		return
 	}
-	c.JSON(http.StatusOK, toSyncRunDTO(run))
+	c.JSON(http.StatusOK, sourceRunDTOForRead(run, source))
 }
 
 func (s *Server) ownedSource(uid, id uint64) (meta.Source, error) {

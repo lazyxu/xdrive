@@ -56,6 +56,7 @@ type agentController struct {
 	historyMu          sync.Mutex
 	historyPath        string
 	historyKey         string
+	historyWriterDone  chan struct{}
 	mu                 sync.RWMutex
 	snap               agentSnapshot
 	snapshotRevision   uint64
@@ -75,6 +76,7 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		snapshotRevision:   1,
 		snapshotChanged:    make(chan struct{}),
 		transfers:          transfer.NewManager(transfer.DefaultHistoryLimit),
+		historyWriterDone:  make(chan struct{}),
 		updates:            newClientUpdateManager(ctx),
 		thumbnailCache:     newAgentMediaThumbnailCache(agentMediaThumbnailCacheMaxEntries, agentMediaThumbnailCacheMaxBytes),
 		availabilitySearch: newAgentAvailabilitySearchCache(),
@@ -85,7 +87,10 @@ func newAgentController(ctx context.Context, cancel context.CancelFunc) *agentCo
 		},
 	}
 	c.loadInitialTransferHistory()
-	go c.runTransferHistoryWriter(ctx)
+	go func() {
+		defer close(c.historyWriterDone)
+		c.runTransferHistoryWriter(ctx)
+	}()
 	return c
 }
 

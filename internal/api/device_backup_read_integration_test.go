@@ -96,6 +96,34 @@ func TestDeviceBackupReadOnlyOverviewAndHistoryRedactPrivatePaths(t *testing.T) 
 	if err := db.Create(&nas).Error; err != nil {
 		t.Fatal(err)
 	}
+	// The B-scope page is not a security boundary if the same owner JWT can
+	// request the legacy Source/Run DTO or per-file error endpoints instead.
+	genericPaths := []string{
+		"/api/v1/sources",
+		"/api/v1/sources/overview",
+		fmt.Sprintf("/api/v1/sources/%d", source.ID),
+		fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+		fmt.Sprintf("/api/v1/sources/%d/runs/%s", source.ID, runs[1].ID),
+	}
+	for _, path := range genericPaths {
+		result := request(t, router, http.MethodGet, path, ownerToken, nil, http.StatusOK)
+		for _, forbidden := range []string{secretPath, "private-checkpoint-secret", `"ignore_rules"`, `"checkpoint_before"`, `"active_transfer_path"`, `"last_error"`, `"error"`} {
+			if strings.Contains(result.Body.String(), forbidden) {
+				t.Fatalf("generic local Source read %s leaked %q: %s", path, forbidden, result.Body.String())
+			}
+		}
+	}
+	for _, path := range []string{
+		fmt.Sprintf("/api/v1/sources/%d/items", source.ID),
+		fmt.Sprintf("/api/v1/sources/%d/collections", source.ID),
+		fmt.Sprintf("/api/v1/sources/%d/collections/1/items", source.ID),
+		fmt.Sprintf("/api/v1/sources/%d/runs/%s/failures", source.ID, runs[1].ID),
+	} {
+		request(t, router, http.MethodGet, path, ownerToken, nil, http.StatusForbidden)
+		request(t, router, http.MethodGet, path, otherToken, nil, http.StatusNotFound)
+	}
+	// Legacy NAS remains on the generic Source API (not the new device list).
+	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/sources/%d", nas.ID), ownerToken, nil, http.StatusOK)
 	overview := request(t, router, http.MethodGet, "/api/v1/device-backups", ownerToken, nil, http.StatusOK)
 	payload := overview.Body.String()
 	for _, forbidden := range []string{secretPath, deviceToken, fingerprint, "private-checkpoint-secret", "Old NAS Photos", "root_fingerprint", "ignore_rules", "active_transfer_path", "last_error"} {

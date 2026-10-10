@@ -89,8 +89,12 @@ func (s *Server) listSourceItems(c *gin.Context) {
 		fail(c, http.StatusBadRequest, "invalid source id")
 		return
 	}
-	if _, err := s.ownedSource(userID(c), sourceID); err != nil {
+	source, err := s.ownedSource(userID(c), sourceID)
+	if err != nil {
 		fail(c, statusForLookup(err), "source not found")
+		return
+	}
+	if denyLocalSourceDetailRead(c, source) {
 		return
 	}
 

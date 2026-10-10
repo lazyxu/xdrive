@@ -186,8 +186,15 @@ func (s *Server) getLocalSourceBinding(c *gin.Context) {
 		fail(c, http.StatusNotFound, "bound device not found")
 		return
 	}
-	c.Header("Cache-Control", "no-store")
-	c.JSON(http.StatusOK, localBindingDTO(binding, device))
+	// Owner JWT may inspect whether a binding exists, but cannot learn the
+	// native Root identifier. Only possession of the bound Agent credential
+	// allows the Root ID to be returned for local bind recovery.
+	dto := localBindingDTO(binding, device)
+	if !clientDeviceCredentialMatches(device, c.GetHeader("X-XDrive-Device-Token")) {
+		dto.RootID = ""
+	}
+	c.Header("Cache-Control", "private, no-store")
+	c.JSON(http.StatusOK, dto)
 }
 
 func (s *Server) unbindLocalSource(c *gin.Context) {

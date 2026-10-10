@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a run cancellation merged #1301; P0-B2b1 bound Source mutation guards pending CI; unbound creation ownership remains separate |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic local read redaction under review; unbound creation ownership remains separate |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -103,11 +103,29 @@ A local-folder Push run's `POST /sources/:id/runs/:runID/cancel` now uses the sa
 
 Server-managed Pull and legacy NAS Source Run cancellation retain their pre-existing owner-scoped behavior. This is **only the cancellation boundary** of P0-B2. Generic local-folder Source creation/update/delete/trigger/unbind and binding-management permissions remain separate unimplemented gaps, and Agent-native explicit cancel with context propagation remains future work.
 
-## P0-B2b1: bound local-folder configuration mutation fencing (pending PR CI)
+## P0-B2b1: bound local-folder configuration mutation fencing (merged #1308)
 
 The Server now requires a registered, unrevoked owning device credential plus the exact Root ID/fingerprint and current Source revision for **already-bound** `local_folder` PATCH, DELETE, trigger and unbind operations. A shared read-only owner JWT or another Desktop using the same account is insufficient. Preflight uses the existing Source execution guard, then every write transaction rechecks the proof while locking device before Source/binding so revocation and revision changes fail closed. Paused Sources may be edited/removed by their authorized owning device; no generic unbound Source mutation is permitted yet. A synthetically forced active local Source also cannot be triggered before a proven native executor exists. Pull and legacy NAS behavior is unchanged.
 
 **Remaining:** Creating an unbound `local_folder` still lacks a durable creating-device claim; the existing create/bind staging flow is not proof of owning device creation. Device-native configuration IPC must attach Root proof and provide safe cleanup/rebind rules for unbound/revoked legacy Sources. Do not claim those flows complete, and do not activate any local run/upload/schedule. The existing generic source read DTO still requires path/error redaction work.
+
+## P0-B2c1: prevent generic local-folder read bypass (PR review; not yet merged)
+
+The legacy owner-JWT Source and Run overview/detail APIs are shared with Pull/NAS.
+They must not disclose local Push ignore rules, checkpoints, raw errors or active
+filesystem paths to a second Desktop using the same account. The narrow
+Device Backup DTO remains the intended remote summary. Generic local-folder
+SourceItem, collection/item and run-failure detail reads fail closed until a
+separate authenticated owning-Agent detail route exists; all Pull and legacy
+NAS detail routes remain available.
+
+The binding-presence GET remains owner-readable for the staged native picker,
+but the Root UUID is omitted without the bound Agent's unrevoked credential.
+The Agent performs token-authenticated recovery after an uncertain bind
+response; it must not discard an already-committed Root on a timeout.
+This hardening does **not** authorize local-folder creation, expose write
+controls, add heartbeat, run an uploader, infer deletions, or complete the
+1k/10k/100k and >=4GiB physical acceptance tests.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

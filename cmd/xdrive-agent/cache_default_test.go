@@ -46,6 +46,12 @@ func TestAuthenticateUsesSafeDefaultCacheLimitAndPreservesExistingUnlimited(t *t
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	controller := newAgentController(ctx, cancel)
+	// The transfer-history writer flushes once after context cancellation.
+	// Join it before t.TempDir cleans up the private config tree.
+	t.Cleanup(func() {
+		cancel()
+		<-controller.historyWriterDone
+	})
 	mountPath := filepath.Join(root, "mount")
 
 	if err := controller.Authenticate(server.URL, "alice", "password", mountPath); err != nil {

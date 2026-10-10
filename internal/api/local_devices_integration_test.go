@@ -264,6 +264,23 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/local-binding", ownerToken,
 		strings.NewReader(changedRoot), http.StatusConflict, headers)
 
+	// Same-account Web/foreign Desktop must not discover a native Root ID.
+	publicBinding := request(t, router, http.MethodGet, sourceURL+"/local-binding", ownerToken, nil, http.StatusOK)
+	if strings.Contains(publicBinding.Body.String(), rootID) ||
+		publicBinding.Header().Get("Cache-Control") != "private, no-store" {
+		t.Fatalf("remote Root identity leaked: %s", publicBinding.Body.String())
+	}
+	ownBinding := requestWithHeaders(t, router, http.MethodGet, sourceURL+"/local-binding",
+		ownerToken, nil, http.StatusOK, map[string]string{"X-XDrive-Device-Token": enrolled.DeviceToken})
+	if !strings.Contains(ownBinding.Body.String(), rootID) {
+		t.Fatalf("owning Agent could not recover its Root: %s", ownBinding.Body.String())
+	}
+	foreignBinding := requestWithHeaders(t, router, http.MethodGet, sourceURL+"/local-binding",
+		ownerToken, nil, http.StatusOK, map[string]string{"X-XDrive-Device-Token": "wrong-device-token"})
+	if strings.Contains(foreignBinding.Body.String(), rootID) {
+		t.Fatal("foreign Agent credential exposed local Root")
+	}
+
 	// Device registration and binding alone never enable an unimplemented executor.
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
 		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
