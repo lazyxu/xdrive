@@ -2432,6 +2432,7 @@ export default function App({
               recentSupported: fileRecentSupported,
               transferLifecycleSupported: agent.hello?.capabilities.includes('transfer-lifecycle') ?? false,
               transferLifecycleBatchSupported: agent.hello?.capabilities.includes('transfer-lifecycle-child-batch') ?? false,
+              transferGroupUploadCancelSupported: agent.hello?.capabilities.includes('transfer-upload-group-cancel') ?? false,
               transfers: transfers.transfers,
               actionIntent: cloudFileActionIntent,
               onActionIntentConsumed: (id) => {

@@ -666,10 +666,10 @@ const agent = Object.freeze({
   cloudRedoFileOperation: (id: string) => ipcRenderer.invoke('agent:cloud-file-operation-redo', id),
   cloudResolveFileOperationConflict: (id: string, policy: 'skip' | 'keep_both' | 'replace') =>
     ipcRenderer.invoke('agent:cloud-file-operation-resolve', id, policy),
-  cloudUploadPreflight: (parentID: number, name: string) =>
-    ipcRenderer.invoke('agent:cloud-upload-preflight', parentID, name),
-  cloudUploadPreflightBatch: (items: Array<{ parent_id: number; name: string }>) =>
-    ipcRenderer.invoke('agent:cloud-upload-preflight-batch', items),
+  cloudUploadPreflight: (parentID: number, name: string, groupID = '') =>
+    ipcRenderer.invoke('agent:cloud-upload-preflight', parentID, name, groupID),
+  cloudUploadPreflightBatch: (items: Array<{ parent_id: number; name: string }>, groupID = '') =>
+    ipcRenderer.invoke('agent:cloud-upload-preflight-batch', items, groupID),
   cloudUploadFile: (
     parentID: number,
     file: unknown,

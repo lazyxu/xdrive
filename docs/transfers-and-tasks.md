@@ -438,3 +438,40 @@ No local clone tests or GitLab push are claimed by this connector delivery.
 
 Collision safety: failed exclusive destination creation never removes an
 externally existing target; only successfully owned creations are rolled back.
+
+
+## Desktop folder uploads: Agent-owned cancellable groups (2026-10-10)
+
+**Status: exact-head CI candidate; installed-device acceptance pending.**
+The shared Desktop folder uploader creates a cancellable Agent upload group
+*before* asynchronous folder enumeration. Its task-ID-only cancel action
+cancels the Agent-owned Go context. Tracked child HTTP upload requests and
+individual/batched conflict preflights inherit that context. No later child
+upload may send bytes after cancellation. The shared controller terminalizes
+unstarted children, preserves previously committed children, and ends the
+root as `partial` if anything committed or `cancelled` otherwise. Network
+speed expires independently of the state transition. Cancel does not alter
+another group, standalone upload, hydration, source Push/Pull or durable sync.
+
+Old Agents without the `transfer-upload-group-cancel` capability continue to
+use their legacy upload path without claiming group-cancel support. The
+renderer only sends task IDs, not arbitrary host file paths. Upload cancellation
+is not checkpoint pause/resume; those controls remain absent. Browser-native
+handed-off downloads remain owned by the browser, not the Transfer Center.
+
+### Required device acceptance matrix (not yet physically run)
+
+| Case | Automated evidence | Actual installed-device evidence |
+| --- | --- | --- |
+| Windows Desktop: folder with 4 GiB file, cancel mid-upload | Go owner-context real HTTP test; Windows CI | **Pending** — installed Windows Agent + real xDrive Server required |
+| 1000 files: cancel while scanning or preflighting; no new queued/upload HTTP | Go context fence and shared upload-controller tests | **Pending** — browser picker and slow server required |
+| Three files: cancel during second; first remains, second and third cancel; root partial | Go cancel scope tests + shared lifecycle tests | **Pending** — real Server CAS verification required |
+| Two concurrent folder uploads; cancel one, other unaffected | Go HTTP owner isolation test | **Pending** — two real simultaneous uploads required |
+| Failure/retry: disconnect network then cancel; reconnect cannot revive cancelled request | Go context cancellation and fresh transfer generation tests | **Pending** — network fault injection required |
+| Account switch or logout: old group must stop; unrelated durable background sync persists | Manager Clear cancellation test and existing Agent session tests | **Pending** — installed Desktop session QA required |
+| Windows Explorer location and 390px Web gallery/file popover remain usable | Existing UI contracts and CI Web/Desktop builds | **Pending** — physical Windows/mobile browsers required |
+
+Treat the GitHub Windows runner and HTTP `httptest` as *automated verification*,
+not physical hardware acceptance. Record HTTP active-request count, bytes
+sent after cancel, terminal state, retained completed files, and latency in
+actual device logs; do not invent benchmark numbers.

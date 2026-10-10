@@ -3128,18 +3128,19 @@ export class AgentIPCClient {
     }, 45_000)
   }
 
-  cloudUploadPreflight(parentID: number, name: string) {
+  cloudUploadPreflight(parentID: number, name: string, groupID = '') {
     return this.request<AgentCloudUploadConflictPreflight>('POST', '/v1/cloud/upload/preflight', {
       parent_id: parentID,
       name,
+      ...(groupID ? { group_id: groupID } : {}),
     }, 45_000)
   }
 
-  cloudUploadPreflightBatch(items: Array<{ parent_id: number; name: string }>) {
+  cloudUploadPreflightBatch(items: Array<{ parent_id: number; name: string }>, groupID = '') {
     return this.request<AgentCloudUploadConflictPreflight[]>(
       'POST',
       '/v1/cloud/upload/preflight/batch',
-      { items },
+      { items, ...(groupID ? { group_id: groupID } : {}) },
       45_000,
     )
   }

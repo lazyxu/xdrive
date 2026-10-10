@@ -872,6 +872,25 @@ func (c *agentController) CloudUploadConflictPreflightBatch(
 	return cli.UploadConflictPreflightBatch(ctx, items)
 }
 
+// Tracked conflict checks inherit the same cancellable upload-group owner.
+func (c *agentController) CloudUploadConflictPreflightTracked(ctx context.Context, parentID uint64, name, groupID string) (client.UploadConflictPreflight, error) {
+	groupCtx, release, err := c.transfers.UploadGroupContext(ctx, groupID, false)
+	if err != nil {
+		return client.UploadConflictPreflight{}, err
+	}
+	defer release()
+	return c.CloudUploadConflictPreflight(groupCtx, parentID, name)
+}
+
+func (c *agentController) CloudUploadConflictPreflightBatchTracked(ctx context.Context, items []client.UploadConflictPreflightRequest, groupID string) ([]client.UploadConflictPreflight, error) {
+	groupCtx, release, err := c.transfers.UploadGroupContext(ctx, groupID, false)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	return c.CloudUploadConflictPreflightBatch(groupCtx, items)
+}
+
 func (c *agentController) CloudUploadWithConflictPolicy(
 	ctx context.Context,
 	parentID uint64,
@@ -926,7 +945,14 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 	var handle *transfer.Handle
 	var progress func(done, total int64)
 	managedExternally := transferID != ""
+	transportCtx := ctx
 	if managedExternally {
+		var release context.CancelFunc
+		transportCtx, release, err = c.transfers.UploadGroupContext(ctx, transferID, true)
+		if err != nil {
+			return agentCloudUploadResult{}, err
+		}
+		defer release()
 		handle = c.transfers.Handle(transferID)
 		if handle == nil {
 			return agentCloudUploadResult{}, fmt.Errorf("transfer child not found")
@@ -952,7 +978,6 @@ func (c *agentController) cloudUploadWithConflictPolicyTracked(
 		)
 	}
 
-	transportCtx := ctx
 	if !managedExternally && handle != nil {
 		var cancel context.CancelFunc
 		transportCtx, cancel = context.WithCancel(ctx)

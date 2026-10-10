@@ -151,10 +151,12 @@ export function useXDriveFileExplorerUploadController<TFile>({
     parentID: number,
     file: TFile,
     signal?: AbortSignal,
+    groupID?: string,
   ) => Promise<XDriveUploadConflictPreflight>
   preflightBatch?: (
     targets: readonly XDriveFileExplorerUploadTarget<TFile>[],
     signal?: AbortSignal,
+    groupID?: string,
   ) => Promise<readonly XDriveUploadConflictPreflight[]>
   upload: (
     parentID: number,
@@ -229,6 +231,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
         const batch = await preflightBatch(
           indices.map((index) => targets[index]),
           groupID ? transferLifecycle?.abortSignal?.(groupID) : undefined,
+          groupID,
         )
         if (
           lifecycleGeneration !== undefined &&
@@ -238,7 +241,8 @@ export function useXDriveFileExplorerUploadController<TFile>({
         batch.forEach((result, offset) => out.set(indices[offset], result))
       }
       return out
-    } catch {
+    } catch (error) {
+      if (isUserAbort(error)) throw error
       return null
     }
   }
@@ -252,6 +256,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
     const result = batch?.get(index) ?? await preflight(
       target.parentID, target.file,
       groupID ? transferLifecycle?.abortSignal?.(groupID) : undefined,
+      groupID,
     )
     if (result.error) throw new Error(result.error)
     return result
@@ -583,7 +588,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
           conflict = await preflightTarget(target, batchPreflights, index, groupID)
         } catch (error) {
           if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
-          if (isGroupCancelled()) {
+          if (isGroupCancelled() || isUserAbort(error)) {
             aggregate.running = 0
             aggregate.cancelled = true
             stoppedAt = index
@@ -690,7 +695,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
           fileUploadStarted = false
         } catch (error) {
           if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
-          if (isGroupCancelled()) {
+          if (isGroupCancelled() || isUserAbort(error)) {
             aggregate.running = 0
             aggregate.cancelled = true
             aggregate.processed += 1
@@ -770,7 +775,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       return result
     } catch (error) {
       if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
-      if (isGroupCancelled() && !fileUploadStarted) {
+      if ((isGroupCancelled() || isUserAbort(error)) && !fileUploadStarted) {
         if (batchStarted) {
           conflicts.endBatch()
           batchStarted = false

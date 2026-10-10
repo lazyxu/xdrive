@@ -782,6 +782,18 @@ func (c *agentController) StartTransferGroup(spec transfer.Spec) (string, error)
 	if handle == nil {
 		return "", errors.New("transfer manager is unavailable")
 	}
+	if spec.Kind == transfer.KindUpload && spec.Direction == "upload" {
+		owner := c.ctx
+		if owner == nil {
+			owner = context.Background()
+		}
+		groupCtx, cancel := context.WithCancel(owner)
+		if !handle.BindGroupCancelContext(groupCtx, cancel) {
+			cancel()
+			_ = handle.Finish(transfer.StateFailed, errors.New("cannot bind upload group cancellation"))
+			return "", errors.New("cannot bind upload group cancellation")
+		}
+	}
 	return handle.ID(), nil
 }
 

@@ -4706,7 +4706,7 @@ function registerIPCHandlers() {
     )
   }, false))
 
-  ipcMain.handle('agent:cloud-upload-preflight', (_event, parentID: unknown, name: unknown) =>
+  ipcMain.handle('agent:cloud-upload-preflight', (_event, parentID: unknown, name: unknown, groupID: unknown) =>
     runAgentAction<AgentCloudUploadConflictPreflight>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'cloud-files')
@@ -4720,10 +4720,15 @@ function registerIPCHandlers() {
       ) {
         throw new AgentIPCError('invalid_input', 0, 'Parent node id and file name are required.')
       }
-      return requireAgentClient().cloudUploadPreflight(parentID, name.trim())
+      if (groupID !== undefined && (typeof groupID !== 'string' || groupID.length > 128)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid upload group task id.')
+      }
+      const ownerID = typeof groupID === 'string' ? groupID.trim() : ''
+      if (ownerID) requireAgentCapability(hello, 'transfer-upload-group-cancel')
+      return requireAgentClient().cloudUploadPreflight(parentID, name.trim(), ownerID)
     }, false))
 
-  ipcMain.handle('agent:cloud-upload-preflight-batch', (_event, items: unknown) =>
+  ipcMain.handle('agent:cloud-upload-preflight-batch', (_event, items: unknown, groupID: unknown) =>
     runAgentAction<AgentCloudUploadConflictPreflight[]>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
       requireAgentCapability(hello, 'cloud-files')
@@ -4742,11 +4747,17 @@ function registerIPCHandlers() {
       ) {
         throw new AgentIPCError('invalid_input', 0, 'Upload preflight batch must contain 1-200 parent/name entries.')
       }
+      if (groupID !== undefined && (typeof groupID !== 'string' || groupID.length > 128)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid upload group task id.')
+      }
+      const ownerID = typeof groupID === 'string' ? groupID.trim() : ''
+      if (ownerID) requireAgentCapability(hello, 'transfer-upload-group-cancel')
       return requireAgentClient().cloudUploadPreflightBatch(
         items.map((item) => ({
           parent_id: (item as { parent_id: number }).parent_id,
           name: (item as { name: string }).name,
         })),
+        ownerID,
       )
     }, false))
 

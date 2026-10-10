@@ -116,14 +116,15 @@ type Task struct {
 }
 
 type entry struct {
-	task              Task
-	retry             RetryFunc
-	cancel            context.CancelFunc
-	lastBytes         int64
-	lastAt            time.Time
-	rateBaseBytes     int64
-	rateStartedAt     time.Time
-	networkGeneration uint64
+	task               Task
+	retry              RetryFunc
+	cancel             context.CancelFunc
+	groupCancelContext context.Context // Agent-owned upload group; never persisted
+	lastBytes          int64
+	lastAt             time.Time
+	rateBaseBytes      int64
+	rateStartedAt      time.Time
+	networkGeneration  uint64
 }
 
 type Manager struct {
@@ -279,7 +280,7 @@ func (m *Manager) StartChildrenByID(parentID string, specs []Spec) []*Handle {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	parent := m.entries[parentID]
-	if parent == nil {
+	if parent == nil || parent.task.State == StateCancelling || terminalState(parent.task.State) {
 		return nil
 	}
 	rootID := transferRootID(parent.task)
@@ -302,6 +303,13 @@ func (m *Manager) StartChildrenByID(parentID string, specs []Spec) []*Handle {
 
 func (m *Manager) StartChild(parent *Handle, spec Spec) *Handle {
 	if m == nil || parent == nil || parent.manager != m {
+		return nil
+	}
+	m.mu.Lock()
+	parentEntry := m.entries[parent.ID()]
+	inactive := parentEntry == nil || parentEntry.task.State == StateCancelling || terminalState(parentEntry.task.State)
+	m.mu.Unlock()
+	if inactive {
 		return nil
 	}
 	spec.Scope = ScopeItem
@@ -488,6 +496,68 @@ func (h *Handle) BindCancel(cancel context.CancelFunc) bool {
 	return true
 }
 
+// BindGroupCancelContext owns an upload group's cancellable lifetime across
+// separate renderer-driven Agent IPC requests. Never bind a durable sync task.
+func (h *Handle) BindGroupCancelContext(ctx context.Context, cancel context.CancelFunc) bool {
+	if h == nil || h.manager == nil || ctx == nil || cancel == nil || ctx.Err() != nil {
+		return false
+	}
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[h.id]
+	if e == nil || e.task.Scope != ScopeGroup || e.task.Kind != KindUpload ||
+		e.task.Direction != "upload" || !activeState(e.task.State) ||
+		e.task.State == StateCancelling || e.cancel != nil {
+		return false
+	}
+	e.groupCancelContext = ctx
+	e.cancel = cancel
+	e.task.Cancelable = true
+	m.touchLocked()
+	return true
+}
+
+// UploadGroupContext composes exactly one group or its child network request
+// with the authenticated Agent's original transfer ownership. It does not
+// change other uploads, hydration, or durable sync execution contexts.
+func (m *Manager) UploadGroupContext(parent context.Context, id string, child bool) (context.Context, context.CancelFunc, error) {
+	if m == nil || parent == nil || id == "" {
+		return nil, nil, errors.New("upload transfer context unavailable")
+	}
+	m.mu.Lock()
+	item := m.entries[id]
+	group := item
+	if child && item != nil {
+		if item.task.Scope != ScopeItem || item.task.Kind != KindUpload ||
+			item.task.Direction != "upload" || item.task.ParentID == "" ||
+			item.task.RootID != item.task.ParentID ||
+			!activeState(item.task.State) || item.task.State == StateCancelling {
+			item = nil
+		} else {
+			group = m.entries[item.task.ParentID]
+		}
+	}
+	var owner context.Context
+	if item != nil && group != nil && group.task.Scope == ScopeGroup &&
+		group.task.Kind == KindUpload && group.task.Direction == "upload" &&
+		activeState(group.task.State) && group.task.State != StateCancelling {
+		owner = group.groupCancelContext
+	}
+	m.mu.Unlock()
+	if owner == nil || owner.Err() != nil {
+		return nil, nil, context.Canceled
+	}
+	requestCtx, cancel := context.WithCancel(parent)
+	stop := context.AfterFunc(owner, cancel)
+	if err := owner.Err(); err != nil {
+		stop()
+		cancel()
+		return nil, nil, err
+	}
+	return requestCtx, func() { stop(); cancel() }, nil
+}
+
 // Cancel requests abort of exactly one bound request. Only its original
 // worker may confirm a terminal state after the I/O has stopped.
 // AllowLocalReveal is invoked only by the owning Agent after it has created
@@ -561,6 +631,12 @@ func (m *Manager) Clear() {
 	defer m.mu.Unlock()
 	if len(m.entries) == 0 && len(m.order) == 0 {
 		return
+	}
+	// Account switching must not leave an old renderer upload in flight.
+	for _, e := range m.entries {
+		if e.groupCancelContext != nil && e.cancel != nil {
+			e.cancel()
+		}
 	}
 	m.entries = make(map[string]*entry)
 	m.order = nil
@@ -995,6 +1071,10 @@ func (m *Manager) finishState(id, state string, err error) error {
 	if e == nil {
 		return errors.New("transfer not found")
 	}
+	if e.groupCancelContext != nil && e.cancel != nil {
+		e.cancel() // Release the group context on normal terminalization too.
+	}
+	e.groupCancelContext = nil
 	e.cancel = nil
 	e.task.Cancelable = false
 	e.task.State = state
