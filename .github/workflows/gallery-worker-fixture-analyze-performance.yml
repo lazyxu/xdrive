@@ -1,0 +1,85 @@
+name: Gallery 100k Worker fixture ANALYZE performance diagnosis
+
+on:
+  push:
+    branches: ["perf/gallery-worker-100k-fixture-analyze"]
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-worker-fixture-analyze-100k:
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/perf/gallery-worker-100k-fixture-analyze') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-worker-100k-fixture-analyze')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --shm-size=256m
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_SELECTION_JOB_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Validate test-only source Go format
+        run: |
+          set -euo pipefail
+          diff="$(gofmt -d internal/api/media_selection_jobs_performance_integration_test.go)"
+          if [ -n "$diff" ]; then
+            printf '%s\n' "$diff"
+            exit 1
+          fi
+      - name: Three independent alternating PostgreSQL before/after Worker runs
+        run: |
+          set -euo pipefail
+          root="perf-results/gallery-worker-fixture-stats-n3"
+          mkdir -p "$root/before" "$root/after"
+          for sample in 1 2 3; do
+            arms="before after"
+            if [ "$sample" = "2" ]; then
+              arms="after before"
+            fi
+            for arm in $arms; do
+              analyze="0"
+              if [ "$arm" = after ]; then
+                analyze="1"
+              fi
+              echo "G07_WORKER_STATS_ARM sample=$sample arm=$arm analyze=$analyze"
+              env XD_GALLERY_WORKER_FIXTURE_ANALYZE="$analyze" \
+                /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+                  -o "$root/$arm/sample-$sample.time" \
+                  go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k$' -timeout=12m -count=1 -v ./internal/api \
+                | tee "$root/$arm/sample-$sample.log"
+            done
+          done
+          python3 scripts/ci/parse-gallery-selection-enqueue-n3.py "$root/before"
+          python3 scripts/ci/parse-gallery-selection-enqueue-n3.py "$root/after"
+          python3 scripts/ci/compare-gallery-worker-stats-n3.py "$root"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-100k-worker-postgresql-fixture-analyze-n3
+          path: perf-results/gallery-worker-fixture-stats-n3/
+          if-no-files-found: warn
+          retention-days: 14

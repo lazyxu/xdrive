@@ -78,6 +78,21 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 			if job.TotalItems != int64(scale) || server.mediaSelections[token] != nil {
 				t.Fatalf("enqueue frozen mismatch: %+v", job)
 			}
+			statsMode := "original"
+			statsRefreshMS := int64(0)
+			if os.Getenv("XD_GALLERY_WORKER_FIXTURE_ANALYZE") == "1" {
+				statsMode = "analyzed"
+				statsStarted := time.Now()
+				for _, table := range []string{"xd_nodes", "xd_photo_assets"} {
+					if err := db.Exec("ANALYZE " + table).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				statsRefreshMS = time.Since(statsStarted).Milliseconds()
+			}
+			// ANALYZE is performed only in this synthetic test schema,
+			// outside the original durable Worker timing window. The Server
+			// receives unchanged production SQL, retries and row-level locks.
 			profile.setPhase("worker")
 			runStarted := time.Now()
 			chunks := 0
@@ -132,7 +147,11 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 				HeapAfter          uint64                                          `json:"heap_after_bytes"`
 				SQLProfile         map[string]map[string]gallerySelectionSQLBucket `json:"sql_profile"`
 				WorkerSELECTDetail map[string]galleryWorkerSQLDetail               `json:"worker_select_detail"`
-			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc, sqlProfile, queryDetail}
+
+				StatsMode string `json:"stats_mode"`
+
+				StatsRefreshMS int64 `json:"stats_refresh_ms"`
+			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc, sqlProfile, queryDetail, statsMode, statsRefreshMS}
 			b, _ := json.Marshal(result)
 			t.Logf("G07_SELECTION_JOB_BASELINE %s", b)
 		})
