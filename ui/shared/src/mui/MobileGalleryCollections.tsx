@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Box, Button, Stack, Typography } from '@mui/material'
+import { Box, Button, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type {
   MediaAlbum, MediaMemory, MediaPersonIdentity, MediaPetFacet,
@@ -9,6 +11,66 @@ import type { MediaThumbnailLoader } from './MediaGallery'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
 import { readMediaAlbumPreferences, sortedMediaAlbums } from './MediaGalleryAlbumOrganization'
+
+
+type GalleryCollectionGroupID =
+  | 'pinned' | 'memories' | 'albums' | 'people'
+  | 'places' | 'sync-folders' | 'utilities'
+type GalleryCollectionsLayout = 'mixed' | 'large' | 'small'
+type GalleryCollectionsPresentation = {
+  layout: GalleryCollectionsLayout
+  collapsed: GalleryCollectionGroupID[]
+}
+const GROUP_IDS: readonly GalleryCollectionGroupID[] = [
+  'pinned', 'memories', 'albums', 'people', 'places', 'sync-folders', 'utilities',
+]
+const COLLECTIONS_LAYOUT_KEY = 'xdrive.gallery.mobile.collections.layout.v1'
+function normalizeCollectionPresentation(value: unknown): GalleryCollectionsPresentation {
+  const fallback: GalleryCollectionsPresentation = { layout: 'mixed', collapsed: [] }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return fallback
+  const data = value as Partial<GalleryCollectionsPresentation>
+  const layout: GalleryCollectionsLayout =
+    data.layout === 'large' || data.layout === 'small' ? data.layout : 'mixed'
+  const collapsed = Array.isArray(data.collapsed)
+    ? Array.from(new Set(data.collapsed.filter((id): id is GalleryCollectionGroupID =>
+        GROUP_IDS.includes(id as GalleryCollectionGroupID))))
+    : []
+  return { layout, collapsed }
+}
+export function xDriveReadMobileGalleryCollectionsPresentation(accountScope: string): GalleryCollectionsPresentation {
+  if (!accountScope || typeof window === 'undefined') return normalizeCollectionPresentation(null)
+  try {
+    return normalizeCollectionPresentation(JSON.parse(
+      window.localStorage.getItem(COLLECTIONS_LAYOUT_KEY + ':' + encodeURIComponent(accountScope)) || 'null',
+    ))
+  } catch {
+    return normalizeCollectionPresentation(null)
+  }
+}
+export function xDriveWriteMobileGalleryCollectionsPresentation(
+  accountScope: string, value: GalleryCollectionsPresentation,
+) {
+  if (!accountScope || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      COLLECTIONS_LAYOUT_KEY + ':' + encodeURIComponent(accountScope),
+      JSON.stringify(normalizeCollectionPresentation(value)),
+    )
+  } catch {
+    // Private-mode storage failures cannot prevent browsing or switching layouts.
+  }
+}
+/** Presentation geometry only. Media item paging still belongs to shared VirtualCollection. */
+export function xDriveMobileGalleryCollectionTileWidth(
+  layout: GalleryCollectionsLayout, group: GalleryCollectionGroupID,
+) {
+  if (layout === 'large') return 196
+  if (layout === 'small') return 104
+  // The mixed default intentionally gives Memories more visual weight.
+  if (group === 'memories') return 184
+  if (group === 'pinned' || group === 'utilities') return 132
+  return 144
+}
 
 type CollectionCard = {
   key: string
@@ -76,51 +138,88 @@ function CollectionCover({
   )
 }
 
+
 function CollectionGroup({
-  title, cards, loadThumbnail, onViewAll,
-}: { title: string; cards: readonly CollectionCard[]; loadThumbnail: MediaThumbnailLoader; onViewAll?: () => void }) {
+  id, title, cards, loadThumbnail, onViewAll, layout, collapsed, onToggleCollapsed,
+}: {
+  id: GalleryCollectionGroupID
+  title: string
+  cards: readonly CollectionCard[]
+  loadThumbnail: MediaThumbnailLoader
+  onViewAll?: () => void
+  layout: GalleryCollectionsLayout
+  collapsed: boolean
+  onToggleCollapsed: (id: GalleryCollectionGroupID) => void
+}) {
   if (!cards.length && !onViewAll) return null
+  const tileWidth = xDriveMobileGalleryCollectionTileWidth(layout, id)
   return (
-    <Stack spacing={1} data-xdrive-mobile-gallery-collection-group={title}>
+    <Stack spacing={1} data-xdrive-mobile-gallery-collection-group={title}
+      data-xdrive-mobile-gallery-collection-group-id={id}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1.5 }}>
         <Typography component="h3" fontWeight={750} variant="h6">
           {title}
         </Typography>
-        {onViewAll ? (
-          <Button size="small" data-xdrive-mobile-gallery-view-all={title}
-            aria-label={'查看全部' + title}
-            onClick={onViewAll} sx={{ minHeight: 44, minWidth: 72 }}>
-            查看全部
-          </Button>
-        ) : null}
+        <Stack direction="row" spacing={0.25} alignItems="center">
+          {onViewAll ? (
+            <Button size="small" data-xdrive-mobile-gallery-view-all={title}
+              aria-label={'查看全部' + title}
+              onClick={onViewAll} sx={{ minHeight: 44, minWidth: 72 }}>
+              查看全部
+            </Button>
+          ) : null}
+          <IconButton size="small" data-xdrive-mobile-gallery-collapse-group={id}
+            aria-label={(collapsed ? '展开' : '折叠') + title}
+            aria-expanded={!collapsed}
+            aria-controls={'xdrive-mobile-gallery-group-content-' + id}
+            onClick={() => onToggleCollapsed(id)}
+            sx={{ minHeight: 44, minWidth: 44 }}>
+            <KeyboardArrowRightRoundedIcon sx={{
+              transform: collapsed ? undefined : 'rotate(90deg)',
+            }} />
+          </IconButton>
+        </Stack>
       </Stack>
       {cards.length ? (
-        <Stack direction="row" spacing={1.25} role="list"
-        sx={{ px: 1.5, pb: 1, overflowX: 'auto',
-          overscrollBehaviorX: 'contain', scrollbarWidth: 'none',
-          '&::-webkit-scrollbar': { display: 'none' } }}>
-        {cards.map((card) => (
-          <Box role="listitem" key={card.key} sx={{ flex: '0 0 144px', width: 144, minWidth: 0 }}>
-            <Button onClick={card.activate} aria-label={card.title}
-              data-xdrive-mobile-gallery-collection-card={card.key}
-              sx={{
-                p: 0, minWidth: 0, width: '100%',
-                display: 'flex', alignItems: 'stretch', flexDirection: 'column',
-                textTransform: 'none', textAlign: 'left', color: 'text.primary',
-                borderRadius: 2,
-              }}>
-              <CollectionCover title={card.title} nodeID={card.coverNodeID}
-                loadThumbnail={loadThumbnail} />
-              <Typography variant="body2" fontWeight={650} noWrap sx={{ width: '100%', pt: 0.75 }}>
-                {card.title}
-              </Typography>
-              {card.detail ? (
-                <Typography variant="caption" color="text.secondary" noWrap
-                  sx={{ width: '100%' }}>{card.detail}</Typography>
-              ) : null}
-            </Button>
-          </Box>
-        ))}
+        <Stack id={'xdrive-mobile-gallery-group-content-' + id}
+          direction="row" spacing={collapsed ? 0.75 : 1.25} role="list"
+          data-xdrive-mobile-gallery-group-collapsed={collapsed ? id : undefined}
+          data-xdrive-mobile-gallery-group-tiles={collapsed ? undefined : id}
+          sx={{ px: 1.5, pb: 1, overflowX: 'auto',
+            overscrollBehaviorX: 'contain', scrollbarWidth: 'none',
+            '&::-webkit-scrollbar': { display: 'none' } }}>
+          {cards.map((card) => (
+            <Box role="listitem" key={card.key}
+              data-xdrive-mobile-gallery-card-width={collapsed ? undefined : tileWidth}
+              sx={collapsed
+                ? { flex: '0 0 auto', minWidth: 0 }
+                : { flex: '0 0 ' + tileWidth + 'px', width: tileWidth, minWidth: 0 }}>
+              <Button onClick={card.activate} aria-label={card.title}
+                data-xdrive-mobile-gallery-collection-card={card.key}
+                sx={collapsed ? {
+                  minHeight: 44, px: 1.5, borderRadius: 99,
+                  bgcolor: 'action.hover', textTransform: 'none',
+                } : {
+                  p: 0, minWidth: 0, width: '100%',
+                  display: 'flex', alignItems: 'stretch', flexDirection: 'column',
+                  textTransform: 'none', textAlign: 'left', color: 'text.primary',
+                  borderRadius: 2,
+                }}>
+                {!collapsed ? (
+                  <CollectionCover title={card.title} nodeID={card.coverNodeID}
+                    loadThumbnail={loadThumbnail} />
+                ) : null}
+                <Typography variant="body2" fontWeight={650} noWrap
+                  sx={{ width: collapsed ? 'auto' : '100%', pt: collapsed ? 0 : 0.75 }}>
+                  {card.title}
+                </Typography>
+                {!collapsed && card.detail ? (
+                  <Typography variant="caption" color="text.secondary" noWrap
+                    sx={{ width: '100%' }}>{card.detail}</Typography>
+                ) : null}
+              </Button>
+            </Box>
+          ))}
         </Stack>
       ) : null}
     </Stack>
@@ -134,6 +233,41 @@ export function XDriveMobileGalleryCollections({
   onOpenPet, onOpenPlace, onOpenSyncFolder,
 }: XDriveMobileGalleryCollectionsProps) {
   const open = (section: MediaGallerySection) => () => onOpenSection(section)
+  const [layoutAnchor, setLayoutAnchor] = useState<HTMLElement | null>(null)
+  const [savedPresentation, setSavedPresentation] = useState(() => ({
+    accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope),
+  }))
+  useEffect(() => {
+    setSavedPresentation((current) => current.accountScope === accountScope
+      ? current : { accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope) })
+    setLayoutAnchor(null)
+  }, [accountScope])
+  const presentation = savedPresentation.accountScope === accountScope
+    ? savedPresentation
+    : { accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope) }
+  useEffect(() => {
+    if (savedPresentation.accountScope !== accountScope) return
+    xDriveWriteMobileGalleryCollectionsPresentation(accountScope, savedPresentation)
+  }, [accountScope, savedPresentation])
+  const changePresentation = (update: Partial<GalleryCollectionsPresentation>) => {
+    setSavedPresentation((previous) => {
+      const current = previous.accountScope === accountScope
+        ? previous : { accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope) }
+      return { ...current, ...update }
+    })
+    setLayoutAnchor(null)
+  }
+  const toggleCollapsed = (id: GalleryCollectionGroupID) => {
+    const collapsed = presentation.collapsed.includes(id)
+      ? presentation.collapsed.filter((candidate) => candidate !== id)
+      : [...presentation.collapsed, id]
+    changePresentation({ collapsed })
+  }
+  const groupProps = (id: GalleryCollectionGroupID) => ({
+    id, layout: presentation.layout,
+    collapsed: presentation.collapsed.includes(id),
+    onToggleCollapsed: toggleCollapsed,
+  })
   // Reuse the exact account-scoped album pin order from the shared Web/Desktop
   // Album Organizer. These are previews only; all pinned albums remain in Albums.
   const pinnedAlbums: CollectionCard[] = onOpenAlbum
@@ -209,17 +343,51 @@ export function XDriveMobileGalleryCollections({
     { key: 'trash', title: '回收站', activate: open('trash') },
   ]
 
+
   return (
     <Stack id="xdrive-mobile-gallery-collections" data-xdrive-mobile-gallery-collections
       role="tabpanel" aria-label="精选集"
       spacing={2.75} sx={{ minWidth: 0, pt: 0.75, pb: 1 }}>
-      <CollectionGroup title="固定项目" cards={pinned} loadThumbnail={loadThumbnail} onViewAll={pinnedAlbums.length ? open('albums') : undefined} />
-      <CollectionGroup title="回忆" cards={recent} loadThumbnail={loadThumbnail} onViewAll={open('memories')} />
-      <CollectionGroup title="相册" cards={ownedAlbums} loadThumbnail={loadThumbnail} onViewAll={open('albums')} />
-      <CollectionGroup title="人物与宠物" cards={identities} loadThumbnail={loadThumbnail} onViewAll={open('people')} />
-      <CollectionGroup title="地点" cards={placesCards} loadThumbnail={loadThumbnail} onViewAll={placesCards.length ? open('places') : undefined} />
-      <CollectionGroup title="同步文件夹" cards={folderCards} loadThumbnail={loadThumbnail} onViewAll={folderCards.length ? open('albums') : undefined} />
-      <CollectionGroup title="实用工具" cards={utilities} loadThumbnail={loadThumbnail} />
+      <Stack direction="row" alignItems="center" justifyContent="flex-end" sx={{ px: 1.5 }}>
+        <Button size="small" data-xdrive-mobile-gallery-layout-trigger
+          aria-label="精选集布局" aria-haspopup="menu"
+          onClick={(event) => setLayoutAnchor(event.currentTarget)}
+          sx={{ minHeight: 44, minWidth: 44 }}>
+          <GridViewRoundedIcon fontSize="small" />
+          布局
+        </Button>
+      </Stack>
+      <Menu anchorEl={layoutAnchor} open={Boolean(layoutAnchor)}
+        onClose={() => setLayoutAnchor(null)} aria-label="精选集布局选项">
+        {([
+          ['large', '大图标'], ['small', '小图标'], ['mixed', '混合图标'],
+        ] as const).map(([mode, label]) => (
+          <MenuItem key={mode} data-xdrive-mobile-gallery-layout-option={mode}
+            selected={presentation.layout === mode}
+            onClick={() => changePresentation({ layout: mode })}
+            sx={{ minHeight: 44 }}>{label}</MenuItem>
+        ))}
+        <MenuItem data-xdrive-mobile-gallery-layout-collapse-all
+          onClick={() => changePresentation({ collapsed: [...GROUP_IDS] })}
+          sx={{ minHeight: 44 }}>全部折叠</MenuItem>
+        <MenuItem data-xdrive-mobile-gallery-layout-expand-all
+          onClick={() => changePresentation({ collapsed: [] })}
+          sx={{ minHeight: 44 }}>全部展开</MenuItem>
+      </Menu>
+      <CollectionGroup {...groupProps('pinned')} title="固定项目" cards={pinned}
+        loadThumbnail={loadThumbnail} onViewAll={pinnedAlbums.length ? open('albums') : undefined} />
+      <CollectionGroup {...groupProps('memories')} title="回忆" cards={recent}
+        loadThumbnail={loadThumbnail} onViewAll={open('memories')} />
+      <CollectionGroup {...groupProps('albums')} title="相册" cards={ownedAlbums}
+        loadThumbnail={loadThumbnail} onViewAll={open('albums')} />
+      <CollectionGroup {...groupProps('people')} title="人物与宠物" cards={identities}
+        loadThumbnail={loadThumbnail} onViewAll={open('people')} />
+      <CollectionGroup {...groupProps('places')} title="地点" cards={placesCards}
+        loadThumbnail={loadThumbnail} onViewAll={placesCards.length ? open('places') : undefined} />
+      <CollectionGroup {...groupProps('sync-folders')} title="同步文件夹" cards={folderCards}
+        loadThumbnail={loadThumbnail} onViewAll={folderCards.length ? open('albums') : undefined} />
+      <CollectionGroup {...groupProps('utilities')} title="实用工具" cards={utilities}
+        loadThumbnail={loadThumbnail} />
     </Stack>
   )
 }
