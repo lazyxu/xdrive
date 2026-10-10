@@ -68,6 +68,7 @@ export function XDriveMobileGalleryChrome({
   const [searchFocus, setSearchFocus] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const [jumpDay, setJumpDay] = useState('')
   const searchHost = useRef<HTMLDivElement>(null)
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
@@ -91,6 +92,19 @@ export function XDriveMobileGalleryChrome({
     setSearchFocus(focus)
     setSearchOpen(true)
   }
+
+  const closeSortMenu = () => {
+    setSortAnchor(null)
+    setViewOptionsOpen(false)
+  }
+
+  // Collections overview must never retain detached Library menu actions.
+  useEffect(() => {
+    if (!showCollection) {
+      setSortAnchor(null)
+      setViewOptionsOpen(false)
+    }
+  }, [showCollection])
 
   const sheetSx = (maxHeight: string) => ({
     maxHeight: panelViewport ? panelViewport.height + 'px' : '100dvh',
@@ -137,7 +151,10 @@ export function XDriveMobileGalleryChrome({
               </Button>
               <IconButton aria-label="图库排序和筛选"
                 aria-haspopup="menu" aria-expanded={Boolean(sortAnchor)}
-                onClick={(event) => setSortAnchor(event.currentTarget)}
+                onClick={(event) => {
+                  setViewOptionsOpen(false)
+                  setSortAnchor(event.currentTarget)
+                }}
                 data-xdrive-mobile-gallery-sort-filter>
                 <SortRoundedIcon fontSize="small" />
               </IconButton>
@@ -174,20 +191,59 @@ export function XDriveMobileGalleryChrome({
       ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
-        onClose={() => setSortAnchor(null)} aria-label="图库排序和筛选">
-        {([
-          ['captured', 'asc', '拍摄时间 · 最早在前'],
-          ['captured', 'desc', '拍摄时间 · 最新在前'],
-          ['added', 'asc', '加入时间 · 最早在前'],
-          ['added', 'desc', '加入时间 · 最新在前'],
-        ] as const).map(([by, dir, label]) => (
-          <MenuItem key={by + dir} selected={sortBy === by && sortDir === dir}
-            onClick={() => { onSort(by, dir); setSortAnchor(null) }}
-            sx={{ minHeight: 44 }}>{label}</MenuItem>
+        onClose={closeSortMenu}
+        aria-label={viewOptionsOpen ? '图库显示选项' : '图库排序和筛选'}>
+        {showCollection && (viewOptionsOpen ? (
+          <>
+            <MenuItem data-xdrive-mobile-gallery-view-back
+              onClick={() => setViewOptionsOpen(false)}
+              sx={{ minHeight: 44, fontWeight: 650 }}>
+              <ArrowBackRoundedIcon fontSize="small" sx={{ mr: 1 }} />
+              排序和筛选
+            </MenuItem>
+            <MenuItem aria-label="放大照片缩略图" data-xdrive-mobile-gallery-zoom-in
+              disabled={density <= densityMin}
+              onClick={() => {
+                onDensityChange(Math.max(densityMin, density - densityStep))
+                closeSortMenu()
+              }}
+              sx={{ minHeight: 44 }}>放大</MenuItem>
+            <MenuItem aria-label="缩小照片缩略图" data-xdrive-mobile-gallery-zoom-out
+              disabled={density >= densityMax}
+              onClick={() => {
+                onDensityChange(Math.min(densityMax, density + densityStep))
+                closeSortMenu()
+              }}
+              sx={{ minHeight: 44 }}>缩小</MenuItem>
+            <MenuItem data-xdrive-mobile-gallery-aspect-crop
+              selected={aspectMode === 'crop'}
+              onClick={() => { onAspectModeChange('crop'); closeSortMenu() }}
+              sx={{ minHeight: 44 }}>方形裁切</MenuItem>
+            <MenuItem data-xdrive-mobile-gallery-aspect-contain
+              selected={aspectMode === 'contain'}
+              onClick={() => { onAspectModeChange('contain'); closeSortMenu() }}
+              sx={{ minHeight: 44 }}>完整比例（方形网格）</MenuItem>
+          </>
+        ) : (
+          <>
+            {([
+              ['captured', 'asc', '拍摄时间 · 最早在前'],
+              ['captured', 'desc', '拍摄时间 · 最新在前'],
+              ['added', 'asc', '加入时间 · 最早在前'],
+              ['added', 'desc', '加入时间 · 最新在前'],
+            ] as const).map(([by, dir, label]) => (
+              <MenuItem key={by + dir} selected={sortBy === by && sortDir === dir}
+                onClick={() => { onSort(by, dir); closeSortMenu() }}
+                sx={{ minHeight: 44 }}>{label}</MenuItem>
+            ))}
+            <MenuItem data-xdrive-mobile-gallery-filter disabled={!filterContent}
+              onClick={() => { closeSortMenu(); openFilter(false) }}
+              sx={{ minHeight: 44 }}>筛选图库</MenuItem>
+            <MenuItem data-xdrive-mobile-gallery-display-options
+              onClick={() => setViewOptionsOpen(true)}
+              sx={{ minHeight: 44 }}>显示选项</MenuItem>
+          </>
         ))}
-        <MenuItem data-xdrive-mobile-gallery-filter disabled={!filterContent}
-          onClick={() => { setSortAnchor(null); openFilter(false) }}
-          sx={{ minHeight: 44 }}>筛选图库</MenuItem>
       </Menu>
 
       {!selectionMode ? (
@@ -323,15 +379,6 @@ export function XDriveMobileGalleryChrome({
               />
             ) : null}
             <Typography variant="caption" color="text.secondary">
-              照片显示方式
-            </Typography>
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-              <Button variant={aspectMode === 'crop' ? 'contained' : 'outlined'}
-                onClick={() => onAspectModeChange('crop')}>方形裁切</Button>
-              <Button variant={aspectMode === 'contain' ? 'contained' : 'outlined'}
-                onClick={() => onAspectModeChange('contain')}>完整比例</Button>
-            </Stack>
-            <Typography variant="caption" color="text.secondary">
               照片墙最少列数：{density} 列
             </Typography>
             <Slider size="small" aria-label="移动图库缩略图密度"
@@ -340,24 +387,6 @@ export function XDriveMobileGalleryChrome({
               value={density} onChange={(_event, value) => {
                 if (typeof value === 'number') onDensityChange(value)
               }} />
-            {showCollection ? (
-              <Stack direction="row" spacing={1} data-xdrive-mobile-gallery-view-zoom>
-                <Button size="small" variant="outlined"
-                  aria-label="放大照片缩略图" data-xdrive-mobile-gallery-zoom-in
-                  disabled={density <= densityMin}
-                  onClick={() => onDensityChange(Math.max(densityMin, density - densityStep))}
-                  sx={{ minHeight: 44, minWidth: 44, flex: 1 }}>
-                  放大
-                </Button>
-                <Button size="small" variant="outlined"
-                  aria-label="缩小照片缩略图" data-xdrive-mobile-gallery-zoom-out
-                  disabled={density >= densityMax}
-                  onClick={() => onDensityChange(Math.min(densityMax, density + densityStep))}
-                  sx={{ minHeight: 44, minWidth: 44, flex: 1 }}>
-                  缩小
-                </Button>
-              </Stack>
-            ) : null}
             {onFoldDuplicatesChange ? (
               <Button variant={foldDuplicates ? 'contained' : 'outlined'}
                 onClick={() => onFoldDuplicatesChange(!foldDuplicates)}>

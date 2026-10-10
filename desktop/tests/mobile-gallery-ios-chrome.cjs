@@ -215,22 +215,28 @@ test('iOS 27 View Options zoom commands reuse the shared column change callback 
       onDensityChange,
     })))
   })
-  await act(async () => { find(view, 'data-xdrive-mobile-gallery-more').props.onClick() })
-  const drawer = view.root.findAll(x => x.type === 'drawer' && x.props.open === true)
-  assert.equal(drawer.length, 1)
-  const zoom = find(view, 'data-xdrive-mobile-gallery-view-zoom')
-  assert.ok(zoom)
+  const openOptions = async () => {
+    await act(async () => {
+      find(view, 'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} })
+    })
+    await act(async () => { find(view, 'data-xdrive-mobile-gallery-display-options').props.onClick() })
+    assert.equal(view.root.findAll(x => x.type === 'menu'
+      && x.props['aria-label'] === '图库显示选项' && x.props.open === true).length, 1)
+  }
+  await openOptions()
   const zoomIn = find(view, 'data-xdrive-mobile-gallery-zoom-in')
   const zoomOut = find(view, 'data-xdrive-mobile-gallery-zoom-out')
-  assert.equal(zoomIn.type, 'button')
-  assert.equal(zoomOut.type, 'button')
+  assert.equal(zoomIn.type, 'menuitem')
+  assert.equal(zoomOut.type, 'menuitem')
   assert.equal(zoomIn.props['aria-label'], '放大照片缩略图')
   assert.equal(zoomOut.props['aria-label'], '缩小照片缩略图')
   for (const control of [zoomIn, zoomOut]) {
     assert.equal(control.props.sx.minHeight, 44)
     assert.equal(control.props.disabled, false)
   }
-  await act(async () => { zoomIn.props.onClick(); zoomOut.props.onClick() })
+  await act(async () => { zoomIn.props.onClick() })
+  await openOptions()
+  await act(async () => { find(view, 'data-xdrive-mobile-gallery-zoom-out').props.onClick() })
   assert.deepEqual(changed, [2, 4])
 
   await act(async () => {
@@ -239,8 +245,12 @@ test('iOS 27 View Options zoom commands reuse the shared column change callback 
       onDensityChange,
     })))
   })
+  await openOptions()
   assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-in').props.disabled, true)
   assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-out').props.disabled, false)
+  await act(async () => {
+    view.root.findAll(x => x.type === 'menu' && x.props.open === true)[0].props.onClose()
+  })
 
   await act(async () => {
     view.update(React.createElement(MobileChrome, props({
@@ -248,6 +258,7 @@ test('iOS 27 View Options zoom commands reuse the shared column change callback 
       onDensityChange,
     })))
   })
+  await openOptions()
   assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-in').props.disabled, false)
   assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-out').props.disabled, true)
   await act(async () => { view.unmount() })
@@ -260,7 +271,7 @@ test('Collections overview does not expose the Library zoom controls', async () 
       primaryTab: 'collections', showCollection: false, canGoBack: false,
     })))
   })
-  assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-view-zoom']).length, 0)
+  assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-display-options']).length, 0)
   assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-zoom-in']).length, 0)
   assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-zoom-out']).length, 0)
   await act(async () => { view.unmount() })
@@ -273,4 +284,69 @@ test('Zoom uses the existing shared Gallery columns, not a mobile-specific media
   assert.match(read(sourcePath), /Math\.max\(densityMin, density - densityStep\)/)
   assert.match(read(sourcePath), /Math\.min\(densityMax, density \+ densityStep\)/)
   assert.doesNotMatch(read(sourcePath), /<XDriveMobileAppHeader|fetch\(/)
+})
+
+
+test('P0-3h iOS 27 View Options shares aspect callbacks and Back returns to sort/filter', async () => {
+  const changed = []
+  let view
+  try {
+    await act(async () => {
+      view = renderer.create(React.createElement(MobileChrome, props({
+        aspectMode: 'crop', onAspectModeChange: value => changed.push(value),
+      })))
+    })
+    const openOptions = async () => {
+      await act(async () => {
+        find(view,'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} })
+      })
+      await act(async () => { find(view,'data-xdrive-mobile-gallery-display-options').props.onClick() })
+    }
+    await openOptions()
+    const crop = find(view,'data-xdrive-mobile-gallery-aspect-crop')
+    const contain = find(view,'data-xdrive-mobile-gallery-aspect-contain')
+    assert.equal(crop.type,'menuitem')
+    assert.equal(crop.props.selected,true)
+    assert.equal(contain.props.selected,false)
+    assert.equal(crop.props.sx.minHeight,44)
+    assert.equal(contain.props.sx.minHeight,44)
+    assert.match(String(contain.props.children),/方形网格/,
+      'square contain must not impersonate native variable-aspect grid')
+    await act(async () => { contain.props.onClick() })
+    assert.deepEqual(changed,['contain'])
+    assert.equal(view.root.findAll(x => x.type === 'menu' && x.props.open).length,0)
+    await openOptions()
+    await act(async () => { find(view,'data-xdrive-mobile-gallery-view-back').props.onClick() })
+    assert.equal(view.root.findAll(x => x.type === 'menu' &&
+      x.props['aria-label'] === '图库排序和筛选' && x.props.open).length,1)
+    await act(async () => { find(view,'data-xdrive-mobile-gallery-filter').props.onClick() })
+    assert.equal(view.root.findAll(x => x.type === 'drawer' && x.props.open).length,1)
+    assert.equal(find(view,'data-xdrive-mobile-gallery-filter-panel').props.children,'REUSED_GALLERY_FILTERS')
+  } finally {
+    if(view) await act(async () => { view.unmount() })
+  }
+})
+
+
+test('P0-3h Collections transition removes stale Library View Options before another section loads', async () => {
+  let view
+  try {
+    await act(async () => { view = renderer.create(React.createElement(MobileChrome, props())) })
+    await act(async () => {
+      find(view,'data-xdrive-mobile-gallery-sort-filter').props.onClick({currentTarget:{}})
+    })
+    await act(async () => { find(view,'data-xdrive-mobile-gallery-display-options').props.onClick() })
+    assert.ok(find(view,'data-xdrive-mobile-gallery-zoom-in'))
+    await act(async () => {
+      view.update(React.createElement(MobileChrome, props({
+        primaryTab:'collections',showCollection:false,canGoBack:false,
+      })))
+    })
+    assert.equal(view.root.findAll(x => x.type === 'menu' && x.props.open).length,0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-display-options']).length,0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-zoom-in']).length,0)
+    assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-aspect-contain']).length,0)
+  } finally {
+    if(view) await act(async () => { view.unmount() })
+  }
 })

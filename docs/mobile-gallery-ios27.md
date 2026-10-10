@@ -237,8 +237,19 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3g · iOS 27 统一「排序和筛选」入口（2026-10-10）
 
-**状态：单工作提交候选，完整 GitHub CI 待验证；iOS 27 真机视觉/触控待验收。** Apple iOS 27 [官方排序/筛选指南](https://support.apple.com/zh-cn/guide/iphone/iph2e66e2f2c/27/ios/27) 使用统一入口，xDrive 此前顶部拆成两个 44px 独立按钮。
+**状态：[#1293](https://github.com/lazyxu/xdrive/pull/1293) 精确单提交完整 CI `final-gate` 通过，已线性合并（`2db84f895`），相关旧分支已清理；iOS 27 真机视觉/触控仍待验收。** Apple iOS 27 [官方排序/筛选指南](https://support.apple.com/zh-cn/guide/iphone/iph2e66e2f2c/27/ios/27) 使用统一入口，xDrive 此前顶部拆成两个 44px 独立按钮。
 
 - 将移动图库顶部排序、筛选按钮合为一个至少 44px 的「图库排序和筛选」按钮；原有四种拍摄时间/加入时间升降序完整保留，菜单末尾的「筛选图库」直接打开原来的共享 `filterContent` Drawer；没有可用筛选时该项禁用。保留清晰的 aria 名称和展开状态。
 - `MobileGalleryChrome` 只变更编排，排序直接调用原 `onSort`，筛选仍消费同一个 Web Gallery 的业务状态与 Server REST 接口，不引入独立移动查询、虚拟列表、Viewer、任务或媒体索引。52px App Header、全屏 App Frame、4px 网格间距及 KFS GridMetrics 不变。
 - React 组件回归 `desktop/tests/mobile-gallery-ios27-sort-filter.cjs` 覆盖单入口、原四种排序回调、筛选 Drawer 引用和无可用筛选时禁用。此次不声称真机像素匹配、性能提升或 100k 渲染/HTTP 取消已验收。
+
+
+## P0-3h · 原生「排序和筛选 → 显示选项」菜单层级（2026-10-10）
+
+**状态：[#1294](https://github.com/lazyxu/xdrive/pull/1294) 已在 #1293 合并后重建为独立 `master` 单工作提交候选；最终精确提交 CI、合并及真机验收均待完成。** Apple iOS 27 官方 [浏览照片图库](https://support.apple.com/zh-cn/guide/iphone/iph7d24753a5/27/ios/27) 明确要求从图库的「排序和筛选」进入「显示选项」后再放大/缩小、切换网格呈现。
+
+- **本轮实现边界：** 现有 `XDriveMobileGalleryChrome` 的「图库排序和筛选」菜单增加「显示选项」子级，并在同一原菜单内显示「放大、缩小、方形裁切、完整比例（方形网格）」；返回能回到排序和筛选。删除「更多」面板重复的缩放与长宽比入口，保留 xDrive 的精确列数 Slider、时区、跳转、折叠副本和扩展操作。每项实际调用已存在的 `onDensityChange/onAspectModeChange`，禁用状态与原边界一致，不改 Server 查询和媒体身份。
+- **严格不伪称原生功能：** `aspectMode=contain` 只改变**方形单元内的图片完整显示**，不是 iOS 27 的真正「原始比例网格」（可变单元高度/行布局）。菜单必须使用「完整比例（方形网格）」而非「原始比例网格」，后者需另行设计共享虚拟布局、锚点与 10k/100k 可见范围测试，真机图像校准前保持未交付状态。
+- **验收：** 原 React 组件测试移至真实菜单层级，验证 44px 触达、密度回调及 2/10 列边界；扩展回归测试验证显示模式回调、菜单返回与现有筛选 Drawer；新状态保持共用 `MediaGalleryDataSource`、VirtualGrid/Timeline、52px App Header 与完整 App Frame，不另建移动端后端或 Viewer。测试、CI 和 iOS 27 Safari 原生截屏的状态分开报告。
+
+- **首轮 CI 边界回归：** 原有 `Collections overview does not expose the Library zoom controls` 在 Test Renderer 中发现“未展开但仍挂载的排序菜单”包含 Library 显示选项；第一轮 Desktop 统计 2002 pass / 1 fail / 1 skip。通过只在 `showCollection` 为真时挂载菜单项、离开 Gallery 列表时关闭/清空菜单状态，补充从打开的 View Options 跳至 Collections 总览的真实 React 回归。该问题属于展示/生命周期隔离，不改变 Server 查询或 100k 虚拟列表；修订后的完整 CI 结果另计。
