@@ -61,13 +61,19 @@ func geoNamesDesiredSettings(ctx context.Context, db *gorm.DB, fallback float64)
 	}, nil
 }
 
-// Startup uses the exact same precedence as the administration API.
-func GeoNamesStartupMaxDistance(ctx context.Context, db *gorm.DB, fallback float64) (float64, error) {
+// Startup must capture the radius AND its persisted revision from one read.
+// A heartbeat cannot acknowledge a revision merely because the radius matches.
+func GeoNamesStartupDistanceRevision(ctx context.Context, db *gorm.DB, fallback float64) (float64, uint64, error) {
 	config, err := geoNamesDesiredSettings(ctx, db, fallback)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return config.MaxDistanceKM, nil
+	return config.MaxDistanceKM, config.Revision, nil
+}
+
+func GeoNamesStartupMaxDistance(ctx context.Context, db *gorm.DB, fallback float64) (float64, error) {
+	distance, _, err := GeoNamesStartupDistanceRevision(ctx, db, fallback)
+	return distance, err
 }
 
 func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
@@ -189,5 +195,6 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 	// Saved desired state becomes effective only on THIS instance after
 	// a successful transaction. Other replicas report pending until reloaded.
 	s.GeoNamesRuntime.Swap(candidate)
+	s.GeoNamesAppliedRevision.Store(nextRevision)
 	s.adminGeoNamesConfig(c)
 }

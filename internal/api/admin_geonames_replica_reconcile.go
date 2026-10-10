@@ -53,8 +53,14 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read committed GeoNames settings: %w", err)
 	}
-	if s.GeoNamesRuntime.Snapshot() == nil ||
-		s.GeoNamesRuntime.MaxDistanceKM() == desired.MaxDistanceKM {
+	if s.GeoNamesRuntime.Snapshot() == nil {
+		return nil
+	}
+	if s.GeoNamesRuntime.MaxDistanceKM() == desired.MaxDistanceKM {
+		// A newer audit revision can intentionally carry the same radius.
+		// This instance actually has the desired immutable resolver settings,
+		// so acknowledge the revision without an unnecessary full rebuild.
+		s.GeoNamesAppliedRevision.Store(desired.Revision)
 		return nil
 	}
 
@@ -81,6 +87,7 @@ func (s *Server) reconcileGeoNamesReplica(ctx context.Context) error {
 		return nil
 	}
 	s.GeoNamesRuntime.Swap(candidate)
+	s.GeoNamesAppliedRevision.Store(confirmed.Revision)
 	slog.Info("geonames_replica_radius_applied",
 		"revision", confirmed.Revision,
 		"max_distance_km", confirmed.MaxDistanceKM,

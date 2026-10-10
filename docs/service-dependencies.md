@@ -2,7 +2,7 @@
 
 ## Scope and status
 
-**Status:** Shared Web/Desktop **服务与依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Independent Pull Worker liveness is now observable through expiring PostgreSQL heartbeats (P1-D1), while its settings remain deployment-owned. Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.
+**Status:** Shared Web/Desktop **服务与依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Independent Pull Worker liveness is observable through expiring PostgreSQL heartbeats (P1-D1), and its bounded scheduling policy is administrator-controlled with safe task-boundary acknowledgement (merged P1-D2 #1300). Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.
 
 ### Contract
 
@@ -45,7 +45,7 @@ This page must **not** treat a service's configuration form, process presence an
 | Creative analyzer (cutout/erase/movie/collage) | Same optional Photo Intelligence runtime | Controlled deployment; independent model/info probe |
 | Media Worker / FFmpeg | Not yet integrated | Planned; **no enable button** or fabricated status |
 | PostgreSQL and file storage | Deployment volumes/database connection and backup policy | Restricted maintenance / controlled restart, not changed by web admin Server self-operation |
-| Background Pull Worker | Deployment-owned worker polling, scheduling and concurrency parameters | Fresh PostgreSQL heartbeat is visible; configuration remains deployment-only and restart-controlled, not editable from this page |
+| Background Pull Worker | Administrator can version, edit and roll back the scan/poll/concurrency policy; deployment still owns Worker container lifecycle | Real Worker heartbeat acknowledges effective policy at completed Pull batch boundaries, without forced restart |
 | Caddy/HTTPS | Deployment parameters/Host Manager when explicitly supported | Controlled redeploy/restart; do not mount or expose Docker socket |
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
@@ -153,3 +153,16 @@ The independent Pull Worker now supports administrator-only, version-guarded des
 - `config_mode=in-app` and `apply_mode=task-boundary` apply only to these three scheduling settings. Installing/restarting/upgrading container images, CPU/memory limits, storage, PostgreSQL, Caddy or FFmpeg Media Worker still needs a restricted deployment controller that this phase does not add. No Docker socket is exposed.
 
 **Tests and delivery:** bound validation; real PostgreSQL revision/audit/rollback and worker acknowledgement; safe Worker scheduler rebuild; shared Web/Desktop port, Go Client, Desktop IPC and Electron transport; exact-head GitHub CI. Do not claim runtime application merely because the Server saved a revision or green build exists; effective status requires a live Worker heartbeat.
+
+
+### P1-B2d: observed GeoNames Server replica revision and dataset consistency (implementation)
+
+GeoNames radius reconciliation from P1-B2c applies per Server process, but the existing admin status only displays the Server instance reached by the request. This phase adds a **bounded, privacy-safe observation** of other online Server instances; it does **not** create a complete cluster membership registry or change deployment ownership of GeoNames datasets.
+
+- Every running Server publishes a short-lived lease in `xd_geonames_replica_presence` approximately every five seconds, expiring after 20 seconds. Its process-only random ID remains PostgreSQL-internal; the row contains whether an immutable GeoNames resolver is actually loaded, effective matching distance, effective audited revision and resolver content fingerprint. It contains no hostname, mount path, coordinates, Source ID, account or credential.
+- Startup captures the persisted radius **and exact revision in the same read** as the loaded resolver. An administrator save/rollback or validated manual reload acknowledges a revision **only after** the live immutable resolver is published. A passive replica that reads a new revision with an unchanged radius can acknowledge it without rebuilding; failed dataset validation or audit never advances the acknowledgement.
+- The existing admin-only `GET /api/v1/admin/services/geonames` returns the current instance's desired/effective radius and revision **separately** from an aggregated view of fresh leases. The aggregate shows observed, applied and unconfigured instance counts, dataset fingerprint groups and consistency, and `unmanaged/unavailable/pending/applied/unknown` state. `applied` requires a persisted revision, at least one observed live instance, all observed instances with exact revision and radius, one identical nonempty fingerprint group, and a non-truncated query. A database error or missing older schema returns unknown instead of hiding the existing local editor or claiming success.
+- The shared Web/Desktop MUI page shows this read-only evidence using the already authenticated Server and Agent transport; no new control or Docker socket is introduced. Older Agents may omit the optional aggregate fields; the UI then explicitly reports that only the current instance can be verified.
+- This is **observed-live-replica consistency only**. Unobserved/dead instances, configured but non-starting deployments and future replicas are not proved applied. Even equal current resolver fingerprints do not mean the deployment-mounted dataset has been versioned, securely staged, distributed, or recoverably rolled back. Those are subsequent independent controls.
+
+**Acceptance:** Go unit tests for mixed versions, stale equal-radius revision, unconfigured/missing/over-cap instances; PostgreSQL heartbeat upsert/expiry and redacted admin summary; existing immutable-snapshot reconciliation tests; Web/Desktop source parity and authoritative one-commit PR CI. No production dataset or multi-host rollout claim is made.

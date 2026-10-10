@@ -103,8 +103,9 @@ func main() {
 	}
 	var photoPlaceResolver photointelligence.PlaceResolver
 	var geoNamesRuntime *photointelligence.ReloadablePlaceResolver
+	var geoNamesEffectiveRevision uint64
 	if cfg.PhotoPlaceGeoNamesDir != "" {
-		distance, settingErr := api.GeoNamesStartupMaxDistance(
+		distance, revision, settingErr := api.GeoNamesStartupDistanceRevision(
 			context.Background(), db, cfg.PhotoPlaceMaxDistanceKM,
 		)
 		if settingErr != nil {
@@ -119,6 +120,7 @@ func main() {
 				log.Fatalf("load GeoNames photo place resolver: %v", loadErr)
 			}
 			geoNamesRuntime = photointelligence.NewReloadablePlaceResolver(resolver)
+			geoNamesEffectiveRevision = revision
 			photoPlaceResolver = geoNamesRuntime
 			slog.Info(
 				"photo_place_resolver_loaded",
@@ -235,6 +237,8 @@ func main() {
 		MediaIndexWakeups:           mediaIndexListener.Events,
 		FileOperationWakeups:        fileOperationListener.Wakeups,
 	}
+	srv.GeoNamesAppliedRevision.Store(geoNamesEffectiveRevision)
+	srv.StartGeoNamesReplicaPresence(serverCtx)
 	srv.StartBackgroundRuntimePresence(serverCtx)
 	srv.StartUploadJanitor(serverCtx)
 	srv.StartStorageSampler(serverCtx)
@@ -253,7 +257,7 @@ func main() {
 }
 
 func migrate(db *gorm.DB) error {
-	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.SourceWorkerPresence{}, &meta.AdminSourceWorkerSetting{}, &meta.AdminSourceWorkerRevision{}, &meta.ArchivePrepareRun{}, &meta.DownloadProgress{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.AdminServiceSecret{}, &meta.AdminGeoNamesSetting{}, &meta.AdminGeoNamesRevision{}, &meta.AdminPhotoAutoSetting{}, &meta.AdminPhotoAutoRevision{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoEditRecipe{}, &meta.PhotoCreativeGeneration{}, &meta.PhotoAlbumFolder{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{}, &meta.FileOperation{}, &meta.MediaSelectionJob{}, &meta.MediaSelectionJobItem{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}, &meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{}, &meta.StorageSample{}, &meta.BackgroundOwnerCancellation{}, &meta.BackgroundRuntimePresence{}, &meta.SourceWorkerPresence{}, &meta.GeoNamesReplicaPresence{}, &meta.AdminSourceWorkerSetting{}, &meta.AdminSourceWorkerRevision{}, &meta.ArchivePrepareRun{}, &meta.DownloadProgress{}, &meta.SystemMaintenanceRun{}, &meta.StagingCleanupRun{}, &meta.StagingCleanupFailure{}, &meta.Source{}, &meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{}, &meta.AdminServiceSecret{}, &meta.AdminGeoNamesSetting{}, &meta.AdminGeoNamesRevision{}, &meta.AdminPhotoAutoSetting{}, &meta.AdminPhotoAutoRevision{}, &meta.SourceConnectorConfig{}, &meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{}, &meta.MediaMetadata{}, &meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{}, &meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{}, &meta.PhotoEditRecipe{}, &meta.PhotoCreativeGeneration{}, &meta.PhotoAlbumFolder{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{}, &meta.PhotoAnalysisState{}, &meta.PhotoFace{}, &meta.PhotoPersonCluster{}, &meta.PhotoPersonClusterFace{}, &meta.PhotoPersonClusterState{}, &meta.PhotoIntelligenceReanalyzeIntent{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.PhotoPersonSuggestionReview{}, &meta.PhotoPlaceLabel{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoSemanticEmbedding{}, &meta.FileOperation{}, &meta.MediaSelectionJob{}, &meta.MediaSelectionJobItem{}, &meta.FileQuickAccess{}, &meta.FileFavorite{}, &meta.FileRecentAccess{}, &meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{}); err != nil {
 		return err
 	}
 	if err := db.Exec(`ALTER TABLE xd_source_item_metadata
