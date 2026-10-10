@@ -4,15 +4,17 @@
 
 An ordinary **local folder** selected by the user on Windows or Linux should push original files to an owner-authorized xDrive Source target. Existing xDrive CfAPI/FUSE two-way mount synchronization, Synology NAS Push, and Pull connectors are separate products and remain unchanged.
 
-The currently implemented L01-A is **Server-only, fail-closed**: the kind `local_folder` is recognized only in the push direction; a new Source always starts paused; activation and starting any run are denied until future device-bound authorization and native executor support exist. No user-facing operational preset is exposed. Source/CAS/upload code is not duplicated.
+The local-folder **enrollment and authorization flow is in master** (L01-A/B, Desktop native picker and shared Source Manager). L02-A/B have also delivered a bounded, read-only Windows/Linux inventory and optional native identity hints. L02-C adds only a local crash-safe inventory journal; it does **not** enable SourceRun, upload, deletion inference or automatic sync. The Server still rejects local-folder activation and run execution. Source/CAS/upload protocols remain shared rather than duplicated.
 
 | Phase | Deliverable | Status |
 | --- | --- | --- |
-| L01-A | local_folder push/paused activation gate; integration regression; AGENTS progress rule | implemented in this change; CI/merge separate |
-| L01-B | Authenticated client device registration, Root approval/binding, and Source Run authorization | registration/binding and Source Run proof preflight staged; native approval, transaction-bound enforcement and execution remain incomplete |
-| L02 | Windows/Linux streaming scan, stable local identity, per-root journal/state | not implemented |
+| L01-A | local_folder push/paused activation gate; integration regression; AGENTS progress rule | merged #1204 |
+| L01-B | Device registration, Root binding, runtime proof and revocation fencing, native Desktop Root grant | merged #1208, #1214, #1216, #1219, #1223 |
+| L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
+| L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
+| L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | proposed in this change; CI/merge separate |
 | L03 | Planner + resumable upload + SourceItem commit, crash/idempotency recovery | not implemented |
-| L04 | Desktop native root selection and shared Source Manager UI | not implemented |
+| L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
@@ -68,6 +70,14 @@ Opt-in `InventoryScanner.IncludeNativeIdentity` now emits a **root-scoped, opaqu
 **Important:** Native object identity does **not** equal logical SourceItem identity. Hard links share the same key while representing separate paths; a link count over one makes file rename candidates unsafe. Even strong single-link candidates are only evidence for the future journal/reconciliation layer, not authority for move, overwrite or deletion. The caller must revalidate Root and file identity around real byte reads in L03, reject ambiguous reuse and preserve the original file's logical identity if safe. The default scanner keeps native identity disabled for existing read-only previews and their original IO budget.
 
 Tests verify rename stability, hard-link ambiguity, per-Root scoping, opt-in behavior and cancelled inventories. This phase does **not** add an on-disk index or enable a SourceRun. `missing_inference_safe` remains false; Mirror and all upload operations remain disabled.
+
+## L02-C atomic Root-scoped local inventory journal (non-operational)
+
+`ScanInventoryToJournal` streams batches of L02-B native-identity observations into a private local NDJSON file. It retains constant-size buffers rather than loading an entire 100k inventory into the renderer or a process-wide JSON array. Every completed snapshot is flushed, `fsync`ed and renamed to an immutable local file; only then is the small `CURRENT.json` manifest atomically replaced. Old snapshots are deleted only after the new manifest is committed. An interrupted/failed/cancelled scan leaves the last complete generation selected. Restart verifies the authorized Root and streams the snapshot through SHA-256 before use; tampering, mismatched Root/Server/Source, and replaced drives fail closed.
+
+A gated native 100k filesystem test is included; it executes only when `XD_LOCALPUSH_STRESS_100K=1` is supplied. Merely providing this test is **not** a claimed measured 100k performance result. Record actual wall time, RSS and IO on real Windows/Linux devices before performance decisions.
+
+This is **strictly Agent-local state**; it is not a SourceRun checkpoint, stable SourceItem identity, automatic upload, or evidence for missing/deleted remote files. `MissingInferenceSafe` remains false. The next phase must implement the reconciler between consecutive snapshots and the remote Source, including hard-link-safe moves and crash idempotence, before enabling any transfer or Mirror.
 
 ## Non-negotiable invariants
 
