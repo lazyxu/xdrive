@@ -416,6 +416,21 @@ export function useXDriveFileExplorerUploadController<TFile>({
       }
     }
 
+    // Only transfer records that were registered before any file upload
+    // started can be safely marked cancelled by a detached UI lifecycle.
+    // Use this closure's original Port; never mutate replacement Agent scope.
+    const finishDetachedUnstarted = async (
+      extraChildIDs: readonly string[] = [],
+    ): Promise<XDriveFileExplorerUploadBatchResult> => {
+      for (const id of [...childIDs, ...extraChildIDs]) {
+        if (!id || terminalChildren.has(id)) continue
+        terminalChildren.add(id)
+        await finishQuietly(id, { state: 'cancelled' })
+      }
+      if (groupID) await finishQuietly(groupID, { state: 'cancelled' })
+      return idleResult(true, true)
+    }
+
     try {
       groupID = await transferLifecycle.startGroup({
         fileName: label,
@@ -423,10 +438,10 @@ export function useXDriveFileExplorerUploadController<TFile>({
         bytesTotal: knownBytes,
         itemsTotal: knownItems,
       })
-      if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+      if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
 
       const targets = await resolveTargets()
-      if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+      if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
       const childSizes = targets.map((target) => Math.max(0, fileSize(target.file)))
       const totalBytes = childSizes.reduce((sum, size) => sum + size, 0)
       let groupBytesDone = 0
@@ -438,7 +453,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
       }))
       if (transferLifecycle.startChildren && childInputs.length > 0) {
         const registeredChildIDs = await transferLifecycle.startChildren(groupID, childInputs)
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) {
+          return finishDetachedUnstarted(registeredChildIDs)
+        }
         if (registeredChildIDs.length !== targets.length) {
           throw new Error('传输子任务数量不匹配。')
         }
@@ -446,7 +463,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
       } else {
         for (let index = 0; index < childInputs.length; index += 1) {
           const childID = await transferLifecycle.startChild(groupID, childInputs[index])
-          if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+          if (!isCurrentLifecycle(lifecycleGeneration)) {
+            return finishDetachedUnstarted([childID])
+          }
           childIDs.push(childID)
         }
       }
@@ -466,7 +485,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       })
 
       await transferLifecycle.begin(groupID, { group: groupProgress() })
-      if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+      if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
 
       if (targets.length === 0) {
         await transferLifecycle.finish(groupID, { state: 'completed' })
@@ -487,7 +506,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
       let firstFailure: unknown = null
       let stoppedAt = targets.length
       const batchPreflights = await loadBatchPreflights(targets, lifecycleGeneration)
-      if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+      if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
 
       for (let index = 0; index < targets.length; index += 1) {
         const target = targets[index]

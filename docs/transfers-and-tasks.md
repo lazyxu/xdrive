@@ -129,3 +129,35 @@ fix commit; retain the existing hierarchical group lifecycle, conflict
 resolution, error reporting, Web/Desktop build and Go race contracts.
 This is a correctness/lifecycle fix, **not** a measured throughput gain;
 do not claim 100k performance improvements without separate benchmarks.
+
+## Grouped upload registration and detached session terminal states (2026-10-10, PR #1266)
+
+The shared Web/Desktop `FileExplorerUploadController.runGroup` must not
+leave queued/running transfer *tracking records* when a session or Agent
+capability changes **before the first actual file upload starts**. Once a
+group/child registration Promise returns, its IDs exist in the originating
+transfer Port even if the UI lifecycle is now obsolete. The old Port should
+best-effort `finish(id, {state:'cancelled'})` for those unstarted children
+and group rather than exiting without a terminal state. This preserves old
+session ownership and never sends the finish command through the new
+session. Existing server-owned durable operations and already-started file
+uploads must not be cancelled merely by UI teardown or window switching.
+
+**Real first-red, production unmodified:** GitHub Actions
+`38021728014`, test-only commit
+`56a6022e6dba858d0e84b668163b19e3b71c97ed`,
+`desktop/tests/shared-folder-upload-session-terminal-race.cjs`:
+four original real React Hook assertions **#1419–#1422** failed because
+`finish` calls were entirely absent after late startGroup, directory
+scan, batched startChildren, or sequential startChild. The normal same
+session completed group/children control **#1423** passed. First-red
+full desktop-tests: 1932 pass, 4 fail, 1 skip. The exact four
+first-red tests are preserved for the fix's same-interleaving retest.
+
+The minimal fix reuses the existing `finishQuietly` error-isolated Port
+bridge on those pre-upload registration and initialization exit paths.
+This is best-effort: an entirely unavailable old Agent may reject
+terminal updates, in which case reconciliation is a separate responsibility.
+No durable upload, Server API, Agent API, transfer speed or polling cadence
+changes. Require the original tests, related FileExplorer/transfer suites,
+Web/Desktop builds, Go race and authoritative exact-head PR final gate.
