@@ -57,7 +57,7 @@ import type {
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
-  MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
+  mobileFilesRowTextInset, MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
 
@@ -1267,14 +1267,15 @@ export default function MobileFiles(props: Props) {
           outlineColor: IOS_FILES_MOBILE_BLUE, outlineOffset: -2,
           '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE },
           ...(!effectiveGrid ? { '&:not(:last-child)::after': {
-            content: '""', position: 'absolute', bottom: 0, left: 60, right: 0,
+            content: '""', position: 'absolute', bottom: 0,
+            left: mobileFilesRowTextInset(selectionMode, depth), right: 0,
             borderBottom: '1px solid', borderColor: 'divider', pointerEvents: 'none',
           } } : {}),
         }}
       >
         {selectionMode ? (
           <Box sx={{ color: chosen ? 'primary.main' : 'text.disabled', width: 24, height: 24,
-            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {chosen ? <CheckCircleRoundedIcon fontSize="small"/> : <RadioButtonUncheckedRoundedIcon fontSize="small"/>}
           </Box>
         ) : null}
@@ -1287,8 +1288,8 @@ export default function MobileFiles(props: Props) {
           )}
         </Box>
         <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
-          <Typography variant="body2" fontWeight={500} noWrap textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
-          <Typography variant="caption" color="text.secondary" noWrap display="block" textAlign={effectiveGrid ? 'center' : 'left'}>
+          <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
+          <Typography data-mobile-files-item-meta variant="caption" color="text.secondary" noWrap display="block" textAlign={effectiveGrid ? 'center' : 'left'}>
             {inlineBranch?.error ?? (inlineBranch?.itemCount === 0 ? '空文件夹' :
               item.secondaryLabel || [labelOf(item), item.kind === 'file' && item.size !== undefined ? formatBytes(item.size) : ''].filter(Boolean).join(' · '))}
           </Typography>
@@ -1326,6 +1327,8 @@ export default function MobileFiles(props: Props) {
     locationKind?: 'cloud' | 'trash' | 'smart' | 'tag',
   ) => (
     <Box key={`${locationKind ?? owner ?? 'home'}:${String(entry.id)}`} role="button" tabIndex={0}
+      data-mobile-files-collection-row={owner}
+      aria-keyshortcuts={owner ? 'Shift+F10' : undefined}
       onClick={() => {
         if (cancelClickRef.current) { cancelClickRef.current = false; return }
         action()
@@ -1368,13 +1371,25 @@ export default function MobileFiles(props: Props) {
       }}
       onPointerCancel={() => { closeCollectionHold(); cancelClickRef.current = false }}
       onKeyDown={event => {
-        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action() }
+        // ContextMenu and Shift+F10 must work on the same Recent/Favorites
+        // selection as touch hold/right-click, without launching the item.
+        // Never turn a nested Browse-home edit control's key into row Open.
+        if (event.target !== event.currentTarget || event.altKey || event.ctrlKey || event.metaKey) return
+        if (owner && (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))) {
+          event.preventDefault()
+          const rect = event.currentTarget.getBoundingClientRect()
+          setCollectionMenu({ entry, owner, x: rect.left + 14, y: rect.top + 28 })
+        } else if (!event.shiftKey && (event.key === 'Enter' || event.key === ' ')) {
+          event.preventDefault()
+          action()
+        }
       }}
-      sx={{ display: 'flex', alignItems: 'center', minHeight: 64, px: 2, gap: 1.5,
+      sx={{ display: 'flex', alignItems: 'center', minHeight: MOBILE_FILES_ROW_HEIGHT, px: 2, gap: 1.5,
         position: 'relative',
         bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff',
         '&:not(:last-child)::after': {
-          content: '""', position: 'absolute', bottom: 0, left: 60, right: 0,
+          content: '""', position: 'absolute', bottom: 0,
+          left: mobileFilesRowTextInset(false), right: 0,
           borderBottom: '1px solid', borderColor: 'divider', pointerEvents: 'none',
         },
         '&:focus-visible': { outline: '2px solid', outlineColor: IOS_FILES_MOBILE_BLUE } }}>
@@ -1395,8 +1410,8 @@ export default function MobileFiles(props: Props) {
                       sx={{ width: 42, height: 42, borderRadius: 0 }}/>}
       </Box>
       <Box minWidth={0} flex={1}>
-        <Typography variant="body2" noWrap>{entry.name}</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (entry.kind === 'dir' ? '文件夹' : '文件')}</Typography>
+        <Typography data-mobile-files-collection-title variant="body2" noWrap>{entry.name}</Typography>
+        <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (entry.kind === 'dir' ? '文件夹' : '文件')}</Typography>
       </Box>
     </Box>
   )
@@ -2071,10 +2086,12 @@ export default function MobileFiles(props: Props) {
           ) : null}
           {itemMenu ? menuFor(itemMenu.item).filter(item => item.danger).map(mobileContextAction) : null}
         </Menu>
-        <Menu open={Boolean(collectionMenu)} onClose={() => setCollectionMenu(null)}
+        <Menu data-mobile-files-collection-menu open={Boolean(collectionMenu)} onClose={() => setCollectionMenu(null)}
           anchorReference="anchorPosition"
-          anchorPosition={collectionMenu ? { top: collectionMenu.y, left: collectionMenu.x } : undefined}>
-          {collectionMenu ? <MenuItem onClick={() => {
+          anchorPosition={collectionMenu ? { top: collectionMenu.y, left: collectionMenu.x } : undefined}
+          slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
+            maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)' } } }}>
+          {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const selectedEntry = collectionMenu.entry
             const owner = collectionMenu.owner
             setCollectionMenu(null)
@@ -2084,7 +2101,7 @@ export default function MobileFiles(props: Props) {
               if (accepted && intent === navigationIntentRef.current && selectedEntry.kind === 'dir') beginBrowse(selectedEntry.id)
             }).catch(props.onOpenError)
           }}>打开</MenuItem> : null}
-          {collectionMenu ? <MenuItem onClick={() => {
+          {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const entry = collectionMenu.entry
             setCollectionMenu(null)
             void props.loadNodeLocation(entry.id).then(location => {
@@ -2094,31 +2111,31 @@ export default function MobileFiles(props: Props) {
               }).catch(props.onOpenError)
             }).catch(props.onOpenError)
           }}>显示所在文件夹</MenuItem> : null}
-          {collectionMenu ? <MenuItem onClick={() => {
+          {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const entry = collectionMenu.entry
             setCollectionMenu(null)
             openProperties({ id: entry.id, name: entry.name, kind: entry.kind,
               size: entry.size, revision: entry.revision, path: entry.subtitle, updatedAt: entry.updatedAt })
           }}>属性</MenuItem> : null}
-          {collectionMenu?.owner === 'favorites' ? <MenuItem onClick={() => {
+          {collectionMenu?.owner === 'favorites' ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const id = collectionMenu.entry.id
             setCollectionMenu(null)
             void Promise.resolve(props.onUnfavorite(id)).catch(props.onOpenError)
           }}>取消收藏</MenuItem> : null}
           {collectionMenu && props.onCollectionAction ? (
-            <MenuItem data-mobile-files-collection-action="copy"
+            <MenuItem sx={{ minHeight: MIN_TOUCH }} data-mobile-files-collection-action="copy"
               onClick={() => runCollectionAction(collectionMenu.entry, 'copy')}>复制</MenuItem>
           ) : null}
           {collectionMenu && props.onCollectionAction ? (
-            <MenuItem data-mobile-files-collection-action="download"
+            <MenuItem sx={{ minHeight: MIN_TOUCH }} data-mobile-files-collection-action="download"
               onClick={() => runCollectionAction(collectionMenu.entry, 'download')}>下载</MenuItem>
           ) : null}
           {collectionMenu?.entry.kind === 'file' && props.onCollectionAction ? (
-            <MenuItem data-mobile-files-collection-action="share"
+            <MenuItem sx={{ minHeight: MIN_TOUCH }} data-mobile-files-collection-action="share"
               onClick={() => runCollectionAction(collectionMenu.entry, 'share')}>分享链接</MenuItem>
           ) : null}
           {collectionMenu?.entry.kind === 'file' && canNativeShareFile ? (
-            <MenuItem data-mobile-files-native-share-entry="collection"
+            <MenuItem sx={{ minHeight: MIN_TOUCH }} data-mobile-files-native-share-entry="collection"
               onClick={() => prepareNativeShare(collectionMenu.entry)}>
               <ShareRoundedIcon fontSize="small" sx={{ mr: 1 }}/>系统分享文件
             </MenuItem>

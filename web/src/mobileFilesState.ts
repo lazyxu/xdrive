@@ -13,6 +13,16 @@ export const MOBILE_FILES_MOVE_PX = 10
 export const MOBILE_FILES_ROW_HEIGHT = 68
 export const MOBILE_FILES_GRID_ROW_HEIGHT = 150
 
+// Actual leading edge of file text in List/Recent/Favorites. MUI 2-unit
+// horizontal padding (16px) + 44px thumbnail slot + 12px gap; selection
+// inserts a 24px circle and another 12px gap. Inline disclosure adds 16px
+// per level, capped at the same four levels as the rendered row indentation.
+// Keep separators aligned without changing the shared 68px virtual row height.
+export function mobileFilesRowTextInset(selectionMode: boolean, depth = 0): number {
+  const level = Number.isFinite(depth) ? Math.max(0, Math.min(4, Math.floor(depth))) : 0
+  return 16 + level * 16 + 44 + 12 + (selectionMode ? 24 + 12 : 0)
+}
+
 export const mobileFilesDefaultState = (): MobileFilesSavedState => ({
   section: 'browse', folderID: null, scrollTop: 0, view: 'details',
 })

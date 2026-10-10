@@ -173,4 +173,11 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 
 ## 2026-10-10 F-iOS27-08A · 对齐 iOS 27「文件」更多菜单的视图选项
 
-**独立单工作提交实现，等待完整 PR CI 和合并。** Apple 官方 iOS 27「文件」在目录“更多”菜单并列显示「图标／列表」，而此前 Mobile 只提供一项“切换到图标／列表”。现在在现有 MUI More 菜单里独立显示两种视图（图标、勾选态、44px 触控目标、可访问的单选语义），并让排序与分组紧邻；只修改 Mobile 的展示层和本机视图偏好，保持 Server 的排序/分组回调、宽屏 Web 的 Columns 偏好、一个虚拟化滚动宿主以及目录/Viewer 状态。当前已选项再次点击不会无谓重置滚动。测试覆盖菜单选中态、视图切换/持久化、回调不串扰及 44px 点击目标。真实 iOS 27 图片差异、Safari/安装模式、VoiceOver 与 375/390/899/900px 及 10k/100k 性能仍需另外验收；保持全屏 App Frame 与 52px 全局 App Header。
+**已合入：** [PR #1305](https://github.com/lazyxu/xdrive/pull/1305)，完整 CI [#38036163945](https://github.com/lazyxu/xdrive/actions/runs/38036163945) 和 Final Gate 均通过，线性合并 `eed0ed80`，临时分支已清理。 Apple 官方 iOS 27「文件」在目录“更多”菜单并列显示「图标／列表」，而此前 Mobile 只提供一项“切换到图标／列表”。现在在现有 MUI More 菜单里独立显示两种视图（图标、勾选态、44px 触控目标、可访问的单选语义），并让排序与分组紧邻；只修改 Mobile 的展示层和本机视图偏好，保持 Server 的排序/分组回调、宽屏 Web 的 Columns 偏好、一个虚拟化滚动宿主以及目录/Viewer 状态。当前已选项再次点击不会无谓重置滚动。测试覆盖菜单选中态、视图切换/持久化、回调不串扰及 44px 点击目标。真实 iOS 27 图片差异、Safari/安装模式、VoiceOver 与 375/390/899/900px 及 10k/100k 性能仍需另外验收；保持全屏 App Frame 与 52px 全局 App Header。
+
+
+## 2026-10-10 F-iOS27-08B · 行高／分隔线与键盘右键菜单
+
+**单工作提交实现，等待完整 PR CI 与合并。** 近期／收藏的虚拟列表用共享 68px 行高计算 before/after，但实际集合行仅 `minHeight:64`，可能使深层滚动错位。本阶段统一集合行与虚拟行的 68px 计算高度，并将列表分隔线与真实标题起点对齐：普通行 72px，多选行 108px，内嵌层级每级再加 16px（最多四级）；图标网格不受影响。Recent/Favorites 支持键盘 `ContextMenu`／`Shift+F10` 调用原长按菜单，沿用全部 Web Controller/Server 授权的文件打开、下载、属性、收藏操作；所有菜单项至少 44px，避免误触和嵌套按钮键盘事件串扰。挂载／纯函数回归测试覆盖 10k/100k 的虚拟行跨度、焦点、快捷键及原业务回调。
+
+这只修复 **已知内部布局不一致**，不能用 68px 或 72px 的代码常量宣称 iOS 27 真机像素级 1:1。真机截图与辅助功能、375/390/899/900px 的真实授权／错误对比、100k 实际浏览器资源测量和取消请求传播仍未完成。保留全屏 App Frame、52px 标题栏，以及 Web/Desktop/Mobile Web 共享 Server/虚拟化和 Mobile 仅无内部多标签页。
