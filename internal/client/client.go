@@ -471,6 +471,27 @@ type AdminGeoNamesConfig struct {
 	DatasetVersions        []AdminGeoNamesVersionGroup `json:"dataset_versions"`
 }
 
+type AdminGeoNamesSnapshot struct {
+	Fingerprint     string    `json:"fingerprint"`
+	ResolverVersion string    `json:"resolver_version"`
+	CheckedRadiusKM float64   `json:"checked_radius_km"`
+	CheckedRevision uint64    `json:"checked_revision"`
+	TotalBytes      int64     `json:"total_bytes"`
+	CreatedAt       time.Time `json:"created_at"`
+	LocallyPresent  bool      `json:"locally_present"`
+}
+
+type AdminGeoNamesSnapshotInput struct {
+	Revision        uint64 `json:"revision"`
+	ExpectedVersion string `json:"expected_version"`
+}
+
+type AdminGeoNamesSnapshotResult struct {
+	Staged   bool                  `json:"staged"`
+	Applied  bool                  `json:"applied"`
+	Snapshot AdminGeoNamesSnapshot `json:"snapshot"`
+}
+
 type AdminGeoNamesUpdate struct {
 	Revision      uint64  `json:"revision"`
 	MaxDistanceKM float64 `json:"max_distance_km"`
@@ -491,6 +512,12 @@ func (c *Client) AdminGeoNamesConfig(ctx context.Context) (AdminGeoNamesConfig, 
 func (c *Client) UpdateAdminGeoNames(ctx context.Context, input AdminGeoNamesUpdate) (AdminGeoNamesConfig, error) {
 	var out AdminGeoNamesConfig
 	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/geonames", input, &out)
+	return out, err
+}
+
+func (c *Client) StageAdminGeoNamesSnapshot(ctx context.Context, input AdminGeoNamesSnapshotInput) (AdminGeoNamesSnapshotResult, error) {
+	var out AdminGeoNamesSnapshotResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/dataset-snapshots", input, &out)
 	return out, err
 }
 

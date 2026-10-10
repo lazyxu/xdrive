@@ -796,6 +796,8 @@ declare global {
         cloudAdminGeoNamesConfig: () => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudSetAdminGeoNamesConfig: (input: XDriveGeoNamesUpdate) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudReloadAdminGeoNames: (expectedVersion: string) => Promise<DesktopResult<XDriveGeoNamesReloadResult>>
+        cloudStageAdminGeoNamesSnapshot: (input: import('../../../ui/shared/src').XDriveGeoNamesSnapshotInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveGeoNamesSnapshotResult>>
         cloudAdminGeoNamesRevisions: () => Promise<DesktopResult<XDriveGeoNamesRevisionPage>>
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>

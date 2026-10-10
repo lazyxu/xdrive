@@ -604,6 +604,22 @@ export type AgentAdminPhotoAutoRevision = {
 export type AgentAdminPhotoAutoRevisionPage = { items: AgentAdminPhotoAutoRevision[] }
 export type AgentAdminPhotoAutoRollbackInput = { revision: number; target_revision: number }
 
+export type AgentAdminGeoNamesSnapshot = {
+  fingerprint: string
+  resolver_version: string
+  checked_radius_km: number
+  checked_revision: number
+  total_bytes: number
+  created_at: string
+  locally_present: boolean
+}
+export type AgentAdminGeoNamesSnapshotInput = { revision: number; expected_version: string }
+export type AgentAdminGeoNamesSnapshotResult = {
+  staged: boolean
+  applied: boolean
+  snapshot: AgentAdminGeoNamesSnapshot
+}
+
 export type AgentAdminGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
@@ -614,6 +630,10 @@ export type AgentAdminGeoNamesConfig = {
   editable: boolean
   revision: number
   apply_state: 'applied' | 'pending' | 'unavailable'
+  snapshot_supported?: boolean
+  snapshot_requirement?: string
+  snapshot_history_known?: boolean
+  snapshots?: AgentAdminGeoNamesSnapshot[]
   updated_at?: string
   requires_restart: boolean
 }
@@ -2957,6 +2977,11 @@ export class AgentIPCClient {
   }
   cloudRollbackAdminGeoNames(input: AgentAdminGeoNamesRollbackInput) {
     return this.request<AgentAdminGeoNamesConfig>('POST', '/v1/cloud/admin-geonames/rollback', input, 120_000)
+  }
+  cloudStageAdminGeoNamesSnapshot(input: AgentAdminGeoNamesSnapshotInput) {
+    return this.request<AgentAdminGeoNamesSnapshotResult>(
+      'POST', '/v1/cloud/admin-geonames/dataset-snapshots', input, 180_000,
+    )
   }
   cloudReloadAdminGeoNames(expectedVersion: string) {
     return this.request<AgentAdminGeoNamesReloadResult>(

@@ -31,6 +31,10 @@ type adminGeoNamesConfigDTO struct {
 	ReplicaStatusTruncated bool                   `json:"replica_status_truncated"`
 	DatasetConsistent      bool                   `json:"dataset_versions_consistent"`
 	DatasetVersions        []geoNamesVersionGroup `json:"dataset_versions"`
+	SnapshotSupported      bool                   `json:"snapshot_supported"`
+	SnapshotRequirement    string                 `json:"snapshot_requirement"`
+	SnapshotHistoryKnown   bool                   `json:"snapshot_history_known"`
+	Snapshots              []geoNamesSnapshotDTO  `json:"snapshots"`
 }
 
 // GeoNames dataset paths are deliberately not accepted from HTTP. A trusted,
@@ -77,6 +81,13 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 			replicas = summarizeGeoNamesReplicas(desired, observed, truncated)
 		}
 	}
+	snapshots, snapshotHistoryKnown := s.geoNamesSnapshotHistory(c.Request.Context())
+	snapshotSupported := configured && snapshotHistoryKnown &&
+		geoNamesSnapshotStorageConfigured(s.GeoNamesSnapshotDir, s.GeoNamesDataDir)
+	snapshotRequirement := "需先在部署中配置 XD_GEONAMES_SNAPSHOT_DIR 为独立可写的持久目录，并完成数据库迁移。"
+	if snapshotSupported {
+		snapshotRequirement = "仅将受信任挂载的数据校验并暂存到此 Server 的持久目录；不会激活或分发到其他实例。"
+	}
 	c.JSON(http.StatusOK, adminGeoNamesConfigDTO{
 		DatasetConfigured:      configured,
 		ReloadSupported:        s.DB != nil && configured,
@@ -97,6 +108,10 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 		ReplicaStatusTruncated: replicas.Truncated,
 		DatasetConsistent:      replicas.DatasetConsistent,
 		DatasetVersions:        replicas.Versions,
+		SnapshotSupported:      snapshotSupported,
+		SnapshotRequirement:    snapshotRequirement,
+		SnapshotHistoryKnown:   snapshotHistoryKnown,
+		Snapshots:              snapshots,
 	})
 }
 
