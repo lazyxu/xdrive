@@ -166,6 +166,11 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 
 ## 2026-10-10 F-PARITY-07F-C · Mobile 多选属性与宽屏 Web 一致
 
-**实现已提交独立单工作提交，等待 PR CI/合并。** Mobile 的“更多已选操作”加入“所选项目属性”，基于当前已选真实 Node 身份/Revision 快照复用原 `XDriveFilePropertiesDialog`、共享 `useXDriveFileExplorerPropertiesController` 和 Web 的原 `filePropertiesStats`。纯文件多选直接汇总文件数/已知大小，不触发额外递归接口；含文件夹多选展示服务端授权计算的总字节和递归文件/文件夹数。关闭属性或跨账户、目录、搜索、回收站、集合切换时清空请求并取消 AbortSignal，选中项本身保留；单个图片/视频/实况的媒体 Inspector 路径不变。
+**已合入：** [PR #1297](https://github.com/lazyxu/xdrive/pull/1297)，完整 CI [#38034184362](https://github.com/lazyxu/xdrive/actions/runs/38034184362) 成功（Desktop 2006 通过／0 失败／1 跳过，Final Gate 通过），单提交 `4f149281`，线性合并 `dccebda0`，短期分支已删除。Mobile 的“更多已选操作”加入“所选项目属性”，基于当前已选真实 Node 身份/Revision 快照复用原 `XDriveFilePropertiesDialog`、共享 `useXDriveFileExplorerPropertiesController` 和 Web 的原 `filePropertiesStats`。纯文件多选直接汇总文件数/已知大小，不触发额外递归接口；含文件夹多选展示服务端授权计算的总字节和递归文件/文件夹数。关闭属性或跨账户、目录、搜索、回收站、集合切换时清空请求并取消 AbortSignal，选中项本身保留；单个图片/视频/实况的媒体 Inspector 路径不变。
 
 挂载测试覆盖文件夹+文件、纯文件、在途属性统计关闭/账户切换和迟到响应。移动端不新增独立 REST、权限或虚拟列表，也不破坏全屏 App Frame、52px 全局标题栏。真实 iOS 27 Safari/安装模式截图像素、VoiceOver、宽屏与 375/390/899/900px 权限错误及 10k/100k 性能仍待验收。
+
+
+## 2026-10-10 F-iOS27-08A · 对齐 iOS 27「文件」更多菜单的视图选项
+
+**独立单工作提交实现，等待完整 PR CI 和合并。** Apple 官方 iOS 27「文件」在目录“更多”菜单并列显示「图标／列表」，而此前 Mobile 只提供一项“切换到图标／列表”。现在在现有 MUI More 菜单里独立显示两种视图（图标、勾选态、44px 触控目标、可访问的单选语义），并让排序与分组紧邻；只修改 Mobile 的展示层和本机视图偏好，保持 Server 的排序/分组回调、宽屏 Web 的 Columns 偏好、一个虚拟化滚动宿主以及目录/Viewer 状态。当前已选项再次点击不会无谓重置滚动。测试覆盖菜单选中态、视图切换/持久化、回调不串扰及 44px 点击目标。真实 iOS 27 图片差异、Safari/安装模式、VoiceOver 与 375/390/899/900px 及 10k/100k 性能仍需另外验收；保持全屏 App Frame 与 52px 全局 App Header。
