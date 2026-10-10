@@ -13,11 +13,23 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified local reader/digest/candidates, two-generation history, then Planner, resumable upload, commit and recovery | L03-A merged #1244, L03-B merged #1246; L03-C merged #1250; L03-D1 staged in this change, runtime not implemented |
+| L03 | Verified local reader/digest/candidates, two-generation history, then Planner, resumable upload, commit and recovery | L03-A #1244, L03-B #1246, L03-C #1250 and L03-D1 #1258 merged; reconciler/upload/runtime not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
-| L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
+| L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
+
+## Agreed Push/Pull product and security boundary (2026-10-10)
+
+The canonical Web/Desktop navigation, local-vs-other Desktop capabilities, read-only projection and compatibility acceptance matrix are in [sync-folder-apps.md](./sync-folder-apps.md). These are approved requirements, **not proof of currently implemented Server/UI restrictions**.
+
+- **设备备份** (Push) and **远程拉取** (Pull) are separate **first-level** applications. A shared `Source` backend is not a reason to share a single mixed configuration page.
+- Only the *owning machine's* Desktop + xdrive-agent may authorize/configure/start/pause/cancel/retry/remove that machine's `local_folder` Sources. Another Desktop—even signed into the same user account—can only inspect the safe folder name, server-resolved target, policy, progress, aggregate counts and run summaries; it cannot read absolute OS paths or initiate operations.
+- Web/Mobile Web sees the same owner-scoped read-only device/folder summary, including real progress and paginated history; it cannot make offline execution requests or run read-only previews against a foreign device.
+- **Account-security exception:** owner-scoped lost-device token revocation is allowed in a *separate account security page*. It must not be exposed as a backup task operation or a means of remote control.
+- NAS Push remains locally administered and executed by the NAS. No new NAS Push agent/management feature is delivered in this round: show a non-interactive **待支持** entry; retain existing NAS Source/Run data and the legacy local NAS CLI without incorrectly advertising a unified device/heartbeat integration. Existing generic owner-JWT NAS mutation routes are a transitional API-security gap, not compliance with the target model.
+- All Pull Sources remain operable from Web/Desktop. Preserve existing `synology_photos` Pull and Push differentiation by `kind+direction`, target Node identities, aliases, task and media history, and the original CfAPI/FUSE mount product.
+- Current `local_folder` activation and SourceRun remain fail-closed. Do not claim that the existing generic owner-authenticated create/update/delete/trigger/cancel API already enforces this stricter device-local policy. Before enabling execution, require server-side device token/Root proof, revocation fencing and all cross-device negative tests.
 
 ## L01-B2-B transaction-scoped device revocation fencing (non-operational)
 
@@ -25,7 +37,7 @@ Source Run mutating handlers revalidate the bound device token, Root and Source 
 
 ## L01-B2-A Source Run executor-proof preflight (non-operational)
 
-For the seven Source Run **mutating** endpoints (begin, observe, commit, failures, progress, heartbeat, finish), local-folder Sources require a verified owner-scoped device enrollment token and the exact bound Device ID, Root UUID and fingerprint. The owner's JWT alone is insufficient. All existing non-local-folder Source executors are unchanged. Source Run cancel remains a signed-in owner's control operation and does not require the executing device's secret.
+For the seven Source Run **mutating** endpoints (begin, observe, commit, failures, progress, heartbeat, finish), local-folder Sources require a verified owner-scoped device enrollment token and the exact bound Device ID, Root UUID and fingerprint. The owner's JWT alone is insufficient. All existing non-local-folder Source executors are unchanged. Today the generic Source Run cancel endpoint is owner-authenticated. Before a local-folder executor is enabled, add own-device authorization to local Push cancellation. Keep existing Pull semantics, and do not use the owner JWT alone as proof of ownership of a local source.
 
 This phase is a **preflight only**, not final transactional revocation fencing: the subsequent Agent/Server implementation must validate the device and binding within every corresponding write transaction, bound to the run's accepted device/root/config revision, to avoid revoke-versus-commit TOCTOU races. Existing regular file upload APIs remain owner-authenticated rather than device- or Source-scoped; they must not be treated as an authorized local Source commit. The L01-A activation and BeginSourceRun hard-deny is preserved until all these end-to-end checks are in place.
 
@@ -112,7 +124,7 @@ Both manifests are Agent-local read-only evidence, not SourceItem identities or 
 - Full inventory is required for missing inference. Unmounted drives, unreadable directories, cancelled runs, partial scans and lost watcher events must not count as deletions.
 - Backup never deletes xDrive content when local files disappear. Mirror only uses the existing 2 complete scans + 24-hour grace + trash-only policy.
 - Use existing `Source / SourceItem / SyncRun`, `internal/client` resumable upload, CAS and Task Center; no parallel media parser, transport or business store.
-- Draft rule preview is not a formal `run_mode=scan`: the formal mode mutates synchronization records. Implement a separate no-business-writes preview in L06.
+- Draft rule preview is not a formal `run_mode=scan`: the formal mode mutates synchronization records. Implement a separate no-business-writes *Desktop-local* preview in L06; do not add Web or foreign-Desktop preview for a local Root.
 - Server identity, owner authorization, revisions and target Node binding are authoritative. No cross-account source access or data leakage.
 - Before performance work, record baseline, optimize only where necessary, rerun identical 1k/10k/100k and large-file workloads, keep only meaningful improvements.
 
@@ -124,7 +136,7 @@ L01-B/L03: prove device credential possession for the *entire* source run lifecy
 
 L02/L05: prove at least 100k inventory without loading the entire tree into the renderer, successful rename/modify/identity preservation, filesystem-event overflow fallback, root replacement safety, restart resume and no false mirror deletions.
 
-L04/L06: shared MUI Source Manager, Desktop native folder picker, honest online/offline/queued/claimed states, agent-version capability gating, no remote arbitrary path execution.
+L04/L06: two first-level Push/Pull apps; own Desktop native Root picker and safe Agent preview/run/cancel; foreign Desktop/Web read-only redacted device/folder state with truthful heartbeat (unknown until proven), counts, real progress and paginated run summaries. No remote Push execution queues, all other-device mutation endpoints fail closed, and Pull remains fully manageable.
 
 L07: measurable SQL P50/P95, Agent RSS/CPU, bytes transferred vs CAS reuse, 4 GiB stream/resume, explicit cancel propagation and power/network interruption tests. Native-device and simulated tests have separate verdicts.
 
