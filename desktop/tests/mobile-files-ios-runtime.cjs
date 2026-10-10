@@ -1323,3 +1323,60 @@ for (const [groupBy, firstKey, secondKey] of [
     } })
   })
 }
+
+
+test('F-PARITY-07E: mounted selected child survives 100k sparse-page eviction with original Node revision', async () => {
+  const retained = []
+  const actions = []
+  const folder = { id: 2, name: 'Work', kind: 'dir', revision: 2 }
+  const child = { id: 41, name: 'inside.txt', kind: 'file', revision: 7 }
+  const rootSource = {
+    interactionKey: '100k-root', itemCount: 100000,
+    loadedItems: new Map([[0, folder]]),
+    itemAt: index => index === 0 ? folder : undefined,
+    onRangeChange() {},
+  }
+  const firstBranch = {
+    ownerID: 2, parentID: 1, parentIndex: 0, name: 'Work',
+    itemCount: 100000, loading: false, error: null,
+    items: new Map([[0, child]]),
+  }
+  await withView(async h => {
+    await act(async () => {
+      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
+    })
+    const choose = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    assert.equal(choose.length, 1)
+    await act(async () => choose[0].props.onClick())
+    const childRow = h.view.root.findAll(node =>
+      node.props?.['data-mobile-files-depth'] === 1 &&
+      String(node.props?.['aria-label'] ?? '').endsWith('inside.txt'))
+    assert.equal(childRow.length, 1)
+    await act(async () => childRow[0].props.onClick())
+    assert.deepEqual(retained.at(-1), [[41, 7]], 'actual selection hook must notify Web with ID/revision')
+
+    // Preserve selected state while Server's 100k child pages are evicted;
+    // Mobile must not silently drop the action when its row unmounts.
+    await h.update({ inlineBranches: [{ ...firstBranch, items: new Map() }] })
+    assert.equal(h.view.root.findAll(node =>
+      node.props?.['data-mobile-files-depth'] === 1 &&
+      String(node.props?.['aria-label'] ?? '').endsWith('inside.txt')).length, 0)
+    await act(async () => find(h.view, 'aria-label', '复制已选').props.onClick())
+    assert.deepEqual(actions, [[[41, 7]]], 'original selection and revision survive eviction')
+    assert.deepEqual(retained.at(-1), [[41, 7]])
+
+    const finish = h.view.root.findAll(node =>
+      node.props?.children === '完成' && node.props?.onClick)
+    assert.equal(finish.length, 1)
+    await act(async () => finish[0].props.onClick())
+    assert.deepEqual(retained.at(-1), [], 'leaving Select must unpin the old Node')
+    await h.update({ lifecycleKey: 'different-user' })
+    assert.deepEqual(retained.at(-1), [], 'account switch may not preserve a previous selection')
+  }, { props: {
+    requestedDirectoryID: 1, items: [folder], virtualCollection: rootSource,
+    grouping: { groupBy: 'none', foldersFirst: true },
+    inlineBranches: [firstBranch], onToggleInlineFolder() {},
+    onCopy: items => actions.push(items.map(item => [item.id, item.revision])),
+    onSelectedItemsChange: items => retained.push(items.map(item => [item.id, item.revision])),
+  } })
+})

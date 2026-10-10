@@ -119,3 +119,126 @@ test('F-PARITY-07B: expanded owner count is bounded, destroy aborts pending requ
   assert.equal(errors.length, 22)
   store.destroy()
 })
+
+
+function actualSelectionController() {
+  const file = path.resolve(__dirname, '../../ui/shared/src/file-explorer-controller.ts')
+  const output = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    fileName: file,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const mod = { exports: {} }
+  new Function('module', 'exports', output)(mod, mod.exports)
+  return mod.exports
+}
+
+/** Execute WebFileExplorer's real inline Node projection with stable useRef
+ * slots, then validate using the real shared Server node/operation contract. */
+function actualWebInlineProjection() {
+  const web = fs.readFileSync(path.resolve(__dirname, '../../web/src/WebFileExplorer.tsx'), 'utf8')
+  const originalStart = web.indexOf('  const inlineOwnerByNodeID = new Map<number, number>()')
+  const retainedStart = web.indexOf('  const selectedMobileNodesRef = useRef(')
+  const start = retainedStart >= 0 && retainedStart < originalStart ? retainedStart : originalStart
+  const end = web.indexOf('  const inlineMobileBranches =', start)
+  assert.ok(start >= 0 && end > start, 'Web inline Node projection must be present')
+  const ending = [
+    'return {nodeByID, inlineCrumbsForItem,',
+    "retainedCount: typeof selectedMobileNodesRef !== 'undefined' ? selectedMobileNodesRef.current.size : 0,",
+    "notifySelection: typeof retainMobileSelection === 'function' ? retainMobileSelection : null};",
+  ].join('\n')
+  const output = ts.transpileModule(web.slice(start, end) + ending, {
+    fileName: 'WebFileExplorer-inline.ts',
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const invoke = new Function('inlineSnapshot', 'nodeByID', 'useRef', 'current', 'crumbs',
+    'inlineScopeKey', 'explorerVirtualCollection', output)
+  const refs = []
+  return function render(snapshot, nodes, scope = 'session-A:root:1') {
+    let hookIndex = 0
+    const useRef = initial => refs[hookIndex++] ??= { current: initial }
+    return invoke(snapshot, new Map(nodes.map(node => [node.id, node])), useRef,
+      { id: 1, name: '我的文件' }, [{ id: 1, name: '我的文件' }],
+      scope, { retainInteractionIDs() {} })
+  }
+}
+
+test('F-PARITY-07E: selected root and nested Node IDs survive real 100k sparse-range eviction', async () => {
+  const validation = actualSelectionController()
+  const render = actualWebInlineProjection()
+  const root = { id: 1, name: '我的文件', type: 'dir', revision: 1, parent_id: 0 }
+  const folder = { id: 2, name: 'Work', type: 'dir', revision: 2, parent_id: 1 }
+  const rootFile = { id: 81, name: 'root.txt', type: 'file', revision: 5, parent_id: 1 }
+  const childFile = { id: 41, name: 'inside.txt', type: 'file', revision: 7, parent_id: 2 }
+  const errors = []
+  const store = new Store(async (ownerID, offset, limit) => ({
+    offset, limit, totalCount: 100000,
+    items: Array.from({ length: limit }, (_, i) => offset + i === 0
+      ? childFile
+      : { id: 5000 + offset + i, name: 'other.txt', type: 'file', revision: 1, parent_id: ownerID }),
+  }), error => errors.push(error))
+  let rootRows = [root, folder, rootFile]
+  let projection = render(store.getSnapshot(), rootRows)
+  store.subscribe(() => { projection = render(store.getSnapshot(), rootRows) })
+  try {
+    store.toggle(2, 1, 0, 'Work')
+    await tick()
+    assert.equal(projection.nodeByID.get(childFile.id)?.revision, 7)
+    const selected = [
+      { id: childFile.id, name: childFile.name, kind: 'file', revision: 7 },
+      { id: rootFile.id, name: rootFile.name, kind: 'file', revision: 5 },
+    ]
+    projection.notifySelection?.(selected)
+    rootRows = [root, folder]
+    store.ensureViewport([{ ownerID: 2, startIndex: 99900, endIndex: 99910 }])
+    await tick()
+    projection = render(store.getSnapshot(), rootRows)
+    assert.equal(store.getSnapshot().branches[0].items.has(0), false,
+      'first child page must truly be evicted, not retained as a 100k collection')
+    for (const action of ['copy', 'cut', 'move-to', 'copy-to', 'delete', 'download']) {
+      assert.equal(validation.xDriveFileExplorerSelectionActionDisabledReason({
+        selected, selectedCount: 2, nodeByID: projection.nodeByID,
+        requireRevision: action !== 'download', maxItems: 200,
+      }), null, action + ' must resolve the original selected Server Nodes')
+    }
+    const nodes = validation.xDriveFileExplorerResolveSelectionNodes(selected, projection.nodeByID)
+    assert.deepEqual(nodes.map(node => [node.id, node.revision]), [[41, 7], [81, 5]])
+    assert.equal(validation.xDriveFileExplorerCopyPath(selected[0],
+      projection.inlineCrumbsForItem(selected[0])), '/Work/inside.txt',
+      'selected child must keep its real containing path after eviction')
+    assert.equal(errors.length, 0)
+    assert.ok(store.getSnapshot().branches[0].items.size <= 400,
+      'only sparse pages and selected IDs can survive, not 100k')
+    assert.ok(projection.retainedCount <= 200)
+
+    projection.notifySelection?.([])
+    projection = render(store.getSnapshot(), rootRows)
+    assert.equal(projection.retainedCount, 0)
+    assert.equal(projection.nodeByID.has(41), false)
+    store.clear()
+    projection = render(store.getSnapshot(), [root, folder], 'session-B:root:1')
+    assert.equal(projection.nodeByID.has(41), false, 'no cross-account Node leak')
+  } finally {
+    store.destroy()
+  }
+})
+
+
+test('F-PARITY-07E: owner-scoped selected cache remains <=200 and clears when user/session changes', () => {
+  const render = actualWebInlineProjection()
+  const root = { id: 1, name: '我的文件', type: 'dir', revision: 1 }
+  const folders = [{ id: 2, name: 'Work', type: 'dir', revision: 1 }]
+  const files = Array.from({ length: 240 }, (_, i) => ({
+    id: i + 1000, name: 'file-' + i, type: 'file', revision: 1, parent_id: 1,
+  }))
+  let view = render({ branches: [] }, [root, ...folders, ...files], 'account-A:root')
+  view.notifySelection?.(files.map(node => ({
+    id: node.id, name: node.name, kind: 'file', revision: node.revision,
+  })))
+  view = render({ branches: [] }, [root, ...folders], 'account-A:root')
+  assert.equal(view.retainedCount, 200, 'retain at most 200 selected Node records, never an entire 100k page')
+  assert.equal(view.nodeByID.has(1000), true)
+  assert.equal(view.nodeByID.has(1239), false)
+  view = render({ branches: [] }, [root, ...folders], 'account-B:root')
+  assert.equal(view.retainedCount, 0, 'a new login must drop all prior-account identities')
+  assert.equal(view.nodeByID.has(1000), false)
+})
