@@ -93,7 +93,7 @@ import {
   xDriveLoginCredentialsReady,
   xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
-import type { XDriveFileExplorerDownloadResult } from '@xdrive/shared'
+import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -329,6 +329,28 @@ export default function App({
     () => createDesktopSourceManagerAdapter(status?.username, localFolderGrantSupported),
     [status?.username, localFolderGrantSupported],
   )
+  // Changing account/server or disconnecting must replace the datasource
+  // immediately, so the shared viewer discards old overview/history snapshots.
+  const deviceBackupReadSupported = Boolean(
+    agent.connected && status?.configured &&
+    agent.hello?.capabilities.includes('device-backup-read'),
+  )
+  const deviceBackupSource = useMemo<XDriveDeviceBackupDataSource | undefined>(() => {
+    if (!deviceBackupReadSupported) return undefined
+    return {
+      list: async () => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackups()
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      runs: async (sourceID, limit, offset) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupRuns(sourceID, limit, offset)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [deviceBackupReadSupported, status?.server, status?.username, status?.auth_status])
+
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = xDriveLoginCredentialsReady({
@@ -2187,7 +2209,7 @@ export default function App({
           />
         )}
 
-        {view === 'device-backup' && <XDriveDeviceBackupPage />}
+        {view === 'device-backup' && <XDriveDeviceBackupPage source={deviceBackupSource} />}
 
         {view === 'remote-pull' && (
           agent.hello?.capabilities.includes('external-sources') ? (

@@ -113,6 +113,7 @@ var desktopIPCCapabilities = []string{
 	"media-duplicate-organize-apply",
 	"media-album-folders",
 	"external-sources",
+	"device-backup-read",
 	"storage-intelligence",
 	"storage-cache-cleanup",
 	"conflicts",
@@ -717,6 +718,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/live-photo-still-ticket", h.mediaLivePhotoStillTicket)
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
+	mux.HandleFunc("GET /v1/device-backups", h.deviceBackups)
+	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
 	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)
 	mux.HandleFunc("POST /v1/sources", h.createSource)
 	mux.HandleFunc("PATCH /v1/sources", h.updateSource)
@@ -5359,6 +5362,63 @@ func (h *desktopIPCHandler) authorizeLocalFolder(w http.ResponseWriter, r *http.
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusCreated, grant)
+}
+
+// The optional, read-only port never reuses CloudSources/CloudSourceItems.
+type desktopIPCDeviceBackupReader interface {
+	CloudDeviceBackupOverview(context.Context) (client.DeviceBackupOverview, error)
+	CloudDeviceBackupRuns(context.Context, uint64, int, int) (client.DeviceBackupRunPage, error)
+}
+
+func (h *desktopIPCHandler) deviceBackups(w http.ResponseWriter, r *http.Request) {
+	reader, ok := h.ctrl.(desktopIPCDeviceBackupReader)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "device_backups_unavailable", "read-only device backups are unavailable")
+		return
+	}
+	items, err := reader.CloudDeviceBackupOverview(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) deviceBackupRuns(w http.ResponseWriter, r *http.Request) {
+	sourceID, err := strconv.ParseUint(strings.TrimSpace(r.URL.Query().Get("source_id")), 10, 64)
+	if err != nil || sourceID == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_source_id", "source_id must be a positive integer")
+		return
+	}
+	limit := 20
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 100")
+			return
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || value < 0 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_offset", "offset must be zero or greater")
+			return
+		}
+		offset = value
+	}
+	reader, ok := h.ctrl.(desktopIPCDeviceBackupReader)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "device_backups_unavailable", "read-only device backups are unavailable")
+		return
+	}
+	items, err := reader.CloudDeviceBackupRuns(r.Context(), sourceID, limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, items)
 }
 
 func (h *desktopIPCHandler) sources(w http.ResponseWriter, r *http.Request) {

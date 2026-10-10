@@ -87,6 +87,10 @@ Shared navigation now has two *top-level* destinations, `设备备份` and `远�
 
 Web now consumes **only** the allowlisted `GET /device-backups` and `GET /device-backups/:sourceID/runs` responses for device/folder names, trusted-safe cloud target, aggregate progress and paginated summary history. No local path or uncontrolled Source DTO enters this presentation, and it contains no mutation controls. The signed-in owner remains scope of both Server endpoints; online status is explicitly unknown until a separate trusted heartbeat feature is complete. For Desktop, the owning Agent does not yet have a safe read IPC; the UI remains a truthful unsupported placeholder until that port is added. NAS Push remains `待支持`. Source mutation protections and true local executor are separate deliverables.
 
+## UI P0-C2 progress: Desktop read-only Agent IPC (proposed; CI pending)
+
+Desktop reads the same narrow owner-scoped Device Backup DTO as Web/Mobile Web, but through an explicitly authenticated loopback Agent IPC (`device-backup-read` capability). This path passes through Electron Main/Preload, with strict Source ID and run-page bounds. Generic Source/SourceItem/run-failure endpoints are **not** a fallback. The shared presenter isolates overview, history and late responses by account/server datasource identity. Until the configured Agent advertises this read capability, Desktop remains a truthful, non-operational placeholder. This phase adds **no** Root picker/run controls, server mutation authority, heartbeat or uploader; Desktop own-device vs foreign-device action splitting remains future work.
+
 ## 6. Acceptance matrix (release-blocking for the new features)
 
 1. With the same owner account, Desktop A edits and runs its locally authorized A-folder; Desktop B can see A's aggregate status/history but **cannot** create, edit, trigger, cancel, delete or unbind A. Raw HTTP requests from B and Web return forbidden even with spoofed device headers.

@@ -203,6 +203,58 @@ export type AgentTransferEvent = {
   transfers: AgentTransfer[]
 }
 
+export interface AgentDeviceBackupRun {
+  id: string
+  source_id: number
+  run_number: number
+  mode: string
+  trigger: string
+  status: string
+  scanned_items: number
+  scanned_bytes: number
+  ignored_items: number
+  new_items: number
+  changed_items: number
+  moved_items: number
+  unchanged_items: number
+  planned_transfer_bytes: number
+  transferred_items: number
+  transferred_bytes: number
+  failed_items: number
+  active_transfer_bytes: number
+  active_transfer_total_bytes: number
+  cancel_requested_at?: string
+  started_at: string
+  finished_at?: string
+}
+export interface AgentDeviceBackupFolder {
+  source_id: number
+  name: string
+  target_path?: string
+  sync_mode: 'backup' | 'mirror'
+  status: string
+  latest_run?: AgentDeviceBackupRun
+}
+export interface AgentDeviceBackupDevice {
+  id: string
+  name: string
+  platform: string
+  client_version?: string
+  last_seen_at?: string
+  connection_state: 'unknown' | 'online' | 'offline'
+  revoked: boolean
+  folders: AgentDeviceBackupFolder[]
+}
+export interface AgentDeviceBackupOverview {
+  devices: AgentDeviceBackupDevice[]
+  has_more: boolean
+  has_more_folders: boolean
+}
+export interface AgentDeviceBackupRunPage {
+  items: AgentDeviceBackupRun[]
+  has_more: boolean
+}
+
 export type AgentSource = {
   id: number
   name: string
@@ -2473,6 +2525,19 @@ export class AgentIPCClient {
 
   sources() {
     return this.request<AgentSource[]>('GET', '/v1/sources')
+  }
+
+  deviceBackups() {
+    return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups')
+  }
+
+  deviceBackupRuns(sourceID: number, limit = 20, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      limit: String(limit),
+      offset: String(offset),
+    })
+    return this.request<AgentDeviceBackupRunPage>('GET', `/v1/device-backups/runs?${query.toString()}`)
   }
 
   sourceRuns(sourceID: number, limit = 1, offset = 0) {
