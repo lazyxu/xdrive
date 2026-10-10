@@ -193,3 +193,76 @@ test('P0-A no duplicate inline toolbar and filters become embedded in mobile she
   assert.match(appHeader, /data-xdrive-mobile-app-header/)
   assert.ok(appHeader.includes("minHeight: 'calc(52px + env(safe-area-inset-top))'"))
 })
+
+// iOS 27 Photos also exposes Zoom In/Zoom Out in View Options.
+// These commands adjust the exact same per-scale column preference as pinch
+// and the slider; mobile navigation must not introduce another query engine.
+test('iOS 27 View Options zoom commands reuse the shared column change callback and bounds', async () => {
+  const changed = []
+  const onDensityChange = (value) => changed.push(value)
+  let view
+  await act(async () => {
+    view = renderer.create(React.createElement(MobileChrome, props({
+      density: 3, densityMin: 2, densityMax: 10, densityStep: 1,
+      onDensityChange,
+    })))
+  })
+  await act(async () => { find(view, 'data-xdrive-mobile-gallery-more').props.onClick() })
+  const drawer = view.root.findAll(x => x.type === 'drawer' && x.props.open === true)
+  assert.equal(drawer.length, 1)
+  const zoom = find(view, 'data-xdrive-mobile-gallery-view-zoom')
+  assert.ok(zoom)
+  const zoomIn = find(view, 'data-xdrive-mobile-gallery-zoom-in')
+  const zoomOut = find(view, 'data-xdrive-mobile-gallery-zoom-out')
+  assert.equal(zoomIn.type, 'button')
+  assert.equal(zoomOut.type, 'button')
+  assert.equal(zoomIn.props['aria-label'], '放大照片缩略图')
+  assert.equal(zoomOut.props['aria-label'], '缩小照片缩略图')
+  for (const control of [zoomIn, zoomOut]) {
+    assert.equal(control.props.sx.minHeight, 44)
+    assert.equal(control.props.disabled, false)
+  }
+  await act(async () => { zoomIn.props.onClick(); zoomOut.props.onClick() })
+  assert.deepEqual(changed, [2, 4])
+
+  await act(async () => {
+    view.update(React.createElement(MobileChrome, props({
+      density: 2, densityMin: 2, densityMax: 10, densityStep: 1,
+      onDensityChange,
+    })))
+  })
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-in').props.disabled, true)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-out').props.disabled, false)
+
+  await act(async () => {
+    view.update(React.createElement(MobileChrome, props({
+      density: 10, densityMin: 2, densityMax: 10, densityStep: 1,
+      onDensityChange,
+    })))
+  })
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-in').props.disabled, false)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-zoom-out').props.disabled, true)
+  await act(async () => { view.unmount() })
+})
+
+test('Collections overview does not expose the Library zoom controls', async () => {
+  let view
+  await act(async () => {
+    view = renderer.create(React.createElement(MobileChrome, props({
+      primaryTab: 'collections', showCollection: false, canGoBack: false,
+    })))
+  })
+  assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-view-zoom']).length, 0)
+  assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-zoom-in']).length, 0)
+  assert.equal(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-zoom-out']).length, 0)
+  await act(async () => { view.unmount() })
+})
+
+test('Zoom uses the existing shared Gallery columns, not a mobile-specific media API', () => {
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  assert.match(gallery, /onDensityChange=\{updateGalleryDensity\}/)
+  assert.match(gallery, /minColumns=\{compactGallery \? mobileColumns : undefined\}/)
+  assert.match(read(sourcePath), /Math\.max\(densityMin, density - densityStep\)/)
+  assert.match(read(sourcePath), /Math\.min\(densityMax, density \+ densityStep\)/)
+  assert.doesNotMatch(read(sourcePath), /<XDriveMobileAppHeader|fetch\(/)
+})
