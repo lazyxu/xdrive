@@ -81,7 +81,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminPhotoAutoSetting{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminPhotoAutoSetting{}, &meta.AdminPhotoAutoRevision{}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{DB: db, Auth: auth.New("photo-auto-policy-test-secret", time.Hour)}
@@ -226,5 +226,111 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	}
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 4 {
 		t.Fatalf("invalid/stale writes changed audit history: count %d, err %v", auditCount, err)
+	}
+	// Revision history is admin-only and contains only global/task switches.
+	historyPath := "/api/v1/admin/services/photo-intelligence/revisions"
+	rollbackPath := "/api/v1/admin/services/photo-intelligence/rollback"
+	requestHistory := func(method, path, token, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		result := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		router.ServeHTTP(result, req)
+		return result
+	}
+	if result := requestHistory(http.MethodGet, historyPath, "", ""); result.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated history must be rejected: %d", result.Code)
+	}
+	if result := requestHistory(http.MethodGet, historyPath, memberToken, ""); result.Code != http.StatusForbidden {
+		t.Fatalf("member must not read global policy history: %d", result.Code)
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, memberToken, `{"revision":4,"target_revision":2}`); result.Code != http.StatusForbidden {
+		t.Fatalf("member must not roll back global policy: %d", result.Code)
+	}
+	history := requestHistory(http.MethodGet, historyPath, adminToken, "")
+	if history.Code != http.StatusOK ||
+		!strings.Contains(history.Body.String(), `"revision":0`) ||
+		!strings.Contains(history.Body.String(), `"origin":"default"`) ||
+		!strings.Contains(history.Body.String(), `"revision":4`) ||
+		!strings.Contains(history.Body.String(), `"face":false`) {
+		t.Fatalf("admin history missing default and per-kind snapshots: %d %s", history.Code, history.Body.String())
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":4,"target_revision":4}`); result.Code != http.StatusBadRequest {
+		t.Fatalf("same-revision rollback = %d", result.Code)
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":3,"target_revision":1}`); result.Code != http.StatusConflict {
+		t.Fatalf("stale rollback = %d", result.Code)
+	}
+
+	// Rollback revision 4 to the previous all-enabled (revision 2) policy.
+	rollback := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":4,"target_revision":2}`)
+	if rollback.Code != http.StatusOK ||
+		!strings.Contains(rollback.Body.String(), `"revision":5`) ||
+		!strings.Contains(rollback.Body.String(), `"auto_enabled":true`) ||
+		!strings.Contains(rollback.Body.String(), `"apply_state":"applied"`) ||
+		!strings.Contains(rollback.Body.String(), `"face":true`) {
+		t.Fatalf("rollback did not hot-apply historical policy: %d %s", rollback.Code, rollback.Body.String())
+	}
+	if !s.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) ||
+		!s.photoAutoAllows(photoIntelligenceSemanticSearch, background.TriggerSystemEvent) {
+		t.Fatal("rollback did not restore historical automatic task admission")
+	}
+	if err := db.Where("name = ?", photoAutoSettingName).Take(&row).Error; err != nil ||
+		row.Revision != 5 || !row.AutoEnabled {
+		t.Fatalf("rollback was not persisted as a new revision: %+v err=%v", row, err)
+	}
+	recorder = httptest.NewRecorder()
+	ginCtx, _ = gin.CreateTestContext(recorder)
+	ginCtx.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	replica.adminPhotoAutoConfig(ginCtx)
+	if !strings.Contains(recorder.Body.String(), `"apply_state":"pending"`) {
+		t.Fatalf("replica must remain pending before next refresh: %s", recorder.Body.String())
+	}
+	if err := replica.refreshPhotoAutoPolicy(context.Background()); err != nil ||
+		!replica.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) {
+		t.Fatalf("replica did not apply rolled-back policy: %v", err)
+	}
+	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 5 {
+		t.Fatalf("policy rollback must append exactly one audit: count %d err=%v", auditCount, err)
+	}
+	var latest meta.AdminPhotoAutoRevision
+	if err := db.Where("name = ? AND revision = ?", photoAutoSettingName, uint64(5)).
+		Take(&latest).Error; err != nil || latest.Origin != "rollback" {
+		t.Fatalf("historical rollback event missing: %+v err=%v", latest, err)
+	}
+
+	// A deleted/missing revision cannot be fabricated from current settings.
+	if err := db.Where("name = ? AND revision = ?", photoAutoSettingName, uint64(1)).
+		Delete(&meta.AdminPhotoAutoRevision{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":5,"target_revision":1}`); result.Code != http.StatusNotFound {
+		t.Fatalf("missing target revision = %d", result.Code)
+	}
+	// Corrupt historical policy must never replace a healthy runtime.
+	if err := db.Model(&meta.AdminPhotoAutoRevision{}).
+		Where("name = ? AND revision = ?", photoAutoSettingName, uint64(0)).
+		Update("kinds_json", "invalid").Error; err != nil {
+		t.Fatal(err)
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":5,"target_revision":0}`); result.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("corrupt target revision = %d", result.Code)
+	}
+	// A failed audit MUST abort the settings update and leave runtime unchanged.
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	if result := requestHistory(http.MethodPost, rollbackPath, adminToken, `{"revision":5,"target_revision":2}`); result.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unauditable rollback must fail closed: %d %s", result.Code, result.Body.String())
+	}
+	if err := db.Where("name = ?", photoAutoSettingName).Take(&row).Error; err != nil ||
+		row.Revision != 5 || !row.AutoEnabled {
+		t.Fatalf("audit failure changed persisted policy: %+v err=%v", row, err)
+	}
+	if !s.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) {
+		t.Fatal("audit failure changed live automatic task admission")
 	}
 }

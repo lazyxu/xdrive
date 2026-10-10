@@ -330,6 +330,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services", s.adminServiceDependencies)
 	admin.GET("/services/photo-intelligence", s.adminPhotoAutoConfig)
 	admin.PUT("/services/photo-intelligence", s.adminSavePhotoAutoConfig)
+	admin.GET("/services/photo-intelligence/revisions", s.adminPhotoAutoRevisions)
+	admin.POST("/services/photo-intelligence/rollback", s.adminRollbackPhotoAutoConfig)
 	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)

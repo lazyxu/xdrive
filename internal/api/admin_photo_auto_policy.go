@@ -274,6 +274,19 @@ func (s *Server) adminSavePhotoAutoConfig(c *gin.Context) {
 			rawKinds = string(data)
 			appliedKinds = proposedKinds
 		}
+		// Snapshot the pre-change configuration before updating it.
+		// The first write preserves the original default as revision zero.
+		previousEnabled := true
+		previousKinds := ""
+		previousOrigin := "default"
+		if exists {
+			previousEnabled = row.AutoEnabled
+			previousKinds = row.KindsJSON
+			previousOrigin = "saved"
+		}
+		if err := recordPhotoAutoRevisionTx(tx, *input.Revision, previousEnabled, previousKinds, previousOrigin); err != nil {
+			return err
+		}
 		nextRevision = *input.Revision + 1
 		if exists {
 			write := tx.Model(&meta.AdminPhotoAutoSetting{}).
@@ -302,6 +315,9 @@ func (s *Server) adminSavePhotoAutoConfig(c *gin.Context) {
 			if write.RowsAffected != 1 {
 				return errPhotoAutoRevisionConflict
 			}
+		}
+		if err := recordPhotoAutoRevisionTx(tx, nextRevision, *input.AutoEnabled, rawKinds, "saved"); err != nil {
+			return err
 		}
 		return recordAuditTx(tx, auditEventFromContext(
 			c, "admin.service.photo-intelligence.auto-policy", "service", "photo-intelligence",
