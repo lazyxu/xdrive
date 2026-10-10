@@ -15,11 +15,23 @@ const compiled=ts.transpileModule(file(sourcePath),{
     target:ts.ScriptTarget.ES2022, esModuleInterop:true,
   },
 }).outputText
+const albumOrganizeSource=file('ui/shared/src/mui/MediaGalleryAlbumOrganization.ts')
+const albumOrganizeCompiled=ts.transpileModule(albumOrganizeSource,{
+  fileName:'MediaGalleryAlbumOrganization.ts',compilerOptions:{
+    module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,
+  },
+}).outputText
+const albumOrganizeModule={exports:{}}
+new Function('exports','module','require',albumOrganizeCompiled)(
+  albumOrganizeModule.exports,albumOrganizeModule,()=>{throw Error('Unexpected album organization import')},
+)
+const sharedAlbumOrganization=albumOrganizeModule.exports
 const mocks={
   react:React, 'react/jsx-runtime':require('react/jsx-runtime'),
   '@mui/material': Object.fromEntries(['Box','Button','Stack','Typography'].map(s=>[s,s.toLowerCase()])),
   '@mui/icons-material/PhotoLibraryOutlined':'icon',
   './MediaGalleryPreviewMedia': {XDriveMediaAsyncThumbnail:'thumbnail'},
+  './MediaGalleryAlbumOrganization': sharedAlbumOrganization,
 }
 const output={exports:{}}
 new Function('exports','module','require',compiled)(output.exports,output,
@@ -116,4 +128,76 @@ test('iOS 27 Mobile Gallery new source retains original Viewer/server/navigation
   assert.match(file(sourcePath), /IntersectionObserver/)
   assert.match(file(sourcePath), /rootMargin: '180px'/)
   assert.match(file(sourcePath), /nearViewport && nodeID/)
+})
+
+
+test('P0-3a Mobile pinned albums use the same account-scoped Web album order', async () => {
+  const previousWindow=global.window
+  const storage=new Map()
+  global.window={localStorage:{
+    getItem:key=>storage.has(key)?storage.get(key):null,
+    setItem:(key,value)=>storage.set(key,String(value)),
+  }}
+  const albums=Array.from({length:12},(_,i)=>({
+    id:'a'+i,kind:'manual',name:'相册'+i,
+    item_count:10+i,cover_node_id:100+i,
+  }))
+  sharedAlbumOrganization.writeMediaAlbumPreferences('owner-A',{
+    sort:'name',pinned:['a9','a2','gone'],order:[],
+  })
+  sharedAlbumOrganization.writeMediaAlbumPreferences('owner-B',{
+    sort:'name',pinned:['a4'],order:[],
+  })
+  const opened=[],sections=[]
+  let view
+  try {
+    const render=scope=>React.createElement(Collections,{
+      ...data,albums,accountScope:scope,
+      onOpenAlbum:album=>opened.push(album.id),
+      onOpenSection:section=>sections.push(section),
+    })
+    await act(async()=>{view=renderer.create(render('owner-A'))})
+    const pinned=()=>cards(view).filter(c=>
+      String(c.props['data-xdrive-mobile-gallery-collection-card']).startsWith('pinned-album-'))
+    assert.deepEqual(pinned().map(c=>c.props['data-xdrive-mobile-gallery-collection-card']),[
+      'pinned-album-a9','pinned-album-a2',
+    ])
+    assert.ok(view.root.findAll(x=>x.type==='thumbnail'&&x.props.nodeID===109).length)
+    await act(async()=>{pinned()[0].props.onClick()})
+    assert.deepEqual(opened,['a9'])
+    const all=view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-view-all']==='固定项目')[0]
+    assert.ok(all,'bounded pinned preview retains the shared full Albums route')
+    await act(async()=>{all.props.onClick()})
+    assert.deepEqual(sections,['albums'])
+    await act(async()=>{view.update(render('owner-B'))})
+    assert.deepEqual(pinned().map(c=>c.props['data-xdrive-mobile-gallery-collection-card']),[
+      'pinned-album-a4',
+    ],'an account switch cannot leak prior album pins')
+    await act(async()=>{view.update(render(''))})
+    assert.equal(pinned().length,0,'empty/unauthenticated scope has no saved pin state')
+  } finally {
+    if(view) await act(async()=>{view.unmount()})
+    global.window=previousWindow
+  }
+})
+
+test('P0-3a Collections filters empty memories before bounding preview',async()=>{
+  const memories=Array.from({length:13},(_,i)=>({
+    id:'m'+i,title:'回忆'+i,item_count:i<9?0:2,cover_node_id:200+i,
+  }))
+  let view
+  const opened=[]
+  try {
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,memories,onOpenMemory:m=>opened.push(m.id),onOpenSection:()=>{},
+    }))})
+    const visible=cards(view).filter(c=>
+      String(c.props['data-xdrive-mobile-gallery-collection-card']).startsWith('memory-'))
+    assert.deepEqual(visible.map(c=>c.props['data-xdrive-mobile-gallery-collection-card']),[
+      'memory-m9','memory-m10','memory-m11','memory-m12',
+    ])
+    await act(async()=>{visible[0].props.onClick()})
+    assert.deepEqual(opened,['m9'])
+    assert.equal(cards(view).some(c=>c.props['data-xdrive-mobile-gallery-collection-card']==='memories'),false)
+  } finally {if(view)await act(async()=>{view.unmount()})}
 })

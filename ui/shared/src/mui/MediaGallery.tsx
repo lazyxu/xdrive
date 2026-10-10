@@ -5767,6 +5767,7 @@ export function XDriveMediaGallery({
 
       {compactGallery && mobileCollectionsOverview ? (
         <XDriveMobileGalleryCollections
+          accountScope={preferenceScope}
           albums={albums} memories={memories} people={people}
           pets={pets} places={places} syncFolders={syncFolders}
           loadThumbnail={loadThumbnail}
