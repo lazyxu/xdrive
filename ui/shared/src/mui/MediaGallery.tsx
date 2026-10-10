@@ -3557,6 +3557,8 @@ function MediaTile({
 function MediaTileGrid({
   items,
   minTileWidth,
+  minColumns,
+  referenceColumnWidth,
   loadThumbnail,
   loadPreviewURL,
   saveVideoPoster,
@@ -3573,6 +3575,8 @@ function MediaTileGrid({
 }: {
   items: MediaItem[]
   minTileWidth: number
+  minColumns?: number
+  referenceColumnWidth?: number
   selectionMode: boolean
   selectedNodeIDs: ReadonlySet<number>
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
@@ -3587,11 +3591,48 @@ function MediaTileGrid({
   onToggleFavorite: (item: MediaItem) => void
   recommendedNodeID?: number
 }) {
+  const denseGridRef = useRef<HTMLDivElement | null>(null)
+  const [measuredColumns, setMeasuredColumns] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (minColumns === undefined) return
+    const host = denseGridRef.current
+    if (!host) return
+
+    const update = () => {
+      // Use the exact same KFS column-first metrics as the sparse virtual Grid
+      // and Timeline. Do not read viewport/window.outerWidth or deduct the
+      // scrollbar again: this host's clientWidth is the available width.
+      const next = xDriveMediaGalleryGridMetrics({
+        width: host.clientWidth,
+        itemCount: items.length,
+        minColumnWidth: minTileWidth,
+        minColumns,
+        referenceColumnWidth,
+      }).columns
+      setMeasuredColumns((current) => current === next ? current : next)
+    }
+    update()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(update)
+      observer.observe(host)
+      return () => observer.disconnect()
+    }
+    if (typeof window === 'undefined') return
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [items.length, minTileWidth, minColumns, referenceColumnWidth])
+
   return (
     <Box
+      ref={denseGridRef}
+      data-xdrive-media-gallery-dense-grid
       sx={{
         display: 'grid',
-        gridTemplateColumns: `repeat(auto-fill, minmax(${minTileWidth}px, 1fr))`,
+        gridTemplateColumns: minColumns === undefined
+          ? `repeat(auto-fill, minmax(${minTileWidth}px, 1fr))`
+          : `repeat(${measuredColumns ?? minColumns}, minmax(0, 1fr))`,
         gap: `${XDRIVE_MEDIA_GALLERY_GRID_GAP}px`,
       }}
     >
@@ -6854,6 +6895,8 @@ export function XDriveMediaGallery({
                   <MediaTileGrid
                     items={group.items}
                     minTileWidth={minTileWidth}
+                    minColumns={compactGallery ? mobileColumns : undefined}
+                    referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
                     indexOffset={group.startIndex}
                     selectionMode={selectionMode}
                     selectedNodeIDs={selectedNodeIDs}
@@ -6898,6 +6941,8 @@ export function XDriveMediaGallery({
           <MediaTileGrid
             items={items}
             minTileWidth={minTileWidth}
+            minColumns={compactGallery ? mobileColumns : undefined}
+            referenceColumnWidth={XDRIVE_MEDIA_GALLERY_MOBILE_REFERENCE_WIDTH}
             selectionMode={selectionMode}
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
