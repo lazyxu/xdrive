@@ -353,6 +353,34 @@ func (c *Client) ReloadAdminGeoNames(ctx context.Context, expectedVersion string
 	return out, err
 }
 
+type AdminGeoNamesRevision struct {
+	Revision      uint64    `json:"revision"`
+	MaxDistanceKM float64   `json:"max_distance_km"`
+	Origin        string    `json:"origin"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type AdminGeoNamesRevisionPage struct {
+	Items []AdminGeoNamesRevision `json:"items"`
+}
+
+type AdminGeoNamesRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminGeoNamesRevisions(ctx context.Context) (AdminGeoNamesRevisionPage, error) {
+	var out AdminGeoNamesRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/geonames/revisions", nil, &out)
+	return out, err
+}
+
+func (c *Client) RollbackAdminGeoNames(ctx context.Context, input AdminGeoNamesRollbackInput) (AdminGeoNamesConfig, error) {
+	var out AdminGeoNamesConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/rollback", input, &out)
+	return out, err
+}
+
 type AdminBaiduMapConfig struct {
 	Enabled         bool       `json:"enabled"`
 	Configured      bool       `json:"configured"`

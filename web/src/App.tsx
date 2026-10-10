@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate } from '../../ui/shared/src'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput } from '../../ui/shared/src'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
@@ -821,6 +821,8 @@ function FileManager({
     loadGeoNamesConfig: () => api.adminGeoNamesConfig(),
     saveGeoNamesConfig: (input: XDriveGeoNamesUpdate) => api.adminSaveGeoNamesConfig(input),
     reloadGeoNames: (expectedVersion: string) => api.adminReloadGeoNames(expectedVersion),
+    loadGeoNamesRevisions: () => api.adminGeoNamesRevisions(),
+    rollbackGeoNames: (input: XDriveGeoNamesRollbackInput) => api.adminRollbackGeoNames(input),
   }), [api])
 
   const executeConfirm = async () => {

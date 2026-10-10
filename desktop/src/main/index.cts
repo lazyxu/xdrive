@@ -86,6 +86,7 @@ import {
   type AgentAdminGeoNamesConfig,
   type AgentAdminGeoNamesUpdate,
   type AgentAdminGeoNamesReloadResult,
+  type AgentAdminGeoNamesRevisionPage,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
   type AgentBackgroundTaskActiveSummary,
@@ -4294,6 +4295,27 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudSetAdminGeoNamesConfig({
       revision: data.revision, max_distance_km: data.max_distance_km,
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-geonames-revisions', () => runAgentAction<AgentAdminGeoNamesRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminGeoNamesRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-geonames', (_event, value: unknown) => runAgentAction<AgentAdminGeoNamesConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'GeoNames rollback requires a revision and an older target.')
+    }
+    const input = value as Partial<{ revision: number; target_revision: number }>
+    if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+        input.revision <= input.target_revision || input.target_revision < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'GeoNames rollback target revision is invalid.')
+    }
+    return requireAgentClient().cloudRollbackAdminGeoNames({
+      revision: input.revision, target_revision: input.target_revision,
     })
   }, false))
   ipcMain.handle('agent:cloud-reload-admin-geonames', (_event, version: unknown) => runAgentAction<AgentAdminGeoNamesReloadResult>(async () => {

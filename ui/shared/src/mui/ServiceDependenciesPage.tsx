@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { Box, Button, Chip, CircularProgress, FormControlLabel, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
@@ -8,6 +8,9 @@ import type {
   XDriveGeoNamesConfig,
   XDriveGeoNamesReloadResult,
   XDriveGeoNamesUpdate,
+  XDriveGeoNamesRevision,
+  XDriveGeoNamesRevisionPage,
+  XDriveGeoNamesRollbackInput,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -27,6 +30,8 @@ export type XDriveServiceDependenciesPort = {
   loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
   saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
+  loadGeoNamesRevisions?: () => Promise<XDriveGeoNamesRevisionPage>
+  rollbackGeoNames?: (input: XDriveGeoNamesRollbackInput) => Promise<XDriveGeoNamesConfig>
 }
 
 const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; description: string }> = [
@@ -115,6 +120,10 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesBusy, setGeoNamesBusy] = useState(false)
   const [geoNamesError, setGeoNamesError] = useState('')
   const [geoNamesNotice, setGeoNamesNotice] = useState('')
+  const [geoNamesRevisions, setGeoNamesRevisions] = useState<XDriveGeoNamesRevision[]>([])
+  const [geoNamesHistoryError, setGeoNamesHistoryError] = useState('')
+  const [geoNamesRollbackTarget, setGeoNamesRollbackTarget] = useState('')
+  const [geoNamesRollbackConfirmOpen, setGeoNamesRollbackConfirmOpen] = useState(false)
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -145,6 +154,10 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesDraftDistance('')
     setGeoNamesError('')
     setGeoNamesNotice('')
+    setGeoNamesRevisions([])
+    setGeoNamesHistoryError('')
+    setGeoNamesRollbackTarget('')
+    setGeoNamesRollbackConfirmOpen(false)
     setLoading(true)
     setError('')
     // Do not retain an old server/account snapshot while a different source loads.
@@ -161,6 +174,13 @@ export function XDriveServiceDependenciesPage({
         setBaiduEnabled(config.enabled)
       }).catch(() => {
         if (active) setBaiduError('无法读取百度地图管理配置，请检查 Server 或更新客户端。')
+      })
+    }
+    if (source.loadGeoNamesRevisions) {
+      void source.loadGeoNamesRevisions().then((page) => {
+        if (active) setGeoNamesRevisions(page.items)
+      }).catch(() => {
+        if (active) setGeoNamesHistoryError('当前服务尚无法读取 GeoNames 配置历史，请检查 Server/Agent 版本。')
       })
     }
     if (source.loadGeoNamesConfig) {
@@ -263,6 +283,14 @@ export function XDriveServiceDependenciesPage({
       setGeoNamesNotice(updated.apply_state === 'applied'
         ? '已持久化配置并写入审计，当前 Server 新索引立即生效；其他实例可能仍待生效。'
         : '配置已保存，但当前 Server 尚未确认生效，请校验并热加载。')
+      if (source.loadGeoNamesRevisions) {
+        const history = await source.loadGeoNamesRevisions().catch(() => null)
+        if (epoch === geoNamesEpochRef.current && history) {
+          setGeoNamesRevisions(history.items)
+          setGeoNamesRollbackTarget('')
+          setGeoNamesHistoryError('')
+        }
+      }
       const next = await source.load()
       if (epoch === geoNamesEpochRef.current) setSnapshot(next)
     } catch (err) {
@@ -303,6 +331,50 @@ export function XDriveServiceDependenciesPage({
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
+    }
+  }
+
+  const rollbackGeoNames = async () => {
+    if (!geoNamesConfig?.editable || !source.rollbackGeoNames || geoNamesBusy) return
+    const target = geoNamesRevisions.find(
+      (item) => String(item.revision) === geoNamesRollbackTarget && item.revision < geoNamesConfig.revision,
+    )
+    if (!target) {
+      setGeoNamesError('请选择一个比当前配置更早的有效修订。')
+      setGeoNamesRollbackConfirmOpen(false)
+      return
+    }
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const effective = await source.rollbackGeoNames({
+        revision: geoNamesConfig.revision,
+        target_revision: target.revision,
+      })
+      if (epoch !== geoNamesEpochRef.current) return
+      setGeoNamesConfig(effective)
+      setGeoNamesDraftDistance(String(effective.max_distance_km))
+      setGeoNamesRollbackTarget('')
+      setGeoNamesNotice(effective.apply_state === 'applied'
+        ? '历史距离已回滚、审计并热应用至当前 Server；其他实例如有待生效状态仍需单独重载。'
+        : '已保存回滚配置；当前实例尚未确认生效，请执行校验并热加载。')
+      if (source.loadGeoNamesRevisions) {
+        const history = await source.loadGeoNamesRevisions().catch(() => null)
+        if (history && epoch === geoNamesEpochRef.current) setGeoNamesRevisions(history.items)
+      }
+      const status = await source.load().catch(() => null)
+      if (status && epoch === geoNamesEpochRef.current) setSnapshot(status)
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 回滚失败，已生效配置保持不变。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesBusy(false)
+        setGeoNamesRollbackConfirmOpen(false)
+      }
     }
   }
 
@@ -492,6 +564,43 @@ export function XDriveServiceDependenciesPage({
                         {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
                       </Button>
                     </Stack>
+                    {source.loadGeoNamesRevisions && source.rollbackGeoNames && (
+                      <Stack spacing={1.25}>
+                        <TextField select fullWidth size="small" label="回滚至历史匹配距离"
+                          value={geoNamesRollbackTarget}
+                          onChange={(event) => setGeoNamesRollbackTarget(event.target.value)}
+                          disabled={geoNamesBusy || !geoNamesConfig?.editable ||
+                            !geoNamesRevisions.some((item) => item.revision < (geoNamesConfig?.revision ?? 0))}
+                          helperText="仅回滚匹配距离；会重新校验当前只读数据集并产生新的修订，不会回滚磁盘数据文件。">
+                          <MenuItem value="">请选择较早的配置版本</MenuItem>
+                          {geoNamesRevisions.filter((item) => item.revision < (geoNamesConfig?.revision ?? 0))
+                            .map((item) => (
+                              <MenuItem key={item.revision} value={String(item.revision)}>
+                                修订 #{item.revision} · {item.max_distance_km} km · {item.origin === 'environment'
+                                  ? '初始部署' : item.origin === 'rollback' ? '历史回滚' : '管理员保存'}
+                              </MenuItem>
+                            ))}
+                        </TextField>
+                        <Button variant="outlined" size="small"
+                          disabled={geoNamesBusy || !geoNamesConfig?.editable || !geoNamesRollbackTarget}
+                          onClick={() => setGeoNamesRollbackConfirmOpen(true)}>
+                          确认回滚历史配置
+                        </Button>
+                        {geoNamesHistoryError ? (
+                          <Typography variant="caption" color="warning.main">{geoNamesHistoryError}</Typography>
+                        ) : null}
+                        <XDriveConfirmDialog
+                          open={geoNamesRollbackConfirmOpen}
+                          title="确认回滚 GeoNames 匹配距离"
+                          description={`将回滚到修订 #${geoNamesRollbackTarget} 的匹配距离，重新验证当前只读数据集，
+并在通过审计后立即应用到当前 Server。已有地名任务保持原快照；其他实例可能需要单独重载。`}
+                          confirmLabel="校验并回滚配置"
+                          loading={geoNamesBusy}
+                          onCancel={() => setGeoNamesRollbackConfirmOpen(false)}
+                          onConfirm={() => { void rollbackGeoNames() }}
+                        />
+                      </Stack>
+                    )}
                     {!geoNamesConfig?.reload_supported && (
                       <Typography variant="caption" color="text.secondary">
                         需先部署只读 GeoNames 数据集并加载初始索引。本页不提供任意宿主路径修改，也不宣称所有 Server 实例已同时生效。

@@ -1,5 +1,5 @@
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
-import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate } from '../../ui/shared/src'
+import type { XDriveServiceDependenciesSnapshot, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput } from '../../ui/shared/src'
 import type {
   AdminUser,
   AuditEvent,
@@ -636,6 +636,14 @@ export class XDriveApi {
   }
   adminGeoNamesConfig() {
     return this.request<XDriveGeoNamesConfig>('/api/v1/admin/services/geonames')
+  }
+  adminGeoNamesRevisions() {
+    return this.request<XDriveGeoNamesRevisionPage>('/api/v1/admin/services/geonames/revisions', { cache: 'no-store' })
+  }
+  adminRollbackGeoNames(input: XDriveGeoNamesRollbackInput) {
+    return this.request<XDriveGeoNamesConfig>('/api/v1/admin/services/geonames/rollback', {
+      method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+    })
   }
   adminReloadGeoNames(expectedVersion: string) {
     return this.request<XDriveGeoNamesReloadResult>('/api/v1/admin/services/geonames/reload', {
