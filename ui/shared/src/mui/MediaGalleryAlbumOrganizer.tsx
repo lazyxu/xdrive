@@ -20,7 +20,7 @@ import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
-  sortedMediaAlbums, writeMediaAlbumPreferences,
+  sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
 } from './MediaGalleryAlbumOrganization'
 import type { MediaAlbumOrganizePreferences, MediaAlbumSortOrder } from './MediaGalleryAlbumOrganization'
 import {
@@ -229,7 +229,14 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const folderListVersionRef = useRef(0)
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
-  useEffect(() => setPrefs(readMediaAlbumPreferences(accountScope)), [accountScope])
+  useEffect(() => {
+    // Read the same canonical preference on scope change and whenever another
+    // Mobile/Wide view or browser tab updates this account's album pins.
+    setPrefs(readMediaAlbumPreferences(accountScope))
+    return subscribeMediaAlbumPreferences(accountScope, () => {
+      setPrefs(readMediaAlbumPreferences(accountScope))
+    })
+  }, [accountScope])
   useEffect(() => {
     // A dialog started under an obsolete capability/Port must not be
     // re-submitted against the replacement Port.

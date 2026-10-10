@@ -218,8 +218,18 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3e · iOS 27 精选集标题直接打开完整内容（2026-10-10）
 
-**状态：单提交候选，需精确提交的 GitHub PR 完整 CI；真实 iOS 27 截图与 Safari 交互尚未验收。** Apple 官方 [iOS 27「在 iPhone 上浏览照片精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27) 明确要求：在分类标题下水平滚动以浏览项目，或**轻点分类标题直接打开该类别的全部项目**。此前 xDrive Mobile 分类标题只是静态文本，右侧另有小「查看全部」按钮，产生额外的导航操作并与原生结构不一致。
+**状态：[#1282](https://github.com/lazyxu/xdrive/pull/1282) 精确提交完整 CI `final-gate` 通过、线性合并（`ab693be`）；真实 iOS 27 截图与 Safari 交互尚未验收。** Apple 官方 [iOS 27「在 iPhone 上浏览照片精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27) 明确要求：在分类标题下水平滚动以浏览项目，或**轻点分类标题直接打开该类别的全部项目**。此前 xDrive Mobile 分类标题只是静态文本，右侧另有小「查看全部」按钮，产生额外的导航操作并与原生结构不一致。
 
 - **单导航入口：** 只有已经拥有真实 `onViewAll` 业务回调的分类，才把原有 `<h3>` 标题内嵌至少 44px 的单一文本+右箭头按钮：回忆 → 原 `memories`、相册 → 原 `albums`、人物与宠物 → 原 `people`、地点 → 原 `places`、同步文件夹 → 原相册入口中已有的同步文件夹区（真实完整聚合页仍属 Albums）。分类仍可水平扫卡片，折叠后文字入口继续存在，不额外发起 Range 或 Viewer 读取；移除右侧重复「查看全部」按钮。
 - **不伪造页面：** Pinned 的「查看全部」原先直接进入 Albums，但 Albums **不是**全部固定项目，包含收藏、人物、媒体类型及相册混合项；取消这种误导的聚合链接，只保留原生标题旁 ≥44px「编辑」及可横向浏览的预览。完整固定项通过现有可搜索编辑器可达；实用工具也没有合法的独立聚合页，标题保持普通文字。若以后交付真正的「全部固定项目」阅读页，再添加相应真实入口。
 - **可验收边界：** 在真正渲染的共享 React 组件测试中，验证五种可点击标题的路由回调、44px 目标及 `aria-label`、折叠状态、仅有一个对应动作、Pinned 的完整编辑入口仍可达以及 Album/Node 身份不变。仍保持 Web 与 Mobile Web 一套 `XDriveMediaGalleryPage`、`MediaGalleryDataSource`、`VirtualCollection` / `VirtualGrid` / `VirtualTimeline`，使用相同 Server Range、权限、批量任务和 Viewer。全屏 App Frame 与 **52px** 全局应用标题栏不变。物理设备照片墙列数/间距/动效、真实 Safari、10k/100k 浏览器 FPS、HTTP cancel 均需另行实测。
+
+
+## P0-3f · Web/Mobile Web 固定相册实时状态一致性（2026-10-10）
+
+**状态：候选，完整精确提交 GitHub PR CI 尚未验证；真实浏览器多标签及 iOS 27 实机交互待测。** 之前 P0-3a～P0-3e 保证了固定相册使用相同的 `xdrive.gallery.album-organization.v1:<accountScope>`，但宽屏 Web 的 `MediaGalleryAlbumOrganizer` 只在首次挂载或账号变化时读取；已打开的宽屏和 Mobile 页面并不能保证同步看到另一个标签页写入的固定状态。原生照片应用的不同布局只改变展示，固定相册的逻辑身份与状态必须一致。
+
+- **一份权威数据：** 沿用现有 `MediaGalleryAlbumOrganization` 的 `readMediaAlbumPreferences/writeMediaAlbumPreferences/changeAlbumPin`；增加零存储开销的 `subscribeMediaAlbumPreferences(accountScope, notify)`。当前窗口写入成功后只通知对应账号订阅者；其他标签页的 `storage` 事件更新相同账号，处理 `localStorage.clear()` 的空 key 并在组件卸载/账号切换时注销处理器。失败写入不虚报变更，未授权/空账号不订阅，不增添新的 Mobile Pin membership model。
+- **两端接入：** 已有宽屏 Web / Desktop 公共 `XDriveMediaGalleryAlbumOrganizer` 订阅上述事件并重读原有排序与固定偏好；原 Mobile Collections 同样订阅并在数据变化时重渲染。任何 `album:<id>` 与 `pinned-album:<id>` 的渲染仍使用相同 `sortedMediaAlbums` 和同一 `onOpenAlbum`，不会重新获取全库图片或新增媒体任务。Desktop 的独立 `desktop:` 存储作用域、权限及运行时保持原样；不宣称不同设备自动同步本地偏好。
+- **回归：** 从真实 TypeScript 业务函数编译运行的 Node 测试验证账号隔离、同窗口和跨标签事件、空键、写入失败、卸载后监听释放；实际 React Mobile Collections 渲染测试验证另一宽屏回调写入后直接出现/移除固定相册、跨账号不泄漏、无需组件 remount；静态契约验证仍使用同一 Web REST / Range / Viewer、虚拟列表及 52px 全局标题栏。最终浏览器多标签/移动真机与 899/900px 切换仍需测量，静态与 Test Renderer 不能代替。
+- **系统边界不变：** 全屏 App Frame、52px 全局 App Header、一个 `XDriveMediaGalleryPage` 和 Web REST `MediaGalleryDataSource`、共用 `VirtualCollection`/`VirtualGrid`/`VirtualTimeline`、PhotoAsset/Live/RAW/Viewer、Server Range、权限、Task Center、原页面返回位置均保持原样。没有新后端 API、媒体缓存或专属移动端业务控制器；真正的 iOS 27 像素截图、触控交互、原比例照片墙、真实浏览器 10k/100k FPS/HTTP cancel 仍列为独立待验事项。

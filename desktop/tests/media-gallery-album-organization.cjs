@@ -19,6 +19,7 @@ loaded._compile(compiled, file)
 const {
   normalizeMediaAlbumPreferences, mediaAlbumPreferencesKey, sortedMediaAlbums,
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences, writeMediaAlbumPreferences,
+  subscribeMediaAlbumPreferences,
 } = loaded.exports
 
 const albums = [
@@ -107,4 +108,92 @@ test('G04 album organizer shares one Web/Desktop component, scoped to the signed
   assert.match(web, /preferenceScope=\{\x60web:\$\{profile\?\.id \?\? username\}\x60\}/)
   assert.match(desktop, /preferenceScope=\{\x60desktop:\$\{status\?\.server/)
   assert.doesNotMatch(organization, /mediaItemRange|new Array\(100000\)/)
+})
+
+
+test('P0-3f same-window and other-tab album preference changes notify only the active account',()=>{
+  const previous=global.window
+  const storage=new Map()
+  const handlers=new Map()
+  const localStorage={
+    getItem:key=>storage.has(key)?storage.get(key):null,
+    setItem:(key,value)=>storage.set(key,String(value)),
+  }
+  global.window={
+    localStorage,
+    addEventListener:(event,listener)=>{
+      const set=handlers.get(event)||new Set()
+      set.add(listener)
+      handlers.set(event,set)
+    },
+    removeEventListener:(event,listener)=>handlers.get(event)?.delete(listener),
+  }
+  const eventsA=[],eventsB=[]
+  const stopA=subscribeMediaAlbumPreferences('web:accountA',()=>{
+    eventsA.push(readMediaAlbumPreferences('web:accountA').pinned.join(','))
+  })
+  const stopB=subscribeMediaAlbumPreferences('web:accountB',()=>{
+    eventsB.push(readMediaAlbumPreferences('web:accountB').pinned.join(','))
+  })
+  const dispatchStorage=key=>{
+    for(const notify of [...(handlers.get('storage')||[])])notify({key,storageArea:localStorage})
+  }
+  try{
+    assert.equal(handlers.get('storage')?.size,2)
+    writeMediaAlbumPreferences('web:accountA',{
+      sort:'name',pinned:['manual:a'],order:[],
+    })
+    assert.deepEqual(eventsA,['manual:a'])
+    assert.deepEqual(eventsB,[],'the other account must not be notified')
+    writeMediaAlbumPreferences('web:accountB',{
+      sort:'name',pinned:['manual:b'],order:[],
+    })
+    assert.deepEqual(eventsB,['manual:b'])
+    assert.deepEqual(eventsA,['manual:a'])
+    const aKey=mediaAlbumPreferencesKey('web:accountA')
+    storage.set(aKey,JSON.stringify({sort:'name',pinned:['smart:z'],order:[]}))
+    dispatchStorage(aKey)
+    assert.deepEqual(eventsA,['manual:a','smart:z'],
+      'another tab refreshes the same canonical account preference')
+    assert.deepEqual(eventsB,['manual:b'])
+    dispatchStorage(null)
+    assert.deepEqual(eventsA.at(-1),'smart:z')
+    assert.deepEqual(eventsB.at(-1),'manual:b')
+    stopA()
+    assert.equal(handlers.get('storage')?.size,1)
+    writeMediaAlbumPreferences('web:accountA',{
+      sort:'name',pinned:['manual:a'],order:[],
+    })
+    dispatchStorage(aKey)
+    assert.deepEqual(eventsA,['manual:a','smart:z','smart:z'],
+      'an unmounted subscriber must not receive any later changes')
+  }finally{
+    stopA();stopB()
+    assert.equal(handlers.get('storage')?.size,0,
+      'all event handlers must be removed on unmount')
+    if(previous===undefined)delete global.window
+    else global.window=previous
+  }
+})
+
+test('P0-3f invalid or unauthorized preference storage never publishes a false success',()=>{
+  const previous=global.window
+  const hits=[]
+  global.window={localStorage:{
+    getItem:()=>null,setItem:()=>{throw Error('storage unavailable')},
+  }}
+  const off=subscribeMediaAlbumPreferences('web:test',()=>hits.push('changed'))
+  try{
+    assert.doesNotThrow(()=>writeMediaAlbumPreferences('web:test',{
+      sort:'name',pinned:['manual:a'],order:[],
+    }))
+    assert.deepEqual(hits,[])
+    assert.doesNotThrow(()=>writeMediaAlbumPreferences('',{
+      sort:'name',pinned:['manual:a'],order:[],
+    }))
+  }finally{
+    off()
+    if(previous===undefined)delete global.window
+    else global.window=previous
+  }
 })

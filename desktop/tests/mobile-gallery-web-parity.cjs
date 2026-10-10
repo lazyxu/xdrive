@@ -160,3 +160,20 @@ test('P0-3e native collection heading is the only View All affordance, using ori
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
 })
+
+
+test('P0-3f mounted Web and Mobile share same account-pinned album notifications',()=>{
+  const organization=read('ui/shared/src/mui/MediaGalleryAlbumOrganization.ts')
+  const organizer=read('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx')
+  assert.match(organization,/export function subscribeMediaAlbumPreferences\(/)
+  assert.match(organization,/albumPreferenceListeners\.get\(accountScope\)/)
+  assert.match(organization,/addEventListener\?\.\('storage', onStorage\)/)
+  assert.match(organization,/removeEventListener\?\.\('storage', onStorage\)/)
+  assert.match(organizer,/return subscribeMediaAlbumPreferences\(accountScope, \(\) => \{/)
+  assert.match(collections,/useEffect\(\(\) => subscribeMediaAlbumPreferences\(accountScope, \(\) => \{/)
+  assert.match(collections,/readMediaAlbumPreferences\(accountScope\)/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.doesNotMatch(collections,/create.*DataSource|new.*VirtualCollection|listItemRange\(|fetch\(/)
+  assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
+    /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+})
