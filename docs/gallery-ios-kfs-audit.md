@@ -575,3 +575,16 @@ the Agent IPC declares actual media byte length, with new assertions. Desktop
 progress additionally rejects compressed/invalid totals. No claim of physical
 iOS 27 screenshot calibration or authoritative green PR CI is made here.
 Work branch: `fix/gallery-thumbnail-full-surface-pie-20261010`.
+
+### 2026-10-11 alpha mask at thumbnail byte-progress time
+
+**In progress, CI pending:** alpha-aware thumbnail support is prepared for
+Web/Mobile Web/Desktop's common progress surface. It does not rely on decoding
+a file after its download is complete. Transparent PNG derived thumbnails
+retain original per-pixel alpha; a strictly bounded same-raster mask is supplied
+in the *first HTTP response headers* and forwarded by the Desktop Agent IPC.
+A byte-counted pie and percentage text are alpha-clipped, including mobile
+contain/cover display modes. Legacy/missing/oversized proofs hide the overlay,
+not paint a rectangle. JPEG v3 identity and analysis preview remain supported.
+True iOS 27 visual parity and 100k alpha-heavy loading costs are not yet
+measured.

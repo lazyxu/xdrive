@@ -24,3 +24,15 @@ func TestAnalysisPreviewStorageKeyUsesAnalysisVersion(t *testing.T) {
 		t.Fatalf("analysis preview key=%q want=%q", got, want)
 	}
 }
+
+func TestAlphaCapableThumbnailKeysDoNotInvalidateOrdinaryJPEG(t *testing.T) {
+	sha := strings.Repeat("c", 64)
+	if got := ThumbnailStorageKeyForSource(7, 9, sha, 512, "image/jpeg"); got != ThumbnailStorageKey(7, 9, sha, 512) {
+		t.Fatalf("ordinary JPEG key changed: %q", got)
+	}
+	for _, mime := range []string{"image/png", "image/webp", "image/avif", "image/heic", "image/gif"} {
+		if key := ThumbnailStorageKeyForSource(7, 9, sha, 512, mime); !strings.HasSuffix(key, "-v4-512.thumb") {
+			t.Fatalf("alpha-capable MIME %q key=%q", mime, key)
+		}
+	}
+}

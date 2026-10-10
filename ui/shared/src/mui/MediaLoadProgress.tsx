@@ -11,6 +11,9 @@ export type XDriveMediaLoadStage =
 export type XDriveMediaByteProgress = {
   loadedBytes?: number
   totalBytes?: number
+  // '' means proof of opaque pixels; a data URL is exact alpha;
+  // null means unknown and the full-tile pie must be suppressed.
+  alphaMask?: string | null
 }
 
 function byteAmount(value: number, unit: number, decimals: number) {
@@ -62,6 +65,7 @@ export function XDriveMediaLoadingProgress({
   stage = 'transfer',
   loadedBytes = 0,
   totalBytes,
+  alphaMask,
   bufferedSeconds = 0,
   bufferedStartSeconds,
   durationSeconds,
@@ -99,6 +103,19 @@ export function XDriveMediaLoadingProgress({
           position: 'absolute', inset: 0, minWidth: 0,
           display: 'grid', placeItems: 'center',
           overflow: 'hidden', borderRadius: 'inherit',
+          // The mask belongs on this container (not only the gradient):
+          // both its sector and centre text must stay inside real alpha.
+          ...(typeof alphaMask === 'string' && alphaMask.startsWith('data:image/png;base64,') ? {
+            maskImage: `url("${alphaMask}")`,
+            WebkitMaskImage: `url("${alphaMask}")`,
+            maskSize: 'cover',
+            WebkitMaskSize: 'cover',
+            maskPosition: 'center',
+            WebkitMaskPosition: 'center',
+            maskRepeat: 'no-repeat',
+            WebkitMaskRepeat: 'no-repeat',
+          } : {}),
+          visibility: alphaMask === null ? 'hidden' : 'visible',
           pointerEvents: 'none',
           animation: 'xdriveMediaPieReveal 120ms ease-out 160ms backwards',
           '@keyframes xdriveMediaPieReveal': {

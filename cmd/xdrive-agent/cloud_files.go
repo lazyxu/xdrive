@@ -117,6 +117,8 @@ type agentCreatedShare struct {
 
 type agentMediaThumbnail struct {
 	ContentType string
+	AlphaMask   string
+	AlphaState  string
 	Data        []byte
 }
 
@@ -3218,6 +3220,8 @@ func (c *agentController) CloudMediaThumbnail(
 		return agentMediaThumbnailFetch{
 			Thumbnail: agentMediaThumbnail{
 				ContentType: response.ContentType,
+				AlphaMask:   response.AlphaMask,
+				AlphaState:  response.AlphaState,
 				Data:        response.Data,
 			},
 			ETag:        response.ETag,

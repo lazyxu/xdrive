@@ -242,10 +242,10 @@ export class XDriveMediaThumbnailScheduler {
       // subscribers arriving mid-request still get its final image, but do not
       // retroactively turn a no-observer HTTP response into a counted stream.
       const notify = task.progressListeners.size > 0
-        ? (loadedBytes: number, totalBytes?: number) => {
+        ? (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => {
             if (task.cancelled || this.disposed) return
             for (const entry of [...task.progressListeners]) {
-              try { entry.notify(loadedBytes, totalBytes) } catch { /* UI does not own I/O */ }
+              try { entry.notify(loadedBytes, totalBytes, alphaMask) } catch { /* UI does not own I/O */ }
             }
           }
         : undefined

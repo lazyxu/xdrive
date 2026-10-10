@@ -830,3 +830,33 @@ The existing 160ms reveal delay, AbortSignal lifecycle, cached-image fast path,
 noncompact Viewer progress, decoding state and native video buffering semantics
 remain unchanged. This is presentation work, not a media transfer protocol,
 download job or evidence of physical iOS acceptance.
+
+### P0-C alpha-aware thumbnail download progress (2026-10-11)
+
+**Implementation candidate, awaiting authoritative PR CI and physical iOS/100k QA.**
+The previous ThumbnailJPEG always flattened transparency before any frontend
+alpha mask could exist. New alpha-capable input types use a versioned v4 derived
+thumbnail cache, preserving original files and normal JPEG v3 keys. Actual
+transparent outputs use PNG including semitransparent edge pixels; fully opaque
+alpha-capable inputs remain JPEG. Analysis previews and native video posters
+preserve their original media interfaces.
+
+When a transparent derivative is served, the Server constructs a PNG mask
+from its exact per-pixel alpha, with matching orientation and raster geometry.
+A safe 4096-base64-character cap prevents oversized HTTP headers. The same
+authenticated thumbnail HTTP response carries both pixel length and alpha
+proof before the binary body; no per-tile second request or global 100k mask
+scan is introduced. `X-XDrive-Thumbnail-Alpha-State` is `opaque`,
+`masked` or `unavailable`. The Web and Agent/Electron IPC readers propagate
+the proof with request-scoped byte progress into shared Gallery/FileExplorer.
+A valid mask applies to the entire compact sector and its label, using CSS
+mask-image/WebkitMaskImage, with the same object-fit cover/contain and center
+as the later thumbnail; missing proof never paints an opaque rectangular pie.
+Opaque proof allows the existing full-area pie. Existing viewport abort,
+thumbnail scheduling, ETag revision fence, unknown-length behavior and native
+video buffering are preserved.
+
+Known limitation: exceptionally complex alpha rasters whose mask exceeds the
+header budget intentionally suppress the download sector instead of cropping
+inaccurately. No performance or physical iOS acceptance is claimed without
+those tests.

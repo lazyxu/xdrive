@@ -2396,6 +2396,7 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 		}},
 		cloudMediaThumbnail: agentMediaThumbnail{
 			ContentType: "image/jpeg",
+			AlphaState:  "opaque",
 			Data:        []byte("fake-jpeg"),
 		},
 		cloudMediaStillTicket: client.FilePreviewTicket{
@@ -3125,6 +3126,9 @@ func TestDesktopIPCMediaGallery(t *testing.T) {
 	}
 	if got := res.Header().Get("Content-Length"); got != fmt.Sprint(len("fake-jpeg")) {
 		t.Fatalf("media thumbnail Content-Length=%q want=%d", got, len("fake-jpeg"))
+	}
+	if got := res.Header().Get("X-XDrive-Thumbnail-Alpha-State"); got != "opaque" {
+		t.Fatalf("thumbnail alpha state=%q want opaque", got)
 	}
 	if ctrl.cloudMediaThumbnailID != 31 {
 		t.Fatalf("media thumbnail id=%d want=31", ctrl.cloudMediaThumbnailID)

@@ -7,6 +7,9 @@ export type XDriveFileTextPreview = {
 export type XDriveByteProgressHandler = (
   loadedBytes: number,
   totalBytes?: number,
+  // '' is authoritative opaque; data:image/png mask is authoritative alpha;
+  // null is unknown and must never paint a rectangular overlay.
+  alphaMask?: string | null,
 ) => void
 
 export type XDriveLivePhotoMotionSource =

@@ -1903,6 +1903,8 @@ type MediaThumbnailResponse struct {
 	ContentType string
 	ETag        string
 	MaxAge      time.Duration
+	AlphaMask   string
+	AlphaState  string
 	NotModified bool
 }
 
@@ -1978,7 +1980,7 @@ func (c *Client) MediaThumbnailConditional(
 	req, err := c.request(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("/api/v1/media/items/%d/thumbnail?v=3", nodeID),
+		fmt.Sprintf("/api/v1/media/items/%d/thumbnail?v=4", nodeID),
 		nil,
 	)
 	if err != nil {
@@ -1997,6 +1999,8 @@ func (c *Client) MediaThumbnailConditional(
 		ContentType: strings.TrimSpace(resp.Header.Get("Content-Type")),
 		ETag:        strings.TrimSpace(resp.Header.Get("ETag")),
 		MaxAge:      mediaResponseMaxAge(resp.Header.Get("Cache-Control")),
+		AlphaMask:   strings.TrimSpace(resp.Header.Get("X-XDrive-Thumbnail-Alpha-Mask")),
+		AlphaState:  strings.TrimSpace(resp.Header.Get("X-XDrive-Thumbnail-Alpha-State")),
 	}
 	if resp.StatusCode == http.StatusNotModified {
 		out.NotModified = true

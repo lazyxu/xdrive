@@ -202,3 +202,80 @@ func TestThumbnailJPEGNormalizesOrientationWithoutDoubleRotatingHEIC(t *testing.
 		t.Fatalf("heic orientation policy=%d want=1", got)
 	}
 }
+
+func TestThumbnailWithAlphaPreservesExactPixelMask(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 3, 2))
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 3; x++ {
+			src.SetNRGBA(x, y, color.NRGBA{R: 55, G: 100, B: 200, A: uint8((x + y*3) * 51)})
+		}
+	}
+	var original bytes.Buffer
+	if err := png.Encode(&original, src); err != nil {
+		t.Fatal(err)
+	}
+	thumb, err := ThumbnailWithAlpha(bytes.NewReader(original.Bytes()), 1, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if thumb.MIMEType != "image/png" {
+		t.Fatalf("lost transparency: %s", thumb.MIMEType)
+	}
+	imageOut, err := png.Decode(bytes.NewReader(thumb.Data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := ThumbnailAlphaMaskHeader(thumb.Data)
+	if header == "" || len(header) > MaxThumbnailMaskHeader {
+		t.Fatalf("invalid mask header size=%d", len(header))
+	}
+	maskBytes, err := base64.StdEncoding.DecodeString(header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mask, err := png.Decode(bytes.NewReader(maskBytes))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 3; x++ {
+			_, _, _, want := imageOut.At(x, y).RGBA()
+			_, _, _, got := mask.At(x, y).RGBA()
+			if got != want {
+				t.Fatalf("alpha mismatch (%d,%d): %d != %d", x, y, got, want)
+			}
+		}
+	}
+	opaque := image.NewNRGBA(image.Rect(0, 0, 3, 2))
+	for i := 3; i < len(opaque.Pix); i += 4 {
+		opaque.Pix[i] = 255
+	}
+	original.Reset()
+	if err := png.Encode(&original, opaque); err != nil {
+		t.Fatal(err)
+	}
+	plain, err := ThumbnailWithAlpha(bytes.NewReader(original.Bytes()), 1, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plain.MIMEType != "image/jpeg" {
+		t.Fatalf("opaque image bloated to %s", plain.MIMEType)
+	}
+}
+
+func TestThumbnailAlphaMaskHeaderDropsExcessivelyComplexMasks(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 512, 512))
+	seed := uint32(1)
+	for i := 0; i < len(src.Pix); i += 4 {
+		seed = seed*1664525 + 1013904223
+		src.Pix[i], src.Pix[i+1], src.Pix[i+2] = 255, 255, 255
+		src.Pix[i+3] = uint8(seed >> 24)
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, src); err != nil {
+		t.Fatal(err)
+	}
+	if got := ThumbnailAlphaMaskHeader(encoded.Bytes()); got != "" {
+		t.Fatalf("oversized mask was incorrectly emitted: %d base64 chars", len(got))
+	}
+}

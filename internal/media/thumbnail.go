@@ -2,11 +2,13 @@ package media
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"image/png"
 	"io"
 	"strings"
 )
@@ -17,6 +19,8 @@ const (
 	AnalysisPreviewEdge    = 1280
 	CreativePreviewEdge    = 2048
 	ThumbnailVersion       = 3
+	ThumbnailAlphaVersion  = 4
+	MaxThumbnailMaskHeader = 4096
 	AnalysisPreviewVersion = 3
 	CreativePreviewVersion = 1
 	ThumbnailStoragePrefix = ".xdrive-media/thumbnails/"
@@ -100,6 +104,29 @@ func ThumbnailStorageKey(
 	)
 }
 
+// ThumbnailVersionForSource keeps ordinary JPEG v3 caches valid. Only images
+// with a possible alpha channel need the new versioned derivative.
+func ThumbnailVersionForSource(mime string) int {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "image/png", "image/gif", "image/webp", "image/avif",
+		"image/heic", "image/heif", "image/tiff", "image/bmp":
+		return ThumbnailAlphaVersion
+	default:
+		return ThumbnailVersion
+	}
+}
+
+// The neutral extension reflects that alpha-capable sources can output either
+// a transparent PNG or a compact JPEG; the HTTP MIME describes the bytes.
+func ThumbnailStorageKeyForSource(nodeID, nodeRevision uint64, sha256 string, maxEdge int, mime string) string {
+	version := ThumbnailVersionForSource(mime)
+	if version == ThumbnailVersion {
+		return ThumbnailStorageKey(nodeID, nodeRevision, sha256, maxEdge)
+	}
+	key := thumbnailStorageKey(nodeID, nodeRevision, sha256, version, maxEdge)
+	return strings.TrimSuffix(key, ".jpg") + ".thumb"
+}
+
 func AnalysisPreviewStorageKey(
 	nodeID, nodeRevision uint64,
 	sha256 string,
@@ -171,6 +198,16 @@ type Thumbnail struct {
 // ThumbnailJPEG renders a bounded JPEG preview without changing or duplicating
 // the original xDrive file object. The returned bytes are a derived cache only.
 func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error) {
+	return renderThumbnail(r, orientation, maxEdge, false)
+}
+
+// ThumbnailWithAlpha preserves real alpha (including translucent edges), but
+// keeps opaque assets as JPEG. Only this thumbnail derivative may use PNG.
+func ThumbnailWithAlpha(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error) {
+	return renderThumbnail(r, orientation, maxEdge, true)
+}
+
+func renderThumbnail(r io.ReadSeeker, orientation, maxEdge int, preserveAlpha bool) (Thumbnail, error) {
 	var out Thumbnail
 	if r == nil {
 		return out, errors.New("media reader is nil")
@@ -236,19 +273,65 @@ func ThumbnailJPEG(r io.ReadSeeker, orientation, maxEdge int) (Thumbnail, error)
 
 	var encoded bytes.Buffer
 	const quality = 84
-	if err := jpeg.Encode(&encoded, dst, &jpeg.Options{Quality: quality}); err != nil {
+	mimeType := "image/jpeg"
+	outputQuality := quality
+	if preserveAlpha && !dst.Opaque() {
+		if err := png.Encode(&encoded, dst); err != nil {
+			return out, err
+		}
+		mimeType = "image/png"
+		outputQuality = 0
+	} else if err := jpeg.Encode(&encoded, dst, &jpeg.Options{Quality: quality}); err != nil {
 		return out, err
 	}
 	out = Thumbnail{
 		Data:       encoded.Bytes(),
-		MIMEType:   "image/jpeg",
+		MIMEType:   mimeType,
 		Width:      dstWidth,
 		Height:     dstHeight,
 		MaxEdge:    maxEdge,
-		Quality:    quality,
+		Quality:    outputQuality,
 		SourceKind: format,
 	}
 	return out, nil
+}
+
+// ThumbnailAlphaMaskHeader encodes the derivative's exact per-pixel alpha as
+// a same-size PNG mask. The HTTP header arrives before the streamed image.
+// Pathological masks exceed the safe 4 KiB header budget: clients then hide
+// the pie instead of painting over transparent pixels.
+func ThumbnailAlphaMaskHeader(data []byte) string {
+	if len(data) == 0 || len(data) > 4<<20 {
+		return ""
+	}
+	src, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return ""
+	}
+	bounds := src.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	if w < 1 || h < 1 || w > 2048 || h > 2048 {
+		return ""
+	}
+	mask := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			_, _, _, a := src.At(bounds.Min.X+x, bounds.Min.Y+y).RGBA()
+			i := mask.PixOffset(x, y)
+			mask.Pix[i] = 255
+			mask.Pix[i+1] = 255
+			mask.Pix[i+2] = 255
+			mask.Pix[i+3] = uint8(a >> 8)
+		}
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, mask); err != nil {
+		return ""
+	}
+	if base64.StdEncoding.EncodedLen(encoded.Len()) > MaxThumbnailMaskHeader {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(encoded.Bytes())
 }
 
 func thumbnailSourceOrientation(

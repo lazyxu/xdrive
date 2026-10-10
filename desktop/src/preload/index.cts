@@ -1,6 +1,6 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 
-type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number) => void
+type XDriveByteProgressCallback = (loadedBytes: number, totalBytes?: number, alphaMask?: string | null) => void
 let mediaBinaryProgressSequence = 0
 
 /** Progress is tied to the sender-owned viewport request and removed at settlement. */
@@ -17,12 +17,19 @@ function invokeMediaBinaryWithProgress(
   const progressChannel = 'agent:media-binary-progress'
   const listener: Parameters<typeof ipcRenderer.on>[1] = (_event, payload: unknown) => {
     if (!payload || typeof payload !== 'object') return
-    const value = payload as { request_id?: unknown; loaded_bytes?: unknown; total_bytes?: unknown }
+    const value = payload as {
+      request_id?: unknown; loaded_bytes?: unknown; total_bytes?: unknown; alpha_mask?: unknown
+    }
     if (value.request_id !== requestID ||
         typeof value.loaded_bytes !== 'number' || !Number.isFinite(value.loaded_bytes)) return
     const total = typeof value.total_bytes === 'number' && Number.isFinite(value.total_bytes) &&
       value.total_bytes > 0 ? value.total_bytes : undefined
-    try { onProgress(value.loaded_bytes, total) } catch { /* UI subscriber cannot break IPC */ }
+    const alphaMask = value.alpha_mask === null ? null
+      : value.alpha_mask === '' ? ''
+        : typeof value.alpha_mask === 'string' && value.alpha_mask.length <= 4120 &&
+          /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(value.alpha_mask)
+          ? value.alpha_mask : undefined
+    try { onProgress(value.loaded_bytes, total, alphaMask) } catch { /* UI subscriber cannot break IPC */ }
   }
   ipcRenderer.on(progressChannel, listener)
   return ipcRenderer.invoke(channel, ...args, true).finally(() => {

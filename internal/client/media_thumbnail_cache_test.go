@@ -17,8 +17,8 @@ func TestMediaThumbnailConditionalUsesETagAndCacheControl(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		if got := r.URL.Query().Get("v"); got != "3" {
-			t.Fatalf("thumbnail derivative version query=%q want=3", got)
+		if got := r.URL.Query().Get("v"); got != "4" {
+			t.Fatalf("thumbnail derivative transport version query=%q want=4", got)
 		}
 		w.Header().Set("ETag", "\"thumb-7\"")
 		w.Header().Set("Cache-Control", "private, max-age=3600")

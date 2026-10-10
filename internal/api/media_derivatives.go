@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -23,8 +24,7 @@ const (
 	mediaDerivativeAnalysis  mediaDerivativeKind = "analysis_preview"
 	mediaDerivativeCreative  mediaDerivativeKind = "creative_preview"
 
-	mediaThumbnailDerivativeVersion = mediapkg.ThumbnailVersion
-	mediaDerivativeRunTimeout       = 2 * time.Minute
+	mediaDerivativeRunTimeout = 2 * time.Minute
 )
 
 var (
@@ -147,7 +147,7 @@ func mediaDerivativeIdentity(
 	case mediaDerivativeThumbnail:
 		return mediaThumbnailStorageKey(node, metadata),
 			mediaThumbnailEdge,
-			mediaThumbnailDerivativeVersion,
+			mediapkg.ThumbnailVersionForSource(metadata.MIMEType),
 			nil
 	case mediaDerivativeAnalysis:
 		return mediaAnalysisPreviewStorageKey(node, metadata),
@@ -206,7 +206,12 @@ func (s *Server) generateMediaDerivative(
 	if err != nil {
 		return fmt.Errorf("%w: %v", errMediaDerivativeUnsupported, err)
 	}
-	preview, err := mediapkg.ThumbnailJPEG(
+	render := mediapkg.ThumbnailJPEG
+	if kind == mediaDerivativeThumbnail &&
+		mediapkg.ThumbnailVersionForSource(metadata.MIMEType) == mediapkg.ThumbnailAlphaVersion {
+		render = mediapkg.ThumbnailWithAlpha
+	}
+	preview, err := render(
 		previewSource,
 		metadata.Orientation,
 		edge,
@@ -307,7 +312,30 @@ func (s *Server) tryServeMediaDerivative(
 	if strings.TrimSpace(contentType) == "" {
 		contentType = "image/jpeg"
 	}
+	// All successful thumbnail derivatives explicitly prove their pixel
+	// opacity; old servers omit this header and clients fail closed.
+	alphaState := "opaque"
+	if strings.HasSuffix(key, ".thumb") && contentType == "image/jpeg" {
+		var signature [8]byte
+		if _, err := file.ReadAt(signature[:], 0); err == nil &&
+			bytes.Equal(signature[:], []byte{137, 80, 78, 71, 13, 10, 26, 10}) {
+			contentType = "image/png"
+			alphaState = "unavailable"
+			name = strings.TrimSuffix(name, ".jpg") + ".png"
+			// Bounded derivative decode; the body remains seekable for ServeContent.
+			if stat, err := file.Stat(); err == nil && stat.Size() > 0 && stat.Size() <= 4<<20 {
+				if data, err := io.ReadAll(io.LimitReader(file, (4<<20)+1)); err == nil {
+					if mask := mediapkg.ThumbnailAlphaMaskHeader(data); mask != "" {
+						c.Header("X-XDrive-Thumbnail-Alpha-Mask", mask)
+						alphaState = "masked"
+					}
+				}
+				_, _ = file.Seek(0, io.SeekStart)
+			}
+		}
+	}
 	c.Header("Content-Type", contentType)
+	c.Header("X-XDrive-Thumbnail-Alpha-State", alphaState)
 	http.ServeContent(
 		c.Writer,
 		c.Request,

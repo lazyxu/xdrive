@@ -80,6 +80,35 @@ test('compact Gallery covers the entire opaque thumbnail surface with a solid se
   }
 })
 
+test('PNG alpha masks the sector and percentage label with pixel-aligned fitting', () => {
+  const mask = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+  const rendered = create(React.createElement(XDriveMediaLoadingProgress, {
+    compact: true, stage: 'transfer', loadedBytes: 42, totalBytes: 100, alphaMask: mask,
+  }))
+  try {
+    const root = rendered.root.findByProps({ 'data-xdrive-media-loading-style': 'solid-pie' })
+    assert.equal(root.props.sx.maskImage, `url("${mask}")`)
+    assert.equal(root.props.sx.WebkitMaskImage, `url("${mask}")`)
+    assert.equal(root.props.sx.maskSize, 'cover')
+    assert.equal(root.props.sx.maskPosition, 'center')
+    assert.equal(root.props.sx.visibility, 'visible')
+  } finally { rendered.unmount() }
+  const withoutProof = create(React.createElement(XDriveMediaLoadingProgress, {
+    compact: true, stage: 'transfer', loadedBytes: 42, totalBytes: 100, alphaMask: null,
+  }))
+  try {
+    const root = withoutProof.root.findByProps({ 'data-xdrive-media-loading-style': 'solid-pie' })
+    assert.equal(root.props.sx.visibility, 'hidden',
+      'a missing or oversize alpha mask must suppress the rectangular progress')
+  } finally { withoutProof.unmount() }
+  const opaque = create(React.createElement(XDriveMediaLoadingProgress, {
+    compact: true, stage: 'transfer', loadedBytes: 42, totalBytes: 100, alphaMask: '',
+  }))
+  try {
+    assert.equal(opaque.root.findByProps({ 'data-xdrive-media-loading-style': 'solid-pie' }).props.sx.visibility, 'visible')
+  } finally { opaque.unmount() }
+})
+
 test('unknown-length thumbs remain unnumbered static placeholders while Viewer retains its ring', () => {
   const gallery = create(React.createElement(XDriveMediaLoadingProgress, {
     compact: true, stage: 'transfer', loadedBytes: 65536,
@@ -106,7 +135,7 @@ test('Desktop Agent IPC does not use compressed or unsafe wire lengths for thumb
   assert.ok(source.includes("response.headers.get('content-encoding')?.toLowerCase().trim()"))
   assert.ok(source.includes("Number.isSafeInteger(numericTotal) && numericTotal > 0"))
   assert.ok(source.includes("(!encoding || encoding === 'identity')"))
-  assert.ok(source.includes('onProgress(data.byteLength, totalBytes)'),
+  assert.ok(source.includes('onProgress(data.byteLength, totalBytes, alphaMask)'),
     'body-only completion must not manufacture a denominator')
   assert.ok(!source.includes('onProgress(data.byteLength, totalBytes ?? data.byteLength)'))
 })
@@ -208,7 +237,7 @@ test('shared Gallery/Viewer/Explorer consumers keep the same progress contract',
   const adapter = read('ui/shared/src/mui/MediaGalleryAdapter.ts')
   const preview = read('ui/shared/src/mui/FilePreviewImage.tsx')
   const explorer = read('ui/shared/src/mui/FileExplorerThumbnail.tsx')
-  assert.match(web, /xDriveMediaResponseBlob\(response, signal, onProgress\)/)
+  assert.match(web, /xDriveMediaResponseBlob\(response, signal, onProgress, true\)/)
   assert.match(web, /revisionQuery/)
   assert.match(main, /agent:media-binary-progress/)
   assert.match(preload, /value\.request_id !== requestID/)
@@ -293,4 +322,56 @@ test('transformed videos report native buffered time through the same shared Vie
   assert.match(viewer, /onBufferChange=\{updateBuffered\}/)
   assert.match(viewer, /onProgress=\{updateBuffered\}/)
   assert.match(viewer, /bufferedStartSeconds/)
+})
+
+test('Web HTTP thumbnails deliver verified alpha before first image-body byte', async () => {
+  const mask = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+  const image = new Response(new Uint8Array([1, 2, 3, 4]), { headers: {
+    'content-type': 'image/png',
+    'content-length': '4',
+    'x-xdrive-thumbnail-alpha-state': 'masked',
+    'x-xdrive-thumbnail-alpha-mask': mask,
+  } })
+  const events = []
+  const blob = await xDriveMediaResponseBlob(image, undefined,
+    (loaded, total, alpha) => events.push([loaded, total, alpha]), true)
+  assert.equal(blob.size, 4)
+  assert.deepEqual(events[0], [0, 4, 'data:image/png;base64,' + mask],
+    'first event must include mask from HTTP headers before body streaming')
+  assert.equal(events.at(-1)[0], 4)
+
+  const cases = [
+    { 'content-type': 'image/jpeg' },
+    { 'content-type': 'image/png', 'x-xdrive-thumbnail-alpha-state': 'masked' },
+    { 'content-type': 'image/png', 'x-xdrive-thumbnail-alpha-state': 'masked',
+      'x-xdrive-thumbnail-alpha-mask': 'not-base64!' },
+    { 'content-type': 'image/png', 'x-xdrive-thumbnail-alpha-state': 'masked',
+      'x-xdrive-thumbnail-alpha-mask': 'a'.repeat(5000) },
+    { 'content-type': 'image/png', 'x-xdrive-thumbnail-alpha-state': 'unavailable' },
+  ]
+  for (const headers of cases) {
+    const response = new Response(new Uint8Array([3,4]), { headers: {
+      'content-length': '2', ...headers,
+    } })
+    const results = []
+    await xDriveMediaResponseBlob(response, undefined, (_done, _total, alpha) => results.push(alpha), true)
+    assert.equal(results[0], null,
+      'missing, legacy, untrusted or oversized masks must fail closed')
+  }
+  const opaque = new Response(new Uint8Array([5,6]), { headers: {
+    'content-type': 'image/jpeg',
+    'content-length': '2',
+    'x-xdrive-thumbnail-alpha-state': 'opaque',
+  } })
+  const opaqueResults = []
+  await xDriveMediaResponseBlob(opaque, undefined, (_done, _total, alpha) => opaqueResults.push(alpha), true)
+  assert.equal(opaqueResults[0], '', 'only explicitly verified JPEGs can paint the full tile')
+})
+
+test('Gallery contain mode aligns alpha mask with the thumbnail object-fit geometry', () => {
+  const gallery = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  const begin = gallery.indexOf('& [data-xdrive-media-tile] [data-xdrive-media-loading-progress]')
+  assert.ok(begin >= 0)
+  assert.match(gallery.slice(begin, begin + 280), /maskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
+  assert.match(gallery.slice(begin, begin + 280), /WebkitMaskSize: aspectMode === 'contain' \? 'contain' : 'cover'/)
 })

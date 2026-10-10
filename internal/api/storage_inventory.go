@@ -132,7 +132,8 @@ func storageInventoryCategory(key string) string {
 	}
 	if strings.HasPrefix(key, media.ThumbnailStoragePrefix) {
 		switch {
-		case strings.HasSuffix(key, "-"+strconv.Itoa(media.DefaultThumbnailEdge)+".jpg"):
+		case strings.HasSuffix(key, "-"+strconv.Itoa(media.DefaultThumbnailEdge)+".jpg"),
+			strings.HasSuffix(key, "-"+strconv.Itoa(media.DefaultThumbnailEdge)+".thumb"):
 			return "media_thumbnail"
 		case strings.HasSuffix(key, "-"+strconv.Itoa(media.AnalysisPreviewEdge)+".jpg"),
 			strings.HasSuffix(key, "-"+strconv.Itoa(media.CreativePreviewEdge)+".jpg"):
@@ -312,7 +313,7 @@ func (s *Server) scanStorageInventoryWithProgress(
 		item("cas", "CAS 主数据", "primary", storageHostJoin(filesRoot, storage.ContentBlobDir), "active", false, ""),
 		item("legacy", "Legacy 文件数据", "primary", filesRoot, "active", false, ""),
 		item("upload_staging", "上传临时文件", "temporary", storageHostJoin(filesRoot, storage.UploadStagingDir), "active", true, storageCleanupStaging),
-		item("media_thumbnail", "图片缩略图 · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-512.jpg"), "regenerable", true, storageCleanupThumbnail),
+		item("media_thumbnail", "图片缩略图 · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-512.{jpg,thumb}"), "regenerable", true, storageCleanupThumbnail),
 		item("video_poster", "视频 Poster · 512px", "cache", storageHostPattern(filesRoot, ".xdrive-media/posters/*-512.jpg"), "regenerable", true, storageCleanupVideoPoster),
 		item("analysis_preview", "Photo Intelligence 分析/创作预览 · 1280/2048px", "cache", storageHostPattern(filesRoot, ".xdrive-media/thumbnails/*-{1280,2048}.jpg"), "regenerable", true, storageCleanupAnalysis),
 		item("media_other", "其他媒体派生文件", "cache", storageHostJoin(filesRoot, ".xdrive-media"), "unknown", false, ""),
