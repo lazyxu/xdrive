@@ -59,6 +59,10 @@ The administrator-only `GET /api/v1/admin/services/geonames` reports the loaded 
 
 The administrator may update the GeoNames matching radius in `(0, 500]` km with a mandatory optimistic revision and an explicit applied-versus-pending indication. The Server rebuilds the full candidate from the existing trusted read-only mount **before** updating `xd_admin_geonames_settings`. Saving and a metadata-only audit are one transaction; only after commit is the new immutable resolver published in the current Server. Failed validation, stale revision (409), or failed audit leaves the previous effective resolver intact. Startup reads the persisted override before loading the resolver. An administrator may use the existing manual reload action on a replica to pick up a pending saved radius. This is **not** an arbitrary dataset-path editor, automatic cluster broadcast, or global all-replicas success guarantee. User-level Sync Folder credentials remain excluded.
 
+### P1-B2b-R1: revision journal and auditable rollback (staged)
+
+The administrator can review an immutable history of the last 40 GeoNames matching-distance revisions and roll back to an older value. The first setting edit stores the old deployment default as revision 0. Every rollback creates a new revision, not a history rewrite. Complete dataset verification precedes database changes; settings, immutable history and a metadata-only audit commit atomically before this Server swaps the resolver. Stale revisions return 409, missing targets 404 and invalid datasets 422. Other replicas may remain pending. This is a radius rollback, **not** automatic dataset-file or multi-replica rollback.
+
 **Remaining P1-B2b:** safe managed dataset staging and validation, application across all Server instances with actual status acknowledgments, and rollback of persisted desired revisions. These are not declared delivered by radius hot-apply.
 
 **Next real control-plane stages:**
