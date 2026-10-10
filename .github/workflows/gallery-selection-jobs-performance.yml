@@ -40,12 +40,15 @@ jobs:
       - name: Measure G07 durable jobs on 10k and 100k PostgreSQL items
         run: |
           set -euo pipefail
-          go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k$' -timeout=24m -count=1 -v ./internal/api | tee gallery-selection-jobs-baseline.log
-          test "$(grep -c 'G07_SELECTION_JOB_BASELINE' gallery-selection-jobs-baseline.log)" -eq 2
+          mkdir -p perf-results/gallery-selection-enqueue-n3
+          for sample in 1 2 3; do
+            go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k$' -timeout=12m -count=1 -v ./internal/api | tee "perf-results/gallery-selection-enqueue-n3/sample-$sample.log"
+          done
+          python3 scripts/ci/parse-gallery-selection-enqueue-n3.py perf-results/gallery-selection-enqueue-n3
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gallery-selection-jobs-10k-100k
-          path: gallery-selection-jobs-baseline.log
+          name: gallery-selection-jobs-10k-100k-n3
+          path: perf-results/gallery-selection-enqueue-n3/
           if-no-files-found: warn
           retention-days: 14

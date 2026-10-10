@@ -1,0 +1,167 @@
+{
+  "status": "Measured current BEFORE n=3; 100k enqueue & Worker exceed predeclared budgets. Candidate AFTER unmeasured.",
+  "measured_work_commit": "2d02f1d10f6ccb3379eea389153bf5e6a4ff6d8e",
+  "fixed_parent": "dccebda02367c53c5597dd7410fd8577a232c627",
+  "github_run": 38035890714,
+  "github_benchmark_job": 114166104014,
+  "source_url": "https://github.com/lazyxu/xdrive/actions/runs/38035890714/job/114166104014",
+  "workload": "Native PostgreSQL17 10k/100k Nodes + PhotoAssets + PhotoMetadata; Gin enqueue and real durable worker; all task items correctly processed",
+  "original_worker_chunk_size": 100,
+  "original_enqueue_chunk_size": 100,
+  "candidate_enqueue_chunk_size": 1000,
+  "candidate_worker_chunk_size": 100,
+  "baseline": {
+    "status": "measured-current-before-only-not-a-product-optimization",
+    "scope": "native PostgreSQL17/Gin/Go durable Gallery selection job, 100k Node/PhotoAsset/PhotoMetadata rows, metadata-only; no Web/Desktop/Agent or CAS bytes",
+    "sampling": "three independent Go test processes and isolated PostgreSQL schemas per scale, no fixture time in operation timer",
+    "sample_count_per_scale": 3,
+    "acceptance_budgets": {
+      "10000_enqueue_p50_ms": 750,
+      "100000_enqueue_p50_ms": 3000,
+      "100000_worker_p50_ms": 60000
+    },
+    "acceptance": {
+      "10000_enqueue_p50_pass": true,
+      "100000_enqueue_p50_pass": false,
+      "100000_worker_p50_pass": false
+    },
+    "decision": "baseline red: consider smallest enqueue batch optimization only after actual n3 results",
+    "aggregates": {
+      "10000": {
+        "enqueue_ms": {
+          "samples": [
+            293,
+            301,
+            428
+          ],
+          "median": 301,
+          "minimum": 293,
+          "maximum": 428
+        },
+        "worker_ms": {
+          "samples": [
+            3083,
+            3555,
+            3216
+          ],
+          "median": 3216,
+          "minimum": 3083,
+          "maximum": 3555
+        },
+        "fixture_ms": {
+          "samples": [
+            1111,
+            809,
+            781
+          ],
+          "median": 809,
+          "minimum": 781,
+          "maximum": 1111
+        }
+      },
+      "100000": {
+        "enqueue_ms": {
+          "samples": [
+            4158,
+            4596,
+            4587
+          ],
+          "median": 4587,
+          "minimum": 4158,
+          "maximum": 4596
+        },
+        "worker_ms": {
+          "samples": [
+            54895,
+            142307,
+            149394
+          ],
+          "median": 142307,
+          "minimum": 54895,
+          "maximum": 149394
+        },
+        "fixture_ms": {
+          "samples": [
+            8170,
+            8583,
+            8205
+          ],
+          "median": 8205,
+          "minimum": 8170,
+          "maximum": 8583
+        }
+      }
+    },
+    "raw_rows": [
+      {
+        "independent_process_sample": 1,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 1111,
+        "enqueue_ms": 293,
+        "worker_ms": 3083,
+        "chunks": 100,
+        "heap_before_bytes": 2684776,
+        "heap_after_bytes": 3754424
+      },
+      {
+        "independent_process_sample": 1,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 8170,
+        "enqueue_ms": 4158,
+        "worker_ms": 54895,
+        "chunks": 1000,
+        "heap_before_bytes": 6562584,
+        "heap_after_bytes": 2781664
+      },
+      {
+        "independent_process_sample": 2,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 809,
+        "enqueue_ms": 301,
+        "worker_ms": 3555,
+        "chunks": 100,
+        "heap_before_bytes": 2683576,
+        "heap_after_bytes": 3762864
+      },
+      {
+        "independent_process_sample": 2,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 8583,
+        "enqueue_ms": 4596,
+        "worker_ms": 142307,
+        "chunks": 1000,
+        "heap_before_bytes": 6568048,
+        "heap_after_bytes": 2498536
+      },
+      {
+        "independent_process_sample": 3,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 781,
+        "enqueue_ms": 428,
+        "worker_ms": 3216,
+        "chunks": 100,
+        "heap_before_bytes": 2684952,
+        "heap_after_bytes": 3165552
+      },
+      {
+        "independent_process_sample": 3,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 8205,
+        "enqueue_ms": 4587,
+        "worker_ms": 149394,
+        "chunks": 1000,
+        "heap_before_bytes": 6564976,
+        "heap_after_bytes": 3335928
+      }
+    ]
+  },
+  "after": null,
+  "decision": "100k enqueue red. Run paired n3 A/B of an enqueue-only SQL insert batching experiment; Worker remains independently red.",
+  "scope_limitations": "No CAS binaries, photo/video/Live rendering, physical disk/WAN, real Web/Desktop Agent or synchronization"
+}
