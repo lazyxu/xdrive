@@ -516,6 +516,15 @@ export type AgentAdminGeoNamesConfig = {
   requires_restart: boolean
 }
 
+export type AgentAdminGeoNamesRevision = {
+  revision: number
+  max_distance_km: number
+  origin: 'environment' | 'saved' | 'rollback'
+  created_at: string
+}
+export type AgentAdminGeoNamesRevisionPage = { items: AgentAdminGeoNamesRevision[] }
+export type AgentAdminGeoNamesRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminGeoNamesUpdate = {
   max_distance_km: number
   revision: number
@@ -2804,6 +2813,12 @@ export class AgentIPCClient {
   }
   cloudSetAdminGeoNamesConfig(input: AgentAdminGeoNamesUpdate) {
     return this.request<AgentAdminGeoNamesConfig>('PUT', '/v1/cloud/admin-geonames', input, 120_000)
+  }
+  cloudAdminGeoNamesRevisions() {
+    return this.request<AgentAdminGeoNamesRevisionPage>('GET', '/v1/cloud/admin-geonames/revisions')
+  }
+  cloudRollbackAdminGeoNames(input: AgentAdminGeoNamesRollbackInput) {
+    return this.request<AgentAdminGeoNamesConfig>('POST', '/v1/cloud/admin-geonames/rollback', input, 120_000)
   }
   cloudReloadAdminGeoNames(expectedVersion: string) {
     return this.request<AgentAdminGeoNamesReloadResult>(

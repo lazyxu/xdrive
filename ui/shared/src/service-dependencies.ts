@@ -63,6 +63,20 @@ export type XDriveGeoNamesConfig = {
   requires_restart: boolean
 }
 
+export type XDriveGeoNamesRevision = {
+  revision: number
+  max_distance_km: number
+  origin: 'environment' | 'saved' | 'rollback'
+  created_at: string
+}
+
+export type XDriveGeoNamesRevisionPage = { items: XDriveGeoNamesRevision[] }
+
+export type XDriveGeoNamesRollbackInput = {
+  revision: number
+  target_revision: number
+}
+
 export type XDriveGeoNamesUpdate = {
   revision: number
   max_distance_km: number

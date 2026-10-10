@@ -614,6 +614,22 @@ func (c *agentController) CloudReloadAdminGeoNames(ctx context.Context, expected
 	return cli.ReloadAdminGeoNames(ctx, expectedVersion)
 }
 
+func (c *agentController) CloudAdminGeoNamesRevisions(ctx context.Context) (client.AdminGeoNamesRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminGeoNamesRevisionPage{}, err
+	}
+	return cli.AdminGeoNamesRevisions(ctx)
+}
+
+func (c *agentController) CloudRollbackAdminGeoNames(ctx context.Context, input client.AdminGeoNamesRollbackInput) (client.AdminGeoNamesConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminGeoNamesConfig{}, err
+	}
+	return cli.RollbackAdminGeoNames(ctx, input)
+}
+
 func (c *agentController) CloudAdminBaiduMapConfig(ctx context.Context) (client.AdminBaiduMapConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {
