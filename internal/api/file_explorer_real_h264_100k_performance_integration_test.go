@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -26,10 +28,62 @@ import (
 // This sample is deliberately small. Never present it as 4K or HEVC decoding.
 const fileExplorerH264Real100KVideo = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAANTbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAfQAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAn50cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAfQAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAGAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAH0AAAAAAABAAAAAAH2bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAwAAAAGABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABoW1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAWFzdGJsAAAAuXN0c2QAAAAAAAAAAQAAAKlhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAGAAQABIAAAASAAAAAAAAAABFUxhdmM2MS4xOS4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAAL2F2Y0MBQsAK/+EAF2dCwArZBibARAAAAwAEAAADAMA8SJkgAQAFaMuDyyAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAACAsAAAAAAAAAAYc3R0cwAAAAAAAAABAAAADAAAAgAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAADAAAAAEAAABEc3RzegAAAAAAAAAAAAAADAAABpMAAAAcAAAAJQAAACMAAAAlAAAAJAAAACsAAAApAAAAKQAAACAAAAAZAAAAFQAAABRzdGNvAAAAAAAAAAEAAAODAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMwAAAAhmcmVlAAAIE21kYXQAAAJxBgX//23cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MiBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0yNCBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAABBpliIQ3/w/tHRQABAj+KAAIAngAXpb/QLHOT9oOKJu/bv/IILs4QABMMedB0CYgA+3dmQRT/2DgBACsQAPBoJdbRRYuDUhy5WlDxuAC155FiHeYfroAWfdQH+uQADjGqAA9g/59/f/v//u8OEAAgwNBoIAAQEAABANAAemAhjkK4d/66v7//6/B+AQaMRA5vLBwh+uu+/v9/9jUqlUH4f/wViIoABniAICRAADQAAgLxQLGIBYiAgRjBwQIxGYDgAGAKIAAEABMEAQABCbiAAGmxALEQCxBwQIxBwQIx/A/hwWHAAvU5BXXBEt34AA/AOLvBLkIATADhwQAAgBACgAEgewAysJbRm/rr+AA6GlSuDkZOSDzEPh9KJ8N4oAAgBeAD1aTUU3828xM7nH+8BCaGmdrcsRggIBaYEAAbAAECpoNEQJjAA0dS9ijKeIAQBWMAB9sBOvKzCG+J8H9iYPaFhyAAxkLp2FW6vibB7brDDZyj6H/eBTaQDFIhBuPv+iAS5F9yHvuSABIlyHAEiXDMVqmV0//+ghguOABYhKbxBKC6o1rv/8BQvgU32sY8jcqPAImQ0xSdTOQ5fEwzN9ilZXJnCAAJBySDeDVy+BwmNLikPj+w3/xmMecqIQ1nSXUwAAmAwbVMDLAAEAGHnej0cYfY///SlgugAI2MW8iIUtHelwfiMRFu5+Rk46g182+XTMV6Zl9FPrl0u/9Cv7EVgsPftgEDch3a/R8AAQCAFpCe3wGiERTiCSqx+S//+7wKidb/b9fC054QCQI8IAA4A4EiUPMUsdlt2HAQh8v/+1vYLcAChoTpUFSr+5//3xoYtZMShSPxLW/8u4h+GAQyA6AAIAXB0X4iFwdF8ByIgFlgrJU78K6pwXRgSndYUAAQAQYBIQABgMJBIUzjwauWCOZhZBIeWGHiaWCSEgFtRAcergZAAKVMnxA8QD8AhWk0Rvf1GD3ghVwJcghCagtA1+W7wgACAAceNBAACAhnAAEB0QmIUZAg8j4xD/niBGWWHQDWCkFWAg1Z2ClZ5R4M/PKNGds/4BAAgtxfUX8ByEYDy3xj3CAEILHggAQAxgBZOANCcBoHwOgH+i9km4oWDXYAl0iIml/+EQGTwe+DwP4PA+DwfwOwy0EoBZ7o8Ds3dAIDDixTvCEAAQUlAAEEAIAA+AKCTpVHINWqwgAjESyACEKlhQBkDgYAC2A4JzywUTNr4I+AYAHIliXiQ/bEnv0yX4AD6W+9CR3n/ABbX8rHzdkff9P//AgADACtUEAAUgAAgAgAg/L8AHxtLhcO2ROAMIKwdJZXsBA4Etq6kT1wtaHANwIAD8HxWK9RJ6qAcQZwJLB77fCII3CAAQCBI0FQNDgLCDIFk0R1r5A3hYyDOCftEBIaXAAAAAYQZo4bhNGn6J0R/qRMvkkklk3vROrfU6YAAAAIUGaVAjhMvkkkl6yfL5oieeeuTUvrNzT211k5q516xHWLAAAAB9BmmBHCbzcE5FVVUl/hWb6yfL5pJJ661m/541TWffgAAAAIUGagEcJl803Py+aInmlI586zRtcsvmmqfrN/wS73t2zpgAAACBBmqBXCazTzkX8+n2XzSSzdZovrNzQ+y36ycuMe9Yj4AAAACdBmsBXCZfJNJPBIQMZb7iXySSydZonl8k0k/WTnr+TSb8EWbzc6YAAAAAlQZrgZwms0/WbnsPLWPy+s3PWmMS4/l80kk/WbrF+GtajVEH4vwAAACVBmwBnCZfJNJP1iOCOez3nTWTgkx/3uayfWbhiS+S/h2z79Yj4AAAAHEGbIHcJrNPBIQl9/1vrN9ZvrN1c1k4J83m8mb4AAAAVQZtAIcKLEde1k+XzTR0/WT6ydE7AAAAAEUGbYCnCbxXRGWs31m+snXMw"
 
+type fileExplorerH264CancelCounters struct {
+	started     atomic.Int64
+	active      atomic.Int64
+	contextDone atomic.Int64
+	cancelled   atomic.Int64
+	rangeStarts atomic.Int64
+	emitted     atomic.Int64
+	posterPuts  atomic.Int64
+	cancelMark  atomic.Int64
+	maxCancelUS atomic.Int64
+}
+
+// Slow only the benchmark response writer. Production signed Preview Engine,
+// authentication, Store.Open, ServeContent and the H264/MP4 bytes are unchanged.
+type fileExplorerH264CancelWriter struct {
+	http.ResponseWriter
+	ctx      context.Context
+	counters *fileExplorerH264CancelCounters
+}
+
+func (w *fileExplorerH264CancelWriter) Write(data []byte) (int, error) {
+	first := min(256, len(data))
+	n, err := w.ResponseWriter.Write(data[:first])
+	w.counters.emitted.Add(int64(n))
+	if flusher, ok := w.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+	if err != nil || n != first {
+		return n, err
+	}
+	timer := time.NewTimer(1500 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-w.ctx.Done():
+		return n, w.ctx.Err()
+	case <-timer.C:
+	}
+	if first == len(data) {
+		return n, nil
+	}
+	m, nextErr := w.ResponseWriter.Write(data[first:])
+	w.counters.emitted.Add(int64(m))
+	return n + m, nextErr
+}
+
+func (w *fileExplorerH264CancelWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 	if os.Getenv("XD_FILEEXPLORER_REAL_H264_100K_PERF") != "1" {
 		t.Skip("set XD_FILEEXPLORER_REAL_H264_100K_PERF=1")
 	}
+	cancelMode := os.Getenv("XD_FILEEXPLORER_H264_CANCEL_100K_PERF") == "1"
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	readyFile := os.Getenv("XD_FILEEXPLORER_REAL_H264_READY_FILE")
 	if dsn == "" || readyFile == "" {
@@ -135,10 +189,52 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 	}
 	seedMs := float64(time.Since(started).Microseconds()) / 1000
 	config := map[string]any{"token": token, "folder_id": folder.ID, "total_count": count,
-		"sample_node_ids": sampleIDs, "video_bytes": len(videoBytes) + 12, "unique_sha256_count": len(uniqueSHAs), "seed_ms": seedMs}
+		"sample_node_ids": sampleIDs, "video_bytes": len(videoBytes) + 12, "unique_sha256_count": len(uniqueSHAs), "seed_ms": seedMs, "cancel_mode": cancelMode}
 	done := make(chan struct{})
 	var once sync.Once
+	var counters fileExplorerH264CancelCounters
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Benchmark-only slow transport preserves the authenticated production
+		// signed Preview Engine handler and the genuine H264 source bytes.
+		if cancelMode && strings.HasPrefix(r.URL.Path, "/api/v1/file-preview/") &&
+			r.URL.Query().Get("bench_slow") == "1" {
+			counters.started.Add(1)
+			counters.active.Add(1)
+			if r.Header.Get("Range") != "" {
+				counters.rangeStarts.Add(1)
+			}
+			defer counters.active.Add(-1)
+			go func(ctx context.Context) {
+				<-ctx.Done()
+				counters.contextDone.Add(1)
+				if ctx.Err() != context.Canceled {
+					return
+				}
+				mark := counters.cancelMark.Load()
+				if mark <= 0 {
+					return
+				}
+				delay := time.Since(time.Unix(0, mark)).Microseconds()
+				for delay > counters.maxCancelUS.Load() {
+					old := counters.maxCancelUS.Load()
+					if old >= delay || counters.maxCancelUS.CompareAndSwap(old, delay) {
+						break
+					}
+				}
+			}(r.Context())
+			writer := &fileExplorerH264CancelWriter{
+				ResponseWriter: w, ctx: r.Context(), counters: &counters,
+			}
+			router.ServeHTTP(writer, r)
+			if r.Context().Err() == context.Canceled {
+				counters.cancelled.Add(1)
+			}
+			return
+		}
+		if cancelMode && r.Method == http.MethodPut &&
+			strings.HasSuffix(r.URL.Path, "/video-poster") {
+			counters.posterPuts.Add(1)
+		}
 		switch r.URL.Path {
 		case "/":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -150,7 +246,22 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 		case "/__perf/stats":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]int64{
-				"original_open": store.originalOpen.Load(), "poster_open": store.posterOpen.Load()})
+				"original_open": store.originalOpen.Load(), "poster_open": store.posterOpen.Load(),
+				"preview_started": counters.started.Load(), "preview_active": counters.active.Load(),
+				"preview_context_done":  counters.contextDone.Load(),
+				"preview_cancelled":     counters.cancelled.Load(),
+				"preview_range_started": counters.rangeStarts.Load(),
+				"preview_emitted_bytes": counters.emitted.Load(),
+				"preview_max_cancel_us": counters.maxCancelUS.Load(),
+				"preview_poster_puts":   counters.posterPuts.Load()})
+		case "/__perf/cancel-mark":
+			if r.Method != http.MethodPost || !cancelMode {
+				http.Error(w, "benchmark cancellation only", http.StatusMethodNotAllowed)
+				return
+			}
+			counters.maxCancelUS.Store(0)
+			counters.cancelMark.Store(time.Now().UnixNano())
+			w.WriteHeader(http.StatusNoContent)
 		case "/__perf/stop":
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)

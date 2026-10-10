@@ -2948,3 +2948,57 @@ jobs:
           path: desktop/real-h264-100k-results/
           if-no-files-found: warn
           retention-days: 7
+
+  file-explorer-real-h264-cancel-100k-performance:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/file-explorer-real-h264-cancel-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install native Chromium and Xvfb
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd desktop && npm install --no-audit --no-fund)
+      - name: Measure authentic signed H264 Renderer-to-Go cancellations at 100k
+        working-directory: desktop
+        run: |
+          set -euo pipefail
+          node --check scripts/file-explorer-real-h264-cancel-100k-main.cjs
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-real-h264-cancel-100k-main.cjs
+          for sample in 1 2 3; do
+            test -f "real-h264-cancel-100k-results/sample-$sample.json"
+          done
+          cat real-h264-cancel-100k-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-real-h264-cancel-100k
+          path: desktop/real-h264-cancel-100k-results/
+          if-no-files-found: warn
+          retention-days: 7
