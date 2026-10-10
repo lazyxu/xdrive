@@ -267,7 +267,12 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	// Device registration and binding alone never enable an unimplemented executor.
 	requestWithHeaders(t, router, http.MethodPatch, sourceURL, ownerToken,
 		strings.NewReader(`{"status":"active"}`), http.StatusConflict,
-		map[string]string{"If-Match": `"2"`})
+		map[string]string{
+			"If-Match": `"2"`, "X-XDrive-Device-ID": enrolled.Device.ID,
+			"X-XDrive-Device-Token":           enrolled.DeviceToken,
+			"X-XDrive-Local-Root-ID":          rootID,
+			"X-XDrive-Local-Root-Fingerprint": fingerprint,
+		})
 	request(t, router, http.MethodPost, sourceURL+"/runs", ownerToken,
 		strings.NewReader(fmt.Sprintf(`{"run_id":%q}`, uuid.NewString())), http.StatusForbidden)
 
@@ -281,9 +286,11 @@ func TestLocalFolderDeviceBindingAndRevocation(t *testing.T) {
 	headers["If-Match"] = `"3"`
 	requestWithHeaders(t, router, http.MethodPost, sourceURL+"/local-binding", ownerToken,
 		strings.NewReader(payload), http.StatusForbidden, headers)
+	// Revocation does not empower a remote JWT-only caller to unbind or delete
+	// the linked local Source; that would bypass device-local ownership.
 	requestWithHeaders(t, router, http.MethodDelete, sourceURL+"/local-binding", ownerToken,
-		nil, http.StatusNoContent, map[string]string{"If-Match": `"3"`})
-	request(t, router, http.MethodGet, sourceURL+"/local-binding", ownerToken, nil, http.StatusNotFound)
+		nil, http.StatusForbidden, map[string]string{"If-Match": `"3"`})
+	request(t, router, http.MethodGet, sourceURL+"/local-binding", ownerToken, nil, http.StatusOK)
 	requestWithHeaders(t, router, http.MethodDelete, sourceURL, ownerToken,
-		nil, http.StatusNoContent, map[string]string{"If-Match": `"4"`})
+		nil, http.StatusForbidden, map[string]string{"If-Match": `"3"`})
 }

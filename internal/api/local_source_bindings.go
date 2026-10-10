@@ -202,6 +202,9 @@ func (s *Server) unbindLocalSource(c *gin.Context) {
 	}
 	var currentRevision uint64
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
+			return err
+		}
 		var source meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
@@ -251,6 +254,8 @@ func (s *Server) unbindLocalSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errLocalBindingTypeInvalid):
 			fail(c, http.StatusBadRequest, "local_folder source required")
+		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
+			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, errLocalBindingStateInvalid), errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "local source must be paused with no active run")
 		case errors.Is(err, gorm.ErrRecordNotFound):

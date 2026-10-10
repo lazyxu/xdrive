@@ -401,6 +401,9 @@ func (s *Server) updateSource(c *gin.Context) {
 	var updated meta.Source
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
+			return err
+		}
 		var current meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&current).Error; err != nil {
@@ -534,6 +537,8 @@ func (s *Server) updateSource(c *gin.Context) {
 		switch {
 		case errors.Is(err, errRevisionConflict):
 			revisionConflict(c, expected, currentRevision)
+		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
+			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, errSourceNameTaken), isDuplicate(err):
 			fail(c, http.StatusConflict, "source name already exists")
 		case errors.Is(err, errLocalFolderNotReady):
@@ -569,9 +574,17 @@ func (s *Server) triggerSource(c *gin.Context) {
 	now := time.Now().UTC()
 	var source meta.Source
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
+			return err
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
 			return err
+		}
+		if source.Kind == meta.SourceKindLocalFolder {
+			// No local Source trigger is executable until the native Agent
+			// planner, upload and commit protocol has been verified end-to-end.
+			return errLocalFolderNotReady
 		}
 		if source.Status != meta.SourceStatusActive {
 			return errSourcePaused
@@ -610,6 +623,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 	}
 	var currentRevision uint64
 	err := s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.requireLocalSourceMutationTx(tx, c, id); err != nil {
+			return err
+		}
 		var source meta.Source
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ? AND owner_id = ?", id, userID(c)).First(&source).Error; err != nil {
@@ -636,6 +652,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source already has an active run")
+		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
+			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, gorm.ErrRecordNotFound):
 			fail(c, http.StatusNotFound, "source not found")
 		default:
