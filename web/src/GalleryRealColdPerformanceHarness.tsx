@@ -4,6 +4,8 @@ import { XDriveMediaGalleryPage } from '@xdrive/ui/mui'
 import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
 
 const progressMode = new URLSearchParams(window.location.search).get('xdriveMediaProgress') === 'on' ? 'on' : 'off'
+const actualViewportCancelBenchmark = new URLSearchParams(window.location.search)
+  .get('xdriveRealViewportCancel') === '1'
 
 type RealColdConfig = {
   token: string
@@ -170,6 +172,10 @@ export function XDriveGalleryRealColdPerformanceHarness() {
   }, [config])
 
   useEffect(() => {
+    // The scroll/cancel benchmark mounts exactly this production Gallery,
+    // but deliberately holds its first thumbnails pending. It cannot use
+    // the ordinary 12-decoded-images first-paint completion gate.
+    if (actualViewportCancelBenchmark) return
     if (!source || !config) return
     let checking = false
     let didDecode = false
@@ -282,7 +288,11 @@ export function XDriveGalleryRealColdPerformanceHarness() {
   }, [source, config])
 
   if (!source) return <div role="status">Loading real 100k Gallery fixture</div>
-  return <div style={{ width: '100vw', height: '100vh', overflow: 'hidden' }}>
+  return <div style={{
+    width: '100vw',
+    height: '100vh',
+    overflow: actualViewportCancelBenchmark ? 'auto' : 'hidden',
+  }}>
     <XDriveMediaGalleryPage source={source} pageSize={100} initialSection="library" />
   </div>
 }
