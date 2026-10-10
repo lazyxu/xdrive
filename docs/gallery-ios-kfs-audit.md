@@ -564,3 +564,14 @@ mounted collection. Existing Web ZIP and Desktop archive batch downloads
 were already wired; this extension does **not** replace those services.
 Physical iOS 27 gesture/visual acceptance and real Agent native-dialog
 testing remain separate from source/CI checks.
+
+### 2026-10-10 thumbnail response-length / filled-sector follow-up
+
+**In progress; validation pending.** The shared Gallery compact loading primitive
+now targets a full-placeholder conic sector rather than a centred 34px disk;
+Web/Mobile Web and Desktop share the same surface. Real Server 200/206
+`Content-Length` is already covered in `internal/api/media_integration_test.go`;
+the Agent IPC declares actual media byte length, with new assertions. Desktop
+progress additionally rejects compressed/invalid totals. No claim of physical
+iOS 27 screenshot calibration or authoritative green PR CI is made here.
+Work branch: `fix/gallery-thumbnail-full-surface-pie-20261010`.

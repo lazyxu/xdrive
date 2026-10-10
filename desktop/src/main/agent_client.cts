@@ -3558,12 +3558,17 @@ export class AgentIPCClient {
           }
         }
 
-        const rawTotal = Number(response.headers.get('content-length') || '')
-        const totalBytes = Number.isFinite(rawTotal) && rawTotal > 0 ? rawTotal : undefined
+        const declared = response.headers.get('content-length')
+        const numericTotal = declared !== null && /^\d+$/.test(declared) ? Number(declared) : 0
+        // Fetch can decompress the body but retain its encoded wire length.
+        // In that case, a pie percentage would misrepresent the received bytes.
+        const encoding = response.headers.get('content-encoding')?.toLowerCase().trim()
+        const totalBytes = (!encoding || encoding === 'identity') &&
+          Number.isSafeInteger(numericTotal) && numericTotal > 0 ? numericTotal : undefined
         onProgress(0, totalBytes)
         if (!response.body) {
           const data = await response.arrayBuffer()
-          onProgress(data.byteLength, totalBytes ?? data.byteLength)
+          onProgress(data.byteLength, totalBytes)
           return { content_type: contentType, data }
         }
 

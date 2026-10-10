@@ -336,8 +336,12 @@ Desktop keeps the file name and an unselected Favorite control visually quiet un
 hover/focus, while existing favorites remain visible. Compact touch keeps the dedicated
 Info/Favorite/selection controls at 44 CSS px and places Favorite after the selection
 target without overlap. Thumbnail requests keep the existing bounded scheduler; pending
-thumbnail pixels use a non-animated rectangular skeleton rather than one progress spinner
-per visible tile.
+thumbnail pixels use a non-animated rectangular skeleton. When the response's
+HTTP-body Content-Length is trustworthy, a full-surface, clockwise filled sector
+shows actual received-byte percentage across that placeholder (not a 34px disk
+or hollow ring); an unknown or compressed length remains a quiet, unnumbered
+placeholder, never an estimated percentage or a spinner per visible tile.
+The same shared visual is used by Web, Mobile Web and Desktop.
 
 
 ### Structured camera / format facet contract

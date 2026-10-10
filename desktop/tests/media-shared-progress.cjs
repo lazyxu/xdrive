@@ -54,39 +54,43 @@ test('App Store-style full-pie uses only the measured HTTP response size', () =>
   }
 })
 
-test('compact Gallery draws a filled circular sector from centre to rim, not an annular stroke', () => {
+test('compact Gallery covers the entire opaque thumbnail surface with a solid sector', () => {
   for (const percent of [0, 42, 100]) {
     const view = create(React.createElement(XDriveMediaLoadingProgress, {
       compact: true, stage: 'transfer', loadedBytes: percent, totalBytes: 100,
     }))
     try {
       const root = view.root.findByProps({ 'data-xdrive-media-loading-style': 'solid-pie' })
-      const disk = view.root.findAll(node => node.props?.['data-xdrive-media-solid-pie'])[0]
-      assert.ok(disk)
+      const fill = view.root.findByProps({ 'data-xdrive-media-progress-coverage': 'full-surface' })
       assert.equal(root.props['data-xdrive-media-loading-percent'], percent)
       assert.ok(root.props['aria-label'].includes(percent + '%'))
-      assert.ok(disk.props.sx.background.startsWith('conic-gradient(from -90deg,'))
-      assert.ok(disk.props.sx.background.includes('#0A84FF 0% ' + percent + '%'))
-      assert.equal(disk.props.sx.borderRadius, '50%')
-      assert.equal(view.root.findAll(n => n.props?.variant === 'determinate').length, 0,
-        'a measured compact thumbnail must never render an additional progress ring')
+      assert.equal(fill.props.sx.position, 'absolute')
+      assert.equal(fill.props.sx.inset, 0)
+      assert.equal(fill.props.sx.borderRadius, 'inherit')
+      assert.equal(fill.props.sx.width, undefined, 'no small 34px disk')
+      assert.equal(fill.props.sx.height, undefined, 'no small 34px disk')
+      assert.ok(fill.props.sx.background.startsWith('conic-gradient(from -90deg at 50% 50%,'))
+      assert.ok(fill.props.sx.background.includes('0% ' + percent + '%'))
+      assert.equal(root.props.sx.overflow, 'hidden')
       assert.equal(root.props.sx.pointerEvents, 'none')
       assert.ok(root.props.sx.animation.includes('160ms'))
+      assert.equal(view.root.findAll(n => n.props?.variant === 'determinate').length, 0,
+        'a known-length compact thumbnail must not draw a progress ring')
     } finally { view.unmount() }
   }
 })
 
-test('unknown-length thumbs remain indeterminate while full Viewer keeps its original ring', () => {
+test('unknown-length thumbs remain unnumbered static placeholders while Viewer retains its ring', () => {
   const gallery = create(React.createElement(XDriveMediaLoadingProgress, {
     compact: true, stage: 'transfer', loadedBytes: 65536,
   }))
   try {
     const root = gallery.root.findByProps({ 'data-xdrive-media-loading-style': 'indeterminate' })
-    const disk = gallery.root.findAll(n => n.props?.['data-xdrive-media-solid-pie'])[0]
-    assert.ok(disk)
+    const fill = gallery.root.findByProps({ 'data-xdrive-media-progress-coverage': 'full-surface' })
     assert.equal(root.props['data-xdrive-media-loading-percent'], undefined)
-    assert.ok(!disk.props.sx.background.includes('conic-gradient'))
-    assert.equal(gallery.root.findAll(n => n.props?.variant === 'determinate').length, 0)
+    assert.ok(!fill.props.sx.background.includes('conic-gradient'))
+    assert.equal(gallery.root.findAll(n => n.props?.variant === 'indeterminate').length, 0,
+      'unknown-size thumbnails must not animate hundreds of independent spinners')
   } finally { gallery.unmount() }
   const viewer = create(React.createElement(XDriveMediaLoadingProgress, {
     compact: false, stage: 'transfer', loadedBytes: 42, totalBytes: 100,
@@ -95,6 +99,16 @@ test('unknown-length thumbs remain indeterminate while full Viewer keeps its ori
     assert.equal(viewer.root.findAll(n => n.props?.variant === 'determinate').length, 1)
     assert.equal(viewer.root.findAll(n => n.props?.['data-xdrive-media-solid-pie']).length, 0)
   } finally { viewer.unmount() }
+})
+
+test('Desktop Agent IPC does not use compressed or unsafe wire lengths for thumbnail percentages', () => {
+  const source = fs.readFileSync(path.join(root, 'desktop/src/main/agent_client.cts'), 'utf8')
+  assert.ok(source.includes("response.headers.get('content-encoding')?.toLowerCase().trim()"))
+  assert.ok(source.includes("Number.isSafeInteger(numericTotal) && numericTotal > 0"))
+  assert.ok(source.includes("(!encoding || encoding === 'identity')"))
+  assert.ok(source.includes('onProgress(data.byteLength, totalBytes)'),
+    'body-only completion must not manufacture a denominator')
+  assert.ok(!source.includes('onProgress(data.byteLength, totalBytes ?? data.byteLength)'))
 })
 
 test('Web media stream preserves JPEG bytes and reports actual response length', async () => {

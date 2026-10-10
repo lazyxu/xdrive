@@ -807,3 +807,26 @@ The existing Viewer/Inspector preview HTTP cancellation contract is a dependency
 ### P0-C buffered time parity for edited video
 
 A native ordinary video and `XDriveTransformedVideoPreview` must send their actual `HTMLMediaElement.buffered` interval around `currentTime` into the same shared media-loading primitive. The edited-video trim/rotation state, source URL and player identity stay unchanged; an edited or seeked stream shows a factual e.g. 00:30–00:40 buffer inside a 02:36 clip, not 00:00–00:40 downloaded. Loading original media and RAW still separates byte receipt from decode. Live Photo motion still begins only after the first hold. A late buffer callback must not update a replaced Viewer generation.
+
+### P0-C full-surface thumbnail progress and transport length audit (2026-10-10)
+
+**Implementation candidate; PR/CI and actual-device validation pending.**
+The Server thumbnail handler serves stored, seekable JPEG derivatives through
+`http.ServeContent`: `internal/api/media_integration_test.go` already asserts
+exact `Content-Length` for cold and cached 200, 206 partial responses, RAW
+analysis preview and video posters. No new size API or duplicate synthetic
+size header is needed. The Desktop Agent media thumbnail and analysis-preview
+IPC handlers set the actual byte-array length; their Go test also asserts it.
+Web consumes the HTTP body header only when positive, safe and unencoded;
+Desktop IPC now applies that same trust requirement, never assigning the
+finished body size retroactively to a missing response denominator.
+
+For **compact thumbnails only**, the measured download fraction draws a
+clockwise conic-gradient sector across the whole clipped, nontransparent
+thumbnail placeholder; it is neither a progress ring nor a fixed-size disk.
+The virtualized tile or FileExplorer visual bounds own the clipping. A missing
+or untrusted length retains a nonanimated placeholder without numeric percent.
+The existing 160ms reveal delay, AbortSignal lifecycle, cached-image fast path,
+noncompact Viewer progress, decoding state and native video buffering semantics
+remain unchanged. This is presentation work, not a media transfer protocol,
+download job or evidence of physical iOS acceptance.
