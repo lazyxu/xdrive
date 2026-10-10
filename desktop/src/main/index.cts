@@ -99,6 +99,8 @@ import {
   type AgentAdminGeoNamesConfig,
   type AgentAdminGeoNamesUpdate,
   type AgentAdminGeoNamesReloadResult,
+  type AgentAdminGeoNamesSnapshotInput,
+  type AgentAdminGeoNamesSnapshotResult,
   type AgentAdminGeoNamesRevisionPage,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
@@ -4489,6 +4491,23 @@ function registerIPCHandlers() {
       revision: input.revision, target_revision: input.target_revision,
     })
   }, false))
+  ipcMain.handle('agent:cloud-stage-admin-geonames-snapshot', (_event, data: unknown) =>
+    runAgentAction<AgentAdminGeoNamesSnapshotResult>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new AgentIPCError('invalid_input', 0, 'GeoNames snapshot requires a revision and expected version.')
+      }
+      const input = data as Partial<AgentAdminGeoNamesSnapshotInput>
+      if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+          input.revision < 0 || typeof input.expected_version !== 'string' ||
+          !input.expected_version.length || input.expected_version.length > 128) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid GeoNames snapshot revision or version.')
+      }
+      return requireAgentClient().cloudStageAdminGeoNamesSnapshot({
+        revision: input.revision, expected_version: input.expected_version,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-reload-admin-geonames', (_event, version: unknown) => runAgentAction<AgentAdminGeoNamesReloadResult>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

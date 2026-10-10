@@ -17,6 +17,8 @@ import type {
   XDriveGeoNamesRevision,
   XDriveGeoNamesRevisionPage,
   XDriveGeoNamesRollbackInput,
+  XDriveGeoNamesSnapshotInput,
+  XDriveGeoNamesSnapshotResult,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -45,6 +47,7 @@ export type XDriveServiceDependenciesPort = {
   loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
   saveGeoNamesConfig?: (input: XDriveGeoNamesUpdate) => Promise<XDriveGeoNamesConfig>
   reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
+  stageGeoNamesSnapshot?: (input: XDriveGeoNamesSnapshotInput) => Promise<XDriveGeoNamesSnapshotResult>
   loadGeoNamesRevisions?: () => Promise<XDriveGeoNamesRevisionPage>
   rollbackGeoNames?: (input: XDriveGeoNamesRollbackInput) => Promise<XDriveGeoNamesConfig>
 }
@@ -157,6 +160,7 @@ export function XDriveServiceDependenciesPage({
   const [geoNamesHistoryError, setGeoNamesHistoryError] = useState('')
   const [geoNamesRollbackTarget, setGeoNamesRollbackTarget] = useState('')
   const [geoNamesRollbackConfirmOpen, setGeoNamesRollbackConfirmOpen] = useState(false)
+  const [geoNamesSnapshotConfirmOpen, setGeoNamesSnapshotConfirmOpen] = useState(false)
   const photoPolicyEpochRef = useRef(0)
   const photoHistoryEpochRef = useRef(0)
   const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
@@ -215,6 +219,7 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesHistoryError('')
     setGeoNamesRollbackTarget('')
     setGeoNamesRollbackConfirmOpen(false)
+    setGeoNamesSnapshotConfirmOpen(false)
     setLoading(true)
     setError('')
     // Do not retain an old server/account snapshot while a different source loads.
@@ -380,6 +385,37 @@ export function XDriveServiceDependenciesPage({
       }
     } finally {
       if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
+    }
+  }
+
+  const stageGeoNamesSnapshot = async () => {
+    if (!geoNamesConfig?.snapshot_supported || !source.stageGeoNamesSnapshot || geoNamesBusy) return
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const result = await source.stageGeoNamesSnapshot({
+        revision: geoNamesConfig.revision,
+        expected_version: geoNamesConfig.current_version,
+      })
+      if (epoch !== geoNamesEpochRef.current) return
+      if (!result.staged || result.applied || !result.snapshot.fingerprint) {
+        throw new Error('GeoNames 版本快照未完成验证，当前运行索引不变。')
+      }
+      const next = await source.loadGeoNamesConfig?.()
+      if (epoch !== geoNamesEpochRef.current) return
+      if (next) setGeoNamesConfig(next)
+      setGeoNamesNotice('数据集已完成有界复制、完整索引校验和审计，并保存为不可变快照；尚未应用，不影响现有地名解析。')
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 版本快照创建失败；当前索引不变。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesBusy(false)
+        setGeoNamesSnapshotConfirmOpen(false)
+      }
     }
   }
 
@@ -915,6 +951,56 @@ export function XDriveServiceDependenciesPage({
                         onClick={() => { void reloadGeoNames() }}>
                         {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
                       </Button>
+                    </Stack>
+                    <Stack spacing={1} data-xdrive-geonames-dataset-snapshots>
+                      <Typography variant="subtitle2" fontWeight={700}>
+                        GeoNames 数据集版本快照
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        只对已挂载的受信任 GeoNames 三文件进行限额复制和完整索引校验，
+                        保存为本 Server 可读取的历史快照。创建快照不会切换当前索引；
+                        在线上传、跨实例文件分发和从历史文件恢复仍待后续安全控制。
+                      </Typography>
+                      <Button variant="outlined" size="small"
+                        disabled={geoNamesBusy || !geoNamesConfig?.snapshot_supported ||
+                          !source.stageGeoNamesSnapshot}
+                        onClick={() => setGeoNamesSnapshotConfirmOpen(true)}>
+                        {geoNamesBusy ? '正在校验并保存快照…' : '建立不可变数据集快照'}
+                      </Button>
+                      {!geoNamesConfig?.snapshot_supported && (
+                        <Typography variant="caption" color="text.secondary">
+                          {geoNamesConfig?.snapshot_requirement ??
+                            '当前 Server/Agent 尚未支持数据集快照；需先配置独立可写的持久目录。'}
+                        </Typography>
+                      )}
+                      {geoNamesConfig?.snapshot_history_known && (geoNamesConfig.snapshots?.length ?? 0) === 0 && (
+                        <Typography variant="caption" color="text.secondary">当前还没有保存数据集快照。</Typography>
+                      )}
+                      {geoNamesConfig?.snapshots?.map((entry) => (
+                        <Box key={entry.fingerprint} sx={{
+                          border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1,
+                          overflowWrap: 'anywhere',
+                        }}>
+                          <Typography variant="caption" fontWeight={700}>
+                            数据集指纹 {entry.fingerprint.slice(0, 16)}… · 已暂存，未应用
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                            {entry.total_bytes} 字节 · 验证时匹配距离 {entry.checked_radius_km} km
+                            {' · '}配置修订 #{entry.checked_revision}
+                            {' · '}{entry.locally_present ? '本 Server 存储目录存在（未重新验签）' : '本 Server 未确认存储目录'}
+                            {' · '}{new Date(entry.created_at).toLocaleString('zh-CN')}
+                          </Typography>
+                        </Box>
+                      ))}
+                      <XDriveConfirmDialog
+                        open={geoNamesSnapshotConfirmOpen}
+                        title="建立 GeoNames 数据集历史快照"
+                        description="从已有只读挂载复制三个 GeoNames 文件到独立持久目录，并完成实际索引校验后记录审计。不会修改当前索引或影响同步；不会分发、应用或回滚至该快照。"
+                        confirmLabel="确认校验并暂存"
+                        loading={geoNamesBusy}
+                        onCancel={() => setGeoNamesSnapshotConfirmOpen(false)}
+                        onConfirm={() => { void stageGeoNamesSnapshot() }}
+                      />
                     </Stack>
                     {source.loadGeoNamesRevisions && source.rollbackGeoNames && (
                       <Stack spacing={1.25}>

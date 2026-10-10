@@ -74,6 +74,22 @@ export type XDrivePhotoAutoRollbackInput = {
   target_revision: number
 }
 
+export type XDriveGeoNamesSnapshot = {
+  fingerprint: string
+  resolver_version: string
+  checked_radius_km: number
+  checked_revision: number
+  total_bytes: number
+  created_at: string
+  locally_present: boolean
+}
+export type XDriveGeoNamesSnapshotInput = { revision: number; expected_version: string }
+export type XDriveGeoNamesSnapshotResult = {
+  staged: boolean
+  applied: boolean
+  snapshot: XDriveGeoNamesSnapshot
+}
+
 export type XDriveGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
@@ -93,6 +109,10 @@ export type XDriveGeoNamesConfig = {
   replica_status_truncated?: boolean
   dataset_versions_consistent?: boolean
   dataset_versions?: Array<{ version: string; count: number }>
+  snapshot_supported?: boolean
+  snapshot_requirement?: string
+  snapshot_history_known?: boolean
+  snapshots?: XDriveGeoNamesSnapshot[]
   updated_at?: string
   requires_restart: boolean
 }

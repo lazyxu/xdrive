@@ -613,6 +613,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
 	mux.HandleFunc("PUT /v1/cloud/admin-geonames", h.cloudSetAdminGeoNames)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
+	mux.HandleFunc("POST /v1/cloud/admin-geonames/dataset-snapshots", h.cloudStageAdminGeoNamesSnapshot)
 	mux.HandleFunc("GET /v1/cloud/admin-geonames/revisions", h.cloudAdminGeoNamesRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-geonames/rollback", h.cloudRollbackAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
@@ -2134,6 +2135,39 @@ func (h *desktopIPCHandler) cloudSetAdminGeoNames(w http.ResponseWriter, r *http
 
 func validGeoNamesIPCMaxDistance(value float64) bool {
 	return value > 0 && value <= 500
+}
+
+// Optional to preserve compatibility with older test double controllers.
+type desktopIPCAdminGeoNamesSnapshotController interface {
+	CloudStageAdminGeoNamesSnapshot(context.Context, client.AdminGeoNamesSnapshotInput) (client.AdminGeoNamesSnapshotResult, error)
+}
+
+func (h *desktopIPCHandler) cloudStageAdminGeoNamesSnapshot(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesSnapshotController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_snapshot_unavailable", "GeoNames dataset snapshots are unsupported")
+		return
+	}
+	var input struct {
+		Revision        *uint64 `json:"revision"`
+		ExpectedVersion string  `json:"expected_version"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.ExpectedVersion == "" || len(input.ExpectedVersion) > 128 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_snapshot", "current revision and expected version are required")
+		return
+	}
+	result, err := provider.CloudStageAdminGeoNamesSnapshot(r.Context(), client.AdminGeoNamesSnapshotInput{
+		Revision: *input.Revision, ExpectedVersion: input.ExpectedVersion,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 func (h *desktopIPCHandler) cloudReloadAdminGeoNames(w http.ResponseWriter, r *http.Request) {

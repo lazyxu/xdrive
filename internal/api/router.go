@@ -31,9 +31,11 @@ type Server struct {
 	PhotoPlaceResolver             photointelligence.PlaceResolver
 	GeoNamesRuntime                *photointelligence.ReloadablePlaceResolver
 	GeoNamesDataDir                string
+	GeoNamesSnapshotDir            string
 	GeoNamesMaxDistanceKM          float64
 	GeoNamesAppliedRevision        atomic.Uint64
 	geoNamesReloadMu               sync.Mutex
+	geoNamesSnapshotMu             sync.Mutex
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
 	BaiduMapHTTPClient             *http.Client
@@ -345,6 +347,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
+	admin.POST("/services/geonames/dataset-snapshots", s.adminStageGeoNamesSnapshot)
 	admin.GET("/services/geonames/revisions", s.adminGeoNamesRevisions)
 	admin.POST("/services/geonames/rollback", s.adminRollbackGeoNamesConfig)
 	admin.GET("/audit", s.adminAuditEvents)

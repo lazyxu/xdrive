@@ -863,6 +863,8 @@ function FileManager({
     loadGeoNamesConfig: () => api.adminGeoNamesConfig(),
     saveGeoNamesConfig: (input: XDriveGeoNamesUpdate) => api.adminSaveGeoNamesConfig(input),
     reloadGeoNames: (expectedVersion: string) => api.adminReloadGeoNames(expectedVersion),
+    stageGeoNamesSnapshot: (input: import('../../ui/shared/src').XDriveGeoNamesSnapshotInput) =>
+      api.adminStageGeoNamesSnapshot(input),
     loadGeoNamesRevisions: () => api.adminGeoNamesRevisions(),
     rollbackGeoNames: (input: XDriveGeoNamesRollbackInput) => api.adminRollbackGeoNames(input),
   }), [api])

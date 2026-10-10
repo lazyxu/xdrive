@@ -1499,6 +1499,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    stageGeoNamesSnapshot: async (input: import('../../../ui/shared/src').XDriveGeoNamesSnapshotInput) => {
+      const result = await window.xdriveDesktop.agent.cloudStageAdminGeoNamesSnapshot(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     reloadGeoNames: async (expectedVersion: string) => {
       const result = await window.xdriveDesktop.agent.cloudReloadAdminGeoNames(expectedVersion)
       if (!result.ok) throw new Error(result.error.message)
