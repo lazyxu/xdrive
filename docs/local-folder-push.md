@@ -61,6 +61,14 @@ The local JSON registry stores paths under a per-Server/account hash with user-o
 
 A completed metadata enumeration is NOT yet authority to infer deletions: `missing_inference_safe=false` until reliable per-item identities, complete-inventory reconciliation and agent/run protocol are implemented. No Mirror, scan-only formal SourceRun or cloud file mutation is enabled. Tests cover 1043 files with batched delivery, ignored files, cancellation, Root replacement and symlink skipping; a dedicated 10k/100k process-level performance baseline still needs native execution.
 
+## L02-B native file-entry identity hints (no Source identity commit)
+
+An optional `CollectIdentity` mode extends the existing read-only streaming scanner with `EntryIdentity` for Windows/Linux entries. The key is a SHA-256-encoded, path-free native filesystem identifier **not a content digest and not `SourceItem.ExternalID`**. Linux combines device/inode with `statx` birth time where supported; without birth time the hint is marked weak. Windows combines volume serial, file index, and creation time while rejecting reparse points and verifying the opened handle is the observed file.
+
+`RenameSafe` is true only for a strong identity and a single-link regular file (or a stable directory). Multiple directory entries referring to the same hard-linked file deliberately share a physical identity hint but are **never merged into one logical xDrive file**. Even a strong hint is only evidence: subsequent persisted item/alias reconciliation must prove the identity is unique within the Source and correlate the previously confirmed file content/version before translating a rename to a zero-byte move. Missing-inference safety remains false; no SyncRun/SourceItem changes or uploads are enabled.
+
+Default metadata-only scanning remains fast and unchanged. Native-ID mode costs additional file handle/stat calls, particularly on Windows; record 10k/100k CPU/RSS/latency and cancellation baselines in L02-C before choosing it as the always-on path. Tests cover hard links, rename identity, same-path replacement and cancelled scans; Windows and Linux CI must both pass.
+
 ## Non-negotiable invariants
 
 - The Device binds one explicitly authorized local Root to one Source ID for a specific Server and owner. Never let Web specify arbitrary paths to read on the client.
