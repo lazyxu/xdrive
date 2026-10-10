@@ -57,3 +57,17 @@ export interface XDriveDeviceBackupDataSource {
   list(): Promise<XDriveDeviceBackupOverview>
   runs(sourceID: number, limit: number, offset: number): Promise<XDriveDeviceBackupRunPage>
 }
+
+// Separate private Agent-only draft projection. This is never returned by
+// the Web B-scope device/folder read API or by generic Source listing.
+export interface XDriveLocalSourceDraft {
+  source_id: number
+  name: string
+  revision: number
+  created_at: string
+}
+export interface XDriveLocalSourceDraftPage {
+  items: XDriveLocalSourceDraft[]
+  has_more: boolean
+  next_after_id: number
+}

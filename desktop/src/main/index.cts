@@ -172,6 +172,7 @@ import {
   type AgentSource,
   type AgentDeviceBackupOverview,
   type AgentVerifiedLocalDevice,
+  type AgentLocalSourceDraftPage,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
@@ -1981,6 +1982,16 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'device-backup-local-device')
     return requireAgentClient().verifiedLocalDevice()
   }, false))
+  ipcMain.handle('agent:get-device-backup-local-drafts', (_event, limit: unknown = 20, afterID: unknown = 0) =>
+    runAgentAction<AgentLocalSourceDraftPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-drafts')
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        typeof afterID !== 'number' || !Number.isSafeInteger(afterID) || afterID < 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local draft limit or cursor is invalid.')
+      }
+      return requireAgentClient().deviceBackupLocalDrafts(limit, afterID)
+    }, false))
   ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'device-backup-read')

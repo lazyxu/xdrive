@@ -33,7 +33,7 @@ does not enable local Push execution, scheduling, Mirror deletion or 4 GiB
 uploads. The owner-JWT device-registration bootstrap is not a physical-device
 attestation and remains a separate trust consideration; unbound **legacy** reclaim remains a separate explicit ownership workflow.
 
-## P0-B2b3 native empty-draft cleanup (PR verification)
+## P0-B2b3 native empty-draft cleanup (merged #1325)
 
 A newly created paused `local_folder` with an authenticated creator claim
 may be discarded via a dedicated owning-Agent-only endpoint, before any
@@ -47,6 +47,19 @@ later local recovery. Existing bound records, orphan legacy records and
 revoked device records cannot be reclaimed with owner JWT alone. No
 automatic periodic orphan deletion is performed. Actual local Push
 execution remains completely disabled.
+
+## P0-C4b1 device-local draft recovery (PR verification)
+
+Only the owning Agent (same owner session plus OS-held, unrevoked
+installation token) may list its own paused, never-bound Source
+drafts. A bounded ID-cursor read projection does not expose local
+Root paths, Root IDs, credentials or detailed Source configuration.
+Desktop presents retry-native-pick and confirm-empty-draft-delete
+controls; creator-only P0-B2b3 fencing remains authoritative.
+Same-account other desktops, Web and legacy unclaimed Sources do not
+get draft controls. Device revocation recovery and existing bound
+Source edit/removal remain separate unimplemented phases; this change
+does not lift the local Push execution/activation block.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 

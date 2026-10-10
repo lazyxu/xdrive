@@ -10,6 +10,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveDeviceBackupLocalCreateDialog } from './DeviceBackupLocalCreateDialog'
+import { XDriveDeviceBackupLocalDrafts } from './DeviceBackupLocalDrafts'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
 import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
@@ -17,6 +18,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
+  XDriveLocalSourceDraftPage,
 } from '../device-backups'
 
 type HistoryPage = { items: XDriveDeviceBackupRun[]; page: number; hasMore: boolean; loading: boolean }
@@ -61,11 +63,13 @@ export function XDriveDeviceBackupPage({
   initialSourceID,
   localCreate,
   targetBrowser,
+  localDrafts,
 }: {
   source?: XDriveDeviceBackupDataSource
   initialSourceID?: number
   localCreate?: XDriveLocalBackupCreateActions
   targetBrowser?: XDriveSourceTargetBrowser
+  localDrafts?: (limit: number, afterID: number) => Promise<XDriveLocalSourceDraftPage>
 }) {
   const [refreshID, refresh] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
@@ -206,6 +210,19 @@ export function XDriveDeviceBackupPage({
       ) : undefined}
     >
       {localMessage ? <XDriveStatusAlert tone="neutral">{localMessage}</XDriveStatusAlert> : null}
+      {source && verifiedLocalDeviceID && localCreate && localDrafts ? (
+        <XDriveDeviceBackupLocalDrafts
+          key={verifiedLocalDeviceID}
+          reader={localDrafts}
+          actions={localCreate}
+          refreshID={refreshID}
+          onFinished={(message) => {
+            if (activeSourceRef.current !== source) return
+            setLocalMessage(message)
+            refresh((n) => n + 1)
+          }}
+        />
+      ) : null}
       {!source ? (
         <XDriveStatusAlert tone="neutral">
           当前 Desktop Agent 暂不支持读取脱敏设备备份数据。请更新 Agent；不能从普通 Source 接口读取异机私有路径。

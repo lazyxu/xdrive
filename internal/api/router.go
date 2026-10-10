@@ -292,6 +292,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/source-credentials/test", s.testSourceCredential)
 
 	authed.GET("/device-backups", s.listDeviceBackupOverview)
+	authed.GET("/device-backups/local-drafts", s.listOwningLocalSourceDrafts)
 	authed.GET("/device-backups/:sourceID/runs", s.listDeviceBackupRunSummaries)
 	authed.GET("/devices", s.listClientDevices)
 	authed.GET("/devices/self", s.verifyCurrentClientDevice)

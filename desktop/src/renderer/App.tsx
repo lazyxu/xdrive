@@ -405,6 +405,17 @@ export default function App({
     }
   }, [deviceBackupSource, localFolderGrantSupported, agent.hello?.capabilities, sourceManagerAdapter])
 
+  const localBackupDraftReader = useMemo(() => {
+    if (!localBackupCreate || !localIdentityReadSupported ||
+      !agent.hello?.capabilities.includes('device-backup-local-drafts')) return undefined
+    return async (limit: number, afterID: number) => {
+      const result = await window.xdriveDesktop.agent.getDeviceBackupLocalDrafts(limit, afterID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    }
+  }, [localBackupCreate, localIdentityReadSupported, agent.hello?.capabilities,
+    status?.server, status?.username, status?.auth_status])
+
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = xDriveLoginCredentialsReady({
@@ -2335,6 +2346,7 @@ export default function App({
             source={deviceBackupSource}
             localCreate={localBackupCreate}
             targetBrowser={localBackupCreate ? desktopSourceTargetBrowser : undefined}
+            localDrafts={localBackupDraftReader}
           />
         )}
 

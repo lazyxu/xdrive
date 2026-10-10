@@ -53,3 +53,45 @@ func (c *agentController) CloudVerifiedLocalDevice(ctx context.Context) (client.
 	}
 	return verified, nil
 }
+
+// CloudLocalSourceDrafts exposes only this installation's unbound, first-time
+// local Push drafts. Opening this view must never enroll a new device.
+func (c *agentController) CloudLocalSourceDrafts(ctx context.Context, limit int, afterID uint64) (client.LocalSourceDraftPage, error) {
+	if limit < 1 || limit > 100 {
+		return client.LocalSourceDraftPage{}, errors.New("invalid local draft page size")
+	}
+	cli, cfg, err := c.cloudClient()
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
+		return client.LocalSourceDraftPage{}, errors.New("login required for local draft recovery")
+	}
+	configDir, err := userconfig.Dir()
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	deviceID, err := localpush.LoadDeviceRegistration(configDir, cfg.Server, cfg.Username)
+	if errors.Is(err, localpush.ErrDeviceNotRegistered) {
+		return client.LocalSourceDraftPage{Items: make([]client.LocalSourceDraft, 0)}, nil
+	}
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	secret, err := localpush.LoadDeviceToken(configDir, cfg.Server, cfg.Username, deviceID)
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	page, err := cli.LocalSourceDrafts(ctx, deviceID, secret, limit, afterID)
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return client.LocalSourceDraftPage{}, err
+	}
+	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return client.LocalSourceDraftPage{}, errors.New("account changed during local draft listing")
+	}
+	return page, nil
+}
