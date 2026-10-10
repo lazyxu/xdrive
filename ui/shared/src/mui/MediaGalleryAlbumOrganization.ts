@@ -13,6 +13,34 @@ const DEFAULTS: MediaAlbumOrganizePreferences = {
   order: [],
 }
 const KEY = 'xdrive.gallery.album-organization.v1'
+/** One account-scoped signal for both Web layouts.
+ * Storage events cover other tabs; local listeners cover writes in this tab.
+ * Neither creates a media controller nor persists redundant state. */
+const albumPreferenceListeners = new Map<string, Set<() => void>>()
+
+export function subscribeMediaAlbumPreferences(
+  accountScope: string, notify: () => void,
+): () => void {
+  if (!accountScope) return () => undefined
+  let listeners = albumPreferenceListeners.get(accountScope)
+  if (!listeners) {
+    listeners = new Set()
+    albumPreferenceListeners.set(accountScope, listeners)
+  }
+  listeners.add(notify)
+  const host = typeof window !== 'undefined' ? window : undefined
+  const onStorage = (event: StorageEvent) => {
+    if (event.key !== null && event.key !== mediaAlbumPreferencesKey(accountScope)) return
+    // Cross-tab storage events never fire in the writing document.
+    notify()
+  }
+  host?.addEventListener?.('storage', onStorage)
+  return () => {
+    listeners?.delete(notify)
+    if (!listeners?.size) albumPreferenceListeners.delete(accountScope)
+    host?.removeEventListener?.('storage', onStorage)
+  }
+}
 
 export function mediaAlbumPreferencesKey(accountScope: string) {
   return `${KEY}:${encodeURIComponent(accountScope)}`
@@ -55,7 +83,10 @@ export function writeMediaAlbumPreferences(accountScope: string, value: MediaAlb
     )
   } catch {
     // Gallery remains interactive even without local storage.
+    return
   }
+  // Storage event does not fire in the writing tab: publish after commit.
+  for (const notify of [...(albumPreferenceListeners.get(accountScope) ?? [])]) notify()
 }
 
 export function sortedMediaAlbums(

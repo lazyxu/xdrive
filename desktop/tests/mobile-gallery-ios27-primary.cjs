@@ -912,3 +912,62 @@ test('P0-3e collapsed section title remains a 44px reachable route without wakin
       'the album identity remains present in the collapsed text-only view')
   }finally{if(view)await act(async()=>{view.unmount()})}
 })
+
+
+test('P0-3f live mobile Collections follows canonical wide Web pins without remount',async()=>{
+  const previous=global.window
+  const localValues=new Map()
+  const listeners=new Set()
+  const localStorage={
+    getItem:key=>localValues.has(key)?localValues.get(key):null,
+    setItem:(key,val)=>localValues.set(key,String(val)),
+  }
+  global.window={
+    localStorage,
+    addEventListener:(name,handler)=>{if(name==='storage')listeners.add(handler)},
+    removeEventListener:(name,handler)=>{if(name==='storage')listeners.delete(handler)},
+  }
+  const albums=[
+    {id:'a1',kind:'manual',name:'家庭',item_count:7,cover_node_id:81},
+    {id:'a2',kind:'smart',name:'旅行',item_count:5,cover_node_id:82},
+  ]
+  const render=scope=>React.createElement(Collections,{
+    ...data,albums,accountScope:scope,onOpenAlbum:()=>{},onOpenSection:()=>{},
+  })
+  const visible=view=>cards(view)
+    .map(x=>x.props['data-xdrive-mobile-gallery-collection-card'])
+    .filter(k=>String(k).startsWith('pinned-album-'))
+  let view
+  try{
+    await act(async()=>{view=renderer.create(render('web:A'))})
+    assert.deepEqual(visible(view),[])
+    await act(async()=>{sharedAlbumOrganization.writeMediaAlbumPreferences(
+      'web:A',{sort:'name',pinned:['a2','a1'],order:[]})})
+    assert.deepEqual(visible(view),['pinned-album-a2','pinned-album-a1'],
+      'mobile must update when the shared wide-Web organizer writes in this tab')
+    assert.equal(listeners.size,1,'one listener per mounted Mobile Collections')
+    await act(async()=>{sharedAlbumOrganization.writeMediaAlbumPreferences(
+      'web:B',{sort:'name',pinned:['a1'],order:[]})})
+    assert.deepEqual(visible(view),['pinned-album-a2','pinned-album-a1'],
+      'foreign account writes cannot leak into current mobile collection')
+    const key=sharedAlbumOrganization.mediaAlbumPreferencesKey('web:A')
+    localValues.set(key,JSON.stringify({sort:'name',pinned:['a1'],order:[]}))
+    await act(async()=>{for(const listener of [...listeners])listener({
+      key,storageArea:localStorage,
+    })})
+    assert.deepEqual(visible(view),['pinned-album-a1'],
+      'cross-tab storage updates must re-read the canonical account key')
+    await act(async()=>{view.update(render('web:B'))})
+    assert.deepEqual(visible(view),['pinned-album-a1'])
+    await act(async()=>{sharedAlbumOrganization.writeMediaAlbumPreferences(
+      'web:A',{sort:'name',pinned:[],order:[]})})
+    assert.deepEqual(visible(view),['pinned-album-a1'],
+      'old account signals must be detached after switching owners')
+    await act(async()=>{view.update(render('web:A'))})
+    assert.deepEqual(visible(view),[])
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    assert.equal(listeners.size,0,'no storage handler retained after unmount')
+    global.window=previous
+  }
+})

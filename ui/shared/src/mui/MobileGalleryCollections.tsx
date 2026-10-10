@@ -16,7 +16,7 @@ import type {
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
-import { changeAlbumPin, readMediaAlbumPreferences, sortedMediaAlbums, writeMediaAlbumPreferences } from './MediaGalleryAlbumOrganization'
+import { changeAlbumPin, readMediaAlbumPreferences, sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences } from './MediaGalleryAlbumOrganization'
 
 
 type GalleryCollectionGroupID =
@@ -440,6 +440,9 @@ export function XDriveMobileGalleryCollections({
   const [removeIntent, setRemoveIntent] = useState<{ key: string; anchor: HTMLElement } | null>(null)
   const [pinQuery, setPinQuery] = useState('')
   const [albumPinRevision, setAlbumPinRevision] = useState(0)
+  useEffect(() => subscribeMediaAlbumPreferences(accountScope, () => {
+    setAlbumPinRevision((revision) => revision + 1)
+  }), [accountScope])
   const [pinDragging, setPinDragging] = useState<string | null>(null)
   const pinDragRef = useRef<{key:string; pointerId:number; kind:string;
     started:number; x:number; y:number} | null>(null)
