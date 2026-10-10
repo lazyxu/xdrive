@@ -58,6 +58,19 @@ function rendererCompatibleSvg(svg) {
       </feMerge>`)
 }
 
+// Apple applies its own launcher mask. Keeping the master's round corner
+// transparency in iOS/PWA PNGs causes a dark inset edge on the home screen.
+// Leave the approved rounded SVG and Windows/favicons intact, but render an
+// opaque, edge-to-edge launcher source for the 180/192/512 PNG derivatives.
+function opaqueLauncherSvg(svg) {
+  const rounded = '<rect x="0" y="0" width="1024" height="1024" rx="242"'
+  const count = svg.split(rounded).length - 1
+  if (count !== 2) {
+    throw new Error('Expected both full-bleed blue master background rectangles.')
+  }
+  return svg.replaceAll(rounded, '<rect x="0" y="0" width="1024" height="1024"')
+}
+
 function trayVariantSvg(svg, kind) {
   const badges = {
     normal: '',
@@ -141,12 +154,14 @@ try {
   const sourceSvg = path.join(tempDir, 'xdrive-icon-render.svg')
   const compatibleMasterSvg = rendererCompatibleSvg(fs.readFileSync(masterPath, 'utf8'))
   fs.writeFileSync(sourceSvg, compatibleMasterSvg, 'utf8')
+  const opaqueSourceSvg = path.join(tempDir, 'xdrive-opaque-launcher.svg')
+  fs.writeFileSync(opaqueSourceSvg, opaqueLauncherSvg(compatibleMasterSvg), 'utf8')
 
   const sizes = [16, 32, 48, 64, 180, 192, 256, 512]
   const rendered = new Map()
   for (const size of sizes) {
     const outputPath = path.join(tempDir, `${size}.png`)
-    renderSvg(renderer, sourceSvg, size, outputPath)
+    renderSvg(renderer, [180, 192, 512].includes(size) ? opaqueSourceSvg : sourceSvg, size, outputPath)
     const data = fs.readFileSync(outputPath)
     if (!data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
       throw new Error(`Renderer produced an invalid PNG for ${size}x${size}`)
@@ -176,8 +191,8 @@ try {
     name: 'xDrive',
     short_name: 'xDrive',
     icons: [
-      { src: '/pwa-192.png', sizes: '192x192', type: 'image/png' },
-      { src: '/pwa-512.png', sizes: '512x512', type: 'image/png' },
+      { src: '/pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
     ],
     theme_color: '#1787FA',
     background_color: '#F5F7FB',
