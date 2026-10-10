@@ -1,0 +1,381 @@
+{
+  "status": "Rejected measured enqueue-batch performance experiment; original production restored",
+  "decision": "Candidate failed two frozen 100k enqueue gates; no product optimization retained",
+  "paired_work_commit": "af35fe681b9292af53c10331dba639737fe54044",
+  "fixed_original_parent": "dccebda02367c53c5597dd7410fd8577a232c627",
+  "runner": "GitHub Actions native PostgreSQL 17 / Ubuntu",
+  "source_run_id": 38036725965,
+  "source_job_id": 114168581373,
+  "source_url": "https://github.com/lazyxu/xdrive/actions/runs/38036725965/job/114168581373",
+  "candidate_delta": "100-row -> 1000-row INSERT batching only; worker checkpoints unchanged at 100",
+  "frozen_paired": {
+    "status": "real-native-postgresql-3-paired-before-after-samples",
+    "original": {
+      "status": "measured-current-before-only-not-a-product-optimization",
+      "scope": "native PostgreSQL17/Gin/Go durable Gallery selection job, 100k Node/PhotoAsset/PhotoMetadata rows, metadata-only; no Web/Desktop/Agent or CAS bytes",
+      "sampling": "three independent Go test processes and isolated PostgreSQL schemas per scale, no fixture time in operation timer",
+      "sample_count_per_scale": 3,
+      "acceptance_budgets": {
+        "10000_enqueue_p50_ms": 750,
+        "100000_enqueue_p50_ms": 3000,
+        "100000_worker_p50_ms": 60000
+      },
+      "acceptance": {
+        "10000_enqueue_p50_pass": true,
+        "100000_enqueue_p50_pass": false,
+        "100000_worker_p50_pass": false
+      },
+      "decision": "baseline red: consider smallest enqueue batch optimization only after actual n3 results",
+      "aggregates": {
+        "10000": {
+          "enqueue_ms": {
+            "samples": [
+              401,
+              412,
+              411
+            ],
+            "median": 411,
+            "minimum": 401,
+            "maximum": 412
+          },
+          "worker_ms": {
+            "samples": [
+              3730,
+              3806,
+              3810
+            ],
+            "median": 3806,
+            "minimum": 3730,
+            "maximum": 3810
+          },
+          "fixture_ms": {
+            "samples": [
+              951,
+              936,
+              941
+            ],
+            "median": 941,
+            "minimum": 936,
+            "maximum": 951
+          }
+        },
+        "100000": {
+          "enqueue_ms": {
+            "samples": [
+              5473,
+              5350,
+              3544
+            ],
+            "median": 5350,
+            "minimum": 3544,
+            "maximum": 5473
+          },
+          "worker_ms": {
+            "samples": [
+              175803,
+              174125,
+              55608
+            ],
+            "median": 174125,
+            "minimum": 55608,
+            "maximum": 175803
+          },
+          "fixture_ms": {
+            "samples": [
+              9495,
+              9373,
+              9331
+            ],
+            "median": 9373,
+            "minimum": 9331,
+            "maximum": 9495
+          }
+        }
+      },
+      "raw_rows": [
+        {
+          "independent_process_sample": 1,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 951,
+          "enqueue_ms": 401,
+          "worker_ms": 3730,
+          "chunks": 100,
+          "heap_before_bytes": 2685560,
+          "heap_after_bytes": 2795520
+        },
+        {
+          "independent_process_sample": 1,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9495,
+          "enqueue_ms": 5473,
+          "worker_ms": 175803,
+          "chunks": 1000,
+          "heap_before_bytes": 6560272,
+          "heap_after_bytes": 3038552
+        },
+        {
+          "independent_process_sample": 2,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 936,
+          "enqueue_ms": 412,
+          "worker_ms": 3806,
+          "chunks": 100,
+          "heap_before_bytes": 2686136,
+          "heap_after_bytes": 3855928
+        },
+        {
+          "independent_process_sample": 2,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9373,
+          "enqueue_ms": 5350,
+          "worker_ms": 174125,
+          "chunks": 1000,
+          "heap_before_bytes": 6555328,
+          "heap_after_bytes": 3372448
+        },
+        {
+          "independent_process_sample": 3,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 941,
+          "enqueue_ms": 411,
+          "worker_ms": 3810,
+          "chunks": 100,
+          "heap_before_bytes": 2685672,
+          "heap_after_bytes": 3679824
+        },
+        {
+          "independent_process_sample": 3,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9331,
+          "enqueue_ms": 3544,
+          "worker_ms": 55608,
+          "chunks": 1000,
+          "heap_before_bytes": 6548176,
+          "heap_after_bytes": 3369280
+        }
+      ]
+    },
+    "candidate": {
+      "status": "measured-current-before-only-not-a-product-optimization",
+      "scope": "native PostgreSQL17/Gin/Go durable Gallery selection job, 100k Node/PhotoAsset/PhotoMetadata rows, metadata-only; no Web/Desktop/Agent or CAS bytes",
+      "sampling": "three independent Go test processes and isolated PostgreSQL schemas per scale, no fixture time in operation timer",
+      "sample_count_per_scale": 3,
+      "acceptance_budgets": {
+        "10000_enqueue_p50_ms": 750,
+        "100000_enqueue_p50_ms": 3000,
+        "100000_worker_p50_ms": 60000
+      },
+      "acceptance": {
+        "10000_enqueue_p50_pass": true,
+        "100000_enqueue_p50_pass": false,
+        "100000_worker_p50_pass": false
+      },
+      "decision": "baseline red: consider smallest enqueue batch optimization only after actual n3 results",
+      "aggregates": {
+        "10000": {
+          "enqueue_ms": {
+            "samples": [
+              406,
+              403,
+              394
+            ],
+            "median": 403,
+            "minimum": 394,
+            "maximum": 406
+          },
+          "worker_ms": {
+            "samples": [
+              3746,
+              3743,
+              3701
+            ],
+            "median": 3743,
+            "minimum": 3701,
+            "maximum": 3746
+          },
+          "fixture_ms": {
+            "samples": [
+              938,
+              933,
+              916
+            ],
+            "median": 933,
+            "minimum": 916,
+            "maximum": 938
+          }
+        },
+        "100000": {
+          "enqueue_ms": {
+            "samples": [
+              1783,
+              3754,
+              3854
+            ],
+            "median": 3754,
+            "minimum": 1783,
+            "maximum": 3854
+          },
+          "worker_ms": {
+            "samples": [
+              56649,
+              185181,
+              65881
+            ],
+            "median": 65881,
+            "minimum": 56649,
+            "maximum": 185181
+          },
+          "fixture_ms": {
+            "samples": [
+              9341,
+              9342,
+              9224
+            ],
+            "median": 9341,
+            "minimum": 9224,
+            "maximum": 9342
+          }
+        }
+      },
+      "raw_rows": [
+        {
+          "independent_process_sample": 1,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 938,
+          "enqueue_ms": 406,
+          "worker_ms": 3746,
+          "chunks": 100,
+          "heap_before_bytes": 2686016,
+          "heap_after_bytes": 2874968
+        },
+        {
+          "independent_process_sample": 1,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9341,
+          "enqueue_ms": 1783,
+          "worker_ms": 56649,
+          "chunks": 1000,
+          "heap_before_bytes": 6625584,
+          "heap_after_bytes": 4194200
+        },
+        {
+          "independent_process_sample": 2,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 933,
+          "enqueue_ms": 403,
+          "worker_ms": 3743,
+          "chunks": 100,
+          "heap_before_bytes": 2684904,
+          "heap_after_bytes": 3525632
+        },
+        {
+          "independent_process_sample": 2,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9342,
+          "enqueue_ms": 3754,
+          "worker_ms": 185181,
+          "chunks": 1000,
+          "heap_before_bytes": 6615848,
+          "heap_after_bytes": 3422856
+        },
+        {
+          "independent_process_sample": 3,
+          "scale": 10000,
+          "samples": 1,
+          "fixture_ms": 916,
+          "enqueue_ms": 394,
+          "worker_ms": 3701,
+          "chunks": 100,
+          "heap_before_bytes": 2690712,
+          "heap_after_bytes": 2782296
+        },
+        {
+          "independent_process_sample": 3,
+          "scale": 100000,
+          "samples": 1,
+          "fixture_ms": 9224,
+          "enqueue_ms": 3854,
+          "worker_ms": 65881,
+          "chunks": 1000,
+          "heap_before_bytes": 6617528,
+          "heap_after_bytes": 3955272
+        }
+      ]
+    },
+    "n3_100k_enqueue_before_ms": 5350,
+    "n3_100k_enqueue_after_ms": 3754,
+    "improvement_percent": 29.83177570093458,
+    "process_cpu_and_rss": [
+      {
+        "sample": 1,
+        "before": {
+          "maxrss_kib": 824352,
+          "user_cpu_seconds": 115.96,
+          "system_cpu_seconds": 9.76
+        },
+        "after": {
+          "maxrss_kib": 851904,
+          "user_cpu_seconds": 34.9,
+          "system_cpu_seconds": 2.17
+        },
+        "rss_limit_kib": 1030440,
+        "rss_nonregression": true
+      },
+      {
+        "sample": 2,
+        "before": {
+          "maxrss_kib": 371672,
+          "user_cpu_seconds": 9.55,
+          "system_cpu_seconds": 1.48
+        },
+        "after": {
+          "maxrss_kib": 374152,
+          "user_cpu_seconds": 9.17,
+          "system_cpu_seconds": 1.44
+        },
+        "rss_limit_kib": 464590,
+        "rss_nonregression": true
+      },
+      {
+        "sample": 3,
+        "before": {
+          "maxrss_kib": 376232,
+          "user_cpu_seconds": 9.27,
+          "system_cpu_seconds": 1.46
+        },
+        "after": {
+          "maxrss_kib": 374620,
+          "user_cpu_seconds": 8.71,
+          "system_cpu_seconds": 1.45
+        },
+        "rss_limit_kib": 470290,
+        "rss_nonregression": true
+      }
+    ],
+    "frozen_gates": {
+      "100k_after_enqueue_p50_at_most_3000ms": false,
+      "100k_enqueue_relative_improvement_at_least_30pct": false,
+      "10k_enqueue_nonregression_10pct": true,
+      "100k_worker_nonregression_15pct": true,
+      "process_rss_no_material_regression": true
+    },
+    "accepted": false,
+    "boundary": "100k Node/PhotoAsset/Metadata SQL metadata; whole-process peak RSS includes fixture and worker, not isolated enqueue; worker 60s budget reported independently."
+  },
+  "rejected_due_to": [
+    "100k candidate enqueue P50 3754 ms exceeds predeclared 3000 ms limit",
+    "29.83177570093458% improvement is less than predeclared 30% floor"
+  ],
+  "correctness": "All six source/side Go test processes ran 10k and 100k jobs to completion, correct owner-bound favorite state and 100-row Worker chunks",
+  "resource_limitations": "maxrss and CPU diagnostics include full Go test process and fixture + Worker, not isolated enqueue. No Server/CAS original files or Web/Desktop media decode."
+}

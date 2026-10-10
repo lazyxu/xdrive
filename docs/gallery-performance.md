@@ -2218,6 +2218,126 @@ Each run captures first content, first HTTP range, first byte/thumbnail response
 
 **Delivery workflow:** preserve the matched first-acceptance sample raw JSON and this canonical table in the same single work commit, rerun full GitHub PR CI on the evidence-amended exact head, then linear-merge and branch-clean per AGENTS.md. No time/throughput or memory claim beyond the named source, scale and measurement boundary.
 
+## P0 · Gallery 100k durable selection job enqueue responsiveness — n=3 same-fixture baseline (2026-10-10)
+
+**Status: Rejected experiment / 100k enqueue and Worker baseline remain Red; original production batching restored; final source-exact CI pending.** Fixed GitHub master parent `dccebda02367c53c5597dd7410fd8577a232c627`; reuse the already merged G07 PostgreSQL durable selection job and `TestGallerySelectionJobsReal10k100k` fixture rather than introducing a new controller, endpoint or semantic contract. Related Desktop Gallery progress IPC PR #1185 is blocked on its own final-head progress event delivery; do not touch it, and do not mix this work with the race专项.
+
+**Previous measured BEFORE (n=1 only, different CI run)** from [GitHub Actions 37951640137](https://github.com/lazyxu/xdrive/actions/runs/37951640137): 10k enqueue **411ms**, worker **3783ms**; 100k enqueue **5760ms**, worker **48315ms**, 1000 worker chunks, 100k/100k succeeded. This one-off synchronous enqueue is slower than the provisional **3000ms** 100k response budget but cannot establish p50/variance without n=3. It did not measure browser rendering or CAS original media. Do **not** infer an AFTER improvement.
+
+**Frozen new native workload before product experiments:** 10k and 100k `xd_nodes` + `xd_photo_assets` + `xd_photo_metadata`, with real original Gin selection enqueue handler and actual SQL-backed 100-row durable worker chunks; owner identity/revisions, frozen member IDs, complete favorite results verified in every run. Execute **three independent Go test processes per scale, six isolated PostgreSQL17 schemas** by running the unchanged test `-count=1` in three separate invocations on the same CI host. Preserve sample-level fixture/setup milliseconds separately; capture original `enqueue_ms`, `worker_ms`, chunks, `heap_before_bytes`/`heap_after_bytes` (point-in-time heap, NOT peak), exact correctness, medians/min/max and raw logs. Native CI command: `XD_GALLERY_SELECTION_JOB_PERF=1 go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k
+
+**Status: Measured baseline / no production optimization / evidence amendment under CI review.**
+Go production enqueue and worker, native PostgreSQL 17-alpine in GitHub Actions
+ubuntu-latest runner, 100-item worker chunks; **one** independent initial sample
+per scale, not a percentile, not a before/after improvement.
+
+[Source CI: run 37951640137, job 113891629077](https://github.com/lazyxu/xdrive/actions/runs/37951640137/job/113891629077).
+The run ended **successfully**, with exact persisted counts and favorites verified.
+
+| Workload | n | Fixture (ms) | BEFORE enqueue (ms) | BEFORE worker (ms) | Enqueue + worker (ms) | Chunks | Succeeded / Failed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 10,000 Nodes/PhotoAssets/PhotoMetadata | 1 | 946 | **411** | **3,783** | 4,194 | 100 | 10,000 / 0 |
+| 100,000 Nodes/PhotoAssets/PhotoMetadata | 1 | 9,509 | **5,760** | **48,315** | 54,075 | 1,000 | 100,000 / 0 |
+
+**Boundary:** the fixture is created separately using PostgreSQL INSERT SELECT;
+the measured code is the real Gin selection-to-job handler + SQL-backed job
+worker with identical owner-scoped immutable revisions, not a benchmark-only
+enqueue shortcut. No CAS bytes, photo/video thumbnails, browser/Electron
+rendering, network hop, live device, upload/download, UI wall time or
+client-side first paint. The generated owner-scoped selection is already
+constructed before the enqueue timer; full query snapshot creation is
+not measured by this test.
+
+Go point-in-time heap Alloc (before/after) was 2,685,680/3,029,720 bytes
+(10k) and 6,549,744/3,031,848 bytes (100k). **These are two heap samples,
+not peak RSS or maximum heap, and cannot prove memory scalability.**
+Fixture creation is reported but excluded from operation latency.
+
+**Decision:** 100k finished correctly but the **5.760-second synchronous
+enqueue is a responsiveness concern**, especially relative to the Agent
+IPC's nominal 10-second request budget. This is one sample, so do not
+make a P50/P95 claim. Establish the following *provisional, not yet
+validated* targets for a new n=3 same-fixture measurement: 100k enqueue
+P50 <=3,000ms, worker P50 <=60,000ms; 10k enqueue P50 <=750ms. A subsequent
+production change to improve enqueue must measure both BEFORE and AFTER
+on the same workload and preserve 100k item integrity, cancellation,
+partial failures, PostgreSQL CPU/I/O and heap; if gains are not material,
+revert the optimization and retain the rejection evidence.
+
+**Benchmark:** `XD_GALLERY_SELECTION_JOB_PERF=1 go test -mod=readonly
+-run '^TestGallerySelectionJobsReal10k100k$' -timeout=24m -count=1 -v
+./internal/api` with `XD_TEST_DATABASE_URL` set to runner PostgreSQL 17.
+The dedicated workflow is `.github/workflows/gallery-selection-jobs-performance.yml`
+and is branch-scoped; it does not alter GitHub/GitLab core CI parity.
+Current AFTER = **N/A (no optimization)**; improvements are not claimed.
+This evidence amendment must pass full PR CI before the benchmark branch
+can merge and be deleted.
+
+### Mobile Gallery tail-first sparse positioning (P0-B)
+
+Status: candidate under CI validation, not yet accepted on physical devices. The functional baseline is the existing offset=0 initial media range; P0-B adds an opt-in `initial_position=latest` reverse-limited, aligned tail range for compact Mobile Web. Both paths use identical PostgreSQL 17 fixture (100k logical photos, 115k physical nodes), query filters, `captured + asc` and 100-row page; output reports `first_normal_ms` (BEFORE), `first_tail_ms` (AFTER) and page counts/offset, with one initial benchmark sample each. CI `go-linux-api` job runs the optional P0-B measurement step `XD_MOBILE_GALLERY_TAIL_100K=1 go test ./internal/api -run '^TestMobileGalleryTailReal100K$' -count=1 -timeout=25m -v`. Acceptance: first tail page is at the correct last index, bounded to <=100 materialized items, and no 0..100k client traversal; no regressive database latency versus the same initial-range baseline. First PR sample on commit `6b89d2c`: before 489.222 ms, tail 478.146 ms (one sample; 2.3% within noise, not a meaningful speedup). The three-sample warmed GitHub PostgreSQL 17 run [37966470056 / go-linux-api](https://github.com/lazyxu/xdrive/actions/runs/37966470056/job/113942262796) recorded `seed_ms=26343.747`, BEFORE `first_normal_p50_ms=458.120`, AFTER `first_tail_p50_ms=459.032`, `total=100000`, `offset=99900`, `returned=100`. Tail was **+0.912 ms (+0.20%)**, i.e. statistically inconclusive/no demonstrated latency improvement; the **bounded tail positioning is a functional correctness gain**, not an accepted performance optimization. Three samples are not a production end-to-end latency guarantee; the SQL group-count overhead, actual device first decoded thumbnail and browser memory require separately scoped measurements. The exact run failed an unrelated-in-kind but **same-PR** brittle Desktop regex assertion at `mobile-gallery-tail-first.cjs:32` (expected single-line fallback while production used an equivalent multiline conditional), therefore the PR is not mergeable on CI evidence alone; the one-work-commit regression test was made whitespace-tolerant without changing production behavior. Keep P0-B unmerged until the amended exact-head full PR CI passes; physical iOS/Android tests stay marked pending and cannot be inferred from Go integration.
+
+
+## Mobile Gallery KFS-style column-first geometry · P0-2 (2026-10-10)
+
+**Status: Visual/UI candidate; computed geometry only / no measured wall-clock performance gain.** Based on KFS [`calImageWidth`](https://github.com/lazyxu/kfs/blob/306cc635b2da5163b0495c28bc0d478453e94d55/ui/packages/common/components/ThumbnailList/ThumbnailList.jsx), now proposed as an optional mode of xDrive's existing shared VirtualGrid and VirtualTimeline. The unmodified wide Web/Desktop pixel-minimum mode remains the baseline. The Mobile candidate uses `minColumns` and a 144px growth-reference instead of KFS's 256px Web reference, with xDrive's unchanged 4px gap. Width is actual scroll container `clientWidth`, not outer viewport including scrollbars or navigation.
+
+| Deterministic scenario | BEFORE width-min mode (144px) | AFTER mobile column mode | Source of measurement |
+| --- | ---: | ---: | --- |
+| 320px All, 100k | 2 cols; 158px tile; 8,099,996px calculated height | 3 cols; 104px tile; 3,600,068px calculated height | Shared GridMetrics formulas, not a browser |
+| 360px All, 100k | 2 cols; 178px tile; 9,099,996px height | 3 cols; 117.333px tile; 4,044,521px height | Shared GridMetrics formulas |
+| **390px All, 100k** | **2 cols; 193px tile; 50,000 rows; 9,849,996px height** | **3 cols; 127.333px tile; 33,334 rows; 4,377,861px height** | Shared GridMetrics formulas |
+| 430px All, 100k | 2 cols; 213px tile; 10,849,996px height | 3 cols; 140.667px tile; 4,822,315px height | Shared GridMetrics formulas |
+| 899px All, 100k | 6 cols; 146.5px tile | 6 cols; 146.5px tile | Shared GridMetrics formulas |
+| 390px Year (mobile only) | — | 6 cols; 61.667px tile | KFS Year=10 is intentionally reduced for tappability |
+
+Exact workload/units: 100,000 **logical rows**, square tiles, 4px gap; synthetic vertical canvas height is calculated as `rows * tileWidth + (rows - 1) * 4`. This is **not** physical browser scroll height, FPS, memory, thumbnail decode or elapsed HTTP/IPC time. New `desktop/tests/mobile-gallery-kfs-columns.cjs` checks the KFS reference calculation, 10k/100k bounded Grid/Timeline windows across 320–899px, unchanged wide Web mode and pinch-to-column math. No added index/API or full-array materialization. **Acceptance pending:** current-head GitHub full CI, physical iOS27/Android 899/900 breakpoint, actual 100k viewport scroll/anchor, request cancellation, viewer-tap suppression, first-frame and memory traces. Do not claim performance improvement from shorter theoretical grid height.
+
+ -timeout=12m -count=1 -v ./internal/api` repeated three times, summarized with `scripts/ci/parse-gallery-selection-enqueue-n3.py`. Scoped workflow `.github/workflows/gallery-selection-jobs-performance.yml` and matching GitLab configuration. GitHub CI is the authoritative measurement; GitLab job presence is not a claim of an actual GitLab pipeline.
+
+**Frozen diagnostic budgets:** 10k enqueue **P50 ≤750ms**, 100k enqueue **P50 ≤3000ms**, 100k worker **P50 ≤60000ms**. These were already named in the prior n1 chapter and are not retrospectively relaxed. If the n3 100k enqueue exceeds 3 seconds, record a confirmed responsiveness red, then propose the smallest SQL enqueue batch / round-trip experiment separately from the worker chunk size and compare three alternating same-runner BEFORE/AFTER samples with exact 100k success, cancellation semantics, owner/revision safety, SQL calls/CPU/RSS or allocations, correct task status and no important throughput/heap regression. If current is already within budget, **Accepted unchanged production**. Never compare failed requests as successful throughput or claim a percentage speedup without matched n3 A/B.
+
+**Handoff:** The first benchmark-only PR must archive all six raw samples plus n3 summary under `docs/performance-evidence/gallery-selection-enqueue-100k/` and write exact numeric BEFORE data into this canonical document in its same one-work-commit branch, then rerun full exact-head CI. Do not merge an evidence-less benchmark. No CAS bytes or upload/download/sync/delete physical work; these are separate P0 performance tracks.
+
+
+### Native BEFORE n=3 — confirmed 100k performance first-red (2026-10-10)
+
+**Benchmark source:** [CI 38035890714, job 114166104014](https://github.com/lazyxu/xdrive/actions/runs/38035890714/job/114166104014), measured unchanged work commit `2d02f1d10f6ccb3379eea389153bf5e6a4ff6d8e`, parent `dccebda02367c53c5597dd7410fd8577a232c627`. Three independent Go processes and PostgreSQL17 isolated schemas per scale. Full real Gin enqueue + 100-row durable worker. All six runs verified exact 10k/100k successes and correct frozen revisions and task state. A preceding invalid GitHub workflow YAML run had no jobs, so is not counted.
+
+| Scale / phase | Sample 1 | Sample 2 | Sample 3 | P50 | Fixed P50 budget | Verdict |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 10k enqueue | 293ms | 301ms | 428ms | **301ms** | ≤750ms | Pass |
+| 10k Worker | 3,083ms | 3,555ms | 3,216ms | **3,216ms** | diagnostic | all 10k successful |
+| **100k enqueue** | **4,158ms** | **4,596ms** | **4,587ms** | **4,587ms** | **≤3,000ms** | **Red** |
+| **100k Worker** | **54,895ms** | **142,307ms** | **149,394ms** | **142,307ms** | **≤60,000ms** | **Red, high variance** |
+
+**Evidence:** [all six sample rows and native summary](performance-evidence/gallery-selection-enqueue-100k/ci-run-38035890714-before.json). Fixture times are excluded from operation timers. Heap-before and heap-after are Go point-in-time samples separated by both enqueue and full Worker; they are **not** peak RSS or isolated enqueue allocations. Since the three Worker samples differ substantially, do not assert a single proven Worker root cause without its own controlled workload.
+
+**Measured decision:** the 100k **enqueue** red is repeatable and justifies the smallest isolated performance experiment. Introduce `mediaSelectionJobEnqueueBatch = 1000` to group SQL inserts in `createMediaSelectionJob`, reducing the count of INSERT batches from **1000 to 100** for 100k items. Keep `mediaSelectionJobChunk = 100` for the Worker checkpoints, cancellation, owner/revision semantics and persistence. This is a structural 10× round-trip count reduction, **not yet a wall-clock speedup claim**.
+
+**Frozen acceptance gate before candidate results:** execute the original fixed parent and the new candidate through **three independent samples per scale and side**, alternating BEFORE→AFTER, AFTER→BEFORE, BEFORE→AFTER on a single GitHub runner with fresh PostgreSQL schemas. Require 100k AFTER enqueue P50 **≤3,000ms** and **≥30% reduction versus same-runner BEFORE**; 10k enqueue P50 no more than **10% regression**; 100k Worker P50 no more than **15% regression** (separate absolute 60s Worker budget remains independently red until measured green); every 10k/100k durable favorite job completed with 100/1000 original 100-item checkpoint chunks; no per-pair process RSS peak increase exceeding **25% plus 32MiB minimum noise allowance**. Record Linux `/usr/bin/time` peak process RSS and user/system CPU for each paired run, noting each includes fixture+Worker and cannot isolate enqueue CPU. A candidate failing any gate must be **Rejected and reverted**, not shipped merely because it has fewer SQL calls.
+
+**Validation and branch:** GitHub dedicated `gallery-selection-jobs-performance.yml` now runs both source-exact HEAD^ and candidate HEAD worktrees with `scripts/ci/parse-gallery-selection-enqueue-n3.py` and `scripts/ci/compare-gallery-selection-enqueue-n3.py`. Commit all raw paired samples, CPU/RSS, and accepted/rejected decision in this canonical doc before full final source-exact PR CI and linear merge. An erroneously added GitLab-only standalone benchmark job caused existing CI-parity failure and is removed; preserving established main CI parity, **no GitLab push or benchmark execution is claimed**. This performance work does not change race/concurrency contracts or durable task cancellation.
+
+
+### Final paired n=3 A/B — Rejected 1000-row enqueue experiment (2026-10-10)
+
+**Decision: Rejected / product unchanged.** [Source-exact paired CI 38036725965, job 114168581373](https://github.com/lazyxu/xdrive/actions/runs/38036725965/job/114168581373) executed **12 complete native 10k/100k original-versus-candidate arms**: three same-runner alternating B→A / A→B / B→A process pairs, real PostgreSQL17, original immutable parent `dccebda02367c53c5597dd7410fd8577a232c627` and rejected candidate `af35fe681b9292af53c10331dba639737fe54044`. Every arm completed all selected job items with the original 100-row Worker checkpoints. The performance job returned **failure solely because the predeclared speedup and absolute response gates failed**; do not call this a correctness regression or a green benchmark.
+
+| Named workload (ms, P50 with raw n=3) | Original BEFORE | Candidate AFTER | Relative result |
+| --- | ---: | ---: | --- |
+| 10k enqueue | **411** (401 / 412 / 411) | **403** (406 / 403 / 394) | 1.95% faster; within 10% nonregression |
+| **100k enqueue** | **5,350** (5,473 / 5,350 / 3,544) | **3,754** (1,783 / 3,754 / 3,854) | **29.8317757% faster, but fails BOTH strict gates** |
+| 100k Worker | **174,125** (175,803 / 174,125 / 55,608) | **65,881** (56,649 / 185,181 / 65,881) | highly variable, cannot attribute to enqueue batching |
+
+**Frozen gate verdict (unchanged):** candidate 100k enqueue **3,754ms >3,000ms** (fail) and measured improvement **29.83177570093458% <30%** (fail). The 10k enqueue P50, 100k Worker relative nonregression (≤15%), and each-pair peak-process RSS gate (**≤25% +32MiB noise floor**) passed. Worker **65,881ms** still exceeds its separate provisional ≤60,000ms absolute P50 budget. It is invalid to claim a successful 100k response target or a confirmed Worker acceleration based on these noisy full-job measurements.
+
+**Captured whole-process metrics:** paired max-RSS KiB BEFORE→AFTER: sample 1 **824,352→851,904**, sample 2 **371,672→374,152**, sample 3 **376,232→374,620**. Per-process user/system CPU seconds and all individual original/candidate operation/fixture rows are preserved unrounded in the [complete paired evidence JSON](performance-evidence/gallery-selection-enqueue-100k/ci-run-38036725965-rejected-paired.json). These process metrics include Go test startup/fixture/Worker and cannot isolate enqueue peak RSS or claim causal CPU savings.
+
+**Exact production decision:** the candidate changed only SQL enqueue INSERT batch count (100 → 1000 rows, reducing 100k round trips 1000 → 100) but this structural gain does **not** clear the frozen performance gate. Restore the original `internal/api/media_selection_jobs.go` source with **100-row enqueue and 100-row Worker**, keeping cancellation, retry, durability and authorization unchanged. Keep the raw rejected comparison and its command for future reference; do not rerun/ship the same failed candidate as an accepted optimization.
+
+**Post-rejection delivery:** the branch is now a **benchmark-and-documentation-only** contribution. The opt-in GitHub workflow returns to the valid 3-independent-sample ORIGINAL baseline mode (rather than rerunning a knowingly failed paired acceptance job on production code that has been reverted), and still archives each raw sample. The rejected comparison script remains as an explicit historical reproduction utility, not a required global CI gate. Run full exact-head GitHub PR CI including final-gate after this evidence amendment. All future enqueue experiments require a new named baseline and matched 3× BEFORE/AFTER samples, preserving the already documented 3,000ms, 30%, 10k/Worker nonregression and RSS gates. For the independently red 100k Worker, profile per-100-item SQL query/lock/transaction time, DB CPU/I/O, checkpoint cadence and client cancel-to-Go release *before* changing the Worker batch size or task semantics.
+
 ## G07 PostgreSQL durable selection jobs 10k/100k baseline (2026-10-09)
 
 **Status: Measured baseline / no production optimization / evidence amendment under CI review.**
