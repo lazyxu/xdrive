@@ -138,7 +138,10 @@ test('iOS presentation keeps global Search semantics and does not change desktop
     'Mobile icons must not embed desktop file glyphs')
   assert.match(mobileSource, /MOBILE_FILES_ROW_HEIGHT/)
   assert.match(mobileSource, /viewPreference === 'grid'/)
-  assert.match(mobileSource, /setViewPreference\(next\); browseScrollRef\.current = 0/)
+  assert.match(mobileSource, /const chooseMobileView = \(next:/)
+  assert.match(mobileSource, /if \(next === viewPreference\) return/)
+  assert.match(mobileSource, /setViewPreference\(next\)\s+browseScrollRef\.current = 0/)
+  assert.match(mobileSource, /persist\(\{ view: next, scrollTop: 0 \}\)/)
   assert.doesNotMatch(mobileSource, /props\.onViewModeChange\(next\)/)
   assert.match(mobileSource, /文件操作菜单/)
   assert.match(mobileSource, /overflowAction\('新建文件夹'/)
@@ -598,4 +601,16 @@ test('F-PARITY-07C: iOS Files grouped child disclosure changes no global app arc
   assert.match(app, /compactMobile \? \(/)
   assert.match(app, /api\.listRange\(parentID, offset, limit, sort\.key, sort\.direction, true, grouping, signal\)/)
   assert.match(mobileSource, /action\.id !== 'open-new-tab'/)
+})
+
+
+test('F-iOS27-08A: Files More has explicit paired native view actions and one shared viewport', () => {
+  assert.match(mobileSource, /data-mobile-files-view-option=\{option\.view\}/)
+  assert.match(mobileSource, /role="menuitemradio"/)
+  assert.match(mobileSource, /aria-checked=\{viewPreference === option\.view\}/)
+  assert.match(mobileSource, /chooseMobileView\(option\.view\)/)
+  assert.match(mobileSource, /setMoreAnchor\(null\)/)
+  assert.doesNotMatch(mobileSource, /切换到列表|切换到图标/)
+  assert.match(mobileSource, /data-xdrive-file-explorer-scroll-host/)
+  assert.doesNotMatch(mobileSource, /props\.onViewModeChange\(next\)/)
 })

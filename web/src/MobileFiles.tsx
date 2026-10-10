@@ -21,6 +21,9 @@ import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
+import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded'
+import ViewListRoundedIcon from '@mui/icons-material/ViewListRounded'
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import {
@@ -1453,6 +1456,18 @@ export default function MobileFiles(props: Props) {
   const overflowAction = (label: string, action: () => void, disabled = false) => (
     <MenuItem key={label} disabled={disabled} onClick={() => { setMoreAnchor(null); action() }} sx={{ minHeight: MIN_TOUCH }}>{label}</MenuItem>
   )
+  // iOS 27 Files displays both Icons and List as explicit radio-like actions
+  // in More. This changes Mobile presentation only, not the shared Web/Desktop
+  // list query, workspace, tabs, Server sort, or virtual scroll owner.
+  const chooseMobileView = (next: 'details' | 'grid') => {
+    setMoreAnchor(null)
+    if (next === viewPreference) return
+    setViewPreference(next)
+    browseScrollRef.current = 0
+    setScrollTop(0)
+    scrollHostRef.current?.scrollTo({ top: 0 })
+    persist({ view: next, scrollTop: 0 })
+  }
 
   return (
     <XDriveFileExplorerThumbnailProvider lifecycleKey={props.lifecycleKey} loadThumbnail={props.loadThumbnail}>
@@ -1838,6 +1853,26 @@ export default function MobileFiles(props: Props) {
           {section === 'browse' && !showDirectory ? overflowAction('整理浏览首页', () => setEditBrowseHome(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('选择', () => setSelectionMode(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('新建文件夹', props.onCreateFolder) : null}
+          {showDirectory ? <Divider data-mobile-files-view-group="start" sx={{ my: 0.5 }} /> : null}
+          {showDirectory ? ([
+            { view: 'grid', label: '图标', icon: <ViewModuleRoundedIcon fontSize="small" /> },
+            { view: 'details', label: '列表', icon: <ViewListRoundedIcon fontSize="small" /> },
+          ] as const).map(option => (
+            <MenuItem key={option.view} data-mobile-files-view-option={option.view}
+              role="menuitemradio" aria-checked={viewPreference === option.view}
+              selected={viewPreference === option.view}
+              sx={{ minHeight: MIN_TOUCH }}
+              onClick={() => chooseMobileView(option.view)}>
+              <ListItemIcon sx={{ minWidth: 36 }}>{option.icon}</ListItemIcon>
+              {option.label}
+              {viewPreference === option.view
+                ? <CheckRoundedIcon sx={{ ml: 'auto', color: IOS_FILES_MOBILE_BLUE }} /> : null}
+            </MenuItem>
+          )) : null}
+          {showDirectory ? overflowAction('排序与分组', () => {
+            setArrangeAnchor(moreAnchor)
+          }) : null}
+          {showDirectory ? <Divider data-mobile-files-view-group="end" sx={{ my: 0.5 }} /> : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件', props.onUpload) : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件夹', props.onUploadFolder) : null}
           {showDirectory && !props.trashActive ? overflowAction('粘贴', props.onPaste, !props.canPaste) : null}
@@ -1848,14 +1883,6 @@ export default function MobileFiles(props: Props) {
           {!props.trashActive ? overflowAction('重做', () => props.onRedo?.(), !props.canRedo || !props.onRedo) : null}
           {showDirectory && !props.trashActive ? overflowAction('后退（浏览历史）', () => props.onHistoryBack?.(), !props.canHistoryBack || !props.onHistoryBack) : null}
           {showDirectory && !props.trashActive ? overflowAction('前进（浏览历史）', () => props.onHistoryForward?.(), !props.canHistoryForward || !props.onHistoryForward) : null}
-          {showDirectory ? overflowAction('排序与分组', () => {
-            setArrangeAnchor(moreAnchor)
-          }) : null}
-          {showDirectory ? overflowAction(effectiveGrid ? '切换到列表' : '切换到图标', () => {
-            const next = effectiveGrid ? 'details' : 'grid'
-            setViewPreference(next); browseScrollRef.current = 0; setScrollTop(0)
-            scrollHostRef.current?.scrollTo({ top: 0 }); persist({ view: next, scrollTop: 0 })
-          }) : null}
           {section === 'recent' ? overflowAction('清空最近记录', () => setClearRecentConfirm(true)) : null}
           {overflowAction('刷新', refresh)}
           {overflowAction('管理标签', props.onManageTags)}
@@ -1973,23 +2000,23 @@ export default function MobileFiles(props: Props) {
         <Menu anchorEl={arrangeAnchor} open={Boolean(arrangeAnchor)} onClose={() => setArrangeAnchor(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 460px)' } } }}>
           {(['name', 'updated', 'type', 'size'] as const).map(key => (
-            <MenuItem key={key} selected={props.sort.key === key}
+            <MenuItem key={key} selected={props.sort.key === key} sx={{ minHeight: MIN_TOUCH }}
               onClick={() => { props.onSortChange({ ...props.sort, key }); setArrangeAnchor(null) }}>
               {({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[key]}
             </MenuItem>
           ))}
-          <MenuItem onClick={() => {
+          <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             props.onSortChange({ ...props.sort, direction: props.sort.direction === 'asc' ? 'desc' : 'asc' })
             setArrangeAnchor(null)
           }}>方向：{props.sort.direction === 'asc' ? '升序' : '降序'}</MenuItem>
           {props.grouping && props.onGroupingChange ? (['none', 'type', 'modified', 'size'] as const).map(kind => (
-            <MenuItem key={kind} selected={props.grouping?.groupBy === kind} onClick={() => {
+            <MenuItem key={kind} selected={props.grouping?.groupBy === kind} sx={{ minHeight: MIN_TOUCH }} onClick={() => {
               if (props.grouping) props.onGroupingChange?.({ ...props.grouping, groupBy: kind })
               setArrangeAnchor(null)
             }}>{({ none: '不分组', type: '按类型分组', modified: '按修改日期分组', size: '按大小分组' })[kind]}</MenuItem>
           )) : null}
           {props.grouping && props.onGroupingChange ? (
-            <MenuItem onClick={() => {
+            <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
               if (props.grouping) props.onGroupingChange?.({ ...props.grouping, foldersFirst: !props.grouping.foldersFirst })
               setArrangeAnchor(null)
             }}>文件夹优先：{props.grouping.foldersFirst ? '开启' : '关闭'}</MenuItem>

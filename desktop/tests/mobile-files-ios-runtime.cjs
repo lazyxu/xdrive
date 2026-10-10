@@ -1704,3 +1704,81 @@ test('F-PARITY-07F-C: sparse 257-file selection can inspect all files without lo
     loadPropertiesStats: async () => { statsCalls += 1; throw Error('unneeded stats') },
   } })
 })
+
+
+test('F-iOS27-08A: More exposes explicit iOS Files Icons/List radio choices without forking wide Web state', async () => {
+  const sorts = []
+  const wideViews = []
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-mobile-files-view-option'), 0,
+      'Browse home has no directory view switch')
+    const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { root.props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const icons = find(h.view, 'data-mobile-files-view-option', 'grid')
+    const list = find(h.view, 'data-mobile-files-view-option', 'details')
+    assert.equal(icons.props.role, 'menuitemradio')
+    assert.equal(list.props.role, 'menuitemradio')
+    assert.equal(icons.props['aria-checked'], false)
+    assert.equal(list.props['aria-checked'], true)
+    assert.equal(list.props.selected, true)
+    assert.equal(icons.props.sx.minHeight, 44)
+    assert.equal(list.props.sx.minHeight, 44)
+    assert.equal(count(h.view, 'data-mobile-files-view-group'), 2,
+      'More keeps Files view choices in an independent native-like group')
+    assert.equal(h.view.root.findAll(node => node.props?.children === '切换到图标' ||
+      node.props?.children === '切换到列表').length, 0)
+    await act(async () => { icons.props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-view-option', 'grid').props['aria-checked'], true)
+    assert.equal(find(h.view, 'data-mobile-files-view-option', 'details').props['aria-checked'], false)
+    assert.match(textOf(find(h.view, 'data-mobile-files-arrangement-status', true).props.children),
+      /名称 ↑ · 图标/)
+    assert.match(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'), /"view":"grid"/)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-view-option', 'details').props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-view-option', 'details').props.selected, true)
+    assert.match(textOf(find(h.view, 'data-mobile-files-arrangement-status', true).props.children),
+      /名称 ↑ · 列表/)
+    assert.match(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'), /"view":"details"/)
+    assert.deepEqual(sorts, [], 'Mobile view is presentation only; Server sort did not change')
+    assert.deepEqual(wideViews, [], 'switching Mobile view must not overwrite wide Web Columns preference')
+  }, { props: {
+    onSortChange: next => sorts.push(next),
+    onViewModeChange: next => wideViews.push(next),
+  } })
+})
+
+test('F-iOS27-08A: native-like More keeps real backed sort/group actions and touch targets', async () => {
+  const changes = []
+  const groupChanges = []
+  await withView(async h => {
+    const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { root.props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const arrange = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '排序与分组')
+    assert.equal(arrange.length, 1)
+    assert.equal(arrange[0].props.sx.minHeight, 44)
+    await act(async () => { arrange[0].props.onClick() })
+    const bySize = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '大小')[0]
+    assert.ok(bySize)
+    assert.equal(bySize.props.sx.minHeight, 44)
+    await act(async () => { bySize.props.onClick() })
+    assert.deepEqual(changes, [{ key: 'size', direction: 'asc' }])
+    const group = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '按类型分组')[0]
+    assert.ok(group)
+    assert.equal(group.props.sx.minHeight, 44)
+    await act(async () => { group.props.onClick() })
+    assert.deepEqual(groupChanges, [{ groupBy: 'type', foldersFirst: true }])
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    onSortChange: value => changes.push(value),
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onGroupingChange: value => groupChanges.push(value),
+  } })
+})
