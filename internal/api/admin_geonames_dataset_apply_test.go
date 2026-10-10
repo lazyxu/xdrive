@@ -61,7 +61,7 @@ func TestGeoNamesSnapshotLocalApplyRevalidatesAndKeepsLastGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{}, &meta.AdminGeoNamesSetting{},
-		&meta.AdminGeoNamesDatasetSnapshot{}); err != nil {
+		&meta.AdminGeoNamesDatasetSnapshot{}, &meta.AdminGeoNamesRevision{}); err != nil {
 		t.Fatal(err)
 	}
 	source, historyDir := t.TempDir(), t.TempDir()
@@ -184,14 +184,52 @@ func TestGeoNamesSnapshotLocalApplyRevalidatesAndKeepsLastGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.ActiveDatasetFingerprint != fp || cfg.ActiveDatasetSource != "snapshot" ||
-		cfg.ActiveDatasetPersistent || rt.Version() == first.Version() ||
+		!cfg.ActiveDatasetPersistent || cfg.DesiredFingerprint != fp || cfg.Revision != 3 ||
+		cfg.EffectiveRevision != 3 || rt.Version() == first.Version() ||
 		pinned.Version() != first.Version() || srv.currentGeoNamesDatasetFingerprint() != fp {
 		t.Fatalf("local snapshot apply false state: %+v", cfg)
+	}
+	// The persisted revision and content address survive a fresh Server startup.
+	startupDistance, startupRevision, startupFP, err := GeoNamesStartupDesired(context.Background(), db, 5)
+	if err != nil || startupDistance != 5 || startupRevision != 3 || startupFP != fp {
+		t.Fatalf("persisted dataset selection invalid: distance=%v revision=%v fp=%v err=%v",
+			startupDistance, startupRevision, startupFP, err)
+	}
+	restored, err := GeoNamesStartupVerifiedSnapshot(
+		context.Background(), db, source, historyDir, startupFP, startupDistance,
+	)
+	if err != nil || restored.Version() != rt.Version() {
+		t.Fatalf("restart did not verify selected archived bytes: %v", err)
+	}
+	// An archived snapshot that was corrupted after saving must not restore.
+	if err := os.WriteFile(archivedFile, []byte("corrupted-startup"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := GeoNamesStartupVerifiedSnapshot(
+		context.Background(), db, source, historyDir, startupFP, startupDistance,
+	); err == nil {
+		t.Fatal("startup accepted changed archived bytes")
+	}
+	fallback := &Server{
+		DB: db, GeoNamesRuntime: photointelligence.NewReloadablePlaceResolver(first),
+		GeoNamesDataDir: source, GeoNamesSnapshotDir: historyDir, GeoNamesMaxDistanceKM: 5,
+	}
+	statusOut := httptest.NewRecorder()
+	statusCtx, _ := gin.CreateTestContext(statusOut)
+	statusCtx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services/geonames", nil)
+	fallback.adminGeoNamesConfig(statusCtx)
+	var pendingConfig adminGeoNamesConfigDTO
+	if json.Unmarshal(statusOut.Body.Bytes(), &pendingConfig) != nil ||
+		pendingConfig.ApplyState == "applied" || pendingConfig.ActiveDatasetPersistent {
+		t.Fatalf("corrupt archived startup was marked applied: %+v", pendingConfig)
+	}
+	if err := os.WriteFile(archivedFile, archivedBytes, 0600); err != nil {
+		t.Fatal(err)
 	}
 	// A later global radius change must rebuild from this selected archive on
 	// the current instance, not silently revert to the deployment-mounted bytes.
 	if err := db.Model(&meta.AdminGeoNamesSetting{}).Where("name = ?", geoNamesSettingName).
-		Updates(map[string]any{"revision": uint64(3), "max_distance_km": 8.0}).Error; err != nil {
+		Updates(map[string]any{"revision": uint64(4), "max_distance_km": 8.0}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := srv.reconcileGeoNamesReplica(context.Background()); err != nil {
@@ -215,9 +253,14 @@ func TestGeoNamesSnapshotLocalApplyRevalidatesAndKeepsLastGood(t *testing.T) {
 	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}
-	revert := applyBody(3, rt.Version(), fp, "deployment")
+	revert := applyBody(4, rt.Version(), fp, "deployment")
 	if rec := request(applyPath, adminToken, revert); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("missing audit accepted deployment restore: %d", rec.Code)
+	}
+	// A failed audit must also leave the desired database source untouched.
+	_, stillRevision, stillFP, stateErr := GeoNamesStartupDesired(context.Background(), db, 5)
+	if stateErr != nil || stillRevision != 4 || stillFP != fp {
+		t.Fatalf("audit error changed desired dataset selection: %d %q %v", stillRevision, stillFP, stateErr)
 	}
 	if rt.Version() != expectedFromArchive.Version() || srv.currentGeoNamesDatasetFingerprint() != fp {
 		t.Fatal("audit failure changed active data source")
@@ -230,8 +273,12 @@ func TestGeoNamesSnapshotLocalApplyRevalidatesAndKeepsLastGood(t *testing.T) {
 		t.Fatalf("restore operator-mounted source failed: %d %s", rec.Code, rec.Body.String())
 	}
 	if rt.Version() != expectedFromDeployment.Version() || srv.currentGeoNamesDatasetFingerprint() != "" ||
-		srv.GeoNamesAppliedRevision.Load() != 3 {
+		srv.GeoNamesAppliedRevision.Load() != 5 {
 		t.Fatal("deployment restore failed to publish a verified index")
+	}
+	_, restoredRevision, restoredTarget, restoredErr := GeoNamesStartupDesired(context.Background(), db, 5)
+	if restoredErr != nil || restoredRevision != 5 || restoredTarget != "" {
+		t.Fatalf("deployment restore was not persisted: %d %q %v", restoredRevision, restoredTarget, restoredErr)
 	}
 	if _, err := os.Stat(archivedFile); err != nil {
 		t.Fatal("historical snapshot was deleted during deployment restore")

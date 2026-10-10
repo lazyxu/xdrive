@@ -104,8 +104,9 @@ func main() {
 	var photoPlaceResolver photointelligence.PlaceResolver
 	var geoNamesRuntime *photointelligence.ReloadablePlaceResolver
 	var geoNamesEffectiveRevision uint64
+	var geoNamesEffectiveFingerprint string
 	if cfg.PhotoPlaceGeoNamesDir != "" {
-		distance, revision, settingErr := api.GeoNamesStartupDistanceRevision(
+		distance, revision, fingerprint, settingErr := api.GeoNamesStartupDesired(
 			context.Background(), db, cfg.PhotoPlaceMaxDistanceKM,
 		)
 		if settingErr != nil {
@@ -113,21 +114,43 @@ func main() {
 			// or its uploads, downloads and synchronization offline.
 			slog.Error("photo_place_settings_unavailable", "error", settingErr)
 		} else {
-			resolver, loadErr := photointelligence.LoadGeoNamesResolver(
-				cfg.PhotoPlaceGeoNamesDir, distance,
-			)
-			if loadErr != nil {
-				log.Fatalf("load GeoNames photo place resolver: %v", loadErr)
+			var resolver *photointelligence.GeoNamesResolver
+			var loadErr error
+			if fingerprint != "" {
+				resolver, loadErr = api.GeoNamesStartupVerifiedSnapshot(
+					context.Background(), db, cfg.PhotoPlaceGeoNamesDir,
+					strings.TrimSpace(os.Getenv("XD_GEONAMES_SNAPSHOT_DIR")), fingerprint, distance,
+				)
+				if loadErr != nil {
+					slog.Error("geonames_persisted_snapshot_invalid", "error", loadErr)
+					// Keep core storage and sync alive, but never acknowledge a
+					// missing or corrupt selected archive as successfully applied.
+					revision = 0
+					resolver, loadErr = photointelligence.LoadGeoNamesResolver(
+						cfg.PhotoPlaceGeoNamesDir, distance,
+					)
+				} else {
+					geoNamesEffectiveFingerprint = fingerprint
+				}
+			} else {
+				resolver, loadErr = photointelligence.LoadGeoNamesResolver(
+					cfg.PhotoPlaceGeoNamesDir, distance,
+				)
 			}
-			geoNamesRuntime = photointelligence.NewReloadablePlaceResolver(resolver)
-			geoNamesEffectiveRevision = revision
-			photoPlaceResolver = geoNamesRuntime
-			slog.Info(
-				"photo_place_resolver_loaded",
-				"resolver", resolver.Name(),
-				"resolver_version", resolver.Version(),
-				"attribution", photointelligence.GeoNamesAttribution,
-			)
+			if loadErr != nil {
+				// GeoNames is optional; a broken index must not stop file I/O.
+				slog.Error("photo_place_resolver_unavailable", "error", loadErr)
+			} else {
+				geoNamesRuntime = photointelligence.NewReloadablePlaceResolver(resolver)
+				geoNamesEffectiveRevision = revision
+				photoPlaceResolver = geoNamesRuntime
+				slog.Info(
+					"photo_place_resolver_loaded",
+					"resolver", resolver.Name(),
+					"resolver_version", resolver.Version(),
+					"attribution", photointelligence.GeoNamesAttribution,
+				)
+			}
 		}
 	}
 	var photoFaceAnalyzer photointelligence.FaceAnalyzer
@@ -238,6 +261,7 @@ func main() {
 		MediaIndexWakeups:           mediaIndexListener.Events,
 		FileOperationWakeups:        fileOperationListener.Wakeups,
 	}
+	srv.SetGeoNamesStartupDataset(geoNamesEffectiveFingerprint)
 	srv.GeoNamesAppliedRevision.Store(geoNamesEffectiveRevision)
 	srv.StartGeoNamesReplicaPresence(serverCtx)
 	srv.StartBackgroundRuntimePresence(serverCtx)

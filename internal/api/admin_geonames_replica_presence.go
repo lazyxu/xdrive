@@ -51,7 +51,7 @@ func summarizeGeoNamesReplicas(desired geoNamesDesiredConfig, rows []meta.GeoNam
 		}
 		versions[row.ResolverVersion]++
 		if desired.Revision != 0 && row.AppliedRevision == desired.Revision &&
-			row.MaxDistanceKM == desired.MaxDistanceKM {
+			row.MaxDistanceKM == desired.MaxDistanceKM && row.Fingerprint == desired.Fingerprint {
 			out.AppliedInstances++
 		}
 	}
@@ -89,6 +89,7 @@ func (s *Server) geoNamesPresenceSnapshot(id string, now time.Time) meta.GeoName
 	}
 	row.Configured = true
 	row.ResolverVersion = snapshot.Version()
+	row.Fingerprint = s.currentGeoNamesDatasetFingerprint()
 	row.MaxDistanceKM = snapshot.MaxDistanceKM()
 	row.AppliedRevision = s.GeoNamesAppliedRevision.Load()
 	return row
@@ -98,7 +99,7 @@ func publishGeoNamesReplicaPresence(ctx context.Context, db *gorm.DB, row meta.G
 	return db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "instance_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"configured", "resolver_version", "max_distance_km",
+			"configured", "resolver_version", "fingerprint", "max_distance_km",
 			"applied_revision", "heartbeat_at", "expires_at",
 		}),
 	}).Create(&row).Error

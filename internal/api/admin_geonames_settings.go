@@ -21,6 +21,7 @@ var errGeoNamesRevisionConflict = errors.New("GeoNames configuration revision ch
 
 type geoNamesDesiredConfig struct {
 	MaxDistanceKM float64
+	Fingerprint   string
 	Revision      uint64
 	Source        string
 	UpdatedAt     *time.Time
@@ -49,11 +50,13 @@ func geoNamesDesiredSettings(ctx context.Context, db *gorm.DB, fallback float64)
 	if err != nil {
 		return geoNamesDesiredConfig{}, err
 	}
-	if !validGeoNamesMaxDistanceKM(row.MaxDistanceKM) || row.Revision == 0 {
+	if !validGeoNamesMaxDistanceKM(row.MaxDistanceKM) || row.Revision == 0 ||
+		(row.Fingerprint != "" && !validGeoNamesSnapshotFingerprint(row.Fingerprint)) {
 		return geoNamesDesiredConfig{}, fmt.Errorf("persisted GeoNames configuration is invalid")
 	}
 	return geoNamesDesiredConfig{
 		MaxDistanceKM: row.MaxDistanceKM,
+		Fingerprint:   row.Fingerprint,
 		Revision:      row.Revision,
 		Source:        "saved",
 		UpdatedAt:     &row.UpdatedAt,
@@ -62,12 +65,17 @@ func geoNamesDesiredSettings(ctx context.Context, db *gorm.DB, fallback float64)
 
 // Startup must capture the radius AND its persisted revision from one read.
 // A heartbeat cannot acknowledge a revision merely because the radius matches.
-func GeoNamesStartupDistanceRevision(ctx context.Context, db *gorm.DB, fallback float64) (float64, uint64, error) {
+func GeoNamesStartupDesired(ctx context.Context, db *gorm.DB, fallback float64) (float64, uint64, string, error) {
 	config, err := geoNamesDesiredSettings(ctx, db, fallback)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
-	return config.MaxDistanceKM, config.Revision, nil
+	return config.MaxDistanceKM, config.Revision, config.Fingerprint, nil
+}
+
+func GeoNamesStartupDistanceRevision(ctx context.Context, db *gorm.DB, fallback float64) (float64, uint64, error) {
+	distance, revision, _, err := GeoNamesStartupDesired(ctx, db, fallback)
+	return distance, revision, err
 }
 
 func GeoNamesStartupMaxDistance(ctx context.Context, db *gorm.DB, fallback float64) (float64, error) {
@@ -110,7 +118,7 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 		return
 	}
 	// Fully validate and build an immutable candidate before database writes.
-	candidate, err := s.loadCurrentGeoNamesResolver(ctx, *input.MaxDistanceKM)
+	candidate, err := s.loadGeoNamesResolverForFingerprint(ctx, desired.Fingerprint, *input.MaxDistanceKM)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active settings unchanged")
 		return
@@ -127,7 +135,7 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 		if readErr != nil && !errors.Is(readErr, gorm.ErrRecordNotFound) {
 			return readErr
 		}
-		if (exists && row.Revision != *input.Revision) ||
+		if (exists && (row.Revision != *input.Revision || row.Fingerprint != desired.Fingerprint)) ||
 			(!exists && *input.Revision != 0) {
 			return errGeoNamesRevisionConflict
 		}
@@ -150,7 +158,7 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 			write := tx.Clauses(clause.OnConflict{DoNothing: true}).
 				Create(&meta.AdminGeoNamesSetting{
 					Name: geoNamesSettingName, MaxDistanceKM: *input.MaxDistanceKM,
-					Revision: nextRevision,
+					Fingerprint: desired.Fingerprint, Revision: nextRevision,
 				})
 			if write.Error != nil {
 				return write.Error
@@ -194,6 +202,7 @@ func (s *Server) adminSaveGeoNamesConfig(c *gin.Context) {
 	// Saved desired state becomes effective only on THIS instance after
 	// a successful transaction. Other replicas report pending until reloaded.
 	s.GeoNamesRuntime.Swap(candidate)
+	s.SetGeoNamesStartupDataset(desired.Fingerprint)
 	s.GeoNamesAppliedRevision.Store(nextRevision)
 	s.adminGeoNamesConfig(c)
 }
