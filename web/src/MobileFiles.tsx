@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
+import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
@@ -35,12 +35,13 @@ import {
   XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
-  xDriveFileExplorerVisibleGroupSegments,
+  xDriveFileExplorerVisibleGroupSegments, xDriveFileExplorerReadExternalDrop,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerCrumb, XDriveFileExplorerItem, XDriveFileExplorerMenuItem,
   XDriveFileExplorerSearchSummary, XDriveFileExplorerSort, XDriveFileExplorerVirtualCollection,
   XDriveFileExplorerPropertiesLoader, XDriveFilePropertiesDialogProperty,
+  XDriveFileExplorerExternalDropPayload,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
 import {
@@ -145,6 +146,10 @@ type Props = {
   onDelete: (items: XDriveFileExplorerItem[]) => void
   onDropToFolder: (items: XDriveFileExplorerItem[], folder: XDriveFileExplorerItem) => void
   onDropToCrumb: (items: XDriveFileExplorerItem[], crumb: XDriveFileExplorerCrumb) => void
+  onExternalFilesDrop?: (files: File[], target?: XDriveFileExplorerItem) => void | Promise<void>
+  onExternalFolderDrop?: (payload: XDriveFileExplorerExternalDropPayload, target?: XDriveFileExplorerItem) => void | Promise<void>
+  onExternalFilesDropToCrumb?: (files: File[], crumb: XDriveFileExplorerCrumb) => void | Promise<void>
+  onExternalFolderDropToCrumb?: (payload: XDriveFileExplorerExternalDropPayload, crumb: XDriveFileExplorerCrumb) => void | Promise<void>
   getItemMenuItems: (item: XDriveFileExplorerItem) => XDriveFileExplorerMenuItem[]
   loadThumbnail: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
   loadMediaItem: (item: XDriveFileExplorerItem, signal: AbortSignal) => Promise<MediaItem | null>
@@ -348,6 +353,7 @@ export default function MobileFiles(props: Props) {
   } | null>(null)
   const [dropFolderID, setDropFolderID] = useState<string | null>(null)
   const [dropCrumbID, setDropCrumbID] = useState<string | null>(null)
+  const externalDropGenerationRef = useRef(0)
   const ownerRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const lastRequestedDirectoryRef = useRef(props.requestedDirectoryID)
@@ -509,6 +515,11 @@ export default function MobileFiles(props: Props) {
     nativeShareControllerRef.current?.abort()
     deleteSavedSearchGenerationRef.current += 1
   }, [props.lifecycleKey])
+  // A dropped directory may still be reading on another browser task. Fence
+  // its result before starting uploads after account, folder or Search changes.
+  useEffect(() => () => {
+    externalDropGenerationRef.current += 1
+  }, [props.lifecycleKey, directoryID, props.trashActive, props.searchActive, props.virtualCollection?.interactionKey])
   useEffect(() => {
     if (props.searchActive) return
     setReplaceSavedSearchOpen(false)
@@ -871,6 +882,52 @@ export default function MobileFiles(props: Props) {
     }
   }
 
+  type MobileExternalTarget =
+    | { kind: 'folder'; item: XDriveFileExplorerItem }
+    | { kind: 'crumb'; crumb: XDriveFileExplorerCrumb }
+  const externalDropEnabled = showDirectory && !props.trashActive && Boolean(
+    props.onExternalFilesDrop || props.onExternalFolderDrop ||
+    props.onExternalFilesDropToCrumb || props.onExternalFolderDropToCrumb
+  )
+  const externalDragOver = (event: ReactDragEvent<HTMLElement>, target?: MobileExternalTarget) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    if (!externalDropEnabled) return
+    if (target) event.stopPropagation()
+    event.dataTransfer.dropEffect = 'copy'
+    setDropFolderID(target?.kind === 'folder' ? String(target.item.id) : null)
+    setDropCrumbID(target?.kind === 'crumb' ? String(target.crumb.id) : null)
+  }
+  const externalDrop = (event: ReactDragEvent<HTMLElement>, target?: MobileExternalTarget) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    if (target) event.stopPropagation()
+    setDropFolderID(null)
+    setDropCrumbID(null)
+    if (!externalDropEnabled) return
+    const generation = externalDropGenerationRef.current
+    const dataTransfer = event.dataTransfer
+    const files = Array.from(dataTransfer.files)
+    // Share the exact wide-Web directory-entry reader and upload controller.
+    void (async () => {
+      const payload = await xDriveFileExplorerReadExternalDrop(dataTransfer)
+      if (externalDropGenerationRef.current !== generation) return
+      if (payload.directories.length > 0) {
+        if (target?.kind === 'folder') await props.onExternalFolderDrop?.(payload, target.item)
+        else if (target?.kind === 'crumb') await props.onExternalFolderDropToCrumb?.(payload, target.crumb)
+        else await props.onExternalFolderDrop?.(payload)
+        return
+      }
+      const selected = files.length > 0 ? files : payload.files.map(entry => entry.file)
+      if (!selected.length) return
+      if (target?.kind === 'folder') await props.onExternalFilesDrop?.(selected, target.item)
+      else if (target?.kind === 'crumb') await props.onExternalFilesDropToCrumb?.(selected, target.crumb)
+      else await props.onExternalFilesDrop?.(selected)
+    })().catch(error => {
+      if (externalDropGenerationRef.current === generation) props.onOpenError(error)
+    })
+  }
+
   const menuFor = (item: XDriveFileExplorerItem) =>
     props.getItemMenuItems(item).filter(action => action.id !== 'open-new-tab')
   // The shared menu adapter already supplies genuine action icons and danger/
@@ -989,6 +1046,8 @@ export default function MobileFiles(props: Props) {
         aria-label={selectionMode ? `${chosen ? '已选' : '未选'}，${item.name}` : item.name}
         aria-pressed={selectionMode ? chosen : undefined}
         onClick={() => { if (!cancelClickRef.current) onOpenEntry(item); else cancelClickRef.current = false }}
+        onDragOver={item.kind === 'dir' ? event => externalDragOver(event, { kind: 'folder', item }) : undefined}
+        onDrop={item.kind === 'dir' ? event => externalDrop(event, { kind: 'folder', item }) : undefined}
         onContextMenu={event => {
           event.preventDefault()
           // The 450ms hold owns touch activation until pointerup.
@@ -1234,6 +1293,9 @@ export default function MobileFiles(props: Props) {
           )}
         </Stack>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
+          onDragOver={event => externalDragOver(event)}
+          onDrop={event => externalDrop(event)}
+          onDragLeave={() => { setDropFolderID(null); setDropCrumbID(null) }}
           onScroll={(event: UIEvent<HTMLDivElement>) => {
             xDriveFileExplorerMarkThumbnailScrollActivity(event.currentTarget)
             const top = event.currentTarget.scrollTop
@@ -1381,6 +1443,8 @@ export default function MobileFiles(props: Props) {
                 <Stack direction="row" gap={0.5} sx={{ px: 1.5, pb: 1, overflowX: 'auto' }}>
                   {props.crumbs.map((crumb, i) => (
                     <Button key={String(crumb.id)} data-mobile-files-crumb-id={String(crumb.id)}
+                      onDragOver={event => externalDragOver(event, { kind: 'crumb', crumb })}
+                      onDrop={event => externalDrop(event, { kind: 'crumb', crumb })}
                       variant={i === props.crumbs.length - 1 ? 'outlined' : 'text'}
                       sx={{ whiteSpace: 'nowrap', minHeight: 36,
                         bgcolor: dropCrumbID === String(crumb.id) ? 'action.selected' : undefined }}

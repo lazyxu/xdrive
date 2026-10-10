@@ -505,3 +505,34 @@ test('F-PARITY-05: typed path keeps FileExplorer tabs and all-files Search separ
   assert.match(ios, /F-PARITY-05/)
   assert.match(ios, /52px/)
 })
+
+test('F-PARITY-06: Mobile Files external drop shares wide Web reader and upload controllers', () => {
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  const controller = read('ui/shared/src/mui/FileExplorerExternalDrop.ts')
+  assert.match(mobileSource, /xDriveFileExplorerReadExternalDrop\(dataTransfer\)/)
+  assert.match(mobileSource, /data-mobile-files-folder-id/)
+  assert.match(mobileSource, /data-mobile-files-crumb-id/)
+  assert.match(mobileSource, /onDragOver=\{event => externalDragOver\(event\)\}/)
+  assert.match(mobileSource, /onDrop=\{event => externalDrop\(event\)\}/)
+  assert.match(mobileSource, /props\.onExternalFolderDrop\?\.\(payload, target\.item\)/)
+  assert.match(mobileSource, /props\.onExternalFilesDropToCrumb\?\.\(selected, target\.crumb\)/)
+  assert.match(mobileSource, /externalDropGenerationRef\.current !== generation/)
+  assert.match(controller, /export async function xDriveFileExplorerReadExternalDrop/)
+  assert.match(controller, /useXDriveFileExplorerExternalDropController/)
+  for (const name of ['onExternalFilesDrop', 'onExternalFolderDrop',
+    'onExternalFilesDropToCrumb', 'onExternalFolderDropToCrumb']) {
+    assert.ok(adapter.includes(name + '={trashActive ? undefined'), 'missing shared Web upload bridge: ' + name)
+    assert.ok(mobileSource.includes(name + '?:'), 'missing Mobile adapter prop: ' + name)
+  }
+  assert.doesNotMatch(mobileSource, /api\.upload|fetch\(.*api\/v1\/upload/)
+})
+
+test('F-PARITY-06: Mobile external drops preserve account scope and iOS Files chrome', () => {
+  const ios = read('docs/mobile-files-ios27.md')
+  assert.match(ios, /F-PARITY-06/)
+  assert.match(mobileSource, /showDirectory && !props\.trashActive/)
+  assert.match(mobileSource, /props\.virtualCollection\?\.interactionKey/)
+  assert.match(mobileSource, /externalDropGenerationRef\.current \+= 1/)
+  assert.match(mobileSource, /data-xdrive-file-explorer-scroll-host/)
+  assert.doesNotMatch(mobileSource, /<XDriveFileExplorer\b/)
+})

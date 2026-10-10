@@ -1083,6 +1083,10 @@ export default function WebFileExplorer({
           }}
           onDropToFolder={(selected, target) => { void dropItemsToFolder(selected, target, 'move') }}
           onDropToCrumb={(selected, target) => { void dropItemsToCrumb(selected, target, 'move') }}
+          onExternalFilesDrop={trashActive ? undefined : (files, target) => { void dropExternalFiles(files, target) }}
+          onExternalFilesDropToCrumb={trashActive ? undefined : (files, crumb) => { void dropExternalFilesToCrumb(files, crumb) }}
+          onExternalFolderDrop={trashActive ? undefined : (payload, target) => { void dropExternalFolderEntries(payload, target) }}
+          onExternalFolderDropToCrumb={trashActive ? undefined : (payload, crumb) => { void dropExternalFolderEntriesToCrumb(payload, crumb) }}
           getItemMenuItems={trashActive ? trash.getItemMenuItems : getItemMenuItems}
           loadThumbnail={loadThumbnail}
           loadMediaItem={loadMediaItem}

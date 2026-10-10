@@ -69,3 +69,13 @@ Wide Web supports a typed FileExplorer address/path through `useXDriveFileExplor
 The typed path is explicitly **not** a folder-scoped Search. Blank paths cannot submit, Trash cannot start the operation, and normal Open/Viewer and global Search remain separate. Preserve full-height App Frame, 52px app header, shared Server/API, virtual collection and thumbnail ownership.
 
 **Acceptance:** React mounted tests for Browse Home and Recent, current path prefill, trimmed submission, empty path rejection, Trash suppression and preserved scroll owner; source tests for shared resolver reuse. Full PR CI is the merge gate; real iOS 27 screenshots, software keyboard, installed mode and 100k end-to-end measurements remain not-run.
+
+## 2026-10-10 F-PARITY-06 · external files and folder drop parity
+
+**Implemented on a short-lived dependent PR; final CI/merge and physical iOS 27 device validation remain pending.**
+
+Mobile's Files-internal browsing list/grid, real folder rows and ancestor breadcrumbs now dispatch genuine dragged **external files or folder entries** through the exact same `xDriveFileExplorerReadExternalDrop` parser and `useXDriveFileExplorerExternalDropController` adapter already used by wide Web. A source folder goes to the owning folder as the Server resolves it; a crumb drop goes to that ancestor; a background drop goes to the existing current directory. The parser preserves folder-relative paths and empty-directory entries, and the shared upload controller enforces authorized parent, current account, lifecycle, transfer retry and refresh semantics. A folder drop must never additionally upload a flattened copy at the background location.
+
+This is different from Mobile's existing long-hold *internal move* gesture, which remains intact. HTML5 external `DataTransfer` recognition requires real browser file handles; no fabricated mobile filesystem access, auto-hydration, offline folder scan or second upload endpoint is introduced. A stale async directory read is discarded after session, directory, Search generation, or Trash changes **before** invoking the upload controller; the browser's legacy entry enumeration itself does not support upstream `AbortSignal` cancellation, so do not claim the bytes of an in-flight read were cancelled. In Trash, file drops are prevented from navigating away in the browser and never cause a mutation.
+
+React behavior/source tests must cover background, folder and ancestor targets, prevention of bubbled duplicate drops, same-account gating, rejected Trash, shared reader usage and unmount/stale read. Real iPhone/iPad Files → Safari split-view drag, iOS-installed Web App, permission errors and large-folder handling remain **not run** until device and workload evidence exists.
