@@ -327,6 +327,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
+	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/background-tasks", s.adminListBackgroundTasks)

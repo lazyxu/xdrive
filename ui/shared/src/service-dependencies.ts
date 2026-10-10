@@ -35,10 +35,20 @@ export type XDriveServiceDependenciesSnapshot = {
 export type XDriveGeoNamesConfig = {
   dataset_configured: boolean
   reload_supported: boolean
-  source: 'deployment'
+  source: 'environment' | 'saved'
   current_version: string
   max_distance_km: number
+  effective_max_distance_km: number
+  editable: boolean
+  revision: number
+  apply_state: 'applied' | 'pending' | 'unavailable'
+  updated_at?: string
   requires_restart: boolean
+}
+
+export type XDriveGeoNamesUpdate = {
+  revision: number
+  max_distance_km: number
 }
 export type XDriveGeoNamesReloadResult = {
   applied: boolean

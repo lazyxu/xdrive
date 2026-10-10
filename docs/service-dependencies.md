@@ -40,7 +40,7 @@ This page must **not** treat a service's configuration form, process presence an
 | Dependency | Configuration owner / controls today | Activation contract |
 | --- | --- | --- |
 | Baidu Server API | Admin service page; encrypted AK enable/edit/reveal/clear | Immediate, next authenticated map request, no restart |
-| GeoNames place labels | Read-only `/geonames` dataset mount plus `XD_PHOTO_PLACE_GEONAMES_DIR` / distance env | Admin can validate/reload revised mounted data without restart; changing mount path or distance still requires controlled deployment; never a map fallback |
+| GeoNames place labels | Read-only `/geonames` dataset mount with deployment path; administrator-persisted matching distance | Admin can edit distance and atomically hot-apply this instance, or validate/reload dataset without restart; path stays deployment-owned, replica status remains independent |
 | Face, animal/object, OCR and semantic image analysis | Optional shared `photo-intelligence` Compose container, Unix socket, pinned models | Controlled deployment for profile/socket/model changes; never represent a UI toggle as a container start |
 | Creative analyzer (cutout/erase/movie/collage) | Same optional Photo Intelligence runtime | Controlled deployment; independent model/info probe |
 | Media Worker / FFmpeg | Not yet integrated | Planned; **no enable button** or fabricated status |
@@ -49,14 +49,20 @@ This page must **not** treat a service's configuration form, process presence an
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
 
-### P1-B1: GeoNames actual validate-and-apply (stacked, not merged)
+### P1-B1: GeoNames actual validate-and-apply (merged #1225)
 
 The administrator-only `GET /api/v1/admin/services/geonames` reports the loaded dataset version, configuration source, search radius, and whether this Server supports reload. `POST /api/v1/admin/services/geonames/reload` accepts **only** the expected active resolver version, not an arbitrary directory path. It serializes reload attempts, re-reads and validates all three files from the existing deployment-mounted directory, writes a metadata-only audit before publication, then atomically publishes an immutable snapshot. Invalid or partial files retain the old snapshot; a stale active version returns HTTP 409. The PlaceRunner pins a resolver snapshot for candidate queries, resolution, and stored label version throughout each batch. Current Web/Desktop share the same MUI button and Server-backed Agent bridge. Existing durable upload, download and sync tasks are unrelated.
 
-**Limitations:** This is real reload of existing deployment-provided data, **not** in-app editing of the directory, matching radius, or a remote GeoNames download. It only proves the current Server instance has switched. Coordinated multi-replica apply, persisted desired/effective revisions, upload/staging and rollback UI remain for P1-B2; do not mislabel this as complete service configuration parity with Baidu AK. Full CI and real production-dataset memory/latency evidence are required before merge.
+**B1 historical scope (merged after CI run #38009959801):** This delivers real reload of the existing deployment-provided data, not an in-app directory editor or remote GeoNames download. The radius editor and persisted desired/effective distinction arrive in P1-B2a. Automatic multi-replica coordination, upload/staging and rollback UI remain outstanding; production-dataset memory/latency evidence has not been recorded as completed.
+
+### P1-B2a: persisted matching radius and per-instance hot apply (in review)
+
+The administrator may update the GeoNames matching radius in `(0, 500]` km with a mandatory optimistic revision and an explicit applied-versus-pending indication. The Server rebuilds the full candidate from the existing trusted read-only mount **before** updating `xd_admin_geonames_settings`. Saving and a metadata-only audit are one transaction; only after commit is the new immutable resolver published in the current Server. Failed validation, stale revision (409), or failed audit leaves the previous effective resolver intact. Startup reads the persisted override before loading the resolver. An administrator may use the existing manual reload action on a replica to pick up a pending saved radius. This is **not** an arbitrary dataset-path editor, automatic cluster broadcast, or global all-replicas success guarantee. User-level Sync Folder credentials remain excluded.
+
+**Remaining P1-B2b:** safe managed dataset staging and validation, application across all Server instances with actual status acknowledgments, and rollback of persisted desired revisions. These are not declared delivered by radius hot-apply.
 
 **Next real control-plane stages:**
-1. Add a managed GeoNames dataset validation, update/reload protocol with safe indexing and version continuity before exposing an editor (current resolver loads at startup and is used by background analysis; unsafe hot pointer replacement is not acceptable).
+1. Extend the already delivered GeoNames immutable-index reload with safe managed dataset staging/upload, versioned apply acknowledgments across replicas and rollback. Keep the existing batch snapshot-pinning contract.
 2. Add Photo Intelligence enable/disable and per-model resource controls with a real analyzer lifecycle and safe task semantics. Separate container installation/profile/CPU/memory from runtime job policy.
 3. Implement optional FFmpeg Media Worker with signed byte access, cancellation and resource isolation before introducing its configuration endpoint.
 4. Reuse the restricted Host Manager for deployment-only changes after implementing permissioned status/backup/diff/rollback and exact runtime-health checks. Never grant Server general Docker socket permissions.

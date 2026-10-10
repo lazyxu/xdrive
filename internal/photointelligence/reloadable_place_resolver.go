@@ -36,6 +36,17 @@ func (r *ReloadablePlaceResolver) Swap(next *GeoNamesResolver) {
 	r.current.Store(next)
 }
 
+// MaxDistanceKM reports only the effective radius of THIS Server instance.
+func (r *ReloadablePlaceResolver) MaxDistanceKM() float64 {
+	if r == nil {
+		return 0
+	}
+	if current := r.current.Load(); current != nil {
+		return current.MaxDistanceKM()
+	}
+	return 0
+}
+
 func (r *ReloadablePlaceResolver) Name() string {
 	return GeoNamesResolverName
 }

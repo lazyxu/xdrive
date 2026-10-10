@@ -11,30 +11,54 @@ import (
 )
 
 type adminGeoNamesConfigDTO struct {
-	DatasetConfigured bool    `json:"dataset_configured"`
-	ReloadSupported   bool    `json:"reload_supported"`
-	Source            string  `json:"source"`
-	CurrentVersion    string  `json:"current_version"`
-	MaxDistanceKM     float64 `json:"max_distance_km"`
-	RequiresRestart   bool    `json:"requires_restart"`
+	DatasetConfigured bool       `json:"dataset_configured"`
+	ReloadSupported   bool       `json:"reload_supported"`
+	Source            string     `json:"source"`
+	CurrentVersion    string     `json:"current_version"`
+	MaxDistanceKM     float64    `json:"max_distance_km"`
+	RequiresRestart   bool       `json:"requires_restart"`
+	Editable          bool       `json:"editable"`
+	Revision          uint64     `json:"revision"`
+	EffectiveDistance float64    `json:"effective_max_distance_km"`
+	ApplyState        string     `json:"apply_state"`
+	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
 }
 
 // GeoNames dataset paths are deliberately not accepted from HTTP. A trusted,
 // read-only deployment mount is the sole dataset source in this first phase.
 func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
+	desired, err := geoNamesDesiredSettings(c.Request.Context(), s.DB, s.GeoNamesMaxDistanceKM)
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "GeoNames settings are unavailable")
+		return
+	}
 	version := ""
+	effectiveDistance := float64(0)
 	if s.GeoNamesRuntime != nil {
 		version = s.GeoNamesRuntime.Version()
+		effectiveDistance = s.GeoNamesRuntime.MaxDistanceKM()
+	}
+	configured := strings.TrimSpace(s.GeoNamesDataDir) != "" && version != ""
+	applyState := "unavailable"
+	if configured {
+		applyState = "pending"
+		if effectiveDistance == desired.MaxDistanceKM {
+			applyState = "applied"
+		}
 	}
 	c.JSON(http.StatusOK, adminGeoNamesConfigDTO{
-		DatasetConfigured: strings.TrimSpace(s.GeoNamesDataDir) != "" && version != "",
-		ReloadSupported: s.DB != nil && s.GeoNamesRuntime != nil &&
-			strings.TrimSpace(s.GeoNamesDataDir) != "" && version != "",
-		Source:          "deployment",
-		CurrentVersion:  version,
-		MaxDistanceKM:   s.GeoNamesMaxDistanceKM,
-		RequiresRestart: false,
+		DatasetConfigured: configured,
+		ReloadSupported:   s.DB != nil && configured,
+		Source:            desired.Source,
+		CurrentVersion:    version,
+		MaxDistanceKM:     desired.MaxDistanceKM,
+		RequiresRestart:   false,
+		Editable:          s.DB != nil && configured,
+		Revision:          desired.Revision,
+		EffectiveDistance: effectiveDistance,
+		ApplyState:        applyState,
+		UpdatedAt:         desired.UpdatedAt,
 	})
 }
 
@@ -67,8 +91,13 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 	}
 	// Always build a fresh, fully validated immutable index BEFORE publishing it.
 	// A bad or partial data update must leave existing tasks and the active version intact.
+	desired, err := geoNamesDesiredSettings(c.Request.Context(), s.DB, s.GeoNamesMaxDistanceKM)
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "GeoNames settings are unavailable")
+		return
+	}
 	next, err := photointelligence.LoadGeoNamesResolver(
-		s.GeoNamesDataDir, s.GeoNamesMaxDistanceKM,
+		s.GeoNamesDataDir, desired.MaxDistanceKM,
 	)
 	if err != nil {
 		fail(c, http.StatusUnprocessableEntity, "GeoNames dataset validation failed; active version retained")

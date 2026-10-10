@@ -1,4 +1,4 @@
-import type { XDriveBaiduMapAdminUpdate } from '@xdrive/shared'
+import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate } from '@xdrive/shared'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import type { FormEvent, ReactNode } from 'react'
@@ -1371,6 +1371,11 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    saveGeoNamesConfig: async (input: XDriveGeoNamesUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminGeoNamesConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadGeoNamesConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminGeoNamesConfig()
       if (!result.ok) throw new Error(result.error.message)

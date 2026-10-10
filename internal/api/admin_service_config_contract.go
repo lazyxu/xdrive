@@ -12,8 +12,8 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 		return "in-app", "immediate",
 			"在本页配置、启用或更换 Server AK；加密保存后新请求直接生效，无须重启。已配置不等于远端服务健康"
 	case "geonames":
-		return "deployment", "manual-reload",
-			"将 cities500.txt、admin1CodesASCII.txt、countryInfo.txt 安装到只读 /geonames；管理员可在本页校验并热加载更新后的数据集，任务按不可变索引版本完成。初始目录与搜索半径仍由部署配置决定，修改它们须受控部署；不提供地图"
+		return "in-app", "immediate",
+			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。每个 Server 实例报告自己的生效状态，不代表集群全部完成；GeoNames 仅提供地名标签"
 	case "photo-face", "photo-smart", "photo-semantic", "photo-creative":
 		return "deployment", "controlled-restart",
 			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"
