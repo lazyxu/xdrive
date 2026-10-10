@@ -513,7 +513,13 @@ test('P0-3c2 pinned editor uses the canonical Web/Desktop album pin store',async
     })
     assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pinned-editor']).length)
     const add=async key=>await act(async()=>{control('data-xdrive-mobile-gallery-pin-add',key).props.onClick()})
-    const remove=async key=>await act(async()=>{control('data-xdrive-mobile-gallery-pin-remove',key).props.onClick()})
+    const remove=async key=>{
+      await act(async()=>{control('data-xdrive-mobile-gallery-pin-remove',key)
+        .props.onClick({currentTarget:{}})})
+      assert.ok(view.root.findAll(x=>x.props?.['aria-label']==='确认取消固定'&&x.props.open).length)
+      await act(async()=>{view.root.findAll(x=>
+        x.props?.['data-xdrive-mobile-gallery-pin-confirm-remove'])[0].props.onClick()})
+    }
     await add('pinned-album-a1')
     await add('pinned-album-a2')
     assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1','a2'],
@@ -564,9 +570,12 @@ test('P0-3c2 all pins can be removed without losing the edit entry',async()=>{
     const edit=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0]
     await act(async()=>{edit().props.onClick()})
     for(const id of ['favorites','albums','people','media-types']){
-      await act(async()=>{
-        view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-remove']===id)[0].props.onClick()
-      })
+      await act(async()=>{view.root.findAll(x=>
+        x.props?.['data-xdrive-mobile-gallery-pin-remove']===id)[0]
+        .props.onClick({currentTarget:{}})})
+      await act(async()=>{view.root.findAll(x=>
+        x.props?.['data-xdrive-mobile-gallery-pin-confirm-remove'])[0]
+        .props.onClick()})
     }
     assert.equal(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-row']).length,0)
     await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pinned-done'])[0].props.onClick()})
@@ -648,4 +657,172 @@ test('P0-3c2 album suggestions stay bounded while search reaches any real album'
     await act(async()=>{matching.props.onClick()})
     assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a119'])
   }finally{if(view)await act(async()=>{view.unmount()});global.window=old}
+})
+
+
+test('P0-3d keyboard context menu pins and unpins real albums through canonical store',async()=>{
+  const old=global.window,store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  const albums=[{id:'a1',kind:'manual',name:'家庭',item_count:4,cover_node_id:81}]
+  const opened=[]
+  let view
+  const albumCard=()=>cards(view).find(x=>
+    x.props['data-xdrive-mobile-gallery-collection-card']==='album-a1')
+  const menu=()=>view.root.findAll(x=>x.props?.['aria-label']==='精选集快速固定菜单'
+    && x.props.open)[0]
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,albums,accountScope:'owner-A',onOpenAlbum:a=>opened.push(a.id),
+      onOpenSection:()=>{},
+    }))})
+    assert.ok(albumCard())
+    let prevented=0,stopped=0
+    await act(async()=>{albumCard().props.onContextMenu({
+      currentTarget:{},preventDefault:()=>prevented++,stopPropagation:()=>stopped++,
+    })})
+    assert.equal(prevented,1)
+    assert.equal(stopped,1)
+    assert.ok(menu())
+    const action=()=>view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-quick-pin-action'])[0]
+    assert.equal(action().children.includes('固定'),true)
+    await act(async()=>{action().props.onClick()})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1'])
+    assert.ok(cards(view).find(x=>
+      x.props['data-xdrive-mobile-gallery-collection-card']==='pinned-album-a1'))
+    await act(async()=>{albumCard().props.onContextMenu({
+      currentTarget:{},preventDefault:()=>{},stopPropagation:()=>{},
+    })})
+    assert.ok(menu())
+    assert.equal(action().children.includes('取消固定'),true)
+    await act(async()=>{action().props.onClick()})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,[])
+    await act(async()=>{albumCard().props.onClick()})
+    assert.deepEqual(opened,['a1'],'normal short tap still uses unchanged album opening')
+  }finally{if(view)await act(async()=>{view.unmount()});global.window=old}
+})
+
+test('P0-3d touch hold opens quick Pin only after 450ms and suppresses synthetic click',async()=>{
+  const oldWindow=global.window,oldSetTimeout=global.setTimeout
+  const oldClearTimeout=global.clearTimeout
+  const oldNow=Date.now
+  const store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  let scheduled=null,cancelled=[],now=1000,view
+  Date.now=()=>now
+  const open=[]
+  const evt={pointerId:6,pointerType:'touch',clientX:20,clientY:40,
+    currentTarget:{},preventDefault:()=>{},
+  }
+  const favorite=()=>cards(view).find(x=>
+    x.props['data-xdrive-mobile-gallery-collection-card']==='favorites')
+  const menu=()=>view.root.findAll(x=>x.props?.['aria-label']==='精选集快速固定菜单'
+    && x.props.open)
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,accountScope:'owner-A',onOpenSection:s=>open.push(s),
+    }))})
+    global.setTimeout=(callback,delay)=>{scheduled={callback,delay};return 9001}
+    global.clearTimeout=(id)=>{cancelled.push(id);scheduled=null}
+    await act(async()=>{favorite().props.onPointerDown(evt)})
+    assert.equal(scheduled?.delay,450)
+    now+=100
+    await act(async()=>{favorite().props.onPointerMove({...evt,clientX:30})})
+    assert.deepEqual(cancelled,[9001],'moving 10px cancels the hold')
+    assert.equal(menu().length,0)
+    await act(async()=>{favorite().props.onPointerDown(evt)})
+    await act(async()=>{favorite().props.onPointerLeave(evt)})
+    assert.deepEqual(cancelled,[9001,9001],'pointer leaving cancels its held timer')
+    await act(async()=>{favorite().props.onClick()})
+    assert.deepEqual(open,['favorites'],'a cancelled hold must still allow short tap')
+    await act(async()=>{favorite().props.onPointerDown(evt)})
+    assert.equal(scheduled?.delay,450)
+    now+=450
+    await act(async()=>{scheduled.callback()})
+    assert.equal(menu().length,1)
+    now += 2500
+    await act(async()=>{favorite().props.onPointerUp(evt)})
+    await act(async()=>{favorite().props.onClick()})
+    assert.deepEqual(open,['favorites'],'post-long-press click must not also navigate')
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-quick-pin-action'])[0]
+        .props.onClick()
+    })
+    assert.ok(!cards(view).some(x=>
+      x.props['data-xdrive-mobile-gallery-collection-card']==='favorites'))
+    await act(async()=>{view.update(React.createElement(Collections,{
+      ...data,accountScope:'owner-B',onOpenSection:s=>open.push(s),
+    }))})
+    assert.ok(cards(view).some(x=>
+      x.props['data-xdrive-mobile-gallery-collection-card']==='favorites'),
+      'a fast unpin must not leak into other accounts')
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    global.window=oldWindow;global.setTimeout=oldSetTimeout
+    global.clearTimeout=oldClearTimeout;Date.now=oldNow
+  }
+})
+
+test('P0-3d removal confirmation offers cancel and performs no album deletion',async()=>{
+  const old=global.window,store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.get(k)||null,setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  const albums=[{id:'a1',kind:'manual',name:'家庭',item_count:7,cover_node_id:81}]
+  let view
+  const openEdit=async()=>await act(async()=>{view.root.findAll(x=>
+    x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0].props.onClick()})
+  const remove=async()=>await act(async()=>{view.root.findAll(x=>
+    x.props?.['data-xdrive-mobile-gallery-pin-remove']==='pinned-album-a1')[0]
+    .props.onClick({currentTarget:{}})})
+  try{
+    sharedAlbumOrganization.writeMediaAlbumPreferences('owner-A',{
+      sort:'name',pinned:['a1'],order:[],
+    })
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,albums,accountScope:'owner-A',onOpenAlbum:()=>{},
+      onOpenSection:()=>{},
+    }))})
+    await openEdit()
+    await remove()
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1'],
+      'remove button only opens a confirmation')
+    const dialog=()=>view.root.findAll(x=>x.props?.['aria-label']==='确认取消固定'&&x.props.open)
+    assert.equal(dialog().length,1)
+    await act(async()=>{view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-pin-cancel-remove'])[0].props.onClick()})
+    assert.equal(dialog().length,0)
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1'])
+    await remove()
+    await act(async()=>{view.root.findAll(x=>
+      x.props?.['data-xdrive-mobile-gallery-pin-confirm-remove'])[0].props.onClick()})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,[])
+    assert.equal(albums.length,1,'unpin does not mutate or delete the actual album')
+  }finally{if(view)await act(async()=>{view.unmount()});global.window=old}
+})
+
+test('P0-3d unsupported People/Memory and folder previews retain original tap actions',async()=>{
+  let view
+  const opened=[]
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,memories:[{id:'m1',title:'旅途',item_count:2}],
+      onOpenSection:()=>{},onOpenMemory:m=>opened.push(m.id),
+    }))})
+    const memory=cards(view).find(x=>
+      x.props?.['data-xdrive-mobile-gallery-collection-card']==='memory-m1')
+    assert.ok(memory)
+    await act(async()=>{memory.props.onContextMenu({
+      currentTarget:{},preventDefault:()=>{throw Error('unsupported item pinned')},
+      stopPropagation:()=>{},
+    })})
+    assert.equal(view.root.findAll(x=>
+      x.props?.['aria-label']==='精选集快速固定菜单'&&x.props.open).length,0)
+    await act(async()=>{memory.props.onClick()})
+    assert.deepEqual(opened,['m1'])
+  }finally{if(view)await act(async()=>{view.unmount()})}
 })

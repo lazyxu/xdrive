@@ -132,3 +132,18 @@ test('P0-3c2 pinned edit shares canonical wide-Web album preferences',()=>{
   assert.doesNotMatch(collections,/listItemRange\(|new XMLHttpRequest\(|fetch\(/)
   assert.match(page,/accountScope=\{preferenceScope\}/)
 })
+
+
+test('P0-3d quick Pin and remove confirmation keep common Gallery semantics',()=>{
+  assert.match(collections,/data-xdrive-mobile-gallery-quick-pin-action/)
+  assert.match(collections,/onContextMenu=\{\(event\) =>/)
+  assert.match(collections,/setTimeout\(\(\) => \{/)
+  assert.match(collections,/onScroll=\{cancelHold\}/)
+  assert.match(collections,/data-xdrive-mobile-gallery-pin-confirm-remove/)
+  assert.match(collections,/data-xdrive-mobile-gallery-pin-cancel-remove/)
+  assert.match(collections,/changeAlbumPin\(albums, readMediaAlbumPreferences\(accountScope\), albumID\)/)
+  assert.doesNotMatch(collections,/listItemRange\(|fetch\(|new XMLHttpRequest\(/)
+  assert.match(page,/accountScope=\{preferenceScope\}/)
+  assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
+    /calc\(52px \+ env\(safe-area-inset-top\)\)/)
+})

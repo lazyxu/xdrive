@@ -258,6 +258,7 @@ function CollectionCover({
 
 function CollectionGroup({
   id, title, cards, loadThumbnail, onViewAll, onEdit, layout, collapsed, onToggleCollapsed,
+  canQuickPin, onQuickPin,
 }: {
   id: GalleryCollectionGroupID
   title: string
@@ -268,7 +269,57 @@ function CollectionGroup({
   layout: GalleryCollectionsLayout
   collapsed: boolean
   onToggleCollapsed: (id: GalleryCollectionGroupID) => void
+  canQuickPin?: (key: string) => boolean
+  onQuickPin?: (key: string, anchor: HTMLElement) => void
 }) {
+  // The long press lives only on a genuine collection card, not on the
+  // Gallery scroll host or MediaTileGrid. Scrolling cancels it.
+  const pressRef = useRef<{ key: string; pointerId: number; x: number; y: number } | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const consumedTapRef = useRef<{ key: string } | null>(null)
+  const cancelHold = () => {
+    if (timerRef.current !== null) clearTimeout(timerRef.current)
+    timerRef.current = null
+    pressRef.current = null
+  }
+  useEffect(() => () => cancelHold(), [])
+  const startHold = (key: string, e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!canQuickPin?.(key) || !onQuickPin ||
+        (e.pointerType !== 'touch' && e.pointerType !== 'pen')) return
+    cancelHold()
+    // A genuinely new gesture may open the collection even if a previous
+    // long-hold was not followed by a synthesized click.
+    consumedTapRef.current = null
+    pressRef.current = { key, pointerId: e.pointerId, x: e.clientX, y: e.clientY }
+    const anchor = e.currentTarget
+    const pointerId = e.pointerId
+    timerRef.current = setTimeout(() => {
+      if (pressRef.current?.pointerId !== pointerId) return
+      // Suppress the release click no matter how long a held finger stays down.
+      consumedTapRef.current = { key }
+      pressRef.current = null
+      timerRef.current = null
+      onQuickPin(key, anchor)
+    }, 450)
+  }
+  const moveHold = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const press = pressRef.current
+    if (!press || press.pointerId !== e.pointerId) return
+    if (Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 8) cancelHold()
+  }
+  const endHold = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pressRef.current?.pointerId === e.pointerId) cancelHold()
+  }
+  const clickCard = (card: CollectionCard, e?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    const consumed = consumedTapRef.current
+    consumedTapRef.current = null
+    if (consumed?.key === card.key) {
+      e?.preventDefault?.()
+      e?.stopPropagation?.()
+      return
+    }
+    card.activate()
+  }
   if (!cards.length && !onViewAll && !onEdit) return null
   const tileWidth = xDriveMobileGalleryCollectionTileWidth(layout, id)
   return (
@@ -308,6 +359,7 @@ function CollectionGroup({
       {cards.length ? (
         <Stack id={'xdrive-mobile-gallery-group-content-' + id}
           direction="row" spacing={collapsed ? 0.75 : 1.25} role="list"
+          onScroll={cancelHold}
           data-xdrive-mobile-gallery-group-collapsed={collapsed ? id : undefined}
           data-xdrive-mobile-gallery-group-tiles={collapsed ? undefined : id}
           sx={{ px: 1.5, pb: 1, overflowX: 'auto',
@@ -319,13 +371,24 @@ function CollectionGroup({
               sx={collapsed
                 ? { flex: '0 0 auto', minWidth: 0 }
                 : { flex: '0 0 ' + tileWidth + 'px', width: tileWidth, minWidth: 0 }}>
-              <Button onClick={card.activate} aria-label={card.title}
+              <Button onClick={(event) => clickCard(card, event)} aria-label={card.title}
                 data-xdrive-mobile-gallery-collection-card={card.key}
+                onPointerDown={(event) => startHold(card.key, event)}
+                onPointerMove={moveHold}
+                onPointerUp={endHold}
+                onPointerCancel={endHold}
+                onPointerLeave={endHold}
+                onContextMenu={(event) => {
+                  if (!canQuickPin?.(card.key) || !onQuickPin) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  onQuickPin(card.key, event.currentTarget)
+                }}
                 sx={collapsed ? {
                   minHeight: 44, px: 1.5, borderRadius: 99,
                   bgcolor: 'action.hover', textTransform: 'none',
                 } : {
-                  p: 0, minWidth: 0, width: '100%',
+                  p: 0, minWidth: 0, width: '100%', WebkitTouchCallout: 'none',
                   display: 'flex', alignItems: 'stretch', flexDirection: 'column',
                   textTransform: 'none', textAlign: 'left', color: 'text.primary',
                   borderRadius: 2,
@@ -361,6 +424,8 @@ export function XDriveMobileGalleryCollections({
   const [layoutAnchor, setLayoutAnchor] = useState<HTMLElement | null>(null)
   const [reorderMode, setReorderMode] = useState(false)
   const [pinEditMode, setPinEditMode] = useState(false)
+  const [quickPin, setQuickPin] = useState<{ key: string; anchor: HTMLElement } | null>(null)
+  const [removeIntent, setRemoveIntent] = useState<{ key: string; anchor: HTMLElement } | null>(null)
   const [pinQuery, setPinQuery] = useState('')
   const [albumPinRevision, setAlbumPinRevision] = useState(0)
   const [pinDragging, setPinDragging] = useState<string | null>(null)
@@ -404,6 +469,8 @@ export function XDriveMobileGalleryCollections({
     setLayoutAnchor(null)
     setReorderMode(false)
     setPinEditMode(false)
+    setQuickPin(null)
+    setRemoveIntent(null)
     setPinQuery('')
     setPinDragging(null)
     pinDragRef.current = null
@@ -480,7 +547,18 @@ export function XDriveMobileGalleryCollections({
     .filter((card): card is CollectionCard => Boolean(card))
   const pinnedPreview = pinned.slice(0, 12)
   const pinnedAlbumCount = pinnedAlbumRecords.length
+  const resolveQuickPinKey = (key: string): string | null => {
+    const canonical = key.startsWith('album-') ? 'pinned-' + key : key
+    return cardByKey.has(canonical) ? canonical : null
+  }
+  const showQuickPin = (key: string, anchor: HTMLElement) => {
+    const canonical = resolveQuickPinKey(key)
+    if (!canonical) return
+    setQuickPin({ key: canonical, anchor })
+  }
   const enterPinEdit = () => {
+    setQuickPin(null)
+    setRemoveIntent(null)
     setReorderMode(false)
     setPinQuery('')
     setPinEditMode(true)
@@ -712,6 +790,16 @@ export function XDriveMobileGalleryCollections({
         <MenuItem data-xdrive-mobile-gallery-layout-reorder
           onClick={enterReorder} sx={{ minHeight: 44 }}>重新排序</MenuItem>
       </Menu>
+      <Menu anchorEl={quickPin?.anchor ?? null} open={Boolean(quickPin)}
+        onClose={() => setQuickPin(null)} aria-label="精选集快速固定菜单">
+        <MenuItem data-xdrive-mobile-gallery-quick-pin-action
+          onClick={() => {
+            if (quickPin) togglePin(quickPin.key)
+            setQuickPin(null)
+          }} sx={{ minHeight: 44 }}>
+          {quickPin && pinnedOrder.includes(quickPin.key) ? '取消固定' : '固定'}
+        </MenuItem>
+      </Menu>
       {pinEditMode ? (
         <Stack data-xdrive-mobile-gallery-pinned-editor spacing={1.5} sx={{ px: 1.5 }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -727,6 +815,22 @@ export function XDriveMobileGalleryCollections({
             onChange={(event) => setPinQuery(event.target.value)}
             sx={{ '& .MuiInputBase-input': { fontSize: 16 } }} />
           <Typography variant="subtitle2">已固定（{pinned.length}）</Typography>
+          <Menu anchorEl={removeIntent?.anchor ?? null} open={Boolean(removeIntent)}
+            onClose={() => setRemoveIntent(null)}
+            aria-label="确认取消固定">
+            <MenuItem disabled sx={{ minHeight: 44 }}>
+              仅移除固定入口，不删除原内容
+            </MenuItem>
+            <MenuItem data-xdrive-mobile-gallery-pin-confirm-remove
+              onClick={() => {
+                if (removeIntent && pinnedOrder.includes(removeIntent.key)) {
+                  togglePin(removeIntent.key)
+                }
+                setRemoveIntent(null)
+              }} sx={{ minHeight: 44 }}>删除</MenuItem>
+            <MenuItem data-xdrive-mobile-gallery-pin-cancel-remove
+              onClick={() => setRemoveIntent(null)} sx={{ minHeight: 44 }}>取消</MenuItem>
+          </Menu>
           <Stack role="list" spacing={0.5} data-xdrive-mobile-gallery-pin-current>
             {displayedPins.map((card, index) => (
               <Stack key={card.key} role="listitem" direction="row"
@@ -737,7 +841,8 @@ export function XDriveMobileGalleryCollections({
                   {card.title}
                 </Typography>
                 <IconButton data-xdrive-mobile-gallery-pin-remove={card.key}
-                  aria-label={'取消固定' + card.title} onClick={() => togglePin(card.key)}
+                  aria-label={'取消固定' + card.title}
+                  onClick={(event) => setRemoveIntent({ key: card.key, anchor: event.currentTarget })}
                   sx={{ minHeight: 44, minWidth: 44 }}>
                   <RemoveCircleOutlineRoundedIcon fontSize="small" />
                 </IconButton>
@@ -851,7 +956,9 @@ export function XDriveMobileGalleryCollections({
             <CollectionGroup key={group.id} {...groupProps(group.id)}
               title={group.title} cards={group.cards} loadThumbnail={loadThumbnail}
               onViewAll={group.onViewAll}
-              onEdit={group.onEdit} />
+              onEdit={group.onEdit}
+              canQuickPin={(key) => resolveQuickPinKey(key) !== null}
+              onQuickPin={showQuickPin} />
           ))}
           <Button data-xdrive-mobile-gallery-reorder-bottom
             onClick={enterReorder} sx={{ minHeight: 44, mx: 1.5, alignSelf: 'flex-start' }}>
