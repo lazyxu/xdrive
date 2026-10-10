@@ -392,8 +392,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
     const childIDs: string[] = []
     const terminalChildren = new Set<string>()
     let batchStarted = false
-    // A detached UI may terminalize tracking records only before invoking
-    // the first actual file upload. Once dispatched, Server/Agent owns it.
+    // Only guard a dispatched file while it or its terminal receipt is
+    // unsettled. Once that child is terminal, later unstarted siblings may
+    // be safely closed on the originating Port after a session change.
     let fileUploadStarted = false
     let aggregate = {
       uploaded: 0,
@@ -431,7 +432,13 @@ export function useXDriveFileExplorerUploadController<TFile>({
         terminalChildren.add(id)
         await finishQuietly(id, { state: 'cancelled' })
       }
-      if (groupID) await finishQuietly(groupID, { state: 'cancelled' })
+      if (groupID) {
+        const state: XDriveFileExplorerUploadTransferTerminalState =
+          aggregate.uploaded + aggregate.skipped > 0
+            ? 'partial'
+            : aggregate.failed > 0 ? 'failed' : 'cancelled'
+        await finishQuietly(groupID, { state })
+      }
       return idleResult(true, true)
     }
 
@@ -615,6 +622,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
             await transferLifecycle.finish(childID, { state: 'completed' })
           }
           terminalChildren.add(childID)
+          fileUploadStarted = false
         } catch (error) {
           if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
           aggregate.running = 0
@@ -626,6 +634,7 @@ export function useXDriveFileExplorerUploadController<TFile>({
             error: errorMessage(error),
           })
           terminalChildren.add(childID)
+          fileUploadStarted = false
           if (!continueOnUploadError) {
             fatalError = error
             stoppedAt = index + 1
@@ -634,9 +643,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
         } finally {
           if (trackProgress && isCurrentLifecycle(lifecycleGeneration)) setProgress(null)
         }
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
         await transferLifecycle.updateGroup(groupID, groupProgress())
-        if (!isCurrentLifecycle(lifecycleGeneration)) return idleResult(true, true)
+        if (!isCurrentLifecycle(lifecycleGeneration)) return finishDetachedUnstarted()
       }
 
       if (aggregate.cancelled || fatalError) {
