@@ -560,6 +560,16 @@ export type AgentAdminPostgresPoolValues = {
   max_open_connections: number
   max_idle_connections: number
 }
+export type AgentAdminPostgresPoolReplicaSummary = {
+  state: 'unknown' | 'unavailable' | 'unmanaged' | 'pending' | 'applied'
+  observed_instances: number
+  applied_instances: number
+  pending_instances: number
+  unmanaged_instances: number
+  truncated: boolean
+  limits_consistent: boolean
+  policy_groups: Array<{ revision: number; max_open_connections: number; max_idle_connections: number; count: number }>
+}
 export type AgentAdminPostgresPoolConfig = {
   desired: AgentAdminPostgresPoolValues
   effective?: AgentAdminPostgresPoolValues
@@ -574,6 +584,7 @@ export type AgentAdminPostgresPoolConfig = {
   open_connections: number
   in_use_connections: number
   idle_connections: number
+  replicas?: AgentAdminPostgresPoolReplicaSummary
 }
 export type AgentAdminPostgresPoolUpdate = {
   revision: number

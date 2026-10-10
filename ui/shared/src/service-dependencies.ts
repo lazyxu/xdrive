@@ -36,6 +36,16 @@ export type XDrivePostgresPoolValues = {
   max_open_connections: number
   max_idle_connections: number
 }
+export type XDrivePostgresPoolReplicaSummary = {
+  state: 'unknown' | 'unavailable' | 'unmanaged' | 'pending' | 'applied'
+  observed_instances: number
+  applied_instances: number
+  pending_instances: number
+  unmanaged_instances: number
+  truncated: boolean
+  limits_consistent: boolean
+  policy_groups: Array<{ revision: number; max_open_connections: number; max_idle_connections: number; count: number }>
+}
 export type XDrivePostgresPoolConfig = {
   desired: XDrivePostgresPoolValues
   effective?: XDrivePostgresPoolValues
@@ -50,6 +60,7 @@ export type XDrivePostgresPoolConfig = {
   open_connections: number
   in_use_connections: number
   idle_connections: number
+  replicas?: XDrivePostgresPoolReplicaSummary
 }
 export type XDrivePostgresPoolUpdate = { revision: number; desired: XDrivePostgresPoolValues }
 export type XDrivePostgresPoolRevisionPage = {

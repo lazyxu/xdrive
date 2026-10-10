@@ -222,6 +222,40 @@ export function XDrivePostgresPoolConfigPanel({
               {' · '}打开中 {config.open_connections} · 使用中 {config.in_use_connections}
               {' · '}空闲 {config.idle_connections} · 实际打开上限 {config.current_max_open_connections || '不限额'}
             </Typography>
+            {config.replicas ? (
+              <Box data-xdrive-postgres-pool-replicas sx={{ p: 1.5, borderRadius: 1, bgcolor: 'action.hover' }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Typography variant="subtitle2">已观测 Server 实例 · 连接池生效</Typography>
+                  <Chip size="small" variant="outlined"
+                    color={config.replicas.state === 'applied' ? 'success' :
+                      config.replicas.state === 'pending' || config.replicas.state === 'unknown' ? 'warning' : 'default'}
+                    label={config.replicas.state === 'applied' ? '全部已观测实例已生效' :
+                      config.replicas.state === 'pending' ? '存在待生效实例' :
+                      config.replicas.state === 'unmanaged' ? '未由管理员管理' :
+                      config.replicas.state === 'unavailable' ? '未发现有效心跳' : '无法验证观测状态'} />
+                </Stack>
+                <Typography variant="body2" sx={{ mt: 0.75 }}>
+                  已观测 {config.replicas.observed_instances} · 已生效 {config.replicas.applied_instances}
+                  {' · '}待生效 {config.replicas.pending_instances}
+                  {' · '}未确认管理 {config.replicas.unmanaged_instances}
+                  {config.replicas.truncated ? ' · 结果超过查询上限，不能确认全部生效' : ''}
+                </Typography>
+                {config.replicas.policy_groups.map((group, index) => (
+                  <Typography key={index} variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.4 }}>
+                    修订 #{group.revision} · 最大打开 {group.max_open_connections || '不限额'}
+                    {' · '}最大空闲 {group.max_idle_connections} · {group.count} 个已观测实例
+                  </Typography>
+                ))}
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                  每 5 秒上报一次、20 秒过期，仅表示已观测在线实例，不代表部署中所有 Server 都已生效。
+                  查询失败或旧版本无法提供完整证据时不显示成功。
+                </Typography>
+              </Box>
+            ) : (
+              <Typography variant="caption" color="text.secondary">
+                当前 Server/Agent 尚不支持 PostgreSQL 多实例观测，不能确认其他实例是否生效。
+              </Typography>
+            )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
               <TextField size="small" fullWidth type="number" label="最大打开连接数" value={draft.open}
                 helperText="0（Go 默认不限额）或 8–256"

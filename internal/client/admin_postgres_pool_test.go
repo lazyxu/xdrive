@@ -31,7 +31,7 @@ func TestAdminPostgresPoolClientTransport(t *testing.T) {
 			} else if r.Method != http.MethodGet {
 				t.Errorf("invalid HTTP method: %s", r.Method)
 			}
-			_, _ = w.Write([]byte(`{"desired":{"max_open_connections":32,"max_idle_connections":8},"effective":{"max_open_connections":32,"max_idle_connections":8},"revision":8,"effective_revision":8,"source":"saved","apply_state":"applied","editable":true,"current_max_open_connections":32}`))
+			_, _ = w.Write([]byte(`{"desired":{"max_open_connections":32,"max_idle_connections":8},"effective":{"max_open_connections":32,"max_idle_connections":8},"revision":8,"effective_revision":8,"source":"saved","apply_state":"applied","editable":true,"current_max_open_connections":32,"replicas":{"state":"pending","observed_instances":2,"applied_instances":1,"pending_instances":1,"unmanaged_instances":0,"truncated":false,"limits_consistent":false,"policy_groups":[{"revision":8,"max_open_connections":32,"max_idle_connections":8,"count":1}]}}`))
 		case "/api/v1/admin/services/postgresql/pool/revisions":
 			if r.Method != http.MethodGet {
 				t.Errorf("history used wrong method: %s", r.Method)
@@ -59,7 +59,8 @@ func TestAdminPostgresPoolClientTransport(t *testing.T) {
 		t.Fatalf("PostgreSQL pool update not transported: %+v %v", updated, err)
 	}
 	cfg, err := cli.AdminPostgresPoolConfig(context.Background())
-	if err != nil || cfg.CurrentMaxOpen != 32 {
+	if err != nil || cfg.CurrentMaxOpen != 32 || cfg.Replicas == nil || cfg.Replicas.State != "pending" ||
+		cfg.Replicas.ObservedInstances != 2 || len(cfg.Replicas.PolicyGroups) != 1 {
 		t.Fatalf("PostgreSQL pool status missing: %+v %v", cfg, err)
 	}
 	history, err := cli.AdminPostgresPoolRevisions(context.Background())

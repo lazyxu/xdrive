@@ -317,20 +317,37 @@ type AdminPostgresPoolValues struct {
 	MaxOpenConnections int `json:"max_open_connections"`
 	MaxIdleConnections int `json:"max_idle_connections"`
 }
+type AdminPostgresPoolPolicyGroup struct {
+	Revision           uint64 `json:"revision"`
+	MaxOpenConnections int    `json:"max_open_connections"`
+	MaxIdleConnections int    `json:"max_idle_connections"`
+	Count              int    `json:"count"`
+}
+type AdminPostgresPoolReplicaSummary struct {
+	State              string                         `json:"state"`
+	ObservedInstances  int                            `json:"observed_instances"`
+	AppliedInstances   int                            `json:"applied_instances"`
+	PendingInstances   int                            `json:"pending_instances"`
+	UnmanagedInstances int                            `json:"unmanaged_instances"`
+	Truncated          bool                           `json:"truncated"`
+	LimitsConsistent   bool                           `json:"limits_consistent"`
+	PolicyGroups       []AdminPostgresPoolPolicyGroup `json:"policy_groups"`
+}
 type AdminPostgresPoolConfig struct {
-	Desired           AdminPostgresPoolValues  `json:"desired"`
-	Effective         *AdminPostgresPoolValues `json:"effective,omitempty"`
-	Revision          uint64                   `json:"revision"`
-	EffectiveRevision uint64                   `json:"effective_revision"`
-	Source            string                   `json:"source"`
-	ApplyState        string                   `json:"apply_state"`
-	Editable          bool                     `json:"editable"`
-	RequiresRestart   bool                     `json:"requires_restart"`
-	UpdatedAt         *time.Time               `json:"updated_at,omitempty"`
-	CurrentMaxOpen    int                      `json:"current_max_open_connections"`
-	OpenConnections   int                      `json:"open_connections"`
-	InUseConnections  int                      `json:"in_use_connections"`
-	IdleConnections   int                      `json:"idle_connections"`
+	Desired           AdminPostgresPoolValues          `json:"desired"`
+	Effective         *AdminPostgresPoolValues         `json:"effective,omitempty"`
+	Revision          uint64                           `json:"revision"`
+	EffectiveRevision uint64                           `json:"effective_revision"`
+	Source            string                           `json:"source"`
+	ApplyState        string                           `json:"apply_state"`
+	Editable          bool                             `json:"editable"`
+	RequiresRestart   bool                             `json:"requires_restart"`
+	UpdatedAt         *time.Time                       `json:"updated_at,omitempty"`
+	CurrentMaxOpen    int                              `json:"current_max_open_connections"`
+	OpenConnections   int                              `json:"open_connections"`
+	InUseConnections  int                              `json:"in_use_connections"`
+	IdleConnections   int                              `json:"idle_connections"`
+	Replicas          *AdminPostgresPoolReplicaSummary `json:"replicas,omitempty"`
 }
 type AdminPostgresPoolUpdate struct {
 	Revision uint64                  `json:"revision"`
