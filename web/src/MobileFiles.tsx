@@ -363,8 +363,10 @@ export default function MobileFiles(props: Props) {
   const [renaming, setRenaming] = useState<XDriveFileExplorerItem | null>(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
-  const [properties, setProperties] = useState<XDriveFileExplorerItem | null>(null)
-  const propertiesItems = useMemo(() => properties ? [properties] : [], [properties])
+  // Single and multi-item Properties share the same Server-owned stats hook,
+  // MUI dialog, and selection identity as wide Web. Keep only one inspector.
+  const [propertiesItems, setPropertiesItems] = useState<XDriveFileExplorerItem[]>([])
+  const properties = propertiesItems.length === 1 ? propertiesItems[0] : null
   const propertiesStatsState = useXDriveFileExplorerPropertiesController({
     items: propertiesItems, loadStats: props.loadPropertiesStats,
   })
@@ -675,6 +677,9 @@ export default function MobileFiles(props: Props) {
     setClearRecentConfirm(false)
     setItemMenu(null)
     setCollectionMenu(null)
+    // Owner/scope changes close the inspector and abort old Server stats
+    // through the existing shared PropertiesController cleanup.
+    setPropertiesItems([])
   }, [section, props.trashActive, props.searchActive, props.virtualCollection?.interactionKey, props.lifecycleKey, directoryID])
 
   // Notify the same Web workspace of selected sparse Nodes before their pages
@@ -738,6 +743,16 @@ export default function MobileFiles(props: Props) {
     ? `${propertiesStatsState.stats.file_count} 个文件 · ${propertiesStatsState.stats.folder_count} 个文件夹`
     : propertiesStatsState.loading ? '正在计算…'
       : propertiesStatsState.error ? '计算失败' : '—'
+  const bulkPropertiesTotals = useMemo(() => {
+    let fileCount = 0
+    let fileBytes = 0
+    for (const item of propertiesItems) {
+      if (item.kind !== 'file') continue
+      fileCount += 1
+      fileBytes += item.size ?? 0
+    }
+    return { fileCount, fileBytes, hasFolder: fileCount !== propertiesItems.length }
+  }, [propertiesItems])
   const propertiesRows: XDriveFilePropertiesDialogProperty[] = properties ? [
     { label: '类型', value: labelOf(properties), section: 'general' },
     { label: '修改时间', value: propertiesModified, section: 'general' },
@@ -758,6 +773,14 @@ export default function MobileFiles(props: Props) {
     { label: 'Revision', value: properties.revision ?? '—', section: 'technical' },
     { label: 'ID', value: String(properties.id), section: 'technical' },
     { label: '来源', value: propertiesSource, section: 'technical' },
+  ] : propertiesItems.length > 1 ? [
+    { label: '项目数', value: `${propertiesItems.length} 个`, section: 'general' },
+    { label: '位置', value: props.crumbs.map(crumb => crumb.name).join('/'), section: 'general' },
+    { label: '内容', value: bulkPropertiesTotals.hasFolder
+      ? recursiveContent
+      : `${bulkPropertiesTotals.fileCount} 个文件 · 0 个文件夹`, section: 'content' },
+    { label: '文件大小合计', value: bulkPropertiesTotals.hasFolder
+      ? recursiveSize : formatBytes(bulkPropertiesTotals.fileBytes), section: 'content' },
   ] : []
   const mediaFileRows: Array<[string, ReactNode]> = properties ? [
     ['位置', propertiesPath],
@@ -1044,7 +1067,10 @@ export default function MobileFiles(props: Props) {
       {action.id === 'share' ? '分享链接' : action.label}
     </MenuItem>
   )
-  const openProperties = (item: XDriveFileExplorerItem) => { setItemMenu(null); setProperties(item) }
+  const openProperties = (item: XDriveFileExplorerItem) => {
+    setItemMenu(null)
+    setPropertiesItems([item])
+  }
   const closeNativeShare = () => {
     nativeShareInvocationRef.current = false
     nativeShareControllerRef.current?.abort()
@@ -1799,6 +1825,13 @@ export default function MobileFiles(props: Props) {
               setSelectionMoreAnchor(null)
               props.onManageTags(selection)
             }}>添加/管理标签</MenuItem>
+          <MenuItem data-mobile-files-batch-properties
+            disabled={!selection.length || Boolean(selectionLoad)}
+            onClick={() => {
+              if (!selection.length || selectionLoad) return
+              setSelectionMoreAnchor(null)
+              setPropertiesItems([...selection])
+            }}>所选项目属性</MenuItem>
         </Menu>
         <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
           slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 520px)' } } }}>
@@ -2004,7 +2037,7 @@ export default function MobileFiles(props: Props) {
               <ListItemIcon><ShareRoundedIcon fontSize="small"/></ListItemIcon>系统分享文件
             </MenuItem>
           ) : null}
-          {itemMenu ? <MenuItem onClick={() => openProperties(itemMenu.item)}
+          {itemMenu ? <MenuItem data-mobile-files-item-properties onClick={() => openProperties(itemMenu.item)}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><InfoOutlinedIcon fontSize="small"/></ListItemIcon>属性</MenuItem> : null}
           {itemMenu && menuFor(itemMenu.item).some(item => item.danger) ? (
             <Divider data-mobile-files-context-separator="danger" sx={{ my: 0.5 }}/>
@@ -2106,15 +2139,15 @@ export default function MobileFiles(props: Props) {
         </Dialog>
         {properties && mediaEligible && (activeMediaState?.status !== 'done' || activeMediaState.item) ? (
           <XDriveMediaDetailsInspector open item={activeMediaState?.item ?? null}
-            fallbackName={properties.name} showPreview={false} onClose={() => setProperties(null)}
+            fallbackName={properties.name} showPreview={false} onClose={() => setPropertiesItems([])}
             albums={[]} loadThumbnail={async nodeID => Number(properties.id) === nodeID
               ? (await props.loadThumbnail(properties)) ?? null : null}
             extraFileRows={mediaFileRows}
             loadNodeLocation={props.loadNodeLocation} onShowInFolder={props.onShowInFolder}/>
         ) : (
-          <XDriveFilePropertiesDialog open={Boolean(properties)}
-            title={properties ? `属性 — ${properties.name}` : '文件属性'}
-            properties={propertiesRows} onClose={() => setProperties(null)}/>
+          <XDriveFilePropertiesDialog open={propertiesItems.length > 0}
+            title={properties ? `属性 — ${properties.name}` : '所选项目属性'}
+            properties={propertiesRows} onClose={() => setPropertiesItems([])}/>
         )}
       </Box>
     </XDriveFileExplorerThumbnailProvider>

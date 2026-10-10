@@ -159,6 +159,13 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 
 ## 2026-10-10 F-PARITY-07F-B · 批量操作可用状态与宽屏 Web 对齐
 
-**单提交 PR 实现，等待 CI/合并验收。** Mobile 现在可全选 257/100k 个逻辑节点，但超过批量操作上限时仍将复制、移动、删除和更多菜单误标为可用。现将宽屏 Web 已用的 `getSelectionActionDisabledReason` 传入 Mobile 展示层，统一按钮禁用、菜单禁用、直接调用拦截及实际提示。写操作 200 项、下载 1000 项、标签 500 项的上限分别生效；选中、下载和文件修改仍走原 Web/Server 授权、版本验证和任务链路，不复制 REST 或控制器。补充 257 项挂载交互回归测试。
+**已合入：** [PR #1292](https://github.com/lazyxu/xdrive/pull/1292)，完整 CI [#38032617100](https://github.com/lazyxu/xdrive/actions/runs/38032617100) 通过（Final Gate），线性提交 `38e2b5e4`，远端分支已确认清理。Mobile 现在可全选 257/100k 个逻辑节点，但超过批量操作上限时仍将复制、移动、删除和更多菜单误标为可用。现将宽屏 Web 已用的 `getSelectionActionDisabledReason` 传入 Mobile 展示层，统一按钮禁用、菜单禁用、直接调用拦截及实际提示。写操作 200 项、下载 1000 项、标签 500 项的上限分别生效；选中、下载和文件修改仍走原 Web/Server 授权、版本验证和任务链路，不复制 REST 或控制器。补充 257 项挂载交互回归测试。
 
 真实 iOS 27 像素、触控/VoiceOver、375/390/899/900px 权限错误矩阵与 10k/100k 真实资源测量仍未验收；全选在途 HTTP→Go `ctx.cancel` 另行专项测试。保留全屏 App Frame、52px 标题栏、共用虚拟化与 Mobile 仅省略内部多标签页的规则。
+
+
+## 2026-10-10 F-PARITY-07F-C · Mobile 多选属性与宽屏 Web 一致
+
+**实现已提交独立单工作提交，等待 PR CI/合并。** Mobile 的“更多已选操作”加入“所选项目属性”，基于当前已选真实 Node 身份/Revision 快照复用原 `XDriveFilePropertiesDialog`、共享 `useXDriveFileExplorerPropertiesController` 和 Web 的原 `filePropertiesStats`。纯文件多选直接汇总文件数/已知大小，不触发额外递归接口；含文件夹多选展示服务端授权计算的总字节和递归文件/文件夹数。关闭属性或跨账户、目录、搜索、回收站、集合切换时清空请求并取消 AbortSignal，选中项本身保留；单个图片/视频/实况的媒体 Inspector 路径不变。
+
+挂载测试覆盖文件夹+文件、纯文件、在途属性统计关闭/账户切换和迟到响应。移动端不新增独立 REST、权限或虚拟列表，也不破坏全屏 App Frame、52px 全局标题栏。真实 iOS 27 Safari/安装模式截图像素、VoiceOver、宽屏与 375/390/899/900px 权限错误及 10k/100k 性能仍待验收。

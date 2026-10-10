@@ -772,9 +772,10 @@ test('F-PARITY-01A: Mobile folder Properties show Server-recursive counts and pr
     await act(async () => { folder.props.onContextMenu({
       preventDefault() {}, clientX: 40, clientY: 90, nativeEvent: { pointerType: 'mouse' },
     }) })
-    const propertiesAction = h.view.root.findAll(node =>
-      node.type === 'MenuItem' && textOf(node.props?.children).includes('属性'))[0]
-    assert.ok(propertiesAction)
+    // The mocked Menu renders closed menu children too: select the actual
+    // item-context Properties control, not hidden selected-items Properties.
+    assert.equal(find(h.view, 'data-mobile-files-batch-properties', true).props.disabled, true)
+    const propertiesAction = find(h.view, 'data-mobile-files-item-properties', true)
     await act(async () => { propertiesAction.props.onClick() })
     assert.equal(requests.length, 1)
     assert.deepEqual(requests[0].items, [2])
@@ -1556,5 +1557,150 @@ test('F-PARITY-07F-B: 1001 selected Nodes disable download and tagging at their 
         action === 'download' ? 1000 : action === 'manage-tags' ? 500 : Infinity
       return count > cap ? '单次最多 ' + cap + ' 项' : null
     },
+  } })
+})
+
+
+test('F-PARITY-07F-C: Mobile multi-item Properties reuses Server recursive stats for a folder plus a file', async () => {
+  const requests = []
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => {
+      const rows = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      assert.equal(rows.length, 2)
+      rows[0].props.onClick()
+      rows[1].props.onClick()
+    })
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    const action = find(h.view, 'data-mobile-files-batch-properties', true)
+    assert.equal(action.props.disabled, false)
+    await act(async () => { action.props.onClick() })
+    assert.equal(requests.length, 1, 'same shared stats request as wide Web, no mobile REST')
+    assert.deepEqual(requests[0].ids, [2, 3], 'folder and file Server identities preserved')
+    const dialog = h.view.root.findAll(node => node.type === 'properties-dialog')[0]
+    assert.equal(dialog.props.open, true)
+    assert.equal(dialog.props.title, '所选项目属性')
+    const fields = Object.fromEntries(dialog.props.properties.map(p => [p.label, p.value]))
+    assert.equal(fields['项目数'], '2 个')
+    assert.equal(fields['位置'], '我的文件')
+    assert.equal(fields['内容'], '3 个文件 · 2 个文件夹')
+    assert.equal(fields['文件大小合计'], '5120 B')
+    await act(async () => { dialog.props.onClose() })
+    assert.equal(requests[0].signal.aborted, true, 'closing aborts Server stats as on wide Web')
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 1,
+      'inspecting a selection does not clear it')
+    assert.equal(h.view.root.findAll(node => node.props?.['aria-pressed'] === true).length, 2)
+  }, { props: {
+    loadPropertiesStats: async (items, signal) => {
+      requests.push({ ids: items.map(item => item.id), signal })
+      return { selected_count: 2, effective_root_count: 2, total_bytes: 5120,
+        file_count: 3, folder_count: 2, sources: [] }
+    },
+  } })
+})
+
+test('F-PARITY-07F-C: Mobile file-only multi Properties compute local bytes without Server scan', async () => {
+  let calls = 0
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => {
+      const rows = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      rows[0].props.onClick()
+      rows[1].props.onClick()
+    })
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-batch-properties', true).props.onClick() })
+    const dialog = h.view.root.findAll(node => node.type === 'properties-dialog')[0]
+    const fields = Object.fromEntries(dialog.props.properties.map(p => [p.label, p.value]))
+    assert.equal(fields['项目数'], '2 个')
+    assert.equal(fields['内容'], '2 个文件 · 0 个文件夹')
+    assert.equal(fields['文件大小合计'], '1000 B')
+    assert.equal(calls, 0, 'multi-file summary must not make unnecessary recursive API call')
+  }, { props: {
+    items: [
+      { id: 3, name: 'one.txt', kind: 'file', revision: 1, size: 120 },
+      { id: 4, name: 'two.txt', kind: 'file', revision: 2, size: 880 },
+    ],
+    loadPropertiesStats: async () => { calls += 1; throw Error('unexpected recursive stats') },
+  } })
+})
+
+test('F-PARITY-07F-C: changing account scope closes multi Properties and aborts old request', async () => {
+  let request = null
+  let finish
+  await withView(async h => {
+    const rootLocation = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { rootLocation.props.onClick() })
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => {
+      const rows = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      rows[0].props.onClick()
+      rows[1].props.onClick()
+    })
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-batch-properties', true).props.onClick() })
+    assert.ok(request)
+    assert.equal(request.signal.aborted, false)
+    await h.update({ lifecycleKey: 'another-account' })
+    assert.equal(request.signal.aborted, true)
+    assert.equal(h.view.root.findAll(node => node.type === 'properties-dialog')[0].props.open, false)
+    await act(async () => finish({ selected_count: 2, effective_root_count: 2,
+      total_bytes: 9000, file_count: 9, folder_count: 1, sources: [] }))
+    assert.equal(h.view.root.findAll(node => node.type === 'properties-dialog')[0].props.open, false,
+      'late Server stats cannot reopen old-account properties')
+  }, { props: {
+    loadPropertiesStats: (items, signal) => {
+      request = { ids: items.map(item => item.id), signal }
+      return new Promise(resolve => { finish = resolve })
+    },
+  } })
+})
+
+
+test('F-PARITY-07F-C: sparse 257-file selection can inspect all files without loading 257 DOM rows', async () => {
+  const ranges = []
+  let statsCalls = 0
+  const source = {
+    interactionKey: '257-file-properties', itemCount: 257, loadedItems: new Map(),
+    itemAt() {}, onRangeChange() {}, retainInteractionIDs() {},
+    collectRange: async (start, end) => {
+      ranges.push([start, end])
+      return Array.from({ length: end - start + 1 }, (_, index) => ({
+        id: 1000 + start + index, name: 'file-' + (start + index) + '.txt',
+        kind: 'file', revision: 4, size: 2,
+      }))
+    },
+  }
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+    assert.deepEqual(ranges, [[0, 199], [200, 256]], 'shared 200-item Server range contract')
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-batch-properties', true).props.onClick() })
+    const dialog = h.view.root.findAll(node => node.type === 'properties-dialog')[0]
+    const fields = Object.fromEntries(dialog.props.properties.map(p => [p.label, p.value]))
+    assert.equal(fields['项目数'], '257 个')
+    assert.equal(fields['文件大小合计'], '514 B')
+    assert.equal(statsCalls, 0, 'file-only stats should not request a 257-file recursive scan')
+    assert.ok(count(h.view, 'data-mobile-files-item') < 257,
+      'inspection does not materialize the full collection as item rows')
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    loadPropertiesStats: async () => { statsCalls += 1; throw Error('unneeded stats') },
   } })
 })
