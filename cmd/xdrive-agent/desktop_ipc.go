@@ -122,6 +122,7 @@ var desktopIPCCapabilities = []string{
 	"transfer-events",
 	"transfer-retry",
 	"transfer-cancel",
+	"transfer-open-local",
 	"transfer-lifecycle",
 	"transfer-lifecycle-child-batch",
 	"transfer-history-scope",
@@ -754,6 +755,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/transfer-events", h.transferEvents)
 	mux.HandleFunc("POST /v1/transfers/retry", h.retryTransfer)
 	mux.HandleFunc("POST /v1/transfers/cancel", h.cancelTransfer)
+	mux.HandleFunc("POST /v1/transfers/open-local", h.openTransferLocal)
 	mux.HandleFunc("POST /v1/transfers/lifecycle", h.transferLifecycle)
 	mux.HandleFunc("DELETE /v1/transfers", h.clearTransferHistory)
 	mux.HandleFunc("GET /v1/diagnostics", h.diagnostics)
@@ -6187,6 +6189,30 @@ func (h *desktopIPCHandler) cancelTransfer(w http.ResponseWriter, r *http.Reques
 	}
 	revision, items := h.ctrl.Transfers()
 	writeDesktopIPCJSON(w, http.StatusOK, desktopIPCTransfers{Revision: revision, Transfers: items})
+}
+
+func (h *desktopIPCHandler) openTransferLocal(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ID string `json:"id"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	input.ID = strings.TrimSpace(input.ID)
+	if input.ID == "" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "missing_transfer_id", "id is required")
+		return
+	}
+	opener, ok := h.ctrl.(interface{ OpenTransferLocal(string) error })
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "transfer_local_unsupported", "Agent does not support transfer local reveal")
+		return
+	}
+	if err := opener.OpenTransferLocal(input.ID); err != nil {
+		writeDesktopIPCError(w, http.StatusConflict, "transfer_local_unavailable", err.Error())
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (h *desktopIPCHandler) transferLifecycle(w http.ResponseWriter, r *http.Request) {

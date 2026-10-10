@@ -89,6 +89,7 @@ type Task struct {
 	RelativePath          string     `json:"relative_path,omitempty"`
 	CloudParentID         uint64     `json:"cloud_parent_id,omitempty"`
 	CloudNodeID           uint64     `json:"cloud_node_id,omitempty"`
+	LocalRevealable       bool       `json:"local_revealable,omitempty"`
 	Kind                  string     `json:"kind"`
 	Direction             string     `json:"direction"`
 	State                 string     `json:"state"`
@@ -487,6 +488,41 @@ func (h *Handle) BindCancel(cancel context.CancelFunc) bool {
 
 // Cancel requests abort of exactly one bound request. Only its original
 // worker may confirm a terminal state after the I/O has stopped.
+// AllowLocalReveal is invoked only by the owning Agent after it has created
+// a direct file transfer. Renderer-created lifecycle records cannot set it.
+func (h *Handle) AllowLocalReveal() {
+	if h == nil || h.manager == nil {
+		return
+	}
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[h.id]
+	if e == nil || e.task.Scope == ScopeGroup ||
+		(e.task.Kind != KindUpload && e.task.Kind != KindDownload) {
+		return
+	}
+	e.task.LocalRevealable = true
+	m.touchLocked()
+}
+
+// LocalRevealTask returns a path recorded by trusted Agent-owned file work,
+// never a user-supplied path received from the renderer.
+func (m *Manager) LocalRevealTask(id string) (Task, error) {
+	if m == nil || id == "" {
+		return Task{}, errors.New("transfer not found")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[id]
+	if e == nil || !e.task.LocalRevealable ||
+		e.task.Scope == ScopeGroup ||
+		(e.task.Kind != KindUpload && e.task.Kind != KindDownload) {
+		return Task{}, errors.New("local transfer position is unavailable")
+	}
+	return e.task, nil
+}
+
 func (m *Manager) Cancel(id string) error {
 	if m == nil {
 		return errors.New("transfer manager is unavailable")

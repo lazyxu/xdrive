@@ -139,6 +139,7 @@ export type AgentTransfer = {
   relative_path?: string
   cloud_parent_id?: number
   cloud_node_id?: number
+  local_revealable?: boolean
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
   direction: 'upload' | 'download' | 'local' | string
   state: 'queued' | 'running' | 'completed' | 'partial' | 'failed' | 'retrying' | 'cancelling' | 'cancelled' | string
@@ -3295,6 +3296,10 @@ export class AgentIPCClient {
 
   cancelTransfer(id: string) {
     return this.request<AgentTransfers>('POST', '/v1/transfers/cancel', { id }, 30_000)
+  }
+
+  openTransferLocal(id: string) {
+    return this.request<{ ok: boolean }>('POST', '/v1/transfers/open-local', { id }, 30_000)
   }
 
   transferLifecycle(input: AgentTransferLifecycleInput) {

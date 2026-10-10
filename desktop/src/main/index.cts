@@ -5567,6 +5567,16 @@ function registerIPCHandlers() {
       return next
     }, false)
   })
+  ipcMain.handle('agent:open-transfer-local', (_event, id: unknown) => {
+    if (typeof id !== 'string' || !id.trim()) {
+      return { ok: false, error: { code: 'invalid_input', message: 'Transfer id is required.' } }
+    }
+    return runAgentAction<{ ok: boolean }>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'transfer-open-local')
+      return requireAgentClient().openTransferLocal(id)
+    }, false)
+  })
   ipcMain.handle('agent:transfer-lifecycle', (_event, input: unknown) =>
     runAgentAction<{ id?: string; ids?: string[]; ok?: boolean }>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
