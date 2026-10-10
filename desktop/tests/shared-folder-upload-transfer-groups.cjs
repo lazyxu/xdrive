@@ -715,3 +715,152 @@ test('Web folder upload batches upfront child registration and persistence', asy
   )
 })
 
+
+test('Web grouped upload cancel aborts active child, closes queued siblings and reports cancellation', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  let requested = false
+  let rejectRunning
+  const events = []
+  const errors = []
+  const transferLifecycle = {
+    async startGroup() { return 'group-cancel' },
+    async startChildren(_groupID, inputs) {
+      return inputs.map((_item, index) => 'child-' + (index + 1))
+    },
+    async startChild() { throw new Error('batched setup required') },
+    async begin() {},
+    async progress() {},
+    async updateGroup() {},
+    async finish(id, result) { events.push([id, result.state]) },
+    isCancelled: () => requested,
+  }
+  const invoked = []
+  const hook = runtime.render(() => useUploadController({
+    lifecycleKey: 'owner',
+    fileName: file => file.name,
+    fileSize: file => file.size,
+    preflight: async () => ({ conflict: false }),
+    upload: async (_parent, file, _policy, _progress, childID, groupID) => {
+      invoked.push({ file: file.name, childID, groupID })
+      return new Promise((_resolve, reject) => { rejectRunning = reject })
+    },
+    transferLifecycle,
+    onError: error => errors.push(error),
+    onFeedback: () => {},
+  }))
+  const batch = hook.runGroup({
+    label: 'photos',
+    resolveTargets: async () => ['a.bin', 'b.bin', 'c.bin'].map(name => ({
+      parentID: 9, file: { name, size: 100 }, relativePath: 'photos/' + name,
+    })),
+  })
+  for (let i = 0; i < 40 && !rejectRunning; i += 1) await Promise.resolve()
+  assert.equal(typeof rejectRunning, 'function', 'first child upload must be active')
+  requested = true
+  const aborted = new Error('user cancelled group')
+  aborted.name = 'AbortError'
+  rejectRunning(aborted)
+  const outcome = await batch
+  assert.equal(outcome.cancelled, true)
+  assert.equal(outcome.uploaded, 0)
+  assert.equal(outcome.failed, 0)
+  assert.deepEqual(invoked, [{ file: 'a.bin', childID: 'child-1', groupID: 'group-cancel' }])
+  assert.deepEqual(events.filter(([id]) => id.startsWith('child-')), [
+    ['child-1', 'cancelled'],
+    ['child-2', 'cancelled'],
+    ['child-3', 'cancelled'],
+  ])
+  assert.deepEqual(events.at(-1), ['group-cancel', 'cancelled'])
+  assert.deepEqual(errors, [], 'explicit user cancellation must not be misreported as a failed upload')
+})
+
+test('Web group cancellation retains earlier successfully uploaded children as partial', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  const events = []
+  let requestCancellation
+  let requested = false
+  const transferLifecycle = {
+    async startGroup() { return 'group-partial' },
+    async startChildren(_groupID, inputs) { return inputs.map((_v, i) => 'child-' + (i + 1)) },
+    async startChild() { throw new Error('batched registration required') },
+    async begin() {},
+    async progress() {},
+    async updateGroup() {},
+    async finish(id, input) { events.push([id, input.state]) },
+    isCancelled: () => requested,
+  }
+  const uploaded = []
+  const hook = runtime.render(() => useUploadController({
+    lifecycleKey: 'owner',
+    fileName: f => f.name,
+    fileSize: f => f.size,
+    preflight: async () => ({ conflict: false }),
+    upload: async (_parent, file) => {
+      uploaded.push(file.name)
+      if (file.name === 'a.bin') return { skipped: false }
+      return new Promise((_resolve, reject) => { requestCancellation = reject })
+    },
+    transferLifecycle,
+    onError: error => { throw error },
+    onFeedback: () => {},
+  }))
+  const batch = hook.runGroup({
+    label: 'folder',
+    resolveTargets: async () => ['a.bin', 'b.bin', 'c.bin'].map(name => ({
+      parentID: 1, file: { name, size: 10 },
+    })),
+  })
+  for (let i = 0; i < 60 && !requestCancellation; i += 1) await Promise.resolve()
+  assert.equal(typeof requestCancellation, 'function', 'second file must begin')
+  requested = true
+  const aborted = new Error('cancelled')
+  aborted.name = 'AbortError'
+  requestCancellation(aborted)
+  const result = await batch
+  assert.equal(result.uploaded, 1)
+  assert.equal(result.failed, 0)
+  assert.equal(result.cancelled, true)
+  assert.deepEqual(uploaded, ['a.bin', 'b.bin'])
+  assert.deepEqual(events, [
+    ['child-1', 'completed'], ['child-2', 'cancelled'],
+    ['child-3', 'cancelled'], ['group-partial', 'partial'],
+  ])
+})
+
+test('cancel during Web folder enumeration prevents all uploads', async () => {
+  const runtime = createUploadHookRuntime()
+  const useUploadController = loadUploadController(runtime.react)
+  let requested = false
+  let resolveScan
+  const events = []
+  const hook = runtime.render(() => useUploadController({
+    lifecycleKey: 'owner',
+    fileName: file => file.name,
+    preflight: async () => ({ conflict: false }),
+    upload: async () => { throw new Error('cancelled group must not start I/O') },
+    transferLifecycle: {
+      async startGroup() { return 'group-scan' },
+      async startChild() { throw new Error('cancelled scan must not register children') },
+      async begin() {},
+      async progress() {},
+      async updateGroup() {},
+      async finish(id, result) { events.push([id, result.state]) },
+      isCancelled: () => requested,
+    },
+    onError: e => { throw e },
+    onFeedback: () => {},
+  }))
+  const batch = hook.runGroup({
+    label: 'unscanned',
+    resolveTargets: () => new Promise(resolve => { resolveScan = resolve }),
+  })
+  for (let i = 0; i < 10 && !resolveScan; i += 1) await Promise.resolve()
+  assert.equal(typeof resolveScan, 'function')
+  requested = true
+  resolveScan([{ parentID: 1, file: { name: 'no.bin' } }])
+  const outcome = await batch
+  assert.equal(outcome.cancelled, true)
+  assert.deepEqual(events, [['group-scan', 'cancelled']])
+})
