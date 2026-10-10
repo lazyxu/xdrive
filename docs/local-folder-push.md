@@ -55,6 +55,12 @@ The local JSON registry stores paths under a per-Server/account hash with user-o
 
 **Still non-operational:** this library does not itself know that an Electron picker was clicked, does not expose an Agent RPC to grant a path, and does not lift the Server fail-closed source run gate. Subsequent work must authenticate the local picker-to-Agent IPC boundary and prove its Root grant before a permitted upload. No `local_folder` UI preset until the full loop passes E2E.
 
+## L02-A read-only bounded local inventory (no Source writes)
+
+`internal/localpush.InventoryScanner` accepts an already authorized RootGrant, an optional compiled `Source` ignore configuration and a synchronous bounded-batch callback. It enumerates original file/directory metadata without hashing contents, uploading bytes, creating SourceItems or changing SourceRun checkpoints. The scanner validates root identity before and after enumeration, propagates Go context cancellation and callback failures, and does not follow symlinks or nonregular files. Ignored items are still included in batches to support honest preview counts and potential negation rules. Directory reads are capped at 256 entries and callback batches to at most 500; no 100k-sized item array is accumulated.
+
+A completed metadata enumeration is NOT yet authority to infer deletions: `missing_inference_safe=false` until reliable per-item identities, complete-inventory reconciliation and agent/run protocol are implemented. No Mirror, scan-only formal SourceRun or cloud file mutation is enabled. Tests cover 1043 files with batched delivery, ignored files, cancellation, Root replacement and symlink skipping; a dedicated 10k/100k process-level performance baseline still needs native execution.
+
 ## Non-negotiable invariants
 
 - The Device binds one explicitly authorized local Root to one Source ID for a specific Server and owner. Never let Web specify arbitrary paths to read on the client.
