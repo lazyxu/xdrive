@@ -176,7 +176,11 @@ test('P0-2 mobile gesture has one root, preserves Gallery anchor and uses same v
   assert.match(gallerySource, /clearGalleryTouchPress\(\)/)
   assert.match(gallerySource, /viewAnchorIndexRef\.current = index/)
   assert.match(gallerySource, /updateGalleryDensity\(xDriveMediaGalleryPinchColumnCount\(/)
-  assert.equal((gallerySource.match(/minColumns=\{compactGallery \? mobileColumns : undefined\}/g) || []).length, 2)
+  const virtualCallSites = gallerySource.match(/<(?:MediaVirtualTileGrid|MediaVirtualTimeline)\b[\s\S]*?\/>/g) || []
+  assert.equal(virtualCallSites.length, 2, 'one shared virtual grid and one virtual timeline')
+  for (const call of virtualCallSites) {
+    assert.match(call, /minColumns=\{compactGallery \? mobileColumns : undefined\}/)
+  }
   assert.match(gallerySource, /restoreAnchorRevision=\{viewAnchorRevision\}/)
   assert.match(gallerySource, /<MediaVirtualTileGrid/)
   assert.match(gallerySource, /<MediaVirtualTimeline/)
