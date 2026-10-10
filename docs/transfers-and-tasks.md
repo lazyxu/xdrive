@@ -254,3 +254,16 @@ No persistent Desktop database or server-side per-device history is claimed
 in this phase. Native-browser handoff cannot invent a completed download's
 end-to-end average without actual observed bytes. A `server` source
 remains explicitly labelled as server-send speed, not browser receipt.
+
+
+## Desktop tray transfer-rate expiry (2026-10-10)
+
+The Desktop OS tray is an additional speed display, separate from the shared
+React Transfer Popover/Center. It now holds an Agent rate sample for a 2-second
+presentation interval, while allowing progress and transfer-state snapshots to
+update immediately. A clock-driven refresh continues for active transfers even
+without incoming Agent events; samples older than 3 seconds expire to zero.
+The sample key combines transfer ID and attempt start time so new attempts do
+not inherit old speed. Queued/finalizing/cancelling transfers never advertise
+wire throughput. Neither this change nor the shared UI throttle delays bytes,
+upload/download work or transport progress events.

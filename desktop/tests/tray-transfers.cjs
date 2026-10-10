@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { trayTransferPresentation } = require('../dist/main/tray_transfers.cjs')
+const { trayTransferPresentation, trayTransferRateKey } = require('../dist/main/tray_transfers.cjs')
 
 function transfer(id, state, done, total, speed, direction = 'download') {
   return {
@@ -19,7 +19,8 @@ function transfer(id, state, done, total, speed, direction = 'download') {
     retry_count: 0,
     retryable: true,
     started_at: new Date(0).toISOString(),
-    updated_at: new Date(0).toISOString(),
+    updated_at: new Date().toISOString(),
+    speed_updated_at: new Date().toISOString(),
   }
 }
 
@@ -117,4 +118,47 @@ test('tray shows folder scanning as discovery rather than a fake final percentag
   const view = trayTransferPresentation({ revision: 3, transfers: [parent] })
   assert.match(view.items[0].label, /扫描中 · 已发现 128 个文件/)
   assert.doesNotMatch(view.items[0].label, /%/)
+})
+
+test('tray expires stale instantaneous speed even when progress updates do not refresh wire samples', () => {
+  const now = Date.parse('2026-10-10T07:00:08.000Z')
+  const stale = {
+    ...transfer('stalled.bin', 'running', 123, 999, 1.3 * 1024 * 1024),
+    updated_at: new Date(now).toISOString(),
+    speed_updated_at: new Date(now - 8_000).toISOString(),
+  }
+  const view = trayTransferPresentation({ revision: 2, transfers: [stale] }, 3, now)
+  assert.equal(view.label, '传输 · 1 进行中')
+  assert.equal(view.items[0].label, '下载 · stalled.bin · 12.3%')
+})
+
+test('tray displays stable sampled speed while retaining current byte progress', () => {
+  const now = Date.parse('2026-10-10T07:00:08.000Z')
+  const item = {
+    ...transfer('active.bin', 'running', 80, 100, 16 * 1024 * 1024),
+    updated_at: new Date(now).toISOString(),
+    speed_updated_at: new Date(now).toISOString(),
+  }
+  const samples = new Map([[trayTransferRateKey(item), {
+    instant_bytes_per_second: 1024 * 1024,
+    speed_updated_at: new Date(now - 1500).toISOString(),
+    updated_at: new Date(now - 1500).toISOString(),
+  }]])
+  const view = trayTransferPresentation({ revision: 4, transfers: [item] }, 3, now, samples)
+  assert.equal(view.label, '传输 · 1 进行中 · 1 MiB/s')
+  assert.match(view.items[0].label, /80\.0% · 1 MiB\/s/)
+  assert.equal(trayTransferPresentation({ revision: 4, transfers: [item] }, 3, now + 2000, samples).label, '传输 · 1 进行中')
+})
+
+test('tray never borrows a stale rate across a new transfer attempt or phase change', () => {
+  const now = Date.parse('2026-10-10T07:00:08.000Z')
+  const old = { ...transfer('a', 'running', 20, 100, 1024 * 1024), started_at: new Date(now - 8_000).toISOString() }
+  const next = { ...old, started_at: new Date(now - 1_000).toISOString(), speed_updated_at: new Date(now).toISOString() }
+  const samples = new Map([[trayTransferRateKey(old), {
+    instant_bytes_per_second: 1024 * 1024,
+    speed_updated_at: new Date(now).toISOString(),
+    updated_at: new Date(now).toISOString(),
+  }]])
+  assert.equal(trayTransferPresentation({ revision: 5, transfers: [next] }, 3, now, samples).label, '传输 · 1 进行中')
+  assert.equal(trayTransferPresentation({ revision: 5, transfers: [{ ...old, phase: 'finalizing' }] }, 3, now, samples).label, '传输 · 1 进行中')
 })
