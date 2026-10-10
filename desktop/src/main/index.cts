@@ -83,6 +83,8 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminPhotoAutoConfig,
+  type AgentAdminPhotoAutoUpdate,
   type AgentAdminGeoNamesConfig,
   type AgentAdminGeoNamesUpdate,
   type AgentAdminGeoNamesReloadResult,
@@ -4274,6 +4276,26 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map configuration revision.')
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
+  }, false))
+  ipcMain.handle('agent:cloud-admin-photo-intelligence', () => runAgentAction<AgentAdminPhotoAutoConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminPhotoAutoConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-photo-intelligence', (_event, input: unknown) => runAgentAction<AgentAdminPhotoAutoConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Photo Intelligence policy.')
+    }
+    const data = input as Partial<AgentAdminPhotoAutoUpdate>
+    if (typeof data.auto_enabled !== 'boolean' ||
+        typeof data.revision !== 'number' || !Number.isSafeInteger(data.revision) || data.revision < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Photo Intelligence policy revision or switch.')
+    }
+    return requireAgentClient().cloudSetAdminPhotoAutoConfig({
+      revision: data.revision, auto_enabled: data.auto_enabled,
+    })
   }, false))
   ipcMain.handle('agent:cloud-admin-geonames', () => runAgentAction<AgentAdminGeoNamesConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

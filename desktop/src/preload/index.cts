@@ -615,6 +615,9 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudAdminPhotoAutoConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence'),
+  cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-photo-intelligence', input),
   cloudAdminGeoNamesConfig: () => ipcRenderer.invoke('agent:cloud-admin-geonames'),
   cloudSetAdminGeoNamesConfig: (input: { revision: number; max_distance_km: number }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-geonames', input),

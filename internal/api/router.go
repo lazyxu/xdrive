@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -66,6 +67,8 @@ type Server struct {
 	mediaIndexOwners               map[uint64]*mediaIndexOwnerState
 	mediaSelectionMu               sync.Mutex
 	mediaSelections                map[string]*mediaSelectionSnapshot
+	photoAutoSaveMu                sync.Mutex
+	photoAutoPolicy                atomic.Pointer[photoAutoRuntime]
 	photoIntelligenceMu            sync.Mutex
 	photoIntelligenceOwners        map[photoIntelligenceOwnerKey]*photoIntelligenceOwnerState
 	photoFaceRunner                photoFaceOwnerRunner
@@ -323,6 +326,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/photo-intelligence", s.adminPhotoAutoConfig)
+	admin.PUT("/services/photo-intelligence", s.adminSavePhotoAutoConfig)
 	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)

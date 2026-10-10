@@ -67,6 +67,8 @@ import type {
   XDriveBackgroundTaskActiveSummary,
   XDriveServiceDependenciesSnapshot,
   XDriveBaiduMapAdminConfig,
+  XDrivePhotoAutoConfig,
+  XDrivePhotoAutoUpdate,
   XDriveGeoNamesConfig,
   XDriveGeoNamesUpdate,
   XDriveGeoNamesReloadResult,
@@ -770,6 +772,8 @@ declare global {
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudAdminPhotoAutoConfig: () => Promise<DesktopResult<XDrivePhotoAutoConfig>>
+        cloudSetAdminPhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudAdminGeoNamesConfig: () => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudSetAdminGeoNamesConfig: (input: XDriveGeoNamesUpdate) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudReloadAdminGeoNames: (expectedVersion: string) => Promise<DesktopResult<XDriveGeoNamesReloadResult>>
