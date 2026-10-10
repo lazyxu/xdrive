@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import SortRoundedIcon from '@mui/icons-material/SortRounded'
@@ -136,14 +135,11 @@ export function XDriveMobileGalleryChrome({
                 data-xdrive-mobile-gallery-select onClick={onToggleSelection}>
                 {selectionMode ? '完成' : '选择'}
               </Button>
-              <IconButton aria-label="图库排序"
+              <IconButton aria-label="图库排序和筛选"
+                aria-haspopup="menu" aria-expanded={Boolean(sortAnchor)}
                 onClick={(event) => setSortAnchor(event.currentTarget)}
-                data-xdrive-mobile-gallery-sort>
+                data-xdrive-mobile-gallery-sort-filter>
                 <SortRoundedIcon fontSize="small" />
-              </IconButton>
-              <IconButton aria-label="图库筛选" disabled={!filterContent}
-                onClick={() => openFilter(false)} data-xdrive-mobile-gallery-filter>
-                <FilterAltOutlinedIcon fontSize="small" />
               </IconButton>
             </>
           ) : null}
@@ -178,7 +174,7 @@ export function XDriveMobileGalleryChrome({
       ) : null}
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
-        onClose={() => setSortAnchor(null)} aria-label="图库排序方式">
+        onClose={() => setSortAnchor(null)} aria-label="图库排序和筛选">
         {([
           ['captured', 'asc', '拍摄时间 · 最早在前'],
           ['captured', 'desc', '拍摄时间 · 最新在前'],
@@ -189,6 +185,9 @@ export function XDriveMobileGalleryChrome({
             onClick={() => { onSort(by, dir); setSortAnchor(null) }}
             sx={{ minHeight: 44 }}>{label}</MenuItem>
         ))}
+        <MenuItem data-xdrive-mobile-gallery-filter disabled={!filterContent}
+          onClick={() => { setSortAnchor(null); openFilter(false) }}
+          sx={{ minHeight: 44 }}>筛选图库</MenuItem>
       </Menu>
 
       {!selectionMode ? (

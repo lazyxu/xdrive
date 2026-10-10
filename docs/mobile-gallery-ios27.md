@@ -227,9 +227,18 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3f · Web/Mobile Web 固定相册实时状态一致性（2026-10-10）
 
-**状态：候选，完整精确提交 GitHub PR CI 尚未验证；真实浏览器多标签及 iOS 27 实机交互待测。** 之前 P0-3a～P0-3e 保证了固定相册使用相同的 `xdrive.gallery.album-organization.v1:<accountScope>`，但宽屏 Web 的 `MediaGalleryAlbumOrganizer` 只在首次挂载或账号变化时读取；已打开的宽屏和 Mobile 页面并不能保证同步看到另一个标签页写入的固定状态。原生照片应用的不同布局只改变展示，固定相册的逻辑身份与状态必须一致。
+**状态：[#1286](https://github.com/lazyxu/xdrive/pull/1286) 精确提交完整 CI `final-gate` 成功并以单工作提交线性合并（`e06afeb`）；真实浏览器多标签及 iOS 27 实机交互仍待验收。** 之前 P0-3a～P0-3e 保证了固定相册使用相同的 `xdrive.gallery.album-organization.v1:<accountScope>`，但宽屏 Web 的 `MediaGalleryAlbumOrganizer` 只在首次挂载或账号变化时读取；已打开的宽屏和 Mobile 页面并不能保证同步看到另一个标签页写入的固定状态。原生照片应用的不同布局只改变展示，固定相册的逻辑身份与状态必须一致。
 
 - **一份权威数据：** 沿用现有 `MediaGalleryAlbumOrganization` 的 `readMediaAlbumPreferences/writeMediaAlbumPreferences/changeAlbumPin`；增加零存储开销的 `subscribeMediaAlbumPreferences(accountScope, notify)`。当前窗口写入成功后只通知对应账号订阅者；其他标签页的 `storage` 事件更新相同账号，处理 `localStorage.clear()` 的空 key 并在组件卸载/账号切换时注销处理器。失败写入不虚报变更，未授权/空账号不订阅，不增添新的 Mobile Pin membership model。
 - **两端接入：** 已有宽屏 Web / Desktop 公共 `XDriveMediaGalleryAlbumOrganizer` 订阅上述事件并重读原有排序与固定偏好；原 Mobile Collections 同样订阅并在数据变化时重渲染。任何 `album:<id>` 与 `pinned-album:<id>` 的渲染仍使用相同 `sortedMediaAlbums` 和同一 `onOpenAlbum`，不会重新获取全库图片或新增媒体任务。Desktop 的独立 `desktop:` 存储作用域、权限及运行时保持原样；不宣称不同设备自动同步本地偏好。
 - **回归：** 从真实 TypeScript 业务函数编译运行的 Node 测试验证账号隔离、同窗口和跨标签事件、空键、写入失败、卸载后监听释放；实际 React Mobile Collections 渲染测试验证另一宽屏回调写入后直接出现/移除固定相册、跨账号不泄漏、无需组件 remount；静态契约验证仍使用同一 Web REST / Range / Viewer、虚拟列表及 52px 全局标题栏。最终浏览器多标签/移动真机与 899/900px 切换仍需测量，静态与 Test Renderer 不能代替。
 - **系统边界不变：** 全屏 App Frame、52px 全局 App Header、一个 `XDriveMediaGalleryPage` 和 Web REST `MediaGalleryDataSource`、共用 `VirtualCollection`/`VirtualGrid`/`VirtualTimeline`、PhotoAsset/Live/RAW/Viewer、Server Range、权限、Task Center、原页面返回位置均保持原样。没有新后端 API、媒体缓存或专属移动端业务控制器；真正的 iOS 27 像素截图、触控交互、原比例照片墙、真实浏览器 10k/100k FPS/HTTP cancel 仍列为独立待验事项。
+
+
+## P0-3g · iOS 27 统一「排序和筛选」入口（2026-10-10）
+
+**状态：单工作提交候选，完整 GitHub CI 待验证；iOS 27 真机视觉/触控待验收。** Apple iOS 27 [官方排序/筛选指南](https://support.apple.com/zh-cn/guide/iphone/iph2e66e2f2c/27/ios/27) 使用统一入口，xDrive 此前顶部拆成两个 44px 独立按钮。
+
+- 将移动图库顶部排序、筛选按钮合为一个至少 44px 的「图库排序和筛选」按钮；原有四种拍摄时间/加入时间升降序完整保留，菜单末尾的「筛选图库」直接打开原来的共享 `filterContent` Drawer；没有可用筛选时该项禁用。保留清晰的 aria 名称和展开状态。
+- `MobileGalleryChrome` 只变更编排，排序直接调用原 `onSort`，筛选仍消费同一个 Web Gallery 的业务状态与 Server REST 接口，不引入独立移动查询、虚拟列表、Viewer、任务或媒体索引。52px App Header、全屏 App Frame、4px 网格间距及 KFS GridMetrics 不变。
+- React 组件回归 `desktop/tests/mobile-gallery-ios27-sort-filter.cjs` 覆盖单入口、原四种排序回调、筛选 Drawer 引用和无可用筛选时禁用。此次不声称真机像素匹配、性能提升或 100k 渲染/HTTP 取消已验收。

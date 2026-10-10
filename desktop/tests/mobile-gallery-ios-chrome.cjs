@@ -31,7 +31,6 @@ const mocks = {
 }
 for (const name of [
   '@mui/icons-material/ArrowBackRounded',
-  '@mui/icons-material/FilterAltOutlined',
   '@mui/icons-material/MoreHorizRounded',
   '@mui/icons-material/SearchRounded',
   '@mui/icons-material/SortRounded',
@@ -84,8 +83,11 @@ test('iOS 27 Mobile Gallery keeps top actions and gives Library/Collections sepa
   assert.ok(find(view, 'data-xdrive-mobile-gallery-bottom'))
   assert.ok(find(view, 'data-xdrive-mobile-gallery-primary-tabs'))
   assert.ok(find(view, 'data-xdrive-mobile-gallery-select'))
-  assert.ok(find(view, 'data-xdrive-mobile-gallery-sort'))
-  assert.ok(find(view, 'data-xdrive-mobile-gallery-filter'))
+  const combined = find(view, 'data-xdrive-mobile-gallery-sort-filter')
+  assert.ok(combined, 'native-style sort/filter shares a single header action')
+  assert.equal(combined.props['aria-label'], '图库排序和筛选')
+  assert.equal(view.root.findAll(x => x.props?.['aria-label'] === '图库筛选').length, 0)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-filter').type, 'menuitem')
   assert.ok(find(view, 'data-xdrive-mobile-gallery-more'))
   assert.deepEqual(view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-tab'])
     .map(x => x.props['data-xdrive-mobile-gallery-tab']), ['library', 'collections'])
@@ -118,10 +120,16 @@ test('iOS 27 Mobile Gallery tab, back, sort and scale own independent callbacks'
   const collections = view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-tab'] === 'collections')[0]
   await act(async () => { collections.props.onClick() })
   assert.equal(tab,'collections')
-  await act(async () => { find(view,'data-xdrive-mobile-gallery-sort').props.onClick({ currentTarget: {} }) })
+  await act(async () => { find(view,'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} }) })
   const option=view.root.findAll(x => x.type === 'menuitem' && x.props.children === '加入时间 · 最新在前')[0]
   await act(async () => { option.props.onClick() })
   assert.deepEqual(sort,[['added','desc']])
+  await act(async () => { find(view,'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} }) })
+  await act(async () => { find(view,'data-xdrive-mobile-gallery-filter').props.onClick() })
+  const filterDrawer = view.root.findAll(x => x.type === 'drawer' && x.props.open)[0]
+  assert.ok(filterDrawer, 'the same sort/filter menu must open existing Web filters')
+  assert.equal(find(view,'data-xdrive-mobile-gallery-filter-panel').props.children, 'REUSED_GALLERY_FILTERS')
+  await act(async () => { filterDrawer.props.onClose() })
   const month=view.root.findAll(x => x.props?.['data-xdrive-mobile-gallery-scale'] === 'month')[0]
   await act(async () => { month.props.onClick() })
   assert.equal(timeScale,'month')
