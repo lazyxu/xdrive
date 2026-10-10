@@ -310,21 +310,31 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+type AdminPhotoAutoKinds struct {
+	Face          bool `json:"face"`
+	Smart         bool `json:"smart"`
+	Semantic      bool `json:"semantic"`
+	PersonCluster bool `json:"person_cluster"`
+}
+
 type AdminPhotoAutoConfig struct {
-	AutoEnabled          bool       `json:"auto_enabled"`
-	EffectiveAutoEnabled bool       `json:"effective_auto_enabled"`
-	Revision             uint64     `json:"revision"`
-	EffectiveRevision    uint64     `json:"effective_revision"`
-	Source               string     `json:"source"`
-	ApplyState           string     `json:"apply_state"`
-	Editable             bool       `json:"editable"`
-	RequiresRestart      bool       `json:"requires_restart"`
-	UpdatedAt            *time.Time `json:"updated_at,omitempty"`
+	AutoEnabled          bool                 `json:"auto_enabled"`
+	EffectiveAutoEnabled bool                 `json:"effective_auto_enabled"`
+	Kinds                *AdminPhotoAutoKinds `json:"kinds,omitempty"`
+	EffectiveKinds       *AdminPhotoAutoKinds `json:"effective_kinds,omitempty"`
+	Revision             uint64               `json:"revision"`
+	EffectiveRevision    uint64               `json:"effective_revision"`
+	Source               string               `json:"source"`
+	ApplyState           string               `json:"apply_state"`
+	Editable             bool                 `json:"editable"`
+	RequiresRestart      bool                 `json:"requires_restart"`
+	UpdatedAt            *time.Time           `json:"updated_at,omitempty"`
 }
 
 type AdminPhotoAutoUpdate struct {
-	Revision    uint64 `json:"revision"`
-	AutoEnabled bool   `json:"auto_enabled"`
+	Revision    uint64               `json:"revision"`
+	AutoEnabled bool                 `json:"auto_enabled"`
+	Kinds       *AdminPhotoAutoKinds `json:"kinds,omitempty"`
 }
 
 func (c *Client) AdminPhotoAutoConfig(ctx context.Context) (AdminPhotoAutoConfig, error) {

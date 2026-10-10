@@ -485,9 +485,18 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentPhotoAutoKinds = {
+  face: boolean
+  smart: boolean
+  semantic: boolean
+  person_cluster: boolean
+}
+
 export type AgentAdminPhotoAutoConfig = {
   auto_enabled: boolean
   effective_auto_enabled: boolean
+  kinds?: AgentPhotoAutoKinds
+  effective_kinds?: AgentPhotoAutoKinds
   revision: number
   effective_revision: number
   source: 'default' | 'saved'
@@ -500,6 +509,7 @@ export type AgentAdminPhotoAutoConfig = {
 export type AgentAdminPhotoAutoUpdate = {
   revision: number
   auto_enabled: boolean
+  kinds?: AgentPhotoAutoKinds
 }
 
 export type AgentAdminGeoNamesConfig = {

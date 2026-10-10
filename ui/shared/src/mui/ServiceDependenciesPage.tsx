@@ -6,6 +6,7 @@ import type {
   XDriveBaiduMapAdminUpdate,
   XDriveBaiduMapAKReveal,
   XDrivePhotoAutoConfig,
+  XDrivePhotoAutoKinds,
   XDrivePhotoAutoUpdate,
   XDriveGeoNamesConfig,
   XDriveGeoNamesReloadResult,
@@ -37,6 +38,19 @@ export type XDriveServiceDependenciesPort = {
   loadGeoNamesRevisions?: () => Promise<XDriveGeoNamesRevisionPage>
   rollbackGeoNames?: (input: XDriveGeoNamesRollbackInput) => Promise<XDriveGeoNamesConfig>
 }
+
+const defaultPhotoAutoKinds: XDrivePhotoAutoKinds = {
+  face: true, smart: true, semantic: true, person_cluster: true,
+}
+
+// These correspond to existing Server task groups. Visual/OCR is one shared
+// scheduler kind and must not be represented as separately controllable jobs.
+const photoAutoKindChoices = [
+  { key: 'face', title: '人脸检测与特征', description: '仅限制后续自动人脸处理' },
+  { key: 'smart', title: '视觉识别 / OCR', description: '动物、物体识别与 OCR 共用当前自动任务队列' },
+  { key: 'semantic', title: '语义向量与搜索索引', description: '仅限制后续自动语义分析' },
+  { key: 'person_cluster', title: '人物聚类', description: '仅限制后续自动人物整理' },
+] as const
 
 const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; description: string }> = [
   { id: 'core', label: '基础服务', description: '核心数据库与文件存储的实时就绪探针。' },
@@ -131,6 +145,7 @@ export function XDriveServiceDependenciesPage({
   const photoPolicyEpochRef = useRef(0)
   const [photoPolicy, setPhotoPolicy] = useState<XDrivePhotoAutoConfig | null>(null)
   const [photoAutoDraft, setPhotoAutoDraft] = useState(true)
+  const [photoKindsDraft, setPhotoKindsDraft] = useState<XDrivePhotoAutoKinds>(defaultPhotoAutoKinds)
   const [photoPolicyBusy, setPhotoPolicyBusy] = useState(false)
   const [photoPolicyError, setPhotoPolicyError] = useState('')
   const [photoPolicyNotice, setPhotoPolicyNotice] = useState('')
@@ -160,6 +175,7 @@ export function XDriveServiceDependenciesPage({
     ++photoPolicyEpochRef.current
     setPhotoPolicy(null)
     setPhotoAutoDraft(true)
+    setPhotoKindsDraft(defaultPhotoAutoKinds)
     setPhotoPolicyBusy(false)
     setPhotoPolicyError('')
     setPhotoPolicyNotice('')
@@ -188,6 +204,7 @@ export function XDriveServiceDependenciesPage({
         if (!active) return
         setPhotoPolicy(policy)
         setPhotoAutoDraft(policy.auto_enabled)
+        setPhotoKindsDraft(policy.kinds ?? defaultPhotoAutoKinds)
       }).catch(() => {
         if (active) setPhotoPolicyError('无法读取照片智能分析策略，请检查 Server 或更新客户端。')
       })
@@ -370,10 +387,12 @@ export function XDriveServiceDependenciesPage({
       const next = await source.savePhotoAutoConfig({
         revision: photoPolicy.revision,
         auto_enabled: photoAutoDraft,
+        ...(photoPolicy.kinds ? { kinds: photoKindsDraft } : {}),
       })
       if (epoch !== photoPolicyEpochRef.current) return
       setPhotoPolicy(next)
       setPhotoAutoDraft(next.auto_enabled)
+      setPhotoKindsDraft(next.kinds ?? defaultPhotoAutoKinds)
       setPhotoPolicyNotice(next.apply_state === 'applied'
         ? '设置已持久化并审计，当前 Server 的新自动分析任务立即遵循此策略；其他实例将定期同步。'
         : '设置已保存，但当前 Server 尚未确认生效，请刷新状态。')
@@ -435,6 +454,9 @@ export function XDriveServiceDependenciesPage({
     : ''
   // Ignore user-level connector rows returned by older Server versions.
   const systemServices = snapshot?.services.filter((item) => groups.some((group) => group.id === item.group)) ?? []
+  const photoKindsChanged = !!photoPolicy?.kinds && photoAutoKindChoices.some(
+    (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
+  )
   const healthy = systemServices.filter((item) => item.status === 'ready').length
 
   return (
@@ -504,15 +526,40 @@ export function XDriveServiceDependenciesPage({
                         onChange={(_event, value) => setPhotoAutoDraft(value)}
                         disabled={!photoPolicy?.editable || !source.savePhotoAutoConfig || photoPolicyBusy} />}
                     />
+                    {photoPolicy?.kinds && photoPolicy.effective_kinds ? (
+                      <Stack spacing={0.5} sx={{ pl: 1.5, borderLeft: '2px solid', borderColor: 'divider' }}>
+                        <Typography variant="body2" fontWeight={600}>自动分析分项策略</Typography>
+                        {photoAutoKindChoices.map((kind) => (
+                          <FormControlLabel key={kind.key}
+                            control={<Switch size="small" checked={photoKindsDraft[kind.key]}
+                              onChange={(_event, value) => setPhotoKindsDraft((old) => ({ ...old, [kind.key]: value }))}
+                              disabled={!photoPolicy.editable || !source.savePhotoAutoConfig || photoPolicyBusy} />}
+                            label={(
+                              <Stack spacing={0}>
+                                <Typography variant="body2">{kind.title} · 当前实例分项策略：{photoPolicy.effective_kinds![kind.key] ? '开启（全局开关优先）' : '暂停'}</Typography>
+                                <Typography variant="caption" color="text.secondary">{kind.description}</Typography>
+                              </Stack>
+                            )} />
+                        ))}
+                        <Typography variant="caption" color="text.secondary">
+                          全局暂停优先于分项开关。分项状态只代表任务准入策略是否生效，
+                          不代表模型已安装或容器健康；实际健康以每项服务探针为准。
+                        </Typography>
+                      </Stack>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">
+                        当前 Server 尚不支持分项自动分析设置，请升级 Server 后使用。现有全局开关仍可操作。
+                      </Typography>
+                    )}
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
                       <Button variant="contained" size="small"
                         disabled={!photoPolicy?.editable || !source.savePhotoAutoConfig || photoPolicyBusy ||
-                          photoPolicy.auto_enabled === photoAutoDraft}
+                          (photoPolicy.auto_enabled === photoAutoDraft && !photoKindsChanged)}
                         onClick={() => { void savePhotoAutoPolicy() }}>
                         {photoPolicyBusy ? '正在保存…' : '保存并应用到当前实例'}
                       </Button>
                       <Typography variant="caption" color="text.secondary">
-                        模型和部署资源仍由受控部署管理；其他 Server 实例最多在下一轮策略刷新后应用。
+                        保存后当前 Server 立即按新的准入策略执行；其他实例在周期刷新后尝试生效。模型与资源仍由受控部署管理。
                       </Typography>
                     </Stack>
                     {photoPolicyError && <XDriveStatusAlert tone="bad">{photoPolicyError}</XDriveStatusAlert>}

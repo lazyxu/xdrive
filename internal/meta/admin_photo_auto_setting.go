@@ -7,9 +7,11 @@ import "time"
 type AdminPhotoAutoSetting struct {
 	Name        string `gorm:"primaryKey;size:64"`
 	AutoEnabled bool   `gorm:"not null"`
-	Revision    uint64 `gorm:"not null"`
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Empty means all four automatic analysis groups enabled (legacy default).
+	KindsJSON string `gorm:"column:kinds_json;type:text;not null;default:''"`
+	Revision  uint64 `gorm:"not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (AdminPhotoAutoSetting) TableName() string { return "xd_admin_photo_auto_settings" }

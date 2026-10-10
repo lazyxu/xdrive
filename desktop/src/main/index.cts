@@ -4294,8 +4294,16 @@ function registerIPCHandlers() {
         typeof data.revision !== 'number' || !Number.isSafeInteger(data.revision) || data.revision < 0) {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Photo Intelligence policy revision or switch.')
     }
+    const kinds = data.kinds
+    if (kinds !== undefined && (!kinds || typeof kinds !== 'object' || Array.isArray(kinds) ||
+        Object.keys(kinds).sort().join(',') !== 'face,person_cluster,semantic,smart' ||
+        typeof kinds.face !== 'boolean' || typeof kinds.smart !== 'boolean' ||
+        typeof kinds.semantic !== 'boolean' || typeof kinds.person_cluster !== 'boolean')) {
+      throw new AgentIPCError('invalid_input', 0, 'All Photo Intelligence kind switches must be booleans.')
+    }
     return requireAgentClient().cloudSetAdminPhotoAutoConfig({
       revision: data.revision, auto_enabled: data.auto_enabled,
+      ...(kinds ? { kinds } : {}),
     })
   }, false))
   ipcMain.handle('agent:cloud-admin-geonames', () => runAgentAction<AgentAdminGeoNamesConfig>(async () => {
