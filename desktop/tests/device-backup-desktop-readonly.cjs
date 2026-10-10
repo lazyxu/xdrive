@@ -29,7 +29,7 @@ test('Desktop Push uses only bounded read projection end to end', () => {
   assert.match(main, /Number\.isSafeInteger\(requestedOffset\)/)
   assert.match(preload, /getDeviceBackups: \(\) => ipcRenderer\.invoke\('agent:get-device-backups'\)/)
   assert.match(agent, /deviceBackups\(\) \{/)
-  assert.match(renderer, /<XDriveDeviceBackupPage source=\{deviceBackupSource\} \/>/)
+  assert.match(renderer, /<XDriveDeviceBackupPage[\s\S]*?source=\{deviceBackupSource\}/)
   assert.match(renderer, /status\?\.server, status\?\.username, status\?\.auth_status/)
 })
 

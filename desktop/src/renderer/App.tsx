@@ -385,6 +385,26 @@ export default function App({
     }
   }, [deviceBackupReadSupported, localIdentityReadSupported, status?.server, status?.username, status?.auth_status])
 
+  // Only the currently connected Desktop with native picker + Source IPC
+  // may create a local Push draft. The Agent obtains the device token itself;
+  // no credential, Root fingerprint or local OS path crosses Renderer props.
+  const localBackupCreate = useMemo(() => {
+    if (!deviceBackupSource || !localFolderGrantSupported ||
+      !agent.hello?.capabilities.includes('external-sources')) return undefined
+    return {
+      create: async (name: string, targetNodeID: number) => {
+        const created = await sourceManagerAdapter.createSource({
+          name, kind: 'local_folder', direction: 'push',
+          sync_mode: 'backup', run_mode: 'sync', schedule_type: 'manual',
+          target_node_id: targetNodeID, ignore_rules: '',
+        })
+        return { id: created.id, revision: created.revision }
+      },
+      authorize: (sourceID: number) => sourceManagerAdapter.authorizeLocalFolder!(sourceID),
+      discard: (sourceID: number, revision: number) => sourceManagerAdapter.deleteSource(sourceID, revision),
+    }
+  }, [deviceBackupSource, localFolderGrantSupported, agent.hello?.capabilities, sourceManagerAdapter])
+
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = xDriveLoginCredentialsReady({
@@ -2310,7 +2330,13 @@ export default function App({
           />
         )}
 
-        {view === 'device-backup' && <XDriveDeviceBackupPage source={deviceBackupSource} />}
+        {view === 'device-backup' && (
+          <XDriveDeviceBackupPage
+            source={deviceBackupSource}
+            localCreate={localBackupCreate}
+            targetBrowser={localBackupCreate ? desktopSourceTargetBrowser : undefined}
+          />
+        )}
 
         {view === 'remote-pull' && (
           agent.hello?.capabilities.includes('external-sources') ? (

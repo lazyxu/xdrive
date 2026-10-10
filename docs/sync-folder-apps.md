@@ -178,6 +178,27 @@ Revoked-device recovery requires an explicit separate reclaim contract; it
 is NOT implemented by bypassing creator identity. Local activation/SourceRun,
 upload, automatic scheduling, and Mirror deletion remain blocked.
 
+## UI P0-C4a: owning Desktop local-backup creation (stacked PR review)
+
+The first-level `设备备份` page accepts optional own-device-only
+creation capability and a cloud directory browser. The Desktop supplies
+them only while its Agent advertises both authenticated Source IPC and
+native Root grants; Web/Mobile Web do not supply either. The user enters a
+folder display name, chooses a Server-authorized cloud target directory,
+then the Agent creates a paused Source with its device credential and Main
+opens the OS-native directory picker. The Renderer never supplies a local
+path, device token or Root fingerprint.
+
+If the picker is cancelled for a newly created empty draft, the owning
+Agent attempts P0-B2b3's fenced cleanup. Failed/timed-out authorization
+retains a draft reference with explicit retry/cleanup controls; the Server
+rejects cleanup of already-bound or historically used Sources. Account
+changes replace the safe read datasource and dismiss the creation dialog.
+This is **only the create/bind slice** of P0-C4: own-device bound Source
+edit/remove/rebind, legacy orphan discovery/recovery, local preview and
+run controls require subsequent stages. No actual upload or schedule is
+enabled; B-scope history remains read-only for all devices.
+
 ## 6. Acceptance matrix (release-blocking for the new features)
 
 1. With the same owner account, Desktop A edits and runs its locally authorized A-folder; Desktop B can see A's aggregate status/history but **cannot** create, edit, trigger, cancel, delete or unbind A. Raw HTTP requests from B and Web return forbidden even with spoofed device headers.
