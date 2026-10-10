@@ -1,0 +1,185 @@
+{
+  "status": "accepted-real-native-pg17-abandoned-request-resource-release-sql-only",
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38016336548/job/114107316414",
+  "before_production_parent": "a63fe51e2f16c132c1be76b690a72165a44de5c0",
+  "after_source_sha": "b566306f9ed548423ae7d4be547d8f6f89dfd184",
+  "script": "TestTrashRangeRequestContextCancellation100K",
+  "n": 3,
+  "arms_per_sample": 2,
+  "phase_order": [
+    "before/after",
+    "after/before",
+    "before/after"
+  ],
+  "environment": "GitHub hosted ubuntu-latest; postgres:17-alpine; real authenticated Gin HTTP; real xd_nodes ACCESS EXCLUSIVE lock; test seeds an independent PostgreSQL schema per arm",
+  "logical_items": 100000,
+  "extensions": "25k each .jpg/.mp4/.livp/.txt metadata-only",
+  "viewport_range": {
+    "limit": 200,
+    "concurrent_canceled_ranges": 6
+  },
+  "observation_ms": 160,
+  "interpretation": "6/6 canceled PostgreSQL lock waiters and Handler resources released by the AFTER candidate while BEFORE retains all 6. Does not measure successful throughput, codec decoding, client app scrolling, Electron IPC, or durable task cancellation.",
+  "acceptance": {
+    "first_red_reproduced_all_3": true,
+    "after_zero_waiters_and_handlers_all_3": true,
+    "contexts_canceled_all_6_arms": true,
+    "zero_stale_payload_bytes_all_6_arms": true,
+    "healthy_new_range_200_of_100k_all_6_arms": true
+  },
+  "pairs": [
+    {
+      "sample": 1,
+      "before": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": false,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 6,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.14,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 6,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 3577.731,
+        "server_context_latency_ms": [
+          0.126,
+          0.132,
+          0.133,
+          0.137,
+          0.137,
+          0.14
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      },
+      "after": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": true,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 0,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.165,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 0,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 2596.983,
+        "server_context_latency_ms": [
+          0.111,
+          0.134,
+          0.15,
+          0.155,
+          0.161,
+          0.165
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      }
+    },
+    {
+      "sample": 2,
+      "before": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": false,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 6,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.28,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 6,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 3120.253,
+        "server_context_latency_ms": [
+          0.121,
+          0.224,
+          0.23,
+          0.235,
+          0.247,
+          0.28
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      },
+      "after": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": true,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 0,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.155,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 0,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 2694.896,
+        "server_context_latency_ms": [
+          0.07,
+          0.117,
+          0.121,
+          0.124,
+          0.127,
+          0.155
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      }
+    },
+    {
+      "sample": 3,
+      "before": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": false,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 6,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.177,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 6,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 3065.689,
+        "server_context_latency_ms": [
+          0.081,
+          0.088,
+          0.107,
+          0.114,
+          0.134,
+          0.177
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      },
+      "after": {
+        "client_payload_bytes_at_160ms": 0,
+        "context_done_at_160ms": 6,
+        "expect_fixed": true,
+        "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+        "handler_active_at_160ms": 0,
+        "logical_files": 100000,
+        "max_server_context_done_ms": 0.125,
+        "observation_ms": 160,
+        "postgres_lock_waiters_at_160ms": 0,
+        "requests": 6,
+        "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+        "seed_ms": 3476.533,
+        "server_context_latency_ms": [
+          0.076,
+          0.08,
+          0.101,
+          0.105,
+          0.109,
+          0.125
+        ],
+        "started_sql_waits": 6,
+        "workload": "trash-range-go-context-cancel-100k"
+      }
+    }
+  ]
+}

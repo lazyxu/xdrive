@@ -1,0 +1,31 @@
+{
+  "status": "INVALID_complete_benchmark_misrouted_post_cancel_health_check",
+  "ci_run_id": 38014772267,
+  "ci_job_id": 114102504162,
+  "source_head": "e22eed5a94667971d8c91ab9258fe15280dec6f9",
+  "diagnostic_observation": {
+    "client_payload_bytes_at_160ms": 0,
+    "context_done_at_160ms": 6,
+    "expect_fixed": false,
+    "extensions": ".jpg/.mp4/.livp/.txt metadata-only (no actual live pairing or codecs)",
+    "handler_active_at_160ms": 6,
+    "logical_files": 100000,
+    "max_server_context_done_ms": 0.167,
+    "observation_ms": 160,
+    "postgres_lock_waiters_at_160ms": 6,
+    "requests": 6,
+    "scope": "actual HTTP authenticated Gin Trash count-once range handler, native PG lock wait, 6 virtual-range request cancellations; no Electron, media generation, network or durable transfer cancellation",
+    "seed_ms": 2059.527,
+    "server_context_latency_ms": [
+      0.107,
+      0.108,
+      0.112,
+      0.113,
+      0.166,
+      0.167
+    ],
+    "started_sql_waits": 6,
+    "workload": "trash-range-go-context-cancel-100k"
+  },
+  "reason": "Six native PostgreSQL SQL waiters and Gin handlers remained at +160ms, but follow-up health GET lacked range=true, hit the unrelated legacy unpaged /trash route, and failed with extended protocol limited to 65535 parameters. Do not classify this source head as a completed healthy 100k Trash range first-red, and do not change production until the corrected harness passes n=3."
+}
