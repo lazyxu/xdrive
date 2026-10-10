@@ -28,13 +28,15 @@ new Function('exports','module','require',albumOrganizeCompiled)(
 const sharedAlbumOrganization=albumOrganizeModule.exports
 const mocks={
   react:React, 'react/jsx-runtime':require('react/jsx-runtime'),
-  '@mui/material': Object.fromEntries(['Box','Button','IconButton','Menu','MenuItem','Stack','Typography'].map(s=>[s,s.toLowerCase()])),
+  '@mui/material': Object.fromEntries(['Box','Button','IconButton','Menu','MenuItem','Stack','TextField','Typography'].map(s=>[s,s.toLowerCase()])),
   '@mui/icons-material/PhotoLibraryOutlined':'icon',
   '@mui/icons-material/GridViewRounded':'icon',
   '@mui/icons-material/KeyboardArrowRightRounded':'icon',
   '@mui/icons-material/DragIndicatorRounded':'icon',
   '@mui/icons-material/ArrowUpwardRounded':'icon',
   '@mui/icons-material/ArrowDownwardRounded':'icon',
+  '@mui/icons-material/AddCircleOutlineRounded':'icon',
+  '@mui/icons-material/RemoveCircleOutlineRounded':'icon',
   './MediaGalleryPreviewMedia': {XDriveMediaAsyncThumbnail:'thumbnail'},
   './MediaGalleryAlbumOrganization': sharedAlbumOrganization,
 }
@@ -451,4 +453,199 @@ test('P0-3c1 Layout menu and bottom action open the exact same reorder editor',a
     await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-done'])[0].props.onClick()})
     assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-reorder-bottom']).length)
   }finally{if(view)await act(async()=>{view.unmount()})}
+})
+
+
+test('P0-3c2 mobile pinned keys normalize, preserve empty, and isolate accounts',()=>{
+  const normalize=output.exports.xDriveNormalizeMobileGalleryPinnedKeys
+  const move=output.exports.xDriveMoveMobileGalleryPinnedKey
+  const read=output.exports.xDriveReadMobileGalleryPinnedKeys
+  const write=output.exports.xDriveWriteMobileGalleryPinnedKeys
+  assert.deepEqual(normalize(null),['favorites','albums','people','media-types'])
+  assert.deepEqual(normalize([]),[],'explicitly clearing all pins must stay empty')
+  assert.deepEqual(normalize(['favorites','favorites','trash','bad','pinned-album-a1','pinned-album-']),[
+    'favorites','trash','pinned-album-a1',
+  ])
+  assert.deepEqual(move(['favorites','albums','pinned-album-a1'],'pinned-album-a1','favorites'),[
+    'pinned-album-a1','favorites','albums',
+  ])
+  assert.deepEqual(move(['favorites','albums'],'nope','albums'),['favorites','albums'])
+  const prev=global.window,store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.has(k)?store.get(k):null,
+    setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  try{
+    write('owner-A',['trash','pinned-album-a1'])
+    assert.deepEqual(read('owner-A'),['trash','pinned-album-a1'])
+    assert.deepEqual(read('owner-B'),['favorites','albums','people','media-types'])
+    write('owner-A',[])
+    assert.deepEqual(read('owner-A'),[])
+    write('',['trash'])
+    assert.equal(store.has('xdrive.gallery.mobile.collections.pinned-order.v1:'),false)
+    store.set('xdrive.gallery.mobile.collections.pinned-order.v1:broken','{')
+    assert.deepEqual(read('broken'),['favorites','albums','people','media-types'])
+  }finally{global.window=prev}
+})
+
+test('P0-3c2 pinned editor uses the canonical Web/Desktop album pin store',async()=>{
+  const old=global.window,store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.has(k)?store.get(k):null,
+    setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  const albums=[{id:'a1',kind:'manual',name:'家庭',item_count:9,cover_node_id:81},
+    {id:'a2',kind:'smart',name:'摄影',item_count:8,cover_node_id:82}]
+  const opened=[],sections=[]
+  const render=scope=>React.createElement(Collections,{
+    ...data,albums,accountScope:scope,onOpenAlbum:a=>opened.push(a.id),
+    onOpenSection:s=>sections.push(s),
+  })
+  let view
+  const item=(id)=>cards(view).find(x=>x.props['data-xdrive-mobile-gallery-collection-card']===id)
+  const control=(attr,id)=>view.root.findAll(x=>x.props?.[attr]===id)[0]
+  try{
+    await act(async()=>{view=renderer.create(render('owner-A'))})
+    assert.ok(control('data-xdrive-mobile-gallery-edit-pinned',true) ||
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned']).length)
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0].props.onClick()
+    })
+    assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pinned-editor']).length)
+    const add=async key=>await act(async()=>{control('data-xdrive-mobile-gallery-pin-add',key).props.onClick()})
+    const remove=async key=>await act(async()=>{control('data-xdrive-mobile-gallery-pin-remove',key).props.onClick()})
+    await add('pinned-album-a1')
+    await add('pinned-album-a2')
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1','a2'],
+      'both widths share one canonical pin preference')
+    const keys=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-row'])
+      .map(x=>x.props['data-xdrive-mobile-gallery-pin-row'])
+    assert.deepEqual(keys().slice(-2),['pinned-album-a1','pinned-album-a2'])
+    await act(async()=>{control('data-xdrive-mobile-gallery-pin-up','pinned-album-a2').props.onClick()})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a2','a1'])
+    await remove('pinned-album-a1')
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a2'])
+    await add('memories')
+    assert.ok(keys().includes('memories'))
+    await remove('favorites')
+    assert.ok(!keys().includes('favorites'))
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pinned-done'])[0].props.onClick()})
+    assert.ok(item('pinned-album-a2'))
+    assert.ok(item('memories'))
+    assert.ok(!item('favorites'))
+    await act(async()=>{item('pinned-album-a2').props.onClick()})
+    await act(async()=>{item('memories').props.onClick()})
+    assert.deepEqual(opened,['a2'])
+    assert.deepEqual(sections,['memories'])
+    await act(async()=>{view.update(render('owner-B'))})
+    assert.ok(item('favorites'))
+    assert.ok(!item('pinned-album-a2'))
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-B').pinned,[])
+    await act(async()=>{view.update(render('owner-A'))})
+    assert.ok(item('pinned-album-a2'))
+    assert.ok(!item('favorites'))
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    global.window=old
+  }
+})
+
+test('P0-3c2 all pins can be removed without losing the edit entry',async()=>{
+  const old=global.window,store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.has(k)?store.get(k):null,
+    setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  let view
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,accountScope:'owner-A',onOpenSection:()=>{},
+    }))})
+    const edit=()=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0]
+    await act(async()=>{edit().props.onClick()})
+    for(const id of ['favorites','albums','people','media-types']){
+      await act(async()=>{
+        view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-remove']===id)[0].props.onClick()
+      })
+    }
+    assert.equal(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-row']).length,0)
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pinned-done'])[0].props.onClick()})
+    assert.ok(edit(),'an empty pinned group must still be editable')
+    await act(async()=>{edit().props.onClick()})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-add']==='favorites')[0].props.onClick()})
+    assert.ok(view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-row']==='favorites').length)
+  }finally{if(view)await act(async()=>{view.unmount()});global.window=old}
+})
+
+test('P0-3c2 touch handle reorders actual pinned albums after hold and preserves 44px controls',async()=>{
+  const oldWindow=global.window,oldDocument=global.document,oldNow=Date.now
+  const store=new Map()
+  global.window={localStorage:{
+    getItem:k=>store.has(k)?store.get(k):null,
+    setItem:(k,v)=>store.set(k,String(v)),
+  }}
+  const albums=[
+    {id:'a1',kind:'manual',name:'家庭',item_count:9,cover_node_id:81},
+    {id:'a2',kind:'manual',name:'工作',item_count:6,cover_node_id:82},
+  ]
+  sharedAlbumOrganization.writeMediaAlbumPreferences('owner-A',{
+    sort:'name',pinned:['a1','a2'],order:[],
+  })
+  let view,clock=1000
+  Date.now=()=>clock
+  const event={pointerId:7,pointerType:'touch',button:0,clientX:10,clientY:25,
+    currentTarget:{setPointerCapture:()=>{},hasPointerCapture:()=>true,releasePointerCapture:()=>{}},
+    preventDefault:()=>{}}
+  const find=(id)=>view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-handle']===id)[0]
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,albums,accountScope:'owner-A',onOpenAlbum:()=>{},onOpenSection:()=>{},
+    }))})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0].props.onClick()})
+    assert.equal(find('pinned-album-a2').props.sx.minWidth,44)
+    assert.equal(find('pinned-album-a2').props.sx.minHeight,44)
+    global.document={elementFromPoint:()=>({closest:()=>({
+      getAttribute:()=> 'pinned-album-a1',
+    })})}
+    await act(async()=>{find('pinned-album-a2').props.onPointerDown(event)})
+    clock+=100
+    await act(async()=>{find('pinned-album-a2').props.onPointerMove({...event,clientY:70})})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1','a2'])
+    clock+=160
+    await act(async()=>{find('pinned-album-a2').props.onPointerMove({...event,clientY:70})})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a2','a1'])
+    await act(async()=>{find('pinned-album-a2').props.onPointerCancel(event)})
+    await act(async()=>{find('pinned-album-a1').props.onKeyDown({key:'ArrowUp',preventDefault:()=>{}})})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a1','a2'])
+  }finally{
+    if(view)await act(async()=>{view.unmount()})
+    Date.now=oldNow;global.document=oldDocument;global.window=oldWindow
+  }
+})
+
+test('P0-3c2 album suggestions stay bounded while search reaches any real album',async()=>{
+  const old=global.window,storage=new Map()
+  global.window={localStorage:{
+    getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),
+  }}
+  const albums=Array.from({length:120},(_,i)=>({
+    id:'a'+i,kind:'manual',name:'相册-'+i,item_count:2,
+  }))
+  let view
+  try{
+    await act(async()=>{view=renderer.create(React.createElement(Collections,{
+      ...data,albums,accountScope:'owner-A',onOpenAlbum:()=>{},onOpenSection:()=>{},
+    }))})
+    await act(async()=>{view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-edit-pinned'])[0].props.onClick()})
+    const list=()=>view.root.findAll(x=>String(x.props?.['data-xdrive-mobile-gallery-pin-add']).startsWith('pinned-album-'))
+    assert.equal(list().length,48,'the editor must not mount every album suggestion')
+    await act(async()=>{
+      view.root.findAll(x=>x.props?.label==='搜索精选集或相册')[0]
+        .props.onChange({target:{value:'相册-119'}})
+    })
+    const matching=view.root.findAll(x=>x.props?.['data-xdrive-mobile-gallery-pin-add']==='pinned-album-a119')[0]
+    assert.ok(matching,'search must reach albums beyond the preview limit')
+    await act(async()=>{matching.props.onClick()})
+    assert.deepEqual(sharedAlbumOrganization.readMediaAlbumPreferences('owner-A').pinned,['a119'])
+  }finally{if(view)await act(async()=>{view.unmount()});global.window=old}
 })

@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
-import { Box, Button, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import { Box, Button, IconButton, Menu, MenuItem, Stack, TextField, Typography } from '@mui/material'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
 import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded'
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded'
 import PhotoLibraryOutlinedIcon from '@mui/icons-material/PhotoLibraryOutlined'
 import type {
   MediaAlbum, MediaMemory, MediaPersonIdentity, MediaPetFacet,
@@ -14,7 +16,7 @@ import type {
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
 import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
-import { readMediaAlbumPreferences, sortedMediaAlbums } from './MediaGalleryAlbumOrganization'
+import { changeAlbumPin, readMediaAlbumPreferences, sortedMediaAlbums, writeMediaAlbumPreferences } from './MediaGalleryAlbumOrganization'
 
 
 type GalleryCollectionGroupID =
@@ -123,11 +125,68 @@ export function xDriveMoveMobileGalleryGroup(
   result.splice(result.indexOf(target) + (from < to ? 1 : 0), 0, source)
   return result
 }
+
+/** P0-3c2: Mobile pinned section visibility/order is presentation-only.
+ * Album membership and album-relative order are owned by Web/Desktop's
+ * existing MediaGalleryAlbumOrganization preference. */
+const PINNED_ORDER_KEY = 'xdrive.gallery.mobile.collections.pinned-order.v1'
+const DEFAULT_PINNED_KEYS = ['favorites', 'albums', 'people', 'media-types']
+const SECTION_PIN_KEYS = [
+  'favorites', 'albums', 'people', 'media-types',
+  'memories', 'places', 'cleanup', 'trash',
+] as const
+export function xDriveNormalizeMobileGalleryPinnedKeys(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_PINNED_KEYS]
+  const out: string[] = []
+  for (const key of value) {
+    if (typeof key !== 'string' || key.length > 530) continue
+    const knownSection = SECTION_PIN_KEYS.includes(key as typeof SECTION_PIN_KEYS[number])
+    const knownAlbum = key.startsWith('pinned-album-') &&
+      key.length > 'pinned-album-'.length
+    if ((knownSection || knownAlbum) && !out.includes(key)) out.push(key)
+    if (out.length >= 5008) break
+  }
+  return out
+}
+export function xDriveReadMobileGalleryPinnedKeys(accountScope: string): string[] {
+  if (!accountScope || typeof window === 'undefined') return [...DEFAULT_PINNED_KEYS]
+  try {
+    const raw = window.localStorage.getItem(
+      PINNED_ORDER_KEY + ':' + encodeURIComponent(accountScope))
+    return raw === null ? [...DEFAULT_PINNED_KEYS]
+      : xDriveNormalizeMobileGalleryPinnedKeys(JSON.parse(raw))
+  } catch {
+    return [...DEFAULT_PINNED_KEYS]
+  }
+}
+export function xDriveWriteMobileGalleryPinnedKeys(accountScope: string, keys: readonly string[]) {
+  if (!accountScope || typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(
+      PINNED_ORDER_KEY + ':' + encodeURIComponent(accountScope),
+      JSON.stringify(xDriveNormalizeMobileGalleryPinnedKeys(keys)),
+    )
+  } catch {
+    // Private mode: keep the in-memory choice without breaking browsing.
+  }
+}
+export function xDriveMoveMobileGalleryPinnedKey(
+  keys: readonly string[], source: string, target: string,
+): string[] {
+  const current = xDriveNormalizeMobileGalleryPinnedKeys(keys)
+  if (source === target || !current.includes(source) || !current.includes(target)) return current
+  const before = current.indexOf(source) < current.indexOf(target)
+  const remaining = current.filter((key) => key !== source)
+  remaining.splice(remaining.indexOf(target) + (before ? 1 : 0), 0, source)
+  return remaining
+}
+
 type GalleryCollectionGroupModel = {
   id: GalleryCollectionGroupID
   title: string
   cards: readonly CollectionCard[]
   onViewAll?: () => void
+  onEdit?: () => void
 }
 
 type CollectionCard = {
@@ -198,18 +257,19 @@ function CollectionCover({
 
 
 function CollectionGroup({
-  id, title, cards, loadThumbnail, onViewAll, layout, collapsed, onToggleCollapsed,
+  id, title, cards, loadThumbnail, onViewAll, onEdit, layout, collapsed, onToggleCollapsed,
 }: {
   id: GalleryCollectionGroupID
   title: string
   cards: readonly CollectionCard[]
   loadThumbnail: MediaThumbnailLoader
   onViewAll?: () => void
+  onEdit?: () => void
   layout: GalleryCollectionsLayout
   collapsed: boolean
   onToggleCollapsed: (id: GalleryCollectionGroupID) => void
 }) {
-  if (!cards.length && !onViewAll) return null
+  if (!cards.length && !onViewAll && !onEdit) return null
   const tileWidth = xDriveMobileGalleryCollectionTileWidth(layout, id)
   return (
     <Stack spacing={1} data-xdrive-mobile-gallery-collection-group={title}
@@ -224,6 +284,13 @@ function CollectionGroup({
               aria-label={'查看全部' + title}
               onClick={onViewAll} sx={{ minHeight: 44, minWidth: 72 }}>
               查看全部
+            </Button>
+          ) : null}
+          {onEdit ? (
+            <Button size="small" onClick={onEdit}
+              data-xdrive-mobile-gallery-edit-pinned
+              aria-label="编辑固定项目" sx={{ minHeight: 44, minWidth: 44 }}>
+              编辑
             </Button>
           ) : null}
           <IconButton size="small" data-xdrive-mobile-gallery-collapse-group={id}
@@ -293,6 +360,25 @@ export function XDriveMobileGalleryCollections({
   const open = (section: MediaGallerySection) => () => onOpenSection(section)
   const [layoutAnchor, setLayoutAnchor] = useState<HTMLElement | null>(null)
   const [reorderMode, setReorderMode] = useState(false)
+  const [pinEditMode, setPinEditMode] = useState(false)
+  const [pinQuery, setPinQuery] = useState('')
+  const [albumPinRevision, setAlbumPinRevision] = useState(0)
+  const [pinDragging, setPinDragging] = useState<string | null>(null)
+  const pinDragRef = useRef<{key:string; pointerId:number; kind:string;
+    started:number; x:number; y:number} | null>(null)
+  const [pinOrderState, setPinOrderState] = useState(() => ({
+    accountScope, keys: xDriveReadMobileGalleryPinnedKeys(accountScope),
+  }))
+  const storedPinKeys = pinOrderState.accountScope === accountScope
+    ? pinOrderState.keys : xDriveReadMobileGalleryPinnedKeys(accountScope)
+  const pinOrderRef = useRef<string[]>(storedPinKeys)
+  pinOrderRef.current = storedPinKeys
+  const savePinKeys = (keys: string[]) => {
+    const next = xDriveNormalizeMobileGalleryPinnedKeys(keys)
+    pinOrderRef.current = next
+    setPinOrderState({ accountScope, keys: next })
+    xDriveWriteMobileGalleryPinnedKeys(accountScope, next)
+  }
   const [draggingID, setDraggingID] = useState<GalleryCollectionGroupID | null>(null)
   const dragRef = useRef<{ id: GalleryCollectionGroupID; pointerId: number;
     kind: string; started: number; x: number; y: number } | null>(null)
@@ -317,6 +403,12 @@ export function XDriveMobileGalleryCollections({
       ? current : { accountScope, ...xDriveReadMobileGalleryCollectionsPresentation(accountScope) })
     setLayoutAnchor(null)
     setReorderMode(false)
+    setPinEditMode(false)
+    setPinQuery('')
+    setPinDragging(null)
+    pinDragRef.current = null
+    setPinOrderState((current) => current.accountScope === accountScope
+      ? current : { accountScope, keys: xDriveReadMobileGalleryPinnedKeys(accountScope) })
     setDraggingID(null)
     dragRef.current = null
     setOrderState((current) => current.accountScope === accountScope
@@ -348,19 +440,14 @@ export function XDriveMobileGalleryCollections({
     collapsed: presentation.collapsed.includes(id),
     onToggleCollapsed: toggleCollapsed,
   })
-  // Reuse the exact account-scoped album pin order from the shared Web/Desktop
-  // Album Organizer. These are previews only; all pinned albums remain in Albums.
-  const pinnedAlbums: CollectionCard[] = onOpenAlbum
-    ? sortedMediaAlbums(albums, readMediaAlbumPreferences(accountScope))
-        .pinned.slice(0, 8).map((album) => ({
-          key: 'pinned-album-' + album.id,
-          title: album.name,
-          detail: album.item_count.toLocaleString('zh-CN') + ' 项',
-          coverNodeID: album.cover_node_id,
-          activate: () => onOpenAlbum(album),
-        }))
-    : []
-  const pinned: CollectionCard[] = [
+  // A pinned album's membership lives only in the canonical shared Web/Desktop
+  // album organization preference. The Mobile preference only controls which
+  // section shortcuts appear and the display order relative to those albums.
+  void albumPinRevision
+  const canonicalAlbumPrefs = readMediaAlbumPreferences(accountScope)
+  const pinnedAlbumRecords = onOpenAlbum
+    ? sortedMediaAlbums(albums, canonicalAlbumPrefs).pinned : []
+  const sectionCards: CollectionCard[] = [
     { key: 'favorites', title: '收藏', activate: open('favorites') },
     { key: 'albums', title: '相册',
       coverNodeID: albums.find((album) => album.cover_node_id)?.cover_node_id,
@@ -369,8 +456,109 @@ export function XDriveMobileGalleryCollections({
       coverNodeID: people.find((person) => !person.hidden && person.cover_node_id)?.cover_node_id,
       activate: open('people') },
     { key: 'media-types', title: '媒体类型', activate: open('media-types') },
-    ...pinnedAlbums,
+    { key: 'memories', title: '回忆', activate: open('memories') },
+    { key: 'places', title: '地点', activate: open('places') },
+    { key: 'cleanup', title: '清理建议', activate: open('cleanup') },
+    { key: 'trash', title: '回收站', activate: open('trash') },
   ]
+  const albumCards: CollectionCard[] = onOpenAlbum
+    ? albums.map((album) => ({
+      key: 'pinned-album-' + album.id, title: album.name,
+      detail: album.item_count.toLocaleString('zh-CN') + ' 项',
+      coverNodeID: album.cover_node_id, activate: () => onOpenAlbum(album),
+    })) : []
+  const cardByKey = new Map([...sectionCards, ...albumCards].map((card) => [card.key, card]))
+  const pinnedAlbumKeys = pinnedAlbumRecords.map((album) => 'pinned-album-' + album.id)
+  const pinnedAlbumKeySet = new Set(pinnedAlbumKeys)
+  const pinnedOrder = [
+    ...storedPinKeys.filter((key) => SECTION_PIN_KEYS.includes(
+      key as typeof SECTION_PIN_KEYS[number]) || pinnedAlbumKeySet.has(key)),
+    ...pinnedAlbumKeys.filter((key) => !storedPinKeys.includes(key)),
+  ]
+  const pinned: CollectionCard[] = pinnedOrder
+    .map((key) => cardByKey.get(key))
+    .filter((card): card is CollectionCard => Boolean(card))
+  const pinnedPreview = pinned.slice(0, 12)
+  const pinnedAlbumCount = pinnedAlbumRecords.length
+  const enterPinEdit = () => {
+    setReorderMode(false)
+    setPinQuery('')
+    setPinEditMode(true)
+  }
+  const togglePin = (key: string) => {
+    if (!cardByKey.has(key)) return
+    const alreadyPinned = pinnedOrder.includes(key)
+    if (key.startsWith('pinned-album-')) {
+      const albumID = key.slice('pinned-album-'.length)
+      if (!onOpenAlbum || !albums.some((album) => album.id === albumID)) return
+      writeMediaAlbumPreferences(accountScope,
+        changeAlbumPin(albums, readMediaAlbumPreferences(accountScope), albumID))
+      setAlbumPinRevision((revision) => revision + 1)
+    }
+    savePinKeys(alreadyPinned
+      ? pinnedOrder.filter((candidate) => candidate !== key)
+      : [...pinnedOrder, key])
+  }
+  const movePinned = (source: string, target: string) => {
+    const next = xDriveMoveMobileGalleryPinnedKey(pinnedOrder, source, target)
+    if (next.join('|') === pinnedOrder.join('|')) return
+    // Preserve any canonical pin IDs that are not currently in the loaded
+    // album summary; do not silently unpin Wide Web entries.
+    const canonical = readMediaAlbumPreferences(accountScope)
+    const knownAlbumIDs = new Set(albums.map((album) => album.id))
+    const visibleIDs = next.filter((key) => key.startsWith('pinned-album-'))
+      .map((key) => key.slice('pinned-album-'.length))
+      .filter((id) => knownAlbumIDs.has(id))
+    const unloaded = canonical.pinned.filter((id) => !knownAlbumIDs.has(id))
+    writeMediaAlbumPreferences(accountScope, {
+      ...canonical, pinned: [...visibleIDs, ...unloaded],
+    })
+    setAlbumPinRevision((revision) => revision + 1)
+    savePinKeys(next)
+  }
+  const filteredPins = pinned.filter((card) =>
+    card.title.toLocaleLowerCase().includes(pinQuery.trim().toLocaleLowerCase()))
+  const displayedPins = filteredPins.slice(0, 48)
+  const availableSections = sectionCards.filter((card) =>
+    !pinnedOrder.includes(card.key) &&
+    card.title.toLocaleLowerCase().includes(pinQuery.trim().toLocaleLowerCase()))
+  const availableAlbums = albumCards.filter((card) =>
+    !pinnedOrder.includes(card.key) &&
+    card.title.toLocaleLowerCase().includes(pinQuery.trim().toLocaleLowerCase()))
+    .slice(0, 48)
+  const shiftPinned = (key: string, step: -1 | 1) => {
+    const index = filteredPins.findIndex((card) => card.key === key)
+    const target = filteredPins[index + step]
+    if (index >= 0 && target) movePinned(key, target.key)
+  }
+  const startPinDrag = (key: string, e: ReactPointerEvent<HTMLButtonElement>) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || pinDragRef.current) return
+    pinDragRef.current = { key, pointerId: e.pointerId, kind: e.pointerType,
+      started: Date.now(), x: e.clientX, y: e.clientY }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+    setPinDragging(key)
+  }
+  const movePinDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const active = pinDragRef.current
+    if (!active || active.pointerId !== e.pointerId) return
+    if (active.kind === 'touch' && Date.now() - active.started < 220) return
+    if (Math.hypot(e.clientX - active.x, e.clientY - active.y) < 6) return
+    const hit = typeof document === 'undefined' ? null : document
+      .elementFromPoint?.(e.clientX, e.clientY)
+      ?.closest<HTMLElement>('[data-xdrive-mobile-gallery-pin-row]')
+    const target = hit?.getAttribute('data-xdrive-mobile-gallery-pin-row')
+    if (!target || !filteredPins.some((card) => card.key === target)) return
+    e.preventDefault()
+    if (target !== active.key) movePinned(active.key, target)
+  }
+  const stopPinDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (pinDragRef.current?.pointerId !== e.pointerId) return
+    if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    }
+    pinDragRef.current = null
+    setPinDragging(null)
+  }
   const recent: CollectionCard[] = onOpenMemory
     ? memories.filter((m) => m.item_count > 0).slice(0, 8)
       .map((m) => ({
@@ -424,8 +612,8 @@ export function XDriveMobileGalleryCollections({
   ]
 
   const groupModels: GalleryCollectionGroupModel[] = [
-    { id: 'pinned', title: '固定项目', cards: pinned,
-      onViewAll: pinnedAlbums.length ? open('albums') : undefined },
+    { id: 'pinned', title: '固定项目', cards: pinnedPreview,
+      onViewAll: pinnedAlbumCount ? open('albums') : undefined, onEdit: enterPinEdit },
     { id: 'memories', title: '回忆', cards: recent, onViewAll: open('memories') },
     { id: 'albums', title: '相册', cards: ownedAlbums, onViewAll: open('albums') },
     { id: 'people', title: '人物与宠物', cards: identities, onViewAll: open('people') },
@@ -438,7 +626,7 @@ export function XDriveMobileGalleryCollections({
   const visibleGroups = groupOrder
     .map((id) => groupModels.find((group) => group.id === id))
     .filter((group): group is GalleryCollectionGroupModel =>
-      Boolean(group && (group.cards.length || group.onViewAll)))
+      Boolean(group && (group.cards.length || group.onViewAll || group.onEdit)))
   const moveGroup = (source: GalleryCollectionGroupID, target: GalleryCollectionGroupID) =>
     updateOrder(xDriveMoveMobileGalleryGroup(currentOrderRef.current, source, target))
   const shiftGroup = (source: GalleryCollectionGroupID, delta: -1 | 1) => {
@@ -524,7 +712,93 @@ export function XDriveMobileGalleryCollections({
         <MenuItem data-xdrive-mobile-gallery-layout-reorder
           onClick={enterReorder} sx={{ minHeight: 44 }}>重新排序</MenuItem>
       </Menu>
-      {reorderMode ? (
+      {pinEditMode ? (
+        <Stack data-xdrive-mobile-gallery-pinned-editor spacing={1.5} sx={{ px: 1.5 }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography component="h3" variant="h6" fontWeight={750}>
+              编辑固定项目
+            </Typography>
+            <Button data-xdrive-mobile-gallery-pinned-done
+              onClick={() => { pinDragRef.current = null; setPinDragging(null); setPinEditMode(false) }}
+              sx={{ minHeight: 44 }}>关闭</Button>
+          </Stack>
+          <TextField size="small" label="搜索精选集或相册" value={pinQuery}
+            inputProps={{ 'aria-label': '搜索可固定的项目' }}
+            onChange={(event) => setPinQuery(event.target.value)}
+            sx={{ '& .MuiInputBase-input': { fontSize: 16 } }} />
+          <Typography variant="subtitle2">已固定（{pinned.length}）</Typography>
+          <Stack role="list" spacing={0.5} data-xdrive-mobile-gallery-pin-current>
+            {displayedPins.map((card, index) => (
+              <Stack key={card.key} role="listitem" direction="row"
+                data-xdrive-mobile-gallery-pin-row={card.key} alignItems="center"
+                spacing={0.25} sx={{ minHeight: 52, borderRadius: 2, px: 0.5,
+                  bgcolor: pinDragging === card.key ? 'action.selected' : 'action.hover' }}>
+                <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                  {card.title}
+                </Typography>
+                <IconButton data-xdrive-mobile-gallery-pin-remove={card.key}
+                  aria-label={'取消固定' + card.title} onClick={() => togglePin(card.key)}
+                  sx={{ minHeight: 44, minWidth: 44 }}>
+                  <RemoveCircleOutlineRoundedIcon fontSize="small" />
+                </IconButton>
+                <IconButton data-xdrive-mobile-gallery-pin-up={card.key}
+                  aria-label={'上移' + card.title} disabled={index === 0}
+                  onClick={() => shiftPinned(card.key, -1)}
+                  sx={{ minHeight: 44, minWidth: 44 }}>
+                  <ArrowUpwardRoundedIcon fontSize="small" />
+                </IconButton>
+                <IconButton data-xdrive-mobile-gallery-pin-down={card.key}
+                  aria-label={'下移' + card.title}
+                  disabled={index === filteredPins.length - 1}
+                  onClick={() => shiftPinned(card.key, 1)}
+                  sx={{ minHeight: 44, minWidth: 44 }}>
+                  <ArrowDownwardRoundedIcon fontSize="small" />
+                </IconButton>
+                <IconButton data-xdrive-mobile-gallery-pin-handle={card.key}
+                  aria-label={'拖动' + card.title + '调整固定顺序'}
+                  aria-grabbed={pinDragging === card.key}
+                  onPointerDown={(event) => startPinDrag(card.key, event)}
+                  onPointerMove={movePinDrag} onPointerUp={stopPinDrag}
+                  onPointerCancel={stopPinDrag} onLostPointerCapture={stopPinDrag}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                      event.preventDefault()
+                      shiftPinned(card.key, event.key === 'ArrowUp' ? -1 : 1)
+                    }
+                  }}
+                  sx={{ minHeight: 44, minWidth: 44, touchAction: 'none', userSelect: 'none' }}>
+                  <DragIndicatorRoundedIcon fontSize="small" />
+                </IconButton>
+              </Stack>
+            ))}
+          </Stack>
+          {pinned.length > 48 && !pinQuery ? (
+            <Typography variant="caption" color="text.secondary">
+              已固定项目较多；搜索可定位其余项目
+            </Typography>
+          ) : null}
+          <Typography variant="subtitle2">建议精选集</Typography>
+          <Stack role="list" spacing={0.5} data-xdrive-mobile-gallery-pin-suggestions>
+            {availableSections.map((card) => (
+              <Button key={card.key} data-xdrive-mobile-gallery-pin-add={card.key}
+                onClick={() => togglePin(card.key)} sx={{ minHeight: 44, justifyContent: 'flex-start' }}>
+                <AddCircleOutlineRoundedIcon fontSize="small" />
+                {card.title}
+              </Button>
+            ))}
+          </Stack>
+          <Typography variant="subtitle2">任何精选集或相册</Typography>
+          <Stack role="list" spacing={0.5} data-xdrive-mobile-gallery-pin-albums>
+            {availableAlbums.map((card) => (
+              <Button key={card.key} data-xdrive-mobile-gallery-pin-add={card.key}
+                onClick={() => togglePin(card.key)} sx={{ minHeight: 44, justifyContent: 'flex-start' }}>
+                <AddCircleOutlineRoundedIcon fontSize="small" />
+                {card.title}
+              </Button>
+            ))}
+          </Stack>
+        </Stack>
+      ) : reorderMode ? (
         <Stack role="list" data-xdrive-mobile-gallery-reorder-editor
           sx={{ px: 1.5 }} spacing={1}>
           <Typography variant="body2" color="text.secondary">
@@ -576,7 +850,8 @@ export function XDriveMobileGalleryCollections({
           {visibleGroups.map((group) => (
             <CollectionGroup key={group.id} {...groupProps(group.id)}
               title={group.title} cards={group.cards} loadThumbnail={loadThumbnail}
-              onViewAll={group.onViewAll} />
+              onViewAll={group.onViewAll}
+              onEdit={group.onEdit} />
           ))}
           <Button data-xdrive-mobile-gallery-reorder-bottom
             onClick={enterReorder} sx={{ minHeight: 44, mx: 1.5, alignSelf: 'flex-start' }}>

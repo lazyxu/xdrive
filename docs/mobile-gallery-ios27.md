@@ -186,8 +186,19 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 ## P0-3c1 · 精选集分组排序（2026-10-10）
 
-**状态：候选，完整精确提交 GitHub PR CI 与真实 iOS 27 Safari 触控验收待完成。** 参照 [Apple iOS 27「重新排序精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27)：精选集布局菜单和列表末尾均可进入「重新排序」，排序模式只展示现有有内容（或有合法「查看全部」入口）的分组名称，不创建假集合。每项拥有最小 44px 触控手柄；触控按住至少 220ms 后拖动，通过手指命中的分组行更新顺序；提供独立上移/下移和方向键替代方案，再点「完成」回到同一 Gallery 页面。一般浏览不拦截上下滚动、Collection Cover 仍使用原来的懒加载、原来的 Click 打开操作。
+**状态：[#1269](https://github.com/lazyxu/xdrive/pull/1269) 已通过精确提交完整 GitHub PR CI `final-gate`，单提交线性合并（`22b8844`）；真实 iOS 27 Safari 触控及截图验收仍待完成。** 参照 [Apple iOS 27「重新排序精选集」](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27)：精选集布局菜单和列表末尾均可进入「重新排序」，排序模式只展示现有有内容（或有合法「查看全部」入口）的分组名称，不创建假集合。每项拥有最小 44px 触控手柄；触控按住至少 220ms 后拖动，通过手指命中的分组行更新顺序；提供独立上移/下移和方向键替代方案，再点「完成」回到同一 Gallery 页面。一般浏览不拦截上下滚动、Collection Cover 仍使用原来的懒加载、原来的 Click 打开操作。
 
 **偏好与身份：** 分组顺序的唯一新存储是 `xdrive.gallery.mobile.collections.group-order.v1:<accountScope>`，其内容仅为七种固定的展示分组 ID 的有界、去重、合法化排列。账号不同不能相互读取，存储失败退回默认展示；后续新增分组自动追加。没有内容的分组可在排序编辑器中暂时隐藏，但其 ID 仍然保留于偏好，不得删除其排序位置。相册内部固定项及其由 Web/Desktop 共用的 `MediaGalleryAlbumOrganization` 完全不改，这是另一个 P0-3c2 范围。
 
 **不变量：** 全屏 App Frame、52px 全局标题栏、一个 Web `XDriveMediaGalleryPage`、Web REST `MediaGalleryDataSource`、同一 Server Range 与共享 `VirtualCollection/VirtualGrid/VirtualTimeline`、Viewer、Live、RAW、Properties、任务和权限均不修改。加入真实 React 组件的 pointer 长按/拖动、键盘/按钮、账号边界和完成后顺序恢复回归。相关性能没有对比样本，无加速声明。iOS 27 真机像素级位置、触感、drag 动画、边缘自动滚动、真实 10k/100k Browser 请求取消和滚动帧率仍需后续验收。
+
+
+## P0-3c2 · 编辑固定项目（2026-10-10）
+
+**状态：单工作提交候选；GitHub 精确提交 CI、真实 iOS 27 视觉/拖拽验收待完成。** Apple iOS 27 官方 [固定精选集和相簿](https://support.apple.com/zh-cn/guide/iphone/iph4f36c4148/27/ios/27) 要求从「固定」标题右侧进入「编辑」，可移除、添加和通过触控拖动调整固定顺序，完成后关闭。此前 P0-3a 仅显示宽 Web 已固定的相册，这里补齐可操作的编辑界面，并显示真实可打开的精选集快捷项以及当前用户实际已有的相册。
+
+- **共享语义：** 相册是否固定只由现有 `MediaGalleryAlbumOrganization` 中的 `readMediaAlbumPreferences`、`changeAlbumPin`、`writeMediaAlbumPreferences` 管理；Mobile 编辑后宽屏 Web 通过同一账号偏好获得一致的固定相册及顺序。没有独立的 Mobile 相册归属表或请求端点。保留当前已有的收藏、相册、人物与宠物、媒体类型为初始四个快捷项，候选补充已实现的回忆、地点、清理建议、回收站。
+- **Mobile 展示顺序：** `xdrive.gallery.mobile.collections.pinned-order.v1:<accountScope>` 只保存真实项目的 ID 排列及移动端内置快捷项是否显示；**不会替代** Web/Desktop 的 `xdrive.gallery.album-organization.v1`。改变相册相对顺序时同时将相册子序列写回共享固定相册偏好；未加载的原有相册身份必须保留。非法、重复、超长、跨账号记录无法注入显示；用户明确全部取消固定时，固定栏目仍必须能再次打开编辑器。
+- **交互：** 固定项目标题旁放置 ≥44px「编辑」入口，编辑器有「已固定」移除按钮、长按至少 220ms 的 44px 拖动手柄、方向键与上下移动可访问替代，以及真实精选集建议和「任何精选集或相册」搜索添加。预览最多 12 项，候选和已固定编辑列表按需筛选并限制 DOM 展示，避免把所有相册并行渲染进 DOM。关闭后回到同一个精选集滚动宿主与内部导航；不会打开新的 Gallery 应用、Viewer 或 API。
+- **保护原架构：** 全屏 Mobile App Frame、52px App Header、Web/Desktop 一套 Server 与 REST `MediaGalleryDataSource`、`VirtualCollection/Grid/Timeline`、媒体身份、Viewer、Live/RAW、权限与批量操作全部保持不变。测试覆盖真实 React 编辑事件、两端共享偏好、相册真实 Node/ID、插入/移除/重排、账号隔离、空固定编辑入口、触控阈值、键盘，以及 120 个相册中候选最多 48 与搜索超出初始配额的项目。
+- **待完成：** iOS 27 同视口真机截图、Safari 长按与滚动冲突、原生动作动效、宽 Web 多标签实时存储同步，以及所有个人照片/回忆/人物的完整固定项目可用性仍需后续真实数据/交互专项验收。当前候选的任何静态测试不能代替 1:1 真机验证或真实 100k 浏览器性能测量。
