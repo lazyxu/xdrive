@@ -3334,11 +3334,47 @@ func (c *agentController) CloudUpdateSource(ctx context.Context, sourceID, revis
 }
 
 func (c *agentController) CloudDeleteSource(ctx context.Context, sourceID, revision uint64) error {
-	cli, _, err := c.cloudClient()
+	cli, cfg, err := c.cloudClient()
 	if err != nil {
 		return err
 	}
-	return cli.DeleteSource(ctx, sourceID, revision)
+	// The ordinary owner-JWT delete path is never a fallback for local Push.
+	// Only the creating Agent can discard its own unbound, empty draft.
+	source, err := cli.Source(ctx, sourceID)
+	if err != nil {
+		return err
+	}
+	if source.Kind != meta.SourceKindLocalFolder {
+		return cli.DeleteSource(ctx, sourceID, revision)
+	}
+	if source.Direction != meta.SourceDirectionPush {
+		return errors.New("unexpected local source direction")
+	}
+	c.localFolderGrantMu.Lock()
+	defer c.localFolderGrantMu.Unlock()
+	if cfg.SessionInvalid || cfg.Server == "" || cfg.Username == "" || cfg.SessionID == "" {
+		return errors.New("login required to discard local backup draft")
+	}
+	configDir, err := userconfig.Dir()
+	if err != nil {
+		return err
+	}
+	deviceID, err := localpush.LoadDeviceRegistration(configDir, cfg.Server, cfg.Username)
+	if err != nil {
+		return err
+	}
+	secret, err := localpush.LoadDeviceToken(configDir, cfg.Server, cfg.Username, deviceID)
+	if err != nil {
+		return err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return err
+	}
+	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return errors.New("account changed during local backup draft cleanup")
+	}
+	return cli.DiscardLocalSourceDraft(ctx, sourceID, revision, deviceID, secret)
 }
 
 func (c *agentController) CloudTriggerSource(ctx context.Context, sourceID uint64) (client.Source, error) {

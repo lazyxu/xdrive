@@ -303,6 +303,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id", s.getSource)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
+	// Only the enrolled creator Agent may discard a never-bound, empty draft.
+	authed.DELETE("/sources/:id/local-draft", s.discardLocalSourceDraft)
 	authed.POST("/sources/:id/trigger", s.requireLocalSourceExecutor(), s.triggerSource)
 	authed.GET("/sources/:id/local-binding", s.getLocalSourceBinding)
 	authed.POST("/sources/:id/local-binding", s.bindLocalSource)
