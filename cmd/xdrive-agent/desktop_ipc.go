@@ -598,6 +598,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-geonames", h.cloudAdminGeoNames)
+	mux.HandleFunc("POST /v1/cloud/admin-geonames/reload", h.cloudReloadAdminGeoNames)
 	mux.HandleFunc("GET /v1/cloud/background-task-page", h.cloudBackgroundTaskPage)
 	mux.HandleFunc("GET /v1/cloud/background-tasks", h.cloudBackgroundTasks)
 	mux.HandleFunc("POST /v1/cloud/background-task-control", h.cloudBackgroundTaskControl)
@@ -1797,6 +1799,48 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, summary)
+}
+
+type desktopIPCAdminGeoNamesController interface {
+	CloudAdminGeoNamesConfig(context.Context) (client.AdminGeoNamesConfig, error)
+	CloudReloadAdminGeoNames(context.Context, string) (client.AdminGeoNamesReloadResult, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminGeoNames(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_unavailable", "GeoNames management is unsupported")
+		return
+	}
+	result, err := provider.CloudAdminGeoNamesConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+func (h *desktopIPCHandler) cloudReloadAdminGeoNames(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminGeoNamesController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_geonames_unavailable", "GeoNames management is unsupported")
+		return
+	}
+	var input struct {
+		ExpectedVersion string `json:"expected_version"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.ExpectedVersion == "" || len(input.ExpectedVersion) > 128 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_geonames_version", "valid expected version is required")
+		return
+	}
+	result, err := provider.CloudReloadAdminGeoNames(r.Context(), input.ExpectedVersion)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 type desktopIPCAdminBaiduMapController interface {

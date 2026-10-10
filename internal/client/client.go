@@ -310,6 +310,33 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+type AdminGeoNamesConfig struct {
+	DatasetConfigured bool    `json:"dataset_configured"`
+	ReloadSupported   bool    `json:"reload_supported"`
+	Source            string  `json:"source"`
+	CurrentVersion    string  `json:"current_version"`
+	MaxDistanceKM     float64 `json:"max_distance_km"`
+	RequiresRestart   bool    `json:"requires_restart"`
+}
+type AdminGeoNamesReloadResult struct {
+	Applied         bool   `json:"applied"`
+	Changed         bool   `json:"changed"`
+	PreviousVersion string `json:"previous_version"`
+	CurrentVersion  string `json:"current_version"`
+	CheckedAt       string `json:"checked_at"`
+}
+
+func (c *Client) AdminGeoNamesConfig(ctx context.Context) (AdminGeoNamesConfig, error) {
+	var out AdminGeoNamesConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/geonames", nil, &out)
+	return out, err
+}
+func (c *Client) ReloadAdminGeoNames(ctx context.Context, expectedVersion string) (AdminGeoNamesReloadResult, error) {
+	var out AdminGeoNamesReloadResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/geonames/reload", map[string]string{"expected_version": expectedVersion}, &out)
+	return out, err
+}
+
 type AdminBaiduMapConfig struct {
 	Enabled         bool       `json:"enabled"`
 	Configured      bool       `json:"configured"`

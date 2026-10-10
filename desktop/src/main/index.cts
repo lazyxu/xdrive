@@ -83,6 +83,8 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminGeoNamesConfig,
+  type AgentAdminGeoNamesReloadResult,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
   type AgentBackgroundTaskActiveSummary,
@@ -4271,6 +4273,19 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map configuration revision.')
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
+  }, false))
+  ipcMain.handle('agent:cloud-admin-geonames', () => runAgentAction<AgentAdminGeoNamesConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminGeoNamesConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-reload-admin-geonames', (_event, version: unknown) => runAgentAction<AgentAdminGeoNamesReloadResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (typeof version !== 'string' || version.length === 0 || version.length > 128) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid GeoNames dataset version.')
+    }
+    return requireAgentClient().cloudReloadAdminGeoNames(version)
   }, false))
   ipcMain.handle('agent:cloud-admin-baidu-map', () => runAgentAction<AgentAdminBaiduMapConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

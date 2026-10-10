@@ -27,6 +27,22 @@ type placeCandidate struct {
 	Longitude float64
 }
 
+// snapshotForBatch pins the exact immutable dataset/version used for SQL
+// candidate selection, resolution and label persistence. A concurrent admin
+// reload must not stamp results from the next dataset onto an older batch.
+func (r *PlaceRunner) snapshotForBatch() *PlaceRunner {
+	if r == nil || r.Resolver == nil {
+		return r
+	}
+	provider, ok := r.Resolver.(interface{ Snapshot() PlaceResolver })
+	if !ok {
+		return r
+	}
+	copy := *r
+	copy.Resolver = provider.Snapshot()
+	return &copy
+}
+
 func (r *PlaceRunner) RunBatch(ctx context.Context, limit int) (int, error) {
 	return r.runBatch(ctx, 0, limit)
 }
@@ -46,6 +62,7 @@ func (r *PlaceRunner) CandidateOwnerIDs(
 	ctx context.Context,
 	limit int,
 ) ([]uint64, error) {
+	r = r.snapshotForBatch()
 	if r == nil || r.DB == nil || r.Resolver == nil {
 		return nil, fmt.Errorf("photo place runner is not configured")
 	}
@@ -87,6 +104,7 @@ func (r *PlaceRunner) runBatch(
 	ownerID uint64,
 	limit int,
 ) (int, error) {
+	r = r.snapshotForBatch()
 	if r == nil || r.DB == nil || r.Resolver == nil {
 		return 0, fmt.Errorf("photo place runner is not configured")
 	}
