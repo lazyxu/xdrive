@@ -12,7 +12,7 @@ export type XDriveServiceDependencyGroup =
   | 'location'
 
 export type XDriveServiceConfigMode = 'in-app' | 'deployment' | 'planned'
-export type XDriveServiceApplyMode = 'immediate' | 'controlled-restart' | 'not-available'
+export type XDriveServiceApplyMode = 'immediate' | 'manual-reload' | 'controlled-restart' | 'not-available'
 
 export type XDriveServiceDependency = {
   id: string
@@ -30,6 +30,22 @@ export type XDriveServiceDependency = {
 export type XDriveServiceDependenciesSnapshot = {
   checked_at: string
   services: XDriveServiceDependency[]
+}
+
+export type XDriveGeoNamesConfig = {
+  dataset_configured: boolean
+  reload_supported: boolean
+  source: 'deployment'
+  current_version: string
+  max_distance_km: number
+  requires_restart: boolean
+}
+export type XDriveGeoNamesReloadResult = {
+  applied: boolean
+  changed: boolean
+  previous_version: string
+  current_version: string
+  checked_at: string
 }
 
 export type XDriveBaiduMapAdminConfig = {

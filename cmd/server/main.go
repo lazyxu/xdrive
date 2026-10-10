@@ -102,6 +102,7 @@ func main() {
 		log.Fatalf("invalid connector credential keyring: %v", err)
 	}
 	var photoPlaceResolver photointelligence.PlaceResolver
+	var geoNamesRuntime *photointelligence.ReloadablePlaceResolver
 	if cfg.PhotoPlaceGeoNamesDir != "" {
 		resolver, err := photointelligence.LoadGeoNamesResolver(
 			cfg.PhotoPlaceGeoNamesDir,
@@ -110,7 +111,8 @@ func main() {
 		if err != nil {
 			log.Fatalf("load GeoNames photo place resolver: %v", err)
 		}
-		photoPlaceResolver = resolver
+		geoNamesRuntime = photointelligence.NewReloadablePlaceResolver(resolver)
+		photoPlaceResolver = geoNamesRuntime
 		slog.Info(
 			"photo_place_resolver_loaded",
 			"resolver", resolver.Name(),
@@ -203,6 +205,9 @@ func main() {
 		SourceRunFailureRetention:   cfg.SourceRunFailureRetention,
 		ConnectorSecrets:            connectorSecrets,
 		PhotoPlaceResolver:          photoPlaceResolver,
+		GeoNamesRuntime:             geoNamesRuntime,
+		GeoNamesDataDir:             cfg.PhotoPlaceGeoNamesDir,
+		GeoNamesMaxDistanceKM:       cfg.PhotoPlaceMaxDistanceKM,
 		BaiduMapEnabled:             cfg.BaiduMapEnabled,
 		BaiduMapAK:                  cfg.BaiduMapAK,
 		PhotoFaceAnalyzer:           photoFaceAnalyzer,

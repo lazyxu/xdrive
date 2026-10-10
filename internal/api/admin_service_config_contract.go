@@ -5,14 +5,15 @@ package api
 // Per-user Sync Folder connectors have their own settings and must not appear here.
 // In particular, "controlled-restart" is informational: Server does NOT have
 // Docker socket access and cannot arbitrarily restart its dependencies.
+// "manual-reload" is reserved for a real audited, live-index reload endpoint.
 func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 	switch id {
 	case "baidu-map":
 		return "in-app", "immediate",
 			"在本页配置、启用或更换 Server AK；加密保存后新请求直接生效，无须重启。已配置不等于远端服务健康"
 	case "geonames":
-		return "deployment", "controlled-restart",
-			"将 cities500.txt、admin1CodesASCII.txt、countryInfo.txt 安装到只读 /geonames；配置 XD_PHOTO_PLACE_GEONAMES_DIR=/geonames 与 XD_PHOTO_PLACE_MAX_DISTANCE_KM 后受控重启 Server。GeoNames 只生成地名标签，不提供地图"
+		return "deployment", "manual-reload",
+			"将 cities500.txt、admin1CodesASCII.txt、countryInfo.txt 安装到只读 /geonames；管理员可在本页校验并热加载更新后的数据集，任务按不可变索引版本完成。初始目录与搜索半径仍由部署配置决定，修改它们须受控部署；不提供地图"
 	case "photo-face", "photo-smart", "photo-semantic", "photo-creative":
 		return "deployment", "controlled-restart",
 			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"

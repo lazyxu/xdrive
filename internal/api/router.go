@@ -28,6 +28,10 @@ type Server struct {
 	SourceRunFailureRetention      time.Duration
 	ConnectorSecrets               *connectorsecret.Keyring
 	PhotoPlaceResolver             photointelligence.PlaceResolver
+	GeoNamesRuntime                *photointelligence.ReloadablePlaceResolver
+	GeoNamesDataDir                string
+	GeoNamesMaxDistanceKM          float64
+	geoNamesReloadMu               sync.Mutex
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
 	BaiduMapHTTPClient             *http.Client
@@ -322,6 +326,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
+	admin.GET("/services/geonames", s.adminGeoNamesConfig)
+	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
 	admin.GET("/audit", s.adminAuditEvents)
 	admin.GET("/background-tasks", s.adminListBackgroundTasks)
 	admin.GET("/background-tasks/page", s.adminListBackgroundTaskPage)

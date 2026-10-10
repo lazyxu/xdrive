@@ -818,6 +818,8 @@ function FileManager({
     loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
     saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),
     revealBaiduMapAK: (revision: number) => api.adminRevealBaiduMapAK(revision),
+    loadGeoNamesConfig: () => api.adminGeoNamesConfig(),
+    reloadGeoNames: (expectedVersion: string) => api.adminReloadGeoNames(expectedVersion),
   }), [api])
 
   const executeConfirm = async () => {

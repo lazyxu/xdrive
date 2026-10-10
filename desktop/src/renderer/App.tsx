@@ -1371,6 +1371,16 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadGeoNamesConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminGeoNamesConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    reloadGeoNames: async (expectedVersion: string) => {
+      const result = await window.xdriveDesktop.agent.cloudReloadAdminGeoNames(expectedVersion)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     revealBaiduMapAK: async (revision: number) => {
       const result = await window.xdriveDesktop.agent.cloudRevealAdminBaiduMapAK(revision)
       if (!result.ok) throw new Error(result.error.message)

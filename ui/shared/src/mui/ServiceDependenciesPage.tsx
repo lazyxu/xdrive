@@ -5,6 +5,8 @@ import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
   XDriveBaiduMapAKReveal,
+  XDriveGeoNamesConfig,
+  XDriveGeoNamesReloadResult,
   XDriveServiceDependenciesSnapshot,
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
@@ -21,6 +23,8 @@ export type XDriveServiceDependenciesPort = {
   loadBaiduMapConfig?: () => Promise<XDriveBaiduMapAdminConfig>
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
+  loadGeoNamesConfig?: () => Promise<XDriveGeoNamesConfig>
+  reloadGeoNames?: (expectedVersion: string) => Promise<XDriveGeoNamesReloadResult>
 }
 
 const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; description: string }> = [
@@ -40,6 +44,7 @@ const statusLabels: Record<XDriveServiceDependencyState, { label: string; color:
 
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
+  'manual-reload': '管理员校验后手动热加载',
   'controlled-restart': '受控重启／重新部署后生效',
   'not-available': '尚无安全配置执行接口',
 }
@@ -102,6 +107,11 @@ export function XDriveServiceDependenciesPage({
   const [baiduReveal, setBaiduReveal] = useState<XDriveBaiduMapAKReveal | null>(null)
   const [revealingAK, setRevealingAK] = useState(false)
   const revealEpochRef = useRef(0)
+  const geoNamesEpochRef = useRef(0)
+  const [geoNamesConfig, setGeoNamesConfig] = useState<XDriveGeoNamesConfig | null>(null)
+  const [geoNamesBusy, setGeoNamesBusy] = useState(false)
+  const [geoNamesError, setGeoNamesError] = useState('')
+  const [geoNamesNotice, setGeoNamesNotice] = useState('')
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -124,8 +134,13 @@ export function XDriveServiceDependenciesPage({
   useEffect(() => {
     let active = true
     ++revealEpochRef.current
+    ++geoNamesEpochRef.current
     setBaiduReveal(null)
     setRevealingAK(false)
+    setGeoNamesBusy(false)
+    setGeoNamesConfig(null)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
     setLoading(true)
     setError('')
     // Do not retain an old server/account snapshot while a different source loads.
@@ -144,6 +159,13 @@ export function XDriveServiceDependenciesPage({
         if (active) setBaiduError('无法读取百度地图管理配置，请检查 Server 或更新客户端。')
       })
     }
+    if (source.loadGeoNamesConfig) {
+      void source.loadGeoNamesConfig().then((config) => {
+        if (active) setGeoNamesConfig(config)
+      }).catch(() => {
+        if (active) setGeoNamesError('无法读取 GeoNames 管理配置，请检查 Server 或更新客户端。')
+      })
+    }
     void source.load().then((next) => {
       if (active) setSnapshot(next)
     }).catch((err: unknown) => {
@@ -154,6 +176,7 @@ export function XDriveServiceDependenciesPage({
     return () => {
       active = false
       ++revealEpochRef.current
+      ++geoNamesEpochRef.current
     }
   }, [source, refreshID])
 
@@ -205,6 +228,34 @@ export function XDriveServiceDependenciesPage({
     } finally {
       setBaiduBusy(false)
       setClearConfirmOpen(false)
+    }
+  }
+
+  // This administrator command validates the deployment-mounted dataset and
+  // swaps the fully loaded resolver. It does not edit a user sync folder, choose
+  // an arbitrary Server filesystem path, or claim online env-variable editing.
+  const reloadGeoNames = async () => {
+    if (!geoNamesConfig?.reload_supported || !source.reloadGeoNames || geoNamesBusy) return
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const result = await source.reloadGeoNames(geoNamesConfig.current_version)
+      if (epoch !== geoNamesEpochRef.current) return
+      if (!result.applied || !result.current_version) throw new Error('GeoNames 未能完成生效校验。')
+      setGeoNamesConfig((old) => old ? { ...old, current_version: result.current_version } : old)
+      setGeoNamesNotice(result.changed
+        ? '已验证并热加载新索引。后续地名任务使用新版本，运行中的任务保持旧快照。'
+        : '数据集验证通过，版本未变化，无需替换当前索引。')
+      const next = await source.load()
+      if (epoch === geoNamesEpochRef.current) setSnapshot(next)
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 数据校验失败，当前已生效索引未改变。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
     }
   }
 
@@ -340,6 +391,43 @@ export function XDriveServiceDependenciesPage({
                     onCancel={() => setClearConfirmOpen(false)}
                     onConfirm={() => { void applyBaiduMap(true) }}
                   />
+                </Paper>
+              )}
+              {group.id === 'location' && (
+                <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
+                  <Stack spacing={1.5}>
+                    <Typography variant="subtitle2" fontWeight={700}>GeoNames 地名索引</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      数据目录与匹配距离仍由管理员部署配置提供。本页可以验证只读挂载中的完整数据集，
+                      并将新索引热加载到本实例；不会重启 Server，也不会中断已有地名处理批次。
+                    </Typography>
+                    {geoNamesConfig ? (
+                      <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+                        {geoNamesConfig.dataset_configured ? '索引已加载' : '未加载地名索引'}
+                        {' · '}当前生效版本：{geoNamesConfig.current_version || '无'}
+                        {' · '}匹配距离：{geoNamesConfig.max_distance_km} km
+                        {' · '}数据来源：部署挂载
+                      </Typography>
+                    ) : (
+                      <Typography variant="body2" color="text.secondary">
+                        当前 Server/Agent 暂不支持 GeoNames 在线重载，或尚未获取配置状态。
+                      </Typography>
+                    )}
+                    <Box>
+                      <Button variant="outlined" size="small"
+                        disabled={geoNamesBusy || !geoNamesConfig?.reload_supported || !source.reloadGeoNames}
+                        onClick={() => { void reloadGeoNames() }}>
+                        {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
+                      </Button>
+                    </Box>
+                    {!geoNamesConfig?.reload_supported && (
+                      <Typography variant="caption" color="text.secondary">
+                        需先部署只读 GeoNames 数据集，并由 Server 加载初始索引；本阶段不支持从浏览器修改宿主路径。
+                      </Typography>
+                    )}
+                    {geoNamesError && <XDriveStatusAlert tone="bad">{geoNamesError}</XDriveStatusAlert>}
+                    {geoNamesNotice && <XDriveStatusAlert tone="good">{geoNamesNotice}</XDriveStatusAlert>}
+                  </Stack>
                 </Paper>
               )}
             </Box>

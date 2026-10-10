@@ -485,6 +485,22 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminGeoNamesConfig = {
+  dataset_configured: boolean
+  reload_supported: boolean
+  source: 'deployment'
+  current_version: string
+  max_distance_km: number
+  requires_restart: boolean
+}
+export type AgentAdminGeoNamesReloadResult = {
+  applied: boolean
+  changed: boolean
+  previous_version: string
+  current_version: string
+  checked_at: string
+}
+
 export type AgentAdminBaiduMapConfig = {
   enabled: boolean
   configured: boolean
@@ -519,7 +535,7 @@ export type AgentServiceDependenciesSnapshot = {
     version?: string
     model?: string
     config_mode?: 'in-app' | 'deployment' | 'planned'
-    apply_mode?: 'immediate' | 'controlled-restart' | 'not-available'
+    apply_mode?: 'immediate' | 'manual-reload' | 'controlled-restart' | 'not-available'
     config_hint?: string
   }>
 }
@@ -2749,6 +2765,14 @@ export class AgentIPCClient {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
   }
 
+  cloudAdminGeoNamesConfig() {
+    return this.request<AgentAdminGeoNamesConfig>('GET', '/v1/cloud/admin-geonames')
+  }
+  cloudReloadAdminGeoNames(expectedVersion: string) {
+    return this.request<AgentAdminGeoNamesReloadResult>(
+      'POST', '/v1/cloud/admin-geonames/reload', { expected_version: expectedVersion }, 120_000,
+    )
+  }
   cloudAdminBaiduMapConfig() {
     return this.request<AgentAdminBaiduMapConfig>('GET', '/v1/cloud/admin-baidu-map')
   }

@@ -575,6 +575,21 @@ func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revisi
 	return cli.RevealAdminBaiduMapAK(ctx, revision)
 }
 
+func (c *agentController) CloudAdminGeoNamesConfig(ctx context.Context) (client.AdminGeoNamesConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminGeoNamesConfig{}, err
+	}
+	return cli.AdminGeoNamesConfig(ctx)
+}
+func (c *agentController) CloudReloadAdminGeoNames(ctx context.Context, expectedVersion string) (client.AdminGeoNamesReloadResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminGeoNamesReloadResult{}, err
+	}
+	return cli.ReloadAdminGeoNames(ctx, expectedVersion)
+}
+
 func (c *agentController) CloudAdminBaiduMapConfig(ctx context.Context) (client.AdminBaiduMapConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

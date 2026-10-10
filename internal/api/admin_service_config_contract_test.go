@@ -7,7 +7,7 @@ func TestServiceDependencyConfigurationModesAreTruthful(t *testing.T) {
 		id, config, apply string
 	}{
 		{"baidu-map", "in-app", "immediate"},
-		{"geonames", "deployment", "controlled-restart"},
+		{"geonames", "deployment", "manual-reload"},
 		{"database", "deployment", "controlled-restart"},
 		{"storage", "deployment", "controlled-restart"},
 		{"caddy", "deployment", "controlled-restart"},

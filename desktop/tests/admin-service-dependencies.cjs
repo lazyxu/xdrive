@@ -156,7 +156,7 @@ test('All service rows disclose a grounded configuration and activation mode', (
   for (const mode of ["'in-app'", "'deployment'", "'planned'"]) {
     assert.ok(model.includes(mode), 'missing config mode ' + mode)
   }
-  for (const mode of ["'immediate'", "'controlled-restart'", "'not-available'"]) {
+  for (const mode of ["'immediate'", "'manual-reload'", "'controlled-restart'", "'not-available'"]) {
     assert.ok(model.includes(mode), 'missing activation mode ' + mode)
   }
   assert.equal(model.includes("'connectors'"), false)
@@ -176,4 +176,39 @@ test('All service rows disclose a grounded configuration and activation mode', (
   assert.ok(page.includes('groups.some((group) => group.id === item.group)'))
   assert.equal(page.includes('docker.sock'), false)
   assert.equal(page.includes('docker restart'), false)
+})
+
+
+test('GeoNames reload is an administrator-only, version-guarded actual Server operation on Web and Desktop', () => {
+  const server = read('internal', 'api', 'admin_geonames_reload.go')
+  const resolver = read('internal', 'photointelligence', 'reloadable_place_resolver.go')
+  const runner = read('internal', 'photointelligence', 'place_runner.go')
+  const client = read('internal', 'client', 'client.go')
+  const agent = read('cmd', 'xdrive-agent', 'cloud_files.go')
+  const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const preload = read('desktop', 'src', 'preload', 'index.cts')
+  const web = read('web', 'src', 'api.ts')
+  assert.ok(api.includes('admin.POST("/services/geonames/reload", s.adminGeoNamesReload)'))
+  assert.ok(api.includes('admin.Use(s.requireAdmin())'))
+  assert.ok(server.includes('GeoNamesDataDir'))
+  assert.ok(server.includes('LoadGeoNamesResolver('))
+  assert.ok(server.includes('recordAuditTx('))
+  assert.ok(server.includes('s.GeoNamesRuntime.Swap(next)'))
+  assert.ok(server.includes('current.Version() != input.ExpectedVersion'))
+  assert.ok(resolver.includes('atomic.Pointer[GeoNamesResolver]'))
+  assert.ok(runner.includes('r = r.snapshotForBatch()'))
+  assert.ok(client.includes('ReloadAdminGeoNames'))
+  assert.ok(agent.includes('CloudReloadAdminGeoNames'))
+  assert.ok(ipc.includes('POST /v1/cloud/admin-geonames/reload'))
+  assert.ok(main.includes('agent:cloud-reload-admin-geonames'))
+  assert.ok(preload.includes('agent:cloud-reload-admin-geonames'))
+  assert.ok(desktop.includes('cloudReloadAdminGeoNames(expectedVersion)'))
+  assert.ok(app.includes('api.adminReloadGeoNames(expectedVersion)'))
+  assert.ok(web.includes("'/api/v1/admin/services/geonames/reload'"))
+  assert.ok(page.includes('校验并热加载 GeoNames 数据'))
+  assert.ok(page.includes('geoNamesEpochRef'))
+  assert.ok(page.includes('setGeoNamesBusy(false)'))
+  assert.equal(page.includes('openSyncFolders'), false)
+  assert.equal(server.includes('docker.sock'), false)
 })
