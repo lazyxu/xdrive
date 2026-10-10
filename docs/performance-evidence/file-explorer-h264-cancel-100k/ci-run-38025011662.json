@@ -1,0 +1,215 @@
+{
+  "name": "xdrive 100k real Chromium H264 signed Preview Engine cancellation",
+  "status": "Accepted unchanged production / benchmark-only",
+  "source_exact_measured_sha": "9e1a3d45df11514b39097ed845b38d9d892a4625",
+  "frozen_baseline": "af3c1e822b44046dc1ece4f1fa4eb5f9004d2601",
+  "source_run": "https://github.com/lazyxu/xdrive/actions/runs/38025011662",
+  "source_job": "https://github.com/lazyxu/xdrive/actions/runs/38025011662/job/114133897053",
+  "runtime": {
+    "github": "ubuntu-latest",
+    "postgresql": "17 alpine native service",
+    "browser": "Electron Chromium Xvfb",
+    "http": "real signed Gin preview route via httptest.NewServer",
+    "localCAS": true,
+    "fixture": "three fresh 100k video metadata PostgreSQL schemas"
+  },
+  "workload": {
+    "logical_videos": 100000,
+    "real_h264_video_assets": 6,
+    "samples": 3,
+    "request_groups": 6,
+    "concurrently_active_per_group": 3,
+    "total_actual_canceled_signed_http_requests": 18,
+    "source_h264_bytes_each": 2970,
+    "emitted_initial_bytes_per_request": 256,
+    "test_only_writer_delay_ms": 1500,
+    "observe_ms": 160,
+    "mode_A": "simulated viewport eviction through source-exact production capture helper AbortSignal",
+    "mode_B": "actual Electron BrowserWindow destruction"
+  },
+  "frozen_acceptance": {
+    "real_signed_range_started_per_group": 3,
+    "go_context_done_per_group": 3,
+    "canceled_gin_handler_per_group": 3,
+    "active_gin_handlers_after_160ms": 0,
+    "extra_bytes_after_cancel": 0,
+    "late_cache_put": 0,
+    "max_context_notification_ms": 160,
+    "healthy_fresh_signed_preview_http": 206,
+    "healthy_fresh_body_bytes": 1024
+  },
+  "initial_status": "measured current production, no candidate optimization",
+  "before": "current production n=3, all budgets met",
+  "after": "not applicable because current already healthy",
+  "performance_delta": "N/A (not a BEFORE/AFTER code-change speedup)",
+  "decision": "Accepted current production, no changes to Go handler, video capture, caching, Task Center or Agent IPC.",
+  "summary": {
+    "status": "measured-native-100k-real-H264-viewport-owned-preview-cancel",
+    "runCount": 3,
+    "modeRuns": 6,
+    "passed": true,
+    "maxContextNotificationMs": 7.128,
+    "savedObsoleteBodyBytesVsFullStream": [
+      8142,
+      8142,
+      8142,
+      8142,
+      8142,
+      8142
+    ],
+    "scope": "6 request groups: real Chromium video H264 + signed Gin/PG/local CAS 100k metadata; 3 abort-controller simulated viewport evictions and 3 real Electron window closures. Test-only 1500ms slow writer; NOT full actual FileExplorer scroll/Agent IPC or codec decode completion."
+  },
+  "raw_samples": [
+    {
+      "sample": 1,
+      "seedMsExcluded": 6889.224,
+      "realChromiumVersion": "152.0.7977.130",
+      "viewportEviction": {
+        "sample": 1,
+        "mode": "viewport-eviction",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 3.257,
+        "browserNullResults": {
+          "count": 3,
+          "allNull": true
+        },
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "windowDestroy": {
+        "sample": 1,
+        "mode": "window-destroy",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 6.523,
+        "browserNullResults": null,
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "healthy": {
+        "status": 206,
+        "bytes": 1024
+      }
+    },
+    {
+      "sample": 2,
+      "seedMsExcluded": 6447.318,
+      "realChromiumVersion": "152.0.7977.130",
+      "viewportEviction": {
+        "sample": 2,
+        "mode": "viewport-eviction",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 2.446,
+        "browserNullResults": {
+          "count": 3,
+          "allNull": true
+        },
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "windowDestroy": {
+        "sample": 2,
+        "mode": "window-destroy",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 6.361,
+        "browserNullResults": null,
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "healthy": {
+        "status": 206,
+        "bytes": 1024
+      }
+    },
+    {
+      "sample": 3,
+      "seedMsExcluded": 6452.648,
+      "realChromiumVersion": "152.0.7977.130",
+      "viewportEviction": {
+        "sample": 3,
+        "mode": "viewport-eviction",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 2.283,
+        "browserNullResults": {
+          "count": 3,
+          "allNull": true
+        },
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "windowDestroy": {
+        "sample": 3,
+        "mode": "window-destroy",
+        "namespaceVideoCount": 100000,
+        "actualMP4BytesEach": 2970,
+        "rangeRequests": 3,
+        "requestsStarted": 3,
+        "contextDone": 3,
+        "cancelledHandlers": 3,
+        "serverActiveAt160Ms": 0,
+        "bytesSentBeforeCancel": 768,
+        "staleBytesSentAfterCancel": 0,
+        "totalPotentialBytes": 8910,
+        "originalOpens": 3,
+        "posterPuts": 0,
+        "worstContextNotificationMs": 7.128,
+        "browserNullResults": null,
+        "measurementScope": "real Chromium video element/source-exact poster capture; native authenticated signed Preview Engine/Gin/Local CAS and test-only delayed real body writer; viewport-eviction simulates React cleanup by aborting its actual controller, not mouse-driven scroll"
+      },
+      "healthy": {
+        "status": 206,
+        "bytes": 1024
+      }
+    }
+  ],
+  "limits": "This is actual signed Preview Engine/genuine H264 video-element cancellation, not mouse-driven mounted FileExplorer scroll, actual Desktop Agent IPC, real WAN, 4K/HEVC, full video decode, running shared derivative workers, peak RSS, CPU or physical 100k source media. 8142 saved bytes per group are relative to artificial delayed full 2970-byte complete stream, not measured global WAN reduction."
+}

@@ -2129,3 +2129,44 @@ file-explorer-real-h264-100k-performance:
     when: always
     paths:
       - desktop/real-h264-100k-results/
+
+file-explorer-real-h264-cancel-100k-performance:
+  image: $XDRIVE_CI_GO_IMAGE
+  extends: .go-linux-cache
+  stage: test
+  needs: []
+  tags:
+    - linux
+  services:
+    - name: postgres:17-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: "xdrive"
+    POSTGRES_PASSWORD: "xdrive"
+    POSTGRES_DB: "xdrive_test"
+    XD_TEST_DATABASE_URL: "postgres://xdrive:xdrive@postgres:5432/xdrive_test?sslmode=disable"
+  rules:
+    - if: '$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME == "perf/file-explorer-real-h264-cancel-100k"'
+    - if: '$CI_COMMIT_BRANCH == "perf/file-explorer-real-h264-cancel-100k"'
+  before_script:
+    - *ensure_linux_fetch_tools
+    - *install_postgres_client
+  script:
+    - |
+      set -euo pipefail
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      apt-get install -y --no-install-recommends xvfb libasound2 libatk-bridge2.0-0 libgbm1 libgtk-3-0 libnss3 xz-utils
+      rm -rf /var/lib/apt/lists/*
+      bash scripts/ci/install-node22.sh
+      (cd desktop && npm install --no-audit --no-fund)
+      cd desktop
+      node --check scripts/file-explorer-real-h264-cancel-100k-main.cjs
+      xvfb-run -a --server-args="-screen 0 1920x1200x24" ./node_modules/.bin/electron --no-sandbox scripts/file-explorer-real-h264-cancel-100k-main.cjs
+      cat real-h264-cancel-100k-results/summary.json
+  artifacts:
+    name: "file-explorer-real-h264-cancel-100k-$CI_COMMIT_SHORT_SHA"
+    expire_in: 7 days
+    when: always
+    paths:
+      - desktop/real-h264-cancel-100k-results/
