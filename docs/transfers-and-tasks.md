@@ -229,3 +229,28 @@ skipped. Preserve all seven original tests unchanged for the same-interleaving
 green retest. An additional test covers first-child terminal acknowledgement
 crossing the session boundary. Verify exact-head full Desktop/Web/Go race/
 Windows artefacts and GitHub \`final-gate\` before merge.
+
+## Transfer speed presentation and history (2026-10-10)
+
+Web and Desktop use the same shared TransferSpeedDisplay presentation
+cadence: each active transfer rate is sampled for display every 2 seconds.
+The numeric speed can no longer flicker for every byte callback; byte
+counts, progress bars, status, cancellation state, and terminal receipts
+still update immediately. Sample timestamps are preserved verbatim:
+unrelated progress/state events must not renew an old network speed.
+The timer continues while active even when no transfer events arrive, so
+the shared 3-second freshness policy clears an idle rate to zero instead
+of leaving a frozen value on the header or Task Center. History compact
+rows show **stored average speed**, not `0 B/s` current speed.
+
+The Web transfer-history store serializes its records (including
+`average_bytes_per_second`, elapsed time, terminal state and timestamps)
+to the origin/account-scoped browser `localStorage` key beginning with
+`xdrive.web.transfer_history`, retaining up to 200 root histories.
+Desktop keeps Go Agent transfer history and terminal average rates in its
+`transfer.Manager` process-memory snapshot (up to its configured history
+limit); these are **not guaranteed to survive an Agent restart**.
+No persistent Desktop database or server-side per-device history is claimed
+in this phase. Native-browser handoff cannot invent a completed download's
+end-to-end average without actual observed bytes. A `server` source
+remains explicitly labelled as server-send speed, not browser receipt.

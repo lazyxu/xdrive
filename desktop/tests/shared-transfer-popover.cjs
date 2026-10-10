@@ -122,3 +122,19 @@ test('detailed folder cards aggregate child averages while compact children reta
   assert.match(text, /当前速度\s+1 KiB\/s/)
   assert.match(text, /当前速度\s+2 KiB\/s/)
 })
+
+test('terminal compact items show stored average speed rather than a frozen current-speed label', () => {
+  const item = task('historical-rate', {
+    state: 'completed', phase: 'finalizing',
+    average_bytes_per_second: 5120, instant_bytes_per_second: 9999,
+  })
+  const html = render(XDriveTransferTreeItem, {
+    node: xDriveTransferTree([item])[0],
+    compact: true,
+    retryDisabled: false,
+    retryingID: '',
+  })
+  const visible = visibleText(html)
+  assert.match(visible, /平均速度\s+5 KiB\/s/)
+  assert.doesNotMatch(visible, /当前速度\s+0 B\/s/)
+})
