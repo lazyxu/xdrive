@@ -182,5 +182,6 @@ func (s *Server) adminRollbackGeoNamesConfig(c *gin.Context) {
 		return
 	}
 	s.GeoNamesRuntime.Swap(candidate)
+	s.GeoNamesAppliedRevision.Store(*input.Revision + 1)
 	s.adminGeoNamesConfig(c)
 }

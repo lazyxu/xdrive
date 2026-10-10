@@ -7,21 +7,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
+	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 )
 
 type adminGeoNamesConfigDTO struct {
-	DatasetConfigured bool       `json:"dataset_configured"`
-	ReloadSupported   bool       `json:"reload_supported"`
-	Source            string     `json:"source"`
-	CurrentVersion    string     `json:"current_version"`
-	MaxDistanceKM     float64    `json:"max_distance_km"`
-	RequiresRestart   bool       `json:"requires_restart"`
-	Editable          bool       `json:"editable"`
-	Revision          uint64     `json:"revision"`
-	EffectiveDistance float64    `json:"effective_max_distance_km"`
-	ApplyState        string     `json:"apply_state"`
-	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+	DatasetConfigured      bool                   `json:"dataset_configured"`
+	ReloadSupported        bool                   `json:"reload_supported"`
+	Source                 string                 `json:"source"`
+	CurrentVersion         string                 `json:"current_version"`
+	MaxDistanceKM          float64                `json:"max_distance_km"`
+	RequiresRestart        bool                   `json:"requires_restart"`
+	Editable               bool                   `json:"editable"`
+	Revision               uint64                 `json:"revision"`
+	EffectiveDistance      float64                `json:"effective_max_distance_km"`
+	EffectiveRevision      uint64                 `json:"effective_revision"`
+	ApplyState             string                 `json:"apply_state"`
+	UpdatedAt              *time.Time             `json:"updated_at,omitempty"`
+	ReplicaApplyState      string                 `json:"replica_apply_state"`
+	ObservedInstances      int                    `json:"observed_instances"`
+	AppliedInstances       int                    `json:"applied_instances"`
+	UnconfiguredInstances  int                    `json:"unconfigured_instances"`
+	ReplicaStatusTruncated bool                   `json:"replica_status_truncated"`
+	DatasetConsistent      bool                   `json:"dataset_versions_consistent"`
+	DatasetVersions        []geoNamesVersionGroup `json:"dataset_versions"`
 }
 
 // GeoNames dataset paths are deliberately not accepted from HTTP. A trusted,
@@ -40,25 +49,54 @@ func (s *Server) adminGeoNamesConfig(c *gin.Context) {
 		effectiveDistance = s.GeoNamesRuntime.MaxDistanceKM()
 	}
 	configured := strings.TrimSpace(s.GeoNamesDataDir) != "" && version != ""
+	effectiveRevision := s.GeoNamesAppliedRevision.Load()
 	applyState := "unavailable"
 	if configured {
 		applyState = "pending"
-		if effectiveDistance == desired.MaxDistanceKM {
+		if effectiveDistance == desired.MaxDistanceKM && effectiveRevision == desired.Revision {
 			applyState = "applied"
 		}
 	}
+	// An unreadable/older presence schema must never become a fabricated
+	// success. Keep the existing local radius editor available and mark
+	// cross-replica evidence unknown instead of returning a false 500.
+	replicas := geoNamesReplicaSummary{
+		State: "unknown", Versions: make([]geoNamesVersionGroup, 0),
+	}
+	if s.DB != nil {
+		var observed []meta.GeoNamesReplicaPresence
+		err := s.DB.WithContext(c.Request.Context()).
+			Where("expires_at > ?", time.Now().UTC()).
+			Order("instance_id ASC").Limit(geoNamesReplicaQueryCap + 1).
+			Find(&observed).Error
+		if err == nil {
+			truncated := len(observed) > geoNamesReplicaQueryCap
+			if truncated {
+				observed = observed[:geoNamesReplicaQueryCap]
+			}
+			replicas = summarizeGeoNamesReplicas(desired, observed, truncated)
+		}
+	}
 	c.JSON(http.StatusOK, adminGeoNamesConfigDTO{
-		DatasetConfigured: configured,
-		ReloadSupported:   s.DB != nil && configured,
-		Source:            desired.Source,
-		CurrentVersion:    version,
-		MaxDistanceKM:     desired.MaxDistanceKM,
-		RequiresRestart:   false,
-		Editable:          s.DB != nil && configured,
-		Revision:          desired.Revision,
-		EffectiveDistance: effectiveDistance,
-		ApplyState:        applyState,
-		UpdatedAt:         desired.UpdatedAt,
+		DatasetConfigured:      configured,
+		ReloadSupported:        s.DB != nil && configured,
+		Source:                 desired.Source,
+		CurrentVersion:         version,
+		MaxDistanceKM:          desired.MaxDistanceKM,
+		RequiresRestart:        false,
+		Editable:               s.DB != nil && configured,
+		Revision:               desired.Revision,
+		EffectiveDistance:      effectiveDistance,
+		EffectiveRevision:      effectiveRevision,
+		ApplyState:             applyState,
+		UpdatedAt:              desired.UpdatedAt,
+		ReplicaApplyState:      replicas.State,
+		ObservedInstances:      replicas.ObservedInstances,
+		AppliedInstances:       replicas.AppliedInstances,
+		UnconfiguredInstances:  replicas.UnconfiguredInstances,
+		ReplicaStatusTruncated: replicas.Truncated,
+		DatasetConsistent:      replicas.DatasetConsistent,
+		DatasetVersions:        replicas.Versions,
 	})
 }
 
@@ -121,6 +159,7 @@ func (s *Server) adminGeoNamesReload(c *gin.Context) {
 	if changed {
 		s.GeoNamesRuntime.Swap(next)
 	}
+	s.GeoNamesAppliedRevision.Store(desired.Revision)
 	c.JSON(http.StatusOK, gin.H{
 		"applied": true, "changed": changed, "previous_version": previousVersion,
 		"current_version": s.GeoNamesRuntime.Version(),

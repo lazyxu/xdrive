@@ -444,18 +444,31 @@ func (c *Client) RollbackAdminPhotoAuto(ctx context.Context, input AdminPhotoAut
 	return out, err
 }
 
+type AdminGeoNamesVersionGroup struct {
+	Version string `json:"version"`
+	Count   int    `json:"count"`
+}
+
 type AdminGeoNamesConfig struct {
-	DatasetConfigured bool       `json:"dataset_configured"`
-	ReloadSupported   bool       `json:"reload_supported"`
-	Source            string     `json:"source"`
-	CurrentVersion    string     `json:"current_version"`
-	MaxDistanceKM     float64    `json:"max_distance_km"`
-	RequiresRestart   bool       `json:"requires_restart"`
-	Editable          bool       `json:"editable"`
-	Revision          uint64     `json:"revision"`
-	EffectiveDistance float64    `json:"effective_max_distance_km"`
-	ApplyState        string     `json:"apply_state"`
-	UpdatedAt         *time.Time `json:"updated_at,omitempty"`
+	DatasetConfigured      bool                        `json:"dataset_configured"`
+	ReloadSupported        bool                        `json:"reload_supported"`
+	Source                 string                      `json:"source"`
+	CurrentVersion         string                      `json:"current_version"`
+	MaxDistanceKM          float64                     `json:"max_distance_km"`
+	RequiresRestart        bool                        `json:"requires_restart"`
+	Editable               bool                        `json:"editable"`
+	Revision               uint64                      `json:"revision"`
+	EffectiveDistance      float64                     `json:"effective_max_distance_km"`
+	EffectiveRevision      uint64                      `json:"effective_revision"`
+	ApplyState             string                      `json:"apply_state"`
+	UpdatedAt              *time.Time                  `json:"updated_at,omitempty"`
+	ReplicaApplyState      string                      `json:"replica_apply_state"`
+	ObservedInstances      int                         `json:"observed_instances"`
+	AppliedInstances       int                         `json:"applied_instances"`
+	UnconfiguredInstances  int                         `json:"unconfigured_instances"`
+	ReplicaStatusTruncated bool                        `json:"replica_status_truncated"`
+	DatasetConsistent      bool                        `json:"dataset_versions_consistent"`
+	DatasetVersions        []AdminGeoNamesVersionGroup `json:"dataset_versions"`
 }
 
 type AdminGeoNamesUpdate struct {

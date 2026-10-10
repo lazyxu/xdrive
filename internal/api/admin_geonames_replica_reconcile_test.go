@@ -101,6 +101,7 @@ func TestGeoNamesReplicaReconcileRetainsLastGoodIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	if replica.GeoNamesRuntime.MaxDistanceKM() != 15 ||
+		replica.GeoNamesAppliedRevision.Load() != 1 ||
 		pinned.Version() != initial.Version() {
 		t.Fatal("pending radius was not hot-applied or an in-flight snapshot changed")
 	}
@@ -125,6 +126,7 @@ func TestGeoNamesReplicaReconcileRetainsLastGoodIndex(t *testing.T) {
 		t.Fatal("invalid replica dataset was published without a validation failure")
 	}
 	if replica.GeoNamesRuntime.Version() != beforeFailure ||
+		replica.GeoNamesAppliedRevision.Load() != 1 ||
 		replica.GeoNamesRuntime.MaxDistanceKM() != 15 {
 		t.Fatal("failed replica validation must preserve last-good effective index")
 	}
@@ -132,7 +134,30 @@ func TestGeoNamesReplicaReconcileRetainsLastGoodIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := replica.reconcileGeoNamesReplica(ctx); err != nil ||
-		replica.GeoNamesRuntime.MaxDistanceKM() != 25 {
+		replica.GeoNamesRuntime.MaxDistanceKM() != 25 ||
+		replica.GeoNamesAppliedRevision.Load() != 2 {
 		t.Fatalf("repaired replica did not converge: radius=%v err=%v", replica.GeoNamesRuntime.MaxDistanceKM(), err)
+	}
+
+	// An audited rollback/save may create a new revision with the same radius.
+	// Before observation it is pending; only a completed reconciliation may
+	// acknowledge that revision without rebuilding an identical resolver.
+	snapshot := replica.GeoNamesRuntime.Snapshot()
+	if err := db.Model(&meta.AdminGeoNamesSetting{}).
+		Where("name = ?", geoNamesSettingName).
+		Update("revision", uint64(3)).Error; err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	ginCtx, _ = gin.CreateTestContext(rec)
+	ginCtx.Request = httptest.NewRequest("GET", "/api/v1/admin/services/geonames", nil)
+	replica.adminGeoNamesConfig(ginCtx)
+	if !strings.Contains(rec.Body.String(), `"apply_state":"pending"`) {
+		t.Fatalf("same radius without revision acknowledgement is pending: %s", rec.Body.String())
+	}
+	if err := replica.reconcileGeoNamesReplica(ctx); err != nil ||
+		replica.GeoNamesAppliedRevision.Load() != 3 ||
+		replica.GeoNamesRuntime.Snapshot() != snapshot {
+		t.Fatal("same-radius revision failed acknowledgement or rebuilt the live index")
 	}
 }

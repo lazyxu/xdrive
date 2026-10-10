@@ -850,7 +850,43 @@ export function XDriveServiceDependenciesPage({
                           {' · '}{geoNamesConfig.apply_state === 'applied'
                             ? '当前实例已生效（不代表其他实例）'
                             : geoNamesConfig.apply_state === 'pending' ? '当前实例待生效' : '索引不可用'}
+                          {typeof geoNamesConfig.effective_revision === 'number'
+                            ? ` · 当前实例实际修订 #${geoNamesConfig.effective_revision}` : ''}
                         </Typography>
+                        {geoNamesConfig.replica_apply_state ? (
+                          <Stack spacing={0.5} data-xdrive-geonames-replica-status>
+                            <Typography variant="body2"
+                              color={geoNamesConfig.replica_apply_state === 'pending' ? 'warning.main' : 'text.secondary'}>
+                              已观察的在线 Server：{geoNamesConfig.observed_instances ?? 0} 个
+                              {' · '}半径修订已确认：{geoNamesConfig.applied_instances ?? 0} 个
+                              {' · '}未加载数据集：{geoNamesConfig.unconfigured_instances ?? 0} 个
+                              {' · '}{geoNamesConfig.replica_apply_state === 'applied'
+                                ? '已观察实例的修订和数据集版本一致'
+                                : geoNamesConfig.replica_apply_state === 'pending'
+                                  ? '部分在线实例尚未生效或数据集版本不一致'
+                                  : geoNamesConfig.replica_apply_state === 'unmanaged'
+                                    ? '尚无管理员持久化修订；不能确认集群生效'
+                                    : geoNamesConfig.replica_apply_state === 'unavailable'
+                                      ? '没有有效的在线实例心跳'
+                                      : '跨实例状态暂不可验证'}
+                            </Typography>
+                            {geoNamesConfig.dataset_versions?.map((item) => (
+                              <Typography key={item.version} variant="caption" color="text.secondary">
+                                数据集指纹 {item.version} · {item.count} 个在线实例
+                              </Typography>
+                            ))}
+                            <Typography variant="caption" color="text.secondary">
+                              仅汇总最近 20 秒内有心跳的实例，不是部署节点名册；
+                              未观测的实例不能判定为已生效。心跳约每 5 秒更新。
+                              {geoNamesConfig.replica_status_truncated
+                                ? ' 在线实例超过 100 个观测上限，不能声明全部已生效。' : ''}
+                            </Typography>
+                          </Stack>
+                        ) : (
+                          <Typography variant="caption" color="text.secondary">
+                            当前 Server/Agent 未提供跨实例应用确认；只能验证当前 Server。
+                          </Typography>
+                        )}
                       </Stack>
                     ) : (
                       <Typography variant="body2" color="text.secondary">

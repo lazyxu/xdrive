@@ -32,6 +32,7 @@ type Server struct {
 	GeoNamesRuntime                *photointelligence.ReloadablePlaceResolver
 	GeoNamesDataDir                string
 	GeoNamesMaxDistanceKM          float64
+	GeoNamesAppliedRevision        atomic.Uint64
 	geoNamesReloadMu               sync.Mutex
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool

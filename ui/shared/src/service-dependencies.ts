@@ -81,9 +81,18 @@ export type XDriveGeoNamesConfig = {
   current_version: string
   max_distance_km: number
   effective_max_distance_km: number
+  effective_revision?: number
   editable: boolean
   revision: number
   apply_state: 'applied' | 'pending' | 'unavailable'
+  // Optional for older Servers/Agents; a missing field is not a green fleet.
+  replica_apply_state?: 'unknown' | 'unmanaged' | 'unavailable' | 'pending' | 'applied'
+  observed_instances?: number
+  applied_instances?: number
+  unconfigured_instances?: number
+  replica_status_truncated?: boolean
+  dataset_versions_consistent?: boolean
+  dataset_versions?: Array<{ version: string; count: number }>
   updated_at?: string
   requires_restart: boolean
 }
