@@ -58,7 +58,7 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 			setupMS := time.Since(setup).Milliseconds()
 			token := uuid.NewString()
 			session := &mediaSelectionSnapshot{ownerID: owner.ID, nodes: nodes, memberIDs: memberIDs, excluded: map[uint64]struct{}{}, version: 1, createdAt: time.Now(), expiresAt: time.Now().Add(15 * time.Minute)}
-			profile := newGallerySelectionSQLProfiler()
+			profile := newGallerySelectionDetailedProfiler()
 			server := &Server{DB: db.Session(&gorm.Session{Logger: profile}), mediaSelections: map[string]*mediaSelectionSnapshot{token: session}}
 			c, rec := newDurableJobContext(owner.ID, http.MethodPost, "/api/v1/media/selection-snapshots/"+token+"/jobs", `{"version":1,"action":"favorite","favorite":true,"confirm":true}`)
 			c.Params = gin.Params{{Key: "token", Value: token}}
@@ -111,17 +111,28 @@ func TestGallerySelectionJobsReal10k100k(t *testing.T) {
 				sqlProfile["worker"]["UPDATE"].Statements == 0 {
 				t.Fatalf("missing production enqueue/worker SQL observations: %+v", sqlProfile)
 			}
+			queryDetail := profile.selectDetailSnapshot()
+			for _, name := range []string{"jobs", "items", "nodes", "assets", "metadata"} {
+				if queryDetail[name].Statements != scale/mediaSelectionJobChunk {
+					t.Fatalf("expected %d real %s SELECTs, got %+v",
+						scale/mediaSelectionJobChunk, name, queryDetail[name])
+				}
+			}
+			if len(queryDetail) != 5 {
+				t.Fatalf("unexpected Worker SELECT stage: %+v", queryDetail)
+			}
 			result := struct {
-				Scale      int                                             `json:"scale"`
-				Samples    int                                             `json:"samples"`
-				SetupMS    int64                                           `json:"fixture_ms"`
-				EnqueueMS  int64                                           `json:"enqueue_ms"`
-				WorkerMS   int64                                           `json:"worker_ms"`
-				Chunks     int                                             `json:"chunks"`
-				HeapBefore uint64                                          `json:"heap_before_bytes"`
-				HeapAfter  uint64                                          `json:"heap_after_bytes"`
-				SQLProfile map[string]map[string]gallerySelectionSQLBucket `json:"sql_profile"`
-			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc, sqlProfile}
+				Scale              int                                             `json:"scale"`
+				Samples            int                                             `json:"samples"`
+				SetupMS            int64                                           `json:"fixture_ms"`
+				EnqueueMS          int64                                           `json:"enqueue_ms"`
+				WorkerMS           int64                                           `json:"worker_ms"`
+				Chunks             int                                             `json:"chunks"`
+				HeapBefore         uint64                                          `json:"heap_before_bytes"`
+				HeapAfter          uint64                                          `json:"heap_after_bytes"`
+				SQLProfile         map[string]map[string]gallerySelectionSQLBucket `json:"sql_profile"`
+				WorkerSELECTDetail map[string]galleryWorkerSQLDetail               `json:"worker_select_detail"`
+			}{scale, 1, setupMS, enqueueMS, workerMS, chunks, before.Alloc, after.Alloc, sqlProfile, queryDetail}
 			b, _ := json.Marshal(result)
 			t.Logf("G07_SELECTION_JOB_BASELINE %s", b)
 		})
