@@ -71,7 +71,9 @@ test('shared transfer center renders hierarchical group progress and child tasks
   ]) {
     assert.ok(shared.includes(token), `hierarchical Transfer Center missing: ${token}`)
   }
-  assert.ok(shared.includes('const roots = xDriveTransferTree(transfers)'), 'Transfer Center must group only root tasks at the top level')
+  assert.ok(shared.includes('const roots = xDriveTransferTree(display.tasks)') &&
+    shared.includes('const display = useXDriveTransferDisplayedRates(transfers)'),
+    'Transfer Center must group only root tasks at the top level with a shared display-rate snapshot')
   assert.ok(shared.includes('xDriveTransferAggregateBytes(item, children)'), 'group byte progress must aggregate child work')
   assert.ok(shared.includes('xDriveTransferItemProgress(item, children)'), 'group item progress must aggregate child work')
   assert.ok(shared.includes("item.scan_complete === false"), 'group UI must distinguish discovered totals from final totals')

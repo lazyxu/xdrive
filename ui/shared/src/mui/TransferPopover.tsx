@@ -29,6 +29,7 @@ import {
 import { XDriveActionButton } from './ActionButton'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveTransferTreeItem } from './TransferCenter'
+import { useXDriveTransferDisplayedRates } from './TransferSpeedDisplay'
 
 export type XDriveTransferPopoverProps = {
   transfers: readonly XDriveTransferTask[]
@@ -91,11 +92,12 @@ function TransferPopoverSession({
   const id = useId()
   const [internalOpen, setInternalOpen] = useState(false)
   const [section, setSection] = useState<'active' | 'history'>('active')
-  const [clock, setClock] = useState(Date.now)
-  const network = useMemo(() => xDriveNetworkTransferTasks(transfers), [transfers])
+  // Snapshot only the speed numbers every two seconds; byte progress and
+  // status remain live. Clock ticks also expire stalled rates without events.
+  const display = useXDriveTransferDisplayedRates(transfers)
+  const network = useMemo(() => xDriveNetworkTransferTasks(display.tasks), [display.tasks])
   const roots = useMemo(() => xDriveTransferTree(network), [network])
-  const hasActive = roots.some(xDriveTransferTreeActive)
-  const now = Math.max(clock, Date.now())
+  const now = display.now
   const summary = xDriveNetworkTransferSummary(network, now)
   const activeRootIDs = new Set(roots.filter(xDriveTransferTreeActive).map(({ task }) => xDriveTransferRootID(task)))
   const active = roots.filter(({ task }) => activeRootIDs.has(xDriveTransferRootID(task)))
@@ -109,14 +111,6 @@ function TransferPopoverSession({
     setInternalOpen(false)
     onOpenChange?.(false)
   }, [disabled, internalOpen, onOpenChange, open])
-
-  // Keep stale-rate expiry running when the popup is closed and no new transfer
-  // events arrive. A retained average is never a current network sample.
-  useEffect(() => {
-    if (!hasActive) return
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [hasActive])
 
   const setOpen = (value: boolean) => {
     setInternalOpen(value)
@@ -149,8 +143,12 @@ function TransferPopoverSession({
               setOpen(!isOpen)
             }}
             sx={{
-              minWidth: compactTrigger ? 44 : 100,
-              maxWidth: compactTrigger ? 44 : 164,
+              // Allow actual speed text to determine width until header space
+              // becomes constrained. Small screens retain the icon trigger.
+              width: compactTrigger ? 44 : 'fit-content',
+              minWidth: compactTrigger ? 44 : 0,
+              maxWidth: compactTrigger ? 44 : 'min(36vw, 224px)',
+              flexShrink: 1,
               minHeight: 36,
               px: 0.75,
               py: 0.25,
@@ -162,7 +160,7 @@ function TransferPopoverSession({
               '@media (pointer: coarse)': { minHeight: 44 },
             }}
           >
-            {compactTrigger ? <SyncAltRoundedIcon aria-hidden="true" fontSize="small" /> : <Stack spacing={0} aria-hidden="true" sx={{ minWidth: 0, width: '100%' }}>
+            {compactTrigger ? <SyncAltRoundedIcon aria-hidden="true" fontSize="small" /> : <Stack spacing={0} aria-hidden="true" sx={{ minWidth: 0, maxWidth: '100%' }}>
               {(['upload', 'download'] as const).map((direction) => (
                 <Stack key={direction} direction="row" spacing={0.5} alignItems="center">
                   {direction === 'upload'

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useXDriveTransferDisplayedRates } from './TransferSpeedDisplay'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import {
@@ -138,7 +139,7 @@ function TransferLeafItem({
         />
         <Stack direction="row" spacing={1.5} flexWrap="wrap" sx={{ mt: 0.75 }}>
           <Typography variant="caption" color="text.secondary">
-            {speedLabel} {formatBytes(instantSpeed)}/s
+            {active ? speedLabel : item.speed_source === 'server' ? '平均服务端发送速度' : '平均速度'} {formatBytes(active ? instantSpeed : Math.max(0, item.average_bytes_per_second || 0))}/s
           </Typography>
           <Typography variant="caption" color="text.secondary">
             已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}
@@ -351,7 +352,9 @@ function TransferGroupItem({
 
         {compact ? (
           <Stack direction="row" spacing={1.5} flexWrap="wrap">
-            <Typography variant="caption" color="text.secondary">{speedLabel} {formatBytes(instantSpeed)}/s</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {active ? speedLabel : speed.serverReported ? '平均服务端发送速度' : '平均速度'} {formatBytes(active ? instantSpeed : Math.max(0, averageSpeed || 0))}/s
+            </Typography>
             <Typography variant="caption" color="text.secondary">已耗时 {formatXDriveTransferDuration(item.elapsed_ms)}</Typography>
             {eta !== undefined ? (
               <Typography variant="caption" color="text.secondary">剩余约 {formatXDriveTransferDuration(eta)}</Typography>
@@ -460,7 +463,8 @@ export function XDriveTransferCenter({
   retryDisabled?: boolean
   onRetry?: (id: string) => void
 }) {
-  const roots = xDriveTransferTree(transfers)
+  const display = useXDriveTransferDisplayedRates(transfers)
+  const roots = xDriveTransferTree(display.tasks)
   const active = roots.filter(({ task }) => xDriveTransferActive(task))
   const completed = roots.filter(({ task }) => (
     task.state === 'completed' || task.state === 'partial' || task.state === 'cancelled'
@@ -498,6 +502,7 @@ export function XDriveTransferCenter({
                 <XDriveTransferTreeItem
                   key={node.task.id}
                   node={node}
+                  now={display.now}
                   retryDisabled={retryDisabled}
                   retryingID={retryingID}
                   onRetry={onRetry}
