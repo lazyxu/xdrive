@@ -1,0 +1,993 @@
+{
+  "source_exact": {
+    "repository": "lazyxu/xdrive",
+    "head_sha": "6dd5eecd4481a146645370f295103c4b05546fa4",
+    "run_id": 38066112125,
+    "job_id": 114253976747,
+    "event": "push",
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38066112125/job/114253976747",
+    "conclusion": "success",
+    "fixture": "native postgres:17-alpine, Go 1.25, 3 fresh test processes with independent PostgreSQL schemas; 10k and 100k persisted favorite metadata, 100-item durable Worker chunks",
+    "measurement": "test-only GORM SQL Trace by SELECT table; client/driver/observer time, excludes fixture and implicit COMMIT, not PostgreSQL EXPLAIN/CPU/I/O nor CAS, browser or physical device"
+  },
+  "raw_and_aggregate": {
+    "status": "test-only-real-postgresql-sql-query-stage-attribution",
+    "sample_count_per_scale": 3,
+    "workload": "10k/100k actual immutable selection favorites, 100-item SQL Worker checkpoints, independent Go/PostgreSQL schema each run",
+    "limits": "GORM Trace SQL client/driver/observer wall time, not PostgreSQL CPU/I/O or EXPLAIN; transaction commit and fixture excluded; separate current baseline, not matched speedup",
+    "raw_rows": [
+      {
+        "independent_process_sample": 1,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 679,
+        "enqueue_ms": 279,
+        "worker_ms": 3085,
+        "chunks": 100,
+        "heap_before_bytes": 2693056,
+        "heap_after_bytes": 3304776,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 101,
+              "sql_ms": 274.465,
+              "slowest_sql_ms": 4.227
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 500,
+              "sql_ms": 2004.7160000000003,
+              "slowest_sql_ms": 10.549
+            },
+            "UPDATE": {
+              "statements": 301,
+              "sql_ms": 327.5009999999998,
+              "slowest_sql_ms": 2.539
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 100,
+            "total_ms": 885.832,
+            "p50_ms": 9.183499999999999,
+            "p95_ms": 9.786,
+            "max_ms": 10.261
+          },
+          "items": {
+            "statements": 100,
+            "total_ms": 97.76500000000001,
+            "p50_ms": 0.958,
+            "p95_ms": 1.422,
+            "max_ms": 1.934
+          },
+          "jobs": {
+            "statements": 100,
+            "total_ms": 21.478,
+            "p50_ms": 0.195,
+            "p95_ms": 0.308,
+            "max_ms": 0.937
+          },
+          "metadata": {
+            "statements": 100,
+            "total_ms": 91.81,
+            "p50_ms": 0.782,
+            "p95_ms": 1.528,
+            "max_ms": 1.898
+          },
+          "nodes": {
+            "statements": 100,
+            "total_ms": 892.3680000000002,
+            "p50_ms": 9.248999999999999,
+            "p95_ms": 9.769,
+            "max_ms": 10.502
+          }
+        }
+      },
+      {
+        "independent_process_sample": 1,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 7210,
+        "enqueue_ms": 3900,
+        "worker_ms": 49509,
+        "chunks": 1000,
+        "heap_before_bytes": 6579400,
+        "heap_after_bytes": 2757016,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 1001,
+              "sql_ms": 3769.159999999996,
+              "slowest_sql_ms": 115.363
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 5000,
+              "sql_ms": 44368.90200000003,
+              "slowest_sql_ms": 109.378
+            },
+            "UPDATE": {
+              "statements": 3001,
+              "sql_ms": 3312.5000000000023,
+              "slowest_sql_ms": 6.249
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 1000,
+            "total_ms": 16173.069000000001,
+            "p50_ms": 0.541,
+            "p95_ms": 94.193,
+            "max_ms": 109.335
+          },
+          "items": {
+            "statements": 1000,
+            "total_ms": 10679.257000000003,
+            "p50_ms": 9.561499999999999,
+            "p95_ms": 18.13,
+            "max_ms": 22.59
+          },
+          "jobs": {
+            "statements": 1000,
+            "total_ms": 204.33199999999974,
+            "p50_ms": 0.199,
+            "p95_ms": 0.266,
+            "max_ms": 0.637
+          },
+          "metadata": {
+            "statements": 1000,
+            "total_ms": 835.9209999999998,
+            "p50_ms": 0.7324999999999999,
+            "p95_ms": 1.343,
+            "max_ms": 2.148
+          },
+          "nodes": {
+            "statements": 1000,
+            "total_ms": 16318.561,
+            "p50_ms": 0.615,
+            "p95_ms": 92.346,
+            "max_ms": 107.248
+          }
+        }
+      },
+      {
+        "independent_process_sample": 2,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 606,
+        "enqueue_ms": 285,
+        "worker_ms": 2584,
+        "chunks": 100,
+        "heap_before_bytes": 2685832,
+        "heap_after_bytes": 3534160,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 101,
+              "sql_ms": 279.829,
+              "slowest_sql_ms": 4.273
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 500,
+              "sql_ms": 2092.2700000000004,
+              "slowest_sql_ms": 11.67
+            },
+            "UPDATE": {
+              "statements": 301,
+              "sql_ms": 317.739,
+              "slowest_sql_ms": 2.466
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 100,
+            "total_ms": 919.9160000000005,
+            "p50_ms": 9.4115,
+            "p95_ms": 10.442,
+            "max_ms": 10.744
+          },
+          "items": {
+            "statements": 100,
+            "total_ms": 100.15800000000006,
+            "p50_ms": 1.0339999999999998,
+            "p95_ms": 1.505,
+            "max_ms": 2.486
+          },
+          "jobs": {
+            "statements": 100,
+            "total_ms": 21.79699999999999,
+            "p50_ms": 0.2005,
+            "p95_ms": 0.297,
+            "max_ms": 0.961
+          },
+          "metadata": {
+            "statements": 100,
+            "total_ms": 95.03800000000001,
+            "p50_ms": 1.0074999999999998,
+            "p95_ms": 1.51,
+            "max_ms": 1.825
+          },
+          "nodes": {
+            "statements": 100,
+            "total_ms": 940.1440000000002,
+            "p50_ms": 9.536,
+            "p95_ms": 10.732,
+            "max_ms": 11.631
+          }
+        }
+      },
+      {
+        "independent_process_sample": 2,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 6882,
+        "enqueue_ms": 3735,
+        "worker_ms": 45697,
+        "chunks": 1000,
+        "heap_before_bytes": 6565272,
+        "heap_after_bytes": 3635512,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 1001,
+              "sql_ms": 3695.376999999998,
+              "slowest_sql_ms": 96.051
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 5000,
+              "sql_ms": 40839.48500000011,
+              "slowest_sql_ms": 112.377
+            },
+            "UPDATE": {
+              "statements": 3001,
+              "sql_ms": 3117.518999999995,
+              "slowest_sql_ms": 5.502
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 1000,
+            "total_ms": 14035.153000000004,
+            "p50_ms": 0.555,
+            "p95_ms": 94.082,
+            "max_ms": 104.77
+          },
+          "items": {
+            "statements": 1000,
+            "total_ms": 10872.124999999998,
+            "p50_ms": 9.784500000000001,
+            "p95_ms": 18.033,
+            "max_ms": 20.551
+          },
+          "jobs": {
+            "statements": 1000,
+            "total_ms": 206.96799999999962,
+            "p50_ms": 0.2015,
+            "p95_ms": 0.263,
+            "max_ms": 0.874
+          },
+          "metadata": {
+            "statements": 1000,
+            "total_ms": 836.3600000000012,
+            "p50_ms": 0.749,
+            "p95_ms": 1.318,
+            "max_ms": 2
+          },
+          "nodes": {
+            "statements": 1000,
+            "total_ms": 14724.293000000007,
+            "p50_ms": 0.625,
+            "p95_ms": 96.356,
+            "max_ms": 112.314
+          }
+        }
+      },
+      {
+        "independent_process_sample": 3,
+        "scale": 10000,
+        "samples": 1,
+        "fixture_ms": 653,
+        "enqueue_ms": 284,
+        "worker_ms": 2462,
+        "chunks": 100,
+        "heap_before_bytes": 2686288,
+        "heap_after_bytes": 3304800,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 101,
+              "sql_ms": 278.80000000000007,
+              "slowest_sql_ms": 4.269
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 500,
+              "sql_ms": 1984.7200000000012,
+              "slowest_sql_ms": 10.268
+            },
+            "UPDATE": {
+              "statements": 301,
+              "sql_ms": 324.07399999999996,
+              "slowest_sql_ms": 2.785
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 100,
+            "total_ms": 867.2269999999999,
+            "p50_ms": 9.0045,
+            "p95_ms": 9.427,
+            "max_ms": 10.172
+          },
+          "items": {
+            "statements": 100,
+            "total_ms": 96.63199999999999,
+            "p50_ms": 0.961,
+            "p95_ms": 1.545,
+            "max_ms": 1.71
+          },
+          "jobs": {
+            "statements": 100,
+            "total_ms": 20.73900000000001,
+            "p50_ms": 0.193,
+            "p95_ms": 0.247,
+            "max_ms": 0.882
+          },
+          "metadata": {
+            "statements": 100,
+            "total_ms": 92.14500000000001,
+            "p50_ms": 0.8069999999999999,
+            "p95_ms": 1.545,
+            "max_ms": 1.794
+          },
+          "nodes": {
+            "statements": 100,
+            "total_ms": 892.5409999999995,
+            "p50_ms": 9.211500000000001,
+            "p95_ms": 9.819,
+            "max_ms": 10.229
+          }
+        }
+      },
+      {
+        "independent_process_sample": 3,
+        "scale": 100000,
+        "samples": 1,
+        "fixture_ms": 6738,
+        "enqueue_ms": 4110,
+        "worker_ms": 44120,
+        "chunks": 1000,
+        "heap_before_bytes": 6576384,
+        "heap_after_bytes": 4325048,
+        "sql_profile": {
+          "enqueue": {
+            "INSERT": {
+              "statements": 1001,
+              "sql_ms": 4060.578999999999,
+              "slowest_sql_ms": 81.491
+            }
+          },
+          "worker": {
+            "SELECT": {
+              "statements": 5000,
+              "sql_ms": 39895.58299999994,
+              "slowest_sql_ms": 146.302
+            },
+            "UPDATE": {
+              "statements": 3001,
+              "sql_ms": 3267.5610000000047,
+              "slowest_sql_ms": 7.494
+            }
+          }
+        },
+        "worker_select_detail": {
+          "assets": {
+            "statements": 1000,
+            "total_ms": 13311.825,
+            "p50_ms": 0.5654999999999999,
+            "p95_ms": 92.549,
+            "max_ms": 104.416
+          },
+          "items": {
+            "statements": 1000,
+            "total_ms": 10961.784999999996,
+            "p50_ms": 9.8565,
+            "p95_ms": 17.95,
+            "max_ms": 25.416
+          },
+          "jobs": {
+            "statements": 1000,
+            "total_ms": 207.22599999999946,
+            "p50_ms": 0.201,
+            "p95_ms": 0.269,
+            "max_ms": 0.863
+          },
+          "metadata": {
+            "statements": 1000,
+            "total_ms": 861.135000000001,
+            "p50_ms": 0.7615000000000001,
+            "p95_ms": 1.37,
+            "max_ms": 1.925
+          },
+          "nodes": {
+            "statements": 1000,
+            "total_ms": 14382.937999999993,
+            "p50_ms": 0.637,
+            "p95_ms": 96.05,
+            "max_ms": 146.254
+          }
+        }
+      }
+    ],
+    "aggregates": {
+      "10000": {
+        "worker_ms": {
+          "samples": [
+            3085,
+            2584,
+            2462
+          ],
+          "median": 2584
+        },
+        "worker_select": {
+          "jobs": {
+            "statements": {
+              "samples": [
+                100,
+                100,
+                100
+              ],
+              "median": 100,
+              "min": 100,
+              "max": 100
+            },
+            "total_ms": {
+              "samples": [
+                21.478,
+                21.79699999999999,
+                20.73900000000001
+              ],
+              "median": 21.478,
+              "min": 20.73900000000001,
+              "max": 21.79699999999999
+            },
+            "p50_ms": {
+              "samples": [
+                0.195,
+                0.2005,
+                0.193
+              ],
+              "median": 0.195,
+              "min": 0.193,
+              "max": 0.2005
+            },
+            "p95_ms": {
+              "samples": [
+                0.308,
+                0.297,
+                0.247
+              ],
+              "median": 0.297,
+              "min": 0.247,
+              "max": 0.308
+            },
+            "max_ms": {
+              "samples": [
+                0.937,
+                0.961,
+                0.882
+              ],
+              "median": 0.937,
+              "min": 0.882,
+              "max": 0.961
+            }
+          },
+          "items": {
+            "statements": {
+              "samples": [
+                100,
+                100,
+                100
+              ],
+              "median": 100,
+              "min": 100,
+              "max": 100
+            },
+            "total_ms": {
+              "samples": [
+                97.76500000000001,
+                100.15800000000006,
+                96.63199999999999
+              ],
+              "median": 97.76500000000001,
+              "min": 96.63199999999999,
+              "max": 100.15800000000006
+            },
+            "p50_ms": {
+              "samples": [
+                0.958,
+                1.0339999999999998,
+                0.961
+              ],
+              "median": 0.961,
+              "min": 0.958,
+              "max": 1.0339999999999998
+            },
+            "p95_ms": {
+              "samples": [
+                1.422,
+                1.505,
+                1.545
+              ],
+              "median": 1.505,
+              "min": 1.422,
+              "max": 1.545
+            },
+            "max_ms": {
+              "samples": [
+                1.934,
+                2.486,
+                1.71
+              ],
+              "median": 1.934,
+              "min": 1.71,
+              "max": 2.486
+            }
+          },
+          "nodes": {
+            "statements": {
+              "samples": [
+                100,
+                100,
+                100
+              ],
+              "median": 100,
+              "min": 100,
+              "max": 100
+            },
+            "total_ms": {
+              "samples": [
+                892.3680000000002,
+                940.1440000000002,
+                892.5409999999995
+              ],
+              "median": 892.5409999999995,
+              "min": 892.3680000000002,
+              "max": 940.1440000000002
+            },
+            "p50_ms": {
+              "samples": [
+                9.248999999999999,
+                9.536,
+                9.211500000000001
+              ],
+              "median": 9.248999999999999,
+              "min": 9.211500000000001,
+              "max": 9.536
+            },
+            "p95_ms": {
+              "samples": [
+                9.769,
+                10.732,
+                9.819
+              ],
+              "median": 9.819,
+              "min": 9.769,
+              "max": 10.732
+            },
+            "max_ms": {
+              "samples": [
+                10.502,
+                11.631,
+                10.229
+              ],
+              "median": 10.502,
+              "min": 10.229,
+              "max": 11.631
+            }
+          },
+          "assets": {
+            "statements": {
+              "samples": [
+                100,
+                100,
+                100
+              ],
+              "median": 100,
+              "min": 100,
+              "max": 100
+            },
+            "total_ms": {
+              "samples": [
+                885.832,
+                919.9160000000005,
+                867.2269999999999
+              ],
+              "median": 885.832,
+              "min": 867.2269999999999,
+              "max": 919.9160000000005
+            },
+            "p50_ms": {
+              "samples": [
+                9.183499999999999,
+                9.4115,
+                9.0045
+              ],
+              "median": 9.183499999999999,
+              "min": 9.0045,
+              "max": 9.4115
+            },
+            "p95_ms": {
+              "samples": [
+                9.786,
+                10.442,
+                9.427
+              ],
+              "median": 9.786,
+              "min": 9.427,
+              "max": 10.442
+            },
+            "max_ms": {
+              "samples": [
+                10.261,
+                10.744,
+                10.172
+              ],
+              "median": 10.261,
+              "min": 10.172,
+              "max": 10.744
+            }
+          },
+          "metadata": {
+            "statements": {
+              "samples": [
+                100,
+                100,
+                100
+              ],
+              "median": 100,
+              "min": 100,
+              "max": 100
+            },
+            "total_ms": {
+              "samples": [
+                91.81,
+                95.03800000000001,
+                92.14500000000001
+              ],
+              "median": 92.14500000000001,
+              "min": 91.81,
+              "max": 95.03800000000001
+            },
+            "p50_ms": {
+              "samples": [
+                0.782,
+                1.0074999999999998,
+                0.8069999999999999
+              ],
+              "median": 0.8069999999999999,
+              "min": 0.782,
+              "max": 1.0074999999999998
+            },
+            "p95_ms": {
+              "samples": [
+                1.528,
+                1.51,
+                1.545
+              ],
+              "median": 1.528,
+              "min": 1.51,
+              "max": 1.545
+            },
+            "max_ms": {
+              "samples": [
+                1.898,
+                1.825,
+                1.794
+              ],
+              "median": 1.825,
+              "min": 1.794,
+              "max": 1.898
+            }
+          }
+        },
+        "worker_select_total_ms": [
+          1989.2530000000002,
+          2077.053000000001,
+          1969.2839999999994
+        ]
+      },
+      "100000": {
+        "worker_ms": {
+          "samples": [
+            49509,
+            45697,
+            44120
+          ],
+          "median": 45697
+        },
+        "worker_select": {
+          "jobs": {
+            "statements": {
+              "samples": [
+                1000,
+                1000,
+                1000
+              ],
+              "median": 1000,
+              "min": 1000,
+              "max": 1000
+            },
+            "total_ms": {
+              "samples": [
+                204.33199999999974,
+                206.96799999999962,
+                207.22599999999946
+              ],
+              "median": 206.96799999999962,
+              "min": 204.33199999999974,
+              "max": 207.22599999999946
+            },
+            "p50_ms": {
+              "samples": [
+                0.199,
+                0.2015,
+                0.201
+              ],
+              "median": 0.201,
+              "min": 0.199,
+              "max": 0.2015
+            },
+            "p95_ms": {
+              "samples": [
+                0.266,
+                0.263,
+                0.269
+              ],
+              "median": 0.266,
+              "min": 0.263,
+              "max": 0.269
+            },
+            "max_ms": {
+              "samples": [
+                0.637,
+                0.874,
+                0.863
+              ],
+              "median": 0.863,
+              "min": 0.637,
+              "max": 0.874
+            }
+          },
+          "items": {
+            "statements": {
+              "samples": [
+                1000,
+                1000,
+                1000
+              ],
+              "median": 1000,
+              "min": 1000,
+              "max": 1000
+            },
+            "total_ms": {
+              "samples": [
+                10679.257000000003,
+                10872.124999999998,
+                10961.784999999996
+              ],
+              "median": 10872.124999999998,
+              "min": 10679.257000000003,
+              "max": 10961.784999999996
+            },
+            "p50_ms": {
+              "samples": [
+                9.561499999999999,
+                9.784500000000001,
+                9.8565
+              ],
+              "median": 9.784500000000001,
+              "min": 9.561499999999999,
+              "max": 9.8565
+            },
+            "p95_ms": {
+              "samples": [
+                18.13,
+                18.033,
+                17.95
+              ],
+              "median": 18.033,
+              "min": 17.95,
+              "max": 18.13
+            },
+            "max_ms": {
+              "samples": [
+                22.59,
+                20.551,
+                25.416
+              ],
+              "median": 22.59,
+              "min": 20.551,
+              "max": 25.416
+            }
+          },
+          "nodes": {
+            "statements": {
+              "samples": [
+                1000,
+                1000,
+                1000
+              ],
+              "median": 1000,
+              "min": 1000,
+              "max": 1000
+            },
+            "total_ms": {
+              "samples": [
+                16318.561,
+                14724.293000000007,
+                14382.937999999993
+              ],
+              "median": 14724.293000000007,
+              "min": 14382.937999999993,
+              "max": 16318.561
+            },
+            "p50_ms": {
+              "samples": [
+                0.615,
+                0.625,
+                0.637
+              ],
+              "median": 0.625,
+              "min": 0.615,
+              "max": 0.637
+            },
+            "p95_ms": {
+              "samples": [
+                92.346,
+                96.356,
+                96.05
+              ],
+              "median": 96.05,
+              "min": 92.346,
+              "max": 96.356
+            },
+            "max_ms": {
+              "samples": [
+                107.248,
+                112.314,
+                146.254
+              ],
+              "median": 112.314,
+              "min": 107.248,
+              "max": 146.254
+            }
+          },
+          "assets": {
+            "statements": {
+              "samples": [
+                1000,
+                1000,
+                1000
+              ],
+              "median": 1000,
+              "min": 1000,
+              "max": 1000
+            },
+            "total_ms": {
+              "samples": [
+                16173.069000000001,
+                14035.153000000004,
+                13311.825
+              ],
+              "median": 14035.153000000004,
+              "min": 13311.825,
+              "max": 16173.069000000001
+            },
+            "p50_ms": {
+              "samples": [
+                0.541,
+                0.555,
+                0.5654999999999999
+              ],
+              "median": 0.555,
+              "min": 0.541,
+              "max": 0.5654999999999999
+            },
+            "p95_ms": {
+              "samples": [
+                94.193,
+                94.082,
+                92.549
+              ],
+              "median": 94.082,
+              "min": 92.549,
+              "max": 94.193
+            },
+            "max_ms": {
+              "samples": [
+                109.335,
+                104.77,
+                104.416
+              ],
+              "median": 104.77,
+              "min": 104.416,
+              "max": 109.335
+            }
+          },
+          "metadata": {
+            "statements": {
+              "samples": [
+                1000,
+                1000,
+                1000
+              ],
+              "median": 1000,
+              "min": 1000,
+              "max": 1000
+            },
+            "total_ms": {
+              "samples": [
+                835.9209999999998,
+                836.3600000000012,
+                861.135000000001
+              ],
+              "median": 836.3600000000012,
+              "min": 835.9209999999998,
+              "max": 861.135000000001
+            },
+            "p50_ms": {
+              "samples": [
+                0.7324999999999999,
+                0.749,
+                0.7615000000000001
+              ],
+              "median": 0.749,
+              "min": 0.7324999999999999,
+              "max": 0.7615000000000001
+            },
+            "p95_ms": {
+              "samples": [
+                1.343,
+                1.318,
+                1.37
+              ],
+              "median": 1.343,
+              "min": 1.318,
+              "max": 1.37
+            },
+            "max_ms": {
+              "samples": [
+                2.148,
+                2,
+                1.925
+              ],
+              "median": 2,
+              "min": 1.925,
+              "max": 2.148
+            }
+          }
+        },
+        "worker_select_total_ms": [
+          44211.14000000001,
+          40674.89900000001,
+          39724.90899999999
+        ]
+      }
+    },
+    "next": "Profile any dominant SELECT plan under real PG before considering a production optimization; retain existing Worker batches and cancellation"
+  },
+  "decision": "Accepted current/BEFORE measurement without product optimization. 100k Worker P50 <=60,000ms in this run; highly variable individual sample(s); do not claim a production speedup or stable tail. Identify expensive xd_nodes/xd_photo_assets SQL plans and repeat under controlled conditions before changing production."
+}
