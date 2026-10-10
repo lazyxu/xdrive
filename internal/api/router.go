@@ -353,6 +353,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
 	admin.POST("/services/geonames/dataset-snapshots", s.adminStageGeoNamesSnapshot)
 	admin.POST("/services/geonames/dataset-snapshots/apply", s.adminApplyGeoNamesDatasetSnapshot)
+	admin.POST("/services/geonames/dataset-snapshots/restore-missing", s.adminRestoreMissingGeoNamesSnapshot)
 	admin.GET("/services/geonames/revisions", s.adminGeoNamesRevisions)
 	admin.POST("/services/geonames/rollback", s.adminRollbackGeoNamesConfig)
 	admin.GET("/audit", s.adminAuditEvents)

@@ -802,6 +802,8 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveGeoNamesSnapshotResult>>
         cloudApplyAdminGeoNamesDataset: (input: import('../../../ui/shared/src').XDriveGeoNamesDatasetApplyInput) =>
           Promise<DesktopResult<XDriveGeoNamesConfig>>
+        cloudRestoreMissingAdminGeoNamesSnapshot: (input: import('../../../ui/shared/src').XDriveGeoNamesRestoreMissingInput) =>
+          Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudAdminGeoNamesRevisions: () => Promise<DesktopResult<XDriveGeoNamesRevisionPage>>
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>

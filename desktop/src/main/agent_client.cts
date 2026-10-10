@@ -633,6 +633,11 @@ export type AgentAdminGeoNamesDatasetApplyInput = {
   expected_fingerprint: string
   target: string
 }
+export type AgentAdminGeoNamesRestoreMissingInput = {
+  revision: number
+  expected_version: string
+  expected_fingerprint: string
+}
 export type AgentAdminGeoNamesSnapshotResult = {
   staged: boolean
   applied: boolean
@@ -662,6 +667,9 @@ export type AgentAdminGeoNamesConfig = {
   snapshot_history_known?: boolean
   snapshots?: AgentAdminGeoNamesSnapshot[]
   snapshot_apply_supported?: boolean
+  missing_archive_state?: 'not-selected' | 'missing' | 'present-unverified' | 'invalid' | 'unavailable'
+  restore_missing_enabled?: boolean
+  restore_missing_hint?: string
   desired_dataset_fingerprint?: string
   active_dataset_fingerprint?: string
   active_dataset_source?: 'deployment' | 'snapshot'
@@ -3018,6 +3026,11 @@ export class AgentIPCClient {
   cloudApplyAdminGeoNamesDataset(input: AgentAdminGeoNamesDatasetApplyInput) {
     return this.request<AgentAdminGeoNamesConfig>(
       'POST', '/v1/cloud/admin-geonames/dataset-snapshots/apply', input, 180_000,
+    )
+  }
+  cloudRestoreMissingAdminGeoNamesSnapshot(input: AgentAdminGeoNamesRestoreMissingInput) {
+    return this.request<AgentAdminGeoNamesConfig>(
+      'POST', '/v1/cloud/admin-geonames/dataset-snapshots/restore-missing', input, 180_000,
     )
   }
   cloudStageAdminGeoNamesSnapshot(input: AgentAdminGeoNamesSnapshotInput) {

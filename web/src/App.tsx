@@ -870,6 +870,8 @@ function FileManager({
       api.adminStageGeoNamesSnapshot(input),
     applyGeoNamesDataset: (input: import('../../ui/shared/src').XDriveGeoNamesDatasetApplyInput) =>
       api.adminApplyGeoNamesDataset(input),
+    restoreMissingGeoNamesSnapshot: (input: import('../../ui/shared/src').XDriveGeoNamesRestoreMissingInput) =>
+      api.adminRestoreMissingGeoNamesSnapshot(input),
     loadGeoNamesRevisions: () => api.adminGeoNamesRevisions(),
     rollbackGeoNames: (input: XDriveGeoNamesRollbackInput) => api.adminRollbackGeoNames(input),
   }), [api])

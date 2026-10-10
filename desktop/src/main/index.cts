@@ -102,6 +102,7 @@ import {
   type AgentAdminGeoNamesSnapshotInput,
   type AgentAdminGeoNamesSnapshotResult,
   type AgentAdminGeoNamesDatasetApplyInput,
+  type AgentAdminGeoNamesRestoreMissingInput,
   type AgentAdminGeoNamesRevisionPage,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
@@ -4523,6 +4524,26 @@ function registerIPCHandlers() {
       return requireAgentClient().cloudApplyAdminGeoNamesDataset({
         revision: input.revision, expected_version: input.expected_version,
         expected_fingerprint: input.expected_fingerprint, target: input.target,
+      })
+    }, false))
+  ipcMain.handle('agent:cloud-restore-missing-admin-geonames-snapshot', (_event, data: unknown) =>
+    runAgentAction<AgentAdminGeoNamesConfig>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new AgentIPCError('invalid_input', 0, 'GeoNames missing-archive restore needs a current revision.')
+      }
+      const input = data as Partial<AgentAdminGeoNamesRestoreMissingInput>
+      const validFingerprint = (value: string) => /^[0-9a-f]{64}$/.test(value)
+      if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+          typeof input.expected_version !== 'string' || !input.expected_version ||
+          input.expected_version.length > 128 || typeof input.expected_fingerprint !== 'string' ||
+          (input.expected_fingerprint !== '' && !validFingerprint(input.expected_fingerprint))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid GeoNames restore-missing revision or expected source.')
+      }
+      return requireAgentClient().cloudRestoreMissingAdminGeoNamesSnapshot({
+        revision: input.revision, expected_version: input.expected_version,
+        expected_fingerprint: input.expected_fingerprint,
       })
     }, false))
   ipcMain.handle('agent:cloud-stage-admin-geonames-snapshot', (_event, data: unknown) =>
