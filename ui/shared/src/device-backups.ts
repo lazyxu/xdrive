@@ -77,4 +77,6 @@ export interface XDriveLocalBoundBackupSettings {
   source_id: number
   name: string
   revision: number
+  target_node_id?: number
+  target_path?: string
 }

@@ -48,7 +48,7 @@ revoked device records cannot be reclaimed with owner JWT alone. No
 automatic periodic orphan deletion is performed. Actual local Push
 execution remains completely disabled.
 
-## P0-C4b1 device-local draft recovery (PR verification)
+## P0-C4b1 device-local draft recovery (merged #1332)
 
 Only the owning Agent (same owner session plus OS-held, unrevoked
 installation token) may list its own paused, never-bound Source
@@ -60,6 +60,17 @@ Same-account other desktops, Web and legacy unclaimed Sources do not
 get draft controls. Device revocation recovery and existing bound
 Source edit/removal remain separate unimplemented phases; this change
 does not lift the local Push execution/activation block.
+
+## P0-C4b2 own Desktop bound Source settings (partial)
+
+P0-C4b2a **merged #1342**, after full exact-head CI, permits only a
+device/Root/revision-protected change of a paused Source's name. P0-C4b2b
+is a separate PR-stage change of the Server's cloud target directory using
+the same private Agent credential and validated bound Root. A target change
+never relocates or deletes previously stored cloud data. The Server verifies
+directory ownership and resets Mirror missing evidence as applicable.
+No local Push executor, automatic upload, cancellation UI, actual
+filesystem-to-CAS sync or physical-scale benchmark is enabled by either edit.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 

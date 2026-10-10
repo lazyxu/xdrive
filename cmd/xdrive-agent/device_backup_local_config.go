@@ -74,6 +74,13 @@ func (c *agentController) localBoundBackupConfig(ctx context.Context, sourceID u
 	}, cli, nil
 }
 
+func localBoundBackupSettingsDTO(source client.Source) client.LocalBoundBackupSettings {
+	return client.LocalBoundBackupSettings{
+		SourceID: source.ID, Name: source.Name, Revision: source.Revision,
+		TargetNodeID: source.TargetNodeID, TargetPath: source.TargetPath,
+	}
+}
+
 func (c *agentController) CloudLocalBoundBackupSettings(ctx context.Context, sourceID uint64) (client.LocalBoundBackupSettings, error) {
 	c.localFolderGrantMu.Lock()
 	defer c.localFolderGrantMu.Unlock()
@@ -81,7 +88,7 @@ func (c *agentController) CloudLocalBoundBackupSettings(ctx context.Context, sou
 	if err != nil {
 		return client.LocalBoundBackupSettings{}, err
 	}
-	return client.LocalBoundBackupSettings{SourceID: source.ID, Name: source.Name, Revision: source.Revision}, nil
+	return localBoundBackupSettingsDTO(source), nil
 }
 
 func (c *agentController) CloudRenameLocalBoundBackup(ctx context.Context, sourceID, revision uint64, name string) (client.LocalBoundBackupSettings, error) {
@@ -113,5 +120,41 @@ func (c *agentController) CloudRenameLocalBoundBackup(ctx context.Context, sourc
 	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
 		return client.LocalBoundBackupSettings{}, errors.New("account changed during rename; refresh before editing")
 	}
-	return client.LocalBoundBackupSettings{SourceID: updated.ID, Name: updated.Name, Revision: updated.Revision}, nil
+	return localBoundBackupSettingsDTO(updated), nil
+}
+
+// CloudRetargetLocalBoundBackup is called only through private Desktop Agent IPC.
+// It cannot create/activate a Source and does not modify the Root or cloud data.
+func (c *agentController) CloudRetargetLocalBoundBackup(ctx context.Context, sourceID, revision, targetNodeID uint64) (client.LocalBoundBackupSettings, error) {
+	c.localFolderGrantMu.Lock()
+	defer c.localFolderGrantMu.Unlock()
+	if sourceID == 0 || revision == 0 || targetNodeID == 0 {
+		return client.LocalBoundBackupSettings{}, errors.New("invalid Source, revision or cloud target")
+	}
+	source, proof, cli, err := c.localBoundBackupConfig(ctx, sourceID)
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	if source.Revision != revision {
+		return client.LocalBoundBackupSettings{}, errors.New("Source revision changed; reload before changing target")
+	}
+	if source.TargetNodeID != nil && *source.TargetNodeID == targetNodeID {
+		return client.LocalBoundBackupSettings{}, errors.New("the cloud target is already selected")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	updated, err := cli.RetargetLocalBoundSource(ctx, sourceID, revision, targetNodeID, proof)
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return client.LocalBoundBackupSettings{}, errors.New("account changed during local target update; refresh before continuing")
+	}
+	return localBoundBackupSettingsDTO(updated), nil
 }

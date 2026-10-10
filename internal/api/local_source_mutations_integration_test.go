@@ -59,6 +59,7 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	sourceA := makeBound("A root")
 	sourceB := makeBound("A spare root")
 	sourceC := makeBound("A revoke root")
+	sourceD := makeBound("A retarget root")
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", sourceA.ID)
 	own := map[string]string{
 		"X-XDrive-Device-ID":              deviceA.ID,
@@ -104,6 +105,44 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 			}
 		})
 	}
+	// The target-only mutation uses the same credential/Root transaction
+	// fencing, validates owner and directory type, and retains Source identity.
+	newTarget := meta.Node{
+		OwnerID: owner.ID, ParentID: &root.ID, Name: "backup-new-target",
+		Type: meta.NodeTypeDir, Revision: 1,
+	}
+	if err := db.Create(&newTarget).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreignTarget := meta.Node{
+		OwnerID: other.ID, Name: "foreign-backup-target",
+		Type: meta.NodeTypeDir, Revision: 1,
+	}
+	if err := db.Create(&foreignTarget).Error; err != nil {
+		t.Fatal(err)
+	}
+	targetURL := fmt.Sprintf("/api/v1/sources/%d", sourceD.ID)
+	validTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, newTarget.ID)
+	foreignTargetBody := fmt.Sprintf(`{"target_node_id":%d}`, foreignTarget.ID)
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden,
+		map[string]string{"If-Match": "\"1\""})
+	badDevice := copyHeaders()
+	badDevice["X-XDrive-Device-ID"] = deviceB.ID
+	badDevice["X-XDrive-Device-Token"] = deviceBSecret
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusForbidden, badDevice)
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(foreignTargetBody), http.StatusBadRequest, own)
+	retargetResponse := requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusOK, own)
+	var retargeted sourceDTO
+	if err := json.Unmarshal(retargetResponse.Body.Bytes(), &retargeted); err != nil {
+		t.Fatal(err)
+	}
+	if retargeted.ID != sourceD.ID || retargeted.Revision != 2 ||
+		retargeted.TargetNodeID == nil || *retargeted.TargetNodeID != newTarget.ID ||
+		retargeted.SyncMode != meta.SourceSyncModeBackup || retargeted.Status != meta.SourceStatusPaused {
+		t.Fatalf("own local target update changed protected Source semantics: %+v", retargeted)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusConflict, own)
+
 	var unchanged meta.Source
 	if err := db.Where("id = ?", sourceA.ID).First(&unchanged).Error; err != nil {
 		t.Fatal(err)

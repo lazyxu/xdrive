@@ -274,6 +274,8 @@ export type AgentLocalBoundBackupSettings = {
   source_id: number
   name: string
   revision: number
+  target_node_id?: number
+  target_path?: string
 }
 
 export type AgentVerifiedLocalDevice = {
@@ -2678,6 +2680,12 @@ export class AgentIPCClient {
   renameLocalBoundBackup(sourceID: number, revision: number, name: string) {
     return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-source', {
       source_id: sourceID, revision, name,
+    })
+  }
+
+  retargetLocalBoundBackup(sourceID: number, revision: number, targetNodeID: number) {
+    return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-target', {
+      source_id: sourceID, revision, target_node_id: targetNodeID,
     })
   }
 
