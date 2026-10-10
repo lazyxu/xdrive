@@ -1470,6 +1470,26 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadPostgresPoolConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPostgresPoolConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    savePostgresPoolConfig: async (input: import('../../../ui/shared/src').XDrivePostgresPoolUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminPostgresPool(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadPostgresPoolRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPostgresPoolRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackPostgresPool: async (input: import('../../../ui/shared/src').XDrivePostgresPoolRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminPostgresPool(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadSourceWorkerConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminSourceWorkerConfig()
       if (!result.ok) throw new Error(result.error.message)

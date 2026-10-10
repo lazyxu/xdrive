@@ -88,6 +88,10 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminPostgresPoolConfig,
+  type AgentAdminPostgresPoolUpdate,
+  type AgentAdminPostgresPoolRevisionPage,
+  type AgentAdminPostgresPoolRollbackInput,
   type AgentAdminSourceWorkerConfig,
   type AgentAdminSourceWorkerUpdate,
   type AgentAdminSourceWorkerRevisionPage,
@@ -4366,6 +4370,57 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
   }, false))
+  ipcMain.handle('agent:cloud-admin-postgres-pool', () =>
+    runAgentAction<AgentAdminPostgresPoolConfig>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      return requireAgentClient().cloudAdminPostgresPoolConfig()
+    }, false))
+  ipcMain.handle('agent:cloud-set-admin-postgres-pool', (_event, value: unknown) =>
+    runAgentAction<AgentAdminPostgresPoolConfig>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new AgentIPCError('invalid_input', 0, 'PostgreSQL pool needs a versioned complete desired config.')
+      }
+      const input = value as Partial<AgentAdminPostgresPoolUpdate>
+      const desired = input.desired
+      const open = desired?.max_open_connections
+      const idle = desired?.max_idle_connections
+      if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+          typeof open !== 'number' || !Number.isSafeInteger(open) ||
+          typeof idle !== 'number' || !Number.isSafeInteger(idle) ||
+          !(open === 0 || (open >= 8 && open <= 256)) ||
+          idle < 0 || idle > 32 || (open !== 0 && idle > open)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid PostgreSQL pool bounds or expected revision.')
+      }
+      return requireAgentClient().cloudSetAdminPostgresPool({
+        revision: input.revision, desired: { max_open_connections: open, max_idle_connections: idle },
+      })
+    }, false))
+  ipcMain.handle('agent:cloud-admin-postgres-pool-revisions', () =>
+    runAgentAction<AgentAdminPostgresPoolRevisionPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      return requireAgentClient().cloudAdminPostgresPoolRevisions()
+    }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-postgres-pool', (_event, value: unknown) =>
+    runAgentAction<AgentAdminPostgresPoolConfig>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new AgentIPCError('invalid_input', 0, 'PostgreSQL pool rollback requires two revisions.')
+      }
+      const input = value as Partial<AgentAdminPostgresPoolRollbackInput>
+      if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+          typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+          input.target_revision < 0 || input.revision <= input.target_revision) {
+        throw new AgentIPCError('invalid_input', 0, 'PostgreSQL pool rollback requires an older revision.')
+      }
+      return requireAgentClient().cloudRollbackAdminPostgresPool({
+        revision: input.revision, target_revision: input.target_revision,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-admin-source-worker', () => runAgentAction<AgentAdminSourceWorkerConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

@@ -704,6 +704,27 @@ export class XDriveApi {
     return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
   }
 
+  adminPostgresPoolConfig() {
+    return this.request<import('../../ui/shared/src').XDrivePostgresPoolConfig>('/api/v1/admin/services/postgresql/pool', { cache: 'no-store' })
+  }
+  adminSavePostgresPoolConfig(input: import('../../ui/shared/src').XDrivePostgresPoolUpdate) {
+    return this.request<import('../../ui/shared/src').XDrivePostgresPoolConfig>('/api/v1/admin/services/postgresql/pool', {
+      method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+    })
+  }
+  adminPostgresPoolRevisions() {
+    return this.request<import('../../ui/shared/src').XDrivePostgresPoolRevisionPage>(
+      '/api/v1/admin/services/postgresql/pool/revisions', { cache: 'no-store' },
+    )
+  }
+  adminRollbackPostgresPool(input: import('../../ui/shared/src').XDrivePostgresPoolRollbackInput) {
+    return this.request<import('../../ui/shared/src').XDrivePostgresPoolConfig>(
+      '/api/v1/admin/services/postgresql/pool/rollback', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
   adminSourceWorkerConfig() {
     return this.request<XDriveSourceWorkerConfig>('/api/v1/admin/services/source-worker', { cache: 'no-store' })
   }

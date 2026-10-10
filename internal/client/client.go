@@ -311,6 +311,66 @@ type ServiceDependency struct {
 }
 
 // AdminSourceWorkerValues controls the standalone Pull Worker scheduler only.
+// System-wide desired xDrive Server database/sql pool policy, not the
+// PostgreSQL daemon's own connection configuration or credentials.
+type AdminPostgresPoolValues struct {
+	MaxOpenConnections int `json:"max_open_connections"`
+	MaxIdleConnections int `json:"max_idle_connections"`
+}
+type AdminPostgresPoolConfig struct {
+	Desired           AdminPostgresPoolValues  `json:"desired"`
+	Effective         *AdminPostgresPoolValues `json:"effective,omitempty"`
+	Revision          uint64                   `json:"revision"`
+	EffectiveRevision uint64                   `json:"effective_revision"`
+	Source            string                   `json:"source"`
+	ApplyState        string                   `json:"apply_state"`
+	Editable          bool                     `json:"editable"`
+	RequiresRestart   bool                     `json:"requires_restart"`
+	UpdatedAt         *time.Time               `json:"updated_at,omitempty"`
+	CurrentMaxOpen    int                      `json:"current_max_open_connections"`
+	OpenConnections   int                      `json:"open_connections"`
+	InUseConnections  int                      `json:"in_use_connections"`
+	IdleConnections   int                      `json:"idle_connections"`
+}
+type AdminPostgresPoolUpdate struct {
+	Revision uint64                  `json:"revision"`
+	Desired  AdminPostgresPoolValues `json:"desired"`
+}
+type AdminPostgresPoolRevision struct {
+	Revision  uint64                  `json:"revision"`
+	Desired   AdminPostgresPoolValues `json:"desired"`
+	Origin    string                  `json:"origin"`
+	CreatedAt time.Time               `json:"created_at"`
+}
+type AdminPostgresPoolRevisionPage struct {
+	Items []AdminPostgresPoolRevision `json:"items"`
+}
+type AdminPostgresPoolRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminPostgresPoolConfig(ctx context.Context) (AdminPostgresPoolConfig, error) {
+	var out AdminPostgresPoolConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/postgresql/pool", nil, &out)
+	return out, err
+}
+func (c *Client) UpdateAdminPostgresPool(ctx context.Context, input AdminPostgresPoolUpdate) (AdminPostgresPoolConfig, error) {
+	var out AdminPostgresPoolConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/postgresql/pool", input, &out)
+	return out, err
+}
+func (c *Client) AdminPostgresPoolRevisions(ctx context.Context) (AdminPostgresPoolRevisionPage, error) {
+	var out AdminPostgresPoolRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/postgresql/pool/revisions", nil, &out)
+	return out, err
+}
+func (c *Client) RollbackAdminPostgresPool(ctx context.Context, input AdminPostgresPoolRollbackInput) (AdminPostgresPoolConfig, error) {
+	var out AdminPostgresPoolConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/postgresql/pool/rollback", input, &out)
+	return out, err
+}
+
 type AdminSourceWorkerValues struct {
 	ScanIntervalSeconds int64 `json:"scan_interval_seconds"`
 	PollIntervalSeconds int64 `json:"poll_interval_seconds"`

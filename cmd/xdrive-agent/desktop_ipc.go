@@ -602,6 +602,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-postgres-pool", h.cloudAdminPostgresPool)
+	mux.HandleFunc("PUT /v1/cloud/admin-postgres-pool", h.cloudSetAdminPostgresPool)
+	mux.HandleFunc("GET /v1/cloud/admin-postgres-pool/revisions", h.cloudAdminPostgresPoolRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-postgres-pool/rollback", h.cloudRollbackAdminPostgresPool)
 	mux.HandleFunc("GET /v1/cloud/admin-source-worker", h.cloudAdminSourceWorker)
 	mux.HandleFunc("PUT /v1/cloud/admin-source-worker", h.cloudSetAdminSourceWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-source-worker/revisions", h.cloudAdminSourceWorkerRevisions)
@@ -1826,6 +1830,118 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 }
 
 // Optional controller interface keeps older Agent implementations explicit.
+// Optional desktop Agent feature; only the Server's requireAdmin route
+// authorizes global PostgreSQL connection-pool mutations.
+type desktopIPCAdminPostgresPoolController interface {
+	CloudAdminPostgresPoolConfig(context.Context) (client.AdminPostgresPoolConfig, error)
+	CloudSetAdminPostgresPool(context.Context, client.AdminPostgresPoolUpdate) (client.AdminPostgresPoolConfig, error)
+	CloudAdminPostgresPoolRevisions(context.Context) (client.AdminPostgresPoolRevisionPage, error)
+	CloudRollbackAdminPostgresPool(context.Context, client.AdminPostgresPoolRollbackInput) (client.AdminPostgresPoolConfig, error)
+}
+
+func validDesktopPostgresPoolValues(values client.AdminPostgresPoolValues) bool {
+	return (values.MaxOpenConnections == 0 ||
+		(values.MaxOpenConnections >= 8 && values.MaxOpenConnections <= 256)) &&
+		values.MaxIdleConnections >= 0 && values.MaxIdleConnections <= 32 &&
+		(values.MaxOpenConnections == 0 || values.MaxIdleConnections <= values.MaxOpenConnections)
+}
+
+func (h *desktopIPCHandler) cloudAdminPostgresPool(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPostgresPoolController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_postgres_pool_unsupported", "PostgreSQL pool settings are unsupported")
+		return
+	}
+	out, err := provider.CloudAdminPostgresPoolConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudSetAdminPostgresPool(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPostgresPoolController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_postgres_pool_unsupported", "PostgreSQL pool settings are unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Desired  *struct {
+			MaxOpenConnections *int `json:"max_open_connections"`
+			MaxIdleConnections *int `json:"max_idle_connections"`
+		} `json:"desired"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.Desired == nil ||
+		input.Desired.MaxOpenConnections == nil || input.Desired.MaxIdleConnections == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_postgres_pool", "Expected revision and both integer pool limits")
+		return
+	}
+	values := client.AdminPostgresPoolValues{
+		MaxOpenConnections: *input.Desired.MaxOpenConnections,
+		MaxIdleConnections: *input.Desired.MaxIdleConnections,
+	}
+	if !validDesktopPostgresPoolValues(values) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_postgres_pool", "PostgreSQL pool limits are out of bounds")
+		return
+	}
+	out, err := provider.CloudSetAdminPostgresPool(r.Context(), client.AdminPostgresPoolUpdate{Revision: *input.Revision, Desired: values})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudAdminPostgresPoolRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPostgresPoolController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_postgres_pool_unsupported", "PostgreSQL pool history is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminPostgresPoolRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+func (h *desktopIPCHandler) cloudRollbackAdminPostgresPool(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPostgresPoolController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_postgres_pool_unsupported", "PostgreSQL pool rollback is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil || *input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_postgres_pool_rollback", "Older target revision is required")
+		return
+	}
+	out, err := provider.CloudRollbackAdminPostgresPool(r.Context(), client.AdminPostgresPoolRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
 type desktopIPCAdminSourceWorkerController interface {
 	CloudAdminSourceWorkerConfig(context.Context) (client.AdminSourceWorkerConfig, error)
 	CloudSetAdminSourceWorkerConfig(context.Context, client.AdminSourceWorkerUpdate) (client.AdminSourceWorkerConfig, error)

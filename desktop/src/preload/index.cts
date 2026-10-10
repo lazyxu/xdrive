@@ -620,6 +620,12 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudAdminPostgresPoolConfig: () => ipcRenderer.invoke('agent:cloud-admin-postgres-pool'),
+  cloudSetAdminPostgresPool: (input: { revision: number; desired: { max_open_connections: number; max_idle_connections: number } }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-postgres-pool', input),
+  cloudAdminPostgresPoolRevisions: () => ipcRenderer.invoke('agent:cloud-admin-postgres-pool-revisions'),
+  cloudRollbackAdminPostgresPool: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-postgres-pool', input),
   cloudAdminSourceWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-source-worker'),
   cloudSetAdminSourceWorkerConfig: (input: { revision: number; desired: { scan_interval_seconds: number; poll_interval_seconds: number; max_concurrency: number } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-source-worker', input),

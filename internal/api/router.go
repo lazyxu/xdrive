@@ -21,6 +21,8 @@ import (
 
 type Server struct {
 	DB                             *gorm.DB
+	postgresPoolSaveMu             sync.Mutex
+	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
 	Auth                           auth.Manager
 	RefreshTTL                     time.Duration
@@ -337,6 +339,10 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/postgresql/pool", s.adminPostgresPoolConfig)
+	admin.PUT("/services/postgresql/pool", s.adminSavePostgresPool)
+	admin.GET("/services/postgresql/pool/revisions", s.adminPostgresPoolRevisions)
+	admin.POST("/services/postgresql/pool/rollback", s.adminRollbackPostgresPool)
 	admin.GET("/services/source-worker", s.adminSourceWorkerConfig)
 	admin.PUT("/services/source-worker", s.adminSaveSourceWorkerConfig)
 	admin.GET("/services/source-worker/revisions", s.adminSourceWorkerRevisions)
