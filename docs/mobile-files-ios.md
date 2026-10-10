@@ -178,6 +178,13 @@ Tests verify callback delegation and state/viewport ownership. This is a functio
 
 ## 2026-10-10 F-iOS27-08B · 行高／分隔线与键盘右键菜单
 
-**单工作提交实现，等待完整 PR CI 与合并。** 近期／收藏的虚拟列表用共享 68px 行高计算 before/after，但实际集合行仅 `minHeight:64`，可能使深层滚动错位。本阶段统一集合行与虚拟行的 68px 计算高度，并将列表分隔线与真实标题起点对齐：普通行 72px，多选行 108px，内嵌层级每级再加 16px（最多四级）；图标网格不受影响。Recent/Favorites 支持键盘 `ContextMenu`／`Shift+F10` 调用原长按菜单，沿用全部 Web Controller/Server 授权的文件打开、下载、属性、收藏操作；所有菜单项至少 44px，避免误触和嵌套按钮键盘事件串扰。挂载／纯函数回归测试覆盖 10k/100k 的虚拟行跨度、焦点、快捷键及原业务回调。
+**已合入：** [PR #1331](https://github.com/lazyxu/xdrive/pull/1331)，完整 CI [#38066135499](https://github.com/lazyxu/xdrive/actions/runs/38066135499) 和 Final Gate 通过（Desktop 2056 通过／0 失败／1 跳过），线性合并 `593033e3`，短期分支已删除。近期／收藏的虚拟列表用共享 68px 行高计算 before/after，但实际集合行仅 `minHeight:64`，可能使深层滚动错位。本阶段统一集合行与虚拟行的 68px 计算高度，并将列表分隔线与真实标题起点对齐：普通行 72px，多选行 108px，内嵌层级每级再加 16px（最多四级）；图标网格不受影响。Recent/Favorites 支持键盘 `ContextMenu`／`Shift+F10` 调用原长按菜单，沿用全部 Web Controller/Server 授权的文件打开、下载、属性、收藏操作；所有菜单项至少 44px，避免误触和嵌套按钮键盘事件串扰。挂载／纯函数回归测试覆盖 10k/100k 的虚拟行跨度、焦点、快捷键及原业务回调。
 
 这只修复 **已知内部布局不一致**，不能用 68px 或 72px 的代码常量宣称 iOS 27 真机像素级 1:1。真机截图与辅助功能、375/390/899/900px 的真实授权／错误对比、100k 实际浏览器资源测量和取消请求传播仍未完成。保留全屏 App Frame、52px 标题栏，以及 Web/Desktop/Mobile Web 共享 Server/虚拟化和 Mobile 仅无内部多标签页。
+
+
+## 2026-10-11 F-iOS27-08C · 重命名校验／失败提示与宽屏 Web 完全一致
+
+**单工作提交实现；完整 PR CI／合并及 iOS 27 真机验收是独立门槛。** 宽屏 Web 重命名使用 `XDriveFileNameDialogView` 和共享 UTF-8 名称校验，而 Mobile Files 此前另有一份无 255 字节校验、失败后 `catch` 直接忽略异常的简化弹窗。现统一改用 `@xdrive/ui/mui` 的 `XDriveFileNameDialog`：空名称及超长中文名称在客户端阻止提交；403／409 等 Server 拒绝在弹窗内显示错误并保留草稿；原文件 ID 与 Revision 保留，可再次点击保存；进行中禁用重复提交，账户、目录、搜索、回收站范围变化后关闭旧弹窗并忽略迟到结果。请求、鉴权、冲突与刷新仍走原 `WebFileExplorer.onRename → api.rename`，不新建移动端业务实现或请求端点。
+
+挂载测试使用**真实共享对话框组件**，验证拒绝、重试、255 字节上限与作用域切换。真实宽度 375/390/899/900 的跨布局 Server 权限／错误对照、iOS 27 Safari/PWA 截图像素与 VoiceOver、100k 浏览器性能和 HTTP→Go 取消仍未验收。继续保留全屏 App Frame、独立 52px 全局标题栏、共同 Server／虚拟列表，Mobile 仅省略内部多标签页。
