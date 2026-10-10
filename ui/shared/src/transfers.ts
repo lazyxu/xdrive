@@ -31,6 +31,8 @@ export type XDriveTransferTask = {
   // Server-resolved cloud location; never infer this from the local "path".
   cloud_parent_id?: number
   cloud_node_id?: number
+  // Set by owning Desktop Agent only; never inferred from a filename.
+  local_revealable?: boolean
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string
   direction: 'upload' | 'download' | 'local' | string
   state: XDriveTransferState

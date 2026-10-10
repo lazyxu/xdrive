@@ -47,6 +47,7 @@ export type XDriveTransferPopoverProps = {
   retryDisabled?: boolean
   onRetry?: (id: string) => void
   onShowInCloud?: (task: XDriveTransferTask) => void
+  onShowInLocal?: (task: XDriveTransferTask) => void
   canCancel?: (id: string) => boolean
   onCancel?: (id: string) => void
   open?: boolean
@@ -91,6 +92,7 @@ function TransferPopoverSession({
   retryDisabled = false,
   onRetry,
   onShowInCloud,
+  onShowInLocal,
   canCancel,
   onCancel,
   open,
@@ -279,9 +281,11 @@ function TransferPopoverSession({
                   key={node.task.id}
                   onContextMenu={(event) => {
                     const task = node.task
-                    const canShow = (typeof task.cloud_parent_id === 'number' && Number.isSafeInteger(task.cloud_parent_id) && task.cloud_parent_id > 0) ||
-                      (typeof task.cloud_node_id === 'number' && Number.isSafeInteger(task.cloud_node_id) && task.cloud_node_id > 0)
-                    if (!canShow || !onShowInCloud || disabled) return
+                    const canShowCloud = Boolean(onShowInCloud) && (
+                      (typeof task.cloud_parent_id === 'number' && Number.isSafeInteger(task.cloud_parent_id) && task.cloud_parent_id > 0) ||
+                      (typeof task.cloud_node_id === 'number' && Number.isSafeInteger(task.cloud_node_id) && task.cloud_node_id > 0))
+                    const canShowLocal = Boolean(onShowInLocal) && task.local_revealable === true
+                    if ((!canShowCloud && !canShowLocal) || disabled) return
                     event.preventDefault()
                     setContextMenu({ task, mouseX: event.clientX, mouseY: event.clientY })
                   }}
@@ -320,12 +324,25 @@ function TransferPopoverSession({
         anchorReference="anchorPosition"
         anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
       >
-        <MenuItem onClick={() => {
-          if (contextMenu) onShowInCloud?.(contextMenu.task)
-          setContextMenu(null)
-        }}>
-          在云端文件管理器中显示
-        </MenuItem>
+        {contextMenu && onShowInCloud && (
+          (typeof contextMenu.task.cloud_parent_id === 'number' && Number.isSafeInteger(contextMenu.task.cloud_parent_id) && contextMenu.task.cloud_parent_id > 0) ||
+          (typeof contextMenu.task.cloud_node_id === 'number' && Number.isSafeInteger(contextMenu.task.cloud_node_id) && contextMenu.task.cloud_node_id > 0)
+        ) ? (
+          <MenuItem onClick={() => {
+            onShowInCloud(contextMenu.task)
+            setContextMenu(null)
+          }}>
+            在云端文件管理器中显示
+          </MenuItem>
+        ) : null}
+        {contextMenu?.task.local_revealable === true && onShowInLocal ? (
+          <MenuItem onClick={() => {
+            onShowInLocal(contextMenu.task)
+            setContextMenu(null)
+          }}>
+            在本地文件管理器中显示
+          </MenuItem>
+        ) : null}
       </Menu>
     </>
   )

@@ -734,6 +734,38 @@ func (c *agentController) CancelTransfer(id string) error {
 	return c.transfers.Cancel(id)
 }
 
+// Resolve local position by immutable Agent task identity, never by renderer
+// supplied path. A pending download may have only its destination folder.
+func (c *agentController) OpenTransferLocal(id string) error {
+	if _, err := userconfig.Load(); err != nil {
+		return err
+	}
+	task, err := c.transfers.LocalRevealTask(id)
+	if err != nil {
+		return err
+	}
+	localPath := filepath.Clean(filepath.FromSlash(task.Path))
+	if !filepath.IsAbs(localPath) {
+		return errors.New("transfer does not have an absolute local path")
+	}
+	info, err := os.Stat(localPath)
+	if err == nil {
+		if info.IsDir() {
+			return openFolderPlatform(localPath)
+		}
+		return selectFilePlatform(localPath)
+	}
+	if !errors.Is(err, os.ErrNotExist) || task.Kind != transfer.KindDownload {
+		return fmt.Errorf("local file is unavailable: %w", err)
+	}
+	parent := filepath.Dir(localPath)
+	info, err = os.Stat(parent)
+	if err != nil || !info.IsDir() {
+		return errors.New("local download destination folder is unavailable")
+	}
+	return openFolderPlatform(parent)
+}
+
 func (c *agentController) StartTransferGroup(spec transfer.Spec) (string, error) {
 	handle := c.transfers.StartGroup(spec)
 	if handle == nil {

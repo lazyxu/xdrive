@@ -141,8 +141,13 @@ func startAgentCloudTransfer(
 	if len(locations) > 0 {
 		spec.CloudParentID = locations[0].ParentID
 		spec.CloudNodeID = locations[0].NodeID
+		// Only this Agent knows the real local path for this direct transfer.
 	}
 	handle := manager.Start(spec)
+	if handle != nil && len(locations) > 0 &&
+		(kind == transfer.KindUpload || kind == transfer.KindDownload) {
+		handle.AllowLocalReveal()
+	}
 	first := true
 	progress := func(done, total int64) {
 		if handle == nil {

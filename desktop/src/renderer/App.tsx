@@ -2062,6 +2062,15 @@ export default function App({
           transfers.transfers.some((task) => task.id === id && task.cancelable === true &&
             task.state !== 'cancelling' && (task.state === 'running' || task.state === 'retrying'))}
         onCancel={(id) => { void cancelTransfer(id) }}
+        onShowInLocal={agent.hello?.capabilities.includes('transfer-open-local')
+          ? (task) => {
+            void run(
+              `reveal-transfer-${task.id}`,
+              () => window.xdriveDesktop.agent.openTransferLocal(task.id),
+              '已打开本地文件所在位置。',
+            )
+          }
+          : undefined}
         onShowInCloud={(task) => {
           const locatorID = task.cloud_parent_id || task.cloud_node_id
           if (typeof locatorID !== 'number' || !Number.isSafeInteger(locatorID) || locatorID <= 0) return

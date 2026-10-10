@@ -30,3 +30,19 @@ Header 的共享 `XDriveTransferPopover` 是 Web/Mobile Web 与 Desktop 的
 测试：Go 传输快照序列化测试；Web/Desktop 适配器与共享上下文菜单的合同测试。
 合并门槛：单工作提交、Web/Desktop 构建、Desktop/Go 相关测试、Windows
 安装/升级回滚和 `final-gate` 全绿。物理设备验证另行记录。
+
+## 2026-10-10 · Desktop Agent 受限的本地位置定位
+
+Desktop 在传输右键菜单增加「在本地文件管理器中显示」，**仅对 Agent
+真正创建的直接单文件上传/下载任务开放**。Client/Renderer 只提交
+`transfer_id`，本地绝对路径由 Agent 内部传输记录解析；通用
+`transfer-lifecycle` 路径、Web、远程来源和旧 Agent 均不得伪造可定位权限。
+Agent IPC 用 `transfer-open-local` 能力声明启用入口，浏览器不获得磁盘访问能力。
+
+上传在存在本地原文件时直接显示该文件。下载完成后显示本地目标文件；
+下载进行中目标文件尚未提交时，仅打开已存在的目标父目录，
+绝不把临时文件或不存在的路径假装成已保存文件。缺失或不可访问的路径返回可见错误。
+文件路径不会作为右键命令参数传回 Agent。窗口关闭不取消任何传输。
+
+此阶段不扩展到同步文件夹后台、FUSE 水合、ZIP/文件夹合并任务、
+由浏览器接管的下载、以及外部生命周期管理的上传。均不显示不可用的入口。
