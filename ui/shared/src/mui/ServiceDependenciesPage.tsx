@@ -307,7 +307,7 @@ export function XDriveServiceDependenciesPage({
       setGeoNamesConfig(updated)
       setGeoNamesDraftDistance(String(updated.max_distance_km))
       setGeoNamesNotice(updated.apply_state === 'applied'
-        ? '已持久化配置并写入审计，当前 Server 新索引立即生效；其他实例可能仍待生效。'
+        ? '已持久化配置并写入审计，当前 Server 新索引立即生效；其他实例每 30 秒尝试自动校验并应用，失败时仍显示待生效。'
         : '配置已保存，但当前 Server 尚未确认生效，请校验并热加载。')
       if (source.loadGeoNamesRevisions) {
         const history = await source.loadGeoNamesRevisions().catch(() => null)
@@ -410,7 +410,7 @@ export function XDriveServiceDependenciesPage({
       setGeoNamesDraftDistance(String(effective.max_distance_km))
       setGeoNamesRollbackTarget('')
       setGeoNamesNotice(effective.apply_state === 'applied'
-        ? '历史距离已回滚、审计并热应用至当前 Server；其他实例如有待生效状态仍需单独重载。'
+        ? '历史距离已回滚、审计并热应用至当前 Server；其他实例每 30 秒尝试自动校验并应用，失败时仍显示待生效。'
         : '已保存回滚配置；当前实例尚未确认生效，请执行校验并热加载。')
       if (source.loadGeoNamesRevisions) {
         const history = await source.loadGeoNamesRevisions().catch(() => null)
