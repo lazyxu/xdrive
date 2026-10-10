@@ -13,7 +13,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified local snapshot reader (L03-A), then Planner, resumable upload, commit and recovery | read-only L03-A staged in this change; upload/runtime still not implemented |
+| L03 | Verified local snapshot reader (L03-A), bounded original-file digest preflight (L03-B), then Planner, resumable upload, commit and recovery | L03-A merged #1244; L03-B proposed in this change; upload/runtime not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Web remote execution request, Agent pickup, read-only draft preview | not implemented |
@@ -84,6 +84,12 @@ This is **strictly Agent-local state**; it is not a SourceRun checkpoint, stable
 `StreamVerifiedInventoryJournal` validates a complete local Root-scoped journal with SHA-256 **before** returning any bounded batches, then checks each path, type, native identity, hard-link ambiguity, totals, checksum and Root identity during/after the stream. A cancelled, replaced or corrupt local inventory never returns a successful completed snapshot. The reader is intentionally callback-based and bounded to 500 observations; it does not buffer the 100k inventory in the frontend or create cloud SourceItems.
 
 Callbacks remain **read-only**: they can be invoked before the final recheck completes, so downstream planners must not mutate remote state based on a partial or failed reader call. This prepares future reconciliation and resume logic but is not an upload, Source Run checkpoint or Mirror deletion evidence. Full end-to-end operation and cancellation/revocation acceptance are still L03 follow-up work.
+
+## L03-B safe local file content preflight (non-operational)
+
+After a complete verified L03-A journal, `HashVerifiedInventoryFile` can stream one non-ignored regular file through SHA-256 with fixed 256 KiB buffering and Go context cancellation. The operation validates the Source Root, canonical relative path, expected size/mtime/native item key and open handle before returning a digest; modifications or replaced roots reject the result. Linux uses `openat2` with beneath/no-symlink resolution (fails closed on unsupported kernels); Windows rejects observed reparse-point directories and leaf handles. No content bytes or credential paths are returned to Web.
+
+The digest is **advisory preflight evidence, not a stable SourceItem ID or upload authorization**. A future uploader must preserve the verified file handle or reopen and validate equivalent native constraints and must match the Server/CAS-received SHA before committing a SourceItem. The current feature neither publishes plans nor mutates remote files, runs or deletion evidence. Tests cover original bytes, cancellation, content changes, path traversal, symlinks and Root replacement. A 4 GiB Windows/Desktop resumable upload E2E still needs actual execution in a later phase.
 
 ## Non-negotiable invariants
 
