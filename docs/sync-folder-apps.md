@@ -65,9 +65,9 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 own Desktop local-only inventory snapshot in development |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 owning Desktop local-only snapshot merged #1400; P0-C4c3 read-only delta in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
-| L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a revision-bound advisory generation fence in PR; no durable SourceItem aliases/Planner/upload/commit |
+| L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a advisory generation fence merged #1397; no durable SourceItem aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
 
@@ -435,3 +435,29 @@ exist even if account revocation races immediately after its atomic commit;
 it never permits a remote write. Deliberately no Server upload, SourceItem
 alias reconciliation, Mirror missing evidence, NAS manager, scheduled scan or
 remote-device operation is added. CI and physical acceptance remain pending.
+
+## P0-C4c3 owning Desktop local two-generation delta (PR verification, not merged)
+
+The verified owning Windows/Linux Desktop can explicitly compare its two
+previously saved and independently verified complete CURRENT/PREVIOUS local
+Root inventories. A distinct authenticated loopback
+`GET /v1/device-backups/local-delta?source_id=` requires the OS-held enrolled
+device credential, exact paused local Push Source and revision, saved private
+rules, matching native Root grant and unchanged account/Server session. The
+existing 64-bucket bounded delta reader verifies both generations and does
+not publish persistent evidence. The Agent rechecks authority after reading.
+
+The Renderer receives only allowlisted Source ID/revision and aggregate counts:
+`previous_items`, `current_items`, `added`, `changed`, `metadata_stable`,
+`absent_candidates`. No filenames, paths, native identities, Root credentials,
+fingerprints, raw errors, or candidate arrays are available through Renderer,
+Web/Mobile Web or foreign Desktop. Electron Main registers an isolated
+per-webContents AbortController before Agent startup; cancellation propagates
+to Go's request Context. Missing, changed or corrupt generations fail closed.
+
+`authoritative=false` and `missing_inference_safe=false` are mandatory.
+An absent candidate is **not** cloud deletion evidence, stable metadata is
+**not** content equality, and this view is not a backup, confirmed rename or
+SourceItem/alias mapping. It never triggers upload, CAS/Node writes, SourceRun,
+saved schedules, watchers, NAS controls or Mirror deletion. Physical 100k/4GiB
+acceptance and GitLab validation are not claimed for this PR.
