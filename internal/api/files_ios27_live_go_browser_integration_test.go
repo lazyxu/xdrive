@@ -69,13 +69,14 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := (&Server{
+	srv := &Server{
 		DB: db, Store: local,
 		Auth:           auth.New("files-ios27-real-go-isolated", time.Hour),
 		RefreshTTL:     24 * time.Hour,
 		AllowedOrigin:  "http://localhost",
 		MaxUploadBytes: 10 << 20,
-	}).Router()
+	}
+	router := srv.Router()
 	username := "ios27-files-owner"
 	token := createTestUser(t, db, router, username, "test-only-owner-password")
 	foreignToken := createTestUser(t, db, router, "ios27-files-other", "test-only-other-password")
@@ -452,6 +453,34 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		t.Logf("IOS27_FILES_LIVE_GO_COPY_QUEUED count=%d source=%d revision=%d", len(queued), after.ID, after.Revision)
 		t.Logf("IOS27_FILES_LIVE_GO_VERIFIED id=%d revision=%d name=%s owner=%d",
 			after.ID, after.Revision, after.Name, after.OwnerID)
+		// F09I-D3: only after genuine Chromium, owner-scoped queue and
+		// PostgreSQL intent assertions, execute the production Worker.
+		assertIOS27FilesLiveWorkerEffects(t, srv, db, router, peer.URL, token, after.OwnerID,
+			[]ios27FilesWorkerEffect{
+				{ID: file.ID, Revision: after.Revision, SourceParent: root.ID, TargetParent: mobileTarget.ID, Name: after.Name, Body: "actual PostgreSQL/CAS document"},
+				{ID: file.ID, Revision: after.Revision, SourceParent: root.ID, TargetParent: wideTarget.ID, Name: after.Name, Body: "actual PostgreSQL/CAS document"},
+				{ID: mobileBatchCopyA.ID, Revision: mobileBatchCopyA.Revision, SourceParent: batchSource.ID, TargetParent: mobileTarget.ID, Name: mobileBatchCopyA.Name, Body: "real Mobile batch copy one"},
+				{ID: mobileBatchCopyB.ID, Revision: mobileBatchCopyB.Revision, SourceParent: batchSource.ID, TargetParent: mobileTarget.ID, Name: mobileBatchCopyB.Name, Body: "real Mobile batch copy two"},
+				{ID: wideBatchCopyA.ID, Revision: wideBatchCopyA.Revision, SourceParent: batchSource.ID, TargetParent: wideTarget.ID, Name: wideBatchCopyA.Name, Body: "real Wide batch copy one"},
+				{ID: wideBatchCopyB.ID, Revision: wideBatchCopyB.Revision, SourceParent: batchSource.ID, TargetParent: wideTarget.ID, Name: wideBatchCopyB.Name, Body: "real Wide batch copy two"},
+			},
+			[]ios27FilesWorkerEffect{
+				{ID: mobileMove.ID, Revision: mobileMove.Revision, SourceParent: root.ID, TargetParent: mobileMoveTarget.ID, Name: mobileMove.Name, Body: "real mobile move source"},
+				{ID: wideMove.ID, Revision: wideMove.Revision, SourceParent: root.ID, TargetParent: wideMoveTarget.ID, Name: wideMove.Name, Body: "real wide move source"},
+				{ID: mobileBatchMoveA.ID, Revision: mobileBatchMoveA.Revision, SourceParent: batchSource.ID, TargetParent: mobileMoveTarget.ID, Name: mobileBatchMoveA.Name, Body: "real Mobile batch move one"},
+				{ID: mobileBatchMoveB.ID, Revision: mobileBatchMoveB.Revision, SourceParent: batchSource.ID, TargetParent: mobileMoveTarget.ID, Name: mobileBatchMoveB.Name, Body: "real Mobile batch move two"},
+				{ID: wideBatchMoveA.ID, Revision: wideBatchMoveA.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveA.Name, Body: "real Wide batch move one"},
+				{ID: wideBatchMoveB.ID, Revision: wideBatchMoveB.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveB.Name, Body: "real Wide batch move two"},
+			},
+			[]ios27FilesWorkerEffect{
+				{ID: mobileDelete.ID, Revision: mobileDelete.Revision, SourceParent: root.ID, Name: mobileDelete.Name, Body: "real mobile delete source"},
+				{ID: wideDelete.ID, Revision: wideDelete.Revision, SourceParent: root.ID, Name: wideDelete.Name, Body: "real wide delete source"},
+				{ID: mobileBatchA.ID, Revision: mobileBatchA.Revision, SourceParent: root.ID, Name: mobileBatchA.Name, Body: "real Mobile bulk delete one"},
+				{ID: mobileBatchB.ID, Revision: mobileBatchB.Revision, SourceParent: root.ID, Name: mobileBatchB.Name, Body: "real Mobile bulk delete two"},
+				{ID: wideBatchA.ID, Revision: wideBatchA.Revision, SourceParent: root.ID, Name: wideBatchA.Name, Body: "real Wide bulk delete one"},
+				{ID: wideBatchB.ID, Revision: wideBatchB.Revision, SourceParent: root.ID, Name: wideBatchB.Name, Body: "real Wide bulk delete two"},
+			})
+
 	case <-time.After(4 * time.Minute):
 		t.Fatal("live browser did not finish the real Gin/PostgreSQL fixture")
 	}
