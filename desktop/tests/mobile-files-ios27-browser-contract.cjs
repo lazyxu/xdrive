@@ -172,7 +172,7 @@ test('09F: actual Chromium Recent/Favorites/Saved Search collection menus share 
     "await sampleMenu('favorites', 4)",
     "await sampleMenu('saved-search', 3)",
     "parseFloat(item.computedMinHeight) >= 44",
-    "deniedSaved.status() === 403", "acceptedSaved.status() === 200",
+    "deniedSaved.status() === 403", "acceptedSaved.status() === 204",
     "filesIos27Fixture.favoriteNodeIDs.length === 0",
     "filesIos27Fixture.savedSearches.length === 0",
     "writesAfter === writesBefore",
@@ -189,6 +189,38 @@ test('09F: actual Chromium Recent/Favorites/Saved Search collection menus share 
     'MOBILE_FILES_MENU_TOUCH_SX',
     'props.onCollectionAction?.(entry, action)',
   ]) assert.ok(mobile.includes(key), 'Mobile must retain shared presentation: ' + key)
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
+
+
+test('09G: Chrome collection DELETE success matches genuine Gin 204 and one shared REST adapter', () => {
+  const favoriteGo = read('internal/api/file_favorites.go')
+  const savedGo = read('internal/api/file_organization.go')
+  const favoritePG = read('internal/api/file_favorites_integration_test.go')
+  const savedPG = read('internal/api/file_organization_integration_test.go')
+  const api = read('web/src/api.ts')
+  const web = read('web/src/WebFileExplorer.tsx')
+  const mobile = read('web/src/MobileFiles.tsx')
+  for (const token of [
+    'filesIos27Fixture.rejectNextUnfavorite ? 403 : 204',
+    'filesIos27Fixture.rejectNextSavedDelete ? 403 : 204',
+    'acceptedFavorite.status() === 204',
+    'acceptedSaved.status() === 204',
+    '[[104,403],[104,204]]',
+    '[[17,403],[17,204]]',
+    'if (body?.__fixtureNoContent)',
+    'await route.fulfill({ status: 204 })',
+  ]) assert.ok(runner.includes(token), 'browser must test actual empty-body Gin 204: ' + token)
+  assert.ok(favoriteGo.includes('Where("owner_id = ? AND node_id = ?", userID(c), nodeID)'))
+  assert.ok(favoriteGo.includes('c.Status(http.StatusNoContent)'))
+  assert.ok(savedGo.includes('if result.RowsAffected == 0'))
+  assert.ok(savedGo.includes('fail(c, http.StatusNotFound, "saved search not found")'))
+  assert.ok(favoritePG.includes('foreign DELETE modified A'))
+  assert.ok(savedPG.includes('foreign saved-rule writes mutated A'))
+  assert.ok(api.includes('if (response.status === 204) return undefined as T'))
+  assert.ok(web.includes('onUnfavorite={id => favorites.unfavorite(id)}'))
+  assert.ok(web.includes('onDeleteSavedSearch={id => organization.deleteSavedSearch(id)}'))
   assert.ok(!mobile.includes('new XDriveApi('))
   assert.ok(!mobile.includes('fetch('))
 })
