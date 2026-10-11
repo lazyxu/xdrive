@@ -199,6 +199,7 @@ import {
   type AgentLocalBackupPreview,
   type AgentLocalBackupSnapshot,
   type AgentLocalBackupDelta,
+  type AgentLocalBackupEvidence,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2224,6 +2225,41 @@ function registerIPCHandlers() {
       const key = `${event.sender.id}:${String(requestID)}`
       const found = localDeltaRequests.has(key)
       localDeltaRequests.get(key)?.abort()
+      return { cancelled: found }
+    }, false))
+  // An advisory read-only local advisory evidence uses its own request registry.
+  // Closing its dialog or changing account aborts Electron HTTP and Go.
+  const localEvidenceRequests = new Map<string, AbortController>()
+  ipcMain.handle('agent:stage-device-backup-local-evidence', (event, sourceID: unknown, requestID: unknown) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      !validLocalPreviewID(requestID) || localEvidenceRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupEvidence>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid or duplicate local advisory evidence request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    localEvidenceRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupEvidence>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-evidence')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local advisory evidence staging was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupEvidence(sourceID, controller.signal)
+    }, false).finally(() => {
+      if (localEvidenceRequests.get(key) === controller) localEvidenceRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-evidence', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local advisory evidence request ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localEvidenceRequests.has(key)
+      localEvidenceRequests.get(key)?.abort()
       return { cancelled: found }
     }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>

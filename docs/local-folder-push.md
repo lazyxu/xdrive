@@ -470,3 +470,36 @@ machine identity. SourceRun activation, CAS transfer, authoritative alias
 promotion, cloud rename, Mirror deletion, trusted heartbeat and native 100k/
 4GiB acceptance remain blocked until later separate work. CI/merge/GitLab
 status must be recorded independently.
+
+
+## P0-C4c4: manual owning Desktop advisory rename evidence (GitHub PR validation pending)
+
+After two independently verified complete local inventory generations, an
+explicitly confirmed, credential-verified owning Windows/Linux Desktop may
+invoke one capability-gated authenticated local Agent POST. The renderer
+supplies only a positive Source ID and a random one-shot request ID.
+The Agent loads the OS-enrolled device token, exact Root approval, private
+saved ignore rules and current Source revision itself and checks them before
+and after the advisory staging operation. Neither a browser nor the other
+Desktop logged into the same account receives this private capability.
+
+The shared page only shows a button for the verified local non-revoked
+device; Web/Mobile Web remain strictly owner-readable observers.
+The Agent IPC returns only Source ID/revision, advisory hints, existing
+SourceItem matches, unmatched hints, newly stored/replayed evidence counts,
+and explicit complete=true, authoritative=false and
+missing_inference_safe=false flags. No raw local paths, device tokens,
+native keys, Root fingerprints, individual SourceItem IDs, error detail or
+arbitrary original filesystem metadata enter renderer/foreign-device DTOs.
+
+Opening the dialog does NOT make an outbound write. Explicit manual
+confirmation starts one cancellable request with a per-webContents request ID;
+closing the dialog or switching datasource aborts the Electron request,
+Agent HTTP and Go Request.Context. Partial failure may leave only inert
+Server-side evidence in its already private, idempotent staging table;
+there is never an accepted alias or cloud operation.
+
+This does NOT make local Push executable: SourceRun activation, CAS upload,
+Node commit/rename, authoritative alias promotion, background scheduling,
+Mirror deletion, NAS Push, physical 100k/4GiB and GitLab delivery are
+separately pending. CI and physical acceptance must not be conflated.
