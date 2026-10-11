@@ -46,6 +46,12 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     next: XDriveWebViewerCandidate | null
     totalCount: number
   } | null>(null)
+  const [filmstrip, setFilmstrip] = useState<{
+    session: typeof session
+    index: number
+    nodeID: number
+    entries: Array<{ index: number; item: MediaItem; candidate: XDriveWebViewerCandidate }>
+  } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -83,6 +89,32 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   const previous = currentNeighbors?.previous ?? null
   const next = currentNeighbors?.next ?? null
   const totalCount = currentContent?.totalCount || currentNeighbors?.totalCount || (context?.kind === 'selection' ? context.nodeIDs.length : context?.kind === 'gallery' ? context.totalCount : 0)
+
+  // At most eleven neighbors. Reuse the same authorized Server Range
+  // session that owns Gallery browsing; never materialize the whole collection.
+  useEffect(() => {
+    let active = true
+    setFilmstrip(null)
+    if (!wantsMedia || context?.kind !== 'gallery' || !Number.isSafeInteger(activeIndex) ||
+      activeIndex < 0 || activeIndex >= totalCount) return
+    const start = Math.max(0, activeIndex - 5)
+    const end = Math.min(totalCount - 1, activeIndex + 5)
+    void Promise.all(Array.from({ length: end - start + 1 }, (_, i) =>
+      session.candidateAt(start + i))).then((candidates) => {
+      if (!active) return
+      const entries = candidates.filter((candidate): candidate is XDriveWebViewerCandidate =>
+        Boolean(candidate && candidate.mediaItem && predicate(candidate.node)))
+        .map((candidate) => ({ index: candidate.index, item: candidate.mediaItem!, candidate }))
+      setFilmstrip({ session, index: activeIndex, nodeID, entries })
+    }).catch(() => {
+      if (active) setFilmstrip({ session, index: activeIndex, nodeID, entries: [] })
+    })
+    return () => { active = false }
+  }, [activeIndex, context?.kind, nodeID, predicate, session, totalCount, wantsMedia])
+
+  // A previous route / index must not leave its controls on the next asset.
+  const visibleFilmstrip = filmstrip?.session === session && filmstrip.index === activeIndex &&
+    filmstrip.nodeID === nodeID ? filmstrip.entries : []
 
   function navigate(candidate: XDriveWebViewerCandidate | null) {
     if (!candidate) return
@@ -132,6 +164,11 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
     navigationLoading: Boolean(context && !currentNeighbors),
     goPrevious: () => navigate(previous),
     goNext: () => navigate(next),
+    filmstripEntries: visibleFilmstrip.map(({ index, item }) => ({ index, item })),
+    goToFilmstripIndex: (index: number) => {
+      if (index === activeIndex) return
+      navigate(visibleFilmstrip.find((entry) => entry.index === index)?.candidate ?? null)
+    },
     updateMediaItem, invalidate,
   }
 }

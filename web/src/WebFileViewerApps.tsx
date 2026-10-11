@@ -25,6 +25,7 @@ import {
   XDriveFilePreviewSurface,
   XDriveFileTagDialog,
   XDriveMediaDetailsInspector,
+  XDriveMediaGalleryFilmstrip,
   XDriveMediaViewerContent,
   XDriveShareDialog,
   XDriveStatePanel,
@@ -72,6 +73,7 @@ function WebViewerFrame({
   onPrevious,
   onNext,
   actions,
+  filmstrip,
   slideshow = false,
   sourceKey = '',
   presentationState = 'loading',
@@ -93,6 +95,7 @@ function WebViewerFrame({
   onPrevious?: () => void
   onNext?: () => void
   actions?: ReactNode
+  filmstrip?: ReactNode
   slideshow?: boolean
   sourceKey?: string
   presentationState?: XDriveFilePreviewPresentationState
@@ -398,6 +401,32 @@ function WebViewerFrame({
           </>
         ) : null}
       </Box>
+
+      {filmstrip && photosViewer ? (
+        <Box
+          data-xdrive-web-viewer-filmstrip
+          sx={{
+            position: immersive ? 'absolute' : 'relative',
+            left: 0,
+            right: 0,
+            bottom: compactTouch ? 'calc(56px + env(safe-area-inset-bottom))' : 0,
+            zIndex: 2,
+            width: '100%',
+            minWidth: 0,
+            py: 0.5,
+            pl: 'max(8px, env(safe-area-inset-left))',
+            pr: 'max(8px, env(safe-area-inset-right))',
+            bgcolor: immersive ? 'rgba(0,0,0,.60)' : 'background.paper',
+            backdropFilter: immersive ? 'blur(14px) saturate(1.25)' : undefined,
+            color: immersive ? 'common.white' : 'text.primary',
+            opacity: immersive && !chromeVisible ? 0 : 1,
+            pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
+            transition: 'opacity 160ms ease',
+          }}
+        >
+          {filmstrip}
+        </Box>
+      ) : null}
 
       {compactTouch && (actions || hasNavigation || slideshow) ? (
         <Stack
@@ -786,6 +815,14 @@ function WebMediaViewerApp({
         onPrevious={viewer.goPrevious}
         onNext={viewer.goNext}
         actions={actions}
+        filmstrip={mediaItem && viewer.filmstripEntries.length > 0 ? (
+          <XDriveMediaGalleryFilmstrip
+            entries={viewer.filmstripEntries}
+            activeIndex={viewer.activeIndex}
+            loadThumbnail={gallerySource.loadThumbnail}
+            onSelect={viewer.goToFilmstripIndex}
+          />
+        ) : undefined}
         onClose={() => onClose(viewer.node)}
       >
         {viewer.loading ? (

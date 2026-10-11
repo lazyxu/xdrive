@@ -504,22 +504,117 @@ function FileManager({
   useLayoutEffect(() => {
     const wasViewerActive = previousViewerActiveRef.current
     previousViewerActiveRef.current = viewerActive
-    if (viewerActive || !wasViewerActive) return
+    if (viewerActive) {
+      const saved = galleryViewerScrollRef.current
+      // The click's scrollTop can precede browser focus and Gallery layout
+      // settling. Capture the actual *active Viewer* entry position, while
+      // the original virtual scroll host and viewport are still intact.
+      if (wasViewerActive || !saved || appView !== 'gallery' ||
+          Math.abs(window.innerWidth - saved.viewportWidth) > 1) return
+      // Browser focus, virtual rows and decoded media can settle on different
+      // frames after the click. Observe only this already-mounted Gallery
+      // scroll host until the *first* viewport width change; then freeze the
+      // original Viewer-entry snapshot so breakpoint layout cannot rewrite it.
+      let frozen = false
+      const captureEntry = () => {
+        if (frozen) return
+        const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+        if (galleryViewerScrollRef.current !== saved || host !== saved.host ||
+            !saved.host.isConnected) return
+        if (Math.abs(window.innerWidth - saved.viewportWidth) > 1) {
+          frozen = true
+          return
+        }
+        saved.offset = saved.host.scrollTop
+      }
+      const freezeCapture = () => {
+        if (Math.abs(window.innerWidth - saved.viewportWidth) > 1) frozen = true
+        else captureEntry()
+      }
+      saved.host.addEventListener('scroll', captureEntry, { passive: true })
+      window.addEventListener('resize', freezeCapture)
+      captureEntry()
+      let afterLayout: number | null = null
+      const frame = window.requestAnimationFrame(() => {
+        captureEntry()
+        afterLayout = window.requestAnimationFrame(captureEntry)
+      })
+      return () => {
+        window.cancelAnimationFrame(frame)
+        if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+        saved.host.removeEventListener('scroll', captureEntry)
+        window.removeEventListener('resize', freezeCapture)
+      }
+    }
+    if (!wasViewerActive) return
     const saved = galleryViewerScrollRef.current
     galleryViewerScrollRef.current = null
     if (!saved || appView !== 'gallery' ||
         window.location.hash !== saved.callerHash ||
         Math.abs(window.innerWidth - saved.viewportWidth) > 1) return
-    const restore = () => {
+    const stillReturningToSameGallery = () => {
       const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
-      if (host !== saved.host || !saved.host.isConnected) return
-      saved.host.scrollTop = saved.offset
+      return host === saved.host && saved.host.isConnected &&
+        window.location.hash === saved.callerHash &&
+        Math.abs(window.innerWidth - saved.viewportWidth) <= 1
     }
-    // Reapply after the routed Viewer leaves and the retained Gallery's
-    // latest responsive virtual layout is committed. No polling or 100k scan.
+    const restore = () => {
+      if (!stillReturningToSameGallery()) return
+      if (Math.abs(saved.host.scrollTop - saved.offset) > 1) {
+        saved.host.scrollTop = saved.offset
+      }
+    }
+    // Gallery's virtual-window child layout can commit *after* the initial
+    // React layout effect and two rAF callbacks. A bounded passive scroll
+    // listener catches any resulting one-row browser/layout correction.
+    // Stop immediately on real input: a user scroll always wins over return.
+    let guardActive = true
+    let guardTimeout: number | null = null
+    const stopReturnGuard = () => {
+      if (!guardActive) return
+      guardActive = false
+      if (guardTimeout !== null) window.clearTimeout(guardTimeout)
+      saved.host.removeEventListener('scroll', preserveReturnOffset)
+      window.removeEventListener('pointerdown', cancelOnUserInput)
+      window.removeEventListener('touchstart', cancelOnUserInput)
+      window.removeEventListener('wheel', cancelOnUserInput)
+      window.removeEventListener('keydown', cancelOnUserInput)
+      window.removeEventListener('resize', cancelOnViewportChange)
+    }
+    const preserveReturnOffset = () => {
+      if (!guardActive) return
+      if (!stillReturningToSameGallery()) {
+        stopReturnGuard()
+        return
+      }
+      restore()
+    }
+    const cancelOnUserInput = (event: Event) => {
+      if (event.isTrusted) stopReturnGuard()
+    }
+    const cancelOnViewportChange = () => {
+      if (!stillReturningToSameGallery()) stopReturnGuard()
+    }
+    saved.host.addEventListener('scroll', preserveReturnOffset, { passive: true })
+    window.addEventListener('pointerdown', cancelOnUserInput, { passive: true })
+    window.addEventListener('touchstart', cancelOnUserInput, { passive: true })
+    window.addEventListener('wheel', cancelOnUserInput, { passive: true })
+    window.addEventListener('keydown', cancelOnUserInput)
+    window.addEventListener('resize', cancelOnViewportChange)
+    // No polling: the guard has only a short maximum lifetime, with
+    // event-driven correction and deterministic cleanup on new navigation.
+    guardTimeout = window.setTimeout(stopReturnGuard, 650)
     restore()
-    const frame = window.requestAnimationFrame(restore)
-    return () => window.cancelAnimationFrame(frame)
+    let afterLayout: number | null = null
+    const frame = window.requestAnimationFrame(() => {
+      restore()
+      afterLayout = window.requestAnimationFrame(restore)
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+      stopReturnGuard()
+    }
   }, [viewerActive, appView])
   const setAppView = useCallback((view: AppView) => {
     const next = xDriveWebAppRouteForWorkspaceKey(view)
@@ -1367,6 +1462,10 @@ function FileManager({
         <XDriveWorkspaceContent
           responsive
           presentation={xDriveWorkspacePresentation(appView)}
+          // The Gallery's virtual grid owns its logical row/Node anchors.
+          // Native scroll anchoring otherwise shifts main.scrollTop by one
+          // tile row as the virtual window reflows through Viewer breakpoints.
+          sx={{ overflowAnchor: appView === 'gallery' ? 'none' : undefined }}
         >
         {appView === 'overview' ? (
           <WebOverviewPage

@@ -227,3 +227,12 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 
 
 **P1-2c 第二次真实首红：** 前一轮逻辑照片与同一 Gallery DOM 均恢复，但滚动 589→721，偏移 132px（fine/coarse 相同，artifact 11692228248）。新增 Web App 仅在返回原 Gallery Hash、原宿主、原视口宽度时恢复点击后的精确 ScrollTop；Chromium 验收继续要求 ≤2px。最终宽度不同的响应式返回仍需以 Node 身份与设备截图独立验收，不能用原宽度像素假设取代。
+
+
+## P1-2d · 实际 Web Viewer 与共享图库 Filmstrip 等价（2026-10-11）
+
+- 同一个 Viewer 会话里只按需获取当前 Index ±5；Server Range、媒体缩略图/Node/权限、XDriveMediaGalleryFilmstrip 和页面虚拟化继续共享。跨越 127/128 分页边界不得全量加载，返回与 Filmstrip 单击仍遵循原 Node 身份及同一 Gallery scroll host。
+- 真实 Chromium 双指针与 390/899/900px 检查 Filmstrip 位置/最多 11 项、唯一 aria-current、与操作栏不重叠、点击后返回合法 Node。iOS 27 Safari 实机/主屏安装、VoiceOver、动画与透明度像素校准、真实 Live/RAW/视频和 100k 物理媒体性能尚未验收。
+
+
+**P1-2d 返回滚动事件守卫候选：** 参考原生 Chrome artifact 11695500444 的 589→458px/131px 实测偏差。只在返回同一 Gallery 路由与原 Scroll Host/宽度时，以最多 650ms 的被动滚动事件侦测处理 late virtual row shift；一旦用户主动输入即取消，所有监听器在超时或卸载时移除。严格的原逻辑 Node、44px、Filmstrip 和返回 ≤2px 门禁不修改；需要最新单提交 Web Chromium/全量 CI 验证。
