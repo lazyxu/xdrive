@@ -432,3 +432,16 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **P1-2h 首轮真实 Chrome First-red 及共享 Creative Dialog 预览生命周期修复（2026-10-11）：** [CI #38139437432 Web Job #114470069502](https://github.com/lazyxu/xdrive/actions/runs/38139437432/job/114470069502) 的真实构建 Chromium fine-pointer 流程在第 24 项新增创作验收阻塞：已有 `POST /media/items/1011/creative` 403→200 queued 两次真实请求、`GET /media/creative/qa-gallery-creative-1` 两次；UI 正确显示「已生成」且已发出结果文件 `POST /files/2601/preview-ticket`，但 10 秒后仍是原图 `photo-012.png`，未出现 `img[alt="创作结果"]`。未知 HTTP=0、ConsoleError=0、PageError=0，浏览器证据 [artifact 11701164726](https://github.com/lazyxu/xdrive/actions/runs/38139437432/artifacts/11701164726) 记录了失败现场。不是可忽略的“超时测试”：共享 `MediaGalleryCreativeDialog` 原先在同一个 `useEffect` 中先 `onCompleted(generation)`（使原 Gallery 刷新，导致回调身份变化），随后开始异步 `loadPreviewURL`，新回调触发 Effect cleanup 后设置 `disposed=true`，而 `completedRef` 又阻止了预览重试。
 
 **本轮限界修复：** 创作完成通知与结果下载拆为两个独立的 `useEffect`。通知通过最新回调 Ref 加原来的 `completedRef` 去重，只按 job ID/output/state/open 调度；结果下载仅由真正的 output、loader、state 或打开状态变化控制生命周期，不能被回调身份变化无故取消。实际关闭、切换资源或卸载仍及时废弃旧预览，并且不会取消 Server 已持久化的创作任务。新增共享 `media-gallery-creative-race.cjs` 回归验证完成通知恰好一次、Owner 回调刷新时原生成图仍解码显示、实际关闭/切换时旧结果不穿越；原有 Chrome “必须看见创作结果”严格断言、403/重试/取消和原 55 项 Viewer 回归均不放宽。**首轮旧 HEAD 的其它绿色作业不能作为新版验收**；修复必须重建在同一固定父提交上的单工作提交并重新通过全套精确 HEAD CI + `final-gate`，iOS 27 真机/真实 Worker 字节仍未验收。
+
+
+## P1-2i · 创作 Go Server / PostgreSQL / CAS / Unix 协议真实验收（2026-10-11）
+
+前置 P1-2h [PR #1410](https://github.com/lazyxu/xdrive/pull/1410) 已合并，原生浏览器 61/61、Desktop 2,159 通过。本阶段只验 Go Server 真实创作链路，不修改 Web/Mobile Web 共同使用的 Viewer、MediaGalleryDataSource、虚拟化列表、全屏 App Frame 或 52px 应用标题栏。iOS 27「照片」仍以实体 iPhone 的 1:1 同帧对照作为最终视觉/交互标准。
+
+**服务界限：** Go `internal/mediaworker` 仅提供 FFmpeg/FFprobe 相关能力；创作任务由 `PhotoCreativeAnalyzer` 经 `internal/photointelligence/creative_unix.go` 访问 `services/photo-face-analyzer` Unix Socket。新的 `internal/api/media_creative_cas_integration_test.go` 在实际 PostgreSQL 创建独立并可清理的 Schema，启动真实 Go Router、鉴权、后台 Scheduler、文件上传及创作预览衍生链路，使用真正的 Unix 创作协议和本地 CAS。仅 Unix Socket 末端的 EfficientSAM 推理被**可解码确定性 PNG**替代，不能声称已测生产 AI 模型。
+
+**可验证行为：** 相同已授权 Node+revision 经 Web/Mobile 共用 POST 创建 cutout/erase，Worker 实际 GET 签名预览、生成任务 GET 返回持久终态，成功产物同父文件夹的 canonical Node 与 File SHA256、Blob CAS 路径、实际下载字节和 PNG 解码一致；同内容可复用 CAS，但不复用错误的 Node 身份。原图永不被重写；异账号读取任务、原图或输出必须失败。运行中取消不得提交输出；Worker 给出与 JPEG/PNG MIME、尺寸不符或损坏/截断的字节不得将状态置 completed。
+
+**发现并修复的服务端缺口：** 现有 `photointelligence.ValidateCreativeResult` 只确认声明的大小、MIME、Width/Height。额外在 Go `runMediaCreativeGeneration` 写入 CAS 前先执行 `validateMediaCreativeDecodedImage`：校验真实图片头格式及像素尺寸，再完整解码 JPEG/PNG；伪造尺寸、错误 MIME、损坏或截断数据使持久任务进入 failed，不产生新的可见 Node/File/Blob。输入大小与最大宽高保持现有上限，避免失控图片分配。MP4 另需视频特定完整验证，不将图片门禁误称为视频验收。
+
+**仍未覆盖：** 实际 Python EfficientSAM/ONNX 模型推理和性能、实体 iOS 27 Safari/PWA/VoiceOver 同帧像素/动画/交互、真实 100k RAW/HEVC/LivePhoto、全部 Web/Desktop 上传下载取消的实测。PG/CAS/Unix 协议门禁和原生浏览器 fixture 必须分别标记，任何一个都不能冒充这些真实设备与模型验收。当前提交只在最新 SHA 的 PR CI 和 final-gate 全绿后允许合并；不得借用历史通过值或更改并行性能/race 专项。
