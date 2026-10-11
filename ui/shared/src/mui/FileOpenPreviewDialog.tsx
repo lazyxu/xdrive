@@ -46,7 +46,14 @@ export function XDriveOpenPreviewDialog({
   onClose,
   children,
 }: XDriveOpenPreviewDialogProps) {
-  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  // Mobile Gallery's immersive Viewer is a narrow-screen layout, not a
+  // coarse-pointer-only feature. A paired mouse/trackpad must not turn it into
+  // a desktop modal or hide its mobile filmstrip and action rail.
+  // Non-immersive Files / Quick Look retain their existing pointer contract.
+  // Fine-pointer immersive Viewer still wakes its chrome on mouse movement.
+  const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const compactTouch = coarseMobilePointer || (immersive && narrowViewport)
   const effectiveFullScreen = fullScreen || compactTouch
   const hasNavigation = canPrevious || canNext
   const [chromeVisible, setChromeVisible] = useState(true)
@@ -278,7 +285,7 @@ export function XDriveOpenPreviewDialog({
       </Stack>
 
       <DialogContent
-        onMouseMove={compactTouch ? undefined : showChrome}
+        onMouseMove={coarseMobilePointer ? undefined : showChrome}
         onFocusCapture={showChrome}
         onPointerDownCapture={handleTouchPointerDown}
         onPointerMoveCapture={handleTouchPointerMove}

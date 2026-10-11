@@ -203,3 +203,9 @@ At **844×200 CSS px with 200% root text**, Files previously left only **24px** 
 On production `53177a7b`, the same final **Files135**, **Navigation162**, **Files panels22**, **Gallery panels57**, **actual Web drag49** and **actual Web panels37** all pass with zero browser/unknown-request errors. The active build is `assets/index-BYQXNagw.js`; both App receipts contain exact runner/build hashes. Full Desktop validation passes **1594**, with zero failures and one existing optional benchmark skip; typecheck, Web lint and build pass. Eight prior actual VisualViewport scale/pan samples are retained as observations with an explicit dependency comparison, not rerun or keyboard tests. The native pointer21 receipt has an unchanged helper source.
 
 The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preserves the same17-check Files first-red (16pass/1fail), same57-check Gallery first-red (52pass/5fail), full final assertions, source/build hashes, geometry and fixture-only corrections. The [M10 ledger](validation/mobile-files-touch-drag-2026-10-09.json), `combinedPanelIntegration`, retains its earlier history and records these fresh integration results. Counts overlap and are not summed. All four physical iOS/Android tab/installed environments, real keyboard/address bars/safe areas and screen readers remain **not-run**; M49.V08/V09 record the actual evidence boundary.
+
+
+## P1-2a · Mobile Gallery Viewer 细指针/粗指针复核（2026-10-11）
+
+- **待真机：** iOS 27 Safari 标签/主屏安装，iPad 外接触控板或鼠标；390×844、899×700、900×700（浏览器或窗口缩放）。分别验证全屏/桌面 Viewer 断点、52px App Header 在 Viewer 期间不被第二个全局 Header 替代、底部 Filmstrip 及分享/收藏/编辑/属性/下载/删除权限入口、VoiceOver 标签、safe-area、触控显隐、外接鼠标移动重新唤醒控件与缩放/横滑冲突。
+- **共享 React 回归：** `desktop/tests/mobile-gallery-viewer-pointer-parity.cjs` 将 narrow + immersive 强制移动全屏与行动 rail（不依赖 `pointer:coarse`），同时验证 narrow+fine 非沉浸式 Quick Look 保持旧 Modal、wide Gallery 保持桌面布局、原始媒体 API/VirtualCollection 不分叉。组件测试成功不等于 Safari 真机/像素级完成；按 CI 日志与实际设备证据分别记账。
