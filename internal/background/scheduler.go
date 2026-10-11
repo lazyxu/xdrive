@@ -1054,7 +1054,7 @@ func (s *Scheduler) updateTaskProgress(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	live := s.entries[entry.identity]
-	if live != entry || live.state != itemRunning || live.attempt != attempt {
+	if live != entry || live.state != itemRunning || live.cancelRequested || live.attempt != attempt {
 		return
 	}
 	live.progress = progress.normalized()
