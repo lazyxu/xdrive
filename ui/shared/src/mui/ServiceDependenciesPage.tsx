@@ -95,6 +95,30 @@ const statusLabels: Record<XDriveServiceDependencyState, { label: string; color:
   planned: { label: '尚未接入', color: 'default' },
 }
 
+const configurationStateLabels = {
+  configured: '当前 Server 已配置',
+  unconfigured: '当前 Server 未配置',
+  unknown: '配置未知',
+} as const
+const installationStateLabels = {
+  observed: '实际运行时已观测',
+  external: '外部服务（不检查本机安装）',
+  unknown: '安装/部署未确认',
+} as const
+const healthStateLabels = {
+  ready: '独立健康检查通过',
+  failed: '实际健康检查失败',
+  'not-checked': '未进行健康检测',
+  unknown: '健康无法确认',
+} as const
+const activationStateLabels = {
+  verified: '目标修订实际生效',
+  'local-effective': '本机配置即时读取（远端另验）',
+  pending: '目标待生效或待验证',
+  'deployment-only': '仅受控部署管理',
+  unknown: '无法确认目标修订生效',
+} as const
+
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
   'task-boundary': '运行批次完成后安全生效',
@@ -147,6 +171,21 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               </Typography>
             </Stack>
           )}
+          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ mt: 1 }}
+            data-xdrive-service-lifecycle>
+            <Typography variant="caption" color="text.secondary">
+              配置：{configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              部署：{installationStateLabels[service.installation_state ?? 'unknown'] ?? '安装/部署未确认'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              健康：{healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              生效：{activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
+            </Typography>
+          </Stack>
           {service.config_hint && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
               {service.config_hint}

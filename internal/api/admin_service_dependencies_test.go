@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -56,6 +58,69 @@ func TestAdminServiceDependenciesFailClosed(t *testing.T) {
 		if item.ConfigMode == "" || item.ApplyMode == "" || item.ConfigHint == "" {
 			t.Fatalf("missing safe service configuration contract for %q", item.ID)
 		}
+		for field, value := range map[string]string{
+			"configuration_state": item.ConfigurationState,
+			"installation_state":  item.InstallationState,
+			"health_state":        item.HealthState,
+			"activation_state":    item.ActivationState,
+		} {
+			if value == "" {
+				t.Fatalf("missing %s for %q", field, item.ID)
+			}
+		}
+		if item.ActivationState == "verified" || item.InstallationState == "observed" {
+			t.Fatalf("empty Server fabricated activation or installation: %+v", item)
+		}
+	}
+}
+
+func TestAdminServiceDependencyLifecycleBaiduAndCaddyNoFalseApplied(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	s := &Server{BaiduMapEnabled: true, BaiduMapAK: "test-example-AK"}
+	read := func() map[string]serviceDependency {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services", nil)
+		s.adminServiceDependencies(ctx)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("services HTTP %d", recorder.Code)
+		}
+		var response serviceDependenciesSnapshot
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		byID := make(map[string]serviceDependency)
+		for _, item := range response.Services {
+			byID[item.ID] = item
+		}
+		return byID
+	}
+	before := read()
+	baidu := before["baidu-map"]
+	if baidu.Status != "unknown" || baidu.ConfigurationState != "configured" ||
+		baidu.InstallationState != "external" || baidu.HealthState != "not-checked" ||
+		baidu.ActivationState != "local-effective" {
+		t.Fatalf("configured AK must not fabricate remote Baidu health: %+v", baidu)
+	}
+	if before["caddy"].InstallationState != "unknown" ||
+		before["caddy"].ActivationState != "deployment-only" {
+		t.Fatalf("no Host Manager must not prove Caddy applied: %+v", before["caddy"])
+	}
+	s.HostControlDir = t.TempDir()
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, "heartbeat"), []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, caddyHostStatusName),
+		[]byte(`{"state":"healthy","https_configured":true,"tls_check_supported":true,"tls_state":"verified"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gateway := read()["caddy"]
+	if gateway.Status != "ready" || gateway.ConfigurationState != "configured" ||
+		gateway.InstallationState != "observed" || gateway.HealthState != "ready" ||
+		gateway.ActivationState != "deployment-only" ||
+		gateway.LocalTLSState != "verified" || gateway.HTTPSConfigured == nil || !*gateway.HTTPSConfigured {
+		t.Fatalf("local HTTPS cannot promote unbound desired revision: %+v", gateway)
 	}
 }
 

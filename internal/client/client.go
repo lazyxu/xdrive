@@ -298,16 +298,22 @@ type BackgroundTaskPage struct {
 }
 
 type ServiceDependency struct {
-	ID         string `json:"id"`
-	Group      string `json:"group"`
-	Label      string `json:"label"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail"`
-	Version    string `json:"version,omitempty"`
-	Model      string `json:"model,omitempty"`
-	ConfigMode string `json:"config_mode"`
-	ApplyMode  string `json:"apply_mode"`
-	ConfigHint string `json:"config_hint,omitempty"`
+	ID                 string `json:"id"`
+	Group              string `json:"group"`
+	Label              string `json:"label"`
+	Status             string `json:"status"`
+	Detail             string `json:"detail"`
+	Version            string `json:"version,omitempty"`
+	Model              string `json:"model,omitempty"`
+	ConfigMode         string `json:"config_mode"`
+	ApplyMode          string `json:"apply_mode"`
+	ConfigHint         string `json:"config_hint,omitempty"`
+	ConfigurationState string `json:"configuration_state,omitempty"`
+	InstallationState  string `json:"installation_state,omitempty"`
+	HealthState        string `json:"health_state,omitempty"`
+	ActivationState    string `json:"activation_state,omitempty"`
+	HTTPSConfigured    *bool  `json:"https_configured,omitempty"`
+	LocalTLSState      string `json:"local_tls_state,omitempty"`
 }
 
 // Caddy HTTPS administrator-desired state; never implies host activation.

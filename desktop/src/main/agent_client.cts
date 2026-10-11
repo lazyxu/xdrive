@@ -998,6 +998,12 @@ export type AgentServiceDependenciesSnapshot = {
     config_mode?: 'in-app' | 'deployment' | 'planned'
     apply_mode?: 'immediate' | 'task-boundary' | 'manual-reload' | 'controlled-restart' | 'not-available'
     config_hint?: string
+    configuration_state?: 'configured' | 'unconfigured' | 'unknown'
+    installation_state?: 'observed' | 'external' | 'unknown'
+    health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
+    activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
+    https_configured?: boolean
+    local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
   }>
 }
 
