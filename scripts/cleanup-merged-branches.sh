@@ -86,7 +86,23 @@ if [[ -n "$exact_branch" || -n "$expected_sha" ]]; then
 
   echo "cleanup: $exact_branch — tip matches closed PR head $expected_sha"
   if [[ "$dry_run" != "1" ]]; then
-    "$GIT_BIN" push origin ":refs/heads/$exact_branch" >/dev/null
+    # The checkout snapshot is only a preflight. Recheck the remote tip
+    # atomically at push time: a reused/advanced branch must never be deleted.
+    if ! "$GIT_BIN" push "--force-with-lease=refs/heads/$exact_branch:$expected_sha" \
+      origin ":refs/heads/$exact_branch" >/dev/null; then
+      # Concurrent master scan might already have removed this exact ref.
+      # Treat only confirmed remote absence as a successful duplicate cleanup.
+      if ! remote_state="$("$GIT_BIN" ls-remote --heads origin "refs/heads/$exact_branch")"; then
+        echo "cleanup: unable to verify remote $exact_branch after failed push" >&2
+        exit 1
+      fi
+      if [[ -n "$remote_state" ]]; then
+        echo "cleanup: could not delete $exact_branch — remote branch still exists" >&2
+        exit 1
+      fi
+      echo "cleanup: $exact_branch — already removed by concurrent cleanup"
+      exit 0
+    fi
   fi
   echo "cleanup: removed 1 redundant branch(es)"
   exit 0
@@ -98,6 +114,37 @@ command -v jq >/dev/null 2>&1 || { echo "jq is required" >&2; exit 1; }
 
 declare -A deleted=()
 declare -A open_pr_branches=()
+
+# GitHub App API rate limits previously made 'gh api | jq' inside a process
+# substitution silently fail while the scan still reported success. Fetch
+# both authoritative PR lists *before* any possible branch deletion, with
+# checked status and schema, then parse the immutable local snapshots.
+pr_snapshot_dir="$(mktemp -d)"
+trap 'rm -rf "$pr_snapshot_dir"' EXIT
+load_pr_snapshot() {
+  local state="$1" output="$pr_snapshot_dir/$1.json"
+  if ! "$GH_BIN" api --paginate "repos/$repo/pulls?state=$state&per_page=100" > "$output"; then
+    echo "cleanup: unable to list $state PRs; refusing branch scan" >&2
+    exit 1
+  fi
+  # --paginate produces one JSON array per response page, not one giant array.
+  # Missing, truncated or error-object responses cannot establish safe cleanup.
+  if ! jq -s -e '
+    length > 0 and all(.[];
+      type == "array" and all(.[];
+        type == "object" and
+        (.head | type) == "object" and
+        (.head.ref | type) == "string" and
+        (.head.sha | type) == "string"
+      )
+    )
+  ' "$output" >/dev/null; then
+    echo "cleanup: invalid $state PR response; refusing branch scan" >&2
+    exit 1
+  fi
+}
+load_pr_snapshot open
+load_pr_snapshot closed
 
 current_ref_sha() {
   local branch="$1"
@@ -111,12 +158,9 @@ while IFS= read -r branch; do
   [[ -n "$branch" ]] || continue
   open_pr_branches["$branch"]=1
 done < <(
-  "$GH_BIN" api --paginate "repos/$repo/pulls?state=open&per_page=100" |
-    jq -r --arg repo "$repo" '
-      .[]
-      | select(.head.repo.full_name == $repo)
-      | .head.ref
-    '
+  jq -r -s --arg repo "$repo" '
+      .[][] | select(.head.repo.full_name == $repo) | .head.ref
+    ' "$pr_snapshot_dir/open.json"
 )
 
 delete_branch() {
@@ -148,14 +192,13 @@ while IFS=$'\t' read -r branch merged_sha; do
     delete_branch "$branch" "tip matches merged PR head $merged_sha"
   fi
 done < <(
-  "$GH_BIN" api --paginate "repos/$repo/pulls?state=closed&per_page=100" |
-    jq -r --arg repo "$repo" '
-      .[]
+  jq -r -s --arg repo "$repo" '
+      .[][]
       | select(.merged_at != null)
       | select(.head.repo.full_name == $repo)
       | [.head.ref, .head.sha]
       | @tsv
-    '
+    ' "$pr_snapshot_dir/closed.json"
 )
 
 # Closed-but-unmerged work is not normally safe to delete. The one explicit
@@ -170,15 +213,14 @@ while IFS=$'\t' read -r branch superseded_sha pr_number; do
     delete_branch "$branch" "tip matches closed superseded PR #$pr_number head $superseded_sha"
   fi
 done < <(
-  "$GH_BIN" api --paginate "repos/$repo/pulls?state=closed&per_page=100" |
-    jq -r --arg repo "$repo" --arg label_name "$superseded_label" '
-      .[]
+  jq -r -s --arg repo "$repo" --arg label_name "$superseded_label" '
+      .[][]
       | select(.merged_at == null)
       | select(.head.repo.full_name == $repo)
       | select(any(.labels[]?; .name == $label_name))
       | [.head.ref, .head.sha, (.number | tostring)]
       | @tsv
-    '
+    ' "$pr_snapshot_dir/closed.json"
 )
 
 # Review-owned SHA-pinned retirement entries cover abandoned branches without PRs.
