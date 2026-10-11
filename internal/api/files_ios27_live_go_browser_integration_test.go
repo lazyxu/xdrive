@@ -89,6 +89,16 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	wideTarget := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"wide-copy-target"}`), http.StatusCreated)
+	mobileMove := uploadTestFile(t, router, token, root.ID, "a-mobile-move.txt", "real mobile move source")
+	wideMove := uploadTestFile(t, router, token, root.ID, "b-wide-move.txt", "real wide move source")
+	mobileDelete := uploadTestFile(t, router, token, root.ID, "c-mobile-delete.txt", "real mobile delete source")
+	wideDelete := uploadTestFile(t, router, token, root.ID, "d-wide-delete.txt", "real wide delete source")
+	mobileMoveTarget := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"mobile-move-target"}`), http.StatusCreated)
+	wideMoveTarget := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"wide-move-target"}`), http.StatusCreated)
 	// Cross-owner responses are the genuine product's 404 semantics, NOT the
 	// synthetic 403 used by the earlier intercepted-HTTP Chrome matrix.
 	request(t, router, http.MethodGet,
@@ -136,6 +146,11 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	ready["mobile_copy_target_id"] = mobileTarget.ID
 	ready["wide_copy_target_id"] = wideTarget.ID
 	ready["foreign_root_id"] = foreignRoot.ID
+	ready["mobile_move_id"], ready["mobile_move_revision"] = mobileMove.ID, mobileMove.Revision
+	ready["wide_move_id"], ready["wide_move_revision"] = wideMove.ID, wideMove.Revision
+	ready["mobile_delete_id"], ready["mobile_delete_revision"] = mobileDelete.ID, mobileDelete.Revision
+	ready["wide_delete_id"], ready["wide_delete_revision"] = wideDelete.ID, wideDelete.Revision
+	ready["mobile_move_target_id"], ready["wide_move_target_id"] = mobileMoveTarget.ID, wideMoveTarget.ID
 	payload, err := json.Marshal(ready)
 	if err != nil {
 		t.Fatal(err)
@@ -195,6 +210,77 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			if !visited {
 				t.Fatalf("no UI copy operation persisted for target %d", target)
 			}
+		}
+		// The queue is intentionally not executed in this fixture. Persisted
+		// Move/Delete operation intents still must preserve exact source
+		// identities, revisions, intended targets and owner boundaries.
+		type mutationSource struct {
+			revision uint64
+			parentID uint64
+		}
+		for _, spec := range []struct {
+			operation string
+			expected  map[uint64]mutationSource
+		}{
+			{operation: meta.FileOperationTypeMove, expected: map[uint64]mutationSource{
+				mobileMove.ID: {revision: mobileMove.Revision, parentID: mobileMoveTarget.ID},
+				wideMove.ID:   {revision: wideMove.Revision, parentID: wideMoveTarget.ID},
+			}},
+			{operation: meta.FileOperationTypeDelete, expected: map[uint64]mutationSource{
+				mobileDelete.ID: {revision: mobileDelete.Revision},
+				wideDelete.ID:   {revision: wideDelete.Revision},
+			}},
+		} {
+			var operations []meta.FileOperation
+			if err := db.Where("owner_id = ? AND type = ?", after.OwnerID, spec.operation).
+				Find(&operations).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(operations) != 2 {
+				t.Fatalf("%s: expected exactly two UI operation rows, got %d", spec.operation, len(operations))
+			}
+			for _, operation := range operations {
+				if operation.TotalItems != 1 {
+					t.Fatalf("%s: unexpected batch count %+v", spec.operation, operation)
+				}
+				var refs []batchNodeRef
+				if err := json.Unmarshal([]byte(operation.ItemsJSON), &refs); err != nil {
+					t.Fatal(err)
+				}
+				if len(refs) != 1 {
+					t.Fatalf("%s: expected one source ref, got %+v", spec.operation, refs)
+				}
+				want, ok := spec.expected[refs[0].ID]
+				if !ok || refs[0].Revision != want.revision {
+					t.Fatalf("%s: unauthorized, duplicate or stale source %+v", spec.operation, refs)
+				}
+				if spec.operation == meta.FileOperationTypeMove {
+					if operation.ParentID == nil || *operation.ParentID != want.parentID {
+						t.Fatalf("real UI Move target differs from PostgreSQL target: %+v", operation)
+					}
+				} else if operation.ParentID != nil {
+					t.Fatalf("real UI Delete must not have a destination: %+v", operation)
+				}
+				delete(spec.expected, refs[0].ID)
+			}
+			if len(spec.expected) != 0 {
+				t.Fatalf("%s: some UI mutation sources were not enqueued: %+v", spec.operation, spec.expected)
+			}
+			t.Logf("IOS27_FILES_LIVE_GO_MUTATION_QUEUED type=%s count=%d", spec.operation, len(operations))
+		}
+		var foreignAccount meta.User
+		if err := db.Where("username = ?", "ios27-files-other").First(&foreignAccount).Error; err != nil {
+			t.Fatal(err)
+		}
+		// The public Node DTO intentionally has no owner_id. Resolve the
+		// foreign account from the real authentication database instead.
+		var foreignOperations int64
+		if err := db.Model(&meta.FileOperation{}).
+			Where("owner_id = ?", foreignAccount.ID).Count(&foreignOperations).Error; err != nil {
+			t.Fatal(err)
+		}
+		if foreignOperations != 0 {
+			t.Fatalf("foreign owner must not persist a failed source mutation, got %d", foreignOperations)
 		}
 		t.Logf("IOS27_FILES_LIVE_GO_COPY_QUEUED count=%d source=%d revision=%d", len(queued), after.ID, after.Revision)
 		t.Logf("IOS27_FILES_LIVE_GO_VERIFIED id=%d revision=%d name=%s owner=%d",
