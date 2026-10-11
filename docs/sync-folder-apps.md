@@ -536,7 +536,7 @@ and all Mirror remote deletion remain denied. Real 100k/4GiB device tests,
 auto scheduling and GitLab validation are not claimed.
 
 
-## L03-D2b2b2b · Owning-Agent provisional native-rename evidence staging (GitHub PR validation pending)
+## L03-D2b2b2b · Owning-Agent provisional native-rename evidence staging (merged #1429, CI green)
 
 The owning Windows/Linux Agent has a private, **non-IPC** preparation
 primitive for two complete local inventory generations: it first checks the
@@ -561,7 +561,7 @@ promotion, cloud rename, Mirror deletion, trusted heartbeat and native 100k/
 status must be recorded independently.
 
 
-## P0-C4c4: manual owning Desktop advisory rename evidence (GitHub PR validation pending)
+## P0-C4c4: manual owning Desktop advisory rename evidence (merged #1435, 76-job CI green)
 
 After two independently verified complete local inventory generations, an
 explicitly confirmed, credential-verified owning Windows/Linux Desktop may
@@ -592,3 +592,28 @@ This does NOT make local Push executable: SourceRun activation, CAS upload,
 Node commit/rename, authoritative alias promotion, background scheduling,
 Mirror deletion, NAS Push, physical 100k/4GiB and GitLab delivery are
 separately pending. CI and physical acceptance must not be conflated.
+
+
+## P0-C4c5a · Native owning-Agent recovery of persisted advisory evidence (CI pending)
+
+After an explicitly staged, complete two-generation local inventory, a future
+owning Agent can safely inspect only the number of provisional server evidence
+rows that match its current private CURRENT/PREVIOUS digest pair. The Server
+read-only POST is limited to 512 request bytes and requires owner JWT plus
+enrolled, unrevoked device secret, exact bound Root identity, current Source
+revision and paused status, all rechecked in one DB transaction. It counts
+only rows matching source/revision/device/Root/fingerprint and both generation
+digests. The response has only Source ID, revision, nonnegative row count,
+authoritative=false and missing_inference_safe=false. The Server does not
+independently attest local journals: the Agent verifies its own Root, saved
+ignore rules, sealed generation and session before and after the read. Count
+zero is never proof of deletion or an empty Root. No path, SourceItem ID,
+native key, Root, secret or raw failure is returned.
+
+This bounded phase has **no new Desktop IPC/Preload/Renderer/Web exposure**.
+In particular, the existing Device Backup owner-read DTO and foreign-device
+permissions do not change. The new private Agent helper is groundwork for a
+future separately tested local readback UI and execution recovery, not an
+uploader. It cannot activate a SourceRun, promote an alias, commit CAS/Nodes,
+infer Mirror deletion or run a watcher/saved schedule. Full exact-head CI,
+native 100k/4 GiB acceptance and GitLab delivery are independent gates.

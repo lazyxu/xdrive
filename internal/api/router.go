@@ -321,6 +321,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/lookup", s.requireLocalSourceExecutor(), s.localSourceIdentityLookup)
 	// Private, device-bound advisory identity evidence; no alias/SourceItem/Run changes.
 	authed.POST("/sources/:id/local-identity/evidence", s.requireLocalSourceExecutor(), s.recordLocalSourceItemEvidence)
+	// Owning-Agent-only, bounded current-generation advisory COUNT; no mutation.
+	authed.POST("/sources/:id/local-identity/evidence-summary", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidenceSummary)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.

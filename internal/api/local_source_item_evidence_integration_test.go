@@ -212,10 +212,64 @@ func TestOwningLocalIdentityEvidencePersistsOnlyPrivateAdvisoryClaims(t *testing
 	invalidItem.SourceItemID = second.ID
 	send(ownerJWT, headers(), encode(invalidItem), http.StatusConflict)
 
+	// Count-only recovery must never expose a SourceItem, local OS path,
+	// device secret, private snapshot digest, or other-device metadata.
+	summaryURI := fmt.Sprintf("/api/v1/sources/%d/local-identity/evidence-summary", source.ID)
+	summaryPayload := fmt.Sprintf("{\"previous_snapshot_sha256\":%q,\"current_snapshot_sha256\":%q}",
+		strings.Repeat("1", 64), strings.Repeat("2", 64))
+	readSummary := func(jwt string, proof map[string]string, payload string, want int, n int64) {
+		t.Helper()
+		resp := requestWithHeaders(t, router, http.MethodPost, summaryURI,
+			jwt, strings.NewReader(payload), want, proof)
+		if want != http.StatusOK {
+			return
+		}
+		if resp.Header().Get("Cache-Control") != "private, no-store" ||
+			resp.Header().Get("ETag") != "\"7\"" {
+			t.Fatalf("private advisory count response is cacheable or revisionless: %v", resp.Header())
+		}
+		for _, forbidden := range []string{"root_id", "fingerprint", "device_id",
+			"native_identity", "source_item_id", "snapshot_sha256",
+			"previous_path", "current_path", "photos/", "last_error"} {
+			if strings.Contains(resp.Body.String(), forbidden) {
+				t.Fatalf("advisory COUNT leaked %s", forbidden)
+			}
+		}
+		var counted localEvidenceSummaryResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &counted); err != nil {
+			t.Fatal(err)
+		}
+		if counted.SourceID != source.ID || counted.Revision != 7 ||
+			counted.StagedRecords != n || counted.Authoritative ||
+			counted.MissingInferenceSafe {
+			t.Fatalf("invalid private advisory count: %+v", counted)
+		}
+	}
+	readSummary(ownerJWT, headers(), summaryPayload, http.StatusOK, 0)
+	readSummary(ownerJWT, map[string]string{"If-Match": "\"7\""}, summaryPayload, http.StatusForbidden, 0)
+	readSummary(otherJWT, headers(), summaryPayload, http.StatusNotFound, 0)
+	readSummary(ownerJWT, foreign, summaryPayload, http.StatusForbidden, 0)
+	readSummary(ownerJWT, stale, summaryPayload, http.StatusConflict, 0)
+	for _, invalid := range []string{
+		"{}",
+		fmt.Sprintf("{\"previous_snapshot_sha256\":%q,\"current_snapshot_sha256\":%q}",
+			strings.Repeat("0", 64), strings.Repeat("2", 64)),
+		fmt.Sprintf("{\"previous_snapshot_sha256\":%q,\"current_snapshot_sha256\":%q}",
+			strings.Repeat("1", 64), strings.Repeat("1", 64)),
+		summaryPayload[:len(summaryPayload)-1] + ",\"unknown\":true}",
+		summaryPayload + summaryPayload,
+		strings.Repeat(" ", 600),
+	} {
+		readSummary(ownerJWT, headers(), invalid, http.StatusBadRequest, 0)
+	}
 	firstResult := send(ownerJWT, headers(), encode(claim), http.StatusCreated)
 	if firstResult.Replayed {
 		t.Fatalf("fresh local evidence incorrectly marked as replay: %+v", firstResult)
 	}
+	readSummary(ownerJWT, headers(), summaryPayload, http.StatusOK, 1)
+	otherGeneration := fmt.Sprintf("{\"previous_snapshot_sha256\":%q,\"current_snapshot_sha256\":%q}",
+		strings.Repeat("1", 64), strings.Repeat("4", 64))
+	readSummary(ownerJWT, headers(), otherGeneration, http.StatusOK, 0)
 	repeated := send(ownerJWT, headers(), encode(claim), http.StatusOK)
 	if !repeated.Replayed || repeated.EvidenceID != firstResult.EvidenceID {
 		t.Fatalf("exact replay created duplicate or changed identity: %+v %+v", firstResult, repeated)
@@ -276,4 +330,5 @@ func TestOwningLocalIdentityEvidencePersistsOnlyPrivateAdvisoryClaims(t *testing
 		t.Fatal(err)
 	}
 	send(ownerJWT, headers(), encode(claim), http.StatusForbidden)
+	readSummary(ownerJWT, headers(), summaryPayload, http.StatusForbidden, 0)
 }
