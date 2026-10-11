@@ -1028,8 +1028,8 @@ func (m *Manager) finishSkipped(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[id]
-	if e == nil || terminalState(e.task.State) {
-		// A late skip must not overwrite a completed or cancelled operation.
+	if e == nil || e.task.State == StateCancelling || terminalState(e.task.State) {
+		// A late skip must not overwrite a pending cancellation or terminal result.
 		return
 	}
 	e.cancel = nil
