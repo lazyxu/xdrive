@@ -99,6 +99,20 @@ export interface XDriveLocalBoundBackupSchedule {
   schedule_timezone: string
 }
 
+// Desktop owning-Agent-only completed local metadata summary.
+export interface XDriveLocalBackupPreview {
+  source_id: number
+  revision: number
+  scanned_files: number
+  scanned_directories: number
+  scanned_bytes: number
+  ignored_items: number
+  ignored_bytes: number
+  skipped_unsafe_items: number
+  complete: boolean
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number

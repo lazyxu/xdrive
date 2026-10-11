@@ -186,6 +186,7 @@ import {
   type AgentLocalBoundBackupSettings,
   type AgentLocalBoundBackupRules,
   type AgentLocalBoundBackupSchedule,
+  type AgentLocalBackupPreview,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2105,6 +2106,43 @@ function registerIPCHandlers() {
       schedule_timezone: proposed.schedule_timezone,
     })
   }, false))
+  // Register before Agent startup so a fast dialog close still aborts
+  // the HTTP request and Go's r.Context rather than leaving orphan scans.
+  const localPreviewRequests = new Map<string, AbortController>()
+  const validLocalPreviewID = (value: unknown) => typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)
+  ipcMain.handle('agent:get-device-backup-local-preview', (event, sourceID: unknown, requestID: unknown) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      !validLocalPreviewID(requestID) || localPreviewRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupPreview>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid or duplicate local preview request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    localPreviewRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupPreview>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-preview')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local preview was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupPreview(sourceID, controller.signal)
+    }, false).finally(() => {
+      if (localPreviewRequests.get(key) === controller) localPreviewRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-preview', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local preview request ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localPreviewRequests.has(key)
+      localPreviewRequests.get(key)?.abort()
+      return { cancelled: found }
+    }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
     runAgentAction<AgentLocalBoundBackupRemoval>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
