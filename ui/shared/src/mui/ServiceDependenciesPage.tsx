@@ -36,8 +36,9 @@ import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './Po
 import { XDriveMediaWorkerConfigPanel, type XDriveMediaWorkerPort } from './MediaWorkerConfigPanel'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort } from './CaddyAliDNSPanel'
+import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
 
-export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & {
+export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
   loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
@@ -775,6 +776,7 @@ export function XDriveServiceDependenciesPage({
               {group.id === 'core' && <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID} />}
+              {group.id === 'core' && <XDriveCaddyPreflightPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'intelligence' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>

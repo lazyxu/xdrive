@@ -647,6 +647,24 @@ export type AgentAdminCaddyHTTPSRevisionPage = {
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 
+export type AgentAdminCaddyPreflightCheck = {
+  id: 'desired' | 'domain' | 'alidns' | 'host-manager' | 'ingress' | 'restricted-apply' | 'public-https'
+  state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
+  detail: string
+}
+export type AgentAdminCaddyHTTPSPreflight = {
+  checked_at: string
+  action: 'enable' | 'disable' | 'unset'
+  desired_revision: number
+  credential_revision: number
+  configuration_complete: boolean
+  host_observed: boolean
+  host_ingress_ready: boolean
+  host_local_tls_verified: boolean
+  apply_supported: boolean
+  checks: AgentAdminCaddyPreflightCheck[]
+}
+
 export type AgentAdminCaddyAliDNSConfig = {
   configured: boolean
   revision: number
@@ -3273,6 +3291,10 @@ export class AgentIPCClient {
   }
   cloudRollbackAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSRollbackInput) {
     return this.request<AgentAdminCaddyHTTPSConfig>('POST', '/v1/cloud/admin-caddy-https/rollback', input)
+  }
+
+  cloudAdminCaddyHTTPSPreflight() {
+    return this.request<AgentAdminCaddyHTTPSPreflight>('GET', '/v1/cloud/admin-caddy-https/preflight')
   }
 
   cloudAdminCaddyAliDNSConfig() {
