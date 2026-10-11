@@ -162,6 +162,23 @@ type VerifiedLocalDevice struct {
 	DeviceID string `json:"device_id"`
 }
 
+// SendDeviceHeartbeat records only credential-verified Agent presence. It
+// cannot create a device, bind a Root, mutate a Source, or start a run.
+func (c *Client) SendDeviceHeartbeat(ctx context.Context, deviceID, deviceToken string) error {
+	req, err := c.request(ctx, http.MethodPost, "/api/v1/devices/self/heartbeat", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-XDrive-Device-ID", deviceID)
+	req.Header.Set("X-XDrive-Device-Token", deviceToken)
+	response, err := c.do(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	return decodeResponse(response, nil)
+}
+
 // VerifyLocalDevice proves possession of this installation's registered device
 // credential to the current user's Server. This is display identity only;
 // it never authorizes a local Root or any Source mutation.

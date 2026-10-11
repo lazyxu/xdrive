@@ -14,6 +14,7 @@ type ClientDevice struct {
 	CreatedAt      time.Time `gorm:"not null"`
 	UpdatedAt      time.Time `gorm:"not null"`
 	LastSeenAt     *time.Time
+	HeartbeatAt    *time.Time
 	RevokedAt      *time.Time `gorm:"index"`
 }
 

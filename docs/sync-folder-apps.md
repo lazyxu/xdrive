@@ -619,7 +619,7 @@ infer Mirror deletion or run a watcher/saved schedule. Full exact-head CI,
 native 100k/4 GiB acceptance and GitLab delivery are independent gates.
 
 
-## P0-C4c5b · Own Desktop private evidence recovery view (GitHub PR verification)
+## P0-C4c5b · Own Desktop private evidence recovery view (merged #1441)
 
 The existing Agent-private, generation-fenced count readback (#1437) is now
 exposed through a **separate authenticated owning-Agent GET**
@@ -649,3 +649,40 @@ No SourceRun activation, upload, CAS/Node mutation, alias promotion, watcher,
 scheduled execution, NAS Push or Mirror remote deletion is introduced.
 Native Windows/Linux 100k and >=4 GiB physical acceptance and GitLab
 delivery remain separate gates.
+
+## P0-B3 · Authenticated Agent presence heartbeat (GitHub PR verification; not merged)
+
+This phase adds only **device-credential-observed presence** for an already
+enrolled Windows/Linux Agent. The Agent sends a bounded, no-body POST
+`/api/v1/devices/self/heartbeat` at startup and every 60 seconds while its
+current account/Server session remains valid. It reads the installation ID
+and secret from local OS-protected enrollment; viewing a device or running an
+old Agent never enrolls or repairs a device. There is no Web/Renderer IPC for
+sending this heartbeat.
+
+The Server demands the current owner JWT, the exact enrolled device UUID and
+secret, then rechecks unrevoked credential possession under the device row's
+transactional UPDATE lock. It changes only `heartbeat_at`, `last_seen_at` and
+`updated_at`; it does not bind a Root, touch any Source/SyncRun, trigger a
+backup, authorize cancellation, or activate the scheduler. The endpoint has
+no input body or query and returns only HTTP 204 with `private, no-store`.
+
+The existing owner-scoped, redacted GET `/device-backups` derives
+`connection_state` from **only** the new Server-observed `heartbeat_at`: fresh
+within 150 seconds = `online`, previously observed but expired = `offline`,
+missing/legacy/future-skewed/revoked = `unknown`. A stale `LastSeenAt`,
+registration, past sync, display name or open Desktop window cannot establish
+presence. Web, Mobile Web and foreign Desktop may observe the same state,
+but do not gain a local Root, secret, or backup operation. The shared MUI page
+renders these states without guessing from activity timestamps; a refresh
+retrieves the current server observation.
+
+This proves use of the existing enrolled secret, **not cryptographic
+attestation of physical hardware**, a live authenticated filesystem Root,
+successful backup execution, durable scheduling, or transport readiness.
+Revocation fences subsequent heartbeats but cannot alone guarantee immediate
+termination of in-flight uploads (none are enabled in this phase).
+Source activation, real CAS upload/commit, identity promotion, Mirror delete,
+automatic schedule, NAS Push, 100k/4GiB physical acceptance and GitLab
+delivery remain separately blocked. Exact-head GitHub PR CI is the merge gate;
+do not report this phase as merged before it is green and actually integrated.

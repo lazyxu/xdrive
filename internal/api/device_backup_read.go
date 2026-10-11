@@ -100,7 +100,7 @@ func (s *Server) listDeviceBackupOverview(c *gin.Context) {
 		items = append(items, deviceBackupReadDTO{
 			ID: device.ID, Name: device.Name, Platform: device.Platform,
 			ClientVersion: device.ClientVersion, LastSeenAt: device.LastSeenAt,
-			ConnectionState: "unknown", Revoked: device.RevokedAt != nil,
+			ConnectionState: deviceBackupConnectionState(device, time.Now().UTC()), Revoked: device.RevokedAt != nil,
 			Folders: make([]deviceBackupFolderReadDTO, 0),
 		})
 	}
