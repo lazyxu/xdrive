@@ -171,6 +171,10 @@ export function XDriveServiceDependenciesPage({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshID, setRefreshID] = useState(0)
+  // Local HTTPS/AliDNS edits invalidate sibling preflight and read-auth proof
+  // without resetting the editing panel's saved acknowledgement or draft.
+  const [caddyEvidenceRevision, setCaddyEvidenceRevision] = useState(0)
+  const invalidateCaddyEvidence = useCallback(() => setCaddyEvidenceRevision((value) => value + 1), [])
   const [baiduConfig, setBaiduConfig] = useState<XDriveBaiduMapAdminConfig | null>(null)
   const [baiduEnabled, setBaiduEnabled] = useState(false)
   const [baiduAK, setBaiduAK] = useState('')
@@ -774,9 +778,12 @@ export function XDriveServiceDependenciesPage({
               </Paper>
               {group.id === 'media' && <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} />}
-              {group.id === 'core' && <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID} />}
-              {group.id === 'core' && <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID} />}
-              {group.id === 'core' && <XDriveCaddyPreflightPanel source={source} refreshID={refreshID} />}
+              {group.id === 'core' && <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID}
+                onConfigurationChanged={invalidateCaddyEvidence} />}
+              {group.id === 'core' && <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID}
+                onConfigurationChanged={invalidateCaddyEvidence} />}
+              {group.id === 'core' && <XDriveCaddyPreflightPanel source={source}
+                refreshID={refreshID + caddyEvidenceRevision} />}
               {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'intelligence' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>

@@ -34,10 +34,11 @@ const tlsLabels: Record<XDriveCaddyHTTPSConfig['host_tls_state'], string> = {
 }
 
 export function XDriveCaddyHTTPSDesiredPanel({
-  source, refreshID,
+  source, refreshID, onConfigurationChanged,
 }: {
   source: XDriveCaddyHTTPSPort
   refreshID: number
+  onConfigurationChanged?: () => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyHTTPSConfig | null>(null)
@@ -127,6 +128,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setEnabled(next.desired_enabled)
       setDomain(next.desired_domain)
       setNotice('期望配置已保存并审计；宿主机实际 HTTPS 未应用，需后续受限部署操作。')
+      onConfigurationChanged?.() // Invalidate preflight and any prior cloud read proof.
       const page = await source.loadCaddyHTTPSRevisions?.().catch(() => null)
       if (page && epoch === epochRef.current) setHistory(page.items)
     } catch (err) {
@@ -153,6 +155,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       setDomain(next.desired_domain)
       setTarget('')
       setNotice('历史期望配置已恢复为新修订，仍待单独、安全地应用至 Caddy。')
+      onConfigurationChanged?.()
       const page = await source.loadCaddyHTTPSRevisions?.().catch(() => null)
       if (page && epoch === epochRef.current) setHistory(page.items)
     } catch (err) {
