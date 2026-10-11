@@ -299,3 +299,15 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **实施候选；提交、CI、合并及 iOS 真机验收须分开记录。** 宽屏 Web 打开图库的高级筛选时，通过现有 `XDriveMediaGalleryFilterToolbar.onRequestFacets` 调用 Page 的 `requestFacets`，由同一 `MediaGalleryDataSource.listFacets → api.mediaFacets` 加载真实拍摄设备、格式等候选项。Mobile Web 的内嵌筛选表单此前只在改变多选值时触发候选请求，没有在打开「排序和筛选 → 筛选图库」或底部「搜索」时主动请求，导致首次进入候选缺失。本阶段在移动 Gallery-local Chrome 的筛选 Drawer *从关闭到打开* 时调用同一 Page `requestFacets`；无任何移动端 API、媒体索引、业务控制器或虚拟窗口分叉。
 
 生命周期：初次挂载及单独展开排序菜单不请求；每次真正打开筛选/搜索只请求一次；输入/偏好导致 Page callback 更新时不重复获取；「精选集 → 搜索」先回到共享 Library scope，再在 effect 中读取该范围的 facets；关闭/重开允许刷新。现有 Page `facetRequestID` 负责丢弃过期响应和呈现错误，不修改其请求/缓存策略。真实 Chromium 的 `gallery-ios27-chrome` 场景保留原 360–900px 几何、末张点击、上传 filechooser 和严格未知 API 检查，再附加排序/筛选与精选集搜索两次来源明确的 `GET /api/v1/media/facets` 断言。物理 iOS 27 Safari 与真实 100k、失败重试、ARIA 焦点验收另行记录。
+
+
+## P1-1c · Mobile 排序与时间轴操作服从 Web 共享可用性（2026-10-11）
+
+**状态：实现及代码/组件回归候选，GitHub PR 精确提交 CI 与 iOS 27 真机验收需分别记录。** P1-1b 的 Server facets 已交付，但 Mobile Gallery 在搜索生效、回收站及部分不支持排序的照片集合中仍显示「按拍摄／加入时间排序」入口；当 Page 的 `onSortChange` 不存在时，点击会通过可选回调变成空操作。宽屏 Web 原本按 `showPhotoCollection / isTrashSection / searchActive / currentMemory / currentPet / currentCleanupReview / onSortChange` 隐藏这组控制。
+
+**共享门槛：** 在唯一 `XDriveMediaGalleryPage` 中提取 `canSortPhotoCollection`，由宽屏控制和 Mobile 本地 Chrome 同时消费；Mobile 在不可排序时只显示真正可用的共享筛选和显示选项，不假装操作成功。图库内的「年／月／全部」、次级「按日浏览」、日期跳转与返回锚点使用原有 `showCollectionTimeScale` 限制：搜索结果、Trash/清理等不支持时间轴的上下文不可显示不会生效的时间操作。现有密度、方形/完整显示选项、上传/批量、权限及错误语义不变。
+
+**验证边界：** 用真实 React `MobileGalleryChrome` 组件测试不可用及可用两种门槛、菜单项、标签和无副作用；静态回归保护 Page 与 Web REST/VirtualCollection 的唯一性。未添加移动专属媒体 API、业务控制器或列表。后续仍需实际宽 Web/Mobile Web 请求/任务配对、899/900px、iOS 27 Safari/安装模式截图与辅助功能验收；不得宣称 1:1 已验收。
+
+
+**P1-1c 精确提交初轮 CI 回归修订：** 初轮 [GitHub CI #38106365175](https://github.com/lazyxu/xdrive/actions/runs/38106365175) 的 `desktop-tests` 发生两项测试夹具失败，定位到旧 `desktop/tests/mobile-gallery-ios27-sort-filter.cjs` 的 `baseProps` 未传入新增的 `canSort/showTimeScale` 必填项，使 P0-3g 的菜单测试落在未授权排序的模拟状态。原两个测试的可用排序及不可用筛选断言均保留，本轮仅向既有组件测试夹具补齐真实 Page 会传入的 `true/true`，不修改用户运行时权限/排序逻辑。用原始固定父提交重建恰好**一个**工作提交，提交变更后必须重新等待全量精确 SHA CI 及 `final-gate`，旧跑次通过的其它步骤不得当作新提交的门禁。

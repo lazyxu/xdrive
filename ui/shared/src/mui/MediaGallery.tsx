@@ -5397,6 +5397,16 @@ export function XDriveMediaGallery({
     !currentMemory &&
     !currentPet &&
     !currentCleanupReview
+  // The same scope/permission gate governs wide Web sorting and Mobile's
+  // Gallery-local menu. Do not expose a no-op sort where the owner is absent.
+  const canSortPhotoCollection =
+    showPhotoCollection &&
+    !isTrashSection &&
+    !searchActive &&
+    !currentMemory &&
+    !currentPet &&
+    !currentCleanupReview &&
+    Boolean(onSortChange)
   const showCollectionTimeScale =
     showPhotoCollection &&
     !isTrashSection &&
@@ -5770,6 +5780,7 @@ export function XDriveMediaGallery({
           }}
           sortBy={sortBy}
           sortDir={sortDir}
+          canSort={canSortPhotoCollection}
           onSort={requestGallerySort}
           filterContent={showCollectionFilters || mobileCollectionsOverview ? filters : undefined}
           onSearchRequested={() => {
@@ -5782,6 +5793,7 @@ export function XDriveMediaGallery({
             }
           }}
           onFilterOpen={onOpenMobileFilters}
+          showTimeScale={showCollectionTimeScale}
           timeScale={effectiveTimeScale}
           onTimeScale={updateGalleryTimeScale}
           currentDateLabel={currentTimelineGroupKey
@@ -5963,8 +5975,7 @@ export function XDriveMediaGallery({
                 data-xdrive-gallery-time-zone
               />
             ) : null}
-            {showPhotoCollection && !isTrashSection && !searchActive &&
-             !currentMemory && !currentPet && !currentCleanupReview && onSortChange ? (
+            {canSortPhotoCollection ? (
               <Stack direction="row" spacing={0.75}>
                 <TextField
                   select

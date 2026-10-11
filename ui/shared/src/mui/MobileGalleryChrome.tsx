@@ -25,10 +25,12 @@ export interface XDriveMobileGalleryChromeProps {
   onToggleSelection: () => void
   sortBy: 'captured' | 'added'
   sortDir: 'asc' | 'desc'
+  canSort: boolean
   onSort: (by: 'captured' | 'added', dir: 'asc' | 'desc') => void
   filterContent?: ReactNode
   onSearchRequested?: () => void
   onFilterOpen?: () => void
+  showTimeScale: boolean
   timeScale: MobileGalleryTimeScale
   onTimeScale: (scale: MobileGalleryTimeScale) => void
   currentDateLabel?: string
@@ -60,8 +62,8 @@ export interface XDriveMobileGalleryChromeProps {
  */
 export function XDriveMobileGalleryChrome({
   primaryTab, onPrimaryTabChange, collectionTitle, canGoBack, onGoBack,
-  showCollection, selectionMode, onToggleSelection, sortBy, sortDir, onSort,
-  filterContent, onSearchRequested, onFilterOpen, timeScale, onTimeScale, currentDateLabel, timeZone,
+  showCollection, selectionMode, onToggleSelection, sortBy, sortDir, canSort, onSort,
+  filterContent, onSearchRequested, onFilterOpen, showTimeScale, timeScale, onTimeScale, currentDateLabel, timeZone,
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
@@ -171,7 +173,7 @@ export function XDriveMobileGalleryChrome({
                 data-xdrive-mobile-gallery-select onClick={onToggleSelection}>
                 {selectionMode ? '完成' : '选择'}
               </Button>
-              <IconButton aria-label="图库排序和筛选"
+              <IconButton aria-label={canSort ? '图库排序和筛选' : filterContent ? '图库筛选和显示选项' : '图库显示选项'}
                 aria-haspopup="menu" aria-expanded={Boolean(sortAnchor)}
                 onClick={(event) => {
                   setViewOptionsOpen(false)
@@ -196,7 +198,7 @@ export function XDriveMobileGalleryChrome({
 
       <Menu anchorEl={sortAnchor} open={Boolean(sortAnchor)}
         onClose={closeSortMenu}
-        aria-label={viewOptionsOpen ? '图库显示选项' : '图库排序和筛选'}>
+        aria-label={viewOptionsOpen ? '图库显示选项' : canSort ? '图库排序和筛选' : filterContent ? '图库筛选和显示选项' : '图库显示选项'}>
         {showCollection && (viewOptionsOpen ? (
           <>
             <MenuItem data-xdrive-mobile-gallery-view-back
@@ -230,7 +232,7 @@ export function XDriveMobileGalleryChrome({
           </>
         ) : (
           <>
-            {([
+            {canSort ? ([
               ['captured', 'asc', '拍摄时间 · 最早在前'],
               ['captured', 'desc', '拍摄时间 · 最新在前'],
               ['added', 'asc', '加入时间 · 最早在前'],
@@ -239,7 +241,7 @@ export function XDriveMobileGalleryChrome({
               <MenuItem key={by + dir} selected={sortBy === by && sortDir === dir}
                 onClick={() => { onSort(by, dir); closeSortMenu() }}
                 sx={{ minHeight: 44 }}>{label}</MenuItem>
-            ))}
+            )) : null}
             <MenuItem data-xdrive-mobile-gallery-filter disabled={!filterContent}
               onClick={() => { closeSortMenu(); openFilter(false) }}
               sx={{ minHeight: 44 }}>筛选图库</MenuItem>
@@ -250,7 +252,7 @@ export function XDriveMobileGalleryChrome({
         ))}
       </Menu>
 
-      {!selectionMode && primaryTab === 'library' && showCollection ? (
+      {!selectionMode && primaryTab === 'library' && showCollection && showTimeScale ? (
         <Stack data-xdrive-mobile-gallery-time-scale
           direction="row" role="group" aria-label="图库时间尺度"
           justifyContent="center" spacing={0.5}
@@ -363,25 +365,25 @@ export function XDriveMobileGalleryChrome({
           flex: 1, minHeight: 0, overflowY: 'auto', px: 2,
           pb: 'max(16px, env(safe-area-inset-bottom, 0px))',
         }}>
-          {!collectionsOverview && currentDateLabel ? (
+          {showTimeScale && !collectionsOverview && currentDateLabel ? (
             <Typography variant="caption" color="text.secondary">
               当前浏览：{currentDateLabel}
             </Typography>
           ) : null}
           <Stack spacing={1.5} sx={{ py: 1.5 }}>
-            {showCollection ? (
+            {showCollection && showTimeScale ? (
               <Button variant={timeScale === 'day' ? 'contained' : 'outlined'}
                 data-xdrive-mobile-gallery-day-mode
                 onClick={() => { onTimeScale('day'); setMoreOpen(false) }}>
                 按日浏览
               </Button>
             ) : null}
-            {canReturnToPosition && onReturnToPosition ? (
+            {showTimeScale && canReturnToPosition && onReturnToPosition ? (
               <Button variant="outlined" onClick={() => { onReturnToPosition(); setMoreOpen(false) }}>
                 返回刚才位置
               </Button>
             ) : null}
-            {showCollection && jumpGroups && jumpGroups.length > 1 && onJumpGroup ? (
+            {showCollection && showTimeScale && jumpGroups && jumpGroups.length > 1 && onJumpGroup ? (
               <TextField select size="small" label="跳转年月" value=""
                 onChange={(event) => {
                   onJumpGroup(event.target.value)
@@ -393,7 +395,7 @@ export function XDriveMobileGalleryChrome({
                 ))}
               </TextField>
             ) : null}
-            {showCollection && onJumpDay ? (
+            {showCollection && showTimeScale && timeScale === 'day' && onJumpDay ? (
               <TextField type="date" size="small" label="跳转日期" value={jumpDay}
                 slotProps={{ inputLabel: { shrink: true } }}
                 onChange={(event) => {

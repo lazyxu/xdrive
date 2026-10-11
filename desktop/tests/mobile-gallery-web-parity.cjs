@@ -209,3 +209,15 @@ test('P1-1b Mobile filters reuse the exact wide-Web owner-scoped Server facets q
   assert.doesNotMatch(chrome, /\bfetch\(|listItemRange\(|new XMLHttpRequest\(/)
 })
 
+
+
+test('P1-1c Web and Mobile sorting/time-scale affordances share Page eligibility', () => {
+  assert.match(page, /const canSortPhotoCollection =\s*showPhotoCollection &&[\s\S]*?Boolean\(onSortChange\)/)
+  assert.match(page, /canSort=\{canSortPhotoCollection\}/)
+  assert.match(page, /showTimeScale=\{showCollectionTimeScale\}/)
+  assert.match(page, /\{canSortPhotoCollection \? \(/)
+  assert.match(chrome, /\{canSort \? \(\[/)
+  assert.match(chrome, /showCollection && showTimeScale \? \(/)
+  assert.match(chrome, /timeScale === 'day' && onJumpDay/)
+  assert.doesNotMatch(chrome, /\bfetch\(|listItemRange\(|new XMLHttpRequest\(/)
+})

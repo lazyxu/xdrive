@@ -55,8 +55,10 @@ const props = (overrides = {}) => ({
   onToggleSelection: () => {},
   sortBy: 'captured',
   sortDir: 'asc',
+  canSort: true,
   onSort: () => {},
   filterContent: 'REUSED_GALLERY_FILTERS',
+  showTimeScale: true,
   timeScale: 'all',
   onTimeScale: () => {},
   timeZone: 'Asia/Singapore',
@@ -521,4 +523,50 @@ test('P0-3i bottom time controls add safe scroll clearance without forking Web r
   assert.match(gallery, /<MediaVirtualTimeline/)
   assert.match(appHeader, /calc\(52px \+ env\(safe-area-inset-top\)\)/)
   assert.doesNotMatch(chrome, /listItemRange\(|fetch\(|new.*DataSource/)
+})
+
+
+test('P1-1c Mobile does not offer inert sorting or timeline controls in unsupported scopes', async () => {
+  const dispatched = []
+  const scopedProps = props({
+    canSort: false,
+    showTimeScale: false,
+    onSort: (...args) => dispatched.push(['sort', ...args]),
+    onTimeScale: (value) => dispatched.push(['time', value]),
+    currentDateLabel: '2026 年 10 月',
+    canReturnToPosition: true,
+    onReturnToPosition: () => dispatched.push(['return']),
+    jumpGroups: [{ key: '2026', label: '2026 年' }, { key: '2025', label: '2025 年' }],
+    onJumpGroup: (value) => dispatched.push(['jump', value]),
+    onJumpDay: (value) => dispatched.push(['day', value]),
+  })
+  let view
+  await act(async () => { view = renderer.create(React.createElement(MobileChrome, scopedProps)) })
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-time-scale'), undefined)
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-sort-filter').props['aria-label'], '图库筛选和显示选项')
+  await act(async () => {
+    find(view, 'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} })
+  })
+  const availableSortItems = () => view.root.findAll(x => x.type === 'menuitem' &&
+    typeof x.props.children === 'string' && /^(拍摄时间|加入时间) · /.test(x.props.children))
+  assert.equal(availableSortItems().length, 0, 'no inert Sort action in Trash/search/unsupported scope')
+  assert.ok(find(view, 'data-xdrive-mobile-gallery-filter'), 'real shared filter remains available')
+  await act(async () => { find(view, 'data-xdrive-mobile-gallery-display-options').props.onClick() })
+  assert.ok(find(view, 'data-xdrive-mobile-gallery-aspect-crop'), 'display options remain real')
+  await act(async () => {
+    view.root.findAll(x => x.type === 'menu' && x.props.open)[0].props.onClose()
+    find(view, 'data-xdrive-mobile-gallery-more').props.onClick()
+  })
+  assert.equal(find(view, 'data-xdrive-mobile-gallery-day-mode'), undefined)
+  assert.equal(view.root.findAll(x => x.type === 'textfield' &&
+    ['跳转年月', '跳转日期'].includes(x.props.label)).length, 0)
+  assert.equal(view.root.findAll(x => x.type === 'button' && x.props.children === '返回刚才位置').length, 0)
+  assert.deepEqual(dispatched, [], 'scope-limited mobile controls must not dispatch shared state changes')
+  await act(async () => {
+    view.update(React.createElement(MobileChrome, props({ canSort: true, showTimeScale: true })))
+  })
+  assert.ok(find(view, 'data-xdrive-mobile-gallery-time-scale'))
+  await act(async () => { find(view, 'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} }) })
+  assert.equal(availableSortItems().length, 4, 'authorized Web sort modes remain available on mobile')
+  await act(async () => { view.unmount() })
 })
