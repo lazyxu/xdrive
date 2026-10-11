@@ -161,6 +161,17 @@ export interface XDriveLocalBackupEvidence {
   missing_inference_safe: false
 }
 
+
+// A read-only owning-Desktop COUNT for the current verified local generation.
+// No individual file paths, SourceItem IDs or Root identity reach Renderer.
+export interface XDriveLocalBackupEvidenceSummary {
+  source_id: number
+  revision: number
+  staged_records: number
+  authoritative: false
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
