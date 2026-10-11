@@ -13,7 +13,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; durable reconciler/uploader not implemented |
+| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; L03-D2b1 native rename hints under PR verification (read-only); durable alias index, Planner and uploader not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
@@ -293,3 +293,12 @@ L04/L06: two first-level Push/Pull apps; own Desktop native Root picker and safe
 L07: measurable SQL P50/P95, Agent RSS/CPU, bytes transferred vs CAS reuse, 4 GiB stream/resume, explicit cancel propagation and power/network interruption tests. Native-device and simulated tests have separate verdicts.
 
 Related GitHub PR/branch cleanup must be evidence-based and scoped to this work; never disturb unrelated active work.
+
+
+## L03-D2b1: conservative private native-identity rename hints (PR verification)
+
+An owning Agent can compare **two independently verified, complete Root snapshots** and extract advisory rename hints for **regular files only** when each generation has exactly one observation of the same strong, root-scoped native identity, both have link_count=1, and the canonical relative paths differ. It examines unchanged as well as changed paths to prevent reuse/duplicate/hard-link identities from being paired. Directories, weak/ambiguous identities, mismatched kinds and duplicated observations are never paired.
+
+This is an **Agent-private library**, not a Desktop operation or remote read endpoint. Native keys and relative paths are never returned to Web/other Desktop. It reuses L03-D2a verified delta, spools records in 0700/0600 temporary files and processes 64 hashed buckets with an 8192-record bound; callback batches are <=500. Cancellation, invalid generations, Root replacement, identity skew and corruption fail closed; staging files are removed. All delta staging completes before a hint callback, but callers must still treat late callback failures as invalidating the advisory result.
+
+**No durable SourceItem ID/alias index**, server reconciliation, CAS bytes, SourceRun checkpoint, upload, Mirror missing evidence, automatic schedule, background watcher or local preview is introduced. `MissingInferenceSafe=false` remains mandatory. A future durable alias/index protocol must bind hints to the Server's authoritative Source revision and item identities, verify content when needed and handle crashes/replay before any remote rename/commit. Native Windows/Linux 100k/4GiB E2E remains outstanding.
