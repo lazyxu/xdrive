@@ -1,0 +1,191 @@
+{
+  "title": "Gallery genuine mixed 100k / 115k physically distinct CAS first-visible with authenticated HTTP bytes",
+  "status": "Accepted CURRENT on 3 fresh native Postgres17/Go/CAS samples; production unchanged; amended-head final CI pending",
+  "exact_source": {
+    "original_head": "b1948a722cc2d0c7ee32d992119a1d6300e001f5",
+    "base": "c3b762073116a04bc11a1b43bbd73a8f44d198a6",
+    "CI": "https://github.com/lazyxu/xdrive/actions/runs/38155338468",
+    "job": "https://github.com/lazyxu/xdrive/actions/runs/38155338468/job/114517044496",
+    "previous_valid_run": "https://github.com/lazyxu/xdrive/actions/runs/38154535512",
+    "initial_invalid_run": "https://github.com/lazyxu/xdrive/actions/runs/38154239007"
+  },
+  "n": 3,
+  "original_physical_sources_per_sample": 115000,
+  "physical_bytes_per_sample": 149285128,
+  "media_shape": {
+    "ordinary_image": 70000,
+    "video": 15000,
+    "live": 15000,
+    "live_motion_companions": 15000,
+    "first_visible_photos": 38,
+    "first_visible_videos": 9,
+    "first_visible_live": 9
+  },
+  "media_limits": "85k independently encoded JPEG stills, 30k unique MP4/MOV containers sharing one 96x64 H264 bitstream; not 30k distinct encoded movie scenes",
+  "samples": [
+    {
+      "sample": 1,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 72031.442
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 365.557,
+        "thumbnail_cold_first_ms": 27.57,
+        "thumbnail_cold_first12_ms": 57.031,
+        "thumbnail_cold_all_ms": 112.358,
+        "thumbnail_cold_p50_ms": 9.931,
+        "thumbnail_cold_p95_ms": 43.079,
+        "thumbnail_warm_first_ms": 2.066,
+        "thumbnail_warm_first12_ms": 7.716,
+        "thumbnail_warm_all_ms": 21.352,
+        "thumbnail_warm_p50_ms": 2.217,
+        "thumbnail_warm_p95_ms": 4.861,
+        "video_preview_cold_first_ms": 2.293,
+        "video_preview_cold_all_ms": 6.342,
+        "video_preview_warm_first_ms": 1.685,
+        "video_preview_warm_all_ms": 5.58,
+        "cold_thumb_requests": 47,
+        "warm_thumb_requests": 47,
+        "cold_thumb_bytes": 33293,
+        "warm_thumb_bytes": 33293,
+        "cold_thumb_peak": 6,
+        "video_cold_requests": 9,
+        "video_warm_requests": 9,
+        "video_cold_bytes": 26730,
+        "video_warm_bytes": 26730,
+        "video_cold_peak": 3
+      },
+      "process_time": "maxrss_kib=70176\nuser_cpu_seconds=13.36\nsystem_cpu_seconds=12.84\n"
+    },
+    {
+      "sample": 2,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 70070.15
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 360.332,
+        "thumbnail_cold_first_ms": 40.114,
+        "thumbnail_cold_first12_ms": 66.371,
+        "thumbnail_cold_all_ms": 128.921,
+        "thumbnail_cold_p50_ms": 11.262,
+        "thumbnail_cold_p95_ms": 47.993,
+        "thumbnail_warm_first_ms": 2.573,
+        "thumbnail_warm_first12_ms": 7.588,
+        "thumbnail_warm_all_ms": 18.688,
+        "thumbnail_warm_p50_ms": 1.61,
+        "thumbnail_warm_p95_ms": 5.86,
+        "video_preview_cold_first_ms": 2.772,
+        "video_preview_cold_all_ms": 7.731,
+        "video_preview_warm_first_ms": 1.667,
+        "video_preview_warm_all_ms": 5.586,
+        "cold_thumb_requests": 47,
+        "warm_thumb_requests": 47,
+        "cold_thumb_bytes": 33293,
+        "warm_thumb_bytes": 33293,
+        "cold_thumb_peak": 6,
+        "video_cold_requests": 9,
+        "video_warm_requests": 9,
+        "video_cold_bytes": 26730,
+        "video_warm_bytes": 26730,
+        "video_cold_peak": 3
+      },
+      "process_time": "maxrss_kib=69992\nuser_cpu_seconds=12.56\nsystem_cpu_seconds=12.93\n"
+    },
+    {
+      "sample": 3,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 63327.096
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 339.051,
+        "thumbnail_cold_first_ms": 31.322,
+        "thumbnail_cold_first12_ms": 61.803,
+        "thumbnail_cold_all_ms": 124.742,
+        "thumbnail_cold_p50_ms": 11.218,
+        "thumbnail_cold_p95_ms": 44.945,
+        "thumbnail_warm_first_ms": 2.516,
+        "thumbnail_warm_first12_ms": 8.066,
+        "thumbnail_warm_all_ms": 19.382,
+        "thumbnail_warm_p50_ms": 2.175,
+        "thumbnail_warm_p95_ms": 3.896,
+        "video_preview_cold_first_ms": 2.336,
+        "video_preview_cold_all_ms": 6.651,
+        "video_preview_warm_first_ms": 1.557,
+        "video_preview_warm_all_ms": 5.89,
+        "cold_thumb_requests": 47,
+        "warm_thumb_requests": 47,
+        "cold_thumb_bytes": 33293,
+        "warm_thumb_bytes": 33293,
+        "cold_thumb_peak": 6,
+        "video_cold_requests": 9,
+        "video_warm_requests": 9,
+        "video_cold_bytes": 26730,
+        "video_warm_bytes": 26730,
+        "video_cold_peak": 3
+      },
+      "process_time": "maxrss_kib=69972\nuser_cpu_seconds=12.07\nsystem_cpu_seconds=12.88\n"
+    }
+  ],
+  "median_ms": {
+    "range": 360.332,
+    "cold_first": 31.322,
+    "cold_first12": 61.803,
+    "warm_first": 2.516,
+    "video_first": 2.336
+  },
+  "actual_http": {
+    "cold_still": {
+      "requests": 47,
+      "bytes": 33293
+    },
+    "warm_still": {
+      "requests": 47,
+      "bytes": 33293
+    },
+    "cold_video": {
+      "requests": 9,
+      "bytes": 26730
+    },
+    "warm_video": {
+      "requests": 9,
+      "bytes": 26730
+    },
+    "max_inflight_still": 6,
+    "max_inflight_video": 3
+  },
+  "verdict": "PASS original 750/1500/250/500ms gates, no product optimization, AFTER and percentage gain N/A",
+  "exclusions": "Physical seed/whole-process CPU/RSS outside HTTP clock, no Web/Desktop DOM or Chromium video decode, RAW/HEVC/LIVP, WAN, actual durable transfer/sync/delete"
+}

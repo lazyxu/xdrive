@@ -123,6 +123,13 @@ func TestMediaGalleryFirstVisiblePerformance100K(t *testing.T) {
 	}
 
 	mediaGallerySeedFirstOpen100K(t, db, root.OwnerID, folderDTO.ID)
+	physicalMixedMode := os.Getenv("XD_GALLERY_REAL_PHYSICAL_MIXED_100K_PERF") == "1"
+	if physicalMixedMode {
+		report := gallerySeedRealPhysicalMixed100K(t, db, countingStore, root.OwnerID, folderDTO.ID)
+		t.Logf("GALLERY_PHYSICAL_MIXED_100K sources=%d images=%d videos=%d live_stills=%d live_motions=%d physical_bytes=%d verified_cas_reads=%d seed_ms=%.3f",
+			report.PhysicalSources, report.Images, report.Videos, report.LiveStills, report.LiveMotions,
+			report.PhysicalBytes, report.VerifiedCASReads, report.SeedMs)
+	}
 
 	rangeStarted := time.Now()
 	page, err := server.queryMediaItemRange(
@@ -142,12 +149,13 @@ func TestMediaGalleryFirstVisiblePerformance100K(t *testing.T) {
 	}
 	viewport := append([]mediaItemDTO(nil), page.Items[:galleryFirstVisibleViewport]...)
 
-	imageIDs, videoIDs, liveCount := galleryFirstVisibleSeedObjects(
-		t,
-		db,
-		countingStore,
-		viewport,
-	)
+	var imageIDs, videoIDs []uint64
+	var liveCount int
+	if physicalMixedMode {
+		imageIDs, videoIDs, liveCount = galleryPhysicalMixedViewportIDs(t, viewport)
+	} else {
+		imageIDs, videoIDs, liveCount = galleryFirstVisibleSeedObjects(t, db, countingStore, viewport)
+	}
 	if len(imageIDs) == 0 || len(videoIDs) == 0 || liveCount == 0 {
 		t.Fatalf(
 			"first viewport is not mixed: image_like=%d videos=%d live=%d",
@@ -236,8 +244,18 @@ func TestMediaGalleryFirstVisiblePerformance100K(t *testing.T) {
 		)
 	}
 
+	if coldThumb.RequestCount != len(imageIDs) || warmThumb.RequestCount != len(imageIDs) ||
+		videoCold.RequestCount != len(videoIDs) || videoWarm.RequestCount != len(videoIDs) ||
+		coldThumb.TotalBytes <= 0 || warmThumb.TotalBytes <= 0 ||
+		videoCold.TotalBytes <= 0 || videoWarm.TotalBytes <= 0 ||
+		coldThumb.PeakConcurrency > galleryFirstVisibleThumbnailConcurrency ||
+		videoCold.PeakConcurrency > galleryFirstVisibleVideoConcurrency {
+		t.Fatalf("real Gallery HTTP response bytes/request/concurrency invalid: cold=%+v warm=%+v video_cold=%+v video_warm=%+v",
+			coldThumb, warmThumb, videoCold, videoWarm)
+	}
+
 	t.Logf(
-		"GALLERY_FIRST_VISIBLE_SERVER_100K mix_photos=%d mix_videos=%d mix_live=%d viewport=%d range_ms=%.3f thumbnail_cold_first_ms=%.3f thumbnail_cold_first12_ms=%.3f thumbnail_cold_all_ms=%.3f thumbnail_cold_p50_ms=%.3f thumbnail_cold_p95_ms=%.3f thumbnail_warm_first_ms=%.3f thumbnail_warm_first12_ms=%.3f thumbnail_warm_all_ms=%.3f thumbnail_warm_p50_ms=%.3f thumbnail_warm_p95_ms=%.3f video_preview_cold_first_ms=%.3f video_preview_cold_all_ms=%.3f video_preview_warm_first_ms=%.3f video_preview_warm_all_ms=%.3f",
+		"GALLERY_FIRST_VISIBLE_SERVER_100K mix_photos=%d mix_videos=%d mix_live=%d viewport=%d range_ms=%.3f thumbnail_cold_first_ms=%.3f thumbnail_cold_first12_ms=%.3f thumbnail_cold_all_ms=%.3f thumbnail_cold_p50_ms=%.3f thumbnail_cold_p95_ms=%.3f thumbnail_warm_first_ms=%.3f thumbnail_warm_first12_ms=%.3f thumbnail_warm_all_ms=%.3f thumbnail_warm_p50_ms=%.3f thumbnail_warm_p95_ms=%.3f video_preview_cold_first_ms=%.3f video_preview_cold_all_ms=%.3f video_preview_warm_first_ms=%.3f video_preview_warm_all_ms=%.3f cold_thumb_requests=%d warm_thumb_requests=%d cold_thumb_bytes=%d warm_thumb_bytes=%d cold_thumb_peak=%d video_cold_requests=%d video_warm_requests=%d video_cold_bytes=%d video_warm_bytes=%d video_cold_peak=%d",
 		len(imageIDs)-liveCount,
 		len(videoIDs),
 		liveCount,
@@ -257,6 +275,10 @@ func TestMediaGalleryFirstVisiblePerformance100K(t *testing.T) {
 		fileExplorerMediaPerfMilliseconds(videoCold.TotalDuration),
 		fileExplorerMediaPerfMilliseconds(videoWarm.FirstVisible),
 		fileExplorerMediaPerfMilliseconds(videoWarm.TotalDuration),
+		coldThumb.RequestCount, warmThumb.RequestCount,
+		coldThumb.TotalBytes, warmThumb.TotalBytes, coldThumb.PeakConcurrency,
+		videoCold.RequestCount, videoWarm.RequestCount,
+		videoCold.TotalBytes, videoWarm.TotalBytes, videoCold.PeakConcurrency,
 	)
 
 	if coldThumb.FirstVisible > 750*time.Millisecond {

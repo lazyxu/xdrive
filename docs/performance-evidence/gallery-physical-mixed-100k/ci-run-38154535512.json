@@ -1,0 +1,136 @@
+{
+  "title": "100k real physical mixed Gallery CAS authenticated Gin first-visible CURRENT",
+  "source_exact": {
+    "commit": "13624abbdd698ab1521e6173c3b36b17b4420393",
+    "parent": "c3b762073116a04bc11a1b43bbd73a8f44d198a6",
+    "branch": "perf/gallery-physical-mixed-100k-first-visible-20261011",
+    "native_ci": "https://github.com/lazyxu/xdrive/actions/runs/38154535512",
+    "native_job": "https://github.com/lazyxu/xdrive/actions/runs/38154535512/job/114514671367",
+    "invalid_initial_ci": "https://github.com/lazyxu/xdrive/actions/runs/38154239007",
+    "GitLab_not_run": true
+  },
+  "status": "Accepted original CURRENT, unchanged production; evidence-amended byte/counter CI pending",
+  "workload": "100k PhotoAssets 70k image+15k video+15k Live, 115k physically distinct SHA256 CAS original files, 85k unique encoded 80x64 JPEG stills and 30k distinct video containers sharing a 96x64 H264 bitstream, 15k canonical MediaGroup Live links, 12 CAS readback proofs; original 56 view 38 images+9 videos+9 Live",
+  "samples": [
+    {
+      "sample": 1,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 80933.397
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 638.37,
+        "thumbnail_cold_first_ms": 64.638,
+        "thumbnail_cold_first12_ms": 104.218,
+        "thumbnail_cold_all_ms": 199.244,
+        "thumbnail_cold_p50_ms": 16.496,
+        "thumbnail_cold_p95_ms": 73.806,
+        "thumbnail_warm_first_ms": 3.079,
+        "thumbnail_warm_first12_ms": 14.636,
+        "thumbnail_warm_all_ms": 34.477,
+        "thumbnail_warm_p50_ms": 3.481,
+        "thumbnail_warm_p95_ms": 9.549,
+        "video_preview_cold_first_ms": 5.309,
+        "video_preview_cold_all_ms": 13.291,
+        "video_preview_warm_first_ms": 3.023,
+        "video_preview_warm_all_ms": 10.378
+      },
+      "process_time": "maxrss_kib=69828\nuser_cpu_seconds=23.31\nsystem_cpu_seconds=20.77\n"
+    },
+    {
+      "sample": 2,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 75331.753
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 621.233,
+        "thumbnail_cold_first_ms": 57.338,
+        "thumbnail_cold_first12_ms": 97.576,
+        "thumbnail_cold_all_ms": 203.629,
+        "thumbnail_cold_p50_ms": 18.212,
+        "thumbnail_cold_p95_ms": 75.376,
+        "thumbnail_warm_first_ms": 6.191,
+        "thumbnail_warm_first12_ms": 12.806,
+        "thumbnail_warm_all_ms": 33.511,
+        "thumbnail_warm_p50_ms": 3.405,
+        "thumbnail_warm_p95_ms": 7.539,
+        "video_preview_cold_first_ms": 3.973,
+        "video_preview_cold_all_ms": 12.493,
+        "video_preview_warm_first_ms": 3.197,
+        "video_preview_warm_all_ms": 10.453
+      },
+      "process_time": "maxrss_kib=70040\nuser_cpu_seconds=23.14\nsystem_cpu_seconds=20.43\n"
+    },
+    {
+      "sample": 3,
+      "physical": {
+        "sources": 115000,
+        "images": 70000,
+        "videos": 15000,
+        "live_stills": 15000,
+        "live_motions": 15000,
+        "physical_bytes": 149285128,
+        "verified_cas_reads": 12,
+        "seed_ms": 76111.171
+      },
+      "transport": {
+        "mix_photos": 38,
+        "mix_videos": 9,
+        "mix_live": 9,
+        "viewport": 56,
+        "range_ms": 667.638,
+        "thumbnail_cold_first_ms": 68.316,
+        "thumbnail_cold_first12_ms": 106.207,
+        "thumbnail_cold_all_ms": 205.214,
+        "thumbnail_cold_p50_ms": 17.395,
+        "thumbnail_cold_p95_ms": 81.648,
+        "thumbnail_warm_first_ms": 4.733,
+        "thumbnail_warm_first12_ms": 12.147,
+        "thumbnail_warm_all_ms": 33.119,
+        "thumbnail_warm_p50_ms": 3.837,
+        "thumbnail_warm_p95_ms": 6.629,
+        "video_preview_cold_first_ms": 3.814,
+        "video_preview_cold_all_ms": 13.831,
+        "video_preview_warm_first_ms": 3.417,
+        "video_preview_warm_all_ms": 11.139
+      },
+      "process_time": "maxrss_kib=69784\nuser_cpu_seconds=22.98\nsystem_cpu_seconds=20.88\n"
+    }
+  ],
+  "median_of_three_independent_fixture_ms": {
+    "rangeMs": 638.37,
+    "coldFirstMs": 64.638,
+    "coldFirst12Ms": 104.218,
+    "warmFirstMs": 4.733,
+    "videoFirstMs": 3.973
+  },
+  "original_budgets_ms": {
+    "cold_first": 750,
+    "cold_first12": 1500,
+    "warm_first": 250,
+    "video_first": 500
+  },
+  "decision": "PASS current only; product AFTER=N/A; shipped speedup=N/A",
+  "limitation": "Original source did not print the exact HTTP response TotalBytes already collected by the request helper. New evidence-amended source will report request counts, actual HTTP response bytes and peak concurrent real HTTP calls. Whole-process time/RSS/CPU include fixture seed, not isolated request; browser Web/Desktop/HEVC/RAW/Live-motion decode/durable sync/delete remain unmeasured."
+}

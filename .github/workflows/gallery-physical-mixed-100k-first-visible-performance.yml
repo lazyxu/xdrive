@@ -1,0 +1,110 @@
+name: Gallery Mixed 100k Physical CAS Cold/Warm Media Transport Baseline
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-mixed-physical-100k:
+    if: github.head_ref == 'perf/gallery-physical-mixed-100k-first-visible-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_FIRST_VISIBLE_PERF: '1'
+      XD_GALLERY_REAL_PHYSICAL_MIXED_100K_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact Go fixture source and source-only regression guard
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/media_gallery_first_visible_performance_integration_test.go internal/api/gallery_physical_mixed_first_visible_100k_performance_test.go)"
+          node --test desktop/tests/gallery-physical-mixed-100k-source.cjs
+      - name: Build native Go Gallery HTTP/PostgreSQL/CAS test executable once
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/gallery-physical-mixed-100k-bin
+          go test -c -o desktop/gallery-physical-mixed-100k-bin/api.test ./internal/api
+      - name: Measure 3 independent real mixed 100k physical-source thumbnail and video preview cohorts
+        run: |
+          set -euo pipefail
+          results=desktop/gallery-physical-mixed-100k-results
+          mkdir -p "$results"
+          printf 'SOURCE_HEAD=%s\nPR_MERGE_SHA=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$results/source.txt"
+          for sample in 1 2 3; do
+            export XD_GALLERY_PHYSICAL_100K_SAMPLE="$sample"
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' -o "$results/sample-$sample.time" \
+              desktop/gallery-physical-mixed-100k-bin/api.test -test.run '^TestMediaGalleryFirstVisiblePerformance100K$' -test.count=1 -test.timeout=25m -test.v \
+              | tee "$results/sample-$sample.log"
+          done
+          python3 - "$results" <<'PY'
+          import json, pathlib, re, statistics, sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          for sample in range(1,4):
+              log=(root/f"sample-{sample}.log").read_text()
+              sources=re.findall(r"GALLERY_PHYSICAL_MIXED_100K\s+([^\n]+)",log)
+              measured=re.findall(r"GALLERY_FIRST_VISIBLE_SERVER_100K\s+([^\n]+)",log)
+              assert len(sources)==len(measured)==1,(sample,len(sources),len(measured))
+              def parse(s):
+                  return dict((k,float(v)) for k,v in re.findall(r"(\w+)=([0-9.]+)",s))
+              physical,perf=parse(sources[0]),parse(measured[0])
+              for key,val in [('sources',115000),('images',70000),('videos',15000),('live_stills',15000),('live_motions',15000),('verified_cas_reads',12)]:
+                  assert physical[key]==val,(sample,key,physical.get(key))
+              assert physical['physical_bytes']>100000000,physical
+              assert perf['viewport']==56 and perf['mix_live']>0 and perf['mix_videos']>0,perf
+              assert perf['cold_thumb_requests']==47 and perf['warm_thumb_requests']==47,perf
+              assert perf['video_cold_requests']==9 and perf['video_warm_requests']==9,perf
+              assert 1<=perf['cold_thumb_peak']<=6 and 1<=perf['video_cold_peak']<=3,perf
+              for field in ('cold_thumb_bytes','warm_thumb_bytes','video_cold_bytes','video_warm_bytes'):
+                  assert perf[field]>0,(sample,field,perf[field])
+              limits={'thumbnail_cold_first_ms':750,'thumbnail_cold_first12_ms':1500,
+                      'thumbnail_warm_first_ms':250,'video_preview_cold_first_ms':500}
+              for key,limit in limits.items():
+                  assert perf[key]<=limit,(sample,key,perf[key],limit)
+              rows.append(dict(sample=sample,physical=physical,transport=perf,
+                               process_time=(root/f"sample-{sample}.time").read_text()))
+          report={'status':'Accepted CURRENT iff exact source n3 and full PR CI pass',
+                  'physical_media_shape':'70k independently encoded 80x64 JPEG + 15k image still JPEG, 15k unique video MP4 containers + 15k unique Live motion containers sharing one 96x64 H264 bitstream',
+                  'n':3,'samples':rows,'frozen_budgets_ms':limits,
+                  'median_cold_first_ms':statistics.median(r['transport']['thumbnail_cold_first_ms'] for r in rows),
+                  'median_first12_ms':statistics.median(r['transport']['thumbnail_cold_first12_ms'] for r in rows),
+                  'median_video_first_ms':statistics.median(r['transport']['video_preview_cold_first_ms'] for r in rows),
+                  'exclusions':'No Web/Desktop DOM, no full Live motion browser decode, RAW, HEVC, WAN, durable tasks, or 100k simultaneous decodes; fixture seed and full go process CPU/RSS separate from HTTP times'}
+          (root/'summary.json').write_text(json.dumps(report,indent=2)+'\n')
+          print('GALLERY_PHYSICAL_MIXED_100K_N3 '+json.dumps(report))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-mixed-100k-physical-cas-http-n3
+          path: desktop/gallery-physical-mixed-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
