@@ -1,0 +1,231 @@
+{
+  "status": "INVALID n3 browser benchmark: correctly decoded first 3 actual physical-100k viewport view modes, but expected Go Context-canceled 404 misclassified as missing JPEG",
+  "source_work_commit": "804311cc27d920dc79c21ab5033b66823d1f0613",
+  "master_base": "a3f2bd46f4d1f9e4c1b50115af285526db7091e7",
+  "job_id": 114459791160,
+  "run_id": 38135972440,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38135972440/job/114459791160",
+  "artifact_id": 11700529591,
+  "file_source_bytes": 70893376,
+  "valid_partial_first_three_browser_rows": [
+    {
+      "sample": 1,
+      "view": "grid",
+      "itemCount": 100000,
+      "physicalDistinctJpegOriginals": 100000,
+      "bitmapDimensions": "80x64 JPEG",
+      "renderedViewportPositions": 5,
+      "metrics": [
+        {
+          "fraction": 0,
+          "firstSixDecodedMs": 524.007243,
+          "decoded": 10,
+          "newIDs": 10,
+          "mounted": 88,
+          "scrollTop": 0,
+          "realGoThumbnailRequestsSoFar": 18,
+          "realGoThumbnailBytesSoFar": 12314
+        },
+        {
+          "fraction": 0.25,
+          "firstSixDecodedMs": 509.5461280000018,
+          "decoded": 14,
+          "newIDs": 14,
+          "mounted": 121,
+          "scrollTop": 336192,
+          "realGoThumbnailRequestsSoFar": 51,
+          "realGoThumbnailBytesSoFar": 31211
+        },
+        {
+          "fraction": 0.5,
+          "firstSixDecodedMs": 466.033482999992,
+          "decoded": 8,
+          "newIDs": 8,
+          "mounted": 121,
+          "scrollTop": 672385,
+          "realGoThumbnailRequestsSoFar": 69,
+          "realGoThumbnailBytesSoFar": 45295
+        },
+        {
+          "fraction": 0.75,
+          "firstSixDecodedMs": 451.3227640000114,
+          "decoded": 10,
+          "newIDs": 10,
+          "mounted": 121,
+          "scrollTop": 1008577,
+          "realGoThumbnailRequestsSoFar": 92,
+          "realGoThumbnailBytesSoFar": 61700
+        },
+        {
+          "fraction": 0.95,
+          "firstSixDecodedMs": 12.278753999999026,
+          "decoded": 16,
+          "newIDs": 6,
+          "mounted": 121,
+          "scrollTop": 1277531,
+          "realGoThumbnailRequestsSoFar": 94,
+          "realGoThumbnailBytesSoFar": 65287
+        }
+      ],
+      "totalRequestsForSample": 96,
+      "totalRealHTTPBytesForSample": 65287,
+      "peakRealGoThumbnailConcurrency": 6,
+      "rendererWorkingSetStartBytes": 147513344,
+      "rendererWorkingSetPeakBytes": 253530112,
+      "rendererWorkingSetGrowthBytes": 106016768,
+      "electronMainCPUUserMs": 199.937,
+      "electronMainCPUSystemMs": 170.591,
+      "firstSixP50Ms": 466.033482999992,
+      "worstFirstSixMs": 524.007243,
+      "passed": true
+    },
+    {
+      "sample": 1,
+      "view": "details",
+      "itemCount": 100000,
+      "physicalDistinctJpegOriginals": 100000,
+      "bitmapDimensions": "80x64 JPEG",
+      "renderedViewportPositions": 5,
+      "metrics": [
+        {
+          "fraction": 0,
+          "firstSixDecodedMs": 463.71784599999955,
+          "decoded": 19,
+          "newIDs": 19,
+          "mounted": 30,
+          "scrollTop": 0,
+          "realGoThumbnailRequestsSoFar": 116,
+          "realGoThumbnailBytesSoFar": 81148
+        },
+        {
+          "fraction": 0.25,
+          "firstSixDecodedMs": 336.781329999998,
+          "decoded": 7,
+          "newIDs": 7,
+          "mounted": 40,
+          "scrollTop": 899830,
+          "realGoThumbnailRequestsSoFar": 134,
+          "realGoThumbnailBytesSoFar": 92460
+        },
+        {
+          "fraction": 0.5,
+          "firstSixDecodedMs": 397.818174,
+          "decoded": 9,
+          "newIDs": 9,
+          "mounted": 40,
+          "scrollTop": 1799661,
+          "realGoThumbnailRequestsSoFar": 154,
+          "realGoThumbnailBytesSoFar": 103788
+        },
+        {
+          "fraction": 0.75,
+          "firstSixDecodedMs": 371.8017749999999,
+          "decoded": 6,
+          "newIDs": 6,
+          "mounted": 40,
+          "scrollTop": 2699491,
+          "realGoThumbnailRequestsSoFar": 171,
+          "realGoThumbnailBytesSoFar": 115927
+        },
+        {
+          "fraction": 0.95,
+          "firstSixDecodedMs": 423.3241490000073,
+          "decoded": 11,
+          "newIDs": 11,
+          "mounted": 40,
+          "scrollTop": 3419355,
+          "realGoThumbnailRequestsSoFar": 190,
+          "realGoThumbnailBytesSoFar": 130858
+        }
+      ],
+      "totalRequestsForSample": 93,
+      "totalRealHTTPBytesForSample": 62711,
+      "peakRealGoThumbnailConcurrency": 6,
+      "rendererWorkingSetStartBytes": 144875520,
+      "rendererWorkingSetPeakBytes": 230092800,
+      "rendererWorkingSetGrowthBytes": 85217280,
+      "electronMainCPUUserMs": 122.861,
+      "electronMainCPUSystemMs": 141.781,
+      "firstSixP50Ms": 397.818174,
+      "worstFirstSixMs": 463.71784599999955,
+      "passed": true
+    },
+    {
+      "sample": 2,
+      "view": "grid",
+      "itemCount": 100000,
+      "physicalDistinctJpegOriginals": 100000,
+      "bitmapDimensions": "80x64 JPEG",
+      "renderedViewportPositions": 5,
+      "metrics": [
+        {
+          "fraction": 0,
+          "firstSixDecodedMs": 528.9153240000014,
+          "decoded": 9,
+          "newIDs": 9,
+          "mounted": 88,
+          "scrollTop": 0,
+          "realGoThumbnailRequestsSoFar": 17,
+          "realGoThumbnailBytesSoFar": 10936
+        },
+        {
+          "fraction": 0.25,
+          "firstSixDecodedMs": 440.80726900001173,
+          "decoded": 9,
+          "newIDs": 9,
+          "mounted": 121,
+          "scrollTop": 336192,
+          "realGoThumbnailRequestsSoFar": 38,
+          "realGoThumbnailBytesSoFar": 24908
+        },
+        {
+          "fraction": 0.5,
+          "firstSixDecodedMs": 449.62454400002025,
+          "decoded": 11,
+          "newIDs": 11,
+          "mounted": 121,
+          "scrollTop": 672385,
+          "realGoThumbnailRequestsSoFar": 60,
+          "realGoThumbnailBytesSoFar": 39695
+        },
+        {
+          "fraction": 0.75,
+          "firstSixDecodedMs": 467.8086159999948,
+          "decoded": 11,
+          "newIDs": 11,
+          "mounted": 121,
+          "scrollTop": 1008577,
+          "realGoThumbnailRequestsSoFar": 84,
+          "realGoThumbnailBytesSoFar": 56811
+        },
+        {
+          "fraction": 0.95,
+          "firstSixDecodedMs": 499.8383600000234,
+          "decoded": 15,
+          "newIDs": 15,
+          "mounted": 121,
+          "scrollTop": 1277531,
+          "realGoThumbnailRequestsSoFar": 112,
+          "realGoThumbnailBytesSoFar": 76116
+        }
+      ],
+      "totalRequestsForSample": 112,
+      "totalRealHTTPBytesForSample": 76819,
+      "peakRealGoThumbnailConcurrency": 6,
+      "rendererWorkingSetStartBytes": 147664896,
+      "rendererWorkingSetPeakBytes": 258215936,
+      "rendererWorkingSetGrowthBytes": 110551040,
+      "electronMainCPUUserMs": 120.039,
+      "electronMainCPUSystemMs": 192.092,
+      "firstSixP50Ms": 467.8086159999948,
+      "worstFirstSixMs": 528.9153240000014,
+      "passed": true
+    }
+  ],
+  "valid_complete_independent_pg_schemas": 1,
+  "second_fixture_grid_completed": true,
+  "real_failed_browser_reproducer": "After 100k fixture 2 Details virtual scroll: Go GORM xd_files lookup for abandoned node 25015 printed context canceled; Gin logged HTTP404 26B; probe incorrectly counted it as real JPEG error instead of canceled HTTP.",
+  "corrected_classification": "non-2xx with r.Context().Err()!=nil => canceled expected load shedding; non-2xx with live Context => genuine failure and frozen zero-error gate",
+  "full_n3_result": "UNMEASURED; keep Draft, no product AFTER, no speedup claim",
+  "forbidden_interpretation": "Do not claim this partial first fixture is final n3 performance acceptance or a product 404 missing-file regression. No production code changed."
+}

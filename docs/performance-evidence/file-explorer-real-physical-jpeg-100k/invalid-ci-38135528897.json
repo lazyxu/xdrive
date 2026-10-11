@@ -1,0 +1,26 @@
+{
+  "status": "INVALID benchmark harness early return: 100k native physical CAS seed passed; browser n3 performance NOT measured",
+  "repository": "lazyxu/xdrive",
+  "source_work_commit": "70511afab3e9b9c85c014835153313ebc6c8bd8c",
+  "fixed_master_parent": "a3f2bd46f4d1f9e4c1b50115af285526db7091e7",
+  "run_id": 38135528897,
+  "job_id": 114458489344,
+  "artifact_id": 11701017770,
+  "job_url": "https://github.com/lazyxu/xdrive/actions/runs/38135528897/job/114458489344",
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38135528897/artifacts/11701017770",
+  "actual_native_seed": {
+    "physical_distinct_jpeg_sources": 100000,
+    "encoded_source_bytes": 70893376,
+    "seed_elapsed_ms": 72036.906,
+    "go_fixture_status": "PASS",
+    "browser_full_n3_qualification": false
+  },
+  "first_failure": "Electron benchmark viewSample: premature until() state on >=6 complete images with only 1..5 decoded IDs new versus prior viewport; immediate uniqueNew>=6 assertion then failed. Old overscan thumbnails may legitimately remain while new range arrives.",
+  "first_failure_original": "FILEEXPLORER_REAL_PHYSICAL_100K_ERROR AssertionError [ERR_ASSERTION]: virtual FileExplorer thumbnail window recycled stale source",
+  "not_proven": [
+    "No reproducible production Grid/Details real viewport performance budget breach established",
+    "No 3 independent fixture browser P50/p95/peak resource outcome measured",
+    "Not a real 100k simultaneous image decode or H264/RAW/LIVP test"
+  ],
+  "decision": "correct ONLY benchmark poll predicate to await six decoded fresh IDs; leave original absolute timeout and budgets unchanged; rerun native exact-head."
+}

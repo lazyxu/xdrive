@@ -1,0 +1,73 @@
+name: FileExplorer 100k Distinct Physical JPEG Viewport Performance
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  file-explorer-real-physical-jpeg-100k:
+    if: github.head_ref == 'perf/file-explorer-physical-jpeg-100k-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_PHYSICAL_TEST_BINARY: ${{ github.workspace }}/desktop/file-explorer-physical-jpeg-bin/api.test
+      XD_FILEEXPLORER_PHYSICAL_RESULTS: ${{ github.workspace }}/desktop/file-explorer-physical-jpeg-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate exact physical 100k native JPEG source and shared Grid/Details benchmark formatting
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go internal/api/file_explorer_real_physical_jpeg_100k_performance_test.go)"
+          node --check desktop/scripts/file-explorer-real-physical-100k-main.cjs
+      - name: Build real Web FileExplorer, Electron and native PostgreSQL17/Gin/CAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/file-explorer-physical-jpeg-bin
+          go test -c -o desktop/file-explorer-physical-jpeg-bin/api.test ./internal/api
+      - name: Qualify 3 independent 100k real CAS JPEG fixtures and shared Grid/Details viewport image decodes
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_PHYSICAL_RESULTS"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/file-explorer-real-physical-100k-main.cjs
+          test "$(find "$XD_FILEEXPLORER_PHYSICAL_RESULTS" -maxdepth 1 -type f -name 'sample-*-*.json' | wc -l)" -eq 6
+          cat "$XD_FILEEXPLORER_PHYSICAL_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-100k-real-physical-jpeg-viewports-n3
+          path: desktop/file-explorer-physical-jpeg-100k-results/
+          if-no-files-found: warn
+          retention-days: 14

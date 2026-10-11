@@ -41,6 +41,8 @@ const pageSize = 200
 const sort = { key: 'name' as const, direction: 'asc' as const }
 const viewMode: XDriveFileExplorerViewMode = new URLSearchParams(window.location.search)
   .get('xdriveFileExplorerViewMode') === 'details' ? 'details' : 'grid'
+const physical100k = new URLSearchParams(window.location.search)
+  .get('xdriveFileExplorerPhysical100k') === '1'
 
 // Opt-in benchmark only. Uses the actual shared FileExplorer and thumbnail
 // scheduler with real signed Gin/PG17/CAS HTTP; no production data adapter.
@@ -60,7 +62,7 @@ export function XDriveFileExplorerRealScrollPerformanceHarness() {
         return response.json() as Promise<RealFileExplorerConfig>
       })
       .then((next) => {
-        if (next.logical_count !== 100_000 || next.physical_images !== 16) {
+        if (next.logical_count !== 100_000 || next.physical_images !== (physical100k ? 100_000 : 16)) {
           throw new Error('invalid real 100k FileExplorer fixture shape')
         }
         setConfig(next)

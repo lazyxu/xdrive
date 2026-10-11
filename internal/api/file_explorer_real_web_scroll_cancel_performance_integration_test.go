@@ -76,7 +76,11 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	}
 
 	const logicalCount = 100000
-	const distinctPhysicalImages = 16
+	distinctPhysicalImages := 16
+	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1"
+	if physicalMode {
+		distinctPhysicalImages = logicalCount
+	}
 	seedStarted := time.Now()
 	if err := db.Exec(`CREATE TABLE file_explorer_real_scroll_variants (
 		variant INTEGER PRIMARY KEY, sha256 TEXT NOT NULL,
@@ -84,21 +88,26 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < distinctPhysicalImages; i++ {
-		data := fileExplorerMediaPerfJPEG(t, i)
-		hash := fmt.Sprintf("%x", sha256.Sum256(data))
-		key, keyErr := storage.ContentAddressedKey(hash)
-		if keyErr != nil {
-			t.Fatal(keyErr)
-		}
-		written, putErr := store.Put(context.Background(), key, bytes.NewReader(data))
-		if putErr != nil || written != int64(len(data)) {
-			t.Fatalf("variant %d put=%d expected=%d err=%v", i, written, len(data), putErr)
-		}
-		if err := db.Exec(`INSERT INTO file_explorer_real_scroll_variants
-			(variant, sha256, storage_key, size) VALUES (?, ?, ?, ?)`,
-			i, hash, key, len(data)).Error; err != nil {
-			t.Fatal(err)
+	var physicalSourceBytes int64
+	if physicalMode {
+		physicalSourceBytes = seedFileExplorerDistinctPhysicalJPEG100K(t, db, store, logicalCount)
+	} else {
+		for i := 0; i < distinctPhysicalImages; i++ {
+			data := fileExplorerMediaPerfJPEG(t, i)
+			hash := fmt.Sprintf("%x", sha256.Sum256(data))
+			key, keyErr := storage.ContentAddressedKey(hash)
+			if keyErr != nil {
+				t.Fatal(keyErr)
+			}
+			written, putErr := store.Put(context.Background(), key, bytes.NewReader(data))
+			if putErr != nil || written != int64(len(data)) {
+				t.Fatalf("variant %d put=%d expected=%d err=%v", i, written, len(data), putErr)
+			}
+			if err := db.Exec(`INSERT INTO file_explorer_real_scroll_variants
+				(variant, sha256, storage_key, size) VALUES (?, ?, ?, ?)`,
+				i, hash, key, len(data)).Error; err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if err := db.Exec(`INSERT INTO xd_nodes
@@ -118,16 +127,20 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		distinctPhysicalImages, ownerRoot.OwnerID, folder.ID).Error; err != nil {
 		t.Fatal(err)
 	}
+	mediaWidth, mediaHeight := 800, 600
+	if physicalMode {
+		mediaWidth, mediaHeight = 80, 64
+	}
 	if err := db.Exec(`INSERT INTO xd_media_metadata
 		(node_id, owner_id, node_revision, sha256, media_kind, mime_type,
 		relation_evidence_version, width, height, orientation, index_state,
 		created_at, updated_at)
 		SELECT n.id, n.owner_id, n.revision, f.sha256, ?, 'image/jpeg',
-		?, 800, 600, 1, ?, NOW(), NOW()
+		?, ?, ?, 1, ?, NOW(), NOW()
 		FROM xd_nodes AS n JOIN xd_files AS f ON f.node_id = n.id
 		WHERE n.owner_id = ? AND n.parent_id = ? AND n.deleted_at IS NULL`,
 		meta.MediaKindImage, mediapkg.RelationEvidenceVersion,
-		meta.MediaIndexStateReady, ownerRoot.OwnerID, folder.ID).Error; err != nil {
+		mediaWidth, mediaHeight, meta.MediaIndexStateReady, ownerRoot.OwnerID, folder.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, statement := range []string{
@@ -154,17 +167,20 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	if len(firstIDs) != 6 {
 		t.Fatalf("first visible real JPEG identities=%d", len(firstIDs))
 	}
-	warming := httptest.NewServer(router)
-	warmClient := &http.Client{Timeout: 60 * time.Second}
-	warmResult, warmErr := fileExplorerMediaPerfFetchThumbnails(
-		warmClient, warming.URL, token, firstIDs, 6)
-	warming.Close()
-	if warmErr != nil || warmResult.RequestCount != 6 {
-		t.Fatalf("prewarm 6 real JPEGs: result=%+v err=%v", warmResult, warmErr)
+	if !physicalMode {
+		warming := httptest.NewServer(router)
+		warmClient := &http.Client{Timeout: 60 * time.Second}
+		warmResult, warmErr := fileExplorerMediaPerfFetchThumbnails(
+			warmClient, warming.URL, token, firstIDs, 6)
+		warming.Close()
+		if warmErr != nil || warmResult.RequestCount != 6 {
+			t.Fatalf("prewarm 6 real JPEGs: result=%+v err=%v", warmResult, warmErr)
+		}
 	}
 	seedMS := float64(time.Since(seedStarted).Microseconds()) / 1000
 	store.Reset()
 	probe := newGalleryRealWebScrollCancelProbe(firstIDs) // shared test-only native writer
+	physicalProbe := &fileExplorerRealPhysicalProbe{}
 
 	stopped := make(chan struct{})
 	var once sync.Once
@@ -177,8 +193,13 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"token": token, "folder_id": folder.ID,
 				"logical_count": logicalCount, "physical_images": distinctPhysicalImages,
-				"seed_ms": seedMS,
+				"seed_ms": seedMS, "physical_mode": physicalMode,
+				"physical_source_bytes": physicalSourceBytes,
 			})
+		case "/__perf/physical-jpeg-stats":
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(physicalProbe.snapshot())
 		case "/__perf/viewport-cancel-stats":
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("Cache-Control", "no-store")
@@ -198,6 +219,12 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
+			if physicalMode && r.Method == http.MethodGet &&
+				strings.HasPrefix(r.URL.Path, "/api/v1/media/items/") &&
+				strings.HasSuffix(r.URL.Path, "/thumbnail") {
+				physicalProbe.serve(w, r, router)
+				return
+			}
 			if r.Method == http.MethodGet && probe.matches(r.URL.Path) {
 				probe.serve(w, r, router)
 				return
@@ -214,6 +241,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	ready := map[string]any{
 		"url": service.URL, "folder_id": folder.ID, "logical_count": logicalCount,
 		"physical_images": distinctPhysicalImages, "seed_ms": seedMS,
+		"physical_mode": physicalMode, "physical_source_bytes": physicalSourceBytes,
 		"first_image_nodes": firstIDs,
 	}
 	contents, err := json.Marshal(ready)
@@ -227,10 +255,14 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("FILEEXPLORER_REAL_WEB_SCROLL_100K_READY %s", contents)
+	waitLimit := 8 * time.Minute
+	if physicalMode {
+		waitLimit = 16 * time.Minute
+	}
 	select {
 	case <-stopped:
-		t.Logf("FILEEXPLORER_REAL_WEB_SCROLL_100K_STOP seed_ms=%.3f", seedMS)
-	case <-time.After(8 * time.Minute):
+		t.Logf("FILEEXPLORER_REAL_WEB_SCROLL_100K_STOP seed_ms=%.3f physical=%t", seedMS, physicalMode)
+	case <-time.After(waitLimit):
 		t.Fatal("browser did not finish FileExplorer mounted scroll fixture")
 	}
 }
