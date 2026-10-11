@@ -70,7 +70,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 	dir := t.TempDir()
 	req := mediaWorkerHostRequest{
 		RequestID: "0123456789abcdef01234567",
-		Revision:  2, Enabled: true, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Revision:  2, Enabled: true, MemoryMiB: 768, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeMediaWorkerHostRequest(dir, req); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 		t.Fatalf("host request corrupted: %+v", got)
 	}
 	if err := writeMediaWorkerHostRequest(dir, mediaWorkerHostRequest{
-		RequestID: "contains-a-host-path", Revision: 3,
+		RequestID: "contains-a-host-path", Revision: 3, MemoryMiB: 768,
 	}); err == nil {
 		t.Fatal("untrusted host control request ID accepted")
 	}
@@ -167,7 +167,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodGet, endpoint, memberToken, ""); response.Code != 403 {
 		t.Fatalf("non-admin GET %d", response.Code)
 	}
-	body := `{"revision":0,"enabled":true}`
+	body := `{"revision":0,"enabled":true,"memory_mib":768}`
 	if response := request(http.MethodPut, endpoint, "", body); response.Code != 401 {
 		t.Fatalf("anonymous PUT %d", response.Code)
 	}
@@ -184,7 +184,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("stale edit %d", response.Code)
 	}
 	var saved meta.AdminMediaWorkerSetting
-	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled {
+	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled || saved.MemoryMiB != 768 {
 		t.Fatalf("desired not persisted correctly: %+v %v", saved, err)
 	}
 	// A saved policy cannot be called applied without a Host Manager.
@@ -225,7 +225,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	var command mediaWorkerHostRequest
-	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled ||
+	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled || command.MemoryMiB != 768 ||
 		!mediaWorkerRequestIDPattern.MatchString(command.RequestID) {
 		t.Fatalf("unsafe host command: %+v", command)
 	}
@@ -235,7 +235,8 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
-		State: "success", Revision: 1, AppliedRevision: 1, Enabled: true, ObservedEnabled: true, RequestID: command.RequestID,
+		State: "success", Revision: 1, AppliedRevision: 1, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true, RequestID: command.RequestID,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
@@ -252,7 +253,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("applied worker not really verified: %s", got.Body.String())
 	}
 	// Disable must be its own revision and own host acknowledgement.
-	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false}`)
+	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false,"memory_mib":768}`)
 	if disabled.Code != 200 {
 		t.Fatalf("disable desired %d %s", disabled.Code, disabled.Body.String())
 	}
@@ -262,6 +263,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	_ = os.Remove(filepath.Join(dir, mediaWorkerControlRequestName))
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
 		State: "success", Revision: 2, AppliedRevision: 2, Enabled: false, ObservedEnabled: false,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" || cfg.DesiredEnabled {
@@ -287,8 +289,60 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodPost, endpoint+"/rollback", memberToken, `{"revision":3,"target_revision":1}`); response.Code != 403 {
 		t.Fatalf("non-admin rollback accepted: %d", response.Code)
 	}
+	// A memory-only change is a new audited revision and MUST remain pending
+	// until the Host Runner confirms its actual cgroup memory allocation.
+	change := request(http.MethodPut, endpoint, adminToken, `{"revision":3,"enabled":true,"memory_mib":1024}`)
+	if change.Code != http.StatusOK {
+		t.Fatalf("memory-only change rejected: %d %s", change.Code, change.Body.String())
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 4 ||
+		cfg.DesiredMemoryMiB != 1024 || cfg.ApplyState == "applied" {
+		t.Fatalf("memory-only save misreported as applied: %+v", cfg)
+	}
+	enqueued = request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":4}`)
+	if enqueued.Code != http.StatusAccepted {
+		t.Fatalf("memory-only apply not queued: %d %s", enqueued.Code, enqueued.Body.String())
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, mediaWorkerControlRequestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(raw, &command) != nil || command.MemoryMiB != 1024 || command.Revision != 4 {
+		t.Fatalf("memory-only Host request incorrect: %+v", command)
+	}
+	if err := os.Remove(filepath.Join(dir, mediaWorkerControlRequestName)); err != nil {
+		t.Fatal(err)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 4, AppliedRevision: 4, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 1024, ObservedMemoryMiB: 768, MemoryVerified: false,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
+		t.Fatalf("wrong real memory was incorrectly advertised applied: %+v", cfg)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 4, AppliedRevision: 4, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 1024, ObservedMemoryMiB: 1024, MemoryVerified: true,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
+		cfg.Host.ObservedMemoryMiB != 1024 || !cfg.Host.MemoryVerified {
+		t.Fatalf("real memory verification did not acknowledge policy: %+v", cfg)
+	}
+	// Rollback restores original memory with a NEW desired revision.
+	rollback = request(http.MethodPost, endpoint+"/rollback", adminToken, `{"revision":4,"target_revision":1}`)
+	if rollback.Code != http.StatusOK {
+		t.Fatalf("memory rollback rejected: %d", rollback.Code)
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 5 ||
+		cfg.DesiredMemoryMiB != 768 || cfg.ApplyState == "applied" {
+		t.Fatalf("memory rollback wrongly acknowledged: %+v", cfg)
+	}
 	var audits int64
-	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 4 {
+	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 7 {
 		t.Fatalf("missing audit evidence count=%d err=%v", audits, err)
 	}
 }

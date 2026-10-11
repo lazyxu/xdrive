@@ -50,7 +50,7 @@ else
   chown 65532:65532 "$runtime_dir"
 fi
 docker run -d --name "$container" \
-  --network none --read-only --cap-drop ALL --security-opt no-new-privileges \
+  --network none --read-only --memory 768m --cap-drop ALL --security-opt no-new-privileges \
   --user 65532:65532 \
   --tmpfs /tmp:rw,noexec,nosuid,size=32m \
   -v "$runtime_dir:/run/xdrive-media-worker" \
@@ -70,5 +70,6 @@ if [[ "$healthy" != 1 ]]; then
   exit 1
 fi
 [[ "$(docker inspect --format '{{.HostConfig.NetworkMode}}' "$container")" == "none" ]]
+[[ "$(docker inspect --format '{{.HostConfig.Memory}}' "$container")" == "805306368" ]]
 docker exec "$container" sh -ec 'test ! -d /data && test -S /run/xdrive-media-worker/media-worker.sock'
 bash scripts/ci/export-docker-image.sh xdrive/media-worker:test "${1:-dist/media-worker-image}"

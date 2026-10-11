@@ -18,6 +18,14 @@ export type XDriveMediaWorkerPort = {
   rollbackMediaWorker?: (input: XDriveMediaWorkerRollbackInput) => Promise<XDriveMediaWorkerConfig>
 }
 
+function validMediaMemory(value: string): number | null {
+  const raw = value.trim()
+  if (!/^\d+$/.test(raw)) return null
+  const result = Number(raw)
+  return Number.isSafeInteger(result) && result >= 256 && result <= 4096 && result % 128 === 0
+    ? result : null
+}
+
 const states: Record<XDriveMediaWorkerConfig['apply_state'], string> = {
   unmanaged: '尚未由管理员配置', pending: '等待宿主机实际生效',
   unavailable: 'Host Manager 不可用', failed: '宿主机执行失败或运行状态丢失',
@@ -34,6 +42,7 @@ export function XDriveMediaWorkerConfigPanel({
   const [config, setConfig] = useState<XDriveMediaWorkerConfig | null>(null)
   const [history, setHistory] = useState<XDriveMediaWorkerRevisionPage['items']>([])
   const [draftEnabled, setDraftEnabled] = useState(false)
+  const [draftMemory, setDraftMemory] = useState('768')
   const [rollbackTarget, setRollbackTarget] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -49,6 +58,7 @@ export function XDriveMediaWorkerConfigPanel({
     const epoch = ++epochRef.current
     setConfig(null)
     setDraftEnabled(false)
+    setDraftMemory('768')
     setHistory([])
     setRollbackTarget('')
     setBusy(false)
@@ -64,6 +74,7 @@ export function XDriveMediaWorkerConfigPanel({
         if (!active || epoch !== epochRef.current) return
         setConfig(next)
         setDraftEnabled(next.desired_enabled)
+        setDraftMemory(String(next.desired_memory_mib ?? 768))
       }).catch(() => {
         if (active && epoch === epochRef.current) setError('无法读取 Media Worker 配置；请检查 Server/Agent 版本。')
       }).finally(() => {
@@ -92,6 +103,7 @@ export function XDriveMediaWorkerConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
+      setDraftMemory(String(next.desired_memory_mib ?? 768))
       if (source.loadMediaWorkerRevisions) {
         const result = await source.loadMediaWorkerRevisions().catch(() => null)
         if (result && epoch === epochRef.current) {
@@ -114,10 +126,17 @@ export function XDriveMediaWorkerConfigPanel({
     setError('')
     setNotice('')
     try {
-      const next = await source.saveMediaWorkerConfig({ revision: config.revision, enabled: draftEnabled })
+      const memory = validMediaMemory(draftMemory)
+      if (memory === null) {
+        throw new Error('Worker 内存限额必须为 256–4096 MiB，且是 128 MiB 的整数倍。')
+      }
+      const next = await source.saveMediaWorkerConfig({
+        revision: config.revision, enabled: draftEnabled, memory_mib: memory,
+      })
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
+      setDraftMemory(String(next.desired_memory_mib ?? 768))
       setNotice('期望配置已保存并审计；尚未作用于容器。请单独点击“提交宿主机应用”。')
       if (source.loadMediaWorkerRevisions) {
         const page = await source.loadMediaWorkerRevisions().catch(() => null)
@@ -164,6 +183,7 @@ export function XDriveMediaWorkerConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
+      setDraftMemory(String(next.desired_memory_mib ?? 768))
       setRollbackTarget('')
       setNotice('已新建历史回滚修订并完成审计；仍需单独提交宿主机应用，未立即停止或启动服务。')
       if (source.loadMediaWorkerRevisions) {
@@ -179,8 +199,10 @@ export function XDriveMediaWorkerConfigPanel({
 
   const operationActive = config?.host.state === 'queued' || config?.host.state === 'running'
   const canApply = !!config && config.revision > 0 && config.apply_supported &&
+    typeof config.desired_memory_mib === 'number' &&
     config.apply_state !== 'applied' && !operationActive
-  const canEdit = !!config?.editable && !busy && !operationActive
+  const canEdit = !!config?.editable && typeof config?.desired_memory_mib === 'number' &&
+    !busy && !operationActive
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-media-worker-control>
@@ -193,7 +215,7 @@ export function XDriveMediaWorkerConfigPanel({
         <Typography variant="body2" color="text.secondary">
           仅启停独立 FFmpeg Media Worker，不涉及 Server、数据库、上传下载或同步容器。
           首先保存期望配置及审计，再通过受限 Host Manager 执行；未经实际验证不会显示生效。
-          当前仅有运行时健康探针，媒体作业处理仍待后续接入。
+          当前仅有运行时健康探针，媒体作业处理仍待后续接入。资源参数仅作用于独立 Worker 容器。
         </Typography>
         {config ? (
           <>
@@ -212,13 +234,24 @@ export function XDriveMediaWorkerConfigPanel({
               {' · '}宿主机：{config.host.supported ?
                 (config.host.observed_enabled ? '检测到运行中' : '未检测到运行') : '控制器不在线'}
               {' · '}FFmpeg：{config.runtime_ready ? '探针通过' : '未验证就绪'}
+              {' · '}内存：期望 {config.desired_memory_mib ?? '未知'} MiB
+              {' · '}实际 {config.host.memory_verified ? config.host.observed_memory_mib + ' MiB（' + (config.host.observed_enabled ? 'Docker 实际限制已核验' : '停用后配置文件已核验') + '）' : '未核验'}
               {' · '}执行状态：{config.host.state}
             </Typography>
             <FormControlLabel
               control={<Switch checked={draftEnabled} disabled={!canEdit}
                 onChange={(event) => setDraftEnabled(event.target.checked)} />}
               label={draftEnabled ? '期望启用媒体运行时' : '期望停止媒体运行时'} />
-            <Button size="small" variant="outlined" disabled={!canEdit || draftEnabled === config.desired_enabled ||
+            <TextField fullWidth type="number" size="small" label="Media Worker 内存上限 (MiB)"
+              value={draftMemory} onChange={(event) => setDraftMemory(event.target.value)}
+              disabled={!canEdit} inputProps={{ min: 256, max: 4096, step: 128 }}
+              error={validMediaMemory(draftMemory) === null}
+              helperText="允许 256–4096 MiB，以 128 MiB 为步长。保存后不立即修改容器；仅独立 Worker 在受限应用时被重建。"
+            />
+            <Button size="small" variant="outlined" disabled={!canEdit ||
+              validMediaMemory(draftMemory) === null ||
+              (draftEnabled === config.desired_enabled &&
+                validMediaMemory(draftMemory) === config.desired_memory_mib) ||
               !source.saveMediaWorkerConfig} onClick={() => setConfirmSave(true)}>
               保存期望状态（不立即操作容器）
             </Button>
@@ -236,13 +269,14 @@ export function XDriveMediaWorkerConfigPanel({
             )}
             <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="保存 Media Worker 的期望启停状态"
-              description="此操作只保存新修订并审计，不会直接启停容器；需要随后单独提交实际应用。"
+              description="此操作只保存启停与内存限额的新修订并审计，不会直接改变容器；需要随后单独提交宿主机实际应用。"
               confirmLabel="保存期望配置" onCancel={() => setConfirmSave(false)}
               onConfirm={() => { void save() }} />
             <XDriveConfirmDialog open={confirmApply} loading={busy}
               title="确认宿主机实际启停 FFmpeg Worker"
               description={'仅控制 media-worker 容器，不接触数据库或核心文件服务。目标：' +
-                (config.desired_enabled ? '开启' : '关闭') + '。只有宿主机执行和实际健康检测后才算生效。'}
+                (config.desired_enabled ? '开启' : '关闭') + '，内存限制 ' + config.desired_memory_mib +
+                ' MiB。启用时仅重建 media-worker，并实际核验容器内存限制和 FFmpeg 探针。'}
               confirmLabel="提交受限执行" onCancel={() => setConfirmApply(false)}
               onConfirm={() => { void apply() }} />
             {source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
@@ -255,7 +289,7 @@ export function XDriveMediaWorkerConfigPanel({
                   <MenuItem value="">请选择较早修订</MenuItem>
                   {history.filter((item) => item.revision < config.revision).map((item) => (
                     <MenuItem key={item.revision} value={String(item.revision)}>
-                      修订 #{item.revision} · {item.enabled ? '启用' : '停用'} · {item.origin}
+                      修订 #{item.revision} · {item.enabled ? '启用' : '停用'} · 内存 {item.memory_mib ?? 768} MiB · {item.origin}
                     </MenuItem>
                   ))}
                 </TextField>

@@ -313,30 +313,35 @@ type ServiceDependency struct {
 // Global desired Media Worker enablement and host-observed effect only.
 // No user Source settings, host paths, Docker socket or file job inputs.
 type AdminMediaWorkerHost struct {
-	Supported       bool   `json:"supported"`
-	State           string `json:"state"`
-	Revision        uint64 `json:"revision"`
-	AppliedRevision uint64 `json:"applied_revision"`
-	Enabled         bool   `json:"enabled"`
-	ObservedEnabled bool   `json:"observed_enabled"`
-	RequestID       string `json:"request_id,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	Supported         bool   `json:"supported"`
+	State             string `json:"state"`
+	Revision          uint64 `json:"revision"`
+	AppliedRevision   uint64 `json:"applied_revision"`
+	Enabled           bool   `json:"enabled"`
+	ObservedEnabled   bool   `json:"observed_enabled"`
+	MemoryMiB         int    `json:"memory_mib"`
+	ObservedMemoryMiB int    `json:"observed_memory_mib"`
+	MemoryVerified    bool   `json:"memory_verified"`
+	RequestID         string `json:"request_id,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
 }
 type AdminMediaWorkerConfig struct {
-	DesiredEnabled  bool                 `json:"desired_enabled"`
-	Revision        uint64               `json:"revision"`
-	Source          string               `json:"source"`
-	UpdatedAt       *time.Time           `json:"updated_at,omitempty"`
-	ApplyState      string               `json:"apply_state"`
-	Host            AdminMediaWorkerHost `json:"host"`
-	RuntimeReady    bool                 `json:"runtime_ready"`
-	Editable        bool                 `json:"editable"`
-	ApplySupported  bool                 `json:"apply_supported"`
-	RequiresRestart bool                 `json:"requires_restart"`
+	DesiredEnabled   bool                 `json:"desired_enabled"`
+	DesiredMemoryMiB int                  `json:"desired_memory_mib"`
+	Revision         uint64               `json:"revision"`
+	Source           string               `json:"source"`
+	UpdatedAt        *time.Time           `json:"updated_at,omitempty"`
+	ApplyState       string               `json:"apply_state"`
+	Host             AdminMediaWorkerHost `json:"host"`
+	RuntimeReady     bool                 `json:"runtime_ready"`
+	Editable         bool                 `json:"editable"`
+	ApplySupported   bool                 `json:"apply_supported"`
+	RequiresRestart  bool                 `json:"requires_restart"`
 }
 type AdminMediaWorkerUpdate struct {
-	Revision uint64 `json:"revision"`
-	Enabled  bool   `json:"enabled"`
+	Revision  uint64 `json:"revision"`
+	Enabled   bool   `json:"enabled"`
+	MemoryMiB int    `json:"memory_mib"`
 }
 type AdminMediaWorkerApplyInput struct {
 	Revision uint64 `json:"revision"`
@@ -345,11 +350,13 @@ type AdminMediaWorkerApplyResult struct {
 	State     string `json:"state"`
 	Revision  uint64 `json:"revision"`
 	Enabled   bool   `json:"enabled"`
+	MemoryMiB int    `json:"memory_mib"`
 	RequestID string `json:"request_id"`
 }
 type AdminMediaWorkerRevision struct {
 	Revision  uint64    `json:"revision"`
 	Enabled   bool      `json:"enabled"`
+	MemoryMiB int       `json:"memory_mib"`
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 }

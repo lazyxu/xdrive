@@ -28,20 +28,24 @@ const (
 var mediaWorkerRequestIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 type mediaWorkerHostStatus struct {
-	Supported       bool   `json:"supported"`
-	State           string `json:"state"`
-	Revision        uint64 `json:"revision"`
-	AppliedRevision uint64 `json:"applied_revision"`
-	Enabled         bool   `json:"enabled"`
-	ObservedEnabled bool   `json:"observed_enabled"`
-	RequestID       string `json:"request_id,omitempty"`
-	UpdatedAt       string `json:"updated_at,omitempty"`
+	Supported         bool   `json:"supported"`
+	State             string `json:"state"`
+	Revision          uint64 `json:"revision"`
+	AppliedRevision   uint64 `json:"applied_revision"`
+	Enabled           bool   `json:"enabled"`
+	ObservedEnabled   bool   `json:"observed_enabled"`
+	MemoryMiB         int    `json:"memory_mib"`
+	ObservedMemoryMiB int    `json:"observed_memory_mib"`
+	MemoryVerified    bool   `json:"memory_verified"`
+	RequestID         string `json:"request_id,omitempty"`
+	UpdatedAt         string `json:"updated_at,omitempty"`
 }
 
 type mediaWorkerHostRequest struct {
 	RequestID string `json:"request_id"`
 	Revision  uint64 `json:"revision"`
 	Enabled   bool   `json:"enabled"`
+	MemoryMiB int    `json:"memory_mib"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -91,7 +95,10 @@ func (s *Server) readMediaWorkerHostStatus() mediaWorkerHostStatus {
 	}
 	if json.Unmarshal(content, &host) != nil || !validMediaWorkerHostState(host.State) ||
 		(host.RequestID != "" && !mediaWorkerRequestIDPattern.MatchString(host.RequestID)) ||
-		host.AppliedRevision > host.Revision || host.Revision > (1<<60) {
+		host.AppliedRevision > host.Revision || host.Revision > (1<<60) ||
+		(host.MemoryMiB != 0 && !mediaworker.ValidMemoryMiB(host.MemoryMiB)) ||
+		(host.ObservedMemoryMiB != 0 && !mediaworker.ValidMemoryMiB(host.ObservedMemoryMiB)) ||
+		(host.MemoryVerified && !mediaworker.ValidMemoryMiB(host.ObservedMemoryMiB)) {
 		return unavailableMediaWorkerHost()
 	}
 	host.Supported = true
@@ -100,27 +107,31 @@ func (s *Server) readMediaWorkerHostStatus() mediaWorkerHostStatus {
 	if err == nil && len(raw) <= 1024 {
 		var queued mediaWorkerHostRequest
 		if json.Unmarshal(raw, &queued) == nil && queued.Revision > 0 &&
-			mediaWorkerRequestIDPattern.MatchString(queued.RequestID) {
+			mediaWorkerRequestIDPattern.MatchString(queued.RequestID) &&
+			mediaworker.ValidMemoryMiB(queued.MemoryMiB) {
 			host.State = "queued"
 			host.RequestID = queued.RequestID
 			host.Revision = queued.Revision
 			host.Enabled = queued.Enabled
+			host.MemoryMiB = queued.MemoryMiB
+			host.MemoryVerified = false
 		}
 	}
 	return host
 }
 
 type adminMediaWorkerConfigDTO struct {
-	DesiredEnabled  bool                  `json:"desired_enabled"`
-	Revision        uint64                `json:"revision"`
-	Source          string                `json:"source"`
-	UpdatedAt       *time.Time            `json:"updated_at,omitempty"`
-	ApplyState      string                `json:"apply_state"`
-	Host            mediaWorkerHostStatus `json:"host"`
-	RuntimeReady    bool                  `json:"runtime_ready"`
-	Editable        bool                  `json:"editable"`
-	ApplySupported  bool                  `json:"apply_supported"`
-	RequiresRestart bool                  `json:"requires_restart"`
+	DesiredEnabled   bool                  `json:"desired_enabled"`
+	DesiredMemoryMiB int                   `json:"desired_memory_mib"`
+	Revision         uint64                `json:"revision"`
+	Source           string                `json:"source"`
+	UpdatedAt        *time.Time            `json:"updated_at,omitempty"`
+	ApplyState       string                `json:"apply_state"`
+	Host             mediaWorkerHostStatus `json:"host"`
+	RuntimeReady     bool                  `json:"runtime_ready"`
+	Editable         bool                  `json:"editable"`
+	ApplySupported   bool                  `json:"apply_supported"`
+	RequiresRestart  bool                  `json:"requires_restart"`
 }
 
 func (s *Server) mediaWorkerRuntimeReady(ctx context.Context) bool {
@@ -176,12 +187,15 @@ func (s *Server) adminMediaWorkerConfig(c *gin.Context) {
 		}
 		if host.State == "success" && host.AppliedRevision == desired.Revision &&
 			host.Enabled == desired.Enabled && host.ObservedEnabled == desired.Enabled &&
+			host.MemoryMiB == desired.MemoryMiB && host.MemoryVerified &&
+			host.ObservedMemoryMiB == desired.MemoryMiB &&
 			(!desired.Enabled || ready) {
 			state = "applied"
 		}
 	}
 	c.JSON(http.StatusOK, adminMediaWorkerConfigDTO{
-		DesiredEnabled: desired.Enabled, Revision: desired.Revision, Source: desired.Source,
+		DesiredEnabled: desired.Enabled, DesiredMemoryMiB: desired.MemoryMiB,
+		Revision: desired.Revision, Source: desired.Source,
 		UpdatedAt: desired.UpdatedAt, ApplyState: state, Host: host,
 		RuntimeReady: ready, Editable: true, ApplySupported: host.Supported,
 		RequiresRestart: false,
@@ -189,7 +203,8 @@ func (s *Server) adminMediaWorkerConfig(c *gin.Context) {
 }
 
 func writeMediaWorkerHostRequest(dir string, request mediaWorkerHostRequest) error {
-	if dir == "" || request.Revision == 0 || !mediaWorkerRequestIDPattern.MatchString(request.RequestID) {
+	if dir == "" || request.Revision == 0 || !mediaWorkerRequestIDPattern.MatchString(request.RequestID) ||
+		!mediaworker.ValidMemoryMiB(request.MemoryMiB) {
 		return errors.New("invalid media worker host request")
 	}
 	data, err := json.Marshal(request)
@@ -264,7 +279,7 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 		return
 	}
 	request := mediaWorkerHostRequest{
-		RequestID: requestID, Revision: desired.Revision, Enabled: desired.Enabled,
+		RequestID: requestID, Revision: desired.Revision, Enabled: desired.Enabled, MemoryMiB: desired.MemoryMiB,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	// Authorization is durably audited before any host operation is queued.
@@ -281,7 +296,8 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 		return recordAuditTx(tx, auditEventFromContext(c,
 			"admin.service.media-worker.apply.authorize", "service", "media-worker",
 			"FFmpeg Media Worker", auditpkg.ResultSuccess,
-			map[string]any{"revision": request.Revision, "enabled": request.Enabled, "request_id": request.RequestID},
+			map[string]any{"revision": request.Revision, "enabled": request.Enabled,
+				"memory_mib": request.MemoryMiB, "request_id": request.RequestID},
 		))
 	})
 	if errors.Is(err, errMediaWorkerRevision) {
@@ -303,6 +319,6 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 	}
 	c.JSON(http.StatusAccepted, gin.H{
 		"state": "queued", "revision": request.Revision,
-		"enabled": request.Enabled, "request_id": request.RequestID,
+		"enabled": request.Enabled, "memory_mib": request.MemoryMiB, "request_id": request.RequestID,
 	})
 }

@@ -39,11 +39,15 @@ export type XDriveMediaWorkerHostStatus = {
   applied_revision: number
   enabled: boolean
   observed_enabled: boolean
+  memory_mib: number
+  observed_memory_mib: number
+  memory_verified: boolean
   request_id?: string
   updated_at?: string
 }
 export type XDriveMediaWorkerConfig = {
   desired_enabled: boolean
+  desired_memory_mib: number
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
@@ -54,15 +58,16 @@ export type XDriveMediaWorkerConfig = {
   apply_supported: boolean
   requires_restart: boolean
 }
-export type XDriveMediaWorkerUpdate = { revision: number; enabled: boolean }
+export type XDriveMediaWorkerUpdate = { revision: number; enabled: boolean; memory_mib: number }
 export type XDriveMediaWorkerApplyResult = {
   state: 'queued'
   revision: number
   enabled: boolean
+  memory_mib: number
   request_id: string
 }
 export type XDriveMediaWorkerRevisionPage = {
-  items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+  items: Array<{ revision: number; enabled: boolean; memory_mib: number; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
 }
 export type XDriveMediaWorkerRollbackInput = { revision: number; target_revision: number }
 
