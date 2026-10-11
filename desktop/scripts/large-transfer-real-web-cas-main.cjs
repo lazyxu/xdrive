@@ -11,7 +11,8 @@ const scenarios = new Set(['upload', 'download'])
 const scenario = process.argv.find(value => scenarios.has(value))
 const sample = process.argv.find(value => /^sample-\d+$/.test(value))
 if (!scenario || !sample) throw Error('upload|download sample-N required')
-const sizeGiB = 1
+const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
+if (![1,4].includes(sizeGiB)) throw Error('real Web CAS benchmark size must be 1 or 4 GiB')
 const sizeBytes = sizeGiB * 2 ** 30
 const chunkSize = 8 * 1024 * 1024
 const desktopRoot = path.resolve(__dirname, '..')
@@ -52,7 +53,7 @@ async function waitForSelector(win, selector, timeoutMs = 30_000) {
 }
 
 async function waitForResult(win) {
-  const deadline = Date.now() + 5 * 60_000
+  const deadline = Date.now() + (sizeGiB === 4 ? 6 : 5) * 60_000
   let workingSetStartKB = null
   let workingSetPeakKB = null
   let started = false

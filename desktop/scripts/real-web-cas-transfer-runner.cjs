@@ -11,7 +11,15 @@ const desktop = path.join(root, 'desktop')
 const dist = path.join(root, 'web/dist')
 const out = path.resolve(process.env.XD_REAL_WEB_CAS_RESULTS || path.join(desktop, 'real-web-cas-results'))
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
-const sizes = { gib: 1, bytes: 1073741824, putCount: 128 }
+function withDeadline(promise,ms,timeoutValue=null) {
+  let timer
+  return Promise.race([promise,new Promise(resolve=>{timer=setTimeout(()=>resolve(timeoutValue),ms)})])
+    .finally(()=>clearTimeout(timer))
+}
+const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
+assert([1,4].includes(sizeGiB), 'real CAS browser workload supports only 1 or 4 GiB')
+const sizes = { gib: sizeGiB, bytes: sizeGiB * 2 ** 30, putCount: sizeGiB * 128 }
+const maxDirectionMs = sizeGiB === 4 ? 360000 : 240000
 const trials = 3
 const modes = ['upload', 'download']
 const median = values => [...values].sort((a,b)=>a-b)[1]
@@ -79,7 +87,7 @@ async function fixture(sample, dir) {
   assert(testBinary && fs.existsSync(testBinary), 'actual compiled native Gin API test binary required')
   const proc = launch(testBinary,[
     '-test.run=^TestRealWebLargeTransferCASFixture$',
-    '-test.count=1', '-test.timeout=13m', '-test.v'
+    '-test.count=1', '-test.timeout=18m', '-test.v'
   ], {...process.env,
     XD_REAL_WEB_CAS_PERF:'1',
     XD_REAL_WEB_CAS_DIST:dist,
@@ -113,7 +121,7 @@ async function chromium(sample,mode,base) {
     XD_REAL_WEB_CAS_RESULTS:out,
   },'chromium-'+sample+'-'+mode,desktop)
   try {
-    const ended=await Promise.race([proc.exited,delay(6*60_000).then(()=>({code:'timeout'}))])
+    const ended=await withDeadline(proc.exited,maxDirectionMs+30000,{code:'timeout'})
     assert.equal(ended?.code,0, 'real Web Chromium '+mode+' did not complete: '+JSON.stringify(ended))
     assert.equal(proc.results.length,1,'genuine Chromium metrics missing for '+sample+' '+mode)
     return proc.results[0]
@@ -173,7 +181,7 @@ async function sampleTrial(index,tmp) {
     const growth=Math.max(0,peakRss-startedRss)
     assert(growth<=256*1024*1024,'real Gin/PG/CAS server RSS growth exceeded 256MiB')
     for(const row of rows){
-      assert(row.elapsedMs<=240000,'actual Web 1GiB '+row.scenario+' exceeded 240s')
+      assert(row.elapsedMs<=maxDirectionMs,`actual Web ${sizeGiB} GiB ${row.scenario} exceeded ${maxDirectionMs}ms`)
     }
     return {
       sample:label, valid:true,
@@ -198,6 +206,12 @@ async function main() {
   assert(fs.existsSync(path.join(dist,'index.html')),'built real Web production bundle missing')
   fs.mkdirSync(out,{recursive:true})
   const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-real-web-pg-cas-'))
+  if (sizeGiB === 4) {
+    const stat=fs.statfsSync(tmp,{bigint:true})
+    const free=stat.bavail*stat.bsize
+    const required=BigInt(3)*BigInt(sizes.bytes)+BigInt(2)*BigInt(2**30)
+    assert(free>=required,'INSUFFICIENT_RUNNER_DISK: need '+required+' B for genuine 4GiB Web/CAS/OPFS, available '+free+' B (infrastructure, not product performance red)')
+  }
   const rows=[]
   try{
     for(let i=1;i<=trials;i++){
@@ -207,7 +221,7 @@ async function main() {
       console.log('REAL_WEB_CAS_SAMPLE '+JSON.stringify(sample))
     }
     const result={
-      name:'real-web-xdriveapi-postgres17-local-cas-1gib-upload-download',
+      name:`real-web-xdriveapi-postgres17-local-cas-${sizeGiB}gib-upload-download`,
       status:'CURRENT/BEFORE only - no production optimization',
       n:rows.length,
       bytesPerDirection:sizes.bytes,
@@ -222,13 +236,13 @@ async function main() {
       nativeGoServerCpuMsP50:median(rows.map(x=>x.serverCpuMs)),
       each:rows,
       frozenBudgets:{
-        individualUploadMs:240000,individualDownloadMs:240000,
+        individualUploadMs:maxDirectionMs,individualDownloadMs:maxDirectionMs,
         browserWorkingSetDeltaMaxMiB:256,serverRSSPeakGrowthMaxMiB:256,
-        uploadHTTPPutCount:128,downloadHTTPGetCount:1,
+        uploadHTTPPutCount:sizes.putCount,downloadHTTPGetCount:1,
         spotCheckThreeDistinctMiB:true
       },
       passed:true,
-      boundary:'Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; 1GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/4GiB/incompressible media, no durable Task Center abort.',
+      boundary:`Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
     }
     fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
     console.log('REAL_WEB_CAS_SUMMARY '+JSON.stringify(result))

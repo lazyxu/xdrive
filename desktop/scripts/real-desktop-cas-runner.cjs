@@ -13,7 +13,11 @@ const webDist=path.join(root,'web/dist')
 const out=path.resolve(process.env.XD_REAL_DESKTOP_CAS_RESULTS||path.join(desktop,'real-desktop-cas-results'))
 const agentBinary=path.resolve(process.env.XD_REAL_DESKTOP_AGENT_BINARY||'')
 const apiTestBinary=path.resolve(process.env.XD_REAL_DESKTOP_CAS_TEST_BINARY||'')
-const oneGiB=1073741824
+const sizeGiB=Number(process.env.XD_REAL_CAS_SIZE_GIB||'1')
+assert([1,4].includes(sizeGiB),'real Desktop CAS benchmark size must be 1 or 4 GiB')
+const transferBytes=sizeGiB*2**30
+const putCount=sizeGiB*128
+const maxDirectionMs=sizeGiB===4?360000:240000
 const delay=ms=>new Promise(r=>setTimeout(r,ms))
 // Clear losing timers after Promise.race, otherwise a completed 1GiB native
 // benchmark keeps the Node runner alive until the 6-minute watchdog fires.
@@ -78,7 +82,7 @@ async function fixture(sample,tmp){
   const readyFile=path.join(tmp,'ready-'+sample+'.json')
   const proc=spawnLogged(apiTestBinary,[
     '-test.run=^TestRealWebLargeTransferCASFixture$','-test.count=1',
-    '-test.timeout=13m','-test.v'
+    '-test.timeout=18m','-test.v'
   ],{...process.env,
     XD_REAL_WEB_CAS_PERF:'1',
     XD_REAL_WEB_CAS_SAMPLE:sample,
@@ -91,7 +95,7 @@ async function fixture(sample,tmp){
       return fs.existsSync(readyFile)?JSON.parse(fs.readFileSync(readyFile,'utf8')):null
     },240000,'PG17/Gin/CAS native ready file')
     assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(info.url))
-    assert.equal(info.size_bytes,oneGiB)
+    assert.equal(info.size_bytes,transferBytes)
     return {process:proc,info}
   }catch(e){await stop(proc,1000);throw e}
 }
@@ -170,7 +174,7 @@ async function runOne(index,tmp){
     },25)
     const source=path.join(tmp,'upload-'+sample+'.bin')
     const handle=fs.openSync(source,'w',0o600)
-    try{fs.ftruncateSync(handle,oneGiB)}finally{fs.closeSync(handle)}
+    try{fs.ftruncateSync(handle,transferBytes)}finally{fs.closeSync(handle)}
     const download=path.join(tmp,'download-'+sample+'.bin')
     const common={
       ...env,
@@ -181,24 +185,24 @@ async function runOne(index,tmp){
     const upload=await launchElectron(sample,'upload',common)
     const afterUpload=await getState(f.info.url,false)
     assert.equal(upload.scenario,'upload')
-    assert.equal(upload.bytes,oneGiB)
-    assert.equal(afterUpload.put_count,128)
-    assert.equal(afterUpload.declared_upload_bytes,oneGiB)
+    assert.equal(upload.bytes,transferBytes)
+    assert.equal(afterUpload.put_count,putCount)
+    assert.equal(afterUpload.declared_upload_bytes,transferBytes)
     assert.equal(afterUpload.uploaded_node_id,upload.nodeID)
     assert.equal(afterUpload.cas_valid,true)
     const downloaded=await launchElectron(sample,'download',{
       ...common,XD_DESKTOP_CAS_NODE_ID:String(upload.nodeID)
     })
     assert.equal(downloaded.scenario,'download')
-    assert.equal(downloaded.bytes,oneGiB)
+    assert.equal(downloaded.bytes,transferBytes)
     assert.equal(downloaded.nodeID,upload.nodeID)
     const disk=fs.statSync(download)
-    assert.equal(disk.size,oneGiB)
+    assert.equal(disk.size,transferBytes)
     const checksum=await hashFile(download)
     const final=await getState(f.info.url,false)
     assert.equal(checksum,final.file_sha256)
     assert.equal(final.cas_valid,true)
-    assert.equal(final.cas_bytes,oneGiB)
+    assert.equal(final.cas_bytes,transferBytes)
     assert.equal(final.download_get_count,1)
     const agentAfter=statsPID(agent.child.pid),serverAfter=statsPID(f.process.child.pid)
     const agentRssGrowth=Math.max(0,agentRssMax-agentBefore.rss)
@@ -212,15 +216,15 @@ async function runOne(index,tmp){
       assert(Number.isFinite(record.electronMainCPUUserMs)&&record.electronMainCPUUserMs>=0&&
         Number.isFinite(record.electronMainCPUSystemMs)&&record.electronMainCPUSystemMs>=0,
         'Electron Main CPU samples must be numeric')
-      assert(record.elapsedMs<=240000,
-        'authentic Desktop 1GiB transfer elapsed budget exceeded')
+      assert(record.elapsedMs<=maxDirectionMs,
+        `authentic Desktop ${sizeGiB} GiB transfer elapsed budget exceeded`)
       assert(record.rendererWorkingSetGrowthKiB>=0&&
         record.rendererWorkingSetGrowthKiB<=256*1024,
         'actual Electron Renderer WorkingSet growth budget exceeded')
     }
     succeeded=true
     return {
-      sample,uploadedBytes:oneGiB,downloadedBytes:disk.size,
+      sample,uploadedBytes:transferBytes,downloadedBytes:disk.size,
       upload,download:downloaded,server:final,downloadSHA256:checksum,
       agentRssGrowthBytes:agentRssGrowth,
       serverRssGrowthBytes:serverRssGrowth,
@@ -246,6 +250,12 @@ async function main(){
   assert(fs.existsSync(path.join(desktop,'dist/renderer/index.html')),'actual Desktop Renderer missing')
   fs.mkdirSync(out,{recursive:true})
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),'xdrive-desktop-real-cas-'))
+  if(sizeGiB===4){
+    const stat=fs.statfsSync(temp,{bigint:true})
+    const free=stat.bavail*stat.bsize
+    const needed=3n*BigInt(transferBytes)+2n*(2n**30n)
+    assert(free>=needed,'INSUFFICIENT_RUNNER_DISK: need '+needed+' B for real Desktop 4GiB CAS/disk, free '+free+' B (infrastructure, not product red)')
+  }
   const rows=[]
   try{
     for(let n=1;n<=3;n++){
@@ -258,21 +268,21 @@ async function main(){
     // pathname/string rather than the actual Electron measurement object.
     assert(rows.length===3 && rows.every(row => {
       return row.upload?.scenario==='upload'&&row.download?.scenario==='download'&&
-        row.upload.bytes===oneGiB&&row.download.bytes===oneGiB&&
+        row.upload.bytes===transferBytes&&row.download.bytes===transferBytes&&
         [row.upload,row.download].every(record=>
-          Number.isFinite(record.elapsedMs)&&record.elapsedMs>0&&record.elapsedMs<=240000&&
+          Number.isFinite(record.elapsedMs)&&record.elapsedMs>0&&record.elapsedMs<=maxDirectionMs&&
           Number.isFinite(record.throughputMiBps)&&record.throughputMiBps>0&&
           Number.isFinite(record.rendererWorkingSetGrowthKiB)&&
           record.rendererWorkingSetGrowthKiB>=0&&record.rendererWorkingSetGrowthKiB<=256*1024&&
           Number.isFinite(record.electronMainCPUUserMs)&&
           Number.isFinite(record.electronMainCPUSystemMs))&&
-        row.uploadedBytes===oneGiB&&row.downloadedBytes===oneGiB&&
-        row.server?.cas_valid===true&&row.server?.put_count===128&&
+        row.uploadedBytes===transferBytes&&row.downloadedBytes===transferBytes&&
+        row.server?.cas_valid===true&&row.server?.put_count===putCount&&
         row.server?.download_get_count===1&&
         row.server?.file_sha256===row.downloadSHA256
     }), 'n3 Desktop real CAS result summary missing genuine numeric upload/download and SHA metrics')
     const result={
-      name:'desktop-renderer-preload-main-agent-postgres17-physical-cas-1gib',
+      name:`desktop-renderer-preload-main-agent-postgres17-physical-cas-${sizeGiB}gib`,
       status:'CURRENT-BEFORE only / no production code optimization',
       n:rows.length,
       uploadMedianMs:median(rows.map(r=>r.upload.elapsedMs)),
@@ -284,12 +294,12 @@ async function main(){
       maxRendererWorkingSetGrowthKiB:Math.max(...rows.flatMap(r=>[
         r.upload.rendererWorkingSetGrowthKiB,r.download.rendererWorkingSetGrowthKiB])),
       budgets:{
-        perDirectionBytes:oneGiB,uploadMsEachMax:240000,downloadMsEachMax:240000,
+        perDirectionBytes:transferBytes,uploadMsEachMax:maxDirectionMs,downloadMsEachMax:maxDirectionMs,
         agentRssPeakGrowthMaxMiB:256,serverRssPeakGrowthMaxMiB:256,
         rendererWSGrowthMaxMiB:256,
-        expectedPUTsEach:128,expectedGETsEach:1,
+        expectedPUTsEach:putCount,expectedGETsEach:1,
       },
-      actualRealUIBoundary:'Electron Renderer uses actual Preload.cloudUploadDroppedFiles(file) with CDP-inserted File, actual Main upload-paths, real Go Agent IPC and genuine Gin/PostgreSQL/CAS; real Download uses production native Main file-save IPC with ONLY test OS-dialog selection override. NOT actual FileExplorer button clicks, not WAN/4GiB, not durable cancellation.',
+      actualRealUIBoundary:'Electron Renderer uses actual Preload.cloudUploadDroppedFiles(file) with CDP-inserted File, actual Main upload-paths, real Go Agent IPC and genuine Gin/PostgreSQL/CAS; real Download uses production native Main file-save IPC with ONLY test OS-dialog selection override. NOT actual FileExplorer button clicks, not WAN, not durable cancellation.',
       samples:rows,
       passed:rows.length===3
     }

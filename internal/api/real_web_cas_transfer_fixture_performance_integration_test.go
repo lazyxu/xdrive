@@ -52,9 +52,22 @@ func TestRealWebLargeTransferCASFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sizeGiB := int64(1)
+	if requested := strings.TrimSpace(os.Getenv("XD_REAL_CAS_SIZE_GIB")); requested != "" {
+		switch requested {
+		case "1":
+			sizeGiB = 1
+		case "4":
+			sizeGiB = 4
+		default:
+			t.Fatalf("unsupported real Web/Desktop CAS benchmark size %q GiB; expected 1 or 4", requested)
+		}
+	}
+	size := sizeGiB << 30
 	capacity, err := local.Capacity(context.Background())
-	if err != nil || capacity.AvailableBytes < 4<<30 {
-		t.Fatalf("native physical CAS storage insufficient: capacity=%+v err=%v", capacity, err)
+	if err != nil || capacity.AvailableBytes < size*3 {
+		t.Fatalf("native physical CAS %d GiB workload needs >=%d free bytes (staging, committed CAS, download): capacity=%+v err=%v",
+			sizeGiB, size*3, capacity, err)
 	}
 	server := &Server{
 		DB: db, Store: local,
@@ -70,7 +83,6 @@ func TestRealWebLargeTransferCASFixture(t *testing.T) {
 	if err := db.First(&rootNode, root.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	const size int64 = 1 << 30
 	var putCount atomic.Int64
 	var declaredPutBytes atomic.Int64
 	var getCount atomic.Int64
@@ -190,11 +202,11 @@ func TestRealWebLargeTransferCASFixture(t *testing.T) {
 	case <-stopped:
 		result := state(false)
 		t.Logf("WEB_REAL_SERVER_CAS_FIXTURE_FINAL %v", result)
-		if putCount.Load() != 128 || declaredPutBytes.Load() != size || getCount.Load() != 1 ||
+		if putCount.Load() != size/(8<<20) || declaredPutBytes.Load() != size || getCount.Load() != 1 ||
 			result["cas_valid"] != true || result["cas_bytes"] != size {
 			t.Fatalf("real Web/Server/CAS integrity failed: %v", result)
 		}
-	case <-time.After(11 * time.Minute):
-		t.Fatal("real Web upload/download runner did not stop fixture")
+	case <-time.After(14 * time.Minute):
+		t.Fatalf("real %d GiB Web/Desktop upload/download runner did not stop fixture", sizeGiB)
 	}
 }
