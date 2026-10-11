@@ -120,6 +120,7 @@ type entry struct {
 	retry              RetryFunc
 	cancel             context.CancelFunc
 	groupCancelContext context.Context // Agent-owned upload group; never persisted
+	pendingGroupCancel bool            // Keep pending group cancel visible to Clear/trim.
 	lastBytes          int64
 	lastAt             time.Time
 	rateBaseBytes      int64
@@ -503,7 +504,9 @@ func (h *Handle) BindGroupCancelContext(ctx context.Context, cancel context.Canc
 		return false
 	}
 	e.groupCancelContext = ctx
-	e.cancel = cancel
+	// Finish, Cancel and Clear can race to invoke the same callback.
+	// OnceFunc joins concurrent callers until the first invocation returns.
+	e.cancel = sync.OnceFunc(cancel)
 	e.task.Cancelable = true
 	m.touchLocked()
 	return true
@@ -673,7 +676,7 @@ func (m *Manager) ClearHistory(scopes ...string) {
 			continue
 		}
 		rootID := transferRootID(e.task)
-		if activeState(e.task.State) {
+		if activeState(e.task.State) || e.pendingGroupCancel {
 			activeRoots[rootID] = true
 		}
 	}
@@ -1073,21 +1076,27 @@ func (m *Manager) finishState(id, state string, err error) error {
 	}
 	now := time.Now()
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	e := m.entries[id]
 	if e == nil {
+		m.mu.Unlock()
 		return errors.New("transfer not found")
 	}
 	if terminalState(e.task.State) || (e.task.State == StateCancelling && state == StateCompleted) {
 		// Retain a pending cancellation against late success and keep
 		// the first confirmed terminal result authoritative.
+		m.mu.Unlock()
 		return nil
 	}
+	var groupCancel context.CancelFunc
 	if e.groupCancelContext != nil && e.cancel != nil {
-		e.cancel() // Release the group context on normal terminalization too.
+		// Keep the callback published while releasing Manager.mu. Concurrent
+		// Clear must join it, and history trimming must not erase the handoff.
+		groupCancel = e.cancel
+		e.pendingGroupCancel = true
+	} else {
+		e.groupCancelContext = nil
+		e.cancel = nil
 	}
-	e.groupCancelContext = nil
-	e.cancel = nil
 	e.task.Cancelable = false
 	e.task.State = state
 	e.task.Phase = PhaseFinalizing
@@ -1124,6 +1133,26 @@ func (m *Manager) finishState(id, state string, err error) error {
 	m.trimLocked()
 	m.touchLocked()
 	m.markHistoryDirtyForLocked(id)
+	m.mu.Unlock()
+
+	if groupCancel != nil {
+		// A cancellation callback may reenter Snapshot or another Manager API.
+		// OnceFunc also lets a concurrent Clear join the actual I/O teardown.
+		groupCancel()
+		m.mu.Lock()
+		if m.entries[id] == e {
+			e.pendingGroupCancel = false
+			e.groupCancelContext = nil
+			e.cancel = nil
+			before := len(m.order)
+			m.trimLocked()
+			if len(m.order) != before {
+				// A deferred capacity trim is a new snapshot revision for waiters.
+				m.touchLocked()
+			}
+		}
+		m.mu.Unlock()
+	}
 	return nil
 }
 
@@ -1214,7 +1243,7 @@ func (m *Manager) trimLocked() {
 				seen[rootID] = true
 				rootOrder = append(rootOrder, rootID)
 			}
-			if activeState(e.task.State) {
+			if activeState(e.task.State) || e.pendingGroupCancel {
 				activeRoots[rootID] = true
 			}
 		}
