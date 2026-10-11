@@ -1,0 +1,45 @@
+{
+  "status": "Invalid overall benchmark run / no complete n=3×3 CURRENT qualification; one authentic Electron virtual-scroll mode passed",
+  "provenance": {
+    "repo": "lazyxu/xdrive",
+    "work_sha": "926b0ca66fd7b8b7f50294fa391a2413aed4df1f",
+    "run_id": 38104121434,
+    "job_id": 114365889245,
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38104121434",
+    "artifact_id": 11688758591,
+    "artifact_name": "gallery-desktop-real-go-cancel-100k",
+    "layer": "actual production Electron Renderer/Preload/Main, actual Go Agent, authenticated Gin/PG17/CAS"
+  },
+  "invalid_reason": "Test-only script targeted stale sidebar text 概览 instead of actual 主页 (view key overview). Native sample 1 virtual-scroll passed first; subsequent app-switch failed before the cancellation action, so no full n3×3 evidence was collected. Do not classify as a product performance defect.",
+  "valid_partial_mode": {
+    "mode": "virtual-scroll",
+    "sample": 1,
+    "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+    "actualWindowDestroyed": false,
+    "actualGalleryNavigation": true,
+    "actualMountedItems": 35,
+    "action": {
+      "before": 0,
+      "after": 1188605,
+      "delta": 1188605,
+      "itemsBefore": 35,
+      "scrollExtent": 2377210
+    },
+    "expectedStartedRequests": 6,
+    "startedRequests": 6,
+    "firstBytesTransferred": 1536,
+    "contextDone": 6,
+    "returnedCanceledHandlers": 6,
+    "activeOldHandlers": 0,
+    "extraStaleHttpBytes": 0,
+    "worstGoNotificationMs": 71.608,
+    "observedAfterMarkerMs": 161.9160139999999,
+    "passed": true,
+    "recovery": {
+      "offset": 50000,
+      "count": 100000,
+      "returned": 200
+    }
+  },
+  "decision": "Only correct the test's navigation label; preserve frozen n=3 per mode, six real started JPEG streams per group, Go 160ms, zero stale bytes and Agent RSS 128MiB gates; unchanged production and no new speedup claim."
+}

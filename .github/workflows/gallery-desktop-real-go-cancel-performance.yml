@@ -1,0 +1,69 @@
+name: Gallery 100k real Electron to Go cancellation
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-desktop-real-go-cancel-100k:
+    if: github.head_ref == 'perf/gallery-electron-real-go-cancel-100k'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_AGENT_BINARY: ${{ github.workspace }}/desktop/gallery-desktop-go-cancel-bin/xdrive-agent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build production Electron Main/preload/renderer, authenticated Gin/CAS fixture and real Go Agent
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          mkdir -p desktop/gallery-desktop-go-cancel-bin
+          go build -o desktop/gallery-desktop-go-cancel-bin/xdrive-agent ./cmd/xdrive-agent
+          node --check desktop/scripts/gallery-desktop-real-go-cancel-electron-main.cjs
+          node --check desktop/scripts/gallery-desktop-real-go-cancel-runner.cjs
+      - name: Real 100k virtual-scroll, app-switch and window-destroy -> Go Request.Context cancellation
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/gallery-desktop-real-go-cancel-runner.cjs
+          test "$(find desktop/gallery-desktop-real-go-cancel-results -maxdepth 1 -type f -name 'sample-*-*.json' | wc -l)" -eq 9
+          cat desktop/gallery-desktop-real-go-cancel-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-desktop-real-go-cancel-100k
+          path: desktop/gallery-desktop-real-go-cancel-results/
+          if-no-files-found: warn
+          retention-days: 14
