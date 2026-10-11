@@ -88,6 +88,10 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminCaddyHTTPSConfig,
+  type AgentAdminCaddyHTTPSUpdate,
+  type AgentAdminCaddyHTTPSRevisionPage,
+  type AgentAdminCaddyHTTPSRollbackInput,
   type AgentAdminMediaWorkerConfig,
   type AgentAdminMediaWorkerUpdate,
   type AgentAdminMediaWorkerApplyResult,
@@ -4527,6 +4531,44 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map configuration revision.')
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
+  }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-https', () => runAgentAction<AgentAdminCaddyHTTPSConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminCaddyHTTPSConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-caddy-https', (_event, value: unknown) => runAgentAction<AgentAdminCaddyHTTPSConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminCaddyHTTPSUpdate> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        input.revision < 0 || typeof input.enabled !== 'boolean' || typeof input.domain !== 'string' ||
+        input.domain.length > 253 || (input.enabled && !input.domain)) {
+      throw new AgentIPCError('invalid_input', 0, 'Complete Caddy HTTPS desired revision, enabled state and bounded domain are required.')
+    }
+    return requireAgentClient().cloudSetAdminCaddyHTTPS({
+      revision: input.revision, enabled: input.enabled, domain: input.domain,
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-https-revisions', () => runAgentAction<AgentAdminCaddyHTTPSRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminCaddyHTTPSRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-caddy-https', (_event, value: unknown) => runAgentAction<AgentAdminCaddyHTTPSConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminCaddyHTTPSRollbackInput> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+        input.target_revision < 0 || input.revision <= input.target_revision) {
+      throw new AgentIPCError('invalid_input', 0, 'Current and older Caddy HTTPS desired revisions are required.')
+    }
+    return requireAgentClient().cloudRollbackAdminCaddyHTTPS({
+      revision: input.revision, target_revision: input.target_revision,
+    })
   }, false))
   ipcMain.handle('agent:cloud-admin-media-worker', () => runAgentAction<AgentAdminMediaWorkerConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

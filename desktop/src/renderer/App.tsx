@@ -1577,6 +1577,27 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadCaddyHTTPSConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveCaddyHTTPSConfig: async (input: import('../../../ui/shared/src').XDriveCaddyHTTPSUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminCaddyHTTPS(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadCaddyHTTPSRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackCaddyHTTPS: async (input: import('../../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminCaddyHTTPS(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+
     loadMediaWorkerConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminMediaWorkerConfig()
       if (!result.ok) throw new Error(result.error.message)

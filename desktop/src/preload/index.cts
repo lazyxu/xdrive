@@ -652,6 +652,12 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudAdminCaddyHTTPSConfig: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https'),
+  cloudSetAdminCaddyHTTPS: (input: { revision: number; enabled: boolean; domain: string }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-caddy-https', input),
+  cloudAdminCaddyHTTPSRevisions: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-revisions'),
+  cloudRollbackAdminCaddyHTTPS: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-caddy-https', input),
   cloudAdminMediaWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-media-worker'),
   cloudSetAdminMediaWorker: (input: { revision: number; enabled: boolean; memory_mib: number; cpu_milli: number; pids_limit: number }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-media-worker', input),

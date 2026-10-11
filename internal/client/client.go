@@ -310,6 +310,63 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+// Caddy HTTPS administrator-desired state; never implies host activation.
+type AdminCaddyHTTPSConfig struct {
+	DesiredEnabled                bool       `json:"desired_enabled"`
+	DesiredDomain                 string     `json:"desired_domain"`
+	Revision                      uint64     `json:"revision"`
+	Source                        string     `json:"source"`
+	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
+	ApplyState                    string     `json:"apply_state"`
+	Editable                      bool       `json:"editable"`
+	ApplySupported                bool       `json:"apply_supported"`
+	RequiresRestrictedMaintenance bool       `json:"requires_restricted_maintenance"`
+	Requirement                   string     `json:"requirement"`
+	HostObserved                  bool       `json:"host_observed"`
+	HostHTTPSConfigured           bool       `json:"host_https_configured"`
+	HostTLSState                  string     `json:"host_tls_state"`
+}
+type AdminCaddyHTTPSUpdate struct {
+	Revision uint64 `json:"revision"`
+	Enabled  bool   `json:"enabled"`
+	Domain   string `json:"domain"`
+}
+type AdminCaddyHTTPSRevision struct {
+	Revision  uint64    `json:"revision"`
+	Enabled   bool      `json:"enabled"`
+	Domain    string    `json:"domain"`
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type AdminCaddyHTTPSRevisionPage struct {
+	Items []AdminCaddyHTTPSRevision `json:"items"`
+}
+type AdminCaddyHTTPSRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminCaddyHTTPSConfig(ctx context.Context) (AdminCaddyHTTPSConfig, error) {
+	var out AdminCaddyHTTPSConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/caddy/https", nil, &out)
+	return out, err
+}
+func (c *Client) UpdateAdminCaddyHTTPS(ctx context.Context, input AdminCaddyHTTPSUpdate) (AdminCaddyHTTPSConfig, error) {
+	var out AdminCaddyHTTPSConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/caddy/https", input, &out)
+	return out, err
+}
+func (c *Client) AdminCaddyHTTPSRevisions(ctx context.Context) (AdminCaddyHTTPSRevisionPage, error) {
+	var out AdminCaddyHTTPSRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/caddy/https/revisions", nil, &out)
+	return out, err
+}
+func (c *Client) RollbackAdminCaddyHTTPS(ctx context.Context, input AdminCaddyHTTPSRollbackInput) (AdminCaddyHTTPSConfig, error) {
+	var out AdminCaddyHTTPSConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/caddy/https/rollback", input, &out)
+	return out, err
+}
+
 // Global desired Media Worker enablement and host-observed effect only.
 // No user Source settings, host paths, Docker socket or file job inputs.
 type AdminMediaWorkerHost struct {

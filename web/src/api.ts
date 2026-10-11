@@ -704,6 +704,31 @@ export class XDriveApi {
     return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
   }
 
+  adminCaddyHTTPSConfig() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSConfig>(
+      '/api/v1/admin/services/caddy/https', { cache: 'no-store' },
+    )
+  }
+  adminSaveCaddyHTTPS(input: import('../../ui/shared/src').XDriveCaddyHTTPSUpdate) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSConfig>(
+      '/api/v1/admin/services/caddy/https', {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+  adminCaddyHTTPSRevisions() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>(
+      '/api/v1/admin/services/caddy/https/revisions', { cache: 'no-store' },
+    )
+  }
+  adminRollbackCaddyHTTPS(input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSConfig>(
+      '/api/v1/admin/services/caddy/https/rollback', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
   adminMediaWorkerConfig() {
     return this.request<import('../../ui/shared/src').XDriveMediaWorkerConfig>(
       '/api/v1/admin/services/media-worker', { cache: 'no-store' },

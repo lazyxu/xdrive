@@ -1,0 +1,307 @@
+package api
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
+	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+)
+
+const caddyHTTPSSettingName = "caddy-https"
+
+var errCaddyHTTPSRevision = errors.New("caddy HTTPS desired revision changed")
+
+// The Server stores only *desired* Caddy state. No interface offered here may
+// restart or reconfigure the ingress or assert a host-applied revision.
+type adminCaddyHTTPSDesired struct {
+	Revision  uint64
+	Enabled   bool
+	Domain    string
+	Source    string
+	UpdatedAt *time.Time
+}
+
+type adminCaddyHTTPSConfigDTO struct {
+	DesiredEnabled                bool       `json:"desired_enabled"`
+	DesiredDomain                 string     `json:"desired_domain"`
+	Revision                      uint64     `json:"revision"`
+	Source                        string     `json:"source"`
+	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
+	ApplyState                    string     `json:"apply_state"`
+	Editable                      bool       `json:"editable"`
+	ApplySupported                bool       `json:"apply_supported"`
+	RequiresRestrictedMaintenance bool       `json:"requires_restricted_maintenance"`
+	Requirement                   string     `json:"requirement"`
+	HostObserved                  bool       `json:"host_observed"`
+	HostHTTPSConfigured           bool       `json:"host_https_configured"`
+	HostTLSState                  string     `json:"host_tls_state"`
+}
+
+const caddyHTTPSApplyRequirement = "已保存的 HTTPS 期望配置尚未应用。修改实际域名、DNS 凭据或启停 Caddy 需要具备防管理入口失联、预检、回滚及审计能力的受限 Host Manager；当前阶段不允许从 Server 或浏览器执行容器操作。"
+
+func (s *Server) readCaddyHTTPSDesired(ctx context.Context) (adminCaddyHTTPSDesired, error) {
+	defaults := adminCaddyHTTPSDesired{Source: "default"}
+	if s == nil || s.DB == nil {
+		return defaults, errors.New("Caddy desired configuration database unavailable")
+	}
+	var row meta.AdminCaddyHTTPSSetting
+	err := s.DB.WithContext(ctx).Where("name = ?", caddyHTTPSSettingName).Take(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return defaults, nil
+	}
+	if err != nil {
+		return defaults, err
+	}
+	if row.Revision == 0 || (row.Enabled && row.Domain == "") ||
+		(row.Domain != "" && !validCaddyHTTPSDomain(row.Domain)) {
+		return defaults, errors.New("invalid stored Caddy HTTPS desired revision")
+	}
+	return adminCaddyHTTPSDesired{
+		Revision: row.Revision, Enabled: row.Enabled, Domain: row.Domain,
+		Source: "saved", UpdatedAt: &row.UpdatedAt,
+	}, nil
+}
+
+func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	desired, err := s.readCaddyHTTPSDesired(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired settings unavailable")
+		return
+	}
+	state := "unmanaged"
+	if desired.Revision > 0 {
+		state = "pending"
+	}
+	host, observed := s.readCaddyHostStatus()
+	tlsState := "unknown"
+	if observed && host.TLSCheckSupported {
+		tlsState = host.TLSState
+	}
+	c.JSON(http.StatusOK, adminCaddyHTTPSConfigDTO{
+		DesiredEnabled: desired.Enabled, DesiredDomain: desired.Domain,
+		Revision: desired.Revision, Source: desired.Source, UpdatedAt: desired.UpdatedAt,
+		ApplyState: state, Editable: true, ApplySupported: false,
+		RequiresRestrictedMaintenance: true, Requirement: caddyHTTPSApplyRequirement,
+		HostObserved: observed, HostHTTPSConfigured: observed && host.HTTPSConfigured,
+		HostTLSState: tlsState,
+	})
+}
+
+func recordCaddyHTTPSRevisionTx(tx *gorm.DB, revision uint64, enabled bool, domain, origin string) error {
+	if (enabled && domain == "") || (domain != "" && !validCaddyHTTPSDomain(domain)) {
+		return errors.New("invalid historical Caddy HTTPS configuration")
+	}
+	var existing meta.AdminCaddyHTTPSRevision
+	err := tx.Where("name = ? AND revision = ?", caddyHTTPSSettingName, revision).Take(&existing).Error
+	if err == nil {
+		if existing.Enabled != enabled || existing.Domain != domain {
+			return errors.New("immutable Caddy HTTPS revision mismatch")
+		}
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return tx.Create(&meta.AdminCaddyHTTPSRevision{
+		Name: caddyHTTPSSettingName, Revision: revision, Enabled: enabled,
+		Domain: domain, Origin: origin, CreatedAt: time.Now().UTC(),
+	}).Error
+}
+
+func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if s == nil || s.DB == nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS database unavailable")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Enabled  *bool   `json:"enabled"`
+		Domain   *string `json:"domain"`
+	}
+	if c.ShouldBindJSON(&input) != nil || input.Revision == nil || input.Enabled == nil ||
+		input.Domain == nil || *input.Revision > 1<<60 {
+		fail(c, http.StatusBadRequest, "full revisioned Caddy HTTPS intent required")
+		return
+	}
+	domain := strings.ToLower(*input.Domain)
+	if (*input.Enabled && domain == "") || (domain != "" && !validCaddyHTTPSDomain(domain)) {
+		fail(c, http.StatusBadRequest, "invalid Caddy HTTPS FQDN; supply a plain DNS hostname")
+		return
+	}
+	s.caddyHTTPSSaveMu.Lock()
+	defer s.caddyHTTPSSaveMu.Unlock()
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var previous meta.AdminCaddyHTTPSSetting
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("name = ?", caddyHTTPSSettingName).Take(&previous).Error
+		exists := err == nil
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if (exists && previous.Revision != *input.Revision) || (!exists && *input.Revision != 0) {
+			return errCaddyHTTPSRevision
+		}
+		oldEnabled, oldDomain, oldOrigin := false, "", "default"
+		if exists {
+			oldEnabled, oldDomain, oldOrigin = previous.Enabled, previous.Domain, "saved"
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, *input.Revision, oldEnabled, oldDomain, oldOrigin); err != nil {
+			return err
+		}
+		next := *input.Revision + 1
+		if exists {
+			updated := tx.Model(&meta.AdminCaddyHTTPSSetting{}).
+				Where("name = ? AND revision = ?", caddyHTTPSSettingName, previous.Revision).
+				Updates(map[string]any{"enabled": *input.Enabled, "domain": domain, "revision": next, "updated_at": time.Now().UTC()})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if updated.RowsAffected != 1 {
+				return errCaddyHTTPSRevision
+			}
+		} else {
+			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&meta.AdminCaddyHTTPSSetting{
+				Name: caddyHTTPSSettingName, Revision: next, Enabled: *input.Enabled, Domain: domain,
+			})
+			if created.Error != nil {
+				return created.Error
+			}
+			if created.RowsAffected != 1 {
+				return errCaddyHTTPSRevision
+			}
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, next, *input.Enabled, domain, "saved"); err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditEventFromContext(c,
+			"admin.service.caddy_https.desired.configure", "service", "caddy",
+			"Caddy HTTPS desired configuration", auditpkg.ResultSuccess,
+			map[string]any{"revision": next, "desired_enabled": *input.Enabled,
+				"domain_configured": domain != "", "domain_changed": domain != oldDomain,
+				"host_applied": false},
+		))
+	})
+	if errors.Is(err, errCaddyHTTPSRevision) {
+		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed; refresh")
+		return
+	}
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired config not saved or audited")
+		return
+	}
+	s.adminCaddyHTTPSConfig(c)
+}
+
+type adminCaddyHTTPSRevisionDTO struct {
+	Revision  uint64    `json:"revision"`
+	Enabled   bool      `json:"enabled"`
+	Domain    string    `json:"domain"`
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *Server) adminCaddyHTTPSRevisions(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if s == nil || s.DB == nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS history unavailable")
+		return
+	}
+	var rows []meta.AdminCaddyHTTPSRevision
+	if err := s.DB.WithContext(c.Request.Context()).Where("name = ?", caddyHTTPSSettingName).
+		Order("revision DESC").Limit(40).Find(&rows).Error; err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS history unavailable")
+		return
+	}
+	list := make([]adminCaddyHTTPSRevisionDTO, 0, len(rows))
+	for _, row := range rows {
+		list = append(list, adminCaddyHTTPSRevisionDTO{
+			Revision: row.Revision, Enabled: row.Enabled, Domain: row.Domain,
+			Origin: row.Origin, CreatedAt: row.CreatedAt,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{"items": list})
+}
+
+func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	if s == nil || s.DB == nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS database unavailable")
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 512)
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if c.ShouldBindJSON(&input) != nil || input.Revision == nil || input.TargetRevision == nil ||
+		*input.Revision == 0 || *input.Revision > 1<<60 || *input.TargetRevision >= *input.Revision {
+		fail(c, http.StatusBadRequest, "current and older HTTPS revision required")
+		return
+	}
+	s.caddyHTTPSSaveMu.Lock()
+	defer s.caddyHTTPSSaveMu.Unlock()
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		var history meta.AdminCaddyHTTPSRevision
+		err := tx.Where("name = ? AND revision = ?", caddyHTTPSSettingName, *input.TargetRevision).Take(&history).Error
+		if err != nil {
+			return err
+		}
+		if (history.Enabled && history.Domain == "") ||
+			(history.Domain != "" && !validCaddyHTTPSDomain(history.Domain)) {
+			return errors.New("invalid historical Caddy HTTPS domain")
+		}
+		var row meta.AdminCaddyHTTPSSetting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("name = ?", caddyHTTPSSettingName).Take(&row).Error; err != nil {
+			return err
+		}
+		if row.Revision != *input.Revision {
+			return errCaddyHTTPSRevision
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, row.Revision, row.Enabled, row.Domain, "saved"); err != nil {
+			return err
+		}
+		next := row.Revision + 1
+		update := tx.Model(&meta.AdminCaddyHTTPSSetting{}).
+			Where("name = ? AND revision = ?", caddyHTTPSSettingName, row.Revision).
+			Updates(map[string]any{"enabled": history.Enabled, "domain": history.Domain, "revision": next, "updated_at": time.Now().UTC()})
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected != 1 {
+			return errCaddyHTTPSRevision
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, next, history.Enabled, history.Domain, "rollback"); err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditEventFromContext(c,
+			"admin.service.caddy_https.desired.rollback", "service", "caddy",
+			"Caddy HTTPS desired rollback", auditpkg.ResultSuccess,
+			map[string]any{"revision": next, "target_revision": *input.TargetRevision,
+				"desired_enabled": history.Enabled, "domain_configured": history.Domain != "",
+				"host_applied": false},
+		))
+	})
+	if errors.Is(err, errCaddyHTTPSRevision) {
+		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed")
+		return
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		fail(c, http.StatusNotFound, "requested Caddy HTTPS historical revision not found")
+		return
+	}
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS rollback not saved or audited")
+		return
+	}
+	s.adminCaddyHTTPSConfig(c)
+}

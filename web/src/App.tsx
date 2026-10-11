@@ -977,6 +977,12 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
+    loadCaddyHTTPSConfig: () => api.adminCaddyHTTPSConfig(),
+    saveCaddyHTTPSConfig: (input: import('../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
+      api.adminSaveCaddyHTTPS(input),
+    loadCaddyHTTPSRevisions: () => api.adminCaddyHTTPSRevisions(),
+    rollbackCaddyHTTPS: (input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
+      api.adminRollbackCaddyHTTPS(input),
     loadMediaWorkerConfig: () => api.adminMediaWorkerConfig(),
     saveMediaWorkerConfig: (input: import('../../ui/shared/src').XDriveMediaWorkerUpdate) =>
       api.adminSaveMediaWorker(input),
