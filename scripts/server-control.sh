@@ -684,10 +684,38 @@ media_worker_control_process() {
     "$pids" "$observed_pids" false
   rm -f "$active"
 }
+# Read-only, fixed-target Caddy health. Never expose domain, ACME secrets,
+# paths or arbitrary Docker operations through the private status bridge.
+caddy_host_refresh() {
+  local dir tmp observed state=unknown https_configured=false
+  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+    https_configured=true
+  fi
+  observed=""
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
+    observed="$(timeout 3s docker inspect \
+      --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+      xdrive-caddy 2>/dev/null || true)"
+  fi
+  case "$observed" in
+    "true|healthy") state=healthy ;;
+    "true|unhealthy") state=unhealthy ;;
+    "true|starting") state=starting ;;
+    "true|") state=running-unverified ;;
+    false\|*) state=stopped ;;
+    *) state=unknown ;;
+  esac
+  dir="$(prepare_dir)"
+  tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
+  printf '{"state":"%s","https_configured":%s}\n' \
+    "$state" "$https_configured" > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$dir/caddy-runtime-status.json"
+}
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
-  local storage_inventory_interval last_storage_inventory_at now
+  local storage_inventory_interval last_storage_inventory_at last_caddy_observation_at now
   dir="$(prepare_dir)"
   pid_file="$dir/runner.pid"
 
@@ -765,7 +793,9 @@ serve_cmd() {
   (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
   refresh_storage_host_inventory || true
   media_worker_control_refresh
+  caddy_host_refresh || true
   last_storage_inventory_at="$(date +%s)"
+  last_caddy_observation_at="$last_storage_inventory_at"
 
   while true; do
     touch_heartbeat
@@ -773,6 +803,10 @@ serve_cmd() {
     [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
     media_worker_control_refresh
     now="$(date +%s)"
+    if (( now - last_caddy_observation_at >= 15 )); then
+      caddy_host_refresh || true
+      last_caddy_observation_at="$now"
+    fi
     if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
       refresh_storage_host_inventory || true
       last_storage_inventory_at="$now"

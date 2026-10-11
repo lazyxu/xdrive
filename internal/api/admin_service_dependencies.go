@@ -213,6 +213,33 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			services[8].Model = info.SegmentModel.Name
 		}()
 	}
+	// Observe Caddy from the restricted host's fixed-container Docker health
+	// probe, not a Server-to-itself HTTP proxy request. A configured domain
+	// is deployment intent only: it does not prove ACME/TLS or public reachability.
+	if gateway, valid := s.readCaddyHostStatus(); valid {
+		mode := "宿主机配置未要求自定义 HTTPS 域名"
+		if gateway.HTTPSConfigured {
+			mode = "宿主机配置要求 HTTPS 域名，但未独立验证证书及公网可达性"
+		}
+		switch gateway.State {
+		case "healthy":
+			services[10].Status = "ready"
+			services[10].Detail = "Caddy 容器健康检查通过，内部 HTTP 反向代理可用；" + mode
+		case "unhealthy":
+			services[10].Status = "unavailable"
+			services[10].Detail = "Caddy 容器健康检查失败；" + mode
+		case "stopped":
+			services[10].Status = "unavailable"
+			services[10].Detail = "Caddy 容器已停止；" + mode
+		case "starting":
+			services[10].Detail = "Caddy 容器启动中，尚未通过健康检查；" + mode
+		case "running-unverified":
+			services[10].Detail = "Caddy 容器在运行，但尚无可信的健康检查结果；" + mode
+		default:
+			services[10].Detail = "Host Manager 无法获取可信 Caddy 容器健康状态；" + mode
+		}
+	}
+
 	if s.DB != nil {
 		wg.Add(1)
 		go func() {

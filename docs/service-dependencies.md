@@ -50,6 +50,16 @@ This page must **not** treat a service's configuration form, process presence an
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
 
+### P1-CD1: real Caddy ingress observation (read-only)
+
+The Caddy dependency row now consumes a fixed, *host-observed* Docker healthcheck from the existing restricted Host Manager instead of permanently reporting unknown. The runner calls only a timeout-bounded `docker inspect` of `xdrive-caddy`, reporting the sanitized running/health state and boolean host **HTTPS configuration intent**. The Server validates a live Host Manager heartbeat plus a fresh, regular, size-bounded, allowlisted status file. It never exposes raw domain names, AliDNS credentials, logs, certificate material, container IDs, host paths or Docker actions. Without a current trusted observation (including old Host Managers), Caddy stays `unknown`. `unhealthy` or `stopped` is `unavailable`; `starting` and `running-unverified` remain `unknown`.
+
+A `healthy` Docker Caddy healthcheck exercises the proxy's internal `/api/v1/readyz` endpoint. The green status therefore means **internal HTTP reverse proxy health** only. It must never assert certificate issuance or external HTTPS availability: configured `XD_DOMAIN` is a deployment target, not proof of TLS handshake, DNS propagation, firewall ingress or validity of the public certificate chain.
+
+No new Caddy configuration write or on/off control is exposed in this phase. Caddy is the Web ingress and restarting or disabling it could lock the operator out. Any future domain, port, ACME credentials or service activation must have a separately audited, versioned, restricted and reversible maintenance contract with real external TLS verification. This read-only probe never modifies Caddy or any other service and cannot interrupt uploads/downloads or sync.
+
+Validation requires sanitized fake Docker health states and HTTP-vs-HTTPS intent, invalid/stale/future-dated host status tests, existing Web/Desktop shared admin row and full PR CI.
+
 ### P1-C1: Photo Intelligence automatic task policy (merged #1253)
 
 The administrator can save a **single instance-wide automatic-analysis scheduling switch** with optimistic revision checking and a metadata-only audit in the same transaction. The default is enabled for backward compatibility. On successful save, the current Server atomically uses the new setting for future automatic face detection/embedding, smart visual/OCR classification, semantic embeddings and person clustering. New system-event and reconciliation admissions are blocked while paused; automatic tasks queued before the change check policy again before processing. In-flight work is not interrupted. Explicit user/admin reanalysis remains available, as does independent GeoNames place-label reconciliation. This does **not** manage the Photo Intelligence container, installed models, sockets or CPU limits.
