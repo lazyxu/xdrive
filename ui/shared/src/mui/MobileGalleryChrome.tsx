@@ -28,6 +28,7 @@ export interface XDriveMobileGalleryChromeProps {
   onSort: (by: 'captured' | 'added', dir: 'asc' | 'desc') => void
   filterContent?: ReactNode
   onSearchRequested?: () => void
+  onFilterOpen?: () => void
   timeScale: MobileGalleryTimeScale
   onTimeScale: (scale: MobileGalleryTimeScale) => void
   currentDateLabel?: string
@@ -60,7 +61,7 @@ export interface XDriveMobileGalleryChromeProps {
 export function XDriveMobileGalleryChrome({
   primaryTab, onPrimaryTabChange, collectionTitle, canGoBack, onGoBack,
   showCollection, selectionMode, onToggleSelection, sortBy, sortDir, onSort,
-  filterContent, onSearchRequested, timeScale, onTimeScale, currentDateLabel, timeZone,
+  filterContent, onSearchRequested, onFilterOpen, timeScale, onTimeScale, currentDateLabel, timeZone,
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
@@ -73,9 +74,20 @@ export function XDriveMobileGalleryChrome({
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const [jumpDay, setJumpDay] = useState('')
   const searchHost = useRef<HTMLDivElement>(null)
+  const onFilterOpenRef = useRef(onFilterOpen)
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
   const collectionsOverview = primaryTab === 'collections' && !showCollection && !canGoBack
   const canShowMore = !collectionsOverview || Boolean(showOverviewActions)
+
+  // Wide Web requests Server facet options when its advanced filter opens.
+  // Mobile uses the very same owning Page callback once per sheet opening.
+  // Keep the latest scope/draft callback without re-fetching on each keystroke.
+  useEffect(() => {
+    onFilterOpenRef.current = onFilterOpen
+  }, [onFilterOpen])
+  useEffect(() => {
+    if (searchOpen) onFilterOpenRef.current?.()
+  }, [searchOpen])
 
   useEffect(() => {
     if (!searchOpen || !searchFocus) return

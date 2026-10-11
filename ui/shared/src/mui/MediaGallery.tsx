@@ -2404,6 +2404,7 @@ export function XDriveMediaGalleryPage({
         onUploadRequested={onUploadRequested}
         mobileCollectionsOverview={mobileCollectionsOverview}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
+        onOpenMobileFilters={() => { void requestFacets() }}
         onMobilePrimaryTabChange={(tab) => {
           if (tab === 'collections') {
             warmMobileCollectionsPreview()
@@ -2833,6 +2834,7 @@ export interface XDriveMediaGalleryProps {
   mobileCollectionsOverview?: boolean
   onMobileCollectionsOverviewChange?: (overview: boolean) => void
   onMobilePrimaryTabChange?: (tab: 'library' | 'collections') => void
+  onOpenMobileFilters?: () => void
   onVisibleAnchorNode?: (nodeID: number) => void
   loadNodeLocation?: (nodeID: number, signal?: AbortSignal) => Promise<NodeLocation>
   onShowInFolder?: (location: NodeLocation) => void
@@ -4383,6 +4385,7 @@ export function XDriveMediaGallery({
   mobileCollectionsOverview = false,
   onMobileCollectionsOverviewChange,
   onMobilePrimaryTabChange,
+  onOpenMobileFilters,
   onVisibleAnchorNode,
   preferenceScope = '',
   items,
@@ -5778,6 +5781,7 @@ export function XDriveMediaGallery({
               if (section !== 'library') onSectionChange?.('library')
             }
           }}
+          onFilterOpen={onOpenMobileFilters}
           timeScale={effectiveTimeScale}
           onTimeScale={updateGalleryTimeScale}
           currentDateLabel={currentTimelineGroupKey

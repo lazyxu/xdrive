@@ -595,3 +595,8 @@ measured.
 
 
 **P1-1a first-real-Chromium red (CI 38072959971):** The 50 completed layout/interaction and native multi-file-picker checks succeeded; the final strict network audit failed because the old fixture asserted thumbnail `v=3` for its PNG items although merged alpha-thumbnail #1337 uses the authoritative v4 identity. Raw artifact 11677456824 preserves the `v=4&revision=1` 501s and console errors. The only correction is MIME-scoped fixture validation (PNG v4, JPEG v3) and an accompanying contract assertion; do not alter production Gallery, disable network audit, or call the old red run green. Exact new-head Web Chrome and full PR CI remain required.
+
+
+### 2026-10-11 · P1-1b Mobile Search/Filter Server facets parity
+
+**Targeted implementation candidate, pending exact-head CI and merge:** The shared wide-Web filter requests authorized camera/format facet options via `requestFacets` on opening Advanced Filters, but the Mobile embedded filter drawer previously did not. Both iOS27 mobile entry points now signal the same owning `XDriveMediaGalleryPage.requestFacets` on closed→open; one request per opening, after a Collections→Library scope change has been rendered, with no refetch from simple draft rerenders. The Server contract, VirtualCollection, shared Gallery filter data, 52px header, browser history and distinct Desktop adapter are unchanged. React callback tests, same REST adapter contract and real Chromium request auditing are the CI gates; physical iOS27 pixels, VoiceOver, 100k loading and actual device runs are not claimed complete.
