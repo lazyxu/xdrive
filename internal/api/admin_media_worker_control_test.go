@@ -70,7 +70,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 	dir := t.TempDir()
 	req := mediaWorkerHostRequest{
 		RequestID: "0123456789abcdef01234567",
-		Revision:  2, Enabled: true, MemoryMiB: 768, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Revision:  2, Enabled: true, MemoryMiB: 768, CPUMilli: 750, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeMediaWorkerHostRequest(dir, req); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 		t.Fatalf("host request corrupted: %+v", got)
 	}
 	if err := writeMediaWorkerHostRequest(dir, mediaWorkerHostRequest{
-		RequestID: "contains-a-host-path", Revision: 3, MemoryMiB: 768,
+		RequestID: "contains-a-host-path", Revision: 3, MemoryMiB: 768, CPUMilli: 750,
 	}); err == nil {
 		t.Fatal("untrusted host control request ID accepted")
 	}
@@ -167,7 +167,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodGet, endpoint, memberToken, ""); response.Code != 403 {
 		t.Fatalf("non-admin GET %d", response.Code)
 	}
-	body := `{"revision":0,"enabled":true,"memory_mib":768}`
+	body := `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":750}`
 	if response := request(http.MethodPut, endpoint, "", body); response.Code != 401 {
 		t.Fatalf("anonymous PUT %d", response.Code)
 	}
@@ -177,6 +177,12 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0}`); response.Code != 400 {
 		t.Fatalf("incomplete edit %d", response.Code)
 	}
+	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768}`); response.Code != 400 {
+		t.Fatalf("old request missing cpu_milli accepted: %d", response.Code)
+	}
+	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":251}`); response.Code != 400 {
+		t.Fatalf("invalid CPU quota accepted: %d", response.Code)
+	}
 	if response := request(http.MethodPut, endpoint, adminToken, body); response.Code != 200 {
 		t.Fatalf("save desired %d %s", response.Code, response.Body.String())
 	}
@@ -184,7 +190,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("stale edit %d", response.Code)
 	}
 	var saved meta.AdminMediaWorkerSetting
-	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled || saved.MemoryMiB != 768 {
+	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled || saved.MemoryMiB != 768 || saved.CPUMilli != 750 {
 		t.Fatalf("desired not persisted correctly: %+v %v", saved, err)
 	}
 	// A saved policy cannot be called applied without a Host Manager.
@@ -194,6 +200,13 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("saved-only configuration incorrectly applied: %+v", cfg)
 	}
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{State: "idle"})
+	if response := request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":1}`); response.Code != 503 {
+		t.Fatalf("old Host Manager without CPU capability accepted apply: %d", response.Code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, mediaWorkerControlRequestName)); !os.IsNotExist(err) {
+		t.Fatal("old Host Manager queued CPU-unsafe request")
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{State: "idle", CPUControlSupported: true})
 	// Audit table unavailable: no host request is allowed to escape.
 	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
@@ -225,7 +238,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	var command mediaWorkerHostRequest
-	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled || command.MemoryMiB != 768 ||
+	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled || command.MemoryMiB != 768 || command.CPUMilli != 750 ||
 		!mediaWorkerRequestIDPattern.MatchString(command.RequestID) {
 		t.Fatalf("unsafe host command: %+v", command)
 	}
@@ -236,7 +249,8 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	}
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
 		State: "success", Revision: 1, AppliedRevision: 1, Enabled: true, ObservedEnabled: true,
-		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true, RequestID: command.RequestID,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true, RequestID: command.RequestID,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
@@ -253,7 +267,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("applied worker not really verified: %s", got.Body.String())
 	}
 	// Disable must be its own revision and own host acknowledgement.
-	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false,"memory_mib":768}`)
+	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false,"memory_mib":768,"cpu_milli":750}`)
 	if disabled.Code != 200 {
 		t.Fatalf("disable desired %d %s", disabled.Code, disabled.Body.String())
 	}
@@ -264,6 +278,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
 		State: "success", Revision: 2, AppliedRevision: 2, Enabled: false, ObservedEnabled: false,
 		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" || cfg.DesiredEnabled {
@@ -291,13 +306,13 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	}
 	// A memory-only change is a new audited revision and MUST remain pending
 	// until the Host Runner confirms its actual cgroup memory allocation.
-	change := request(http.MethodPut, endpoint, adminToken, `{"revision":3,"enabled":true,"memory_mib":1024}`)
+	change := request(http.MethodPut, endpoint, adminToken, `{"revision":3,"enabled":true,"memory_mib":1024,"cpu_milli":750}`)
 	if change.Code != http.StatusOK {
 		t.Fatalf("memory-only change rejected: %d %s", change.Code, change.Body.String())
 	}
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 4 ||
-		cfg.DesiredMemoryMiB != 1024 || cfg.ApplyState == "applied" {
+		cfg.DesiredMemoryMiB != 1024 || cfg.DesiredCPUMilli != 750 || cfg.ApplyState == "applied" {
 		t.Fatalf("memory-only save misreported as applied: %+v", cfg)
 	}
 	enqueued = request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":4}`)
@@ -308,7 +323,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if json.Unmarshal(raw, &command) != nil || command.MemoryMiB != 1024 || command.Revision != 4 {
+	if json.Unmarshal(raw, &command) != nil || command.MemoryMiB != 1024 || command.CPUMilli != 750 || command.Revision != 4 {
 		t.Fatalf("memory-only Host request incorrect: %+v", command)
 	}
 	if err := os.Remove(filepath.Join(dir, mediaWorkerControlRequestName)); err != nil {
@@ -325,6 +340,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
 		State: "success", Revision: 4, AppliedRevision: 4, Enabled: true, ObservedEnabled: true,
 		MemoryMiB: 1024, ObservedMemoryMiB: 1024, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
@@ -341,8 +357,62 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		cfg.DesiredMemoryMiB != 768 || cfg.ApplyState == "applied" {
 		t.Fatalf("memory rollback wrongly acknowledged: %+v", cfg)
 	}
+	// CPU-only update: a resource revision is pending until the actual NanoCpus
+	// matches. A memory match and FFmpeg probe are not enough.
+	changeCPU := request(http.MethodPut, endpoint, adminToken, `{"revision":5,"enabled":true,"memory_mib":768,"cpu_milli":1250}`)
+	if changeCPU.Code != http.StatusOK {
+		t.Fatalf("CPU-only save rejected %d %s", changeCPU.Code, changeCPU.Body.String())
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 6 ||
+		cfg.DesiredMemoryMiB != 768 || cfg.DesiredCPUMilli != 1250 || cfg.ApplyState == "applied" {
+		t.Fatalf("CPU-only desired settings incorrectly applied: %+v", cfg)
+	}
+	enqueued = request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":6}`)
+	if enqueued.Code != http.StatusAccepted {
+		t.Fatalf("CPU-only apply not queued: %d %s", enqueued.Code, enqueued.Body.String())
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, mediaWorkerControlRequestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(raw, &command) != nil || command.CPUMilli != 1250 || command.MemoryMiB != 768 ||
+		command.Revision != 6 {
+		t.Fatalf("CPU-only control request missing bounded resource policy: %+v", command)
+	}
+	if err := os.Remove(filepath.Join(dir, mediaWorkerControlRequestName)); err != nil {
+		t.Fatal(err)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 6, AppliedRevision: 6, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 1250, ObservedCPUMilli: 750, CPUVerified: false,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
+		t.Fatalf("wrong actual CPU quota counted as applied: %+v", cfg)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 6, AppliedRevision: 6, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 1250, ObservedCPUMilli: 1250, CPUVerified: true,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
+		cfg.Host.ObservedCPUMilli != 1250 || !cfg.Host.CPUVerified {
+		t.Fatalf("exact observed CPU quota did not acknowledge new revision: %+v", cfg)
+	}
+	rollback = request(http.MethodPost, endpoint+"/rollback", adminToken, `{"revision":6,"target_revision":1}`)
+	if rollback.Code != http.StatusOK {
+		t.Fatalf("CPU rollback rejected: %d %s", rollback.Code, rollback.Body.String())
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 7 ||
+		cfg.DesiredCPUMilli != 750 || cfg.ApplyState == "applied" {
+		t.Fatalf("CPU rollback must create pending audited revision: %+v", cfg)
+	}
 	var audits int64
-	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 7 {
+	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 9 {
 		t.Fatalf("missing audit evidence count=%d err=%v", audits, err)
 	}
 }
