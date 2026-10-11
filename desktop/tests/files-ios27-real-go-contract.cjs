@@ -173,3 +173,50 @@ test('09I-D1 every viewport arms the real Gin list listener before its guarantee
   assert.ok(gate.includes('new URL(r.url()).pathname === rootPath'))
   assert.ok(gate.includes("r.request().method() === 'GET' && r.status() === 200"))
 })
+
+
+test('09I-D2 actual nested-source Mobile/Wide two-item Copy-to/Move-to use shared persisted queues', () => {
+  for (const label of [
+    'batch-operation-sources', 'i-mobile-batch-copy-a.txt', 'j-mobile-batch-copy-b.txt',
+    'k-wide-batch-copy-a.txt', 'l-wide-batch-copy-b.txt',
+    'm-mobile-batch-move-a.txt', 'n-mobile-batch-move-b.txt',
+    'o-wide-batch-move-a.txt', 'p-wide-batch-move-b.txt',
+    'ready["batch_source_id"]', 'IOS27_FILES_LIVE_GO_BATCH_DESTINATION_QUEUED',
+    'operation.Status != meta.FileOperationStatusQueued', 'operation.TotalItems != 2',
+    'seen[matched]',
+  ]) assert.ok(fixture.includes(label), 'missing genuine PostgreSQL batch destination check: ' + label)
+  for (const label of [
+    'async function queueBatchDestinationFromUI(',
+    "'/#/app/files?dir=' + fixture.batch_source_id",
+    "name: '文件操作菜单'", "name: '选择', exact: true",
+    "name: '更多已选操作'", "'[data-mobile-files-selection-menu]'",
+    "name: '复制到…', exact: true", "name: '移动已选'",
+    "modifiers: ['Control']", "row.getAttribute('aria-pressed')",
+    "row.getAttribute('aria-selected')",
+    "'[data-xdrive-file-explorer-destination-dialog]'",
+    'queued.total_items === 2', 'posted.parent_id === targetID', 'validSources',
+    'results.batchDestinations.length === 4', 'denied === 404',
+  ]) assert.ok(browser.includes(label), 'missing authentic two-file Chromium action: ' + label)
+  assert.ok(web.includes("onCopyTo={selected => openDestination('copy', selected, crumbs)}"))
+  assert.ok(web.includes("onMove={selected => openDestination('move', selected, crumbs)}"))
+  assert.ok(mobile.includes('props.onCopyTo(selection)'))
+  assert.ok(mobile.includes('props.onMove(selection)'))
+  assert.doesNotMatch(browser, /route\.fulfill\(/)
+})
+
+
+test('09I-D2 nested destination selection walks the real shared picker to its root target', () => {
+  const begin = browser.indexOf('async function queueBatchDestinationFromUI(')
+  const end = browser.indexOf('async function main()', begin)
+  const block = browser.slice(begin, end)
+  const open = block.indexOf("const dialog = page.locator('[data-xdrive-file-explorer-destination-dialog]')")
+  const root = block.indexOf("await breadcrumbButtons.first().click()", open)
+  const choose = block.indexOf("await target.click()", root)
+  const submit = block.indexOf("submit.click()", choose)
+  assert.ok(open >= 0 && root > open && choose > root && submit > choose,
+    'must navigate the real root breadcrumb before choosing a sibling target and submitting')
+  assert.ok(block.includes("'[aria-label=\"目标文件夹路径\"] button'"))
+  assert.ok(block.includes("'nested destination picker must expose a usable root ancestor crumb'"))
+  assert.ok(block.includes('breadcrumbButtons.last().isDisabled()'))
+  assert.ok(block.includes('breadcrumbButtons.first().isEnabled()'))
+})

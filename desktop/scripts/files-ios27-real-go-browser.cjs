@@ -23,9 +23,9 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-D1', actualGoServer: true, postgresql17: true,
+  phase: 'F-iOS27-09I-D2', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -325,6 +325,101 @@ async function queueBatchDeleteFromUI(owner, width, nodes) {
   await screenshot(mobile ? 'live-go-mobile-batch-delete-queued' : 'live-go-wide-batch-delete-queued')
 }
 
+// F09I-D2: actual 2-file selection in both UIs, one shared destination
+// picker and real Gin-backed FileOperation; never construct a synthetic POST.
+async function queueBatchDestinationFromUI(kind, owner, width, nodes, targetID) {
+  check(['copy', 'move'].includes(kind) && Array.isArray(nodes) && nodes.length === 2 &&
+    new Set(nodes.map(node => Number(node.id))).size === 2,
+    'batch destination requires two independent CAS Nodes', { kind, nodes })
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 812 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.batch_source_id,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first()
+  await host.waitFor()
+  if (mobile) {
+    await page.getByRole('button', { name: '文件操作菜单' }).click()
+    await page.locator('[data-mobile-files-more-menu]')
+      .getByRole('menuitem', { name: '选择', exact: true }).click()
+    for (const node of nodes) {
+      const row = await findBatchRow(true, host, node.name)
+      await row.click()
+      check((await row.getAttribute('aria-pressed')) === 'true',
+        'Mobile must actually select both source rows', { kind, node })
+    }
+    if (kind === 'move') {
+      await page.getByRole('button', { name: '移动已选' }).click()
+    } else {
+      await page.getByRole('button', { name: '更多已选操作' }).click()
+      await page.locator('[data-mobile-files-selection-menu]')
+        .getByRole('menuitem', { name: '复制到…', exact: true }).click()
+    }
+  } else {
+    const first = await findBatchRow(false, host, nodes[0].name)
+    await first.click()
+    const second = await findBatchRow(false, host, nodes[1].name)
+    await second.click({ modifiers: ['Control'] })
+    for (const node of nodes) {
+      const row = await findBatchRow(false, host, node.name)
+      check((await row.getAttribute('aria-selected')) === 'true',
+        'Wide Web must keep both Ctrl-selected source rows', { kind, node })
+    }
+    const context = await findBatchRow(false, host, nodes[0].name)
+    await context.click({ button: 'right' })
+    await page.getByRole('menuitem', {
+      name: kind === 'copy' ? '复制到…' : '移动到…', exact: true,
+    }).first().click()
+  }
+  const dialog = page.locator('[data-xdrive-file-explorer-destination-dialog]')
+  await dialog.waitFor()
+  // This real picker starts in the nested source folder; the target lives in
+  // its parent root. Navigate with the existing breadcrumb before selecting.
+  const breadcrumbButtons = dialog.locator('[aria-label="目标文件夹路径"] button')
+  check((await breadcrumbButtons.count()) >= 2 &&
+    (await breadcrumbButtons.last().isDisabled()) &&
+    (await breadcrumbButtons.first().isEnabled()),
+    'nested destination picker must expose a usable root ancestor crumb',
+    { kind, owner, width })
+  await breadcrumbButtons.first().click()
+  const target = dialog.locator(
+    '[data-xdrive-file-explorer-destination-directory="' + targetID + '"]')
+  await target.waitFor()
+  await target.click()
+  const submit = dialog.getByRole('button', {
+    name: kind === 'copy' ? '复制到这里' : '移动到这里', exact: true,
+  })
+  const [response] = await Promise.all([
+    page.waitForResponse(r =>
+      new URL(r.url()).pathname === '/api/v1/file-operations' &&
+      r.request().method() === 'POST'),
+    submit.click(),
+  ])
+  const posted = response.request().postDataJSON()
+  const queued = await response.json()
+  const revisions = new Map(nodes.map(node => [Number(node.id), Number(node.revision)]))
+  const validSources = Array.isArray(posted.items) && posted.items.length === 2 &&
+    new Set(posted.items.map(item => Number(item.id))).size === 2 &&
+    posted.items.every(item => revisions.get(Number(item.id)) === Number(item.revision))
+  const sample = {
+    kind, owner, width, targetID, sourceIDs: nodes.map(node => node.id),
+    requestItems: posted.items, status: response.status(), operationID: queued.id,
+    requestType: posted.type, queuedType: queued.type,
+    parentID: posted.parent_id, queuedParentID: queued.parent_id,
+    queuedTotalItems: queued.total_items,
+  }
+  check(response.status() === 202 && posted.type === kind && queued.type === kind &&
+    posted.parent_id === targetID && queued.parent_id === targetID &&
+    queued.total_items === 2 && validSources &&
+    typeof queued.id === 'string' && queued.id.length > 0,
+    'one genuine Mobile/Wide batch destination POST must persist', sample)
+  results.batchDestinations.push(sample)
+  await dialog.waitFor({ state: 'hidden' })
+  await screenshot('live-go-' + (mobile ? 'mobile-' : 'wide-') +
+    '-batch-' + kind + '-queued')
+}
+
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -501,6 +596,21 @@ async function main() {
     new Set(results.batchDeletes.map(item => item.operationID)).size === 2,
     'two layouts must queue different persistent multi-file Delete tasks', results.batchDeletes)
   for (const spec of [
+    { kind: 'copy', owner: 'Mobile Web', width: 375,
+      nodes: fixture.mobile_batch_copy_nodes, targetID: fixture.mobile_copy_target_id },
+    { kind: 'copy', owner: 'Wide Web', width: 900,
+      nodes: fixture.wide_batch_copy_nodes, targetID: fixture.wide_copy_target_id },
+    { kind: 'move', owner: 'Mobile Web', width: 375,
+      nodes: fixture.mobile_batch_move_nodes, targetID: fixture.mobile_move_target_id },
+    { kind: 'move', owner: 'Wide Web', width: 900,
+      nodes: fixture.wide_batch_move_nodes, targetID: fixture.wide_move_target_id },
+  ]) {
+    await queueBatchDestinationFromUI(spec.kind, spec.owner, spec.width, spec.nodes, spec.targetID)
+  }
+  check(results.batchDestinations.length === 4 &&
+    new Set(results.batchDestinations.map(item => item.operationID)).size === 4,
+    'four independent real 2-source Mobile/Wide Copy/Move queues required', results.batchDestinations)
+  for (const spec of [
     { type: 'move', sourceID: fixture.mobile_move_id,
       revision: fixture.mobile_move_revision, parentID: fixture.foreign_root_id },
     { type: 'delete', sourceID: fixture.mobile_delete_id,
@@ -530,6 +640,25 @@ async function main() {
   }, { token: fixture.foreign_token, nodes: fixture.mobile_batch_delete_nodes })
   check(foreignBatch === 404, 'real Gin must reject both foreign-owned batch Delete refs', foreignBatch)
   results.foreignOwner.push({ method: 'POST file-operations/delete-batch', status: foreignBatch })
+  // Owner B chooses its own valid destination but cannot access owner A Nodes.
+  for (const spec of [
+    { kind: 'copy', nodes: fixture.mobile_batch_copy_nodes },
+    { kind: 'move', nodes: fixture.mobile_batch_move_nodes },
+  ]) {
+    const denied = await page.evaluate(async ({ token, parentID, kind, nodes }) => {
+      const response = await fetch('/api/v1/file-operations', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: kind, parent_id: parentID,
+          items: nodes.map(node => ({ id: node.id, revision: node.revision })) }),
+      })
+      return response.status
+    }, { token: fixture.foreign_token, parentID: fixture.foreign_root_id,
+      kind: spec.kind, nodes: spec.nodes })
+    check(denied === 404, 'real Gin must reject foreign 2-source batch destination',
+      { kind: spec.kind, denied })
+    results.foreignOwner.push({ method: 'POST file-operations/' + spec.kind + '-batch', status: denied })
+  }
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -557,6 +686,7 @@ async function main() {
       passed: Boolean(results.passed), widths: results.widths.length,
       patches: results.patches.length, copyQueues: results.copyQueues.length,
       mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
+      batchDestinations: results.batchDestinations.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
