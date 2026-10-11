@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,6 +29,18 @@ import (
 // A genuine 96x64 H264 MP4 from the already accepted Chromium video-poster fixture.
 // This sample is deliberately small. Never present it as 4K or HEVC decoding.
 const fileExplorerH264Real100KVideo = "AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAANTbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAfQAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAn50cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAfQAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAGAAAABAAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAH0AAAAAAABAAAAAAH2bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAwAAAAGABVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABoW1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAWFzdGJsAAAAuXN0c2QAAAAAAAAAAQAAAKlhdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAGAAQABIAAAASAAAAAAAAAABFUxhdmM2MS4xOS4xMDEgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAAL2F2Y0MBQsAK/+EAF2dCwArZBibARAAAAwAEAAADAMA8SJkgAQAFaMuDyyAAAAAQcGFzcAAAAAEAAAABAAAAFGJ0cnQAAAAAAACAsAAAAAAAAAAYc3R0cwAAAAAAAAABAAAADAAAAgAAAAAUc3RzcwAAAAAAAAABAAAAAQAAABxzdHNjAAAAAAAAAAEAAAABAAAADAAAAAEAAABEc3RzegAAAAAAAAAAAAAADAAABpMAAAAcAAAAJQAAACMAAAAlAAAAJAAAACsAAAApAAAAKQAAACAAAAAZAAAAFQAAABRzdGNvAAAAAAAAAAEAAAODAAAAYXVkdGEAAABZbWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAsaWxzdAAAACSpdG9vAAAAHGRhdGEAAAABAAAAAExhdmY2MS43LjEwMwAAAAhmcmVlAAAIE21kYXQAAAJxBgX//23cRem95tlIt5Ys2CDZI+7veDI2NCAtIGNvcmUgMTY0IHIzMTA4IDMxZTE5ZjkgLSBILjI2NC9NUEVHLTQgQVZDIGNvZGVjIC0gQ29weWxlZnQgMjAwMy0yMDIzIC0gaHR0cDovL3d3dy52aWRlb2xhbi5vcmcveDI2NC5odG1sIC0gb3B0aW9uczogY2FiYWM9MCByZWY9MyBkZWJsb2NrPTE6MDowIGFuYWx5c2U9MHgxOjB4MTExIG1lPWhleCBzdWJtZT03IHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MTYgY2hyb21hX21lPTEgdHJlbGxpcz0xIDh4OGRjdD0wIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MiBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTAgd2VpZ2h0cD0wIGtleWludD0yNTAga2V5aW50X21pbj0yNCBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTQwIHJjPWNyZiBtYnRyZWU9MSBjcmY9MjMuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAABBpliIQ3/w/tHRQABAj+KAAIAngAXpb/QLHOT9oOKJu/bv/IILs4QABMMedB0CYgA+3dmQRT/2DgBACsQAPBoJdbRRYuDUhy5WlDxuAC155FiHeYfroAWfdQH+uQADjGqAA9g/59/f/v//u8OEAAgwNBoIAAQEAABANAAemAhjkK4d/66v7//6/B+AQaMRA5vLBwh+uu+/v9/9jUqlUH4f/wViIoABniAICRAADQAAgLxQLGIBYiAgRjBwQIxGYDgAGAKIAAEABMEAQABCbiAAGmxALEQCxBwQIxBwQIx/A/hwWHAAvU5BXXBEt34AA/AOLvBLkIATADhwQAAgBACgAEgewAysJbRm/rr+AA6GlSuDkZOSDzEPh9KJ8N4oAAgBeAD1aTUU3828xM7nH+8BCaGmdrcsRggIBaYEAAbAAECpoNEQJjAA0dS9ijKeIAQBWMAB9sBOvKzCG+J8H9iYPaFhyAAxkLp2FW6vibB7brDDZyj6H/eBTaQDFIhBuPv+iAS5F9yHvuSABIlyHAEiXDMVqmV0//+ghguOABYhKbxBKC6o1rv/8BQvgU32sY8jcqPAImQ0xSdTOQ5fEwzN9ilZXJnCAAJBySDeDVy+BwmNLikPj+w3/xmMecqIQ1nSXUwAAmAwbVMDLAAEAGHnej0cYfY///SlgugAI2MW8iIUtHelwfiMRFu5+Rk46g182+XTMV6Zl9FPrl0u/9Cv7EVgsPftgEDch3a/R8AAQCAFpCe3wGiERTiCSqx+S//+7wKidb/b9fC054QCQI8IAA4A4EiUPMUsdlt2HAQh8v/+1vYLcAChoTpUFSr+5//3xoYtZMShSPxLW/8u4h+GAQyA6AAIAXB0X4iFwdF8ByIgFlgrJU78K6pwXRgSndYUAAQAQYBIQABgMJBIUzjwauWCOZhZBIeWGHiaWCSEgFtRAcergZAAKVMnxA8QD8AhWk0Rvf1GD3ghVwJcghCagtA1+W7wgACAAceNBAACAhnAAEB0QmIUZAg8j4xD/niBGWWHQDWCkFWAg1Z2ClZ5R4M/PKNGds/4BAAgtxfUX8ByEYDy3xj3CAEILHggAQAxgBZOANCcBoHwOgH+i9km4oWDXYAl0iIml/+EQGTwe+DwP4PA+DwfwOwy0EoBZ7o8Ds3dAIDDixTvCEAAQUlAAEEAIAA+AKCTpVHINWqwgAjESyACEKlhQBkDgYAC2A4JzywUTNr4I+AYAHIliXiQ/bEnv0yX4AD6W+9CR3n/ABbX8rHzdkff9P//AgADACtUEAAUgAAgAgAg/L8AHxtLhcO2ROAMIKwdJZXsBA4Etq6kT1wtaHANwIAD8HxWK9RJ6qAcQZwJLB77fCII3CAAQCBI0FQNDgLCDIFk0R1r5A3hYyDOCftEBIaXAAAAAYQZo4bhNGn6J0R/qRMvkkklk3vROrfU6YAAAAIUGaVAjhMvkkkl6yfL5oieeeuTUvrNzT211k5q516xHWLAAAAB9BmmBHCbzcE5FVVUl/hWb6yfL5pJJ661m/541TWffgAAAAIUGagEcJl803Py+aInmlI586zRtcsvmmqfrN/wS73t2zpgAAACBBmqBXCazTzkX8+n2XzSSzdZovrNzQ+y36ycuMe9Yj4AAAACdBmsBXCZfJNJPBIQMZb7iXySSydZonl8k0k/WTnr+TSb8EWbzc6YAAAAAlQZrgZwms0/WbnsPLWPy+s3PWmMS4/l80kk/WbrF+GtajVEH4vwAAACVBmwBnCZfJNJP1iOCOez3nTWTgkx/3uayfWbhiS+S/h2z79Yj4AAAAHEGbIHcJrNPBIQl9/1vrN9ZvrN1c1k4J83m8mb4AAAAVQZtAIcKLEde1k+XzTR0/WT6ydE7AAAAAEUGbYCnCbxXRGWs31m+snXMw"
+
+// Distinct valid MP4 containers: the index is in a trailing ISO BMFF free
+// box. The H264 bitstream stays identical; this is a physical CAS/metadata
+// workload, NOT 100k independently encoded movie-frame sequences.
+func fileExplorerH264PhysicalContainer(videoBytes []byte, ordinal uint32) []byte {
+	variant := make([]byte, len(videoBytes)+12)
+	copy(variant, videoBytes)
+	binary.BigEndian.PutUint32(variant[len(videoBytes):], 12)
+	copy(variant[len(videoBytes)+4:], "free")
+	binary.BigEndian.PutUint32(variant[len(videoBytes)+8:], ordinal)
+	return variant
+}
 
 type fileExplorerH264CancelCounters struct {
 	started     atomic.Int64
@@ -84,6 +98,10 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 		t.Skip("set XD_FILEEXPLORER_REAL_H264_100K_PERF=1")
 	}
 	cancelMode := os.Getenv("XD_FILEEXPLORER_H264_CANCEL_100K_PERF") == "1"
+	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_H264_PHYSICAL_100K_PERF") == "1"
+	if physicalMode && cancelMode {
+		t.Fatal("physical-source baseline and deliberately slow cancellation fixture must not be combined")
+	}
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	readyFile := os.Getenv("XD_FILEEXPLORER_REAL_H264_READY_FILE")
 	if dsn == "" || readyFile == "" {
@@ -139,7 +157,111 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 		t.Fatal(err)
 	}
 	sampleIDs := make([]uint64, 0, 6)
+	physicalVideoCount := 6
+	var physicalSourceBytes int64
 	uniqueSHAs := make(map[string]struct{}, 6)
+	if physicalMode {
+		physicalVideoCount = 100000
+		uniqueSHAs = make(map[string]struct{}, physicalVideoCount)
+		if err := db.Exec(`CREATE TABLE file_explorer_h264_physical_variants (
+			ordinal INTEGER PRIMARY KEY, sha256 TEXT NOT NULL,
+			storage_key TEXT NOT NULL, size BIGINT NOT NULL
+		)`).Error; err != nil {
+			t.Fatal(err)
+		}
+		// Bounded fixture-only batches, separate from the measured HTTP/Chromium
+		// poster lifecycle. Every source has real unique CAS bytes and a real row.
+		const batchSize = 256
+		args := make([]any, 0, batchSize*4)
+		placeholders := make([]string, 0, batchSize)
+		flush := func() {
+			if len(placeholders) == 0 {
+				return
+			}
+			if err := db.Exec("INSERT INTO file_explorer_h264_physical_variants (ordinal,sha256,storage_key,size) VALUES "+
+				strings.Join(placeholders, ","), args...).Error; err != nil {
+				t.Fatalf("persist physical H264 source variants: %v", err)
+			}
+			args = args[:0]
+			placeholders = placeholders[:0]
+		}
+		for ordinal := 1; ordinal <= physicalVideoCount; ordinal++ {
+			container := fileExplorerH264PhysicalContainer(videoBytes, uint32(ordinal))
+			digest := fmt.Sprintf("%x", sha256.Sum256(container))
+			if _, duplicate := uniqueSHAs[digest]; duplicate {
+				t.Fatalf("physical H264 content SHA reused at ordinal=%d", ordinal)
+			}
+			uniqueSHAs[digest] = struct{}{}
+			key, keyErr := storage.ContentAddressedKey(digest)
+			if keyErr != nil {
+				t.Fatal(keyErr)
+			}
+			written, putErr := store.Put(t.Context(), key, bytes.NewReader(container))
+			if putErr != nil || written != int64(len(container)) {
+				t.Fatalf("physical H264 CAS ordinal=%d bytes=%d err=%v", ordinal, written, putErr)
+			}
+			physicalSourceBytes += written
+			placeholders = append(placeholders, "(?,?,?,?)")
+			args = append(args, ordinal, digest, key, len(container))
+			if len(placeholders) == batchSize {
+				flush()
+			}
+		}
+		flush()
+		if len(uniqueSHAs) != 100000 || physicalSourceBytes != int64(physicalVideoCount)*int64(len(videoBytes)+12) {
+			t.Fatalf("physical H264 source cardinality=%d bytes=%d", len(uniqueSHAs), physicalSourceBytes)
+		}
+		if err := db.Exec(`UPDATE xd_files AS f
+			SET storage_key=v.storage_key, size=v.size, sha256=v.sha256
+			FROM xd_nodes AS n, file_explorer_h264_physical_variants AS v
+			WHERE f.node_id=n.id AND n.owner_id=? AND n.parent_id=?
+			AND v.ordinal=substring(n.name from 6 for 6)::integer`,
+			rootNode.OwnerID, folder.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(`UPDATE xd_media_metadata AS m SET sha256=f.sha256
+			FROM xd_nodes AS n JOIN xd_files AS f ON f.node_id=n.id
+			WHERE m.node_id=n.id AND n.owner_id=? AND n.parent_id=?`,
+			rootNode.OwnerID, folder.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		var persistedUnique int64
+		if err := db.Raw(`SELECT COUNT(DISTINCT f.sha256)
+			FROM xd_files AS f JOIN xd_nodes AS n ON n.id=f.node_id
+			WHERE n.owner_id=? AND n.parent_id=?`,
+			rootNode.OwnerID, folder.ID).Scan(&persistedUnique).Error; err != nil {
+			t.Fatal(err)
+		}
+		var consistentMedia int64
+		if err := db.Raw(`SELECT COUNT(*)
+			FROM xd_media_metadata AS m JOIN xd_files AS f ON f.node_id=m.node_id
+			JOIN xd_nodes AS n ON n.id=m.node_id
+			WHERE n.owner_id=? AND n.parent_id=? AND m.sha256=f.sha256`,
+			rootNode.OwnerID, folder.ID).Scan(&consistentMedia).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persistedUnique != 100000 || consistentMedia != 100000 {
+			t.Fatalf("100k physical H264 PG identity invalid: unique=%d media=%d", persistedUnique, consistentMedia)
+		}
+		// Independently read exact first/middle/last real CAS sources without
+		// incrementing the measured production video-open counter.
+		for _, ordinal := range []int{1, 50001, 100000} {
+			want := fileExplorerH264PhysicalContainer(videoBytes, uint32(ordinal))
+			key, keyErr := storage.ContentAddressedKey(fmt.Sprintf("%x", sha256.Sum256(want)))
+			if keyErr != nil {
+				t.Fatal(keyErr)
+			}
+			reader, openErr := disk.Open(t.Context(), key)
+			if openErr != nil {
+				t.Fatalf("physical H264 original %d missing: %v", ordinal, openErr)
+			}
+			got, readErr := io.ReadAll(reader)
+			closeErr := reader.Close()
+			if readErr != nil || closeErr != nil || !bytes.Equal(got, want) {
+				t.Fatalf("physical H264 original %d byte mismatch: read=%v close=%v", ordinal, readErr, closeErr)
+			}
+		}
+	}
 	for _, offset := range []int{0, 50000, 99998} {
 		var nodes []meta.Node
 		if err := db.Where("owner_id=? AND parent_id=?", rootNode.OwnerID, folder.ID).
@@ -149,27 +271,38 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 		if len(nodes) != 2 {
 			t.Fatalf("offset %d nodes=%d", offset, len(nodes))
 		}
-		for _, node := range nodes {
-			// A valid trailing ISO BMFF free box makes each already decodable
-			// clip content-unique without changing its H264 bitstream.
-			variant := append(append([]byte(nil), videoBytes...), 0, 0, 0, 12, 'f', 'r', 'e', 'e',
-				byte(node.ID>>24), byte(node.ID>>16), byte(node.ID>>8), byte(node.ID))
+		for index, node := range nodes {
+			variantOrdinal := uint32(node.ID)
+			if physicalMode {
+				variantOrdinal = uint32(offset + index + 1)
+			}
+			variant := fileExplorerH264PhysicalContainer(videoBytes, variantOrdinal)
 			variantSHA := fmt.Sprintf("%x", sha256.Sum256(variant))
-			if _, exists := uniqueSHAs[variantSHA]; exists {
-				t.Fatalf("duplicate content-hash performance fixture for node=%d", node.ID)
-			}
-			uniqueSHAs[variantSHA] = struct{}{}
-			key := fmt.Sprintf("h264-100k/%d.mp4", node.ID)
-			if n, e := store.Put(t.Context(), key, bytes.NewReader(variant)); e != nil || n != int64(len(variant)) {
-				t.Fatalf("seed H264 node=%d length=%d err=%v", node.ID, n, e)
-			}
-			if err := db.Model(&meta.File{}).Where("node_id=?", node.ID).
-				Updates(map[string]any{"storage_key": key, "size": len(variant), "sha256": variantSHA}).Error; err != nil {
-				t.Fatal(err)
-			}
-			if err := db.Model(&meta.MediaMetadata{}).Where("node_id=?", node.ID).
-				Update("sha256", variantSHA).Error; err != nil {
-				t.Fatal(err)
+			if !physicalMode {
+				if _, exists := uniqueSHAs[variantSHA]; exists {
+					t.Fatalf("duplicate content-hash performance fixture for node=%d", node.ID)
+				}
+				uniqueSHAs[variantSHA] = struct{}{}
+				key := fmt.Sprintf("h264-100k/%d.mp4", node.ID)
+				if n, putErr := store.Put(t.Context(), key, bytes.NewReader(variant)); putErr != nil || n != int64(len(variant)) {
+					t.Fatalf("seed H264 node=%d length=%d err=%v", node.ID, n, putErr)
+				}
+				if err := db.Model(&meta.File{}).Where("node_id=?", node.ID).
+					Updates(map[string]any{"storage_key": key, "size": len(variant), "sha256": variantSHA}).Error; err != nil {
+					t.Fatal(err)
+				}
+				if err := db.Model(&meta.MediaMetadata{}).Where("node_id=?", node.ID).
+					Update("sha256", variantSHA).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				var sampleFile meta.File
+				if err := db.Where("node_id=?", node.ID).Take(&sampleFile).Error; err != nil {
+					t.Fatal(err)
+				}
+				if sampleFile.SHA256 != variantSHA {
+					t.Fatalf("H264 selected source revision mismatch at offset=%d", offset+index)
+				}
 			}
 			sampleIDs = append(sampleIDs, node.ID)
 		}
@@ -189,7 +322,10 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 	}
 	seedMs := float64(time.Since(started).Microseconds()) / 1000
 	config := map[string]any{"token": token, "folder_id": folder.ID, "total_count": count,
-		"sample_node_ids": sampleIDs, "video_bytes": len(videoBytes) + 12, "unique_sha256_count": len(uniqueSHAs), "seed_ms": seedMs, "cancel_mode": cancelMode}
+		"sample_node_ids": sampleIDs, "video_bytes": len(videoBytes) + 12,
+		"unique_sha256_count": len(uniqueSHAs), "seed_ms": seedMs, "cancel_mode": cancelMode,
+		"physical_mode": physicalMode, "physical_videos": physicalVideoCount,
+		"physical_source_bytes": physicalSourceBytes}
 	done := make(chan struct{})
 	var once sync.Once
 	var counters fileExplorerH264CancelCounters

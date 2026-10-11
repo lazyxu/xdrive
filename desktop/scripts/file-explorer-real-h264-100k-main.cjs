@@ -2,12 +2,28 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const ts = require('typescript')
 const { app, BrowserWindow } = require('electron')
 
 const root = path.resolve(__dirname, '..', '..')
-const resultsDir = path.resolve(__dirname, '..', 'real-h264-100k-results')
+const physicalMode = process.env.XD_FILEEXPLORER_REAL_H264_PHYSICAL_100K_PERF === '1'
+const resultsDir = path.resolve(process.env.XD_FILEEXPLORER_REAL_H264_RESULTS ||
+  path.join(__dirname, '..', 'real-h264-100k-results'))
+const nativeBinary = process.env.XD_FILEEXPLORER_H264_TEST_BINARY
+const clockTicks = Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim())
+function nativeStats(pid) {
+  if (!nativeBinary) return null // default Go tool wrapper is not the Gin process
+  const text = fs.readFileSync('/proc/' + pid + '/status', 'utf8')
+  const rssKiB = Number(text.match(/^VmRSS:\s*(\d+) kB/m)?.[1])
+  const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8')
+  const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/)
+  const cpuTicks = Number(fields[11]) + Number(fields[12])
+  if (!Number.isFinite(rssKiB) || !Number.isFinite(cpuTicks) || !Number.isFinite(clockTicks) || clockTicks <= 0) {
+    throw Error('native Gin resource data invalid')
+  }
+  return { rssBytes: rssKiB * 1024, cpuMs: cpuTicks * 1000 / clockTicks }
+}
 const sourcePath = path.join(root, 'ui', 'shared', 'src', 'mui', 'MediaGalleryVideoPoster.ts')
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 const median = nums => [...nums].sort((a, b) => a - b)[Math.floor(nums.length / 2)]
@@ -29,10 +45,11 @@ async function until(check, timeoutMs, message) {
 
 async function startFixture(sample, readyFile) {
   const log = fs.createWriteStream(path.join(resultsDir, 'native-server-' + sample + '.log'))
-  const child = spawn('go', [
-    'test', '-run', '^TestFileExplorerRealH264PosterBrowser100K$',
-    '-count=1', '-timeout=8m', '-v', './internal/api',
-  ], {
+  const child = spawn(nativeBinary ? path.resolve(nativeBinary) : 'go',
+    nativeBinary
+      ? ['-test.run=^TestFileExplorerRealH264PosterBrowser100K$', '-test.count=1', '-test.timeout=25m', '-test.v']
+      : ['test', '-run', '^TestFileExplorerRealH264PosterBrowser100K$',
+          '-count=1', '-timeout=8m', '-v', './internal/api'], {
     cwd: root,
     env: {
       ...process.env,
@@ -49,14 +66,14 @@ async function startFixture(sample, readyFile) {
     if (child.exitCode !== null) throw Error('native fixture quit before ready: ' + child.exitCode)
     if (!fs.existsSync(readyFile)) return null
     return JSON.parse(fs.readFileSync(readyFile, 'utf8'))
-  }, 180000, 'native 100k PostgreSQL/Gin server fixture')
+  }, physicalMode ? 12 * 60_000 : 180000, 'native 100k PostgreSQL/Gin server fixture')
   return { child, exited, log, ready }
 }
 
 async function stopFixture(s) {
   if (!s) return
   try { await fetch(s.ready.url + '/__perf/stop', { method: 'POST' }) } catch (_) {}
-  const r = await Promise.race([s.exited, sleep(25000).then(() => ({ code: 'timeout' }))])
+  const r = await Promise.race([s.exited, sleep(physicalMode ? 90000 : 25000).then(() => ({ code: 'timeout' }))])
   if (r.code !== 0) {
     s.child.kill('SIGKILL')
     s.log.end()
@@ -72,7 +89,12 @@ async function rendererLogic() {
     require(window.__xdriveRealH264Compiled)
   const info = window.__xdriveRealH264Config
   if (info.total_count !== 100000 || info.sample_node_ids.length !== 6 ||
-      info.video_bytes < 1000 || info.unique_sha256_count !== 6) throw Error('missing native 100k H264 fixture')
+      info.video_bytes < 1000 ||
+      info.unique_sha256_count !== (info.physical_mode ? 100000 : 6) ||
+      (info.physical_mode && (info.physical_videos !== 100000 ||
+        info.physical_source_bytes !== 100000 * info.video_bytes))) {
+    throw Error('missing distinct physical 100k H264 CAS sources: ' + JSON.stringify(info))
+  }
   const headers = { Authorization: 'Bearer ' + info.token }
   const response = await fetch('/api/v1/nodes/' + info.folder_id +
     '/children?offset=0&limit=200&sort=name&order=asc', { headers, cache: 'no-store' })
@@ -179,8 +201,13 @@ async function rendererLogic() {
     }))
   }
   return {
-    workload: 'real-chromium-h264-poster-signed-server-100k',
+    workload: info.physical_mode
+      ? 'real-chromium-physical-100k-unique-mp4-cas-poster'
+      : 'real-chromium-h264-poster-signed-server-100k',
     logicalVideoItems: 100000, sampledRealVideoItems: 6, selectedOffsets: [0, 50000, 99998],
+    physicalMode: !!info.physical_mode, physicalVideoCount: info.physical_videos,
+    physicalSourceBytes: info.physical_source_bytes,
+    uniquePhysicalSHA256Count: info.unique_sha256_count,
     actualMP4BytesPerSample: info.video_bytes,
     realH264FirstFrameDecoded: decodedVideos,
     coldMs: cold, warmMs: warm, jpegSizes,
@@ -226,12 +253,34 @@ async function main() {
           '; window.__xdriveRealH264Config=' + JSON.stringify(fixture.ready.config),
           true,
         )
-        const r = await Promise.race([
-          win.webContents.executeJavaScript('(' + rendererLogic.toString() + ')()', true),
-          sleep(120000).then(() => { throw Error('real H264 Chromium capture timed out') }),
-        ])
+        const initialNative = nativeStats(fixture.child.pid)
+        const initialTab = app.getAppMetrics().find(m => m.type === 'Tab')
+        const initialRendererKiB = initialTab?.memory?.workingSetSize ?? null
+        let sampledMaxNativeRSS = initialNative?.rssBytes ?? 0
+        const sampler = nativeBinary ? setInterval(() => {
+          const snapshot = nativeStats(fixture.child.pid)
+          if (snapshot) sampledMaxNativeRSS = Math.max(sampledMaxNativeRSS, snapshot.rssBytes)
+        }, 25) : null
+        let r
+        try {
+          r = await Promise.race([
+            win.webContents.executeJavaScript('(' + rendererLogic.toString() + ')()', true),
+            sleep(120000).then(() => { throw Error('real H264 Chromium capture timed out') }),
+          ])
+        } finally {
+          if (sampler) clearInterval(sampler)
+        }
+        const finalNative = nativeStats(fixture.child.pid)
         const tab = app.getAppMetrics().find(m => m.type === 'Tab')
         r.rendererWorkingSetKiBSnapshot = tab?.memory?.workingSetSize ?? null
+        r.rendererWorkingSetKiBInitial = initialRendererKiB
+        r.nativeGoResources = initialNative && finalNative ? {
+          start: initialNative, end: finalNative,
+          sampledPeakRSSBytes: Math.max(sampledMaxNativeRSS, finalNative.rssBytes),
+          sampledRSSGrowthBytes: Math.max(0, sampledMaxNativeRSS - initialNative.rssBytes),
+          cpuMsDelta: finalNative.cpuMs - initialNative.cpuMs,
+          sampling: 'Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed',
+        } : null
         r.sample = sample
         fs.writeFileSync(path.join(resultsDir, 'sample-' + sample + '.json'),
           JSON.stringify(r, null, 2) + '\n')
@@ -243,8 +292,14 @@ async function main() {
       }
     }
     const summary = {
-      status: 'measured-current-production-real-h264-100k',
+      status: physicalMode
+        ? 'benchmarking-current-100k-distinct-physical-mp4-cas'
+        : 'measured-current-production-real-h264-100k',
       sampleCount: results.length,
+      physicalMode,
+      physicalCASObjects: results.map(r => r.physicalVideoCount),
+      physicalCASBytes: results.map(r => r.physicalSourceBytes),
+      nativeGoResources: results.map(r => r.nativeGoResources),
       coldP50MsAcrossRuns: median(results.map(r => r.coldP50Ms)),
       warmP50MsAcrossRuns: median(results.map(r => r.warmP50Ms)),
       originalsWarm: results.map(r => r.originalsWarm),
@@ -254,8 +309,17 @@ async function main() {
       accepted: results.length === 3 && results.every(r =>
         r.coldMisses === 6 && r.posterPuts === 6 && r.warmHits === 6 &&
         r.originalsCold >= 6 && r.originalsWarm === 0 &&
-        r.warmPosterOpens === 6 && r.coldMs.every(ms => ms < 15000)),
-      scope: 'real signed H264-to-JPEG poster lifecycle in 100k metadata; not full FileExplorer UI, Agent IPC, HEVC or 4K',
+        r.warmPosterOpens === 6 && r.coldMs.every(ms => ms < 15000) &&
+        (!physicalMode || (r.physicalMode && r.physicalVideoCount === 100000 &&
+          r.uniquePhysicalSHA256Count === 100000 && r.physicalSourceBytes === 100000 * r.actualMP4BytesPerSample &&
+          r.nativeGoResources && r.nativeGoResources.sampledRSSGrowthBytes <= 256 * 1024 * 1024 &&
+          Number.isFinite(r.nativeGoResources.cpuMsDelta) &&
+          Number.isFinite(r.rendererWorkingSetKiBInitial) &&
+          Number.isFinite(r.rendererWorkingSetKiBSnapshot) &&
+          Math.max(0, r.rendererWorkingSetKiBSnapshot - r.rendererWorkingSetKiBInitial) <= 256 * 1024))),
+      scope: physicalMode
+        ? '100k distinct physical MP4 containers with the SAME 96x64 H264 essence; six Chromium decoded poster samples in first/middle/end, Gin/PostgreSQL/CAS, no mounted virtual FileExplorer UI or 100k distinct H264 frames'
+        : 'real signed H264-to-JPEG poster lifecycle in 100k metadata; not full FileExplorer UI, Agent IPC, HEVC or 4K',
     }
     fs.writeFileSync(path.join(resultsDir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     console.log('FILEEXPLORER_REAL_H264_100K_SUMMARY ' + JSON.stringify(summary))
