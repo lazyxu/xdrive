@@ -750,6 +750,8 @@ type Scheduler struct {
 	sequence uint64
 	entries  map[Identity]*taskEntry
 	queues   map[ResourceClass]*resourceQueue
+	// A cancelled previous run retains its execution slot until it fully exits.
+	activeRuns map[Identity]chan struct{}
 
 	metrics metrics
 	wg      sync.WaitGroup
@@ -783,6 +785,7 @@ func NewScheduler(parent context.Context, cfg Config) *Scheduler {
 		leaseRetryDelay: cfg.LeaseRetryDelay,
 		entries:         make(map[Identity]*taskEntry),
 		queues:          make(map[ResourceClass]*resourceQueue),
+		activeRuns:      make(map[Identity]chan struct{}),
 		shutdownDone:    make(chan struct{}),
 	}
 	s.metrics.running = make(map[ResourceClass]int)
@@ -838,7 +841,7 @@ func (s *Scheduler) Submit(task Task) (*Handle, error) {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("%w: resource class %q has no capacity", ErrInvalidTask, task.Resource)
 	}
-	if existing := s.entries[identity]; existing != nil && existing.state != itemDone {
+	if existing := s.entries[identity]; existing != nil && existing.state != itemDone && !existing.cancelRequested {
 		if existing.task.Resource != task.Resource {
 			s.mu.Unlock()
 			return nil, fmt.Errorf("%w: duplicate task %q changed resource class", ErrInvalidTask, task.Key)
@@ -1189,14 +1192,32 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	defer stopTimeout()
 
 	s.mu.Lock()
-	if s.closed || entry.state != itemQueued {
+	// When a cancelled task is replaced, the fresh submission must wait for
+	// its predecessor's full finalizer/Lease release even with spare workers.
+	for {
+		if s.closed || entry.state != itemQueued {
+			s.mu.Unlock()
+			cancel(ErrClosed)
+			return
+		}
+		predecessor := s.activeRuns[entry.identity]
+		if predecessor == nil {
+			break
+		}
 		s.mu.Unlock()
-		cancel(ErrClosed)
-		return
+		select {
+		case <-predecessor:
+		case <-s.ctx.Done():
+			cancel(context.Cause(s.ctx))
+			return
+		}
+		s.mu.Lock()
 	}
 	if !entry.task.NotAfter.IsZero() && !time.Now().Before(entry.task.NotAfter) {
 		entry.state = itemDone
-		delete(s.entries, entry.identity)
+		if s.entries[entry.identity] == entry {
+			delete(s.entries, entry.identity)
+		}
 		s.mu.Unlock()
 		s.metrics.mu.Lock()
 		s.metrics.expired++
@@ -1205,6 +1226,18 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 		cancel(ErrExpired)
 		return
 	}
+	// This slot serializes live executions of the same logical identity;
+	// it is not released until all terminal cleanup has finished.
+	slot := make(chan struct{})
+	s.activeRuns[entry.identity] = slot
+	defer func() {
+		s.mu.Lock()
+		if s.activeRuns[entry.identity] == slot {
+			delete(s.activeRuns, entry.identity)
+			close(slot)
+		}
+		s.mu.Unlock()
+	}()
 	now := time.Now().UTC()
 	entry.state = itemRunning
 	entry.cancel = cancel
@@ -1274,7 +1307,11 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	if entry.state != itemDone {
 		entry.state = itemDone
 		entry.cancel = nil
-		delete(s.entries, entry.identity)
+		// The old cancelled run no longer owns this identity after a
+		// replacement is accepted; never remove the replacement's record.
+		if s.entries[entry.identity] == entry {
+			delete(s.entries, entry.identity)
+		}
 	}
 	s.mu.Unlock()
 
