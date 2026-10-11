@@ -461,6 +461,22 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupRules = useMemo(() => {
+    if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-rules')) return undefined
+    return {
+      load: async (sourceID: number) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupLocalRules(sourceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+      update: async (sourceID: number, revision: number, rules: string) => {
+        const result = await window.xdriveDesktop.agent.setDeviceBackupLocalRules(sourceID, revision, rules)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const localBackupRemove = useMemo(() => {
     if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-remove')) return undefined
     return {
@@ -2432,6 +2448,7 @@ export default function App({
             localSettings={localBackupSettings}
             localTarget={localBackupTarget}
             localMode={localBackupMode}
+            localRules={localBackupRules}
             localRemove={localBackupRemove}
           />
         )}

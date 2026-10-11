@@ -65,6 +65,7 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	sourceC := makeBound("A revoke root")
 	sourceD := makeBound("A retarget root")
 	modeSource := makeBound("A mode policy root")
+	rulesSource := makeBound("A private ignore rules root")
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", sourceA.ID)
 	own := map[string]string{
 		"X-XDrive-Device-ID":              deviceA.ID,
@@ -186,6 +187,96 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 		t.Fatalf("policy change failed to clear Mirror evidence: %+v err=%v", resetItem, err)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, modeURL, ownerJWT, strings.NewReader("{\"sync_mode\":\"backup\"}"), http.StatusConflict, own)
+
+	// Generic Source reads stay redacted. Only an exact owning Agent may
+	// retrieve local rules through the private, transaction-proofed route.
+	rulesURL := fmt.Sprintf("/api/v1/sources/%d", rulesSource.ID)
+	privateRulesURL := rulesURL + "/local-rules"
+	initialRules := "*.tmp\nprivate/\n!private/keep.jpg"
+	if err := db.Model(&meta.Source{}).Where("id = ?", rulesSource.ID).
+		Update("ignore_rules", initialRules).Error; err != nil {
+		t.Fatal(err)
+	}
+	generic := request(t, router, http.MethodGet, rulesURL, ownerJWT, nil, http.StatusOK)
+	var redacted sourceDTO
+	if err := json.Unmarshal(generic.Body.Bytes(), &redacted); err != nil {
+		t.Fatal(err)
+	}
+	if redacted.IgnoreRules != "" {
+		t.Fatal("generic owner-JWT read leaked local ignore rules")
+	}
+	requestWithHeaders(t, router, http.MethodGet, privateRulesURL, ownerJWT, nil, http.StatusForbidden, nil)
+	requestWithHeaders(t, router, http.MethodGet, privateRulesURL, otherJWT, nil, http.StatusNotFound, own)
+	foreignRules := copyHeaders()
+	foreignRules["X-XDrive-Device-ID"] = deviceB.ID
+	foreignRules["X-XDrive-Device-Token"] = deviceBSecret
+	requestWithHeaders(t, router, http.MethodGet, privateRulesURL, ownerJWT, nil, http.StatusForbidden, foreignRules)
+	spoofedRules := copyHeaders()
+	spoofedRules["X-XDrive-Local-Root-Fingerprint"] = strings.Repeat("f", 64)
+	requestWithHeaders(t, router, http.MethodGet, privateRulesURL, ownerJWT, nil, http.StatusForbidden, spoofedRules)
+	authorizedRules := requestWithHeaders(t, router, http.MethodGet, privateRulesURL, ownerJWT, nil, http.StatusOK, own)
+	var privateDTO localSourceIgnoreRulesDTO
+	if err := json.Unmarshal(authorizedRules.Body.Bytes(), &privateDTO); err != nil {
+		t.Fatal(err)
+	}
+	if privateDTO.SourceID != rulesSource.ID || privateDTO.Revision != 1 ||
+		privateDTO.IgnoreRules != initialRules ||
+		authorizedRules.Header().Get("Cache-Control") != "private, no-store" ||
+		authorizedRules.Header().Get("ETag") != "\"1\"" {
+		t.Fatalf("private rules response is wrong or cacheable: %+v", privateDTO)
+	}
+	for _, sensitive := range []string{"root_id", "device_token", "root_fingerprint", "checkpoint"} {
+		if strings.Contains(authorizedRules.Body.String(), sensitive) {
+			t.Fatalf("private rules leaked a native secret: %s", sensitive)
+		}
+	}
+
+	// Updating rules with the owning Root must preserve the paused status,
+	// increment revision, and discard obsolete Mirror deletion evidence.
+	itemRules := meta.SourceItem{
+		SourceID: rulesSource.ID, ExternalID: "rules-test-history",
+		Kind: meta.SourceItemKindFile, Path: "safe.txt",
+		State: meta.SourceItemStateSynced, LastSeenAt: now,
+		MirrorMissingFullScans: 2, MirrorMissingSince: &now,
+	}
+	if err := db.Create(&itemRules).Error; err != nil {
+		t.Fatal(err)
+	}
+	validRules := "{\"ignore_rules\":\"*.cache\\n!keep.cache\"}"
+	requestWithHeaders(t, router, http.MethodPatch, rulesURL, ownerJWT, strings.NewReader(validRules),
+		http.StatusForbidden, map[string]string{"If-Match": "\"1\""})
+	requestWithHeaders(t, router, http.MethodPatch, rulesURL, ownerJWT, strings.NewReader(validRules),
+		http.StatusForbidden, foreignRules)
+	requestWithHeaders(t, router, http.MethodPatch, rulesURL, ownerJWT, strings.NewReader("{\"ignore_rules\":\"../escape\"}"),
+		http.StatusBadRequest, own)
+	var oldItem meta.SourceItem
+	if err := db.First(&oldItem, itemRules.ID).Error; err != nil || oldItem.MirrorMissingFullScans != 2 {
+		t.Fatalf("rejected rules change mutated missing evidence: %+v err=%v", oldItem, err)
+	}
+	savedRules := requestWithHeaders(t, router, http.MethodPatch, rulesURL, ownerJWT, strings.NewReader(validRules),
+		http.StatusOK, own)
+	var savedSource sourceDTO
+	if err := json.Unmarshal(savedRules.Body.Bytes(), &savedSource); err != nil {
+		t.Fatal(err)
+	}
+	if savedSource.ID != rulesSource.ID || savedSource.Revision != 2 ||
+		savedSource.Status != meta.SourceStatusPaused || savedSource.IgnoreRules != "" {
+		t.Fatalf("Source PATCH exposed private rules or activated backup: %+v", savedSource)
+	}
+	var currentItem meta.SourceItem
+	if err := db.First(&currentItem, itemRules.ID).Error; err != nil ||
+		currentItem.MirrorMissingFullScans != 0 || currentItem.MirrorMissingSince != nil {
+		t.Fatalf("rule update did not reset Mirror evidence: %+v err=%v", currentItem, err)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, rulesURL, ownerJWT, strings.NewReader(validRules),
+		http.StatusConflict, own)
+	stalePrivate := requestWithHeaders(t, router, http.MethodGet, privateRulesURL, ownerJWT, nil,
+		http.StatusOK, own)
+	var newRules localSourceIgnoreRulesDTO
+	if err := json.Unmarshal(stalePrivate.Body.Bytes(), &newRules); err != nil ||
+		newRules.Revision != 2 || newRules.IgnoreRules != "*.cache\n!keep.cache" {
+		t.Fatalf("private rules did not reflect latest revision: %+v err=%v", newRules, err)
+	}
 
 	var unchanged meta.Source
 	if err := db.Where("id = ?", sourceA.ID).First(&unchanged).Error; err != nil {

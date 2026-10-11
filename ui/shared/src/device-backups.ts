@@ -83,6 +83,13 @@ export interface XDriveLocalBoundBackupSettings {
 }
 
 
+// Owning-Desktop-only sensitive rules; NEVER serialize this in Web / foreign B-scope.
+export interface XDriveLocalBoundBackupRules {
+  source_id: number
+  revision: number
+  ignore_rules: string
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number

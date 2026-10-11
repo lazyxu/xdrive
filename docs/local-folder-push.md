@@ -86,7 +86,7 @@ original local files or cloud Node/CAS bytes. The private Root-grant
 record is cleaned only after confirmed Server success; ambiguous HTTP
 responses retain it. Web/other Desktop remain read-only.
 
-## P0-C4b2d own-Desktop saved Backup/Mirror policy (PR verification)
+## P0-C4b2d own-Desktop saved Backup/Mirror policy (merged #1366; full 76-job CI green)
 
 Only a verified owning Desktop can update the **saved** Backup/Mirror policy
 on its existing, bound and paused Source. A capability-gated Agent IPC loads
@@ -103,6 +103,26 @@ complete trustworthy missing scans, 24 hours of grace and trash-only
 actions; an unmounted/unreadable Root must never cause deletion.
 No activation, upload, watcher, scheduler, run/cancel, Root rebind or NAS
 Push is enabled. Real Windows/Linux, 100k and >=4GiB acceptance remain open.
+
+## P0-C4b2e1 local-only ignore rules (PR verification)
+
+The generic Source API's `ignore_rules` redaction continues
+unchanged. The dedicated owning-Agent private GET verifies the signed-in
+owner, bound device credential, authorized native Root ID/fingerprint
+and current Source revision again within a DB transaction. Only the
+private local Source ID/revision/rules projection is returned to the
+verified owning Desktop, never a remote or Web observer; Cache-Control
+is private no-store. Revoked/missing/wrong device and unknown/changed Root
+fail closed, with no generic Source read fallback.
+
+The own-Desktop editor accepts at most 64KiB / 4096 lines using the
+existing ignore matcher grammar. A save sends *only* `ignore_rules`
+with the Agent's OS-private proof and If-Match through the existing
+PATCH. Transactional Server validation enforces the revision and resets
+Mirror missing evidence on change. Save does not run a scan, scheduler,
+upload, or cloud deletion and does not claim actual backup is ready.
+Separate P0-C4b2e2 schedule configuration and L03-D2b–G/L05–L07
+execution, watcher, recovery and real-device tests remain pending.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 
