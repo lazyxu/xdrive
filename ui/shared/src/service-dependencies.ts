@@ -32,6 +32,40 @@ export type XDriveServiceDependenciesSnapshot = {
   services: XDriveServiceDependency[]
 }
 
+export type XDriveMediaWorkerHostStatus = {
+  supported: boolean
+  state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
+  revision: number
+  applied_revision: number
+  enabled: boolean
+  observed_enabled: boolean
+  request_id?: string
+  updated_at?: string
+}
+export type XDriveMediaWorkerConfig = {
+  desired_enabled: boolean
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending' | 'applied' | 'failed' | 'unavailable'
+  host: XDriveMediaWorkerHostStatus
+  runtime_ready: boolean
+  editable: boolean
+  apply_supported: boolean
+  requires_restart: boolean
+}
+export type XDriveMediaWorkerUpdate = { revision: number; enabled: boolean }
+export type XDriveMediaWorkerApplyResult = {
+  state: 'queued'
+  revision: number
+  enabled: boolean
+  request_id: string
+}
+export type XDriveMediaWorkerRevisionPage = {
+  items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+}
+export type XDriveMediaWorkerRollbackInput = { revision: number; target_revision: number }
+
 export type XDrivePostgresPoolValues = {
   max_open_connections: number
   max_idle_connections: number

@@ -310,6 +310,83 @@ type ServiceDependency struct {
 	ConfigHint string `json:"config_hint,omitempty"`
 }
 
+// Global desired Media Worker enablement and host-observed effect only.
+// No user Source settings, host paths, Docker socket or file job inputs.
+type AdminMediaWorkerHost struct {
+	Supported       bool   `json:"supported"`
+	State           string `json:"state"`
+	Revision        uint64 `json:"revision"`
+	AppliedRevision uint64 `json:"applied_revision"`
+	Enabled         bool   `json:"enabled"`
+	ObservedEnabled bool   `json:"observed_enabled"`
+	RequestID       string `json:"request_id,omitempty"`
+	UpdatedAt       string `json:"updated_at,omitempty"`
+}
+type AdminMediaWorkerConfig struct {
+	DesiredEnabled  bool                 `json:"desired_enabled"`
+	Revision        uint64               `json:"revision"`
+	Source          string               `json:"source"`
+	UpdatedAt       *time.Time           `json:"updated_at,omitempty"`
+	ApplyState      string               `json:"apply_state"`
+	Host            AdminMediaWorkerHost `json:"host"`
+	RuntimeReady    bool                 `json:"runtime_ready"`
+	Editable        bool                 `json:"editable"`
+	ApplySupported  bool                 `json:"apply_supported"`
+	RequiresRestart bool                 `json:"requires_restart"`
+}
+type AdminMediaWorkerUpdate struct {
+	Revision uint64 `json:"revision"`
+	Enabled  bool   `json:"enabled"`
+}
+type AdminMediaWorkerApplyInput struct {
+	Revision uint64 `json:"revision"`
+}
+type AdminMediaWorkerApplyResult struct {
+	State     string `json:"state"`
+	Revision  uint64 `json:"revision"`
+	Enabled   bool   `json:"enabled"`
+	RequestID string `json:"request_id"`
+}
+type AdminMediaWorkerRevision struct {
+	Revision  uint64    `json:"revision"`
+	Enabled   bool      `json:"enabled"`
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type AdminMediaWorkerRevisionPage struct {
+	Items []AdminMediaWorkerRevision `json:"items"`
+}
+type AdminMediaWorkerRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminMediaWorkerConfig(ctx context.Context) (AdminMediaWorkerConfig, error) {
+	var out AdminMediaWorkerConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/media-worker", nil, &out)
+	return out, err
+}
+func (c *Client) UpdateAdminMediaWorker(ctx context.Context, input AdminMediaWorkerUpdate) (AdminMediaWorkerConfig, error) {
+	var out AdminMediaWorkerConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/media-worker", input, &out)
+	return out, err
+}
+func (c *Client) ApplyAdminMediaWorker(ctx context.Context, input AdminMediaWorkerApplyInput) (AdminMediaWorkerApplyResult, error) {
+	var out AdminMediaWorkerApplyResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/media-worker/apply", input, &out)
+	return out, err
+}
+func (c *Client) AdminMediaWorkerRevisions(ctx context.Context) (AdminMediaWorkerRevisionPage, error) {
+	var out AdminMediaWorkerRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/media-worker/revisions", nil, &out)
+	return out, err
+}
+func (c *Client) RollbackAdminMediaWorker(ctx context.Context, input AdminMediaWorkerRollbackInput) (AdminMediaWorkerConfig, error) {
+	var out AdminMediaWorkerConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/media-worker/rollback", input, &out)
+	return out, err
+}
+
 // AdminSourceWorkerValues controls the standalone Pull Worker scheduler only.
 // System-wide desired xDrive Server database/sql pool policy, not the
 // PostgreSQL daemon's own connection configuration or credentials.

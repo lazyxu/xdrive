@@ -88,6 +88,11 @@ import {
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminMediaWorkerConfig,
+  type AgentAdminMediaWorkerUpdate,
+  type AgentAdminMediaWorkerApplyResult,
+  type AgentAdminMediaWorkerRevisionPage,
+  type AgentAdminMediaWorkerRollbackInput,
   type AgentAdminPostgresPoolConfig,
   type AgentAdminPostgresPoolUpdate,
   type AgentAdminPostgresPoolRevisionPage,
@@ -4417,6 +4422,49 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map configuration revision.')
     }
     return requireAgentClient().cloudRevealAdminBaiduMapAK(revision)
+  }, false))
+  ipcMain.handle('agent:cloud-admin-media-worker', () => runAgentAction<AgentAdminMediaWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminMediaWorkerConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-media-worker', (_event, value: unknown) => runAgentAction<AgentAdminMediaWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentIPCError('invalid_input', 0, 'Media Worker desired configuration must be a versioned object.')
+    }
+    const input = value as Partial<AgentAdminMediaWorkerUpdate>
+    if (typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        input.revision < 0 || typeof input.enabled !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Media Worker revision and enabled boolean required.')
+    }
+    return requireAgentClient().cloudSetAdminMediaWorker({ revision: input.revision, enabled: input.enabled })
+  }, false))
+  ipcMain.handle('agent:cloud-apply-admin-media-worker', (_event, value: unknown) => runAgentAction<AgentAdminMediaWorkerApplyResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value as { revision?: unknown } : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Saved Media Worker revision is required.')
+    }
+    return requireAgentClient().cloudApplyAdminMediaWorker({ revision: input.revision })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-media-worker-revisions', () => runAgentAction<AgentAdminMediaWorkerRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminMediaWorkerRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-media-worker', (_event, value: unknown) => runAgentAction<AgentAdminMediaWorkerConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value) ? value as Partial<AgentAdminMediaWorkerRollbackInput> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+        input.target_revision < 0 || input.revision <= input.target_revision) {
+      throw new AgentIPCError('invalid_input', 0, 'An older Media Worker revision is required.')
+    }
+    return requireAgentClient().cloudRollbackAdminMediaWorker({ revision: input.revision, target_revision: input.target_revision })
   }, false))
   ipcMain.handle('agent:cloud-admin-postgres-pool', () =>
     runAgentAction<AgentAdminPostgresPoolConfig>(async () => {

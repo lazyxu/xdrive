@@ -852,6 +852,13 @@ function FileManager({
 
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
+    loadMediaWorkerConfig: () => api.adminMediaWorkerConfig(),
+    saveMediaWorkerConfig: (input: import('../../ui/shared/src').XDriveMediaWorkerUpdate) =>
+      api.adminSaveMediaWorker(input),
+    applyMediaWorker: (input: { revision: number }) => api.adminApplyMediaWorker(input),
+    loadMediaWorkerRevisions: () => api.adminMediaWorkerRevisions(),
+    rollbackMediaWorker: (input: import('../../ui/shared/src').XDriveMediaWorkerRollbackInput) =>
+      api.adminRollbackMediaWorker(input),
     loadPostgresPoolConfig: () => api.adminPostgresPoolConfig(),
     savePostgresPoolConfig: (input: import('../../ui/shared/src').XDrivePostgresPoolUpdate) =>
       api.adminSavePostgresPoolConfig(input),

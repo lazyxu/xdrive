@@ -603,6 +603,11 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-media-worker", h.cloudAdminMediaWorker)
+	mux.HandleFunc("PUT /v1/cloud/admin-media-worker", h.cloudSetAdminMediaWorker)
+	mux.HandleFunc("POST /v1/cloud/admin-media-worker/apply", h.cloudApplyAdminMediaWorker)
+	mux.HandleFunc("GET /v1/cloud/admin-media-worker/revisions", h.cloudAdminMediaWorkerRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-media-worker/rollback", h.cloudRollbackAdminMediaWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-postgres-pool", h.cloudAdminPostgresPool)
 	mux.HandleFunc("PUT /v1/cloud/admin-postgres-pool", h.cloudSetAdminPostgresPool)
 	mux.HandleFunc("GET /v1/cloud/admin-postgres-pool/revisions", h.cloudAdminPostgresPoolRevisions)
@@ -1837,6 +1842,117 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 // Optional controller interface keeps older Agent implementations explicit.
 // Optional desktop Agent feature; only the Server's requireAdmin route
 // authorizes global PostgreSQL connection-pool mutations.
+type desktopIPCAdminMediaWorkerController interface {
+	CloudAdminMediaWorkerConfig(context.Context) (client.AdminMediaWorkerConfig, error)
+	CloudSetAdminMediaWorker(context.Context, client.AdminMediaWorkerUpdate) (client.AdminMediaWorkerConfig, error)
+	CloudApplyAdminMediaWorker(context.Context, client.AdminMediaWorkerApplyInput) (client.AdminMediaWorkerApplyResult, error)
+	CloudAdminMediaWorkerRevisions(context.Context) (client.AdminMediaWorkerRevisionPage, error)
+	CloudRollbackAdminMediaWorker(context.Context, client.AdminMediaWorkerRollbackInput) (client.AdminMediaWorkerConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminMediaWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminMediaWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_media_worker_unsupported", "Media Worker control is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminMediaWorkerConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudSetAdminMediaWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminMediaWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_media_worker_unsupported", "Media Worker control is unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Enabled  *bool   `json:"enabled"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.Enabled == nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_config", "Complete Media Worker revision and enabled flag are required")
+		return
+	}
+	out, err := provider.CloudSetAdminMediaWorker(r.Context(), client.AdminMediaWorkerUpdate{Revision: *input.Revision, Enabled: *input.Enabled})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudApplyAdminMediaWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminMediaWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_media_worker_unsupported", "Media Worker control is unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || *input.Revision == 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_revision", "Saved revision is required")
+		return
+	}
+	out, err := provider.CloudApplyAdminMediaWorker(r.Context(), client.AdminMediaWorkerApplyInput{Revision: *input.Revision})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusAccepted, out)
+}
+func (h *desktopIPCHandler) cloudAdminMediaWorkerRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminMediaWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_media_worker_unsupported", "Media Worker control is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminMediaWorkerRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudRollbackAdminMediaWorker(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminMediaWorkerController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_media_worker_unsupported", "Media Worker control is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil || *input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_rollback", "Current and older target revision required")
+		return
+	}
+	out, err := provider.CloudRollbackAdminMediaWorker(r.Context(), client.AdminMediaWorkerRollbackInput{Revision: *input.Revision, TargetRevision: *input.TargetRevision})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
 type desktopIPCAdminPostgresPoolController interface {
 	CloudAdminPostgresPoolConfig(context.Context) (client.AdminPostgresPoolConfig, error)
 	CloudSetAdminPostgresPool(context.Context, client.AdminPostgresPoolUpdate) (client.AdminPostgresPoolConfig, error)

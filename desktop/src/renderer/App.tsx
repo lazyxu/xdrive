@@ -1515,6 +1515,32 @@ export default function App({
   )
 
   const adminServicesPort = useMemo(() => ({
+    loadMediaWorkerConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminMediaWorkerConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveMediaWorkerConfig: async (input: import('../../../ui/shared/src').XDriveMediaWorkerUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminMediaWorker(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    applyMediaWorker: async (input: { revision: number }) => {
+      const result = await window.xdriveDesktop.agent.cloudApplyAdminMediaWorker(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadMediaWorkerRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminMediaWorkerRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackMediaWorker: async (input: import('../../../ui/shared/src').XDriveMediaWorkerRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminMediaWorker(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+
     loadPostgresPoolConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminPostgresPoolConfig()
       if (!result.ok) throw new Error(result.error.message)
