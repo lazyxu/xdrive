@@ -1,0 +1,101 @@
+name: Gallery 100k Mixed Image Video Live Worker Performance
+
+on:
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-selection-mixed-live-100k:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-selection-mixed-live-100k-20261011'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_SELECTION_JOB_PERF: "1"
+      XD_GALLERY_SELECTION_MIXED_100K_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Check Go benchmark source and parser
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/media_selection_jobs_performance_integration_test.go)"
+          python3 -m py_compile scripts/ci/parse-gallery-selection-enqueue-n3.py
+      - name: Measure three independent 10k/100k mixed-photo durable Worker jobs
+        run: |
+          set -euo pipefail
+          root="perf-results/gallery-selection-mixed-live-100k"
+          mkdir -p "$root"
+          printf 'CHECKED_OUT_HEAD=%s\nGITHUB_EVENT_MERGE_SHA=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$root/source.txt"
+          for sample in 1 2 3; do
+            export XD_GALLERY_MIXED_100K_SAMPLE="$sample"
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+              -o "$root/sample-$sample.time" \
+              go test -mod=readonly -run '^TestGallerySelectionJobsReal10k100k$' \
+                -timeout=12m -count=1 -v ./internal/api | tee "$root/sample-$sample.log"
+          done
+          python3 scripts/ci/parse-gallery-selection-enqueue-n3.py "$root"
+          python3 - "$root" <<'PY'
+          import json, pathlib, sys, statistics
+          root = pathlib.Path(sys.argv[1])
+          data = json.loads((root / "summary.json").read_text())
+          rows = data["raw_rows"]
+          assert len(rows) == 6, len(rows)
+          for row in rows:
+              scale = row["scale"]
+              assert row["fixture_kind"] == "mixed_70_image_15_video_15_live"
+              assert row["logical_assets"] == scale
+              assert row["images"] == scale * 70 // 100
+              assert row["videos"] == scale * 15 // 100
+              assert row["live_photos"] == scale * 15 // 100
+              assert row["motion_resources"] == row["live_photos"]
+              assert row["physical_nodes"] == scale + row["live_photos"]
+              assert row["chunks"] == scale // 100
+              assert row["stats_mode"] == "original" and row["stats_refresh_ms"] == 0
+              details = row["worker_select_detail"]
+              for stage in ("jobs", "items", "nodes", "assets", "metadata"):
+                  assert details[stage]["statements"] == scale // 100, stage
+              assert row["enqueue_ms"] >= 0 and row["worker_ms"] > 0
+          budgets = data["acceptance_budgets"]
+          p50_100k_enqueue = data["aggregates"]["100000"]["enqueue_ms"]["median"]
+          p50_100k_worker = data["aggregates"]["100000"]["worker_ms"]["median"]
+          p50_10k_enqueue = data["aggregates"]["10000"]["enqueue_ms"]["median"]
+          data["status"] = "Measured baseline for real PostgreSQL 100k mixed-asset Worker; product code unchanged"
+          data["workload_shape"] = "100k PhotoAssets: 70k image, 15k video, 15k Live with 15k motion companion Nodes, 115k physical Nodes; no original bytes"
+          data["interpretation"] = "Budgets are diagnostics; do not treat an over-budget baseline as successful product performance or change code without A/B"
+          data["mixed_budgets"] = {"10k_enqueue_limit_ms": 750, "100k_enqueue_limit_ms": 3000, "100k_worker_limit_ms": 60000,
+                "10k_enqueue_pass": p50_10k_enqueue <= 750, "100k_enqueue_pass": p50_100k_enqueue <= 3000,
+                "100k_worker_pass": p50_100k_worker <= 60000}
+          (root / "summary.json").write_text(json.dumps(data, indent=2) + "\n")
+          print("GALLERY_MIXED_100K_N3 " + json.dumps(data["mixed_budgets"]))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-selection-mixed-live-100k-n3
+          path: perf-results/gallery-selection-mixed-live-100k/
+          if-no-files-found: warn
+          retention-days: 14
