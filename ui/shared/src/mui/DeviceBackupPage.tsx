@@ -16,12 +16,14 @@ import { XDriveDeviceBackupLocalTargetDialog } from './DeviceBackupLocalTargetDi
 import { XDriveDeviceBackupLocalModeDialog } from './DeviceBackupLocalModeDialog'
 import { XDriveDeviceBackupLocalRulesDialog } from './DeviceBackupLocalRulesDialog'
 import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalScheduleDialog'
+import { XDriveDeviceBackupLocalPreviewDialog } from './DeviceBackupLocalPreviewDialog'
 import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
 import type { XDriveLocalBackupModeActions } from './DeviceBackupLocalModeDialog'
 import type { XDriveLocalBackupRulesActions } from './DeviceBackupLocalRulesDialog'
 import type { XDriveLocalBackupScheduleActions } from './DeviceBackupLocalScheduleDialog'
+import type { XDriveLocalBackupPreviewActions } from './DeviceBackupLocalPreviewDialog'
 import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
 import type { XDriveSourceTargetBrowser } from './SourceManager'
@@ -81,6 +83,7 @@ export function XDriveDeviceBackupPage({
   localMode,
   localRules,
   localSchedule,
+  localPreview,
   localRemove,
 }: {
   source?: XDriveDeviceBackupDataSource
@@ -93,6 +96,7 @@ export function XDriveDeviceBackupPage({
   localMode?: XDriveLocalBackupModeActions
   localRules?: XDriveLocalBackupRulesActions
   localSchedule?: XDriveLocalBackupScheduleActions
+  localPreview?: XDriveLocalBackupPreviewActions
   localRemove?: XDriveLocalBackupRemoveActions
 }) {
   const [refreshID, refresh] = useState(0)
@@ -102,6 +106,7 @@ export function XDriveDeviceBackupPage({
   const [modeChange, setModeChange] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [rulesTarget, setRulesTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [scheduleTarget, setScheduleTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [previewTarget, setPreviewTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
@@ -115,6 +120,7 @@ export function XDriveDeviceBackupPage({
     setModeChange(null)
     setRulesTarget(null)
     setScheduleTarget(null)
+    setPreviewTarget(null)
     setRemoveTarget(null)
     setLocalMessage('')
   }, [source])
@@ -357,6 +363,12 @@ export function XDriveDeviceBackupPage({
                             配置本机同步计划
                           </Button>
                         ) : null}
+                        {localPreview && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="outlined"
+                            onClick={() => setPreviewTarget({ source, id: folder.source_id })}>
+                            预览本机文件扫描（不上传）
+                          </Button>
+                        ) : null}
                         {localRemove && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined" color="error"
                             onClick={() => setRemoveTarget({ source, id: folder.source_id })}>
@@ -509,6 +521,17 @@ export function XDriveDeviceBackupPage({
             setLocalMessage(message)
             refresh((n) => n + 1)
           }}
+        />
+      ) : null}
+      {previewTarget && previewTarget.source === source && source && localPreview &&
+        verifiedLocalDeviceID && overview?.devices.some((device) =>
+          device.id === verifiedLocalDeviceID && !device.revoked &&
+          device.folders.some((folder) => folder.source_id === previewTarget.id)) ? (
+        <XDriveDeviceBackupLocalPreviewDialog
+          key={previewTarget.id}
+          sourceID={previewTarget.id}
+          actions={localPreview}
+          onClose={() => setPreviewTarget(null)}
         />
       ) : null}
       {removeTarget && removeTarget.source === source && source && localRemove &&
