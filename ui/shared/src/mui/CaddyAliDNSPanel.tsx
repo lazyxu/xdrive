@@ -15,9 +15,10 @@ function validSecret(value: string, min: number, max: number) {
 }
 
 // Global credentials are staged only. This panel never controls Caddy or DNS.
-export function XDriveCaddyAliDNSPanel({ source, refreshID }: {
+export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged }: {
   source: XDriveCaddyAliDNSPort
   refreshID: number
+  onConfigurationChanged?: () => void
 }) {
   const requestEpochRef = useRef(0)
   const revealEpochRef = useRef(0)
@@ -109,6 +110,7 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID }: {
       setNotice(clear
         ? '已清除服务器保存的 AliDNS 凭据并记入审计；宿主机现有配置未改变。'
         : 'AliDNS AK/SK 已加密保存并审计；仅为待应用的期望配置，未部署或验证。')
+      onConfigurationChanged?.() // A rotated or cleared key invalidates old proof.
     } catch (err) {
       if (epoch === requestEpochRef.current) setError(err instanceof Error ? err.message : 'AliDNS 凭据保存失败。')
     } finally {

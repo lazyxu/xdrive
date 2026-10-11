@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Chip, Paper, Stack, Typography } from '@mui/material'
 import { XDriveStatusAlert } from './StatusAlert'
+import { verifyCaddyPreflightContract, verifyCaddyAliDNSReadContract } from './CaddyPreflightValidation'
 import type {
   XDriveCaddyHTTPSPreflight, XDriveCaddyPreflightCheck,
   XDriveCaddyAliDNSReadVerify, XDriveCaddyAliDNSReadVerifyInput,
@@ -66,11 +67,7 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
     try {
       const next = await source.loadCaddyHTTPSPreflight()
       if (epoch !== epochRef.current) return
-      // Old Agents and malformed responses cannot fabricate operational readiness.
-      if (!Array.isArray(next.checks) || typeof next.apply_supported !== 'boolean') {
-        throw new Error('预检响应不完整，请升级 Server/Agent。')
-      }
-      setResult(next)
+      setResult(verifyCaddyPreflightContract(next))
     } catch (err) {
       if (epoch === epochRef.current) {
         setError(err instanceof Error ? err.message : 'HTTPS 预检失败。')
@@ -93,15 +90,10 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
         credential_revision: result.credential_revision,
       })
       if (epoch !== probeEpochRef.current) return
-      if (!['read_authorized', 'denied', 'unavailable'].includes(next.state) ||
-          typeof next.read_permission_verified !== 'boolean' ||
-          next.write_permission_verified !== false || next.apply_supported !== false ||
-          next.public_https_verified !== false ||
-          next.desired_revision !== result.desired_revision ||
-          next.credential_revision !== result.credential_revision) {
-        throw new Error('AliDNS 只读验证响应不符合安全合同。')
-      }
-      setProbeResult(next)
+      setProbeResult(verifyCaddyAliDNSReadContract(next, {
+        desired_revision: result.desired_revision,
+        credential_revision: result.credential_revision,
+      }))
     } catch (err) {
       if (epoch === probeEpochRef.current) {
         setProbeError(err instanceof Error ? err.message : 'AliDNS 只读验证失败。')

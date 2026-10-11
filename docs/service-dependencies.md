@@ -370,3 +370,25 @@ This narrowly extends the existing global FFmpeg Worker resource policy to inclu
 The only authorized apply path is the existing fixed, audited Host Manager bridge. It accepts ID, revision, boolean, bounded memory, CPU and PID values; no paths, service names, Docker arguments, images, user sync-folder inputs or shell expressions. It atomically persists **only** media-worker `COMPOSE_PROFILES`, `XD_MEDIA_WORKER_MEMORY_LIMIT`, `XD_MEDIA_WORKER_CPU_LIMIT`, `XD_MEDIA_WORKER_PIDS_LIMIT`, preserving unrelated deployment values. Enabling recreates **only media-worker** and requires a genuine fixed FFmpeg/FFprobe probe plus exact actual Docker `HostConfig.Memory`, `HostConfig.NanoCpus` and `HostConfig.PidsLimit` matches before applied. Disabled configuration must see a stopped Worker with correctly staged future limits; this is not running cgroup evidence. Old Host Managers without `pids_control_supported`, stale status, queued request, drifts, missing fields or failed rollback remain unverified/failed. On failure restore previous optional Worker config/state best effort; never restart core services or cancel uploads/downloads/sync.
 
 Acceptance requires Go unit/API PostgreSQL integration for bounds, auth, immutable history, stale revisions, failed audit, PID-only edit, effective mismatch and rollback; allowlisted fake Docker start/stop/PID drift/invalid request tests; Web/Desktop/Agent/Go Client type parity; complete exact-head GitHub CI with race, Windows, images, deployment and final gate. Production Rootless opt-in, multi-host rollout and real media-task execution remain separate.
+
+
+### P1-CD3b2b-R1: invalidate stale Caddy prerequisites and AliDNS read evidence
+
+The shared Web/Desktop administrator page invalidates its **local**, ephemeral HTTPS
+preflight and AliDNS read-authorization results immediately after an administrator
+successfully saves or rolls back HTTPS desired configuration, or saves/rotates/clears
+the global AliDNS credential pair. Pending old requests are epoch-fenced; they may
+not restore a green result after a revision change. Mutation failures retain the
+previous evidence until the operator manually refreshes, but no rejected save
+can be presented as a new applied revision. A global refresh or account/server
+change also discards both results.
+
+Runtime validation rejects incomplete, duplicate, contradictory or version-skewed
+preflight checks, any claim of restricted Caddy application or public HTTPS proof,
+and AliDNS response states whose read-permission boolean conflicts with the
+reported authorization result. Only an explicitly revision-matching success of
+the existing fixed `DescribeSubDomainRecords` read can show read authorization.
+This phase **does not** run DNS TXT writes, invoke Host Manager, enable/disable
+Caddy, or claim applied HTTPS. Existing host observations remain distinct from
+the saved HTTPS desired revision and public TLS reachability. Full CI is required
+before merge; production host/network deployment is separately unverified.
