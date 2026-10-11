@@ -392,3 +392,15 @@ This phase **does not** run DNS TXT writes, invoke Host Manager, enable/disable
 Caddy, or claim applied HTTPS. Existing host observations remain distinct from
 the saved HTTPS desired revision and public TLS reachability. Full CI is required
 before merge; production host/network deployment is separately unverified.
+
+
+### P1-S1: four separately evidenced service lifecycle states
+
+Each of the **11 instance-wide** administrator service rows now reports four independent, fail-closed observations in addition to the existing `status`, `config_mode`, `apply_mode` and precise prerequisites:
+
+- `configuration_state` = `configured | unconfigured | unknown`: current Server connector/setting availability, **not** remote health.
+- `installation_state` = `observed | external | unknown`: **observed** requires an actual, trusted executable/model/index or Host Manager process observation. **external** means PostgreSQL or Baidu is a separate remote service, not proof of local installation. Saved intent alone does not prove installation.
+- `health_state` = `ready | failed | not-checked | unknown`: **failed** needs an actual failed check/expired trusted heartbeat, never merely a missing configuration. The Baidu provider inventory intentionally remains **not-checked**, because a real 128px online credential verification is an explicit quota-consuming administrator action, not an automatic dashboard poll.
+- `activation_state` = `verified | local-effective | pending | deployment-only | unknown`: **verified** is reserved for exact Media Worker saved revision + live Host Manager/FFmpeg/cgroup proof; **local-effective** means the Server's Baidu config is consulted on subsequent map requests, **not** that remote Baidu authorization succeeded. Even a healthy Caddy HTTP ingress and verified **local** TLS cannot prove that the administrator's saved HTTPS revision was applied; Caddy remains **deployment-only** pending a reversible no-lockout maintenance protocol.
+
+Go Client now forwards the existing `https_configured` boolean (including false) and `local_tls_state` for Caddy to Desktop Agent IPC. Shared MUI renders four textual states per row, with explicit **unknown** for older Server/Agents rather than inventing a success. No new network probes, cloud quota, Source/同步文件夹 reads, secrets, Docker operations, host file inputs, service restarts, durable task cancellations or per-user writes occur in this phase. Future stages must safely implement service-specific controls and exact applied-revision verification before advertising enable/apply buttons.

@@ -25,6 +25,11 @@ export type XDriveServiceDependency = {
   config_mode?: XDriveServiceConfigMode
   apply_mode?: XDriveServiceApplyMode
   config_hint?: string
+  // Old Agent versions omit these axes: unknown is the only safe fallback.
+  configuration_state?: 'configured' | 'unconfigured' | 'unknown'
+  installation_state?: 'observed' | 'external' | 'unknown'
+  health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
+  activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
   // Only Caddy reports these trusted host observations, never the domain itself.
   https_configured?: boolean
   local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'

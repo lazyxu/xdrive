@@ -11,18 +11,22 @@ import (
 )
 
 type serviceDependency struct {
-	ID              string `json:"id"`
-	Group           string `json:"group"`
-	Label           string `json:"label"`
-	Status          string `json:"status"`
-	Detail          string `json:"detail"`
-	Version         string `json:"version,omitempty"`
-	Model           string `json:"model,omitempty"`
-	ConfigMode      string `json:"config_mode"`
-	ApplyMode       string `json:"apply_mode"`
-	ConfigHint      string `json:"config_hint,omitempty"`
-	HTTPSConfigured *bool  `json:"https_configured,omitempty"`
-	LocalTLSState   string `json:"local_tls_state,omitempty"`
+	ID                 string `json:"id"`
+	Group              string `json:"group"`
+	Label              string `json:"label"`
+	Status             string `json:"status"`
+	Detail             string `json:"detail"`
+	Version            string `json:"version,omitempty"`
+	Model              string `json:"model,omitempty"`
+	ConfigMode         string `json:"config_mode"`
+	ApplyMode          string `json:"apply_mode"`
+	ConfigHint         string `json:"config_hint,omitempty"`
+	ConfigurationState string `json:"configuration_state"`
+	InstallationState  string `json:"installation_state"`
+	HealthState        string `json:"health_state"`
+	ActivationState    string `json:"activation_state"`
+	HTTPSConfigured    *bool  `json:"https_configured,omitempty"`
+	LocalTLSState      string `json:"local_tls_state,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
@@ -75,9 +79,11 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 
 	var wg sync.WaitGroup
 	mediaManaged := false
+	mediaConfigUnreadable := false
 	if s.DB != nil {
 		desired, err := s.readMediaWorkerDesired(ctx)
 		if err != nil {
+			mediaConfigUnreadable = true
 			// Corrupt or inaccessible desired configuration cannot be reported ready
 			// merely because a separately installed FFmpeg executable responds.
 			mediaManaged = true
@@ -218,7 +224,9 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	// Observe Caddy from the restricted host's fixed-container Docker health
 	// probe, not a Server-to-itself HTTP proxy request. A configured domain
 	// is deployment intent only: it does not prove ACME/TLS or public reachability.
+	caddyContainerObserved := false
 	if gateway, valid := s.readCaddyHostStatus(); valid {
+		caddyContainerObserved = gateway.State != "unknown"
 		services[10].HTTPSConfigured = &gateway.HTTPSConfigured
 		if gateway.TLSCheckSupported {
 			services[10].LocalTLSState = gateway.TLSState
@@ -276,6 +284,8 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		services[i].ConfigMode, services[i].ApplyMode, services[i].ConfigHint =
 			serviceDependencyConfigContract(services[i].ID)
 	}
+	// Preserve legacy status. Each new axis uses only its own proof.
+	s.setServiceLifecycleStates(services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
 	c.JSON(http.StatusOK, serviceDependenciesSnapshot{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Services:  services,
