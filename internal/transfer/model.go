@@ -1123,7 +1123,9 @@ func (m *Manager) finish(id string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[id]
-	if e == nil {
+	if e == nil || terminalState(e.task.State) {
+		// A delayed retry or I/O callback must not regress a confirmed
+		// terminal state from the operation that owned cancellation.
 		return
 	}
 	e.cancel = nil
@@ -1143,11 +1145,20 @@ func (m *Manager) finish(id string, err error) {
 			e.task.ItemsQueued = 0
 		}
 	} else {
-		e.task.State = StateFailed
+		if e.task.State == StateCancelling && errors.Is(err, context.Canceled) {
+			// A retry that observed its owned cancellation is cancelled,
+			// not a fresh failed transfer.
+			e.task.State = StateCancelled
+		} else {
+			e.task.State = StateFailed
+		}
 		e.task.Error = err.Error()
 		if e.task.Scope == ScopeItem {
 			e.task.ItemsCompleted = 0
-			e.task.ItemsFailed = 1
+			e.task.ItemsFailed = 0
+			if e.task.State == StateFailed {
+				e.task.ItemsFailed = 1
+			}
 			e.task.ItemsRunning = 0
 			e.task.ItemsQueued = 0
 		}
