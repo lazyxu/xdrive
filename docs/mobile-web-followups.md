@@ -236,3 +236,7 @@ F-PARITY-07C grouped List disclosure is **merged** via [PR #1264](https://github
 ## 2026-10-11 F-iOS27-09C2 → 09D continuation
 
 F-iOS27-09C2 [#1371](https://github.com/lazyxu/xdrive/pull/1371) passed exact-head [CI #38113964643](https://github.com/lazyxu/xdrive/actions/runs/38113964643), with the four-width real Chromium Rename 403→409→200 test and full Final Gate; linearly merged at `f888da8f`. The temporary Files branch was verified deleted. Chrome used intercepted mock API responses, not a live authorized Go/PostgreSQL Server. The following **09D candidate** closes a specific busy-operation Rename eligibility discrepancy between Mobile and wide Web without changing their shared business/API or 52px App Frame. Physical iOS 27 measurement, Apple-reference pixel diffs and real-Go ACL/10k/100k acceptance remain outstanding.
+
+## 2026-10-11 F-iOS27-09D → 09E menu hitbox follow-on
+
+F09D [#1377](https://github.com/lazyxu/xdrive/pull/1377) merged after full exact-head [CI #38117937525](https://github.com/lazyxu/xdrive/actions/runs/38117937525); merge \`d6f8773b\`, obsolete Files branch removed. Next candidate F09E extends the measured 899px MUI sm-breakpoint touch-size correction from file context to all six Mobile Files Menu papers. A native Chrome test measures actual More/Sort/batch options at 375/390/899px, preserving the wide Web at 900px. Real Apple iOS27 pixel references and Safari/PWA/VoiceOver, 10k/100k CPU/RSS and live-Go authorization checks remain future acceptance gates.

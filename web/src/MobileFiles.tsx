@@ -275,6 +275,12 @@ function MobileDocumentIcon({ item, size = 32 }: {
 }
 
 const MIN_TOUCH = 44
+// The MUI sm+ MenuItem rule can override item-level minHeight:44 at 899px.
+// Keep all six Mobile Files Menu hit targets consistent with the item-context
+// fix. The wide Web/Desktop FileExplorer and 52px App Header are independent.
+const MOBILE_FILES_MENU_TOUCH_SX = {
+  '& .MuiMenuItem-root': { minHeight: MIN_TOUCH },
+} as const
 // Only Mobile Files uses the iOS-like type scale and surfaces. Shared Web and
 // Desktop themes remain unchanged; these tokens are not copied Apple assets.
 const IOS_FILES_MOBILE_BLUE = '#007aff'
@@ -1953,8 +1959,9 @@ export default function MobileFiles(props: Props) {
             ))}
           </Stack>
         )}
-        <Menu anchorEl={selectionMoreAnchor} open={Boolean(selectionMoreAnchor)}
-          onClose={() => setSelectionMoreAnchor(null)}>
+        <Menu data-mobile-files-selection-menu anchorEl={selectionMoreAnchor} open={Boolean(selectionMoreAnchor)}
+          onClose={() => setSelectionMoreAnchor(null)}
+          slotProps={{ paper: { sx: MOBILE_FILES_MENU_TOUCH_SX } }}>
           <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('cut'))}
             onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
           <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('copy-to'))}
@@ -1978,8 +1985,8 @@ export default function MobileFiles(props: Props) {
               setPropertiesItems([...selection])
             }}>所选项目属性</MenuItem>
         </Menu>
-        <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
-          slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 520px)' } } }}>
+        <Menu data-mobile-files-more-menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
+          slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 520px)' } } }}>
           {section === 'browse' && !showDirectory ? overflowAction('整理浏览首页', () => setEditBrowseHome(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('选择', () => setSelectionMode(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('新建文件夹', props.onCreateFolder) : null}
@@ -2049,7 +2056,7 @@ export default function MobileFiles(props: Props) {
         </Dialog>
         <Menu data-mobile-files-saved-search-menu anchorEl={savedSearchMenu?.anchor ?? null}
           open={Boolean(savedSearchMenu)} onClose={() => setSavedSearchMenu(null)}
-          slotProps={{ paper: { sx: { maxHeight: 'min(65dvh, 420px)' } } }}>
+          slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(65dvh, 420px)' } } }}>
           {props.onRenameSavedSearch ? <MenuItem sx={{ minHeight: MIN_TOUCH }}
             onClick={() => {
               const target = savedSearchMenu
@@ -2127,8 +2134,8 @@ export default function MobileFiles(props: Props) {
             </Button>
           </DialogActions>
         </Dialog>
-        <Menu anchorEl={arrangeAnchor} open={Boolean(arrangeAnchor)} onClose={() => setArrangeAnchor(null)}
-          slotProps={{ paper: { sx: { maxHeight: 'min(70dvh, 460px)' } } }}>
+        <Menu data-mobile-files-arrange-menu anchorEl={arrangeAnchor} open={Boolean(arrangeAnchor)} onClose={() => setArrangeAnchor(null)}
+          slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 460px)' } } }}>
           {(['name', 'updated', 'type', 'size'] as const).map(key => (
             <MenuItem key={key} selected={props.sort.key === key} sx={{ minHeight: MIN_TOUCH }}
               onClick={() => { props.onSortChange({ ...props.sort, key }); setArrangeAnchor(null) }}>
@@ -2157,10 +2164,7 @@ export default function MobileFiles(props: Props) {
           anchorPosition={itemMenu ? { top: itemMenu.y, left: itemMenu.x } : undefined}
           slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
             maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)',
-            // MUI's sm+ MenuItem rule sets minHeight:auto and overrides
-            // per-row sx.minHeight at 899px. A parent-scoped descendant rule
-            // wins that breakpoint for both shared and Mobile-only actions.
-            '& .MuiMenuItem-root': { minHeight: MIN_TOUCH },
+            ...MOBILE_FILES_MENU_TOUCH_SX,
           } } }}>
           {itemMenu ? menuFor(itemMenu.item).filter(item => !item.danger).flatMap(item => (
             item.dividerBefore
@@ -2228,7 +2232,8 @@ export default function MobileFiles(props: Props) {
         <Menu data-mobile-files-collection-menu open={Boolean(collectionMenu)} onClose={() => setCollectionMenu(null)}
           anchorReference="anchorPosition"
           anchorPosition={collectionMenu ? { top: collectionMenu.y, left: collectionMenu.x } : undefined}
-          slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
+          slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX,
+            borderRadius: '14px', minWidth: 218,
             maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)' } } }}>
           {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const selectedEntry = collectionMenu.entry
