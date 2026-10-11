@@ -236,3 +236,10 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 
 
 **P1-2d 返回滚动事件守卫候选：** 参考原生 Chrome artifact 11695500444 的 589→458px/131px 实测偏差。只在返回同一 Gallery 路由与原 Scroll Host/宽度时，以最多 650ms 的被动滚动事件侦测处理 late virtual row shift；一旦用户主动输入即取消，所有监听器在超时或卸载时移除。严格的原逻辑 Node、44px、Filmstrip 和返回 ≤2px 门禁不修改；需要最新单提交 Web Chromium/全量 CI 验证。
+
+
+## P1-2e · 查看器实际编辑配方与撤销编辑配对（2026-10-11）
+
+- **组件与请求合同：** 同一个 `WebMediaViewerApp` 在 390/899/900px 使用共享编辑 Dialog，不存在移动专属业务控制器。编辑入口严格按 `saveEditRecipe` 能力与 `xDriveMediaItemSupportsBasicEditing` 判断；无权限、实况、非媒体不显示按钮；编辑时换 Node/Revision 必须关闭旧会话。
+- **真实浏览器：** 使用构建产物和原生 Chromium 的 fine/coarse 输入，进入实际 Viewer 后按 90° 并执行真实 `PUT /api/v1/media/items/:id/edit`；服务端承认配方版本后再按 revision 执行 `DELETE`，验证回执、按钮变化、Node 身份、Filmstrip 与严格返回锚点，零未知 API、网络和页面错误。
+- **真实设备及业务仍未完成：** iOS 27 真机普通 Safari、主屏安装、VoiceOver、Liquid Glass 1:1 截图及视频/RAW/Live 多资源输入；编辑失败/冲突、多用户权限、真实服务器端版本持久化与实际原件下载任务收据需单独验收。

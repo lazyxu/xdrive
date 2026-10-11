@@ -3,6 +3,7 @@ import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
+import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
 import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
@@ -26,6 +27,7 @@ import {
   XDriveFileTagDialog,
   XDriveMediaDetailsInspector,
   XDriveMediaGalleryFilmstrip,
+  XDriveMediaGalleryEditDialog,
   XDriveMediaViewerContent,
   XDriveShareDialog,
   XDriveStatePanel,
@@ -59,6 +61,7 @@ import {
 } from './webViewerContext'
 import { useViewerNode } from './useWebViewerNode'
 import { xDriveWebTextSelection } from './webTextViewer'
+import { xDriveMediaItemSupportsBasicEditing } from '../../ui/shared/src/media-edit'
 
 function WebViewerFrame({
   title,
@@ -738,6 +741,10 @@ function WebMediaViewerApp({
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  // A dialog belongs to one actual Node revision. Navigating the bounded
+  // Filmstrip must never reopen a previous asset's editor on the next photo.
+  const [editTarget, setEditTarget] = useState<{ id: number; revision: number } | null>(null)
+  useEffect(() => { setEditTarget(null) }, [route.params.node, route.params.context])
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
 
   const openInfo = () => {
@@ -750,6 +757,10 @@ function WebMediaViewerApp({
     kind: viewer.node.type,
   }) : ''
   const supported = ['image', 'video', 'live_photo'].includes(previewKind)
+  const editingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
+    editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision
+      ? mediaItem : null
+  const editOpen = Boolean(editingItem)
 
   const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
     <Stack direction="row" spacing={0.25}>
@@ -768,6 +779,20 @@ function WebMediaViewerApp({
             {mediaItem.favorite
               ? <StarRoundedIcon fontSize="small" />
               : <StarBorderRoundedIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {gallerySource.saveEditRecipe && xDriveMediaItemSupportsBasicEditing(mediaItem) ? (
+        <Tooltip title="编辑">
+          <IconButton
+            size="small"
+            aria-label="编辑媒体"
+            onClick={() => setEditTarget({
+              id: mediaItem.node.id,
+              revision: mediaItem.node.revision,
+            })}
+          >
+            <EditRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -809,7 +834,7 @@ function WebMediaViewerApp({
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen}
+        keepChromeVisible={infoOpen || editOpen}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -863,6 +888,24 @@ function WebMediaViewerApp({
         onTagsClose={() => setTagsOpen(false)}
         onError={onError}
       /> : null}
+      <XDriveMediaGalleryEditDialog
+        open={editOpen}
+        item={editingItem}
+        loadThumbnail={gallerySource.loadThumbnail}
+        loadPreviewURL={gallerySource.loadPreviewURL}
+        onSave={async (item, input) => {
+          if (!gallerySource.saveEditRecipe) throw new Error('当前客户端不支持媒体编辑')
+          const recipe = await gallerySource.saveEditRecipe(item.node.id, input)
+          viewer.updateMediaItem(item, { edit_recipe: recipe.revision ? recipe : undefined })
+          return recipe
+        }}
+        onReset={gallerySource.resetEditRecipe ? async (item, revision) => {
+          const recipe = await gallerySource.resetEditRecipe!(item.node.id, revision)
+          viewer.updateMediaItem(item, { edit_recipe: recipe.revision ? recipe : undefined })
+          return recipe
+        } : undefined}
+        onClose={() => setEditTarget(null)}
+      />
       <XDriveMediaDetailsInspector
         item={infoOpen ? mediaItem : null}
         overlayZIndex={1251}

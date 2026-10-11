@@ -383,3 +383,14 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 
 **P1-2d 新版事件驱动守卫的实测结果与旧测试修订：** [CI #38125620829](https://github.com/lazyxu/xdrive/actions/runs/38125620829) 的 **真实构建 Web + 原生 Chromium 45/45 检查全部通过**，两种输入指针均将 Viewer 返回滚动偏差从之前 131px 降为 **0px**，共享 Filmstrip 仍为最多 11 项，所有未知 API / Console / PageError 均为 0；[原始浏览器证据 11696916935](https://github.com/lazyxu/xdrive/actions/runs/38125620829/artifacts/11696916935)。Desktop 2139 项中 2137 通过、1 失败、1 跳过，唯一失败是旧 `web-viewer-shell.cjs` 仍要求过去的 `host !== saved.host || !saved.host.isConnected` 字符串，而新生产代码用等价且更严格的 `return host === saved.host && saved.host.isConnected`，并同时检查原 Gallery Hash 与视口宽度。仅更新该旧测试断言来检查真实新语义，保留其他所有已有恢复/输入取消/监听清理契约，**产品代码无变化**。仍由固定父提交重建恰好一个工作提交，旧 CI 不能当作新 SHA 的最终交付门禁；完整 GitHub PR CI 和 final-gate 必须在最新 SHA 全绿后才能合并。
+
+
+## P1-2e · 实际 Web/Mobile Web 媒体查看器复用共享编辑流程（2026-10-11）
+
+**范围：** P1-2d 已复用现有 `XDriveMediaGalleryFilmstrip`，但实际 Web/Mobile Web `WebMediaViewerApp` 尚缺内嵌 Gallery Viewer 已有的编辑/撤销编辑入口。本阶段仅将相同的 `XDriveMediaGalleryEditDialog` 接入实际 `media-viewer` 路由，调用唯一的 `MediaGalleryDataSource.saveEditRecipe/resetEditRecipe` 和原有 Server `PUT/DELETE /api/v1/media/items/:id/edit`，不改媒体字节、上传/下载路径、Server 身份或原生 App Frame。
+
+**权限/身份：** 仅当 DataSource 暴露 `saveEditRecipe` 且现有 `xDriveMediaItemSupportsBasicEditing` 允许时显示「编辑媒体」；不支持编辑的 Live Photo、未授权来源和非媒体 Viewer 不出现无效按钮。编辑器绑定 Node ID/Node revision，浏览 Filmstrip 切换或关闭后不继承上一张的编辑器状态。Server 成功回执通过原 `useViewerNode.updateMediaItem` 写回原浏览会话及其有界 Range 缓存；旧图异步回执不得篡改当前媒体。Server 409/500 等失败由共享 Dialog 显示，未经确认不更新本地数据，也不能显示虚假成功。
+
+**验收：** Web/Mobile 两种布局运行相同按钮/同一 Dialog、真实 Rendered Viewer 组件测试覆盖有权／无权、图片/Live Photo、保存/撤销以及 Filmstrip 导航时自动关闭。复用已存在 `fix/mobile-gallery-ios27-web-viewer-` PR CI 的构建 Web + 原生 Chromium，验证细/粗指针实际授权媒体经 `PUT` 保存 90° 配方、`DELETE` 按 revision 撤销、原始 Viewer Node 和返回 Gallery 滚动位置未丢失，未知 API/Console/PageError 为零，保留精确提交与截图。
+
+**待办：** 仍需为实际 Viewer 补齐删除确认及真实任务中心回执、创作操作等能力，并在 iOS 27 Safari/安装模式进行像素/动画/VoiceOver 同帧比对；10k/100k 原始 HEVC/RAW/LIVP 的性能/真机测试不可由 240 张 PNG Fixture 替代。不能因此宣称总体 1:1 已完成。

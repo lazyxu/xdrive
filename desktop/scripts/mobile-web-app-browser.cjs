@@ -41,6 +41,7 @@ const mobilePanelsScenario = options.scenario === 'mobile-panels';
 const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const galleryIos27ViewerScenario = options.scenario === 'gallery-ios27-viewer';
+const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
@@ -513,6 +514,34 @@ function fixtureFor(request, role) {
   if (match && allNodes.has(Number(match[1]))) { queryOnly(url, []); assert.deepEqual(jsonBody(request), {}); return recentItem(allNodes.get(Number(match[1]))); }
   match = /^GET \/api\/v1\/media\/items\/(\d+)$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) return plain(mediaByID.get(Number(match[1])));
+  // The real MediaGalleryDataSource calls the production PUT/DELETE recipe
+  // routes. Preserve the full Server response and revision contract.
+  match = /^PUT \/api\/v1\/media\/items\/(\d+)\/edit$/.exec(key);
+  if (galleryIos27ViewerScenario && match && mediaByID.has(Number(match[1]))) {
+    queryOnly(url, []);
+    const id = Number(match[1]), input = jsonBody(request);
+    assert.deepEqual(Object.keys(input).sort(), [
+      'revision', 'rotation_degrees', 'flip_horizontal', 'flip_vertical',
+      'crop_x', 'crop_y', 'crop_width', 'crop_height',
+      'exposure_ev', 'contrast', 'saturation', 'trim_start_ms', 'trim_end_ms',
+    ].sort(), 'real editor must send the same typed Server recipe DTO');
+    assert.equal(input.revision, 0);
+    assert.equal(input.rotation_degrees, 90);
+    galleryViewerEditFixture.saved.push({ id, input });
+    return { ...input, version: 1, revision: 1, source_current: true, media_kind: 'image' };
+  }
+  match = /^DELETE \/api\/v1\/media\/items\/(\d+)\/edit$/.exec(key);
+  if (galleryIos27ViewerScenario && match && mediaByID.has(Number(match[1]))) {
+    assert.deepEqual([...url.searchParams.keys()], ['revision']);
+    assert.equal(url.searchParams.get('revision'), '1');
+    const id = Number(match[1]);
+    galleryViewerEditFixture.reset.push({ id, revision: 1 });
+    return { version: 1, revision: 0, source_current: true, media_kind: 'image',
+      rotation_degrees: 0, flip_horizontal: false, flip_vertical: false,
+      crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1,
+      exposure_ev: 0, contrast: 0, saturation: 0,
+      trim_start_ms: 0, trim_end_ms: 0 };
+  }
   match = /^GET \/api\/v1\/media\/items\/(\d+)\/thumbnail$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) {
     queryOnly(url, galleryIos27Fixture ? ['v', 'revision'] : ['v']);
@@ -2671,6 +2700,51 @@ async function galleryIos27ViewerAcceptance(pointer) {
     document.querySelectorAll('[data-xdrive-gallery-filmstrip] [aria-current="true"]').length === 1);
   check(name + ': Filmstrip click navigates same canonical Viewer Node',
     new URL(page.url()).hash.includes('node=' + (999 + photoNumber)));
+  // P1-2e: exercise the *actual built* shared Gallery editor from the routed
+  // media Viewer, not an invented Mobile-only form or a fake success toast.
+  activeStage = name + '-edit-save-reset';
+  if (pointer === 'fine') await page.mouse.move(195, 390);
+  else await page.touchscreen.tap(195, 390);
+  await frame.locator('button[aria-label="编辑媒体"]').click();
+  await page.getByRole('button', { name: '保存编辑', exact: true }).waitFor();
+  await page.getByRole('button', { name: '右转', exact: true }).click();
+  const editNodeID = Number(new URL(page.url()).hash.match(/node=(\d+)/)?.[1]);
+  assert(mediaByID.has(editNodeID), 'edit request must use authorized active media Node');
+  const savesBefore = galleryViewerEditFixture.saved.length;
+  const [saveResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/items/' + editNodeID + '/edit' &&
+      response.request().method() === 'PUT'),
+    page.getByRole('button', { name: '保存编辑', exact: true }).click(),
+  ]);
+  await page.getByRole('button', { name: '移除已保存编辑', exact: true }).waitFor();
+  const savedRecipe = await saveResponse.json();
+  check(name + ': real edit recipe PUT accepted and reflected in shared Viewer',
+    saveResponse.status() === 200 && savedRecipe.revision === 1 &&
+    savedRecipe.rotation_degrees === 90 &&
+    galleryViewerEditFixture.saved.length === savesBefore + 1 &&
+    galleryViewerEditFixture.saved.at(-1).id === editNodeID);
+  const resetsBefore = galleryViewerEditFixture.reset.length;
+  const [resetResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/items/' + editNodeID + '/edit' &&
+      response.request().method() === 'DELETE'),
+    page.getByRole('button', { name: '移除已保存编辑', exact: true }).click(),
+  ]);
+  await page.getByRole('button', { name: '移除已保存编辑', exact: true })
+    .waitFor({ state: 'hidden' });
+  const clearedRecipe = await resetResponse.json();
+  check(name + ': real reset DELETE uses saved revision, not a dummy local edit',
+    resetResponse.status() === 200 && clearedRecipe.revision === 0 &&
+    galleryViewerEditFixture.reset.length === resetsBefore + 1 &&
+    galleryViewerEditFixture.reset.at(-1).id === editNodeID);
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+  await page.getByRole('button', { name: '保存编辑', exact: true })
+    .waitFor({ state: 'hidden' });
+  check(name + ': editor leaves original media-viewer route and session intact',
+    new URL(page.url()).hash.includes('node=' + editNodeID));
+  await page.screenshot({ path: path.join(outputDir, name + '-edit-recipe.png') });
+
   activeStage = name + '-return';
   if (pointer === 'fine') await page.mouse.move(180, 380);
   await page.getByRole('button', { name: '返回', exact: true }).click();
@@ -2748,6 +2822,7 @@ async function main() {
     if (galleryIos27ViewerScenario) {
       fs.copyFileSync(__filename, path.join(outputDir, path.basename(__filename)));
       result.fixture.galleryViewer = { logicalItems: mediaItems.length,
+      sharedEditEndpoints: ['PUT /api/v1/media/items/:id/edit', 'DELETE /api/v1/media/items/:id/edit'],
         physicalIOSDevice: false, actualGoServer: false, pointerModes: ['fine', 'coarse'] };
       result.sourceHashes = Object.fromEntries([
         'web/src/App.tsx', 'web/src/WebFileViewerApps.tsx',
