@@ -1365,7 +1365,9 @@ func (s *Scheduler) execute(ctx context.Context, cancel context.CancelCauseFunc,
 	}
 
 	err := entry.task.Run(ctx)
-	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+	// A task may stop after observing cancellation and return nil following
+	// cleanup. That is still a cancellation for Wait and lease Release.
+	if cause := context.Cause(ctx); cause != nil && (err == nil || !errors.Is(cause, context.Canceled)) {
 		runErr = cause
 	} else {
 		runErr = err
