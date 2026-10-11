@@ -185,8 +185,29 @@ Wide Web and Mobile now pass a dedicated `AbortController.signal` through the sa
 
 ## 2026-10-11 F-iOS27-08E · cancel the first counted Search HTTP page
 
-**Implementation proposed on one-work-commit GitHub branch, pending exact-head CI/merge and physical-device acceptance.** Post-#1341 audit confirmed that explicit Select All and subsequent virtual Search range requests now pass `AbortSignal`, but the initial authoritative counted Search request in `useXDriveFileExplorerSearch.executeSearch` still called the same loader *without* a signal. Old queries could continue consuming Go/PostgreSQL time after a new committed query, explicit Clear, active tab/owner switch, or Files unmount even though generation fences discarded their late results.
+**Merged:** [PR #1345](https://github.com/lazyxu/xdrive/pull/1345), exact-head [CI #38072257423](https://github.com/lazyxu/xdrive/actions/runs/38072257423) green including Final Gate, rebase merge `9e1589b7`, temporary branch deleted. Post-#1341 audit confirmed that explicit Select All and subsequent virtual Search range requests now pass `AbortSignal`, but the initial authoritative counted Search request in `useXDriveFileExplorerSearch.executeSearch` still called the same loader *without* a signal. Old queries could continue consuming Go/PostgreSQL time after a new committed query, explicit Clear, active tab/owner switch, or Files unmount even though generation fences discarded their late results.
 
 The existing **shared Search controller** now owns one first-page `AbortController`: a new request/clear/filter replacement aborts the previous controller; workspace history-entry change/account replacement/unmount runs cleanup. The first page passes its signal through the already shared `WebFileExplorer → XDriveApi.searchRange → fetch` transport; aborted first-page completions never publish errors, counts or group indexes. This adds no new endpoint or Mobile business controller, and does not modify the app-wide 52px global bar, App Frame, row virtualizer, tab rules, thumbnails or current Server permission semantics. The Go Server Search handler already derives an 8s-scoped query context from `c.Request.Context()`; no fake per-request Server cancel endpoint is introduced.
 
 **Verification plan:** mount the real shared Workspace/Search hooks for superseding Search, Clear, account/session switch and unmount with an in-flight first-page promise; assert immediately aborted `signal`, no stale results or error toasts, and the new query's correct ready state; statically assert the actual single Web REST transport is used by both Wide and Mobile presentations. Full CI, real HTTP→Go cancel latency, iOS 27 Safari/PWA screenshots/VoiceOver, paired 375/390/899/900 authorization and 10k/100k physical browser measurements are separate acceptance tiers. Desktop Search's initial renderer→Agent IPC cancellation is explicitly not claimed by this Web/Mobile change.
+
+
+## 2026-10-11 F-iOS27-09A · direct context menu Cut/Copy and shared eligibility
+
+**Code staged on one-work-commit GitHub branch; no claim of physical iOS or full CI before evidence.** Audit of the actual Wide Web `XDriveFileExplorer.openItemContextMenuAt` found four direct clipboard/destination actions (`cut`, `copy`, `move-to`, `copy-to`) using the shared `selectionActionDisabledReason(action, [item], 1)`. Mobile Files' long-hold and keyboard context showed only Move To / Copy To, not Cut/Copy, and those two were visually enabled even when the same Wide Web eligibility returned a denial. Mobile's separate selection toolbar could work around some actions, but the iOS 27 native-style long-hold contract and Web/Mobile parity were incomplete.
+
+Mobile adds the missing direct **剪切 / 复制** alongside **移动到… / 复制到…** using the *existing* `WebFileExplorer` callbacks and `getSelectionActionDisabledReason(action, [item], 1)`. The item context is the exact clicked Node ID, revision and kind, not a stale virtual page or an unrelated multi-selection; disabled reasons are visible via native menu title and are rechecked on direct callback invocation. Already-supplied shared action IDs are not rendered twice. All four menu targets are >=44 CSS px; ordinary writes remain hidden in Trash. The same shared Server authorization/clipboard/destination logic controls the result. No new REST endpoint, Mobile file-operation engine, virtual collection, App Frame/footer, titlebar or internal multi-tab support.
+
+**Regression tiers:** mounted actual `MobileFiles` tests for file/folder Cut/Copy/Move/CopyTo, exact ID/revision, 44px targets, validator feedback/forced-denial guard, Trash exclusion and duplicate shared menu IDs, plus a source contract proving the single Wide Web operation controller. Full Web/Desktop/Go PR CI and Final Gate are required before merge; separate physical Safari/PWA iOS 27 screenshot, VoiceOver and 375/390/899/900px live Server error/parity verification remain **unmeasured**.
+
+**F-iOS27-09 parity matrix (incremental, not physical signoff)**
+
+| Capability / state | Wide Web | Mobile Web 375/390/899 | 900px | Evidence/remaining |
+| --- | --- | --- | --- | --- |
+| Per-item Copy/Cut | existing shared context | staged 09A direct context | wide context | mounted 09A tests; real Safari/network not run |
+| Per-item Move To/Copy To denial | shared eligibility | staged 09A shared eligibility | wide context | mounted 403/revision-like validator tests; live ACL not run |
+| Trash ordinary item writes | suppressed by operation mode | staged suppressed | wide context | mounted guard, live Trash not run |
+| 10k/100k virtual selection and cancellation | merged 08D | merged 08D | wide behavior | unit/mounted only; real latency and RSS outstanding |
+| Search initial/count/ranges | merged 08E / 08D | shared merged 08E / 08D | wide behavior | mounted + CI; real browser Network timing outstanding |
+| Internal file multi-tab | supported | intentionally omitted | supported | sole approved feature exception |
+| Native iOS 27 visual pixel/gesture | not the native layout | target 1:1 below 52px bar | wide design | reference screenshot diff, Safari/PWA/VoiceOver unverified |
