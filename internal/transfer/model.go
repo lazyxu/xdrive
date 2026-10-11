@@ -1031,7 +1031,8 @@ func (m *Manager) finishSkipped(id string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[id]
-	if e == nil {
+	if e == nil || terminalState(e.task.State) {
+		// A late skip must not overwrite a completed or cancelled operation.
 		return
 	}
 	e.cancel = nil
@@ -1073,6 +1074,11 @@ func (m *Manager) finishState(id, state string, err error) error {
 	e := m.entries[id]
 	if e == nil {
 		return errors.New("transfer not found")
+	}
+	if terminalState(e.task.State) {
+		// Retain the first confirmed terminal result when another transport
+		// callback finishes after cancellation or completion.
+		return nil
 	}
 	if e.groupCancelContext != nil && e.cancel != nil {
 		e.cancel() // Release the group context on normal terminalization too.
