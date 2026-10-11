@@ -322,8 +322,8 @@ process_request() {
 }
 
 
-# Restricted Media Worker Host Manager bridge: accepts only boolean activation
-# of the fixed "media-worker" Compose service, never arbitrary Docker commands.
+# Restricted Media Worker bridge accepts only fixed media-worker activation,
+# bounded memory and CPU quotas. No generic Docker commands or core restarts.
 media_worker_control_uint() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
@@ -335,6 +335,43 @@ media_worker_memory_valid() {
   local value="${1:-}"
   [[ "$value" =~ ^[1-9][0-9]*$ && ${#value} -le 4 ]] || return 1
   (( value >= 256 && value <= 4096 && value % 128 == 0 ))
+}
+media_worker_cpu_valid() {
+  local value="${1:-}"
+  [[ "$value" =~ ^[1-9][0-9]*$ && ${#value} -le 4 ]] || return 1
+  (( value >= 250 && value <= 4000 && value % 250 == 0 ))
+}
+media_worker_cpu_decimal() {
+  media_worker_cpu_valid "$1" || return 1
+  printf '%d.%02d\n' "$(( $1 / 1000 ))" "$(( ($1 % 1000) / 10 ))"
+}
+media_worker_inspect_cpu() {
+  local raw milli
+  raw="$(docker inspect --format '{{.HostConfig.NanoCpus}}' xdrive-media-worker 2>/dev/null || true)"
+  [[ "$raw" =~ ^[1-9][0-9]*$ && ${#raw} -le 10 ]] || return 1
+  (( raw % 1000000 == 0 )) || return 1
+  milli=$(( raw / 1000000 ))
+  media_worker_cpu_valid "$milli" || return 1
+  printf '%s\n' "$milli"
+}
+media_worker_staged_cpu() {
+  local raw whole fraction milli
+  raw="$(env_value XD_MEDIA_WORKER_CPU_LIMIT)"
+  [[ -n "$raw" ]] || raw="0.75"
+  [[ "$raw" =~ ^([0-4])\.([0-9]{1,3})$ ]] || return 1
+  whole="${BASH_REMATCH[1]}"
+  fraction="${BASH_REMATCH[2]}"
+  while (( ${#fraction} < 3 )); do fraction+="0"; done
+  milli=$(( 10#$whole * 1000 + 10#$fraction ))
+  media_worker_cpu_valid "$milli" || return 1
+  printf '%s\n' "$milli"
+}
+media_worker_observed_cpu() {
+  if media_worker_running; then
+    media_worker_inspect_cpu
+  else
+    media_worker_staged_cpu
+  fi
 }
 media_worker_running() {
   [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || return 1
@@ -370,29 +407,37 @@ media_worker_observed_memory() {
 }
 media_worker_control_write_status() {
   local state="$1" revision="$2" applied="$3" enabled="$4" observed="$5" request_id="$6"
-  local target_memory="${7:-768}" observed_memory="${8:-0}" verified="${9:-false}"
+  local target_memory="${7:-768}" observed_memory="${8:-0}" memory_verified="${9:-false}"
+  local target_cpu="${10:-750}" observed_cpu="${11:-0}" cpu_verified="${12:-false}"
   local dir tmp
   media_worker_memory_valid "$target_memory" || target_memory=768
-  if ! media_worker_memory_valid "$observed_memory"; then observed_memory=0; verified=false; fi
-  [[ "$verified" == true ]] || verified=false
+  if ! media_worker_memory_valid "$observed_memory"; then observed_memory=0; memory_verified=false; fi
+  media_worker_cpu_valid "$target_cpu" || target_cpu=750
+  if ! media_worker_cpu_valid "$observed_cpu"; then observed_cpu=0; cpu_verified=false; fi
+  [[ "$memory_verified" == true ]] || memory_verified=false
+  [[ "$cpu_verified" == true ]] || cpu_verified=false
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.media-worker-status.XXXXXX")" || return 1
-  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"observed_enabled":%s,"memory_mib":%s,"observed_memory_mib":%s,"memory_verified":%s,"request_id":"%s","updated_at":"%s"}\n' \
+  printf '{"supported":true,"cpu_control_supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"observed_enabled":%s,"memory_mib":%s,"observed_memory_mib":%s,"memory_verified":%s,"cpu_milli":%s,"observed_cpu_milli":%s,"cpu_verified":%s,"request_id":"%s","updated_at":"%s"}\n' \
     "$state" "$revision" "$applied" "$enabled" "$observed" \
-    "$target_memory" "$observed_memory" "$verified" "$request_id" "$(now_utc)" > "$tmp"
+    "$target_memory" "$observed_memory" "$memory_verified" \
+    "$target_cpu" "$observed_cpu" "$cpu_verified" "$request_id" "$(now_utc)" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/media-worker-control-status.json"
 }
 media_worker_control_refresh() {
-  local dir path state revision applied enabled observed request_id target_memory observed_memory verified=false
+  local dir path state revision applied enabled observed request_id target_memory observed_memory memory_verified=false
+  local target_cpu observed_cpu cpu_verified=false
   dir="$(prepare_dir)"
   path="$dir/media-worker-control-status.json"
   observed=false
   if media_worker_running; then observed=true; fi
   observed_memory="$(media_worker_observed_memory || true)"
   media_worker_memory_valid "$observed_memory" || observed_memory=0
+  observed_cpu="$(media_worker_observed_cpu || true)"
+  media_worker_cpu_valid "$observed_cpu" || observed_cpu=0
   if [[ ! -f "$path" ]]; then
-    media_worker_control_write_status idle 0 0 false "$observed" "" 768 "$observed_memory"
+    media_worker_control_write_status idle 0 0 false "$observed" "" 768 "$observed_memory" false 750 "$observed_cpu"
     return
   fi
   state="$(json_value "$path" state)"
@@ -401,18 +446,23 @@ media_worker_control_refresh() {
   enabled="$(json_bool_value "$path" enabled)"
   request_id="$(json_value "$path" request_id)"
   target_memory="$(media_worker_control_uint "$path" memory_mib)"
+  target_cpu="$(media_worker_control_uint "$path" cpu_milli)"
   [[ "$revision" =~ ^[0-9]+$ ]] || revision=0
   [[ "$applied" =~ ^[0-9]+$ ]] || applied=0
   [[ "$enabled" == true ]] || enabled=false
   media_worker_memory_valid "$target_memory" || target_memory=768
+  media_worker_cpu_valid "$target_cpu" || target_cpu=750
   [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
   case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
-  [[ "$observed_memory" == "$target_memory" ]] && verified=true
-  if [[ "$state" == success && ( "$observed" != "$enabled" || "$verified" != true ) ]]; then
+  [[ "$observed_memory" == "$target_memory" ]] && memory_verified=true
+  [[ "$observed_cpu" == "$target_cpu" ]] && cpu_verified=true
+  if [[ "$state" == success && ( "$observed" != "$enabled" ||
+      "$memory_verified" != true || "$cpu_verified" != true ) ]]; then
     state=failed
   fi
   media_worker_control_write_status "$state" "$revision" "$applied" "$enabled" \
-    "$observed" "$request_id" "$target_memory" "$observed_memory" "$verified"
+    "$observed" "$request_id" "$target_memory" "$observed_memory" "$memory_verified" \
+    "$target_cpu" "$observed_cpu" "$cpu_verified"
 }
 media_worker_profiles_for() {
   local profiles="$1" enabled="$2" item next=""
@@ -431,15 +481,17 @@ media_worker_profiles_for() {
   fi
   printf '%s\n' "$next"
 }
-# Atomically stage exactly the media profile and one bounded memory scalar.
-# Preserve all other deployment settings and other Compose profiles.
+# Atomically stage only media-worker profile, memory and CPU scalars.
+# Other Compose settings, credentials and profiles are preserved byte-for-byte.
 media_worker_control_apply_config() {
-  local profiles="$1" memory="$2" tmp
+  local profiles="$1" memory="$2" cpu="$3" cpu_decimal tmp
   media_worker_memory_valid "$memory" || return 1
+  media_worker_cpu_valid "$cpu" || return 1
+  cpu_decimal="$(media_worker_cpu_decimal "$cpu")" || return 1
   [[ "$profiles" =~ ^[A-Za-z0-9,_-]*$ ]] || return 1
   [[ -f "$ENV_PATH" ]] || return 1
   tmp="$(mktemp "$CONFIG_DIR/.media-worker-env.XXXXXX")" || return 1
-  awk -v profile="$profiles" -v mem="$memory" '
+  awk -v profile="$profiles" -v mem="$memory" -v cpu="$cpu_decimal" '
     /^COMPOSE_PROFILES=/ {
       if (!seen_profile) print "COMPOSE_PROFILES=" profile
       seen_profile=1; next
@@ -448,10 +500,15 @@ media_worker_control_apply_config() {
       if (!seen_memory) print "XD_MEDIA_WORKER_MEMORY_LIMIT=" mem "m"
       seen_memory=1; next
     }
+    /^XD_MEDIA_WORKER_CPU_LIMIT=/ {
+      if (!seen_cpu) print "XD_MEDIA_WORKER_CPU_LIMIT=" cpu
+      seen_cpu=1; next
+    }
     { print }
     END {
       if (!seen_profile) print "COMPOSE_PROFILES=" profile
       if (!seen_memory) print "XD_MEDIA_WORKER_MEMORY_LIMIT=" mem "m"
+      if (!seen_cpu) print "XD_MEDIA_WORKER_CPU_LIMIT=" cpu
     }
   ' "$ENV_PATH" > "$tmp" || { rm -f "$tmp"; return 1; }
   chmod 0600 "$tmp"
@@ -459,8 +516,9 @@ media_worker_control_apply_config() {
 }
 media_worker_control_process() {
   local dir request active request_id revision enabled created_at status_path applied last_state
-  local memory before_memory before_profiles next_profiles observed next_observed observed_memory
-  local was_running=false healthy=false memory_verified=false
+  local memory cpu before_memory before_cpu before_profiles next_profiles
+  local observed next_observed observed_memory observed_cpu
+  local was_running=false healthy=false memory_verified=false cpu_verified=false
   dir="$(prepare_dir)"
   request="$dir/media-worker-control-request.json"
   active="$dir/media-worker-control-active.json"
@@ -470,6 +528,7 @@ media_worker_control_process() {
   revision="$(media_worker_control_uint "$active" revision)"
   enabled="$(json_bool_value "$active" enabled)"
   memory="$(media_worker_control_uint "$active" memory_mib)"
+  cpu="$(media_worker_control_uint "$active" cpu_milli)"
   created_at="$(json_value "$active" created_at)"
   status_path="$dir/media-worker-control-status.json"
   applied="$(media_worker_control_uint "$status_path" applied_revision)"
@@ -480,41 +539,47 @@ media_worker_control_process() {
   if media_worker_running; then observed=true; was_running=true; fi
   observed_memory="$(media_worker_observed_memory || true)"
   media_worker_memory_valid "$observed_memory" || observed_memory=0
+  observed_cpu="$(media_worker_observed_cpu || true)"
+  media_worker_cpu_valid "$observed_cpu" || observed_cpu=0
   if [[ ! "$request_id" =~ ^[0-9a-f]{24}$ || "$revision" -le 0 ||
         ( "$revision" -lt "$applied" || ( "$revision" -eq "$applied" && "$last_state" != failed ) ) ||
         "$revision" -gt 1152921504606846976 ||
         ( "$enabled" != true && "$enabled" != false ) ]] ||
-        ! media_worker_memory_valid "$memory" || ! request_time_is_fresh "$created_at"; then
-    media_worker_control_write_status failed "$revision" "$applied" false "$observed" "" 768 "$observed_memory"
+        ! media_worker_memory_valid "$memory" ||
+        ! media_worker_cpu_valid "$cpu" || ! request_time_is_fresh "$created_at"; then
+    media_worker_control_write_status failed "$revision" "$applied" false "$observed" "" \
+      768 "$observed_memory" false 750 "$observed_cpu"
     rm -f "$active"
     return 0
   fi
   media_worker_control_write_status running "$revision" "$applied" "$enabled" "$observed" \
-    "$request_id" "$memory" "$observed_memory"
+    "$request_id" "$memory" "$observed_memory" false "$cpu" "$observed_cpu"
   before_profiles="$(env_value COMPOSE_PROFILES)"
   before_memory="$(media_worker_staged_memory || true)"
+  before_cpu="$(media_worker_staged_cpu || true)"
   if ! media_worker_memory_valid "$before_memory" ||
+      ! media_worker_cpu_valid "$before_cpu" ||
       ! next_profiles="$(media_worker_profiles_for "$before_profiles" "$enabled")"; then
     media_worker_control_write_status failed "$revision" "$applied" "$enabled" "$observed" \
-      "$request_id" "$memory" "$observed_memory"
+      "$request_id" "$memory" "$observed_memory" false "$cpu" "$observed_cpu"
     rm -f "$active"
     return 0
   fi
-  if ! media_worker_control_apply_config "$next_profiles" "$memory"; then
+  if ! media_worker_control_apply_config "$next_profiles" "$memory" "$cpu"; then
     media_worker_control_write_status failed "$revision" "$applied" "$enabled" "$observed" \
-      "$request_id" "$memory" "$observed_memory"
+      "$request_id" "$memory" "$observed_memory" false "$cpu" "$observed_cpu"
     rm -f "$active"
     return 0
   fi
-
   if [[ "$enabled" == true ]]; then
-    # Recreate ONLY the optional media-worker to install real cgroup memory.
+    # Recreate only optional media-worker; inspect actual Docker CPU and memory.
     if docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
         up -d --no-deps --force-recreate media-worker >/dev/null 2>&1; then
       for _ in $(seq 1 20); do
         if docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
             exec -T media-worker xdrive-server media-worker check >/dev/null 2>&1 &&
-            [[ "$(media_worker_inspect_memory || true)" == "$memory" ]]; then
+            [[ "$(media_worker_inspect_memory || true)" == "$memory" ]] &&
+            [[ "$(media_worker_inspect_cpu || true)" == "$cpu" ]]; then
           healthy=true
           break
         fi
@@ -533,17 +598,18 @@ media_worker_control_process() {
   next_observed=false
   if media_worker_running; then next_observed=true; fi
   observed_memory="$(media_worker_observed_memory || true)"
+  observed_cpu="$(media_worker_observed_cpu || true)"
   [[ "$observed_memory" == "$memory" ]] && memory_verified=true
-  if [[ "$healthy" == true && "$next_observed" == "$enabled" && "$memory_verified" == true ]]; then
+  [[ "$observed_cpu" == "$cpu" ]] && cpu_verified=true
+  if [[ "$healthy" == true && "$next_observed" == "$enabled" &&
+      "$memory_verified" == true && "$cpu_verified" == true ]]; then
     media_worker_control_write_status success "$revision" "$revision" "$enabled" "$next_observed" \
-      "$request_id" "$memory" "$observed_memory" true
+      "$request_id" "$memory" "$observed_memory" true "$cpu" "$observed_cpu" true
     rm -f "$active"
     return 0
   fi
-
-  # Roll back the resource config and recreate only Media Worker when it was
-  # previously running. No Server/Postgres/other Source container is touched.
-  media_worker_control_apply_config "$before_profiles" "$before_memory" || true
+  # Failure restores the prior config and optional-worker state only.
+  media_worker_control_apply_config "$before_profiles" "$before_memory" "$before_cpu" || true
   if [[ "$was_running" == true ]]; then
     docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
       up -d --no-deps --force-recreate media-worker >/dev/null 2>&1 || true
@@ -554,11 +620,11 @@ media_worker_control_process() {
   next_observed=false
   if media_worker_running; then next_observed=true; fi
   observed_memory="$(media_worker_observed_memory || true)"
+  observed_cpu="$(media_worker_observed_cpu || true)"
   media_worker_control_write_status failed "$revision" "$applied" "$enabled" "$next_observed" \
-    "$request_id" "$memory" "$observed_memory"
+    "$request_id" "$memory" "$observed_memory" false "$cpu" "$observed_cpu" false
   rm -f "$active"
 }
-
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data

@@ -642,7 +642,7 @@ const agent = Object.freeze({
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
   cloudAdminMediaWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-media-worker'),
-  cloudSetAdminMediaWorker: (input: { revision: number; enabled: boolean; memory_mib: number }) =>
+  cloudSetAdminMediaWorker: (input: { revision: number; enabled: boolean; memory_mib: number; cpu_milli: number }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-media-worker', input),
   cloudApplyAdminMediaWorker: (input: { revision: number }) =>
     ipcRenderer.invoke('agent:cloud-apply-admin-media-worker', input),

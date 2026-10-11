@@ -26,6 +26,14 @@ function validMediaMemory(value: string): number | null {
     ? result : null
 }
 
+function validMediaCPU(value: string): number | null {
+  const raw = value.trim()
+  if (!/^\d+$/.test(raw)) return null
+  const result = Number(raw)
+  return Number.isSafeInteger(result) && result >= 250 && result <= 4000 && result % 250 === 0
+    ? result : null
+}
+
 const states: Record<XDriveMediaWorkerConfig['apply_state'], string> = {
   unmanaged: '尚未由管理员配置', pending: '等待宿主机实际生效',
   unavailable: 'Host Manager 不可用', failed: '宿主机执行失败或运行状态丢失',
@@ -43,6 +51,7 @@ export function XDriveMediaWorkerConfigPanel({
   const [history, setHistory] = useState<XDriveMediaWorkerRevisionPage['items']>([])
   const [draftEnabled, setDraftEnabled] = useState(false)
   const [draftMemory, setDraftMemory] = useState('768')
+  const [draftCPU, setDraftCPU] = useState('750')
   const [rollbackTarget, setRollbackTarget] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -59,6 +68,7 @@ export function XDriveMediaWorkerConfigPanel({
     setConfig(null)
     setDraftEnabled(false)
     setDraftMemory('768')
+    setDraftCPU('750')
     setHistory([])
     setRollbackTarget('')
     setBusy(false)
@@ -75,6 +85,7 @@ export function XDriveMediaWorkerConfigPanel({
         setConfig(next)
         setDraftEnabled(next.desired_enabled)
         setDraftMemory(String(next.desired_memory_mib ?? 768))
+        setDraftCPU(String(next.desired_cpu_milli ?? 750))
       }).catch(() => {
         if (active && epoch === epochRef.current) setError('无法读取 Media Worker 配置；请检查 Server/Agent 版本。')
       }).finally(() => {
@@ -104,6 +115,7 @@ export function XDriveMediaWorkerConfigPanel({
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
       setDraftMemory(String(next.desired_memory_mib ?? 768))
+      setDraftCPU(String(next.desired_cpu_milli ?? 750))
       if (source.loadMediaWorkerRevisions) {
         const result = await source.loadMediaWorkerRevisions().catch(() => null)
         if (result && epoch === epochRef.current) {
@@ -130,13 +142,18 @@ export function XDriveMediaWorkerConfigPanel({
       if (memory === null) {
         throw new Error('Worker 内存限额必须为 256–4096 MiB，且是 128 MiB 的整数倍。')
       }
+      const cpu = validMediaCPU(draftCPU)
+      if (cpu === null) {
+        throw new Error('Worker CPU 限额必须为 250–4000 mCPU，且是 250 mCPU 的整数倍。')
+      }
       const next = await source.saveMediaWorkerConfig({
-        revision: config.revision, enabled: draftEnabled, memory_mib: memory,
+        revision: config.revision, enabled: draftEnabled, memory_mib: memory, cpu_milli: cpu,
       })
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
       setDraftMemory(String(next.desired_memory_mib ?? 768))
+      setDraftCPU(String(next.desired_cpu_milli ?? 750))
       setNotice('期望配置已保存并审计；尚未作用于容器。请单独点击“提交宿主机应用”。')
       if (source.loadMediaWorkerRevisions) {
         const page = await source.loadMediaWorkerRevisions().catch(() => null)
@@ -184,6 +201,7 @@ export function XDriveMediaWorkerConfigPanel({
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
       setDraftMemory(String(next.desired_memory_mib ?? 768))
+      setDraftCPU(String(next.desired_cpu_milli ?? 750))
       setRollbackTarget('')
       setNotice('已新建历史回滚修订并完成审计；仍需单独提交宿主机应用，未立即停止或启动服务。')
       if (source.loadMediaWorkerRevisions) {
@@ -199,9 +217,10 @@ export function XDriveMediaWorkerConfigPanel({
 
   const operationActive = config?.host.state === 'queued' || config?.host.state === 'running'
   const canApply = !!config && config.revision > 0 && config.apply_supported &&
-    typeof config.desired_memory_mib === 'number' &&
+    typeof config.desired_memory_mib === 'number' && typeof config.desired_cpu_milli === 'number' &&
     config.apply_state !== 'applied' && !operationActive
   const canEdit = !!config?.editable && typeof config?.desired_memory_mib === 'number' &&
+    typeof config?.desired_cpu_milli === 'number' &&
     !busy && !operationActive
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
@@ -236,6 +255,9 @@ export function XDriveMediaWorkerConfigPanel({
               {' · '}FFmpeg：{config.runtime_ready ? '探针通过' : '未验证就绪'}
               {' · '}内存：期望 {config.desired_memory_mib ?? '未知'} MiB
               {' · '}实际 {config.host.memory_verified ? config.host.observed_memory_mib + ' MiB（' + (config.host.observed_enabled ? 'Docker 实际限制已核验' : '停用后配置文件已核验') + '）' : '未核验'}
+              {' · '}CPU：期望 {config.desired_cpu_milli ?? '未知'} mCPU
+              {' · '}实际 {config.host.cpu_verified ? config.host.observed_cpu_milli + ' mCPU（' +
+                (config.host.observed_enabled ? 'Docker 实际限制已核验' : '停用后配置文件已核验') + '）' : '未核验'}
               {' · '}执行状态：{config.host.state}
             </Typography>
             <FormControlLabel
@@ -248,10 +270,17 @@ export function XDriveMediaWorkerConfigPanel({
               error={validMediaMemory(draftMemory) === null}
               helperText="允许 256–4096 MiB，以 128 MiB 为步长。保存后不立即修改容器；仅独立 Worker 在受限应用时被重建。"
             />
+            <TextField fullWidth type="number" size="small" label="Media Worker CPU 上限 (mCPU)"
+              value={draftCPU} onChange={(event) => setDraftCPU(event.target.value)}
+              disabled={!canEdit} inputProps={{ min: 250, max: 4000, step: 250 }}
+              error={validMediaCPU(draftCPU) === null}
+              helperText="允许 250–4000 mCPU，以 250 mCPU 为步长；1000 mCPU = 1 个 CPU。"
+            />
             <Button size="small" variant="outlined" disabled={!canEdit ||
-              validMediaMemory(draftMemory) === null ||
+              validMediaMemory(draftMemory) === null || validMediaCPU(draftCPU) === null ||
               (draftEnabled === config.desired_enabled &&
-                validMediaMemory(draftMemory) === config.desired_memory_mib) ||
+                validMediaMemory(draftMemory) === config.desired_memory_mib &&
+                validMediaCPU(draftCPU) === config.desired_cpu_milli) ||
               !source.saveMediaWorkerConfig} onClick={() => setConfirmSave(true)}>
               保存期望状态（不立即操作容器）
             </Button>
@@ -261,7 +290,7 @@ export function XDriveMediaWorkerConfigPanel({
             </Button>
             {!config.apply_supported && (
               <Typography variant="caption" color="warning.main">
-                Host Manager 未提供在线受限控制或心跳已过期；不可提交启停操作。需先部署并启动 xdrive-server control。
+                Host Manager 未提供在线 CPU 策略支持或心跳已过期；需更新并启动受限 xdrive-server control 后才能应用。
               </Typography>
             )}
             {operationActive && (
@@ -269,14 +298,15 @@ export function XDriveMediaWorkerConfigPanel({
             )}
             <XDriveConfirmDialog open={confirmSave} loading={busy}
               title="保存 Media Worker 的期望启停状态"
-              description="此操作只保存启停与内存限额的新修订并审计，不会直接改变容器；需要随后单独提交宿主机实际应用。"
+              description="此操作只保存启停、内存与 CPU 限额的新修订并审计，不会直接改变容器；需要随后单独提交宿主机实际应用。"
               confirmLabel="保存期望配置" onCancel={() => setConfirmSave(false)}
               onConfirm={() => { void save() }} />
             <XDriveConfirmDialog open={confirmApply} loading={busy}
               title="确认宿主机实际启停 FFmpeg Worker"
               description={'仅控制 media-worker 容器，不接触数据库或核心文件服务。目标：' +
                 (config.desired_enabled ? '开启' : '关闭') + '，内存限制 ' + config.desired_memory_mib +
-                ' MiB。启用时仅重建 media-worker，并实际核验容器内存限制和 FFmpeg 探针。'}
+                ' MiB，CPU 限制 ' + config.desired_cpu_milli +
+                ' mCPU。启用时仅重建 media-worker，并实际核验容器内存/CPU 限制和 FFmpeg 探针。'}
               confirmLabel="提交受限执行" onCancel={() => setConfirmApply(false)}
               onConfirm={() => { void apply() }} />
             {source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
@@ -289,7 +319,7 @@ export function XDriveMediaWorkerConfigPanel({
                   <MenuItem value="">请选择较早修订</MenuItem>
                   {history.filter((item) => item.revision < config.revision).map((item) => (
                     <MenuItem key={item.revision} value={String(item.revision)}>
-                      修订 #{item.revision} · {item.enabled ? '启用' : '停用'} · 内存 {item.memory_mib ?? 768} MiB · {item.origin}
+                      修订 #{item.revision} · {item.enabled ? '启用' : '停用'} · 内存 {item.memory_mib ?? 768} MiB · CPU {item.cpu_milli ?? 750} mCPU · {item.origin}
                     </MenuItem>
                   ))}
                 </TextField>

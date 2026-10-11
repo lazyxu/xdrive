@@ -797,3 +797,38 @@ test('Media Worker admin memory limit changes are revisioned, bounded and host-v
   assert.ok(preload.includes('memory_mib: number'))
   assert.equal(control.includes('docker.sock'), false)
 })
+
+test('Media Worker CPU quota is end-to-end guarded and never only persisted', () => {
+  const cpu = read('internal', 'mediaworker', 'cpu_policy.go')
+  const model = read('internal', 'meta', 'admin_media_worker_setting.go')
+  const desired = read('internal', 'api', 'admin_media_worker_setting.go')
+  const control = read('internal', 'api', 'admin_media_worker_control.go')
+  const script = read('scripts', 'server-control.sh')
+  const tests = read('scripts', 'test-media-worker-control.sh')
+  const shared = read('ui', 'shared', 'src', 'service-dependencies.ts')
+  const panel = read('ui', 'shared', 'src', 'mui', 'MediaWorkerConfigPanel.tsx')
+  const client = read('internal', 'client', 'client.go')
+  const agent = read('desktop', 'src', 'main', 'agent_client.cts')
+  const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const preload = read('desktop', 'src', 'preload', 'index.cts')
+  for (const content of [cpu, model, desired, control, script, tests, shared, panel,
+    client, agent, ipc, main, preload]) {
+    assert.ok(content.includes('cpu_milli') || content.includes('CPUMilli') ||
+      content.includes('NanoCpus') || content.includes('ValidCPUMilli'),
+    'CPU policy missing from transport or activation component')
+  }
+  assert.ok(cpu.includes('value%250 == 0'))
+  assert.ok(control.includes('host.CPUVerified'))
+  assert.ok(script.includes("docker inspect --format '{{.HostConfig.NanoCpus}}' xdrive-media-worker"))
+  assert.ok(script.includes('XD_MEDIA_WORKER_CPU_LIMIT='))
+  assert.ok(tests.includes('XDRIVE_MEDIA_FAKE_CPU_DRIFT'))
+  assert.ok(panel.includes('cpu_milli: cpu'))
+  assert.ok(shared.includes('desired_cpu_milli: number'))
+  assert.ok(client.includes('DesiredCPUMilli'))
+  assert.ok(ipc.includes('CPUMilli: *input.CPUMilli'))
+  assert.ok(main.includes('cpu_milli: input.cpu_milli'))
+  assert.ok(preload.includes('cpu_milli: number'))
+  assert.ok(control.includes('CPUControlSupported'))
+  assert.equal(script.includes('docker.sock'), false)
+})
