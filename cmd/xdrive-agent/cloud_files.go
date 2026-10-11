@@ -824,6 +824,14 @@ func (c *agentController) CloudRollbackAdminGeoNames(ctx context.Context, input 
 	return cli.RollbackAdminGeoNames(ctx, input)
 }
 
+func (c *agentController) CloudVerifyAdminBaiduMap(ctx context.Context, revision uint64) (client.AdminBaiduMapVerification, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduMapVerification{}, err
+	}
+	return cli.VerifyAdminBaiduMap(ctx, revision)
+}
+
 func (c *agentController) CloudAdminBaiduMapConfig(ctx context.Context) (client.AdminBaiduMapConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

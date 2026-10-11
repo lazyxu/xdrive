@@ -353,6 +353,14 @@ export type XDriveBaiduMapAdminConfig = {
   updated_at?: string
 }
 
+export type XDriveBaiduMapVerification = {
+  state: 'verified' | 'denied' | 'unavailable'
+  revision: number
+  checked_at: string
+  image_verified: boolean
+  detail: string
+}
+
 export type XDriveBaiduMapAKReveal = {
   field: 'ak'
   value: string

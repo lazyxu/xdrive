@@ -92,6 +92,7 @@ import type {
   XDriveGeoNamesRevisionPage,
   XDriveGeoNamesRollbackInput,
   XDriveBaiduMapAKReveal,
+  XDriveBaiduMapVerification,
   XDriveBaiduMapAdminUpdate,
   XDriveBackgroundTaskControlResult,
   XDriveFileOperation,
@@ -866,6 +867,7 @@ declare global {
           Promise<DesktopResult<XDriveGeoNamesConfig>>
         cloudAdminGeoNamesRevisions: () => Promise<DesktopResult<XDriveGeoNamesRevisionPage>>
         cloudRollbackAdminGeoNames: (input: XDriveGeoNamesRollbackInput) => Promise<DesktopResult<XDriveGeoNamesConfig>>
+        cloudVerifyAdminBaiduMap: (revision: number) => Promise<DesktopResult<XDriveBaiduMapVerification>>
         cloudRevealAdminBaiduMapAK: (revision: number) => Promise<DesktopResult<XDriveBaiduMapAKReveal>>
         cloudSetAdminBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudBackgroundTaskActiveSummary: () => Promise<DesktopResult<AgentBackgroundTaskActiveSummary>>

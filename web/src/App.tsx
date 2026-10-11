@@ -1014,6 +1014,7 @@ function FileManager({
     loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
     saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),
     revealBaiduMapAK: (revision: number) => api.adminRevealBaiduMapAK(revision),
+    verifyBaiduMap: (revision: number) => api.adminVerifyBaiduMap(revision),
     loadGeoNamesConfig: () => api.adminGeoNamesConfig(),
     saveGeoNamesConfig: (input: XDriveGeoNamesUpdate) => api.adminSaveGeoNamesConfig(input),
     reloadGeoNames: (expectedVersion: string) => api.adminReloadGeoNames(expectedVersion),

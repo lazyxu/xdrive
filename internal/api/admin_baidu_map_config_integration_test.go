@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -181,6 +183,45 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 		t.Fatal("runtime editing unexpectedly mutated the deployment environment")
 	}
 
+	// Verified by an admin only, on the current saved AK. The audit is durable.
+	probeEndpoint := endpoint + "/verify"
+	for _, token := range []string{"", memberToken} {
+		want := http.StatusUnauthorized
+		if token != "" {
+			want = http.StatusForbidden
+		}
+		if got := request(http.MethodPost, probeEndpoint, token, `{"revision":1}`); got.Code != want {
+			t.Fatalf("non-admin map verification HTTP %d want %d", got.Code, want)
+		}
+	}
+	var pngBuffer bytes.Buffer
+	if err := png.Encode(&pngBuffer, image.NewRGBA(image.Rect(0, 0, 128, 128))); err != nil {
+		t.Fatal(err)
+	}
+	probeCalls := 0
+	server.BaiduMapHTTPClient = &http.Client{Transport: baiduMapRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		probeCalls++
+		if req.URL.Host != "api.map.baidu.com" || req.URL.Scheme != "https" ||
+			req.URL.Query().Get("ak") != firstAK || req.URL.Query().Get("width") != "128" {
+			t.Fatal("Baidu verifier must use fixed route and saved current AK")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"image/png"}},
+			Body: bytesReadCloser(pngBuffer.Bytes())}, nil
+	})}
+	if got := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":0}`); got.Code != http.StatusConflict || probeCalls != 0 {
+		t.Fatalf("stale map probe must reject before cloud: HTTP %d calls %d", got.Code, probeCalls)
+	}
+	probe := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":1}`)
+	if probe.Code != http.StatusOK || probeCalls != 1 ||
+		!strings.Contains(probe.Body.String(), `"state":"verified"`) ||
+		!strings.Contains(probe.Body.String(), `"image_verified":true`) ||
+		strings.Contains(probe.Body.String(), firstAK) {
+		t.Fatalf("online map proof failed safely: HTTP %d calls %d", probe.Code, probeCalls)
+	}
+	if got := request(http.MethodPost, probeEndpoint, adminToken, `{"revision":1}`); got.Code != http.StatusTooManyRequests || probeCalls != 1 {
+		t.Fatalf("map probe rate limit failed: HTTP %d calls %d", got.Code, probeCalls)
+	}
+
 	stale := request(http.MethodPut, endpoint, adminToken,
 		`{"enabled":true,"revision":0,"ak":"stale-key"}`)
 	if stale.Code != http.StatusConflict {
@@ -226,8 +267,8 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 	if err := db.Order("id ASC").Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 6 {
-		t.Fatalf("expected three updates plus three explicit reveal audits, got %d", len(events))
+	if len(events) != 7 {
+		t.Fatalf("expected three updates, three reveals and one real verification audit, got %d", len(events))
 	}
 	var revealCount int
 	for _, event := range events {
@@ -237,6 +278,15 @@ func TestAdminBaiduAKEncryptedHotReloadAndAccessControl(t *testing.T) {
 	}
 	if revealCount != 3 {
 		t.Fatalf("expected 3 audited successful reveals, got %d", revealCount)
+	}
+	var verifyCount int
+	for _, event := range events {
+		if event.Action == "admin.service.baidu_map.verify" {
+			verifyCount++
+		}
+	}
+	if verifyCount != 1 {
+		t.Fatalf("expected one audit before online map verification, got %d", verifyCount)
 	}
 	for _, event := range events {
 		raw, _ := json.Marshal(event)
