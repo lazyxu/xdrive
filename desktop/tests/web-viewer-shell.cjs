@@ -41,6 +41,7 @@ const mui = {
 const sharedUI = {
   XDriveFilePreviewSurface: (props) => React.createElement('preview-content', props),
   XDriveMediaViewerContent: (props) => React.createElement('media-content', props),
+  XDriveMediaGalleryFilmstrip: (props) => React.createElement('gallery-filmstrip', props),
   XDriveStatePanel: ({ message }) => React.createElement('p', null, message),
   XDriveStatusAlert: ({ children }) => React.createElement('p', { role: 'alert' }, children),
   XDriveFileTagDialog: () => null, XDriveMediaDetailsInspector: () => null,
@@ -295,12 +296,38 @@ test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, hos
   assert.match(app, /galleryViewerScrollRef = useRef/)
   assert.match(app, /useLayoutEffect\(\(\) => \{/)
   assert.match(app, /const wasViewerActive = previousViewerActiveRef\.current/)
-  assert.match(app, /if \(viewerActive \|\| !wasViewerActive\) return/)
+  assert.match(app, /if \(viewerActive\) \{/)
+  assert.match(app, /if \(wasViewerActive \|\| !saved \|\| appView !== 'gallery'/)
+  assert.match(app, /saved\.offset = saved\.host\.scrollTop/)
+  assert.match(app, /overflowAnchor: appView === 'gallery' \? 'none' : undefined/)
+
+  assert.match(app, /saved\.host\.addEventListener\('scroll', captureEntry, \{ passive: true \}\)/)
+  assert.match(app, /window\.addEventListener\('resize', freezeCapture\)/)
+  assert.match(app, /saved\.host\.removeEventListener\('scroll', captureEntry\)/)
+  assert.match(app, /window\.removeEventListener\('resize', freezeCapture\)/)
+  assert.match(app, /window\.requestAnimationFrame\(captureEntry\)/)
+  assert.match(app, /if \(!wasViewerActive\) return/)
   assert.match(app, /window\.location\.hash !== saved\.callerHash/)
   assert.match(app, /Math\.abs\(window\.innerWidth - saved\.viewportWidth\) > 1/)
-  assert.match(app, /host !== saved\.host \|\| !saved\.host\.isConnected/)
+  // The same connected-host contract is now expressed as an affirmative
+  // guard reused by scroll restoration and its bounded event listener.
+  assert.match(app, /return host === saved\.host && saved\.host\.isConnected/)
+  assert.match(app, /window\.location\.hash === saved\.callerHash/)
+  assert.match(app, /Math\.abs\(window\.innerWidth - saved\.viewportWidth\) <= 1/)
   assert.match(app, /saved\.host\.scrollTop = saved\.offset/)
   assert.match(app, /window\.requestAnimationFrame\(restore\)/)
+  // Return viewport is restored even when a virtual row reflows after rAF,
+  // without trapping any real subsequent Gallery gesture.
+  assert.match(app, /saved\.host\.addEventListener\('scroll', preserveReturnOffset, \{ passive: true \}\)/)
+  assert.match(app, /saved\.host\.removeEventListener\('scroll', preserveReturnOffset\)/)
+  assert.match(app, /Math\.abs\(saved\.host\.scrollTop - saved\.offset\) > 1/)
+  assert.match(app, /window\.setTimeout\(stopReturnGuard, 650\)/)
+  assert.match(app, /if \(event\.isTrusted\) stopReturnGuard\(\)/)
+  assert.match(app, /window\.addEventListener\('pointerdown', cancelOnUserInput/)
+  assert.match(app, /window\.addEventListener\('wheel', cancelOnUserInput/)
+  assert.match(app, /window\.removeEventListener\('keydown', cancelOnUserInput\)/)
+  assert.match(app, /window\.addEventListener\('resize', cancelOnViewportChange\)/)
+  assert.match(app, /window\.removeEventListener\('resize', cancelOnViewportChange\)/)
   assert.match(app, /galleryViewerScrollRef\.current = host \? \{/)
   assert.match(app, /offset: host\.scrollTop/)
   assert.match(app, /<WebFileViewerApps/)
@@ -310,4 +337,82 @@ test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, hos
   assert.ok(openStart >= 0 && openEnd > openStart)
   assert.doesNotMatch(app.slice(openStart, openEnd), /api\.mediaItem|fetch\(/,
     'capturing an existing Gallery scroll position must not request media or touch Server state')
+})
+
+
+test('P1-2d real routed Gallery uses bounded shared Filmstrip across 128-item page boundary', async () => {
+  const key = 'xdrive.web_app.session.v1:p12d-gallery-filmstrip'
+  const items = Array.from({ length: 240 }, (_, i) => {
+    const node = { id: 1000 + i, type: 'file', name: 'photo-' + (i + 1) + '.png', revision: 1, size: 80 }
+    return { node, metadata: { media_kind: 'image', mime_type: 'image/png',
+      index_state: 'ready', has_thumbnail: true, captured_at: '2026-10-09T12:00:00Z' } }
+  })
+  storage.set(key, JSON.stringify({ version: 1, context: {
+    kind: 'gallery', target: { kind: 'all', query: {} }, activeIndex: 127, totalCount: 240,
+  } }))
+  const requests = [], navigated = []
+  const api = { node: async id => items[id - 1000]?.node, mediaItem: async id => items[id - 1000] }
+  const source = {
+    loadThumbnail: async () => null,
+    listItemRange: async (limit, offset) => {
+      requests.push({ limit, offset })
+      return { items: items.slice(offset, offset + limit), total_count: items.length, offset, limit }
+    },
+  }
+  compactTouch = true
+  viewportWidth = 390
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: 1127, context: 'p12d-gallery-filmstrip' } },
+        api, gallerySource: source, shareDialogAdapter: {},
+        onReplaceRoute(next) {
+          assert.equal(next.app, 'media-viewer', 'Filmstrip preserves the existing Viewer app route')
+          navigated.push(next.params.node)
+        },
+        onError(error) { throw error }, onClose() {},
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    for (let i = 0; i < 5; i++) {
+      await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+    }
+    const strips = renderer.root.findAll(el => el.type === 'gallery-filmstrip')
+    assert.equal(strips.length, 1, 'reuse one XDriveMediaGalleryFilmstrip')
+    assert.deepEqual(strips[0].props.entries.map(entry => entry.index),
+      Array.from({ length: 11 }, (_, i) => i + 122))
+    assert.equal(strips[0].props.activeIndex, 127)
+    const frame = renderer.root.find(el => el.props['data-xdrive-web-viewer'] !== undefined)
+    const rail = frame.findAll(el => el.type === 'div' &&
+      el.props['data-xdrive-web-viewer-filmstrip'] !== undefined)
+    assert.equal(rail.length, 1)
+    assert.equal(rail[0].props.sx.position, 'absolute')
+    assert.equal(rail[0].props.sx.bottom, 'calc(56px + env(safe-area-inset-bottom))')
+    assert.equal(rail[0].props.sx.width, '100%')
+    assert.deepEqual([...new Set(requests.map(req => req.offset))].sort((a, b) => a - b), [0, 128])
+    assert.ok(requests.every(req => req.limit === 128), 'one authorized bounded range per page')
+    assert.equal(navigated.length, 0, 'neighbor load cannot trigger Viewer navigation')
+    await act(async () => { strips[0].props.onSelect(128) })
+    assert.deepEqual(navigated, [1128], 'Filmstrip uses the same canonical Node/Viewer route')
+    assert.equal(JSON.parse(storage.get(key)).context.activeIndex, 128)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2d no Filmstrip is generated for standalone media without a Gallery session', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const renderer = await mount('media-viewer', 'standalone.jpg')
+  try {
+    assert.equal(renderer.root.findAll(el => el.type === 'gallery-filmstrip').length, 0)
+    assert.equal(renderer.root.findAll(el =>
+      el.props['data-xdrive-web-viewer-filmstrip'] !== undefined).length, 0)
+  } finally {
+    await act(async () => renderer.unmount())
+    compactTouch = false
+  }
 })

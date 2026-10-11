@@ -352,3 +352,34 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 
 **P1-2c 真实 Chromium 已绿、Desktop 旧静态断言误报（2026-10-11）：** [CI #38114239293](https://github.com/lazyxu/xdrive/actions/runs/38114239293) 的真实构建 Web + native Chrome `gallery-ios27-viewer` 已 **全部通过**：含两种 primary pointer、390/899/900/390px、媒体解码、浮层操作、控制显隐、下一 Node，以及 <2px Viewer return-position 恢复；未知请求/Console/PageError 均为 0。Go Linux/API/Windows、Web、镜像和制品测试均绿。然而 `desktop-tests` 运行 2124 项为 2122 通过、1 失败、1 跳过，唯一失败 `desktop/tests/web-shell.cjs` 的 AppBar 静态检测错误地以源代码第一次出现的 `data-xdrive-workspace-background` 作为起点：新 P1-2c `useLayoutEffect` 在渲染前引用了这个选择器，于是旧测试把登录页 AppBar 错认成工作区 AppBar。生产工作区 AppBar 仍明确定义 `display: { xs: 'none', md: 'flex' }` 和 48px 宽屏标题，而移动全屏 App Frame 仍使用自身 52px 标题。本轮**仅将测试定位限定在 `<Box\n        data-xdrive-workspace-background` 的实际 JSX 元素**，保持其原 AppBar 尺寸、权限、唯一菜单及其它断言，不修改产品渲染或缩小视觉验收范围。按 AGENTS.md 从原父提交重建恰好一个工作提交，新 SHA 必须完整 CI 与 final-gate 全绿才可合并；CI 实测 Chromium 不等于 iOS 27 真机像素级 1:1。
+
+
+## P1-2d · 实际 Web/Mobile Web Viewer 共享 Filmstrip（2026-10-11）
+
+本阶段将已有 XDriveMediaGalleryFilmstrip 直接用于真实 WebMediaViewerApp / WebViewerFrame，并通过相同 useViewerNode / createXDriveWebViewerSession 查询当前浏览位置前后各五个媒体条目，最多 11 项。第 127/128 个索引的分页边界仍由原有 128-item 授权 Server Range 会话加载，最多两个相邻分页请求，不从 10k/100k 虚拟图库导出全量列表。选择缩略图仍调用现有 Web media-viewer Node ID 导航和 session 索引；无 Gallery 浏览会话的 Files Quick Look、Text/PDF/Audio 不添加 Filmstrip，也没有新建 Mobile REST、媒体缓存和第二套 Viewer。
+
+小屏 Filmstrip 浮动在底部原有操作栏及 safe-area 之上；宽屏 Web 仍显示同一个 Filmstrip，操作仍在桌面 Header。控制自动隐藏时它不占媒体画布，不抢按键/手势；Filmstrip 自有 aria-current、58px thumb、XDriveMediaAsyncThumbnail 和横向滚动逻辑完全复用。App Frame、52px 全局标题栏、共享查询/分页/虚拟化、Live/RAW/视频和任务中心不做结构改变。
+
+回归矩阵：真实 WebViewerApp 挂载（Gallery 240 逻辑项、索引 127/128 跨页、11 个条目、仅 offset 0/128 两个分页、点击切换正确 Node 和 session、单项无 Gallery 上下文时不显示）；原生 Chromium gallery-ios27-viewer 场景在 fine/coarse、390/899/900px 下验证 Filmstrip 的 bounded window、唯一活跃项、位置/按钮不重叠、真实缩略图导航/图库返回，并保留严格未知网络与 Console/PageError 检查。使用已有 GitHub opt-in 真实浏览器 CI 前缀运行，不改变 GitHub/GitLab CI 工作合同。Fixture 为模拟授权 REST 的 PNG 样例，不代替 iOS 27 真机、10k/100k 实体 RAW/HEVC/LIVP、VoiceOver、像素级视觉校准或完成任务收据。Filmstrip 产品功能验收与真实 Safari 1:1 必须分开记录。
+
+
+**P1-2d 首轮精确 HEAD 真实浏览器通过、组件测试回归修订（2026-10-11）：** [CI #38119168559](https://github.com/lazyxu/xdrive/actions/runs/38119168559) 的原生 Chrome gallery-ios27-viewer 场景全绿，Filmstrip 的两种指针/390/899/900px、有限窗口、唯一 aria-current、缩略图实际导航、返回原 Gallery 都通过，未知 API/Console/PageError=0，原始 artifact [11694444286](https://github.com/lazyxu/xdrive/actions/runs/38119168559/artifacts/11694444286)。同一 HEAD 的 Desktop 2135 项中 2133 通过、1 失败、1 跳过；唯一失败在新增挂载测试的 Filmstrip 容器计数：React-test-renderer host adapter 同时暴露包装组件和内层 div，按 props 计数因此为 2，实际 Chrome 只渲染一个真实容器。本轮仅把新增测试的容器计数限定为真实 div DOM 宿主，保留原始 11 项、跨 127/128 Range 分页、Node/session 导航及真实浏览器断言，**没有改产品功能或放宽功能权限**。在同一固定父提交上重建恰好一个工作提交，旧跑次不能替代新 SHA 的完整 CI/final-gate。
+
+
+**P1-2d 真实 Viewer 返回滚动的随机红灯（2026-10-11）：** [CI #38119376342](https://github.com/lazyxu/xdrive/actions/runs/38119376342) 完整 Web 构建通过，真实 Chrome Filmstrip 组件/点击/缩略图/双指针及全部 API 审计通过，但 fine-pointer 的原 Gallery 返回出现 `entryScroll=589`、`returnScroll=620`、差 31px（coarse 本轮通过）；[原始 artifact 11694738940](https://github.com/lazyxu/xdrive/actions/runs/38119376342/artifacts/11694738940)。不是能放宽的断言：P1-2c 产品只在 Gallery `onOpenViewer` 点击回调捕获早期 scrollTop，异步焦点及布局稳定后 Viewer 背景实际滚动位置可变化。修复只在真实 media Viewer 激活时，确认仍是 Gallery、同一 DOM host、同一视口宽度后，在 layout effect 和最多两帧内把滚动快照更新为稳定的 Viewer-entry scroll；前后 Node 身份、原 2px strict return、无新增移动 API/10k 全量项与用户滚动阻断条件不变。更新相同的 Web shell 源码契约断言以覆盖快照仅在合法 Gallery Viewer 激活时写入；随后仍需完整最新 SHA CI，包括真实 Chromium、Desktop、Go 和 final-gate。此记录不声明 iOS 27 真机已验收。
+
+
+**P1-2d 二次真实 Chrome 返回滚动复测仍为红（2026-10-11）：** [CI #38119665964](https://github.com/lazyxu/xdrive/actions/runs/38119665964) 的最新 Desktop 2134/2135 通过、失败 0、跳过 1；实际 Filmstrip 的加载/唯一选中/点击正确 Node、未知 HTTP/Console/PageError 也全绿，但 fine/coarse 两种指针都出现 `entryScroll=589px`、`returnScroll=458px`，差 131px，原始 [artifact 11694960571](https://github.com/lazyxu/xdrive/actions/runs/38119665964/artifacts/11694960571)。这说明此前仅靠 Viewer 激活时立即/两帧捕获的 scrollTop 仍会被随后异步浏览器焦点/虚拟列表布局覆盖。继续保留原 <2px 严格门禁，产品改用**同一已挂载的 Gallery 主滚动宿主的 passive scroll 事件**捕获真实 Viewer-entry scroll，首次视口宽度发生变化立刻冻结快照，Viewer 退出立即解除事件监听；返回阶段在 React layout effect 加上最多两次后续 RAF 恢复，仍校验同一 Gallery route、DOM host、最终视口宽度。没有轮询、后台定时任务、100k 全量媒体读入、第二套 REST、或者更新其它文件/媒体浏览会话；桌面静态合同测试同时验证监听注册、宽度冻结和解除，全部 CI 需在重建的**单工作提交**新 SHA 上重新执行。物理 iOS 27 Safari 仍未验收。
+
+
+**P1-2d Native Chrome 连续返回位置仍红的物理滚动锚点修正（2026-10-11）：** [CI #38119925170](https://github.com/lazyxu/xdrive/actions/runs/38119925170) 的 2136/2137 Desktop 项通过、失败 0、跳过 1；实际 Chrome Filmstrip 悬浮/点击、媒体身份、控制显隐、授权请求都通过，却在 390→899→900→390 并导航时再次发生两种指针一致的 `589px→458px`、差 131px（原始 [artifact 11694778517](https://github.com/lazyxu/xdrive/actions/runs/38119925170/artifacts/11694778517)）。连续尝试 Viewer-entry 的 rAF 和 passive scroll 事件快照均无法阻止返回后一个**虚拟网格行高**的变化；这是后台仍挂载的 Gallery 虚拟窗口随视口宽度/可见项回收产生滚动锚点，浏览器原生 CSS `overflow-anchor:auto` 与 Gallery 自己的索引/Node 行定位叠加竞争。此次仅对 **Gallery 的现有主滚动容器**设置 `overflowAnchor:'none'`（其它 Files/任务应用仍沿用原生行为），让唯一共享 VirtualGrid/Timeline 继续独占可见 Node 和复位位置；App Frame、52px 标题栏、授权请求、媒体内容与任务均保持。真实 Chromium 在保持原严格 ≤2px 与同 Node 可见条件之余，会读取最终 Main computed style 确认为 `overflow-anchor:none`，增加静态源合同回归。不删除旧证据，也不放宽门槛；最新工作 SHA 必须重新通过完整 CI/Chrome/final-gate 才能合入。若仍红，转向实际布局与恢复事件时序的进一步观测，不能宣称修复。
+
+
+### P1-2d：返回位置在虚拟行异步提交后仍漂移的修复候选（2026-10-11）
+
+最新真实 Chrome CI [#38120407453](https://github.com/lazyxu/xdrive/actions/runs/38120407453)、[原始截图和 JSON 11695500444](https://github.com/lazyxu/xdrive/actions/runs/38120407453/artifacts/11695500444) 确认：Filmstrip、真实照片/Node 导航、11 项有界范围、390/899/900px 粗/细指针、Server 调用与 Console/PageError 均通过，唯一两项失败为返回图库时 `scrollTop=589→458`，固定偏移 131px（一行高度），逻辑照片与原 Gallery DOM 均未丢失。已尝试的 Viewer entry 双 RAF、被动滚动捕获和 `overflow-anchor:none` 仍不能阻止返回后虚拟行/浏览器延后修正。
+
+本轮只在 Web App 的既有 Gallery Viewer 退出恢复逻辑中加 **650ms 上限的事件驱动 scroll 守卫**：原有 React layout effect 与双 RAF 先恢复真实入口 offset；随后如果同一宿主、同一 Gallery Hash、最终宽度不变时又发生虚拟行修正的 `scroll` 事件，再将非用户发起的偏差校正到 ≤1px。任何真实 pointerdown/touchstart/wheel/keydown 立即取消守卫；超时、组件生命周期结束、断点再变化都会卸载所有监听，绝不阻止用户主动滚动、不轮询/扫描 100k、无额外 Server/Agent 请求。不涉及 Files、音频、文本、PDF 独立 Viewer。仅属于源码及 CI 候选，原生 Chrome 的 **≤2px 精确返回门禁不可放宽**，不能在下一 SHA 通过前标记修复完成。
+
+
+**P1-2d 新版事件驱动守卫的实测结果与旧测试修订：** [CI #38125620829](https://github.com/lazyxu/xdrive/actions/runs/38125620829) 的 **真实构建 Web + 原生 Chromium 45/45 检查全部通过**，两种输入指针均将 Viewer 返回滚动偏差从之前 131px 降为 **0px**，共享 Filmstrip 仍为最多 11 项，所有未知 API / Console / PageError 均为 0；[原始浏览器证据 11696916935](https://github.com/lazyxu/xdrive/actions/runs/38125620829/artifacts/11696916935)。Desktop 2139 项中 2137 通过、1 失败、1 跳过，唯一失败是旧 `web-viewer-shell.cjs` 仍要求过去的 `host !== saved.host || !saved.host.isConnected` 字符串，而新生产代码用等价且更严格的 `return host === saved.host && saved.host.isConnected`，并同时检查原 Gallery Hash 与视口宽度。仅更新该旧测试断言来检查真实新语义，保留其他所有已有恢复/输入取消/监听清理契约，**产品代码无变化**。仍由固定父提交重建恰好一个工作提交，旧 CI 不能当作新 SHA 的最终交付门禁；完整 GitHub PR CI 和 final-gate 必须在最新 SHA 全绿后才能合并。

@@ -2550,6 +2550,7 @@ async function galleryIos27ViewerAcceptance(pointer) {
     '[data-xdrive-web-viewer] [data-xdrive-file-preview-kind] img')]
     .some(img => img.complete && img.naturalWidth === 80));
   const initialID = new URL(page.url()).hash.match(/node=(\d+)/)?.[1];
+  await frame.locator('[data-xdrive-web-viewer-filmstrip] [data-xdrive-gallery-filmstrip]').waitFor();
   const opened = await frame.evaluate(el => {
     window.__p12cViewer = el;
     const saved = window.__p12c;
@@ -2577,14 +2578,19 @@ async function galleryIos27ViewerAcceptance(pointer) {
       const el = document.querySelector('[data-xdrive-web-viewer]');
       const header = el?.firstElementChild;
       const rail = el?.querySelector('[data-xdrive-web-viewer-mobile-actions]');
+      const strip = el?.querySelector('[data-xdrive-web-viewer-filmstrip]');
+      const activeFilmstrip = strip?.querySelectorAll('[data-xdrive-gallery-filmstrip] [aria-current="true"]');
       const saved = window.__p12c;
       const box = item => item?.getBoundingClientRect().toJSON() || null;
       return {
         viewport: { width: innerWidth, height: innerHeight },
         coarse: matchMedia('(pointer: coarse)').matches,
-        frame: box(el), rail: box(rail),
+        frame: box(el), rail: box(rail), filmstrip: box(strip),
         headerPosition: header ? getComputedStyle(header).position : '',
         railPosition: rail ? getComputedStyle(rail).position : '',
+        filmstripPosition: strip ? getComputedStyle(strip).position : '',
+        filmstripItems: strip?.querySelectorAll('[data-xdrive-gallery-filmstrip] button').length || 0,
+        filmstripActive: activeFilmstrip?.length || 0,
         infoInRail: !!rail?.querySelector('button[aria-label="查看属性"]'),
         infoInHeader: !!header?.querySelector('button[aria-label="查看属性"]'),
         actionSize: box(rail?.querySelector('button[aria-label="查看属性"]')),
@@ -2605,7 +2611,14 @@ async function galleryIos27ViewerAcceptance(pointer) {
       && data.frame && data.frame.x === 0 && data.frame.y === 0
       && Math.abs(data.frame.width - viewport.width) <= 1
       && Math.abs(data.frame.height - viewport.height) <= 1, data);
+    check(activeStage + ': bounded shared Filmstrip retains one current item',
+      data.filmstrip && data.filmstripPosition === 'absolute' &&
+      data.filmstripItems > 0 && data.filmstripItems <= 11 &&
+      data.filmstripActive === 1, data);
     if (viewport.width < 900) {
+      check(activeStage + ': Filmstrip stays above bottom actions and safe area',
+        data.rail && data.filmstrip.bottom <= data.rail.top + 2 &&
+        data.filmstrip.width <= viewport.width + 1, data);
       check(activeStage + ': mobile chrome matches iOS27 layout regardless of pointer',
         data.headerPosition === 'absolute' && data.railPosition === 'absolute'
         && data.rail && data.rail.bottom <= viewport.height + 1
@@ -2644,6 +2657,20 @@ async function galleryIos27ViewerAcceptance(pointer) {
   });
   check(name + ': existing browse session navigates a new canonical Node',
     new URL(page.url()).hash.match(/node=(\d+)/)?.[1] !== initialID);
+
+  activeStage = name + '-filmstrip-click';
+  const others = frame.locator('[data-xdrive-gallery-filmstrip] button:not([aria-current="true"])');
+  await others.first().waitFor();
+  const selectedLabel = await others.first().getAttribute('aria-label');
+  const photoNumber = Number(/^预览 photo-(\d+)\.png$/.exec(selectedLabel || '')?.[1]);
+  assert(Number.isInteger(photoNumber) && photoNumber >= 1 && photoNumber <= 240,
+    'selected shared Filmstrip item must map to authorized fixture Node');
+  await others.first().click();
+  await page.waitForURL(url => url.hash.includes('node=' + (999 + photoNumber)));
+  await page.waitForFunction(() =>
+    document.querySelectorAll('[data-xdrive-gallery-filmstrip] [aria-current="true"]').length === 1);
+  check(name + ': Filmstrip click navigates same canonical Viewer Node',
+    new URL(page.url()).hash.includes('node=' + (999 + photoNumber)));
   activeStage = name + '-return';
   if (pointer === 'fine') await page.mouse.move(180, 380);
   await page.getByRole('button', { name: '返回', exact: true }).click();
@@ -2677,6 +2704,7 @@ async function galleryIos27ViewerAcceptance(pointer) {
       tileVisibleInGallery: !!tileBox &&
         tileBox.bottom > mainBox.top && tileBox.top < mainBox.bottom,
       backgroundRestored: !s.background.inert && !s.background.hasAttribute('aria-hidden'),
+      galleryUsesExplicitAnchoring: getComputedStyle(main).overflowAnchor === 'none',
     };
   });
   result.samples[name + '-return'] = returned;
@@ -2684,7 +2712,7 @@ async function galleryIos27ViewerAcceptance(pointer) {
     returned.sameMain && returned.sameGallery &&
     returned.scrollDeltaFromViewerEntry <= 2 &&
     returned.logicalNodeRestored && returned.tileVisibleInGallery &&
-    returned.backgroundRestored, returned);
+    returned.backgroundRestored && returned.galleryUsesExplicitAnchoring, returned);
 }
 
 async function main() {
