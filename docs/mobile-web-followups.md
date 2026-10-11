@@ -240,3 +240,7 @@ F-iOS27-09C2 [#1371](https://github.com/lazyxu/xdrive/pull/1371) passed exact-he
 ## 2026-10-11 F-iOS27-09D → 09E menu hitbox follow-on
 
 F09D [#1377](https://github.com/lazyxu/xdrive/pull/1377) merged after full exact-head [CI #38117937525](https://github.com/lazyxu/xdrive/actions/runs/38117937525); merge \`d6f8773b\`, obsolete Files branch removed. Next candidate F09E extends the measured 899px MUI sm-breakpoint touch-size correction from file context to all six Mobile Files Menu papers. A native Chrome test measures actual More/Sort/batch options at 375/390/899px, preserving the wide Web at 900px. Real Apple iOS27 pixel references and Safari/PWA/VoiceOver, 10k/100k CPU/RSS and live-Go authorization checks remain future acceptance gates.
+
+## 2026-10-11 F-iOS27-09E → 09F handoff
+
+F09E [#1379](https://github.com/lazyxu/xdrive/pull/1379) passed exact-head [CI #38119214561](https://github.com/lazyxu/xdrive/actions/runs/38119214561), including Chrome touch hitboxes and Final Gate; rebase merge `a8e1a895`, task branch verified deleted. F09F tests actual Recent/Favorites and saved-search Menu paper geometry and owner-scoped 403→retry API behavior in the same native Chrome 375/390/899px browser fixture. Keep 900px wide Web, full App Frame and 52px title, shared API/virtualizer and single Mobile internal tab exception. Real Go/PostgreSQL authorization, native iOS 27 pixel/VoiceOver/PWA and 10k/100k CPU/RSS remain separate signoffs.

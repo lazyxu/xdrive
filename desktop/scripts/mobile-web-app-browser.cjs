@@ -45,6 +45,13 @@ const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScen
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
+  // Exact owner-scoped Server DTOs for the same Web controller used by
+  // wide and mobile Files. Do not supply a second Mobile API.
+  recentNodeIDs: [103], favoriteNodeIDs: [104],
+  savedSearches: [{ id: 17, name: '验收智能规则', query: 'document',
+    filters: {}, position: 0, created_at: stamp, updated_at: stamp }],
+  unfavoriteAttempts: [], savedDeleteAttempts: [],
+  rejectNextUnfavorite: true, rejectNextSavedDelete: true,
 };
 const gallerySelectionFixture = {
   albums: [...Array.from({ length: 24 }, (_, index) => ({
@@ -157,7 +164,7 @@ function fixtureFor(request, role) {
       organizationFixture.tags = [tag];
       return tag;
     }
-    case 'GET /api/v1/file-saved-searches': return plain(filesTouchDragScenario ? touchFixture.savedOrder.map((id, position) => ({ id, name: `触控搜索${id}`, query: `document-${id}`, filters: {}, position, created_at: stamp, updated_at: stamp })) : filesOrganizationScenario ? organizationFixture.savedSearches : []);
+    case 'GET /api/v1/file-saved-searches': return plain(filesTouchDragScenario ? touchFixture.savedOrder.map((id, position) => ({ id, name: `触控搜索${id}`, query: `document-${id}`, filters: {}, position, created_at: stamp, updated_at: stamp })) : filesOrganizationScenario ? organizationFixture.savedSearches : filesIos27ChromeScenario ? filesIos27Fixture.savedSearches : []);
     case 'PUT /api/v1/file-saved-searches/order': {
       assert(filesTouchDragScenario); queryOnly(url, []);
       const body = jsonBody(request); assert.deepEqual(Object.keys(body), ['ids']);
@@ -187,7 +194,39 @@ function fixtureFor(request, role) {
       organizationFixture.assignments.push({ assigned, nodeIDs: body.node_ids });
       return { updated: 1 };
     }
-    case 'GET /api/v1/file-favorites': return plain([]);
+    case 'GET /api/v1/file-favorites': return plain(filesIos27ChromeScenario
+      ? filesIos27Fixture.favoriteNodeIDs.map(id => ({
+        node: allNodes.get(id), path: `我的文件/${allNodes.get(id).name}`,
+        crumbs: [rootNode, allNodes.get(id)], favorited_at: stamp,
+      })) : []);
+    case 'DELETE /api/v1/file-favorites/104': {
+      assert(filesIos27ChromeScenario, 'Unfavorite belongs to the exact Files collections Chrome gate');
+      queryOnly(url, []); assert.equal(role, 'user');
+      const status = filesIos27Fixture.rejectNextUnfavorite ? 403 : 200;
+      filesIos27Fixture.unfavoriteAttempts.push({ id: 104, status, stage: activeStage });
+      if (status === 403) {
+        filesIos27Fixture.rejectNextUnfavorite = false;
+        return { __fixtureStatus: 403,
+          __fixturePurpose: 'real Favorites action denied by fixture before explicit retry',
+          __fixtureBody: { error: '验收：无权取消收藏，请重试。' } };
+      }
+      filesIos27Fixture.favoriteNodeIDs = filesIos27Fixture.favoriteNodeIDs.filter(id => id !== 104);
+      return null;
+    }
+    case 'DELETE /api/v1/file-saved-searches/17': {
+      assert(filesIos27ChromeScenario, 'Saved-search deletion belongs to the exact Files collections Chrome gate');
+      queryOnly(url, []); assert.equal(role, 'user');
+      const status = filesIos27Fixture.rejectNextSavedDelete ? 403 : 200;
+      filesIos27Fixture.savedDeleteAttempts.push({ id: 17, status, stage: activeStage });
+      if (status === 403) {
+        filesIos27Fixture.rejectNextSavedDelete = false;
+        return { __fixtureStatus: 403,
+          __fixturePurpose: 'saved search owner rejection must retain the rule and visible confirmation',
+          __fixtureBody: { error: '验收：无权删除智能规则，请重试。' } };
+      }
+      filesIos27Fixture.savedSearches = filesIos27Fixture.savedSearches.filter(item => item.id !== 17);
+      return null;
+    }
     case 'GET /api/v1/trash': {
       assert(filesOrganizationScenario, 'Trash inspection belongs to the explicit organization scenario');
       queryOnly(url, ['range', 'offset', 'limit', 'sort', 'order', 'include_count']);
@@ -228,7 +267,9 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin'); queryOnly(url, ['limit', 'offset']);
       integerQuery(url, 'limit', 20, 20); integerQuery(url, 'offset', 0, 0); return [];
     case 'GET /api/v1/file-recent':
-      queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50); return [];
+      queryOnly(url, ['limit']); integerQuery(url, 'limit', 16, 50);
+      return filesIos27ChromeScenario
+        ? filesIos27Fixture.recentNodeIDs.map(id => recentItem(allNodes.get(id))) : [];
     case 'GET /api/v1/search': {
       if (filesOrganizationScenario || mobilePanelsScenario) {
         queryOnly(url, ['q', 'offset', 'limit', 'sort', 'order', 'kind', 'tag_id', 'group', 'folders_first']);
@@ -2172,6 +2213,154 @@ async function filesIos27MobileMenuTouchAcceptance(viewport) {
       page.url().endsWith('/files?dir=1'), page.url());
 }
 
+
+async function filesIos27CollectionMenusAcceptance(origin) {
+  // Existing strict built-Web/Chrome + owner-specific Server-DTO fixture.
+  // Exercise all three mobile widths after the canonical 09C2/09E matrix.
+  // The 900px wide owner is already covered by the shared Node/revision
+  // operation assertions, and intentionally has no Mobile Files rail.
+  for (const viewport of [
+    { width: 375, height: 812 }, { width: 390, height: 844 }, { width: 899, height: 700 },
+  ]) {
+    const label = `user-files-ios27-${viewport.width}x${viewport.height}-collections`;
+    activeStage = label;
+    filesIos27Fixture.favoriteNodeIDs = [104];
+    filesIos27Fixture.savedSearches = [{ id: 17, name: '验收智能规则',
+      query: 'document', filters: {}, position: 0, created_at: stamp, updated_at: stamp }];
+    filesIos27Fixture.rejectNextUnfavorite = true;
+    filesIos27Fixture.rejectNextSavedDelete = true;
+    const favoriteStart = filesIos27Fixture.unfavoriteAttempts.length;
+    const savedStart = filesIos27Fixture.savedDeleteAttempts.length;
+    const writesBefore = Object.entries(result.requests).filter(([key]) =>
+      /^user (PATCH|DELETE) \/api\/v1\/nodes\//.test(key)).reduce((total, [, count]) => total + count, 0);
+    await page.setViewportSize(viewport);
+    await page.goto(`${origin}/#/app/files?dir=1`, { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.locator('[data-xdrive-mobile-files]').waitFor();
+    await page.locator('[data-mobile-files-item]').first().waitFor();
+    const ownerURL = page.url();
+    const scroll = page.locator('[data-xdrive-file-explorer-scroll-host]');
+    const oneOwner = async () => await scroll.count() === 1 &&
+      await page.locator('[data-xdrive-mobile-files]').count() === 1 &&
+      await page.locator('[data-xdrive-file-explorer]').count() === 0 &&
+      page.url() === ownerURL;
+    const sampleMenu = async (menuName, expectedMinimum) => {
+      const menu = page.getByRole('menu').last();
+      await menu.waitFor({ state: 'visible' });
+      await page.waitForTimeout(400);
+      await settle();
+      const items = await menu.locator('.MuiMenuItem-root').evaluateAll(elements =>
+        elements.map(element => {
+          const css = getComputedStyle(element);
+          return {
+            text: element.textContent?.trim().slice(0, 60) || '',
+            computedMinHeight: css.minHeight,
+            actualHeight: element.getBoundingClientRect().height,
+            disabled: element.getAttribute('aria-disabled') === 'true',
+          };
+        }));
+      result.samples[`${label}-${menuName}`] = items;
+      check(`${label}: ${menuName} has settled >=44px touch targets`,
+        items.length >= expectedMinimum &&
+          items.every(item => item.actualHeight >= 43.5 && parseFloat(item.computedMinHeight) >= 44),
+        items);
+      await page.screenshot({ path: path.join(outputDir, `${label}-${menuName}.png`) });
+      return menu;
+    };
+    // Real Recent keyboard context uses the same menu and Web business
+    // controller as long-hold/secondary-click, not a Mobile data loader.
+    await page.locator('[data-mobile-files-section="recent"]').click();
+    const recent = page.locator('[data-mobile-files-collection-row="recent"]')
+      .filter({ hasText: 'document-004.txt' });
+    await recent.waitFor();
+    await recent.focus();
+    await page.keyboard.press('Shift+F10');
+    let menu = await sampleMenu('recent-keyboard', 4);
+    const readsBefore = result.requests['user GET /api/v1/nodes/103'] ?? 0;
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/nodes/103' &&
+        response.request().method() === 'GET'),
+      menu.locator('[data-mobile-files-collection-action="copy"]').click(),
+    ]);
+    check(`${label}: Recent Copy reads original owner Node id/revision via Web XDriveApi`,
+      (result.requests['user GET /api/v1/nodes/103'] ?? 0) === readsBefore + 1 &&
+        allNodes.get(103).revision === 1 && await oneOwner());
+    // Test rejected and accepted actual Favorite DELETE from the same
+    // existing Web Favorites controller. Denial must not remove the item.
+    await page.locator('[data-mobile-files-section="favorites"]').click();
+    const favorite = page.locator('[data-mobile-files-collection-row="favorites"]')
+      .filter({ hasText: 'document-005.txt' });
+    await favorite.waitFor();
+    await favorite.click({ button: 'right' });
+    menu = await sampleMenu('favorites', 4);
+    const unfavorite = menu.getByRole('menuitem', { name: '取消收藏', exact: true });
+    const [deniedFavorite] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname === '/api/v1/file-favorites/104'),
+      unfavorite.click(),
+    ]);
+    check(`${label}: 403 Favorite refusal preserves the owner-scoped row`,
+      deniedFavorite.status() === 403 && filesIos27Fixture.favoriteNodeIDs.includes(104) &&
+        await favorite.count() === 1 && await oneOwner());
+    await favorite.click({ button: 'right' });
+    menu = await sampleMenu('favorites-retry', 4);
+    const [acceptedFavorite] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname === '/api/v1/file-favorites/104'),
+      menu.getByRole('menuitem', { name: '取消收藏', exact: true }).click(),
+    ]);
+    await favorite.waitFor({ state: 'detached' });
+    check(`${label}: retry removes only the selected Favorite on accepted Web request`,
+      acceptedFavorite.status() === 200 && filesIos27Fixture.favoriteNodeIDs.length === 0 &&
+        await oneOwner());
+
+    // Browse Home's saved search only exposes management when explicitly
+    // editing. No fake folder scoped Search or local saved-search manager.
+    await page.locator('[data-mobile-files-section="browse"]').click();
+    await page.getByRole('button', { name: '返回', exact: true }).click();
+    await page.locator('[data-xdrive-mobile-files-home]').waitFor();
+    await page.getByRole('button', { name: '文件操作菜单', exact: true }).click();
+    await page.getByRole('menuitem', { name: '整理浏览首页', exact: true }).click();
+    await page.locator('[data-mobile-files-saved-options="17"]').click();
+    menu = await sampleMenu('saved-search', 3);
+    check(`${label}: inactive all-files Search cannot replace the saved rule`,
+      await menu.getByRole('menuitem', { name: '更新为当前搜索', exact: true }).isDisabled());
+    await menu.getByRole('menuitem', { name: '删除智能文件夹', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: /^删除智能文件夹/ });
+    await dialog.waitFor();
+    const deleteRule = dialog.getByRole('button', { name: '删除规则', exact: true });
+    const [deniedSaved] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname === '/api/v1/file-saved-searches/17'),
+      deleteRule.click(),
+    ]);
+    await dialog.getByRole('alert').filter({ hasText: '验收：无权删除智能规则' }).waitFor();
+    check(`${label}: denied rule deletion keeps confirmation and persisted rule`,
+      deniedSaved.status() === 403 && filesIos27Fixture.savedSearches.length === 1 &&
+        await dialog.isVisible() && await page.locator('[data-mobile-files-saved-options="17"]').count() === 1);
+    const [acceptedSaved] = await Promise.all([
+      page.waitForResponse(response => response.request().method() === 'DELETE' &&
+        new URL(response.url()).pathname === '/api/v1/file-saved-searches/17'),
+      deleteRule.click(),
+    ]);
+    await dialog.waitFor({ state: 'hidden' });
+    await page.locator('[data-mobile-files-saved-options="17"]').waitFor({ state: 'detached' });
+    const attemptsFavorite = filesIos27Fixture.unfavoriteAttempts.slice(favoriteStart);
+    const attemptsSaved = filesIos27Fixture.savedDeleteAttempts.slice(savedStart);
+    const writesAfter = Object.entries(result.requests).filter(([key]) =>
+      /^user (PATCH|DELETE) \/api\/v1\/nodes\//.test(key)).reduce((total, [, count]) => total + count, 0);
+    check(`${label}: only exact owner collection IDs are mutated 403 then 200, no Nodes deleted`,
+      acceptedSaved.status() === 200 &&
+        JSON.stringify(attemptsFavorite.map(({ id, status }) => [id, status])) === '[[104,403],[104,200]]' &&
+        JSON.stringify(attemptsSaved.map(({ id, status }) => [id, status])) === '[[17,403],[17,200]]' &&
+        filesIos27Fixture.savedSearches.length === 0 && writesAfter === writesBefore &&
+        await oneOwner(), { attemptsFavorite, attemptsSaved, writesBefore, writesAfter });
+    await geometry(label);
+    result.samples[`${label}-actions`] = { attemptsFavorite, attemptsSaved,
+      physicalIphone: false, liveGoServer: false, viewport };
+  }
+}
+
 async function filesIos27ChromeAcceptance(origin) {
   // Authentic built React/Chromium at both responsive owners. The local
   // request router supplies deterministic authorized-looking Server payloads;
@@ -2320,6 +2509,7 @@ async function filesIos27ChromeAcceptance(origin) {
     distinctPaths: [...new Set(Object.keys(result.requests)
       .map(key => key.slice(key.indexOf(' /api/'))).filter(Boolean))].sort(),
   };
+  await filesIos27CollectionMenusAcceptance(origin);
 }
 
 async function galleryIos27ViewerAcceptance(pointer) {
