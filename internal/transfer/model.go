@@ -623,25 +623,31 @@ func (m *Manager) Clear() {
 		return
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	// Fence pending old-account callbacks even when history was cleared earlier.
 	m.generation++
 	if len(m.entries) == 0 && len(m.order) == 0 {
+		m.mu.Unlock()
 		return
 	}
-	// Account switching must abort all old Agent-owned uploads/downloads,
-	// including direct transfers without an upload group.
+	// Collect old Agent-owned transfer cancellations and publish an empty
+	// account state while holding the lock. A cancellation callback may
+	// synchronously inspect the Manager, so invoke it only after unlocking.
+	cancels := make([]context.CancelFunc, 0, len(m.entries))
 	for _, e := range m.entries {
 		if e.cancel != nil {
-			e.cancel()
+			cancels = append(cancels, e.cancel)
 		}
 	}
 	m.entries = make(map[string]*entry)
 	m.order = nil
 	m.roots = make(map[string]struct{})
 	m.touchLocked()
+	m.mu.Unlock()
+	// Account switching must still abort old I/O before Clear returns.
+	for _, cancel := range cancels {
+		cancel()
+	}
 }
-
 func (m *Manager) ClearHistory(scopes ...string) {
 	if m == nil {
 		return
