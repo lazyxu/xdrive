@@ -204,3 +204,24 @@ F-PARITY-07C grouped List disclosure is **merged** via [PR #1264](https://github
 - **Merged 09A:** [PR #1353](https://github.com/lazyxu/xdrive/pull/1353), exact-head [CI #38104145868](https://github.com/lazyxu/xdrive/actions/runs/38104145868) green including Final Gate, linear rebase merge `0110ff8b`; verified no 09A branch on GitHub after cleanup. Restored direct item Cut/Copy in Mobile context with one shared eligibility and no new API.
 - **09B candidate, CI pending:** use wide Web's exported keyboard command interpreter in the existing iOS-style Mobile presentation. Support direct selected/focused Copy/Cut/Delete, full sparse Select All, Paste (including iPad Cmd+Option+V move semantics), Undo/Redo, Esc cancellation and Search focus. Keep editable inputs, dialogs/IME and Trash isolated, maintain same Web/Server clipboard/business requests. Mount the *actual shared parser* in tests and assert ownership/abort.
 - **Not yet accepted:** real iOS 27 screenshot pixel diff and VoiceOver/Safari/PWA, paired authenticated 375/390/899/900 Web/Mobile Server operations, measured 10k/100k browser performance, Desktop Agent initial Search cancellation, or unimplemented Apple Shared/Scanner capabilities. Do not claim native 1:1 completion from CI unit tests.
+
+
+## 2026-10-11 F-iOS27-09C1 · real Chromium Web/Mobile acceptance
+
+- **Prior verified:** 09A [#1353](https://github.com/lazyxu/xdrive/pull/1353) and 09B [#1357](https://github.com/lazyxu/xdrive/pull/1357) merged, full exact-head Final Gate green, short branches deleted. Current task starts from GitHub `master@db3f55d6`; unrelated open Gallery performance PR #1185 is untouched.
+- **New browser phase, pending exact-head CI:** Extend the *existing real built-Web* Chrome Playwright fixture and opt-in `web` job to verify at 375/390/899/900: correct responsive Files surface, full App Frame and independent 52px title, one viewport/virtual owner, 44px item-context actions, and exact same Web/Server Copy→Paste HTTP payload from Mobile long/right press and 900px wide Web keyboard. Fail on any unknown HTTP/JS error; upload screenshot/JSON/built-artifact hash evidence with exact tested SHA.
+- **Evidence tier:** Native Chromium is real browser interaction, but the API backend is a deterministic fixture, not live Server ACL, iOS 27 native UI, Safari/PWA, VoiceOver, 10k/100k real browser performance or true cancellation latency. Those and native iOS 27 screenshot pixel comparisons remain explicit *not done*; no false 1:1 claim or decorative fake backend.
+
+
+### 2026-10-11 F-iOS27-09C1 native Chrome first measured result and correction
+
+- [Chrome CI #38108538342](https://github.com/lazyxu/xdrive/actions/runs/38108538342) **actually ran** the built Web at 375/390/899/900 with ~97 root fixture Nodes. One responsive Files/scroll owner, correct xDrive full Frame/52px header, four identical actual Web Copy→Paste HTTP POSTs, and zero unknown API/JS errors passed. **CI failed** only because first-frame MUI Grow animation scaled Mobile context menu item bounding boxes to 20–26px even though computed `minHeight` was specified as 44px in source; do not assert this is an enduring layout defect until measured after entrance animation.
+- The runner now captures both opening bbox, computed CSS minimum and paper transform, and **after-transition** bbox, requiring 44px steady-state hitboxes. The test remains strict; no alteration to production Menu styles or virtual owners was made without a steady-state failure. The new exact-head CI and final gate must pass before merging #1365.
+- Real native iOS 27 screenshots/VoiceOver, live authorized Go Server and 10k/100k CPU/RSS/abort remain unmeasured, regardless of browser fixture success.
+
+
+### 2026-10-11 F-iOS27-09C1 responsive MenuItem hitbox fix
+
+- Chrome [#38108924989](https://github.com/lazyxu/xdrive/actions/runs/38108924989) measured the four exact shared Node/Revision API copy operations, 375/390/899/900 responsive owners, one scroll host, preserved 52px App bar, and no unknown requests/JS errors. After CSS transition, 375/390 context options had **44px computed minimum**; **899px remained 0px**, a real MUI `sm` breakpoint style override.
+- Scoped repair uses higher-specificity descendant `& .MuiMenuItem-root` on existing Mobile context Popover paper to restore 44px native-like touch sizes for all context entries, without modifying wide UI, operation/Server semantics or virtualization. Added static guard; rerun real built-Web Chrome and full GitHub exact-head CI before merge.
+- Real iPhone iOS 27 Safari/PWA/VoiceOver screenshots and live authenticated Go permission tests, 10k/100k measurements are still not done.
