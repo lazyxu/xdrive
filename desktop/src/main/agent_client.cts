@@ -279,6 +279,12 @@ export type AgentLocalBoundBackupSettings = {
   target_path?: string
 }
 
+export type AgentLocalBoundBackupRules = {
+  source_id: number
+  revision: number
+  ignore_rules: string
+}
+
 export type AgentLocalBoundBackupRemoval = {
   source_id: number
   local_grant_removed: boolean
@@ -2742,6 +2748,17 @@ export class AgentIPCClient {
   setLocalBoundBackupMode(sourceID: number, revision: number, mode: 'backup' | 'mirror') {
     return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-mode', {
       source_id: sourceID, revision, sync_mode: mode,
+    })
+  }
+
+  localBoundBackupRules(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBoundBackupRules>('GET', `/v1/device-backups/local-rules?${query.toString()}`)
+  }
+
+  setLocalBoundBackupRules(sourceID: number, revision: number, rules: string) {
+    return this.request<AgentLocalBoundBackupRules>('PATCH', '/v1/device-backups/local-rules', {
+      source_id: sourceID, revision, ignore_rules: rules,
     })
   }
 

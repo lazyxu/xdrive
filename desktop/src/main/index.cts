@@ -184,6 +184,7 @@ import {
   type AgentVerifiedLocalDevice,
   type AgentLocalSourceDraftPage,
   type AgentLocalBoundBackupSettings,
+  type AgentLocalBoundBackupRules,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2050,6 +2051,27 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().setLocalBoundBackupMode(sourceID, revision, mode)
   }, false))
+  ipcMain.handle('agent:get-device-backup-local-rules', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBoundBackupRules>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-rules')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Positive local Source ID required.')
+      }
+      return requireAgentClient().localBoundBackupRules(sourceID)
+    }, false))
+  ipcMain.handle('agent:set-device-backup-local-rules', (_event, sourceID: unknown, revision: unknown, rules: unknown) =>
+    runAgentAction<AgentLocalBoundBackupRules>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-rules')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+        typeof rules !== 'string' || Buffer.byteLength(rules, 'utf8') > 64 * 1024 ||
+        rules.split(/\r\n|\n|\r/).length > 4096) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local Source ID, revision or ignore rules.')
+      }
+      return requireAgentClient().setLocalBoundBackupRules(sourceID, revision, rules)
+    }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
     runAgentAction<AgentLocalBoundBackupRemoval>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()
