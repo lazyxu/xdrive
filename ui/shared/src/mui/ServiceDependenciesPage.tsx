@@ -34,8 +34,9 @@ import { XDriveStoredCredentialField } from './SourceCredentialFields'
 import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
 import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
 import { XDriveMediaWorkerConfigPanel, type XDriveMediaWorkerPort } from './MediaWorkerConfigPanel'
+import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 
-export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & {
+export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDriveCaddyHTTPSPort & {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
   loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
@@ -771,6 +772,7 @@ export function XDriveServiceDependenciesPage({
               </Paper>
               {group.id === 'media' && <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} />}
+              {group.id === 'core' && <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID} />}
               {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
               {group.id === 'intelligence' && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>

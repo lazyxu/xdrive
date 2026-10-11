@@ -600,6 +600,35 @@ func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revisi
 	return cli.RevealAdminBaiduMapAK(ctx, revision)
 }
 
+func (c *agentController) CloudAdminCaddyHTTPSConfig(ctx context.Context) (client.AdminCaddyHTTPSConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyHTTPSConfig{}, err
+	}
+	return cli.AdminCaddyHTTPSConfig(ctx)
+}
+func (c *agentController) CloudSetAdminCaddyHTTPS(ctx context.Context, input client.AdminCaddyHTTPSUpdate) (client.AdminCaddyHTTPSConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyHTTPSConfig{}, err
+	}
+	return cli.UpdateAdminCaddyHTTPS(ctx, input)
+}
+func (c *agentController) CloudAdminCaddyHTTPSRevisions(ctx context.Context) (client.AdminCaddyHTTPSRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyHTTPSRevisionPage{}, err
+	}
+	return cli.AdminCaddyHTTPSRevisions(ctx)
+}
+func (c *agentController) CloudRollbackAdminCaddyHTTPS(ctx context.Context, input client.AdminCaddyHTTPSRollbackInput) (client.AdminCaddyHTTPSConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminCaddyHTTPSConfig{}, err
+	}
+	return cli.RollbackAdminCaddyHTTPS(ctx, input)
+}
+
 func (c *agentController) CloudAdminMediaWorkerConfig(ctx context.Context) (client.AdminMediaWorkerConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

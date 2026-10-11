@@ -603,6 +603,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
+	mux.HandleFunc("GET /v1/cloud/admin-caddy-https", h.cloudAdminCaddyHTTPS)
+	mux.HandleFunc("PUT /v1/cloud/admin-caddy-https", h.cloudSetAdminCaddyHTTPS)
+	mux.HandleFunc("GET /v1/cloud/admin-caddy-https/revisions", h.cloudAdminCaddyHTTPSRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-caddy-https/rollback", h.cloudRollbackAdminCaddyHTTPS)
 	mux.HandleFunc("GET /v1/cloud/admin-media-worker", h.cloudAdminMediaWorker)
 	mux.HandleFunc("PUT /v1/cloud/admin-media-worker", h.cloudSetAdminMediaWorker)
 	mux.HandleFunc("POST /v1/cloud/admin-media-worker/apply", h.cloudApplyAdminMediaWorker)
@@ -1848,6 +1852,101 @@ func (h *desktopIPCHandler) cloudBackgroundTaskActiveSummary(
 
 // Optional controller interface keeps older Agent implementations explicit.
 // Optional desktop Agent feature; only the Server's requireAdmin route
+// Administrator Caddy HTTPS desired settings: no server/container apply path.
+type desktopIPCAdminCaddyHTTPSController interface {
+	CloudAdminCaddyHTTPSConfig(context.Context) (client.AdminCaddyHTTPSConfig, error)
+	CloudSetAdminCaddyHTTPS(context.Context, client.AdminCaddyHTTPSUpdate) (client.AdminCaddyHTTPSConfig, error)
+	CloudAdminCaddyHTTPSRevisions(context.Context) (client.AdminCaddyHTTPSRevisionPage, error)
+	CloudRollbackAdminCaddyHTTPS(context.Context, client.AdminCaddyHTTPSRollbackInput) (client.AdminCaddyHTTPSConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminCaddyHTTPS(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyHTTPSController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_https_unsupported", "Caddy HTTPS desired configuration is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminCaddyHTTPSConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudSetAdminCaddyHTTPS(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyHTTPSController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_https_unsupported", "Caddy HTTPS desired configuration is unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Enabled  *bool   `json:"enabled"`
+		Domain   *string `json:"domain"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || *input.Revision > 1<<60 || input.Enabled == nil ||
+		input.Domain == nil || len(*input.Domain) > 253 ||
+		(*input.Enabled && *input.Domain == "") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_https_input", "Complete bounded Caddy HTTPS desired revision, enabled flag and domain required")
+		return
+	}
+	out, err := provider.CloudSetAdminCaddyHTTPS(r.Context(), client.AdminCaddyHTTPSUpdate{
+		Revision: *input.Revision, Enabled: *input.Enabled, Domain: *input.Domain,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudAdminCaddyHTTPSRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyHTTPSController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_https_unsupported", "Caddy HTTPS desired history is unsupported")
+		return
+	}
+	out, err := provider.CloudAdminCaddyHTTPSRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+func (h *desktopIPCHandler) cloudRollbackAdminCaddyHTTPS(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminCaddyHTTPSController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_caddy_https_unsupported", "Caddy HTTPS desired rollback is unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil ||
+		*input.Revision > 1<<60 || *input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_caddy_https_revision", "Current and older Caddy HTTPS desired revision required")
+		return
+	}
+	out, err := provider.CloudRollbackAdminCaddyHTTPS(r.Context(), client.AdminCaddyHTTPSRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
 // authorizes global PostgreSQL connection-pool mutations.
 type desktopIPCAdminMediaWorkerController interface {
 	CloudAdminMediaWorkerConfig(context.Context) (client.AdminMediaWorkerConfig, error)

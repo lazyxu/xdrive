@@ -810,6 +810,13 @@ declare global {
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudAdminCaddyHTTPSConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
+        cloudSetAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
+        cloudAdminCaddyHTTPSRevisions: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>>
+        cloudRollbackAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
         cloudAdminMediaWorkerConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>
         cloudSetAdminMediaWorker: (input: import('../../../ui/shared/src').XDriveMediaWorkerUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>

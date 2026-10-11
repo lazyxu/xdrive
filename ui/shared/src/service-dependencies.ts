@@ -35,6 +35,33 @@ export type XDriveServiceDependenciesSnapshot = {
   services: XDriveServiceDependency[]
 }
 
+// Administrator-only Caddy HTTPS intent, never evidence of installed host configuration.
+export type XDriveCaddyHTTPSConfig = {
+  desired_enabled: boolean
+  desired_domain: string
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending'
+  editable: boolean
+  apply_supported: boolean
+  requires_restricted_maintenance: boolean
+  requirement: string
+  host_observed: boolean
+  host_https_configured: boolean
+  host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+}
+export type XDriveCaddyHTTPSUpdate = { revision: number; enabled: boolean; domain: string }
+export type XDriveCaddyHTTPSRevision = {
+  revision: number
+  enabled: boolean
+  domain: string
+  origin: 'default' | 'saved' | 'rollback'
+  created_at: string
+}
+export type XDriveCaddyHTTPSRevisionPage = { items: XDriveCaddyHTTPSRevision[] }
+export type XDriveCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
+
 export type XDriveMediaWorkerHostStatus = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'

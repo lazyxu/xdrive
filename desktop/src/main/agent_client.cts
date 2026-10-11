@@ -612,6 +612,27 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminCaddyHTTPSConfig = {
+  desired_enabled: boolean
+  desired_domain: string
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending'
+  editable: boolean
+  apply_supported: boolean
+  requires_restricted_maintenance: boolean
+  requirement: string
+  host_observed: boolean
+  host_https_configured: boolean
+  host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+}
+export type AgentAdminCaddyHTTPSUpdate = { revision: number; enabled: boolean; domain: string }
+export type AgentAdminCaddyHTTPSRevisionPage = {
+  items: Array<{ revision: number; enabled: boolean; domain: string; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+}
+export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminMediaWorkerHost = {
   supported: boolean
   state: 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'unavailable'
@@ -3196,6 +3217,19 @@ export class AgentIPCClient {
 
   cloudRevealAdminBaiduMapAK(revision: number) {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminCaddyHTTPSConfig() {
+    return this.request<AgentAdminCaddyHTTPSConfig>('GET', '/v1/cloud/admin-caddy-https')
+  }
+  cloudSetAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSUpdate) {
+    return this.request<AgentAdminCaddyHTTPSConfig>('PUT', '/v1/cloud/admin-caddy-https', input)
+  }
+  cloudAdminCaddyHTTPSRevisions() {
+    return this.request<AgentAdminCaddyHTTPSRevisionPage>('GET', '/v1/cloud/admin-caddy-https/revisions')
+  }
+  cloudRollbackAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSRollbackInput) {
+    return this.request<AgentAdminCaddyHTTPSConfig>('POST', '/v1/cloud/admin-caddy-https/rollback', input)
   }
 
   cloudAdminMediaWorkerConfig() {

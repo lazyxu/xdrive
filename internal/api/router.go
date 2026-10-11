@@ -24,6 +24,7 @@ type Server struct {
 	DB                             *gorm.DB
 	postgresPoolSaveMu             sync.Mutex
 	mediaWorkerConfigSaveMu        sync.Mutex
+	caddyHTTPSSaveMu               sync.Mutex
 	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
 	MediaWorkerConfigured          bool
@@ -347,6 +348,10 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/caddy/https", s.adminCaddyHTTPSConfig)
+	admin.PUT("/services/caddy/https", s.adminSaveCaddyHTTPS)
+	admin.GET("/services/caddy/https/revisions", s.adminCaddyHTTPSRevisions)
+	admin.POST("/services/caddy/https/rollback", s.adminRollbackCaddyHTTPS)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
