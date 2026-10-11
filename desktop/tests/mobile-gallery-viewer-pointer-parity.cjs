@@ -52,7 +52,7 @@ const Preview = loaded.exports.XDriveOpenPreviewDialog
 const findData = (tree, key) => tree.root.findAll((node) => node.props?.[key] !== undefined)
 const findType = (tree, kind) => tree.root.findAll((node) => node.type === kind)
 
-async function withPreview({ width, coarse, immersive }, verify) {
+async function withPreview({ width, coarse, immersive, mobileEdgeToEdge = false }, verify) {
   viewport = { width, coarse }
   const originalWindow = global.window
   const originalHTMLElement = global.HTMLElement
@@ -79,6 +79,7 @@ async function withPreview({ width, coarse, immersive }, verify) {
       open: true,
       title: 'sample.jpg',
       immersive,
+      mobileEdgeToEdge,
       quickLook: !immersive,
       actions: React.createElement('button', {
         'data-shared-media-action': true,
@@ -208,6 +209,98 @@ test('P1-2a does not fork Gallery data, virtual items, or media semantics', () =
   assert.match(pageSource, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
   assert.match(pageSource, /<MediaVirtualTileGrid/)
   assert.match(webSource, /<XDriveMediaGalleryPage/)
+  assert.match(webSource, /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(adapterSource, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
+})
+
+
+test('P1-2b narrow Gallery keeps one full-height media canvas below opt-in overlay chrome', async () => {
+  for (const width of [390, 899]) {
+    for (const coarse of [false, true]) {
+      await withPreview({ width, coarse, immersive: true, mobileEdgeToEdge: true }, async (h) => {
+        const { view } = h
+        const dialog = findType(view, 'dialog')[0]
+        const header = view.root.findAll((node) => node.props?.['data-xdrive-preview-chrome'] === 'header')[0]
+        const media = findType(view, 'dialogcontent')[0]
+        const strip = findData(view, 'data-xdrive-preview-mobile-filmstrip')[0]
+        const actions = findData(view, 'data-xdrive-preview-mobile-actions')[0]
+        assert.equal(dialog.props.fullScreen, true)
+        assert.equal(dialog.props.slotProps.paper.sx.position, 'relative')
+        assert.equal(dialog.props.slotProps.paper.sx.height, '100dvh')
+        assert.equal(media.props.sx.flex, '1 1 0', 'no headers/footers may consume media flex height')
+        for (const owner of [header, strip, actions]) {
+          assert.equal(owner.props.sx.position, 'absolute',
+            'visible/hidden chrome must float over the same full-size media canvas')
+          assert.equal(owner.props.sx.zIndex, 3)
+        }
+        assert.equal(header.props.sx.top, 0)
+        assert.equal(header.props.sx.pt, 'env(safe-area-inset-top)')
+        assert.equal(strip.props.sx.bottom, 'calc(56px + env(safe-area-inset-bottom))')
+        assert.equal(actions.props.sx.bottom, 0)
+        assert.equal(actions.props.sx.minHeight, 'calc(56px + env(safe-area-inset-bottom))')
+        assert.equal(actions.props.sx.pb, 'env(safe-area-inset-bottom)')
+        assert.equal(actions.props.sx['& .MuiIconButton-root'].width, 44)
+        assert.equal(header.props.sx['& .MuiIconButton-root'].height, 44)
+        const back = header.findAll((node) =>
+          node.type === 'iconbutton' && node.props['aria-label'] === '返回图库')
+        assert.equal(back.length, 1, 'Gallery owns a genuine back-to-collection action')
+        assert.equal(header.findAll((node) => node.props['aria-label'] === '关闭预览').length, 0)
+        const action = actions.findAll((node) => node.props['data-shared-media-action'] === true)[0]
+        assert.ok(action, 'same Gallery mutation/download handler stays reachable in overlay')
+        await act(async () => { action.props.onClick() })
+        assert.equal(h.clicks, 1)
+
+        await act(async () => { h.runTimeout(2200) })
+        for (const owner of [
+          view.root.findAll((node) => node.props?.['data-xdrive-preview-chrome'] === 'header')[0],
+          findData(view, 'data-xdrive-preview-mobile-filmstrip')[0],
+          findData(view, 'data-xdrive-preview-mobile-actions')[0],
+        ]) {
+          assert.equal(owner.props.sx.opacity, 0)
+          assert.equal(owner.props.sx.pointerEvents, 'none')
+          assert.equal(owner.props.sx.position, 'absolute',
+            'auto-hide must not reserve layout or resize zoom/pan viewport')
+        }
+        // Explicit return is the existing onClose, not a second app-navigation callback.
+        await act(async () => { back[0].props.onClick() })
+        assert.equal(h.closes, 1)
+      })
+    }
+  }
+})
+
+test('P1-2b Quick Look and wide Gallery preserve the non-overlaid shared preview shell', async () => {
+  const modes = [
+    { width: 900, coarse: false, immersive: true, mobileEdgeToEdge: true },
+    { width: 900, coarse: true, immersive: true, mobileEdgeToEdge: true },
+    { width: 390, coarse: true, immersive: true, mobileEdgeToEdge: false },
+    { width: 390, coarse: false, immersive: false, mobileEdgeToEdge: true },
+    { width: 390, coarse: true, immersive: false, mobileEdgeToEdge: true },
+  ]
+  for (const mode of modes) {
+    await withPreview(mode, async ({ view }) => {
+      const dialog = findType(view, 'dialog')[0]
+      const header = view.root.findAll((node) => node.props?.['data-xdrive-preview-chrome'] === 'header')[0]
+      const media = findType(view, 'dialogcontent')[0]
+      assert.equal(dialog.props.slotProps.paper.sx.position, undefined)
+      assert.equal(header.props.sx.position, undefined)
+      assert.equal(media.props.sx.flex, undefined)
+      assert.equal(header.findAll((node) => node.props['aria-label'] === '返回图库').length, 0)
+      assert.equal(header.findAll((node) => node.props['aria-label'] === '关闭预览').length, 1)
+      const strip = findData(view, 'data-xdrive-preview-mobile-filmstrip')
+      if (strip.length) assert.equal(strip[0].props.sx.position, undefined)
+      const rail = findData(view, 'data-xdrive-preview-mobile-actions')
+      if (rail.length) assert.equal(rail[0].props.sx.position, undefined)
+    })
+  }
+})
+
+test('P1-2b edge-to-edge mode is owned only by the existing shared Gallery Viewer', () => {
+  assert.match(viewerSource, /<XDriveOpenPreviewDialog[\s\S]*?\bimmersive\s+mobileEdgeToEdge\b/)
+  assert.match(viewerSource, /<XDriveMediaViewerContent/)
+  assert.match(viewerSource, /<XDriveMediaGalleryFilmstrip/)
+  assert.match(viewerSource, /onSwipePrevious=\{canPrevious \? onPrevious : undefined\}/)
+  assert.match(pageSource, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
   assert.match(webSource, /createWebMediaGalleryDataSource\(api\)/)
   assert.match(adapterSource, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
 })

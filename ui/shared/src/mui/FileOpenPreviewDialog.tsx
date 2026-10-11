@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import FullscreenRoundedIcon from '@mui/icons-material/FullscreenRounded'
 import FullscreenExitRoundedIcon from '@mui/icons-material/FullscreenExitRounded'
 import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
@@ -20,6 +21,9 @@ export type XDriveOpenPreviewDialogProps = {
   actions?: ReactNode
   footer?: ReactNode
   immersive?: boolean
+  // Only an opted-in Gallery Viewer overlays local chrome on the full media canvas.
+  // Generic Quick Look and the standalone file previews keep their own layout.
+  mobileEdgeToEdge?: boolean
   fullScreen?: boolean
   onFullScreenChange?: (fullScreen: boolean) => void
   chromeAutoHideMs?: number
@@ -40,6 +44,7 @@ export function XDriveOpenPreviewDialog({
   actions,
   footer,
   immersive = false,
+  mobileEdgeToEdge = false,
   fullScreen = false,
   onFullScreenChange,
   chromeAutoHideMs = 2200,
@@ -54,6 +59,7 @@ export function XDriveOpenPreviewDialog({
   const narrowViewport = useMediaQuery('(max-width:899.95px)')
   const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const compactTouch = coarseMobilePointer || (immersive && narrowViewport)
+  const mobileOverlay = mobileEdgeToEdge && immersive && compactTouch
   const effectiveFullScreen = fullScreen || compactTouch
   const hasNavigation = canPrevious || canNext
   const [chromeVisible, setChromeVisible] = useState(true)
@@ -228,6 +234,7 @@ export function XDriveOpenPreviewDialog({
             height: effectiveFullScreen ? '100dvh' : { xs: '78vh', sm: '82vh' },
             minHeight: 0,
             maxHeight: effectiveFullScreen ? 'none' : 820,
+            position: mobileOverlay ? 'relative' : undefined,
             borderRadius: effectiveFullScreen ? 0 : { xs: 1.5, sm: 2 },
             overflow: 'hidden',
             backgroundImage: 'none',
@@ -241,25 +248,44 @@ export function XDriveOpenPreviewDialog({
         spacing={1}
         data-xdrive-preview-chrome="header"
         sx={{
+          // Gallery mobile chrome floats above the media; hidden controls do
+          // not reserve blank bars or resize the zoom/pan viewport.
+          position: mobileOverlay ? 'absolute' : undefined,
+          top: mobileOverlay ? 0 : undefined,
+          left: mobileOverlay ? 0 : undefined,
+          right: mobileOverlay ? 0 : undefined,
+          zIndex: mobileOverlay ? 3 : undefined,
           minHeight: compactTouch ? 56 : 48,
           px: compactTouch ? 1 : 1.5,
           pl: compactTouch ? 'max(8px, env(safe-area-inset-left))' : undefined,
           pr: compactTouch ? 'max(8px, env(safe-area-inset-right))' : undefined,
           pt: compactTouch ? 'env(safe-area-inset-top)' : 0,
-          '& .MuiIconButton-root': compactTouch ? { width: 44, height: 44 } : undefined,
-          borderBottom: 1,
+          '& .MuiIconButton-root': compactTouch ? {
+            width: 44, height: 44, color: mobileOverlay ? 'common.white' : undefined,
+          } : undefined,
+          borderBottom: mobileOverlay ? 0 : 1,
           borderColor: 'divider',
+          bgcolor: mobileOverlay ? 'rgba(0,0,0,0.64)' : undefined,
+          color: mobileOverlay ? 'common.white' : undefined,
+          backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
           opacity: immersive && !chromeVisible ? 0 : 1,
           pointerEvents: immersive && !chromeVisible ? 'none' : 'auto',
           transition: 'opacity 160ms ease',
         }}
       >
+        {mobileOverlay ? (
+          <Tooltip title="返回图库">
+            <IconButton size="small" aria-label="返回图库" onClick={onClose}>
+              <ArrowBackRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" noWrap>{title}</Typography>
           {subtitle ? <Typography variant="caption" noWrap sx={{ display: 'block', opacity: 0.72 }}>{subtitle}</Typography> : null}
         </Box>
         {positionLabel ? (
-          <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+          <Typography variant="caption" color={mobileOverlay ? 'inherit' : 'text.secondary'} sx={{ flexShrink: 0 }}>
             {positionLabel}
           </Typography>
         ) : null}
@@ -277,11 +303,13 @@ export function XDriveOpenPreviewDialog({
             </IconButton>
           </Tooltip>
         ) : null}
-        <Tooltip title={quickLook ? '关闭（Space / Esc）' : '关闭（Esc）'}>
-          <IconButton size="small" aria-label="关闭预览" onClick={onClose}>
-            <CloseRoundedIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        {!mobileOverlay ? (
+          <Tooltip title={quickLook ? '关闭（Space / Esc）' : '关闭（Esc）'}>
+            <IconButton size="small" aria-label="关闭预览" onClick={onClose}>
+              <CloseRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        ) : null}
       </Stack>
 
       <DialogContent
@@ -293,6 +321,9 @@ export function XDriveOpenPreviewDialog({
         onPointerCancelCapture={handleTouchPointerCancel}
         sx={{
           position: 'relative',
+          // The overlay header and bottom rail are out of document flow.
+          // Give Gallery media every available pixel in the full-screen paper.
+          flex: mobileOverlay ? '1 1 0' : undefined,
           p: 0,
           minHeight: 0,
           overflow: 'hidden',
@@ -363,9 +394,16 @@ export function XDriveOpenPreviewDialog({
             <Box
               data-xdrive-preview-mobile-filmstrip
               sx={{
+                position: mobileOverlay ? 'absolute' : undefined,
+                left: mobileOverlay ? 0 : undefined,
+                right: mobileOverlay ? 0 : undefined,
+                bottom: mobileOverlay ? 'calc(56px + env(safe-area-inset-bottom))' : undefined,
+                zIndex: mobileOverlay ? 3 : undefined,
                 flexShrink: 0,
                 borderTop: 1,
-                borderColor: 'divider',
+                borderColor: mobileOverlay ? 'rgba(255,255,255,0.16)' : 'divider',
+                bgcolor: mobileOverlay ? 'rgba(0,0,0,0.58)' : undefined,
+                backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
                 opacity: chromeVisible ? 1 : 0,
                 pointerEvents: chromeVisible ? 'auto' : 'none',
                 transition: 'opacity 160ms ease',
@@ -381,7 +419,12 @@ export function XDriveOpenPreviewDialog({
             spacing={0.5}
             data-xdrive-preview-mobile-actions
             sx={{
-              minHeight: 56,
+              position: mobileOverlay ? 'absolute' : undefined,
+              left: mobileOverlay ? 0 : undefined,
+              right: mobileOverlay ? 0 : undefined,
+              bottom: mobileOverlay ? 0 : undefined,
+              zIndex: mobileOverlay ? 3 : undefined,
+              minHeight: mobileOverlay ? 'calc(56px + env(safe-area-inset-bottom))' : 56,
               px: 1,
               pl: 'max(8px, env(safe-area-inset-left))',
               pr: 'max(8px, env(safe-area-inset-right))',
@@ -389,12 +432,16 @@ export function XDriveOpenPreviewDialog({
               flexShrink: 0,
               overflowX: 'auto',
               borderTop: 1,
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
+              borderColor: mobileOverlay ? 'rgba(255,255,255,0.16)' : 'divider',
+              bgcolor: mobileOverlay ? 'rgba(0,0,0,0.72)' : 'background.paper',
+              backdropFilter: mobileOverlay ? 'blur(16px) saturate(1.35)' : undefined,
               opacity: chromeVisible ? 1 : 0,
               pointerEvents: chromeVisible ? 'auto' : 'none',
               transition: 'opacity 160ms ease',
-              '& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 },
+              '& .MuiIconButton-root': {
+                width: 44, height: 44, flexShrink: 0,
+                color: mobileOverlay ? 'common.white' : undefined,
+              },
             }}
           >
             {hasNavigation ? <IconButton aria-label="预览上一个项目" disabled={!canPrevious} onClick={onPrevious}>

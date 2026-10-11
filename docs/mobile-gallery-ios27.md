@@ -320,3 +320,15 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **实现边界：** 在唯一共享 `FileOpenPreviewDialog` 内，保留非沉浸式 Files/Quick Look 原来的粗指针门槛；仅当调用方已选择 `immersive` 且视口小于 900px 时，不论 primary pointer 为 `fine` 或 `coarse`，均使用原有移动全屏、顶部 safe-area、底部 `44px` 按钮 rail 与 filmstrip、触控轻点显隐控件；在窄屏细指针模式下，鼠标移动仍能唤醒自动隐藏的控件，粗指针触摸不因模拟 mousemove 意外唤醒。900px 及以上宽屏保留现有桌面 Viewer 弹窗/手动全屏与键鼠操作。切换指针不会创建第二套页面或更改媒体回调；Live Photo 按住才播放、照片缩放/横划、视频原生交互仍由同一个 `MediaViewerContent/FilePreviewSurface` 拥有。
 
 **验收：** 新增真实 React 挂载测试矩阵（390、899、900px × 主指针 fine/coarse × immersive/Quick Look），包括全屏 Dialog、safe-area、filmstrip、同一操作回调、控制显隐与交互媒体例外；已有 Web REST `MediaGalleryDataSource`、Server Range、VirtualCollection、Viewer 复用契约继续校验。完整 GitHub CI 及最终门禁按精确工作 SHA 验收；iOS 27 真机截图/辅助功能、动态地址栏/已安装模式和 10k/100k 实体媒体真实性能仍是独立缺口，不以测试模拟冒充真机已复刻。
+
+
+## P1-2b · Viewer 的 iOS 27 全画布与浮层 Chrome（2026-10-11）
+
+**状态：已实现代码与 React 组件回归候选；CI、合并、iOS 27 真机像素差异必须分开记录。** P1-2a 修复了细指针移动设备打开 Gallery Viewer 会变成桌面 Modal 的问题；本阶段又确认原有 `FileOpenPreviewDialog` 的窄屏 Header/Filmstrip/Actions 只是改变 opacity，三块在不可见时仍占据正常 flex 布局高度，导致照片可用画布缩小，不能满足 iOS 27「照片」轻点隐藏控件后全屏沉浸查看的结构。Apple 的「查看照片和视频」说明亦规定返回图库、横向浏览、缩略图快速导航、轻点隐藏/显示控制；但实际控件颜色、玻璃、动画仍需同版本设备截图校准。
+
+**仅图库专用展示开关：** `XDriveMediaGalleryViewer` 在原有唯一 `XDriveOpenPreviewDialog` 上明确传入 `mobileEdgeToEdge`。仅当 `immersive && mobileEdgeToEdge && compactTouch` 才在 390/899 等小于 900px 的移动/细指针图库启用覆盖式 Header、贴底带安全区的原 `44px` actions、同一 Filmstrip，令 `DialogContent` 在 `100dvh` 内占满一整块画布；隐藏浮层不改变照片缩放/横划及 Live/RAW/Video 内容尺寸，也不凭空新增媒体接口/身份/任务/Viewer。顶部单个图标改为返回方向且复用现有 `onClose`，不创建另一条 App Back；普通 Files Quick Look、其他使用共享预览组件的调用者、900px 及以上宽屏、既有全屏切换均保持原结构。半透明遮罩/模糊是可用视觉初稿，**不称为已校准的 iOS 27 Liquid Glass 像素值**。
+
+**验收门槛：** 扩展 `desktop/tests/mobile-gallery-viewer-pointer-parity.cjs` 的真实 React 渲染：390/899 × coarse/fine 验证同一个 Canvas 高度、绝对定位的上下浮层、safe-area、Filmstrip、单个返回回调、下载/其它操作保留、2200ms 自动隐藏不占位；900px 和 Quick Look 禁用图层回归；保持 Web REST、`XDriveMediaGalleryPage` 与共享 `VirtualCollection/VirtualGrid/Timeline` 的一套数据合同。源代码测试、CI 和真机验收分别计账。iOS 27 Safari 标签/安装模式、VoiceOver、原生截图对比、滚动/动画和真 10k/100k HEVC/RAW/LIVP 设备性能仍待外部证据。
+
+
+**P1-2b 首轮精确提交 CI 回归修订：** [CI #38109891574](https://github.com/lazyxu/xdrive/actions/runs/38109891574) 的 `desktop-tests` 运行中，新增 3 项 P1-2b mounted React 验证均通过，但旧 `desktop/tests/shared-viewer-touch.cjs` 以完整单行文本匹配 `'& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 }`，误将新增的浮层对比色字段判为 44px 触控目标缺失。本轮仅将该旧静态断言改为可允许额外字段/换行的 44px 尺寸断言，保留真实 mounted 44px、浮层关闭/隐藏与共享 API 验证；**没有放宽按钮尺寸要求或改动产品文件**。同一固定 GitHub 父版本重建仍恰好一个工作提交，新 SHA 需完整 PR CI/final-gate 验证；旧跑次其它通过项不得移作新提交依据。
