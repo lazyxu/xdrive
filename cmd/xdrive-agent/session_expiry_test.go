@@ -77,6 +77,15 @@ func TestExpiredSessionBecomesReloginStateWithoutLosingSettings(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("controller did not stop")
 		}
+		// Run() and the transfer-history writer own separate goroutines.
+		// Join the final history flush before t.TempDir cleans config/xdrive.
+		// Otherwise a late atomic rename can recreate the directory while
+		// test cleanup is removing it (reproduced in Go -race CI twice).
+		select {
+		case <-controller.historyWriterDone:
+		case <-time.After(5 * time.Second):
+			t.Fatal("transfer history writer did not stop")
+		}
 	}()
 
 	deadline := time.Now().Add(8 * time.Second)
