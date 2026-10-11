@@ -2281,6 +2281,9 @@ jobs:
           grep -q 'load_exact xdrive-server-image xdrive/server:test' .github/workflows/release.yml
           grep -q 'load_exact xdrive-caddy-image xdrive/caddy:test' .github/workflows/release.yml
           grep -q 'load_exact xdrive-photo-face-image xdrive/photo-face:test' .github/workflows/release.yml
+          grep -q 'load_exact xdrive-media-worker-image xdrive/media-worker:test' .github/workflows/release.yml
+          grep -q 'profiles: \["media-worker"\]' deploy/docker-compose.yml
+          bash -n scripts/ci/test-media-worker-image.sh
           if grep -q 'xdrive-web-image\|xdrive/web:test\|xdrive-web:' .github/workflows/release.yml deploy/docker-compose.yml; then
             echo "runtime Web image/container must be removed after Web -> Caddy merge" >&2
             exit 1
@@ -2469,6 +2472,21 @@ jobs:
       - name: Real Rootless Docker install/status/doctor E2E
         shell: bash
         run: bash scripts/ci/test-server-rootless-e2e.sh dist/server-image dist/caddy-image
+
+  media-worker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build FFmpeg/FFprobe runtime and verify offline private-socket health
+        shell: bash
+        run: bash scripts/ci/test-media-worker-image.sh dist/media-worker-image
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xdrive-media-worker-image
+          path: dist/media-worker-image
+          if-no-files-found: error
+          retention-days: 2
+          compression-level: 0
 
   photo-face-image:
     runs-on: ubuntu-latest
@@ -2840,6 +2858,7 @@ jobs:
       - server-validation
       - server-image
       - photo-face-image
+      - media-worker-image
       - server-rootless-e2e
       - caddy-image
       - server-backup
@@ -2868,6 +2887,7 @@ jobs:
       - server-image
       - caddy-image
       - photo-face-image
+      - media-worker-image
     permissions:
       contents: write
       packages: write

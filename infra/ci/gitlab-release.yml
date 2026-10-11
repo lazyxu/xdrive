@@ -79,6 +79,8 @@ publish-server-images:
           artifacts: true
         - job: photo-face-image
           artifacts: true
+        - job: media-worker-image
+          artifacts: true
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE'
       needs:
         - job: server-image
@@ -86,6 +88,8 @@ publish-server-images:
         - job: caddy-image
           artifacts: true
         - job: photo-face-image
+          artifacts: true
+        - job: media-worker-image
           artifacts: true
     - when: never
   script:

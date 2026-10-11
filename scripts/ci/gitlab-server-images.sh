@@ -33,11 +33,13 @@ prepare_exact() {
 prepare_exact xdrive-server dist/server-image xdrive/server:test
 prepare_exact xdrive-caddy dist/caddy-image xdrive/caddy:test
 prepare_exact xdrive-photo-face dist/photo-face-image xdrive/photo-face:test
+prepare_exact xdrive-media-worker dist/media-worker-image xdrive/media-worker:test
 
 images=(
   "$CI_REGISTRY_IMAGE/xdrive-server:$XDRIVE_IMAGE_TAG"
   "$CI_REGISTRY_IMAGE/xdrive-caddy:$XDRIVE_IMAGE_TAG"
   "$CI_REGISTRY_IMAGE/xdrive-photo-face:$XDRIVE_IMAGE_TAG"
+  "$CI_REGISTRY_IMAGE/xdrive-media-worker:$XDRIVE_IMAGE_TAG"
 )
 pids=()
 

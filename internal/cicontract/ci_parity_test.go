@@ -67,6 +67,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-validation":              "linux",
 		"server-image":                   "linux",
 		"photo-face-image":               "linux",
+		"media-worker-image":             "linux",
 		"caddy-image":                    "linux",
 		"server-backup":                  "linux",
 		"test-linux-artifact":            "linux",
@@ -93,6 +94,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 		"server-validation":              "$XDRIVE_CI_GO_IMAGE",
 		"server-image":                   "$XDRIVE_CI_GO_IMAGE",
 		"photo-face-image":               "$XDRIVE_CI_GO_IMAGE",
+		"media-worker-image":             "$XDRIVE_CI_GO_IMAGE",
 		"caddy-image":                    "$XDRIVE_CI_GO_IMAGE",
 		"server-backup":                  "$XDRIVE_CI_GO_IMAGE",
 		"test-linux-artifact":            "$XDRIVE_CI_GO_IMAGE",
@@ -511,7 +513,7 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	assertGitLabJobNeeds(t, gitlab, "test-windows-rollback-artifact", []string{"package-windows-client"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-upgrade-artifact", []string{"package-windows-client", "test-windows-rollback-artifact"})
 	assertGitLabJobNeeds(t, gitlab, "test-windows-smoke-artifact", []string{"package-windows-client", "test-windows-upgrade-artifact"})
-	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image"})
+	assertGitHubJobNeeds(t, github, "publish-master", []string{"build-source-agent", "package-linux-client", "package-windows-client", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 	assertGitHubJobNeeds(t, github, "publish-stable", []string{"final-gate"})
 	assertGitLabSharedResourceGroup(t, gitlab, []string{
 		"test-windows-rollback-artifact",
@@ -1023,8 +1025,8 @@ func TestGitHubAndGitLabReleaseStayInParity(t *testing.T) {
 	}
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"build-source-agent", "final-gate"})
 	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "release-assets", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"build-source-agent"})
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image"})
-	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image", "photo-face-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG =~ /^v.+/`, []string{"final-gate", "server-image", "caddy-image", "photo-face-image", "media-worker-image"})
+	assertGitLabRuleNeeds(t, gitlabReleaseYAML, "publish-server-images", `$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`, []string{"server-image", "caddy-image", "photo-face-image", "media-worker-image"})
 
 	requireRaw(t, "GitLab release pipeline", gitlabRelease,
 		`$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "master" && $CI_REGISTRY_IMAGE`,
