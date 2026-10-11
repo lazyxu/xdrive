@@ -42,6 +42,7 @@ const sharedUI = {
   XDriveFilePreviewSurface: (props) => React.createElement('preview-content', props),
   XDriveMediaViewerContent: (props) => React.createElement('media-content', props),
   XDriveMediaGalleryFilmstrip: (props) => React.createElement('gallery-filmstrip', props),
+  XDriveMediaGalleryEditDialog: (props) => React.createElement('edit-dialog', props),
   XDriveStatePanel: ({ message }) => React.createElement('p', null, message),
   XDriveStatusAlert: ({ children }) => React.createElement('p', { role: 'alert' }, children),
   XDriveFileTagDialog: () => null, XDriveMediaDetailsInspector: () => null,
@@ -414,5 +415,157 @@ test('P1-2d no Filmstrip is generated for standalone media without a Gallery ses
   } finally {
     await act(async () => renderer.unmount())
     compactTouch = false
+  }
+})
+
+
+test('P1-2e real Web Media Viewer reuses Gallery edit dialog and acknowledged recipe write/reset', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 713, revision: 2, type: 'file', name: 'editable.png', size: 4096 }
+  const original = { node, metadata: {
+    media_kind: 'image', mime_type: 'image/png', index_state: 'ready', has_thumbnail: false,
+  } }
+  const operations = []
+  const input = {
+    revision: 0, rotation_degrees: 90, flip_horizontal: false, flip_vertical: false,
+    crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1,
+    exposure_ev: 0, contrast: 0, saturation: 0, trim_start_ms: 0, trim_end_ms: 0,
+  }
+  const recipe = { ...input, version: 1, revision: 5, source_current: true, media_kind: 'image' }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: node.id } },
+        api: { node: async () => node, mediaItem: async () => original },
+        gallerySource: {
+          loadThumbnail: async () => null,
+          saveEditRecipe: async (id, payload) => {
+            operations.push(['save', id, payload])
+            return recipe
+          },
+          resetEditRecipe: async (id, revision) => {
+            operations.push(['reset', id, revision])
+            return { ...recipe, revision: 0 }
+          },
+        },
+        shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    const editor = () => renderer.root.findAll(el => el.type === 'edit-dialog')[0]
+    assert.ok(editor(), 'one existing shared Gallery edit dialog is mounted')
+    assert.equal(editor().props.open, false)
+    assert.equal(buttons(renderer, '编辑媒体').length, 1, 'same authorized edit operation reaches the mobile rail')
+    const rail = renderer.root.find(el =>
+      el.type === 'div' && el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+    assert.equal(rail.findAll(el => el.type === 'button' && el.props['aria-label'] === '编辑媒体').length, 1)
+    await act(async () => { buttons(renderer, '编辑媒体')[0].props.onClick() })
+    assert.equal(editor().props.open, true)
+    assert.equal(editor().props.item.node.id, node.id)
+    assert.equal(editor().props.item.node.revision, node.revision)
+    await act(async () => { await editor().props.onSave(editor().props.item, input) })
+    assert.deepEqual(operations[0], ['save', node.id, input],
+      'Viewer must use the exact MediaGalleryDataSource edit recipe contract')
+    assert.equal(editor().props.item.edit_recipe?.revision, 5,
+      'authorized Server recipe acknowledgment updates the existing Viewer session')
+    await act(async () => { await editor().props.onReset(editor().props.item, 5) })
+    assert.deepEqual(operations[1], ['reset', node.id, 5])
+    assert.equal(editor().props.item.edit_recipe, undefined, 'reset removes the recipe from active Viewer state')
+    await act(async () => { editor().props.onClose() })
+    assert.equal(editor().props.open, false)
+    assert.equal(buttons(renderer, '编辑媒体').length, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2e edit capability is gated by source and media kind, never a no-op icon', async () => {
+  compactTouch = false
+  viewportWidth = 900
+  try {
+    const withoutPermission = await mount('media-viewer', 'restricted.jpg')
+    try {
+      assert.equal(buttons(withoutPermission, '编辑媒体').length, 0,
+        'no edit capability on source means no button on wide or mobile Web')
+    } finally {
+      await act(async () => withoutPermission.unmount())
+    }
+    const liveNode = { id: 714, revision: 2, type: 'file', name: 'paired.jpg', size: 4096 }
+    const live = { node: liveNode, metadata: {
+      media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready', has_thumbnail: false,
+    }, live_photo: true, asset_kind: 'live_photo' }
+    let renderer
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: liveNode.id } },
+        api: { node: async () => liveNode, mediaItem: async () => live },
+        gallerySource: {
+          saveEditRecipe: async () => { throw Error('must never edit Live Photo') },
+          loadThumbnail: async () => null,
+        },
+        shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    try {
+      assert.equal(buttons(renderer, '编辑媒体').length, 0,
+        'existing shared editing eligibility excludes paired Live Photo')
+      assert.equal(renderer.root.find(el => el.type === 'edit-dialog').props.open, false)
+    } finally {
+      await act(async () => renderer.unmount())
+    }
+  } finally {
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2e editor is scoped to one Node/revision and closes on Viewer route change', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const nodes = [81, 82].map(id => ({ id, revision: 1, type: 'file', name: id + '.png', size: 4096 }))
+  const api = { node: async id => nodes.find(node => node.id === id),
+    mediaItem: async id => ({ node: nodes.find(node => node.id === id),
+      metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready', has_thumbnail: false } }) }
+  const source = { loadThumbnail: async () => null,
+    saveEditRecipe: async () => ({ revision: 1 }) }
+  const props = {
+    api, gallerySource: source, shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 81 } },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => { buttons(renderer, '编辑媒体')[0].props.onClick() })
+    assert.equal(renderer.root.find(el => el.type === 'edit-dialog').props.open, true)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 82 } },
+      }))
+    })
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+    const dialog = renderer.root.find(el => el.type === 'edit-dialog')
+    assert.equal(dialog.props.open, false, 'a previous photo editor cannot transfer to the next route')
+    assert.equal(dialog.props.item, null)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 81 } },
+      }))
+    })
+    await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
+    assert.equal(renderer.root.find(el => el.type === 'edit-dialog').props.open, false,
+      'returning to the same Node does not silently reopen the prior editor')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
   }
 })
