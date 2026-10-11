@@ -1172,6 +1172,10 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 				// A deferred capacity trim is a new snapshot revision for waiters.
 				m.touchLocked()
 			}
+			// The writer may have observed a terminal state while teardown was
+			// still pending. Publish a fresh durable-history event only after
+			// cancellation has actually settled, even if trim removed the root.
+			m.markHistoryDirtyLocked()
 		}
 		m.mu.Unlock()
 	}
