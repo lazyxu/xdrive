@@ -146,6 +146,21 @@ export interface XDriveLocalBackupDelta {
   missing_inference_safe: false
 }
 
+// Owning Desktop request for SERVER-PERSISTED ADVISORY candidates only.
+// Existing SourceItem/Node/CAS and Mirror state are never changed here.
+export interface XDriveLocalBackupEvidence {
+  source_id: number
+  revision: number
+  hints: number
+  matched: number
+  unmatched: number
+  stored: number
+  replayed: number
+  complete: true
+  authoritative: false
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number

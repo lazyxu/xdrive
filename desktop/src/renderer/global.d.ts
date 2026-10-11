@@ -11,6 +11,7 @@ import type {
   XDriveLocalBackupPreview,
   XDriveLocalBackupSnapshot,
   XDriveLocalBackupDelta,
+  XDriveLocalBackupEvidence,
   XDriveLocalBoundBackupRemoval,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialReveal,
@@ -730,6 +731,8 @@ declare global {
         cancelDeviceBackupLocalSnapshot: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         getDeviceBackupLocalDelta: (sourceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupDelta>>
         cancelDeviceBackupLocalDelta: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
+        stageDeviceBackupLocalEvidence: (sourceID: number, requestID: string) => Promise<DesktopResult<XDriveLocalBackupEvidence>>
+        cancelDeviceBackupLocalEvidence: (requestID: string) => Promise<DesktopResult<{ cancelled: boolean }>>
         removeDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupRemoval>>
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>

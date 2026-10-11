@@ -3,23 +3,39 @@ package main
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/localpushstage"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
-// cloudStageLocalRenameEvidence is an owning-Agent-private preparation step.
-// It is intentionally NOT an Agent HTTP/IPC or Desktop/renderer operation.
-// It stages ONLY provisional, non-authoritative metadata: never activation,
-// upload, SourceItem/alias mutation, Node moves or Mirror missing evidence.
-func (c *agentController) cloudStageLocalRenameEvidence(
+// Owning-Desktop-only bounded advisory evidence summary. No path, Root,
+// SourceItem, native filesystem identity or device credential may enter IPC.
+type localBackupEvidenceStageSummary struct {
+	SourceID             uint64 `json:"source_id"`
+	Revision             uint64 `json:"revision"`
+	Hints                int64  `json:"hints"`
+	Matched              int64  `json:"matched"`
+	Unmatched            int64  `json:"unmatched"`
+	Stored               int64  `json:"stored"`
+	Replayed             int64  `json:"replayed"`
+	Complete             bool   `json:"complete"`
+	Authoritative        bool   `json:"authoritative"`
+	MissingInferenceSafe bool   `json:"missing_inference_safe"`
+}
+
+// The owning Agent alone owns the credential and Root. This explicit request
+// ONLY stages revocable/immutable advisory metadata, never cloud operations.
+func (c *agentController) CloudStageLocalBoundBackupEvidence(
 	ctx context.Context, sourceID uint64,
-) (localpushstage.LocalVerifiedRenameStageSummary, error) {
-	var empty localpushstage.LocalVerifiedRenameStageSummary
+) (localBackupEvidenceStageSummary, error) {
+	var empty localBackupEvidenceStageSummary
 	if ctx == nil || sourceID == 0 {
 		return empty, privateLocalSnapshotError(errors.New("valid local Source required"))
 	}
+	stageCtx, cancel := context.WithTimeout(ctx, 300*time.Second)
+	defer cancel()
 	if !c.localFolderGrantMu.TryLock() {
 		return empty, privateLocalSnapshotError(errors.New("owning Agent operation busy"))
 	}
@@ -29,11 +45,11 @@ func (c *agentController) cloudStageLocalRenameEvidence(
 	if err != nil {
 		return empty, privateLocalSnapshotError(err)
 	}
-	source, proof, cli, err := c.localBoundBackupConfig(ctx, sourceID)
+	source, proof, cli, err := c.localBoundBackupConfig(stageCtx, sourceID)
 	if err != nil {
 		return empty, privateLocalSnapshotError(err)
 	}
-	rules, err := cli.LocalBoundRules(ctx, sourceID, proof)
+	rules, err := cli.LocalBoundRules(stageCtx, sourceID, proof)
 	if err != nil || rules.SourceID != sourceID || rules.Revision != source.Revision {
 		return empty, privateLocalSnapshotError(errors.New("local rules or Source revision changed"))
 	}
@@ -47,15 +63,15 @@ func (c *agentController) cloudStageLocalRenameEvidence(
 		return empty, privateLocalSnapshotError(errors.New("owning Root grant invalid"))
 	}
 	if _, err := localpush.PublishLocalReconcileEvidence(
-		ctx, configDir, grant, source.Revision); err != nil {
+		stageCtx, configDir, grant, source.Revision); err != nil {
 		return empty, privateLocalSnapshotError(err)
 	}
 	result, err := localpushstage.StageVerifiedLocalRenameEvidence(
-		cli, ctx, configDir, grant, source.Revision, proof)
+		cli, stageCtx, configDir, grant, source.Revision, proof)
 	if err != nil {
 		return empty, privateLocalSnapshotError(err)
 	}
-	latest, err := cli.LocalBoundRules(ctx, sourceID, proof)
+	latest, err := cli.LocalBoundRules(stageCtx, sourceID, proof)
 	if err != nil || latest.SourceID != sourceID || latest.Revision != source.Revision ||
 		latest.IgnoreRules != rules.IgnoreRules ||
 		localBackupRuleSessionUnchanged(cfg) != nil {
@@ -63,5 +79,13 @@ func (c *agentController) cloudStageLocalRenameEvidence(
 		// SourceItem/Run authority even if a later revocation wins this race.
 		return empty, privateLocalSnapshotError(errors.New("owning device or rules changed"))
 	}
-	return result, nil
+	if err := stageCtx.Err(); err != nil {
+		return empty, privateLocalSnapshotError(err)
+	}
+	return localBackupEvidenceStageSummary{
+		SourceID: sourceID, Revision: source.Revision,
+		Hints: result.Hints, Matched: result.Matched,
+		Unmatched: result.Unmatched, Stored: result.Stored, Replayed: result.Replayed,
+		Complete: true, Authoritative: false, MissingInferenceSafe: false,
+	}, nil
 }
