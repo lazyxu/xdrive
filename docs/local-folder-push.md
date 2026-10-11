@@ -561,7 +561,7 @@ scheduled execution, NAS Push or Mirror remote deletion is introduced.
 Native Windows/Linux 100k and >=4 GiB physical acceptance and GitLab
 delivery remain separate gates.
 
-## P0-B3 · Authenticated Agent presence heartbeat (GitHub PR verification; not merged)
+## P0-B3 · Authenticated Agent presence heartbeat (merged #1445; 76-job CI green)
 
 This phase adds only **device-credential-observed presence** for an already
 enrolled Windows/Linux Agent. The Agent sends a bounded, no-body POST
@@ -595,5 +595,49 @@ Revocation fences subsequent heartbeats but cannot alone guarantee immediate
 termination of in-flight uploads (none are enabled in this phase).
 Source activation, real CAS upload/commit, identity promotion, Mirror delete,
 automatic schedule, NAS Push, 100k/4GiB physical acceptance and GitLab
-delivery remain separately blocked. Exact-head GitHub PR CI is the merge gate;
-do not report this phase as merged before it is green and actually integrated.
+delivery remain separately blocked. PR #1445 passed the full 76-job exact-head CI and is merged; the related
+work branch was automatically removed. This is presence only, not Push execution.
+
+## L03-D2b2c1 · Owning-Agent private paginated advisory reconciliation readback (GitHub PR verification)
+
+After #1422/#1429 persisted candidate evidence and #1437/#1441 added an
+own-device **count-only** recovery view, the owning native Agent needs a
+bounded way to replay individual candidates when a later executor resumes.
+This phase adds a dedicated read-only POST at
+`/api/v1/sources/:id/local-identity/evidence-page` (POST because the
+private generation digests must not enter a URL). It is not a general Source
+or Web read contract.
+
+The Server requires the owner JWT, registered and unrevoked owning Agent
+credential, exact bound Root ID/fingerprint and current `If-Match` Source
+revision. The authenticated device -> Source -> Root proof is rechecked
+inside the same transaction as the query; only a **paused** local-folder
+Push Source is eligible. A strict <=512-byte body specifies two distinct
+lowercase SHA-256 generation digests, 1–64 rows and `after_evidence_id`.
+The SQL keyset is ordered by immutable evidence ID with `LIMIT + 1`, and
+is restricted to the exact source, revision, device, Root, fingerprint,
+PREVIOUS and CURRENT generation. Replies are no-store, bounded, and contain
+only existing evidence IDs, SourceItem IDs and hashed previous/current
+path/native-identity keys for the **owning Agent**. No raw local file names,
+absolute paths, Root IDs, tokens, freeform errors or credential material.
+
+The dedicated Go Client validates the request, bounded reply size, exact
+Source/revision, strictly increasing cursor, SHA-256 key syntax, duplicate
+SourceItem claims and both permanently false safety flags. The native
+Agent-private helper loads its OS credential, current bound Root grant,
+saved rules and two sealed inventory generations before the read and
+rechecks the generation, rules and account session afterward. It is
+**not registered as Electron/Preload/Desktop IPC or exposed to Web,
+Mobile Web or any foreign Desktop**. PostgreSQL tests exercise owner/other
+account, same-account foreign device, forged credentials and Root,
+revocation, stale Source revision, generation isolation, malformed/oversized
+bodies, keyset exhaustion and absence of SourceRun or evidence writes.
+
+Every returned row is still **advisory**, even after local generation
+verification. The Server does not independently attest native files, and
+staged evidence is not a commit token or content-equality proof. A later
+explicit transaction must re-verify canonical SourceItem and Node revision,
+alias collisions, live Root/source, and actual content before promoting
+identity. No `SourceItemAlias` or SourceItem move, upload, CAS/Node
+mutation, SourceRun activation, scheduled execution, Mirror deletion or
+NAS Push is enabled here. The 100k and >=4GiB physical tests are still L07.

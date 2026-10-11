@@ -326,6 +326,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/evidence", s.requireLocalSourceExecutor(), s.recordLocalSourceItemEvidence)
 	// Owning-Agent-only, bounded current-generation advisory COUNT; no mutation.
 	authed.POST("/sources/:id/local-identity/evidence-summary", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidenceSummary)
+	// Native owning-Agent only: ordered, capped private advisory candidate readback.
+	authed.POST("/sources/:id/local-identity/evidence-page", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidencePage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
