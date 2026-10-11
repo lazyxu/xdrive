@@ -1732,6 +1732,11 @@ function FileManager({
             void refreshFileOperations()
             setFeedback({ tone: 'good', message: '已提交删除任务；实际执行结果请查看任务中心。' })
           }}
+          onCreativeCompleted={() => {
+            // Generated media is a new canonical file; reload the mounted
+            // Gallery's shared sparse range without replacing its Viewer.
+            setGalleryUploadRevision((revision) => revision + 1)
+          }}
           onError={handleError}
         />
       ) : null}

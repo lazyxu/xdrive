@@ -42,6 +42,8 @@ const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const galleryIos27ViewerScenario = options.scenario === 'gallery-ios27-viewer';
 const galleryViewerEditFixture = { saved: [], reset: [] };
+const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
+  denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
 const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
@@ -68,6 +70,7 @@ const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : (filesOrga
   node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario || filesOrganizationScenario ? 2 : 1),
   metadata: { media_kind: 'image', mime_type: 'image/png', width: 80, height: 80, captured_at: stamp,
     index_state: 'ready', has_thumbnail: true, thumbnail_mime_type: 'image/png', thumbnail_width: 80, thumbnail_height: 80 },
+  ...(galleryIos27ViewerScenario ? { asset_kind: 'image' } : {}),
   favorite: false, tags: [], people: [],
 }));
 const mediaByID = new Map(mediaItems.map((item) => [item.node.id, item]));
@@ -570,6 +573,75 @@ function fixtureFor(request, role) {
       crop_x: 0, crop_y: 0, crop_width: 1, crop_height: 1,
       exposure_ev: 0, contrast: 0, saturation: 0,
       trim_start_ms: 0, trim_end_ms: 0 };
+  }
+  // P1-2h: real built-Web routes use the existing MediaGalleryDataSource,
+  // not synthetic callbacks. One deliberate 403 precedes explicit retry; the
+  // generated Node is only registered when the source job completes.
+  match = /^POST \/api\/v1\/media\/items\/(\d+)\/creative$/.exec(key);
+  if (galleryIos27ViewerScenario && match && mediaByID.has(Number(match[1]))) {
+    queryOnly(url, []);
+    const sourceID = Number(match[1]), input = jsonBody(request);
+    const source = mediaByID.get(sourceID);
+    assert.equal(source.asset_kind, 'image');
+    assert.equal(source.node.revision, 1);
+    assert.equal(input.kind, 'cutout');
+    assert.equal(input.cutout_mode, 'object');
+    assert(Array.isArray(input.points) && input.points.some(point =>
+      point.foreground && point.x >= 0 && point.x <= 1 && point.y >= 0 && point.y <= 1),
+      'real shared editor must submit actual normalized cutout hints');
+    const status = galleryViewerCreativeFixture.denyNext ? 403 : 200;
+    galleryViewerCreativeFixture.denyNext = false;
+    galleryViewerCreativeFixture.attempts.push({ sourceID, revision: source.node.revision, status, input });
+    if (status !== 200) return {
+      __fixtureStatus: 403,
+      __fixturePurpose: 'controlled first Server creative permission denial before explicit retry',
+      __fixtureBody: { error: '验收：没有创作权限，请重试。' },
+    };
+    const index = galleryViewerCreativeFixture.accepted.length + 1;
+    const generation = {
+      id: 'qa-gallery-creative-' + index, kind: 'cutout', state: 'queued',
+      source_asset_id: sourceID, source_node_id: sourceID,
+      source_node_revision: source.node.revision,
+      created_at: stamp, updated_at: stamp,
+    };
+    galleryViewerCreativeFixture.accepted.push({ sourceID, input, id: generation.id });
+    galleryViewerCreativeFixture.generations.set(generation.id, { generation, reads: 0 });
+    return generation;
+  }
+  match = /^GET \/api\/v1\/media\/creative\/(qa-gallery-creative-\d+)$/.exec(key);
+  if (galleryIos27ViewerScenario && match) {
+    queryOnly(url, []);
+    const record = galleryViewerCreativeFixture.generations.get(match[1]);
+    assert(record, 'poll only a returned real creative job identifier');
+    record.reads++;
+    galleryViewerCreativeFixture.polls.push({ id: match[1], count: record.reads });
+    if (record.generation.state !== 'cancelled' && record.generation.state !== 'completed') {
+      // The second job remains running to make its explicit cancellation
+      // deterministic; the first needs two real GETs before it completes.
+      const isFirst = match[1] === 'qa-gallery-creative-1';
+      record.generation.state = isFirst && record.reads >= 2 ? 'completed' : 'running';
+      if (record.generation.state === 'completed') {
+        const outputID = 2600 + galleryViewerCreativeFixture.accepted.length;
+        record.generation.output_node_id = outputID;
+        const generatedNode = makeNode(outputID, 'generated-cutout.png', 1);
+        allNodes.set(outputID, generatedNode);
+        mediaByID.set(outputID, { node: generatedNode, asset_kind: 'image',
+          metadata: { media_kind: 'image', mime_type: 'image/png',
+            index_state: 'ready', has_thumbnail: true } });
+      }
+    }
+    return record.generation;
+  }
+  match = /^POST \/api\/v1\/media\/creative\/(qa-gallery-creative-\d+)\/cancel$/.exec(key);
+  if (galleryIos27ViewerScenario && match) {
+    queryOnly(url, []);
+    assert.deepEqual(jsonBody(request), {});
+    const record = galleryViewerCreativeFixture.generations.get(match[1]);
+    assert(record && ['queued', 'running'].includes(record.generation.state),
+      'cancel only the actual still-running creative Server job');
+    record.generation.state = 'cancelled';
+    galleryViewerCreativeFixture.cancelled.push(match[1]);
+    return record.generation;
   }
   match = /^GET \/api\/v1\/media\/items\/(\d+)\/thumbnail$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) {
@@ -2774,6 +2846,85 @@ async function galleryIos27ViewerAcceptance(pointer) {
     new URL(page.url()).hash.includes('node=' + editNodeID));
   await page.screenshot({ path: path.join(outputDir, name + '-edit-recipe.png') });
 
+  // P1-2h: the actual routed Viewer must expose the same shared Creative
+  // Dialog as Gallery/Desktop, with real authorized POST/poll/cancel calls.
+  activeStage = name + '-creative-create-poll-and-cancel';
+  if (pointer === 'fine') await page.mouse.move(195, 390);
+  else await page.touchscreen.tap(195, 390);
+  await frame.locator('button[aria-label="创作图片"]').click();
+  const creativeDialog = page.locator('[data-xdrive-media-creative-dialog]');
+  await creativeDialog.waitFor();
+  const creativeSourceImage = creativeDialog.locator('img[alt^="photo-"]');
+  await creativeSourceImage.waitFor();
+  await creativeSourceImage.click({ position: { x: 30, y: 30 } });
+  await creativeDialog.getByRole('button', { name: '生成抠图' }).waitFor();
+  const creativeNodeID = Number(new URL(page.url()).hash.match(/node=(\d+)/)?.[1]);
+  assert(mediaByID.has(creativeNodeID), 'creative target must be same active canonical media Node');
+  galleryViewerCreativeFixture.denyNext = true;
+  const attemptsBeforeCreative = galleryViewerCreativeFixture.attempts.length;
+  const [creativeDenied] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/items/' + creativeNodeID + '/creative' &&
+      response.request().method() === 'POST'),
+    creativeDialog.getByRole('button', { name: '生成抠图' }).click(),
+  ]);
+  await creativeDialog.getByText(/没有创作权限/).waitFor();
+  check(name + ': real creative Server 403 preserves prompt, Viewer and explicit retry',
+    creativeDenied.status() === 403 &&
+    new URL(page.url()).hash.includes('node=' + creativeNodeID) &&
+    await creativeDialog.getByRole('button', { name: '生成抠图' }).isEnabled());
+  const [creativeQueued] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/items/' + creativeNodeID + '/creative' &&
+      response.request().method() === 'POST'),
+    creativeDialog.getByRole('button', { name: '生成抠图' }).click(),
+  ]);
+  const firstCreativeJob = await creativeQueued.json();
+  await creativeDialog.locator('img[alt="创作结果"]').waitFor();
+  check(name + ': shared creative POST and GET reach completed canonical output preview',
+    creativeQueued.status() === 200 && firstCreativeJob.state === 'queued' &&
+    galleryViewerCreativeFixture.polls.filter(p => p.id === firstCreativeJob.id).length >= 2 &&
+    galleryViewerCreativeFixture.generations.get(firstCreativeJob.id)?.generation.state === 'completed' &&
+    galleryViewerCreativeFixture.generations.get(firstCreativeJob.id)?.generation.output_node_id > 0);
+  await page.screenshot({ path: path.join(outputDir, name + '-creative-result.png') });
+  await creativeDialog.getByRole('button', { name: '再创作一次' }).click();
+  await creativeDialog.locator('img[alt^="photo-"]').click({ position: { x: 30, y: 30 } });
+  const [secondCreativeResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/items/' + creativeNodeID + '/creative' &&
+      response.request().method() === 'POST'),
+    creativeDialog.getByRole('button', { name: '生成抠图' }).click(),
+  ]);
+  const secondCreativeJob = await secondCreativeResponse.json();
+  const [cancelResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname ===
+      '/api/v1/media/creative/' + secondCreativeJob.id + '/cancel' &&
+      response.request().method() === 'POST'),
+    creativeDialog.getByRole('button', { name: '取消任务' }).click(),
+  ]);
+  const cancelledJob = await cancelResponse.json();
+  await creativeDialog.getByText('已取消').waitFor();
+  const creativeAttempts = galleryViewerCreativeFixture.attempts.slice(attemptsBeforeCreative);
+  result.samples[name + '-creative'] = {
+    sourceNodeID: creativeNodeID,
+    attempts: creativeAttempts,
+    jobs: galleryViewerCreativeFixture.accepted.slice(-2),
+    polls: galleryViewerCreativeFixture.polls.filter(p =>
+      p.id === firstCreativeJob.id || p.id === secondCreativeJob.id),
+    cancelled: galleryViewerCreativeFixture.cancelled.slice(),
+    outputNodeID: galleryViewerCreativeFixture.generations.get(firstCreativeJob.id)?.generation.output_node_id,
+  };
+  check(name + ': second shared creative job cancels explicitly; original Viewer remains active',
+    cancelResponse.status() === 200 && cancelledJob.state === 'cancelled' &&
+    galleryViewerCreativeFixture.cancelled.includes(secondCreativeJob.id) &&
+    creativeAttempts.length === 3 && creativeAttempts[0].status === 403 &&
+    creativeAttempts.slice(1).every(attempt =>
+      attempt.status === 200 && attempt.sourceID === creativeNodeID &&
+      attempt.revision === 1) &&
+    new URL(page.url()).hash.includes('node=' + creativeNodeID));
+  await creativeDialog.getByRole('button', { name: '关闭', exact: true }).click();
+  await creativeDialog.waitFor({ state: 'hidden' });
+
   activeStage = name + '-return';
   if (pointer === 'fine') await page.mouse.move(180, 380);
   await page.getByRole('button', { name: '返回', exact: true }).click();
@@ -2889,6 +3040,11 @@ async function main() {
       result.fixture.galleryViewer = { logicalItems: mediaItems.length,
       sharedEditEndpoints: ['PUT /api/v1/media/items/:id/edit', 'DELETE /api/v1/media/items/:id/edit'],
       sharedDeleteEndpoint: 'POST /api/v1/file-operations (type=delete)',
+      sharedCreativeEndpoints: [
+        'POST /api/v1/media/items/:id/creative',
+        'GET /api/v1/media/creative/:job',
+        'POST /api/v1/media/creative/:job/cancel',
+      ],
         physicalIOSDevice: false, actualGoServer: false, pointerModes: ['fine', 'coarse'] };
       result.sourceHashes = Object.fromEntries([
         'web/src/App.tsx', 'web/src/WebFileViewerApps.tsx',
@@ -2934,6 +3090,17 @@ async function main() {
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
           : [{ role: 'user' }, { role: 'admin' }, { role: 'user', viewMode: 'columns' }];
     for (const { role, viewMode, galleryDensity, viewerPointer } of cases) {
+      if (galleryIos27ViewerScenario) {
+        // Each native pointer mode is an independent real browser context.
+        // The first generated task must complete in both sessions, while
+        // the second task remains running until explicit cancellation.
+        galleryViewerCreativeFixture.attempts = [];
+        galleryViewerCreativeFixture.accepted = [];
+        galleryViewerCreativeFixture.polls = [];
+        galleryViewerCreativeFixture.cancelled = [];
+        galleryViewerCreativeFixture.generations.clear();
+        galleryViewerCreativeFixture.denyNext = false;
+      }
       if (filesOperationsScenario || filesTouchDragScenario) {
         operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
         Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });

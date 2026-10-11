@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
@@ -30,6 +31,8 @@ import {
   XDriveMediaDetailsInspector,
   XDriveMediaGalleryFilmstrip,
   XDriveMediaGalleryEditDialog,
+  XDriveMediaGalleryCreativeDialog,
+  xDriveMediaItemSupportsCreative,
   XDriveMediaViewerContent,
   XDriveShareDialog,
   XDriveStatePanel,
@@ -729,6 +732,7 @@ function WebMediaViewerApp({
   onShowInFolder,
   onClose,
   onFileOperationQueued,
+  onCreativeCompleted,
   onError,
 }: {
   route: Extract<XDriveWebAppRoute, { app: 'media-viewer' }>
@@ -739,6 +743,7 @@ function WebMediaViewerApp({
   onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
   onFileOperationQueued?: () => void
+  onCreativeCompleted?: () => void
   onError: (error: unknown) => void
 }) {
   const viewer = useViewerNode({
@@ -757,6 +762,13 @@ function WebMediaViewerApp({
   // A dialog belongs to one actual Node revision. Navigating the bounded
   // Filmstrip must never reopen a previous asset's editor on the next photo.
   const [editTarget, setEditTarget] = useState<{ id: number; revision: number } | null>(null)
+  // The shared Creative Dialog owns its own Server job. This target is only
+  // the visible originating Viewer session, not a second task controller.
+  const [creativeTarget, setCreativeTarget] = useState<{
+    id: number; revision: number; context?: string
+  } | null>(null)
+  const creativeTargetRef = useRef(creativeTarget)
+  creativeTargetRef.current = creativeTarget
   const [deleteTarget, setDeleteTarget] = useState<{ id: number; revision: number } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
   const deleteInFlightRef = useRef(false)
@@ -770,6 +782,7 @@ function WebMediaViewerApp({
   }
   useEffect(() => {
     setEditTarget(null)
+    setCreativeTarget(null)
     setDeleteTarget(null)
   }, [route.params.node, route.params.context])
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
@@ -788,6 +801,11 @@ function WebMediaViewerApp({
     editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision
       ? mediaItem : null
   const editOpen = Boolean(editingItem)
+  const creativeItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
+    creativeTarget?.id === mediaItem.node.id &&
+    creativeTarget.revision === mediaItem.node.revision &&
+    creativeTarget.context === route.params.context ? mediaItem : null
+  const creativeOpen = Boolean(creativeItem)
   const deletingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
     deleteTarget?.id === mediaItem.node.id && deleteTarget.revision === mediaItem.node.revision
       ? mediaItem : null
@@ -838,6 +856,25 @@ function WebMediaViewerApp({
             {mediaItem.favorite
               ? <StarRoundedIcon fontSize="small" />
               : <StarBorderRoundedIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {gallerySource.createCreativeGeneration &&
+      gallerySource.getCreativeGeneration &&
+      gallerySource.loadPreviewURL &&
+      !viewer.isTrashContext &&
+      xDriveMediaItemSupportsCreative(mediaItem) ? (
+        <Tooltip title="创作">
+          <IconButton
+            size="small"
+            aria-label="创作图片"
+            onClick={() => setCreativeTarget({
+              id: mediaItem.node.id,
+              revision: mediaItem.node.revision,
+              context: route.params.context,
+            })}
+          >
+            <AutoFixHighRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -915,7 +952,7 @@ function WebMediaViewerApp({
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen || editOpen || deleteOpen}
+        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -978,6 +1015,31 @@ function WebMediaViewerApp({
         loading={deleteBusy}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={submitDelete}
+      />
+      <XDriveMediaGalleryCreativeDialog
+        open={creativeOpen}
+        item={creativeItem}
+        loadPreviewURL={gallerySource.loadPreviewURL}
+        onCreate={gallerySource.createCreativeGeneration
+          ? (item, input) => gallerySource.createCreativeGeneration!(item.node.id, input)
+          : undefined}
+        onGet={gallerySource.getCreativeGeneration}
+        onCancel={gallerySource.cancelCreativeGeneration}
+        onCompleted={(generation) => {
+          // Only a completed generation of the still-active originating
+          // Node/revision can refresh the one mounted Gallery collection.
+          // Old asynchronous job results cannot mutate the next Viewer route.
+          if (!creativeItem || !creativeTarget ||
+              creativeTargetRef.current !== creativeTarget ||
+              currentDeleteRouteRef.current.node !== creativeItem.node.id ||
+              currentDeleteRouteRef.current.revision !== creativeItem.node.revision ||
+              currentDeleteRouteRef.current.context !== route.params.context ||
+              generation.state !== 'completed' || !generation.output_node_id ||
+              generation.source_node_id !== creativeItem.node.id ||
+              generation.source_node_revision !== creativeItem.node.revision) return
+          onCreativeCompleted?.()
+        }}
+        onClose={() => setCreativeTarget(null)}
       />
       <XDriveMediaGalleryEditDialog
         open={editOpen}
@@ -1219,6 +1281,7 @@ export function WebFileViewerApps({
   onShowInFolder,
   onClose,
   onFileOperationQueued,
+  onCreativeCompleted,
   onError,
 }: {
   route: XDriveWebAppRoute
@@ -1229,6 +1292,7 @@ export function WebFileViewerApps({
   onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
   onFileOperationQueued?: () => void
+  onCreativeCompleted?: () => void
   onError: (error: unknown) => void
 }) {
   if (route.app === 'preview') {
@@ -1261,6 +1325,7 @@ export function WebFileViewerApps({
         onShowInFolder={onShowInFolder}
         onClose={onClose}
         onFileOperationQueued={onFileOperationQueued}
+        onCreativeCompleted={onCreativeCompleted}
         onError={onError}
       />
     )

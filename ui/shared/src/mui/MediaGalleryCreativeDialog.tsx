@@ -103,6 +103,10 @@ export function XDriveMediaGalleryCreativeDialog({
 }) {
   const imageRef = useRef<HTMLImageElement | null>(null)
   const completedRef = useRef('')
+  // Completion notification must never own the result-preview request's
+  // lifetime: the callback may change when Gallery refreshes its range.
+  const onCompletedRef = useRef(onCompleted)
+  onCompletedRef.current = onCompleted
   const creativeActionGenerationRef = useRef(0)
   const cutoutPointDragRef = useRef<number | null>(null)
   const [mode, setMode] = useState<CreativeMode>('cutout')
@@ -220,17 +224,22 @@ export function XDriveMediaGalleryCreativeDialog({
     }
   }, [generation?.id, generation?.state, onGet, open])
 
+  // Notify the owning Gallery exactly once per completed durable task.
+  // The callback may change when that Gallery refreshes its sparse window;
+  // never let its identity cancel the independent generated-image preview.
   useEffect(() => {
-    if (
-      !open ||
-      generation?.state !== 'completed' ||
-      !generation.output_node_id ||
-      !loadPreviewURL
-    ) return
+    if (!open || generation?.state !== 'completed' || !generation.output_node_id) return
     const completionKey = `${generation.id}:${generation.output_node_id}`
     if (completedRef.current === completionKey) return
     completedRef.current = completionKey
-    onCompleted?.(generation)
+    onCompletedRef.current?.(generation)
+  }, [generation?.id, generation?.output_node_id, generation?.state, open])
+
+  // Keep result loading alive across onCompleted callback rerenders. Only a
+  // changed output, loader, or an actual Dialog close can dispose it.
+  useEffect(() => {
+    if (!open || generation?.state !== 'completed' ||
+        !generation.output_node_id || !loadPreviewURL) return
     let disposed = false
     void loadPreviewURL(generation.output_node_id, 'image')
       .then((url) => {
@@ -245,7 +254,6 @@ export function XDriveMediaGalleryCreativeDialog({
     generation?.output_node_id,
     generation?.state,
     loadPreviewURL,
-    onCompleted,
     open,
   ])
 

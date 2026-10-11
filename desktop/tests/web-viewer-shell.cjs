@@ -43,6 +43,10 @@ const sharedUI = {
   XDriveMediaViewerContent: (props) => React.createElement('media-content', props),
   XDriveMediaGalleryFilmstrip: (props) => React.createElement('gallery-filmstrip', props),
   XDriveMediaGalleryEditDialog: (props) => React.createElement('edit-dialog', props),
+  XDriveMediaGalleryCreativeDialog: (props) => React.createElement('creative-dialog', props),
+  xDriveMediaItemSupportsCreative: (item) => Boolean(item &&
+    item.metadata.media_kind === 'image' && item.metadata.index_state === 'ready' &&
+    item.asset_kind === 'image' && !item.live_photo),
   XDriveConfirmDialog: (props) => React.createElement('confirm-dialog', props),
   XDriveStatePanel: ({ message }) => React.createElement('p', null, message),
   XDriveStatusAlert: ({ children }) => React.createElement('p', { role: 'alert' }, children),
@@ -827,5 +831,204 @@ test('P1-2g Files Quick Look keeps the regular Web file download adapter', async
     assert.deepEqual(errors, [])
   } finally {
     if (renderer) await act(async () => renderer.unmount())
+  }
+})
+
+
+test('P1-2h actual Web/Mobile routed Viewer reuses Gallery Creative Dialog and existing API/job callbacks', async () => {
+  for (const width of [390, 900]) {
+    compactTouch = width < 900
+    viewportWidth = width
+    const node = { id: 931, revision: 7, type: 'file', name: 'creative.png', size: 4096 }
+    const item = { node, asset_kind: 'image', metadata: {
+      media_kind: 'image', mime_type: 'image/png', index_state: 'ready', has_thumbnail: true,
+    } }
+    const calls = [], completed = []
+    const input = { kind: 'cutout', cutout_mode: 'object', points: [{ x: 0.5, y: 0.5, foreground: true }] }
+    const created = { id: 'creative-931', state: 'queued', kind: 'cutout',
+      source_asset_id: 931, source_node_id: 931, source_node_revision: 7 }
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: { node: async () => node, mediaItem: async () => item },
+          gallerySource: {
+            loadThumbnail: async () => null, loadPreviewURL: async () => '/preview/931',
+            createCreativeGeneration: async (id, payload) => {
+              calls.push(['create', id, payload]); return created
+            },
+            getCreativeGeneration: async (id) => {
+              calls.push(['get', id]); return { ...created, state: 'running' }
+            },
+            cancelCreativeGeneration: async (id) => {
+              calls.push(['cancel', id]); return { ...created, state: 'cancelled' }
+            },
+          },
+          shareDialogAdapter: {}, onReplaceRoute() {}, onClose() {},
+          onCreativeCompleted() { completed.push(node.id) },
+          onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      const dialog = () => renderer.root.find(el => el.type === 'creative-dialog')
+      assert.equal(dialog().props.open, false)
+      assert.equal(buttons(renderer, '创作图片').length, 1)
+      if (width === 390) {
+        const rail = renderer.root.find(el => el.type === 'div' &&
+          el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+        assert.equal(rail.findAll(el => el.type === 'button' &&
+          el.props['aria-label'] === '创作图片').length, 1)
+      }
+      await act(async () => { buttons(renderer, '创作图片')[0].props.onClick() })
+      assert.equal(dialog().props.open, true)
+      assert.equal(dialog().props.item.node.id, node.id)
+      assert.equal(dialog().props.item.node.revision, node.revision)
+      assert.equal(typeof dialog().props.loadPreviewURL, 'function')
+      assert.equal(await dialog().props.loadPreviewURL(node.id, 'image'), '/preview/931')
+      await act(async () => { assert.deepEqual(await dialog().props.onCreate(dialog().props.item, input), created) })
+      await act(async () => { await dialog().props.onGet(created.id) })
+      await act(async () => { await dialog().props.onCancel(created.id) })
+      assert.deepEqual(calls, [['create', 931, input], ['get', 'creative-931'], ['cancel', 'creative-931']],
+        'only existing shared MediaGalleryDataSource creative job APIs are used')
+      await act(async () => {
+        dialog().props.onCompleted({ ...created, state: 'completed', output_node_id: 2850 })
+      })
+      assert.deepEqual(completed, [931], 'completed job refreshes existing mounted Gallery exactly once')
+      await act(async () => {
+        dialog().props.onCompleted({ ...created, state: 'failed', output_node_id: 2850 })
+        dialog().props.onCompleted({ ...created, state: 'completed', source_node_revision: 8, output_node_id: 2850 })
+        dialog().props.onCompleted({ ...created, state: 'completed', source_node_id: 932, output_node_id: 2850 })
+      })
+      assert.deepEqual(completed, [931], 'unrelated, stale or failed results cannot refresh Gallery')
+      await act(async () => { dialog().props.onClose() })
+      assert.equal(dialog().props.open, false)
+      assert.equal(buttons(renderer, '创作图片').length, 1)
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+  compactTouch = false
+  viewportWidth = 390
+})
+
+test('P1-2h no Creative action without complete shared capability, or for unsupported and Trash media', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 932, revision: 1, type: 'file', name: 'restricted.jpg', size: 4096 }
+  const normal = { node, asset_kind: 'image', metadata: {
+    media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready',
+  } }
+  const fullSource = {
+    loadThumbnail: async () => null,
+    loadPreviewURL: async () => '/preview',
+    createCreativeGeneration: async () => { throw Error('must not create without eligibility') },
+    getCreativeGeneration: async () => { throw Error('must not poll') },
+  }
+  const props = {
+    api: { node: async () => node, mediaItem: async () => normal },
+    shareDialogAdapter: {}, onReplaceRoute() {}, onClose() {}, onError(error) { throw error },
+  }
+  const key = 'xdrive.web_app.session.v1:p12h-trash'
+  let renderer
+  try {
+    for (const source of [{ ...fullSource, createCreativeGeneration: undefined },
+      { ...fullSource, getCreativeGeneration: undefined },
+      { ...fullSource, loadPreviewURL: undefined }]) {
+      await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+        ...props, gallerySource: source, route: { app: 'media-viewer', params: { node: 932 } },
+      }), { createNodeMock: () => ({ focus() {} }) }) })
+      assert.equal(buttons(renderer, '创作图片').length, 0)
+      await act(async () => renderer.unmount())
+      renderer = null
+    }
+    for (const item of [
+      { ...normal, live_photo: true },
+      { ...normal, asset_kind: 'live_photo' },
+      { ...normal, asset_kind: 'raw' },
+      { ...normal, metadata: { ...normal.metadata, media_kind: 'video' } },
+      { ...normal, metadata: { ...normal.metadata, index_state: 'pending' } },
+    ]) {
+      await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+        ...props, api: { node: async () => node, mediaItem: async () => item },
+        gallerySource: fullSource, route: { app: 'media-viewer', params: { node: 932 } },
+      }), { createNodeMock: () => ({ focus() {} }) }) })
+      assert.equal(buttons(renderer, '创作图片').length, 0)
+      await act(async () => renderer.unmount())
+      renderer = null
+    }
+    storage.set(key, JSON.stringify({ version: 1, context: {
+      kind: 'gallery', target: { kind: 'trash' }, activeIndex: 0, totalCount: 1,
+    } }))
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+      ...props, gallerySource: {
+        ...fullSource, listTrashItemRange: async () => ({
+          items: [normal], total_count: 1, offset: 0, limit: 128,
+        }),
+      }, route: { app: 'media-viewer', params: { node: 932, context: 'p12h-trash' } },
+    }), { createNodeMock: () => ({ focus() {} }) }) })
+    assert.equal(buttons(renderer, '创作图片').length, 0)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2h Filmstrip changes disarm Creative Dialog; late old job cannot refresh next media', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const nodes = [933, 934].map(id => ({ id, revision: 2, type: 'file', name: id + '.png', size: 4096 }))
+  const media = id => ({ node: nodes.find(node => node.id === id), asset_kind: 'image',
+    metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } })
+  let refreshed = 0, cancelled = 0, renderer
+  const props = {
+    api: { node: async id => nodes.find(node => node.id === id), mediaItem: async id => media(id) },
+    gallerySource: {
+      loadThumbnail: async () => null, loadPreviewURL: async () => '/preview',
+      createCreativeGeneration: async id => ({ id: 'generation-' + id, state: 'queued',
+        source_node_id: id, source_node_revision: 2 }),
+      getCreativeGeneration: async () => ({ state: 'running' }),
+      cancelCreativeGeneration: async () => { cancelled++; return { state: 'cancelled' } },
+    }, shareDialogAdapter: {}, onReplaceRoute() {}, onClose() {},
+    onCreativeCompleted() { refreshed++ }, onError(error) { throw error },
+  }
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 933 } },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => { buttons(renderer, '创作图片')[0].props.onClick() })
+    const oldDialog = renderer.root.find(el => el.type === 'creative-dialog')
+    const oldCompleted = oldDialog.props.onCompleted
+    assert.equal(oldDialog.props.open, true)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 934 } },
+      }))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    const dialog = () => renderer.root.find(el => el.type === 'creative-dialog')
+    assert.equal(dialog().props.open, false)
+    assert.equal(dialog().props.item, null)
+    await act(async () => {
+      oldCompleted({ state: 'completed', source_node_id: 933, source_node_revision: 2,
+        output_node_id: 4000 })
+    })
+    assert.equal(refreshed, 0, 'old job must not refresh or close the new Viewer route')
+    assert.equal(cancelled, 0, 'switching Viewer photos does not cancel durable creative jobs')
+    assert.equal(buttons(renderer, '创作图片').length, 1)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 933 } },
+      }))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(dialog().props.open, false, 'returning to same Node never resurrects old dialog')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
   }
 })
