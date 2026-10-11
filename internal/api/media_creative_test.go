@@ -142,3 +142,39 @@ func TestCreativeOutputName(t *testing.T) {
 		t.Fatal("movie timeout mismatch")
 	}
 }
+
+// P1-2i: the actual Go creative job must reject corrupt Worker image bytes
+// before the SQL/CAS commit can mark a photo as completed. MIME/dimensions
+// alone do not prove decodeability of the new canonical media file.
+func TestValidateMediaCreativeDecodedImage(t *testing.T) {
+	good := photointelligence.CreativeResult{
+		Data: testPNG(t, 3, 2), MIMEType: "image/png", Width: 3, Height: 2,
+	}
+	if err := validateMediaCreativeDecodedImage(good); err != nil {
+		t.Fatalf("valid generated PNG rejected: %v", err)
+	}
+	cases := []struct {
+		name   string
+		result photointelligence.CreativeResult
+	}{
+		{"broken image", photointelligence.CreativeResult{
+			Data: []byte("not-a-png"), MIMEType: "image/png", Width: 3, Height: 2,
+		}},
+		{"forged dimensions", photointelligence.CreativeResult{
+			Data: good.Data, MIMEType: "image/png", Width: 4, Height: 2,
+		}},
+		{"forged MIME", photointelligence.CreativeResult{
+			Data: good.Data, MIMEType: "image/jpeg", Width: 3, Height: 2,
+		}},
+		{"truncated image", photointelligence.CreativeResult{
+			Data: good.Data[:len(good.Data)-8], MIMEType: "image/png", Width: 3, Height: 2,
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := validateMediaCreativeDecodedImage(tc.result); err == nil {
+				t.Fatalf("unsafe Worker bytes accepted: %s", tc.name)
+			}
+		})
+	}
+}

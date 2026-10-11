@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"net/http"
 	"path"
 	"strconv"
@@ -577,6 +580,39 @@ func validateMediaCreativeSourcesTx(
 	return nil
 }
 
+// The Unix worker returns image bytes over a private protocol, but neither
+// MIME, claimed dimensions nor a 200 response prove that a browser can decode
+// the resulting image. Never mark a broken artifact completed or retain it in
+// CAS. Check the bounded header before decoding the full image to reject
+// oversized forged dimensions without allocating its pixel buffer.
+func validateMediaCreativeDecodedImage(result photointelligence.CreativeResult) error {
+	if result.MIMEType != "image/png" && result.MIMEType != "image/jpeg" {
+		// Movie generation is a different output contract; do not claim its
+		// MP4 stream has been decoded by the image gate.
+		return nil
+	}
+	expectedFormat := strings.TrimPrefix(result.MIMEType, "image/")
+	header, format, err := image.DecodeConfig(bytes.NewReader(result.Data))
+	if err != nil {
+		return fmt.Errorf("creative image result header cannot decode: %w", err)
+	}
+	if format != expectedFormat || header.Width != result.Width ||
+		header.Height != result.Height || header.Width < 1 ||
+		header.Height < 1 || header.Width > 4096 || header.Height > 4096 {
+		return errors.New("creative image result format or dimensions do not match its bytes")
+	}
+	decoded, decodedFormat, err := image.Decode(bytes.NewReader(result.Data))
+	if err != nil {
+		return fmt.Errorf("creative image result bytes cannot decode: %w", err)
+	}
+	if decodedFormat != expectedFormat ||
+		decoded.Bounds().Dx() != result.Width ||
+		decoded.Bounds().Dy() != result.Height {
+		return errors.New("creative image result pixel dimensions do not match its bytes")
+	}
+	return nil
+}
+
 func creativeOutputName(
 	sourceName, requestedName, kind, mimeType string,
 ) (string, error) {
@@ -1102,6 +1138,9 @@ func (s *Server) runMediaCreativeGeneration(
 	}
 	result, err = photointelligence.ValidateCreativeResult(result)
 	if err != nil {
+		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
+	}
+	if err := validateMediaCreativeDecodedImage(result); err != nil {
 		return s.finishMediaCreativeRunError(ctx, generation.ID, err)
 	}
 	background.ReportProgress(ctx, background.TaskProgress{
