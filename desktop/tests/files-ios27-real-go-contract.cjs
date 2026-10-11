@@ -220,3 +220,32 @@ test('09I-D2 nested destination selection walks the real shared picker to its ro
   assert.ok(block.includes('breadcrumbButtons.last().isDisabled()'))
   assert.ok(block.includes('breadcrumbButtons.first().isEnabled()'))
 })
+
+
+const worker = read('internal/api/files_ios27_live_go_worker_effects_test.go')
+
+test('09I-D3 actual Chromium queued operations run real Worker, validate physical CAS and Trash restore', () => {
+  for (const required of [
+    'srv := &Server{', 'router := srv.Router()',
+    'assertIOS27FilesLiveWorkerEffects(t, srv, db, router, peer.URL, token, after.OwnerID,',
+    'mobileBatchCopyA.ID', 'wideBatchCopyB.ID', 'mobileBatchMoveA.ID',
+    'wideBatchMoveB.ID', 'mobileBatchA.ID', 'wideBatchB.ID',
+  ]) assert.ok(fixture.includes(required), 'missing D3 genuine browser source binding: ' + required)
+  for (const required of [
+    'const expectedOperations = 12',
+    'srv.processNextFileOperation(ctx)',
+    'meta.FileOperationStatusCompleted',
+    'op.ProcessedItems != op.TotalItems',
+    'op.ProcessedBytes != op.TotalBytes',
+    'clientpkg.New(apiURL, token)', 'client.DownloadTo(ctx, id, &data)',
+    'client.Trash(ctx)', 'client.RestoreTrash(ctx, spec.ID, node.Revision)',
+    'source.File', 'dest[0].File.SHA256', 'node.Revision != spec.Revision+1',
+    'node.TrashRootID == nil', 'remaining, err := client.Trash(ctx)',
+    'afterBlobs != beforeBlobs',
+    'IOS27_FILES_REAL_WORKER_COPY_COMPLETED',
+    'IOS27_FILES_REAL_WORKER_MOVE_COMPLETED',
+    'IOS27_FILES_REAL_WORKER_DELETE_TRASH_RESTORE_COMPLETED',
+  ]) assert.ok(worker.includes(required), 'missing real Worker/physical CAS proof: ' + required)
+  assert.doesNotMatch(worker, /enqueueFileOperation\(|route\.fulfill\(|mockFileOperation\(/)
+  assert.ok(ci.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-')"))
+})
