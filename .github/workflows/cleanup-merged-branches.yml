@@ -12,8 +12,9 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # Serialize master push scans and PR events; never race when deleting remote refs.
-  group: cleanup-redundant-branches
+  # Serialize repeated scans, but do not let a new master push evict a queued
+  # merged-PR event. Exact-head deletion has an atomic Git force-with-lease.
+  group: cleanup-redundant-branches-${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || 'scan' }}
   cancel-in-progress: false
 
 jobs:

@@ -8,7 +8,8 @@ WORKFLOW="$ROOT/.github/workflows/cleanup-merged-branches.yml"
 grep -Fq "types: [closed, labeled]" "$WORKFLOW"
 grep -Fq '  push:' "$WORKFLOW"
 grep -Fq '    branches: [master]' "$WORKFLOW"
-grep -Fq "group: cleanup-redundant-branches" "$WORKFLOW"
+grep -Fq "group: cleanup-redundant-branches-" "$WORKFLOW"
+grep -Fq "github.event.pull_request.number || 'scan'" "$WORKFLOW"
 grep -Fq "if: github.event_name == 'pull_request_target'" "$WORKFLOW"
 grep -Fq -- '--branch "$XD_CLEANUP_BRANCH"' "$WORKFLOW"
 grep -Fq -- '--expected-sha "$XD_CLEANUP_EXPECTED_SHA"' "$WORKFLOW"
@@ -31,6 +32,28 @@ fi
 shift
 if [[ "${1:-}" == "--paginate" ]]; then
   endpoint="${2:-}"
+  case "$endpoint" in
+    *"pulls?state=open"*)
+      if [[ "${MOCK_PR_LIST_FAIL_OPEN:-}" == "1" ]]; then
+        echo '{"message":"API rate limit exceeded for installation"}'
+        exit 1
+      fi
+      if [[ "${MOCK_PR_LIST_BAD_OPEN:-}" == "1" ]]; then
+        echo '{"message":"API rate limit exceeded for installation"}'
+        exit 0
+      fi
+      ;;
+    *"pulls?state=closed"*)
+      if [[ "${MOCK_PR_LIST_FAIL_CLOSED:-}" == "1" ]]; then
+        echo '{"message":"API rate limit exceeded for installation"}'
+        exit 1
+      fi
+      if [[ "${MOCK_PR_LIST_BAD_CLOSED:-}" == "1" ]]; then
+        echo '{"message":"API rate limit exceeded for installation"}'
+        exit 0
+      fi
+      ;;
+  esac
   case "$endpoint" in
     *"pulls?state=open"*)
       cat <<'JSON'
@@ -162,6 +185,15 @@ case "${1:-}" in
     ;;
   push)
     printf '%s\n' "$*" >> "$PUSH_LOG"
+    [[ "${MOCK_PUSH_FAIL:-}" == "1" ]] && exit 1
+    exit 0
+    ;;
+  ls-remote)
+    [[ "${MOCK_REMOTE_LOOKUP_FAIL:-}" == "1" ]] && exit 1
+    # Simulate ref still present when an attempted deletion fails.
+    if [[ "${MOCK_REMOTE_EXISTS:-}" == "1" ]]; then
+      printf '%s\t%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa refs/heads/event/merged
+    fi
     exit 0
     ;;
   for-each-ref)
@@ -245,7 +277,7 @@ grep -q 'removed 4 redundant branch(es)' "$TMP/dry-run.out"
 GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
   --branch event/merged \
   --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/event.out"
-grep -qx 'push origin :refs/heads/event/merged' "$PUSH_LOG"
+grep -qx 'push --force-with-lease=refs/heads/event/merged:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa origin :refs/heads/event/merged' "$PUSH_LOG"
 grep -q 'tip matches closed PR head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$TMP/event.out"
 
 : > "$PUSH_LOG"
@@ -269,5 +301,52 @@ GH_BIN="$TMP/bin/does-not-exist" bash "$SCRIPT" \
   --dry-run > "$TMP/event-dry.out"
 [[ ! -s "$PUSH_LOG" ]]
 grep -q 'removed 1 redundant branch(es)' "$TMP/event-dry.out"
+
+
+# Every scan must have valid, complete open/closed PR snapshots before it can
+# issue a single DELETE or fetch/prune. This reproduces the GH App 403 case
+# that had previously produced an incorrectly green 0-deletion workflow.
+for failure in FAIL_OPEN FAIL_CLOSED BAD_OPEN BAD_CLOSED; do
+  : > "$DELETE_LOG"
+  key="MOCK_PR_LIST_$failure"
+  if env "$key=1" bash "$SCRIPT" > "$TMP/api-$failure.out" 2>&1; then
+    echo "cleanup unexpectedly succeeded with $key" >&2
+    exit 1
+  fi
+  [[ ! -s "$DELETE_LOG" ]]
+  grep -Eq 'cleanup: (unable to list|invalid) (open|closed) PR' "$TMP/api-$failure.out"
+done
+
+# Independent consecutive scans never infer safe deletion from a stale
+# previously captured snapshot after a fresh listing fails.
+: > "$DELETE_LOG"
+bash "$SCRIPT" > "$TMP/after-api-fail.out"
+[[ "$(wc -l < "$DELETE_LOG" | tr -d ' ')" == "4" ]]
+
+
+# Event mode's atomic lease refuses to delete a branch whose remote tip moved;
+# it may only treat a failed push as success if an independent remote read
+# positively proves the branch is already gone.
+: > "$PUSH_LOG"
+if MOCK_PUSH_FAIL=1 MOCK_REMOTE_EXISTS=1 GH_BIN="$TMP/bin/does-not-exist" \
+  bash "$SCRIPT" --branch event/merged \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-exists.out" 2>&1; then
+  echo "cleanup claimed success while the remote branch still exists" >&2
+  exit 1
+fi
+grep -q 'remote branch still exists' "$TMP/remote-exists.out"
+
+if MOCK_PUSH_FAIL=1 MOCK_REMOTE_LOOKUP_FAIL=1 GH_BIN="$TMP/bin/does-not-exist" \
+  bash "$SCRIPT" --branch event/merged \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-unknown.out" 2>&1; then
+  echo "cleanup claimed success when remote verification failed" >&2
+  exit 1
+fi
+grep -q 'unable to verify remote' "$TMP/remote-unknown.out"
+
+MOCK_PUSH_FAIL=1 GH_BIN="$TMP/bin/does-not-exist" \
+  bash "$SCRIPT" --branch event/merged \
+  --expected-sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$TMP/remote-gone.out"
+grep -q 'already removed by concurrent cleanup' "$TMP/remote-gone.out"
 
 echo "redundant branch cleanup tests passed"
