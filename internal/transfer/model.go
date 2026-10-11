@@ -1072,9 +1072,9 @@ func (m *Manager) finishState(id, state string, err error) error {
 	if e == nil {
 		return errors.New("transfer not found")
 	}
-	if terminalState(e.task.State) {
-		// Retain the first confirmed terminal result when another transport
-		// callback finishes after cancellation or completion.
+	if terminalState(e.task.State) || (e.task.State == StateCancelling && state == StateCompleted) {
+		// Retain a pending cancellation against late success and keep
+		// the first confirmed terminal result authoritative.
 		return nil
 	}
 	if e.groupCancelContext != nil && e.cancel != nil {
@@ -1126,9 +1126,9 @@ func (m *Manager) finish(id string, err error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[id]
-	if e == nil || terminalState(e.task.State) {
-		// A delayed retry or I/O callback must not regress a confirmed
-		// terminal state from the operation that owned cancellation.
+	if e == nil || terminalState(e.task.State) || (e.task.State == StateCancelling && err == nil) {
+		// A late success must not win after cancellation was accepted;
+		// nor may a delayed callback rewrite a confirmed terminal result.
 		return
 	}
 	e.cancel = nil
