@@ -25,6 +25,7 @@ type Server struct {
 	postgresPoolSaveMu             sync.Mutex
 	mediaWorkerConfigSaveMu        sync.Mutex
 	caddyHTTPSSaveMu               sync.Mutex
+	caddyAliDNSSaveMu              sync.Mutex
 	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
 	MediaWorkerConfigured          bool
@@ -352,6 +353,9 @@ func (s *Server) Router() *gin.Engine {
 	admin.PUT("/services/caddy/https", s.adminSaveCaddyHTTPS)
 	admin.GET("/services/caddy/https/revisions", s.adminCaddyHTTPSRevisions)
 	admin.POST("/services/caddy/https/rollback", s.adminRollbackCaddyHTTPS)
+	admin.GET("/services/caddy/alidns", s.adminCaddyAliDNSConfig)
+	admin.PUT("/services/caddy/alidns", s.adminSaveCaddyAliDNS)
+	admin.POST("/services/caddy/alidns/reveal", s.adminRevealCaddyAliDNS)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
