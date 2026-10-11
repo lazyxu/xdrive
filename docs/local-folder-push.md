@@ -13,10 +13,10 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; L03-D2b1 native rename hints under PR verification (read-only); durable alias index, Planner and uploader not implemented |
+| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; L03-D2b1 native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a revision-fenced advisory summary in PR; no durable SourceItem alias index, Planner or uploader |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
-| L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
+| L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | own read-only metadata preview merged #1391; executor, run/cancel, offline queue not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
 
 ## P0-B2b2 native creating-device claim (merged #1323)
@@ -295,7 +295,7 @@ L07: measurable SQL P50/P95, Agent RSS/CPU, bytes transferred vs CAS reuse, 4 Gi
 Related GitHub PR/branch cleanup must be evidence-based and scoped to this work; never disturb unrelated active work.
 
 
-## L03-D2b1: conservative private native-identity rename hints (PR verification)
+## L03-D2b1: conservative private native-identity rename hints (merged #1385; 76-job exact-head CI green)
 
 An owning Agent can compare **two independently verified, complete Root snapshots** and extract advisory rename hints for **regular files only** when each generation has exactly one observation of the same strong, root-scoped native identity, both have link_count=1, and the canonical relative paths differ. It examines unchanged as well as changed paths to prevent reuse/duplicate/hard-link identities from being paired. Directories, weak/ambiguous identities, mismatched kinds and duplicated observations are never paired.
 
@@ -304,10 +304,19 @@ This is an **Agent-private library**, not a Desktop operation or remote read end
 **No durable SourceItem ID/alias index**, server reconciliation, CAS bytes, SourceRun checkpoint, upload, Mirror missing evidence, automatic schedule, background watcher or local preview is introduced. `MissingInferenceSafe=false` remains mandatory. A future durable alias/index protocol must bind hints to the Server's authoritative Source revision and item identities, verify content when needed and handle crashes/replay before any remote rename/commit. Native Windows/Linux 100k/4GiB E2E remains outstanding.
 
 
-## P0-C4c1 owning Desktop read-only local inventory preview (PR verification)
+## P0-C4c1 owning Desktop read-only local inventory preview (merged #1391; 76-job exact-head CI green)
 
 The verified owning Windows/Linux Desktop may explicitly preview an **already-bound, paused** local Push Source's native filesystem metadata using a capability-gated, authenticated loopback Agent IPC. It first checks owning-device credential, Source revision and native Root grant; then reads actual private ignore rules through the bound-Agent-only GET (never a redacted generic Source response), scans with the existing bounded-memory `InventoryScanner`, and rechecks Source revision, rules, Root and login identity before displaying results.
 
 Only file count, directory count, scanned/ignored bytes, ignored-item count, skipped unsafe-entry count and completion status reach Renderer. No raw local path, per-file listing, credential, Root ID/fingerprint, raw filesystem errors or per-item failures enter the preview DTO or Web/other-Desktop B-scope reads. The scan is deliberately **not** a formal SourceRun, saved journal or cloud operation. A canceled, timed-out, changed-device/Source/Root or partial scan reports no successful result.
 
 Dialog unmount, account/server change or explicit close calls Electron Main's preview AbortController keyed to the invoking webContents and a fresh request ID; the AgentIPCClient propagates its AbortSignal to HTTP and Go's `Request.Context()` aborts scanning. The Agent has a 35-second hard scan deadline and the Desktop HTTP client 40 seconds. This is request-scoped work, not a durable Task Center job. No `local_folder` activation, upload, CAS commit, Mirror missing/deletion evidence, saved-schedule execution, watcher or NAS integration is enabled; `MissingInferenceSafe=false` remains mandatory. Actual Windows/Linux 1k/10k/100k and >=4GiB physical acceptance remains open.
+
+
+## L03-D2b2a: Source-revision-fenced local advisory generation manifest (PR verification)
+
+An authorized native Agent may **prepare** an advisory reconciliation generation from two independently verified complete `CURRENT/PREVIOUS` filesystem inventories. `PublishLocalReconcileEvidence` checks the Root grant, consumes the existing bounded disk-spooled `StreamInventoryGenerationDelta`, verifies both snapshots again, and publishes a compact, sealed `ADVISORY.json` summary under `localpush/journals/<scoped-key>/reconcile-evidence-v1`. This directory is **Agent-private local configuration state, not Server storage**. It is created with 0700 permissions and contains a 0600 file; no raw Root path, account name, file lists, content bytes, credentials or Server SourceItem IDs are written. The manifest contains only the immutable generation names and SHA-256, private Root/device/scope fingerprints, Source revision, bounded aggregate counts, and checksum.
+
+Publish uses a 0700 exclusive directory lock to reject concurrent writers, fsyncs the temporary manifest and uses atomic rename, with directory fsync on Linux. A crash before the rename leaves only a discarded/ignored temporary file and cannot turn incomplete data into a committed generation. A crash leaving the exclusive lock fails **future publishing closed** until operator-verified cleanup; already published read-only evidence remains readable. Same revision+same generations is idempotent; stale or decreasing Source revisions, a changed Root, tampered/truncated JSON, changed/corrupt snapshots or incomplete/cancelled scans fail closed. `LoadLocalReconcileEvidence` separately revalidates Root, input Source revision, both snapshots and the manifest seal on every read.
+
+**Security boundary:** the revision is a caller-provided *fence input*, not a Server-authenticated ownership proof. The checksum detects accidental corruption but is not a keyed device signature or remote authorization. The persisted counts are **not** a SourceItem-to-PathKey mapping, `SourceItemAlias`, a confirmed rename, planner checkpoint, missing-file proof, or a `SyncRun`. `Authoritative=false` and `MissingInferenceSafe=false` are enforced on read/write. No Agent IPC, Web/Mobile read contract, CAS bytes, upload, Source activation, scheduler, watcher, Mirror delete or NAS Push is added. Next L03-D2b2b must bind immutable path/identity candidates to Server-authoritative SourceItem IDs and Source revisions through an owning-device authenticated protocol with conflict/replay fencing before L03-E–G execution.
