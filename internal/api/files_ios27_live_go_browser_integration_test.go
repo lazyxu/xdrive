@@ -79,9 +79,16 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	username := "ios27-files-owner"
 	token := createTestUser(t, db, router, username, "test-only-owner-password")
 	foreignToken := createTestUser(t, db, router, "ios27-files-other", "test-only-other-password")
+	foreignRoot := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", foreignToken, nil, http.StatusOK)
 	root := requestNode(t, router, http.MethodGet, "/api/v1/nodes/root", token, nil, http.StatusOK)
 	file := uploadTestFile(t, router, token, root.ID, "document-001.txt", "actual PostgreSQL/CAS document")
 	occupied := uploadTestFile(t, router, token, root.ID, "occupied.txt", "immutable collision sentinel")
+	mobileTarget := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"mobile-copy-target"}`), http.StatusCreated)
+	wideTarget := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"wide-copy-target"}`), http.StatusCreated)
 	// Cross-owner responses are the genuine product's 404 semantics, NOT the
 	// synthetic 403 used by the earlier intercepted-HTTP Chrome matrix.
 	request(t, router, http.MethodGet,
@@ -126,6 +133,9 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		"real_gin":        true,
 		"intercepted_api": false,
 	}
+	ready["mobile_copy_target_id"] = mobileTarget.ID
+	ready["wide_copy_target_id"] = wideTarget.ID
+	ready["foreign_root_id"] = foreignRoot.ID
 	payload, err := json.Marshal(ready)
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +165,38 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		if collision.Name != "occupied.txt" || collision.Revision != occupied.Revision {
 			t.Fatalf("failed rename changed collision sentinel: %+v", collision)
 		}
+		var queued []meta.FileOperation
+		if err := db.Where("owner_id = ? AND type = ?", after.OwnerID, meta.FileOperationTypeCopy).
+			Find(&queued).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(queued) != 2 {
+			t.Fatalf("expected exactly two genuine UI copy operations in PostgreSQL, got %d", len(queued))
+		}
+		targets := map[uint64]bool{mobileTarget.ID: false, wideTarget.ID: false}
+		for _, operation := range queued {
+			if operation.ParentID == nil {
+				t.Fatalf("copy operation missing target: %+v", operation)
+			}
+			visited, allowed := targets[*operation.ParentID]
+			if !allowed || visited || operation.TotalItems != 1 {
+				t.Fatalf("unexpected duplicate/target/count in copy operation: %+v", operation)
+			}
+			var refs []batchNodeRef
+			if err := json.Unmarshal([]byte(operation.ItemsJSON), &refs); err != nil {
+				t.Fatal(err)
+			}
+			if len(refs) != 1 || refs[0].ID != after.ID || refs[0].Revision != after.Revision {
+				t.Fatalf("copy operation did not persist the exact renamed Node revision: %+v", operation)
+			}
+			targets[*operation.ParentID] = true
+		}
+		for target, visited := range targets {
+			if !visited {
+				t.Fatalf("no UI copy operation persisted for target %d", target)
+			}
+		}
+		t.Logf("IOS27_FILES_LIVE_GO_COPY_QUEUED count=%d source=%d revision=%d", len(queued), after.ID, after.Revision)
 		t.Logf("IOS27_FILES_LIVE_GO_VERIFIED id=%d revision=%d name=%s owner=%d",
 			after.ID, after.Revision, after.Name, after.OwnerID)
 	case <-time.After(4 * time.Minute):

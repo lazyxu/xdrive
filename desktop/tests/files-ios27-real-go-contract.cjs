@@ -63,3 +63,21 @@ test('09I-A exact-head CI reuses Go API PostgreSQL17 and never publishes JWTs', 
   assert.ok(!browser.includes('results.token'))
   assert.ok(ci.includes('--scenario=files-ios27-chrome'))
 })
+
+test('09I-B real Mobile/Wide Copy-to queues persist exact Node IDs, revisions, destinations and owner isolation', () => {
+  for (const label of [
+    'mobile-copy-target', 'wide-copy-target', 'foreignRoot := requestNode',
+    'IOS27_FILES_LIVE_GO_COPY_QUEUED', 'operation.ItemsJSON',
+    'len(queued) != 2', 'meta.FileOperationTypeCopy',
+  ]) assert.ok(fixture.includes(label), 'missing real PostgreSQL copy proof: ' + label)
+  for (const label of [
+    'async function queueCopyFromUI(', '[data-mobile-files-context-selection-action="copy-to"]',
+    "name: '复制到…'", '[data-xdrive-file-explorer-destination-dialog]',
+    "'/api/v1/file-operations'", 'queued.parent_id === targetID',
+    'posted.items[0].revision === fixture.node_revision + 2',
+    'foreignCopy === 404', 'results.copyQueues.length === 2',
+  ]) assert.ok(browser.includes(label), 'missing real Chromium copy contract: ' + label)
+  assert.doesNotMatch(browser, /route\.fulfill\(/)
+  assert.ok(web.includes('useXDriveFileExplorerOperationController'))
+  assert.ok(mobile.includes('props.onCopyTo([item])'))
+})

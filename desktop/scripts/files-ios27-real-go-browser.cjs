@@ -25,7 +25,7 @@ const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root,
 const results = {
   phase: 'F-iOS27-09I-A', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -69,6 +69,52 @@ async function screenshot(name) {
   await page.screenshot({ path: path.join(output, file), fullPage: false })
   results.screenshots.push(file)
 }
+// F09I-B: compare real Copy-to submissions, without implying worker/CAS completion.
+async function queueCopyFromUI(owner, width, targetID) {
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 812 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const row = page.locator(mobile ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: 'wide-accepted.txt' }).first()
+  await row.waitFor()
+  await row.click({ button: 'right' })
+  if (mobile) {
+    await page.locator('[data-mobile-files-context-selection-action="copy-to"]').click()
+  } else {
+    await page.getByRole('menuitem', { name: '复制到…', exact: true }).first().click()
+  }
+  const dialog = page.locator('[data-xdrive-file-explorer-destination-dialog]')
+  await dialog.waitFor()
+  await dialog.locator('[data-xdrive-file-explorer-destination-directory="' + targetID + '"]').click()
+  const submit = dialog.getByRole('button', { name: '复制到这里', exact: true })
+  const [response] = await Promise.all([
+    page.waitForResponse(r =>
+      new URL(r.url()).pathname === '/api/v1/file-operations' &&
+      r.request().method() === 'POST'),
+    submit.click(),
+  ])
+  const posted = response.request().postDataJSON()
+  const queued = await response.json()
+  const sample = {
+    owner, width, targetID, status: response.status(), type: posted.type,
+    parentID: posted.parent_id, item: posted.items?.[0],
+    operationID: queued.id, queuedType: queued.type, queuedParentID: queued.parent_id,
+  }
+  check(response.status() === 202 && posted.type === 'copy' && queued.type === 'copy',
+    'actual Gin queued-copy response and operation type', sample)
+  check(posted.parent_id === targetID && queued.parent_id === targetID &&
+    posted.items?.length === 1 && posted.items[0].id === fixture.node_id &&
+    posted.items[0].revision === fixture.node_revision + 2,
+    'Mobile and Wide UI must send the same Node ID/revision through shared operation API', sample)
+  check(typeof queued.id === 'string' && queued.id.length > 0,
+    'real Server must persist an operation ID', sample)
+  results.copyQueues.push(sample)
+  await dialog.waitFor({ state: 'hidden' })
+  await screenshot(mobile ? 'live-go-mobile-copy-queued' : 'live-go-wide-copy-queued')
+}
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -206,6 +252,22 @@ async function main() {
   await screenshot('live-go-wide-200')
   check(results.patches.map(item => item.actualStatus).join(',') === '409,200,409,200',
     'real Server conflict/retry matrix must be exact', results.patches)
+  await queueCopyFromUI('Mobile Web', 375, fixture.mobile_copy_target_id)
+  await queueCopyFromUI('Wide Web', 900, fixture.wide_copy_target_id)
+  check(results.copyQueues.length === 2, 'both actual layouts must queue a copy', results.copyQueues)
+  // Owner B has its own valid destination but no authority over Owner A's source.
+  const foreignCopy = await page.evaluate(async ({ token, parentID, sourceID, revision }) => {
+    const response = await fetch('/api/v1/file-operations', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'copy', parent_id: parentID,
+        items: [{ id: sourceID, revision }] }),
+    })
+    return response.status
+  }, { token: fixture.foreign_token, parentID: fixture.foreign_root_id,
+    sourceID: fixture.node_id, revision: fixture.node_revision + 2 })
+  check(foreignCopy === 404, 'real Server must deny foreign-source queued copy', foreignCopy)
+  results.foreignOwner.push({ method: 'POST file-operations/copy', status: foreignCopy })
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -231,7 +293,7 @@ async function main() {
     fs.writeFileSync(resultPath, JSON.stringify(results, null, 2) + '\n')
     console.log('IOS27_FILES_REAL_GO_RESULT ' + JSON.stringify({
       passed: Boolean(results.passed), widths: results.widths.length,
-      patches: results.patches.length, actualGoServer: true, postgresql17: true,
+      patches: results.patches.length, copyQueues: results.copyQueues.length, actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
   }
