@@ -70,7 +70,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 	dir := t.TempDir()
 	req := mediaWorkerHostRequest{
 		RequestID: "0123456789abcdef01234567",
-		Revision:  2, Enabled: true, MemoryMiB: 768, CPUMilli: 750, CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		Revision:  2, Enabled: true, MemoryMiB: 768, CPUMilli: 750, PIDsLimit: 128, CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := writeMediaWorkerHostRequest(dir, req); err != nil {
 		t.Fatal(err)
@@ -94,7 +94,7 @@ func TestMediaWorkerHostRequestAtomicNoClobber(t *testing.T) {
 		t.Fatalf("host request corrupted: %+v", got)
 	}
 	if err := writeMediaWorkerHostRequest(dir, mediaWorkerHostRequest{
-		RequestID: "contains-a-host-path", Revision: 3, MemoryMiB: 768, CPUMilli: 750,
+		RequestID: "contains-a-host-path", Revision: 3, MemoryMiB: 768, CPUMilli: 750, PIDsLimit: 128,
 	}); err == nil {
 		t.Fatal("untrusted host control request ID accepted")
 	}
@@ -167,7 +167,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodGet, endpoint, memberToken, ""); response.Code != 403 {
 		t.Fatalf("non-admin GET %d", response.Code)
 	}
-	body := `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":750}`
+	body := `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":750,"pids_limit":128}`
 	if response := request(http.MethodPut, endpoint, "", body); response.Code != 401 {
 		t.Fatalf("anonymous PUT %d", response.Code)
 	}
@@ -180,7 +180,13 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768}`); response.Code != 400 {
 		t.Fatalf("old request missing cpu_milli accepted: %d", response.Code)
 	}
-	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":251}`); response.Code != 400 {
+	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":750}`); response.Code != 400 {
+		t.Fatalf("missing PID quota unexpectedly accepted: %d", response.Code)
+	}
+	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":750,"pids_limit":65}`); response.Code != 400 {
+		t.Fatalf("invalid PID quota unexpectedly accepted: %d", response.Code)
+	}
+	if response := request(http.MethodPut, endpoint, adminToken, `{"revision":0,"enabled":true,"memory_mib":768,"cpu_milli":251,"pids_limit":128}`); response.Code != 400 {
 		t.Fatalf("invalid CPU quota accepted: %d", response.Code)
 	}
 	if response := request(http.MethodPut, endpoint, adminToken, body); response.Code != 200 {
@@ -190,7 +196,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("stale edit %d", response.Code)
 	}
 	var saved meta.AdminMediaWorkerSetting
-	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled || saved.MemoryMiB != 768 || saved.CPUMilli != 750 {
+	if err := db.Where("name = ?", mediaWorkerSettingName).Take(&saved).Error; err != nil || saved.Revision != 1 || !saved.Enabled || saved.MemoryMiB != 768 || saved.CPUMilli != 750 || saved.PIDsLimit != 128 {
 		t.Fatalf("desired not persisted correctly: %+v %v", saved, err)
 	}
 	// A saved policy cannot be called applied without a Host Manager.
@@ -207,6 +213,11 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatal("old Host Manager queued CPU-unsafe request")
 	}
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{State: "idle", CPUControlSupported: true})
+	// A CPU-capable but older Host Manager cannot acknowledge a new PID policy.
+	if response := request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":1}`); response.Code != 503 {
+		t.Fatalf("old Host Manager without PID capability accepted apply: %d", response.Code)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{State: "idle", CPUControlSupported: true, PIDsControlSupported: true})
 	// Audit table unavailable: no host request is allowed to escape.
 	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
@@ -238,7 +249,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	var command mediaWorkerHostRequest
-	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled || command.MemoryMiB != 768 || command.CPUMilli != 750 ||
+	if json.Unmarshal(raw, &command) != nil || command.Revision != 1 || !command.Enabled || command.MemoryMiB != 768 || command.CPUMilli != 750 || command.PIDsLimit != 128 ||
 		!mediaWorkerRequestIDPattern.MatchString(command.RequestID) {
 		t.Fatalf("unsafe host command: %+v", command)
 	}
@@ -250,7 +261,8 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
 		State: "success", Revision: 1, AppliedRevision: 1, Enabled: true, ObservedEnabled: true,
 		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
-		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true, RequestID: command.RequestID,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true, RequestID: command.RequestID,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
@@ -267,7 +279,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		t.Fatalf("applied worker not really verified: %s", got.Body.String())
 	}
 	// Disable must be its own revision and own host acknowledgement.
-	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false,"memory_mib":768,"cpu_milli":750}`)
+	disabled := request(http.MethodPut, endpoint, adminToken, `{"revision":1,"enabled":false,"memory_mib":768,"cpu_milli":750,"pids_limit":128}`)
 	if disabled.Code != 200 {
 		t.Fatalf("disable desired %d %s", disabled.Code, disabled.Body.String())
 	}
@@ -279,6 +291,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		State: "success", Revision: 2, AppliedRevision: 2, Enabled: false, ObservedEnabled: false,
 		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
 		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" || cfg.DesiredEnabled {
@@ -306,7 +319,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	}
 	// A memory-only change is a new audited revision and MUST remain pending
 	// until the Host Runner confirms its actual cgroup memory allocation.
-	change := request(http.MethodPut, endpoint, adminToken, `{"revision":3,"enabled":true,"memory_mib":1024,"cpu_milli":750}`)
+	change := request(http.MethodPut, endpoint, adminToken, `{"revision":3,"enabled":true,"memory_mib":1024,"cpu_milli":750,"pids_limit":128}`)
 	if change.Code != http.StatusOK {
 		t.Fatalf("memory-only change rejected: %d %s", change.Code, change.Body.String())
 	}
@@ -323,7 +336,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if json.Unmarshal(raw, &command) != nil || command.MemoryMiB != 1024 || command.CPUMilli != 750 || command.Revision != 4 {
+	if json.Unmarshal(raw, &command) != nil || command.MemoryMiB != 1024 || command.CPUMilli != 750 || command.PIDsLimit != 128 || command.Revision != 4 {
 		t.Fatalf("memory-only Host request incorrect: %+v", command)
 	}
 	if err := os.Remove(filepath.Join(dir, mediaWorkerControlRequestName)); err != nil {
@@ -341,6 +354,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		State: "success", Revision: 4, AppliedRevision: 4, Enabled: true, ObservedEnabled: true,
 		MemoryMiB: 1024, ObservedMemoryMiB: 1024, MemoryVerified: true,
 		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
@@ -359,7 +373,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 	}
 	// CPU-only update: a resource revision is pending until the actual NanoCpus
 	// matches. A memory match and FFmpeg probe are not enough.
-	changeCPU := request(http.MethodPut, endpoint, adminToken, `{"revision":5,"enabled":true,"memory_mib":768,"cpu_milli":1250}`)
+	changeCPU := request(http.MethodPut, endpoint, adminToken, `{"revision":5,"enabled":true,"memory_mib":768,"cpu_milli":1250,"pids_limit":128}`)
 	if changeCPU.Code != http.StatusOK {
 		t.Fatalf("CPU-only save rejected %d %s", changeCPU.Code, changeCPU.Body.String())
 	}
@@ -387,6 +401,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		State: "success", Revision: 6, AppliedRevision: 6, Enabled: true, ObservedEnabled: true,
 		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
 		CPUControlSupported: true, CPUMilli: 1250, ObservedCPUMilli: 750, CPUVerified: false,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
@@ -396,6 +411,7 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		State: "success", Revision: 6, AppliedRevision: 6, Enabled: true, ObservedEnabled: true,
 		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
 		CPUControlSupported: true, CPUMilli: 1250, ObservedCPUMilli: 1250, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true,
 	})
 	got = request(http.MethodGet, endpoint, adminToken, "")
 	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
@@ -411,8 +427,62 @@ func TestAdminMediaWorkerSaveApplyRollbackAndAudit(t *testing.T) {
 		cfg.DesiredCPUMilli != 750 || cfg.ApplyState == "applied" {
 		t.Fatalf("CPU rollback must create pending audited revision: %+v", cfg)
 	}
+	// PID-only edits must not appear applied until Docker's real PidsLimit matches.
+	changePIDs := request(http.MethodPut, endpoint, adminToken, `{"revision":7,"enabled":true,"memory_mib":768,"cpu_milli":750,"pids_limit":256}`)
+	if changePIDs.Code != http.StatusOK {
+		t.Fatalf("PID-only save rejected: %d %s", changePIDs.Code, changePIDs.Body.String())
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 8 ||
+		cfg.DesiredPIDsLimit != 256 || cfg.ApplyState == "applied" {
+		t.Fatalf("PID-only save incorrectly applied: %+v", cfg)
+	}
+	enqueued = request(http.MethodPost, endpoint+"/apply", adminToken, `{"revision":8}`)
+	if enqueued.Code != http.StatusAccepted {
+		t.Fatalf("PID-only apply rejected: %d %s", enqueued.Code, enqueued.Body.String())
+	}
+	raw, err = os.ReadFile(filepath.Join(dir, mediaWorkerControlRequestName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(raw, &command) != nil || command.PIDsLimit != 256 || command.Revision != 8 {
+		t.Fatalf("PID Host Manager request missing limit: %+v", command)
+	}
+	if err := os.Remove(filepath.Join(dir, mediaWorkerControlRequestName)); err != nil {
+		t.Fatal(err)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 8, AppliedRevision: 8, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 256, ObservedPIDsLimit: 128, PIDsVerified: false,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState == "applied" {
+		t.Fatalf("PID limit mismatch wrongly considered applied: %+v", cfg)
+	}
+	writeMediaWorkerHostStatusFixture(t, dir, mediaWorkerHostStatus{
+		State: "success", Revision: 8, AppliedRevision: 8, Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 256, ObservedPIDsLimit: 256, PIDsVerified: true,
+	})
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.ApplyState != "applied" ||
+		cfg.Host.ObservedPIDsLimit != 256 || !cfg.Host.PIDsVerified {
+		t.Fatalf("exact PID quota not acknowledged: %+v", cfg)
+	}
+	rollback = request(http.MethodPost, endpoint+"/rollback", adminToken, `{"revision":8,"target_revision":1}`)
+	if rollback.Code != http.StatusOK {
+		t.Fatalf("PID rollback rejected: %d %s", rollback.Code, rollback.Body.String())
+	}
+	got = request(http.MethodGet, endpoint, adminToken, "")
+	if json.Unmarshal(got.Body.Bytes(), &cfg) != nil || cfg.Revision != 9 ||
+		cfg.DesiredPIDsLimit != 128 || cfg.ApplyState == "applied" {
+		t.Fatalf("PID rollback failed to create pending audited revision: %+v", cfg)
+	}
 	var audits int64
-	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 9 {
+	if err := db.Model(&meta.AuditEvent{}).Count(&audits).Error; err != nil || audits < 11 {
 		t.Fatalf("missing audit evidence count=%d err=%v", audits, err)
 	}
 }

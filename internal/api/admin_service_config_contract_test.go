@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestServiceDependencyConfigurationModesAreTruthful(t *testing.T) {
 	table := []struct {
@@ -29,6 +32,11 @@ func TestServiceDependencyConfigurationModesAreTruthful(t *testing.T) {
 		if gotConfig != tc.config || gotApply != tc.apply || hint == "" {
 			t.Fatalf("dependency %q: got mode=%q apply=%q hint=%q; want %q/%q",
 				tc.id, gotConfig, gotApply, hint, tc.config, tc.apply)
+		}
+		if tc.id == "media-worker" && (!strings.Contains(hint, "内存") ||
+			!strings.Contains(hint, "CPU") || !strings.Contains(hint, "PID") ||
+			!strings.Contains(hint, "Docker")) {
+			t.Fatalf("Media Worker hint omits bounded in-app resources or real host verification: %s", hint)
 		}
 	}
 }

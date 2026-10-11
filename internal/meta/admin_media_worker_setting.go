@@ -10,6 +10,7 @@ type AdminMediaWorkerSetting struct {
 	Enabled   bool   `gorm:"not null"`
 	MemoryMiB int    `gorm:"column:memory_mib;not null;default:768"`
 	CPUMilli  int    `gorm:"column:cpu_milli;not null;default:750"`
+	PIDsLimit int    `gorm:"column:pids_limit;not null;default:128"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -22,6 +23,7 @@ type AdminMediaWorkerRevision struct {
 	Enabled   bool      `gorm:"not null"`
 	MemoryMiB int       `gorm:"column:memory_mib;not null;default:768"`
 	CPUMilli  int       `gorm:"column:cpu_milli;not null;default:750"`
+	PIDsLimit int       `gorm:"column:pids_limit;not null;default:128"`
 	Origin    string    `gorm:"size:16;not null"`
 	CreatedAt time.Time `gorm:"not null"`
 }

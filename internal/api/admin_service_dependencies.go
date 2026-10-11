@@ -74,25 +74,30 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	var wg sync.WaitGroup
 	mediaManaged := false
 	if s.DB != nil {
-		if desired, err := s.readMediaWorkerDesired(ctx); err == nil && desired.Revision != 0 {
+		desired, err := s.readMediaWorkerDesired(ctx)
+		if err != nil {
+			// Corrupt or inaccessible desired configuration cannot be reported ready
+			// merely because a separately installed FFmpeg executable responds.
+			mediaManaged = true
+			services[2].Status = "unavailable"
+			services[2].Detail = "Media Worker 管理配置不可读取；无法确认实际生效"
+		} else if desired.Revision != 0 {
 			mediaManaged = true
 			host := s.readMediaWorkerHostStatus()
 			if desired.Enabled {
 				services[2].Status = "unavailable"
-				services[2].Detail = "Media Worker 管理员期望启用；等待宿主机执行及真实 FFmpeg 健康验证"
-				if host.Supported && host.State == "success" &&
-					host.AppliedRevision == desired.Revision && host.ObservedEnabled &&
-					s.mediaWorkerRuntimeReady(ctx) {
+				services[2].Detail = "Media Worker 期望启用；等待宿主机对内存、CPU、PID 及运行健康完成验证"
+				if host.Supported && host.ObservedEnabled &&
+					mediaWorkerApplied(desired, host, s.mediaWorkerRuntimeReady(ctx)) {
 					services[2].Status = "ready"
-					services[2].Detail = "Media Worker 实际容器已启动并通过 FFmpeg/FFprobe 探针；媒体作业协议尚未接入"
+					services[2].Detail = "容器启动、内存/CPU/PID 限制和 FFmpeg/FFprobe 均已验证；媒体作业尚未接入"
 				}
 			} else {
 				services[2].Status = "unavailable"
-				services[2].Detail = "管理员期望停用；等待宿主机确认独立 Media Worker 容器已停止"
-				if host.Supported && host.State == "success" &&
-					host.AppliedRevision == desired.Revision && !host.ObservedEnabled {
+				services[2].Detail = "管理员期望停用；等待宿主机确认容器已停止及资源限制已保存"
+				if mediaWorkerApplied(desired, host, false) {
 					services[2].Status = "disabled"
-					services[2].Detail = "管理员禁用已在宿主机生效，独立 Media Worker 容器已停止"
+					services[2].Detail = "容器停止且下次启用的内存、CPU、PID 限制已核验"
 				}
 			}
 		}

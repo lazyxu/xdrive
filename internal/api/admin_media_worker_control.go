@@ -28,21 +28,25 @@ const (
 var mediaWorkerRequestIDPattern = regexp.MustCompile(`^[a-f0-9]{24}$`)
 
 type mediaWorkerHostStatus struct {
-	Supported           bool   `json:"supported"`
-	State               string `json:"state"`
-	Revision            uint64 `json:"revision"`
-	AppliedRevision     uint64 `json:"applied_revision"`
-	Enabled             bool   `json:"enabled"`
-	ObservedEnabled     bool   `json:"observed_enabled"`
-	MemoryMiB           int    `json:"memory_mib"`
-	ObservedMemoryMiB   int    `json:"observed_memory_mib"`
-	MemoryVerified      bool   `json:"memory_verified"`
-	CPUMilli            int    `json:"cpu_milli"`
-	ObservedCPUMilli    int    `json:"observed_cpu_milli"`
-	CPUVerified         bool   `json:"cpu_verified"`
-	CPUControlSupported bool   `json:"cpu_control_supported"`
-	RequestID           string `json:"request_id,omitempty"`
-	UpdatedAt           string `json:"updated_at,omitempty"`
+	Supported            bool   `json:"supported"`
+	State                string `json:"state"`
+	Revision             uint64 `json:"revision"`
+	AppliedRevision      uint64 `json:"applied_revision"`
+	Enabled              bool   `json:"enabled"`
+	ObservedEnabled      bool   `json:"observed_enabled"`
+	MemoryMiB            int    `json:"memory_mib"`
+	ObservedMemoryMiB    int    `json:"observed_memory_mib"`
+	MemoryVerified       bool   `json:"memory_verified"`
+	CPUMilli             int    `json:"cpu_milli"`
+	ObservedCPUMilli     int    `json:"observed_cpu_milli"`
+	CPUVerified          bool   `json:"cpu_verified"`
+	CPUControlSupported  bool   `json:"cpu_control_supported"`
+	PIDsLimit            int    `json:"pids_limit"`
+	ObservedPIDsLimit    int    `json:"observed_pids_limit"`
+	PIDsVerified         bool   `json:"pids_verified"`
+	PIDsControlSupported bool   `json:"pids_control_supported"`
+	RequestID            string `json:"request_id,omitempty"`
+	UpdatedAt            string `json:"updated_at,omitempty"`
 }
 
 type mediaWorkerHostRequest struct {
@@ -51,6 +55,7 @@ type mediaWorkerHostRequest struct {
 	Enabled   bool   `json:"enabled"`
 	MemoryMiB int    `json:"memory_mib"`
 	CPUMilli  int    `json:"cpu_milli"`
+	PIDsLimit int    `json:"pids_limit"`
 	CreatedAt string `json:"created_at"`
 }
 
@@ -107,7 +112,11 @@ func (s *Server) readMediaWorkerHostStatus() mediaWorkerHostStatus {
 		(host.CPUMilli != 0 && !mediaworker.ValidCPUMilli(host.CPUMilli)) ||
 		(host.ObservedCPUMilli != 0 && !mediaworker.ValidCPUMilli(host.ObservedCPUMilli)) ||
 		(host.CPUVerified && (!host.CPUControlSupported || !mediaworker.ValidCPUMilli(host.ObservedCPUMilli))) ||
-		(host.CPUControlSupported && host.Revision > 0 && !mediaworker.ValidCPUMilli(host.CPUMilli)) {
+		(host.CPUControlSupported && host.Revision > 0 && !mediaworker.ValidCPUMilli(host.CPUMilli)) ||
+		(host.PIDsLimit != 0 && !mediaworker.ValidPIDsLimit(host.PIDsLimit)) ||
+		(host.ObservedPIDsLimit != 0 && !mediaworker.ValidPIDsLimit(host.ObservedPIDsLimit)) ||
+		(host.PIDsVerified && (!host.PIDsControlSupported || !mediaworker.ValidPIDsLimit(host.ObservedPIDsLimit))) ||
+		(host.PIDsControlSupported && host.Revision > 0 && !mediaworker.ValidPIDsLimit(host.PIDsLimit)) {
 		return unavailableMediaWorkerHost()
 	}
 	host.Supported = true
@@ -118,13 +127,16 @@ func (s *Server) readMediaWorkerHostStatus() mediaWorkerHostStatus {
 		if json.Unmarshal(raw, &queued) == nil && queued.Revision > 0 &&
 			mediaWorkerRequestIDPattern.MatchString(queued.RequestID) &&
 			mediaworker.ValidMemoryMiB(queued.MemoryMiB) &&
-			mediaworker.ValidCPUMilli(queued.CPUMilli) {
+			mediaworker.ValidCPUMilli(queued.CPUMilli) &&
+			mediaworker.ValidPIDsLimit(queued.PIDsLimit) {
 			host.State = "queued"
 			host.RequestID = queued.RequestID
 			host.Revision = queued.Revision
 			host.Enabled = queued.Enabled
 			host.MemoryMiB = queued.MemoryMiB
 			host.CPUMilli = queued.CPUMilli
+			host.PIDsLimit = queued.PIDsLimit
+			host.PIDsVerified = false
 			host.MemoryVerified = false
 			host.CPUVerified = false
 		}
@@ -136,6 +148,7 @@ type adminMediaWorkerConfigDTO struct {
 	DesiredEnabled   bool                  `json:"desired_enabled"`
 	DesiredMemoryMiB int                   `json:"desired_memory_mib"`
 	DesiredCPUMilli  int                   `json:"desired_cpu_milli"`
+	DesiredPIDsLimit int                   `json:"desired_pids_limit"`
 	Revision         uint64                `json:"revision"`
 	Source           string                `json:"source"`
 	UpdatedAt        *time.Time            `json:"updated_at,omitempty"`
@@ -170,6 +183,22 @@ func (s *Server) mediaWorkerRuntimeReady(ctx context.Context) bool {
 	return err == nil && mediaworker.ValidInfo(info)
 }
 
+// mediaWorkerApplied is the single source of truth for Media Worker desired/
+// actual resource and health acknowledgement across the admin detail and overview.
+// A healthy executable by itself does not prove resource limits were applied.
+func mediaWorkerApplied(desired mediaWorkerDesired, host mediaWorkerHostStatus, runtimeReady bool) bool {
+	return desired.Revision > 0 && host.Supported && host.State == "success" &&
+		host.Revision == desired.Revision && host.AppliedRevision == desired.Revision &&
+		host.Enabled == desired.Enabled && host.ObservedEnabled == desired.Enabled &&
+		host.MemoryMiB == desired.MemoryMiB && host.MemoryVerified &&
+		host.ObservedMemoryMiB == desired.MemoryMiB &&
+		host.CPUControlSupported && host.CPUMilli == desired.CPUMilli &&
+		host.CPUVerified && host.ObservedCPUMilli == desired.CPUMilli &&
+		host.PIDsControlSupported && host.PIDsLimit == desired.PIDsLimit &&
+		host.PIDsVerified && host.ObservedPIDsLimit == desired.PIDsLimit &&
+		(!desired.Enabled || runtimeReady)
+}
+
 // Applied means exact desired revision AND observed Host container state AND,
 // when enabled, a successful live FFmpeg/FFprobe Unix-socket probe. No success
 // is inferred from a saved database row or queued host request.
@@ -198,28 +227,22 @@ func (s *Server) adminMediaWorkerConfig(c *gin.Context) {
 		if host.State == "failed" && host.Revision == desired.Revision {
 			state = "failed"
 		}
-		if host.State == "success" && host.AppliedRevision == desired.Revision &&
-			host.Enabled == desired.Enabled && host.ObservedEnabled == desired.Enabled &&
-			host.MemoryMiB == desired.MemoryMiB && host.MemoryVerified &&
-			host.ObservedMemoryMiB == desired.MemoryMiB &&
-			host.CPUControlSupported && host.CPUMilli == desired.CPUMilli &&
-			host.CPUVerified && host.ObservedCPUMilli == desired.CPUMilli &&
-			(!desired.Enabled || ready) {
+		if mediaWorkerApplied(desired, host, ready) {
 			state = "applied"
 		}
 	}
 	c.JSON(http.StatusOK, adminMediaWorkerConfigDTO{
-		DesiredEnabled: desired.Enabled, DesiredMemoryMiB: desired.MemoryMiB, DesiredCPUMilli: desired.CPUMilli,
+		DesiredEnabled: desired.Enabled, DesiredMemoryMiB: desired.MemoryMiB, DesiredCPUMilli: desired.CPUMilli, DesiredPIDsLimit: desired.PIDsLimit,
 		Revision: desired.Revision, Source: desired.Source,
 		UpdatedAt: desired.UpdatedAt, ApplyState: state, Host: host,
-		RuntimeReady: ready, Editable: true, ApplySupported: host.Supported && host.CPUControlSupported,
+		RuntimeReady: ready, Editable: true, ApplySupported: host.Supported && host.CPUControlSupported && host.PIDsControlSupported,
 		RequiresRestart: false,
 	})
 }
 
 func writeMediaWorkerHostRequest(dir string, request mediaWorkerHostRequest) error {
 	if dir == "" || request.Revision == 0 || !mediaWorkerRequestIDPattern.MatchString(request.RequestID) ||
-		!mediaworker.ValidMemoryMiB(request.MemoryMiB) || !mediaworker.ValidCPUMilli(request.CPUMilli) {
+		!mediaworker.ValidMemoryMiB(request.MemoryMiB) || !mediaworker.ValidCPUMilli(request.CPUMilli) || !mediaworker.ValidPIDsLimit(request.PIDsLimit) {
 		return errors.New("invalid media worker host request")
 	}
 	data, err := json.Marshal(request)
@@ -267,8 +290,8 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 	s.mediaWorkerConfigSaveMu.Lock()
 	defer s.mediaWorkerConfigSaveMu.Unlock()
 	host := s.readMediaWorkerHostStatus()
-	if !host.Supported || !host.CPUControlSupported {
-		fail(c, http.StatusServiceUnavailable, "host media worker CPU-capable control unavailable")
+	if !host.Supported || !host.CPUControlSupported || !host.PIDsControlSupported {
+		fail(c, http.StatusServiceUnavailable, "host media worker resource-capable control unavailable")
 		return
 	}
 	if s.mediaWorkerHostBusy() || host.State == "queued" || host.State == "running" {
@@ -294,7 +317,7 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 		return
 	}
 	request := mediaWorkerHostRequest{
-		RequestID: requestID, Revision: desired.Revision, Enabled: desired.Enabled, MemoryMiB: desired.MemoryMiB, CPUMilli: desired.CPUMilli,
+		RequestID: requestID, Revision: desired.Revision, Enabled: desired.Enabled, MemoryMiB: desired.MemoryMiB, CPUMilli: desired.CPUMilli, PIDsLimit: desired.PIDsLimit,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 	// Authorization is durably audited before any host operation is queued.
@@ -312,7 +335,7 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 			"admin.service.media-worker.apply.authorize", "service", "media-worker",
 			"FFmpeg Media Worker", auditpkg.ResultSuccess,
 			map[string]any{"revision": request.Revision, "enabled": request.Enabled,
-				"memory_mib": request.MemoryMiB, "cpu_milli": request.CPUMilli, "request_id": request.RequestID},
+				"memory_mib": request.MemoryMiB, "cpu_milli": request.CPUMilli, "pids_limit": request.PIDsLimit, "request_id": request.RequestID},
 		))
 	})
 	if errors.Is(err, errMediaWorkerRevision) {
@@ -334,6 +357,6 @@ func (s *Server) adminApplyMediaWorker(c *gin.Context) {
 	}
 	c.JSON(http.StatusAccepted, gin.H{
 		"state": "queued", "revision": request.Revision,
-		"enabled": request.Enabled, "memory_mib": request.MemoryMiB, "cpu_milli": request.CPUMilli, "request_id": request.RequestID,
+		"enabled": request.Enabled, "memory_mib": request.MemoryMiB, "cpu_milli": request.CPUMilli, "pids_limit": request.PIDsLimit, "request_id": request.RequestID,
 	})
 }

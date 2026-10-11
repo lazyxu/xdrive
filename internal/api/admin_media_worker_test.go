@@ -77,3 +77,56 @@ func TestAdminMediaWorkerRuntimeIsProbedButJobsAreNotClaimed(t *testing.T) {
 		t.Fatalf("media worker was not truthfully probed: %+v", ok)
 	}
 }
+
+func TestMediaWorkerAppliedRequiresActualResourcesAndRuntime(t *testing.T) {
+	desired := mediaWorkerDesired{
+		Revision: 7, Enabled: true, MemoryMiB: 768, CPUMilli: 750, PIDsLimit: 128,
+	}
+	host := mediaWorkerHostStatus{
+		Supported: true, State: "success", Revision: 7, AppliedRevision: 7,
+		Enabled: true, ObservedEnabled: true,
+		MemoryMiB: 768, ObservedMemoryMiB: 768, MemoryVerified: true,
+		CPUControlSupported: true, CPUMilli: 750, ObservedCPUMilli: 750, CPUVerified: true,
+		PIDsControlSupported: true, PIDsLimit: 128, ObservedPIDsLimit: 128, PIDsVerified: true,
+	}
+	if !mediaWorkerApplied(desired, host, true) {
+		t.Fatal("exact host memory/CPU/PID and runtime proof did not apply")
+	}
+	if mediaWorkerApplied(desired, host, false) {
+		t.Fatal("executable runtime health missing but Worker marked applied")
+	}
+	tests := []struct {
+		name   string
+		change func(*mediaWorkerHostStatus)
+	}{
+		{"old host", func(h *mediaWorkerHostStatus) { h.PIDsControlSupported = false }},
+		{"pending revision", func(h *mediaWorkerHostStatus) { h.State = "queued" }},
+		{"stale host revision", func(h *mediaWorkerHostStatus) { h.Revision = 8 }},
+		{"stale applied revision", func(h *mediaWorkerHostStatus) { h.AppliedRevision = 6 }},
+		{"memory unverified", func(h *mediaWorkerHostStatus) { h.MemoryVerified = false }},
+		{"memory mismatch", func(h *mediaWorkerHostStatus) { h.ObservedMemoryMiB = 1024 }},
+		{"CPU unverified", func(h *mediaWorkerHostStatus) { h.CPUVerified = false }},
+		{"CPU drift", func(h *mediaWorkerHostStatus) { h.ObservedCPUMilli = 1000 }},
+		{"PID unverified", func(h *mediaWorkerHostStatus) { h.PIDsVerified = false }},
+		{"PID drift", func(h *mediaWorkerHostStatus) { h.ObservedPIDsLimit = 256 }},
+		{"wrong enabled target", func(h *mediaWorkerHostStatus) { h.ObservedEnabled = false }},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := host
+			tc.change(&h)
+			if mediaWorkerApplied(desired, h, true) {
+				t.Fatalf("host drift/unknown proof incorrectly treated as applied: %+v", h)
+			}
+		})
+	}
+	desired.Enabled = false
+	host.Enabled, host.ObservedEnabled = false, false
+	if !mediaWorkerApplied(desired, host, false) {
+		t.Fatal("verified stopped Worker and staged limits must be acknowledged")
+	}
+	host.ObservedPIDsLimit = 256
+	if mediaWorkerApplied(desired, host, false) {
+		t.Fatal("disabled Worker with wrong staged PID quota wrongly acknowledged")
+	}
+}

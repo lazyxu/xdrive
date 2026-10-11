@@ -22,7 +22,7 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"
 	case "media-worker":
 		return "in-app", "controlled-restart",
-			"管理员可版本化保存启停目标和内存限额（256–4096 MiB，128 MiB 步长），经审计和独立 Host Manager 仅重新创建 media-worker；启用后生效必须同时确认 Docker 实际内存限制、容器状态和 FFmpeg/FFprobe 探针。CPU、进程上限、镜像及挂载仍由部署管理；不重启核心 Server 或其他服务。"
+			"本页可版本化保存启停目标、内存上限（256–4096 MiB）、CPU 上限（250–4000 mCPU）和 PID 上限（64–1024）；保存不会直接操作容器。仅受限 Host Manager 可单独应用并重建 media-worker；仅在期望修订与实际启停状态、Docker 内存/CPU/PID 限制和 FFmpeg/FFprobe 探针全部匹配时确认生效。旧版控制器和配额漂移不得显示成功。镜像及挂载仍由部署管理，不重启其他服务。"
 	case "database":
 		return "in-app", "immediate",
 			"本页仅支持配置 xDrive Server 的 database/sql 最大打开连接数与最大空闲连接数，经版本校验和审计后当前实例热生效；其他 Server 定期协调并独立确认。PostgreSQL 地址、密码、版本、数据卷和服务重启仍由受控部署管理。此配置不改变数据库服务端参数"

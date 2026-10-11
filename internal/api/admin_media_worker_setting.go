@@ -23,12 +23,13 @@ type mediaWorkerDesired struct {
 	Enabled   bool
 	MemoryMiB int
 	CPUMilli  int
+	PIDsLimit int
 	Source    string
 	UpdatedAt *time.Time
 }
 
 func (s *Server) readMediaWorkerDesired(ctx context.Context) (mediaWorkerDesired, error) {
-	defaults := mediaWorkerDesired{Source: "default", MemoryMiB: mediaworker.DefaultMemoryMiB, CPUMilli: mediaworker.DefaultCPUMilli}
+	defaults := mediaWorkerDesired{Source: "default", MemoryMiB: mediaworker.DefaultMemoryMiB, CPUMilli: mediaworker.DefaultCPUMilli, PIDsLimit: mediaworker.DefaultPIDsLimit}
 	if s == nil || s.DB == nil {
 		return defaults, errors.New("database unavailable")
 	}
@@ -40,23 +41,23 @@ func (s *Server) readMediaWorkerDesired(ctx context.Context) (mediaWorkerDesired
 	if err != nil {
 		return defaults, err
 	}
-	if row.Revision == 0 || !mediaworker.ValidMemoryMiB(row.MemoryMiB) || !mediaworker.ValidCPUMilli(row.CPUMilli) {
+	if row.Revision == 0 || !mediaworker.ValidMemoryMiB(row.MemoryMiB) || !mediaworker.ValidCPUMilli(row.CPUMilli) || !mediaworker.ValidPIDsLimit(row.PIDsLimit) {
 		return defaults, errors.New("invalid media worker revision or resource limits")
 	}
 	return mediaWorkerDesired{
-		Revision: row.Revision, Enabled: row.Enabled, MemoryMiB: row.MemoryMiB, CPUMilli: row.CPUMilli,
+		Revision: row.Revision, Enabled: row.Enabled, MemoryMiB: row.MemoryMiB, CPUMilli: row.CPUMilli, PIDsLimit: row.PIDsLimit,
 		Source: "saved", UpdatedAt: &row.UpdatedAt,
 	}, nil
 }
 
-func recordMediaWorkerRevisionTx(tx *gorm.DB, revision uint64, enabled bool, memoryMiB, cpuMilli int, origin string) error {
-	if !mediaworker.ValidMemoryMiB(memoryMiB) || !mediaworker.ValidCPUMilli(cpuMilli) {
+func recordMediaWorkerRevisionTx(tx *gorm.DB, revision uint64, enabled bool, memoryMiB, cpuMilli, pidsLimit int, origin string) error {
+	if !mediaworker.ValidMemoryMiB(memoryMiB) || !mediaworker.ValidCPUMilli(cpuMilli) || !mediaworker.ValidPIDsLimit(pidsLimit) {
 		return errors.New("invalid historical media worker resource limits")
 	}
 	var old meta.AdminMediaWorkerRevision
 	err := tx.Where("name = ? AND revision = ?", mediaWorkerSettingName, revision).Take(&old).Error
 	if err == nil {
-		if old.Enabled != enabled || old.MemoryMiB != memoryMiB || old.CPUMilli != cpuMilli {
+		if old.Enabled != enabled || old.MemoryMiB != memoryMiB || old.CPUMilli != cpuMilli || old.PIDsLimit != pidsLimit {
 			return errors.New("immutable media worker revision conflict")
 		}
 		return nil
@@ -66,7 +67,7 @@ func recordMediaWorkerRevisionTx(tx *gorm.DB, revision uint64, enabled bool, mem
 	}
 	return tx.Create(&meta.AdminMediaWorkerRevision{
 		Name: mediaWorkerSettingName, Revision: revision,
-		Enabled: enabled, MemoryMiB: memoryMiB, CPUMilli: cpuMilli, Origin: origin, CreatedAt: time.Now().UTC(),
+		Enabled: enabled, MemoryMiB: memoryMiB, CPUMilli: cpuMilli, PIDsLimit: pidsLimit, Origin: origin, CreatedAt: time.Now().UTC(),
 	}).Error
 }
 
@@ -84,11 +85,13 @@ func (s *Server) adminSaveMediaWorkerConfig(c *gin.Context) {
 		Enabled   *bool   `json:"enabled"`
 		MemoryMiB *int    `json:"memory_mib"`
 		CPUMilli  *int    `json:"cpu_milli"`
+		PIDsLimit *int    `json:"pids_limit"`
 	}
 	if c.ShouldBindJSON(&input) != nil || input.Revision == nil || input.Enabled == nil ||
 		input.MemoryMiB == nil || !mediaworker.ValidMemoryMiB(*input.MemoryMiB) ||
-		input.CPUMilli == nil || !mediaworker.ValidCPUMilli(*input.CPUMilli) {
-		fail(c, http.StatusBadRequest, "media worker revision, enabled, memory_mib and cpu_milli required")
+		input.CPUMilli == nil || !mediaworker.ValidCPUMilli(*input.CPUMilli) ||
+		input.PIDsLimit == nil || !mediaworker.ValidPIDsLimit(*input.PIDsLimit) {
+		fail(c, http.StatusBadRequest, "media worker revision, enabled and bounded memory_mib, cpu_milli, pids_limit required")
 		return
 	}
 	s.mediaWorkerConfigSaveMu.Lock()
@@ -111,11 +114,11 @@ func (s *Server) adminSaveMediaWorkerConfig(c *gin.Context) {
 		if (exists && row.Revision != *input.Revision) || (!exists && *input.Revision != 0) {
 			return errMediaWorkerRevision
 		}
-		before, beforeMemory, beforeCPU, origin := false, mediaworker.DefaultMemoryMiB, mediaworker.DefaultCPUMilli, "default"
+		before, beforeMemory, beforeCPU, beforePIDs, origin := false, mediaworker.DefaultMemoryMiB, mediaworker.DefaultCPUMilli, mediaworker.DefaultPIDsLimit, "default"
 		if exists {
-			before, beforeMemory, beforeCPU, origin = row.Enabled, row.MemoryMiB, row.CPUMilli, "saved"
+			before, beforeMemory, beforeCPU, beforePIDs, origin = row.Enabled, row.MemoryMiB, row.CPUMilli, row.PIDsLimit, "saved"
 		}
-		if err := recordMediaWorkerRevisionTx(tx, *input.Revision, before, beforeMemory, beforeCPU, origin); err != nil {
+		if err := recordMediaWorkerRevisionTx(tx, *input.Revision, before, beforeMemory, beforeCPU, beforePIDs, origin); err != nil {
 			return err
 		}
 		nextRevision := *input.Revision + 1
@@ -126,6 +129,7 @@ func (s *Server) adminSaveMediaWorkerConfig(c *gin.Context) {
 					"enabled":    *input.Enabled,
 					"memory_mib": *input.MemoryMiB,
 					"cpu_milli":  *input.CPUMilli,
+					"pids_limit": *input.PIDsLimit,
 					"revision":   nextRevision,
 					"updated_at": time.Now().UTC(),
 				})
@@ -139,7 +143,7 @@ func (s *Server) adminSaveMediaWorkerConfig(c *gin.Context) {
 			created := tx.Clauses(clause.OnConflict{DoNothing: true}).
 				Create(&meta.AdminMediaWorkerSetting{
 					Name: mediaWorkerSettingName, Revision: nextRevision, Enabled: *input.Enabled,
-					MemoryMiB: *input.MemoryMiB, CPUMilli: *input.CPUMilli,
+					MemoryMiB: *input.MemoryMiB, CPUMilli: *input.CPUMilli, PIDsLimit: *input.PIDsLimit,
 				})
 			if created.Error != nil {
 				return created.Error
@@ -148,13 +152,13 @@ func (s *Server) adminSaveMediaWorkerConfig(c *gin.Context) {
 				return errMediaWorkerRevision
 			}
 		}
-		if err := recordMediaWorkerRevisionTx(tx, nextRevision, *input.Enabled, *input.MemoryMiB, *input.CPUMilli, "saved"); err != nil {
+		if err := recordMediaWorkerRevisionTx(tx, nextRevision, *input.Enabled, *input.MemoryMiB, *input.CPUMilli, *input.PIDsLimit, "saved"); err != nil {
 			return err
 		}
 		return recordAuditTx(tx, auditEventFromContext(c,
 			"admin.service.media-worker.configure", "service", "media-worker",
 			"FFmpeg Media Worker", auditpkg.ResultSuccess,
-			map[string]any{"revision": nextRevision, "desired_enabled": *input.Enabled, "memory_mib": *input.MemoryMiB, "cpu_milli": *input.CPUMilli},
+			map[string]any{"revision": nextRevision, "desired_enabled": *input.Enabled, "memory_mib": *input.MemoryMiB, "cpu_milli": *input.CPUMilli, "pids_limit": *input.PIDsLimit},
 		))
 	})
 	if errors.Is(err, errMediaWorkerRevision) {
@@ -173,6 +177,7 @@ type mediaWorkerRevisionDTO struct {
 	Enabled   bool      `json:"enabled"`
 	MemoryMiB int       `json:"memory_mib"`
 	CPUMilli  int       `json:"cpu_milli"`
+	PIDsLimit int       `json:"pids_limit"`
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -192,7 +197,7 @@ func (s *Server) adminMediaWorkerRevisions(c *gin.Context) {
 	}
 	list := make([]mediaWorkerRevisionDTO, 0, len(rows))
 	for _, row := range rows {
-		list = append(list, mediaWorkerRevisionDTO{Revision: row.Revision, Enabled: row.Enabled, MemoryMiB: row.MemoryMiB, CPUMilli: row.CPUMilli, Origin: row.Origin, CreatedAt: row.CreatedAt})
+		list = append(list, mediaWorkerRevisionDTO{Revision: row.Revision, Enabled: row.Enabled, MemoryMiB: row.MemoryMiB, CPUMilli: row.CPUMilli, PIDsLimit: row.PIDsLimit, Origin: row.Origin, CreatedAt: row.CreatedAt})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": list})
 }
@@ -227,7 +232,7 @@ func (s *Server) adminRollbackMediaWorker(c *gin.Context) {
 		fail(c, http.StatusNotFound, "media worker history revision not found")
 		return
 	}
-	if err != nil || !mediaworker.ValidMemoryMiB(history.MemoryMiB) || !mediaworker.ValidCPUMilli(history.CPUMilli) {
+	if err != nil || !mediaworker.ValidMemoryMiB(history.MemoryMiB) || !mediaworker.ValidCPUMilli(history.CPUMilli) || !mediaworker.ValidPIDsLimit(history.PIDsLimit) {
 		fail(c, http.StatusServiceUnavailable, "media worker history unavailable or invalid")
 		return
 	}
@@ -243,13 +248,13 @@ func (s *Server) adminRollbackMediaWorker(c *gin.Context) {
 		if row.Revision != *input.Revision {
 			return errMediaWorkerRevision
 		}
-		if err := recordMediaWorkerRevisionTx(tx, row.Revision, row.Enabled, row.MemoryMiB, row.CPUMilli, "saved"); err != nil {
+		if err := recordMediaWorkerRevisionTx(tx, row.Revision, row.Enabled, row.MemoryMiB, row.CPUMilli, row.PIDsLimit, "saved"); err != nil {
 			return err
 		}
 		next := row.Revision + 1
 		updated := tx.Model(&meta.AdminMediaWorkerSetting{}).
 			Where("name = ? AND revision = ?", mediaWorkerSettingName, row.Revision).
-			Updates(map[string]any{"enabled": history.Enabled, "memory_mib": history.MemoryMiB, "cpu_milli": history.CPUMilli,
+			Updates(map[string]any{"enabled": history.Enabled, "memory_mib": history.MemoryMiB, "cpu_milli": history.CPUMilli, "pids_limit": history.PIDsLimit,
 				"revision": next, "updated_at": time.Now().UTC()})
 		if updated.Error != nil {
 			return updated.Error
@@ -257,14 +262,14 @@ func (s *Server) adminRollbackMediaWorker(c *gin.Context) {
 		if updated.RowsAffected != 1 {
 			return errMediaWorkerRevision
 		}
-		if err := recordMediaWorkerRevisionTx(tx, next, history.Enabled, history.MemoryMiB, history.CPUMilli, "rollback"); err != nil {
+		if err := recordMediaWorkerRevisionTx(tx, next, history.Enabled, history.MemoryMiB, history.CPUMilli, history.PIDsLimit, "rollback"); err != nil {
 			return err
 		}
 		return recordAuditTx(tx, auditEventFromContext(c,
 			"admin.service.media-worker.rollback", "service", "media-worker",
 			"FFmpeg Media Worker", auditpkg.ResultSuccess,
 			map[string]any{"revision": next, "target_revision": *input.TargetRevision,
-				"desired_enabled": history.Enabled, "memory_mib": history.MemoryMiB, "cpu_milli": history.CPUMilli},
+				"desired_enabled": history.Enabled, "memory_mib": history.MemoryMiB, "cpu_milli": history.CPUMilli, "pids_limit": history.PIDsLimit},
 		))
 	})
 	if errors.Is(err, errMediaWorkerRevision) {
