@@ -1,0 +1,21 @@
+{
+  "status": "Invalid benchmark launch / no transfer measurement / no product performance evidence",
+  "source_exact_commit": "89d0a794a854741d05ea34ccdde8bcd8dc36d737",
+  "run_id": 38113380419,
+  "job_id": 114393364470,
+  "url": "https://github.com/lazyxu/xdrive/actions/runs/38113380419",
+  "failed_step": "Measure n=3 authentic Electron Renderer to real Go Agent IPC to Gin CAS 1GiB native transfers",
+  "first_error": "REAL_DESKTOP_CAS_ERROR ReferenceError: Cannot access 'process' before initialization",
+  "cause": "New benchmark-only fixture(...) declared const process=spawnLogged(...) and expanded {...process.env} before initializer completed. JavaScript TDZ/local identifier shadow of global process terminated at fixture startup before any actual PostgreSQL/CAS/Agent IPC bytes were sent.",
+  "valid_samples": 0,
+  "scope": "Only JavaScript test-driver bug; no evidence of product transfer, Go CAS, Desktop or cancellation regression.",
+  "fix": "Rename local fixture process variable to proc while preserving returned {process: proc} and all test semantics; rerun EXACT 1GiB n3 auth/physical SHA/CPU/RSS budgets unchanged. No production edits.",
+  "original_frozen_workload": {
+    "size_bytes": 1073741824,
+    "samples": 3,
+    "upload_puts": 128,
+    "download_gets": 1,
+    "max_elapsed_ms_each": 240000,
+    "ram_growth_mib_each": 256
+  }
+}

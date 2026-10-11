@@ -1,0 +1,62 @@
+{
+  "status": "Incomplete n=3 qualification / first authentic Desktop sample completed both physical 1GiB transfers; test-only result validation failed afterward",
+  "source": {
+    "repository": "lazyxu/xdrive",
+    "measured_work_sha": "f66a619bb47254168ad5945340b887db9ae16b10",
+    "run_id": 38117873343,
+    "job_id": 114406337236,
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38117873343",
+    "artifact_id": 11694272954,
+    "artifact_name": "desktop-real-renderer-go-agent-postgres-cas-1gib",
+    "scope": "real compiled Desktop Renderer→Preload→Main→Go Agent IPC→authenticated Gin/PostgreSQL17 physical local CAS, Linux loopback and 1GiB sparse zero file"
+  },
+  "sample": "sample-1",
+  "actual_browser_upload": {
+    "scenario": "upload",
+    "nodeID": 2,
+    "bytes": 1073741824,
+    "elapsedMs": 11036.946847,
+    "throughputMiBps": 92.779281643305,
+    "rendererWorkingSetStartKiB": 134720,
+    "rendererWorkingSetPeakKiB": 205548,
+    "rendererWorkingSetGrowthKiB": 70828,
+    "electronMainCPUUserMs": null,
+    "electronMainCPUSystemMs": null
+  },
+  "actual_browser_download": {
+    "scenario": "download",
+    "nodeID": 2,
+    "bytes": 1073741824,
+    "elapsedMs": 3503.2553909999997,
+    "throughputMiBps": 292.29955732907626,
+    "rendererWorkingSetStartKiB": 139920,
+    "rendererWorkingSetPeakKiB": 153896,
+    "rendererWorkingSetGrowthKiB": 13976,
+    "electronMainCPUUserMs": null,
+    "electronMainCPUSystemMs": null
+  },
+  "actual_gin_final": {
+    "cas_bytes": 1073741824,
+    "cas_valid": true,
+    "declared_upload_bytes": 1073741824,
+    "download_get_count": 1,
+    "file_bytes": 1073741824,
+    "file_sha256": "49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14",
+    "node_revision": 1,
+    "put_count": 128,
+    "root_id": 1,
+    "sample": "sample-1",
+    "size_bytes": 1073741824,
+    "upload_name": "upload-sample-1.bin",
+    "uploaded_node_id": 2
+  },
+  "source_exact_red": {
+    "time_utc": "2026-10-11T06:25:48Z",
+    "kind": "test-only benchmark runner result variable mix-up",
+    "actual_failure": "REAL_DESKTOP_CAS_ERROR AssertionError [ERR_ASSERTION]: authentic Desktop 1GiB transfer elapsed budget exceeded",
+    "root_cause": "The benchmark runner's `for (const record of [upload, download])` used `download` (absolute destination pathname STRING), rather than `downloaded` (real Electron download result object). `record.elapsedMs` was undefined on string, making the elapsed gate fail after both real upload+download completed. It is NOT a 240s transfer timeout or product failure.",
+    "secondary_invalid_metric": "Electron Main benchmark called `process.getCPUUsage()` (Electron CPU % API shape) as though it were Node `process.cpuUsage()` (microsecond user/system). It serialized `cpu.user/1000` and `cpu.system/1000` to null for both modes; CPU values from this source MUST NOT be cited.",
+    "treatment": "Preserve valid measured upload/download elapsed, browser Renderer WS growth, authentic CAS/128 PUT/1 GET counters as single-sample first evidence; full 3× acceptance remains INCOMPLETE, CPU invalid, Agent/Gin peak RSS/unrounded sample summaries not produced. Correct only test runner's array and test Electron CPU sampling, retain original n=3/1GiB/128PUT/1GET/240s/256MiB budgets and run new exact-head native+full CI."
+  },
+  "exclusions": "No full three trials, no valid Electron CPU from original head, no per-sample Go Agent/Gin RSS because assertion prevented result finalization, no real mouse click on FileExplorer toolbar, no 4GiB, WAN, random/HEVC/RAW bytes, durable cancel test."
+}

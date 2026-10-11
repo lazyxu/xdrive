@@ -1,0 +1,44 @@
+{
+  "scope": "authentic Electron Desktop Renderer/Preload/Main -> Go Agent IPC -> native PostgreSQL17/Gin/physical CAS 1GiB",
+  "status": "INVALID RUN / no 1GiB benchmark sample / harness entry directory mismatch",
+  "source": {
+    "commit": "84bc70f9990886cea0cb22eef7353e2fb96e0b21",
+    "run_id": 38113661932,
+    "job_id": 114394169832,
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38113661932",
+    "artifact_id": 11692338061,
+    "artifact_name": "desktop-real-renderer-go-agent-postgres-cas-1gib",
+    "recorded_at": "2026-10-11T05:14:51Z"
+  },
+  "actual_evidence": {
+    "child_app_startup_error": "AssertionError [ERR_ASSERTION]: authentic Desktop app required",
+    "app_get_app_path": "/home/runner/work/xdrive/xdrive/desktop/scripts",
+    "required_production_app_path": "/home/runner/work/xdrive/xdrive/desktop",
+    "trigger": "Electron launched scripts/real-desktop-cas-electron-main.cjs directly, rather than a package-root .cjs bootstrap",
+    "observed_go_server_end": {
+      "http_chunk_put_count": 0,
+      "declared_upload_bytes": 0,
+      "http_download_get_count": 0,
+      "cas_valid": false,
+      "cas_bytes": 0
+    },
+    "first_native_fixture_ready": true,
+    "production_authenticated_root_get": true,
+    "upload_full_file_started": false,
+    "download_full_file_started": false,
+    "native_sample_count": 0,
+    "runner_error": "REAL_DESKTOP_CAS_ERROR AssertionError [ERR_ASSERTION]: authentic Electron upload failed: {\"code\":\"timeout\"}",
+    "timed_out_at_ms": 360000,
+    "native_job_status": "failure",
+    "full_pr_ci_run": 38113662097,
+    "full_pr_ci_result": "success",
+    "reason_for_hang": "Electron Main never reached real run(win) because its startup app path assertion threw; launcher timed out waiting for result."
+  },
+  "actions": [
+    "Amend only test-only desktop/scripts/real-desktop-cas-runner.cjs to create temporary .cjs bootstrap under desktop/ (package root), requiring the unmodified test-only electron-main script",
+    "Use fixed one-work-commit baseline and original n=3 1GiB, 128 PUT, single GET, hash, <=240s per-direction, <=256MiB per-process growth gates",
+    "Rerun actual native dedicated CI and full exact-head CI, archive genuine original n=3 metrics before merge",
+    "Do not change production Go Agent, Preload/Main, CAS or race code on this invalid harness result."
+  ],
+  "decision": "Not a production performance red. No valid BEFORE metrics collected. No AFTER comparison or speedup can be claimed."
+}
