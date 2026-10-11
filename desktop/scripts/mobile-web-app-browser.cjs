@@ -42,6 +42,7 @@ const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const galleryIos27ViewerScenario = options.scenario === 'gallery-ios27-viewer';
 const galleryViewerEditFixture = { saved: [], reset: [] };
+const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
 const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
@@ -104,8 +105,34 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/nodes/root': return plain(rootNode);
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
     case 'GET /api/v1/file-operations':
-      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesIos27ChromeScenario ? filesIos27Fixture.operations : filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
+      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return galleryIos27ViewerScenario ? galleryViewerDeleteFixture.operations : filesIos27ChromeScenario ? filesIos27Fixture.operations : filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
     case 'POST /api/v1/file-operations': {
+      if (galleryIos27ViewerScenario) {
+        queryOnly(url, []);
+        const body = jsonBody(request);
+        assert.deepEqual(Object.keys(body).sort(), ['items', 'type']);
+        assert.equal(body.type, 'delete');
+        assert.equal(body.items.length, 1);
+        const ref = body.items[0], item = mediaByID.get(ref.id);
+        assert(item && ref.revision === item.node.revision,
+          'Gallery Viewer delete must use the exact authorized media Node and revision');
+        const status = galleryViewerDeleteFixture.rejectNext ? 403 : 200;
+        galleryViewerDeleteFixture.rejectNext = false;
+        galleryViewerDeleteFixture.attempts.push({ nodeID: ref.id, revision: ref.revision, status });
+        if (status !== 200) return {
+          __fixtureStatus: 403, __fixturePurpose: 'real Server owner denial before explicit retry',
+          __fixtureBody: { error: '验收：没有删除权限，请重试。' },
+        };
+        galleryViewerDeleteFixture.accepted.push(body);
+        const operation = {
+          id: 'qa-gallery-delete-' + galleryViewerDeleteFixture.accepted.length,
+          type: 'delete', status: 'queued', total_items: 1, processed_items: 0,
+          total_bytes: item.node.size, processed_bytes: 0, percent: 0,
+          retryable: false, created_at: stamp, updated_at: stamp,
+        };
+        galleryViewerDeleteFixture.operations.unshift(operation);
+        return operation;
+      }
       if (filesIos27ChromeScenario) {
         queryOnly(url, []);
         const body = jsonBody(request);
@@ -2789,6 +2816,42 @@ async function galleryIos27ViewerAcceptance(pointer) {
     returned.scrollDeltaFromViewerEntry <= 2 &&
     returned.logicalNodeRestored && returned.tileVisibleInGallery &&
     returned.backgroundRestored && returned.galleryUsesExplicitAnchoring, returned);
+
+  // P1-2f: reopen the same logical photo and exercise the actual shared Web
+  // file-operation endpoint. A 403 must preserve the dialog; queued != deleted.
+  activeStage = name + '-delete-403-then-queued';
+  await page.locator('[data-xdrive-media-tile][data-xdrive-media-index="' +
+    returned.originalNodeID + '"]').click();
+  await page.waitForURL(/\/media-viewer\?node=/);
+  const deletionID = Number(new URL(page.url()).hash.match(/node=(\d+)/)?.[1]);
+  const deleteViewer = page.locator('[data-xdrive-web-viewer]');
+  if (pointer === 'fine') await page.mouse.move(180, 380);
+  await deleteViewer.locator('button[aria-label="删除媒体"]').click();
+  const dialog = page.getByRole('dialog', { name: /^删除这张照片或视频/ });
+  await dialog.waitFor();
+  galleryViewerDeleteFixture.rejectNext = true;
+  const attemptsBefore = galleryViewerDeleteFixture.attempts.length;
+  const [denied] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/file-operations' &&
+      response.request().method() === 'POST'),
+    dialog.getByRole('button', { name: '删除', exact: true }).click(),
+  ]);
+  check(name + ': real 403 denial preserves Viewer and delete confirmation',
+    denied.status() === 403 && await dialog.isVisible() &&
+    new URL(page.url()).hash.includes('node=' + deletionID));
+  const [queued] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/file-operations' &&
+      response.request().method() === 'POST'),
+    dialog.getByRole('button', { name: '删除', exact: true }).click(),
+  ]);
+  const receipt = await queued.json();
+  await page.waitForURL(await page.evaluate(() => window.__p12c.url));
+  const attempts = galleryViewerDeleteFixture.attempts.slice(attemptsBefore);
+  result.samples[name + '-delete'] = { attempts, receipt, returnedToGallery: true };
+  check(name + ': same shared delete API accepts exact Node/revision and returns a durable queued task',
+    queued.status() === 200 && receipt.status === 'queued' &&
+    attempts.length === 2 && attempts[0].status === 403 && attempts[1].status === 200 &&
+    attempts.every(attempt => attempt.nodeID === deletionID && attempt.revision === 1));
 }
 
 async function main() {
@@ -2825,6 +2888,7 @@ async function main() {
       fs.copyFileSync(__filename, path.join(outputDir, path.basename(__filename)));
       result.fixture.galleryViewer = { logicalItems: mediaItems.length,
       sharedEditEndpoints: ['PUT /api/v1/media/items/:id/edit', 'DELETE /api/v1/media/items/:id/edit'],
+      sharedDeleteEndpoint: 'POST /api/v1/file-operations (type=delete)',
         physicalIOSDevice: false, actualGoServer: false, pointerModes: ['fine', 'coarse'] };
       result.sourceHashes = Object.fromEntries([
         'web/src/App.tsx', 'web/src/WebFileViewerApps.tsx',

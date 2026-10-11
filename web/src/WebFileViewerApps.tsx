@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -23,6 +24,7 @@ import {
   useMediaQuery,
 } from '@mui/material'
 import {
+  XDriveConfirmDialog,
   XDriveFilePreviewSurface,
   XDriveFileTagDialog,
   XDriveMediaDetailsInspector,
@@ -717,6 +719,7 @@ function WebMediaViewerApp({
   onNavigate,
   onShowInFolder,
   onClose,
+  onFileOperationQueued,
   onError,
 }: {
   route: Extract<XDriveWebAppRoute, { app: 'media-viewer' }>
@@ -726,6 +729,7 @@ function WebMediaViewerApp({
   onNavigate: (nodeID: number) => void
   onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
+  onFileOperationQueued?: () => void
   onError: (error: unknown) => void
 }) {
   const viewer = useViewerNode({
@@ -744,7 +748,21 @@ function WebMediaViewerApp({
   // A dialog belongs to one actual Node revision. Navigating the bounded
   // Filmstrip must never reopen a previous asset's editor on the next photo.
   const [editTarget, setEditTarget] = useState<{ id: number; revision: number } | null>(null)
-  useEffect(() => { setEditTarget(null) }, [route.params.node, route.params.context])
+  const [deleteTarget, setDeleteTarget] = useState<{ id: number; revision: number } | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const deleteInFlightRef = useRef(false)
+  // Deletion belongs to the original Node/revision and browse route; a late
+  // Task Center receipt must never close a newer Filmstrip item.
+  const currentDeleteRouteRef = useRef({
+    node: route.params.node, context: route.params.context, revision: viewer.node?.revision,
+  })
+  currentDeleteRouteRef.current = {
+    node: route.params.node, context: route.params.context, revision: viewer.node?.revision,
+  }
+  useEffect(() => {
+    setEditTarget(null)
+    setDeleteTarget(null)
+  }, [route.params.node, route.params.context])
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
 
   const openInfo = () => {
@@ -761,6 +779,38 @@ function WebMediaViewerApp({
     editTarget?.id === mediaItem.node.id && editTarget.revision === mediaItem.node.revision
       ? mediaItem : null
   const editOpen = Boolean(editingItem)
+  const deletingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
+    deleteTarget?.id === mediaItem.node.id && deleteTarget.revision === mediaItem.node.revision
+      ? mediaItem : null
+  const deleteOpen = Boolean(deletingItem)
+  const submitDelete = () => {
+    if (!deletingItem || !gallerySource.deleteItems || deleteInFlightRef.current) return
+    const item = deletingItem
+    const targetNode = item.node
+    const targetContext = route.params.context
+    const stillAtTarget = () => currentDeleteRouteRef.current.node === targetNode.id &&
+      currentDeleteRouteRef.current.context === targetContext &&
+      currentDeleteRouteRef.current.revision === targetNode.revision
+    deleteInFlightRef.current = true
+    setDeleteBusy(true)
+    void gallerySource.deleteItems([item]).then((operation) => {
+      // A queued file operation is a Task Center receipt, NOT proof that the
+      // photo has already been moved to Trash or that its bytes are gone.
+      if (operation && (operation.status === 'failed' || operation.status === 'cancelled')) {
+        throw new Error('服务端未接受删除任务，请在任务中心核查或重试。')
+      }
+      onFileOperationQueued?.()
+      if (stillAtTarget()) {
+        setDeleteTarget(null)
+        onClose(targetNode)
+      }
+    }).catch((error) => {
+      if (stillAtTarget()) onError(error)
+    }).finally(() => {
+      deleteInFlightRef.current = false
+      setDeleteBusy(false)
+    })
+  }
 
   const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
     <Stack direction="row" spacing={0.25}>
@@ -793,6 +843,21 @@ function WebMediaViewerApp({
             })}
           >
             <EditRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {gallerySource.deleteItems && !viewer.isTrashContext ? (
+        <Tooltip title="删除">
+          <IconButton
+            size="small"
+            aria-label="删除媒体"
+            disabled={deleteBusy}
+            onClick={() => setDeleteTarget({
+              id: mediaItem.node.id,
+              revision: mediaItem.node.revision,
+            })}
+          >
+            <DeleteOutlineRoundedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -834,7 +899,7 @@ function WebMediaViewerApp({
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen || editOpen}
+        keepChromeVisible={infoOpen || editOpen || deleteOpen}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -888,6 +953,16 @@ function WebMediaViewerApp({
         onTagsClose={() => setTagsOpen(false)}
         onError={onError}
       /> : null}
+      <XDriveConfirmDialog
+        open={deleteOpen}
+        title="删除这张照片或视频？"
+        description="将提交移入回收站的文件操作。任务可能仍在进行中，可在任务中心核查状态或取消。"
+        confirmLabel="删除"
+        confirmIntent="danger"
+        loading={deleteBusy}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={submitDelete}
+      />
       <XDriveMediaGalleryEditDialog
         open={editOpen}
         item={editingItem}
@@ -1127,6 +1202,7 @@ export function WebFileViewerApps({
   onReplaceRoute,
   onShowInFolder,
   onClose,
+  onFileOperationQueued,
   onError,
 }: {
   route: XDriveWebAppRoute
@@ -1136,6 +1212,7 @@ export function WebFileViewerApps({
   onReplaceRoute: (route: XDriveWebAppRoute) => void
   onShowInFolder?: (location: NodeLocation) => void
   onClose: (node: Node | null) => void
+  onFileOperationQueued?: () => void
   onError: (error: unknown) => void
 }) {
   if (route.app === 'preview') {
@@ -1167,6 +1244,7 @@ export function WebFileViewerApps({
         })}
         onShowInFolder={onShowInFolder}
         onClose={onClose}
+        onFileOperationQueued={onFileOperationQueued}
         onError={onError}
       />
     )
