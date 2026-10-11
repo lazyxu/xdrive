@@ -197,3 +197,15 @@ test('P1-1a Mobile Collections overview reuses the Wide Web Gallery upload entry
   assert.match(realWebFixture, /thumbnail URL version must match the fixture source MIME/)
 })
 
+
+test('P1-1b Mobile filters reuse the exact wide-Web owner-scoped Server facets query', () => {
+  assert.match(page, /onOpenMobileFilters=\{\(\) => \{ void requestFacets\(\) \}\}/)
+  assert.match(page, /onFilterOpen=\{onOpenMobileFilters\}/)
+  assert.match(page, /source\.listFacets\(facetQuery, albumID\)/)
+  assert.match(webAdapter, /listFacets: \(query, albumID\) => api\.mediaFacets\(query, albumID\)/)
+  assert.match(chrome, /if \(searchOpen\) onFilterOpenRef\.current\?\.\(\)/)
+  assert.match(chrome, /\}, \[searchOpen\]\)/)
+  assert.match(page, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
+  assert.doesNotMatch(chrome, /\bfetch\(|listItemRange\(|new XMLHttpRequest\(/)
+})
+

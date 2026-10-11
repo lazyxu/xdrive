@@ -166,6 +166,61 @@ test('iOS 27 Search opens the shared filter without creating a second query engi
   await act(async () => { view.unmount() })
 })
 
+test('P1-1b mobile Sort/Filter and Search request canonical Server facets once on each opening', async () => {
+  const events = []
+  const firstOpen = () => events.push('facets-first')
+  const nextOpen = () => events.push('facets-next')
+  const make = onFilterOpen => React.createElement(MobileChrome, props({ onFilterOpen }))
+  let view
+  try {
+    await act(async () => { view = renderer.create(make(firstOpen)) })
+    assert.deepEqual(events, [], 'facets are lazy and never requested on initial mount')
+    await act(async () => {
+      find(view, 'data-xdrive-mobile-gallery-sort-filter').props.onClick({ currentTarget: {} })
+    })
+    assert.deepEqual(events, [], 'opening Sort & Filter alone must not fetch advanced facets')
+    await act(async () => { find(view, 'data-xdrive-mobile-gallery-filter').props.onClick() })
+    assert.deepEqual(events, ['facets-first'])
+    assert.equal(view.root.findAll(x => x.type === 'drawer' && x.props.open).length, 1)
+    assert.equal(find(view, 'data-xdrive-mobile-gallery-filter-panel').props.children,
+      'REUSED_GALLERY_FILTERS')
+
+    // The owning Page replaces its callback when draft/scope changes.
+    // The open sheet must not issue a network request per changed keystroke.
+    await act(async () => { view.update(make(nextOpen)) })
+    assert.deepEqual(events, ['facets-first'])
+    await act(async () => {
+      view.root.findAll(x => x.type === 'drawer' && x.props.open)[0].props.onClose()
+    })
+    assert.deepEqual(events, ['facets-first'])
+    await act(async () => { find(view, 'data-xdrive-mobile-gallery-search').props.onClick() })
+    assert.deepEqual(events, ['facets-first', 'facets-next'])
+    assert.equal(view.root.findAll(x => x.type === 'drawer' && x.props.open).length, 1)
+  } finally {
+    if (view) await act(async () => { view.unmount() })
+  }
+})
+
+test('P1-1b Collections Search resolves shared library scope before fetching facets', async () => {
+  const events = []
+  let view
+  try {
+    await act(async () => {
+      view = renderer.create(React.createElement(MobileChrome, props({
+        primaryTab: 'collections', canGoBack: false, showCollection: false,
+        onSearchRequested: () => { events.push('switch-to-library') },
+        onFilterOpen: () => { events.push('facets-from-current-scope') },
+      })))
+    })
+    await act(async () => { find(view, 'data-xdrive-mobile-gallery-search').props.onClick() })
+    assert.deepEqual(events, ['switch-to-library', 'facets-from-current-scope'],
+      'facet read must happen after Search has asked the shared Page to change scope')
+    assert.equal(view.root.findAll(x => x.type === 'drawer' && x.props.open).length, 1)
+  } finally {
+    if (view) await act(async () => { view.unmount() })
+  }
+})
+
 test('iOS 27 Collections overview omits Library scale/actions and selection hides bottom dock', async () => {
   let view
   await act(async () => {

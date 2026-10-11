@@ -1807,6 +1807,32 @@ async function galleryIos27ChromeAcceptance() {
     window.__iosGalleryRoot = document.querySelector('#xdrive-mobile-gallery-main');
   });
 
+  // P1-1b: Wide Web's advanced-filter trigger calls the Server facet list.
+  // Both Mobile entry points must reach that identical authenticated REST
+  // DataSource without a second mobile facet query or duplicate open requests.
+  const facetResponses = () => Object.entries(result.requests)
+    .filter(([key]) => key.includes(' GET /api/v1/media/facets'))
+    .reduce((total, [, count]) => total + count, 0);
+  activeStage = 'user-gallery-ios27-filter-facets';
+  const beforeFilter = facetResponses();
+  await page.locator('[data-xdrive-mobile-gallery-sort-filter]').tap();
+  check('Opening mobile Sort & Filter alone does not fetch advanced Server facets',
+    facetResponses() === beforeFilter);
+  const [filterResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/media/facets'),
+    page.locator('[data-xdrive-mobile-gallery-filter]').tap(),
+  ]);
+  await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor();
+  const facetPayload = await filterResponse.json();
+  check('Mobile advanced filter fetches real shared Server facets with current scope',
+    filterResponse.status() === 200 &&
+    facetPayload?.formats?.[0]?.value === 'png' &&
+    facetResponses() === beforeFilter + 1 &&
+    new URL(filterResponse.url()).search === '',
+    { url: filterResponse.url(), facetPayload, requests: facetResponses() });
+  await page.getByRole('button', {name:'完成', exact:true}).tap();
+  await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor({state:'hidden'});
+
   const measure = () => page.evaluate(() => {
     const bounds = element => element?.getBoundingClientRect().toJSON() ?? null;
     const main = document.querySelector('main');
@@ -1932,6 +1958,24 @@ async function galleryIos27ChromeAcceptance() {
   check('Returning Library restores exactly one bottom time dock',
     await page.locator('[data-xdrive-mobile-gallery-time-scale]').count() === 1);
   await page.screenshot({path:path.join(outputDir,'user-gallery-ios27-actions.png')});
+  // After Collections -> Search, the owning Gallery Page changes back to
+  // Library before its deferred mobile-filter open reads Server facets.
+  activeStage = 'user-gallery-ios27-collections-search-facets';
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  await settle();
+  const beforeSearch = facetResponses();
+  const [searchResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/media/facets'),
+    page.locator('[data-xdrive-mobile-gallery-search]').tap(),
+  ]);
+  await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor();
+  check('Collections Search opens shared Library filter and fetches exactly one Server facet set',
+    searchResponse.status() === 200 && facetResponses() === beforeSearch + 1 &&
+    !await page.locator('[data-xdrive-mobile-gallery-tab="collections"][aria-selected="true"]').count() &&
+    await page.evaluate(() => document.querySelector('#xdrive-mobile-gallery-main') === window.__iosGalleryRoot),
+    {url:searchResponse.url(), count:facetResponses()});
+  await page.getByRole('button', {name:'完成', exact:true}).tap();
+  await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor({state:'hidden'});
 }
 
 async function main() {

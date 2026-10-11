@@ -292,3 +292,10 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 测试分层：现有 React `mobile-gallery-ios-chrome.cjs` 检查启用/禁用、真实同一回调、44px 与回收权限收回；`mobile-gallery-web-parity.cjs` 保护 REST/VirtualCollection 与 Web 多文件 picker 的唯一绑定；分支命名 `test/mobile-gallery-ios27-real-chrome-*` 启动已构建 Web 的 `gallery-ios27-chrome`，在原 360–900px / 240 张 fixture 之后实际触发浏览器 `filechooser` 并验证 `multiple`，保留严格未知网络请求审计。该测试不提交文件，因此不冒充真实上传完成、批量任务收据或 100k 性能数据。真实 iOS 27 Safari/主屏幕、语音辅助、图片像素与完整文件传输验收继续待办。
 
 **P1-1a 首轮真实 Chromium 红灯，2026-10-11：** [PR #1347 源码提交 `e7b204ca`，CI run 38072959971](https://github.com/lazyxu/xdrive/actions/runs/38072959971) 的真实 Web 测试完成 50 项布局、交互与多文件选择器检查，失败仅发生在末尾严格网络审计：本测试 fixture 对 `photo-*.png` 的 thumbnail URL 仍硬编码 `v=3`，而已合并 #1337 的 Go Server、共享前端对可透明的 PNG 使用 `v=4`；浏览器实际发起 `?v=4&revision=1`，老 mock 返回 501，连带 console error。原始 Chrome artifacts ID `11677456824`。这是**测试夹具陈旧**而非已证明的产品功能 bug；在同一工作提交内按源 MIME 严格校验 PNG=v4 / JPEG=v3，原 50 项交互、原生 filechooser 和未知请求失败门禁保持不变。修订后必须以新 HEAD 再跑 Web Chrome 及完整 PR CI，不借用旧运行作为通过证据。
+
+
+## P1-1b · Web/Mobile Web 高级筛选 facets 请求一致性（2026-10-11）
+
+**实施候选；提交、CI、合并及 iOS 真机验收须分开记录。** 宽屏 Web 打开图库的高级筛选时，通过现有 `XDriveMediaGalleryFilterToolbar.onRequestFacets` 调用 Page 的 `requestFacets`，由同一 `MediaGalleryDataSource.listFacets → api.mediaFacets` 加载真实拍摄设备、格式等候选项。Mobile Web 的内嵌筛选表单此前只在改变多选值时触发候选请求，没有在打开「排序和筛选 → 筛选图库」或底部「搜索」时主动请求，导致首次进入候选缺失。本阶段在移动 Gallery-local Chrome 的筛选 Drawer *从关闭到打开* 时调用同一 Page `requestFacets`；无任何移动端 API、媒体索引、业务控制器或虚拟窗口分叉。
+
+生命周期：初次挂载及单独展开排序菜单不请求；每次真正打开筛选/搜索只请求一次；输入/偏好导致 Page callback 更新时不重复获取；「精选集 → 搜索」先回到共享 Library scope，再在 effect 中读取该范围的 facets；关闭/重开允许刷新。现有 Page `facetRequestID` 负责丢弃过期响应和呈现错误，不修改其请求/缓存策略。真实 Chromium 的 `gallery-ios27-chrome` 场景保留原 360–900px 几何、末张点击、上传 filechooser 和严格未知 API 检查，再附加排序/筛选与精选集搜索两次来源明确的 `GET /api/v1/media/facets` 断言。物理 iOS 27 Safari 与真实 100k、失败重试、ARIA 焦点验收另行记录。
