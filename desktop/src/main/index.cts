@@ -187,6 +187,7 @@ import {
   type AgentLocalBoundBackupRules,
   type AgentLocalBoundBackupSchedule,
   type AgentLocalBackupPreview,
+  type AgentLocalBackupSnapshot,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2141,6 +2142,42 @@ function registerIPCHandlers() {
       const key = `${event.sender.id}:${String(requestID)}`
       const found = localPreviewRequests.has(key)
       localPreviewRequests.get(key)?.abort()
+      return { cancelled: found }
+    }, false))
+  // A saved snapshot has its own request registry. A closing window or
+  // switched account aborts Electron HTTP and the Go metadata scan before
+  // publication of an incomplete local journal.
+  const localSnapshotRequests = new Map<string, AbortController>()
+  ipcMain.handle('agent:save-device-backup-local-snapshot', (event, sourceID: unknown, requestID: unknown) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      !validLocalPreviewID(requestID) || localSnapshotRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupSnapshot>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid or duplicate local snapshot request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    localSnapshotRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupSnapshot>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-snapshot')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local snapshot was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupSnapshot(sourceID, controller.signal)
+    }, false).finally(() => {
+      if (localSnapshotRequests.get(key) === controller) localSnapshotRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-snapshot', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local snapshot request ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localSnapshotRequests.has(key)
+      localSnapshotRequests.get(key)?.abort()
       return { cancelled: found }
     }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>

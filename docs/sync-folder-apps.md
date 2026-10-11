@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green) |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 own Desktop local-only inventory snapshot in development |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a revision-bound advisory generation fence in PR; no durable SourceItem aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -412,3 +412,26 @@ Dialog unmount, account/server change or explicit close calls Electron Main's pr
 The owning Agent can persist a compact private **advisory** SHA-256-sealed generation manifest for exactly two complete, verified Root inventories and a caller-supplied Source revision. It reuses the existing bounded local delta reader, stores no 100k item array or raw paths, uses private file permissions, atomic publication and an exclusive fail-closed writer lock, and re-verifies Root/generation/revision on read. Interrupted publishing cannot mark partial observations as accepted; stale/corrupt/replaced Root evidence rejects.
 
 This is not a cryptographic device authentication token, Server `SourceItem` identity/alias record, upload entitlement, safe missing inference or SourceRun checkpoint. The ownership proof and canonical identity/alias linkage remain L03-D2b2b onward; the Server local-folder activation/run hard gate stays in place. Web and foreign Desktop are unchanged, and trusted heartbeat, actual scheduler, push bytes/commit, cancellation and native 100k/4GiB E2E remain pending.
+
+
+## P0-C4c2 manual local inventory generation (implementation pending PR acceptance)
+
+A separately capability-gated owning Windows/Linux Desktop action saves one
+complete filesystem metadata inventory to the already available Root-scoped
+private local journal. The corresponding Agent action is POST-only and cannot
+be invoked through Web/Mobile, a same-account foreign Desktop, generic Sources
+or the owner-scoped B-view. A private credential/Root/Source revision/rule
+check before publication and another final check prevent stale changes from
+being represented as successful capture. The existing journal writer commits
+only complete native-identity snapshots, with 0700 directory / 0600 file
+privacy and checksum-verified CURRENT/PREVIOUS retention. The renderer receives
+only bounded aggregate counts, verified-predecessor boolean and an explicit
+`missing_inference_safe=false` value. A scan aborted by closing the dialog
+propagates through Electron HTTP to the Agent's Go Context.
+
+This is **not** a cloud backup, durable SourceRun, L03-D2b2b authoritative
+identity bridge, or an automatic schedule. A local completed journal may
+exist even if account revocation races immediately after its atomic commit;
+it never permits a remote write. Deliberately no Server upload, SourceItem
+alias reconciliation, Mirror missing evidence, NAS manager, scheduled scan or
+remote-device operation is added. CI and physical acceptance remain pending.

@@ -113,6 +113,23 @@ export interface XDriveLocalBackupPreview {
   missing_inference_safe: false
 }
 
+// An owning Desktop can explicitly persist a LOCAL-only, verified inventory.
+// It is not a completed backup, deletion/missing inference, or cloud checkpoint.
+export interface XDriveLocalBackupSnapshot {
+  source_id: number
+  revision: number
+  scanned_files: number
+  scanned_directories: number
+  scanned_bytes: number
+  ignored_items: number
+  ignored_bytes: number
+  skipped_unsafe_items: number
+  has_verified_previous: boolean
+  saved: true
+  complete: true
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
