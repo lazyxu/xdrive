@@ -479,7 +479,9 @@ func (h *Handle) BindCancel(cancel context.CancelFunc) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[h.id]
-	if e == nil || !activeState(e.task.State) || e.task.State == StateCancelling {
+	// A direct transfer has exactly one active I/O owner. Rebinding while
+	// that owner is live would orphan its cancellation during account Clear.
+	if e == nil || !activeState(e.task.State) || e.task.State == StateCancelling || e.cancel != nil {
 		return false
 	}
 	e.cancel = cancel
