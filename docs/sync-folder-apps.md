@@ -594,7 +594,7 @@ Mirror deletion, NAS Push, physical 100k/4GiB and GitLab delivery are
 separately pending. CI and physical acceptance must not be conflated.
 
 
-## P0-C4c5a · Native owning-Agent recovery of persisted advisory evidence (CI pending)
+## P0-C4c5a · Native owning-Agent recovery of persisted advisory evidence (merged #1437; 76-job full CI green)
 
 After an explicitly staged, complete two-generation local inventory, a future
 owning Agent can safely inspect only the number of provisional server evidence
@@ -617,3 +617,35 @@ future separately tested local readback UI and execution recovery, not an
 uploader. It cannot activate a SourceRun, promote an alias, commit CAS/Nodes,
 infer Mirror deletion or run a watcher/saved schedule. Full exact-head CI,
 native 100k/4 GiB acceptance and GitLab delivery are independent gates.
+
+
+## P0-C4c5b · Own Desktop private evidence recovery view (GitHub PR verification)
+
+The existing Agent-private, generation-fenced count readback (#1437) is now
+exposed through a **separate authenticated owning-Agent GET**
+`/v1/device-backups/local-evidence-summary?source_id=N` with a strict
+single positive Source ID parameter and no request body. The Agent loads its
+own OS-held registration credential and current native Root grant; the
+renderer cannot supply credentials, Root, fingerprints, snapshot digests or
+file lists. The Agent checks protected ignore rules, paused Source/revision,
+complete immutable local journal generations, and current account session
+before and after the Server-side bounded count. The Server repeats the
+device→Source→Root authorization inside the count transaction and returns
+only Source ID, Source revision and nonnegative advisory record count.
+Cancellation propagates Electron request ID → HTTP AbortSignal → Agent
+Go Context; no durable background run is aborted by closing the dialog.
+
+Desktop Main/Preload and the shared MUI page offer this **read-only** action
+only for the credential-verified, unrevoked owning device. Other Desktop
+installs under the same account and Web/Mobile remain B-scope observers;
+their DTOs do not gain source_item_id, paths, device tokens, native identity,
+Root grants or any mutation action. Dialog close, account/server change or
+source deselection aborts the pending read and never displays late counts
+from a previous datasource. A zero count is **not** a proof of an empty
+Root, lost backup, missing remote files, or a Mirror deletion condition.
+The UI must explicitly say advisory count, not upload/rename success.
+
+No SourceRun activation, upload, CAS/Node mutation, alias promotion, watcher,
+scheduled execution, NAS Push or Mirror remote deletion is introduced.
+Native Windows/Linux 100k and >=4 GiB physical acceptance and GitLab
+delivery remain separate gates.

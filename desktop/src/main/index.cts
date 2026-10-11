@@ -201,6 +201,7 @@ import {
   type AgentLocalBackupSnapshot,
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
+  type AgentLocalBackupEvidenceSummary,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2261,6 +2262,42 @@ function registerIPCHandlers() {
       const key = `${event.sender.id}:${String(requestID)}`
       const found = localEvidenceRequests.has(key)
       localEvidenceRequests.get(key)?.abort()
+      return { cancelled: found }
+    }, false))
+  // Read-only persisted advisory counts use a separate request registry.
+  // The Renderer never supplies device credentials, Root identities or
+  // snapshot digests; closing the view aborts HTTP into Go Context.
+  const localEvidenceSummaryRequests = new Map<string, AbortController>()
+  ipcMain.handle('agent:get-device-backup-local-evidence-summary', (event, sourceID: unknown, requestID: unknown) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      !validLocalPreviewID(requestID) || localEvidenceSummaryRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupEvidenceSummary>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid or duplicate local evidence summary request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    localEvidenceSummaryRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupEvidenceSummary>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-evidence-summary')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local evidence summary request was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupEvidenceSummary(sourceID, controller.signal)
+    }, false).finally(() => {
+      if (localEvidenceSummaryRequests.get(key) === controller) localEvidenceSummaryRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-evidence-summary', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local evidence summary request ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localEvidenceSummaryRequests.has(key)
+      localEvidenceSummaryRequests.get(key)?.abort()
       return { cancelled: found }
     }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>

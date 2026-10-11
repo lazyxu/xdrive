@@ -321,6 +321,14 @@ export type AgentLocalBackupEvidence = {
   missing_inference_safe: false
 }
 
+export type AgentLocalBackupEvidenceSummary = {
+  source_id: number
+  revision: number
+  staged_records: number
+  authoritative: false
+  missing_inference_safe: false
+}
+
 export type AgentLocalBackupDelta = {
   source_id: number
   revision: number
@@ -2960,6 +2968,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupEvidence>(
       'POST', `/v1/device-backups/local-evidence?${query.toString()}`, undefined, 315_000, signal,
+    )
+  }
+
+  localBoundBackupEvidenceSummary(sourceID: number, signal?: AbortSignal) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupEvidenceSummary>(
+      'GET', `/v1/device-backups/local-evidence-summary?${query.toString()}`, undefined, 195_000, signal,
     )
   }
 
