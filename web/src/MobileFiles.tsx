@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
+import type { DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent } from 'react'
 import ArrowBackIosNewRoundedIcon from '@mui/icons-material/ArrowBackIosNewRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudRoundedIcon from '@mui/icons-material/CloudRounded'
@@ -32,7 +32,8 @@ import {
   Divider, IconButton, InputAdornment, ListItemIcon, Menu, MenuItem, Stack, TextField, Typography,
 } from '@mui/material'
 import {
-  formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerInlineLayout,
+  formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardCommand,
+  xDriveFileExplorerKeyboardProfileFromPlatform, xDriveFileExplorerInlineLayout,
   xDriveFileExplorerInlineCellAt, xDriveFileExplorerInlineVisibleRanges,
   xDriveFileExplorerInlineGroupIndex, XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE,
 } from '../../ui/shared/src'
@@ -150,7 +151,7 @@ type Props = {
   onRefreshRecent: () => void
   onRefreshFavorites: () => void
   canPaste: boolean
-  onPaste: () => void
+  onPaste: (operationOverride?: 'move') => void
   canUndo?: boolean
   onUndo?: () => void
   canRedo?: boolean
@@ -399,6 +400,12 @@ export default function MobileFiles(props: Props) {
     x: number; y: number; timer: number; held: boolean
   } | null>(null)
   const cancelClickRef = useRef(false)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+  // Reuse the same OS-aware command interpreter as the wide FileExplorer.
+  // Only the Mobile presentation chooses which real Web callbacks are exposed.
+  const filesKeyboardProfile = xDriveFileExplorerKeyboardProfileFromPlatform(
+    typeof navigator === 'undefined' ? '' : `${navigator.platform} ${navigator.userAgent}`,
+  )
   const selection = [...selected.values()]
   const directoryID = Number(props.crumbs.at(-1)?.id ?? 0) || null
   const selectionScopeKey = [
@@ -1171,6 +1178,16 @@ export default function MobileFiles(props: Props) {
     if (kind === 'download') props.onDownload(selection)
     if (kind === 'delete') props.onDelete(selection)
   }
+  const finishSelection = () => {
+    selectionAbortRef.current?.abort()
+    selectionAbortRef.current = null
+    selectionIntentRef.current += 1
+    setSelectionLoad(null)
+    setSelectionMode(false)
+    setSelected(new Map())
+    setSelectionFeedback('')
+    setSelectionMoreAnchor(null)
+  }
   const cancelSelectAll = () => {
     if (!selectionLoad) return
     selectionAbortRef.current?.abort()
@@ -1232,6 +1249,70 @@ export default function MobileFiles(props: Props) {
       }
     })()
   }
+  const handleFilesKeyboard = (event: ReactKeyboardEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement | null
+    // Native editing, accessibility menus, dialogs and text selection retain
+    // their own keyboard handling; never intercept an input's Ctrl/Cmd+A/C/V.
+    if (
+      event.nativeEvent?.isComposing || event.repeat ||
+      target?.isContentEditable ||
+      target?.closest?.('input, textarea, select, [role="textbox"], [role="dialog"], [role="menu"], [role="menuitem"]') ||
+      moreAnchor || arrangeAnchor || selectionMoreAnchor || savedSearchMenu ||
+      itemMenu || collectionMenu || renaming || propertiesItems.length ||
+      nativeShare || goToPathOpen || replaceSavedSearchOpen ||
+      deleteSavedSearchTarget || clearRecentConfirm || editBrowseHome
+    ) return
+
+    const command = xDriveFileExplorerKeyboardCommand(event, filesKeyboardProfile)
+    if (event.key === 'Escape' && selectionActive) {
+      event.preventDefault()
+      if (selectionLoad) cancelSelectAll()
+      else finishSelection()
+      return
+    }
+    if (command === 'focus-search' && !props.trashActive) {
+      event.preventDefault()
+      scrollHostRef.current?.scrollTo({ top: 0 })
+      setScrollTop(0)
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+      return
+    }
+    if (!showDirectory || props.trashActive) return
+    if (command === 'select-all') {
+      event.preventDefault()
+      if (!props.loading && totalCount > 0) {
+        setSelectionMode(true)
+        selectAllCurrent()
+      }
+      return
+    }
+    if ((command === 'paste' || command === 'paste-move') && props.canPaste) {
+      event.preventDefault()
+      props.onPaste(command === 'paste-move' ? 'move' : undefined)
+      return
+    }
+    if (command === 'undo' && props.canUndo && props.onUndo) {
+      event.preventDefault()
+      props.onUndo()
+      return
+    }
+    if (command === 'redo' && props.canRedo && props.onRedo) {
+      event.preventDefault()
+      props.onRedo()
+      return
+    }
+    if (!selectionActive) return
+    if (command === 'copy' || command === 'cut' || command === 'delete') {
+      event.preventDefault()
+      if (selection.length && !selectionLoad) selectedAction(command)
+      return
+    }
+    if (command === 'copy-path' && props.onCopyPaths) {
+      event.preventDefault()
+      if (selection.length && !selectionLoad) props.onCopyPaths(selection)
+    }
+  }
   const renderEntry = (
     item: XDriveFileExplorerItem, key: string, depth = 0,
     ownerID = directoryID ?? 0, sourceIndex = -1,
@@ -1263,15 +1344,26 @@ export default function MobileFiles(props: Props) {
         onPointerUp={pointerUp}
         onPointerCancel={() => { closeHold(); cancelClickRef.current = false }}
         onKeyDown={event => {
+          const command = xDriveFileExplorerKeyboardCommand(event, filesKeyboardProfile)
+          if (!selectionActive && !props.trashActive &&
+              (command === 'copy' || command === 'cut' || command === 'copy-path' || command === 'delete')) {
+            event.preventDefault()
+            event.stopPropagation()
+            if (command === 'copy-path') props.onCopyPaths?.([item])
+            else if (command === 'delete') {
+              if (!props.getSelectionActionDisabledReason?.('delete', [item], 1)) props.onDelete([item])
+            } else contextItemAction(command, item)
+            return
+          }
           if (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey)) {
             event.preventDefault()
             const rect = event.currentTarget.getBoundingClientRect()
             setItemMenu({ item, x: rect.left + 14, y: rect.top + 28 })
-          } else if (event.key === ' ' && !selectionMode && !props.trashActive && props.onQuickLookItem) {
+          } else if (event.key === ' ' && !event.altKey && !event.ctrlKey && !event.metaKey && !selectionMode && !props.trashActive && props.onQuickLookItem) {
             // Desktop Space uses Quick Look. Retain Enter/tap Open and explicit selection.
             event.preventDefault()
             props.onQuickLookItem(item, ownerID)
-          } else if (event.key === 'Enter' || event.key === ' ') {
+          } else if (!event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'Enter' || event.key === ' ')) {
             event.preventDefault()
             onOpenEntry(item, ownerID)
           }
@@ -1508,7 +1600,7 @@ export default function MobileFiles(props: Props) {
 
   return (
     <XDriveFileExplorerThumbnailProvider lifecycleKey={props.lifecycleKey} loadThumbnail={props.loadThumbnail}>
-      <Box ref={ownerRef} data-xdrive-mobile-files sx={{
+      <Box ref={ownerRef} data-xdrive-mobile-files onKeyDown={handleFilesKeyboard} sx={{
         minHeight: 0, minWidth: 0, height: '100%', flex: 1,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#f2f2f7',
@@ -1542,12 +1634,8 @@ export default function MobileFiles(props: Props) {
                   disabled={props.loading || totalCount === 0}
                   sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>全选</Button>
               )}
-              <Button size="small" onClick={() => {
-                selectionAbortRef.current?.abort(); selectionAbortRef.current = null
-                selectionIntentRef.current += 1; setSelectionLoad(null)
-                setSelectionMode(false); setSelected(new Map())
-                setSelectionFeedback(''); setSelectionMoreAnchor(null)
-              }} sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
+              <Button size="small" onClick={finishSelection}
+                sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
             </>
           ) : editBrowseHome && section === 'browse' && !showDirectory ? (
             <Button size="small" onClick={() => setEditBrowseHome(false)}
@@ -1588,7 +1676,7 @@ export default function MobileFiles(props: Props) {
             opacity: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
             overflow: 'hidden', transition: 'max-height .16s ease, opacity .16s ease, padding .16s ease' }}>
             <Stack direction="row" spacing={0.5} alignItems="center">
-            <TextField size="small" fullWidth value={props.searchValue}
+            <TextField inputRef={searchInputRef} size="small" fullWidth value={props.searchValue}
               placeholder="搜索全部文件"
               aria-label="搜索全部文件"
               onChange={event => props.onSearchValueChange(event.target.value)}

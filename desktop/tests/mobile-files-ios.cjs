@@ -207,7 +207,7 @@ test('recent and pinned folders navigate only after the existing Web controller 
 })
 
 test('F-PARITY-07F: Mobile bulk selection uses shared chunks, progress, cancel and preserves previous state', () => {
-  const action = mobileSource.slice(mobileSource.indexOf('const selectedAction ='), mobileSource.indexOf('const cancelSelectAll ='))
+  const action = mobileSource.slice(mobileSource.indexOf('const selectedAction ='), mobileSource.indexOf('const finishSelection ='))
   assert.match(action, /props\.onCopy\(selection\)/)
   assert.doesNotMatch(action, /setSelected\(/)
   assert.doesNotMatch(mobileSource, /if \(totalCount > 200\)/)
@@ -477,7 +477,9 @@ test('F-PARITY-04: Mobile Space and context preview invoke the exact wide Web Pr
   assert.match(adapter, /openWebQuickLook\(\{ item, logicalIndex: logicalIndexForItem\(item\) \}\)/)
   assert.match(mobileSource, /props\.onQuickLookItem\(item, ownerID\)/)
   assert.match(mobileSource, /data-mobile-files-quick-look/)
-  assert.match(mobileSource, /event\.key === ' ' && !selectionMode && !props\.trashActive/)
+  assert.match(mobileSource, /event\.key === ' ' && !event\.altKey && !event\.ctrlKey && !event\.metaKey && !selectionMode && !props\.trashActive/)
+  assert.match(mobileSource, /const finishSelection = \(\) => \{/)
+  assert.match(mobileSource, /setSelectionMode\(false\)/)
   assert.match(adapter, /const openWebQuickLook = \(request: XDriveFileExplorerQuickLookRequest\)/)
   assert.doesNotMatch(mobileSource, /<XDriveFileQuickLookDialog|filePreviewURL\(/)
 })
