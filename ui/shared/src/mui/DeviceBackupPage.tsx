@@ -312,7 +312,7 @@ export function XDriveDeviceBackupPage({
                   <Typography fontWeight={700}>{device.name}</Typography>
                   <Typography variant="caption" color="text.secondary">
                     {platformLabel(device.platform)} · {device.client_version || 'Agent 版本未知'} ·
-                    {device.revoked ? ' 授权已撤销' : ' 连接状态未知'}
+                    {device.revoked ? ' 授权已撤销' : device.connection_state === 'online' ? ' 在线' : device.connection_state === 'offline' ? ' 离线' : ' 连接状态未知'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" display="block">
                     最近登记或活动记录：{timeLabel(device.last_seen_at)}
