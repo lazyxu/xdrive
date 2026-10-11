@@ -203,6 +203,34 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 		t.Fatalf("file favorites leaked across users: %+v", isolated)
 	}
 
+	// F-iOS27-09G: the real Gin/PostgreSQL contract deliberately treats a
+	// foreign/missing favorite DELETE as idempotent 204, not a fabricated
+	// 403. Authorization comes from the owner_id predicate: B cannot mutate
+	// A's favorite or the underlying Node even when B knows the exact ID.
+	request(
+		t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-favorites/%d", fileNode.ID),
+		tokenB, nil, http.StatusNoContent,
+	)
+	var ownedFavoriteCount int64
+	if err := db.Model(&meta.FileFavorite{}).
+		Where("owner_id = ? AND node_id = ?", rootModel.OwnerID, fileNode.ID).
+		Count(&ownedFavoriteCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if ownedFavoriteCount != 1 {
+		t.Fatalf("foreign DELETE modified A's persisted favorite: count=%d", ownedFavoriteCount)
+	}
+	res = request(t, router, http.MethodGet, "/api/v1/file-favorites", tokenA, nil, http.StatusOK)
+	var afterForeignDelete []fileFavoriteItemDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &afterForeignDelete); err != nil {
+		t.Fatal(err)
+	}
+	if len(afterForeignDelete) != 1 || afterForeignDelete[0].Node.ID != fileNode.ID ||
+		afterForeignDelete[0].Node.Revision != fileNode.Revision {
+		t.Fatalf("foreign DELETE altered A's favorite Node identity: %+v", afterForeignDelete)
+	}
+
 	if err := db.Model(&meta.Node{}).
 		Where("id = ?", fileNode.ID).
 		Updates(map[string]any{
@@ -290,6 +318,18 @@ func TestFileFavoritesPersistenceIsolationAndLiveBreadcrumbs(t *testing.T) {
 		nil,
 		http.StatusNoContent,
 	)
+	// Both layouts' one Web XDriveApi handles 204 with no JSON body.
+	// Repeating the same owner's DELETE remains safely idempotent.
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-favorites/%d", fileNode.ID),
+		tokenA, nil, http.StatusNoContent)
+	var retainedFile meta.Node
+	if err := db.First(&retainedFile, fileNode.ID).Error; err != nil {
+		t.Fatalf("unfavorite removed the underlying Node: %v", err)
+	}
+	if retainedFile.ID != fileNode.ID {
+		t.Fatalf("unfavorite changed the original Node ID: %d", retainedFile.ID)
+	}
 	res = request(
 		t,
 		router,

@@ -249,6 +249,51 @@ func TestFileOrganizationTagsSavedSearchesAndSidebarOrder(t *testing.T) {
 		t.Fatalf("saved searches leaked across users: %+v", isolatedSearches)
 	}
 
+	// F-iOS27-09G: genuine owner-scoped Go/PostgreSQL responses for Web and
+	// Mobile are 404 on a foreign saved-search update/delete, not the 403
+	// synthetic rejection used by the earlier browser feedback fixture.
+	// No response may leak, rename or delete account A's saved rule.
+	request(t, router, http.MethodPatch,
+		fmt.Sprintf("/api/v1/file-saved-searches/%d", saved.ID),
+		tokenB, strings.NewReader(`{"name":"Foreign rewrite","query":"pdf","filters":{}}`),
+		http.StatusNotFound)
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-saved-searches/%d", saved.ID),
+		tokenB, nil, http.StatusNotFound)
+
+	// A separate user may independently save the same display name; their
+	// own legitimate DELETE is an empty-body 204 and does not affect A.
+	res = request(t, router, http.MethodPost, "/api/v1/file-saved-searches",
+		tokenB, strings.NewReader(`{"name":"Work PDF","query":"pdf","filters":{}}`),
+		http.StatusCreated)
+	var savedB fileSavedSearchDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &savedB); err != nil {
+		t.Fatal(err)
+	}
+	if savedB.ID == 0 || savedB.ID == saved.ID || savedB.Name != saved.Name {
+		t.Fatalf("other account saved rule identity invalid: %+v (owner A: %+v)", savedB, saved)
+	}
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-saved-searches/%d", savedB.ID),
+		tokenB, nil, http.StatusNoContent)
+	res = request(t, router, http.MethodGet,
+		"/api/v1/file-saved-searches", tokenA, nil, http.StatusOK)
+	var afterForeignWrites []fileSavedSearchDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &afterForeignWrites); err != nil {
+		t.Fatal(err)
+	}
+	if len(afterForeignWrites) != 1 || afterForeignWrites[0].ID != saved.ID ||
+		afterForeignWrites[0].Name != saved.Name || afterForeignWrites[0].Filters.TagID != tag.ID {
+		t.Fatalf("foreign saved-rule writes mutated A's persisted record: %+v", afterForeignWrites)
+	}
+	var intactReport meta.Node
+	if err := db.First(&intactReport, report.ID).Error; err != nil {
+		t.Fatalf("saved-rule operations removed the underlying file: %v", err)
+	}
+	if intactReport.ID != report.ID || intactReport.Name != "Report.pdf" {
+		t.Fatalf("saved-rule operations altered the file Node: %+v", intactReport)
+	}
+
 	request(
 		t, router, http.MethodDelete,
 		fmt.Sprintf("/api/v1/file-tags/%d", tag.ID),
@@ -272,4 +317,17 @@ func TestFileOrganizationTagsSavedSearchesAndSidebarOrder(t *testing.T) {
 		fmt.Sprintf("/api/v1/file-saved-searches/%d", saved.ID),
 		tokenA, nil, http.StatusNoContent,
 	)
+	// Saved Search deletion is not idempotent: a missing ID becomes 404.
+	request(t, router, http.MethodDelete,
+		fmt.Sprintf("/api/v1/file-saved-searches/%d", saved.ID),
+		tokenA, nil, http.StatusNotFound)
+	res = request(t, router, http.MethodGet,
+		"/api/v1/file-saved-searches", tokenA, nil, http.StatusOK)
+	var afterOwnerDelete []fileSavedSearchDTO
+	if err := json.Unmarshal(res.Body.Bytes(), &afterOwnerDelete); err != nil {
+		t.Fatal(err)
+	}
+	if len(afterOwnerDelete) != 0 {
+		t.Fatalf("owner's successful DELETE did not remove saved rule: %+v", afterOwnerDelete)
+	}
 }

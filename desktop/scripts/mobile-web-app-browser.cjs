@@ -203,7 +203,8 @@ function fixtureFor(request, role) {
     case 'DELETE /api/v1/file-favorites/104': {
       assert(filesIos27ChromeScenario, 'Unfavorite belongs to the exact Files collections Chrome gate');
       queryOnly(url, []); assert.equal(role, 'user');
-      const status = filesIos27Fixture.rejectNextUnfavorite ? 403 : 200;
+      // 403 is a deliberately injected rejection; the real Go success is 204.
+      const status = filesIos27Fixture.rejectNextUnfavorite ? 403 : 204;
       filesIos27Fixture.unfavoriteAttempts.push({ id: 104, status, stage: activeStage });
       if (status === 403) {
         filesIos27Fixture.rejectNextUnfavorite = false;
@@ -212,12 +213,13 @@ function fixtureFor(request, role) {
           __fixtureBody: { error: '验收：无权取消收藏，请重试。' } };
       }
       filesIos27Fixture.favoriteNodeIDs = filesIos27Fixture.favoriteNodeIDs.filter(id => id !== 104);
-      return null;
+      return { __fixtureNoContent: true };
     }
     case 'DELETE /api/v1/file-saved-searches/17': {
       assert(filesIos27ChromeScenario, 'Saved-search deletion belongs to the exact Files collections Chrome gate');
       queryOnly(url, []); assert.equal(role, 'user');
-      const status = filesIos27Fixture.rejectNextSavedDelete ? 403 : 200;
+      // Genuine Go owner-scoped DELETE responds 204 (foreign ID is 404).
+      const status = filesIos27Fixture.rejectNextSavedDelete ? 403 : 204;
       filesIos27Fixture.savedDeleteAttempts.push({ id: 17, status, stage: activeStage });
       if (status === 403) {
         filesIos27Fixture.rejectNextSavedDelete = false;
@@ -226,7 +228,7 @@ function fixtureFor(request, role) {
           __fixtureBody: { error: '验收：无权删除智能规则，请重试。' } };
       }
       filesIos27Fixture.savedSearches = filesIos27Fixture.savedSearches.filter(item => item.id !== 17);
-      return null;
+      return { __fixtureNoContent: true };
     }
     case 'GET /api/v1/trash': {
       assert(filesOrganizationScenario, 'Trash inspection belongs to the explicit organization scenario');
@@ -2340,7 +2342,7 @@ async function filesIos27CollectionMenusAcceptance(origin) {
     ]);
     await favorite.waitFor({ state: 'detached' });
     check(`${label}: retry removes only the selected Favorite on accepted Web request`,
-      acceptedFavorite.status() === 200 && filesIos27Fixture.favoriteNodeIDs.length === 0 &&
+      acceptedFavorite.status() === 204 && filesIos27Fixture.favoriteNodeIDs.length === 0 &&
         await oneOwner());
 
     // Browse Home's saved search only exposes management when explicitly
@@ -2378,10 +2380,10 @@ async function filesIos27CollectionMenusAcceptance(origin) {
     const attemptsSaved = filesIos27Fixture.savedDeleteAttempts.slice(savedStart);
     const writesAfter = Object.entries(result.requests).filter(([key]) =>
       /^user (PATCH|DELETE) \/api\/v1\/nodes\//.test(key)).reduce((total, [, count]) => total + count, 0);
-    check(`${label}: only exact owner collection IDs are mutated 403 then 200, no Nodes deleted`,
-      acceptedSaved.status() === 200 &&
-        JSON.stringify(attemptsFavorite.map(({ id, status }) => [id, status])) === '[[104,403],[104,200]]' &&
-        JSON.stringify(attemptsSaved.map(({ id, status }) => [id, status])) === '[[17,403],[17,200]]' &&
+    check(`${label}: exact collection IDs get synthetic 403 then genuine Go-style 204, no Nodes deleted`,
+      acceptedSaved.status() === 204 &&
+        JSON.stringify(attemptsFavorite.map(({ id, status }) => [id, status])) === '[[104,403],[104,204]]' &&
+        JSON.stringify(attemptsSaved.map(({ id, status }) => [id, status])) === '[[17,403],[17,204]]' &&
         filesIos27Fixture.savedSearches.length === 0 && writesAfter === writesBefore &&
         await oneOwner(), { attemptsFavorite, attemptsSaved, writesBefore, writesAfter });
     await geometry(label);
@@ -2907,6 +2909,12 @@ async function main() {
             return;
           }
           const body = fixtureFor(request, role);
+          if (body?.__fixtureNoContent) {
+            // Match Gin c.Status(204) instead of returning JSON "null" with
+            // HTTP 200; one Web XDriveApi must handle actual empty success.
+            await route.fulfill({ status: 204 });
+            return;
+          }
           if (body?.__fixtureStatus) {
             expectedConsoleURLs.add(request.url());
             result.expectedApiErrors.push({ request: key, status: body.__fixtureStatus, purpose: body.__fixturePurpose || 'actual rename rejected by the controlled API' });
