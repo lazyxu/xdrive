@@ -632,9 +632,10 @@ func (m *Manager) Clear() {
 	if len(m.entries) == 0 && len(m.order) == 0 {
 		return
 	}
-	// Account switching must not leave an old renderer upload in flight.
+	// Account switching must abort all old Agent-owned uploads/downloads,
+	// including direct transfers without an upload group.
 	for _, e := range m.entries {
-		if e.groupCancelContext != nil && e.cancel != nil {
+		if e.cancel != nil {
 			e.cancel()
 		}
 	}
