@@ -13,7 +13,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta in PR; durable reconciler/uploader not implemented |
+| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; durable reconciler/uploader not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
@@ -72,7 +72,7 @@ directory ownership and resets Mirror missing evidence as applicable.
 No local Push executor, automatic upload, cancellation UI, actual
 filesystem-to-CAS sync or physical-scale benchmark is enabled by either edit.
 
-## P0-C4b2c own-Desktop safe bound Source removal (PR verification)
+## P0-C4b2c own-Desktop safe bound Source removal (merged #1356)
 
 Only an owning Desktop may remove an already bound, paused and
 **history-free** local Push configuration. Agent requires the OS-stored
@@ -85,6 +85,24 @@ until a future archival contract exists. The operation never deletes
 original local files or cloud Node/CAS bytes. The private Root-grant
 record is cleaned only after confirmed Server success; ambiguous HTTP
 responses retain it. Web/other Desktop remain read-only.
+
+## P0-C4b2d own-Desktop saved Backup/Mirror policy (PR verification)
+
+Only a verified owning Desktop can update the **saved** Backup/Mirror policy
+on its existing, bound and paused Source. A capability-gated Agent IPC loads
+the OS-stored device credential and validates the native Root grant, session,
+Source revision and exact registered binding before calling the existing
+Server PATCH with device/Root proof and If-Match. The renderer receives only
+the minimal private configuration DTO, never OS paths or credentials.
+Web/Mobile and another Desktop remain strictly read-only.
+
+Backup is the default. Selecting Mirror requires separate explicit
+confirmation. A policy change clears old Mirror deletion evidence in the
+same Server transaction. Future Mirror execution still requires two
+complete trustworthy missing scans, 24 hours of grace and trash-only
+actions; an unmounted/unreadable Root must never cause deletion.
+No activation, upload, watcher, scheduler, run/cancel, Root rebind or NAS
+Push is enabled. Real Windows/Linux, 100k and >=4GiB acceptance remain open.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 

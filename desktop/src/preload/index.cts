@@ -525,6 +525,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:rename-device-backup-local-source', sourceID, revision, name),
   retargetDeviceBackupLocalSource: (sourceID: number, revision: number, targetNodeID: number) =>
     ipcRenderer.invoke('agent:retarget-device-backup-local-source', sourceID, revision, targetNodeID),
+  setDeviceBackupLocalMode: (sourceID: number, revision: number, mode: 'backup' | 'mirror') =>
+    ipcRenderer.invoke('agent:set-device-backup-local-mode', sourceID, revision, mode),
   removeDeviceBackupLocalSource: (sourceID: number, revision: number) =>
     ipcRenderer.invoke('agent:remove-device-backup-local-source', sourceID, revision),
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),

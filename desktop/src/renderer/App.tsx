@@ -449,6 +449,18 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupMode = useMemo(() => {
+    if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-mode')) return undefined
+    return {
+      load: localBackupSettings.load,
+      setMode: async (sourceID: number, revision: number, mode: 'backup' | 'mirror') => {
+        const result = await window.xdriveDesktop.agent.setDeviceBackupLocalMode(sourceID, revision, mode)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const localBackupRemove = useMemo(() => {
     if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-remove')) return undefined
     return {
@@ -2419,6 +2431,7 @@ export default function App({
             localDrafts={localBackupDraftReader}
             localSettings={localBackupSettings}
             localTarget={localBackupTarget}
+            localMode={localBackupMode}
             localRemove={localBackupRemove}
           />
         )}

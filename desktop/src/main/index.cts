@@ -2033,6 +2033,18 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().retargetLocalBoundBackup(sourceID, revision, targetNodeID)
   }, false))
+  ipcMain.handle('agent:set-device-backup-local-mode', (
+    _event, sourceID: unknown, revision: unknown, mode: unknown,
+  ) => runAgentAction<AgentLocalBoundBackupSettings>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-local-mode')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      (mode !== 'backup' && mode !== 'mirror')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid local Source, revision or backup policy.')
+    }
+    return requireAgentClient().setLocalBoundBackupMode(sourceID, revision, mode)
+  }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
     runAgentAction<AgentLocalBoundBackupRemoval>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

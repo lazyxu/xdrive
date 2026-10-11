@@ -77,6 +77,7 @@ func (c *agentController) localBoundBackupConfig(ctx context.Context, sourceID u
 func localBoundBackupSettingsDTO(source client.Source) client.LocalBoundBackupSettings {
 	return client.LocalBoundBackupSettings{
 		SourceID: source.ID, Name: source.Name, Revision: source.Revision,
+		SyncMode:     source.SyncMode,
 		TargetNodeID: source.TargetNodeID, TargetPath: source.TargetPath,
 	}
 }
@@ -155,6 +156,42 @@ func (c *agentController) CloudRetargetLocalBoundBackup(ctx context.Context, sou
 	}
 	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
 		return client.LocalBoundBackupSettings{}, errors.New("account changed during local target update; refresh before continuing")
+	}
+	return localBoundBackupSettingsDTO(updated), nil
+}
+
+// CloudSetLocalBoundBackupMode changes only the stored policy for an own-device,
+// already-bound paused Source. It cannot authorize execution or local deletion.
+func (c *agentController) CloudSetLocalBoundBackupMode(ctx context.Context, sourceID, revision uint64, mode string) (client.LocalBoundBackupSettings, error) {
+	c.localFolderGrantMu.Lock()
+	defer c.localFolderGrantMu.Unlock()
+	if sourceID == 0 || revision == 0 || !meta.ValidSourceSyncMode(mode) {
+		return client.LocalBoundBackupSettings{}, errors.New("invalid Source, revision or backup mode")
+	}
+	source, proof, cli, err := c.localBoundBackupConfig(ctx, sourceID)
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	if source.Revision != revision {
+		return client.LocalBoundBackupSettings{}, errors.New("Source revision changed; reload before editing backup policy")
+	}
+	if source.SyncMode == mode {
+		return client.LocalBoundBackupSettings{}, errors.New("backup policy is already selected")
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	updated, err := cli.SetLocalBoundBackupMode(ctx, sourceID, revision, mode, proof)
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	latest, err := userconfig.Load()
+	if err != nil {
+		return client.LocalBoundBackupSettings{}, err
+	}
+	if latest.SessionID != cfg.SessionID || latest.Server != cfg.Server || latest.Username != cfg.Username {
+		return client.LocalBoundBackupSettings{}, errors.New("account changed during backup policy update; refresh before continuing")
 	}
 	return localBoundBackupSettingsDTO(updated), nil
 }
