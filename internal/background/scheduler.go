@@ -1046,6 +1046,7 @@ func (s *Scheduler) shutdown(cause error) {
 func (s *Scheduler) updateTaskProgress(
 	entry *taskEntry,
 	attempt int,
+	executionCtx context.Context,
 	progress TaskProgress,
 ) {
 	if s == nil || entry == nil {
@@ -1054,7 +1055,10 @@ func (s *Scheduler) updateTaskProgress(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	live := s.entries[entry.identity]
-	if live != entry || live.state != itemRunning || live.cancelRequested || live.attempt != attempt {
+	// Cancellation can also come from the Scheduler parent, a lost Lease or
+	// RunTimeout. The live attempt's Context fences every such late callback.
+	if live != entry || live.state != itemRunning || live.cancelRequested ||
+		live.attempt != attempt || executionCtx.Err() != nil {
 		return
 	}
 	live.progress = progress.normalized()
@@ -1246,11 +1250,14 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	entry.startedAt = &now
 	entry.updatedAt = now
 	attempt := entry.attempt
+	// Capture the actual execution context before attaching its reporter.
+	// Parent, timeout and Lease cancellation can all occur without Cancel().
+	executionCtx := runCtx
 	runCtx = context.WithValue(
-		runCtx,
+		executionCtx,
 		progressReporterKey{},
 		func(progress TaskProgress) {
-			s.updateTaskProgress(entry, attempt, progress)
+			s.updateTaskProgress(entry, attempt, executionCtx, progress)
 		},
 	)
 	s.metrics.mu.Lock()
