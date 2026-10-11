@@ -26,6 +26,9 @@ type Server struct {
 	mediaWorkerConfigSaveMu        sync.Mutex
 	caddyHTTPSSaveMu               sync.Mutex
 	caddyAliDNSSaveMu              sync.Mutex
+	caddyAliDNSProbeMu             sync.Mutex
+	caddyAliDNSProbeAt             time.Time
+	CaddyAliDNSProbeTransport      http.RoundTripper
 	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
 	MediaWorkerConfigured          bool
@@ -360,6 +363,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/caddy/alidns", s.adminCaddyAliDNSConfig)
 	admin.PUT("/services/caddy/alidns", s.adminSaveCaddyAliDNS)
 	admin.POST("/services/caddy/alidns/reveal", s.adminRevealCaddyAliDNS)
+	admin.POST("/services/caddy/alidns/verify-read", s.adminVerifyCaddyAliDNSRead)
 	admin.GET("/services/caddy/https/preflight", s.adminCaddyHTTPSPreflight)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)

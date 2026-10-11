@@ -284,6 +284,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/services/caddy/alidns", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/caddy/alidns", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/caddy/alidns/reveal", suite: "admin"},
+		{method: "POST", path: "/api/v1/admin/services/caddy/alidns/verify-read", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/baidu-map", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/baidu-map", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/baidu-map/reveal", suite: "admin"},

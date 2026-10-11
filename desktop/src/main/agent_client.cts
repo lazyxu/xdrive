@@ -647,6 +647,22 @@ export type AgentAdminCaddyHTTPSRevisionPage = {
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 
+export type AgentAdminCaddyAliDNSReadVerifyInput = {
+  desired_revision: number
+  credential_revision: number
+}
+export type AgentAdminCaddyAliDNSReadVerify = {
+  state: 'read_authorized' | 'denied' | 'unavailable'
+  desired_revision: number
+  credential_revision: number
+  checked_at: string
+  read_permission_verified: boolean
+  write_permission_verified: false
+  apply_supported: false
+  public_https_verified: false
+  detail: string
+}
+
 export type AgentAdminCaddyPreflightCheck = {
   id: 'desired' | 'domain' | 'alidns' | 'host-manager' | 'ingress' | 'restricted-apply' | 'public-https'
   state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
@@ -3291,6 +3307,10 @@ export class AgentIPCClient {
   }
   cloudRollbackAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSRollbackInput) {
     return this.request<AgentAdminCaddyHTTPSConfig>('POST', '/v1/cloud/admin-caddy-https/rollback', input)
+  }
+
+  cloudVerifyAdminCaddyAliDNSRead(input: AgentAdminCaddyAliDNSReadVerifyInput) {
+    return this.request<AgentAdminCaddyAliDNSReadVerify>('POST', '/v1/cloud/admin-caddy-alidns/verify-read', input)
   }
 
   cloudAdminCaddyHTTPSPreflight() {

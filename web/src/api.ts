@@ -729,6 +729,14 @@ export class XDriveApi {
     )
   }
 
+  adminVerifyCaddyAliDNSRead(input: import('../../ui/shared/src').XDriveCaddyAliDNSReadVerifyInput) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSReadVerify>(
+      '/api/v1/admin/services/caddy/alidns/verify-read', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
   adminCaddyHTTPSPreflight() {
     return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSPreflight>(
       '/api/v1/admin/services/caddy/https/preflight', { cache: 'no-store' },

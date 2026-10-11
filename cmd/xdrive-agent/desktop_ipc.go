@@ -611,6 +611,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-caddy-alidns", h.cloudAdminCaddyAliDNS)
 	mux.HandleFunc("PUT /v1/cloud/admin-caddy-alidns", h.cloudSetAdminCaddyAliDNS)
 	mux.HandleFunc("POST /v1/cloud/admin-caddy-alidns/reveal", h.cloudRevealAdminCaddyAliDNS)
+	mux.HandleFunc("POST /v1/cloud/admin-caddy-alidns/verify-read", h.cloudVerifyAdminCaddyAliDNSRead)
 	mux.HandleFunc("GET /v1/cloud/admin-media-worker", h.cloudAdminMediaWorker)
 	mux.HandleFunc("PUT /v1/cloud/admin-media-worker", h.cloudSetAdminMediaWorker)
 	mux.HandleFunc("POST /v1/cloud/admin-media-worker/apply", h.cloudApplyAdminMediaWorker)
