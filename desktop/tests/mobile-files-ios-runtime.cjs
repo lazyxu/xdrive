@@ -33,6 +33,13 @@ function loadState() {
   return mod.exports
 }
 const state = loadState()
+const keyboard = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/file-explorer-keyboard.ts'))(
+    mod, mod.exports,
+  )
+  return mod.exports
+})()
 function loadGrouping() {
   const source = { exports: {} }
   new Function('module', 'exports', compile('ui/shared/src/file-explorer-grouping.ts'))(
@@ -113,7 +120,7 @@ const imports = {
   '@mui/material': material,
   '@xdrive/ui/mui': ui,
   '../../ui/shared/src': {
-    ...inline,
+    ...inline, ...keyboard,
     XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE: 200,
     formatBytes: n => n + ' B',
     xDriveFileExplorerDragAutoScrollDelta: () => 0,
@@ -2150,4 +2157,212 @@ test('F-iOS27-09A: Wide/Web/Mobile share operation eligibility and no Mobile-spe
   assert.match(mobile, /data-mobile-files-context-selection-action=\{option\.action\}/)
   assert.ok(!mobile.includes('fetch('))
   assert.equal(mobile.includes('new XDriveApi('), false)
+})
+
+
+function iosFilesKeyEvent(key, modifiers = {}) {
+  const counters = { prevented: 0, stopped: 0 }
+  const event = {
+    key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false,
+    repeat: false, nativeEvent: { isComposing: false },
+    target: { isContentEditable: false, closest: () => null },
+    preventDefault() { counters.prevented++ },
+    stopPropagation() { counters.stopped++ },
+    ...modifiers,
+  }
+  return { event, counters }
+}
+
+async function fireMobileFilesShortcut(h, key, modifiers = {}) {
+  const { event, counters } = iosFilesKeyEvent(key, modifiers)
+  await act(async () => {
+    find(h.view, 'data-xdrive-mobile-files', true).props.onKeyDown(event)
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+  return counters
+}
+
+test('F-iOS27-09B: shared keyboard interpreter selects the full Mobile directory then copies and cuts intact identities', async () => {
+  const calls = []
+  await withView(async h => {
+    const select = await fireMobileFilesShortcut(h, 'a', { ctrlKey: true })
+    assert.equal(select.prevented, 1)
+    assert.equal(find(h.view, 'aria-label', '复制已选').props.disabled, false)
+    const copy = await fireMobileFilesShortcut(h, 'c', { ctrlKey: true })
+    assert.equal(copy.prevented, 1)
+    const cut = await fireMobileFilesShortcut(h, 'x', { metaKey: true })
+    assert.equal(cut.prevented, 1)
+    assert.deepEqual(calls, [
+      { action: 'copy', keys: [[2, 1], [3, 1]] },
+      { action: 'cut', keys: [[2, 1], [3, 1]] },
+    ])
+    assert.equal(find(h.view, 'aria-label', '复制已选').props.disabled, false,
+      'clipboard commands must retain the full virtual selection')
+    const esc = await fireMobileFilesShortcut(h, 'Escape')
+    assert.equal(esc.prevented, 1)
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 0)
+  }, { props: {
+    requestedDirectoryID: 1,
+    onCopy: items => calls.push({ action: 'copy', keys: items.map(i => [i.id, i.revision]) }),
+    onCut: items => calls.push({ action: 'cut', keys: items.map(i => [i.id, i.revision]) }),
+  } })
+})
+
+test('F-iOS27-09B: external keyboard Copy/Cut/Delete on a focused file use its exact Node revision', async () => {
+  const calls = []
+  await withView(async h => {
+    const row = find(h.view, 'aria-label', '说明.txt')
+    for (const [key, opts, name] of [
+      ['c', { ctrlKey: true }, 'copy'],
+      ['x', { ctrlKey: true }, 'cut'],
+      ['Delete', {}, 'delete'],
+    ]) {
+      const { event, counters } = iosFilesKeyEvent(key, opts)
+      await act(async () => { row.props.onKeyDown(event) })
+      assert.equal(counters.prevented, 1)
+      assert.equal(counters.stopped, 1, 'one focused row owns its shortcut')
+      assert.equal(calls.at(-1).action, name)
+    }
+    assert.deepEqual(calls.map(x => [x.action, x.items.map(i => [i.id, i.revision, i.kind])]), [
+      ['copy', [[3, 1, 'file']]],
+      ['cut', [[3, 1, 'file']]],
+      ['delete', [[3, 1, 'file']]],
+    ])
+  }, { props: {
+    requestedDirectoryID: 1,
+    onCopy: items => calls.push({ action: 'copy', items }),
+    onCut: items => calls.push({ action: 'cut', items }),
+    onDelete: items => calls.push({ action: 'delete', items }),
+  } })
+})
+
+test('F-iOS27-09B: paste, undo and redo shortcuts delegate to the existing Web controller', async () => {
+  const calls = []
+  await withView(async h => {
+    assert.equal((await fireMobileFilesShortcut(h, 'v', { ctrlKey: true })).prevented, 1)
+    assert.equal((await fireMobileFilesShortcut(h, 'z', { ctrlKey: true })).prevented, 1)
+    assert.equal((await fireMobileFilesShortcut(h, 'z', { ctrlKey: true, shiftKey: true })).prevented, 1)
+    assert.deepEqual(calls, [['paste', undefined], ['undo'], ['redo']])
+    await h.update({ canPaste: false, canUndo: false, canRedo: false })
+    assert.equal((await fireMobileFilesShortcut(h, 'v', { ctrlKey: true })).prevented, 0)
+    assert.equal((await fireMobileFilesShortcut(h, 'z', { ctrlKey: true })).prevented, 0)
+    assert.equal(calls.length, 3)
+    await h.update({ trashActive: true, canPaste: true, canUndo: true, canRedo: true })
+    assert.equal((await fireMobileFilesShortcut(h, 'v', { ctrlKey: true })).prevented, 0)
+    assert.equal(calls.length, 3)
+  }, { props: {
+    requestedDirectoryID: 1, canPaste: true, canUndo: true, canRedo: true,
+    onPaste: operation => calls.push(['paste', operation]),
+    onUndo: () => calls.push(['undo']),
+    onRedo: () => calls.push(['redo']),
+  } })
+})
+
+test('F-iOS27-09B: iPad Cmd+Option+V keeps the shared move-paste override', async () => {
+  const oldNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true, value: { platform: 'iPad', userAgent: 'Mozilla/5.0 iPad iOS 27' },
+  })
+  const modes = []
+  try {
+    await withView(async h => {
+      assert.equal((await fireMobileFilesShortcut(h, 'v', { metaKey: true, altKey: true })).prevented, 1)
+      assert.equal((await fireMobileFilesShortcut(h, 'v', { metaKey: true })).prevented, 1)
+      assert.deepEqual(modes, ['move', undefined])
+    }, { props: {
+      requestedDirectoryID: 1, canPaste: true,
+      onPaste: mode => modes.push(mode),
+    } })
+  } finally {
+    if (oldNavigator) Object.defineProperty(globalThis, 'navigator', oldNavigator)
+    else delete globalThis.navigator
+  }
+})
+
+test('F-iOS27-09B: text input, contenteditable, dialog and composition own their native keyboard events', async () => {
+  const calls = []
+  await withView(async h => {
+    for (const target of [
+      { closest: selector => selector.includes('input') ? {} : null },
+      { closest: () => null, isContentEditable: true },
+      { closest: selector => selector.includes('[role="dialog"]') ? {} : null },
+      { closest: selector => selector.includes('[role="menu"]') ? {} : null },
+    ]) {
+      assert.equal((await fireMobileFilesShortcut(h, 'a', { ctrlKey: true, target })).prevented, 0)
+      assert.equal((await fireMobileFilesShortcut(h, 'v', { ctrlKey: true, target })).prevented, 0)
+    }
+    assert.equal((await fireMobileFilesShortcut(h, 'v', {
+      ctrlKey: true, nativeEvent: { isComposing: true },
+    })).prevented, 0)
+    assert.equal((await fireMobileFilesShortcut(h, 'v', { ctrlKey: true, repeat: true })).prevented, 0)
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 0)
+    assert.deepEqual(calls, [])
+  }, { props: {
+    requestedDirectoryID: 1, canPaste: true, onPaste: mode => calls.push(mode),
+  } })
+})
+
+test('F-iOS27-09B: shared eligibility rejects keyboard Copy, Cut and Delete, even on a selected full directory', async () => {
+  const calls = []
+  await withView(async h => {
+    await fireMobileFilesShortcut(h, 'a', { ctrlKey: true })
+    assert.equal((await fireMobileFilesShortcut(h, 'c', { ctrlKey: true })).prevented, 1)
+    assert.equal((await fireMobileFilesShortcut(h, 'x', { metaKey: true })).prevented, 1)
+    assert.equal((await fireMobileFilesShortcut(h, 'Delete')).prevented, 1)
+    assert.deepEqual(calls, [])
+  }, { props: {
+    requestedDirectoryID: 1,
+    getSelectionActionDisabledReason: () => 'Node/Revision 已失效',
+    onCopy: items => calls.push(['copy', items.length]),
+    onCut: items => calls.push(['cut', items.length]),
+    onDelete: items => calls.push(['delete', items.length]),
+  } })
+})
+
+test('F-iOS27-09B: Escape aborts a 100k sparse Select All request without committing old IDs', async () => {
+  let resolveRange, captured
+  const snapshots = []
+  const source = {
+    interactionKey: 'keyboard-cancel-100k', itemCount: 100000,
+    loadedItems: new Map(), itemAt: () => undefined, onRangeChange() {},
+    retainInteractionIDs() {},
+    collectRange: (_start, _end, signal) => {
+      captured = signal
+      return new Promise(resolve => { resolveRange = resolve })
+    },
+  }
+  await withView(async h => {
+    assert.equal((await fireMobileFilesShortcut(h, 'a', { metaKey: true })).prevented, 1)
+    assert.ok(captured instanceof AbortSignal)
+    assert.equal(captured.aborted, false)
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 1)
+    assert.equal((await fireMobileFilesShortcut(h, 'Escape')).prevented, 1)
+    assert.equal(captured.aborted, true)
+    await act(async () => {
+      resolveRange(Array.from({ length: 200 }, (_, i) => ({
+        id: 1000 + i, name: 'old.txt', revision: 3, kind: 'file',
+      })))
+      await Promise.resolve()
+    })
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0)
+    assert.deepEqual(snapshots.at(-1), [])
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    onSelectedItemsChange: items => snapshots.push(items.map(i => i.id)),
+  } })
+})
+
+test('F-iOS27-09B: wide/Mobile keyboards share parser, and Web forwards the same paste override', () => {
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const wide = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  assert.match(mobile, /xDriveFileExplorerKeyboardCommand\(event, filesKeyboardProfile\)/)
+  assert.match(mobile, /xDriveFileExplorerKeyboardProfileFromPlatform\(/)
+  assert.match(wide, /xDriveFileExplorerKeyboardCommand\(/)
+  assert.match(mobile, /data-xdrive-mobile-files onKeyDown=\{handleFilesKeyboard\}/)
+  assert.match(mobile, /props\.onPaste\(command === 'paste-move' \? 'move' : undefined\)/)
+  assert.match(web, /onPaste=\{operationOverride => \{ void pasteClipboard\(operationOverride\) \}\}/)
+  assert.equal(mobile.includes('new XDriveApi('), false)
+  assert.equal(mobile.includes('fetch('), false)
 })

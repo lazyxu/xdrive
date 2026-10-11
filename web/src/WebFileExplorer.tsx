@@ -1200,7 +1200,7 @@ export default function WebFileExplorer({
           onRefreshRecent={() => { void recent.refresh() }}
           onRefreshFavorites={() => { void favorites.refresh() }}
           canPaste={!trashActive && fileOperationCanPaste}
-          onPaste={() => { void pasteClipboard() }}
+          onPaste={operationOverride => { void pasteClipboard(operationOverride) }}
           canUndo={!trashActive && canUndo}
           onUndo={trashActive ? undefined : onUndo}
           canRedo={!trashActive && canRedo}
