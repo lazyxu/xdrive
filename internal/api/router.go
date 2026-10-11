@@ -316,6 +316,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/local-schedule", s.requireLocalSourceExecutor(), s.getLocalSourceSchedule)
 	// Bound-device-only read of existing canonical SourceItem identity. No writes or activation.
 	authed.POST("/sources/:id/local-identity/lookup", s.requireLocalSourceExecutor(), s.localSourceIdentityLookup)
+	// Private, device-bound advisory identity evidence; no alias/SourceItem/Run changes.
+	authed.POST("/sources/:id/local-identity/evidence", s.requireLocalSourceExecutor(), s.recordLocalSourceItemEvidence)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.

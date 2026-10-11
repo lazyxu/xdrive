@@ -67,7 +67,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
 | Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 owning Desktop local-only snapshot merged #1400; P0-C4c3 owning Desktop two-generation delta merged #1411 (76-job exact-head CI green) |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
-| L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a advisory generation fence merged #1397; no durable SourceItem aliases/Planner/upload/commit |
+| L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a advisory generation fence merged #1397; private identity lookup #1417 merged; no accepted SourceItem alias or upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
 
@@ -463,7 +463,7 @@ saved schedules, watchers, NAS controls or Mirror deletion. Physical 100k/4GiB
 acceptance and GitLab validation are not claimed for this PR.
 
 
-## L03-D2b2b1 · Owning-Agent-only bounded SourceItem identity lookup (PR verification)
+## L03-D2b2b1 · Owning-Agent-only bounded SourceItem identity lookup (merged #1417; 76-job CI green)
 
 The Server exposes `POST /api/v1/sources/:id/local-identity/lookup` to the
 **authenticated, registered, unrevoked bound owning Agent**, not to Web,
@@ -492,3 +492,45 @@ an Agent IPC method, or expose a Renderer control. The existing Push denial
 remains. Tests cover bounded validation, owner/device/Root/revoke/revision
 fencing, alias collisions, and no Source/Run/alias writes. Actual real-device
 100k and ≥4GiB E2E, auto schedules and GitLab validation are not claimed.
+
+## L03-D2b2b2a · Persist private advisory SourceItem reconciliation evidence (PR verification)
+
+The owning Agent may stage a **single conservative regular-file native-rename
+candidate** against one previously synced and still live SourceItem. Its POST
+`/api/v1/sources/:id/local-identity/evidence` requires the same owner JWT,
+unrevoked OS-held installation credential, exact bound Root ID/fingerprint and
+If-Match Source revision as other protected local Source mutations. The Server
+repeats device -> Source -> binding locks in the same PostgreSQL transaction,
+requires the Source to remain paused and the existing SourceItem to be synced
+with an owned, undeleted, revision-matched file Node.
+
+A valid 8 KiB-bounded request contains SourceItem ID; independently identified
+PREVIOUS/CURRENT inventory SHA-256; old/new Root- and path-scoped SHA-256
+keys; matching native identity keys; both strong-identity flags; and link
+count=1 in both generations. The Server **recomputes the old path key** from
+its existing SourceItem path and authenticated Root ID. No unverified or
+arbitrary old path key may claim a different remote item. Canonical and alias
+namespace collisions fail closed.
+
+A separate private `xd_local_source_item_evidence` table records the
+Source/device/Root/revision, snapshot digests and candidate keys. Unique
+generation+item and generation+destination constraints permit exact idempotent
+replay while denying two destinations for one item or two items sharing a
+destination in the same generation. No raw local paths are stored in this
+table or echoed in the response. The response contains only Source/item/
+evidence IDs, revision, created/replayed metadata and explicit
+`authoritative=false`, `missing_inference_safe=false`.
+
+**Critical safety distinction:** the Server does not possess or independently
+attest the Agent's private journals. Strong native-key flags and generation
+SHA-256 values are caller assertions until an owning Agent replays its
+independently verified complete local generations. This record is advisory
+staging only; it is **not** a `SourceItemAlias`, canonical identity promotion,
+successful upload, content-equality proof, SourceRun, Node move or deletion
+evidence. Existing Planner and SourceItem identity resolution NEVER consult
+the staging table. A separate, transactionally authorized promotion must
+re-verify live Root/source generations, SourceItem/Node revisions and alias
+conflicts before any actual identity mutation. No Web, Mobile Web, Desktop
+renderer or Agent IPC control is added in this stage. Local Push activation
+and all Mirror remote deletion remain denied. Real 100k/4GiB device tests,
+auto scheduling and GitLab validation are not claimed.
