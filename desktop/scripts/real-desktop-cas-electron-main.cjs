@@ -11,7 +11,10 @@ const sourceFile=process.env.XD_DESKTOP_CAS_SOURCE_PATH
 const destinationFile=process.env.XD_DESKTOP_CAS_DESTINATION
 const parentID=Number(process.env.XD_DESKTOP_CAS_ROOT_ID)
 const nodeID=Number(process.env.XD_DESKTOP_CAS_NODE_ID)
-const size=1073741824
+const sizeGiB=Number(process.env.XD_REAL_CAS_SIZE_GIB||'1')
+assert([1,4].includes(sizeGiB),'real Desktop CAS benchmark size must be 1 or 4 GiB')
+const size=sizeGiB*2**30
+const maxDirectionMs=sizeGiB===4?360000:240000
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 if(!['upload','download'].includes(mode))throw Error('Desktop performance mode invalid')
 if((mode==='upload'&&(!sourceFile||!fs.existsSync(sourceFile)))||
@@ -112,7 +115,7 @@ async function run(win){
       nodeID:mode==='upload'?reply.data.uploaded[0].id:nodeID,
       bytes:size,
       elapsedMs:elapsed,
-      throughputMiBps:1024/(elapsed/1000),
+      throughputMiBps:(size/(2**20))/(elapsed/1000),
       rendererWorkingSetStartKiB:rssStart,
       rendererWorkingSetPeakKiB:rssPeak,
       rendererWorkingSetGrowthKiB:rssPeak-rssStart,
@@ -121,7 +124,7 @@ async function run(win){
       ...(mode==='download'?{destination:destinationFile}:{})
     }
     console.log('REAL_DESKTOP_TO_CAS_TRANSFER '+JSON.stringify(row))
-    if(row.rendererWorkingSetGrowthKiB>256*1024||elapsed>240000)
+    if(row.rendererWorkingSetGrowthKiB>256*1024||elapsed>maxDirectionMs)
       throw Error('Desktop to CAS resource budget exceeded')
     app.exit(0)
   }catch(error){
