@@ -8,7 +8,7 @@ export XD_CONFIG_DIR="$temp"
 export XDRIVE_MEDIA_FAKE_STATE="$temp/media-running"
 export XDRIVE_MEDIA_FAKE_CALLS="$temp/docker-calls"
 mkdir -p "$temp/config" "$temp/bin" "$temp/logs" "$temp/fakebin"
-printf 'COMPOSE_PROFILES=photo-intelligence\nXD_TEST_UNRELATED=keep\n' > "$temp/config/.env"
+printf 'COMPOSE_PROFILES=photo-intelligence\nXD_MEDIA_WORKER_MEMORY_LIMIT=768m\nXD_TEST_UNRELATED=keep\n' > "$temp/config/.env"
 printf 'services:\n  media-worker:\n    image: fixture\n' > "$temp/config/docker-compose.yml"
 cat > "$temp/fakebin/docker" <<'FAKE'
 #!/usr/bin/env bash
@@ -18,17 +18,22 @@ case "$*" in
   *"ps --status running --services media-worker")
     if [[ -f "$XDRIVE_MEDIA_FAKE_STATE" ]]; then echo media-worker; fi
     ;;
-  *"up -d --no-deps media-worker") touch "$XDRIVE_MEDIA_FAKE_STATE" ;;
+  *"inspect --format {{.HostConfig.Memory}} xdrive-media-worker")
+    [[ -f "$XDRIVE_MEDIA_FAKE_STATE" ]] || exit 1
+    memory="$(sed -nE 's/^XD_MEDIA_WORKER_MEMORY_LIMIT=([0-9]+)m$/\1/p' "$XD_CONFIG_DIR/config/.env" | tail -n 1)"
+    [[ "$memory" =~ ^[0-9]+$ ]] || exit 1
+    printf '%s\n' "$(( memory * 1048576 ))"
+    ;;
+  *"up -d --no-deps --force-recreate media-worker") touch "$XDRIVE_MEDIA_FAKE_STATE" ;;
   *"exec -T media-worker xdrive-server media-worker check")
     [[ -f "$XDRIVE_MEDIA_FAKE_STATE" ]] ;;
   *"stop media-worker") rm -f "$XDRIVE_MEDIA_FAKE_STATE" ;;
-  *) echo "unexpected Docker invocation" >&2; exit 2 ;;
+  *) echo "unexpected Docker invocation: $*" >&2; exit 2 ;;
 esac
 FAKE
 chmod +x "$temp/fakebin/docker"
 export PATH="$temp/fakebin:$PATH"
 export XD_HOST_CONTROL_SOURCE_ONLY=1
-# Load only the restricted Host Manager functions; no real service starts.
 source "$ROOT/scripts/server-control.sh"
 unset XD_HOST_CONTROL_SOURCE_ONLY
 media_worker_control_refresh
@@ -38,44 +43,74 @@ test "$(json_value "$status_file" state)" = idle
 test "$(json_bool_value "$status_file" observed_enabled)" = false
 
 request_id=0123456789abcdef01234567
-printf '{"request_id":"%s","revision":1,"enabled":true,"created_at":"%s"}\n' \
-  "$request_id" "$(now_utc)" > "$dir/media-worker-control-request.json"
+make_request() {
+  local revision="$1" enabled="$2" memory="$3"
+  printf '{"request_id":"%s","revision":%s,"enabled":%s,"memory_mib":%s,"created_at":"%s"}\n' \
+    "$request_id" "$revision" "$enabled" "$memory" "$(now_utc)" > "$dir/media-worker-control-request.json"
+}
+
+# Start with the default cgroup memory allocation (768 MiB).
+make_request 1 true 768
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 test "$(media_worker_control_uint "$status_file" applied_revision)" = 1
+test "$(media_worker_control_uint "$status_file" observed_memory_mib)" = 768
+test "$(json_bool_value "$status_file" memory_verified)" = true
 test "$(json_bool_value "$status_file" observed_enabled)" = true
 grep -Fxq 'COMPOSE_PROFILES=photo-intelligence,media-worker' "$temp/config/.env"
 grep -Fxq 'XD_TEST_UNRELATED=keep' "$temp/config/.env"
-# A stale revision is rejected before executing any command.
-before="$(wc -l < "$XDRIVE_MEDIA_FAKE_CALLS")"
-printf '{"request_id":"%s","revision":1,"enabled":false,"created_at":"%s"}\n' \
-  "$request_id" "$(now_utc)" > "$dir/media-worker-control-request.json"
+
+# An invalid resource limit is rejected before recreating anything.
+previous_calls="$(wc -l < "$XDRIVE_MEDIA_FAKE_CALLS")"
+make_request 2 true 999
 media_worker_control_process
 test "$(json_value "$status_file" state)" = failed
-test "$(json_bool_value "$status_file" observed_enabled)" = true
 test "$(media_worker_control_uint "$status_file" applied_revision)" = 1
+grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=768m' "$temp/config/.env"
+# Invalid control must not accidentally run up/stop commands.
+test "$(grep -E ' (up -d|stop) ' "$XDRIVE_MEDIA_FAKE_CALLS" | wc -l)" = 1
+
+# Changing only the optional Worker memory re-creates only that container.
+make_request 2 true 1024
+media_worker_control_process
+test "$(json_value "$status_file" state)" = success
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
+test "$(media_worker_control_uint "$status_file" observed_memory_mib)" = 1024
+test "$(json_bool_value "$status_file" memory_verified)" = true
+grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
 grep -Fxq 'COMPOSE_PROFILES=photo-intelligence,media-worker' "$temp/config/.env"
-# Allow a new audited revision to stop ONLY the optional media-worker.
-printf '{"request_id":"%s","revision":2,"enabled":false,"created_at":"%s"}\n' \
-  "$request_id" "$(now_utc)" > "$dir/media-worker-control-request.json"
+
+# An old revision cannot alter the live policy or disable the Worker.
+make_request 1 false 768
+media_worker_control_process
+test "$(json_value "$status_file" state)" = failed
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
+test "$(json_bool_value "$status_file" observed_enabled)" = true
+grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
+
+# Disabling keeps the resource setting for the next controlled startup.
+make_request 3 false 1024
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 test "$(json_bool_value "$status_file" observed_enabled)" = false
-test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
+test "$(media_worker_control_uint "$status_file" observed_memory_mib)" = 1024
+test "$(json_bool_value "$status_file" memory_verified)" = true
 grep -Fxq 'COMPOSE_PROFILES=photo-intelligence' "$temp/config/.env"
-grep -Fxq 'XD_TEST_UNRELATED=keep' "$temp/config/.env"
-! grep -Eq '(^| )(down|restart|kill|rm)( |$)' "$XDRIVE_MEDIA_FAKE_CALLS"
-test ! -f "$dir/media-worker-control-request.json"
-test ! -f "$dir/media-worker-control-active.json"
-# Detect real drift and permit re-applying the SAME revision only after
-# observed failure. A successful version must not be blindly replayed.
+grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
+
+# Drift: container appears unexpectedly after disabled status. Detect, then
+# explicitly reapply the same revision only after the failed status.
 touch "$XDRIVE_MEDIA_FAKE_STATE"
 media_worker_control_refresh
 test "$(json_value "$status_file" state)" = failed
-printf '{"request_id":"%s","revision":2,"enabled":false,"created_at":"%s"}\n' \
-  "$request_id" "$(now_utc)" > "$dir/media-worker-control-request.json"
+make_request 3 false 1024
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 test "$(json_bool_value "$status_file" observed_enabled)" = false
-test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
-echo "Media Worker Host Manager restricted on/off, revision fence, drift retry and profile persistence: OK"
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 3
+! grep -Eq '(^| )(down|restart|kill|rm)( |$)' "$XDRIVE_MEDIA_FAKE_CALLS"
+! grep -E '(up -d|stop) .* (server|postgres|caddy|photo-face|worker)$' "$XDRIVE_MEDIA_FAKE_CALLS"
+grep -Fxq 'XD_TEST_UNRELATED=keep' "$temp/config/.env"
+test ! -f "$dir/media-worker-control-request.json"
+test ! -f "$dir/media-worker-control-active.json"
+echo "Media Worker restricted start/stop/memory, cgroup verification, profile preservation and revision fences: OK"

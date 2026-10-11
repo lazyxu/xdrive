@@ -577,11 +577,15 @@ export type AgentAdminMediaWorkerHost = {
   applied_revision: number
   enabled: boolean
   observed_enabled: boolean
+  memory_mib: number
+  observed_memory_mib: number
+  memory_verified: boolean
   request_id?: string
   updated_at?: string
 }
 export type AgentAdminMediaWorkerConfig = {
   desired_enabled: boolean
+  desired_memory_mib: number
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
@@ -592,10 +596,10 @@ export type AgentAdminMediaWorkerConfig = {
   apply_supported: boolean
   requires_restart: boolean
 }
-export type AgentAdminMediaWorkerUpdate = { revision: number; enabled: boolean }
-export type AgentAdminMediaWorkerApplyResult = { state: 'queued'; revision: number; enabled: boolean; request_id: string }
+export type AgentAdminMediaWorkerUpdate = { revision: number; enabled: boolean; memory_mib: number }
+export type AgentAdminMediaWorkerApplyResult = { state: 'queued'; revision: number; enabled: boolean; memory_mib: number; request_id: string }
 export type AgentAdminMediaWorkerRevisionPage = {
-  items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+  items: Array<{ revision: number; enabled: boolean; memory_mib: number; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
 }
 export type AgentAdminMediaWorkerRollbackInput = { revision: number; target_revision: number }
 

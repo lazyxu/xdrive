@@ -1872,17 +1872,19 @@ func (h *desktopIPCHandler) cloudSetAdminMediaWorker(w http.ResponseWriter, r *h
 		return
 	}
 	var input struct {
-		Revision *uint64 `json:"revision"`
-		Enabled  *bool   `json:"enabled"`
+		Revision  *uint64 `json:"revision"`
+		Enabled   *bool   `json:"enabled"`
+		MemoryMiB *int    `json:"memory_mib"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
-	if input.Revision == nil || input.Enabled == nil {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_config", "Complete Media Worker revision and enabled flag are required")
+	if input.Revision == nil || input.Enabled == nil || input.MemoryMiB == nil ||
+		*input.MemoryMiB < 256 || *input.MemoryMiB > 4096 || *input.MemoryMiB%128 != 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_config", "Complete Media Worker revision, enabled flag and bounded memory limit are required")
 		return
 	}
-	out, err := provider.CloudSetAdminMediaWorker(r.Context(), client.AdminMediaWorkerUpdate{Revision: *input.Revision, Enabled: *input.Enabled})
+	out, err := provider.CloudSetAdminMediaWorker(r.Context(), client.AdminMediaWorkerUpdate{Revision: *input.Revision, Enabled: *input.Enabled, MemoryMiB: *input.MemoryMiB})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return
