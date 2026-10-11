@@ -120,6 +120,28 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               {service.model ? '模型：' + service.model : ''}
             </Typography>
           )}
+          {service.id === 'caddy' && typeof service.https_configured === 'boolean' && (
+            <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+              <Chip size="small" variant="outlined"
+                label={service.https_configured ? 'HTTPS 已配置' : 'HTTP 模式'} />
+              {service.https_configured && (
+                <Chip size="small" variant="outlined"
+                  color={service.local_tls_state === 'verified' ? 'success' :
+                    service.local_tls_state === 'failed' || service.local_tls_state === 'invalid-config'
+                      ? 'error' : 'warning'}
+                  label={
+                    service.local_tls_state === 'verified' ? '本机 TLS 证书已验证' :
+                    service.local_tls_state === 'failed' ? '本机 TLS 验证失败' :
+                    service.local_tls_state === 'invalid-config' ? 'HTTPS 配置不合法' :
+                    '尚无可信 TLS 验证'
+                  }
+                />
+              )}
+              <Typography variant="caption" color="text.secondary">
+                公网 HTTPS 可达性仍需独立验证
+              </Typography>
+            </Stack>
+          )}
           {service.config_hint && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
               {service.config_hint}

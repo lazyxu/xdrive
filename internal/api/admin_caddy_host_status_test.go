@@ -46,7 +46,17 @@ func TestAdminCaddyHostHealthFailsClosedWithoutClaimingExternalTLS(t *testing.T)
 	heartbeat := filepath.Join(dir, "heartbeat")
 	write := func(state string, https bool) {
 		t.Helper()
-		payload, err := json.Marshal(caddyHostStatus{State: state, HTTPSConfigured: https})
+		tlsState := "disabled"
+		if https {
+			tlsState = "unavailable"
+			if state == "healthy" {
+				tlsState = "verified"
+			}
+		}
+		payload, err := json.Marshal(caddyHostStatus{
+			State: state, HTTPSConfigured: https,
+			TLSCheckSupported: true, TLSState: tlsState,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,7 +70,8 @@ func TestAdminCaddyHostHealthFailsClosedWithoutClaimingExternalTLS(t *testing.T)
 	write("healthy", true)
 	good := caddyStatusFromAdmin(t, server)
 	if good.Status != "ready" || !strings.Contains(good.Detail, "内部 HTTP") ||
-		!strings.Contains(good.Detail, "未独立验证证书") || strings.Contains(good.Detail, "证书已验证") {
+		!strings.Contains(good.Detail, "证书信任链及域名校验通过") ||
+		!strings.Contains(good.Detail, "公网访问未验证") {
 		t.Fatalf("internal proxy readiness falsely claimed external TLS: %+v", good)
 	}
 	write("healthy", false)
@@ -81,6 +92,57 @@ func TestAdminCaddyHostHealthFailsClosedWithoutClaimingExternalTLS(t *testing.T)
 		if got := caddyStatusFromAdmin(t, server); got.Status != tc.expected {
 			t.Fatalf("state %q returned %q instead of %q", tc.state, got.Status, tc.expected)
 		}
+	}
+	// HTTPS requires a genuine local TLS handshake and verified certificate.
+	// HTTP readiness alone must not produce a green HTTPS service status.
+	for _, tc := range []struct {
+		tlsState, want string
+	}{
+		{"failed", "unavailable"},
+		{"invalid-config", "unavailable"},
+		{"unavailable", "unknown"},
+	} {
+		write("healthy", true)
+		payload, err := json.Marshal(caddyHostStatus{
+			State: "healthy", HTTPSConfigured: true,
+			TLSCheckSupported: true, TLSState: tc.tlsState,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(statusPath, payload, 0600); err != nil {
+			t.Fatal(err)
+		}
+		got := caddyStatusFromAdmin(t, server)
+		if got.Status != tc.want {
+			t.Fatalf("HTTPS %s incorrectly reported %s instead of %s: %+v", tc.tlsState, got.Status, tc.want, got)
+		}
+	}
+	// Backward-compatible read: an old health-only Host Manager cannot
+	// assert HTTPS certificate validity even if its HTTP probe is healthy.
+	legacy, err := json.Marshal(caddyHostStatus{State: "healthy", HTTPSConfigured: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusPath, legacy, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := caddyStatusFromAdmin(t, server); got.Status != "unknown" {
+		t.Fatalf("old Host Manager falsely acknowledged HTTPS: %+v", got)
+	}
+	// Reject self-contradictory TLS proofs from a malformed host file.
+	invalid, err := json.Marshal(caddyHostStatus{
+		State: "healthy", HTTPSConfigured: false,
+		TLSCheckSupported: true, TLSState: "verified",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusPath, invalid, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := caddyStatusFromAdmin(t, server); got.Status != "unknown" {
+		t.Fatalf("verified TLS without HTTPS configuration was accepted: %+v", got)
 	}
 	write("healthy", false)
 	old := time.Now().Add(-2 * time.Minute)
