@@ -1809,7 +1809,7 @@ export default function MobileFiles(props: Props) {
                       onDragOver={event => externalDragOver(event, { kind: 'crumb', crumb })}
                       onDrop={event => externalDrop(event, { kind: 'crumb', crumb })}
                       variant={i === props.crumbs.length - 1 ? 'outlined' : 'text'}
-                      sx={{ whiteSpace: 'nowrap', minHeight: 36,
+                      sx={{ whiteSpace: 'nowrap', minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0,
                         bgcolor: dropCrumbID === String(crumb.id) ? 'action.selected' : undefined }}
                       onClick={() => { props.onCrumbClick(i); browseScrollRef.current = 0; setScrollTop(0); scrollHostRef.current?.scrollTo({ top: 0 }) }}>
                       {crumb.name || '根目录'}

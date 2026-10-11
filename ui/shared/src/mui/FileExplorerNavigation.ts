@@ -359,6 +359,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   onAfterNavigate,
   initialNavigationState,
   navigationSessionStorageKey,
+  skipInitialSessionRestore = false,
   onNavigationStateChange,
   maxTabs = 12,
 }: {
@@ -374,6 +375,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   onAfterNavigate?: (crumbs: TCrumb[]) => void
   initialNavigationState?: XDriveFileExplorerNavigationState<TCrumb>
   navigationSessionStorageKey?: string
+  skipInitialSessionRestore?: boolean
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<TCrumb>,
   ) => void
@@ -403,7 +405,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     )
   }
   const initialSessionRestorePendingRef = useRef(
-    initialNavigationSourceRef.current === 'session',
+    initialNavigationSourceRef.current === 'session' && !skipInitialSessionRestore,
   )
   const nextTabIDRef = useRef(nextNavigationTabID(initialNavigationStateRef.current.tabs))
   const navigationRequestRef = useRef({
@@ -463,7 +465,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
 
     initialNavigationStateRef.current = cloneNavigationState(nextState)
     initialNavigationSourceRef.current = source
-    initialSessionRestorePendingRef.current = source === 'session'
+    initialSessionRestorePendingRef.current = source === 'session' && !skipInitialSessionRestore
     nextTabIDRef.current = nextNavigationTabID(nextState.tabs)
     navigationRequestRef.current = {
       id: navigationRequestRef.current.id + 1,
@@ -679,6 +681,14 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
   }, [maxTabs, navigationSessionStorageKey])
 
   useEffect(() => {
+    // An explicit Web files?dir=ID is the navigation authority. Preserve
+    // the saved tabs/history but do not auto-load their old active folder.
+    // The Web adapter's existing Node-authorized deep-link resolver will
+    // dispatch exactly one requested directory into the same workspace.
+    if (skipInitialSessionRestore) {
+      initialSessionRestorePendingRef.current = false
+      return
+    }
     if (
       !initialSessionRestorePendingRef.current ||
       crumbs.length === 0
@@ -721,7 +731,7 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
         )),
       }))
     })()
-  }, [crumbs, navigationSessionStorageKey, onLoadDirectory])
+  }, [crumbs, navigationSessionStorageKey, onLoadDirectory, skipInitialSessionRestore])
 
   useEffect(() => {
     if (

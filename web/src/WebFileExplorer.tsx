@@ -272,6 +272,7 @@ export default function WebFileExplorer({
     directoryVirtualCollection: virtualDirectory,
     viewModeStorageKey: FILE_VIEW_KEY,
     navigationSessionStorageKey,
+    skipInitialSessionRestore: Boolean(initialDirectoryID),
     onLoadDirectory,
     loadSearchRange: async (query, filters, searchGrouping, searchSort, offset, limit, signal) => {
       const page = await api.searchRange(
@@ -309,19 +310,33 @@ export default function WebFileExplorer({
   const routedDirectoryRef = useRef<{
     directoryID: number
     lifecycleKey: string
+    navigationIntentID: number
+    dispatched: boolean
   } | null>(null)
   useEffect(() => {
-    if (!initialDirectoryID || current?.id === initialDirectoryID) return
     const lifecycleKey = navigationSessionStorageKey ?? ''
+    // Only a new requested route/account resets a dispatched route ticket.
+    // A successful user-initiated ancestor navigation must not re-run the
+    // previous deep link before App has synchronized the browser URL.
     if (
-      routedDirectoryRef.current?.directoryID === initialDirectoryID &&
-      routedDirectoryRef.current.lifecycleKey === lifecycleKey
-    ) return
-    routedDirectoryRef.current = {
+      routedDirectoryRef.current &&
+      (routedDirectoryRef.current.directoryID !== initialDirectoryID ||
+        routedDirectoryRef.current.lifecycleKey !== lifecycleKey)
+    ) routedDirectoryRef.current = null
+    // A URL-provided destination is authoritative even if the temporary
+    // root bootstrap currently has the same ID. Restoring an older persisted
+    // workspace may otherwise switch folders after this early return.
+    // Our per-route ticket prevents duplicate dispatch on later rerenders.
+    if (!initialDirectoryID) return
+    if (routedDirectoryRef.current) return
+    const navigationIntentID = beginNavigationIntent()
+    const routedRequest = {
       directoryID: initialDirectoryID,
       lifecycleKey,
+      navigationIntentID,
+      dispatched: false,
     }
-    const navigationIntentID = beginNavigationIntent()
+    routedDirectoryRef.current = routedRequest
     let active = true
     void (async () => {
       const chain: Crumb[] = []
@@ -335,12 +350,21 @@ export default function WebFileExplorer({
       }
       if (!active || !isNavigationIntentCurrent(navigationIntentID)) return
       chain.reverse()
+      // Retain the resolved route's ticket when current?.id changes. User
+      // navigation invalidates the old intent and must win over the old URL.
+      routedRequest.dispatched = true
       await navigateTo(chain, true, navigationIntentID)
     })().catch((error) => {
       if (active && isNavigationIntentCurrent(navigationIntentID)) onError(error)
     })
     return () => {
       active = false
+      // A never-dispatched lookup cancelled by StrictMode must replay.
+      // Keep already-dispatched tickets until the requested URL/session
+      // actually changes, not merely until current directory rerenders.
+      if (routedDirectoryRef.current === routedRequest && !routedRequest.dispatched) {
+        routedDirectoryRef.current = null
+      }
     }
   }, [
     api,
@@ -354,8 +378,20 @@ export default function WebFileExplorer({
   ])
 
   useEffect(() => {
-    if (!trashActive && current?.id) onDirectoryChange?.(current.id)
-  }, [current?.id, onDirectoryChange, trashActive])
+    if (trashActive || !current?.id) return
+    const pendingRoute = routedDirectoryRef.current
+    // Root bootstrap is not a navigation intent. Do not rewrite a requested
+    // files?dir=... deep link to the temporary root while its authorized
+    // ancestor lookup / sparse directory range is still pending.
+    if (
+      initialDirectoryID && current.id !== initialDirectoryID &&
+      pendingRoute?.directoryID === initialDirectoryID &&
+      pendingRoute.lifecycleKey === (navigationSessionStorageKey ?? '') &&
+      isNavigationIntentCurrent(pendingRoute.navigationIntentID)
+    ) return
+    onDirectoryChange?.(current.id)
+  }, [current?.id, initialDirectoryID, isNavigationIntentCurrent,
+    navigationSessionStorageKey, onDirectoryChange, trashActive])
 
   const refreshCurrentDirectory = onRefreshCurrentDirectoryIfIdle
 
