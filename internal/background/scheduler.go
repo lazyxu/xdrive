@@ -1036,21 +1036,25 @@ func (s *Scheduler) shutdown(cause error) {
 	s.mu.Unlock()
 }
 
+// updateTaskProgress only accepts progress from the live execution attempt.
+// A completed task can be resubmitted with the same Identity, and retries
+// reuse the same taskEntry, so both identity and attempt must still match.
 func (s *Scheduler) updateTaskProgress(
-	identity Identity,
+	entry *taskEntry,
+	attempt int,
 	progress TaskProgress,
 ) {
-	if s == nil {
+	if s == nil || entry == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry := s.entries[identity]
-	if entry == nil || entry.state == itemDone {
+	live := s.entries[entry.identity]
+	if live != entry || live.state != itemRunning || live.attempt != attempt {
 		return
 	}
-	entry.progress = progress.normalized()
-	entry.updatedAt = time.Now().UTC()
+	live.progress = progress.normalized()
+	live.updatedAt = time.Now().UTC()
 }
 
 func (s *Scheduler) TaskSnapshots(ownerID *uint64) []RuntimeTaskSnapshot {
@@ -1207,11 +1211,12 @@ func (s *Scheduler) runEntry(resource ResourceClass, q *resourceQueue, entry *ta
 	entry.leaseDeferred = false
 	entry.startedAt = &now
 	entry.updatedAt = now
+	attempt := entry.attempt
 	runCtx = context.WithValue(
 		runCtx,
 		progressReporterKey{},
 		func(progress TaskProgress) {
-			s.updateTaskProgress(entry.identity, progress)
+			s.updateTaskProgress(entry, attempt, progress)
 		},
 	)
 	s.metrics.mu.Lock()
