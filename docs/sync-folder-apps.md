@@ -65,9 +65,9 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change in PR |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green) |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
-| L03-D2–G | multi-generation reconciliation, durable aliases, Planner/resumable/CAS/commit/recovery | not implemented |
+| L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library in PR; no durable aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
 | L07 | 1k/10k/100k, >=4 GiB, corrupt/revoke/cancel/Root replacement, Web/Desktop/Pull E2E | not implemented |
 
@@ -245,7 +245,7 @@ target/ignore-rule edits, upload, schedule or Mirror deletion; NAS Push stays
 a placeholder. Exact-head CI and native-device verification are required
 before claiming completion. L03-D2-G/L05-L07 remain future work.
 
-## UI P0-C4b2b: own Desktop cloud target revision change (PR verification)
+## UI P0-C4b2b: own Desktop cloud target revision change (merged #1348; full CI green)
 
 This bounded follow-up adds only changing the **Server cloud target directory** of
 an already-bound, paused local Push Source. The existing `PATCH /sources/:id`
@@ -266,6 +266,22 @@ deleted, and existing Source IDs/history/CAS remain untouched. Backups remain
 paused: no Source Run, upload, background schedule, Root rebind, Mirror deletion
 or NAS Push UI is enabled. Real Windows/Linux device acceptance, 100k and 4 GiB
 execution remain L07 and are not claimed by source-only tests.
+
+## L03-D2a: bounded two-generation read-only candidate delta (PR verification)
+
+A native localpush helper compares two distinct, independently verified
+CURRENT/PREVIOUS Root journals, and safely emits bounded relative-path
+metadata changes using 64 owner-private hash-bucket spool files. A
+per-generation 8192-record bucket limit fails closed rather than consuming
+unbounded RAM; callback batches are <=500. Snapshot checks complete
+before any delta callback. Cross-Root/tampered/missing/same-generation,
+cancelled or changed-head inputs must fail. No stable SourceItem identity
+or hard-link rename is inferred; missing paths are strictly
+`absent_candidate`, never remote deletions or Mirror evidence.
+No Agent activation, SourceRun, CAS writes, automatic scheduler, Web/foreign
+device access or remote mutation interface is added. The existing
+2-complete-scans/24h/trash-only Mirror safety contract remains blocked.
+Physical Windows/Linux 100k and >=4GiB measurements remain future L07.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 

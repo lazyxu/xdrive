@@ -13,7 +13,7 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified local reader/digest/candidates, two-generation history, then Planner, resumable upload, commit and recovery | L03-A #1244, L03-B #1246, L03-C #1250 and L03-D1 #1258 merged; reconciler/upload/runtime not implemented |
+| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta in PR; durable reconciler/uploader not implemented |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
 | L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | not implemented; no cross-device trigger, offline queue or Web preview |
@@ -65,7 +65,7 @@ does not lift the local Push execution/activation block.
 
 P0-C4b2a **merged #1342**, after full exact-head CI, permits only a
 device/Root/revision-protected change of a paused Source's name. P0-C4b2b
-is a separate PR-stage change of the Server's cloud target directory using
+merged #1348 as a separate change of the Server's cloud target directory using
 the same private Agent credential and validated bound Root. A target change
 never relocates or deletes previously stored cloud data. The Server verifies
 directory ownership and resets Mirror missing evidence as applicable.
@@ -167,6 +167,28 @@ The L03-C `StreamInventoryCandidates` projection consumes only a completed SHA-2
 A complete Root journal now retains `CURRENT.json` and the immediate `PREVIOUS.json` manifest. On successful inventory commit, PREVIOUS is atomically written before CURRENT; a crash between writes may leave both referring to the same last valid generation, **never evidence of remote deletion**. The oldest third generation is removed only after the new CURRENT has been published. Existing installations with only CURRENT remain valid. `VerifyPreviousInventoryJournal` independently checks grant/Root identity and SHA-256 before exposing the predecessor. Cancelling or failing a scan does not publish an incomplete CURRENT.
 
 Both manifests are Agent-local read-only evidence, not SourceItem identities or SourceRun checkpoints. No candidate delta, upload, Mirror deletion inference, watcher or automatic scheduling is enabled. The later reconciler must validate two **different** complete generations, preserve logical aliases and reject ambiguous hard links or weak identities. The 100k real-device scan/diff performance baseline is still outstanding.
+
+## L03-D2a bounded read-only two-generation candidate delta (PR verification)
+
+An owning Agent may compare two independently SHA-256-verified, different
+CURRENT/PREVIOUS snapshots for the same authorized local Root, without
+loading the entire 100k-entry tree into RAM. A private, 0700 temporary
+directory partitions relative-path metadata into 64 hash buckets, 0600 files,
+and caps each generation's in-memory bucket at 8192 candidates. Streaming
+output batches are at most 500. On corruption, duplicate inventory paths,
+missing generations, swapped Root, concurrent manifest replacement, skewed
+bucket overflow or cancellation, the operation fails closed; staging files
+are discarded. The callback must not mutate remote state.
+
+Path-relative metadata yields only added/changed/metadata-stable or
+absent-**candidate** records. Even metadata-stable does not prove identical
+file bytes. Rename/hardlink hints are not stable SourceItem identity and
+are **not matched** here; a rename is conservatively added+absent candidates.
+Nothing changes Source/SourceItem/SyncRun, journal heads, CAS or Mirror
+evidence. `MissingInferenceSafe=false` is unconditional. This is a
+preparatory local library only, not a Desktop command, scheduled sync,
+distributed cursor or upload. CI unit tests are not native 100k RSS/time
+measurements; 100k/4GiB device acceptance remains outstanding.
 
 ## Non-negotiable invariants
 
