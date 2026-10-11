@@ -1,0 +1,454 @@
+{
+  "title": "100k physically distinct MP4 containers with sampled real Chromium H264/JPEG poster baseline",
+  "status": "Accepted measured CURRENT / unchanged production; amended final-head native+full PR CI pending",
+  "source_exact": {
+    "tested_commit": "6783d0452a34e45152817f40c924ad34292f339f",
+    "fixed_master_parent": "dc8c8fbeb86d64e43b6bb4fde916a1052165baae",
+    "branch": "perf/file-explorer-physical-h264-100k-20261011",
+    "scoped_run_url": "https://github.com/lazyxu/xdrive/actions/runs/38150707819",
+    "scoped_job_url": "https://github.com/lazyxu/xdrive/actions/runs/38150707819/job/114503397039",
+    "original_artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38150707819/artifacts/11705494750",
+    "original_full_ci_url": "https://github.com/lazyxu/xdrive/actions/runs/38150707969",
+    "original_full_ci_final_gate": "success",
+    "runner": "GitHub hosted Ubuntu 24.04.5 LTS, ubuntu-24.04 image 20261004.327.1",
+    "tested_in_local_environment": false,
+    "upload_to_gitlab": false
+  },
+  "workload": {
+    "per_independent_sample": 100000,
+    "independent_samples": 3,
+    "original_containers_sampled_for_decode_per_fixture": 6,
+    "physically_distinct_byte_arrays": true,
+    "physically_distinct_h264_encodes": false,
+    "physical_media_bytes_per_fixture": 297000000,
+    "mp4_bytes_each": 2970,
+    "data": "100k SHA-distinct MP4 containers, same 96×64 H264 bitstream with distinct trailing 12-byte ISO BMFF free boxes, PostgreSQL17 Node/File/MediaMetadata and local physical CAS",
+    "excluded": "fixture seed excluded from thumbnail timings; no mounted FileExplorer virtual Grid/Details or full 100k video decode; no physical 4K/HEVC, RAW, LIVP, WAN, real Windows/macOS, Desktop Agent IPC"
+  },
+  "summary": {
+    "sample_count": 3,
+    "cold_p50_ms_across_samples": 18.5,
+    "warm_p50_ms_across_samples": 2.8000000000174623,
+    "first_frame_decodes_total": 18,
+    "physical_bytes_per_fixture": [
+      297000000,
+      297000000,
+      297000000
+    ],
+    "seeding_duration_ms": [
+      53616.193,
+      46860.123,
+      54606.099
+    ],
+    "native_go_vm_rss_growth_max_bytes": 36864,
+    "renderer_working_set_growth_max_kib": 20156,
+    "original_media_opens_on_warm_per_sample": [
+      0,
+      0,
+      0
+    ],
+    "accepted_without_optimization": true,
+    "after_not_applicable": true,
+    "speedup_percent_not_applicable": true,
+    "previous_six_cas_h264_workload_is_not_matched_before": true
+  },
+  "frozen_acceptance": {
+    "each_sample_physical_count": 100000,
+    "unique_sha256_per_sample": 100000,
+    "each_sample_6_decoded_cold_h264": true,
+    "each_sample_6_poster_put_and_warm_jpeg_reads": true,
+    "no_warm_original_opens": true,
+    "cold_video_poster_each_at_most_ms": 15000,
+    "go_vm_rss_growth_max_bytes": 268435456,
+    "renderer_working_set_growth_max_kib": 262144,
+    "result": "all gates passed on original measured head; exact evidence-amended CI pending"
+  },
+  "samples": [
+    {
+      "workload": "real-chromium-physical-100k-unique-mp4-cas-poster",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "physicalMode": true,
+      "physicalVideoCount": 100000,
+      "physicalSourceBytes": 297000000,
+      "uniquePhysicalSHA256Count": 100000,
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        18.5,
+        15.800000000017462,
+        10.5,
+        23.199999999982538,
+        10.200000000011642,
+        23.10000000000582
+      ],
+      "warmMs": [
+        3.1000000000058208,
+        2.6000000000058208,
+        2.7999999999883585,
+        2.8000000000174623,
+        2.6000000000058208,
+        2.8999999999941792
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 18.5,
+      "warmP50Ms": 2.8000000000174623,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 322,
+      "seedMs": 53616.193,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 154828,
+      "rendererWorkingSetKiBInitial": 134672,
+      "nativeGoResources": {
+        "start": {
+          "rssBytes": 60772352,
+          "cpuMs": 11830
+        },
+        "end": {
+          "rssBytes": 60825600,
+          "cpuMs": 11850
+        },
+        "sampledPeakRSSBytes": 60825600,
+        "sampledRSSGrowthBytes": 28672,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      },
+      "sample": 1
+    },
+    {
+      "workload": "real-chromium-physical-100k-unique-mp4-cas-poster",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "physicalMode": true,
+      "physicalVideoCount": 100000,
+      "physicalSourceBytes": 297000000,
+      "uniquePhysicalSHA256Count": 100000,
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        18.599999999976717,
+        18.10000000000582,
+        10.60000000000582,
+        22.20000000001164,
+        11,
+        23.099999999976717
+      ],
+      "warmMs": [
+        2.8999999999941792,
+        2.8000000000174623,
+        2.7999999999883585,
+        2.7999999999883585,
+        2.8000000000174623,
+        2.6999999999825377
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 18.599999999976717,
+      "warmP50Ms": 2.8000000000174623,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 324.3999999999942,
+      "seedMs": 46860.123,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 152624,
+      "rendererWorkingSetKiBInitial": 132924,
+      "nativeGoResources": {
+        "start": {
+          "rssBytes": 57004032,
+          "cpuMs": 11760
+        },
+        "end": {
+          "rssBytes": 57044992,
+          "cpuMs": 11780
+        },
+        "sampledPeakRSSBytes": 57044992,
+        "sampledRSSGrowthBytes": 36864,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      },
+      "sample": 2
+    },
+    {
+      "workload": "real-chromium-physical-100k-unique-mp4-cas-poster",
+      "logicalVideoItems": 100000,
+      "sampledRealVideoItems": 6,
+      "selectedOffsets": [
+        0,
+        50000,
+        99998
+      ],
+      "physicalMode": true,
+      "physicalVideoCount": 100000,
+      "physicalSourceBytes": 297000000,
+      "uniquePhysicalSHA256Count": 100000,
+      "actualMP4BytesPerSample": 2970,
+      "realH264FirstFrameDecoded": 6,
+      "coldMs": [
+        18.5,
+        11,
+        10.200000000011642,
+        22.70000000001164,
+        10,
+        23.20000000001164
+      ],
+      "warmMs": [
+        3.599999999976717,
+        2.800000000046566,
+        3,
+        2.8999999999650754,
+        2.900000000023283,
+        2.8999999999650754
+      ],
+      "jpegSizes": [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      "coldP50Ms": 18.5,
+      "warmP50Ms": 2.900000000023283,
+      "coldMisses": 6,
+      "posterPuts": 6,
+      "warmHits": 6,
+      "originalsCold": 6,
+      "originalsWarm": 0,
+      "warmPosterOpens": 6,
+      "stages": [
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode",
+        "poster_lookup",
+        "video_read",
+        "poster_capture",
+        "decode"
+      ],
+      "browserWorkMs": 318.1000000000349,
+      "seedMs": 54606.099,
+      "boundary": "Real Gin/PostgreSQL/Local CAS signed preview -> Chromium H264 decoder -> JPEG canvas -> revisioned PUT -> warm GET; no mounted FileExplorer, Agent IPC, 4K/HEVC, WAN or fast-scroll abort",
+      "rendererWorkingSetKiBSnapshot": 154764,
+      "rendererWorkingSetKiBInitial": 134904,
+      "nativeGoResources": {
+        "start": {
+          "rssBytes": 60727296,
+          "cpuMs": 12200
+        },
+        "end": {
+          "rssBytes": 60747776,
+          "cpuMs": 12220
+        },
+        "sampledPeakRSSBytes": 60747776,
+        "sampledRSSGrowthBytes": 16384,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      },
+      "sample": 3
+    }
+  ],
+  "original_scoped_summary": {
+    "status": "benchmarking-current-100k-distinct-physical-mp4-cas",
+    "sampleCount": 3,
+    "physicalMode": true,
+    "physicalCASObjects": [
+      100000,
+      100000,
+      100000
+    ],
+    "physicalCASBytes": [
+      297000000,
+      297000000,
+      297000000
+    ],
+    "nativeGoResources": [
+      {
+        "start": {
+          "rssBytes": 60772352,
+          "cpuMs": 11830
+        },
+        "end": {
+          "rssBytes": 60825600,
+          "cpuMs": 11850
+        },
+        "sampledPeakRSSBytes": 60825600,
+        "sampledRSSGrowthBytes": 28672,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      },
+      {
+        "start": {
+          "rssBytes": 57004032,
+          "cpuMs": 11760
+        },
+        "end": {
+          "rssBytes": 57044992,
+          "cpuMs": 11780
+        },
+        "sampledPeakRSSBytes": 57044992,
+        "sampledRSSGrowthBytes": 36864,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      },
+      {
+        "start": {
+          "rssBytes": 60727296,
+          "cpuMs": 12200
+        },
+        "end": {
+          "rssBytes": 60747776,
+          "cpuMs": 12220
+        },
+        "sampledPeakRSSBytes": 60747776,
+        "sampledRSSGrowthBytes": 16384,
+        "cpuMsDelta": 20,
+        "sampling": "Go binary actual PID, Linux VmRSS sampled 25ms after 100k fixture seed"
+      }
+    ],
+    "coldP50MsAcrossRuns": 18.5,
+    "warmP50MsAcrossRuns": 2.8000000000174623,
+    "originalsWarm": [
+      0,
+      0,
+      0
+    ],
+    "jpegOutputBytes": [
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ],
+      [
+        2338,
+        2338,
+        2338,
+        2338,
+        2338,
+        2338
+      ]
+    ],
+    "seedMsExcluded": [
+      53616.193,
+      46860.123,
+      54606.099
+    ],
+    "workingSetKiBSnapshots": [
+      154828,
+      152624,
+      154764
+    ],
+    "accepted": true,
+    "scope": "100k distinct physical MP4 containers with the SAME 96x64 H264 essence; six Chromium decoded poster samples in first/middle/end, Gin/PostgreSQL/CAS, no mounted virtual FileExplorer UI or 100k distinct H264 frames"
+  }
+}
