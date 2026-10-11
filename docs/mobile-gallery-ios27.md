@@ -415,3 +415,20 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 只在现有 `FileViewerActions` 增加可选下载动作覆盖，实际 Web/Mobile Gallery 路由在已加载当前 `MediaItem` 时传入 `gallerySource.downloadItems([mediaItem])` 并将 Promise 错误上报原 `onError`；保持一个 Viewer、同一 Web REST、Server 下载票据/Range 与 Task Center，不新增媒体下载端点、缓存或 Worker。非图库的 Files Quick Look 仍调用原 `api.download(node)`。数据源未提供下载时保留现有单文件 API 回退，不凭前端实现声称 Server 权限通过。照片 Node/revision 不被替换为文件名猜测。
 
 真实 React mounted 验收覆盖 390px/900px 相同媒体 Node+revision 的共享动作、禁止绕开媒体 Source、拒绝后保留 Viewer 并允许明确重试、Files Quick Look 仍走通用文件 API；已有 `fix/mobile-gallery-ios27-web-viewer-` 原生 Chrome 55 项回归不修改，继续要求 fine/coarse、390/899/900 及 ≤2px 返回位置、零未知 HTTP/Console/PageError。**本阶段不会宣称**浏览器端到端下载实际字节、iOS 27 Safari/PWA 1:1 截图或 100k RAW/HEVC/LIVP 性能已通过，这些还需要独立真实 Server/设备证据。保留全屏 App Frame、52px App Header 和 Web/Desktop 共享后端及虚拟化组件。
+
+
+
+## P1-2h · 真正路由 Web/Mobile Web Viewer 复用已有创作任务（2026-10-11）
+
+**状态：候选实现，完整 GitHub CI、合并、实体 iOS 27 和真实 Server 任务终态分别记账。** P1-2g 的共享下载已由 PR #1408 通过精确 HEAD 全量 CI 并线性合入 `master@2612ed193631`；原远端分支已清理。当前实际 Web/Mobile Web 的独立 `media-viewer` 尚缺内嵌 `XDriveMediaGalleryViewer` 的 AI 抠图/智能消除创作能力。P1-2h 仅补**同一共享图库创作 Dialog 与 API**，不增设移动端业务 Controller、媒体索引、后端接口或第二套 Viewer。
+
+- **唯一功能合同：** 路由 Viewer 和 Desktop/内嵌图库共用 `XDriveMediaGalleryCreativeDialog`、`xDriveMediaItemSupportsCreative` 与 `MediaGalleryDataSource.createCreativeGeneration/getCreativeGeneration/cancelCreativeGeneration`；保存生成的新媒体文件仍使用 Server 原有后台创作任务（`POST /api/v1/media/items/:id/creative`、`GET /api/v1/media/creative/:id`、`POST .../cancel`）。不改变源图、Edit Recipe、Live Photo 配对、下载/上传、后端执行者或 Task Center 的持久任务。
+- **真实能力门禁：** 仅 DataSource 同时具备 `createCreativeGeneration`、`getCreativeGeneration`、`loadPreviewURL` 且共享图片合法性判定为真时显示「创作图片」。Live Photo、RAW/未就绪/视频、回收站及缺能力来源不得展示空操作按钮。Mobile Web 和宽 Web 均在同一个实际 `media-viewer` 上使用此按钮与原共享 MUI 弹窗，390px/900px 业务路径一致。
+- **任务生命周期：** 创作对话框已负责输入标记、同步创建失败、轮询、取消、结果图预览与重新创作；路由只持有当前 Node ID+revision+Gallery browse context。切换 Filmstrip、返回或关闭不得自动取消 Server 上的持久任务，旧图迟到完成不能自动刷新/关闭新图。仅当前来源和 Node 版本的 *completed+output_node_id* 回执调用既有 `Gallery uploadRevision` 刷新已挂载的同一个稀疏图库列表；不直接插入伪造 Node、全量遍历 100k 或改变 Viewer 的文件 identity。
+- **可验证范围：** React 真挂载测试覆盖 390/900 共享 API 的创建/查询/取消、成功刷新一次与错误结果拒绝，Live/视频/RAW/未就绪/无能力/Trash 门禁、旧异步完成与返回。真实构建 Web + 原生 Chromium 应在 fine/coarse 指针、390/899/900 下新增 Server fixture 403→明确重试→queued/running/completed、输出预览及单独创作取消；保留 P1-2g 55/55 编辑、Filmstrip、删除权限/任务回执、返回偏差 ≤2px、未知 HTTP/Console/PageError=0。请分别记录 fixture 原生 Chromium、真实 Go/PostgreSQL/CAS 和实体 iOS27 Safari/PWA/VoiceOver；模拟任务绝不算真实 Worker 已生成有效 bytes。
+- **架构边界：** xDrive 既有全屏 App Frame、独立 52px 全局 App Header、Web/Desktop 共享 Server / Agent IPC、唯一 Web REST `MediaGalleryDataSource`、`VirtualCollection/VirtualGrid/VirtualTimeline` 和 128-item sparse Range/≤11项 Filmstrip 全部保留。iOS 27「照片」仍是版本锁定的 1:1 视觉与交互验收目标，未取得对照同帧实机截图前不得写成已完成。
+
+
+**P1-2h 首轮真实 Chrome First-red 及共享 Creative Dialog 预览生命周期修复（2026-10-11）：** [CI #38139437432 Web Job #114470069502](https://github.com/lazyxu/xdrive/actions/runs/38139437432/job/114470069502) 的真实构建 Chromium fine-pointer 流程在第 24 项新增创作验收阻塞：已有 `POST /media/items/1011/creative` 403→200 queued 两次真实请求、`GET /media/creative/qa-gallery-creative-1` 两次；UI 正确显示「已生成」且已发出结果文件 `POST /files/2601/preview-ticket`，但 10 秒后仍是原图 `photo-012.png`，未出现 `img[alt="创作结果"]`。未知 HTTP=0、ConsoleError=0、PageError=0，浏览器证据 [artifact 11701164726](https://github.com/lazyxu/xdrive/actions/runs/38139437432/artifacts/11701164726) 记录了失败现场。不是可忽略的“超时测试”：共享 `MediaGalleryCreativeDialog` 原先在同一个 `useEffect` 中先 `onCompleted(generation)`（使原 Gallery 刷新，导致回调身份变化），随后开始异步 `loadPreviewURL`，新回调触发 Effect cleanup 后设置 `disposed=true`，而 `completedRef` 又阻止了预览重试。
+
+**本轮限界修复：** 创作完成通知与结果下载拆为两个独立的 `useEffect`。通知通过最新回调 Ref 加原来的 `completedRef` 去重，只按 job ID/output/state/open 调度；结果下载仅由真正的 output、loader、state 或打开状态变化控制生命周期，不能被回调身份变化无故取消。实际关闭、切换资源或卸载仍及时废弃旧预览，并且不会取消 Server 已持久化的创作任务。新增共享 `media-gallery-creative-race.cjs` 回归验证完成通知恰好一次、Owner 回调刷新时原生成图仍解码显示、实际关闭/切换时旧结果不穿越；原有 Chrome “必须看见创作结果”严格断言、403/重试/取消和原 55 项 Viewer 回归均不放宽。**首轮旧 HEAD 的其它绿色作业不能作为新版验收**；修复必须重建在同一固定父提交上的单工作提交并重新通过全套精确 HEAD CI + `final-gate`，iOS 27 真机/真实 Worker 字节仍未验收。
