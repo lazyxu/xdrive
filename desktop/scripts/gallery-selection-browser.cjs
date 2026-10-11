@@ -50,7 +50,7 @@ async function main() {
   fs.mkdirSync(out, { recursive: true })
   fs.copyFileSync(__filename, path.join(out, path.basename(__filename)))
   fs.copyFileSync(fixture, path.join(out, path.basename(fixture)))
-  await build({ entryPoints: [fixture], bundle: true, outfile: path.join(out, 'bundle.js'), jsx: 'automatic', nodePaths: [path.join(dependencyRoot, 'desktop/node_modules')],
+  await build({ entryPoints: [fixture], bundle: true, outfile: path.join(out, 'bundle.js'), jsx: 'automatic', nodePaths: [path.join(dependencyRoot, 'desktop/node_modules'), path.join(dependencyRoot, 'web/node_modules')],
     alias: { '@probe/toolbar': path.join(source, 'ui/shared/src/mui/MediaGallerySelectionToolbar.tsx'), '@probe/theme': path.join(source, 'ui/shared/src/mui/AppearanceThemeProvider.tsx') },
     define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'silent' })
   result.bundleHash = hash(path.join(out, 'bundle.js'))
@@ -67,14 +67,34 @@ async function main() {
     page.on('pageerror', error => result.errors.push({ kind: 'page', message: error.message }))
     page.on('console', message => { if (message.type() === 'error') result.errors.push({ kind: 'console', message: message.text() }) })
     await page.goto(`http://127.0.0.1:${server.address().port}/`)
-    const trigger = page.getByRole('button', { name: '加入相册', exact: true })
+    const trigger = page.getByRole('button', { name: '更多已选项目操作', exact: true })
+    const albumAction = page.getByRole('menuitem', { name: '加入相册', exact: true })
+    const openPicker = async () => {
+      await trigger.tap(); await settle(page)
+      await albumAction.tap(); await settle(page)
+    }
     await trigger.waitFor(); await settle(page)
     const exit = await geometry(page.getByRole('button', { name: '退出选择', exact: true }))
     const triggerBox = await geometry(trigger)
     result.samples.compactToolbar = { exit, trigger: triggerBox, status: await page.getByRole('status').textContent() }
-    check('compact toolbar: Exit and album trigger have visible44px targets', target44(exit) && target44(triggerBox))
+    check('compact toolbar: Exit and More have visible44px targets', target44(exit) && target44(triggerBox))
+    for (const width of [360, 375, 390, 899]) {
+      await page.setViewportSize({ width, height: 844 }); await settle(page)
+      const bounds = await page.locator('[data-xdrive-gallery-selection-toolbar]').evaluate(element => ({
+        scroll: element.scrollWidth, client: element.clientWidth,
+        document: document.documentElement.scrollWidth, viewport: innerWidth,
+      }))
+      result.samples['selection-' + width] = bounds
+      check(`compact ${width}: selection action surface has no horizontal overflow`,
+        bounds.scroll <= bounds.client + 1 && bounds.document <= bounds.viewport + 1)
+      check(`compact ${width}: More remains 44px, visible and tappable`, target44(await geometry(trigger)))
+    }
+    await page.setViewportSize({ width: 390, height: 844 }); await settle(page)
     check('compact toolbar: selection count is announced', (await page.getByRole('status').textContent()).replace(/\s/g, ''), '已选择2项')
     await trigger.tap(); await settle(page)
+    check('compact More: authorized album action is visible and has a 44px hit target',
+      await albumAction.isVisible() && target44(await geometry(albumAction)))
+    await albumAction.tap(); await settle(page)
     const dialog = page.getByRole('dialog', { name: '选择手动相册', exact: true })
     const family = dialog.getByRole('button', { name: /^家庭相册/ })
     check('album picker: actual named MUI dialog opens', await dialog.isVisible())
@@ -84,9 +104,9 @@ async function main() {
     check('album picker: choosing a row does not submit', await page.evaluate(() => window.selectionPickerProbe.calls), [])
     await dialog.getByRole('button', { name: '添加到相册', exact: true }).tap(); await settle(page)
     check('album picker: confirm calls the existing action once with selected album revision', await page.evaluate(() => window.selectionPickerProbe.calls), [{ kind: 'add-to-album', value: { id: 'manual-1', revision: 7 } }])
-    check('album picker: confirm returns focus to the same visible trigger', await trigger.evaluate(element => element === document.activeElement))
+    check('album picker: confirm restores focus to accessible More trigger', await trigger.evaluate(element => element === document.activeElement))
     for (const font of [16, 32]) {
-      await trigger.tap(); await settle(page)
+      await openPicker()
       await page.setViewportSize({ width: 844, height: 200 })
       await page.evaluate(value => { document.documentElement.style.fontSize = `${value}px` }, font); await settle(page)
       const list = dialog.locator('[data-xdrive-gallery-album-picker]')
@@ -113,13 +133,19 @@ async function main() {
       keyboardPage.on('pageerror', error => result.errors.push({ kind: 'keyboard-page', message: error.message }))
       keyboardPage.on('console', message => { if (message.type() === 'error') result.errors.push({ kind: 'keyboard-console', message: message.text() }) })
       await keyboardPage.goto(`http://127.0.0.1:${server.address().port}/`)
-      const keyboardTrigger = keyboardPage.getByRole('button', { name: '加入相册', exact: true })
+      const keyboardTrigger = keyboardPage.getByRole('button', { name: '更多已选项目操作', exact: true })
+      const keyboardAlbumAction = keyboardPage.getByRole('menuitem', { name: '加入相册', exact: true })
+      const keyboardOpenPicker = async (triggerKey = 'Enter') => {
+        await keyboardTrigger.focus(); await keyboardPage.keyboard.press(triggerKey); await settle(keyboardPage)
+        await keyboardAlbumAction.waitFor()
+        await keyboardAlbumAction.focus(); await keyboardPage.keyboard.press('Enter'); await settle(keyboardPage)
+      }
       const keyboardDialog = keyboardPage.getByRole('dialog', { name: '选择手动相册', exact: true })
       const search = keyboardDialog.getByRole('textbox', { name: '搜索相册', exact: true })
       const keyboardFamily = keyboardDialog.getByRole('button', { name: /^家庭相册/ })
       const confirm = keyboardDialog.getByRole('button', { name: '添加到相册', exact: true })
-      await keyboardTrigger.focus(); await keyboardPage.keyboard.press('Enter'); await settle(keyboardPage)
-      check('keyboard: Enter opens the actual compact album dialog', await keyboardDialog.isVisible())
+      await keyboardOpenPicker('Enter')
+      check('keyboard: Enter through More opens the actual compact album dialog', await keyboardDialog.isVisible())
       await search.fill('家庭'); await keyboardPage.keyboard.press('Enter')
       check('keyboard: search filters choices without submitting', {
         choices: await keyboardDialog.locator('[data-xdrive-gallery-album-picker]').getByRole('button').count(),
@@ -144,14 +170,14 @@ async function main() {
         { kind: 'add-to-album', value: { id: 'manual-1', revision: 7 } },
       ])
       check('keyboard: retry success returns focus to the visible trigger', await keyboardTrigger.evaluate(element => element === document.activeElement) && target44(await geometry(keyboardTrigger)))
-      await keyboardPage.keyboard.press('Space'); await settle(keyboardPage)
-      check('keyboard: Space also opens the album dialog', await keyboardDialog.isVisible())
+      await keyboardOpenPicker('Space')
+      check('keyboard: Space through More also opens the album dialog', await keyboardDialog.isVisible())
       await search.fill('保留前不提交'); await keyboardPage.keyboard.press('Escape'); await settle(keyboardPage)
       check('keyboard: Escape dismisses without submission and restores trigger focus', {
         open: await keyboardDialog.count(), calls: await keyboardPage.evaluate(() => window.selectionPickerProbe.calls.length),
         focus: await keyboardTrigger.evaluate(element => element === document.activeElement),
       }, { open: 0, calls: 2, focus: true })
-      await keyboardPage.keyboard.press('Enter'); await settle(keyboardPage)
+      await keyboardOpenPicker('Enter')
       await search.fill('家庭'); await keyboardFamily.click()
       await keyboardPage.evaluate(() => window.selectionPickerProbe.replaceSelection([201, 202]))
       await keyboardDialog.getByRole('alert').waitFor()
@@ -162,7 +188,7 @@ async function main() {
         calls: await keyboardPage.evaluate(() => window.selectionPickerProbe.calls.length),
       }, { count: '已选择2项', disabled: true, warning: true, calls: 2 })
       await keyboardPage.keyboard.press('Escape'); await settle(keyboardPage)
-      await keyboardTrigger.focus(); await keyboardPage.keyboard.press('Enter'); await settle(keyboardPage)
+      await keyboardOpenPicker('Enter')
       const searchHandle = await search.elementHandle()
       await search.focus(); await search.fill('手动相册 24')
       await keyboardPage.setViewportSize({ width: 844, height: 200 })
@@ -185,7 +211,7 @@ async function main() {
       await keyboardPage.keyboard.press('Enter'); await settle(keyboardPage)
       check('short keyboard: explicit confirmation keeps the observed album revision', await keyboardPage.evaluate(() => window.selectionPickerProbe.calls.at(-1)), { kind: 'add-to-album', value: { id: 'manual-24', revision: 30 } })
       await keyboardPage.setViewportSize({ width: 390, height: 844 }); await keyboardPage.evaluate(() => { document.documentElement.style.fontSize = '16px' }); await settle(keyboardPage)
-      await keyboardTrigger.click(); await settle(keyboardPage)
+      await keyboardOpenPicker('Enter')
       await keyboardFamily.click()
       await keyboardPage.setViewportSize({ width: 844, height: 200 }); await keyboardPage.evaluate(() => { document.documentElement.style.fontSize = '32px' }); await settle(keyboardPage)
       const content = keyboardDialog.locator('[data-xdrive-gallery-album-picker-content]')
@@ -211,7 +237,7 @@ async function main() {
       await widePage.goto(`http://127.0.0.1:${server.address().port}/`)
       const wideSelect = widePage.getByRole('combobox', { name: '添加到相册', exact: true })
       await wideSelect.waitFor(); await settle(widePage)
-      check('wide900: the existing select remains available without a compact Drawer', { select: await wideSelect.isVisible(), compact: await widePage.getByRole('button', { name: '加入相册', exact: true }).count() }, { select: true, compact: 0 })
+      check('wide900: the existing select remains available without a compact More', { select: await wideSelect.isVisible(), compact: await widePage.getByRole('button', { name: '更多已选项目操作', exact: true }).count() }, { select: true, compact: 0 })
       await wideSelect.focus(); await widePage.keyboard.press('ArrowDown')
       await widePage.getByRole('option', { name: '家庭相册', exact: true }).click(); await settle(widePage)
       check('wide900: the existing selection action still submits its album revision', await widePage.evaluate(() => window.selectionPickerProbe.calls), [{ kind: 'add-to-album', value: { id: 'manual-1', revision: 7 } }])

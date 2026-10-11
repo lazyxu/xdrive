@@ -2893,6 +2893,7 @@ jobs:
         if: >-
           github.event_name == 'pull_request' &&
           (startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-') ||
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
         shell: bash
@@ -2913,6 +2914,34 @@ jobs:
           else
             echo "No native Chrome available on runner"; exit 1
           fi
+      - name: Native Chrome compact Gallery selection More and album keyboard/viewport contract
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-')
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-gallery-selection-more"
+          echo "$XD_PR_HEAD" > "$RUNNER_TEMP/xdrive-gallery-selection-more/pr-head.sha"
+          git rev-parse HEAD > "$RUNNER_TEMP/xdrive-gallery-selection-more/tested-checkout.sha"
+          if [ "$(git rev-parse HEAD)" != "$XD_PR_HEAD" ]; then
+            git cat-file -p HEAD | grep -Fx "parent $XD_PR_HEAD" >/dev/null || {
+              echo "Exact submitted PR head is not in tested checkout"; exit 1;
+            }
+          fi
+          NODE_PATH="$GITHUB_WORKSPACE/web/node_modules" \
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+          node ../desktop/scripts/gallery-selection-browser.cjs --case=all \
+            --output-dir="$RUNNER_TEMP/xdrive-gallery-selection-more"
+          cat "$RUNNER_TEMP/xdrive-gallery-selection-more/results.json"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-')
+        with:
+          name: gallery-ios27-selection-more-chromium
+          path: ${{ runner.temp }}/xdrive-gallery-selection-more/
+          if-no-files-found: warn
+          retention-days: 7
       - name: Real Web Gallery iOS 27 360-900px browser geometry and actions
         if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
         shell: bash
