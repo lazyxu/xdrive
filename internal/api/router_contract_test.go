@@ -218,6 +218,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "GET", path: "/api/v1/sources/:id/local-rules", suite: "local-source-devices"},
 		{method: "GET", path: "/api/v1/sources/:id/local-schedule", suite: "local-source-devices"},
+		{method: "POST", path: "/api/v1/sources/:id/local-identity/lookup", suite: "local-source-devices"},
 		{method: "PATCH", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id/local-draft", suite: "local-source-devices"},

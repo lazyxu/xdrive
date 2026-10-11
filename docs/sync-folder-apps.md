@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 owning Desktop local-only snapshot merged #1400; P0-C4c3 read-only delta in PR |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule merged #1378 (76-job exact-head CI green); P0-C4c1 owning Desktop read-only metadata preview merged #1391 (76-job exact-head CI green); P0-C4c2 owning Desktop local-only snapshot merged #1400; P0-C4c3 owning Desktop two-generation delta merged #1411 (76-job exact-head CI green) |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; L03-D2b1 unique-native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a advisory generation fence merged #1397; no durable SourceItem aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -407,7 +407,7 @@ Only file count, directory count, scanned/ignored bytes, ignored-item count, ski
 Dialog unmount, account/server change or explicit close calls Electron Main's preview AbortController keyed to the invoking webContents and a fresh request ID; the AgentIPCClient propagates its AbortSignal to HTTP and Go's `Request.Context()` aborts scanning. The Agent has a 35-second hard scan deadline and the Desktop HTTP client 40 seconds. This is request-scoped work, not a durable Task Center job. No `local_folder` activation, upload, CAS commit, Mirror missing/deletion evidence, saved-schedule execution, watcher or NAS integration is enabled; `MissingInferenceSafe=false` remains mandatory. Actual Windows/Linux 1k/10k/100k and >=4GiB physical acceptance remains open.
 
 
-## L03-D2b2a advisory local generation fence (PR verification)
+## L03-D2b2a advisory local generation fence (merged #1397)
 
 The owning Agent can persist a compact private **advisory** SHA-256-sealed generation manifest for exactly two complete, verified Root inventories and a caller-supplied Source revision. It reuses the existing bounded local delta reader, stores no 100k item array or raw paths, uses private file permissions, atomic publication and an exclusive fail-closed writer lock, and re-verifies Root/generation/revision on read. Interrupted publishing cannot mark partial observations as accepted; stale/corrupt/replaced Root evidence rejects.
 
@@ -436,7 +436,7 @@ it never permits a remote write. Deliberately no Server upload, SourceItem
 alias reconciliation, Mirror missing evidence, NAS manager, scheduled scan or
 remote-device operation is added. CI and physical acceptance remain pending.
 
-## P0-C4c3 owning Desktop local two-generation delta (PR verification, not merged)
+## P0-C4c3 owning Desktop local two-generation delta (merged #1411; 76-job exact-head CI green)
 
 The verified owning Windows/Linux Desktop can explicitly compare its two
 previously saved and independently verified complete CURRENT/PREVIOUS local
@@ -461,3 +461,34 @@ An absent candidate is **not** cloud deletion evidence, stable metadata is
 SourceItem/alias mapping. It never triggers upload, CAS/Node writes, SourceRun,
 saved schedules, watchers, NAS controls or Mirror deletion. Physical 100k/4GiB
 acceptance and GitLab validation are not claimed for this PR.
+
+
+## L03-D2b2b1 · Owning-Agent-only bounded SourceItem identity lookup (PR verification)
+
+The Server exposes `POST /api/v1/sources/:id/local-identity/lookup` to the
+**authenticated, registered, unrevoked bound owning Agent**, not to Web,
+Mobile Web, foreign Desktop or generic Source clients. It requires the JWT,
+OS-held device credential, exact Root ID/fingerprint and `If-Match` Source
+revision. The device → Source → binding proof is verified under a DB
+transaction, with the Source paused and limited to `local_folder` Push.
+
+The request contains only 1–128 already normalized opaque external identity
+keys and is capped at 80 KiB. The response contains only the Source ID,
+revision, request count and indexed **existing SourceItem IDs**; it never
+echoes identities, file paths, native filesystem keys, Node paths, secrets or
+raw failure records. Canonical IDs and same-Source `external_id` aliases are
+resolved, while conflicting canonical/alias claims, stale revisions, revoked
+credentials, wrong Root and cross-owner lookups fail closed. It does not
+invent an identity for an unknown key. Results are point-in-time only and
+are expressly `authoritative=false` for any mutation and
+`missing_inference_safe=false`. Future reconciliation MUST verify every
+identity again inside the write transaction before assigning or promoting
+any alias.
+
+This stage does not persist candidate-to-SourceItem links, source aliases,
+run checkpoints or content observations; it does not activate local Push,
+perform CAS uploads, move/delete cloud Nodes, infer Mirror deletion, register
+an Agent IPC method, or expose a Renderer control. The existing Push denial
+remains. Tests cover bounded validation, owner/device/Root/revoke/revision
+fencing, alias collisions, and no Source/Run/alias writes. Actual real-device
+100k and ≥4GiB E2E, auto schedules and GitLab validation are not claimed.
