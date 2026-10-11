@@ -8,7 +8,7 @@ export XD_CONFIG_DIR="$temp"
 export XDRIVE_MEDIA_FAKE_STATE="$temp/media-running"
 export XDRIVE_MEDIA_FAKE_CALLS="$temp/docker-calls"
 mkdir -p "$temp/config" "$temp/bin" "$temp/logs" "$temp/fakebin"
-printf 'COMPOSE_PROFILES=photo-intelligence\nXD_MEDIA_WORKER_MEMORY_LIMIT=768m\nXD_MEDIA_WORKER_CPU_LIMIT=0.75\nXD_TEST_UNRELATED=keep\n' > "$temp/config/.env"
+printf 'COMPOSE_PROFILES=photo-intelligence\nXD_MEDIA_WORKER_MEMORY_LIMIT=768m\nXD_MEDIA_WORKER_CPU_LIMIT=0.75\nXD_MEDIA_WORKER_PIDS_LIMIT=128\nXD_TEST_UNRELATED=keep\n' > "$temp/config/.env"
 printf 'services:\n  media-worker:\n    image: fixture\n' > "$temp/config/docker-compose.yml"
 cat > "$temp/fakebin/docker" <<'FAKE'
 #!/usr/bin/env bash
@@ -34,6 +34,15 @@ case "$*" in
       awk -v cpu="$cpu" 'BEGIN { printf "%.0f\n", cpu * 1000000000 }'
     fi
     ;;
+  *"inspect --format {{.HostConfig.PidsLimit}} xdrive-media-worker")
+    [[ -f "$XDRIVE_MEDIA_FAKE_STATE" ]] || exit 1
+    if [[ -n "${XDRIVE_MEDIA_FAKE_PIDS_DRIFT:-}" ]]; then
+      printf '%s\n' "$XDRIVE_MEDIA_FAKE_PIDS_DRIFT"
+    else
+      sed -nE 's/^XD_MEDIA_WORKER_PIDS_LIMIT=([0-9]+)$/\1/p' \
+        "$XD_CONFIG_DIR/config/.env" | tail -n 1
+    fi
+    ;;
   *"up -d --no-deps --force-recreate media-worker") touch "$XDRIVE_MEDIA_FAKE_STATE" ;;
   *"exec -T media-worker xdrive-server media-worker check")
     [[ -f "$XDRIVE_MEDIA_FAKE_STATE" ]] ;;
@@ -54,9 +63,9 @@ test "$(json_bool_value "$status_file" observed_enabled)" = false
 
 request_id=0123456789abcdef01234567
 make_request() {
-  local revision="$1" enabled="$2" memory="$3" cpu="${4:-750}"
-  printf '{"request_id":"%s","revision":%s,"enabled":%s,"memory_mib":%s,"cpu_milli":%s,"created_at":"%s"}\n' \
-    "$request_id" "$revision" "$enabled" "$memory" "$cpu" "$(now_utc)" > "$dir/media-worker-control-request.json"
+  local revision="$1" enabled="$2" memory="$3" cpu="${4:-750}" pids="${5:-128}"
+  printf '{"request_id":"%s","revision":%s,"enabled":%s,"memory_mib":%s,"cpu_milli":%s,"pids_limit":%s,"created_at":"%s"}\n' \
+    "$request_id" "$revision" "$enabled" "$memory" "$cpu" "$pids" "$(now_utc)" > "$dir/media-worker-control-request.json"
 }
 
 # Start with the default cgroup memory allocation (768 MiB).
@@ -68,6 +77,9 @@ test "$(media_worker_control_uint "$status_file" observed_memory_mib)" = 768
 test "$(json_bool_value "$status_file" cpu_control_supported)" = true
 test "$(media_worker_control_uint "$status_file" observed_cpu_milli)" = 750
 test "$(json_bool_value "$status_file" cpu_verified)" = true
+test "$(json_bool_value "$status_file" pids_control_supported)" = true
+test "$(media_worker_control_uint "$status_file" observed_pids_limit)" = 128
+test "$(json_bool_value "$status_file" pids_verified)" = true
 test "$(json_bool_value "$status_file" memory_verified)" = true
 test "$(json_bool_value "$status_file" observed_enabled)" = true
 grep -Fxq 'COMPOSE_PROFILES=photo-intelligence,media-worker' "$temp/config/.env"
@@ -105,6 +117,19 @@ media_worker_control_process
 test "$(json_value "$status_file" state)" = failed
 test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
 
+# Missing/invalid PID limits must fail before updating any Worker resources.
+previous_up="$(grep -c 'up -d --no-deps --force-recreate media-worker' "$XDRIVE_MEDIA_FAKE_CALLS")"
+make_request 3 true 1024 750 130
+media_worker_control_process
+test "$(json_value "$status_file" state)" = failed
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
+printf '{"request_id":"%s","revision":3,"enabled":true,"memory_mib":1024,"cpu_milli":750,"created_at":"%s"}\n' \
+  "$request_id" "$(now_utc)" > "$dir/media-worker-control-request.json"
+media_worker_control_process
+test "$(json_value "$status_file" state)" = failed
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 2
+test "$(grep -c 'up -d --no-deps --force-recreate media-worker' "$XDRIVE_MEDIA_FAKE_CALLS")" = "$previous_up"
+
 # CPU-only change must recreate media-worker and inspect NanoCpus.
 make_request 3 true 1024 1250
 media_worker_control_process
@@ -124,16 +149,35 @@ make_request 3 true 1024 1250
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 
+# PIDs-only change with bounded quota; inspect actual HostConfig.PidsLimit.
+make_request 4 true 1024 1250 256
+media_worker_control_process
+test "$(json_value "$status_file" state)" = success
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 4
+test "$(media_worker_control_uint "$status_file" observed_pids_limit)" = 256
+test "$(json_bool_value "$status_file" pids_verified)" = true
+grep -Fxq 'XD_MEDIA_WORKER_PIDS_LIMIT=256' "$temp/config/.env"
+
+# PID cgroup drift makes previous success failed.
+export XDRIVE_MEDIA_FAKE_PIDS_DRIFT=192
+media_worker_control_refresh
+test "$(json_value "$status_file" state)" = failed
+test "$(media_worker_control_uint "$status_file" observed_pids_limit)" = 192
+unset XDRIVE_MEDIA_FAKE_PIDS_DRIFT
+make_request 4 true 1024 1250 256
+media_worker_control_process
+test "$(json_value "$status_file" state)" = success
+
 # An old revision cannot alter the live policy or disable the Worker.
-make_request 1 false 768 750
+make_request 1 false 768 750 128
 media_worker_control_process
 test "$(json_value "$status_file" state)" = failed
-test "$(media_worker_control_uint "$status_file" applied_revision)" = 3
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 4
 test "$(json_bool_value "$status_file" observed_enabled)" = true
 grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
 
 # Disabling keeps the resource setting for the next controlled startup.
-make_request 4 false 1024 1250
+make_request 5 false 1024 1250 256
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 test "$(json_bool_value "$status_file" observed_enabled)" = false
@@ -141,6 +185,8 @@ test "$(media_worker_control_uint "$status_file" observed_memory_mib)" = 1024
 test "$(json_bool_value "$status_file" memory_verified)" = true
 test "$(media_worker_control_uint "$status_file" observed_cpu_milli)" = 1250
 test "$(json_bool_value "$status_file" cpu_verified)" = true
+test "$(media_worker_control_uint "$status_file" observed_pids_limit)" = 256
+test "$(json_bool_value "$status_file" pids_verified)" = true
 grep -Fxq 'COMPOSE_PROFILES=photo-intelligence' "$temp/config/.env"
 grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
 
@@ -149,14 +195,14 @@ grep -Fxq 'XD_MEDIA_WORKER_MEMORY_LIMIT=1024m' "$temp/config/.env"
 touch "$XDRIVE_MEDIA_FAKE_STATE"
 media_worker_control_refresh
 test "$(json_value "$status_file" state)" = failed
-make_request 4 false 1024 1250
+make_request 5 false 1024 1250 256
 media_worker_control_process
 test "$(json_value "$status_file" state)" = success
 test "$(json_bool_value "$status_file" observed_enabled)" = false
-test "$(media_worker_control_uint "$status_file" applied_revision)" = 4
+test "$(media_worker_control_uint "$status_file" applied_revision)" = 5
 ! grep -Eq '(^| )(down|restart|kill|rm)( |$)' "$XDRIVE_MEDIA_FAKE_CALLS"
 ! grep -E '(up -d|stop) .* (server|postgres|caddy|photo-face|worker)$' "$XDRIVE_MEDIA_FAKE_CALLS"
 grep -Fxq 'XD_TEST_UNRELATED=keep' "$temp/config/.env"
 test ! -f "$dir/media-worker-control-request.json"
 test ! -f "$dir/media-worker-control-active.json"
-echo "Media Worker restricted start/stop/memory/CPU cgroup verification, profile preservation and revision fences: OK"
+echo "Media Worker restricted start/stop/memory/CPU/PID cgroup verification, profile preservation, drift and revision fences: OK"

@@ -313,26 +313,31 @@ type ServiceDependency struct {
 // Global desired Media Worker enablement and host-observed effect only.
 // No user Source settings, host paths, Docker socket or file job inputs.
 type AdminMediaWorkerHost struct {
-	Supported           bool   `json:"supported"`
-	State               string `json:"state"`
-	Revision            uint64 `json:"revision"`
-	AppliedRevision     uint64 `json:"applied_revision"`
-	Enabled             bool   `json:"enabled"`
-	ObservedEnabled     bool   `json:"observed_enabled"`
-	MemoryMiB           int    `json:"memory_mib"`
-	ObservedMemoryMiB   int    `json:"observed_memory_mib"`
-	MemoryVerified      bool   `json:"memory_verified"`
-	CPUMilli            int    `json:"cpu_milli"`
-	ObservedCPUMilli    int    `json:"observed_cpu_milli"`
-	CPUVerified         bool   `json:"cpu_verified"`
-	CPUControlSupported bool   `json:"cpu_control_supported"`
-	RequestID           string `json:"request_id,omitempty"`
-	UpdatedAt           string `json:"updated_at,omitempty"`
+	Supported            bool   `json:"supported"`
+	State                string `json:"state"`
+	Revision             uint64 `json:"revision"`
+	AppliedRevision      uint64 `json:"applied_revision"`
+	Enabled              bool   `json:"enabled"`
+	ObservedEnabled      bool   `json:"observed_enabled"`
+	MemoryMiB            int    `json:"memory_mib"`
+	ObservedMemoryMiB    int    `json:"observed_memory_mib"`
+	MemoryVerified       bool   `json:"memory_verified"`
+	CPUMilli             int    `json:"cpu_milli"`
+	ObservedCPUMilli     int    `json:"observed_cpu_milli"`
+	CPUVerified          bool   `json:"cpu_verified"`
+	CPUControlSupported  bool   `json:"cpu_control_supported"`
+	PIDsLimit            int    `json:"pids_limit"`
+	ObservedPIDsLimit    int    `json:"observed_pids_limit"`
+	PIDsVerified         bool   `json:"pids_verified"`
+	PIDsControlSupported bool   `json:"pids_control_supported"`
+	RequestID            string `json:"request_id,omitempty"`
+	UpdatedAt            string `json:"updated_at,omitempty"`
 }
 type AdminMediaWorkerConfig struct {
 	DesiredEnabled   bool                 `json:"desired_enabled"`
 	DesiredMemoryMiB int                  `json:"desired_memory_mib"`
 	DesiredCPUMilli  int                  `json:"desired_cpu_milli"`
+	DesiredPIDsLimit int                  `json:"desired_pids_limit"`
 	Revision         uint64               `json:"revision"`
 	Source           string               `json:"source"`
 	UpdatedAt        *time.Time           `json:"updated_at,omitempty"`
@@ -348,6 +353,7 @@ type AdminMediaWorkerUpdate struct {
 	Enabled   bool   `json:"enabled"`
 	MemoryMiB int    `json:"memory_mib"`
 	CPUMilli  int    `json:"cpu_milli"`
+	PIDsLimit int    `json:"pids_limit"`
 }
 type AdminMediaWorkerApplyInput struct {
 	Revision uint64 `json:"revision"`
@@ -358,6 +364,7 @@ type AdminMediaWorkerApplyResult struct {
 	Enabled   bool   `json:"enabled"`
 	MemoryMiB int    `json:"memory_mib"`
 	CPUMilli  int    `json:"cpu_milli"`
+	PIDsLimit int    `json:"pids_limit"`
 	RequestID string `json:"request_id"`
 }
 type AdminMediaWorkerRevision struct {
@@ -365,6 +372,7 @@ type AdminMediaWorkerRevision struct {
 	Enabled   bool      `json:"enabled"`
 	MemoryMiB int       `json:"memory_mib"`
 	CPUMilli  int       `json:"cpu_milli"`
+	PIDsLimit int       `json:"pids_limit"`
 	Origin    string    `json:"origin"`
 	CreatedAt time.Time `json:"created_at"`
 }

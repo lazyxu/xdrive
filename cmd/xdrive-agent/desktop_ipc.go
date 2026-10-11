@@ -1880,17 +1880,19 @@ func (h *desktopIPCHandler) cloudSetAdminMediaWorker(w http.ResponseWriter, r *h
 		Enabled   *bool   `json:"enabled"`
 		MemoryMiB *int    `json:"memory_mib"`
 		CPUMilli  *int    `json:"cpu_milli"`
+		PIDsLimit *int    `json:"pids_limit"`
 	}
 	if !decodeDesktopIPCJSON(w, r, &input) {
 		return
 	}
 	if input.Revision == nil || input.Enabled == nil || input.MemoryMiB == nil || input.CPUMilli == nil ||
 		*input.MemoryMiB < 256 || *input.MemoryMiB > 4096 || *input.MemoryMiB%128 != 0 ||
-		*input.CPUMilli < 250 || *input.CPUMilli > 4000 || *input.CPUMilli%250 != 0 {
-		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_config", "Complete Media Worker revision, enabled flag and bounded memory/CPU limits are required")
+		*input.CPUMilli < 250 || *input.CPUMilli > 4000 || *input.CPUMilli%250 != 0 ||
+		input.PIDsLimit == nil || *input.PIDsLimit < 64 || *input.PIDsLimit > 1024 || *input.PIDsLimit%32 != 0 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_worker_config", "Complete Media Worker revision, enabled flag and bounded memory/CPU/PID limits are required")
 		return
 	}
-	out, err := provider.CloudSetAdminMediaWorker(r.Context(), client.AdminMediaWorkerUpdate{Revision: *input.Revision, Enabled: *input.Enabled, MemoryMiB: *input.MemoryMiB, CPUMilli: *input.CPUMilli})
+	out, err := provider.CloudSetAdminMediaWorker(r.Context(), client.AdminMediaWorkerUpdate{Revision: *input.Revision, Enabled: *input.Enabled, MemoryMiB: *input.MemoryMiB, CPUMilli: *input.CPUMilli, PIDsLimit: *input.PIDsLimit})
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

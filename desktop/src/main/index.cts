@@ -4507,11 +4507,13 @@ function registerIPCHandlers() {
         typeof input.memory_mib !== 'number' || !Number.isSafeInteger(input.memory_mib) ||
         input.memory_mib < 256 || input.memory_mib > 4096 || input.memory_mib % 128 !== 0 ||
         typeof input.cpu_milli !== 'number' || !Number.isSafeInteger(input.cpu_milli) ||
-        input.cpu_milli < 250 || input.cpu_milli > 4000 || input.cpu_milli % 250 !== 0) {
-      throw new AgentIPCError('invalid_input', 0, 'Valid Media Worker revision, enabled and bounded CPU/memory limits required.')
+        input.cpu_milli < 250 || input.cpu_milli > 4000 || input.cpu_milli % 250 !== 0 ||
+        typeof input.pids_limit !== 'number' || !Number.isSafeInteger(input.pids_limit) ||
+        input.pids_limit < 64 || input.pids_limit > 1024 || input.pids_limit % 32 !== 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Valid Media Worker revision, enabled and bounded CPU/memory/PID limits required.')
     }
     return requireAgentClient().cloudSetAdminMediaWorker({
-      revision: input.revision, enabled: input.enabled, memory_mib: input.memory_mib, cpu_milli: input.cpu_milli,
+      revision: input.revision, enabled: input.enabled, memory_mib: input.memory_mib, cpu_milli: input.cpu_milli, pids_limit: input.pids_limit,
     })
   }, false))
   ipcMain.handle('agent:cloud-apply-admin-media-worker', (_event, value: unknown) => runAgentAction<AgentAdminMediaWorkerApplyResult>(async () => {
