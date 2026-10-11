@@ -793,6 +793,14 @@ declare global {
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudAdminMediaWorkerConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>
+        cloudSetAdminMediaWorker: (input: import('../../../ui/shared/src').XDriveMediaWorkerUpdate) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>
+        cloudApplyAdminMediaWorker: (input: { revision: number }) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerApplyResult>>
+        cloudAdminMediaWorkerRevisions: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerRevisionPage>>
+        cloudRollbackAdminMediaWorker: (input: import('../../../ui/shared/src').XDriveMediaWorkerRollbackInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>
         cloudAdminPostgresPoolConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDrivePostgresPoolConfig>>
         cloudSetAdminPostgresPool: (input: import('../../../ui/shared/src').XDrivePostgresPoolUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePostgresPoolConfig>>

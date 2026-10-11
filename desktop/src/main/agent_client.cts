@@ -569,6 +569,35 @@ export type AgentBackgroundTaskControlResult = {
   accepted: boolean
 }
 
+export type AgentAdminMediaWorkerHost = {
+  supported: boolean
+  state: 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'unavailable'
+  revision: number
+  applied_revision: number
+  enabled: boolean
+  observed_enabled: boolean
+  request_id?: string
+  updated_at?: string
+}
+export type AgentAdminMediaWorkerConfig = {
+  desired_enabled: boolean
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending' | 'applied' | 'failed' | 'unavailable'
+  host: AgentAdminMediaWorkerHost
+  runtime_ready: boolean
+  editable: boolean
+  apply_supported: boolean
+  requires_restart: boolean
+}
+export type AgentAdminMediaWorkerUpdate = { revision: number; enabled: boolean }
+export type AgentAdminMediaWorkerApplyResult = { state: 'queued'; revision: number; enabled: boolean; request_id: string }
+export type AgentAdminMediaWorkerRevisionPage = {
+  items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+}
+export type AgentAdminMediaWorkerRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminPostgresPoolValues = {
   max_open_connections: number
   max_idle_connections: number
@@ -3064,6 +3093,22 @@ export class AgentIPCClient {
 
   cloudRevealAdminBaiduMapAK(revision: number) {
     return this.request<AgentAdminBaiduMapAKReveal>('POST', '/v1/cloud/admin-baidu-map/reveal', { revision })
+  }
+
+  cloudAdminMediaWorkerConfig() {
+    return this.request<AgentAdminMediaWorkerConfig>('GET', '/v1/cloud/admin-media-worker')
+  }
+  cloudSetAdminMediaWorker(input: AgentAdminMediaWorkerUpdate) {
+    return this.request<AgentAdminMediaWorkerConfig>('PUT', '/v1/cloud/admin-media-worker', input)
+  }
+  cloudApplyAdminMediaWorker(input: { revision: number }) {
+    return this.request<AgentAdminMediaWorkerApplyResult>('POST', '/v1/cloud/admin-media-worker/apply', input)
+  }
+  cloudAdminMediaWorkerRevisions() {
+    return this.request<AgentAdminMediaWorkerRevisionPage>('GET', '/v1/cloud/admin-media-worker/revisions')
+  }
+  cloudRollbackAdminMediaWorker(input: AgentAdminMediaWorkerRollbackInput) {
+    return this.request<AgentAdminMediaWorkerConfig>('POST', '/v1/cloud/admin-media-worker/rollback', input)
   }
 
   cloudAdminPostgresPoolConfig() {

@@ -72,7 +72,7 @@ func TestAdminMediaWorkerRuntimeIsProbedButJobsAreNotClaimed(t *testing.T) {
 	})
 	if ok.Status != "ready" || ok.Version != "ffmpeg version 5.1.6" ||
 		!strings.Contains(ok.Detail, "队列尚未接入") ||
-		ok.ConfigMode != "deployment" || ok.ApplyMode != "controlled-restart" ||
+		ok.ConfigMode != "in-app" || ok.ApplyMode != "controlled-restart" ||
 		strings.Contains(body, "XD_MEDIA_WORKER_SOCKET") {
 		t.Fatalf("media worker was not truthfully probed: %+v", ok)
 	}

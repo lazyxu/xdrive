@@ -635,6 +635,14 @@ const agent = Object.freeze({
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
+  cloudAdminMediaWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-media-worker'),
+  cloudSetAdminMediaWorker: (input: { revision: number; enabled: boolean }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-media-worker', input),
+  cloudApplyAdminMediaWorker: (input: { revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-apply-admin-media-worker', input),
+  cloudAdminMediaWorkerRevisions: () => ipcRenderer.invoke('agent:cloud-admin-media-worker-revisions'),
+  cloudRollbackAdminMediaWorker: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-media-worker', input),
   cloudAdminPostgresPoolConfig: () => ipcRenderer.invoke('agent:cloud-admin-postgres-pool'),
   cloudSetAdminPostgresPool: (input: { revision: number; desired: { max_open_connections: number; max_idle_connections: number } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-postgres-pool', input),
