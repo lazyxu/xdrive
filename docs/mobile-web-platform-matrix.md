@@ -209,3 +209,9 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 
 - **待真机：** iOS 27 Safari 标签/主屏安装，iPad 外接触控板或鼠标；390×844、899×700、900×700（浏览器或窗口缩放）。分别验证全屏/桌面 Viewer 断点、52px App Header 在 Viewer 期间不被第二个全局 Header 替代、底部 Filmstrip 及分享/收藏/编辑/属性/下载/删除权限入口、VoiceOver 标签、safe-area、触控显隐、外接鼠标移动重新唤醒控件与缩放/横滑冲突。
 - **共享 React 回归：** `desktop/tests/mobile-gallery-viewer-pointer-parity.cjs` 将 narrow + immersive 强制移动全屏与行动 rail（不依赖 `pointer:coarse`），同时验证 narrow+fine 非沉浸式 Quick Look 保持旧 Modal、wide Gallery 保持桌面布局、原始媒体 API/VirtualCollection 不分叉。组件测试成功不等于 Safari 真机/像素级完成；按 CI 日志与实际设备证据分别记账。
+
+
+## P1-2b · iOS 27 照片 Viewer 叠加栏/照片全画布验收（2026-10-11）
+
+- **共享 React 回归：** `desktop/tests/mobile-gallery-viewer-pointer-parity.cjs` 在 390/899/900 CSS px、fine/coarse 下验证只对图库使用 `mobileEdgeToEdge`、Viewer 浮动返回/日期/Filmstrip/操作栏在显示及自动隐藏时均不占用照片画布、同一回调能执行、`100dvh`/safe-area/44px 目标、Quick Look 和宽屏结构不回归。
+- **真实设备待测：** iOS 27 Safari 标签和主屏安装模式，390×844、430×932、844×390 等视口与视频/Live Photo/RAW 混合内容；真实「照片」对应内容截屏及控制显示/隐藏录像，验证遮罩透明度、触控与 VoiceOver、返回原滚动锚点；再跑 899/900px、键鼠、网络失败、10k/100k 虚拟页和取消。CI 源码通过不等于像素级 1:1 或真实设备完成。

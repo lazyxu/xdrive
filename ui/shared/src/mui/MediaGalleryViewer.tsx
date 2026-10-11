@@ -304,6 +304,7 @@ export function XDriveMediaGalleryViewer({
         actions={actions}
         footer={footer}
         immersive
+        mobileEdgeToEdge
         fullScreen={fullScreen}
         onFullScreenChange={setFullScreen}
         onClose={close}

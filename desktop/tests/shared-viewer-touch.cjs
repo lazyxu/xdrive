@@ -59,10 +59,16 @@ test('shared immersive preview becomes mobile full-screen with tap chrome and sa
     "pt: compactTouch ? 'env(safe-area-inset-top)' : 0",
     'data-xdrive-preview-mobile-actions',
     "pb: 'env(safe-area-inset-bottom)'",
-    "'& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 }",
   ]) {
     assert.ok(openPreview.includes(token), 'shared mobile preview chrome missing: ' + token)
   }
+  // The minimum touch target remains 44px; overlay-specific color and
+  // contrast additions must not invalidate the existing hit-area contract.
+  assert.match(
+    openPreview,
+    /'& \.MuiIconButton-root': \{\s*width: 44,\s*height: 44,\s*flexShrink: 0,/,
+    'shared mobile preview controls must preserve 44px hit areas',
+  )
   assert.ok(openPreview.includes('!compactTouch ? actions : null'), 'mobile preview actions must leave the narrow header')
   assert.ok(openPreview.includes('{compactTouch ? ('), 'all compact-touch previews must use the mobile bottom action rail')
 })
