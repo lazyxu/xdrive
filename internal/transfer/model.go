@@ -130,6 +130,7 @@ type entry struct {
 type Manager struct {
 	mu           sync.Mutex
 	nextID       uint64
+	generation   uint64 // Incremented at every account Clear to fence old Handle grants.
 	revision     uint64
 	changed      chan struct{}
 	historyDirty chan struct{}
@@ -140,8 +141,9 @@ type Manager struct {
 }
 
 type Handle struct {
-	manager *Manager
-	id      string
+	manager    *Manager
+	id         string
+	generation uint64
 }
 
 func NewManager(limit int) *Manager {
@@ -245,7 +247,7 @@ func (m *Manager) startLocked(spec Spec, now time.Time) *Handle {
 	m.entries[id] = &entry{task: item, retry: spec.Retry, lastAt: now, rateStartedAt: now}
 	m.order = append(m.order, id)
 	m.roots[rootID] = struct{}{}
-	return &Handle{manager: m, id: id}
+	return &Handle{manager: m, id: id, generation: m.generation}
 }
 
 func (m *Manager) StartGroup(spec Spec) *Handle {
@@ -265,7 +267,7 @@ func (m *Manager) Handle(id string) *Handle {
 	if m.entries[id] == nil {
 		return nil
 	}
-	return &Handle{manager: m, id: id}
+	return &Handle{manager: m, id: id, generation: m.generation}
 }
 
 func (m *Manager) StartChildByID(parentID string, spec Spec) *Handle {
@@ -559,7 +561,9 @@ func (h *Handle) AllowLocalReveal() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[h.id]
-	if e == nil || e.task.Scope == ScopeGroup ||
+	// This grant belongs to the Agent session that created the handle,
+	// not a different account's restored history with the same task ID.
+	if h.generation != m.generation || e == nil || e.task.Scope == ScopeGroup ||
 		(e.task.Kind != KindUpload && e.task.Kind != KindDownload) {
 		return
 	}
@@ -618,6 +622,8 @@ func (m *Manager) Clear() {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Fence pending old-account callbacks even when history was cleared earlier.
+	m.generation++
 	if len(m.entries) == 0 && len(m.order) == 0 {
 		return
 	}
