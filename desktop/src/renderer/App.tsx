@@ -1626,6 +1626,22 @@ export default function App({
       return result.data
     },
 
+    loadCaddyAliDNSConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyAliDNSConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveCaddyAliDNS: async (input: import('../../../ui/shared/src').XDriveCaddyAliDNSUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminCaddyAliDNS(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    revealCaddyAliDNS: async (revision: number) => {
+      const result = await window.xdriveDesktop.agent.cloudRevealAdminCaddyAliDNS(revision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+
     loadMediaWorkerConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminMediaWorkerConfig()
       if (!result.ok) throw new Error(result.error.message)

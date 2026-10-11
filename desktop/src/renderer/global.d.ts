@@ -820,6 +820,12 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSRevisionPage>>
         cloudRollbackAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
+        cloudAdminCaddyAliDNSConfig: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyAliDNSConfig>>
+        cloudSetAdminCaddyAliDNS: (input: import('../../../ui/shared/src').XDriveCaddyAliDNSUpdate) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyAliDNSConfig>>
+        cloudRevealAdminCaddyAliDNS: (revision: number) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyAliDNSReveal>>
         cloudAdminMediaWorkerConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>
         cloudSetAdminMediaWorker: (input: import('../../../ui/shared/src').XDriveMediaWorkerUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveMediaWorkerConfig>>

@@ -62,6 +62,29 @@ export type XDriveCaddyHTTPSRevision = {
 export type XDriveCaddyHTTPSRevisionPage = { items: XDriveCaddyHTTPSRevision[] }
 export type XDriveCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 
+// AliDNS DNS-01 pair is staged encrypted for the administrator, not applied to Caddy.
+export type XDriveCaddyAliDNSConfig = {
+  configured: boolean
+  revision: number
+  source: 'unset' | 'saved'
+  updated_at?: string
+  editable: boolean
+  apply_state: 'unmanaged' | 'pending'
+  apply_supported: false
+  requirement: string
+}
+export type XDriveCaddyAliDNSUpdate = {
+  revision: number
+  access_key_id?: string
+  access_key_secret?: string
+  clear?: boolean
+}
+export type XDriveCaddyAliDNSReveal = {
+  access_key_id: string
+  access_key_secret: string
+  expires_in_seconds: number
+}
+
 export type XDriveMediaWorkerHostStatus = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'

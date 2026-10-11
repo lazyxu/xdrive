@@ -92,6 +92,9 @@ import {
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
+  type AgentAdminCaddyAliDNSConfig,
+  type AgentAdminCaddyAliDNSUpdate,
+  type AgentAdminCaddyAliDNSReveal,
   type AgentAdminMediaWorkerConfig,
   type AgentAdminMediaWorkerUpdate,
   type AgentAdminMediaWorkerApplyResult,
@@ -4642,6 +4645,39 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudRollbackAdminCaddyHTTPS({
       revision: input.revision, target_revision: input.target_revision,
     })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-alidns', () => runAgentAction<AgentAdminCaddyAliDNSConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminCaddyAliDNSConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-caddy-alidns', (_event, value: unknown) => runAgentAction<AgentAdminCaddyAliDNSConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminCaddyAliDNSUpdate> : null
+    const clear = input?.clear === true
+    const id = input?.access_key_id
+    const secret = input?.access_key_secret
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+      input.revision < 0 || input.revision > 2 ** 60 ||
+      (clear && (id !== undefined || secret !== undefined)) ||
+      (!clear && (typeof id !== 'string' || typeof secret !== 'string' ||
+        id.length < 8 || id.length > 128 || secret.length < 8 || secret.length > 256))) {
+      throw new AgentIPCError('invalid_input', 0, 'Provide an AliDNS revision and both valid credentials, or explicit clear.')
+    }
+    return requireAgentClient().cloudSetAdminCaddyAliDNS({
+      revision: input.revision,
+      ...(clear ? { clear: true } : { access_key_id: id, access_key_secret: secret }),
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-reveal-admin-caddy-alidns', (_event, revision: unknown) => runAgentAction<AgentAdminCaddyAliDNSReveal>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0 || revision > 2 ** 60) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid AliDNS credential revision.')
+    }
+    return requireAgentClient().cloudRevealAdminCaddyAliDNS(revision)
   }, false))
   ipcMain.handle('agent:cloud-admin-media-worker', () => runAgentAction<AgentAdminMediaWorkerConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

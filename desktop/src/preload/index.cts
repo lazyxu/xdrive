@@ -666,6 +666,10 @@ const agent = Object.freeze({
   cloudAdminCaddyHTTPSRevisions: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-revisions'),
   cloudRollbackAdminCaddyHTTPS: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-caddy-https', input),
+  cloudAdminCaddyAliDNSConfig: () => ipcRenderer.invoke('agent:cloud-admin-caddy-alidns'),
+  cloudSetAdminCaddyAliDNS: (input: { revision: number; access_key_id?: string; access_key_secret?: string; clear?: boolean }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-caddy-alidns', input),
+  cloudRevealAdminCaddyAliDNS: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-caddy-alidns', revision),
   cloudAdminMediaWorkerConfig: () => ipcRenderer.invoke('agent:cloud-admin-media-worker'),
   cloudSetAdminMediaWorker: (input: { revision: number; enabled: boolean; memory_mib: number; cpu_milli: number; pids_limit: number }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-media-worker', input),

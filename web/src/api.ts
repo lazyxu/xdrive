@@ -729,6 +729,26 @@ export class XDriveApi {
     )
   }
 
+  adminCaddyAliDNSConfig() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSConfig>(
+      '/api/v1/admin/services/caddy/alidns', { cache: 'no-store' },
+    )
+  }
+  adminSaveCaddyAliDNS(input: import('../../ui/shared/src').XDriveCaddyAliDNSUpdate) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSConfig>(
+      '/api/v1/admin/services/caddy/alidns', {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+  adminRevealCaddyAliDNS(revision: number) {
+    return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSReveal>(
+      '/api/v1/admin/services/caddy/alidns/reveal', {
+        method: 'POST', body: JSON.stringify({ revision }), cache: 'no-store',
+      },
+    )
+  }
+
   adminMediaWorkerConfig() {
     return this.request<import('../../ui/shared/src').XDriveMediaWorkerConfig>(
       '/api/v1/admin/services/media-worker', { cache: 'no-store' },

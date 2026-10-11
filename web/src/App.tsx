@@ -983,6 +983,10 @@ function FileManager({
     loadCaddyHTTPSRevisions: () => api.adminCaddyHTTPSRevisions(),
     rollbackCaddyHTTPS: (input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
       api.adminRollbackCaddyHTTPS(input),
+    loadCaddyAliDNSConfig: () => api.adminCaddyAliDNSConfig(),
+    saveCaddyAliDNS: (input: import('../../ui/shared/src').XDriveCaddyAliDNSUpdate) =>
+      api.adminSaveCaddyAliDNS(input),
+    revealCaddyAliDNS: (revision: number) => api.adminRevealCaddyAliDNS(revision),
     loadMediaWorkerConfig: () => api.adminMediaWorkerConfig(),
     saveMediaWorkerConfig: (input: import('../../ui/shared/src').XDriveMediaWorkerUpdate) =>
       api.adminSaveMediaWorker(input),

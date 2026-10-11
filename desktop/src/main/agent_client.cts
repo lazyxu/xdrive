@@ -647,6 +647,28 @@ export type AgentAdminCaddyHTTPSRevisionPage = {
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 
+export type AgentAdminCaddyAliDNSConfig = {
+  configured: boolean
+  revision: number
+  source: 'unset' | 'saved'
+  updated_at?: string
+  editable: boolean
+  apply_state: 'unmanaged' | 'pending'
+  apply_supported: false
+  requirement: string
+}
+export type AgentAdminCaddyAliDNSUpdate = {
+  revision: number
+  access_key_id?: string
+  access_key_secret?: string
+  clear?: boolean
+}
+export type AgentAdminCaddyAliDNSReveal = {
+  access_key_id: string
+  access_key_secret: string
+  expires_in_seconds: number
+}
+
 export type AgentAdminMediaWorkerHost = {
   supported: boolean
   state: 'idle' | 'queued' | 'running' | 'success' | 'failed' | 'unavailable'
@@ -3251,6 +3273,16 @@ export class AgentIPCClient {
   }
   cloudRollbackAdminCaddyHTTPS(input: AgentAdminCaddyHTTPSRollbackInput) {
     return this.request<AgentAdminCaddyHTTPSConfig>('POST', '/v1/cloud/admin-caddy-https/rollback', input)
+  }
+
+  cloudAdminCaddyAliDNSConfig() {
+    return this.request<AgentAdminCaddyAliDNSConfig>('GET', '/v1/cloud/admin-caddy-alidns')
+  }
+  cloudSetAdminCaddyAliDNS(input: AgentAdminCaddyAliDNSUpdate) {
+    return this.request<AgentAdminCaddyAliDNSConfig>('PUT', '/v1/cloud/admin-caddy-alidns', input)
+  }
+  cloudRevealAdminCaddyAliDNS(revision: number) {
+    return this.request<AgentAdminCaddyAliDNSReveal>('POST', '/v1/cloud/admin-caddy-alidns/reveal', { revision })
   }
 
   cloudAdminMediaWorkerConfig() {
