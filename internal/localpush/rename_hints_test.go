@@ -30,6 +30,8 @@ func TestNativeRenameHintRequiresUniqueStrongSingleLinkFile(t *testing.T) {
 		edit func(*inventoryRenameGroup)
 	}{
 		{"unchanged path", func(p *inventoryRenameGroup) { p.After.Path = p.Before.Path }},
+		{"ignored previous path", func(p *inventoryRenameGroup) { p.Before.Ignored = true }},
+		{"ignored current path", func(p *inventoryRenameGroup) { p.After.Ignored = true }},
 		{"old hard links", func(p *inventoryRenameGroup) { p.Before.LinkCount = 2 }},
 		{"new hard links", func(p *inventoryRenameGroup) { p.After.LinkCount = 2 }},
 		{"weak old identity", func(p *inventoryRenameGroup) { p.Before.StrongNativeIdentity = false }},

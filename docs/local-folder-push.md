@@ -445,3 +445,28 @@ conflicts before any actual identity mutation. No Web, Mobile Web, Desktop
 renderer or Agent IPC control is added in this stage. Local Push activation
 and all Mirror remote deletion remain denied. Real 100k/4GiB device tests,
 auto scheduling and GitLab validation are not claimed.
+
+
+## L03-D2b2b2b · Owning-Agent provisional native-rename evidence staging (GitHub PR validation pending)
+
+The owning Windows/Linux Agent has a private, **non-IPC** preparation
+primitive for two complete local inventory generations: it first checks the
+paused Source, exact OS-held device secret, live Root grant, private ignore
+rules, Source revision and account session. It publishes/loads the existing
+sealed advisory generation, dry-runs *all* native rename hints, and only then
+looks up old/new Root-scoped file path keys in bounded 64-hint/128-key batches.
+Ignored files, weak identities, hard links, collisions and unmatched paths
+are never submitted as established renames. Existing synced SourceItems may
+receive **only** private provisional evidence via the bound-device endpoint,
+which transactionally rechecks ownership/revision and Node identity. Local
+heads and saved rules are rechecked after staging. A late failure can leave
+some advisory rows; exact replay is safe and *no* SourceItem or alias is
+mutated.
+
+This helper is intentionally **not yet wired to an executable job, scheduler,
+Desktop button, Web route or public Agent HTTP operation**. The evidence is
+not attestation of remote file content or a cryptographic proof of physical
+machine identity. SourceRun activation, CAS transfer, authoritative alias
+promotion, cloud rename, Mirror deletion, trusted heartbeat and native 100k/
+4GiB acceptance remain blocked until later separate work. CI/merge/GitLab
+status must be recorded independently.
