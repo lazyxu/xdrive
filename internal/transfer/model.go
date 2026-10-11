@@ -801,6 +801,21 @@ func (m *Manager) Retry(ctx context.Context, id string) error {
 	m.mu.Unlock()
 
 	err := retry(ctx)
+	// A retry can acknowledge cancellation, finish its I/O cleanup and
+	// return nil. It must not commit success or strand StateCancelling.
+	if ctx != nil {
+		if cause := ctx.Err(); cause != nil && (err == nil || errors.Is(err, cause)) {
+			// Confirm cancellation only if this retry still owns an active
+			// state. Another I/O owner may already have settled it.
+			committed, finishErr := m.finishStateResult(id, StateCancelled, cause)
+			if finishErr == nil && !committed {
+				// An older callback must preserve its original return value
+				// after independent terminal confirmation.
+				return err
+			}
+			return cause
+		}
+	}
 	if err != nil {
 		m.finish(id, err)
 		return err
@@ -1069,23 +1084,30 @@ func (m *Manager) finishSkipped(id string) {
 }
 
 func (m *Manager) finishState(id, state string, err error) error {
+	_, finishErr := m.finishStateResult(id, state, err)
+	return finishErr
+}
+
+// finishStateResult reports atomically whether this call committed the first
+// terminal outcome, so late Retry callbacks cannot revise a settled result.
+func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 	switch state {
 	case StateCompleted, StatePartial, StateFailed, StateCancelled:
 	default:
-		return fmt.Errorf("invalid terminal transfer state %q", state)
+		return false, fmt.Errorf("invalid terminal transfer state %q", state)
 	}
 	now := time.Now()
 	m.mu.Lock()
 	e := m.entries[id]
 	if e == nil {
 		m.mu.Unlock()
-		return errors.New("transfer not found")
+		return false, errors.New("transfer not found")
 	}
 	if terminalState(e.task.State) || (e.task.State == StateCancelling && state == StateCompleted) {
 		// Retain a pending cancellation against late success and keep
 		// the first confirmed terminal result authoritative.
 		m.mu.Unlock()
-		return nil
+		return false, nil
 	}
 	var groupCancel context.CancelFunc
 	if e.groupCancelContext != nil && e.cancel != nil {
@@ -1153,7 +1175,7 @@ func (m *Manager) finishState(id, state string, err error) error {
 		}
 		m.mu.Unlock()
 	}
-	return nil
+	return true, nil
 }
 
 func (m *Manager) finish(id string, err error) {
