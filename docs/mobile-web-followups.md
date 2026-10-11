@@ -225,3 +225,10 @@ F-PARITY-07C grouped List disclosure is **merged** via [PR #1264](https://github
 - Chrome [#38108924989](https://github.com/lazyxu/xdrive/actions/runs/38108924989) measured the four exact shared Node/Revision API copy operations, 375/390/899/900 responsive owners, one scroll host, preserved 52px App bar, and no unknown requests/JS errors. After CSS transition, 375/390 context options had **44px computed minimum**; **899px remained 0px**, a real MUI `sm` breakpoint style override.
 - Scoped repair uses higher-specificity descendant `& .MuiMenuItem-root` on existing Mobile context Popover paper to restore 44px native-like touch sizes for all context entries, without modifying wide UI, operation/Server semantics or virtualization. Added static guard; rerun real built-Web Chrome and full GitHub exact-head CI before merge.
 - Real iPhone iOS 27 Safari/PWA/VoiceOver screenshots and live authenticated Go permission tests, 10k/100k measurements are still not done.
+
+
+## 2026-10-11 F-iOS27-09C1 → 09C2 handoff
+
+- **09C1 merged:** [PR #1365](https://github.com/lazyxu/xdrive/pull/1365) completed exact-head [CI #38109103574](https://github.com/lazyxu/xdrive/actions/runs/38109103574) with Final Gate success, real Chrome 375/390/899/900 copy/clipboard/Node Revision parity and 44px settled targets. Linear merge `1d085701`, related remote branch verified deleted by [#38112560250](https://github.com/lazyxu/xdrive/actions/runs/38112560250). No active Files branch at 09C2 outset.
+- **09C2 new bounded task, pending:** use identical built-Web/Chrome fixture, not mocked React unit tests, to compare Mobile dialog and Wide inline Rename's authenticated-like `PATCH` requests, controlled 403 and 409 denials, retained revision/draft, and explicit successful retry with 200. Cover all four CSS viewport widths with request logs, screenshots, strict unknown-endpoint guard and source hashes.
+- **Still unmeasured:** real authenticated Go Server/ACL/409, iOS 27 Safari/PWA/VoiceOver exact screenshot/geometry 1:1, 10k/100k real browser CPU/RSS/scroll/Abort timings and Desktop Agent cancellation. No fabricated proof or faux feature parity.

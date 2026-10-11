@@ -2223,9 +2223,14 @@ export function XDriveFileExplorer({
           variant="standard"
           disabled={renameSubmitting}
           error={Boolean(renameError)}
-          title={renameError || undefined}
-          aria-label={'重命名 ' + item.name}
-          slotProps={{ htmlInput: { spellCheck: false } }}
+          // MUI TextField's root receives unknown top-level props. Put the
+          // spoken name and inline Server-rejection tooltip on the actual
+          // HTML input for wide Web/Desktop keyboard and assistive technology.
+          slotProps={{ htmlInput: {
+            spellCheck: false,
+            'aria-label': '重命名 ' + item.name,
+            title: renameError || undefined,
+          } }}
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => event.stopPropagation()}
           onChange={(event) => {
