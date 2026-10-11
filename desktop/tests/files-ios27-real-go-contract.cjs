@@ -132,3 +132,44 @@ test('09I-C Wide context Delete is located by its visible label, ignoring genuin
   assert.ok(browser.includes("page.getByRole('menuitem').filter({ has: page.getByText('删除', { exact: true }) }).first()"))
   assert.ok(!browser.includes("getByRole('menuitem', { name: '删除', exact: true })"))
 })
+
+test('09I-D1 genuine 2-item Mobile/Wide selections submit real queued batch Delete to one Server API', () => {
+  for (const label of [
+    '"e-mobile-batch-a.txt"', '"f-mobile-batch-b.txt"',
+    '"g-wide-batch-a.txt"', '"h-wide-batch-b.txt"',
+    '"mobile_batch_delete_nodes"', '"wide_batch_delete_nodes"',
+    'IOS27_FILES_LIVE_GO_BATCH_DELETE_QUEUED',
+    'operation.TotalItems != 2', 'seenGroups[matched]',
+    'operation.Status != meta.FileOperationStatusQueued',
+  ]) assert.ok(fixture.includes(label), 'missing persisted real-Go batch verification: ' + label)
+  for (const label of [
+    'async function queueBatchDeleteFromUI(', 'async function findBatchRow(',
+    "name: '文件操作菜单'", "'[data-mobile-files-more-menu]'",
+    "name: '选择', exact: true", "row.getAttribute('aria-pressed')",
+    "name: '删除已选'", "modifiers: ['Control']",
+    "row.getAttribute('aria-selected')", "'删除所选项目', { exact: true }",
+    '将所选 2 个项目移到回收站？',
+    'posted.items.every(item =>', 'queued.total_items === 2',
+    "foreignBatch === 404", 'results.batchDeletes.length === 2',
+  ]) assert.ok(browser.includes(label), 'missing real Chromium multi-select mutation: ' + label)
+  assert.ok(web.includes('onRemoveMany(nodes)'))
+  assert.ok(mobile.includes('props.onDelete(selection)'))
+  assert.doesNotMatch(browser, /route\.fulfill\(/)
+})
+
+test('09I-D1 every viewport arms the real Gin list listener before its guaranteed reload', () => {
+  const start = browser.indexOf('for (const viewport of [')
+  const end = browser.indexOf('  // Real owner isolation', start)
+  const gate = browser.slice(start, end)
+  const goto = gate.indexOf("await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,")
+  const listener = gate.indexOf('const listResponse = page.waitForResponse(')
+  const reload = gate.indexOf("await page.reload({ waitUntil: 'domcontentloaded' })")
+  const bytesRead = gate.indexOf('const data = await response.json()', listener)
+  assert.ok(start >= 0 && end > start && goto >= 0 &&
+    goto < listener && listener < reload && reload < bytesRead,
+    'same-hash SPA navigation may not fetch: rearm listener before explicit reload and read that HTTP body')
+  assert.equal((gate.match(/await page\.reload\(/g) || []).length, 1,
+    'one guaranteed reload, never invalidate the captured response with another navigation')
+  assert.ok(gate.includes('new URL(r.url()).pathname === rootPath'))
+  assert.ok(gate.includes("r.request().method() === 'GET' && r.status() === 200"))
+})
