@@ -444,6 +444,7 @@ type taskEntry struct {
 	index           int
 	cancel          context.CancelCauseFunc
 	cancelRequested bool
+	settling        bool // A Lease.Release is settling its result.
 	leaseDeferred   bool
 }
 
@@ -951,7 +952,7 @@ func (s *Scheduler) Cancel(identity Identity) bool {
 	}
 	s.mu.Lock()
 	entry := s.entries[identity]
-	if entry == nil || entry.state == itemDone {
+	if entry == nil || entry.state == itemDone || entry.settling {
 		s.mu.Unlock()
 		return false
 	}
@@ -1368,6 +1369,9 @@ func (s *Scheduler) execute(ctx context.Context, cancel context.CancelCauseFunc,
 			defer func() {
 				releaseCtx, releaseCancel := context.WithTimeout(context.Background(), s.releaseTimeout)
 				defer releaseCancel()
+				s.mu.Lock()
+				entry.settling = true
+				s.mu.Unlock()
 				if err := lease.Release(releaseCtx, runErr); err != nil && runErr == nil {
 					runErr = err
 				}
