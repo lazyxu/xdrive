@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"sort"
 	"strconv"
@@ -44,9 +45,11 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	includeDeletedPaths := strings.EqualFold(strings.TrimSpace(c.Query("include_deleted_paths")), "true") ||
 		strings.TrimSpace(c.Query("include_deleted_paths")) == "1"
 	uid := userID(c)
+	ctx := c.Request.Context()
+	query := s.DB.WithContext(ctx)
 
 	var latest uint64
-	if err := s.DB.Model(&meta.NodeChange{}).
+	if err := query.Model(&meta.NodeChange{}).
 		Where("owner_id = ?", uid).
 		Select("COALESCE(MAX(id), 0)").
 		Scan(&latest).Error; err != nil {
@@ -64,7 +67,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	}
 
 	var rows []meta.NodeChange
-	if err := s.DB.Where("owner_id = ? AND id > ?", uid, after).
+	if err := query.Where("owner_id = ? AND id > ?", uid, after).
 		Order("id ASC").
 		Limit(limit).
 		Find(&rows).Error; err != nil {
@@ -114,7 +117,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	sort.Slice(dirty, func(i, j int) bool { return dirty[i].Cursor < dirty[j].Cursor })
 
 	var active []meta.Node
-	if err := s.DB.Preload("File").
+	if err := query.Preload("File").
 		Where("owner_id = ? AND id IN ? AND deleted_at IS NULL", uid, nodeIDs).
 		Find(&active).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "load changed nodes failed")
@@ -125,7 +128,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 		nodes[node.ID] = node
 	}
 
-	paths, err := s.activeNodePaths(uid, nodeIDs)
+	paths, err := s.activeNodePaths(ctx, uid, nodeIDs)
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "resolve changed node paths failed")
 		return
@@ -138,7 +141,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 				deletedNodeIDs = append(deletedNodeIDs, item.NodeID)
 			}
 		}
-		deletedPaths, err = s.nodePathsIncludingDeleted(uid, deletedNodeIDs)
+		deletedPaths, err = s.nodePathsIncludingDeleted(ctx, uid, deletedNodeIDs)
 		if err != nil {
 			fail(c, http.StatusInternalServerError, "resolve deleted node paths failed")
 			return
@@ -180,7 +183,7 @@ func (s *Server) listNodeChanges(c *gin.Context) {
 	})
 }
 
-func (s *Server) activeNodePaths(ownerID uint64, nodeIDs []uint64) (map[uint64]string, error) {
+func (s *Server) activeNodePaths(ctx context.Context, ownerID uint64, nodeIDs []uint64) (map[uint64]string, error) {
 	paths := make(map[uint64]string, len(nodeIDs))
 	if len(nodeIDs) == 0 {
 		return paths, nil
@@ -190,7 +193,7 @@ func (s *Server) activeNodePaths(ownerID uint64, nodeIDs []uint64) (map[uint64]s
 		Path     string
 	}
 	var rows []row
-	err := s.DB.Raw(`
+	err := s.DB.WithContext(ctx).Raw(`
 WITH RECURSIVE ancestry AS (
 	SELECT
 		n.id AS target_id,
@@ -228,7 +231,7 @@ WHERE parent_id IS NULL
 	return paths, nil
 }
 
-func (s *Server) nodePathsIncludingDeleted(ownerID uint64, nodeIDs []uint64) (map[uint64]string, error) {
+func (s *Server) nodePathsIncludingDeleted(ctx context.Context, ownerID uint64, nodeIDs []uint64) (map[uint64]string, error) {
 	paths := make(map[uint64]string, len(nodeIDs))
 	if len(nodeIDs) == 0 {
 		return paths, nil
@@ -238,7 +241,7 @@ func (s *Server) nodePathsIncludingDeleted(ownerID uint64, nodeIDs []uint64) (ma
 		Path     string
 	}
 	var rows []row
-	err := s.DB.Raw(`
+	err := s.DB.WithContext(ctx).Raw(`
 WITH RECURSIVE ancestry AS (
 	SELECT
 		n.id AS target_id,

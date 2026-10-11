@@ -1,0 +1,92 @@
+name: Node Changes 100k SQL Request Cancel Paired A-B
+
+on:
+  pull_request:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+jobs:
+  changes-100k-request-cancel-current:
+    if: github.event_name == 'pull_request' && github.head_ref == 'perf/node-changes-100k-sql-abort'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_NODE_CHANGES_100K_CANCEL_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Validate source and test Go formatting
+        run: test -z "$(gofmt -l internal/api/changes.go internal/api/node_changes_request_cancel_100k_performance_integration_test.go)"
+      - name: Three matched n=3 original versus candidate PostgreSQL17 runs
+        run: |
+          set -euo pipefail
+          baseline="$RUNNER_TEMP/xdrive-changes-before"
+          root="$GITHUB_WORKSPACE/perf-results/node-changes-cancel-100k"
+          mkdir -p "$root"
+          git worktree add --detach "$baseline" a3f2bd46f4d1f9e4c1b50115af285526db7091e7
+          cp internal/api/node_changes_request_cancel_100k_performance_integration_test.go "$baseline/internal/api/"
+          printf 'BASE=a3f2bd46f4d1f9e4c1b50115af285526db7091e7\nCHECKED_OUT_HEAD=%s\nGITHUB_EVENT_MERGE_SHA=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$root/source.txt"
+          run_arm() {
+            local side="$1" sample="$2" dir expected
+            if [[ "$side" == "before" ]]; then
+              dir="$baseline"
+              expected=0
+            else
+              dir="$GITHUB_WORKSPACE"
+              expected=1
+            fi
+            (
+              cd "$dir"
+              export XD_NODE_CHANGES_100K_EXPECT_FIXED="$expected"
+              export XD_NODE_CHANGES_100K_SAMPLE="$sample"
+              /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+                -o "$root/$side-$sample.time" \
+                go test -mod=readonly -run '^TestNodeChangesRequestContextCancelReal100K$' \
+                  -timeout=8m -count=1 -v ./internal/api | tee "$root/$side-$sample.log"
+            )
+          }
+          for sample in 1 2 3; do
+            if [[ "$sample" == 2 ]]; then
+              run_arm after "$sample"
+              run_arm before "$sample"
+            else
+              run_arm before "$sample"
+              run_arm after "$sample"
+            fi
+          done
+          for side in before after; do
+            for sample in 1 2 3; do
+              grep -q 'NODE_CHANGES_SQL_CANCEL_100K' "$root/$side-$sample.log"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: node-changes-cancel-100k-paired
+          path: perf-results/node-changes-cancel-100k/
+          if-no-files-found: warn
+          retention-days: 14
