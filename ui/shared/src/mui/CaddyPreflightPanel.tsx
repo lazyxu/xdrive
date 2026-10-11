@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button, Chip, Paper, Stack, Typography } from '@mui/material'
 import { XDriveStatusAlert } from './StatusAlert'
-import type { XDriveCaddyHTTPSPreflight, XDriveCaddyPreflightCheck } from '../service-dependencies'
+import type {
+  XDriveCaddyHTTPSPreflight, XDriveCaddyPreflightCheck,
+  XDriveCaddyAliDNSReadVerify, XDriveCaddyAliDNSReadVerifyInput,
+} from '../service-dependencies'
 
 export type XDriveCaddyPreflightPort = {
   loadCaddyHTTPSPreflight?: () => Promise<XDriveCaddyHTTPSPreflight>
+  verifyCaddyAliDNSRead?: (input: XDriveCaddyAliDNSReadVerifyInput) => Promise<XDriveCaddyAliDNSReadVerify>
 }
 
 const titles: Record<XDriveCaddyPreflightCheck['id'], string> = {
@@ -30,16 +34,24 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
   refreshID: number
 }) {
   const epochRef = useRef(0)
+  const probeEpochRef = useRef(0)
   const [result, setResult] = useState<XDriveCaddyHTTPSPreflight | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [probeResult, setProbeResult] = useState<XDriveCaddyAliDNSReadVerify | null>(null)
+  const [probeBusy, setProbeBusy] = useState(false)
+  const [probeError, setProbeError] = useState('')
 
   useEffect(() => {
     ++epochRef.current
+    ++probeEpochRef.current
+    setProbeResult(null)
+    setProbeBusy(false)
+    setProbeError('')
     setResult(null)
     setLoading(false)
     setError('')
-    return () => { ++epochRef.current }
+    return () => { ++epochRef.current; ++probeEpochRef.current }
   }, [source, refreshID])
 
   const check = async () => {
@@ -47,6 +59,9 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
     const epoch = ++epochRef.current
     setLoading(true)
     setResult(null)
+    ++probeEpochRef.current
+    setProbeResult(null)
+    setProbeError('')
     setError('')
     try {
       const next = await source.loadCaddyHTTPSPreflight()
@@ -62,6 +77,37 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
       }
     } finally {
       if (epoch === epochRef.current) setLoading(false)
+    }
+  }
+
+  const verifyAliDNSRead = async () => {
+    if (!result || result.action !== 'enable' || !result.configuration_complete ||
+        !source.verifyCaddyAliDNSRead || probeBusy || loading) return
+    const epoch = ++probeEpochRef.current
+    setProbeResult(null)
+    setProbeError('')
+    setProbeBusy(true)
+    try {
+      const next = await source.verifyCaddyAliDNSRead({
+        desired_revision: result.desired_revision,
+        credential_revision: result.credential_revision,
+      })
+      if (epoch !== probeEpochRef.current) return
+      if (!['read_authorized', 'denied', 'unavailable'].includes(next.state) ||
+          typeof next.read_permission_verified !== 'boolean' ||
+          next.write_permission_verified !== false || next.apply_supported !== false ||
+          next.public_https_verified !== false ||
+          next.desired_revision !== result.desired_revision ||
+          next.credential_revision !== result.credential_revision) {
+        throw new Error('AliDNS 只读验证响应不符合安全合同。')
+      }
+      setProbeResult(next)
+    } catch (err) {
+      if (epoch === probeEpochRef.current) {
+        setProbeError(err instanceof Error ? err.message : 'AliDNS 只读验证失败。')
+      }
+    } finally {
+      if (epoch === probeEpochRef.current) setProbeBusy(false)
     }
   }
 
@@ -105,6 +151,33 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                   <Typography variant="body2" color="text.secondary">{item.detail}</Typography>
                 </Stack>
               ))}
+            </Stack>
+            <Stack spacing={1} alignItems="flex-start">
+              <Button size="small" variant="outlined"
+                disabled={!source.verifyCaddyAliDNSRead || probeBusy || loading ||
+                  result.action !== 'enable' || !result.configuration_complete}
+                onClick={() => { void verifyAliDNSRead() }}>
+                {probeBusy ? '正在核验只读权限…' : '核验 AliDNS 实际只读权限（不会修改 DNS）'}
+              </Button>
+              <Typography variant="caption" color="text.secondary">
+                仅在管理员主动点击后，使用当前已加密保存的凭据请求阿里云固定
+                DescribeSubDomainRecords 接口。不会添加、更新或删除 TXT 记录。
+              </Typography>
+              {probeResult && (
+                <Stack spacing={0.5}>
+                  <Chip size="small" variant="outlined"
+                    color={probeResult.state === 'read_authorized' ? 'default' : 'warning'}
+                    label={probeResult.state === 'read_authorized'
+                      ? 'AliDNS 读取鉴权通过（写入权限未验证）'
+                      : probeResult.state === 'denied' ? 'AliDNS 读取鉴权被拒绝' : 'AliDNS 读取鉴权无法确认'} />
+                  <Typography variant="body2" color="text.secondary">{probeResult.detail}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    验证时间：{new Date(probeResult.checked_at).toLocaleString()} ·
+                    未验证 DNS 写入、证书签发或 HTTPS 实际应用。
+                  </Typography>
+                </Stack>
+              )}
+              {probeError && <XDriveStatusAlert tone="bad">{probeError}</XDriveStatusAlert>}
             </Stack>
             <Typography variant="caption" color="warning.main">
               {result.apply_supported

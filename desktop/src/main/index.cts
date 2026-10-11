@@ -92,6 +92,8 @@ import {
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
+  type AgentAdminCaddyAliDNSReadVerifyInput,
+  type AgentAdminCaddyAliDNSReadVerify,
   type AgentAdminCaddyHTTPSPreflight,
   type AgentAdminCaddyAliDNSConfig,
   type AgentAdminCaddyAliDNSUpdate,
@@ -4647,6 +4649,24 @@ function registerIPCHandlers() {
       revision: input.revision, target_revision: input.target_revision,
     })
   }, false))
+  ipcMain.handle('agent:cloud-verify-admin-caddy-alidns-read', (_event, value: unknown) =>
+    runAgentAction<AgentAdminCaddyAliDNSReadVerify>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'admin-services')
+      const input = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Partial<AgentAdminCaddyAliDNSReadVerifyInput> : null
+      if (!input || typeof input.desired_revision !== 'number' ||
+        !Number.isSafeInteger(input.desired_revision) || input.desired_revision <= 0 ||
+        input.desired_revision > 2 ** 60 ||
+        typeof input.credential_revision !== 'number' ||
+        !Number.isSafeInteger(input.credential_revision) || input.credential_revision <= 0 ||
+        input.credential_revision > 2 ** 60) {
+        throw new AgentIPCError('invalid_input', 0, 'Current HTTPS and AliDNS credential revisions are required.')
+      }
+      return requireAgentClient().cloudVerifyAdminCaddyAliDNSRead({
+        desired_revision: input.desired_revision, credential_revision: input.credential_revision,
+      })
+    }, false))
   ipcMain.handle('agent:cloud-admin-caddy-https-preflight', () => runAgentAction<AgentAdminCaddyHTTPSPreflight>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

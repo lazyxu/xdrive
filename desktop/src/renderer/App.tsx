@@ -1626,6 +1626,12 @@ export default function App({
       return result.data
     },
 
+    verifyCaddyAliDNSRead: async (input: import('../../../ui/shared/src').XDriveCaddyAliDNSReadVerifyInput) => {
+      const result = await window.xdriveDesktop.agent.cloudVerifyAdminCaddyAliDNSRead(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+
     loadCaddyHTTPSPreflight: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSPreflight()
       if (!result.ok) throw new Error(result.error.message)

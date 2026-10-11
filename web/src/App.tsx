@@ -983,6 +983,8 @@ function FileManager({
     loadCaddyHTTPSRevisions: () => api.adminCaddyHTTPSRevisions(),
     rollbackCaddyHTTPS: (input: import('../../ui/shared/src').XDriveCaddyHTTPSRollbackInput) =>
       api.adminRollbackCaddyHTTPS(input),
+    verifyCaddyAliDNSRead: (input: import('../../ui/shared/src').XDriveCaddyAliDNSReadVerifyInput) =>
+      api.adminVerifyCaddyAliDNSRead(input),
     loadCaddyHTTPSPreflight: () => api.adminCaddyHTTPSPreflight(),
     loadCaddyAliDNSConfig: () => api.adminCaddyAliDNSConfig(),
     saveCaddyAliDNS: (input: import('../../ui/shared/src').XDriveCaddyAliDNSUpdate) =>

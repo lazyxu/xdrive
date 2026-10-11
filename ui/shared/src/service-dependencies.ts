@@ -86,6 +86,23 @@ export type XDriveCaddyAliDNSReveal = {
 }
 
 // Read-only, sanitized local prerequisite report; no Caddy or DNS apply.
+// A live fixed AliDNS DescribeSubDomainRecords probe, not DNS write authorization.
+export type XDriveCaddyAliDNSReadVerifyInput = {
+  desired_revision: number
+  credential_revision: number
+}
+export type XDriveCaddyAliDNSReadVerify = {
+  state: 'read_authorized' | 'denied' | 'unavailable'
+  desired_revision: number
+  credential_revision: number
+  checked_at: string
+  read_permission_verified: boolean
+  write_permission_verified: false
+  apply_supported: false
+  public_https_verified: false
+  detail: string
+}
+
 export type XDriveCaddyPreflightCheck = {
   id: 'desired' | 'domain' | 'alidns' | 'host-manager' | 'ingress' | 'restricted-apply' | 'public-https'
   state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
