@@ -1626,6 +1626,12 @@ export default function App({
       return result.data
     },
 
+    loadCaddyHTTPSPreflight: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSPreflight()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+
     loadCaddyAliDNSConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyAliDNSConfig()
       if (!result.ok) throw new Error(result.error.message)

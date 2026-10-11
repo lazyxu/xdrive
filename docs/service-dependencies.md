@@ -1,4 +1,4 @@
-# Admin service dependencies and secure Baidu AK configuration
+# Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
 ## Scope and status
 
@@ -16,7 +16,7 @@
 
 ### Deployment/source of truth
 
-- **Existing:** `server`, `worker`, `postgres`, `caddy`, optional `photo-face` profile. Analyzer sockets, model images, CPU/memory limits and unrelated secrets remain Compose/host config. The Baidu AK is the **only** credential editable here, saved encrypted in PostgreSQL and immediately applied without restart.
+- **Existing:** `server`, `worker`, `postgres`, `caddy`, optional `photo-face` profile. Analyzer sockets, model images, CPU/memory limits and unrelated secrets remain Compose/host config. The Baidu AK can be edited and hot-applied with encrypted storage. The separately encrypted administrator AliDNS ID/Secret is also editable, but is only staged for a future restricted Caddy apply; no Server credential form performs deployment writes.
 - **GeoNames:** Existing `XD_PHOTO_PLACE_GEONAMES_DIR` points at the *container-visible* folder; the dedicated read-only host mount is tracked separately in PR #1189.
 - **Media:** an operator-provisioned FFmpeg/FFprobe process may expose a private Unix Socket runtime readiness probe; the media job queue, transcode and preview tasks are not yet integrated.
 - **Maps:** Gallery Places uses **Baidu Server Static Map API exclusively**; no offline SVG basemap, self-hosted/alternate tiles, or fallback map. If disabled/unavailable, show a visible unavailability state. GeoNames remains an independent optional offline place-*label* resolver, never a map provider. See `docs/baidu-map-server-api.md`.
@@ -46,11 +46,21 @@ This page must **not** treat a service's configuration form, process presence an
 | Media Worker / FFmpeg | Deployment-owned private Unix Socket with live FFmpeg/FFprobe executable probe | **Runtime health only**; job execution remains planned, without an enable button or fabricated task readiness |
 | PostgreSQL and file storage | Deployment volumes/database connection and backup policy | Restricted maintenance / controlled restart, not changed by web admin Server self-operation |
 | Background Pull Worker | Administrator can version, edit and roll back the scan/poll/concurrency policy; deployment still owns Worker container lifecycle | Real Worker heartbeat acknowledges effective policy at completed Pull batch boundaries, without forced restart |
-| Caddy/HTTPS | Deployment parameters/Host Manager when explicitly supported | Controlled redeploy/restart; do not mount or expose Docker socket |
+| Caddy/HTTPS | Administrator-staged HTTPS enable/domain and separately encrypted AliDNS pair | Read-only local prerequisites and existing host health; actual deployment/enable/disable remain unsupported until restricted maintenance is proven |
 
 **Delivered in this phase:** a typed, read-only capability/application contract for **11 system-level dependency rows** with safe Web/Desktop UI labels. No per-user connector rows or navigation appear here. This is **not** a claim that all services can already be started, restarted or hot-reconfigured from the administrator page.
 
-### P1-CD3b1: administrator-encrypted AliDNS credential staging (current work)
+### P1-CD3b2a: read-only Caddy HTTPS configuration prerequisite check (this phase)
+
+The shared Web/Desktop administrator service page adds an explicit **预检配置（只读）** action backed by admin-only `GET /api/v1/admin/services/caddy/https/preflight`. It reads existing persisted desired HTTPS enable/domain/revision and the global AliDNS credential revision. For enable intent, the Server validates domain syntax and locally decrypts/authenticates the separately encrypted **complete pair**, discarding plaintext without returning or logging it. For disable intent, a saved disable revision requires **no AliDNS credentials**. An unset intent remains incomplete. The preflight is intentionally stateless and never writes an audit revision or any host file, invokes a Docker/Host Manager action, sends credentials over IPC, calls Alibaba Cloud, resolves arbitrary user-provided hostnames or performs a DNS/ACME request.
+
+The result returns only fixed revision numbers and **seven safe checks**: desired revision, domain, local AliDNS decryption, trusted Host Manager heartbeat, existing internal HTTP ingress health, restricted-maintenance apply capability (**always blocked in this phase**), and public HTTPS reachability (**always unknown in this phase**). It may separately report the existing host's *local* certificate/hostname proof from a validated fixed loopback observation, but **that proof is not tied to the administrator's desired revision or staged credentials**. `configuration_complete` means only that the chosen local admin intent has the required fields and decryptable secrets; it is never proof of AliDNS API permission or of live/public HTTPS. `apply_supported=false`, and the UI has no host enable/disable/apply button. Missing, stale or malformed Host Manager status remains unknown, not green.
+
+Cross-boundary code uses the existing Go Client → Desktop Agent authenticated IPC → Electron Main/Preload/Renderer contract and exactly the same shared MUI panel as Web. Old Server/Agent versions show explicit unsupported state and stale request completions cannot cross refresh/account scope. Tests cover admin vs nonadmin, enable/disable/unset, corrupted ciphertext/missing keyring, unavailable/healthy host, redacted credentials/domain, stable read-only API and no unsafe apply route; the full exact-head CI remains the merge gate.
+
+**Still not implemented:** proof that AliDNS credentials have actual DNS-edit permission, secure host-secret delivery, audited Host Manager execution/preflight, reversible Caddy switch that protects the current access path, revision-specific effective-state checks, certificate issuance, public DNS, WAN and physical TLS reachability. Those are **CD3b2b+**, not a prerequisite status disguised as completed deployment.
+
+### P1-CD3b1: administrator-encrypted AliDNS credential staging (merged #1412)
 
 Administrators can now stage an AliDNS DNS-01 **AccessKey ID plus AccessKey Secret as an atomic pair** in the existing global **服务与依赖** page. Both values are authenticated and encrypted as **one** payload using the existing rotation-capable keyring and an AliDNS-specific AAD tuple, separately from Baidu Server AK and all per-user 同步文件夹 credentials. PostgreSQL `xd_admin_service_secrets` holds ciphertext only; there is no domain/DNS credential in the global service inventory, Caddy TLS host status, logs or audit metadata. The normal admin GET exposes only configured/revision/staging capability. A separate audited, revision-fenced POST temporarily reveals the pair on explicit admin action, clears it from the shared Web/Desktop UI after 60 seconds, page/account switch or window hiding.
 

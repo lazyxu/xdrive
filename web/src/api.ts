@@ -729,6 +729,12 @@ export class XDriveApi {
     )
   }
 
+  adminCaddyHTTPSPreflight() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSPreflight>(
+      '/api/v1/admin/services/caddy/https/preflight', { cache: 'no-store' },
+    )
+  }
+
   adminCaddyAliDNSConfig() {
     return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSConfig>(
       '/api/v1/admin/services/caddy/alidns', { cache: 'no-store' },

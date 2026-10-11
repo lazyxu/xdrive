@@ -92,6 +92,7 @@ import {
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyHTTPSRevisionPage,
   type AgentAdminCaddyHTTPSRollbackInput,
+  type AgentAdminCaddyHTTPSPreflight,
   type AgentAdminCaddyAliDNSConfig,
   type AgentAdminCaddyAliDNSUpdate,
   type AgentAdminCaddyAliDNSReveal,
@@ -4645,6 +4646,11 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudRollbackAdminCaddyHTTPS({
       revision: input.revision, target_revision: input.target_revision,
     })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-caddy-https-preflight', () => runAgentAction<AgentAdminCaddyHTTPSPreflight>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminCaddyHTTPSPreflight()
   }, false))
   ipcMain.handle('agent:cloud-admin-caddy-alidns', () => runAgentAction<AgentAdminCaddyAliDNSConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

@@ -85,6 +85,25 @@ export type XDriveCaddyAliDNSReveal = {
   expires_in_seconds: number
 }
 
+// Read-only, sanitized local prerequisite report; no Caddy or DNS apply.
+export type XDriveCaddyPreflightCheck = {
+  id: 'desired' | 'domain' | 'alidns' | 'host-manager' | 'ingress' | 'restricted-apply' | 'public-https'
+  state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
+  detail: string
+}
+export type XDriveCaddyHTTPSPreflight = {
+  checked_at: string
+  action: 'enable' | 'disable' | 'unset'
+  desired_revision: number
+  credential_revision: number
+  configuration_complete: boolean
+  host_observed: boolean
+  host_ingress_ready: boolean
+  host_local_tls_verified: boolean
+  apply_supported: boolean
+  checks: XDriveCaddyPreflightCheck[]
+}
+
 export type XDriveMediaWorkerHostStatus = {
   supported: boolean
   state: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
