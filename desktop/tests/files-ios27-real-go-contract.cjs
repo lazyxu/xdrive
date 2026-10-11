@@ -81,3 +81,54 @@ test('09I-B real Mobile/Wide Copy-to queues persist exact Node IDs, revisions, d
   assert.ok(web.includes('useXDriveFileExplorerOperationController'))
   assert.ok(mobile.includes('props.onCopyTo([item])'))
 })
+
+test('09I-C live Mobile/Wide Move and confirmed Delete share one queued Go operation and owner fence', () => {
+  for (const label of [
+    '"a-mobile-move.txt"', '"b-wide-move.txt"',
+    '"c-mobile-delete.txt"', '"d-wide-delete.txt"',
+    'mobileMoveTarget', 'wideMoveTarget',
+    'meta.FileOperationTypeMove', 'meta.FileOperationTypeDelete',
+    'IOS27_FILES_LIVE_GO_MUTATION_QUEUED',
+    'foreignOperations != 0', 'operation.ItemsJSON',
+  ]) assert.ok(fixture.includes(label), 'missing real Gin/PostgreSQL mutation evidence: ' + label)
+  for (const label of [
+    'async function queueMutationFromUI(',
+    '[data-mobile-files-context-selection-action="move-to"]',
+    "name: '移动到…'", "name: '移动到这里'",
+    "'[data-mobile-files-context-action=\"delete\"]'", "getByText('删除', { exact: true })", "getByRole('dialog').filter({ hasText: expectedTitle })", "name: '移到回收站'",
+    "'/api/v1/file-operations'", "posted.items[0].revision === revision",
+    "queued.total_items === 1", 'results.mutationQueues.length === 4',
+    "denied === 404", 'new Set(results.mutationQueues.map',
+    "await row.click()", "row.getAttribute('aria-selected')", "deleteMenuDiagnostic",
+  ]) assert.ok(browser.includes(label), 'missing actual browser move/delete path: ' + label)
+  assert.ok(web.includes("onMove={selected => openDestination('move'"))
+  assert.ok(web.includes('onRemoveMany(nodes)'))
+  assert.ok(mobile.includes('props.onMove([item])'))
+  assert.ok(mobile.includes('props.onDelete([item])'))
+  assert.doesNotMatch(browser, /route\.fulfill\(/)
+})
+
+// MUI v7 forwards aria-label to the Modal root, not the role=dialog Paper.
+// The actual Paper has aria-labelledby from the item-specific DialogTitle.
+test('09I-C real Delete targets its own dialog by item-specific text, not a generic name/attribute', () => {
+  assert.ok(browser.includes("page.getByRole('dialog').filter({ hasText: expectedTitle })"))
+  assert.ok(browser.includes("const expectedTitle = '将“' + sourceName + '”移到回收站？'"))
+  assert.ok(browser.includes("dialog.locator('.MuiDialogTitle-root').innerText()"))
+  assert.ok(browser.includes("title.includes(expectedTitle)"))
+  assert.ok(browser.includes("delete-missing-dialog"))
+  assert.doesNotMatch(browser, /getByRole\('dialog', \{ name: '确认操作' \}\)/)
+  assert.doesNotMatch(browser, /page\.locator\('\[role="dialog"\]\[aria-label=/)
+})
+
+test('09I-C single-file Wide Delete selects exactly one row before invoking the real context action', () => {
+  assert.ok(browser.includes("if (!mobile && kind === 'delete')"))
+  assert.ok(browser.includes('await row.click()'))
+  assert.ok(browser.includes("row.getAttribute('aria-selected')"))
+  assert.ok(browser.includes("page.getByRole('menuitem').filter({ has: page.getByText('删除', { exact: true }) }).first()"))
+  assert.ok(browser.includes("'delete-missing-menu'"))
+})
+
+test('09I-C Wide context Delete is located by its visible label, ignoring genuine shortcut suffix', () => {
+  assert.ok(browser.includes("page.getByRole('menuitem').filter({ has: page.getByText('删除', { exact: true }) }).first()"))
+  assert.ok(!browser.includes("getByRole('menuitem', { name: '删除', exact: true })"))
+})

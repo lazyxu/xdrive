@@ -23,9 +23,9 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-A', actualGoServer: true, postgresql17: true,
+  phase: 'F-iOS27-09I-C', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -113,6 +113,126 @@ async function queueCopyFromUI(owner, width, targetID) {
   results.copyQueues.push(sample)
   await dialog.waitFor({ state: 'hidden' })
   await screenshot(mobile ? 'live-go-mobile-copy-queued' : 'live-go-wide-copy-queued')
+}
+
+// F09I-C: both layouts must submit real Move-to and confirmed Delete through
+// the one existing Web operation controller. Do not infer background completion.
+async function queueMutationFromUI(kind, owner, width, sourceName, sourceID, revision, targetID) {
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 812 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first()
+  await host.waitFor()
+  await host.evaluate(el => { el.scrollTop = 0 })
+  const row = page.locator(mobile ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: sourceName }).first()
+  // Search only the actual bounded virtual viewport by scrolling it, never
+  // materialize all rows just to reach the selected test Node.
+  for (let step = 0; step < 20 && (await row.count()) === 0; step++) {
+    await host.evaluate(el => { el.scrollTop += Math.max(100, el.clientHeight * 0.7) })
+    await page.waitForTimeout(70)
+  }
+  await row.waitFor()
+  if (!mobile && kind === 'delete') {
+    // Wide FileExplorer deliberately offers "删除所选项目" instead of the
+    // single-file "删除" item when an earlier selection has been restored.
+    // Use the real unmodified left-click selection controller to choose
+    // exactly this file before exercising its individual Delete contract.
+    await row.click()
+    check((await row.getAttribute('aria-selected')) === 'true',
+      'Wide Delete must first genuinely select its exact source row', { owner, sourceID })
+  }
+  await row.click({ button: 'right' })
+  const responsePromise = () => page.waitForResponse(r =>
+    new URL(r.url()).pathname === '/api/v1/file-operations' &&
+    r.request().method() === 'POST')
+  let response
+  if (kind === 'move') {
+    if (mobile) {
+      await page.locator('[data-mobile-files-context-selection-action="move-to"]').click()
+    } else {
+      await page.getByRole('menuitem', { name: '移动到…', exact: true }).first().click()
+    }
+    const dialog = page.locator('[data-xdrive-file-explorer-destination-dialog]')
+    await dialog.waitFor()
+    await dialog.locator('[data-xdrive-file-explorer-destination-directory="' + targetID + '"]').click()
+    const [accepted] = await Promise.all([
+      responsePromise(), dialog.getByRole('button', { name: '移动到这里', exact: true }).click(),
+    ])
+    response = accepted
+    await dialog.waitFor({ state: 'hidden' })
+  } else {
+    const deleteItem = mobile
+      ? page.locator('[data-mobile-files-context-action="delete"]')
+      : page.getByRole('menuitem').filter({ has: page.getByText('删除', { exact: true }) }).first()
+    try {
+      await deleteItem.waitFor()
+    } catch (error) {
+      results.errors.push('single-item delete menu entry not reachable')
+      results.deleteMenuDiagnostic = {
+        owner, sourceName, sourceID,
+        menuEntries: await page.getByRole('menuitem').allInnerTexts(),
+        selectedRows: await page.locator('[data-xdrive-file-explorer-item][aria-selected="true"]')
+          .evaluateAll(nodes => nodes.map(node => node.getAttribute('data-xdrive-file-explorer-item-id'))),
+      }
+      await screenshot('live-go-' + (mobile ? 'mobile-' : 'wide-') + 'delete-missing-menu')
+      throw error
+    }
+    await deleteItem.click()
+    // MUI 7 Dialog forwards the generic aria-label to its *Modal root*,
+    // while the actual role="dialog" Paper is named via the dynamic
+    // DialogTitle (aria-labelledby). Neither generic-name nor attribute
+    // selectors identify the accessible Dialog Paper. Select the real role
+    // by this exact source-specific confirmation text, then verify title.
+    const expectedTitle = '将“' + sourceName + '”移到回收站？'
+    const dialog = page.getByRole('dialog').filter({ hasText: expectedTitle })
+    try {
+      await dialog.waitFor()
+    } catch (error) {
+      results.errors.push('delete confirmation not visible after actual UI menu click')
+      results.deleteDialogDiagnostic = await page.locator('[role="dialog"]').evaluateAll(nodes =>
+        nodes.map(node => ({
+          label: node.getAttribute('aria-label'),
+          labelledBy: node.getAttribute('aria-labelledby'),
+          visible: Boolean(node.getClientRects().length),
+          title: node.querySelector('.MuiDialogTitle-root')?.textContent?.trim() || '',
+        })))
+      await screenshot('live-go-' + (mobile ? 'mobile-' : 'wide-') + 'delete-missing-dialog')
+      throw error
+    }
+    const title = await dialog.locator('.MuiDialogTitle-root').innerText()
+    check(title.includes(expectedTitle),
+      'real shared delete confirmation title must name the exact source',
+      { owner, sourceName, title })
+    const [accepted] = await Promise.all([
+      responsePromise(), dialog.getByRole('button', { name: '移到回收站', exact: true }).click(),
+    ])
+    response = accepted
+    await dialog.waitFor({ state: 'hidden' })
+  }
+  const posted = response.request().postDataJSON()
+  const queued = await response.json()
+  const sample = {
+    kind, owner, width, sourceID, revision, targetID,
+    status: response.status(), postedType: posted.type, queuedType: queued.type,
+    items: posted.items, parentID: posted.parent_id, queuedParentID: queued.parent_id,
+    operationID: queued.id,
+  }
+  check(response.status() === 202 && posted.type === kind && queued.type === kind,
+    'real Gin mutation response and type must match both UIs', sample)
+  check(posted.items?.length === 1 && posted.items[0].id === sourceID &&
+    posted.items[0].revision === revision && queued.total_items === 1,
+    'source Node ID/revision must remain exact through shared queued mutation API', sample)
+  check(kind === 'move'
+    ? posted.parent_id === targetID && queued.parent_id === targetID
+    : posted.parent_id == null && queued.parent_id == null,
+    'Move destination/absence of Delete target must match exact server contract', sample)
+  check(typeof queued.id === 'string' && queued.id.length > 0,
+    'real PostgreSQL operation must have a durable ID', sample)
+  results.mutationQueues.push(sample)
+  await screenshot('live-go-' + (mobile ? 'mobile-' : 'wide-') + kind + '-queued')
 }
 
 async function main() {
@@ -268,6 +388,37 @@ async function main() {
     sourceID: fixture.node_id, revision: fixture.node_revision + 2 })
   check(foreignCopy === 404, 'real Server must deny foreign-source queued copy', foreignCopy)
   results.foreignOwner.push({ method: 'POST file-operations/copy', status: foreignCopy })
+  // Independent files avoid conflicting queued Move intents on one source.
+  await queueMutationFromUI('move', 'Mobile Web', 375, 'a-mobile-move.txt',
+    fixture.mobile_move_id, fixture.mobile_move_revision, fixture.mobile_move_target_id)
+  await queueMutationFromUI('move', 'Wide Web', 900, 'b-wide-move.txt',
+    fixture.wide_move_id, fixture.wide_move_revision, fixture.wide_move_target_id)
+  await queueMutationFromUI('delete', 'Mobile Web', 375, 'c-mobile-delete.txt',
+    fixture.mobile_delete_id, fixture.mobile_delete_revision)
+  await queueMutationFromUI('delete', 'Wide Web', 900, 'd-wide-delete.txt',
+    fixture.wide_delete_id, fixture.wide_delete_revision)
+  check(results.mutationQueues.length === 4 &&
+    new Set(results.mutationQueues.map(item => item.operationID)).size === 4,
+    'four distinct real UI Move/Delete operations must be durably queued', results.mutationQueues)
+  for (const spec of [
+    { type: 'move', sourceID: fixture.mobile_move_id,
+      revision: fixture.mobile_move_revision, parentID: fixture.foreign_root_id },
+    { type: 'delete', sourceID: fixture.mobile_delete_id,
+      revision: fixture.mobile_delete_revision },
+  ]) {
+    const denied = await page.evaluate(async ({ token, spec }) => {
+      const response = await fetch('/api/v1/file-operations', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: spec.type,
+          ...(spec.parentID ? { parent_id: spec.parentID } : {}),
+          items: [{ id: spec.sourceID, revision: spec.revision }] }),
+      })
+      return response.status
+    }, { token: fixture.foreign_token, spec })
+    check(denied === 404, 'real Gin must reject foreign-source Move/Delete', { spec, denied })
+    results.foreignOwner.push({ method: 'POST file-operations/' + spec.type, status: denied })
+  }
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -293,7 +444,8 @@ async function main() {
     fs.writeFileSync(resultPath, JSON.stringify(results, null, 2) + '\n')
     console.log('IOS27_FILES_REAL_GO_RESULT ' + JSON.stringify({
       passed: Boolean(results.passed), widths: results.widths.length,
-      patches: results.patches.length, copyQueues: results.copyQueues.length, actualGoServer: true, postgresql17: true,
+      patches: results.patches.length, copyQueues: results.copyQueues.length,
+      mutationQueues: results.mutationQueues.length, actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
   }
