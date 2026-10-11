@@ -1780,6 +1780,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    verifyBaiduMap: async (revision: number) => {
+      const result = await window.xdriveDesktop.agent.cloudVerifyAdminBaiduMap(revision)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     revealBaiduMapAK: async (revision: number) => {
       const result = await window.xdriveDesktop.agent.cloudRevealAdminBaiduMapAK(revision)
       if (!result.ok) throw new Error(result.error.message)

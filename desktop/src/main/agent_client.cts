@@ -943,6 +943,14 @@ export type AgentAdminBaiduMapConfig = {
   updated_at?: string
 }
 
+export type AgentAdminBaiduMapVerification = {
+  state: 'verified' | 'denied' | 'unavailable'
+  revision: number
+  checked_at: string
+  image_verified: boolean
+  detail: string
+}
+
 export type AgentAdminBaiduMapAKReveal = {
   field: 'ak'
   value: string
@@ -3290,6 +3298,10 @@ export class AgentIPCClient {
       items,
       ...(parentID ? { parent_id: parentID } : {}),
     }, 45_000)
+  }
+
+  cloudVerifyAdminBaiduMap(revision: number) {
+    return this.request<AgentAdminBaiduMapVerification>('POST', '/v1/cloud/admin-baidu-map/verify', { revision }, 15_000)
   }
 
   cloudRevealAdminBaiduMapAK(revision: number) {

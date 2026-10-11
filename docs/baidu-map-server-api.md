@@ -53,3 +53,14 @@ XD_BAIDU_MAP_AK=在百度控制台申请的Server类型AK
 - PR 验收：Go API/权限/配额/超时/PNG/WGS84 测试、Web & Desktop 编译、Desktop IPC 取消、Places 唯一 Baidu 渲染的断言、10k/100k facet 不批量发图，以及合法 AK 的实际在线功能复核。
 
 官方服务文档：https://lbs.baidu.com/docs/webapi?title=static/heightStatic
+
+
+## P1-A2：管理员主动验证当前 AK 的真实在线响应
+
+管理员可使用“验证当前 AK 在线生效”，由当前 xDrive Server 向固定百度 Static Map v2 HTTPS 发起一次 128×128 实际图片请求。仅发送固定的公共测试坐标，不读取用户照片的 GPS；只有真实 HTTP 200、image/png、严格大小限制及可完整解码的 128×128 图像才报告 verified。
+
+- `POST /api/v1/admin/services/baidu-map/verify`：仅管理员，仅接受当前修订号。服务端在对固定域名发出网络请求**之前提交脱敏操作审计**；不允许调用端指定 AK、URL、坐标、方法、DNS 或请求头。
+- 每个 Server 上的手动检测有 30 秒限流、5 秒超时、禁止跳转及环境代理、限制图片大小；不会返回敏感 AK、原始上游错误或地图图片。
+- 请求前后均验证修订、AK 与启用状态；验证过程中出现轮换、停用或并发改动一律不认定当前修订已验证。
+- Web/Desktop 使用同一共享面板，只保存当前管理员会话的瞬时结果；保存/停用/清除 AK、编辑草稿、刷新或切换账号会清除旧结果，旧版本服务不提供假检测。
+- 检测本身消耗一次百度调用配额。成功**只证明当前 Server 在本次检查时**使用这一修订的 AK 获取并解析了在线图片，不保证其他实例、未来调用或整个地图 UI 的可用性。无百度正式 AK 的 CI 只通过模拟上游进行验证。

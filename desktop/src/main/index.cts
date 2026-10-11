@@ -87,6 +87,7 @@ import {
   type AgentBackgroundTask,
   type AgentBackgroundTaskPage,
   type AgentAdminBaiduMapAKReveal,
+  type AgentAdminBaiduMapVerification,
   type AgentAdminBaiduMapConfig,
   type AgentAdminCaddyHTTPSConfig,
   type AgentAdminCaddyHTTPSUpdate,
@@ -4602,6 +4603,14 @@ function registerIPCHandlers() {
       refs,
       typeof targetParent === 'number' ? targetParent : 0,
     )
+  }, false))
+  ipcMain.handle('agent:cloud-verify-admin-baidu-map', (_event, revision: unknown) => runAgentAction<AgentAdminBaiduMapVerification>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Baidu map verification revision.')
+    }
+    return requireAgentClient().cloudVerifyAdminBaiduMap(revision)
   }, false))
   ipcMain.handle('agent:cloud-reveal-admin-baidu-map-ak', (_event, revision: unknown) => runAgentAction<AgentAdminBaiduMapAKReveal>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

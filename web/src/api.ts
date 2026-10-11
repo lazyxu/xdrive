@@ -1,5 +1,5 @@
 import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage } from '../../ui/shared/src'
-import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
+import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapVerification, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
   AdminUser,
@@ -894,6 +894,12 @@ export class XDriveApi {
   }
   adminBaiduMapConfig() {
     return this.request<XDriveBaiduMapAdminConfig>('/api/v1/admin/services/baidu-map')
+  }
+
+  adminVerifyBaiduMap(revision: number) {
+    return this.request<XDriveBaiduMapVerification>('/api/v1/admin/services/baidu-map/verify', {
+      method: 'POST', body: JSON.stringify({ revision }), cache: 'no-store',
+    })
   }
 
   adminRevealBaiduMapAK(revision: number) {

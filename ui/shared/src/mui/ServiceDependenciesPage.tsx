@@ -5,6 +5,7 @@ import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
   XDriveBaiduMapAKReveal,
+  XDriveBaiduMapVerification,
   XDrivePhotoAutoConfig,
   XDrivePhotoAutoKinds,
   XDrivePhotoAutoUpdate,
@@ -47,6 +48,7 @@ export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMedia
   loadBaiduMapConfig?: () => Promise<XDriveBaiduMapAdminConfig>
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
+  verifyBaiduMap?: (revision: number) => Promise<XDriveBaiduMapVerification>
   loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
   savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
   loadPhotoAutoRevisions?: () => Promise<XDrivePhotoAutoRevisionPage>
@@ -185,6 +187,10 @@ export function XDriveServiceDependenciesPage({
   const [baiduReveal, setBaiduReveal] = useState<XDriveBaiduMapAKReveal | null>(null)
   const [revealingAK, setRevealingAK] = useState(false)
   const revealEpochRef = useRef(0)
+  const baiduVerifyEpochRef = useRef(0)
+  const [baiduVerification, setBaiduVerification] = useState<XDriveBaiduMapVerification | null>(null)
+  const [baiduVerifyBusy, setBaiduVerifyBusy] = useState(false)
+  const [baiduVerifyError, setBaiduVerifyError] = useState('')
   const geoNamesEpochRef = useRef(0)
   const [geoNamesConfig, setGeoNamesConfig] = useState<XDriveGeoNamesConfig | null>(null)
   const [geoNamesDraftDistance, setGeoNamesDraftDistance] = useState('')
@@ -233,6 +239,10 @@ export function XDriveServiceDependenciesPage({
   useEffect(() => {
     let active = true
     ++revealEpochRef.current
+    ++baiduVerifyEpochRef.current
+    setBaiduVerification(null)
+    setBaiduVerifyBusy(false)
+    setBaiduVerifyError('')
     ++geoNamesEpochRef.current
     ++photoPolicyEpochRef.current
     const photoHistoryEpoch = ++photoHistoryEpochRef.current
@@ -328,6 +338,7 @@ export function XDriveServiceDependenciesPage({
     return () => {
       active = false
       ++revealEpochRef.current
+      ++baiduVerifyEpochRef.current
       ++geoNamesEpochRef.current
       ++photoPolicyEpochRef.current
       ++photoHistoryEpochRef.current
@@ -354,9 +365,42 @@ export function XDriveServiceDependenciesPage({
     }
   }
 
+  const verifyBaiduMap = async () => {
+    if (!baiduConfig || !baiduConfig.enabled || !baiduConfig.configured ||
+        !source.verifyBaiduMap || baiduVerifyBusy || baiduBusy ||
+        baiduEnabled !== baiduConfig.enabled || baiduAK.trim() !== '') return
+    const epoch = ++baiduVerifyEpochRef.current
+    setBaiduVerification(null)
+    setBaiduVerifyError('')
+    setBaiduVerifyBusy(true)
+    try {
+      const result = await source.verifyBaiduMap(baiduConfig.revision)
+      if (epoch !== baiduVerifyEpochRef.current) return
+      if (!['verified', 'denied', 'unavailable'].includes(result.state) ||
+          result.revision !== baiduConfig.revision ||
+          result.image_verified !== (result.state === 'verified') ||
+          typeof result.checked_at !== 'string' || !Number.isFinite(Date.parse(result.checked_at)) ||
+          typeof result.detail !== 'string' || !result.detail) {
+        throw new Error('地图在线验证响应不符合修订或安全合同，请升级 Server/Agent。')
+      }
+      setBaiduVerification(result)
+    } catch (err) {
+      if (epoch === baiduVerifyEpochRef.current) {
+        setBaiduVerifyError(err instanceof Error ? err.message : '百度地图在线检测失败，请稍后重试。')
+      }
+    } finally {
+      if (epoch === baiduVerifyEpochRef.current) setBaiduVerifyBusy(false)
+    }
+  }
+
   const applyBaiduMap = async (clearAK = false) => {
     if (!baiduConfig || !source.saveBaiduMapConfig || baiduBusy) return
     hideBaiduAK()
+    // A pending save, rotation or disable attempt invalidates all old proof.
+    ++baiduVerifyEpochRef.current
+    setBaiduVerification(null)
+    setBaiduVerifyError('')
+    setBaiduVerifyBusy(false)
     const ak = baiduAK.trim()
     if (!clearAK && baiduEnabled && !baiduConfig.configured && !ak) {
       setBaiduError('启用百度地图前，请先填写有效的 Server AK。')
@@ -374,7 +418,7 @@ export function XDriveServiceDependenciesPage({
       setBaiduConfig(next)
       setBaiduEnabled(next.enabled)
       setBaiduAK('')
-      setBaiduNotice('已保存并生效。无需重启 xDrive Server；新请求会使用当前设置。')
+      setBaiduNotice('配置已保存并热应用到新请求，无需重启 xDrive Server；百度上游是否接受当前 AK 仍需单独在线验证。')
       const status = await source.load()
       setSnapshot(status)
     } catch (err) {
@@ -918,6 +962,7 @@ export function XDriveServiceDependenciesPage({
                         {baiduConfig.source === 'environment' ? '当前来源：部署环境变量' : '当前来源：管理员持久化设置'}
                         {' · '}
                         {baiduConfig.requires_restart ? '需要重启' : '修改后无需重启'}
+                        {' · '}修订 #{baiduConfig.revision}
                       </Typography>
                     )}
                     {baiduConfig && (
@@ -940,7 +985,7 @@ export function XDriveServiceDependenciesPage({
                         <FormControlLabel
                           label="启用百度地图"
                           control={
-                            <Switch checked={baiduEnabled} onChange={(_event, value) => setBaiduEnabled(value)}
+                            <Switch checked={baiduEnabled} onChange={(_event, value) => { ++baiduVerifyEpochRef.current; setBaiduVerification(null); setBaiduEnabled(value) }}
                               disabled={baiduBusy} />
                           }
                         />
@@ -951,7 +996,7 @@ export function XDriveServiceDependenciesPage({
                           fullWidth
                           autoComplete="new-password"
                           value={baiduAK}
-                          onChange={(event) => setBaiduAK(event.target.value)}
+                          onChange={(event) => { ++baiduVerifyEpochRef.current; setBaiduVerification(null); setBaiduAK(event.target.value) }}
                           placeholder={baiduConfig.configured ? '留空则保留当前 AK' : '请输入百度地图 Server 类型 AK'}
                           inputProps={{ maxLength: 256 }}
                           disabled={baiduBusy}
@@ -976,6 +1021,28 @@ export function XDriveServiceDependenciesPage({
                           : '当前 Server/Agent 不支持在线配置 AK；更新后即可在此编辑。'}
                       </Typography>
                     )}
+                    <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Button size="small" variant="outlined"
+                        disabled={!baiduConfig?.enabled || !baiduConfig.configured ||
+                          !source.verifyBaiduMap || baiduBusy || baiduVerifyBusy ||
+                          baiduEnabled !== baiduConfig.enabled || baiduAK.trim() !== ''}
+                        onClick={() => { void verifyBaiduMap() }}>
+                        {baiduVerifyBusy ? '正在向百度验证…' : '验证当前 AK 在线生效'}
+                      </Button>
+                      <Typography variant="caption" color="text.secondary">
+                        管理员手动触发一次固定 128×128 百度地图请求，消耗一次 API 配额；不发送用户 GPS，
+                        不自动轮询，不修改 AK 或启停服务。
+                      </Typography>
+                    </Stack>
+                    {baiduVerification && (
+                      <XDriveStatusAlert tone={baiduVerification.image_verified ? 'good' : 'bad'}>
+                        {baiduVerification.image_verified
+                          ? '本次检测：当前 Server 的 AK 修订 #' + baiduVerification.revision + ' 成功取得并解析百度在线 PNG 图像；不保证所有副本或未来请求。'
+                          : baiduVerification.detail}
+                        {' · '}检测于 {new Date(baiduVerification.checked_at).toLocaleString()}
+                      </XDriveStatusAlert>
+                    )}
+                    {baiduVerifyError && <XDriveStatusAlert tone="bad">{baiduVerifyError}</XDriveStatusAlert>}
                     {baiduError && <XDriveStatusAlert tone="bad">{baiduError}</XDriveStatusAlert>}
                     {baiduNotice && <XDriveStatusAlert tone="good">{baiduNotice}</XDriveStatusAlert>}
                   </Stack>

@@ -843,6 +843,21 @@ type AdminBaiduMapUpdate struct {
 	ClearAK  bool   `json:"clear_ak,omitempty"`
 }
 
+type AdminBaiduMapVerification struct {
+	State         string    `json:"state"`
+	Revision      uint64    `json:"revision"`
+	CheckedAt     time.Time `json:"checked_at"`
+	ImageVerified bool      `json:"image_verified"`
+	Detail        string    `json:"detail"`
+}
+
+func (c *Client) VerifyAdminBaiduMap(ctx context.Context, revision uint64) (AdminBaiduMapVerification, error) {
+	var out AdminBaiduMapVerification
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/baidu-map/verify",
+		map[string]uint64{"revision": revision}, &out)
+	return out, err
+}
+
 type AdminBaiduMapAKReveal struct {
 	Field            string `json:"field"`
 	Value            string `json:"value"`

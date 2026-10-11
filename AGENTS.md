@@ -339,3 +339,11 @@ Do not merge known failing or untested changes into `master`.
 When multiple related unmerged branches exist, prefer dependency order. Dependent follow-on work may continue directly from the upstream work branch without waiting for its PR/MR to merge. Unrelated branches and PRs/MRs are outside the current task's workflow and must not block or reorder the work unless they create a real conflict or alter a required dependency. A dependent branch must contain exactly one work commit above its immediate dependency throughout development. Before it is made merge-ready after the dependency lands, rebase/reconstruct that same single commit onto the latest `master`, keep only its own delta, and require its own PR/MR CI to pass. Avoid rebasing or amending an already-green PR solely to create another CI run.
 
 Prefer small, focused branches that remain single-commit from their first commit through merge, minimizing conflicts, avoiding late-squash CI churn, and keeping `master` history reviewable.
+
+
+## Baidu Static Map administrator live effect proof P1-A2 (2026-10-11)
+
+- Baidu remains the only Gallery map provider. Encrypted Server AK config changes apply to subsequent requests, but **saved/enabled is not remotely verified** until explicit admin testing.
+- An administrator-triggered, current-revision-only proof sends one fixed public-coordinate 128x128 Static Map v2 HTTPS request from Server, only after a committed metadata-only audit. Never allow a user-supplied URL, endpoint, coordinate, AK, method or redirect; no environment proxy, bounded read/decode, short timeout and per-instance rate limit. Never expose key/plaintext URL in response or audit; failing audit prevents an external call.
+- Verify the actual 200 PNG dimensions and full decode; no success for malformed, denied, or unreachable responses. After network, recheck enabled/revision/AK, rejecting concurrent changes.
+- Web/Desktop share an ephemeral, current-revision-only verification status; reset on any draft edit, save/rotate/disable, page/account/source refresh. No persistent or fleet-wide verified label. This change must not touch user Source/同步文件夹 records, Docker, core restart, uploads, downloads or sync.

@@ -52,6 +52,8 @@ type Server struct {
 	BaiduMapEnabled                bool
 	BaiduMapHTTPClient             *http.Client
 	baiduMapLimiter                baiduMapLimiter
+	baiduMapVerifyMu               sync.Mutex
+	baiduMapVerifyAt               time.Time
 	PhotoFaceAnalyzer              photointelligence.FaceAnalyzer
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
@@ -385,6 +387,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.GET("/services/baidu-map", s.adminBaiduMapConfig)
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
+	admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
