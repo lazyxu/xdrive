@@ -28,6 +28,30 @@ func StreamVerifiedInventoryJournal(
 	batchSize int,
 	yield func([]InventoryItem) error,
 ) (InventoryJournalSnapshot, error) {
+	return streamVerifiedInventoryManifest(ctx, configDir, grant, batchSize, yield, inventoryJournalCurrent)
+}
+
+// StreamVerifiedPreviousInventoryJournal provides the same SHA-256, Root,
+// record and <=500-item batch checks for PREVIOUS as for CURRENT. It grants
+// no remote deletion, identity mapping, or SourceRun authority.
+func StreamVerifiedPreviousInventoryJournal(
+	ctx context.Context,
+	configDir string,
+	grant RootGrant,
+	batchSize int,
+	yield func([]InventoryItem) error,
+) (InventoryJournalSnapshot, error) {
+	return streamVerifiedInventoryManifest(ctx, configDir, grant, batchSize, yield, inventoryJournalPrevious)
+}
+
+func streamVerifiedInventoryManifest(
+	ctx context.Context,
+	configDir string,
+	grant RootGrant,
+	batchSize int,
+	yield func([]InventoryItem) error,
+	manifest string,
+) (InventoryJournalSnapshot, error) {
 	var empty InventoryJournalSnapshot
 	if ctx == nil {
 		return empty, errors.New("inventory journal context is required")
@@ -44,7 +68,16 @@ func StreamVerifiedInventoryJournal(
 	if batchSize > maxInventoryBatchSize {
 		return empty, fmt.Errorf("inventory journal batch exceeds %d items", maxInventoryBatchSize)
 	}
-	snapshot, err := VerifyInventoryJournal(ctx, configDir, grant)
+	var snapshot InventoryJournalSnapshot
+	var err error
+	switch manifest {
+	case inventoryJournalCurrent:
+		snapshot, err = VerifyInventoryJournal(ctx, configDir, grant)
+	case inventoryJournalPrevious:
+		snapshot, err = VerifyPreviousInventoryJournal(ctx, configDir, grant)
+	default:
+		return empty, errors.New("unsupported inventory generation")
+	}
 	if err != nil {
 		return empty, err
 	}
