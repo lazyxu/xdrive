@@ -431,20 +431,22 @@ func (h *Handle) ProgressAndUpdateGroup(group *Handle, done, total int64, progre
 	h.manager.updateChildAndGroup(h.id, groupID, done, total, false, progress)
 }
 
+// Add atomically accumulates delta against the latest stored progress, even
+// when several transfer callbacks report increments concurrently.
 func (h *Handle) Add(delta int64) {
 	if h == nil || h.manager == nil || delta <= 0 {
 		return
 	}
-	h.manager.mu.Lock()
-	e := h.manager.entries[h.id]
+	m := h.manager
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e := m.entries[h.id]
 	if e == nil {
-		h.manager.mu.Unlock()
 		return
 	}
-	done := e.task.BytesDone + delta
-	total := e.task.BytesTotal
-	h.manager.mu.Unlock()
-	h.Progress(done, total)
+	if m.progressLocked(h.id, e.task.BytesDone+delta, e.task.BytesTotal, time.Now()) {
+		m.touchLocked()
+	}
 }
 
 func (h *Handle) Complete() {
