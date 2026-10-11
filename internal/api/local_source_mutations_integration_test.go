@@ -66,6 +66,7 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	sourceD := makeBound("A retarget root")
 	modeSource := makeBound("A mode policy root")
 	rulesSource := makeBound("A private ignore rules root")
+	scheduleSource := makeBound("A private pending schedule root")
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", sourceA.ID)
 	own := map[string]string{
 		"X-XDrive-Device-ID":              deviceA.ID,
@@ -276,6 +277,122 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	if err := json.Unmarshal(stalePrivate.Body.Bytes(), &newRules); err != nil ||
 		newRules.Revision != 2 || newRules.IgnoreRules != "*.cache\n!keep.cache" {
 		t.Fatalf("private rules did not reflect latest revision: %+v err=%v", newRules, err)
+	}
+
+	// Generic owner-JWT reads must redact native schedule configuration,
+	// just as they redact local filesystem ignore rules. Only the bound
+	// owning Agent may use the private schedule endpoint.
+	scheduleURL := fmt.Sprintf("/api/v1/sources/%d", scheduleSource.ID)
+	privateScheduleURL := scheduleURL + "/local-schedule"
+	initialSchedule := map[string]any{
+		"schedule_type": "cron", "schedule_expression": "0 3 * * *", "schedule_timezone": "UTC",
+	}
+	if err := db.Model(&meta.Source{}).Where("id = ?", scheduleSource.ID).
+		Updates(initialSchedule).Error; err != nil {
+		t.Fatal(err)
+	}
+	scheduleGeneric := request(t, router, http.MethodGet, scheduleURL, ownerJWT, nil, http.StatusOK)
+	var scheduleGenericDTO sourceDTO
+	if err := json.Unmarshal(scheduleGeneric.Body.Bytes(), &scheduleGenericDTO); err != nil {
+		t.Fatal(err)
+	}
+	if scheduleGenericDTO.ScheduleType != "" || scheduleGenericDTO.ScheduleExpression != "" ||
+		scheduleGenericDTO.ScheduleTimezone != "" {
+		t.Fatalf("generic owner-JWT Source leaked private native schedule: %+v", scheduleGenericDTO)
+	}
+	requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil, http.StatusForbidden, nil)
+	requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, otherJWT, nil, http.StatusNotFound, own)
+	foreignSchedule := copyHeaders()
+	foreignSchedule["X-XDrive-Device-ID"] = deviceB.ID
+	foreignSchedule["X-XDrive-Device-Token"] = deviceBSecret
+	requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil, http.StatusForbidden, foreignSchedule)
+	wrongScheduleRoot := copyHeaders()
+	wrongScheduleRoot["X-XDrive-Local-Root-ID"] = uuid.NewString()
+	requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil, http.StatusForbidden, wrongScheduleRoot)
+	scheduleRead := requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil, http.StatusOK, own)
+	var privateSchedule localSourceScheduleDTO
+	if err := json.Unmarshal(scheduleRead.Body.Bytes(), &privateSchedule); err != nil {
+		t.Fatal(err)
+	}
+	if privateSchedule.SourceID != scheduleSource.ID || privateSchedule.Revision != 1 ||
+		privateSchedule.ScheduleType != "cron" || privateSchedule.ScheduleExpression != "0 3 * * *" ||
+		privateSchedule.ScheduleTimezone != "UTC" ||
+		scheduleRead.Header().Get("Cache-Control") != "private, no-store" ||
+		scheduleRead.Header().Get("ETag") != "\"1\"" {
+		t.Fatalf("private local schedule read invalid or cacheable: %+v", privateSchedule)
+	}
+	for _, field := range []string{"device_token", "root_fingerprint", "root_id", "local_path", "ignore_rules", "checkpoint"} {
+		if strings.Contains(scheduleRead.Body.String(), field) {
+			t.Fatalf("private local schedule leaked %s", field)
+		}
+	}
+
+	// An invalid expression/timezone is never persisted. Owner JWT and a
+	// foreign same-account device cannot change the schedule, even when
+	// they know the Source ID and exactly which revision to submit.
+	for _, invalid := range []string{
+		`{"schedule_type":"cron","schedule_expression":"0 3 * *","schedule_timezone":"UTC"}`,
+		`{"schedule_type":"cron","schedule_expression":"0 3 * * *","schedule_timezone":"Invalid/Timezone"}`,
+		`{"schedule_type":"interval","schedule_expression":"30s","schedule_timezone":""}`,
+	} {
+		requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT, strings.NewReader(invalid),
+			http.StatusBadRequest, own)
+	}
+	validManual := `{"schedule_type":"manual","schedule_expression":"","schedule_timezone":""}`
+	requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT, strings.NewReader(validManual),
+		http.StatusForbidden, map[string]string{"If-Match": "\"1\""})
+	requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT, strings.NewReader(validManual),
+		http.StatusForbidden, foreignSchedule)
+	scheduleEvidence := meta.SourceItem{
+		SourceID: scheduleSource.ID, ExternalID: "schedule-pending-history",
+		Kind: meta.SourceItemKindFile, Path: "do-not-delete.jpg",
+		State: meta.SourceItemStateSynced, LastSeenAt: now,
+		MirrorMissingFullScans: 2, MirrorMissingSince: &now,
+	}
+	if err := db.Create(&scheduleEvidence).Error; err != nil {
+		t.Fatal(err)
+	}
+	savedSchedule := requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT,
+		strings.NewReader(validManual), http.StatusOK, own)
+	var savedScheduleSource sourceDTO
+	if err := json.Unmarshal(savedSchedule.Body.Bytes(), &savedScheduleSource); err != nil {
+		t.Fatal(err)
+	}
+	if savedScheduleSource.ID != scheduleSource.ID || savedScheduleSource.Revision != 2 ||
+		savedScheduleSource.Status != meta.SourceStatusPaused ||
+		savedScheduleSource.ScheduleType != "" || savedScheduleSource.ScheduleExpression != "" ||
+		savedScheduleSource.ScheduleTimezone != "" || savedScheduleSource.RunRequestedAt != nil {
+		t.Fatalf("saved-only local schedule activated execution or revealed configuration: %+v", savedScheduleSource)
+	}
+	savedPrivateSchedule := requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil,
+		http.StatusOK, own)
+	var manualPrivate localSourceScheduleDTO
+	if err := json.Unmarshal(savedPrivateSchedule.Body.Bytes(), &manualPrivate); err != nil ||
+		manualPrivate.Revision != 2 || manualPrivate.ScheduleType != "manual" ||
+		manualPrivate.ScheduleExpression != "" || manualPrivate.ScheduleTimezone != "" {
+		t.Fatalf("private schedule was not persisted: %+v err=%v", manualPrivate, err)
+	}
+	var stillIntact meta.SourceItem
+	if err := db.First(&stillIntact, scheduleEvidence.ID).Error; err != nil ||
+		stillIntact.MirrorMissingFullScans != 2 || stillIntact.MirrorMissingSince == nil {
+		t.Fatalf("saved schedule touched Mirror evidence: %+v err=%v", stillIntact, err)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT,
+		strings.NewReader(validManual), http.StatusConflict, own)
+	// Even a synthetic, database-forced active local Source stays protected.
+	if err := db.Model(&meta.Source{}).Where("id = ?", scheduleSource.ID).
+		Update("status", meta.SourceStatusActive).Error; err != nil {
+		t.Fatal(err)
+	}
+	scheduleRevision2 := copyHeaders()
+	scheduleRevision2["If-Match"] = "\"2\""
+	requestWithHeaders(t, router, http.MethodPatch, scheduleURL, ownerJWT,
+		strings.NewReader(validManual), http.StatusConflict, scheduleRevision2)
+	requestWithHeaders(t, router, http.MethodGet, privateScheduleURL, ownerJWT, nil,
+		http.StatusConflict, scheduleRevision2)
+	if err := db.Model(&meta.Source{}).Where("id = ?", scheduleSource.ID).
+		Update("status", meta.SourceStatusPaused).Error; err != nil {
+		t.Fatal(err)
 	}
 
 	var unchanged meta.Source

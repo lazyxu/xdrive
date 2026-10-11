@@ -285,6 +285,14 @@ export type AgentLocalBoundBackupRules = {
   ignore_rules: string
 }
 
+export type AgentLocalBoundBackupSchedule = {
+  source_id: number
+  revision: number
+  schedule_type: '' | 'manual' | 'interval' | 'cron'
+  schedule_expression: string
+  schedule_timezone: string
+}
+
 export type AgentLocalBoundBackupRemoval = {
   source_id: number
   local_grant_removed: boolean
@@ -2759,6 +2767,21 @@ export class AgentIPCClient {
   setLocalBoundBackupRules(sourceID: number, revision: number, rules: string) {
     return this.request<AgentLocalBoundBackupRules>('PATCH', '/v1/device-backups/local-rules', {
       source_id: sourceID, revision, ignore_rules: rules,
+    })
+  }
+
+  localBoundBackupSchedule(sourceID: number) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBoundBackupSchedule>('GET', `/v1/device-backups/local-schedule?${query.toString()}`)
+  }
+
+  setLocalBoundBackupSchedule(sourceID: number, revision: number, spec: {
+    schedule_type: 'manual' | 'interval' | 'cron'
+    schedule_expression: string
+    schedule_timezone: string
+  }) {
+    return this.request<AgentLocalBoundBackupSchedule>('PATCH', '/v1/device-backups/local-schedule', {
+      source_id: sourceID, revision, ...spec,
     })
   }
 

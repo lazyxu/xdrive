@@ -310,6 +310,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id", s.getSource)
 	// Raw local ignore rules are available ONLY to the credential-verified bound Agent.
 	authed.GET("/sources/:id/local-rules", s.requireLocalSourceExecutor(), s.getLocalSourceIgnoreRules)
+	// Planned local schedule is visible only to its authenticated owning Agent.
+	authed.GET("/sources/:id/local-schedule", s.requireLocalSourceExecutor(), s.getLocalSourceSchedule)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.

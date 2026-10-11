@@ -137,7 +137,7 @@ var desktopIPCCapabilities = []string{
 func desktopIPCHelloCapabilities() []string {
 	capabilities := append([]string(nil), desktopIPCCapabilities...)
 	if runtime.GOOS == "windows" || runtime.GOOS == "linux" {
-		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-remove")
+		capabilities = append(capabilities, "local-folder-root-grants", "device-backup-local-drafts", "device-backup-local-config", "device-backup-local-target", "device-backup-local-mode", "device-backup-local-rules", "device-backup-local-schedule", "device-backup-local-remove")
 	}
 	if openWithSupportedPlatform() {
 		capabilities = append(capabilities, "open-with")
@@ -747,6 +747,8 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PATCH /v1/device-backups/local-mode", h.setLocalBoundBackupMode)
 	mux.HandleFunc("GET /v1/device-backups/local-rules", h.localBoundBackupRules)
 	mux.HandleFunc("PATCH /v1/device-backups/local-rules", h.setLocalBoundBackupRules)
+	mux.HandleFunc("GET /v1/device-backups/local-schedule", h.localBoundBackupSchedule)
+	mux.HandleFunc("PATCH /v1/device-backups/local-schedule", h.setLocalBoundBackupSchedule)
 	mux.HandleFunc("DELETE /v1/device-backups/local-bound", h.removeLocalBoundBackup)
 	mux.HandleFunc("GET /v1/device-backups/runs", h.deviceBackupRuns)
 	mux.HandleFunc("POST /v1/local-folder/authorize", h.authorizeLocalFolder)

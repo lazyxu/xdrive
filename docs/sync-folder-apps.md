@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit in PR |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal merged #1356 (exact-head CI green); P0-C4b2d own saved Backup/Mirror policy merged #1366 (76-job exact-head CI green); P0-C4b2e1 private local ignore-rule edit merged #1372 (76-job exact-head CI green); P0-C4b2e2 saved local schedule in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library merged #1351; no durable aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -315,7 +315,7 @@ Mirror requires explicit additional confirmation; Backup remains default.
 This does not activate Source or enable upload, scheduling, preview, run,
 cancel, cross-device mutation, NAS Push management or cloud deletion.
 
-## UI P0-C4b2e1: own Desktop private ignore rules (PR verification)
+## UI P0-C4b2e1: own Desktop private ignore rules (merged #1372; full CI green)
 
 The existing owner-readable `GET /sources/:id` intentionally redacts
 `ignore_rules` because patterns can contain fragments of native local
@@ -344,6 +344,38 @@ No SourceRun, uploader, schedule, local preview, NAS Push, Mirror delete,
 Root rebind or remote task control is enabled. Follow-on P0-C4b2e2
 may configure a *saved* schedule only; L05 is needed for any actual
 owning-Agent background execution.
+
+## UI P0-C4b2e2: owning-Desktop saved schedule, no execution (PR verification)
+
+A bound and paused local-folder Push Source may save one **future**
+manual / Go-duration interval / 5-field cron plan through its own
+credential-verified native Agent. General owner-JWT Source DTOs must not
+reveal the local schedule fields; Web/Mobile Web and same-owner Desktop B
+continue to receive only the B-scope device backup view. A narrow
+`GET /api/v1/sources/:id/local-schedule` uses the authenticated
+owner, enrolled device token, Root identity and a transaction-local repeat
+of device-first authorization to return only Source ID/revision and saved
+schedule fields. No device credential or local Root fingerprint enters
+Renderer or Web.
+
+Desktop Main/Preload gate `device-backup-local-schedule` on
+Windows/Linux Agent capability. The shared MUI page shows the private
+editor only for an unrevoked, verified **own device**, not other devices.
+Account/server transitions close it and discard prior async results.
+The Agent validates a live native Root grant and rechecks the session and
+Source revision on every read and write. Write uses only
+`schedule_type`, `schedule_expression` and
+`schedule_timezone` on the existing Server PATCH with If-Match,
+device/Root proof, a paused-only transaction guard and the existing
+`sourceschedule.Normalize` validation. A post-save private GET
+verifies effective **stored configuration**, not execution.
+
+The UI must distinguish **saved / pending executor** from running or
+applied. A blank legacy schedule is not treated as proof of active
+default scheduling. No Source activation, watcher, background Agent
+scheduler, SourceRun, preview/cancel, upload/CAS commit, or Mirror deletion
+is introduced by this stage. Device-local L05 and L06 execution plus
+L07 physical 100k/4GiB tests remain mandatory before any applied claim.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 
