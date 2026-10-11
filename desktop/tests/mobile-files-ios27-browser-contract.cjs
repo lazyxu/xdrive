@@ -153,3 +153,42 @@ test('09E: native Chrome checks More/Sort/selection menu hitboxes at 375/390/899
     assert.ok(runner.includes(name), 'missing actual native Chrome acceptance: ' + name)
   }
 })
+
+
+test('09F: actual Chromium Recent/Favorites/Saved Search collection menus share Web Server DTOs', () => {
+  const mobile = read('web/src/MobileFiles.tsx')
+  const adapter = read('web/src/WebFileExplorer.tsx')
+  assert.ok(runner.includes('async function filesIos27CollectionMenusAcceptance(origin)'))
+  assert.ok(runner.includes('await filesIos27CollectionMenusAcceptance(origin)'))
+  for (const text of [
+    "'[data-mobile-files-collection-row=\"recent\"]'",
+    "'[data-mobile-files-collection-row=\"favorites\"]'",
+    "'[data-mobile-files-saved-options=\"17\"]'",
+    "await page.keyboard.press('Shift+F10')",
+    "'[data-mobile-files-collection-action=\"copy\"]'",
+    "'/api/v1/nodes/103'", "'/api/v1/file-favorites/104'",
+    "'/api/v1/file-saved-searches/17'",
+    "await sampleMenu('recent-keyboard', 4)",
+    "await sampleMenu('favorites', 4)",
+    "await sampleMenu('saved-search', 3)",
+    "parseFloat(item.computedMinHeight) >= 44",
+    "deniedSaved.status() === 403", "acceptedSaved.status() === 200",
+    "filesIos27Fixture.favoriteNodeIDs.length === 0",
+    "filesIos27Fixture.savedSearches.length === 0",
+    "writesAfter === writesBefore",
+  ]) assert.ok(runner.includes(text), '09F missing physical browser/API acceptance: ' + text)
+  for (const field of [
+    "onCollectionAction={collectionAction}",
+    "onUnfavorite={id => favorites.unfavorite(id)}",
+    "onDeleteSavedSearch={id => organization.deleteSavedSearch(id)}",
+    "const node = await api.node(entry.id)",
+  ]) assert.ok(adapter.includes(field), 'collection action must remain owned by wide Web: ' + field)
+  for (const key of [
+    'data-mobile-files-collection-row={owner}',
+    'data-mobile-files-saved-options={entry.id}',
+    'MOBILE_FILES_MENU_TOUCH_SX',
+    'props.onCollectionAction?.(entry, action)',
+  ]) assert.ok(mobile.includes(key), 'Mobile must retain shared presentation: ' + key)
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
