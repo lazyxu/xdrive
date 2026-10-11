@@ -293,6 +293,21 @@ export type AgentLocalBoundBackupSchedule = {
   schedule_timezone: string
 }
 
+export type AgentLocalBackupSnapshot = {
+  source_id: number
+  revision: number
+  scanned_files: number
+  scanned_directories: number
+  scanned_bytes: number
+  ignored_items: number
+  ignored_bytes: number
+  skipped_unsafe_items: number
+  has_verified_previous: boolean
+  saved: true
+  complete: true
+  missing_inference_safe: false
+}
+
 export type AgentLocalBackupPreview = {
   source_id: number
   revision: number
@@ -2812,6 +2827,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupPreview>(
       'GET', `/v1/device-backups/local-preview?${query.toString()}`, undefined, 40_000, signal,
+    )
+  }
+
+  localBoundBackupSnapshot(sourceID: number, signal?: AbortSignal) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupSnapshot>(
+      'POST', `/v1/device-backups/local-snapshot?${query.toString()}`, undefined, 195_000, signal,
     )
   }
 

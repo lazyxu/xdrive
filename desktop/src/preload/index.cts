@@ -542,6 +542,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-device-backup-local-preview', sourceID, requestID),
   cancelDeviceBackupLocalPreview: (requestID: string) =>
     ipcRenderer.invoke('agent:cancel-device-backup-local-preview', requestID),
+  saveDeviceBackupLocalSnapshot: (sourceID: number, requestID: string) =>
+    ipcRenderer.invoke('agent:save-device-backup-local-snapshot', sourceID, requestID),
+  cancelDeviceBackupLocalSnapshot: (requestID: string) =>
+    ipcRenderer.invoke('agent:cancel-device-backup-local-snapshot', requestID),
   removeDeviceBackupLocalSource: (sourceID: number, revision: number) =>
     ipcRenderer.invoke('agent:remove-device-backup-local-source', sourceID, revision),
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),
