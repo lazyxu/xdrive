@@ -460,3 +460,12 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **严格验收计划：** 已有真实 React 挂载 `web-viewer-shell.cjs` 验证 375/390/899/900 下主/次菜单布局权限、每种能力的真实 Callback 与 Node revision、无法创作的 Live Photo 不出现创作菜单项但完整实况可导出、下载失败/明确重试、旧 Node 切换关闭菜单、宽 Web 功能不退化。原生构建 Web + Chromium `gallery-ios27-viewer` 对 fine/coarse 和 390/899/900 验证 DOM 的菜单**实际可点击**、每个主按钮至少 44×44 CSS px、`rail.scrollWidth <= rail.clientWidth + 1`，所有原可授权次菜单能力可达、无浏览器页面溢出，并保留 P1-2i 之前实际通过的创作 403→重试→输出与取消、编辑 PUT/DELETE、删除 403→queued 回执、返回滚动差 ≤2px、未知 HTTP/Console/PageError=0。首轮真实失败不可降低此门槛。
 
 **不是 iOS 真机 1:1 验收声明：** 当前无实际 iOS 27「照片」截图、配对 Safari/PWA/VoiceOver 报告；MUI 更多菜单实现仅为与版本锁定交互层级接近的可测试迭代。真机玻璃质感、系统 safe area、OS 手势、动效时序仍是独立发布门槛。真实 100k HEVC/RAW/LIVP、传输取消与性能等同样不在本次呈现改动范围，不能借任何浏览器 Fixture 声称完成。
+
+
+## P1-3a · iOS 27 多选照片操作栏与 Web/Mobile Web 等价（2026-10-11）
+
+**状态：候选改动，完整 CI、合入和真实 iOS 27 真机 1:1 待验收。** 共享的 `XDriveMediaGallerySelectionToolbar` 在小于 900 CSS px 时仍让全部操作按钮横向滚动，不适合 375/390px 的 iOS 27「照片」多选操作层级；这与 #1424 的单图 Viewer 操作栏是不同缺口。
+
+小于 900px 的选择模式保留收藏、删除或回收站恢复/永久删除作为直接按钮；加入相册、标签、下载、拼图和自动电影仅按共享 DataSource 授权能力提供单个 44px「更多已选项目操作」入口，不假增业务能力、不水平滚动操作栏。宽 Web ≥900px 保留原全部直接操作。更多菜单必须在选区数量/身份变化、任务 busy、能力变化与 899/900 断点切换时关闭；同一手动相册选择器、查询级选择、失败反馈、任务收据和操作回调不变。
+
+React mounted 回归覆盖操作回调、身份防串、空相册、零选区、回收站及宽窄切换；新增 opt-in 原生 Chromium 组件浏览器 360/375/390/899/900px 的真实工具栏溢出、44px 命中、弹窗焦点与键盘/失败/重试/选区隔离门禁，必须在本 PR 精确 SHA 跑绿后才能声明该层验收。实际 iOS 27 Safari/PWA/VoiceOver 截图/手势和 100k 真数据仍单独记为待验证，不能声称 1:1 完成。全屏 App Frame、52px 应用标题栏、共享 Server REST/Agent IPC 和 `VirtualCollection/Grid/Timeline` 不变。

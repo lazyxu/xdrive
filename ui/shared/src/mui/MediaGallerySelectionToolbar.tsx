@@ -6,6 +6,7 @@ import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import LabelOutlinedIcon from '@mui/icons-material/LabelOutlined'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import MovieCreationOutlinedIcon from '@mui/icons-material/MovieCreationOutlined'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import StarBorderRoundedIcon from '@mui/icons-material/StarBorderRounded'
 import StarRoundedIcon from '@mui/icons-material/StarRounded'
 import RestoreFromTrashRoundedIcon from '@mui/icons-material/RestoreFromTrashRounded'
@@ -19,6 +20,7 @@ import {
   ListItemButton,
   DialogActions,
   IconButton,
+  Menu,
   MenuItem,
   Paper,
   Stack,
@@ -89,7 +91,6 @@ export function XDriveMediaGallerySelectionToolbar({
   onClear: () => void
 }) {
   const compactViewport = useMediaQuery('(max-width:899.95px)')
-  const albumTriggerRef = useRef<HTMLButtonElement | null>(null)
   const albumSubmitRef = useRef(false)
   const [albumID, setAlbumID] = useState('')
   const [albumPickerOpen, setAlbumPickerOpen] = useState(false)
@@ -99,6 +100,7 @@ export function XDriveMediaGallerySelectionToolbar({
   const [albumSelectionCount, setAlbumSelectionCount] = useState(selectedCount)
   const [albumSelectionIdentity, setAlbumSelectionIdentity] = useState(selectionIdentity)
   const albumViewport = useXDriveMobilePanelViewport(compactViewport && albumPickerOpen)
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [tagsInput, setTagsInput] = useState('')
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -110,6 +112,9 @@ export function XDriveMediaGallerySelectionToolbar({
   )
   const tags = parseSelectionTags(tagsInput)
   const disabled = busy || selectedCount === 0
+  const showMoreActions = compactViewport && !trashMode && Boolean(
+    onAddToAlbum || onAddTags || onDownload || onCreateCollage || onCreateMovie,
+  )
   const filteredAlbums = useMemo(
     () => manualAlbums.filter((album) => album.name.toLocaleLowerCase('zh-CN')
       .includes(albumQuery.trim().toLocaleLowerCase('zh-CN'))),
@@ -117,6 +122,8 @@ export function XDriveMediaGallerySelectionToolbar({
   )
   const albumSelectionChanged = selectedCount !== albumSelectionCount ||
     albumSelectionIdentity !== selectionIdentity
+  // Invalidate actions when the selected identity, authorization or layout changes.
+  useEffect(() => { setMoreAnchor(null) }, [selectedCount, selectionIdentity, compactViewport, busy, showMoreActions])
   useEffect(() => {
     if (compactViewport || !albumPickerOpen) return
     setAlbumPickerOpen(false)
@@ -219,7 +226,7 @@ export function XDriveMediaGallerySelectionToolbar({
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center"
             sx={compactViewport ? {
-              minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
+              minWidth: 0, overflowX: 'hidden', overflowY: 'hidden',
               flexWrap: 'nowrap', overscrollBehaviorX: 'contain',
               pb: 0.5, '& .MuiButton-root': {
                 minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap',
@@ -246,36 +253,22 @@ export function XDriveMediaGallerySelectionToolbar({
               {allFavorite ? '取消收藏' : '收藏'}
             </Button>
           ) : null}
-          {onAddToAlbum && !trashMode && (compactViewport || manualAlbums.length > 0) ? (
-            compactViewport ? (
-              <Button ref={albumTriggerRef} size="small" disabled={disabled}
-                onClick={openAlbumPicker}>
-                加入相册
-              </Button>
-            ) : (
-              <TextField
-                select
-                size="small"
-                label="添加到相册"
-                value={albumID}
-                disabled={disabled}
-                onChange={(event) => {
-                  const next = event.target.value
-                  setAlbumID(next)
-                  const album = manualAlbums.find((item) => item.id === next)
-                  if (!album) return
-                  void onAddToAlbum(album).catch(() => undefined).finally(() => setAlbumID(''))
-                }}
-                sx={{ minWidth: 180 }}
-              >
-                <MenuItem value="">选择相册</MenuItem>
-                {manualAlbums.map((album) => (
-                  <MenuItem key={album.id} value={album.id}>{album.name}</MenuItem>
-                ))}
-              </TextField>
-            )
+          {!compactViewport && onAddToAlbum && !trashMode && manualAlbums.length > 0 ? (
+            <TextField select size="small" label="添加到相册" value={albumID}
+              disabled={disabled} onChange={(event) => {
+                const next = event.target.value
+                setAlbumID(next)
+                const album = manualAlbums.find((item) => item.id === next)
+                if (!album) return
+                void onAddToAlbum(album).catch(() => undefined).finally(() => setAlbumID(''))
+              }} sx={{ minWidth: 180 }}>
+              <MenuItem value="">选择相册</MenuItem>
+              {manualAlbums.map((album) => (
+                <MenuItem key={album.id} value={album.id}>{album.name}</MenuItem>
+              ))}
+            </TextField>
           ) : null}
-          {onAddTags && !trashMode ? (
+          {!compactViewport && onAddTags && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -285,7 +278,7 @@ export function XDriveMediaGallerySelectionToolbar({
               标签
             </Button>
           ) : null}
-          {onDownload && !trashMode ? (
+          {!compactViewport && onDownload && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -295,7 +288,7 @@ export function XDriveMediaGallerySelectionToolbar({
               下载
             </Button>
           ) : null}
-          {onCreateCollage && !trashMode ? (
+          {!compactViewport && onCreateCollage && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -305,7 +298,7 @@ export function XDriveMediaGallerySelectionToolbar({
               拼图
             </Button>
           ) : null}
-          {onCreateMovie && !trashMode ? (
+          {!compactViewport && onCreateMovie && !trashMode ? (
             <Button
               size="small"
               disabled={disabled}
@@ -337,9 +330,41 @@ export function XDriveMediaGallerySelectionToolbar({
               永久删除
             </Button>
           ) : null}
+          {showMoreActions ? (
+            <IconButton aria-label="更多已选项目操作" aria-haspopup="menu"
+              aria-expanded={Boolean(moreAnchor)} data-xdrive-gallery-selection-more
+              disabled={disabled} onClick={(event) => setMoreAnchor(event.currentTarget)}
+              sx={{ width: 44, height: 44, flex: '0 0 44px' }}>
+              <MoreHorizRoundedIcon fontSize="small" />
+            </IconButton>
+          ) : null}
           </Stack>
         </Stack>
       </Paper>
+
+      <Menu anchorEl={moreAnchor} open={showMoreActions && !disabled && Boolean(moreAnchor)}
+        onClose={() => setMoreAnchor(null)} aria-label="更多已选项目操作">
+        {onAddToAlbum && !trashMode ? (
+          <MenuItem sx={{ minHeight: 44 }} disabled={disabled}
+            onClick={() => { setMoreAnchor(null); openAlbumPicker() }}>加入相册</MenuItem>
+        ) : null}
+        {onAddTags && !trashMode ? (
+          <MenuItem sx={{ minHeight: 44 }} disabled={disabled}
+            onClick={() => { setMoreAnchor(null); setTagsOpen(true) }}>标签</MenuItem>
+        ) : null}
+        {onDownload && !trashMode ? (
+          <MenuItem sx={{ minHeight: 44 }} disabled={disabled}
+            onClick={() => { setMoreAnchor(null); void onDownload().catch(() => undefined) }}>下载</MenuItem>
+        ) : null}
+        {onCreateCollage && !trashMode ? (
+          <MenuItem sx={{ minHeight: 44 }} disabled={disabled}
+            onClick={() => { setMoreAnchor(null); onCreateCollage() }}>拼图</MenuItem>
+        ) : null}
+        {onCreateMovie && !trashMode ? (
+          <MenuItem sx={{ minHeight: 44 }} disabled={disabled}
+            onClick={() => { setMoreAnchor(null); onCreateMovie() }}>自动电影</MenuItem>
+        ) : null}
+      </Menu>
 
       <Drawer anchor="bottom" open={compactViewport && albumPickerOpen}
         onClose={closeAlbumPicker}
