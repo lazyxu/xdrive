@@ -1,0 +1,43 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const root = path.join(__dirname, '..', '..')
+const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
+
+test('own Desktop alone may remove pristine bound Source through private Agent port', () => {
+  const api = read('internal', 'api', 'sources.go')
+  const auth = read('internal', 'api', 'local_source_executor_auth.go')
+  const transport = read('internal', 'client', 'local_bound_remove.go')
+  const agent = read('cmd', 'xdrive-agent', 'device_backup_local_remove.go')
+  const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const preload = read('desktop', 'src', 'preload', 'index.cts')
+  const app = read('desktop', 'src', 'renderer', 'App.tsx')
+  const page = read('ui', 'shared', 'src', 'mui', 'DeviceBackupPage.tsx')
+  const dialog = read('ui', 'shared', 'src', 'mui', 'DeviceBackupLocalRemoveDialog.tsx')
+  const web = read('web', 'src', 'App.tsx')
+
+  assert.match(api, /requireLocalSourceMutationTx\(tx, c, id\)/)
+  assert.match(api, /requireEmptyBoundLocalSourceRemovalTx\(tx, source\)/)
+  assert.match(api, /meta\.SyncRun\{\}/)
+  assert.match(api, /meta\.SourceItem\{\}/)
+  assert.match(auth, /clientDeviceCredentialMatches\(/)
+  for (const header of ['X-XDrive-Device-ID', 'X-XDrive-Device-Token',
+    'X-XDrive-Local-Root-ID', 'X-XDrive-Local-Root-Fingerprint']) {
+    assert.ok(transport.includes(header), header)
+  }
+  assert.match(agent, /localBoundBackupConfig\(ctx, sourceID\)/)
+  assert.ok(agent.indexOf('cli.RemoveLocalBoundSource(ctx, sourceID, revision, proof)') <
+    agent.indexOf('localpush.RemoveRootGrant('))
+  assert.match(ipc, /"device-backup-local-remove"/)
+  assert.match(main, /requireAgentCapability\(hello, 'device-backup-local-remove'\)/)
+  assert.match(preload, /removeDeviceBackupLocalSource:/)
+  assert.match(app, /localRemove=\{localBackupRemove\}/)
+  assert.match(page, /localRemove && verifiedLocalDeviceID === device\.id && !device\.revoked/)
+  assert.match(dialog, /actions\.remove\(sourceID, settings\.revision\)/)
+  assert.match(dialog, /Checkbox checked=\{confirmed\}/)
+  assert.doesNotMatch(web, /localRemove=/)
+  assert.doesNotMatch(web, /removeDeviceBackupLocalSource/)
+  assert.doesNotMatch(dialog, /(?:triggerSource|cancelSourceRun|startUpload)\(/)
+})

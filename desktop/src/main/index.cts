@@ -179,6 +179,7 @@ import {
   type AgentVerifiedLocalDevice,
   type AgentLocalSourceDraftPage,
   type AgentLocalBoundBackupSettings,
+  type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
   type AgentCreateSourceInput,
@@ -2032,6 +2033,16 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().retargetLocalBoundBackup(sourceID, revision, targetNodeID)
   }, false))
+  ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
+    runAgentAction<AgentLocalBoundBackupRemoval>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-remove')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+        typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Local Source and revision must be positive integers.')
+      }
+      return requireAgentClient().removeLocalBoundBackup(sourceID, revision)
+    }, false))
   ipcMain.handle('agent:get-device-backups', () => runAgentAction<AgentDeviceBackupOverview>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'device-backup-read')

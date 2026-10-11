@@ -278,6 +278,11 @@ export type AgentLocalBoundBackupSettings = {
   target_path?: string
 }
 
+export type AgentLocalBoundBackupRemoval = {
+  source_id: number
+  local_grant_removed: boolean
+}
+
 export type AgentVerifiedLocalDevice = {
   device_id: string
 }
@@ -2697,6 +2702,12 @@ export class AgentIPCClient {
   retargetLocalBoundBackup(sourceID: number, revision: number, targetNodeID: number) {
     return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-target', {
       source_id: sourceID, revision, target_node_id: targetNodeID,
+    })
+  }
+
+  removeLocalBoundBackup(sourceID: number, revision: number) {
+    return this.request<AgentLocalBoundBackupRemoval>('DELETE', '/v1/device-backups/local-bound', {
+      source_id: sourceID, revision,
     })
   }
 

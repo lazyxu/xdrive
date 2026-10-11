@@ -72,6 +72,20 @@ directory ownership and resets Mirror missing evidence as applicable.
 No local Push executor, automatic upload, cancellation UI, actual
 filesystem-to-CAS sync or physical-scale benchmark is enabled by either edit.
 
+## P0-C4b2c own-Desktop safe bound Source removal (PR verification)
+
+Only an owning Desktop may remove an already bound, paused and
+**history-free** local Push configuration. Agent requires the OS-stored
+device secret, validates its native Root grant, and sends the exact
+device/Root/revision proof to the existing Server DELETE. Transactional
+Server checks reject revoked or foreign devices, stale revisions,
+active Sources and any run/item/failure/collection/credential history.
+An existing historically used Source and its stable identity are retained
+until a future archival contract exists. The operation never deletes
+original local files or cloud Node/CAS bytes. The private Root-grant
+record is cleaned only after confirmed Server success; ambiguous HTTP
+responses retain it. Web/other Desktop remain read-only.
+
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 
 The canonical Web/Desktop navigation, local-vs-other Desktop capabilities, read-only projection and compatibility acceptance matrix are in [sync-folder-apps.md](./sync-folder-apps.md). These are approved requirements, **not proof of currently implemented Server/UI restrictions**.

@@ -449,6 +449,18 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupRemove = useMemo(() => {
+    if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-remove')) return undefined
+    return {
+      load: localBackupSettings.load,
+      remove: async (sourceID: number, revision: number) => {
+        const result = await window.xdriveDesktop.agent.removeDeviceBackupLocalSource(sourceID, revision)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const configured = !!status?.configured
   const reloginRequired = !configured && status?.auth_status === '需要重新登录'
   const loginReady = xDriveLoginCredentialsReady({
@@ -2407,6 +2419,7 @@ export default function App({
             localDrafts={localBackupDraftReader}
             localSettings={localBackupSettings}
             localTarget={localBackupTarget}
+            localRemove={localBackupRemove}
           />
         )}
 

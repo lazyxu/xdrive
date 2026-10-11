@@ -13,6 +13,8 @@ import { XDriveDeviceBackupLocalCreateDialog } from './DeviceBackupLocalCreateDi
 import { XDriveDeviceBackupLocalDrafts } from './DeviceBackupLocalDrafts'
 import { XDriveDeviceBackupLocalRenameDialog } from './DeviceBackupLocalRenameDialog'
 import { XDriveDeviceBackupLocalTargetDialog } from './DeviceBackupLocalTargetDialog'
+import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
+import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
 import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
@@ -70,6 +72,7 @@ export function XDriveDeviceBackupPage({
   localDrafts,
   localSettings,
   localTarget,
+  localRemove,
 }: {
   source?: XDriveDeviceBackupDataSource
   initialSourceID?: number
@@ -78,11 +81,13 @@ export function XDriveDeviceBackupPage({
   localDrafts?: (limit: number, afterID: number) => Promise<XDriveLocalSourceDraftPage>
   localSettings?: XDriveLocalBackupSettingsActions
   localTarget?: XDriveLocalBackupTargetActions
+  localRemove?: XDriveLocalBackupRemoveActions
 }) {
   const [refreshID, refresh] = useState(0)
   const [createOpen, setCreateOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [targetChange, setTargetChange] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
   // account/server's Device Backup page.
@@ -92,6 +97,7 @@ export function XDriveDeviceBackupPage({
     setCreateOpen(false)
     setRenameTarget(null)
     setTargetChange(null)
+    setRemoveTarget(null)
     setLocalMessage('')
   }, [source])
   // The data source identity is the account/server boundary. Never display
@@ -315,6 +321,12 @@ export function XDriveDeviceBackupPage({
                             修改本机云端目标
                           </Button>
                         ) : null}
+                        {localRemove && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="outlined" color="error"
+                            onClick={() => setRemoveTarget({ source, id: folder.source_id })}>
+                            移除本机备份配置
+                          </Button>
+                        ) : null}
                         <Typography variant="subtitle2">同步历史（只读）</Typography>
                         {history?.loading ? (
                           <Typography variant="body2">读取历史中…</Typography>
@@ -407,6 +419,23 @@ export function XDriveDeviceBackupPage({
           onFinished={(message) => {
             if (activeSourceRef.current !== source) return
             setTargetChange(null)
+            setLocalMessage(message)
+            refresh((n) => n + 1)
+          }}
+        />
+      ) : null}
+      {removeTarget && removeTarget.source === source && source && localRemove &&
+        verifiedLocalDeviceID && overview?.devices.some((device) =>
+          device.id === verifiedLocalDeviceID && !device.revoked &&
+          device.folders.some((folder) => folder.source_id === removeTarget.id)) ? (
+        <XDriveDeviceBackupLocalRemoveDialog
+          key={removeTarget.id}
+          sourceID={removeTarget.id}
+          actions={localRemove}
+          onClose={() => setRemoveTarget(null)}
+          onFinished={(message) => {
+            if (activeSourceRef.current !== source) return
+            setRemoveTarget(null)
             setLocalMessage(message)
             refresh((n) => n + 1)
           }}

@@ -689,6 +689,43 @@ func (s *Server) triggerSource(c *gin.Context) {
 	c.JSON(http.StatusAccepted, s.sourceDTO(source))
 }
 
+var errLocalSourceRemovalWouldDropHistory = errors.New("local backup Source has history or is not paused")
+
+// Local Push Source IDs are durable. A generic Source hard delete would
+// cascade away items, runs and aliases. A bound Source may be removed only
+// while paused and without any historical state, after the owning Agent's
+// device/Root/revision proof has been checked in the same transaction.
+// Pull and legacy NAS deletion retain their existing semantics.
+func requireEmptyBoundLocalSourceRemovalTx(tx *gorm.DB, source meta.Source) error {
+	if !isLocalFolderPush(source) {
+		return nil
+	}
+	if source.Status != meta.SourceStatusPaused || source.RunRequestedAt != nil ||
+		source.Checkpoint != "" || source.LastRunAt != nil || source.LastSuccessAt != nil ||
+		source.LastError != "" || source.RetryAttempt != 0 || source.RetryAt != nil ||
+		source.RetryClass != "" {
+		return errLocalSourceRemovalWouldDropHistory
+	}
+	for _, model := range []any{
+		&meta.SyncRun{},
+		&meta.SourceItem{},
+		&meta.SourceRunFailure{},
+		&meta.SourceCollection{},
+		&meta.SourceCredential{},
+		&meta.SourceConnectorConfig{},
+	} {
+		var count int64
+		if err := tx.Model(model).Where("source_id = ?", source.ID).
+			Limit(1).Count(&count).Error; err != nil {
+			return err
+		}
+		if count != 0 {
+			return errLocalSourceRemovalWouldDropHistory
+		}
+	}
+	return nil
+}
+
 func (s *Server) deleteSource(c *gin.Context) {
 	id, ok := parseID(c.Param("id"))
 	if !ok {
@@ -722,6 +759,9 @@ func (s *Server) deleteSource(c *gin.Context) {
 		if activeRuns != 0 {
 			return errSourceRunActive
 		}
+		if err := requireEmptyBoundLocalSourceRemovalTx(tx, source); err != nil {
+			return err
+		}
 		return tx.Delete(&source).Error
 	})
 	if err != nil {
@@ -730,6 +770,8 @@ func (s *Server) deleteSource(c *gin.Context) {
 			revisionConflict(c, expected, currentRevision)
 		case errors.Is(err, errSourceRunActive):
 			fail(c, http.StatusConflict, "source already has an active run")
+		case errors.Is(err, errLocalSourceRemovalWouldDropHistory):
+			fail(c, http.StatusConflict, "local backup with history cannot be removed; archival support pending")
 		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
 			fail(c, http.StatusForbidden, "owning device and authorized local Root required")
 		case errors.Is(err, gorm.ErrRecordNotFound):

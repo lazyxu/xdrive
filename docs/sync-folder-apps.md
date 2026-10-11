@@ -65,7 +65,7 @@ Backup remains default. Mirror requires explicit opt-in, two complete reliable m
 | L03-A/B/C/D1 | verified journal reader, bounded SHA256 preflight, candidates, CURRENT/PREVIOUS retention | merged #1244/#1246/#1250/#1258 |
 | Policy P0 | AGENTS + UI ownership, redaction & legacy compatibility contract | merged #1259 |
 | UI P0-A | two first-level routes/sidebar, legacy URL resolver, Pull-only scoped Manager and safe Push placeholder | P0-A1 merged #1276; full Push execution/controller separation still pending |
-| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green) |
+| Security P0-B | device-local authorization for Source mutations, safe redacted device/folder read endpoints, spoof tests | read API merged #1270; P0-B2a cancellation merged #1301; P0-B2b1 bound writes merged #1308; P0-B2c1 generic read redaction merged #1313; P0-B2b2 creator claim merged #1323; P0-B2b3 safe unbound draft cleanup merged #1325; P0-C4a own-Desktop create/bind merged #1328; P0-C4b1 own draft resume merged #1332; P0-C4b2a owning Desktop bound rename merged #1342 (75-job CI green); P0-C4b2b own target change merged #1348 (75-job exact-head CI green); P0-C4b2c own bound Source removal in PR |
 | UI P0-C | Desktop owning-device wizard/controls, other-device/Web viewer, NAS placeholder | Web/Mobile Web B-scope viewer merged #1277; Desktop read IPC merged #1290; verified local identity merged #1296; owning-device controls pending |
 | L03-D2–G | safe two-generation candidate delta, durable aliases, Planner/resumable/CAS/commit/recovery | L03-D2a read-only library in PR; no durable aliases/Planner/upload/commit |
 | L05/L06 | watcher, local schedule, offline recovery; own-device preview/cancel and read-only status | not implemented |
@@ -282,6 +282,25 @@ No Agent activation, SourceRun, CAS writes, automatic scheduler, Web/foreign
 device access or remote mutation interface is added. The existing
 2-complete-scans/24h/trash-only Mirror safety contract remains blocked.
 Physical Windows/Linux 100k and >=4GiB measurements remain future L07.
+
+## UI P0-C4b2c: owning Desktop safe bound Source removal (PR verification)
+
+The verified owning Desktop may remove only its own **paused, bound and
+history-free** local_folder Source configuration. Agent verifies the
+OS-held credential and the current native Root grant. Server rechecks
+device, exact Root, revocation and Source revision in the same deletion
+transaction. Historical runs, SourceItems, failure records, collections,
+connector data, scheduled work or previous progress cause HTTP 409 rather
+than cascading removal. Existing historically used Source IDs and history
+remain untouched until a separate archival/tombstone contract is built.
+
+The Agent removes its private Root-grant JSON only on confirmed Server
+success; uncertain HTTP results preserve it and local cleanup failures
+are reported separately. User-local original files, cloud Nodes and CAS
+bytes are never deleted by this action. Foreign Desktop and Web/Mobile Web
+remain read-only. No local execution, schedule, Mirror deletion or NAS
+Push UI is enabled. Exact-head CI and native-device acceptance remain
+required.
 
 ## 6. Acceptance matrix (release-blocking for the new features)
 
