@@ -1,5 +1,5 @@
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -491,6 +491,36 @@ function FileManager({
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
+  // Only a Gallery-launched media Viewer may restore its already-mounted
+  // caller scroll host. Do not apply this snapshot to Files, another account,
+  // a different workspace route or a different final viewport width.
+  const galleryViewerScrollRef = useRef<{
+    host: HTMLElement
+    offset: number
+    callerHash: string
+    viewportWidth: number
+  } | null>(null)
+  const previousViewerActiveRef = useRef(viewerActive)
+  useLayoutEffect(() => {
+    const wasViewerActive = previousViewerActiveRef.current
+    previousViewerActiveRef.current = viewerActive
+    if (viewerActive || !wasViewerActive) return
+    const saved = galleryViewerScrollRef.current
+    galleryViewerScrollRef.current = null
+    if (!saved || appView !== 'gallery' ||
+        window.location.hash !== saved.callerHash ||
+        Math.abs(window.innerWidth - saved.viewportWidth) > 1) return
+    const restore = () => {
+      const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+      if (host !== saved.host || !saved.host.isConnected) return
+      saved.host.scrollTop = saved.offset
+    }
+    // Reapply after the routed Viewer leaves and the retained Gallery's
+    // latest responsive virtual layout is committed. No polling or 100k scan.
+    restore()
+    const frame = window.requestAnimationFrame(restore)
+    return () => window.cancelAnimationFrame(frame)
+  }, [viewerActive, appView])
   const setAppView = useCallback((view: AppView) => {
     const next = xDriveWebAppRouteForWorkspaceKey(view)
     if (next) launchWebApp(next)
@@ -1486,6 +1516,13 @@ function FileManager({
               listVariant: 'table',
             }}
             onOpenViewer={(item, context) => {
+              const host = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+              galleryViewerScrollRef.current = host ? {
+                host,
+                offset: host.scrollTop,
+                callerHash: window.location.hash,
+                viewportWidth: window.innerWidth,
+              } : null
               const contextID = xDriveCreateWebAppBrowseSession({
                 kind: 'gallery',
                 target: context.target,

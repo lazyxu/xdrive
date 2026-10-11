@@ -332,3 +332,23 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 
 **P1-2b 首轮精确提交 CI 回归修订：** [CI #38109891574](https://github.com/lazyxu/xdrive/actions/runs/38109891574) 的 `desktop-tests` 运行中，新增 3 项 P1-2b mounted React 验证均通过，但旧 `desktop/tests/shared-viewer-touch.cjs` 以完整单行文本匹配 `'& .MuiIconButton-root': { width: 44, height: 44, flexShrink: 0 }`，误将新增的浮层对比色字段判为 44px 触控目标缺失。本轮仅将该旧静态断言改为可允许额外字段/换行的 44px 尺寸断言，保留真实 mounted 44px、浮层关闭/隐藏与共享 API 验证；**没有放宽按钮尺寸要求或改动产品文件**。同一固定 GitHub 父版本重建仍恰好一个工作提交，新 SHA 需完整 PR CI/final-gate 验证；旧跑次其它通过项不得移作新提交依据。
+
+
+## P1-2c · 实际 Web/Mobile Web 路由 Viewer 的 iOS 27 响应式等价（2026-10-11）
+
+**状态：代码与真实浏览器测试候选，完整 CI、合并及真机须分别验收。** Web App.tsx 的 Gallery onOpenViewer 实际进入独立一级 media-viewer App，使用 WebMediaViewerApp → WebViewerFrame。此前 P1-2a/b 主要修复 MediaGalleryViewer/FileOpenPreviewDialog，不能据此断言真正的 Web Viewer 获得相同窄屏特性；独立 App 路由必须保留，因为其承载原来返回历史与媒体浏览上下文。真实 WebViewerFrame 在 390/899 CSS px 但 primary pointer 为 fine 时仍使用桌面 Header，失去移动底部操作栏，与相同宽度粗指针模式不等价。
+
+**本阶段只修复实际路由的呈现门槛：** 仅 WebMediaViewerApp 向现有 WebViewerFrame 传入 photosViewer。当 immersive 且宽度小于 900 CSS px 时，不论 mouse/trackpad/touch，均走同一移动顶部覆盖栏、44px 操作、底部 safe-area 与真正共享媒体预览；细指针依然可以通过 mousemove 唤醒自动隐藏的控制。900px 及以上保留宽屏，其他 Files Quick Look、Text/PDF/Audio App 沿用原指针条件。现有 Web REST MediaGalleryDataSource、useViewerNode、Server Range、共享 Gallery VirtualCollection/Grid/Timeline、MediaViewerContent 和浏览上下文 Node ID 不变；绝不引入第二套 Mobile API/媒体缓存/Viewer 或替换全屏 App Frame、52px 全局标题栏。
+
+**验收：** 完整真实挂载 Web Viewer 测试覆盖 390/899/900 × fine/coarse 与非媒体 Viewer；另在 CI 的 Web Job 运行实际构建 Web + 原生 Chromium gallery-ios27-viewer，采用细/粗指针独立上下文，从图库点击实际虚拟 Tile 打开路由，验证 Server 媒体读取、PNG 解码、操作位置/尺寸、隐藏/唤醒、900px 跨断点、Keyboard Next、返回原 Gallery mounted DOM/scroll、未知请求/Console/PageError，保留精确源 SHA、截图和 HTTP 审计。Fixture 仅 240 个 PNG 样本与严格模拟 REST，不代表真正 100k HEVC/RAW/Live、生产 Go Server/CAS 或真实 iOS Safari 测试。
+
+**剩余差距：** WebMediaViewerApp 尚未复用 Desktop Gallery 的 Filmstrip，也没有完成全部相册媒体编辑/删除等操作入口、业务权限及真实 Task Center 回执的配对验收。这些必须后续在共享服务契约下逐步补齐，取得真实 iOS 27 Safari/安装模式的配对截图和 VoiceOver 验收之前不得宣称像素级 1:1。
+
+
+**P1-2c 首轮真实 Chromium first-red（2026-10-11）：** [CI #38113291931](https://github.com/lazyxu/xdrive/actions/runs/38113291931) 真实 Chrome **27 个已运行验收点中仅 2 个返回锚点失败**，粗/细指针相同：`sameMain=true`、`sameGallery=true`、`backgroundRestored=true`，但比较打开前旧 `main.scrollTop=620` 与返回时得到 `101px` 差异，且旧虚拟 Tile DOM 被回收。全部未知请求/Console/PageError 均为 0，真实 Viewer 路由、PNG decode、移动/桌面断点、隐藏/唤醒与下一 Node 都通过，原始 [浏览器证据 artifact 11691614725](https://github.com/lazyxu/xdrive/actions/runs/38113291931/artifacts/11691614725) 已保存。审计确认初始代码把 `Playwright.click()` 之前的 scroll 误认为实际 Viewer 进入时的 scroll，并错误要求在 390→899→900→390 虚拟列表几何变化后**同一个 Tile DOM 对象**仍挂载；这与已批准的以 Node/逻辑索引为权威的虚拟化合同不符。下一轮在同一工作提交内补齐实际点击之后的 scroll 基线和点击照片的 Node/Index 身份，返回时等待原逻辑资产重新出现在虚拟窗口，然后要求它仍可见、同一 Gallery/main 仍挂载、背景恢复并检查“实际 Viewer-entry scroll”严格 ≤2px；并继续完整记录 pre-click→return 偏差，**若仍有真实丢失，不许放宽门禁，先修真实业务再跑**。不修改 Server/虚拟化生产代码、不伪造历史项，也不拿首轮其它绿项冒充新 SHA 成功。
+
+
+**P1-2c 原生 Chromium 真正的返回锚点 first-red（2026-10-11）：** [CI #38113760709](https://github.com/lazyxu/xdrive/actions/runs/38113760709)，[截图/请求与原始 JSON artifact 11692228248](https://github.com/lazyxu/xdrive/actions/runs/38113760709/artifacts/11692228248) 再次在细指针与粗指针两种真实 Web BrowserContext 触发相同产品差距：点击真实照片后进入 Viewer 时滚动值 **589px**，返回时 **721px**，漂移 **132px**。原逻辑照片 15 / `photo-016.png` 仍可见，Gallery 根节点与 `main` 均相同、背景可操作、无未知 HTTP/Console/PageError，因此是真实的**滚动位置偏移**而不是文件丢失，也不是测试旧 DOM 假设。本轮不再修改容差；在现有 Web `App.tsx` 仅为**从 Gallery 打开的 Viewer**记录其真实 `main` 宿主、点击后的 `scrollTop`、原 Hash 和视口宽度，在 Viewer 返回同一路由/同一宿主/同一视口宽度时，于 layout commit 与下一帧精确恢复该位置。其他 Files、Viewer 深链接、不同账号/路径及横竖屏最终视口不同的返回不使用这个像素快照（继续走原 Server Node 锚点策略）。既不冻结后台媒体请求也不取消上传/下载、改变虚拟化/GO API 或注入第二个 Viewer；需要更新真实 Browser 测试并以严格 ≤2px 重新验收。旧提交的通过项不能算新 SHA 验收。
+
+
+**P1-2c 真实 Chromium 已绿、Desktop 旧静态断言误报（2026-10-11）：** [CI #38114239293](https://github.com/lazyxu/xdrive/actions/runs/38114239293) 的真实构建 Web + native Chrome `gallery-ios27-viewer` 已 **全部通过**：含两种 primary pointer、390/899/900/390px、媒体解码、浮层操作、控制显隐、下一 Node，以及 <2px Viewer return-position 恢复；未知请求/Console/PageError 均为 0。Go Linux/API/Windows、Web、镜像和制品测试均绿。然而 `desktop-tests` 运行 2124 项为 2122 通过、1 失败、1 跳过，唯一失败 `desktop/tests/web-shell.cjs` 的 AppBar 静态检测错误地以源代码第一次出现的 `data-xdrive-workspace-background` 作为起点：新 P1-2c `useLayoutEffect` 在渲染前引用了这个选择器，于是旧测试把登录页 AppBar 错认成工作区 AppBar。生产工作区 AppBar 仍明确定义 `display: { xs: 'none', md: 'flex' }` 和 48px 宽屏标题，而移动全屏 App Frame 仍使用自身 52px 标题。本轮**仅将测试定位限定在 `<Box\n        data-xdrive-workspace-background` 的实际 JSX 元素**，保持其原 AppBar 尺寸、权限、唯一菜单及其它断言，不修改产品渲染或缩小视觉验收范围。按 AGENTS.md 从原父提交重建恰好一个工作提交，新 SHA 必须完整 CI 与 final-gate 全绿才可合并；CI 实测 Chromium 不等于 iOS 27 真机像素级 1:1。
