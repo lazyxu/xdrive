@@ -15,6 +15,7 @@ type LocalBoundBackupSettings struct {
 	SourceID     uint64  `json:"source_id"`
 	Name         string  `json:"name"`
 	Revision     uint64  `json:"revision"`
+	SyncMode     string  `json:"sync_mode"`
 	TargetNodeID *uint64 `json:"target_node_id,omitempty"`
 	TargetPath   string  `json:"target_path,omitempty"`
 }

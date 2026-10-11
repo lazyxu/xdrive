@@ -274,6 +274,7 @@ export type AgentLocalBoundBackupSettings = {
   source_id: number
   name: string
   revision: number
+  sync_mode: 'backup' | 'mirror'
   target_node_id?: number
   target_path?: string
 }
@@ -2702,6 +2703,12 @@ export class AgentIPCClient {
   retargetLocalBoundBackup(sourceID: number, revision: number, targetNodeID: number) {
     return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-target', {
       source_id: sourceID, revision, target_node_id: targetNodeID,
+    })
+  }
+
+  setLocalBoundBackupMode(sourceID: number, revision: number, mode: 'backup' | 'mirror') {
+    return this.request<AgentLocalBoundBackupSettings>('PATCH', '/v1/device-backups/local-mode', {
+      source_id: sourceID, revision, sync_mode: mode,
     })
   }
 

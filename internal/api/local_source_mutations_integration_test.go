@@ -64,6 +64,7 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	sourceB := makeBound("A spare root")
 	sourceC := makeBound("A revoke root")
 	sourceD := makeBound("A retarget root")
+	modeSource := makeBound("A mode policy root")
 	sourceURL := fmt.Sprintf("/api/v1/sources/%d", sourceA.ID)
 	own := map[string]string{
 		"X-XDrive-Device-ID":              deviceA.ID,
@@ -146,6 +147,45 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 		t.Fatalf("own local target update changed protected Source semantics: %+v", retargeted)
 	}
 	requestWithHeaders(t, router, http.MethodPatch, targetURL, ownerJWT, strings.NewReader(validTargetBody), http.StatusConflict, own)
+
+	// A mode-only PATCH is protected by the same transaction fence and
+	// clears any prior Mirror deletion evidence before future scans.
+	modeURL := fmt.Sprintf("/api/v1/sources/%d", modeSource.ID)
+	item := meta.SourceItem{
+		SourceID: modeSource.ID, ExternalID: "policy-evidence-item",
+		Kind: meta.SourceItemKindFile, Path: "photo.jpg",
+		State: meta.SourceItemStateSynced, LastSeenAt: now,
+		MirrorMissingFullScans: 2, MirrorMissingSince: &now,
+	}
+	if err := db.Create(&item).Error; err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, modeURL, ownerJWT, strings.NewReader("{\"sync_mode\":\"mirror\"}"), http.StatusForbidden,
+		map[string]string{"If-Match": "\"1\""})
+	foreignMode := copyHeaders()
+	foreignMode["X-XDrive-Device-ID"] = deviceB.ID
+	foreignMode["X-XDrive-Device-Token"] = deviceBSecret
+	requestWithHeaders(t, router, http.MethodPatch, modeURL, ownerJWT, strings.NewReader("{\"sync_mode\":\"mirror\"}"), http.StatusForbidden, foreignMode)
+	var untouchedItem meta.SourceItem
+	if err := db.First(&untouchedItem, item.ID).Error; err != nil ||
+		untouchedItem.MirrorMissingFullScans != 2 || untouchedItem.MirrorMissingSince == nil {
+		t.Fatalf("rejected backup policy changed deletion evidence: %+v err=%v", untouchedItem, err)
+	}
+	modeResponse := requestWithHeaders(t, router, http.MethodPatch, modeURL, ownerJWT, strings.NewReader("{\"sync_mode\":\"mirror\"}"), http.StatusOK, own)
+	var modeUpdated sourceDTO
+	if err := json.Unmarshal(modeResponse.Body.Bytes(), &modeUpdated); err != nil {
+		t.Fatal(err)
+	}
+	if modeUpdated.SyncMode != meta.SourceSyncModeMirror || modeUpdated.Status != meta.SourceStatusPaused ||
+		modeUpdated.ID != modeSource.ID || modeUpdated.Revision != 2 {
+		t.Fatalf("policy update changed Source identity or activated execution: %+v", modeUpdated)
+	}
+	var resetItem meta.SourceItem
+	if err := db.First(&resetItem, item.ID).Error; err != nil ||
+		resetItem.MirrorMissingFullScans != 0 || resetItem.MirrorMissingSince != nil {
+		t.Fatalf("policy change failed to clear Mirror evidence: %+v err=%v", resetItem, err)
+	}
+	requestWithHeaders(t, router, http.MethodPatch, modeURL, ownerJWT, strings.NewReader("{\"sync_mode\":\"backup\"}"), http.StatusConflict, own)
 
 	var unchanged meta.Source
 	if err := db.Where("id = ?", sourceA.ID).First(&unchanged).Error; err != nil {
