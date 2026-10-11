@@ -90,6 +90,15 @@ export interface XDriveLocalBoundBackupRules {
   ignore_rules: string
 }
 
+// Owning-Desktop-only saved schedule. No execution/online-state claim.
+export interface XDriveLocalBoundBackupSchedule {
+  source_id: number
+  revision: number
+  schedule_type: '' | 'manual' | 'interval' | 'cron'
+  schedule_expression: string
+  schedule_timezone: string
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number

@@ -531,6 +531,13 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-device-backup-local-rules', sourceID),
   setDeviceBackupLocalRules: (sourceID: number, revision: number, rules: string) =>
     ipcRenderer.invoke('agent:set-device-backup-local-rules', sourceID, revision, rules),
+  getDeviceBackupLocalSchedule: (sourceID: number) =>
+    ipcRenderer.invoke('agent:get-device-backup-local-schedule', sourceID),
+  setDeviceBackupLocalSchedule: (sourceID: number, revision: number, spec: {
+    schedule_type: 'manual' | 'interval' | 'cron'
+    schedule_expression: string
+    schedule_timezone: string
+  }) => ipcRenderer.invoke('agent:set-device-backup-local-schedule', sourceID, revision, spec),
   removeDeviceBackupLocalSource: (sourceID: number, revision: number) =>
     ipcRenderer.invoke('agent:remove-device-backup-local-source', sourceID, revision),
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),

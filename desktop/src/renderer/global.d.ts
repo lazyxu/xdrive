@@ -7,6 +7,7 @@ import type {
   XDriveLocalSourceDraftPage,
   XDriveLocalBoundBackupSettings,
   XDriveLocalBoundBackupRules,
+  XDriveLocalBoundBackupSchedule,
   XDriveLocalBoundBackupRemoval,
   ExternalSourceCredentialStatus,
   ExternalSourceCredentialReveal,
@@ -714,6 +715,12 @@ declare global {
         setDeviceBackupLocalMode: (sourceID: number, revision: number, mode: 'backup' | 'mirror') => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
         getDeviceBackupLocalRules: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupRules>>
         setDeviceBackupLocalRules: (sourceID: number, revision: number, rules: string) => Promise<DesktopResult<XDriveLocalBoundBackupRules>>
+        getDeviceBackupLocalSchedule: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSchedule>>
+        setDeviceBackupLocalSchedule: (sourceID: number, revision: number, spec: {
+          schedule_type: 'manual' | 'interval' | 'cron'
+          schedule_expression: string
+          schedule_timezone: string
+        }) => Promise<DesktopResult<XDriveLocalBoundBackupSchedule>>
         removeDeviceBackupLocalSource: (sourceID: number, revision: number) => Promise<DesktopResult<XDriveLocalBoundBackupRemoval>>
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>

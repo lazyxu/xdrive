@@ -185,6 +185,7 @@ import {
   type AgentLocalSourceDraftPage,
   type AgentLocalBoundBackupSettings,
   type AgentLocalBoundBackupRules,
+  type AgentLocalBoundBackupSchedule,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2072,6 +2073,38 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().setLocalBoundBackupRules(sourceID, revision, rules)
     }, false))
+  ipcMain.handle('agent:get-device-backup-local-schedule', (_event, sourceID: unknown) =>
+    runAgentAction<AgentLocalBoundBackupSchedule>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-schedule')
+      if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Positive local Source ID required.')
+      }
+      return requireAgentClient().localBoundBackupSchedule(sourceID)
+    }, false))
+  ipcMain.handle('agent:set-device-backup-local-schedule', (
+    _event, sourceID: unknown, revision: unknown, spec: unknown,
+  ) => runAgentAction<AgentLocalBoundBackupSchedule>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-local-schedule')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision <= 0 ||
+      !spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid local Source, revision or schedule.')
+    }
+    const proposed = spec as Record<string, unknown>
+    if (Object.keys(proposed).some((key) => !['schedule_type', 'schedule_expression', 'schedule_timezone'].includes(key)) ||
+      (proposed.schedule_type !== 'manual' && proposed.schedule_type !== 'interval' && proposed.schedule_type !== 'cron') ||
+      typeof proposed.schedule_expression !== 'string' || Buffer.byteLength(proposed.schedule_expression, 'utf8') > 256 ||
+      typeof proposed.schedule_timezone !== 'string' || Buffer.byteLength(proposed.schedule_timezone, 'utf8') > 128) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid local schedule type, expression or timezone.')
+    }
+    return requireAgentClient().setLocalBoundBackupSchedule(sourceID, revision, {
+      schedule_type: proposed.schedule_type,
+      schedule_expression: proposed.schedule_expression,
+      schedule_timezone: proposed.schedule_timezone,
+    })
+  }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>
     runAgentAction<AgentLocalBoundBackupRemoval>(async () => {
       const hello = await requireAgentLifecycle().ensureRunning()

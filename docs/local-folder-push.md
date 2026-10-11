@@ -104,7 +104,7 @@ actions; an unmounted/unreadable Root must never cause deletion.
 No activation, upload, watcher, scheduler, run/cancel, Root rebind or NAS
 Push is enabled. Real Windows/Linux, 100k and >=4GiB acceptance remain open.
 
-## P0-C4b2e1 local-only ignore rules (PR verification)
+## P0-C4b2e1 local-only ignore rules (merged #1372; full 76-job CI green)
 
 The generic Source API's `ignore_rules` redaction continues
 unchanged. The dedicated owning-Agent private GET verifies the signed-in
@@ -123,6 +123,31 @@ Mirror missing evidence on change. Save does not run a scan, scheduler,
 upload, or cloud deletion and does not claim actual backup is ready.
 Separate P0-C4b2e2 schedule configuration and L03-D2b–G/L05–L07
 execution, watcher, recovery and real-device tests remain pending.
+
+## P0-C4b2e2 saved local schedule only (PR verification)
+
+A verified owning Desktop may read and save a manual, interval or cron
+plan only for its own **paused**, bound local Push Source. Normal
+owner-JWT Source reads redact local schedule type/expression/timezone,
+and other devices/Web receive only B-scope progress/history without an
+operation port. A dedicated private Server GET verifies exact device
+credential and Root plus Source revision under transaction locks.
+Native Agent IPC requires a current native Root grant, private token
+and consistent session. Server PATCH is limited to the three
+`schedule_*` fields, reuses the transaction-fenced Source
+revision, and validates through `sourceschedule.Normalize`.
+Malformed duration, timezone or cron never commits.
+
+Manual cancels the saved *configuration preference* only; it does not
+cancel a running task. Interval duration is 1 minute through 365 days;
+cron is five fields and an IANA timezone. The private returned DTO is
+verified with a second authenticated read because generic Source PATCH
+responses stay schedule-redacted. The UI explicitly says **saved, not
+executing**; no next-run time, online status or effective background
+schedule may be fabricated. Existing local-folder activation/run denial
+stays enforced. L05 native Agent scheduling and recovery, L03-D2b–G
+durable uploader, L06 local preview/explicit cancel and L07 physical
+tests remain unimplemented.
 
 ## Agreed Push/Pull product and security boundary (2026-10-10)
 

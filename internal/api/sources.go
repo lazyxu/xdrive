@@ -125,6 +125,10 @@ func toSourceDTO(source meta.Source) sourceDTO {
 	}
 	if isLocalFolderPush(source) {
 		dto.IgnoreRules = ""
+		// An owner JWT alone must not reveal an owning device's local plan.
+		dto.ScheduleType = ""
+		dto.ScheduleExpression = ""
+		dto.ScheduleTimezone = ""
 		dto.Checkpoint = ""
 		dto.LastError = ""
 	}
@@ -539,6 +543,11 @@ func (s *Server) updateSource(c *gin.Context) {
 			updates["status"] = status
 		}
 		if req.ScheduleType != nil || req.ScheduleExpression != nil || req.ScheduleTimezone != nil {
+			// Local Push is still disabled; even schedule-only edits cannot
+			// mutate a forced-active local Source via this generic endpoint.
+			if isLocalFolderPush(current) && current.Status != meta.SourceStatusPaused {
+				return errLocalFolderNotReady
+			}
 			scheduleType := current.ScheduleType
 			expression := current.ScheduleExpression
 			timezone := current.ScheduleTimezone
