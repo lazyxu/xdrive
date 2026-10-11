@@ -604,7 +604,9 @@ func (m *Manager) Cancel(id string) error {
 		return errors.New("this transfer does not support cancellation")
 	}
 	cancel := e.cancel
-	e.cancel = nil
+	// Keep the pending cancellation visible to Clear until the transport
+	// callback has actually been invoked outside this lock. A concurrent
+	// account switch must not return while old-account I/O remains alive.
 	e.task.Cancelable = false
 	e.task.State = StateCancelling
 	e.task.Phase = PhaseFinalizing
