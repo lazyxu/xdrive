@@ -288,3 +288,22 @@ test('Desktop wires Windows numbered-tab shortcuts through the shared FileExplor
     'Web should leave browser Ctrl+number behavior untouched',
   )
 })
+
+test('F-iOS27-09C2: wide Web/Desktop inline Rename labels the actual HTML input and exposes rejection tooltip', () => {
+  const source = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  const start = source.indexOf('const renderItemName =')
+  const end = source.indexOf('const selectItem =', start)
+  assert.ok(start >= 0 && end > start, 'inspect the one shared inline Rename rendering')
+  const inline = source.slice(start, end)
+  const propsStart = inline.indexOf('slotProps={{ htmlInput:')
+  assert.ok(propsStart >= 0, 'MUI TextField must pass actual HTML input properties')
+  const propsText = inline.slice(propsStart, propsStart + 240)
+  assert.ok(propsText.includes("'aria-label': '重命名 ' + item.name"),
+    'assistive technology must read the HTML textbox name, not a wrapper')
+  assert.ok(propsText.includes('title: renameError || undefined'),
+    'actual HTML textbox retains permission and conflict error tooltip')
+  assert.ok(!inline.includes("aria-label={'重命名 ' + item.name}"),
+    'outer MUI FormControl aria label is not the input accessible name')
+  assert.ok(!inline.includes("title={renameError || undefined}"),
+    'outer MUI FormControl title is not the editable textbox title')
+})

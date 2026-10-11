@@ -37,7 +37,7 @@ test('09C: authentic built Web and Mobile use exactly one business and scroll ow
 })
 
 test('09C: real browser fixture checks canonical Server Node/revision and operation payload', () => {
-  for (const key of ['const filesIos27Fixture = { accepted: [], operations: [] }',
+  for (const key of ['const filesIos27Fixture = {', 'accepted: [], operations: []',
     "assert.deepEqual(body.items, [{ id: 100, revision: 1 }])",
     "assert.equal(body.parent_id, 1", "assert.equal(body.type, 'copy')",
     'GET /api/v1/nodes/1/children', 'FileExplorer route preserved after queued Server operation',
@@ -80,4 +80,57 @@ test('09C: Mobile 899px MUI sm MenuItem auto min-height cannot override 44px con
   assert.ok(mobile.includes("maxHeight: 'min(70dvh, 560px)'"))
   assert.ok(runner.includes("parseFloat(settled[action].cssMinHeight) >= 44"))
   assert.ok(runner.includes("settled[action].boxHeight >= 43.5"))
+})
+
+test('09C2: native Chrome traverses 403 → 409 → success for Mobile and wide rename', () => {
+  for (const item of [
+    "const filesIos27Fixture = {",
+    "if (filesIos27ChromeScenario && key === 'PATCH /api/v1/nodes/100')",
+    "renameRejectQueue = [403, 409]",
+    "filesIos27Fixture.renameAttempts.push(attempt)",
+    "filesIos27RenameAcceptance(viewport, narrow, row)",
+    "filesIos27Fixture.renameAttempts.length === viewports.length * 3",
+    "allNodes.get(100).revision === 2",
+  ]) {
+    assert.ok(runner.includes(item), 'Missing real browser rename parity gate: ' + item)
+  }
+})
+
+test('09C2: browser requires exact immutable If-Match on all denied and accepted API writes', () => {
+  for (const contract of [
+    "assert.equal(request.headers()['if-match'], '\"1\"'",
+    "filesIos27Fixture.renameRejectQueue.shift() ?? 200",
+    "status === 403", "status !== 200",
+    "return {", "const node = allNodes.get(100)",
+    "allNodes.get(100).revision === 1",
+  ]) {
+    assert.ok(runner.includes(contract), 'Missing Server fixture guard: ' + contract)
+  }
+})
+
+test('09C2: native Chrome handles the actual two presentations while sharing one Web rename adapter', () => {
+  const shared = read('ui/shared/src/mui/FileExplorer.tsx')
+  const name = read('ui/shared/src/mui/FileNameDialog.tsx')
+  for (const key of ["page.locator('[data-mobile-files-item-rename]')",
+    "page.getByRole('menuitem', { name: /重命名/ })",
+    "page.getByRole('dialog', { name: /^重命名/ })",
+    "page.getByRole('textbox', { name: '重命名 document-001.txt', exact: true })",
+    "'/api/v1/nodes/100'", "page.screenshot({ path: path.join(outputDir"]) {
+    assert.ok(runner.includes(key), 'Chrome acceptance must exercise actual UI: ' + key)
+  }
+  assert.ok(mobile.includes('<XDriveFileNameDialog'))
+  assert.ok(name.includes('xDriveFileNameValidationError'))
+  assert.ok(shared.includes('const submitRename = async'))
+  assert.ok(web.includes('api.rename(node.id, node.revision, name)'))
+  assert.ok(!mobile.includes('api.rename('))
+})
+
+test('09C2: each width uses a clean built-Web document after resetting the canonical Server fixture', () => {
+  for (const fragment of [
+    "Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 })",
+    "rootChildren.find(node => node.id === 100) === allNodes.get(100)",
+    "await page.reload({ waitUntil: 'domcontentloaded' })",
+  ]) {
+    assert.ok(runner.includes(fragment), 'cross-viewport rename trials cannot reuse stale SPA state: ' + fragment)
+  }
 })

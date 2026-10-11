@@ -41,7 +41,9 @@ const mobilePanelsScenario = options.scenario === 'mobile-panels';
 const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
-const filesIos27Fixture = { accepted: [], operations: [] };
+const filesIos27Fixture = {
+  accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
+};
 const gallerySelectionFixture = {
   albums: [...Array.from({ length: 24 }, (_, index) => ({
     id: `qa-album-${index + 1}`, name: index === 0 ? '验收家庭相册' : `验收相册 ${String(index + 1).padStart(2, '0')} 长名称仍应完整可读`,
@@ -383,6 +385,37 @@ function fixtureFor(request, role) {
     return url.searchParams.has('offset')
       ? { items: filtered.slice(offset, offset + limit), total_count: filtered.length, total_count_included: true, offset, limit, sort, order }
       : { items: filtered.slice(0, limit), has_more: false, sort, order };
+  }
+  if (filesIos27ChromeScenario && key === 'PATCH /api/v1/nodes/100') {
+    queryOnly(url, []);
+    const node = allNodes.get(100);
+    const body = jsonBody(request);
+    assert.deepEqual(Object.keys(body), ['name']);
+    assert.equal(request.headers()['if-match'], '"1"',
+      'Mobile and Wide Web must both quote the same immutable original Node revision');
+    assert.equal(node.revision, 1,
+      'a refused 403 or 409 must never mutate Server state before user retries');
+    assert(['验收待审查.txt', '验收重命名通过.txt'].includes(body.name),
+      'accept only the explicitly controlled rename candidates');
+    const status = filesIos27Fixture.renameRejectQueue.shift() ?? 200;
+    const attempt = { stage: activeStage, id: node.id, revision: node.revision,
+      ifMatch: request.headers()['if-match'], name: body.name, status };
+    filesIos27Fixture.renameAttempts.push(attempt);
+    if (status !== 200) {
+      return {
+        __fixtureStatus: status,
+        __fixturePurpose: status === 403
+          ? 'explicit Server 403 owner/permission denial, not a client-side disabled control'
+          : 'explicit Server 409 name/revision conflict, preserving user draft',
+        __fixtureBody: { error: status === 403
+          ? '验收：当前无权重命名，请重试。'
+          : '验收：目标名称已存在，请更改名称。' },
+      };
+    }
+    assert.equal(body.name, '验收重命名通过.txt',
+      'successful write must occur only after a genuinely new draft');
+    Object.assign(node, { name: body.name, revision: node.revision + 1 });
+    return node;
   }
   if (filesOperationsScenario && key === 'PATCH /api/v1/nodes/100') {
     queryOnly(url, []);
@@ -2007,6 +2040,91 @@ async function galleryIos27ChromeAcceptance() {
 }
 
 
+async function filesIos27RenameAcceptance(viewport, narrow, row) {
+  const label = `user-files-ios27-${viewport.width}x${viewport.height}-rename`;
+  activeStage = `${label}-setup`;
+  const before = filesIos27Fixture.renameAttempts.length;
+  // Real Mobile Files uses shared FileNameDialog; wide Web uses inline TextField.
+  // Both call the same WebFileExplorer.renameItem -> XDriveApi.rename.
+  await row.first().click({ button: 'right' });
+  if (narrow) {
+    await page.locator('[data-mobile-files-item-rename]').click();
+  } else {
+    await page.getByRole('menuitem', { name: /重命名/ }).first().click();
+  }
+  const dialog = narrow ? page.getByRole('dialog', { name: /^重命名/ }) : null;
+  if (dialog) await dialog.waitFor();
+  const input = narrow
+    ? dialog.getByRole('textbox', { name: '名称', exact: true })
+    : page.getByRole('textbox', { name: '重命名 document-001.txt', exact: true });
+  await input.waitFor();
+  const submit = () => narrow
+    ? dialog.getByRole('button', { name: '保存', exact: true }).click()
+    : input.press('Enter');
+  const send = async (expectedStatus, expectedName) => {
+    const [response] = await Promise.all([
+      page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/v1/nodes/100' &&
+          response.request().method() === 'PATCH';
+      }),
+      submit(),
+    ]);
+    check(`${label}: actual Web PATCH response status ${expectedStatus}`,
+      response.status() === expectedStatus,
+      { expectedStatus, received: response.status(), url: response.url() });
+    check(`${label}: original ID/Revision stable across ${expectedStatus}`,
+      filesIos27Fixture.renameAttempts.at(-1)?.id === 100 &&
+      filesIos27Fixture.renameAttempts.at(-1)?.ifMatch === '"1"' &&
+      filesIos27Fixture.renameAttempts.at(-1)?.name === expectedName,
+      filesIos27Fixture.renameAttempts.at(-1));
+  };
+  const errorVisible = async hint => {
+    if (narrow) {
+      await dialog.getByRole('alert').filter({ hasText: hint }).first().waitFor();
+    } else {
+      await page.waitForFunction(hint => {
+        const input = document.querySelector('input[aria-label="重命名 document-001.txt"]');
+        return input?.getAttribute('title')?.includes(hint);
+      }, hint);
+    }
+  };
+  await input.fill('验收待审查.txt');
+  activeStage = `${label}-403`;
+  await send(403, '验收待审查.txt');
+  await errorVisible('验收：当前无权重命名');
+  check(`${label}: 403 keeps draft and canonical revision unchanged`,
+    await input.inputValue() === '验收待审查.txt' &&
+      allNodes.get(100).revision === 1 && allNodes.get(100).name === 'document-001.txt');
+  await page.screenshot({ path: path.join(outputDir, `${label}-403.png`) });
+
+  activeStage = `${label}-409`;
+  await send(409, '验收待审查.txt');
+  await errorVisible('验收：目标名称已存在');
+  check(`${label}: 409 keeps rejected draft for explicit repair`,
+    await input.inputValue() === '验收待审查.txt' && allNodes.get(100).revision === 1);
+  await page.screenshot({ path: path.join(outputDir, `${label}-409.png`) });
+
+  activeStage = `${label}-success`;
+  await input.fill('验收重命名通过.txt');
+  await send(200, '验收重命名通过.txt');
+  if (dialog) await dialog.waitFor({ state: 'hidden' });
+  const updated = page.locator(narrow ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: '验收重命名通过.txt' });
+  await updated.first().waitFor();
+  await settle();
+  const attempts = filesIos27Fixture.renameAttempts.slice(before);
+  result.samples[`${label}-requests`] = attempts;
+  check(`${label}: exactly three explicit revision-guarded writes 403 → 409 → 200`,
+    attempts.length === 3 && JSON.stringify(attempts.map(x => x.status)) === '[403,409,200]' &&
+      attempts.every(x => x.id === 100 && x.revision === 1 && x.ifMatch === '"1"'), attempts);
+  check(`${label}: only success changes canonical Node name and revision`,
+    allNodes.get(100).name === '验收重命名通过.txt' && allNodes.get(100).revision === 2);
+  check(`${label}: rename preserves original Files route`,
+    page.url().endsWith('/files?dir=1'), page.url());
+  await page.screenshot({ path: path.join(outputDir, `${label}-success.png`) });
+}
+
 async function filesIos27ChromeAcceptance(origin) {
   // Authentic built React/Chromium at both responsive owners. The local
   // request router supplies deterministic authorized-looking Server payloads;
@@ -2016,12 +2134,24 @@ async function filesIos27ChromeAcceptance(origin) {
     { width: 899, height: 700 }, { width: 900, height: 700 },
   ];
   for (const viewport of viewports) {
+    // A fresh owner session at each width begins with the same immutable
+    // Server Node snapshot. Failed writes cannot mutate it.
+    Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });
+    filesIos27Fixture.renameRejectQueue = [403, 409];
+    check('Files fixture restored original canonical Node before viewport ' + viewport.width,
+      rootChildren.find(node => node.id === 100) === allNodes.get(100) &&
+        rootChildren.find(node => node.id === 100)?.name === 'document-001.txt' &&
+        rootChildren.find(node => node.id === 100)?.revision === 1);
     const narrow = viewport.width < 900;
     activeStage = `user-files-ios27-${viewport.width}x${viewport.height}`;
     await page.setViewportSize(viewport);
     // A direct, real Files deep link avoids mistaking Browse-home navigation
     // differences for different Node/count/permission business contracts.
     await page.goto(`${origin}/#/app/files?dir=1`, { waitUntil: 'domcontentloaded' });
+    // Playwright may keep the old hash route's SPA state when an identical
+    // deep-link is reissued. Force a fresh built-Web document after resetting
+    // the bounded Server fixture so each viewport is an independent trial.
+    await page.reload({ waitUntil: 'domcontentloaded' });
     const row = narrow
       ? page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' })
       : page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' });
@@ -2117,6 +2247,7 @@ async function filesIos27ChromeAcceptance(origin) {
     check(`${activeStage}: FileExplorer route preserved after queued Server operation`,
       /\/files\?dir=1$/.test(page.url()), page.url());
     await page.screenshot({ path: path.join(outputDir, `${activeStage}-copy.png`) });
+    await filesIos27RenameAcceptance(viewport, narrow, row);
   }
 
   check('Files iOS27 375/390/899/900 use identical authorized copy payloads',
@@ -2124,9 +2255,20 @@ async function filesIos27ChromeAcceptance(origin) {
       filesIos27Fixture.accepted.every(submission =>
         JSON.stringify(submission) === JSON.stringify(filesIos27Fixture.accepted[0])),
     filesIos27Fixture.accepted);
+  check('Files iOS27 375/390/899/900 preserve original Node revision on 403+409 then succeed once',
+    filesIos27Fixture.renameAttempts.length === viewports.length * 3 &&
+      viewports.every((viewport, index) => {
+        const attempts = filesIos27Fixture.renameAttempts.slice(index * 3, index * 3 + 3);
+        return JSON.stringify(attempts.map(item => item.status)) === JSON.stringify([403, 409, 200]) &&
+          attempts.every(item => item.id === 100 && item.revision === 1 && item.ifMatch === '"1"') &&
+          attempts[0].name === '验收待审查.txt' &&
+          attempts[1].name === '验收待审查.txt' &&
+          attempts[2].name === '验收重命名通过.txt';
+      }), filesIos27Fixture.renameAttempts);
   result.samples['files-ios27-transport-parity'] = {
     fixtureBounded: true, realChromium: true, physicalIphone: false,
     liveGoServer: false, accepted: filesIos27Fixture.accepted,
+    renameAttempts: filesIos27Fixture.renameAttempts,
     distinctPaths: [...new Set(Object.keys(result.requests)
       .map(key => key.slice(key.indexOf(' /api/'))).filter(Boolean))].sort(),
   };
