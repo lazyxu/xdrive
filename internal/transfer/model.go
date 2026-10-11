@@ -305,27 +305,14 @@ func (m *Manager) StartChild(parent *Handle, spec Spec) *Handle {
 	if m == nil || parent == nil || parent.manager != m {
 		return nil
 	}
-	m.mu.Lock()
-	parentEntry := m.entries[parent.ID()]
-	inactive := parentEntry == nil || parentEntry.task.State == StateCancelling || terminalState(parentEntry.task.State)
-	m.mu.Unlock()
-	if inactive {
+	// Keep the parent lifecycle check and child insertion under one Manager
+	// lock, just like the existing batch StartChildrenByID method. Otherwise
+	// Clear can remove the parent between the check and the child insertion.
+	children := m.StartChildrenByID(parent.ID(), []Spec{spec})
+	if len(children) == 0 {
 		return nil
 	}
-	spec.Scope = ScopeItem
-	spec.ParentID = parent.ID()
-	if spec.RootID == "" {
-		spec.RootID = parent.ID()
-		m.mu.Lock()
-		if e := m.entries[parent.ID()]; e != nil && e.task.RootID != "" {
-			spec.RootID = e.task.RootID
-		}
-		m.mu.Unlock()
-	}
-	if spec.Phase == "" {
-		spec.Phase = PhaseTransferring
-	}
-	return m.Start(spec)
+	return children[0]
 }
 
 func (h *Handle) ID() string {
