@@ -2803,7 +2803,16 @@ async function galleryIos27ViewerAcceptance(pointer) {
         filmstripActive: activeFilmstrip?.length || 0,
         infoInRail: !!rail?.querySelector('button[aria-label="查看属性"]'),
         infoInHeader: !!header?.querySelector('button[aria-label="查看属性"]'),
-        actionSize: box(rail?.querySelector('button[aria-label="查看属性"]')),
+        moreInRail: !!rail?.querySelector('button[aria-label="更多照片操作"]'),
+        moreInHeader: !!header?.querySelector('button[aria-label="更多照片操作"]'),
+        shareInRail: !!rail?.querySelector('button[aria-label="分享媒体"]'),
+        actionSize: box(rail?.querySelector('button[aria-label="更多照片操作"]')),
+        railClientWidth: rail?.clientWidth || 0,
+        railScrollWidth: rail?.scrollWidth || 0,
+        railButtons: rail ? [...rail.querySelectorAll('button')].map(button => ({
+          name: button.getAttribute('aria-label'),
+          size: box(button),
+        })) : [],
         oneReturn: el?.querySelectorAll('button[aria-label="返回"]').length === 1,
         sameViewer: window.__p12cViewer === el,
         sameCaller: saved.main === document.querySelector('main')
@@ -2832,13 +2841,37 @@ async function galleryIos27ViewerAcceptance(pointer) {
       check(activeStage + ': mobile chrome matches iOS27 layout regardless of pointer',
         data.headerPosition === 'absolute' && data.railPosition === 'absolute'
         && data.rail && data.rail.bottom <= viewport.height + 1
-        && data.infoInRail && !data.infoInHeader
+        && !data.infoInRail && !data.infoInHeader
+        && data.moreInRail && !data.moreInHeader && data.shareInRail
         && data.actionSize?.width >= 44 && data.actionSize?.height >= 44, data);
+      check(activeStage + ': compact Photos rail fits without hidden horizontal actions',
+        data.railScrollWidth <= data.railClientWidth + 1 &&
+        data.railButtons.length <= 7 &&
+        data.railButtons.every(button =>
+          button.size?.width >= 44 && button.size?.height >= 44), data);
     } else {
       check(activeStage + ': wide Web has desktop-only header actions',
         data.headerPosition === 'relative' && !data.rail && data.infoInHeader, data);
     }
   }
+  // P1-2j: these authorized secondary callbacks must remain discoverable
+  // without scrolling the bottom rail horizontally. Do not silently drop
+  // downloads, Creative, metadata or tags to make geometry appear correct.
+  activeStage = name + '-mobile-more';
+  if (pointer === 'fine') await page.mouse.move(180, 380);
+  else await page.touchscreen.tap(180, 380);
+  await frame.locator('button[aria-label="更多照片操作"]').click();
+  const mobileMore = page.getByRole('menu', { name: '更多照片操作' });
+  await mobileMore.waitFor();
+  check(name + ': one accessible iOS27 More menu exposes all authorized secondary actions',
+    await mobileMore.getByRole('menuitem', { name: '创作图片' }).isVisible() &&
+    await mobileMore.getByRole('menuitem', { name: '查看属性' }).isVisible() &&
+    await mobileMore.getByRole('menuitem', { name: '标签' }).isVisible() &&
+    await mobileMore.getByRole('menuitem', { name: '下载' }).isVisible() &&
+    new URL(page.url()).hash.includes('media-viewer'));
+  await page.keyboard.press('Escape');
+  await mobileMore.waitFor({ state: 'hidden' });
+
   activeStage = name + '-chrome';
   await page.waitForFunction(() => {
     const h = document.querySelector('[data-xdrive-web-viewer]')?.firstElementChild;
@@ -2931,7 +2964,8 @@ async function galleryIos27ViewerAcceptance(pointer) {
   activeStage = name + '-creative-create-poll-and-cancel';
   if (pointer === 'fine') await page.mouse.move(195, 390);
   else await page.touchscreen.tap(195, 390);
-  await frame.locator('button[aria-label="创作图片"]').click();
+  await frame.locator('button[aria-label="更多照片操作"]').click();
+  await page.getByRole('menuitem', { name: '创作图片' }).click();
   const creativeDialog = page.locator('[data-xdrive-media-creative-dialog]');
   await creativeDialog.waitFor();
   const creativeSourceImage = creativeDialog.locator('img[alt^="photo-"]');

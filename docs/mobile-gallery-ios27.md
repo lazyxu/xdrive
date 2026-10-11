@@ -445,3 +445,18 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **发现并修复的服务端缺口：** 现有 `photointelligence.ValidateCreativeResult` 只确认声明的大小、MIME、Width/Height。额外在 Go `runMediaCreativeGeneration` 写入 CAS 前先执行 `validateMediaCreativeDecodedImage`：校验真实图片头格式及像素尺寸，再完整解码 JPEG/PNG；伪造尺寸、错误 MIME、损坏或截断数据使持久任务进入 failed，不产生新的可见 Node/File/Blob。输入大小与最大宽高保持现有上限，避免失控图片分配。MP4 另需视频特定完整验证，不将图片门禁误称为视频验收。
 
 **仍未覆盖：** 实际 Python EfficientSAM/ONNX 模型推理和性能、实体 iOS 27 Safari/PWA/VoiceOver 同帧像素/动画/交互、真实 100k RAW/HEVC/LivePhoto、全部 Web/Desktop 上传下载取消的实测。PG/CAS/Unix 协议门禁和原生浏览器 fixture 必须分别标记，任何一个都不能冒充这些真实设备与模型验收。当前提交只在最新 SHA 的 PR CI 和 final-gate 全绿后允许合并；不得借用历史通过值或更改并行性能/race 专项。
+
+
+## P1-2j · iOS 27「照片」Viewer 移动操作栏：主操作与可达「更多」（2026-10-11）
+
+**工作基线：** P1-2i [#1419](https://github.com/lazyxu/xdrive/pull/1419) 已通过完整 CI [#38144329650](https://github.com/lazyxu/xdrive/actions/runs/38144329650) 和 `final-gate` 后线性合并，合并 SHA 为 `fd8c9d976a6b19652722d49b9473b274c657b4b2`；单独受阻的 Desktop 100k 性能 PR #1185 等不归本专项处理。本阶段仅修改实际 Web/Mobile Web 共用的 `WebMediaViewerApp` 操作按钮**呈现方式**、原生 Chrome 验收与 React 回归，不再发明平行的照片业务操作或移动端请求。
+
+**确定的界面缺口：** 原移动底栏把收藏、AI 创作、编辑、删除、属性、实况导出（有则）、标签、分享、下载和前/后照片导航全部各自作为宽/高至少 **44px** 的按钮铺在同一行。宽 375/390 CSS px 明显不足、`overflowX:auto` 将右侧项目藏在横向滚动后面；这不是 iOS 27「照片」预期的可发现的主操作栏，不能把“功能可横向找到”误称 1:1。
+
+**有限的修正：** 在实际 Web/Mobile 共用的单个 Viewer 中，宽度小于 900 CSS px 且粗/细指针两种情况仅保留最常用的收藏、编辑、删除、分享及 `更多照片操作` 控件，既有前/后照片导航继续在原 Frame 所有，不删除真实业务能力。移动「更多」是共享 MUI Menu/MenuItem 呈现，展示当前权限允许的创作图片、查看属性、标签、下载，以及已证据配对 Live Photo 的完整实况原件导出。宽 Web 900px 及以上继续用原全部直接动作按钮。自动隐藏 Viewer Chrome 在菜单打开时保持，ESC/取消关闭菜单；切换 Filmstrip Node/context/revision 或从 899px 切到宽 Web 900px 会关闭旧菜单，切回 899px 不会意外重开，迟到旧动作不能进入下一张；原始 Viewer 身份及 Gallery 虚拟滚动宿主完全不变。
+
+**操作合同未变：** 媒体下载、完整实况、创作、收藏、非破坏编辑、删除（Task Center 仅 queued 回执）、标签、分享、媒体属性仍通过原 `MediaGalleryDataSource`、`FileViewerActions` 及服务器 REST；不添加新的 Mobile-only Controller/API、Gallery 节点、虚拟化网格/时间线、持久状态或 CSS 假按钮。继续保留全屏 App Frame、52px 独立应用标题栏和 Web/Desktop 共享后端/Agent IPC、单一 Web `XDriveMediaGalleryPage`、`VirtualCollection/Grid/Timeline`、128 项 Range / 最多 11 项 Filmstrip。
+
+**严格验收计划：** 已有真实 React 挂载 `web-viewer-shell.cjs` 验证 375/390/899/900 下主/次菜单布局权限、每种能力的真实 Callback 与 Node revision、无法创作的 Live Photo 不出现创作菜单项但完整实况可导出、下载失败/明确重试、旧 Node 切换关闭菜单、宽 Web 功能不退化。原生构建 Web + Chromium `gallery-ios27-viewer` 对 fine/coarse 和 390/899/900 验证 DOM 的菜单**实际可点击**、每个主按钮至少 44×44 CSS px、`rail.scrollWidth <= rail.clientWidth + 1`，所有原可授权次菜单能力可达、无浏览器页面溢出，并保留 P1-2i 之前实际通过的创作 403→重试→输出与取消、编辑 PUT/DELETE、删除 403→queued 回执、返回滚动差 ≤2px、未知 HTTP/Console/PageError=0。首轮真实失败不可降低此门槛。
+
+**不是 iOS 真机 1:1 验收声明：** 当前无实际 iOS 27「照片」截图、配对 Safari/PWA/VoiceOver 报告；MUI 更多菜单实现仅为与版本锁定交互层级接近的可测试迭代。真机玻璃质感、系统 safe area、OS 手势、动效时序仍是独立发布门槛。真实 100k HEVC/RAW/LIVP、传输取消与性能等同样不在本次呈现改动范围，不能借任何浏览器 Fixture 声称完成。

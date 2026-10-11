@@ -10,6 +10,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
 import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
 import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined'
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import PauseRoundedIcon from '@mui/icons-material/PauseRounded'
 import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded'
 import ShareRoundedIcon from '@mui/icons-material/ShareRounded'
@@ -19,6 +20,8 @@ import WrapTextRoundedIcon from '@mui/icons-material/WrapTextRounded'
 import {
   Box,
   IconButton,
+  Menu,
+  MenuItem,
   Stack,
   Tooltip,
   Typography,
@@ -756,6 +759,11 @@ function WebMediaViewerApp({
     onNavigate,
   })
   const mediaItem = viewer.mediaItem
+  // The actual routed Viewer is common to Mobile Web and wide Web. An iOS 27
+  // compact rail cannot show ten 44px controls at 390px without sideways
+  // scrolling; move only the presentation of secondary actions to More.
+  const narrowMediaViewer = useMediaQuery('(max-width:899.95px)')
+  const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
@@ -784,7 +792,13 @@ function WebMediaViewerApp({
     setEditTarget(null)
     setCreativeTarget(null)
     setDeleteTarget(null)
-  }, [route.params.node, route.params.context])
+    setMoreAnchor(null)
+  }, [route.params.node, route.params.context, viewer.node?.revision])
+  // A More sheet opened at 899px must not reappear if the viewport crosses
+  // 900px and returns. Menu ownership belongs to the current compact chrome.
+  useEffect(() => {
+    if (!narrowMediaViewer) setMoreAnchor(null)
+  }, [narrowMediaViewer])
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
 
   const openInfo = () => {
@@ -839,8 +853,25 @@ function WebMediaViewerApp({
     })
   }
 
+const canCreate = Boolean(gallerySource.createCreativeGeneration &&
+    gallerySource.getCreativeGeneration && gallerySource.loadPreviewURL &&
+    !viewer.isTrashContext && xDriveMediaItemSupportsCreative(mediaItem))
+  const canEdit = Boolean(gallerySource.saveEditRecipe &&
+    xDriveMediaItemSupportsBasicEditing(mediaItem))
+  const canDelete = Boolean(gallerySource.deleteItems && !viewer.isTrashContext)
+
+  const startDownload = () => {
+    if (!viewer.node || !mediaItem || viewer.node.id !== mediaItem.node.id) return
+    // Exactly the same authenticated Gallery source used by wide Web,
+    // Mobile Gallery and the inline shared Viewer; no parallel Mobile API.
+    const task = gallerySource.downloadItems
+      ? gallerySource.downloadItems([mediaItem])
+      : api.download(viewer.node)
+    void task.catch(onError)
+  }
+
   const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
-    <Stack direction="row" spacing={0.25}>
+    <Stack direction="row" spacing={0.25} data-xdrive-gallery-viewer-actions>
       {mediaItem && gallerySource.setFavorite ? (
         <Tooltip title={mediaItem.favorite ? '取消收藏' : '收藏'}>
           <IconButton
@@ -859,11 +890,7 @@ function WebMediaViewerApp({
           </IconButton>
         </Tooltip>
       ) : null}
-      {gallerySource.createCreativeGeneration &&
-      gallerySource.getCreativeGeneration &&
-      gallerySource.loadPreviewURL &&
-      !viewer.isTrashContext &&
-      xDriveMediaItemSupportsCreative(mediaItem) ? (
+      {!narrowMediaViewer && canCreate ? (
         <Tooltip title="创作">
           <IconButton
             size="small"
@@ -878,7 +905,7 @@ function WebMediaViewerApp({
           </IconButton>
         </Tooltip>
       ) : null}
-      {gallerySource.saveEditRecipe && xDriveMediaItemSupportsBasicEditing(mediaItem) ? (
+      {canEdit ? (
         <Tooltip title="编辑">
           <IconButton
             size="small"
@@ -892,7 +919,7 @@ function WebMediaViewerApp({
           </IconButton>
         </Tooltip>
       ) : null}
-      {gallerySource.deleteItems && !viewer.isTrashContext ? (
+      {canDelete ? (
         <Tooltip title="删除">
           <IconButton
             size="small"
@@ -907,14 +934,14 @@ function WebMediaViewerApp({
           </IconButton>
         </Tooltip>
       ) : null}
-      {mediaItem ? (
+      {!narrowMediaViewer && mediaItem ? (
         <Tooltip title="属性">
           <IconButton size="small" aria-label="查看属性" onClick={openInfo}>
             <InfoOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
-      {gallerySource.exportLivePhoto &&
+      {!narrowMediaViewer && gallerySource.exportLivePhoto &&
       (mediaItem.live_photo || mediaItem.asset_kind === 'live_photo') ? (
         <Tooltip title="导出完整实况（照片与动态原件）">
           <IconButton
@@ -928,19 +955,39 @@ function WebMediaViewerApp({
           </IconButton>
         </Tooltip>
       ) : null}
-      <FileViewerActions
-        node={viewer.node}
-        api={api}
-        onShare={() => setShareOpen(true)}
-        onTags={() => setTagsOpen(true)}
-        // Reuse the identical MediaGalleryDataSource action that wide Web,
-        // Mobile Gallery and the inline shared Viewer already use. Preserve
-        // legacy File download when this optional Gallery port is absent.
-        onDownload={gallerySource.downloadItems
-          ? () => gallerySource.downloadItems!([mediaItem])
-          : undefined}
-        onError={onError}
-      />
+      {!narrowMediaViewer ? (
+        <FileViewerActions
+          node={viewer.node}
+          api={api}
+          onShare={() => setShareOpen(true)}
+          onTags={() => setTagsOpen(true)}
+          onDownload={gallerySource.downloadItems
+            ? () => gallerySource.downloadItems!([mediaItem])
+            : undefined}
+          onError={onError}
+        />
+      ) : (
+        <>
+          <Tooltip title="分享">
+            <IconButton size="small" aria-label="分享媒体"
+              onClick={() => setShareOpen(true)}>
+              <ShareRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="更多">
+            <IconButton
+              size="small"
+              aria-label="更多照片操作"
+              aria-haspopup="menu"
+              aria-controls={moreAnchor ? 'xdrive-gallery-viewer-more' : undefined}
+              aria-expanded={Boolean(moreAnchor)}
+              onClick={(event) => setMoreAnchor(event.currentTarget)}
+            >
+              <MoreHorizRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </>
+      )}
     </Stack>
   ) : null
 
@@ -952,7 +999,7 @@ function WebMediaViewerApp({
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen}
+        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen || Boolean(moreAnchor)}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -996,6 +1043,45 @@ function WebMediaViewerApp({
           maxHeight="none"
         />}
       </WebViewerFrame>
+      <Menu
+        id="xdrive-gallery-viewer-more"
+        anchorEl={moreAnchor}
+        open={Boolean(moreAnchor) && narrowMediaViewer &&
+          !viewer.loading && !viewer.error && Boolean(mediaItem) &&
+          viewer.node?.id === mediaItem?.node.id}
+        onClose={() => setMoreAnchor(null)}
+        MenuListProps={{ 'aria-label': '更多照片操作' }}
+      >
+        {canCreate && mediaItem ? (
+          <MenuItem aria-label="创作图片" onClick={() => {
+            setMoreAnchor(null)
+            setCreativeTarget({
+              id: mediaItem.node.id,
+              revision: mediaItem.node.revision,
+              context: route.params.context,
+            })
+          }}>创作图片</MenuItem>
+        ) : null}
+        <MenuItem aria-label="查看属性" onClick={() => {
+          setMoreAnchor(null)
+          openInfo()
+        }}>查看属性</MenuItem>
+        <MenuItem aria-label="标签" onClick={() => {
+          setMoreAnchor(null)
+          setTagsOpen(true)
+        }}>标签</MenuItem>
+        {gallerySource.exportLivePhoto && mediaItem &&
+        (mediaItem.live_photo || mediaItem.asset_kind === 'live_photo') ? (
+          <MenuItem aria-label="导出完整实况" onClick={() => {
+            setMoreAnchor(null)
+            void gallerySource.exportLivePhoto!(mediaItem).catch(onError)
+          }}>导出完整实况</MenuItem>
+        ) : null}
+        <MenuItem aria-label="下载" onClick={() => {
+          setMoreAnchor(null)
+          startDownload()
+        }}>下载</MenuItem>
+      </Menu>
       {viewer.node ? <FileDialogs
         node={viewer.node}
         api={api}

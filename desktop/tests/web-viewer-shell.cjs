@@ -29,6 +29,8 @@ const host = (tag) => React.forwardRef(({ component, children, ...props }, ref) 
 const mui = {
   Box: host('div'), Stack: host('div'), Typography: host('span'),
   Dialog: host('dialog'), DialogContent: host('div'),
+  Menu: ({ open, children, ...props }) => open ? React.createElement('menu', props, children) : null,
+  MenuItem: host('menuitem'),
   IconButton: host('button'), Tooltip: ({ children }) => children,
   useMediaQuery: (query) => {
     if (query === '(max-width:899.95px)') return viewportWidth < 900
@@ -124,6 +126,29 @@ for (const app of ['preview', 'media-viewer', 'text-viewer', 'pdf-viewer', 'audi
 
 function buttons(renderer, label) {
   return renderer.root.findAll((element) => element.type === 'button' && element.props['aria-label'] === label)
+}
+
+function galleryMoreItems(renderer, label) {
+  return renderer.root.findAll((element) =>
+    element.type === 'menuitem' && element.props['aria-label'] === label)
+}
+
+async function openGalleryMore(renderer) {
+  const trigger = buttons(renderer, '更多照片操作')[0]
+  assert.ok(trigger, 'Mobile Web secondary actions must be reachable from More')
+  await act(async () => { trigger.props.onClick({ currentTarget: {} }) })
+}
+
+async function clickGalleryAction(renderer, label) {
+  const direct = buttons(renderer, label)[0]
+  if (direct) {
+    await act(async () => { direct.props.onClick() })
+    return
+  }
+  await openGalleryMore(renderer)
+  const item = galleryMoreItems(renderer, label)[0]
+  assert.ok(item, label + ' must be a reachable authorized shared action')
+  await act(async () => { item.props.onClick() })
 }
 
 test('shared preview chrome renders arrows only when navigation is available', async () => {
@@ -226,15 +251,20 @@ test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fi
           assert.equal(header.props.sx.position, mobile ? 'absolute' : 'relative')
           assert.equal(rail.length, mobile ? 1 : 0, 'all narrow pointer types share one bottom action rail')
           const inspector = buttons(renderer, '查看属性')
-          assert.equal(inspector.length, 1, 'real shared media inspector action remains available')
           if (mobile) {
+            assert.equal(inspector.length, 0,
+              'secondary info belongs to iOS27 More, not an overflowing row')
             assert.equal(rail[0].props.sx.position, 'absolute')
             assert.equal(rail[0].props.sx.pb, 'env(safe-area-inset-bottom)')
             assert.equal(rail[0].props.sx['& .MuiIconButton-root'].width, 44)
-            assert.ok(rail[0].findAll(element =>
-              element.type === 'button' && element.props['aria-label'] === '查看属性').length,
-              'same real media action moved to bottom, not duplicated or replaced')
+            assert.equal(rail[0].findAll(element =>
+              element.type === 'button' && element.props['aria-label'] === '更多照片操作').length, 1)
+            await openGalleryMore(renderer)
+            assert.equal(galleryMoreItems(renderer, '查看属性').length, 1,
+              'the same real inspector is reachable through one compact More menu')
           } else {
+            assert.equal(inspector.length, 1)
+            assert.equal(buttons(renderer, '更多照片操作').length, 0)
             assert.equal(header.findAll(element =>
               element.type === 'button' && element.props['aria-label'] === '查看属性').length, 1)
           }
@@ -741,9 +771,11 @@ test('P1-2g routed Media Viewer delegates download to the one shared Gallery Dat
           onError(error) { errors.push(error.message) },
         }), { createNodeMock: () => ({ focus() {} }) })
       })
-      assert.equal(buttons(renderer, '下载').length, 1, 'same real Viewer action on both widths')
+      assert.equal(width < 900 ? buttons(renderer, '更多照片操作').length :
+        buttons(renderer, '下载').length, 1,
+        'both widths reach the same Viewer media download through their own chrome')
       await act(async () => {
-        buttons(renderer, '下载')[0].props.onClick()
+        await clickGalleryAction(renderer, '下载')
         await new Promise(resolve => setImmediate(resolve))
       })
       assert.deepEqual(mediaDownloads, [[[923, 8]]],
@@ -787,18 +819,18 @@ test('P1-2g real Viewer download errors are surfaced, and a failed download can 
       }), { createNodeMock: () => ({ focus() {} }) })
     })
     await act(async () => {
-      buttons(renderer, '下载')[0].props.onClick()
+      await clickGalleryAction(renderer, '下载')
       await new Promise(resolve => setImmediate(resolve))
     })
     assert.deepEqual(errors, ['403 download forbidden'])
     assert.equal(closed, 0, 'failed download must not close Viewer')
     await act(async () => {
-      buttons(renderer, '下载')[0].props.onClick()
+      await clickGalleryAction(renderer, '下载')
       await new Promise(resolve => setImmediate(resolve))
     })
     assert.equal(attempts, 2, 'same shared callback remains available for an explicit retry')
     assert.equal(closed, 0)
-    assert.equal(buttons(renderer, '下载').length, 1)
+    assert.equal(buttons(renderer, '更多照片操作').length, 1)
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     compactTouch = false
@@ -872,14 +904,15 @@ test('P1-2h actual Web/Mobile routed Viewer reuses Gallery Creative Dialog and e
       })
       const dialog = () => renderer.root.find(el => el.type === 'creative-dialog')
       assert.equal(dialog().props.open, false)
-      assert.equal(buttons(renderer, '创作图片').length, 1)
+      assert.equal(width < 900 ? buttons(renderer, '更多照片操作').length :
+        buttons(renderer, '创作图片').length, 1)
       if (width === 390) {
         const rail = renderer.root.find(el => el.type === 'div' &&
           el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
         assert.equal(rail.findAll(el => el.type === 'button' &&
-          el.props['aria-label'] === '创作图片').length, 1)
+          el.props['aria-label'] === '更多照片操作').length, 1)
       }
-      await act(async () => { buttons(renderer, '创作图片')[0].props.onClick() })
+      await clickGalleryAction(renderer, '创作图片')
       assert.equal(dialog().props.open, true)
       assert.equal(dialog().props.item.node.id, node.id)
       assert.equal(dialog().props.item.node.revision, node.revision)
@@ -902,7 +935,8 @@ test('P1-2h actual Web/Mobile routed Viewer reuses Gallery Creative Dialog and e
       assert.deepEqual(completed, [931], 'unrelated, stale or failed results cannot refresh Gallery')
       await act(async () => { dialog().props.onClose() })
       assert.equal(dialog().props.open, false)
-      assert.equal(buttons(renderer, '创作图片').length, 1)
+      assert.equal(width < 900 ? buttons(renderer, '更多照片操作').length :
+        buttons(renderer, '创作图片').length, 1)
     } finally {
       if (renderer) await act(async () => renderer.unmount())
     }
@@ -937,7 +971,9 @@ test('P1-2h no Creative action without complete shared capability, or for unsupp
       await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
         ...props, gallerySource: source, route: { app: 'media-viewer', params: { node: 932 } },
       }), { createNodeMock: () => ({ focus() {} }) }) })
-      assert.equal(buttons(renderer, '创作图片').length, 0)
+      await openGalleryMore(renderer)
+      assert.equal(galleryMoreItems(renderer, '创作图片').length, 0,
+        'no authorized Creative action may leak into the mobile More menu')
       await act(async () => renderer.unmount())
       renderer = null
     }
@@ -952,7 +988,9 @@ test('P1-2h no Creative action without complete shared capability, or for unsupp
         ...props, api: { node: async () => node, mediaItem: async () => item },
         gallerySource: fullSource, route: { app: 'media-viewer', params: { node: 932 } },
       }), { createNodeMock: () => ({ focus() {} }) }) })
-      assert.equal(buttons(renderer, '创作图片').length, 0)
+      await openGalleryMore(renderer)
+      assert.equal(galleryMoreItems(renderer, '创作图片').length, 0,
+        'no authorized Creative action may leak into the mobile More menu')
       await act(async () => renderer.unmount())
       renderer = null
     }
@@ -966,7 +1004,9 @@ test('P1-2h no Creative action without complete shared capability, or for unsupp
         }),
       }, route: { app: 'media-viewer', params: { node: 932, context: 'p12h-trash' } },
     }), { createNodeMock: () => ({ focus() {} }) }) })
-    assert.equal(buttons(renderer, '创作图片').length, 0)
+    await openGalleryMore(renderer)
+      assert.equal(galleryMoreItems(renderer, '创作图片').length, 0,
+        'no authorized Creative action may leak into the mobile More menu')
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     storage.delete(key)
@@ -999,7 +1039,7 @@ test('P1-2h Filmstrip changes disarm Creative Dialog; late old job cannot refres
         ...props, route: { app: 'media-viewer', params: { node: 933 } },
       }), { createNodeMock: () => ({ focus() {} }) })
     })
-    await act(async () => { buttons(renderer, '创作图片')[0].props.onClick() })
+    await clickGalleryAction(renderer, '创作图片')
     const oldDialog = renderer.root.find(el => el.type === 'creative-dialog')
     const oldCompleted = oldDialog.props.onCompleted
     assert.equal(oldDialog.props.open, true)
@@ -1018,7 +1058,7 @@ test('P1-2h Filmstrip changes disarm Creative Dialog; late old job cannot refres
     })
     assert.equal(refreshed, 0, 'old job must not refresh or close the new Viewer route')
     assert.equal(cancelled, 0, 'switching Viewer photos does not cancel durable creative jobs')
-    assert.equal(buttons(renderer, '创作图片').length, 1)
+    assert.equal(buttons(renderer, '更多照片操作').length, 1)
     await act(async () => {
       renderer.update(React.createElement(WebFileViewerApps, {
         ...props, route: { app: 'media-viewer', params: { node: 933 } },
@@ -1030,5 +1070,215 @@ test('P1-2h Filmstrip changes disarm Creative Dialog; late old job cannot refres
     if (renderer) await act(async () => renderer.unmount())
     compactTouch = false
     viewportWidth = 390
+  }
+})
+
+
+test('P1-2j Mobile Gallery Viewer bounds 44px primary actions and exposes all secondary source callbacks without duplicates', async () => {
+  for (const width of [375, 390, 899, 900]) {
+    viewportWidth = width
+    compactTouch = width < 900
+    const node = { id: 952, revision: 4, type: 'file', name: 'action.png', size: 8192 }
+    const media = { node, asset_kind: 'image',
+      metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } }
+    const calls = [], errors = []
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: { node: async () => node, mediaItem: async () => media },
+          gallerySource: {
+            loadThumbnail: async () => null, loadPreviewURL: async () => '/preview/952',
+            listAlbums: async () => [],
+            setFavorite: async (...args) => calls.push(['favorite', ...args]),
+            createCreativeGeneration: async (id, payload) => {
+              calls.push(['creative', id, payload]); return { id: 'task-952', state: 'queued' }
+            },
+            getCreativeGeneration: async id => ({ id, state: 'running' }),
+            saveEditRecipe: async () => ({ revision: 1 }),
+            deleteItems: async items => { calls.push(['delete', items[0].node.id]); return { status: 'queued' } },
+            downloadItems: async items => { calls.push(['download', items[0].node.id, items[0].node.revision]) },
+          },
+          shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+          onError(error) { errors.push(String(error)) },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      const compact = width < 900
+      assert.equal(buttons(renderer, '更多照片操作').length, compact ? 1 : 0)
+      for (const name of ['收藏', '编辑媒体', '删除媒体']) {
+        assert.equal(buttons(renderer, name).length, 1, name + ' primary iOS action')
+      }
+      if (compact) {
+        assert.equal(buttons(renderer, '分享媒体').length, 1)
+        const rail = renderer.root.find(el => el.type === 'div' &&
+          el.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+        const primaryButtons = rail.findAll(el => el.type === 'button')
+        assert.ok(primaryButtons.length <= 7,
+          'five Gallery controls + two navigation buttons fit 375px without hidden horizontal scroll')
+        for (const name of ['创作图片', '查看属性', '标签', '下载']) {
+          assert.equal(buttons(renderer, name).length, 0,
+            name + ' must not be duplicated in the primary compact rail')
+        }
+        await openGalleryMore(renderer)
+        for (const name of ['创作图片', '查看属性', '标签', '下载']) {
+          assert.equal(galleryMoreItems(renderer, name).length, 1,
+            'all existing authorized secondary source actions remain reachable')
+        }
+        await act(async () => { galleryMoreItems(renderer, '下载')[0].props.onClick() })
+        assert.equal(galleryMoreItems(renderer, '下载').length, 0,
+          'More closes as the original shared download starts')
+        await clickGalleryAction(renderer, '创作图片')
+        const dialog = renderer.root.find(el => el.type === 'creative-dialog')
+        assert.equal(dialog.props.open, true)
+        assert.equal(dialog.props.item.node.revision, 4)
+        await act(async () => { dialog.props.onClose() })
+        await clickGalleryAction(renderer, '查看属性')
+      } else {
+        assert.equal(buttons(renderer, '创作图片').length, 1)
+        assert.equal(buttons(renderer, '查看属性').length, 1)
+        assert.equal(buttons(renderer, '下载').length, 1)
+        await clickGalleryAction(renderer, '下载')
+      }
+      assert.deepEqual(calls.filter(c => c[0] === 'download'), [['download', 952, 4]],
+        'both layouts submit the identical authorized MediaGalleryDataSource download')
+      assert.deepEqual(errors, [])
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+  viewportWidth = 390
+  compactTouch = false
+})
+
+test('P1-2j opening mobile More never survives a Filmstrip route switch to another Node', async () => {
+  viewportWidth = 390
+  compactTouch = true
+  const nodes = [961, 962].map(id => ({
+    id, revision: 5, type: 'file', name: id + '.jpg', size: 4096,
+  }))
+  const props = {
+    api: {
+      node: async id => nodes.find(n => n.id === id),
+      mediaItem: async id => ({ node: nodes.find(n => n.id === id),
+        metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' } }),
+    },
+    gallerySource: { loadThumbnail: async () => null, listAlbums: async () => [] },
+    shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+    onError(error) { throw error },
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 961 } },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await openGalleryMore(renderer)
+    assert.equal(galleryMoreItems(renderer, '下载').length, 1)
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 962 } },
+      }))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(galleryMoreItems(renderer, '下载').length, 0,
+      'old Node secondary action menu must close without submitting work')
+    assert.equal(buttons(renderer, '更多照片操作').length, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    viewportWidth = 390
+    compactTouch = false
+  }
+})
+
+
+test('P1-2j full Live Photo export stays reachable through Mobile More and desktop direct source action', async () => {
+  for (const width of [390, 900]) {
+    viewportWidth = width
+    compactTouch = width < 900
+    const node = { id: 987, revision: 12, type: 'file', name: 'live-still.jpg', size: 4000 }
+    const item = { node, live_photo: true, asset_kind: 'live_photo',
+      metadata: { media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready' } }
+    const exported = []
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: { node: async () => node, mediaItem: async () => item },
+          gallerySource: {
+            loadThumbnail: async () => null,
+            loadPreviewURL: async () => '',
+            exportLivePhoto: async value => exported.push([value.node.id, value.node.revision]),
+            createCreativeGeneration: async () => { throw Error('Live Photo cannot start ordinary AI creative') },
+            getCreativeGeneration: async () => ({ state: 'queued' }),
+          },
+          shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+          onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      if (width < 900) {
+        await openGalleryMore(renderer)
+        assert.equal(galleryMoreItems(renderer, '创作图片').length, 0)
+        const exportItem = galleryMoreItems(renderer, '导出完整实况')[0]
+        assert.ok(exportItem, 'paired originals may never disappear from Mobile Gallery Viewer')
+        await act(async () => { exportItem.props.onClick() })
+        assert.equal(galleryMoreItems(renderer, '导出完整实况').length, 0,
+          'secondary action closes More after starting original-pair export')
+      } else {
+        await act(async () => { buttons(renderer, '导出完整实况')[0].props.onClick() })
+      }
+      assert.deepEqual(exported, [[987, 12]],
+        'Mobile and wide Web export through the same canonical original-pair source')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+  compactTouch = false
+  viewportWidth = 390
+})
+
+
+test('P1-2j 899→900→899 layout crossover must dismiss compact More rather than resurrect a stale menu', async () => {
+  viewportWidth = 899
+  compactTouch = false // fine pointer at a Mobile Web width is still compact
+  const node = { id: 978, revision: 4, type: 'file', name: 'resize.jpg', size: 321 }
+  const item = { node, metadata: {
+    media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready',
+  } }
+  const props = {
+    route: { app: 'media-viewer', params: { node: node.id } },
+    api: { node: async () => node, mediaItem: async () => item },
+    gallerySource: { loadThumbnail: async () => null, listAlbums: async () => [] },
+    shareDialogAdapter: {}, onReplaceRoute() {}, onClose() {},
+    onError(error) { throw error },
+  }
+  let renderer
+  try {
+    const element = () => React.createElement(WebFileViewerApps, props)
+    await act(async () => {
+      renderer = create(element(), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await openGalleryMore(renderer)
+    assert.equal(galleryMoreItems(renderer, '下载').length, 1)
+    viewportWidth = 900
+    await act(async () => { renderer.update(element()) })
+    assert.equal(buttons(renderer, '更多照片操作').length, 0)
+    assert.equal(galleryMoreItems(renderer, '下载').length, 0)
+    assert.equal(buttons(renderer, '下载').length, 1,
+      'wide Web immediately recovers its existing direct action without a second menu')
+    viewportWidth = 899
+    await act(async () => { renderer.update(element()) })
+    assert.equal(buttons(renderer, '更多照片操作').length, 1)
+    assert.equal(galleryMoreItems(renderer, '下载').length, 0,
+      'back at mobile width, old open menu must not magically reappear')
+    await openGalleryMore(renderer)
+    assert.equal(galleryMoreItems(renderer, '下载').length, 1,
+      'secondary actions remain reachable after explicitly reopening More')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    viewportWidth = 390
+    compactTouch = false
   }
 })
