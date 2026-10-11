@@ -394,3 +394,15 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 **验收：** Web/Mobile 两种布局运行相同按钮/同一 Dialog、真实 Rendered Viewer 组件测试覆盖有权／无权、图片/Live Photo、保存/撤销以及 Filmstrip 导航时自动关闭。复用已存在 `fix/mobile-gallery-ios27-web-viewer-` PR CI 的构建 Web + 原生 Chromium，验证细/粗指针实际授权媒体经 `PUT` 保存 90° 配方、`DELETE` 按 revision 撤销、原始 Viewer Node 和返回 Gallery 滚动位置未丢失，未知 API/Console/PageError 为零，保留精确提交与截图。
 
 **待办：** 仍需为实际 Viewer 补齐删除确认及真实任务中心回执、创作操作等能力，并在 iOS 27 Safari/安装模式进行像素/动画/VoiceOver 同帧比对；10k/100k 原始 HEVC/RAW/LIVP 的性能/真机测试不可由 240 张 PNG Fixture 替代。不能因此宣称总体 1:1 已完成。
+
+## P1-2f · 实际 Web/Mobile Web Viewer 的删除任务功能等价（2026-10-11）
+
+**状态：实现及精确源验证候选；GitHub PR CI/合入、真实 Chromium、实体 Go Server 及 iOS 27 Safari 真机分别验收，不以提交代码代替交付。** P1-2e 之后的真实 Web `media-viewer` 已共享编辑、Filmstrip、Viewer 数据源、收藏和属性，但缺少内嵌 `XDriveMediaGalleryViewer` 已有的“删除媒体 → 确认 → 文件操作”的入口；390px Mobile Web 与宽 Web 实际运行同一个路由，因此两者都存在功能缺口。
+
+- **仅一条权威写入链路：** 在真实 `WebMediaViewerApp` 增加有权限才出现的“删除媒体”控制和已共享的 `XDriveConfirmDialog`，调用现有 `MediaGalleryDataSource.deleteItems([MediaItem]) → web/src/mediaGalleryAdapter.ts → api.createFileOperation('delete', [{id,revision}])`。回收站上下文不显示再次普通删除（仍使用已有 Trash 控制），不新增 Mobile API、删除专用缓存/Controller/虚拟化索引或重复 Viewer。
+- **任务状态而非假成功：** POST 成功仅表示已提交或得到异步任务回执；提示用户在现有 Task Center 查看真实进度/失败/取消；`FileManager` 复用现有 `refreshFileOperations`，不在 Viewer 层自行推断物理删除完成或立即改写 100k 集合。HTTP 403/409/网络失败保留弹窗及目标以供明确重试，同一请求期间防双击提交；只有接受了请求后才使用原 `onClose` 返回 Gallery。
+- **生命周期与规模：** 确认框绑定精确 Node ID、revision 及 Viewer browse context；Filmstrip 切项、历史路由变化不能让旧确认或迟到删除回执关闭新照片。保留同一 52px 应用标题栏、全屏 App Frame、Web REST/Agent IPC、`useXDriveVirtualCollection`、共享 `MediaVirtualTileGrid/Timeline` 和 128-item Range/最多11项 Filmstrip。
+- **验证范围：** 真实 React mounted Viewer：可授权单提交/Task Center 回执、无能力禁用、Trash 禁用、403 失败重试与旧请求返回不关闭新路由；已有原生 Chromium `gallery-ios27-viewer` 场景追加真实构建 Web 对同一 `POST /api/v1/file-operations` 的 403→手动重试→200 queued，分别跑 fine/coarse 与 390/899/900 视口，继续保留原 Viewer 编辑/缩略图/滚动 ≤2px 和零未知 HTTP/page/console error 门禁。模拟 HTTP 的 Chrome CI 不等于真实 Go/PostgreSQL/CAS 删除完成，也不等于 iOS 27 实机像素 1:1；实际任务终态和物理设备仍待单独验收。
+
+
+**P1-2f 首轮精确 HEAD Chromium First-red（2026-10-11）：** [CI #38135712821 的 web job #114459084145](https://github.com/lazyxu/xdrive/actions/runs/38135712821/job/114459084145) 的源版本为 `3c54fc33b0e2d74db2a0041b019c2fb90c316018`。除 `web` 外实际运行的 12 个构建/测试作业均成功；真实构建 Web Chrome fine pointer 在第 24 项验收点进入 `delete-403-then-queued` 阶段后，新增测试的 `getByRole('dialog', {name:'确认操作'})` 超时。随失败结果保存的真实无障碍树确认对话框已正确出现且可访问名称为 `删除这张照片或视频？ 关闭弹窗`，包含正确的警示正文、取消和删除按钮；截至该失败，没有发出删除 POST，故不得声称 403/重试/任务回执已通过。本轮**仅修正浏览器脚本定位器**为以业务确认标题为前缀的 accessible role/name 查找；不修改删除产品代码、后端权限、任务生命周期、测试门槛或放宽既有滚动 ≤2px 和零未知网络/console/page-error 断言。仍从固定父提交重建**恰好一个**工作提交，新 SHA 需重新完整 PR CI、真实 fine/coarse Chromium 与 `final-gate`，不能复用旧 HEAD 的绿项。

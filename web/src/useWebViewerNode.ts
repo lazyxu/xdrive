@@ -158,6 +158,7 @@ export function useViewerNode({ api, gallerySource, nodeID, contextID, predicate
   return {
     node: currentContent?.node ?? null,
     mediaItem: currentContent?.mediaItem ?? null,
+    isTrashContext: context?.kind === 'gallery' && context.target.kind === 'trash',
     loading: currentContent?.loading ?? true,
     error: currentContent?.error ?? '',
     activeIndex, totalCount, previous, next,

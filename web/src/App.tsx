@@ -1728,6 +1728,10 @@ function FileManager({
             app: 'files',
             params: { dir: node?.parent_id },
           })}
+          onFileOperationQueued={() => {
+            void refreshFileOperations()
+            setFeedback({ tone: 'good', message: '已提交删除任务；实际执行结果请查看任务中心。' })
+          }}
           onError={handleError}
         />
       ) : null}

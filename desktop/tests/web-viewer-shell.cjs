@@ -43,6 +43,7 @@ const sharedUI = {
   XDriveMediaViewerContent: (props) => React.createElement('media-content', props),
   XDriveMediaGalleryFilmstrip: (props) => React.createElement('gallery-filmstrip', props),
   XDriveMediaGalleryEditDialog: (props) => React.createElement('edit-dialog', props),
+  XDriveConfirmDialog: (props) => React.createElement('confirm-dialog', props),
   XDriveStatePanel: ({ message }) => React.createElement('p', null, message),
   XDriveStatusAlert: ({ children }) => React.createElement('p', { role: 'alert' }, children),
   XDriveFileTagDialog: () => null, XDriveMediaDetailsInspector: () => null,
@@ -563,6 +564,143 @@ test('P1-2e editor is scoped to one Node/revision and closes on Viewer route cha
     await act(async () => { await new Promise(resolve => setImmediate(resolve)) })
     assert.equal(renderer.root.find(el => el.type === 'edit-dialog').props.open, false,
       'returning to the same Node does not silently reopen the prior editor')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2f routed Web/Mobile Gallery delete submits one shared revision-fenced Task Center operation', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 811, revision: 3, type: 'file', name: 'delete-target.png', size: 200 }
+  const item = { node, metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } }
+  let submit, closes = 0, receipts = 0
+  const calls = []
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: node.id } },
+        api: { node: async () => node, mediaItem: async () => item },
+        gallerySource: {
+          loadThumbnail: async () => null,
+          deleteItems: (items) => {
+            calls.push(items)
+            return new Promise(resolve => { submit = resolve })
+          },
+        },
+        shareDialogAdapter: {},
+        onClose(returnNode) { closes++; assert.equal(returnNode.id, node.id) },
+        onFileOperationQueued() { receipts++ },
+        onReplaceRoute() {},
+        onError(error) { throw error },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    assert.equal(buttons(renderer, '删除媒体').length, 1)
+    const confirm = () => renderer.root.find(el => el.type === 'confirm-dialog')
+    assert.equal(confirm().props.open, false)
+    await act(async () => { buttons(renderer, '删除媒体')[0].props.onClick() })
+    assert.equal(confirm().props.open, true)
+    assert.match(confirm().props.description, /任务中心/)
+    await act(async () => { confirm().props.onConfirm(); confirm().props.onConfirm() })
+    assert.equal(calls.length, 1, 'repeat taps cannot submit duplicate operations')
+    assert.equal(calls[0].length, 1)
+    assert.equal(calls[0][0].node.id, node.id)
+    assert.equal(calls[0][0].node.revision, 3)
+    assert.equal(confirm().props.loading, true)
+    assert.equal(closes, 0, 'queued work cannot masquerade as already-completed deletion')
+    await act(async () => { submit({ id: 'qa-deletion-811', status: 'queued' }); await new Promise(resolve => setImmediate(resolve)) })
+    assert.equal(receipts, 1, 'real shared receipt feeds the existing Task Center refresh')
+    assert.equal(closes, 1, 'confirmed submission returns to original Gallery browsing context')
+    assert.equal(confirm().props.open, false)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2f delete stays unavailable without source capability and for Trash browse contexts', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 812, revision: 1, type: 'file', name: 'trash.png', size: 10 }
+  const item = { node, metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } }
+  const key = 'xdrive.web_app.session.v1:p12f-trash'
+  let renderer
+  const props = {
+    api: { node: async () => node, mediaItem: async () => item },
+    shareDialogAdapter: {},
+    onClose() {}, onReplaceRoute() {}, onError(error) { throw error },
+  }
+  try {
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+      ...props, route: { app: 'media-viewer', params: { node: 812 } },
+      gallerySource: { loadThumbnail: async () => null },
+    }), { createNodeMock: () => ({ focus() {} }) }) })
+    assert.equal(buttons(renderer, '删除媒体').length, 0, 'no inert delete without shared source permission')
+    await act(async () => renderer.unmount())
+    renderer = null
+    storage.set(key, JSON.stringify({ version: 1, context: {
+      kind: 'gallery', target: { kind: 'trash' }, activeIndex: 0, totalCount: 1,
+    } }))
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+      ...props, route: { app: 'media-viewer', params: { node: 812, context: 'p12f-trash' } },
+      gallerySource: { loadThumbnail: async () => null, deleteItems: async () => { throw Error('should not delete Trash') },
+        listTrashItemRange: async () => ({ items: [item], total_count: 1, offset: 0, limit: 128 }) },
+    }), { createNodeMock: () => ({ focus() {} }) }) })
+    assert.equal(buttons(renderer, '删除媒体').length, 0, 'Gallery Trash uses its own restore/permanent delete controls')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    storage.delete(key)
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2f denied delete can retry and late old-Node acknowledgment cannot close new route', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const nodes = [813, 814].map(id => ({ id, revision: 1, type: 'file', name: id + '.png', size: 10 }))
+  const item = id => ({ node: nodes.find(node => node.id === id),
+    metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } })
+  let reject, accept, closed = 0, errorCount = 0, requestCount = 0
+  const source = { loadThumbnail: async () => null,
+    deleteItems: () => {
+      requestCount++
+      return new Promise((resolve, rejectPromise) => {
+        if (requestCount === 1) reject = rejectPromise
+        else accept = resolve
+      })
+    } }
+  const props = {
+    api: { node: async id => nodes.find(node => node.id === id), mediaItem: async id => item(id) },
+    gallerySource: source, shareDialogAdapter: {},
+    onClose() { closed++ }, onReplaceRoute() {}, onError(error) { errorCount++; assert.match(error.message, /权限/) },
+  }
+  let renderer
+  try {
+    await act(async () => { renderer = create(React.createElement(WebFileViewerApps, {
+      ...props, route: { app: 'media-viewer', params: { node: 813 } },
+    }), { createNodeMock: () => ({ focus() {} }) }) })
+    await act(async () => { buttons(renderer, '删除媒体')[0].props.onClick() })
+    const confirm = () => renderer.root.find(el => el.type === 'confirm-dialog')
+    await act(async () => { confirm().props.onConfirm() })
+    await act(async () => { reject(new Error('权限不足')); await new Promise(resolve => setImmediate(resolve)) })
+    assert.equal(errorCount, 1)
+    assert.equal(closed, 0)
+    assert.equal(confirm().props.open, true, '403 preserves target and confirmation for an explicit retry')
+    await act(async () => { confirm().props.onConfirm() })
+    await act(async () => {
+      renderer.update(React.createElement(WebFileViewerApps, {
+        ...props, route: { app: 'media-viewer', params: { node: 814 } },
+      }))
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(confirm().props.open, false, 'Filmstrip route change disarms previous delete target')
+    await act(async () => { accept({ id: 'old-route-delete', status: 'queued' }); await new Promise(resolve => setImmediate(resolve)) })
+    assert.equal(closed, 0, 'late old-Node success may not close the new photo')
   } finally {
     if (renderer) await act(async () => renderer.unmount())
     compactTouch = false
