@@ -600,6 +600,42 @@ func (c *agentController) CloudRevealAdminBaiduMapAK(ctx context.Context, revisi
 	return cli.RevealAdminBaiduMapAK(ctx, revision)
 }
 
+func (c *agentController) CloudAdminMediaWorkerConfig(ctx context.Context) (client.AdminMediaWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminMediaWorkerConfig{}, err
+	}
+	return cli.AdminMediaWorkerConfig(ctx)
+}
+func (c *agentController) CloudSetAdminMediaWorker(ctx context.Context, input client.AdminMediaWorkerUpdate) (client.AdminMediaWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminMediaWorkerConfig{}, err
+	}
+	return cli.UpdateAdminMediaWorker(ctx, input)
+}
+func (c *agentController) CloudApplyAdminMediaWorker(ctx context.Context, input client.AdminMediaWorkerApplyInput) (client.AdminMediaWorkerApplyResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminMediaWorkerApplyResult{}, err
+	}
+	return cli.ApplyAdminMediaWorker(ctx, input)
+}
+func (c *agentController) CloudAdminMediaWorkerRevisions(ctx context.Context) (client.AdminMediaWorkerRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminMediaWorkerRevisionPage{}, err
+	}
+	return cli.AdminMediaWorkerRevisions(ctx)
+}
+func (c *agentController) CloudRollbackAdminMediaWorker(ctx context.Context, input client.AdminMediaWorkerRollbackInput) (client.AdminMediaWorkerConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminMediaWorkerConfig{}, err
+	}
+	return cli.RollbackAdminMediaWorker(ctx, input)
+}
+
 func (c *agentController) CloudAdminPostgresPoolConfig(ctx context.Context) (client.AdminPostgresPoolConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

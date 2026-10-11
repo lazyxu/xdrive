@@ -2174,6 +2174,9 @@ jobs:
           bash -n scripts/server-verify.sh
           bash -n scripts/test-server-verify.sh
           bash scripts/test-server-verify.sh
+          bash -n scripts/server-control.sh
+          bash -n scripts/test-media-worker-control.sh
+          bash scripts/test-media-worker-control.sh
           bash -n scripts/server-doctor.sh
           bash -n scripts/test-server-doctor.sh
           bash scripts/test-server-doctor.sh

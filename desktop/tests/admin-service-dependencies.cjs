@@ -725,3 +725,38 @@ test('Media Worker optional image is isolated, real and release-gated without fa
   assert.equal(page.includes('startMediaWorker'), false)
   assert.equal(backend.includes('docker.sock'), false)
 })
+
+
+test('Media Worker activation has one guarded revisioned backend and identical shared Web/Desktop MUI controls', () => {
+  const model = read('ui', 'shared', 'src', 'service-dependencies.ts')
+  const panel = read('ui', 'shared', 'src', 'mui', 'MediaWorkerConfigPanel.tsx')
+  const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
+  const webApi = read('web', 'src', 'api.ts')
+  const webApp = read('web', 'src', 'App.tsx')
+  const agentClient = read('desktop', 'src', 'main', 'agent_client.cts')
+  const main = read('desktop', 'src', 'main', 'index.cts')
+  const preload = read('desktop', 'src', 'preload', 'index.cts')
+  const desktopApp = read('desktop', 'src', 'renderer', 'App.tsx')
+  const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const controller = read('cmd', 'xdrive-agent', 'cloud_files.go')
+  for (const name of ['loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker',
+    'loadMediaWorkerRevisions', 'rollbackMediaWorker']) {
+    assert.ok(panel.includes('source.' + name), 'missing shared action ' + name)
+    assert.ok(webApp.includes(name + ':'), 'Web missing action ' + name)
+    assert.ok(desktopApp.includes(name + ':'), 'Desktop missing action ' + name)
+  }
+  assert.ok(page.includes('<XDriveMediaWorkerConfigPanel source={source}'))
+  assert.ok(model.includes('XDriveMediaWorkerHostStatus'))
+  assert.ok(panel.includes('data-xdrive-admin-media-worker-control'))
+  assert.ok(panel.includes('未立即操作容器') || panel.includes('不立即操作容器'))
+  assert.ok(panel.includes('config.apply_state === \'applied\''))
+  assert.ok(webApi.includes("'/api/v1/admin/services/media-worker/apply'"))
+  assert.ok(agentClient.includes('/v1/cloud/admin-media-worker/apply'))
+  assert.ok(main.includes("'agent:cloud-apply-admin-media-worker'"))
+  assert.ok(preload.includes("'agent:cloud-apply-admin-media-worker'"))
+  assert.ok(ipc.includes('"POST /v1/cloud/admin-media-worker/apply"'))
+  assert.ok(controller.includes('CloudApplyAdminMediaWorker('))
+  assert.ok(api.includes('admin.Use(s.requireAdmin())'))
+  assert.equal(panel.includes('docker.sock'), false)
+  assert.equal(panel.includes('openSyncFolders'), false)
+})

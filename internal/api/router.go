@@ -23,6 +23,7 @@ import (
 type Server struct {
 	DB                             *gorm.DB
 	postgresPoolSaveMu             sync.Mutex
+	mediaWorkerConfigSaveMu        sync.Mutex
 	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
 	MediaWorkerConfigured          bool
@@ -342,6 +343,11 @@ func (s *Server) Router() *gin.Engine {
 	admin.Use(s.requireAdmin())
 	admin.GET("/users", s.adminListUsers)
 	admin.GET("/services", s.adminServiceDependencies)
+	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
+	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
+	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
+	admin.GET("/services/media-worker/revisions", s.adminMediaWorkerRevisions)
+	admin.POST("/services/media-worker/rollback", s.adminRollbackMediaWorker)
 	admin.GET("/services/postgresql/pool", s.adminPostgresPoolConfig)
 	admin.PUT("/services/postgresql/pool", s.adminSavePostgresPool)
 	admin.GET("/services/postgresql/pool/revisions", s.adminPostgresPoolRevisions)

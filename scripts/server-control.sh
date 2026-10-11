@@ -321,6 +321,158 @@ process_request() {
   rm -f "$active" "$progress_file"
 }
 
+
+# Restricted Media Worker Host Manager bridge: accepts only boolean activation
+# of the fixed "media-worker" Compose service, never arbitrary Docker commands.
+media_worker_control_uint() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE "s/.*\"${key}\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p" "$file" | head -n1
+}
+media_worker_running() {
+  [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || return 1
+  docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+    ps --status running --services media-worker 2>/dev/null | grep -Fxq media-worker
+}
+media_worker_control_write_status() {
+  local state="$1" revision="$2" applied="$3" enabled="$4" observed="$5" request_id="$6"
+  local dir tmp
+  dir="$(prepare_dir)"
+  tmp="$(mktemp "$dir/.media-worker-status.XXXXXX")" || return 1
+  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"observed_enabled":%s,"request_id":"%s","updated_at":"%s"}\n' \
+    "$state" "$revision" "$applied" "$enabled" "$observed" "$request_id" "$(now_utc)" > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$dir/media-worker-control-status.json"
+}
+media_worker_control_refresh() {
+  local dir path state revision applied enabled observed request_id
+  dir="$(prepare_dir)"
+  path="$dir/media-worker-control-status.json"
+  observed=false
+  if media_worker_running; then observed=true; fi
+  if [[ ! -f "$path" ]]; then
+    media_worker_control_write_status idle 0 0 false "$observed" ""
+    return
+  fi
+  state="$(json_value "$path" state)"
+  revision="$(media_worker_control_uint "$path" revision)"
+  applied="$(media_worker_control_uint "$path" applied_revision)"
+  enabled="$(json_bool_value "$path" enabled)"
+  request_id="$(json_value "$path" request_id)"
+  [[ "$revision" =~ ^[0-9]+$ ]] || revision=0
+  [[ "$applied" =~ ^[0-9]+$ ]] || applied=0
+  [[ "$enabled" == true ]] || enabled=false
+  [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
+  case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
+  if [[ "$state" == success && "$observed" != "$enabled" ]]; then state=failed; fi
+  media_worker_control_write_status "$state" "$revision" "$applied" "$enabled" "$observed" "$request_id"
+}
+media_worker_profiles_for() {
+  local profiles="$1" enabled="$2" item next=""
+  profiles="$(printf '%s' "$profiles" | tr -d '[:space:]')"
+  [[ "$profiles" =~ ^[A-Za-z0-9,_-]*$ ]] || return 1
+  local -a parts=()
+  IFS=',' read -r -a parts <<< "$profiles"
+  for item in "${parts[@]}"; do
+    [[ -n "$item" && "$item" != media-worker ]] || continue
+    [[ -z "$next" ]] || next+=","
+    next+="$item"
+  done
+  if [[ "$enabled" == true ]]; then
+    [[ -z "$next" ]] || next+=","
+    next+="media-worker"
+  fi
+  printf '%s\n' "$next"
+}
+media_worker_control_apply_profiles() {
+  local profiles="$1" tmp
+  [[ -f "$ENV_PATH" ]] || return 1
+  tmp="$(mktemp "$CONFIG_DIR/.media-worker-env.XXXXXX")" || return 1
+  awk -v value="$profiles" '
+    /^COMPOSE_PROFILES=/ { if (!found) print "COMPOSE_PROFILES=" value; found=1; next }
+    { print }
+    END { if (!found) print "COMPOSE_PROFILES=" value }
+  ' "$ENV_PATH" > "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$ENV_PATH"
+}
+media_worker_control_process() {
+  local dir request active request_id revision enabled created_at status_path applied last_state
+  local before_profiles next_profiles observed next_observed was_running=false healthy=false
+  dir="$(prepare_dir)"
+  request="$dir/media-worker-control-request.json"
+  active="$dir/media-worker-control-active.json"
+  [[ -f "$request" ]] || return 0
+  if ! mv "$request" "$active" 2>/dev/null; then return 0; fi
+  request_id="$(json_value "$active" request_id)"
+  revision="$(media_worker_control_uint "$active" revision)"
+  enabled="$(json_bool_value "$active" enabled)"
+  created_at="$(json_value "$active" created_at)"
+  status_path="$dir/media-worker-control-status.json"
+  applied="$(media_worker_control_uint "$status_path" applied_revision)"
+  last_state="$(json_value "$status_path" state)"
+  [[ "$applied" =~ ^[0-9]+$ ]] || applied=0
+  [[ "$revision" =~ ^[0-9]+$ ]] || revision=0
+  observed=false
+  if media_worker_running; then observed=true; was_running=true; fi
+  if [[ ! "$request_id" =~ ^[0-9a-f]{24}$ || "$revision" -le 0 ||
+        ( "$revision" -lt "$applied" || ( "$revision" -eq "$applied" && "$last_state" != failed ) ) ||
+        "$revision" -gt 1152921504606846976 ||
+        ( "$enabled" != true && "$enabled" != false ) ]] ||
+        ! request_time_is_fresh "$created_at"; then
+    media_worker_control_write_status failed "$revision" "$applied" false "$observed" ""
+    rm -f "$active"
+    return 0
+  fi
+  media_worker_control_write_status running "$revision" "$applied" "$enabled" "$observed" "$request_id"
+  before_profiles="$(env_value COMPOSE_PROFILES)"
+  if ! next_profiles="$(media_worker_profiles_for "$before_profiles" "$enabled")"; then
+    media_worker_control_write_status failed "$revision" "$applied" "$enabled" "$observed" "$request_id"
+    rm -f "$active"
+    return 0
+  fi
+  if [[ "$enabled" == true ]]; then
+    if docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+        up -d --no-deps media-worker >/dev/null 2>&1; then
+      for _ in $(seq 1 20); do
+        if docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+            exec -T media-worker xdrive-server media-worker check >/dev/null 2>&1; then
+          healthy=true
+          break
+        fi
+        touch_heartbeat
+        sleep 1
+      done
+    fi
+  else
+    if ! media_worker_running; then
+      healthy=true
+    elif docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+        stop media-worker >/dev/null 2>&1 && ! media_worker_running; then
+      healthy=true
+    fi
+  fi
+  if [[ "$healthy" == true ]] && media_worker_control_apply_profiles "$next_profiles"; then
+    next_observed=false
+    if media_worker_running; then next_observed=true; fi
+    if [[ "$next_observed" == "$enabled" ]]; then
+      media_worker_control_write_status success "$revision" "$revision" "$enabled" "$next_observed" "$request_id"
+      rm -f "$active"
+      return 0
+    fi
+  fi
+  if [[ "$enabled" == true && "$was_running" == false ]]; then
+    docker compose --profile media-worker --env-file "$ENV_PATH" -f "$COMPOSE_PATH" \
+      stop media-worker >/dev/null 2>&1 || true
+  fi
+  # Roll back profile if a post-apply check or persistence step failed.
+  media_worker_control_apply_profiles "$before_profiles" || true
+  next_observed=false
+  if media_worker_running; then next_observed=true; fi
+  media_worker_control_write_status failed "$revision" "$applied" "$enabled" "$next_observed" "$request_id"
+  rm -f "$active"
+}
+
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
@@ -354,6 +506,22 @@ serve_cmd() {
   trap 'rm -f "${CONTROL_PID_FILE:-}"; [[ -z "${CONTROL_LOCK_DIR:-}" ]] || rmdir "${CONTROL_LOCK_DIR}" 2>/dev/null || true' EXIT
   trap 'exit 0' INT TERM
 
+  # An interrupted media activation is never acknowledged after a runner crash.
+  if [[ -f "$dir/media-worker-control-active.json" ]]; then
+    rm -f "$dir/media-worker-control-active.json"
+    media_worker_control_refresh
+    local status_file="$dir/media-worker-control-status.json"
+    local rev="$(media_worker_control_uint "$status_file" revision)"
+    local applied="$(media_worker_control_uint "$status_file" applied_revision)"
+    local enabled="$(json_bool_value "$status_file" enabled)"
+    local observed=false
+    if media_worker_running; then observed=true; fi
+    [[ "$rev" =~ ^[0-9]+$ ]] || rev=0
+    [[ "$applied" =~ ^[0-9]+$ ]] || applied=0
+    [[ "$enabled" == true ]] || enabled=false
+    media_worker_control_write_status failed "$rev" "$applied" "$enabled" "$observed" ""
+  fi
+
   # Publish liveness before any externally visible idle/recovery status. This
   # prevents API/UI consumers from observing a ready-looking status while the
   # host-control heartbeat is still absent during startup.
@@ -385,11 +553,14 @@ serve_cmd() {
   [[ "$storage_inventory_interval" =~ ^[0-9]+$ ]] || storage_inventory_interval=300
   (( storage_inventory_interval >= 30 )) || storage_inventory_interval=30
   refresh_storage_host_inventory || true
+  media_worker_control_refresh
   last_storage_inventory_at="$(date +%s)"
 
   while true; do
     touch_heartbeat
     [[ -f "$dir/request.json" ]] && process_request
+    [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
+    media_worker_control_refresh
     now="$(date +%s)"
     if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
       refresh_storage_host_inventory || true
@@ -465,6 +636,10 @@ install_cmd() {
   fi
   start_cmd
 }
+
+if [[ "${XD_HOST_CONTROL_SOURCE_ONLY:-0}" == "1" ]]; then
+  return 0
+fi
 
 cmd="${1:-status}"
 shift || true

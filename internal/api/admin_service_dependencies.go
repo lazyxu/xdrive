@@ -72,7 +72,32 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 
 	var wg sync.WaitGroup
-	if s.MediaWorkerConfigured {
+	mediaManaged := false
+	if s.DB != nil {
+		if desired, err := s.readMediaWorkerDesired(ctx); err == nil && desired.Revision != 0 {
+			mediaManaged = true
+			host := s.readMediaWorkerHostStatus()
+			if desired.Enabled {
+				services[2].Status = "unavailable"
+				services[2].Detail = "Media Worker 管理员期望启用；等待宿主机执行及真实 FFmpeg 健康验证"
+				if host.Supported && host.State == "success" &&
+					host.AppliedRevision == desired.Revision && host.ObservedEnabled &&
+					s.mediaWorkerRuntimeReady(ctx) {
+					services[2].Status = "ready"
+					services[2].Detail = "Media Worker 实际容器已启动并通过 FFmpeg/FFprobe 探针；媒体作业协议尚未接入"
+				}
+			} else {
+				services[2].Status = "unavailable"
+				services[2].Detail = "管理员期望停用；等待宿主机确认独立 Media Worker 容器已停止"
+				if host.Supported && host.State == "success" &&
+					host.AppliedRevision == desired.Revision && !host.ObservedEnabled {
+					services[2].Status = "disabled"
+					services[2].Detail = "管理员禁用已在宿主机生效，独立 Media Worker 容器已停止"
+				}
+			}
+		}
+	}
+	if s.MediaWorkerConfigured && !mediaManaged {
 		services[2].Status = "unavailable"
 		services[2].Detail = "媒体运行时已配置，但 FFmpeg/FFprobe 实际健康检查未通过"
 		if s.MediaWorkerProbe != nil {

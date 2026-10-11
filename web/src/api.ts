@@ -704,6 +704,38 @@ export class XDriveApi {
     return this.request<XDriveServiceDependenciesSnapshot>('/api/v1/admin/services')
   }
 
+  adminMediaWorkerConfig() {
+    return this.request<import('../../ui/shared/src').XDriveMediaWorkerConfig>(
+      '/api/v1/admin/services/media-worker', { cache: 'no-store' },
+    )
+  }
+  adminSaveMediaWorker(input: import('../../ui/shared/src').XDriveMediaWorkerUpdate) {
+    return this.request<import('../../ui/shared/src').XDriveMediaWorkerConfig>(
+      '/api/v1/admin/services/media-worker', {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+  adminApplyMediaWorker(input: { revision: number }) {
+    return this.request<import('../../ui/shared/src').XDriveMediaWorkerApplyResult>(
+      '/api/v1/admin/services/media-worker/apply', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+  adminMediaWorkerRevisions() {
+    return this.request<import('../../ui/shared/src').XDriveMediaWorkerRevisionPage>(
+      '/api/v1/admin/services/media-worker/revisions', { cache: 'no-store' },
+    )
+  }
+  adminRollbackMediaWorker(input: import('../../ui/shared/src').XDriveMediaWorkerRollbackInput) {
+    return this.request<import('../../ui/shared/src').XDriveMediaWorkerConfig>(
+      '/api/v1/admin/services/media-worker/rollback', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
   adminPostgresPoolConfig() {
     return this.request<import('../../ui/shared/src').XDrivePostgresPoolConfig>('/api/v1/admin/services/postgresql/pool', { cache: 'no-store' })
   }
