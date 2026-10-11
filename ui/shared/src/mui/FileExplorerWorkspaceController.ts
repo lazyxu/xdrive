@@ -83,6 +83,7 @@ export function useXDriveFileExplorerWorkspace<
   searchCrumbsForResult,
   initialNavigationState,
   navigationSessionStorageKey,
+  skipInitialSessionRestore,
   onNavigationStateChange,
   onDirectoryAccess,
   onFileAccess,
@@ -106,6 +107,7 @@ export function useXDriveFileExplorerWorkspace<
   ) => readonly XDriveFileExplorerWorkspaceCrumb[] | undefined
   initialNavigationState?: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>
   navigationSessionStorageKey?: string
+  skipInitialSessionRestore?: boolean
   onNavigationStateChange?: (
     state: XDriveFileExplorerNavigationState<XDriveFileExplorerWorkspaceCrumb>,
   ) => void
@@ -137,6 +139,7 @@ export function useXDriveFileExplorerWorkspace<
     onLoadDirectory,
     initialNavigationState,
     navigationSessionStorageKey,
+    skipInitialSessionRestore,
     onNavigationStateChange,
     onAfterNavigate: (nextCrumbs) => {
       const target = nextCrumbs.at(-1)

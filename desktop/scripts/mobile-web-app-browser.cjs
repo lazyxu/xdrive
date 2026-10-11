@@ -2200,6 +2200,77 @@ async function filesIos27RenameAcceptance(viewport, narrow, row) {
 }
 
 
+async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
+  const label = `user-files-ios27-${viewport.width}x${viewport.height}-breadcrumbs`;
+  activeStage = label;
+  // Reuse the Server directory fixture and shared Web workspace without a
+  // second Mobile navigation API, business controller, or internal tabs.
+  await page.goto(`${origin}/#/app/files?dir=2`, { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const root = page.locator('[data-mobile-files-crumb-id="1"]');
+  const folder = page.locator('[data-mobile-files-crumb-id="2"]');
+  await root.waitFor();
+  await folder.waitFor();
+  check(`${label}: original requested deep link remains canonical once nested folder resolves`,
+    page.url().endsWith('/files?dir=2'), page.url());
+  await page.locator('[data-mobile-files-item]').first().waitFor();
+  await settle();
+  const nestedReads = Object.entries(result.requests)
+    .filter(([key]) => key.startsWith('user GET /api/v1/nodes/2/children'))
+    .reduce((total, [, count]) => total + count, 0);
+  check(`${label}: nested-directory range loaded by the shared Server adapter`,
+    nestedReads > 0, { nestedReads, url: page.url() });
+  const metrics = await page.locator('[data-mobile-files-crumb-id]').evaluateAll(elements =>
+    elements.map(element => {
+      const box = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        id: element.getAttribute('data-mobile-files-crumb-id'),
+        boxWidth: box.width, boxHeight: box.height,
+        cssMinWidth: style.minWidth, cssMinHeight: style.minHeight,
+      };
+    }));
+  result.samples[label] = metrics;
+  check(`${label}: actual directory breadcrumbs meet the 44px touch target`,
+    metrics.length === 2 && ['1', '2'].every(id => metrics.some(item => item.id === id)) &&
+    metrics.every(item => item.boxWidth >= 43.5 && item.boxHeight >= 43.5 &&
+      parseFloat(item.cssMinWidth) >= 44 && parseFloat(item.cssMinHeight) >= 44), metrics);
+  await page.screenshot({ path: path.join(outputDir, `${label}-folder.png`) });
+  const writesBefore = filesIos27Fixture.accepted.length;
+  const childReadsBefore = Object.entries(result.requests)
+    .filter(([key]) => key.startsWith('user GET /api/v1/nodes/2/children'))
+    .reduce((total, [, count]) => total + count, 0);
+  await Promise.all([page.waitForURL(/\/files\?dir=1$/), root.click()]);
+  await page.locator('[data-mobile-files-item]')
+    .filter({ hasText: 'document-002.txt' }).first().waitFor();
+  await settle();
+  await page.waitForTimeout(250);
+  const childReadsAfter = Object.entries(result.requests)
+    .filter(([key]) => key.startsWith('user GET /api/v1/nodes/2/children'))
+    .reduce((total, [, count]) => total + count, 0);
+  check(`${label}: ancestor navigation does not bounce to the old nested route`,
+    page.url().endsWith('/files?dir=1') &&
+    await page.getByRole('heading', { name: '我的文件', level: 2 }).isVisible() &&
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1 &&
+    filesIos27Fixture.accepted.length === writesBefore,
+    { url: page.url(), childReadsBefore, childReadsAfter, operations: filesIos27Fixture.accepted.length });
+  await page.screenshot({ path: path.join(outputDir, `${label}-returned.png`) });
+  // A fresh external route intent must be able to revisit this folder in the
+  // same mounted Web App, without a second adapter or scroll owner.
+  await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
+  await folder.waitFor();
+  await page.locator('[data-mobile-files-item]')
+    .filter({ hasText: 'nested-002.txt' }).first().waitFor();
+  await settle();
+  check(`${label}: directory changes can re-enter the old route in the same app`,
+    page.url().endsWith('/files?dir=2') &&
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
+    { url: page.url() });
+  check(`${label}: same shared virtual scroll owner after route re-entry`,
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1);
+  await page.screenshot({ path: path.join(outputDir, `${label}-reentered.png`) });
+}
+
 async function filesIos27MobileMenuTouchAcceptance(viewport) {
   const label = `user-files-ios27-${viewport.width}x${viewport.height}-menus`;
   activeStage = label;
@@ -2424,6 +2495,12 @@ async function filesIos27ChromeAcceptance(origin) {
       : page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' });
     await row.first().waitFor();
     await settle();
+    await page.waitForTimeout(250);
+    check(`${activeStage}: explicit directory deep link overrides a restored last-folder session`,
+      page.url().endsWith('/files?dir=1') &&
+      await row.first().isVisible() &&
+      await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
+      { url: page.url(), narrow, viewport });
     const sample = await geometry(activeStage);
     const visibleRows = await page.locator(narrow ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]').count();
     const scrollHosts = await page.locator('[data-xdrive-file-explorer-scroll-host]').count();
@@ -2515,7 +2592,10 @@ async function filesIos27ChromeAcceptance(origin) {
       /\/files\?dir=1$/.test(page.url()), page.url());
     await page.screenshot({ path: path.join(outputDir, `${activeStage}-copy.png`) });
     await filesIos27RenameAcceptance(viewport, narrow, row);
-    if (narrow) await filesIos27MobileMenuTouchAcceptance(viewport);
+    if (narrow) {
+      await filesIos27MobileMenuTouchAcceptance(viewport);
+      await filesIos27BreadcrumbTouchAcceptance(viewport, origin);
+    }
   }
 
   check('Files iOS27 375/390/899/900 use identical authorized copy payloads',

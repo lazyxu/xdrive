@@ -145,7 +145,7 @@ test('09E: native Chrome checks More/Sort/selection menu hitboxes at 375/390/899
     'data-mobile-files-arrange-menu', 'data-mobile-files-saved-search-menu',
     'data-mobile-files-collection-menu',
   ]) assert.ok(mobile.includes(name), 'missing scoped menu: ' + name)
-  assert.ok(runner.includes('if (narrow) await filesIos27MobileMenuTouchAcceptance(viewport)'))
+  assert.match(runner, /if \(narrow\) \{\s*await filesIos27MobileMenuTouchAcceptance\(viewport\);/)
   for (const name of ["menu.locator('.MuiMenuItem-root').evaluateAll",
     'item.boxHeight >= 43.5', 'parseFloat(item.cssMinHeight) >= 44',
     "await sample('more')", "await sample('arrange')", "await sample('selected')",
@@ -223,4 +223,70 @@ test('09G: Chrome collection DELETE success matches genuine Gin 204 and one shar
   assert.ok(web.includes('onDeleteSavedSearch={id => organization.deleteSavedSearch(id)}'))
   assert.ok(!mobile.includes('new XDriveApi('))
   assert.ok(!mobile.includes('fetch('))
+})
+
+test('09H: mobile Files breadcrumb navigation uses measured 44px hit targets', () => {
+  assert.match(mobile,
+    /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}[\s\S]{0,450}minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0/)
+  assert.ok(runner.includes('async function filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
+  assert.ok(runner.includes('await filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
+  for (const required of [
+    'data-mobile-files-crumb-id="1"',
+    'data-mobile-files-crumb-id="2"',
+    'boxWidth >= 43.5 && item.boxHeight >= 43.5',
+    'parseFloat(item.cssMinWidth) >= 44 && parseFloat(item.cssMinHeight) >= 44',
+    String.raw`page.waitForURL(/\/files\?dir=1$/)`,
+    "page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1",
+  ]) assert.ok(runner.includes(required), 'Missing real browser breadcrumb gate: ' + required)
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
+
+test('09H: StrictMode cleanup releases only its own deep-link navigation request', () => {
+  const web = read('web/src/WebFileExplorer.tsx')
+  assert.match(web, /const routedRequest = \{\s*directoryID: initialDirectoryID,\s*lifecycleKey,\s*navigationIntentID,\s*dispatched: false,\s*\}/)
+  assert.ok(web.includes('routedDirectoryRef.current = routedRequest'))
+  assert.ok(web.includes('const pendingRoute = routedDirectoryRef.current'))
+  assert.ok(web.includes('isNavigationIntentCurrent(pendingRoute.navigationIntentID)'))
+  assert.ok(web.includes('if (routedDirectoryRef.current === routedRequest && !routedRequest.dispatched)'))
+  assert.ok(web.includes('routedRequest.dispatched = true'))
+  assert.ok(web.includes('routedDirectoryRef.current.directoryID !== initialDirectoryID'))
+  assert.ok(web.includes('routedDirectoryRef.current.lifecycleKey !== lifecycleKey'))
+  assert.ok(web.includes('if (!initialDirectoryID) return'))
+  assert.ok(!web.includes('if (!initialDirectoryID || current?.id === initialDirectoryID) return'))
+  assert.ok(web.includes('if (!active || !isNavigationIntentCurrent(navigationIntentID)) return'))
+  assert.ok(runner.includes('await root.waitFor()'))
+  assert.ok(runner.includes('await folder.waitFor()'))
+  assert.ok(runner.includes('nested-directory range loaded by the shared Server adapter'))
+  assert.ok(runner.includes("key.startsWith('user GET /api/v1/nodes/2/children')"))
+})
+
+test('09H: browser verifies ancestor navigation and same-App deep-link re-entry', () => {
+  assert.ok(runner.includes('ancestor navigation does not bounce to the old nested route'))
+  assert.ok(runner.includes('await page.waitForTimeout(250)'))
+  assert.ok(runner.includes('directory changes can re-enter the old route in the same app'))
+  assert.ok(runner.includes("location.hash = '#/app/files?dir=2'"))
+  assert.ok(runner.includes('await folder.waitFor()'))
+  assert.ok(runner.includes('same shared virtual scroll owner after route re-entry'))
+})
+
+test('09H: explicit root deep links outrank persisted folder restoration in Chrome', () => {
+  const web = read('web/src/WebFileExplorer.tsx')
+  assert.ok(web.includes('A URL-provided destination is authoritative'))
+  assert.ok(runner.includes('explicit directory deep link overrides a restored last-folder session'))
+  assert.ok(runner.includes("page.url().endsWith('/files?dir=1')"))
+  assert.ok(runner.includes('await page.waitForTimeout(250)'))
+})
+
+test('09H: explicit URL overrides saved-session restore without forking the workspace', () => {
+  const navigation = read('ui/shared/src/mui/FileExplorerNavigation.ts')
+  const workspace = read('ui/shared/src/mui/FileExplorerWorkspaceController.ts')
+  const web = read('web/src/WebFileExplorer.tsx')
+  assert.ok(navigation.includes('skipInitialSessionRestore = false'))
+  assert.ok(navigation.includes("initialNavigationSourceRef.current === 'session' && !skipInitialSessionRestore"))
+  assert.ok(navigation.includes("initialSessionRestorePendingRef.current = source === 'session' && !skipInitialSessionRestore"))
+  assert.match(navigation, /if \(skipInitialSessionRestore\) \{\s*initialSessionRestorePendingRef\.current = false\s*return/)
+  assert.ok(workspace.includes('skipInitialSessionRestore,'))
+  assert.ok(web.includes('skipInitialSessionRestore: Boolean(initialDirectoryID)'))
+  assert.ok(runner.includes('explicit directory deep link overrides a restored last-folder session'))
 })
