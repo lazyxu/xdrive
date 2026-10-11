@@ -263,3 +263,14 @@ The same binary can run as an independent service with `xdrive-server media-work
 The default xDrive Server image is distroless and has no FFmpeg binary. This stage does NOT publish an installable separate media-worker image, container controls, media job API, configured concurrency, audited dynamic policy, resource-tuning UI or real transcode throughput measurements. These are separate P1-M1b+ phases and cannot be represented by a green task status.
 
 **Validation:** Go Unix server/client protocol and fixed-command tests, refusal to overwrite untrusted entries, shutdown cleanup, malformed and oversized response rejection, admin safe status/permission checks, Desktop source parity and authoritative complete PR CI. Actual host deployment and codecs remain unmeasured.
+
+
+### P1-M1b: deployable optional FFmpeg Worker image and operator activation
+
+This builds on P1-M1a with a separately CI-tested nonroot Alpine FFmpeg/FFprobe image. The primary xDrive Server stays distroless and does not gain FFmpeg or a Docker socket. Worker Docker Compose isolation uses no network, read-only root, no user file/DB/secret mounts, dropped capabilities, no-new-privileges, CPU/RAM/PID limits and only a private writable Unix socket directory. The Server has read-only access to that directory.
+
+**Actually enable at deployment boundary:** opt in with `COMPOSE_PROFILES=media-worker`, or `photo-intelligence,media-worker`. The installer provisions the runtime directory, sets the internal Server socket, pulls an exact published image, starts the Worker and verifies its live health; a failure triggers normal controlled upgrade rollback. To disable, remove the profile and perform a controlled deployment; editing a file without applying it is not considered activation. Any separately operated Worker path remains operator-maintained.
+
+GitHub and GitLab CI must build/test the exact container, exercise real FFmpeg and FFprobe binaries and the networkless private Unix listener, and export the exact image artifact for stable and rolling release publication without rebuilding at publish time. The Worker has no media job protocol, queue, signed byte processing, cancellation or transcoding capabilities yet. Its health means *executables actually available*, not that media work is enabled. **No administrator Web/Desktop container start switch exists in this phase.** Future in-app controls require an audited revisioned configuration and a separately authorized Host Manager that truly executes deployment changes and reports their effective state.
+
+Acceptance requires real Worker container health, opt-in isolation, installer profile startup and failure reporting, GitHub full exact-head CI, and a separately verified GitLab build if that provider receives the change. Physical multihost deployment, **Rootless Docker with the optional profile enabled**, and transcoding performance are not yet independently measured; do not infer these from default-profile CI.

@@ -90,6 +90,7 @@ jobs:
           load_exact xdrive-server-image xdrive/server:test
           load_exact xdrive-caddy-image xdrive/caddy:test
           load_exact xdrive-photo-face-image xdrive/photo-face:test
+          load_exact xdrive-media-worker-image xdrive/media-worker:test
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -106,8 +107,8 @@ jobs:
             remote_tag="sha-${GITHUB_SHA::12}"
           fi
 
-          names=(xdrive-server xdrive-caddy xdrive-photo-face)
-          locals=(xdrive/server:test xdrive/caddy:test xdrive/photo-face:test)
+          names=(xdrive-server xdrive-caddy xdrive-photo-face xdrive-media-worker)
+          locals=(xdrive/server:test xdrive/caddy:test xdrive/photo-face:test xdrive/media-worker:test)
           pids=()
 
           for i in "${!names[@]}"; do
@@ -246,7 +247,7 @@ jobs:
             source_tag="sha-${GITHUB_SHA::12}"
             target_tag="edge"
           fi
-          for image in xdrive-server xdrive-caddy xdrive-photo-face; do
+          for image in xdrive-server xdrive-caddy xdrive-photo-face xdrive-media-worker; do
             docker buildx imagetools create \
               --tag "ghcr.io/$owner/$image:$target_tag" \
               "ghcr.io/$owner/$image:$source_tag"

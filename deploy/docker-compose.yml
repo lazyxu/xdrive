@@ -130,6 +130,37 @@ services:
     cpus: ${XD_WORKER_CPU_LIMIT:-0.50}
     pids_limit: ${XD_WORKER_PIDS_LIMIT:-128}
 
+  # Optional isolated runtime; no network access and no xDrive media mount.
+  # Runtime health is real; job submission is intentionally unsupported.
+  media-worker:
+    profiles: ["media-worker"]
+    container_name: xdrive-media-worker
+    image: ${XD_MEDIA_WORKER_IMAGE:-ghcr.io/lazyxu/xdrive-media-worker:latest}
+    user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
+    environment:
+      XD_MEDIA_WORKER_SOCKET: /run/xdrive-media-worker/media-worker.sock
+    volumes:
+      - "${XD_MEDIA_WORKER_RUNTIME_DIR:-../state/media-worker}:/run/xdrive-media-worker"
+    network_mode: "none"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=32m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/xdrive-server", "media-worker", "check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_MEDIA_WORKER_MEMORY_LIMIT:-768m}
+    cpus: ${XD_MEDIA_WORKER_CPU_LIMIT:-0.75}
+    pids_limit: ${XD_MEDIA_WORKER_PIDS_LIMIT:-128}
+
   photo-face:
     profiles: ["photo-intelligence"]
     container_name: xdrive-photo-face

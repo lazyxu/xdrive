@@ -525,6 +525,9 @@ pull_service_json() {
     if compose_profile_enabled photo-intelligence; then
       profile_args+=(--profile photo-intelligence)
     fi
+    if compose_profile_enabled media-worker; then
+      profile_args+=(--profile media-worker)
+    fi
     exec docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" --progress json pull "$service" </dev/null
   ) 2>&1 |
     tee -a "$PULL_LOG" |
@@ -1208,6 +1211,9 @@ rollback_compose() {
   if compose_profile_enabled photo-intelligence; then
     profile_args+=(--profile photo-intelligence)
   fi
+  if compose_profile_enabled media-worker; then
+    profile_args+=(--profile media-worker)
+  fi
   docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
@@ -1216,8 +1222,8 @@ rollback_upgrade() {
   local -a rollback_restore_args
   ROLLBACK_RUNNING=1
   echo "[xDrive] rollback: stopping partially upgraded application containers..." >&2
-  docker stop xdrive-caddy xdrive-photo-face xdrive-server xdrive-worker xdrive-postgres \
-    xdrive-caddy-1 xdrive-photo-face-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
+  docker stop xdrive-caddy xdrive-photo-face xdrive-media-worker xdrive-server xdrive-worker xdrive-postgres \
+    xdrive-caddy-1 xdrive-photo-face-1 xdrive-media-worker-1 xdrive-web-1 xdrive-server-1 xdrive-worker-1 xdrive-postgres-1 \
     </dev/null >/dev/null 2>&1 || true
 
   echo "[xDrive] rollback: restoring previous deployment files..." >&2
@@ -1530,6 +1536,11 @@ ensure_env COMPOSE_PROFILES "${COMPOSE_PROFILES:-}"
 ensure_env XD_PHOTO_FACE_ANALYZER_SOCKET "${XD_PHOTO_FACE_ANALYZER_SOCKET:-}"
 ensure_env XD_PHOTO_FACE_ANALYZER_TOKEN "${XD_PHOTO_FACE_ANALYZER_TOKEN:-}"
 ensure_env XD_PHOTO_FACE_PREVIEW_BASE_URL "${XD_PHOTO_FACE_PREVIEW_BASE_URL:-http://server:8080}"
+if compose_profile_enabled media-worker; then
+  set_env XD_MEDIA_WORKER_SOCKET "/run/xdrive-media-worker/media-worker.sock"
+elif [[ "$(env_value XD_MEDIA_WORKER_SOCKET)" == "/run/xdrive-media-worker/media-worker.sock" ]]; then
+  unset_env XD_MEDIA_WORKER_SOCKET
+fi
 if compose_profile_enabled photo-intelligence; then
   if [[ -z "$(env_value XD_PHOTO_FACE_ANALYZER_SOCKET)" ]]; then
     set_env XD_PHOTO_FACE_ANALYZER_SOCKET "/run/xdrive-photo-face/photo-face.sock"
@@ -1744,6 +1755,7 @@ stage 6 "install deployment files"
 set_env XD_SERVER_IMAGE "$IMAGE_REGISTRY/xdrive-server:$IMAGE_TAG"
 set_env XD_CADDY_IMAGE "$IMAGE_REGISTRY/xdrive-caddy:$IMAGE_TAG"
 set_env XD_PHOTO_FACE_IMAGE "$IMAGE_REGISTRY/xdrive-photo-face:$IMAGE_TAG"
+set_env XD_MEDIA_WORKER_IMAGE "$IMAGE_REGISTRY/xdrive-media-worker:$IMAGE_TAG"
 unset_env XD_WEB_IMAGE
 unset_env XD_WEB_MEMORY_LIMIT
 unset_env XD_WEB_CPU_LIMIT
@@ -1767,6 +1779,9 @@ compose() {
   if compose_profile_enabled photo-intelligence; then
     profile_args+=(--profile photo-intelligence)
   fi
+  if compose_profile_enabled media-worker; then
+    profile_args+=(--profile media-worker)
+  fi
   docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@" </dev/null
 }
 
@@ -1774,6 +1789,9 @@ compose_with_stdin() {
   local -a profile_args=()
   if compose_profile_enabled photo-intelligence; then
     profile_args+=(--profile photo-intelligence)
+  fi
+  if compose_profile_enabled media-worker; then
+    profile_args+=(--profile media-worker)
   fi
   docker compose "${profile_args[@]}" --env-file "$ENV_PATH" -f "$COMPOSE_PATH" "$@"
 }
@@ -1865,6 +1883,9 @@ pull_services=(postgres server caddy)
 if compose_profile_enabled photo-intelligence; then
   pull_services+=(photo-face)
 fi
+if compose_profile_enabled media-worker; then
+  pull_services+=(media-worker)
+fi
 for pull_service in "${pull_services[@]}"; do
   pull_service_with_retry "$pull_service"
 done
@@ -1878,6 +1899,9 @@ fi
 initial_services=(postgres server)
 if compose_profile_enabled photo-intelligence; then
   initial_services+=(photo-face)
+fi
+if compose_profile_enabled media-worker; then
+  initial_services+=(media-worker)
 fi
 compose up -d --remove-orphans "${initial_services[@]}"
 
@@ -1913,6 +1937,22 @@ if compose_profile_enabled photo-intelligence; then
   if [[ "$face_healthy" != "1" ]]; then
     echo "xDrive Photo Intelligence face analyzer did not become healthy. Recent logs:" >&2
     compose logs --tail=100 server photo-face >&2 || true
+    exit 1
+  fi
+fi
+
+if compose_profile_enabled media-worker; then
+  media_worker_healthy=0
+  for _ in $(seq 1 30); do
+    if compose exec -T media-worker xdrive-server media-worker check >/dev/null 2>&1; then
+      media_worker_healthy=1
+      break
+    fi
+    sleep 2
+  done
+  if [[ "$media_worker_healthy" != "1" ]]; then
+    echo "xDrive Media Worker FFmpeg/FFprobe runtime did not become healthy. Recent logs:" >&2
+    compose logs --tail=100 media-worker >&2 || true
     exit 1
   fi
 fi
