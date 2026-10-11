@@ -23,9 +23,9 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-C', actualGoServer: true, postgresql17: true,
+  phase: 'F-iOS27-09I-D1', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -235,6 +235,96 @@ async function queueMutationFromUI(kind, owner, width, sourceName, sourceID, rev
   await screenshot('live-go-' + (mobile ? 'mobile-' : 'wide-') + kind + '-queued')
 }
 
+// F09I-D1: 2-item batches must come from each real layout's native
+// multi-select affordance, not fabricated fetch() mutation bodies.
+async function findBatchRow(mobile, host, name) {
+  const row = page.locator(mobile
+    ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: name }).first()
+  await host.evaluate(el => { el.scrollTop = 0 })
+  for (let step = 0; step < 25 && (await row.count()) === 0; step++) {
+    await host.evaluate(el => { el.scrollTop += Math.max(100, el.clientHeight * 0.65) })
+    await page.waitForTimeout(70)
+  }
+  await row.waitFor()
+  await row.scrollIntoViewIfNeeded()
+  return row
+}
+
+async function queueBatchDeleteFromUI(owner, width, nodes) {
+  check(Array.isArray(nodes) && nodes.length === 2 &&
+    new Set(nodes.map(node => node.id)).size === 2,
+    'native fixture must supply two distinct real CAS Nodes', nodes)
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 812 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first()
+  await host.waitFor()
+
+  if (mobile) {
+    await page.getByRole('button', { name: '文件操作菜单' }).click()
+    await page.locator('[data-mobile-files-more-menu]')
+      .getByRole('menuitem', { name: '选择', exact: true }).click()
+    for (const node of nodes) {
+      const row = await findBatchRow(true, host, node.name)
+      await row.click()
+      check((await row.getAttribute('aria-pressed')) === 'true',
+        'Mobile real multi-select row must be checked before submitting', node)
+    }
+    await page.getByRole('button', { name: '删除已选' }).click()
+  } else {
+    const first = await findBatchRow(false, host, nodes[0].name)
+    await first.click()
+    const second = await findBatchRow(false, host, nodes[1].name)
+    await second.click({ modifiers: ['Control'] })
+    for (const node of nodes) {
+      const row = await findBatchRow(false, host, node.name)
+      check((await row.getAttribute('aria-selected')) === 'true',
+        'Wide Web must keep both Ctrl-selected file IDs', node)
+    }
+    const context = await findBatchRow(false, host, nodes[0].name)
+    await context.click({ button: 'right' })
+    // The shared Web context distinguishes 2-item Delete from single
+    // Delete. The visible label is exact even if a shortcut suffix exists.
+    await page.getByRole('menuitem')
+      .filter({ has: page.getByText('删除所选项目', { exact: true }) })
+      .first().click()
+  }
+
+  const expectedTitle = '将所选 2 个项目移到回收站？'
+  const dialog = page.getByRole('dialog').filter({ hasText: expectedTitle })
+  await dialog.waitFor()
+  check((await dialog.locator('.MuiDialogTitle-root').innerText()).includes(expectedTitle),
+    'shared batch delete must show the real 2-item confirmation title', { owner, nodes })
+
+  const [response] = await Promise.all([
+    page.waitForResponse(r =>
+      new URL(r.url()).pathname === '/api/v1/file-operations' &&
+      r.request().method() === 'POST'),
+    dialog.getByRole('button', { name: '移到回收站', exact: true }).click(),
+  ])
+  const posted = response.request().postDataJSON()
+  const queued = await response.json()
+  const sourceRevisions = new Map(nodes.map(node => [Number(node.id), Number(node.revision)]))
+  const validRefs = Array.isArray(posted.items) && posted.items.length === 2 &&
+    new Set(posted.items.map(item => Number(item.id))).size === 2 &&
+    posted.items.every(item =>
+      sourceRevisions.get(Number(item.id)) === Number(item.revision))
+  const sample = { owner, width, sourceIDs: nodes.map(node => node.id),
+    postedItems: posted.items, operationID: queued.id, status: response.status(),
+    type: posted.type, queuedType: queued.type, totalItems: queued.total_items,
+    parentID: posted.parent_id, queuedParentID: queued.parent_id }
+  check(response.status() === 202 && posted.type === 'delete' && queued.type === 'delete' &&
+    queued.total_items === 2 && posted.parent_id == null && queued.parent_id == null &&
+    validRefs && typeof queued.id === 'string' && queued.id.length > 0,
+    'Mobile/Wide must queue exactly the two checked Node revisions using one API', sample)
+  results.batchDeletes.push(sample)
+  await dialog.waitFor({ state: 'hidden' })
+  await screenshot(mobile ? 'live-go-mobile-batch-delete-queued' : 'live-go-wide-batch-delete-queued')
+}
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -278,12 +368,17 @@ async function main() {
     { width: 899, height: 700 }, { width: 900, height: 700 },
   ]) {
     await page.setViewportSize(viewport)
+    // Navigating to the same hash after the previous viewport can reuse the
+    // mounted SPA workspace without issuing another GET. Establish the route,
+    // then arm the real-Gin response listener BEFORE a guaranteed reload.
+    await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+      { waitUntil: 'domcontentloaded' })
     const rootPath = '/api/v1/nodes/' + fixture.root_id + '/children'
     const listResponse = page.waitForResponse(r =>
       new URL(r.url()).pathname === rootPath && r.request().method() === 'GET' && r.status() === 200)
-    await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
-      { waitUntil: 'domcontentloaded' })
     await page.reload({ waitUntil: 'domcontentloaded' })
+    // Consume this reload's real response body before any later navigation,
+    // or Chromium may evict it even when the Server returned HTTP 200.
     const response = await listResponse
     const data = await response.json()
     const items = Array.isArray(data.items) ? data.items : data
@@ -400,6 +495,11 @@ async function main() {
   check(results.mutationQueues.length === 4 &&
     new Set(results.mutationQueues.map(item => item.operationID)).size === 4,
     'four distinct real UI Move/Delete operations must be durably queued', results.mutationQueues)
+  await queueBatchDeleteFromUI('Mobile Web', 375, fixture.mobile_batch_delete_nodes)
+  await queueBatchDeleteFromUI('Wide Web', 900, fixture.wide_batch_delete_nodes)
+  check(results.batchDeletes.length === 2 &&
+    new Set(results.batchDeletes.map(item => item.operationID)).size === 2,
+    'two layouts must queue different persistent multi-file Delete tasks', results.batchDeletes)
   for (const spec of [
     { type: 'move', sourceID: fixture.mobile_move_id,
       revision: fixture.mobile_move_revision, parentID: fixture.foreign_root_id },
@@ -419,6 +519,17 @@ async function main() {
     check(denied === 404, 'real Gin must reject foreign-source Move/Delete', { spec, denied })
     results.foreignOwner.push({ method: 'POST file-operations/' + spec.type, status: denied })
   }
+  const foreignBatch = await page.evaluate(async ({ token, nodes }) => {
+    const response = await fetch('/api/v1/file-operations', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'delete',
+        items: nodes.map(node => ({ id: node.id, revision: node.revision })) }),
+    })
+    return response.status
+  }, { token: fixture.foreign_token, nodes: fixture.mobile_batch_delete_nodes })
+  check(foreignBatch === 404, 'real Gin must reject both foreign-owned batch Delete refs', foreignBatch)
+  results.foreignOwner.push({ method: 'POST file-operations/delete-batch', status: foreignBatch })
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -445,7 +556,8 @@ async function main() {
     console.log('IOS27_FILES_REAL_GO_RESULT ' + JSON.stringify({
       passed: Boolean(results.passed), widths: results.widths.length,
       patches: results.patches.length, copyQueues: results.copyQueues.length,
-      mutationQueues: results.mutationQueues.length, actualGoServer: true, postgresql17: true,
+      mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
+      actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
   }

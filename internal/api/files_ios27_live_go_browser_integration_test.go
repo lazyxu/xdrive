@@ -93,6 +93,10 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	wideMove := uploadTestFile(t, router, token, root.ID, "b-wide-move.txt", "real wide move source")
 	mobileDelete := uploadTestFile(t, router, token, root.ID, "c-mobile-delete.txt", "real mobile delete source")
 	wideDelete := uploadTestFile(t, router, token, root.ID, "d-wide-delete.txt", "real wide delete source")
+	mobileBatchA := uploadTestFile(t, router, token, root.ID, "e-mobile-batch-a.txt", "real Mobile bulk delete one")
+	mobileBatchB := uploadTestFile(t, router, token, root.ID, "f-mobile-batch-b.txt", "real Mobile bulk delete two")
+	wideBatchA := uploadTestFile(t, router, token, root.ID, "g-wide-batch-a.txt", "real Wide bulk delete one")
+	wideBatchB := uploadTestFile(t, router, token, root.ID, "h-wide-batch-b.txt", "real Wide bulk delete two")
 	mobileMoveTarget := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"mobile-move-target"}`), http.StatusCreated)
@@ -151,6 +155,14 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	ready["mobile_delete_id"], ready["mobile_delete_revision"] = mobileDelete.ID, mobileDelete.Revision
 	ready["wide_delete_id"], ready["wide_delete_revision"] = wideDelete.ID, wideDelete.Revision
 	ready["mobile_move_target_id"], ready["wide_move_target_id"] = mobileMoveTarget.ID, wideMoveTarget.ID
+	ready["mobile_batch_delete_nodes"] = []map[string]any{
+		{"id": mobileBatchA.ID, "revision": mobileBatchA.Revision, "name": mobileBatchA.Name},
+		{"id": mobileBatchB.ID, "revision": mobileBatchB.Revision, "name": mobileBatchB.Name},
+	}
+	ready["wide_batch_delete_nodes"] = []map[string]any{
+		{"id": wideBatchA.ID, "revision": wideBatchA.Revision, "name": wideBatchA.Name},
+		{"id": wideBatchB.ID, "revision": wideBatchB.Revision, "name": wideBatchB.Name},
+	}
 	payload, err := json.Marshal(ready)
 	if err != nil {
 		t.Fatal(err)
@@ -232,7 +244,7 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			}},
 		} {
 			var operations []meta.FileOperation
-			if err := db.Where("owner_id = ? AND type = ?", after.OwnerID, spec.operation).
+			if err := db.Where("owner_id = ? AND type = ? AND total_items = ?", after.OwnerID, spec.operation, 1).
 				Find(&operations).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -268,6 +280,60 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			}
 			t.Logf("IOS27_FILES_LIVE_GO_MUTATION_QUEUED type=%s count=%d", spec.operation, len(operations))
 		}
+		// F09I-D1: independently verify the two REAL multi-select UI DELETEs
+		// persisted as exactly two separate two-source queue records.
+		var batchDeletes []meta.FileOperation
+		if err := db.Where("owner_id = ? AND type = ? AND total_items = ?",
+			after.OwnerID, meta.FileOperationTypeDelete, 2).
+			Find(&batchDeletes).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(batchDeletes) != 2 {
+			t.Fatalf("expected two UI 2-item Delete queue records, got %d", len(batchDeletes))
+		}
+		expectedGroups := []map[uint64]uint64{
+			{mobileBatchA.ID: mobileBatchA.Revision, mobileBatchB.ID: mobileBatchB.Revision},
+			{wideBatchA.ID: wideBatchA.Revision, wideBatchB.ID: wideBatchB.Revision},
+		}
+		seenGroups := make([]bool, len(expectedGroups))
+		for _, operation := range batchDeletes {
+			if operation.ParentID != nil || operation.Status != meta.FileOperationStatusQueued ||
+				operation.TotalItems != 2 {
+				t.Fatalf("real UI batch Delete queued unexpected payload: %+v", operation)
+			}
+			var refs []batchNodeRef
+			if err := json.Unmarshal([]byte(operation.ItemsJSON), &refs); err != nil {
+				t.Fatal(err)
+			}
+			if len(refs) != 2 || refs[0].ID == refs[1].ID {
+				t.Fatalf("multi-selection must persist two distinct Node refs: %+v", refs)
+			}
+			matched := -1
+			for i, expected := range expectedGroups {
+				wholeGroup := true
+				for _, ref := range refs {
+					revision, ok := expected[ref.ID]
+					if !ok || revision != ref.Revision {
+						wholeGroup = false
+						break
+					}
+				}
+				if wholeGroup {
+					matched = i
+					break
+				}
+			}
+			if matched < 0 || seenGroups[matched] {
+				t.Fatalf("mixed, duplicate or foreign batch Delete group: %+v", refs)
+			}
+			seenGroups[matched] = true
+		}
+		for index, seen := range seenGroups {
+			if !seen {
+				t.Fatalf("no persisted real UI batch Delete for group %d", index)
+			}
+		}
+		t.Logf("IOS27_FILES_LIVE_GO_BATCH_DELETE_QUEUED count=%d items_per_operation=2", len(batchDeletes))
 		var foreignAccount meta.User
 		if err := db.Where("username = ?", "ios27-files-other").First(&foreignAccount).Error; err != nil {
 			t.Fatal(err)
