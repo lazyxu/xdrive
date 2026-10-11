@@ -2127,6 +2127,51 @@ async function filesIos27RenameAcceptance(viewport, narrow, row) {
   await page.screenshot({ path: path.join(outputDir, `${label}-success.png`) });
 }
 
+
+async function filesIos27MobileMenuTouchAcceptance(viewport) {
+  const label = `user-files-ios27-${viewport.width}x${viewport.height}-menus`;
+  activeStage = label;
+  // Sample real DOM CSS after the Grow transition, not React sx props.
+  const sample = async (section) => {
+    const menu = page.getByRole('menu').last();
+    await menu.waitFor();
+    await page.waitForTimeout(400);
+    await settle();
+    const items = await menu.locator('.MuiMenuItem-root').evaluateAll(elements => elements.map(element => {
+      const css = getComputedStyle(element);
+      const paper = element.closest('.MuiPopover-paper');
+      return {
+        label: element.textContent?.trim().slice(0, 60) ?? '',
+        cssMinHeight: css.minHeight,
+        boxHeight: element.getBoundingClientRect().height,
+        paperTransform: paper ? getComputedStyle(paper).transform : null,
+      };
+    }));
+    result.samples[`${label}-${section}`] = items;
+    check(`${label}: ${section} has settled >=44px click targets`,
+      items.length >= 2 && items.every(item => item.boxHeight >= 43.5 &&
+        parseFloat(item.cssMinHeight) >= 44), items);
+    await page.screenshot({ path: path.join(outputDir, `${label}-${section}.png`) });
+  };
+  const more = () => page.getByRole('button', { name: '文件操作菜单', exact: true });
+  await more().click();
+  await sample('more');
+  await page.getByRole('menuitem', { name: '排序与分组', exact: true }).click();
+  await sample('arrange');
+  await page.keyboard.press('Escape');
+  await more().click();
+  await page.getByRole('menuitem', { name: '选择', exact: true }).click();
+  await page.locator('[data-mobile-files-item]').filter({ hasText: '验收重命名通过.txt' }).first().click();
+  await page.getByRole('button', { name: '更多已选操作', exact: true }).click();
+  await sample('selected');
+  await page.keyboard.press('Escape');
+  // Mobile's real selection header uses the accessible button name "完成".
+  await page.getByRole('button', { name: '完成', exact: true }).click();
+  check(`${label}: menus preserve the one virtual scroll owner and Files route`,
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1 &&
+      page.url().endsWith('/files?dir=1'), page.url());
+}
+
 async function filesIos27ChromeAcceptance(origin) {
   // Authentic built React/Chromium at both responsive owners. The local
   // request router supplies deterministic authorized-looking Server payloads;
@@ -2250,6 +2295,7 @@ async function filesIos27ChromeAcceptance(origin) {
       /\/files\?dir=1$/.test(page.url()), page.url());
     await page.screenshot({ path: path.join(outputDir, `${activeStage}-copy.png`) });
     await filesIos27RenameAcceptance(viewport, narrow, row);
+    if (narrow) await filesIos27MobileMenuTouchAcceptance(viewport);
   }
 
   check('Files iOS27 375/390/899/900 use identical authorized copy payloads',

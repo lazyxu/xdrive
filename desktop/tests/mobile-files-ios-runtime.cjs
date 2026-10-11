@@ -2418,3 +2418,25 @@ test('F-iOS27-09D: Web and Mobile use the identical rename availability conditio
   assert.ok(shared.includes('disabled: renameDisabled || renameSubmitting'), 'wide Web keeps its original gate')
   assert.ok(!mobile.includes('api.rename('), 'Mobile must not introduce a separate REST rename client')
 })
+
+
+test('F-iOS27-09E: all Mobile Files menus enforce a 44px MUI paper-level touch minimum', async () => {
+  await withView(async h => {
+    const menus = h.view.root.findAll(node => node.type === 'Menu')
+    assert.equal(menus.length, 6, 'six distinct Mobile Files menus must have one touch contract')
+    for (const menu of menus) {
+      assert.deepEqual(menu.props?.slotProps?.paper?.sx?.['& .MuiMenuItem-root'],
+        { minHeight: 44 }, 'Menu paper missing its 44px sm-breakpoint override')
+    }
+    for (const key of [
+      'data-mobile-files-selection-menu', 'data-mobile-files-more-menu',
+      'data-mobile-files-saved-search-menu', 'data-mobile-files-arrange-menu',
+      'data-mobile-files-collection-menu',
+    ]) {
+      assert.equal(menus.filter(menu => Object.hasOwn(menu.props ?? {}, key)).length, 1,
+        'expected one accessible Mobile Menu surface: ' + key)
+    }
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1,
+      'menus must not create a second virtual scroll owner')
+  })
+})

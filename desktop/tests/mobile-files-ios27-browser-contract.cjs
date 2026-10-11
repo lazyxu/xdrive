@@ -134,3 +134,22 @@ test('09C2: each width uses a clean built-Web document after resetting the canon
     assert.ok(runner.includes(fragment), 'cross-viewport rename trials cannot reuse stale SPA state: ' + fragment)
   }
 })
+
+
+test('09E: native Chrome checks More/Sort/selection menu hitboxes at 375/390/899px', () => {
+  const mobile = read('web/src/MobileFiles.tsx')
+  assert.ok(mobile.includes('const MOBILE_FILES_MENU_TOUCH_SX = {'))
+  assert.ok(mobile.includes("'& .MuiMenuItem-root': { minHeight: MIN_TOUCH }"))
+  for (const name of [
+    'data-mobile-files-selection-menu', 'data-mobile-files-more-menu',
+    'data-mobile-files-arrange-menu', 'data-mobile-files-saved-search-menu',
+    'data-mobile-files-collection-menu',
+  ]) assert.ok(mobile.includes(name), 'missing scoped menu: ' + name)
+  assert.ok(runner.includes('if (narrow) await filesIos27MobileMenuTouchAcceptance(viewport)'))
+  for (const name of ["menu.locator('.MuiMenuItem-root').evaluateAll",
+    'item.boxHeight >= 43.5', 'parseFloat(item.cssMinHeight) >= 44',
+    "await sample('more')", "await sample('arrange')", "await sample('selected')",
+    'filesIos27RenameAcceptance(viewport, narrow, row)']) {
+    assert.ok(runner.includes(name), 'missing actual native Chrome acceptance: ' + name)
+  }
+})
