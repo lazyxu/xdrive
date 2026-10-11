@@ -358,11 +358,11 @@ function fixtureFor(request, role) {
       queryOnly(url, [
         'range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone',
         ...(mobilePanelsScenario ? ['tag'] : []),
-        ...(galleryIos27Fixture ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
+        ...((galleryIos27Fixture || gallerySelectionScenario) ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
       ]);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
-      if (galleryIos27Fixture) {
+      if ((galleryIos27Fixture || gallerySelectionScenario)) {
         // Current Mobile Library defaults to ascending captured time with the
         // newest range initially at the bottom; this is not legacy desktop desc.
         const direction = url.searchParams.get('sort_dir') || 'asc';
@@ -379,9 +379,9 @@ function fixtureFor(request, role) {
       }
       assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
       const limit = integerQuery(url, 'limit', 200, 500);
-      const latest = galleryIos27Fixture && url.searchParams.has('initial_position');
+      const latest = (galleryIos27Fixture || gallerySelectionScenario) && url.searchParams.has('initial_position');
       if (latest) assert.equal(url.searchParams.get('initial_position'), 'latest');
-      const anchorRaw = galleryIos27Fixture ? url.searchParams.get('anchor_node_id') : null;
+      const anchorRaw = (galleryIos27Fixture || gallerySelectionScenario) ? url.searchParams.get('anchor_node_id') : null;
       let anchorIndex = null;
       if (anchorRaw !== null) {
         assert.match(anchorRaw, /^[1-9]\d*$/, 'explicit anchor must be a positive canonical Node ID');
@@ -391,9 +391,20 @@ function fixtureFor(request, role) {
       }
       // P0-B Server range uses the final page-aligned offset and an absolute
       // last-index anchor, rather than walking all preceding sparse pages.
+      // Go mediaListWindow permits all nonnegative offsets. A responsive
+      // re-query may legitimately probe exactly one page past the final item
+      // before the new range total arrives; that page is empty, not HTTP 400.
+      // Keep this small integration fixture stricter than Go by bounding
+      // beyond-total prefetch to just that one page-aligned sparse window.
+      const endPageOffset = Math.ceil(mediaItems.length / limit) * limit;
       const offset = latest && mediaItems.length
         ? Math.floor((mediaItems.length - 1) / limit) * limit
-        : integerQuery(url, 'offset', 0, mediaItems.length);
+        : integerQuery(url, 'offset', 0,
+          gallerySelectionScenario ? endPageOffset : mediaItems.length);
+      if (gallerySelectionScenario && offset >= mediaItems.length) {
+        assert.equal(offset, endPageOffset, 'only one page-aligned empty tail range is allowed');
+        assert.equal(offset % limit, 0, 'empty range must start at a sparse page boundary');
+      }
       const items = mediaItems.slice(offset, offset + limit);
       if (!url.searchParams.has('range')) return items;
       assert.equal(url.searchParams.get('range'), 'true');
@@ -645,7 +656,10 @@ function fixtureFor(request, role) {
   }
   match = /^GET \/api\/v1\/media\/items\/(\d+)\/thumbnail$/.exec(key);
   if (match && mediaByID.has(Number(match[1]))) {
-    queryOnly(url, galleryIos27Fixture ? ['v', 'revision'] : ['v']);
+    // The current single Web Gallery always carries a canonical revision in
+    // iOS27 Mobile/Viewer and the real built-Web selection flow alike.
+    // Keep unknown-param rejection and exact Node revision/MIME validation.
+    queryOnly(url, (galleryIos27Fixture || gallerySelectionScenario) ? ['v', 'revision'] : ['v']);
     // The real Go Server selects transparent-capable PNG v4 cache keys,
     // while ordinary JPEG retains v3. Do not resurrect a stale global v3
     // fixture or waive unknown-request auditing to make Chrome appear green.
@@ -757,7 +771,9 @@ async function loadFiles(context, origin, role) {
   // assert a Files-specific DOM implementation detail.
   if (filesIos27ChromeScenario) {
     await page.locator('[data-xdrive-mobile-files]').waitFor();
-  } else if (galleryIos27Fixture) {
+  } else if (galleryIos27Fixture || gallerySelectionScenario) {
+    // Gallery-only scenarios share the current Mobile Files readiness check;
+    // the legacy Wide FileExplorer row is intentionally absent under 900px.
     await page.getByText('document-001.txt', { exact: true }).first().waitFor();
   } else {
     await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).waitFor();
@@ -1530,8 +1546,23 @@ async function gallerySelectionAcceptance() {
   const galleryURL = page.url();
   await geometry('user-gallery-selection-initial');
   await page.evaluate(() => { window.__m12GalleryCaller = { main: document.querySelector('main'), header: document.querySelector('[data-xdrive-gallery-header]') }; });
-  const galleryToolbar = page.locator('[data-xdrive-gallery-toolbar]');
+  // The iOS 27 Mobile Chrome is the actual visible selection owner.
+  // The wide Gallery toolbar is deliberately hidden until >=900 CSS px.
+  const galleryToolbar = page.locator('[data-xdrive-mobile-gallery-actions]');
+  const wideGalleryToolbar = page.locator('[data-xdrive-gallery-toolbar]');
   await galleryToolbar.getByRole('button', { name: '选择', exact: true }).tap();
+  check('Gallery actual Mobile Select has entered selection mode',
+    await galleryToolbar.locator('[data-xdrive-mobile-gallery-select]').getAttribute('aria-pressed') === 'true');
+  // iOS27 intentionally opens the Library at the newest bottom range. With
+  // shared sparse virtualization, logical index zero is not necessarily mounted.
+  // Scroll the actual App main back to the first canonical items before
+  // selecting the original three exact Node IDs; never force dense loading.
+  await page.locator('main').evaluate(element => { element.scrollTop = 0 });
+  await settle();
+  await page.locator('[data-xdrive-media-tile][data-xdrive-media-index="0"]').waitFor();
+  check('Gallery virtualized tail-to-top exposes original canonical row zero',
+    await page.locator('[data-xdrive-media-tile][data-xdrive-media-index="0"]').isVisible() &&
+    await page.locator('main').evaluate(element => element.scrollTop <= 1));
   for (const index of [0, 1, 2]) {
     const tile = page.locator(`[data-xdrive-media-tile][data-xdrive-media-index="${index}"]`);
     await tile.getByRole('checkbox').tap();
@@ -1545,7 +1576,8 @@ async function gallerySelectionAcceptance() {
   }));
   const selectedIndexes = () => page.locator('[data-xdrive-media-tile] input:checked').evaluateAll(inputs => inputs.map(input => Number(input.closest('[data-xdrive-media-tile]').dataset.xdriveMediaIndex)).sort((a,b) => a-b));
   check('Gallery selection uses the observed first three media rows', JSON.stringify(await selectedIndexes()) === '[0,1,2]', await selectedIndexes());
-  const join = selection.getByRole('button', { name: '加入相册', exact: true });
+  const more = selection.getByRole('button', { name: '更多已选项目操作', exact: true });
+  const join = page.getByRole('menuitem', { name: '加入相册', exact: true });
   const picker = page.getByRole('dialog', { name: '选择手动相册', exact: true });
   const search = picker.getByRole('textbox', { name: '搜索相册', exact: true });
   const lastAlbum = picker.getByRole('button', { name: /^验收相册 24 / });
@@ -1571,7 +1603,68 @@ async function gallerySelectionAcceptance() {
     return { ...r.toJSON(), visibleWidth, visibleHeight, hit: Boolean(hit && element.contains(hit)) };
   });
   const target44 = r => r.visibleWidth >= 43.9 && r.visibleHeight >= 43.9 && r.hit;
-  await join.tap(); await picker.waitFor(); await finishTransition();
+  // A 900px sort/range crossover can unmount every checked photo from the
+  // sparse virtual window without changing the logical selection. Assert the
+  // exact Node IDs through the already-shared Selection Review at 900px,
+  // while retaining the strict mounted-checkbox identity checks on Mobile.
+  for (const width of [375, 390, 899, 900, 390]) {
+    await page.setViewportSize({ width, height: 844 }); await settle();
+    const currentCount = await count();
+    const currentSelectedIndexes = await selectedIndexes();
+    check(`Gallery ${width}px: canonical selection survives viewport switch`,
+      currentCount === '已选择3项' &&
+      (width === 900 || JSON.stringify(currentSelectedIndexes) === '[0,1,2]'),
+      { width, currentCount, currentSelectedIndexes });
+    if (width < 900) {
+      const mobileSelect = galleryToolbar.locator('[data-xdrive-mobile-gallery-select]');
+      check(`Gallery ${width}px: visible iOS27 Select and hidden Wide Select`,
+        await mobileSelect.isVisible() &&
+        !(await wideGalleryToolbar.getByRole('button', { name: '完成', exact: true }).isVisible()));
+      check(`Gallery ${width}px: 44px accessible More remains tappable`,
+        target44(await rect(more)), await rect(more));
+    } else {
+      const wideSelect = wideGalleryToolbar.getByRole('button', { name: '完成', exact: true });
+      const wideAlbumSelect = selection.getByRole('combobox', { name: '添加到相册', exact: true });
+      check('Gallery 900px: wide Select and album dropdown remain reachable; compact More hidden',
+        await wideSelect.isVisible() && await wideAlbumSelect.isVisible() &&
+        await more.count() === 0);
+      // Range re-queries do not promise that any selected tile stays in the
+      // mounted DOM. The bounded shared Review reads the actual selected Map,
+      // so it is authoritative even if the new wide viewport displays none.
+      await selection.getByRole('button', { name: '查看已选项', exact: true }).click();
+      const review = page.getByRole('dialog', { name: /^已选择\s*3\s*项$/ });
+      await review.waitFor();
+      check('Gallery 900px: Review exposes accessible selected-count heading',
+        await review.getByRole('heading', { name: /^已选择\s*3\s*项$/ }).isVisible());
+      const reviewed = await review.locator('[data-xdrive-gallery-selected-item]').evaluateAll(rows =>
+        rows.map(row => ({
+          nodeID: Number(row.getAttribute('data-xdrive-gallery-selected-item')),
+          label: row.textContent || '',
+        })).sort((a, b) => a.nodeID - b.nodeID));
+      check('Gallery 900px: bounded review retains exact three selected Node identities across sparse remount',
+        reviewed.length === 3 && reviewed.every((row, index) =>
+          row.nodeID === 1000 + index &&
+          row.label.includes(`photo-${String(index + 1).padStart(3, '0')}.png`)), reviewed);
+      await page.screenshot({ path: path.join(outputDir, 'gallery-selection-900px-review.png') });
+      await review.getByRole('button', { name: '关闭已选项', exact: true }).click();
+      await review.waitFor({ state: 'hidden' });
+      check('Gallery 900px: closing selection review preserves the same three chosen assets',
+        await count() === '已选择3项');
+    }
+  }
+  const openPicker = async () => {
+    await more.tap();
+    await join.waitFor({ state: 'visible' });
+    // The MUI Grow/Popover transitions are composed with scales while
+    // opening; a mid-animation getBoundingClientRect() is not a settled
+    // 44px interaction-target measurement. Never relax the real target gate.
+    await finishTransition();
+    await page.screenshot({ path: path.join(outputDir, 'gallery-selection-more-stable.png') });
+    check('Gallery More exposes an authorized 44px album action',
+      target44(await rect(join)), await rect(join));
+    await join.tap(); await picker.waitFor(); await finishTransition();
+  };
+  await openPicker();
   check('Gallery album picker uses the real manual-only catalog', await picker.locator('[data-xdrive-gallery-album-picker]').getByRole('button').count() === 24 && await picker.getByText('验收智能相册', { exact: true }).count() === 0);
   await search.fill('验收相册 24');
   check('Gallery album search narrows the actual catalog without submitting', await picker.locator('[data-xdrive-gallery-album-picker]').getByRole('button').count() === 1 && gallerySelectionFixture.attempts.length === 0);
@@ -1580,8 +1673,10 @@ async function gallerySelectionAcceptance() {
   await picker.getByRole('button', { name: '取消', exact: true }).tap(); await picker.waitFor({ state: 'hidden' }); await settle();
   result.samples['gallery-selection-cancel-focus'] = await focus();
   check('Gallery album Cancel preserves selection and sends no mutation', await count() === '已选择3项' && gallerySelectionFixture.attempts.length === 0);
-  check('Gallery album Cancel restores the live initiating trigger', await join.evaluate(element => element === document.activeElement), result.samples['gallery-selection-cancel-focus']);
-  await join.tap(); await picker.waitFor(); await finishTransition();
+  check('Gallery album Cancel restores the live visible More trigger',
+    await more.evaluate(element => element === document.activeElement),
+    result.samples['gallery-selection-cancel-focus']);
+  await openPicker();
   await page.setViewportSize({ width: 844, height: 200 });
   await page.evaluate(() => { document.documentElement.style.fontSize = '200%'; }); await settle();
   const firstRow = await rect(picker.getByRole('button', { name: /^验收家庭相册/ }));
@@ -1630,7 +1725,7 @@ async function gallerySelectionAcceptance() {
   activeStage = 'user-gallery-selection-retry-success';
   await add.tap();
   await selection.waitFor({ state:'hidden' }); await picker.waitFor({ state:'hidden' }); await settle();
-  const selectAgain = galleryToolbar.getByRole('button',{name:'选择',exact:true});
+  const selectAgain = galleryToolbar.locator('[data-xdrive-mobile-gallery-select]');
   await selectAgain.waitFor();
   result.samples['gallery-selection-success-focus'] = await focus();
   check('Retry sends one new actual request for the retained album and unchanged selection', JSON.stringify(gallerySelectionFixture.attempts) === JSON.stringify([
@@ -1638,7 +1733,9 @@ async function gallerySelectionAcceptance() {
     {albumID:'qa-album-24',node_ids:[1000,1001,1002],ifMatch:'"30"',status:200},
   ]),gallerySelectionFixture.attempts);
   check('Successful Add clears the real Gallery selection once', await selection.count() === 0 && (await selectedIndexes()).length === 0 && gallerySelectionFixture.accepted.length === 1);
-  check('Successful Add returns focus to the remaining Gallery selection control',await selectAgain.evaluate(element => element === document.activeElement),result.samples['gallery-selection-success-focus']);
+  check('Successful Add focuses the real visible iOS27 Mobile Gallery selection control',
+    await selectAgain.evaluate(element => element === document.activeElement && element.getBoundingClientRect().width > 0),
+    result.samples['gallery-selection-success-focus']);
   check('Picker return keeps the same Gallery caller and route', page.url() === galleryURL && await page.evaluate(() => window.__m12GalleryCaller.main === document.querySelector('main') && window.__m12GalleryCaller.header === document.querySelector('[data-xdrive-gallery-header]')));
   await page.evaluate(() => { document.documentElement.style.fontSize = ''; }); await page.setViewportSize({width:390,height:844});
   await geometry('user-gallery-selection-return');

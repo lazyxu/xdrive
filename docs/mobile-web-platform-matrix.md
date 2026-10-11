@@ -243,3 +243,14 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 - **组件与请求合同：** 同一个 `WebMediaViewerApp` 在 390/899/900px 使用共享编辑 Dialog，不存在移动专属业务控制器。编辑入口严格按 `saveEditRecipe` 能力与 `xDriveMediaItemSupportsBasicEditing` 判断；无权限、实况、非媒体不显示按钮；编辑时换 Node/Revision 必须关闭旧会话。
 - **真实浏览器：** 使用构建产物和原生 Chromium 的 fine/coarse 输入，进入实际 Viewer 后按 90° 并执行真实 `PUT /api/v1/media/items/:id/edit`；服务端承认配方版本后再按 revision 执行 `DELETE`，验证回执、按钮变化、Node 身份、Filmstrip 与严格返回锚点，零未知 API、网络和页面错误。
 - **真实设备及业务仍未完成：** iOS 27 真机普通 Safari、主屏安装、VoiceOver、Liquid Glass 1:1 截图及视频/RAW/Live 多资源输入；编辑失败/冲突、多用户权限、真实服务器端版本持久化与实际原件下载任务收据需单独验收。
+
+
+### P1-3b · Gallery M49.V10 iOS27 多选入口与 899/900px 等价
+
+原 `gallery-selection` 真实构建 Web 的窄屏 Toolbar 定位已过时，改为从 `MobileGalleryChrome` 的「选择」与共享选择工具栏「更多 → 加入相册」操作。375/390/899/900→390 CSS px 保持选区、原 Node ID/revision、可见控件与单一 REST；取消返回可见「更多」，成功回到移动「选择」，保留相册失败重试、短视口/200%文字及零未知请求。原生 Chromium 和精确PR CI分别记账；实体 iOS27 Safari/主屏、VoiceOver及Android仍为 not-run。
+
+
+**P1-3b M49.V10 真实功能缺陷补充：** 已测到移动899→宽Web900的默认排序/稀疏Range新请求代次会误清空原本选定的三个Node，属于产品错误而非设备差异。用独立逻辑Selection Scope Key保留同集合选区，仍在相册、账号、筛选集合边界清除；排序重新起代次须清除Shift锚点防选错项目。原生Chromium及精确CI尚待新HEAD验收，不预填passed。
+
+
+**P1-3b 当前真实浏览器结果（CI #38154363890，未合入）：** 60项中58通过/2失败，375/390/899/900→390同一选区、实际403→200相册POST（Node IDs+revision）、取消和成功焦点已得到真实构建Web证据；仅展开期间菜单Grow动画测得的24.75px高度不代表稳定44px，需要等待动画结束后执行原门槛。新增纯Scope键测试3通过，Desktop存在2条测试代码需要迁移，修订后整套CI仍待验；真机不变not-run。

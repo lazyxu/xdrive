@@ -1,4 +1,5 @@
 import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
+import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
@@ -2418,6 +2419,7 @@ export function XDriveMediaGalleryPage({
         items={items}
         virtualCollection={galleryVirtualCollection}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
+        selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
         albums={albums}
         albumFolderActions={source.listAlbumFolders ? {
           list: source.listAlbumFolders,
@@ -2842,6 +2844,8 @@ export interface XDriveMediaGalleryProps {
   items: MediaItem[]
   virtualCollection?: XDriveMediaGalleryVirtualCollection
   collectionKey?: string
+  /** Stable logical selection scope, distinct from a sort/range request generation. */
+  selectionScopeKey?: string
   albums?: MediaAlbum[]
   albumFolderActions?: XDriveMediaGalleryAlbumFolderActions
   syncFolders?: MediaSyncFolder[]
@@ -4391,6 +4395,7 @@ export function XDriveMediaGallery({
   items,
   virtualCollection,
   collectionKey = '',
+  selectionScopeKey = collectionKey,
   albums = [],
   albumFolderActions,
   syncFolders = [],
@@ -5318,6 +5323,10 @@ export function XDriveMediaGallery({
     selectionControlRef.current?.focus()
   }, [selectionMode])
 
+  // Page changes its sparse-collection request ID on responsive sort changes.
+  // Those changes can move virtual rows but must not silently deselect the
+  // very same authorized Node IDs. Only a true logical collection/filter/
+  // account boundary cancels selection and fences pending mutations.
   useEffect(() => {
     selectionActionGenerationRef.current += 1
     selectionBusyRef.current = false
@@ -5335,7 +5344,7 @@ export function XDriveMediaGallery({
   }, [
     activeMediaType,
     activePlaceID,
-    collectionKey,
+    selectionScopeKey,
     clearMediaSelection,
     currentAlbum?.id,
     currentCleanupReview?.group.id,
@@ -5346,6 +5355,12 @@ export function XDriveMediaGallery({
     currentSuggestedPerson?.id,
     section,
   ])
+
+  // Shift-select anchors are indexed into the old sort order. Keep selected
+  // Node identities across responsive sorting but invalidate that index.
+  useEffect(() => {
+    setSelectionAnchorIndex(null)
+  }, [collectionKey])
 
   useEffect(() => {
     if (!selectionMode) return
@@ -5774,6 +5789,7 @@ export function XDriveMediaGallery({
           onGoBack={canBack ? onBack : () => onMobileCollectionsOverviewChange?.(true)}
           showCollection={!mobileCollectionsOverview && showPhotoCollection}
           selectionMode={selectionMode}
+          selectionControlRef={selectionControlRef}
           onToggleSelection={() => {
             if (selectionMode) clearMediaSelection()
             else setSelectionMode(true)
@@ -5948,7 +5964,7 @@ export function XDriveMediaGallery({
               </Button>
             ) : null}
             <Button
-              ref={selectionControlRef}
+              ref={compactGallery ? undefined : selectionControlRef}
               size="small"
               variant={selectionMode ? 'contained' : 'text'}
               onClick={() => {

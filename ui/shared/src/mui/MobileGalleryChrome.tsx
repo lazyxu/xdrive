@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
@@ -23,6 +23,7 @@ export interface XDriveMobileGalleryChromeProps {
   showCollection: boolean
   selectionMode: boolean
   onToggleSelection: () => void
+  selectionControlRef?: Ref<HTMLButtonElement>
   sortBy: 'captured' | 'added'
   sortDir: 'asc' | 'desc'
   canSort: boolean
@@ -62,7 +63,7 @@ export interface XDriveMobileGalleryChromeProps {
  */
 export function XDriveMobileGalleryChrome({
   primaryTab, onPrimaryTabChange, collectionTitle, canGoBack, onGoBack,
-  showCollection, selectionMode, onToggleSelection, sortBy, sortDir, canSort, onSort,
+  showCollection, selectionMode, onToggleSelection, selectionControlRef, sortBy, sortDir, canSort, onSort,
   filterContent, onSearchRequested, onFilterOpen, showTimeScale, timeScale, onTimeScale, currentDateLabel, timeZone,
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
@@ -169,7 +170,7 @@ export function XDriveMobileGalleryChrome({
           sx={{ flexShrink: 0, '& .MuiButton-root, & .MuiIconButton-root': { minHeight: 44, minWidth: 44 } }}>
           {showCollection ? (
             <>
-              <Button size="small" aria-pressed={selectionMode}
+              <Button ref={selectionControlRef} size="small" aria-pressed={selectionMode}
                 data-xdrive-mobile-gallery-select onClick={onToggleSelection}>
                 {selectionMode ? '完成' : '选择'}
               </Button>

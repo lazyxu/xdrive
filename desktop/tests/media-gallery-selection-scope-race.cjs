@@ -56,7 +56,10 @@ function extractSelectionScopeResetEffect() {
       if (
         callbackText.includes('clearMediaSelection()') &&
         callbackText.includes('setCollageDialogItems(null)') &&
-        dependencies.includes('collectionKey')
+        // Only real business scope changes fence a pending write. A new
+        // sparse requestID/sort due to responsive layout must preserve it.
+        dependencies.includes('selectionScopeKey') &&
+        !dependencies.includes('collectionKey')
       ) {
         callback = callbackText
         return
@@ -98,7 +101,7 @@ async function flushAsync() {
   await Promise.resolve()
 }
 
-test('Gallery collection scope change fences stale selection actions', async () => {
+test('Gallery semantic selection scope change fences stale actions without cancelling responsive sort', async () => {
   const runSource = extractRunSelectionAction()
   const resetSource = extractSelectionScopeResetEffect()
 
