@@ -2797,8 +2797,11 @@ jobs:
           path: web/dist
           if-no-files-found: error
           retention-days: 2
-      - name: Prepare opt-in native Chrome Gallery geometry test
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
+      - name: Prepare opt-in native Chrome iOS 27 Web acceptance
+        if: >-
+          github.event_name == 'pull_request' &&
+          (startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-'))
         shell: bash
         run: |
           set -euo pipefail
@@ -2841,6 +2844,40 @@ jobs:
         with:
           name: gallery-ios27-browser-geometry
           path: ${{ runner.temp }}/xdrive-gallery-ios27/
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Verify real Chrome Files 375/390/899/900px shared API parity
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-files-ios27"
+          echo "$XD_PR_HEAD" > "$RUNNER_TEMP/xdrive-files-ios27/pr-head.sha"
+          git rev-parse HEAD > "$RUNNER_TEMP/xdrive-files-ios27/tested-checkout.sha"
+          # pull_request checks out GitHub's synthetic PR merge commit by default.
+          # Its parent is the exact submitted PR head; record both identities.
+          # Do not require the merge checkout SHA to equal the source head SHA.
+          if [ "$(git rev-parse HEAD)" != "$XD_PR_HEAD" ]; then
+            git cat-file -p HEAD | grep -Fx "parent $XD_PR_HEAD" >/dev/null || {
+              echo "PR head not included in tested checkout"; exit 1;
+            }
+          fi
+          set +e
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+          node ../desktop/scripts/mobile-web-app-browser.cjs --scenario=files-ios27-chrome \
+            --output-dir="$RUNNER_TEMP/xdrive-files-ios27"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/xdrive-files-ios27/results.json"
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')
+        with:
+          name: files-ios27-browser-parity
+          path: ${{ runner.temp }}/xdrive-files-ios27/
           if-no-files-found: warn
           retention-days: 7
 

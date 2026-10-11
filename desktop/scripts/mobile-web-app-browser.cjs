@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, or gallery-ios27-chrome.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, or files-ios27-chrome.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -40,6 +40,8 @@ const touchFixture = { quickOrder: [2, 3, 4], savedOrder: [17, 18, 19], quickWri
 const mobilePanelsScenario = options.scenario === 'mobile-panels';
 const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
+const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
+const filesIos27Fixture = { accepted: [], operations: [] };
 const gallerySelectionFixture = {
   albums: [...Array.from({ length: 24 }, (_, index) => ({
     id: `qa-album-${index + 1}`, name: index === 0 ? '验收家庭相册' : `验收相册 ${String(index + 1).padStart(2, '0')} 长名称仍应完整可读`,
@@ -90,8 +92,25 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/nodes/root': return plain(rootNode);
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
     case 'GET /api/v1/file-operations':
-      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
+      queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return filesIos27ChromeScenario ? filesIos27Fixture.operations : filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
     case 'POST /api/v1/file-operations': {
+      if (filesIos27ChromeScenario) {
+        queryOnly(url, []);
+        const body = jsonBody(request);
+        assert.deepEqual(Object.keys(body).sort(), ['items', 'parent_id', 'type']);
+        assert.equal(body.type, 'copy');
+        assert.equal(body.parent_id, 1, 'both viewports paste into the same authenticated cloud root');
+        assert.deepEqual(body.items, [{ id: 100, revision: 1 }]);
+        filesIos27Fixture.accepted.push(body);
+        const operation = {
+          id: `qa-files-copy-${filesIos27Fixture.accepted.length}`,
+          type: 'copy', parent_id: 1, status: 'queued', conflict_policy: 'fail',
+          total_items: 1, processed_items: 0, total_bytes: 4096, processed_bytes: 0,
+          percent: 0, retryable: false, created_at: stamp, updated_at: stamp,
+        };
+        filesIos27Fixture.operations.unshift(operation);
+        return operation;
+      }
       assert(filesOperationsScenario || filesTouchDragScenario, 'File-operation writes belong to the explicit operation/drag scenarios');
       queryOnly(url, []);
       const body = jsonBody(request);
@@ -378,6 +397,13 @@ function fixtureFor(request, role) {
     Object.assign(node, { name: body.name, revision: node.revision + 1 });
     return node;
   }
+  match = /^GET \/api\/v1\/file-operations\/(qa-files-copy-\d+)$/.exec(key);
+  if (filesIos27ChromeScenario && match) {
+    queryOnly(url, []);
+    const found = filesIos27Fixture.operations.find(operation => operation.id === match[1]);
+    assert(found, 'Read must use a real accepted Files operation ID');
+    return found;
+  }
   match = /^GET \/api\/v1\/file-operations\/(qa-copy-\d+)$/.exec(key);
   if (filesOperationsScenario && match) {
     queryOnly(url, []);
@@ -448,7 +474,7 @@ function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
   // Collect independent layout failures so a baseline records every viewport;
   // a failed contract still makes the command fail and appears in results.json.
-  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario)) {
+  if (!passed && (options.scenario === 'fullscreen' || searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || filesIos27ChromeScenario)) {
     result.failures.push({ stage: activeStage, message: name, evidence });
     process.exitCode = 1;
     return;
@@ -523,7 +549,9 @@ async function loadFiles(context, origin, role) {
   // Mobile Files now has an independent presentation without the wide tile's
   // data selector. Gallery-only acceptance needs to wait for visible data, not
   // assert a Files-specific DOM implementation detail.
-  if (galleryIos27ChromeScenario) {
+  if (filesIos27ChromeScenario) {
+    await page.locator('[data-xdrive-mobile-files]').waitFor();
+  } else if (galleryIos27ChromeScenario) {
     await page.getByText('document-001.txt', { exact: true }).first().waitFor();
   } else {
     await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).waitFor();
@@ -1978,16 +2006,152 @@ async function galleryIos27ChromeAcceptance() {
   await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor({state:'hidden'});
 }
 
+
+async function filesIos27ChromeAcceptance(origin) {
+  // Authentic built React/Chromium at both responsive owners. The local
+  // request router supplies deterministic authorized-looking Server payloads;
+  // it is explicitly NOT a physical iOS/Safari or live-Go acceptance claim.
+  const viewports = [
+    { width: 375, height: 812 }, { width: 390, height: 844 },
+    { width: 899, height: 700 }, { width: 900, height: 700 },
+  ];
+  for (const viewport of viewports) {
+    const narrow = viewport.width < 900;
+    activeStage = `user-files-ios27-${viewport.width}x${viewport.height}`;
+    await page.setViewportSize(viewport);
+    // A direct, real Files deep link avoids mistaking Browse-home navigation
+    // differences for different Node/count/permission business contracts.
+    await page.goto(`${origin}/#/app/files?dir=1`, { waitUntil: 'domcontentloaded' });
+    const row = narrow
+      ? page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' })
+      : page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' });
+    await row.first().waitFor();
+    await settle();
+    const sample = await geometry(activeStage);
+    const visibleRows = await page.locator(narrow ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]').count();
+    const scrollHosts = await page.locator('[data-xdrive-file-explorer-scroll-host]').count();
+    const initial = {
+      viewport, narrow, renderedRows: visibleRows, scrollHosts,
+      fullAppFrame: sample.appFrame, appHeader: sample.appHeader,
+      scroll: sample.filesScroll, URL: page.url(),
+    };
+    result.samples[`${activeStage}-initial`] = initial;
+    check(`${activeStage}: real responsive FileExplorer owner`,
+      narrow ? await page.locator('[data-xdrive-mobile-files]').count() === 1
+        && await page.locator('[data-xdrive-file-explorer]').count() === 0
+        : await page.locator('[data-xdrive-file-explorer]').count() === 1
+          && await page.locator('[data-xdrive-mobile-files]').count() === 0, initial);
+    check(`${activeStage}: exactly one shared virtual scroll owner`,
+      scrollHosts === 1 && visibleRows > 0 && visibleRows < rootChildren.length, initial);
+    const before = filesIos27Fixture.accepted.length;
+
+    if (narrow) {
+      await row.first().click({ button: 'right' });
+      const actions = ['cut', 'copy', 'move-to', 'copy-to'];
+      const sampleAction = async (action) => {
+        const option = page.locator(`[data-mobile-files-context-selection-action="${action}"]`);
+        await option.waitFor();
+        const metrics = await option.evaluate(element => {
+          const style = getComputedStyle(element);
+          const paper = element.closest('.MuiPopover-paper');
+          const paperStyle = paper ? getComputedStyle(paper) : null;
+          return {
+            boxHeight: element.getBoundingClientRect().height,
+            cssHeight: style.height,
+            cssMinHeight: style.minHeight,
+            paperTransform: paperStyle?.transform ?? null,
+          };
+        });
+        return { count: await option.count(), enabled: await option.isEnabled(), ...metrics };
+      };
+      // MUI Menu uses Grow: bounding boxes during its entering transform can
+      // be 20-26px despite a real 44px CSS minimum. Record both states, but
+      // judge hit targets only after the transition has actually settled.
+      const opening = {};
+      for (const action of actions) opening[action] = await sampleAction(action);
+      await page.waitForTimeout(400);
+      await settle();
+      const settled = {};
+      for (const action of actions) settled[action] = await sampleAction(action);
+      result.samples[`${activeStage}-context`] = { opening, settled };
+      check(`${activeStage}: exact four shared clipboard/destination operations with >=44px touch targets`,
+        actions.every(action => settled[action].count === 1 && settled[action].enabled
+          && settled[action].boxHeight >= 43.5 && parseFloat(settled[action].cssMinHeight) >= 44),
+        { opening, settled });
+      await page.screenshot({ path: path.join(outputDir, `${activeStage}-context.png`) });
+      await page.locator('[data-mobile-files-context-selection-action="copy"]').click();
+      await page.getByRole('button', { name: '文件操作菜单', exact: true }).click();
+      const paste = page.getByRole('menuitem', { name: '粘贴', exact: true });
+      await paste.waitFor();
+      check(`${activeStage}: copied real Node enables the existing Web paste command`,
+        await paste.isEnabled());
+      await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/file-operations'
+          && response.request().method() === 'POST'),
+        paste.click(),
+      ]);
+    } else {
+      // At the 900px boundary Mobile's presentation is replaced by wide Web,
+      // but Node IDs and Server copy operation must remain identical.
+      await row.first().click();
+      await page.keyboard.press('Control+c');
+      await settle();
+      await Promise.all([
+        page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/file-operations'
+          && response.request().method() === 'POST'),
+        page.keyboard.press('Control+v'),
+      ]);
+    }
+
+    await settle();
+    check(`${activeStage}: one authentic Web operation submission`,
+      filesIos27Fixture.accepted.length === before + 1,
+      filesIos27Fixture.accepted.slice(before));
+    check(`${activeStage}: same Node ID/Revision/method/parent from both layouts`,
+      filesIos27Fixture.accepted.at(-1)?.type === 'copy' &&
+      filesIos27Fixture.accepted.at(-1)?.parent_id === 1 &&
+      JSON.stringify(filesIos27Fixture.accepted.at(-1)?.items) === JSON.stringify([{ id: 100, revision: 1 }]),
+      filesIos27Fixture.accepted.at(-1));
+    check(`${activeStage}: actual Server directory range transport used`,
+      Object.keys(result.requests).some(key => key.includes(' GET /api/v1/nodes/1/children')));
+    check(`${activeStage}: FileExplorer route preserved after queued Server operation`,
+      /\/files\?dir=1$/.test(page.url()), page.url());
+    await page.screenshot({ path: path.join(outputDir, `${activeStage}-copy.png`) });
+  }
+
+  check('Files iOS27 375/390/899/900 use identical authorized copy payloads',
+    filesIos27Fixture.accepted.length === viewports.length &&
+      filesIos27Fixture.accepted.every(submission =>
+        JSON.stringify(submission) === JSON.stringify(filesIos27Fixture.accepted[0])),
+    filesIos27Fixture.accepted);
+  result.samples['files-ios27-transport-parity'] = {
+    fixtureBounded: true, realChromium: true, physicalIphone: false,
+    liveGoServer: false, accepted: filesIos27Fixture.accepted,
+    distinctPaths: [...new Set(Object.keys(result.requests)
+      .map(key => key.slice(key.indexOf(' /api/'))).filter(Boolean))].sort(),
+  };
+}
+
 async function main() {
   fs.mkdirSync(outputDir, { recursive: true });
   assert(fs.existsSync(path.join(distRoot, 'index.html')), `Build the real Web App first: ${distRoot}/index.html missing`);
-  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario) {
+  if (searchReturnScenario || filesOperationsScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || filesIos27ChromeScenario) {
     const hash = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
     result.runnerSHA256 = hash(__filename);
     result.builtWebSHA256 = {
       'index.html': hash(path.join(distRoot, 'index.html')),
       ...Object.fromEntries(fs.readdirSync(path.join(distRoot, 'assets')).filter((name) => /\.(js|css)$/.test(name)).sort().map((name) => [`assets/${name}`, hash(path.join(distRoot, 'assets', name))])),
     };
+    if (filesIos27ChromeScenario) {
+      fs.copyFileSync(__filename, path.join(outputDir, path.basename(__filename)));
+      result.fixture.filesIos27Chrome = { physicalIphone: false, liveServer: false, fixtureNodes: rootChildren.length,
+        viewports: [375, 390, 899, 900] };
+      result.sourceHashes = Object.fromEntries([
+        'web/src/App.tsx', 'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx',
+        'web/src/api.ts', 'ui/shared/src/mui/FileExplorer.tsx',
+        'ui/shared/src/mui/VirtualCollectionController.ts', 'ui/shared/src/mui/MobileAppHeader.tsx',
+      ].map(file => [file, hash(path.join(sourceRoot, file))]));
+    }
     if (galleryIos27ChromeScenario) {
       fs.copyFileSync(__filename, path.join(outputDir, path.basename(__filename)));
       result.fixture.ios27 = { logicalItems: mediaItems.length, physicalDevice: false };
@@ -2027,7 +2191,7 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
-    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario ? [{ role: 'user' }]
+    const cases = options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -2097,6 +2261,7 @@ async function main() {
       else if (mobilePanelsScenario) await mobilePanelsAcceptance();
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
+      else if (filesIos27ChromeScenario) await filesIos27ChromeAcceptance(origin);
       else if (viewMode) await inheritedColumnsAcceptance();
       else {
         await filesAcceptance(role);
