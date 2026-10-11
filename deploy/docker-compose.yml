@@ -77,12 +77,14 @@ services:
       XD_BAIDU_MAP_ENABLED: "${XD_BAIDU_MAP_ENABLED:-false}"
       XD_BAIDU_MAP_AK: "${XD_BAIDU_MAP_AK:-}"
       XD_PHOTO_FACE_ANALYZER_SOCKET: ${XD_PHOTO_FACE_ANALYZER_SOCKET:-}
+      XD_MEDIA_WORKER_SOCKET: ${XD_MEDIA_WORKER_SOCKET:-}
       XD_PHOTO_FACE_ANALYZER_TOKEN: ${XD_PHOTO_FACE_ANALYZER_TOKEN:-}
       XD_PHOTO_FACE_PREVIEW_BASE_URL: ${XD_PHOTO_FACE_PREVIEW_BASE_URL:-http://server:8080}
     volumes:
       - "${XD_FILES_DATA_DIR:-../data/files}:/data"
       - "${XD_HOST_CONTROL_HOST_DIR:-../state/control}:/host-control"
       - "${XD_PHOTO_FACE_RUNTIME_DIR:-../state/photo-face}:/run/xdrive-photo-face"
+      - "${XD_MEDIA_WORKER_RUNTIME_DIR:-../state/media-worker}:/run/xdrive-media-worker:ro"
       - "${XD_GEONAMES_HOST_DIR:-../data/geonames}:/geonames:ro"
     networks:
       - default

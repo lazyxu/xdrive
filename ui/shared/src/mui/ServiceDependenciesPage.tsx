@@ -76,7 +76,7 @@ function photoAutoKindSummary(kinds: XDrivePhotoAutoKinds): string {
 
 const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; description: string }> = [
   { id: 'core', label: '基础服务', description: '核心数据库与文件存储的实时就绪探针。' },
-  { id: 'media', label: '媒体处理', description: '独立 FFmpeg Media Worker 尚未进入生产服务合同。' },
+  { id: 'media', label: '媒体处理', description: 'FFmpeg/FFprobe 运行时可独立探测；媒体作业协议仍未集成。' },
   { id: 'intelligence', label: '照片智能分析', description: '共享 Photo Intelligence 容器；分别探测已配置的分析能力。' },
   { id: 'location', label: '地理位置与地图', description: 'GeoNames 只提供可选地名标签；百度地图是唯一地图 Provider。' },
 ]

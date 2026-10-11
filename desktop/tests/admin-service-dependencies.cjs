@@ -47,7 +47,7 @@ test('Shared page differentiates actual health, disabled state, and not-yet-inte
   assert.ok(page.includes('active = false'), 'stale responses must be ignored after unmount')
   assert.ok(backend.includes('c.Header("Cache-Control", "no-store")'))
   assert.ok(backend.includes('context.WithTimeout'))
-  assert.ok(backend.includes('Status: "planned"'), 'future Media Worker and map tiles must not be reported healthy')
+  assert.ok(backend.includes('Status: "disabled"'), 'an unconfigured runtime must not be marked healthy')
 })
 
 test('Baidu Server AK can be edited through admin-only API and Desktop Agent without restarting xDrive', () => {
@@ -667,4 +667,29 @@ test('PostgreSQL observed-replica status remains a bounded admin-only read contr
   assert.ok(ui.includes('data-xdrive-postgres-pool-replicas'))
   assert.ok(ui.includes('不能确认其他实例是否生效'))
   assert.equal(ui.includes('docker.sock'), false)
+})
+
+
+test('Media Worker status uses real versioned Unix-socket probes and never exposes fictitious job toggles', () => {
+  const worker = read('internal', 'mediaworker', 'info.go')
+  const runtime = read('internal', 'mediaworker', 'serve.go')
+  const cli = read('cmd', 'server', 'media_worker.go')
+  const main = read('cmd', 'server', 'main.go')
+  const config = read('internal', 'config', 'config.go')
+  const compose = read('deploy', 'docker-compose.yml')
+  const contract = read('internal', 'api', 'admin_service_config_contract.go')
+  assert.ok(worker.includes('exec.CommandContext(ctx, name, "-version")'))
+  assert.ok(worker.includes('TaskExecutionSupported: false'))
+  assert.ok(worker.includes('"GET /v1/info"'))
+  assert.ok(runtime.includes('os.Chmod(socket, 0600)'))
+  assert.ok(cli.includes('runMediaWorkerCommand'))
+  assert.ok(main.includes('case "media-worker"'))
+  assert.ok(config.includes('XD_MEDIA_WORKER_SOCKET'))
+  assert.ok(backend.includes('s.MediaWorkerProbe.Info(ctx)'))
+  assert.ok(contract.includes('case "media-worker"'))
+  assert.ok(contract.includes('"deployment", "controlled-restart"'))
+  assert.ok(compose.includes('XD_MEDIA_WORKER_RUNTIME_DIR'))
+  assert.ok(compose.includes(':/run/xdrive-media-worker:ro'))
+  assert.equal(page.includes('docker.sock'), false)
+  assert.equal(backend.includes('SocketPath'), false)
 })

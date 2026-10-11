@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/mediaworker"
 )
 
 type serviceDependency struct {
@@ -37,7 +38,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	services := []serviceDependency{
 		{ID: "database", Group: "core", Label: "PostgreSQL", Status: "unavailable", Detail: "数据库未连接"},
 		{ID: "storage", Group: "core", Label: "文件存储", Status: "unavailable", Detail: "存储不可用"},
-		{ID: "media-worker", Group: "media", Label: "FFmpeg Media Worker", Status: "planned", Detail: "尚未接入媒体处理服务与健康探针；普通视频播放不依赖此服务"},
+		{ID: "media-worker", Group: "media", Label: "FFmpeg Media Worker", Status: "disabled", Detail: "尚未配置独立媒体运行时的私有 Unix Socket；现有视频播放不依赖它"},
 		{ID: "photo-face", Group: "intelligence", Label: "人脸检测与人物聚类", Status: "disabled", Detail: "未配置本地人脸分析器"},
 		{ID: "photo-smart", Group: "intelligence", Label: "动物／物体识别与 OCR", Status: "disabled", Detail: "未配置本地智能识别分析器"},
 		{ID: "photo-semantic", Group: "intelligence", Label: "图片语义搜索", Status: "disabled", Detail: "未配置本地语义分析器"},
@@ -71,6 +72,24 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	}
 
 	var wg sync.WaitGroup
+	if s.MediaWorkerConfigured {
+		services[2].Status = "unavailable"
+		services[2].Detail = "媒体运行时已配置，但 FFmpeg/FFprobe 实际健康检查未通过"
+		if s.MediaWorkerProbe != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				info, err := s.MediaWorkerProbe.Info(ctx)
+				if err != nil || !mediaworker.ValidInfo(info) {
+					return
+				}
+				services[2].Status = "ready"
+				services[2].Detail = "FFmpeg 与 FFprobe 子进程探针通过；媒体作业队列尚未接入"
+				services[2].Version = info.FFmpegVersion
+				services[2].Model = info.FFprobeVersion
+			}()
+		}
+	}
 	if s.DB != nil {
 		wg.Add(1)
 		go func() {

@@ -1517,6 +1517,11 @@ configure_data_path XD_CADDY_DATA_DIR "$DATA_DIR/caddy/data"
 configure_data_path XD_CADDY_CONFIG_DIR "$DATA_DIR/caddy/config"
 set_env XD_HOME_HOST_DIR "$(cd "$XDRIVE_HOME" && pwd)"
 set_env XD_BACKUP_ROOT_HOST_DIR "$(cd "$BACKUP_ROOT" && pwd)"
+configure_data_path XD_MEDIA_WORKER_RUNTIME_DIR "$STATE_DIR/media-worker"
+media_worker_runtime_dir="$(env_value XD_MEDIA_WORKER_RUNTIME_DIR)"
+chgrp "$SERVER_GID" "$media_worker_runtime_dir" 2>/dev/null || true
+chmod 2770 "$media_worker_runtime_dir"
+ensure_env XD_MEDIA_WORKER_SOCKET "${XD_MEDIA_WORKER_SOCKET:-}"
 configure_data_path XD_PHOTO_FACE_RUNTIME_DIR "$STATE_DIR/photo-face"
 photo_face_runtime_dir="$(env_value XD_PHOTO_FACE_RUNTIME_DIR)"
 chgrp "$SERVER_GID" "$photo_face_runtime_dir" 2>/dev/null || true
