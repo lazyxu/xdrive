@@ -32,7 +32,7 @@ func TestAdminServiceDependenciesFailClosed(t *testing.T) {
 	expected := map[string]string{
 		"database":          "unavailable",
 		"storage":           "unavailable",
-		"media-worker":      "planned",
+		"media-worker":      "disabled",
 		"photo-face":        "disabled",
 		"photo-smart":       "disabled",
 		"photo-semantic":    "disabled",

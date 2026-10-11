@@ -23,6 +23,7 @@ type Config struct {
 	BaiduMapAK                   string
 	BaiduMapEnabled              bool
 	PhotoPlaceMaxDistanceKM      float64
+	MediaWorkerSocket            string
 	PhotoFaceAnalyzerSocket      string
 	PhotoFaceAnalyzerToken       string
 	PhotoFacePreviewBaseURL      string
@@ -53,6 +54,7 @@ func Load() (Config, error) {
 		PhotoPlaceGeoNamesDir:        strings.TrimSpace(os.Getenv("XD_PHOTO_PLACE_GEONAMES_DIR")),
 		BaiduMapAK:                   strings.TrimSpace(os.Getenv("XD_BAIDU_MAP_AK")),
 		PhotoPlaceMaxDistanceKM:      100,
+		MediaWorkerSocket:            strings.TrimSpace(os.Getenv("XD_MEDIA_WORKER_SOCKET")),
 		PhotoFaceAnalyzerSocket:      strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_SOCKET")),
 		PhotoFaceAnalyzerToken:       strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_ANALYZER_TOKEN")),
 		PhotoFacePreviewBaseURL:      strings.TrimSpace(os.Getenv("XD_PHOTO_FACE_PREVIEW_BASE_URL")),

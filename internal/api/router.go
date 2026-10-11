@@ -12,6 +12,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/background"
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
+	"github.com/lazyxu/xdrive/internal/mediaworker"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -24,6 +25,8 @@ type Server struct {
 	postgresPoolSaveMu             sync.Mutex
 	postgresPoolApplied            atomic.Pointer[postgresPoolRuntime]
 	Store                          storage.Store
+	MediaWorkerConfigured          bool
+	MediaWorkerProbe               mediaworker.Prober
 	Auth                           auth.Manager
 	RefreshTTL                     time.Duration
 	AllowedOrigin                  string

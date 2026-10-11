@@ -21,8 +21,8 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 		return "deployment", "controlled-restart",
 			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"
 	case "media-worker":
-		return "planned", "not-available",
-			"独立可选 Media Worker（FFmpeg/FFprobe）仍待实现真实协议、队列、取消、资源隔离及健康探针；当前不能在页面启用"
+		return "deployment", "controlled-restart",
+			"可通过部署提供独立 FFmpeg/FFprobe 进程与私有 Unix Socket，管理员页面只读探测实际可执行性。媒体任务协议、可配置并发和动态应用尚未实现；不能在此启停容器。必须由运维预配私有目录并受控部署，不影响现有传输与同步"
 	case "database":
 		return "in-app", "immediate",
 			"本页仅支持配置 xDrive Server 的 database/sql 最大打开连接数与最大空闲连接数，经版本校验和审计后当前实例热生效；其他 Server 定期协调并独立确认。PostgreSQL 地址、密码、版本、数据卷和服务重启仍由受控部署管理。此配置不改变数据库服务端参数"

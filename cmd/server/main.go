@@ -18,6 +18,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/connectorsecret"
 	"github.com/lazyxu/xdrive/internal/fileoperationwake"
 	"github.com/lazyxu/xdrive/internal/mediawake"
+	"github.com/lazyxu/xdrive/internal/mediaworker"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/photointelligence"
 	"github.com/lazyxu/xdrive/internal/storage"
@@ -62,6 +63,11 @@ func main() {
 			return
 		case "media":
 			if err := runMediaCommand(os.Args[2:]); err != nil {
+				log.Fatal(err)
+			}
+			return
+		case "media-worker":
+			if err := runMediaWorkerCommand(os.Args[2:]); err != nil {
 				log.Fatal(err)
 			}
 			return
@@ -211,6 +217,17 @@ func main() {
 			"socket", cfg.PhotoFaceAnalyzerSocket,
 		)
 	}
+	// A broken optional media runtime must never prevent core services or
+	// durable uploads, downloads and synchronization from starting.
+	var mediaWorkerProbe mediaworker.Prober
+	if cfg.MediaWorkerSocket != "" {
+		worker, err := mediaworker.NewUnixClient(cfg.MediaWorkerSocket, 1500*time.Millisecond)
+		if err != nil {
+			slog.Warn("media_worker_probe_configuration_invalid")
+		} else {
+			mediaWorkerProbe = worker
+		}
+	}
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 	backgroundScheduler := background.NewScheduler(
@@ -237,6 +254,8 @@ func main() {
 		MaxUploadBytes:              cfg.MaxUploadBytes,
 		SourceRunFailureRetention:   cfg.SourceRunFailureRetention,
 		ConnectorSecrets:            connectorSecrets,
+		MediaWorkerConfigured:       cfg.MediaWorkerSocket != "",
+		MediaWorkerProbe:            mediaWorkerProbe,
 		PhotoPlaceResolver:          photoPlaceResolver,
 		GeoNamesRuntime:             geoNamesRuntime,
 		GeoNamesDataDir:             cfg.PhotoPlaceGeoNamesDir,
