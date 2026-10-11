@@ -25,6 +25,9 @@ export type XDriveServiceDependency = {
   config_mode?: XDriveServiceConfigMode
   apply_mode?: XDriveServiceApplyMode
   config_hint?: string
+  // Only Caddy reports these trusted host observations, never the domain itself.
+  https_configured?: boolean
+  local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
 }
 
 export type XDriveServiceDependenciesSnapshot = {

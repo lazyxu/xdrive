@@ -11,16 +11,18 @@ import (
 )
 
 type serviceDependency struct {
-	ID         string `json:"id"`
-	Group      string `json:"group"`
-	Label      string `json:"label"`
-	Status     string `json:"status"`
-	Detail     string `json:"detail"`
-	Version    string `json:"version,omitempty"`
-	Model      string `json:"model,omitempty"`
-	ConfigMode string `json:"config_mode"`
-	ApplyMode  string `json:"apply_mode"`
-	ConfigHint string `json:"config_hint,omitempty"`
+	ID              string `json:"id"`
+	Group           string `json:"group"`
+	Label           string `json:"label"`
+	Status          string `json:"status"`
+	Detail          string `json:"detail"`
+	Version         string `json:"version,omitempty"`
+	Model           string `json:"model,omitempty"`
+	ConfigMode      string `json:"config_mode"`
+	ApplyMode       string `json:"apply_mode"`
+	ConfigHint      string `json:"config_hint,omitempty"`
+	HTTPSConfigured *bool  `json:"https_configured,omitempty"`
+	LocalTLSState   string `json:"local_tls_state,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
@@ -217,6 +219,10 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 	// probe, not a Server-to-itself HTTP proxy request. A configured domain
 	// is deployment intent only: it does not prove ACME/TLS or public reachability.
 	if gateway, valid := s.readCaddyHostStatus(); valid {
+		services[10].HTTPSConfigured = &gateway.HTTPSConfigured
+		if gateway.TLSCheckSupported {
+			services[10].LocalTLSState = gateway.TLSState
+		}
 		mode := "宿主机配置未要求自定义 HTTPS 域名"
 		if gateway.HTTPSConfigured {
 			mode = "宿主机配置要求 HTTPS 域名，但未独立验证证书及公网可达性"
@@ -225,6 +231,24 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		case "healthy":
 			services[10].Status = "ready"
 			services[10].Detail = "Caddy 容器健康检查通过，内部 HTTP 反向代理可用；" + mode
+			if gateway.HTTPSConfigured {
+				switch {
+				case !gateway.TLSCheckSupported || gateway.TLSState == "unavailable":
+					services[10].Status = "unknown"
+					services[10].Detail = "内部 HTTP 代理健康，但本机 HTTPS 证书验证不可用；未确认 HTTPS 实际生效及公网可达性"
+				case gateway.TLSState == "verified":
+					services[10].Detail = "内部 HTTP 代理健康；本机 HTTPS TLS 握手、证书信任链及域名校验通过；公网访问未验证"
+				case gateway.TLSState == "failed":
+					services[10].Status = "unavailable"
+					services[10].Detail = "内部 HTTP 代理健康，但本机 HTTPS 握手或证书域名校验失败；HTTPS 未生效"
+				case gateway.TLSState == "invalid-config":
+					services[10].Status = "unavailable"
+					services[10].Detail = "内部 HTTP 代理健康，但 HTTPS 域名或端口配置不合法；未进行 TLS 探测"
+				default:
+					services[10].Status = "unknown"
+					services[10].Detail = "内部 HTTP 代理健康，但宿主机尚未报告可信 HTTPS 证书验证状态"
+				}
+			}
 		case "unhealthy":
 			services[10].Status = "unavailable"
 			services[10].Detail = "Caddy 容器健康检查失败；" + mode

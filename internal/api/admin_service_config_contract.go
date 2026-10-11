@@ -34,7 +34,7 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 			"管理员可保存、审计、回滚独立 Pull Worker 的扫描周期、轮询周期和并发。Worker 在已运行批次结束后的安全边界热应用，心跳确认前只显示待生效；容器镜像、CPU/RAM 和启动停止仍由部署管理"
 	case "caddy":
 		return "deployment", "controlled-restart",
-			"本页只读显示受限 Host Manager 对固定 Caddy 容器的实际 Docker healthcheck；健康仅证明内部 HTTP 代理可用，不代表 HTTPS 证书或公网访问已验证。域名、DNS 凭据、证书、端口和启停仍由受控部署管理；禁止 Server 调用 Docker 或提供可能切断管理入口的虚假开关"
+			"本页只读显示 Caddy 固定容器的真实 HTTP 健康；HTTPS 模式下还由 Host Manager 经 127.0.0.1 进行限时 TLS 握手、受信证书链和域名验证，绝不访问任意外网地址。仅本机证书验证成功不等于公网 HTTPS 可访问。域名、DNS 凭据、证书、端口和启停仍由受控部署管理，不能直接操作容器或切断管理入口"
 	default:
 		return "planned", "not-available", "尚无受支持的安全配置与应用合同"
 	}

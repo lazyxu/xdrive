@@ -684,12 +684,53 @@ media_worker_control_process() {
     "$pids" "$observed_pids" false
   rm -f "$active"
 }
-# Read-only, fixed-target Caddy health. Never expose domain, ACME secrets,
-# paths or arbitrary Docker operations through the private status bridge.
+# Verify only the operator-configured domain via a TCP connection to
+# 127.0.0.1:XD_HTTPS_PORT. Never resolve the hostname or probe a remote URL:
+# the domain is used solely for SNI and TLS hostname verification. No output
+# from OpenSSL, certificate, hostname, credentials or path enters admin JSON.
+caddy_local_tls_state() {
+  local domain="$1" port bind raw
+  port="$(env_value XD_HTTPS_PORT)"
+  [[ -n "$port" ]] || port=8443
+  bind="$(env_value XD_HTTPS_BIND)"
+  [[ -n "$bind" ]] || bind=0.0.0.0
+  # An interface-specific non-loopback binding may be healthy remotely but
+  # cannot be validated through 127.0.0.1. Report unknown, NOT a TLS failure.
+  case "$bind" in
+    0.0.0.0|127.0.0.1) ;;
+    *) printf 'unavailable\n'; return ;;
+  esac
+  # Strict ASCII FQDN (no localhost/IP literals, flags, wildcards, URLs or
+  # shell metacharacters) and a validated host-local TCP port.
+  if (( ${#domain} > 253 )) ||
+      [[ ! "$domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] ||
+      [[ ! "$domain" =~ \.[A-Za-z][A-Za-z0-9-]*$ ]] ||
+      [[ ! "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+    printf 'invalid-config\n'
+    return
+  fi
+  if ! command -v openssl >/dev/null 2>&1 ||
+      ! command -v timeout >/dev/null 2>&1; then
+    printf 'unavailable\n'
+    return
+  fi
+  if raw="$(timeout 5s openssl s_client -connect "127.0.0.1:$port" \
+      -servername "$domain" -verify_hostname "$domain" -verify_return_error \
+      -brief </dev/null 2>&1)" && [[ "$raw" == *"Verification: OK"* ]]; then
+    printf 'verified\n'
+  else
+    printf 'failed\n'
+  fi
+}
+
+# Fixed-container HTTP health and independent loopback TLS chain/host proof.
+# "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed state=unknown https_configured=false
-  if [[ -n "$(env_value XD_DOMAIN)" ]]; then
+  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled
+  domain="$(env_value XD_DOMAIN)"
+  if [[ -n "$domain" ]]; then
     https_configured=true
+    tls_state=unavailable
   fi
   observed=""
   if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
@@ -705,10 +746,13 @@ caddy_host_refresh() {
     false\|*) state=stopped ;;
     *) state=unknown ;;
   esac
+  if [[ "$https_configured" == true && "$state" == healthy ]]; then
+    tls_state="$(caddy_local_tls_state "$domain")"
+  fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s}\n' \
-    "$state" "$https_configured" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
