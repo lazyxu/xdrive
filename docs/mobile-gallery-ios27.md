@@ -311,3 +311,12 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 
 **P1-1c 精确提交初轮 CI 回归修订：** 初轮 [GitHub CI #38106365175](https://github.com/lazyxu/xdrive/actions/runs/38106365175) 的 `desktop-tests` 发生两项测试夹具失败，定位到旧 `desktop/tests/mobile-gallery-ios27-sort-filter.cjs` 的 `baseProps` 未传入新增的 `canSort/showTimeScale` 必填项，使 P0-3g 的菜单测试落在未授权排序的模拟状态。原两个测试的可用排序及不可用筛选断言均保留，本轮仅向既有组件测试夹具补齐真实 Page 会传入的 `true/true`，不修改用户运行时权限/排序逻辑。用原始固定父提交重建恰好**一个**工作提交，提交变更后必须重新等待全量精确 SHA CI 及 `final-gate`，旧跑次通过的其它步骤不得当作新提交的门禁。
+
+
+## P1-2a · 细指针移动设备仍使用原生型全屏 Gallery Viewer（2026-10-11）
+
+**目标：代码与真实组件回归；iOS 27 Safari 真机 1:1 对照仍未验收。** 已确认 `FileOpenPreviewDialog` 原先仅以 `(max-width:899.95px) and (pointer: coarse)` 判定移动全屏，因而移动端外接鼠标/触控板或系统将主指针报告为 `fine` 时，图库照片 Viewer 降级为桌面弹窗，底部 filmstrip/分享、收藏、编辑、属性、下载、删除等共享操作回到小型桌面顶栏，违反图库全屏与跨指针功能可达性要求。
+
+**实现边界：** 在唯一共享 `FileOpenPreviewDialog` 内，保留非沉浸式 Files/Quick Look 原来的粗指针门槛；仅当调用方已选择 `immersive` 且视口小于 900px 时，不论 primary pointer 为 `fine` 或 `coarse`，均使用原有移动全屏、顶部 safe-area、底部 `44px` 按钮 rail 与 filmstrip、触控轻点显隐控件；在窄屏细指针模式下，鼠标移动仍能唤醒自动隐藏的控件，粗指针触摸不因模拟 mousemove 意外唤醒。900px 及以上宽屏保留现有桌面 Viewer 弹窗/手动全屏与键鼠操作。切换指针不会创建第二套页面或更改媒体回调；Live Photo 按住才播放、照片缩放/横划、视频原生交互仍由同一个 `MediaViewerContent/FilePreviewSurface` 拥有。
+
+**验收：** 新增真实 React 挂载测试矩阵（390、899、900px × 主指针 fine/coarse × immersive/Quick Look），包括全屏 Dialog、safe-area、filmstrip、同一操作回调、控制显隐与交互媒体例外；已有 Web REST `MediaGalleryDataSource`、Server Range、VirtualCollection、Viewer 复用契约继续校验。完整 GitHub CI 及最终门禁按精确工作 SHA 验收；iOS 27 真机截图/辅助功能、动态地址栏/已安装模式和 10k/100k 实体媒体真实性能仍是独立缺口，不以测试模拟冒充真机已复刻。
