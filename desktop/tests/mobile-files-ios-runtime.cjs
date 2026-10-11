@@ -2000,3 +2000,154 @@ test('F-iOS27-08C: Mobile rename closes on account scope switch and old denied c
     onRename: async () => { calls += 1; await pending },
   } })
 })
+
+
+async function openFios09Context(h, name = '说明.txt') {
+  if (count(h.view, 'data-xdrive-mobile-files-home')) {
+    const root = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    assert.ok(root, 'the real Browse location must open the shared Web workspace')
+    await act(async () => { root.props.onClick() })
+  }
+  const row = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+    .find(node => node.props?.['aria-label'] === name)
+  assert.ok(row, 'expected an authenticated Mobile item: ' + name)
+  await act(async () => {
+    row.props.onContextMenu({
+      preventDefault() {}, clientX: 48, clientY: 90,
+      nativeEvent: { pointerType: 'mouse' },
+    })
+  })
+  return row
+}
+
+test('F-iOS27-09A: direct held file Cut/Copy/Move/Copy-To use exactly one shared Web Node identity and revision', async () => {
+  const called = []
+  const checked = []
+  await withView(async h => {
+    for (const action of ['copy', 'cut', 'move-to', 'copy-to']) {
+      await openFios09Context(h)
+      const item = find(h.view, 'data-mobile-files-context-selection-action', action)
+      assert.equal(item.props.disabled, false)
+      assert.equal(item.props.sx.minHeight, 44, 'native iOS context target is at least 44px')
+      await act(async () => { item.props.onClick() })
+      const actual = called.at(-1)
+      assert.deepEqual(actual, {
+        action, items: [{ id: 3, revision: 1, name: '说明.txt', kind: 'file' }],
+      })
+      const opened = h.view.root.findAll(node =>
+        node.type === 'Menu' && node.props?.anchorReference === 'anchorPosition' && node.props?.open)
+      assert.equal(opened.length, 0, 'command closes the same owner-scoped context menu')
+    }
+    assert.deepEqual(checked.filter(x => ['copy', 'cut', 'move-to', 'copy-to'].includes(x.action))
+      .map(x => [x.action, x.count, x.items.map(i => [i.id, i.revision])]).slice(0, 4),
+      [['cut', 1, [[3, 1]]], ['copy', 1, [[3, 1]]],
+        ['move-to', 1, [[3, 1]]], ['copy-to', 1, [[3, 1]]]],
+      'render-time disabled state must call the exact shared wide-Web eligibility contract')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
+  }, { props: {
+    getSelectionActionDisabledReason: (action, items, count) => {
+      checked.push({ action, items, count })
+      return null
+    },
+    onCut: items => called.push({ action: 'cut', items: items.map(i => ({ id: i.id, revision: i.revision, name: i.name, kind: i.kind })) }),
+    onCopy: items => called.push({ action: 'copy', items: items.map(i => ({ id: i.id, revision: i.revision, name: i.name, kind: i.kind })) }),
+    onMove: items => called.push({ action: 'move-to', items: items.map(i => ({ id: i.id, revision: i.revision, name: i.name, kind: i.kind })) }),
+    onCopyTo: items => called.push({ action: 'copy-to', items: items.map(i => ({ id: i.id, revision: i.revision, name: i.name, kind: i.kind })) }),
+  } })
+})
+
+test('F-iOS27-09A: held folder Copy/Move uses same exact Node ID/revision, never a truncated virtual selection', async () => {
+  const observed = []
+  await withView(async h => {
+    await openFios09Context(h, '照片文件夹')
+    const copy = find(h.view, 'data-mobile-files-context-selection-action', 'copy')
+    await act(async () => { copy.props.onClick() })
+    await openFios09Context(h, '照片文件夹')
+    const move = find(h.view, 'data-mobile-files-context-selection-action', 'move-to')
+    await act(async () => { move.props.onClick() })
+    assert.deepEqual(observed, [
+      ['copy', 2, 1, 'dir'], ['move-to', 2, 1, 'dir'],
+    ])
+  }, { props: {
+    onCopy: items => observed.push(['copy', items[0].id, items[0].revision, items[0].kind]),
+    onMove: items => observed.push(['move-to', items[0].id, items[0].revision, items[0].kind]),
+  } })
+})
+
+test('F-iOS27-09A: direct file actions honor and recheck shared forbidden/unknown metadata states', async () => {
+  const operations = []
+  const disabled = new Set(['cut', 'move-to', 'copy-to'])
+  const reasons = []
+  await withView(async h => {
+    await openFios09Context(h)
+    for (const action of disabled) {
+      const item = find(h.view, 'data-mobile-files-context-selection-action', action)
+      assert.equal(item.props.disabled, true, action + ' must be disabled by the shared Web validator')
+      assert.equal(item.props.title, '原始 Node/Revision 暂不可用')
+      assert.equal(item.props['aria-label'], textOf(item.props.children) + '：原始 Node/Revision 暂不可用',
+        'VoiceOver can announce the real shared disabled reason')
+      // Force an otherwise disabled callback to ensure the guard also blocks
+      // programmatic invocation while a native Portal state is stale.
+      await act(async () => { item.props.onClick() })
+    }
+    assert.deepEqual(operations, [], 'denied actions must never submit even when called directly')
+    assert.ok(reasons.some(x => x.action === 'cut' && x.count === 1 && x.id === 3))
+    assert.ok(reasons.some(x => x.action === 'move-to' && x.revision === 1))
+    const copy = find(h.view, 'data-mobile-files-context-selection-action', 'copy')
+    assert.equal(copy.props.disabled, false)
+    await act(async () => { copy.props.onClick() })
+    assert.deepEqual(operations, [['copy', 3, 1]], 'permitted Copy delegates to the Web controller')
+  }, { props: {
+    getSelectionActionDisabledReason: (action, items, count) => {
+      reasons.push({ action, count, id: items[0]?.id, revision: items[0]?.revision })
+      return disabled.has(action) ? '原始 Node/Revision 暂不可用' : null
+    },
+    onCut: items => operations.push(['cut', items[0].id, items[0].revision]),
+    onCopy: items => operations.push(['copy', items[0].id, items[0].revision]),
+    onMove: items => operations.push(['move-to', items[0].id, items[0].revision]),
+    onCopyTo: items => operations.push(['copy-to', items[0].id, items[0].revision]),
+  } })
+})
+
+test('F-iOS27-09A: Trash exposes no ordinary file Cut/Copy/Move/Copy-To menu entries', async () => {
+  let invoked = 0
+  await withView(async h => {
+    await openFios09Context(h)
+    assert.equal(h.view.root.findAll(n => n.props?.['data-mobile-files-context-selection-action']).length, 0)
+    assert.equal(invoked, 0)
+  }, { props: {
+    trashActive: true,
+    onCut: () => { invoked++ },
+    onCopy: () => { invoked++ },
+    onMove: () => { invoked++ },
+    onCopyTo: () => { invoked++ },
+  } })
+})
+
+test('F-iOS27-09A: shared context command replaces duplicate menu ids rather than showing two Copy actions', async () => {
+  await withView(async h => {
+    await openFios09Context(h)
+    assert.equal(h.view.root.findAll(n => n.props?.['data-mobile-files-context-selection-action'] === 'copy').length, 0,
+      'the shared Web context adapter already owns this command')
+    const copies = h.view.root.findAll(n => n.type === 'MenuItem' && textOf(n.props?.children) === '复制')
+    assert.equal(copies.length, 1)
+  }, { props: {
+    getItemMenuItems: () => [{
+      id: 'copy', label: '复制', onSelect() {}, disabled: false,
+    }],
+  } })
+})
+
+test('F-iOS27-09A: Wide/Web/Mobile share operation eligibility and no Mobile-specific REST transport', () => {
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const shared = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  assert.match(mobile, /getSelectionActionDisabledReason\?\.\(action, \[item\], 1\)/)
+  assert.match(web, /getSelectionActionDisabledReason=\{getSelectionActionDisabledReason\}/)
+  assert.match(shared, /selectionActionDisabledReason\('cut', selection, contextSelectionCount\)/)
+  assert.match(shared, /selectionActionDisabledReason\('copy', selection, contextSelectionCount\)/)
+  assert.match(mobile, /data-mobile-files-context-selection-action=\{option\.action\}/)
+  assert.ok(!mobile.includes('fetch('))
+  assert.equal(mobile.includes('new XDriveApi('), false)
+})

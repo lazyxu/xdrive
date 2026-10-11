@@ -190,3 +190,10 @@ F-PARITY-07C grouped List disclosure is **merged** via [PR #1264](https://github
 - **Merged:** [#1341](https://github.com/lazyxu/xdrive/pull/1341) at `d0960742`, green [CI #38070529849](https://github.com/lazyxu/xdrive/actions/runs/38070529849); the short-lived Files branch was removed. Explicit Select All Cancel now aborts its dedicated shared Directory/Search HTTP range without aborting independent viewport work.
 - **08E submitted / CI pending:** fill the narrower remaining first counted Search request gap in the same shared Workspace/Search and Web API for both wide and Mobile Web; generation fencing alone is not HTTP cancellation. Mounted regression verifies new query, Clear, workspace/account switch and unmount. No extra Mobile REST, virtualizer, server endpoint, fake scoped Search, or internal tabs.
 - **Still open:** physical iOS 27 1:1 measured screenshots/interaction and live 375/390/899/900 Web/Mobile authorization matrix, true 10k/100k browser/per-request CPU/RSS/HTTP abort timings and Desktop Agent IPC for first-page Search cancellation.
+
+
+## 2026-10-11 F-iOS27-09A · single-item context action parity
+
+- Prior Mobile Files F-iOS27-08D [#1341](https://github.com/lazyxu/xdrive/pull/1341) and 08E [#1345](https://github.com/lazyxu/xdrive/pull/1345) merged with green exact-head CI and short branches removed. No viable unfinished Files-specific PR/branch existed before 09A.
+- Source-backed discrepancy: Wide Web context supports Cut/Copy/Move To/Copy To with real shared operation eligibility. Mobile long-press context omitted Cut and Copy, while Move To/Copy To lacked their disabled reasons. 09A stages one Mobile *presentation-only* correction reusing the same Web controller and all Node ID/revision ACL checks.
+- Paired mounted tests cover file/folder/denied/Trash/duplicate menu cases. Actual 375/390/899/900px Web vs Mobile authenticated Safari/Chromium, 10k/100k CPU/RSS/request timing and iOS 27 physical pixel/VoiceOver remain pending. Do not mark 1:1 or complete functional parity solely from this stage.

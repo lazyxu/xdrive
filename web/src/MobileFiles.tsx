@@ -16,6 +16,7 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import ContentCopyOutlinedIcon from '@mui/icons-material/ContentCopyOutlined'
+import ContentCutRoundedIcon from '@mui/icons-material/ContentCutRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DriveFileMoveOutlinedIcon from '@mui/icons-material/DriveFileMoveOutlined'
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
@@ -1136,6 +1137,20 @@ export default function MobileFiles(props: Props) {
     setItemMenu(null)
     setRenaming(item)
   }
+  // A held file/folder's context commands operate on that precise Node,
+  // even if an unrelated multi-selection is retained elsewhere. Wide Web
+  // already uses this same Server-backed per-action eligibility contract.
+  const contextItemAction = (
+    action: 'cut' | 'copy' | 'move-to' | 'copy-to',
+    item: XDriveFileExplorerItem,
+  ) => {
+    if (props.trashActive || props.getSelectionActionDisabledReason?.(action, [item], 1)) return
+    setItemMenu(null)
+    if (action === 'cut') props.onCut([item])
+    if (action === 'copy') props.onCopy([item])
+    if (action === 'move-to') props.onMove([item])
+    if (action === 'copy-to') props.onCopyTo([item])
+  }
   // Reuse the exact Wide Web/Server operation eligibility contract. A large
   // logical selection does not make an over-limit mutation actionable.
   const selectionDisabledReason = (action: XDriveFileExplorerSelectionAction) => (
@@ -2071,10 +2086,27 @@ export default function MobileFiles(props: Props) {
           {itemMenu && !props.trashActive ? <MenuItem data-mobile-files-item-rename
             onClick={() => beginRename(itemMenu.item)}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onMove([itemMenu.item]); setItemMenu(null) }}
-            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><DriveFileMoveOutlinedIcon fontSize="small"/></ListItemIcon>移动到…</MenuItem> : null}
-          {itemMenu && !props.trashActive ? <MenuItem onClick={() => { props.onCopyTo([itemMenu.item]); setItemMenu(null) }}
-            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><ContentCopyOutlinedIcon fontSize="small"/></ListItemIcon>复制到…</MenuItem> : null}
+          {itemMenu && !props.trashActive ? ([
+            { action: 'cut', label: '剪切', icon: <ContentCutRoundedIcon fontSize="small"/> },
+            { action: 'copy', label: '复制', icon: <ContentCopyOutlinedIcon fontSize="small"/> },
+            { action: 'move-to', label: '移动到…', icon: <DriveFileMoveOutlinedIcon fontSize="small"/> },
+            { action: 'copy-to', label: '复制到…', icon: <ContentCopyOutlinedIcon fontSize="small"/> },
+          ] as const).filter(option => !menuFor(itemMenu.item).some(item => item.id === option.action))
+            .map(option => {
+              const item = itemMenu.item
+              const reason = props.getSelectionActionDisabledReason?.(option.action, [item], 1) ?? null
+              return (
+                <MenuItem key={option.action}
+                  data-mobile-files-context-selection-action={option.action}
+                  disabled={Boolean(reason)}
+                  title={reason || undefined}
+                  aria-label={reason ? `${option.label}：${reason}` : option.label}
+                  onClick={() => contextItemAction(option.action, item)}
+                  sx={{ minHeight: MIN_TOUCH }}>
+                  <ListItemIcon>{option.icon}</ListItemIcon>{option.label}
+                </MenuItem>
+              )
+            }) : null}
           {itemMenu && !props.trashActive && props.onCopyPaths ? (
             <MenuItem data-mobile-files-copy-path onClick={() => {
               props.onCopyPaths?.([itemMenu.item]); setItemMenu(null)
