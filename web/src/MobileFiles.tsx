@@ -2152,7 +2152,12 @@ export default function MobileFiles(props: Props) {
           anchorReference="anchorPosition"
           anchorPosition={itemMenu ? { top: itemMenu.y, left: itemMenu.x } : undefined}
           slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
-            maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)' } } }}>
+            maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)',
+            // MUI's sm+ MenuItem rule sets minHeight:auto and overrides
+            // per-row sx.minHeight at 899px. A parent-scoped descendant rule
+            // wins that breakpoint for both shared and Mobile-only actions.
+            '& .MuiMenuItem-root': { minHeight: MIN_TOUCH },
+          } } }}>
           {itemMenu ? menuFor(itemMenu.item).filter(item => !item.danger).flatMap(item => (
             item.dividerBefore
               ? [<Divider key={`${item.id}-separator`} sx={{ my: 0.5 }}/>, mobileContextAction(item)]
