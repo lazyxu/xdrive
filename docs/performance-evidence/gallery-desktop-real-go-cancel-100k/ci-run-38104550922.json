@@ -1,0 +1,753 @@
+{
+  "source": {
+    "repository": "lazyxu/xdrive",
+    "original_measured_work_sha": "a5551834a31d781eba80af4d10efa37cd8c5f020",
+    "run_id": 38104550922,
+    "job_id": 114367153697,
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38104550922",
+    "artifact_id": 11689470614,
+    "artifact_name": "gallery-desktop-real-go-cancel-100k",
+    "runtime": "GitHub native ubuntu-latest; Electron 44.4.5 app, Node22, Go1.25.x, PostgreSQL17-alpine, production Electron Main+Preload+Renderer and production Go Agent/Gin/CAS",
+    "command": "XD_TEST_DATABASE_URL=<PG17> XD_GALLERY_AGENT_BINARY=<actual-built-agent> xvfb-run -a node desktop/scripts/gallery-desktop-real-go-cancel-runner.cjs"
+  },
+  "status": "Accepted CURRENT-BEFORE n=3×3; unchanged production, AFTER=N/A, measured product speedup=N/A",
+  "full_original_machine_summary": {
+    "name": "gallery-real-electron-desktop-100k-viewport-window-go-context-cancel",
+    "status": "measured-CURRENT-BEFORE-only",
+    "workload": {
+      "logicalAssets": 100000,
+      "physicalMediaNodes": 115000,
+      "pairedLivePhotoAssets": 15000,
+      "realCasJpegsPerFixture": 12,
+      "client": "actual xDrive Electron Renderer, Preload, Main, Go Agent, signed Gin/PG17/CAS",
+      "modes": [
+        "virtual-scroll",
+        "app-switch",
+        "window-destroy"
+      ],
+      "independentPostgresAndAgentSamples": 3,
+      "firstFlushedBytesPerRequest": 256,
+      "testOnlyBodyHoldMs": 1500
+    },
+    "samples": [
+      {
+        "sample": 1,
+        "logicalAssets": 100000,
+        "physicalMediaNodes": 115000,
+        "pairedLiveAssets": 15000,
+        "actualFirstViewportDistinctJpegNodes": 12,
+        "seedMsExcluded": 31618.628,
+        "agentRssBeforeBytes": 15568896,
+        "agentRssAfterBytes": 21110784,
+        "agentRssDeltaBytes": 5541888,
+        "modes": [
+          {
+            "mode": "virtual-scroll",
+            "sample": 1,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "before": 0,
+              "after": 1188605,
+              "delta": 1188605,
+              "itemsBefore": 35,
+              "scrollExtent": 2377210
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 61.792,
+            "observedAfterMarkerMs": 160.6403989999999,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "app-switch",
+            "sample": 1,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "clicked": true,
+              "wasGallery": true,
+              "label": "主页",
+              "galleryStillMounted": false
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 32.71,
+            "observedAfterMarkerMs": 162.19581100000005,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "window-destroy",
+            "sample": 1,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": true,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "destroyed": true
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 6.674,
+            "observedAfterMarkerMs": 160.02761600000008,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          }
+        ]
+      },
+      {
+        "sample": 2,
+        "logicalAssets": 100000,
+        "physicalMediaNodes": 115000,
+        "pairedLiveAssets": 15000,
+        "actualFirstViewportDistinctJpegNodes": 12,
+        "seedMsExcluded": 29554.755,
+        "agentRssBeforeBytes": 17694720,
+        "agentRssAfterBytes": 23212032,
+        "agentRssDeltaBytes": 5517312,
+        "modes": [
+          {
+            "mode": "virtual-scroll",
+            "sample": 2,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "before": 0,
+              "after": 1188633,
+              "delta": 1188633,
+              "itemsBefore": 35,
+              "scrollExtent": 2377266
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 41.553,
+            "observedAfterMarkerMs": 160.91871300000003,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "app-switch",
+            "sample": 2,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "clicked": true,
+              "wasGallery": true,
+              "label": "主页",
+              "galleryStillMounted": false
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 25.018,
+            "observedAfterMarkerMs": 160.87979300000006,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "window-destroy",
+            "sample": 2,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": true,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "destroyed": true
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 6.325,
+            "observedAfterMarkerMs": 161.61386700000003,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          }
+        ]
+      },
+      {
+        "sample": 3,
+        "logicalAssets": 100000,
+        "physicalMediaNodes": 115000,
+        "pairedLiveAssets": 15000,
+        "actualFirstViewportDistinctJpegNodes": 12,
+        "seedMsExcluded": 27494.142,
+        "agentRssBeforeBytes": 17666048,
+        "agentRssAfterBytes": 19517440,
+        "agentRssDeltaBytes": 1851392,
+        "modes": [
+          {
+            "mode": "virtual-scroll",
+            "sample": 3,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "before": 0,
+              "after": 1188605,
+              "delta": 1188605,
+              "itemsBefore": 35,
+              "scrollExtent": 2377210
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 40.628,
+            "observedAfterMarkerMs": 161.654632,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "app-switch",
+            "sample": 3,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": false,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "clicked": true,
+              "wasGallery": true,
+              "label": "主页",
+              "galleryStillMounted": false
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 29.853,
+            "observedAfterMarkerMs": 160.80656499999986,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          },
+          {
+            "mode": "window-destroy",
+            "sample": 3,
+            "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+            "actualWindowDestroyed": true,
+            "actualGalleryNavigation": true,
+            "actualMountedItems": 35,
+            "action": {
+              "destroyed": true
+            },
+            "expectedStartedRequests": 6,
+            "startedRequests": 6,
+            "firstBytesTransferred": 1536,
+            "contextDone": 6,
+            "returnedCanceledHandlers": 6,
+            "activeOldHandlers": 0,
+            "extraStaleHttpBytes": 0,
+            "worstGoNotificationMs": 7.259,
+            "observedAfterMarkerMs": 159.924442,
+            "passed": true,
+            "recovery": {
+              "offset": 50000,
+              "count": 100000,
+              "returned": 200
+            }
+          }
+        ]
+      }
+    ],
+    "modeResults": 9,
+    "totalStarted": 54,
+    "totalContexts": 54,
+    "totalCanceled": 54,
+    "totalWastedOldBytes": 0,
+    "worstGoNotificationMs": 61.792,
+    "maxAgentRssDeltaBytes": 5541888,
+    "budgets": {
+      "n": 3,
+      "modeCount": 3,
+      "startedPerMode": 6,
+      "contextDonePerMode": 6,
+      "goNotificationDeadlineMs": 160,
+      "activeHandlersAfterDeadline": 0,
+      "staleBytesAfterDeadline": 0,
+      "maxAgentRssGrowthMiB": 128,
+      "actualScrollDeltaPxMin": 10000,
+      "independentFreshPageCount": 100000,
+      "independentFreshPageReturned": 200
+    },
+    "passed": true,
+    "scopeLimits": "Only first real 12 CAS JPEGs in 100k metadata, not 100k distinct physical media or HEVC/RAW/LIVP decode, not hardware Windows or WAN; no durable Task Center task cancellation tested."
+  },
+  "independent_original_samples": [
+    {
+      "sample": 1,
+      "logicalAssets": 100000,
+      "physicalMediaNodes": 115000,
+      "pairedLiveAssets": 15000,
+      "actualFirstViewportDistinctJpegNodes": 12,
+      "seedMsExcluded": 31618.628,
+      "agentRssBeforeBytes": 15568896,
+      "agentRssAfterBytes": 21110784,
+      "agentRssDeltaBytes": 5541888,
+      "modes": [
+        {
+          "mode": "virtual-scroll",
+          "sample": 1,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "before": 0,
+            "after": 1188605,
+            "delta": 1188605,
+            "itemsBefore": 35,
+            "scrollExtent": 2377210
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 61.792,
+          "observedAfterMarkerMs": 160.6403989999999,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "app-switch",
+          "sample": 1,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "clicked": true,
+            "wasGallery": true,
+            "label": "主页",
+            "galleryStillMounted": false
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 32.71,
+          "observedAfterMarkerMs": 162.19581100000005,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "window-destroy",
+          "sample": 1,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": true,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "destroyed": true
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 6.674,
+          "observedAfterMarkerMs": 160.02761600000008,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        }
+      ]
+    },
+    {
+      "sample": 2,
+      "logicalAssets": 100000,
+      "physicalMediaNodes": 115000,
+      "pairedLiveAssets": 15000,
+      "actualFirstViewportDistinctJpegNodes": 12,
+      "seedMsExcluded": 29554.755,
+      "agentRssBeforeBytes": 17694720,
+      "agentRssAfterBytes": 23212032,
+      "agentRssDeltaBytes": 5517312,
+      "modes": [
+        {
+          "mode": "virtual-scroll",
+          "sample": 2,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "before": 0,
+            "after": 1188633,
+            "delta": 1188633,
+            "itemsBefore": 35,
+            "scrollExtent": 2377266
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 41.553,
+          "observedAfterMarkerMs": 160.91871300000003,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "app-switch",
+          "sample": 2,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "clicked": true,
+            "wasGallery": true,
+            "label": "主页",
+            "galleryStillMounted": false
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 25.018,
+          "observedAfterMarkerMs": 160.87979300000006,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "window-destroy",
+          "sample": 2,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": true,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "destroyed": true
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 6.325,
+          "observedAfterMarkerMs": 161.61386700000003,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        }
+      ]
+    },
+    {
+      "sample": 3,
+      "logicalAssets": 100000,
+      "physicalMediaNodes": 115000,
+      "pairedLiveAssets": 15000,
+      "actualFirstViewportDistinctJpegNodes": 12,
+      "seedMsExcluded": 27494.142,
+      "agentRssBeforeBytes": 17666048,
+      "agentRssAfterBytes": 19517440,
+      "agentRssDeltaBytes": 1851392,
+      "modes": [
+        {
+          "mode": "virtual-scroll",
+          "sample": 3,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "before": 0,
+            "after": 1188605,
+            "delta": 1188605,
+            "itemsBefore": 35,
+            "scrollExtent": 2377210
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 40.628,
+          "observedAfterMarkerMs": 161.654632,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "app-switch",
+          "sample": 3,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": false,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "clicked": true,
+            "wasGallery": true,
+            "label": "主页",
+            "galleryStillMounted": false
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 29.853,
+          "observedAfterMarkerMs": 160.80656499999986,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        },
+        {
+          "mode": "window-destroy",
+          "sample": 3,
+          "scope": "production Electron Renderer, real Preload/Main, real Go Agent, real signed Gin/CAS JPEG",
+          "actualWindowDestroyed": true,
+          "actualGalleryNavigation": true,
+          "actualMountedItems": 35,
+          "action": {
+            "destroyed": true
+          },
+          "expectedStartedRequests": 6,
+          "startedRequests": 6,
+          "firstBytesTransferred": 1536,
+          "contextDone": 6,
+          "returnedCanceledHandlers": 6,
+          "activeOldHandlers": 0,
+          "extraStaleHttpBytes": 0,
+          "worstGoNotificationMs": 7.259,
+          "observedAfterMarkerMs": 159.924442,
+          "passed": true,
+          "recovery": {
+            "offset": 50000,
+            "count": 100000,
+            "returned": 200
+          }
+        }
+      ]
+    }
+  ],
+  "per_mode": {
+    "virtual-scroll": [
+      {
+        "sample": 1,
+        "go_notify_ms": 61.792,
+        "observed_after_marker_ms": 160.6403989999999,
+        "scroll_delta_px": 1188605,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 2,
+        "go_notify_ms": 41.553,
+        "observed_after_marker_ms": 160.91871300000003,
+        "scroll_delta_px": 1188633,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 3,
+        "go_notify_ms": 40.628,
+        "observed_after_marker_ms": 161.654632,
+        "scroll_delta_px": 1188605,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      }
+    ],
+    "app-switch": [
+      {
+        "sample": 1,
+        "go_notify_ms": 32.71,
+        "observed_after_marker_ms": 162.19581100000005,
+        "unmounted": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 2,
+        "go_notify_ms": 25.018,
+        "observed_after_marker_ms": 160.87979300000006,
+        "unmounted": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 3,
+        "go_notify_ms": 29.853,
+        "observed_after_marker_ms": 160.80656499999986,
+        "unmounted": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      }
+    ],
+    "window-destroy": [
+      {
+        "sample": 1,
+        "go_notify_ms": 6.674,
+        "observed_after_marker_ms": 160.02761600000008,
+        "window_destroyed": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 2,
+        "go_notify_ms": 6.325,
+        "observed_after_marker_ms": 161.61386700000003,
+        "window_destroyed": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      },
+      {
+        "sample": 3,
+        "go_notify_ms": 7.259,
+        "observed_after_marker_ms": 159.924442,
+        "window_destroyed": true,
+        "canceled": 6,
+        "context_done": 6,
+        "active_old": 0,
+        "wasted_bytes": 0
+      }
+    ]
+  },
+  "notes": "The 9 actual action samples are independently seeded n=3 PG17/Agent fixtures; each one has a new Electron Renderer/Preload/Main process. Only 12 physical first-viewport original JPEG bodies, with 256B flushed/stream and test-only 1500ms hold. The Go Context notification ms measure from a preceding Server marker, not OS input-to-server latency. VmRSS sampled start/end, not peak. Original GitHub Actions artifact retains source-exact full Gin/Electron logs; those may include sensitive transport details and are not copied into the repository. The original runner/source is immutable; this separate evidence-amended commit must itself get new targeted and full PR CI before merge.",
+  "invalid_prior_attempt": {
+    "run_id": 38104121434,
+    "work_sha": "926b0ca66fd7b8b7f50294fa391a2413aed4df1f",
+    "reason": "Test-only navigator used obsolete label 概览 vs current 主页; one virtual-scroll partial passed, full workload invalid",
+    "archived_path": "docs/performance-evidence/gallery-desktop-real-go-cancel-100k/invalid-ci-38104121434.json"
+  },
+  "limitations": "No full 100k distinct media bytes/codec decode, no 4K/HEVC/RAW/Live motion renderer load, no WAN or user device Windows/macOS, no CPU peak/detached derivative cancellation, no 1/4GiB production Server/CAS upload/download, sync/physical delete or durable Task Center cancel."
+}
