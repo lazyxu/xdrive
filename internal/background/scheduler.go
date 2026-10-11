@@ -1338,6 +1338,12 @@ func (s *Scheduler) execute(ctx context.Context, cancel context.CancelCauseFunc,
 		}
 	}
 
+	// A slow Lease acquisition can finish after Cancel has already been
+	// accepted. Release any acquired Lease, but never start cancelled work.
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+
 	heartbeatDone := make(chan struct{})
 	if lease.Heartbeat != nil && entry.task.HeartbeatInterval > 0 {
 		go func() {
