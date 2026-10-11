@@ -80,3 +80,10 @@ export interface XDriveLocalBoundBackupSettings {
   target_node_id?: number
   target_path?: string
 }
+
+
+// Owning-Agent only. Never expose local Root identity or path.
+export interface XDriveLocalBoundBackupRemoval {
+  source_id: number
+  local_grant_removed: boolean
+}

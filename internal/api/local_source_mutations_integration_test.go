@@ -16,7 +16,11 @@ import (
 
 func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(
+		&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{},
+		&meta.SourceRunFailure{}, &meta.SourceCollection{},
+		&meta.SourceCredential{}, &meta.SourceConnectorConfig{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
@@ -172,6 +176,53 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 	// The owning Desktop can remove an already-bound Source directly.
 	requestWithHeaders(t, router, http.MethodDelete, sourceURL, ownerJWT, nil, http.StatusNoContent, fresh)
 
+	// Removing a pristine local Source must not delete its cloud directory.
+	var retainedTarget int64
+	if err := db.Model(&meta.Node{}).Where("id = ?", targetID).Count(&retainedTarget).Error; err != nil || retainedTarget != 1 {
+		t.Fatalf("removal must retain cloud target: count=%d err=%v", retainedTarget, err)
+	}
+
+	// Source IDs with any durable activity or pending active status must
+	// remain intact; hard deletion otherwise cascades away history.
+	historyRunSource := makeBound("A historically executed root")
+	historyItemSource := makeBound("A historical item root")
+	activeSource := makeBound("A active root")
+	if err := db.Create(&meta.SyncRun{
+		ID: uuid.NewString(), SourceID: historyRunSource.ID, RunNumber: 1,
+		Status: meta.SyncRunStatusCompleted, Mode: meta.SourceRunModeSync,
+		Trigger: meta.SyncRunTriggerManual, StartedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.SourceItem{
+		SourceID: historyItemSource.ID, ExternalID: "file:stable",
+		Kind: meta.SourceItemKindFile, Path: "preserve.jpg",
+		State: meta.SourceItemStatePending, LastSeenAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.Source{}).Where("id = ?", activeSource.ID).
+		Update("status", meta.SourceStatusActive).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, blocked := range []meta.Source{historyRunSource, historyItemSource, activeSource} {
+		url := fmt.Sprintf("/api/v1/sources/%d", blocked.ID)
+		requestWithHeaders(t, router, http.MethodDelete, url, ownerJWT, nil, http.StatusConflict, own)
+		var retainedSource meta.Source
+		if err := db.Where("id = ?", blocked.ID).Take(&retainedSource).Error; err != nil {
+			t.Fatalf("history guard deleted Source %d: %v", blocked.ID, err)
+		}
+	}
+	var preservedRuns, preservedItems int64
+	if err := db.Model(&meta.SyncRun{}).Where("source_id = ?", historyRunSource.ID).
+		Count(&preservedRuns).Error; err != nil || preservedRuns != 1 {
+		t.Fatalf("run lost during rejected removal: count=%d err=%v", preservedRuns, err)
+	}
+	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", historyItemSource.ID).
+		Count(&preservedItems).Error; err != nil || preservedItems != 1 {
+		t.Fatalf("item lost during rejected removal: count=%d err=%v", preservedItems, err)
+	}
+
 	spareURL := fmt.Sprintf("/api/v1/sources/%d", sourceB.ID)
 	requestWithHeaders(t, router, http.MethodDelete, spareURL+"/local-binding", ownerJWT, nil, http.StatusNoContent, own)
 	request(t, router, http.MethodGet, spareURL+"/local-binding", ownerJWT, nil, http.StatusNotFound)
@@ -194,7 +245,11 @@ func TestBoundLocalSourceWritesRequireOwningDeviceAndRoot(t *testing.T) {
 
 func TestNonLocalSourceWritesPreserveOwnerJWTCompatibility(t *testing.T) {
 	db, server, owner, _, root := setupFilePropertiesTestDB(t)
-	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{}); err != nil {
+	if err := db.AutoMigrate(
+		&meta.ClientDevice{}, &meta.LocalSourceBinding{}, &meta.SyncRun{},
+		&meta.SourceRunFailure{}, &meta.SourceCollection{},
+		&meta.SourceCredential{}, &meta.SourceConnectorConfig{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	gin.SetMode(gin.TestMode)
