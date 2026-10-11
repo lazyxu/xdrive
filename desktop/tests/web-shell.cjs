@@ -27,8 +27,10 @@ const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 
 test('wide Web keeps compact chrome while mobile owns the full-screen title and global controls', () => {
-  const backgroundStart = webApp.indexOf('data-xdrive-workspace-background')
-  assert.notEqual(backgroundStart, -1, 'missing authenticated workspace background')
+  // Anchor on the actual workspace JSX, not the first source-text mention:
+  // Viewer return-scroll logic also queries this selector before the render.
+  const backgroundStart = webApp.indexOf('<Box' + String.fromCharCode(10) + '        data-xdrive-workspace-background')
+  assert.notEqual(backgroundStart, -1, 'missing authenticated workspace background element')
   const appStart = webApp.indexOf('<AppBar\n          position="static"\n          elevation={0}\n          color="inherit"\n          className="web-appbar"', backgroundStart)
   const appEnd = webApp.indexOf('</AppBar>', appStart)
   assert.notEqual(appStart, -1, 'missing Web AppBar')

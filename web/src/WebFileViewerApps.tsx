@@ -64,6 +64,7 @@ function WebViewerFrame({
   subtitle,
   positionLabel,
   immersive = false,
+  photosViewer = false,
   keepChromeVisible = false,
   quickLook = false,
   canPrevious = false,
@@ -82,6 +83,9 @@ function WebViewerFrame({
   subtitle?: ReactNode
   positionLabel?: ReactNode
   immersive?: boolean
+  // Media Viewer launched from Gallery/Files is presentation-only; it keeps
+  // the same Web browse-context, REST source and shared preview engine.
+  photosViewer?: boolean
   keepChromeVisible?: boolean
   quickLook?: boolean
   canPrevious?: boolean
@@ -96,7 +100,12 @@ function WebViewerFrame({
   onClose: () => void
   children: ReactNode
 }) {
-  const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  // The routed Web Media Viewer must not downgrade to desktop chrome when a
+  // mobile-width device has a paired fine pointer. Keep Files Quick Look and
+  // the standalone Text/PDF/Audio apps on their existing pointer contract.
+  const narrowViewport = useMediaQuery('(max-width:899.95px)')
+  const coarseMobilePointer = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  const compactTouch = coarseMobilePointer || (photosViewer && immersive && narrowViewport)
   const compactImmersive = compactTouch && immersive
   const hasNavigation = canPrevious || canNext
   const rootRef = useRef<HTMLDivElement>(null)
@@ -261,7 +270,7 @@ function WebViewerFrame({
       ref={rootRef}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
-      onMouseMove={compactTouch ? undefined : showChrome}
+      onMouseMove={coarseMobilePointer ? undefined : showChrome}
       onPointerDownCapture={handleTouchPointerDown}
       onPointerMoveCapture={handleTouchPointerMove}
       onPointerUpCapture={handleTouchPointerRelease}
@@ -770,6 +779,7 @@ function WebMediaViewerApp({
         subtitle={mediaItem && mediaItem.node.id === viewer.node?.id ? xDriveMediaCaptureTimeLabel(mediaItem.metadata.captured_at) : undefined}
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
+        photosViewer
         keepChromeVisible={infoOpen}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}

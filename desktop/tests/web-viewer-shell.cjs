@@ -8,6 +8,7 @@ const { act, create } = require('react-test-renderer')
 
 const repo = path.resolve(__dirname, '../..')
 let compactTouch = false
+let viewportWidth = 390
 const timers = new Map()
 let timerID = 0
 const storage = new Map()
@@ -29,7 +30,13 @@ const mui = {
   Box: host('div'), Stack: host('div'), Typography: host('span'),
   Dialog: host('dialog'), DialogContent: host('div'),
   IconButton: host('button'), Tooltip: ({ children }) => children,
-  useMediaQuery: () => compactTouch,
+  useMediaQuery: (query) => {
+    if (query === '(max-width:899.95px)') return viewportWidth < 900
+    if (query === '(max-width:899.95px) and (pointer: coarse)') {
+      return compactTouch && viewportWidth < 900
+    }
+    return compactTouch
+  },
 }
 const sharedUI = {
   XDriveFilePreviewSurface: (props) => React.createElement('preview-content', props),
@@ -190,3 +197,117 @@ for (const [app, name] of [['text-viewer', 'source.cpp'], ['pdf-viewer', 'paper.
     }
   })
 }
+
+
+test('P1-2c Web media-viewer uses the same narrow Photos chrome on coarse and fine pointers', async () => {
+  try {
+    for (const width of [390, 899, 900]) {
+      for (const coarse of [false, true]) {
+        compactTouch = coarse
+        viewportWidth = width
+        const renderer = await mount('media-viewer', 'photo.jpg')
+        try {
+          const frame = renderer.root.findAll(element =>
+            element.type === 'div' && element.props['data-xdrive-web-viewer'] !== undefined)[0]
+          assert.ok(frame, 'actual routed Web media Viewer must be mounted')
+          const header = frame.children[0]
+          const rail = frame.findAll(element =>
+            element.type === 'div' && element.props['data-xdrive-web-viewer-mobile-actions'] !== undefined)
+          const mobile = width < 900
+          assert.equal(frame.props.sx.height, mobile ? '100dvh' : undefined,
+            width + 'px (' + (coarse ? 'coarse' : 'fine') + ') must preserve full viewer height')
+          assert.equal(header.props.sx.position, mobile ? 'absolute' : 'relative')
+          assert.equal(rail.length, mobile ? 1 : 0, 'all narrow pointer types share one bottom action rail')
+          const inspector = buttons(renderer, '查看属性')
+          assert.equal(inspector.length, 1, 'real shared media inspector action remains available')
+          if (mobile) {
+            assert.equal(rail[0].props.sx.position, 'absolute')
+            assert.equal(rail[0].props.sx.pb, 'env(safe-area-inset-bottom)')
+            assert.equal(rail[0].props.sx['& .MuiIconButton-root'].width, 44)
+            assert.ok(rail[0].findAll(element =>
+              element.type === 'button' && element.props['aria-label'] === '查看属性').length,
+              'same real media action moved to bottom, not duplicated or replaced')
+          } else {
+            assert.equal(header.findAll(element =>
+              element.type === 'button' && element.props['aria-label'] === '查看属性').length, 1)
+          }
+          assert.equal(typeof frame.props.onMouseMove,
+            (!coarse || !mobile) ? 'function' : 'undefined',
+            'paired fine-pointer mouse must be able to recall auto-hidden Viewer controls')
+          assert.equal(frame.findAll(element => element.type === 'media-content').length, 1,
+            'one shared MediaViewerContent remains the media renderer')
+        } finally {
+          await act(async () => renderer.unmount())
+        }
+      }
+    }
+  } finally {
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2c fine-pointer mobile non-photo Viewer keeps its original standalone chrome', async () => {
+  compactTouch = false
+  viewportWidth = 390
+  try {
+    for (const [app, filename] of [
+      ['preview', 'photo.jpg'], ['text-viewer', 'code.ts'],
+      ['pdf-viewer', 'book.pdf'], ['audio-player', 'recording.mp3'],
+    ]) {
+      const renderer = await mount(app, filename)
+      try {
+        const frame = renderer.root.findAll(element =>
+          element.type === 'div' && element.props['data-xdrive-web-viewer'] !== undefined)[0]
+        assert.equal(frame.children[0].props.sx.position, 'relative')
+        assert.equal(frame.props.sx.height, undefined)
+        assert.equal(frame.findAll(element =>
+          element.props['data-xdrive-web-viewer-mobile-actions'] !== undefined).length, 0)
+        assert.equal(buttons(renderer, '返回').length, 1)
+      } finally {
+        await act(async () => renderer.unmount())
+      }
+    }
+  } finally {
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2c real routed Viewer and Gallery use one Web media and virtual query contract', () => {
+  const source = fs.readFileSync(path.join(repo, 'web/src/WebFileViewerApps.tsx'), 'utf8')
+  const app = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
+  const gallery = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
+  const adapter = fs.readFileSync(path.join(repo, 'web/src/mediaGalleryAdapter.ts'), 'utf8')
+  assert.match(app, /<XDriveMediaGalleryPage[\s\S]*?onOpenViewer=\{\(item, context\) => \{/)
+  assert.match(app, /app: 'media-viewer'/)
+  assert.match(source, /<WebViewerFrame[\s\S]*?immersive\s+photosViewer/)
+  assert.match(source, /<XDriveMediaViewerContent/)
+  assert.match(source, /onSwipePrevious=\{viewer.previous \? viewer.goPrevious : undefined\}/)
+  assert.match(gallery, /useXDriveVirtualCollection(?:<[^>]+>)?\(/)
+  assert.match(gallery, /<MediaVirtualTileGrid/)
+  assert.match(adapter, /listItemRange:\s*\(limit, offset, query, signal\)\s*=>\s*api\.mediaItemRange/)
+  assert.doesNotMatch(source, /new XMLHttpRequest\(/)
+})
+
+test('P1-2c Gallery Viewer return scroll snapshot belongs to same Web route, host and viewport', () => {
+  const app = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
+  assert.match(app, /galleryViewerScrollRef = useRef/)
+  assert.match(app, /useLayoutEffect\(\(\) => \{/)
+  assert.match(app, /const wasViewerActive = previousViewerActiveRef\.current/)
+  assert.match(app, /if \(viewerActive \|\| !wasViewerActive\) return/)
+  assert.match(app, /window\.location\.hash !== saved\.callerHash/)
+  assert.match(app, /Math\.abs\(window\.innerWidth - saved\.viewportWidth\) > 1/)
+  assert.match(app, /host !== saved\.host \|\| !saved\.host\.isConnected/)
+  assert.match(app, /saved\.host\.scrollTop = saved\.offset/)
+  assert.match(app, /window\.requestAnimationFrame\(restore\)/)
+  assert.match(app, /galleryViewerScrollRef\.current = host \? \{/)
+  assert.match(app, /offset: host\.scrollTop/)
+  assert.match(app, /<WebFileViewerApps/)
+  assert.match(app, /onClose=\{\(node\) => closeViewer\(/)
+  const openStart = app.indexOf('onOpenViewer={(item, context) => {')
+  const openEnd = app.indexOf('const contextID = xDriveCreateWebAppBrowseSession', openStart)
+  assert.ok(openStart >= 0 && openEnd > openStart)
+  assert.doesNotMatch(app.slice(openStart, openEnd), /api\.mediaItem|fetch\(/,
+    'capturing an existing Gallery scroll position must not request media or touch Server state')
+})

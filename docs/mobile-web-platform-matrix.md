@@ -215,3 +215,15 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 
 - **共享 React 回归：** `desktop/tests/mobile-gallery-viewer-pointer-parity.cjs` 在 390/899/900 CSS px、fine/coarse 下验证只对图库使用 `mobileEdgeToEdge`、Viewer 浮动返回/日期/Filmstrip/操作栏在显示及自动隐藏时均不占用照片画布、同一回调能执行、`100dvh`/safe-area/44px 目标、Quick Look 和宽屏结构不回归。
 - **真实设备待测：** iOS 27 Safari 标签和主屏安装模式，390×844、430×932、844×390 等视口与视频/Live Photo/RAW 混合内容；真实「照片」对应内容截屏及控制显示/隐藏录像，验证遮罩透明度、触控与 VoiceOver、返回原滚动锚点；再跑 899/900px、键鼠、网络失败、10k/100k 虚拟页和取消。CI 源码通过不等于像素级 1:1 或真实设备完成。
+
+
+## P1-2c · Web/Mobile Web 独立 Viewer 的真实 Chromium 验收（2026-10-11）
+
+- **真实 Web 构建浏览器：** 原生 Chromium 细/粗指针两种独立 BrowserContext，390/899/900/390 CSS px，进入真实 Gallery → media-viewer App。验证浏览会话与同一授权 Server REST、图片解码、浮层/底部操作、44px/安全区、自动隐藏及细指针鼠标/触控唤醒、前后 Node ID、原 Gallery 滚动 DOM、无意外 HTTP/console/pageerror；留存构建 SHA、脚本 SHA、请求审计与屏幕截图。
+- **仍待 iOS 27 真实验收：** Safari 标签/主屏安装、VoiceOver 与设备配对截图/动画、真实 RAW/Live/视频、Filmstrip、上传/下载/分享/删除完整任务收据、10k/100k 物理媒体 FPS/内存与 Go ctx 取消。Chromium 测量不等于真机 1:1。
+
+
+**P1-2c 首轮 Browser 原始红灯与检查校准：** artifact 11691614725 保留 101px 差异及虚拟旧 Tile DOM 回收事实。重测必须把用户真实点击后的滚动作为 Viewer-entry 基线，返回后根据合法数据源里的逻辑 Index + Node 名称确认同一资产重新出现在**新的**虚拟 Tile，不以旧 DOM 引用为权威；记录 pre-click 和 post-click 两种 offset，且严格验证 post-click 返回差异（≤2px）。如果差异仍然存在，视为真实锚点问题，不得通过扩大像素容差掩盖。
+
+
+**P1-2c 第二次真实首红：** 前一轮逻辑照片与同一 Gallery DOM 均恢复，但滚动 589→721，偏移 132px（fine/coarse 相同，artifact 11692228248）。新增 Web App 仅在返回原 Gallery Hash、原宿主、原视口宽度时恢复点击后的精确 ScrollTop；Chromium 验收继续要求 ≤2px。最终宽度不同的响应式返回仍需以 Node 身份与设备截图独立验收，不能用原宽度像素假设取代。
