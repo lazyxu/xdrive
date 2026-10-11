@@ -161,6 +161,15 @@ func TestAdminGeoNamesRadiusPersistedHotApplyAndPendingReplica(t *testing.T) {
 		next.CurrentVersion == first.Version() || next.RequiresRestart {
 		t.Fatalf("persisted settings did not really apply: HTTP %d %+v", saved.Code, next)
 	}
+	assertGeoNamesActivation := func(target *Server, want string) {
+		t.Helper()
+		rows := []serviceDependency{{ID: "geonames", Status: "ready"}}
+		target.setServiceLifecycleStates(context.Background(), rows, baiduMapEffectiveConfig{}, nil, false, false, false)
+		if rows[0].ActivationState != want {
+			t.Fatalf("GeoNames overview activation = %q, want %q", rows[0].ActivationState, want)
+		}
+	}
+	assertGeoNamesActivation(server, "verified")
 	if oldSnapshot.Version() != first.Version() {
 		t.Fatal("in-flight resolver snapshot was changed")
 	}
@@ -184,6 +193,7 @@ func TestAdminGeoNamesRadiusPersistedHotApplyAndPendingReplica(t *testing.T) {
 	// Simulate another Server replica with an old local resolver and same DB.
 	second := &Server{DB: db, GeoNamesRuntime: photointelligence.NewReloadablePlaceResolver(first),
 		GeoNamesDataDir: dir, GeoNamesMaxDistanceKM: 5}
+	assertGeoNamesActivation(second, "pending")
 	viewRecorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(viewRecorder)
 	ctx.Request = httptest.NewRequest(http.MethodGet, endpoint, nil)

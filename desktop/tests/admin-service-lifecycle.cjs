@@ -44,3 +44,17 @@ test('Caddy HTTPS and local TLS observations retain explicit false via Go Client
   assert.ok(shared.includes('https_configured?: boolean'))
   assert.equal(shared.includes("'connectors'"), false)
 })
+
+
+test('PostgreSQL and GeoNames overview activation needs matching saved revision and local effect', () => {
+  const lifecycle = read('internal', 'api', 'admin_service_lifecycle.go')
+  const overview = read('internal', 'api', 'admin_service_dependencies.go')
+  const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
+  assert.ok(overview.includes('s.setServiceLifecycleStates(ctx, services,'))
+  assert.ok(lifecycle.includes('readPostgresPoolDesired(ctx, s.DB)'))
+  assert.ok(lifecycle.includes('geoNamesDesiredSettings(ctx, s.DB,'))
+  assert.ok(lifecycle.includes('s.postgresPoolApplied.Load()'))
+  assert.ok(lifecycle.includes('s.GeoNamesAppliedRevision.Load()'))
+  assert.ok(lifecycle.includes('s.currentGeoNamesDatasetFingerprint()'))
+  assert.ok(page.includes('当前实例目标修订已核验（不代表全集群）'))
+})

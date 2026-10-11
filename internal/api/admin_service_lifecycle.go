@@ -1,11 +1,15 @@
 package api
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // setServiceLifecycleStates adds four independently supported observations.
 // "Observed" needs a trusted runtime probe, not saved configuration.
 // "Verified" requires exact revision-bound effect proof, never just health.
 func (s *Server) setServiceLifecycleStates(
+	ctx context.Context,
 	services []serviceDependency,
 	baidu baiduMapEffectiveConfig,
 	baiduErr error,
@@ -36,7 +40,18 @@ func (s *Server) setServiceLifecycleStates(
 					item.HealthState = "failed" // Bounded PingContext.
 				}
 			}
-			// Postgres pool revision is checked in its detailed control, not here.
+			// A live database Ping and an applied database/sql pool revision
+			// are independent proofs. Only the current Server's exact saved
+			// pool revision and actual max-open limit can be marked verified.
+			if s.DB != nil {
+				if desired, err := readPostgresPoolDesired(ctx, s.DB); err == nil {
+					if sqlDB, err := s.DB.DB(); err == nil {
+						item.ActivationState = postgresPoolLifecycleActivationState(
+							desired, s.postgresPoolApplied.Load(), sqlDB.Stats().MaxOpenConnections,
+						)
+					}
+				}
+			}
 		case "storage":
 			item.ActivationState = "deployment-only"
 			if s.Store == nil {
@@ -98,7 +113,24 @@ func (s *Server) setServiceLifecycleStates(
 			} else if s.GeoNamesDataDir == "" {
 				item.ConfigurationState = "unconfigured"
 			}
-			// Loaded index does not prove current saved radius/revision applied.
+			// A loaded (possibly previous) GeoNames resolver can remain healthy
+			// while the administrator's desired revision has not taken effect.
+			// Match the local immutable index, radius, content fingerprint and
+			// applied revision; never infer deployment-wide activation.
+			if s.DB != nil {
+				if desired, err := geoNamesDesiredSettings(ctx, s.DB, s.GeoNamesMaxDistanceKM); err == nil {
+					loaded := item.Status == "ready" && s.GeoNamesRuntime != nil &&
+						strings.TrimSpace(s.GeoNamesDataDir) != "" && s.GeoNamesRuntime.Version() != ""
+					radius := float64(0)
+					if loaded {
+						radius = s.GeoNamesRuntime.MaxDistanceKM()
+					}
+					item.ActivationState = geoNamesLifecycleActivationState(
+						desired, loaded, radius, s.GeoNamesAppliedRevision.Load(),
+						s.currentGeoNamesDatasetFingerprint(),
+					)
+				}
+			}
 		case "baidu-map":
 			item.InstallationState = "external"
 			item.HealthState = "not-checked" // Online call is explicit and quota-bound.
@@ -150,4 +182,38 @@ func modelLifecycle(item *serviceDependency) {
 	} else if item.ConfigurationState == "configured" && item.Status == "unavailable" {
 		item.HealthState = "failed"
 	}
+}
+
+// postgresPoolLifecycleActivationState deliberately does not treat unmanaged
+// driver defaults as an administrator revision, even if its numbers match.
+func postgresPoolLifecycleActivationState(
+	desired postgresPoolDesired, applied *postgresPoolRuntime, observedMaxOpen int,
+) string {
+	if desired.Revision == 0 {
+		return "unknown"
+	}
+	if applied != nil && applied.Revision == desired.Revision &&
+		applied.Values == desired.Values &&
+		observedMaxOpen == desired.Values.MaxOpenConnections {
+		return "verified"
+	}
+	return "pending"
+}
+
+// geoNamesLifecycleActivationState proves only this instance's current index.
+// A healthy old snapshot, different content address, or revision zero cannot
+// acknowledge a new desired administrator revision.
+func geoNamesLifecycleActivationState(
+	desired geoNamesDesiredConfig, loaded bool, effectiveRadius float64,
+	effectiveRevision uint64, effectiveFingerprint string,
+) string {
+	if desired.Revision == 0 {
+		return "unknown"
+	}
+	if loaded && effectiveRevision == desired.Revision &&
+		effectiveRadius == desired.MaxDistanceKM &&
+		effectiveFingerprint == desired.Fingerprint {
+		return "verified"
+	}
+	return "pending"
 }

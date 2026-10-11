@@ -112,7 +112,7 @@ const healthStateLabels = {
   unknown: '健康无法确认',
 } as const
 const activationStateLabels = {
-  verified: '目标修订实际生效',
+  verified: '当前实例目标修订已核验（不代表全集群）',
   'local-effective': '本机配置即时读取（远端另验）',
   pending: '目标待生效或待验证',
   'deployment-only': '仅受控部署管理',

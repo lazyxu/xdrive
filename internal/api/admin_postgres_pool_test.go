@@ -150,6 +150,15 @@ func TestPostgresPoolAdminSaveReconcileRollbackAudit(t *testing.T) {
 	if err := s.reconcilePostgresPool(context.Background()); err != nil || s.postgresPoolApplied.Load() != nil {
 		t.Fatalf("unmanaged reconciliation changed defaults: %v", err)
 	}
+	assertPoolActivation := func(target *Server, want string) {
+		t.Helper()
+		rows := []serviceDependency{{ID: "database", Status: "ready"}}
+		target.setServiceLifecycleStates(context.Background(), rows, baiduMapEffectiveConfig{}, nil, false, false, false)
+		if rows[0].ActivationState != want {
+			t.Fatalf("PostgreSQL overview activation = %q, want %q", rows[0].ActivationState, want)
+		}
+	}
+	assertPoolActivation(s, "unknown")
 	applied := request(http.MethodPut, endpoint, adminToken, body)
 	var cfg adminPostgresPoolConfigDTO
 	if applied.Code != http.StatusOK || json.Unmarshal(applied.Body.Bytes(), &cfg) != nil ||
@@ -158,6 +167,7 @@ func TestPostgresPoolAdminSaveReconcileRollbackAudit(t *testing.T) {
 		sqlDB.Stats().MaxOpenConnections != 16 {
 		t.Fatalf("saved config was not truly applied to database/sql: HTTP %d %+v", applied.Code, cfg)
 	}
+	assertPoolActivation(s, "verified")
 	if rec := request(http.MethodPut, endpoint, adminToken, body); rec.Code != http.StatusConflict {
 		t.Fatalf("stale settings accepted: HTTP %d", rec.Code)
 	}
@@ -176,20 +186,24 @@ func TestPostgresPoolAdminSaveReconcileRollbackAudit(t *testing.T) {
 	if replica.postgresPoolApplied.Load() != nil {
 		t.Fatal("replica pretended another process's runtime applied")
 	}
+	assertPoolActivation(replica, "pending")
 	if err := replica.reconcilePostgresPool(context.Background()); err != nil ||
 		replicaSQL.Stats().MaxOpenConnections != 16 ||
 		replica.postgresPoolApplied.Load() == nil || replica.postgresPoolApplied.Load().Revision != 1 {
 		t.Fatalf("replica did not independently hot-apply desired state: %v", err)
 	}
+	assertPoolActivation(replica, "verified")
 	changed := request(http.MethodPut, endpoint, adminToken,
 		`{"revision":1,"desired":{"max_open_connections":32,"max_idle_connections":8}}`)
 	if changed.Code != http.StatusOK || sqlDB.Stats().MaxOpenConnections != 32 {
 		t.Fatalf("second version failed hot apply: %d", changed.Code)
 	}
+	assertPoolActivation(replica, "pending")
 	if err := replica.reconcilePostgresPool(context.Background()); err != nil ||
 		replicaSQL.Stats().MaxOpenConnections != 32 || replica.postgresPoolApplied.Load().Revision != 2 {
 		t.Fatalf("replica ignored newer desired revision: %v", err)
 	}
+	assertPoolActivation(replica, "verified")
 	history := request(http.MethodGet, endpoint+"/revisions", adminToken, "")
 	var items struct {
 		Items []postgresPoolRevisionDTO `json:"items"`

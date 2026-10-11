@@ -285,7 +285,7 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 			serviceDependencyConfigContract(services[i].ID)
 	}
 	// Preserve legacy status. Each new axis uses only its own proof.
-	s.setServiceLifecycleStates(services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
+	s.setServiceLifecycleStates(ctx, services, cfg, configErr, mediaManaged, mediaConfigUnreadable, caddyContainerObserved)
 	c.JSON(http.StatusOK, serviceDependenciesSnapshot{
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 		Services:  services,
