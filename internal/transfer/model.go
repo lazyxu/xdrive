@@ -810,7 +810,8 @@ func (m *Manager) setPhase(id, phase string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	e := m.entries[id]
-	if e == nil || phase == "" {
+	if e == nil || phase == "" || terminalState(e.task.State) {
+		// A queued renderer BeginTransfer must not change a final result.
 		return
 	}
 	if e.task.Phase == phase {
@@ -839,7 +840,8 @@ func (m *Manager) updateGroup(id string, progress GroupProgress) {
 
 func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.Time) bool {
 	e := m.entries[id]
-	if e == nil || e.task.Scope != ScopeGroup {
+	if e == nil || e.task.Scope != ScopeGroup || terminalState(e.task.State) {
+		// Ignore progress delivered after the owning group finalized.
 		return false
 	}
 	if progress.Phase != "" {
