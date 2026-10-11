@@ -38,6 +38,10 @@ type LargeTransferPerfResult = {
   heapStartBytes: number | null
   heapPeakBytes: number | null
   heapDeltaBytes: number | null
+  realServerCAS?: boolean
+  uploadedNodeID?: number
+  uploadedSHA256?: string
+  downloadSpotCheckedBytes?: number
   prehashMs?: number | null
   uploadSessionMs?: number | null
   uploadChunksMs?: number | null
@@ -63,6 +67,14 @@ type FetchMarkers = {
 }
 
 const mib = 1024 * 1024
+const realServerCAS = new URLSearchParams(window.location.search).get('xdriveLargeTransferRealCAS') === '1'
+type RealCASFixture = {
+  token: string
+  root_id: number
+  size_bytes: number
+  uploaded_node_id: number
+  file_sha256?: string
+}
 
 function currentHeapBytes() {
   return (performance as PerfMemory).memory?.usedJSHeapSize ?? null
@@ -162,6 +174,16 @@ export function XDriveLargeTransferPerformanceHarness({
       }
 
       const root = await storage.getDirectory()
+      const realConfig: RealCASFixture | null = realServerCAS
+        ? await (async () => {
+            const response = await fetch('/__perf/web-transfer-config', { cache: 'no-store' })
+            if (!response.ok) throw new Error(`real Server/CAS config HTTP ${response.status}`)
+            const config = await response.json() as RealCASFixture
+            if (!config.token || !Number.isSafeInteger(config.root_id) || config.root_id <= 0 ||
+                config.size_bytes !== sizeBytes) throw new Error('invalid native Gin/CAS Web fixture config')
+            return config
+          })()
+        : null
       const downloadName = `xdrive-large-download-${sample}.bin`
       const markers: FetchMarkers = {}
       const restoreFetch = installFetchMarkers(markers)
@@ -174,7 +196,7 @@ export function XDriveLargeTransferPerformanceHarness({
 
       try {
         const api = new XDriveApi({
-          accessToken: 'perf-token',
+          accessToken: realConfig?.token ?? 'perf-token',
           refreshToken: '',
           accessExpiresAt: Date.now() + 60 * 60_000,
         })
@@ -225,18 +247,32 @@ export function XDriveLargeTransferPerformanceHarness({
 
         perfWindow.__xdriveLargeTransferPerfRunning = true
         const startedAt = performance.now()
+        let uploadedNodeID: number | undefined
+        let uploadedSHA256: string | undefined
+        let spotCheckedBytes: number | undefined
 
         if (scenario === 'upload') {
-          const result = await api.uploadWithConflictPolicy(1, uploadFile!, 'fail')
+          const result = await api.uploadWithConflictPolicy(realConfig?.root_id ?? 1, uploadFile!, 'fail')
           if (result.transferred_bytes !== sizeBytes || result.skipped) {
             throw new Error(
               `upload transferred=${result.transferred_bytes} skipped=${result.skipped}`,
             )
           }
+          if (realConfig) {
+            if (!Number.isSafeInteger(result.node.id) || result.node.id <= 0 ||
+                !/^[0-9a-f]{64}$/i.test(result.node.sha256 ?? '')) {
+              throw new Error('real CAS upload missing persisted node ID or SHA-256')
+            }
+            uploadedNodeID = result.node.id
+            uploadedSHA256 = result.node.sha256
+          }
         } else {
+          if (realConfig && (!Number.isSafeInteger(realConfig.uploaded_node_id) || realConfig.uploaded_node_id <= 0)) {
+            throw new Error('real Server/CAS download requires prior genuine browser upload')
+          }
           const saved = await api.download({
-            id: 99,
-            parent_id: 1,
+            id: realConfig?.uploaded_node_id ?? 99,
+            parent_id: realConfig?.root_id ?? 1,
             name: downloadName,
             type: 'file',
             size: sizeBytes,
@@ -247,6 +283,17 @@ export function XDriveLargeTransferPerformanceHarness({
             const downloaded = await (await root.getFileHandle(downloadName)).getFile()
             if (downloaded.size !== sizeBytes) {
               throw new Error(`downloaded size=${downloaded.size} want=${sizeBytes}`)
+            }
+            if (realConfig) {
+              // Inspect three independent 1MiB OPFS ranges without materializing 1GiB in JS heap.
+              const sampleLength = mib
+              for (const offset of [0, Math.floor(sizeBytes / 2), sizeBytes - sampleLength]) {
+                const part = new Uint8Array(await downloaded.slice(offset, offset + sampleLength).arrayBuffer())
+                if (part.byteLength !== sampleLength || part.some(value => value !== 0)) {
+                  throw new Error(`real CAS OPFS readback disagrees with sparse zero upload at ${offset}`)
+                }
+              }
+              spotCheckedBytes = 3 * sampleLength
             }
           }
         }
@@ -265,6 +312,10 @@ export function XDriveLargeTransferPerformanceHarness({
           heapStartBytes: heapStart,
           heapPeakBytes: heapPeak,
           heapDeltaBytes: heapStart === null || heapPeak === null ? null : heapPeak - heapStart,
+          ...(realConfig ? { realServerCAS: true } : {}),
+          ...(uploadedNodeID ? { uploadedNodeID } : {}),
+          ...(uploadedSHA256 ? { uploadedSHA256 } : {}),
+          ...(spotCheckedBytes ? { downloadSpotCheckedBytes: spotCheckedBytes } : {}),
         }
 
         if (scenario === 'upload') {

@@ -1,0 +1,72 @@
+name: Real Web Browser to PostgreSQL CAS 1 GiB Transfers
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  real-web-to-gin-cas-1gib:
+    if: github.head_ref == 'perf/real-web-postgres-cas-1gib'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_REAL_WEB_CAS_RESULTS: ${{ github.workspace }}/desktop/real-web-cas-results
+      XD_REAL_WEB_CAS_TEST_BINARY: ${{ github.workspace }}/desktop/real-web-cas-bin/api.test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build authentic Web XDriveApi transfer UI and native Go fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          node --check desktop/scripts/large-transfer-real-web-cas-main.cjs
+          node --check desktop/scripts/real-web-cas-transfer-runner.cjs
+          gofmt -d internal/api/real_web_cas_transfer_fixture_performance_integration_test.go
+          test -z "$(gofmt -l internal/api/real_web_cas_transfer_fixture_performance_integration_test.go)"
+          mkdir -p desktop/real-web-cas-bin
+          go test -c -o desktop/real-web-cas-bin/api.test ./internal/api
+      - name: Measure 3 independent Chromium Web to real PostgreSQL17/Gin/CAS 1GiB upload and OPFS download
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/real-web-cas-results
+          xvfb-run -a --server-args='-screen 0 1920x1200x24' node desktop/scripts/real-web-cas-transfer-runner.cjs
+          test "$(find desktop/real-web-cas-results -maxdepth 1 -type f -name 'sample-*.json' | wc -l)" -eq 3
+          cat desktop/real-web-cas-results/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-web-browser-to-gin-postgres-cas-1gib
+          path: desktop/real-web-cas-results/
+          if-no-files-found: warn
+          retention-days: 14
