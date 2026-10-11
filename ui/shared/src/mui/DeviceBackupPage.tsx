@@ -18,6 +18,7 @@ import { XDriveDeviceBackupLocalRulesDialog } from './DeviceBackupLocalRulesDial
 import { XDriveDeviceBackupLocalScheduleDialog } from './DeviceBackupLocalScheduleDialog'
 import { XDriveDeviceBackupLocalPreviewDialog } from './DeviceBackupLocalPreviewDialog'
 import { XDriveDeviceBackupLocalSnapshotDialog } from './DeviceBackupLocalSnapshotDialog'
+import { XDriveDeviceBackupLocalDeltaDialog } from './DeviceBackupLocalDeltaDialog'
 import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
@@ -26,6 +27,7 @@ import type { XDriveLocalBackupRulesActions } from './DeviceBackupLocalRulesDial
 import type { XDriveLocalBackupScheduleActions } from './DeviceBackupLocalScheduleDialog'
 import type { XDriveLocalBackupPreviewActions } from './DeviceBackupLocalPreviewDialog'
 import type { XDriveLocalBackupSnapshotActions } from './DeviceBackupLocalSnapshotDialog'
+import type { XDriveLocalBackupDeltaActions } from './DeviceBackupLocalDeltaDialog'
 import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
 import type { XDriveSourceTargetBrowser } from './SourceManager'
@@ -87,6 +89,7 @@ export function XDriveDeviceBackupPage({
   localSchedule,
   localPreview,
   localSnapshot,
+  localDelta,
   localRemove,
 }: {
   source?: XDriveDeviceBackupDataSource
@@ -101,6 +104,7 @@ export function XDriveDeviceBackupPage({
   localSchedule?: XDriveLocalBackupScheduleActions
   localPreview?: XDriveLocalBackupPreviewActions
   localSnapshot?: XDriveLocalBackupSnapshotActions
+  localDelta?: XDriveLocalBackupDeltaActions
   localRemove?: XDriveLocalBackupRemoveActions
 }) {
   const [refreshID, refresh] = useState(0)
@@ -112,6 +116,7 @@ export function XDriveDeviceBackupPage({
   const [scheduleTarget, setScheduleTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [previewTarget, setPreviewTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [snapshotTarget, setSnapshotTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [deltaTarget, setDeltaTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
@@ -127,6 +132,7 @@ export function XDriveDeviceBackupPage({
     setScheduleTarget(null)
     setPreviewTarget(null)
     setSnapshotTarget(null)
+    setDeltaTarget(null)
     setRemoveTarget(null)
     setLocalMessage('')
   }, [source])
@@ -381,6 +387,12 @@ export function XDriveDeviceBackupPage({
                             保存本机扫描清单（不上传）
                           </Button>
                         ) : null}
+                        {localDelta && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="outlined"
+                            onClick={() => setDeltaTarget({ source, id: folder.source_id })}>
+                            比较两代本机清单（只读）
+                          </Button>
+                        ) : null}
                         {localRemove && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined" color="error"
                             onClick={() => setRemoveTarget({ source, id: folder.source_id })}>
@@ -555,6 +567,17 @@ export function XDriveDeviceBackupPage({
           sourceID={snapshotTarget.id}
           actions={localSnapshot}
           onClose={() => setSnapshotTarget(null)}
+        />
+      ) : null}
+      {deltaTarget && deltaTarget.source === source && source && localDelta &&
+        verifiedLocalDeviceID && overview?.devices.some((device) =>
+          device.id === verifiedLocalDeviceID && !device.revoked &&
+          device.folders.some((folder) => folder.source_id === deltaTarget.id)) ? (
+        <XDriveDeviceBackupLocalDeltaDialog
+          key={deltaTarget.id}
+          sourceID={deltaTarget.id}
+          actions={localDelta}
+          onClose={() => setDeltaTarget(null)}
         />
       ) : null}
       {removeTarget && removeTarget.source === source && source && localRemove &&

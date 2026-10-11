@@ -308,6 +308,20 @@ export type AgentLocalBackupSnapshot = {
   missing_inference_safe: false
 }
 
+export type AgentLocalBackupDelta = {
+  source_id: number
+  revision: number
+  previous_items: number
+  current_items: number
+  added: number
+  changed: number
+  metadata_stable: number
+  absent_candidates: number
+  complete: true
+  authoritative: false
+  missing_inference_safe: false
+}
+
 export type AgentLocalBackupPreview = {
   source_id: number
   revision: number
@@ -2855,6 +2869,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupSnapshot>(
       'POST', `/v1/device-backups/local-snapshot?${query.toString()}`, undefined, 195_000, signal,
+    )
+  }
+
+  localBoundBackupDelta(sourceID: number, signal?: AbortSignal) {
+    const query = new URLSearchParams({ source_id: String(sourceID) })
+    return this.request<AgentLocalBackupDelta>(
+      'GET', `/v1/device-backups/local-delta?${query.toString()}`, undefined, 165_000, signal,
     )
   }
 

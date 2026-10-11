@@ -13,10 +13,10 @@ The local-folder **enrollment and authorization flow is in master** (L01-A/B, De
 | L02-A | Windows/Linux bounded read-only scanner with cancellation | merged #1227 |
 | L02-B | Root-scoped native file identities and hard-link-safe hints | merged #1235 |
 | L02-C | Crash-safe Root-scoped local inventory journal with optional 100k stress test | merged #1240; native 100k execution still pending |
-| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; L03-D2b1 native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a revision-fenced advisory summary in PR; no durable SourceItem alias index, Planner or uploader |
+| L03 | Verified journal/candidates, two complete generations, candidate delta, then durable identities/Planner/resumable bytes | L03-A #1244, B #1246, C #1250, D1 #1258 merged; L03-D2a read-only delta merged #1351; L03-D2b1 native rename hints merged #1385 (76-job exact-head CI green); L03-D2b2a advisory generation fence merged #1397; no durable SourceItem alias index, Planner or uploader |
 | L04 | Desktop native root selection and shared Source Manager UI | entry/grant flow merged #1223 and #1226; actual sync experience still incomplete |
 | L05 | watcher, scheduled reconciliation, mount/unplug fail-closed behavior | not implemented |
-| L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | own read-only metadata preview merged #1391; separate manual local inventory snapshot P0-C4c2 in development; executor, run/cancel, offline queue not implemented |
+| L06 | Desktop-only local Push preview/run/cancel; Web/other Desktop owner-scoped device/folder read-only summaries | own read-only metadata preview merged #1391; manual local snapshot P0-C4c2 merged #1400; P0-C4c3 local delta in PR; executor, run/cancel, offline queue not implemented |
 | L07 | 1k/10k/100k and >=4 GiB E2E, cancel propagation and CI evidence | not implemented |
 
 ## P0-B2b2 native creating-device claim (merged #1323)
@@ -346,3 +346,29 @@ source/Run activation denial and NAS/Pull behavior are unchanged.
 
 Full exact-head CI, Windows/Linux physical 100k scaling, >=4GiB and GitLab
 validation are separate and **not yet claimed** for this stage.
+
+## P0-C4c3 owning Desktop local two-generation delta (PR verification, not merged)
+
+The verified owning Windows/Linux Desktop can explicitly compare its two
+previously saved and independently verified complete CURRENT/PREVIOUS local
+Root inventories. A distinct authenticated loopback
+`GET /v1/device-backups/local-delta?source_id=` requires the OS-held enrolled
+device credential, exact paused local Push Source and revision, saved private
+rules, matching native Root grant and unchanged account/Server session. The
+existing 64-bucket bounded delta reader verifies both generations and does
+not publish persistent evidence. The Agent rechecks authority after reading.
+
+The Renderer receives only allowlisted Source ID/revision and aggregate counts:
+`previous_items`, `current_items`, `added`, `changed`, `metadata_stable`,
+`absent_candidates`. No filenames, paths, native identities, Root credentials,
+fingerprints, raw errors, or candidate arrays are available through Renderer,
+Web/Mobile Web or foreign Desktop. Electron Main registers an isolated
+per-webContents AbortController before Agent startup; cancellation propagates
+to Go's request Context. Missing, changed or corrupt generations fail closed.
+
+`authoritative=false` and `missing_inference_safe=false` are mandatory.
+An absent candidate is **not** cloud deletion evidence, stable metadata is
+**not** content equality, and this view is not a backup, confirmed rename or
+SourceItem/alias mapping. It never triggers upload, CAS/Node writes, SourceRun,
+saved schedules, watchers, NAS controls or Mirror deletion. Physical 100k/4GiB
+acceptance and GitLab validation are not claimed for this PR.

@@ -130,6 +130,22 @@ export interface XDriveLocalBackupSnapshot {
   missing_inference_safe: false
 }
 
+// Verified LOCAL two-generation comparison, advisory numeric counts only.
+// No item path, device secrets, SourceItem identity, or deletion authority.
+export interface XDriveLocalBackupDelta {
+  source_id: number
+  revision: number
+  previous_items: number
+  current_items: number
+  added: number
+  changed: number
+  metadata_stable: number
+  absent_candidates: number
+  complete: true
+  authoritative: false
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
