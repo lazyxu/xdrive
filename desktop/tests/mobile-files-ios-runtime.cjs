@@ -2366,3 +2366,55 @@ test('F-iOS27-09B: wide/Mobile keyboards share parser, and Web forwards the same
   assert.equal(mobile.includes('new XDriveApi('), false)
   assert.equal(mobile.includes('fetch('), false)
 })
+
+
+test('F-iOS27-09D: Mobile rename respects wide-Web busy gating, including an already-open shared dialog', async () => {
+  const writes = []
+  await withView(async h => {
+    await openFios09Context(h)
+    const rename = () => find(h.view, 'data-mobile-files-item-rename', true)
+    const dialog = () => find(h.view, 'aria-label', '重命名')
+    assert.equal(rename().props.disabled, true, 'busy Web operation must disable the Mobile held menu')
+    await act(async () => { rename().props.onClick() })
+    assert.equal(dialog().props.open, false, 'direct callbacks cannot bypass the shared busy gate')
+
+    await h.update({ renameDisabled: false })
+    await openFios09Context(h)
+    await act(async () => { rename().props.onClick() })
+    assert.equal(dialog().props.open, true)
+    const input = () => dialog().findAll(node => node.type === 'TextField' && node.props?.label === '名称')[0]
+    await act(async () => { input().props.onChange({ target: { value: '新名称.txt' } }) })
+    await h.update({ renameDisabled: true })
+    await submitMobileRename(h)
+    assert.deepEqual(writes, [], 'became-busy dialog must not send an additional Server mutation')
+    assert.equal(dialog().props.open, true)
+    assert.equal(input().props.value, '新名称.txt', 'busy refusal keeps the original user draft')
+    assert.match(input().props.helperText, /文件操作进行中/)
+
+    await h.update({ renameDisabled: false })
+    await submitMobileRename(h)
+    assert.deepEqual(writes, [{ id: 3, revision: 1, name: '新名称.txt' }])
+    assert.equal(dialog().props.open, false)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1,
+      'busy/ready transition must not create a second FileExplorer virtual scroll owner')
+  }, { props: {
+    renameDisabled: true,
+    onRename: async (item, name) => {
+      writes.push({ id: item.id, revision: item.revision, name })
+    },
+  } })
+})
+
+test('F-iOS27-09D: Web and Mobile use the identical rename availability condition and Server controller', () => {
+  const mobile = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  const web = fs.readFileSync(path.join(root, 'web/src/WebFileExplorer.tsx'), 'utf8')
+  const shared = fs.readFileSync(path.join(root, 'ui/shared/src/mui/FileExplorer.tsx'), 'utf8')
+  assert.ok(web.includes('renameDisabled={trashActive || fileOperationBusy}'), 'both layouts must share the wide busy gate')
+  assert.ok(web.includes('onRename={renameItem}'), 'same Node/revision rename controller')
+  assert.ok(mobile.includes('disabled={Boolean(props.renameDisabled)}'))
+  assert.ok(mobile.includes('if (props.trashActive || props.renameDisabled) return'))
+  assert.ok(mobile.includes('if (props.renameDisabled || props.trashActive) {'))
+  assert.ok(mobile.includes('await props.onRename(renaming, name)'))
+  assert.ok(shared.includes('disabled: renameDisabled || renameSubmitting'), 'wide Web keeps its original gate')
+  assert.ok(!mobile.includes('api.rename('), 'Mobile must not introduce a separate REST rename client')
+})

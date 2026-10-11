@@ -1210,6 +1210,7 @@ export default function WebFileExplorer({
           canHistoryForward={!trashActive && canGoForward}
           onHistoryForward={() => { void goForward() }}
           onCopyPaths={selected => { void copyItemPaths(selected) }}
+          renameDisabled={trashActive || fileOperationBusy}
           onRename={renameItem}
           onCopy={copyItems}
           onCut={cutItems}

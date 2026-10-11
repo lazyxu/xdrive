@@ -161,6 +161,7 @@ type Props = {
   canHistoryForward?: boolean
   onHistoryForward?: () => void
   onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
+  renameDisabled?: boolean
   onRename: (item: XDriveFileExplorerItem, name: string) => Promise<void>
   onCopy: (items: XDriveFileExplorerItem[]) => void
   onCut: (items: XDriveFileExplorerItem[]) => void
@@ -1141,6 +1142,9 @@ export default function MobileFiles(props: Props) {
     if (task) void task.catch(props.onOpenError)
   }
   const beginRename = (item: XDriveFileExplorerItem) => {
+    // Match wide FileExplorer's renameDisabled gate during in-flight
+    // operations; a disabled MUI MenuItem must not be invokable directly.
+    if (props.trashActive || props.renameDisabled) return
     setItemMenu(null)
     setRenaming(item)
   }
@@ -2177,6 +2181,7 @@ export default function MobileFiles(props: Props) {
             </MenuItem>
           ) : null}
           {itemMenu && !props.trashActive ? <MenuItem data-mobile-files-item-rename
+            disabled={Boolean(props.renameDisabled)}
             onClick={() => beginRename(itemMenu.item)}
             sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
           {itemMenu && !props.trashActive ? ([
@@ -2314,6 +2319,9 @@ export default function MobileFiles(props: Props) {
           lifecycleKey={selectionScopeKey + ':rename:' + String(renaming?.id ?? 0) + ':' + String(renaming?.revision ?? 0)}
           onSubmit={async name => {
             if (!renaming) throw new Error('当前文件选择已失效，请重新打开重命名。')
+            if (props.renameDisabled || props.trashActive) {
+              throw new Error('文件操作进行中，暂时无法重命名，请稍后重试。')
+            }
             // One authoritative Web Controller owns the Node id/revision,
             // conflict handling and Server permissions for both layouts.
             // Let the shared dialog retain draft and show rejected mutations.
