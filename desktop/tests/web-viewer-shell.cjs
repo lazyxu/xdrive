@@ -707,3 +707,125 @@ test('P1-2f denied delete can retry and late old-Node acknowledgment cannot clos
     viewportWidth = 390
   }
 })
+
+
+
+test('P1-2g routed Media Viewer delegates download to the one shared Gallery DataSource on Mobile and wide Web', async () => {
+  for (const width of [390, 900]) {
+    compactTouch = width < 900
+    viewportWidth = width
+    const node = { id: 923, revision: 8, type: 'file', name: 'photo.png', size: 4096 }
+    const item = { node, metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready', has_thumbnail: true } }
+    const mediaDownloads = [], directDownloads = [], errors = []
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: {
+            node: async () => node, mediaItem: async () => item,
+            download: async (value) => directDownloads.push(value.id),
+          },
+          gallerySource: {
+            loadThumbnail: async () => null,
+            downloadItems: async (items) => {
+              mediaDownloads.push(items.map(i => [i.node.id, i.node.revision]))
+            },
+          },
+          shareDialogAdapter: {},
+          onClose() {}, onReplaceRoute() {},
+          onError(error) { errors.push(error.message) },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      assert.equal(buttons(renderer, '下载').length, 1, 'same real Viewer action on both widths')
+      await act(async () => {
+        buttons(renderer, '下载')[0].props.onClick()
+        await new Promise(resolve => setImmediate(resolve))
+      })
+      assert.deepEqual(mediaDownloads, [[[923, 8]]],
+        'download uses exactly the current authorized Gallery MediaItem/Node revision')
+      assert.deepEqual(directDownloads, [],
+        'routed Gallery Viewer must not bypass the shared media download source')
+      assert.deepEqual(errors, [])
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+    }
+  }
+  compactTouch = false
+  viewportWidth = 390
+})
+
+test('P1-2g real Viewer download errors are surfaced, and a failed download can be retried without leaving media', async () => {
+  compactTouch = true
+  viewportWidth = 390
+  const node = { id: 924, revision: 2, type: 'file', name: 'retry.png', size: 123 }
+  const item = { node, metadata: { media_kind: 'image', mime_type: 'image/png', index_state: 'ready' } }
+  const errors = []
+  let attempts = 0, closed = 0, renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'media-viewer', params: { node: node.id } },
+        api: {
+          node: async () => node, mediaItem: async () => item,
+          download: async () => { throw Error('bypassed Gallery DataSource') },
+        },
+        gallerySource: {
+          loadThumbnail: async () => null,
+          downloadItems: async () => {
+            attempts++
+            if (attempts === 1) throw Error('403 download forbidden')
+          },
+        },
+        shareDialogAdapter: {},
+        onClose() { closed++ }, onReplaceRoute() {},
+        onError(error) { errors.push(error.message) },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => {
+      buttons(renderer, '下载')[0].props.onClick()
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.deepEqual(errors, ['403 download forbidden'])
+    assert.equal(closed, 0, 'failed download must not close Viewer')
+    await act(async () => {
+      buttons(renderer, '下载')[0].props.onClick()
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.equal(attempts, 2, 'same shared callback remains available for an explicit retry')
+    assert.equal(closed, 0)
+    assert.equal(buttons(renderer, '下载').length, 1)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    compactTouch = false
+    viewportWidth = 390
+  }
+})
+
+test('P1-2g Files Quick Look keeps the regular Web file download adapter', async () => {
+  const node = { id: 925, revision: 3, type: 'file', name: 'plain.pdf', size: 4096 }
+  const downloaded = [], errors = []
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(WebFileViewerApps, {
+        route: { app: 'preview', params: { node: node.id } },
+        api: {
+          node: async () => node, download: async (value) => downloaded.push(value.id),
+          mediaItem: async () => null,
+        },
+        gallerySource: { downloadItems: async () => { throw Error('Quick Look must not use Gallery download') } },
+        shareDialogAdapter: {},
+        onClose() {}, onReplaceRoute() {}, onError(error) { errors.push(error.message) },
+      }), { createNodeMock: () => ({ focus() {} }) })
+    })
+    await act(async () => {
+      buttons(renderer, '下载')[0].props.onClick()
+      await new Promise(resolve => setImmediate(resolve))
+    })
+    assert.deepEqual(downloaded, [925], 'generic File Viewer API contract is not replaced by Gallery')
+    assert.deepEqual(errors, [])
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})

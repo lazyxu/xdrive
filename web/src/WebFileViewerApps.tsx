@@ -503,11 +503,15 @@ function FileViewerActions({
   api,
   onShare,
   onTags,
+  onDownload,
+  onError,
 }: {
   node: Node
   api: XDriveApi
   onShare: () => void
   onTags: () => void
+  onDownload?: () => Promise<void>
+  onError: (error: unknown) => void
 }) {
   return (
     <Stack direction="row" spacing={0.25}>
@@ -525,7 +529,11 @@ function FileViewerActions({
         <IconButton
           size="small"
           aria-label="下载"
-          onClick={() => { void api.download(node) }}
+          onClick={() => {
+            // Media Gallery Viewer overrides only the action callback. File
+            // Quick Look keeps the existing authenticated file download.
+            void (onDownload ? onDownload() : api.download(node)).catch(onError)
+          }}
         >
           <DownloadRoundedIcon fontSize="small" />
         </IconButton>
@@ -660,6 +668,7 @@ function WebPreviewApp({
             api={api}
             onShare={() => setShareOpen(true)}
             onTags={() => setTagsOpen(true)}
+            onError={onError}
           />
         ) : null}
         onClose={() => onClose(viewer.node)}
@@ -887,6 +896,13 @@ function WebMediaViewerApp({
         api={api}
         onShare={() => setShareOpen(true)}
         onTags={() => setTagsOpen(true)}
+        // Reuse the identical MediaGalleryDataSource action that wide Web,
+        // Mobile Gallery and the inline shared Viewer already use. Preserve
+        // legacy File download when this optional Gallery port is absent.
+        onDownload={gallerySource.downloadItems
+          ? () => gallerySource.downloadItems!([mediaItem])
+          : undefined}
+        onError={onError}
       />
     </Stack>
   ) : null

@@ -406,3 +406,12 @@ tileWidth = (clientWidth - 4 * (visibleColumns - 1)) / visibleColumns
 
 
 **P1-2f 首轮精确 HEAD Chromium First-red（2026-10-11）：** [CI #38135712821 的 web job #114459084145](https://github.com/lazyxu/xdrive/actions/runs/38135712821/job/114459084145) 的源版本为 `3c54fc33b0e2d74db2a0041b019c2fb90c316018`。除 `web` 外实际运行的 12 个构建/测试作业均成功；真实构建 Web Chrome fine pointer 在第 24 项验收点进入 `delete-403-then-queued` 阶段后，新增测试的 `getByRole('dialog', {name:'确认操作'})` 超时。随失败结果保存的真实无障碍树确认对话框已正确出现且可访问名称为 `删除这张照片或视频？ 关闭弹窗`，包含正确的警示正文、取消和删除按钮；截至该失败，没有发出删除 POST，故不得声称 403/重试/任务回执已通过。本轮**仅修正浏览器脚本定位器**为以业务确认标题为前缀的 accessible role/name 查找；不修改删除产品代码、后端权限、任务生命周期、测试门槛或放宽既有滚动 ≤2px 和零未知网络/console/page-error 断言。仍从固定父提交重建**恰好一个**工作提交，新 SHA 需重新完整 PR CI、真实 fine/coarse Chromium 与 `final-gate`，不能复用旧 HEAD 的绿项。
+
+
+## P1-2g · 实际 Web/Mobile Web Viewer 的下载数据源一致性（2026-10-11）
+
+**状态：依赖 P1-2f #1404；当前为独立单提交的叠加工作，须区分组件测试、最新 PR CI、合并与真机。** 同一 `XDriveMediaGalleryPage` 的图库原本通过 `MediaGalleryDataSource.downloadItems`（单项原始字节、批量 ZIP 下载），内嵌 `XDriveMediaGalleryViewer` 也使用该共享合同；但独立一级 Web `media-viewer` 的通用按钮此前直接调用 `api.download(node)`，绕过了图库操作入口，且请求失败没有交给同一 Viewer 错误反馈。
+
+只在现有 `FileViewerActions` 增加可选下载动作覆盖，实际 Web/Mobile Gallery 路由在已加载当前 `MediaItem` 时传入 `gallerySource.downloadItems([mediaItem])` 并将 Promise 错误上报原 `onError`；保持一个 Viewer、同一 Web REST、Server 下载票据/Range 与 Task Center，不新增媒体下载端点、缓存或 Worker。非图库的 Files Quick Look 仍调用原 `api.download(node)`。数据源未提供下载时保留现有单文件 API 回退，不凭前端实现声称 Server 权限通过。照片 Node/revision 不被替换为文件名猜测。
+
+真实 React mounted 验收覆盖 390px/900px 相同媒体 Node+revision 的共享动作、禁止绕开媒体 Source、拒绝后保留 Viewer 并允许明确重试、Files Quick Look 仍走通用文件 API；已有 `fix/mobile-gallery-ios27-web-viewer-` 原生 Chrome 55 项回归不修改，继续要求 fine/coarse、390/899/900 及 ≤2px 返回位置、零未知 HTTP/Console/PageError。**本阶段不会宣称**浏览器端到端下载实际字节、iOS 27 Safari/PWA 1:1 截图或 100k RAW/HEVC/LIVP 性能已通过，这些还需要独立真实 Server/设备证据。保留全屏 App Frame、52px App Header 和 Web/Desktop 共享后端及虚拟化组件。
