@@ -97,6 +97,17 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	mobileBatchB := uploadTestFile(t, router, token, root.ID, "f-mobile-batch-b.txt", "real Mobile bulk delete two")
 	wideBatchA := uploadTestFile(t, router, token, root.ID, "g-wide-batch-a.txt", "real Wide bulk delete one")
 	wideBatchB := uploadTestFile(t, router, token, root.ID, "h-wide-batch-b.txt", "real Wide bulk delete two")
+	batchSource := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader("{\"name\":\"batch-operation-sources\"}"), http.StatusCreated)
+	mobileBatchCopyA := uploadTestFile(t, router, token, batchSource.ID, "i-mobile-batch-copy-a.txt", "real Mobile batch copy one")
+	mobileBatchCopyB := uploadTestFile(t, router, token, batchSource.ID, "j-mobile-batch-copy-b.txt", "real Mobile batch copy two")
+	wideBatchCopyA := uploadTestFile(t, router, token, batchSource.ID, "k-wide-batch-copy-a.txt", "real Wide batch copy one")
+	wideBatchCopyB := uploadTestFile(t, router, token, batchSource.ID, "l-wide-batch-copy-b.txt", "real Wide batch copy two")
+	mobileBatchMoveA := uploadTestFile(t, router, token, batchSource.ID, "m-mobile-batch-move-a.txt", "real Mobile batch move one")
+	mobileBatchMoveB := uploadTestFile(t, router, token, batchSource.ID, "n-mobile-batch-move-b.txt", "real Mobile batch move two")
+	wideBatchMoveA := uploadTestFile(t, router, token, batchSource.ID, "o-wide-batch-move-a.txt", "real Wide batch move one")
+	wideBatchMoveB := uploadTestFile(t, router, token, batchSource.ID, "p-wide-batch-move-b.txt", "real Wide batch move two")
 	mobileMoveTarget := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"mobile-move-target"}`), http.StatusCreated)
@@ -163,6 +174,23 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		{"id": wideBatchA.ID, "revision": wideBatchA.Revision, "name": wideBatchA.Name},
 		{"id": wideBatchB.ID, "revision": wideBatchB.Revision, "name": wideBatchB.Name},
 	}
+	ready["batch_source_id"] = batchSource.ID
+	ready["mobile_batch_copy_nodes"] = []map[string]any{
+		{"id": mobileBatchCopyA.ID, "revision": mobileBatchCopyA.Revision, "name": mobileBatchCopyA.Name},
+		{"id": mobileBatchCopyB.ID, "revision": mobileBatchCopyB.Revision, "name": mobileBatchCopyB.Name},
+	}
+	ready["wide_batch_copy_nodes"] = []map[string]any{
+		{"id": wideBatchCopyA.ID, "revision": wideBatchCopyA.Revision, "name": wideBatchCopyA.Name},
+		{"id": wideBatchCopyB.ID, "revision": wideBatchCopyB.Revision, "name": wideBatchCopyB.Name},
+	}
+	ready["mobile_batch_move_nodes"] = []map[string]any{
+		{"id": mobileBatchMoveA.ID, "revision": mobileBatchMoveA.Revision, "name": mobileBatchMoveA.Name},
+		{"id": mobileBatchMoveB.ID, "revision": mobileBatchMoveB.Revision, "name": mobileBatchMoveB.Name},
+	}
+	ready["wide_batch_move_nodes"] = []map[string]any{
+		{"id": wideBatchMoveA.ID, "revision": wideBatchMoveA.Revision, "name": wideBatchMoveA.Name},
+		{"id": wideBatchMoveB.ID, "revision": wideBatchMoveB.Revision, "name": wideBatchMoveB.Name},
+	}
 	payload, err := json.Marshal(ready)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +221,7 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			t.Fatalf("failed rename changed collision sentinel: %+v", collision)
 		}
 		var queued []meta.FileOperation
-		if err := db.Where("owner_id = ? AND type = ?", after.OwnerID, meta.FileOperationTypeCopy).
+		if err := db.Where("owner_id = ? AND type = ? AND total_items = ?", after.OwnerID, meta.FileOperationTypeCopy, 1).
 			Find(&queued).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -334,6 +362,79 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 			}
 		}
 		t.Logf("IOS27_FILES_LIVE_GO_BATCH_DELETE_QUEUED count=%d items_per_operation=2", len(batchDeletes))
+		// F09I-D2: exact four real two-file destination queue records.
+		type destinationGroup struct {
+			targetID  uint64
+			revisions map[uint64]uint64
+		}
+		for _, spec := range []struct {
+			kind   string
+			groups []destinationGroup
+		}{
+			{kind: meta.FileOperationTypeCopy, groups: []destinationGroup{
+				{targetID: mobileTarget.ID, revisions: map[uint64]uint64{
+					mobileBatchCopyA.ID: mobileBatchCopyA.Revision, mobileBatchCopyB.ID: mobileBatchCopyB.Revision}},
+				{targetID: wideTarget.ID, revisions: map[uint64]uint64{
+					wideBatchCopyA.ID: wideBatchCopyA.Revision, wideBatchCopyB.ID: wideBatchCopyB.Revision}},
+			}},
+			{kind: meta.FileOperationTypeMove, groups: []destinationGroup{
+				{targetID: mobileMoveTarget.ID, revisions: map[uint64]uint64{
+					mobileBatchMoveA.ID: mobileBatchMoveA.Revision, mobileBatchMoveB.ID: mobileBatchMoveB.Revision}},
+				{targetID: wideMoveTarget.ID, revisions: map[uint64]uint64{
+					wideBatchMoveA.ID: wideBatchMoveA.Revision, wideBatchMoveB.ID: wideBatchMoveB.Revision}},
+			}},
+		} {
+			var operations []meta.FileOperation
+			if err := db.Where("owner_id = ? AND type = ? AND total_items = ?",
+				after.OwnerID, spec.kind, 2).Find(&operations).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(operations) != 2 {
+				t.Fatalf("%s: expected two 2-source queue records, got %d", spec.kind, len(operations))
+			}
+			seen := make([]bool, len(spec.groups))
+			for _, operation := range operations {
+				if operation.Status != meta.FileOperationStatusQueued || operation.TotalItems != 2 ||
+					operation.ParentID == nil {
+					t.Fatalf("%s: incorrect destination/status: %+v", spec.kind, operation)
+				}
+				var refs []batchNodeRef
+				if err := json.Unmarshal([]byte(operation.ItemsJSON), &refs); err != nil {
+					t.Fatal(err)
+				}
+				if len(refs) != 2 || refs[0].ID == refs[1].ID {
+					t.Fatalf("%s: two distinct source references required: %+v", spec.kind, refs)
+				}
+				matched := -1
+				for i, group := range spec.groups {
+					if *operation.ParentID != group.targetID {
+						continue
+					}
+					valid := true
+					for _, ref := range refs {
+						want, ok := group.revisions[ref.ID]
+						if !ok || ref.Revision != want {
+							valid = false
+							break
+						}
+					}
+					if valid {
+						matched = i
+						break
+					}
+				}
+				if matched < 0 || seen[matched] {
+					t.Fatalf("%s: mixed/duplicate/foreign/stale batch destination: %+v", spec.kind, operation)
+				}
+				seen[matched] = true
+			}
+			for i, got := range seen {
+				if !got {
+					t.Fatalf("%s: missing persisted batch destination group %d", spec.kind, i)
+				}
+			}
+			t.Logf("IOS27_FILES_LIVE_GO_BATCH_DESTINATION_QUEUED kind=%s count=2 items_per_operation=2", spec.kind)
+		}
 		var foreignAccount meta.User
 		if err := db.Where("username = ?", "ios27-files-other").First(&foreignAccount).Error; err != nil {
 			t.Fatal(err)
