@@ -43,6 +43,7 @@ type inventoryRenameRecord struct {
 	Side                 string `json:"side"`
 	Path                 string `json:"path"`
 	Kind                 string `json:"kind"`
+	Ignored              bool   `json:"ignored"`
 	NativeIdentityKey    string `json:"native_identity_key"`
 	StrongNativeIdentity bool   `json:"strong_native_identity"`
 	RenameHintSafe       bool   `json:"rename_hint_safe"`
@@ -74,7 +75,7 @@ func inventoryRenameSpoolPath(dir string, bucket int) string {
 
 func inventoryRenameRecordFor(side string, item InventoryCandidate) inventoryRenameRecord {
 	return inventoryRenameRecord{
-		Side: side, Path: item.Path, Kind: item.Kind,
+		Side: side, Path: item.Path, Kind: item.Kind, Ignored: item.Ignored,
 		NativeIdentityKey:    item.NativeIdentityKey,
 		StrongNativeIdentity: item.StrongNativeIdentity,
 		RenameHintSafe:       item.RenameHintSafe, LinkCount: item.LinkCount,
@@ -89,6 +90,7 @@ func inventoryRenameHintFor(group inventoryRenameGroup) (InventoryRenameHint, bo
 	if group.BeforeCount != 1 || group.AfterCount != 1 ||
 		before.Path == "" || after.Path == "" || before.Path == after.Path ||
 		before.Kind != "file" || after.Kind != "file" ||
+		before.Ignored || after.Ignored ||
 		before.NativeIdentityKey == "" || before.NativeIdentityKey != after.NativeIdentityKey ||
 		!before.StrongNativeIdentity || !after.StrongNativeIdentity ||
 		!before.RenameHintSafe || !after.RenameHintSafe ||

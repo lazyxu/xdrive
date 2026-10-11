@@ -64,13 +64,15 @@ func CandidateFromInventoryItem(grant RootGrant, item InventoryItem) (InventoryC
 		(item.Kind == "file" && item.NativeIdentity.LinkCount != 1)) {
 		return InventoryCandidate{}, errors.New("unsafe native rename candidate")
 	}
-	// This key is *path-specific* even for hard links. Do not use it as an
-	// automatic persistent remote SourceItem ID without a reconciliation index.
-	digest := sha256.Sum256([]byte("xdrive-local-path-v1\x00" +
-		grant.RootID + "\x00" + item.Kind + "\x00" + item.Path))
+	// The exact same canonical path key is needed by the private Agent
+	// reconciler. Do not hand-roll a second digest formula.
+	pathKey, err := LocalInventoryPathKey(grant, item.Kind, item.Path)
+	if err != nil {
+		return InventoryCandidate{}, err
+	}
 	return InventoryCandidate{
 		Path: path, Kind: item.Kind, Size: item.Size, ModifiedAt: item.ModifiedAt,
-		Ignored: item.Ignored, PathKey: hex.EncodeToString(digest[:]),
+		Ignored: item.Ignored, PathKey: pathKey,
 		NativeIdentityKey:    item.NativeIdentity.Key,
 		StrongNativeIdentity: item.NativeIdentity.Strong,
 		LinkCount:            item.NativeIdentity.LinkCount,
@@ -125,4 +127,25 @@ func StreamInventoryCandidates(
 	counts.Snapshot = snapshot
 	counts.MissingInferenceSafe = false
 	return counts, nil
+}
+
+// LocalInventoryPathKey computes the Root-scoped, canonical path identity.
+// It is NOT a durable SourceItem ID or permission to move a cloud Node.
+func LocalInventoryPathKey(grant RootGrant, kind, path string) (string, error) {
+	if grant.SourceID == 0 {
+		return "", errors.New("local path key requires Source")
+	}
+	if _, err := uuid.Parse(grant.RootID); err != nil {
+		return "", errors.New("local path key requires a valid bound Root")
+	}
+	if kind != "file" && kind != "directory" {
+		return "", errors.New("local path key requires file or directory")
+	}
+	normalized, err := sourcepkg.NormalizeRelativePath(path)
+	if err != nil || normalized == "" || normalized != path {
+		return "", errors.New("local path key requires a canonical relative path")
+	}
+	digest := sha256.Sum256([]byte("xdrive-local-path-v1\x00" +
+		grant.RootID + "\x00" + kind + "\x00" + path))
+	return hex.EncodeToString(digest[:]), nil
 }
