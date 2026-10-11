@@ -1,0 +1,72 @@
+name: Real Server PostgreSQL17 CAS 1 GiB Transfer Benchmark
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  real-server-cas-1gib-performance:
+    if: github.head_ref == 'perf/real-server-cas-1gib-transfer'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_REAL_SERVER_CAS_LARGE_PERF: '1'
+      XD_REAL_SERVER_CAS_SIZE_GIB: '1'
+      XD_REAL_SERVER_CAS_RESULTS: real-server-cas-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Ensure current-go Server CAS perf source is formatted
+        run: |
+          set -euo pipefail
+          gofmt -d internal/api/large_transfer_real_server_performance_integration_test.go
+          test -z "$(gofmt -l internal/api/large_transfer_real_server_performance_integration_test.go)"
+          python3 -m py_compile scripts/ci/summarize-real-server-cas-1gib.py
+      - name: Measure 3 independent real PostgreSQL17 and physical Local CAS 1 GiB uploads plus downloads
+        run: |
+          set -euo pipefail
+          mkdir -p real-server-cas-results
+          for sample in 1 2 3; do
+            XD_REAL_SERVER_CAS_SAMPLE="sample-$sample" \
+            XD_REAL_SERVER_CAS_LARGE_OUTPUT="$GITHUB_WORKSPACE/real-server-cas-results/sample-$sample.json" \
+              /usr/bin/time -v -o "real-server-cas-results/sample-$sample.time" \
+              go test -run '^TestRealServerCASLargeTransferBaseline$' -count=1 -timeout=12m -v ./internal/api \
+              > "real-server-cas-results/sample-$sample.log" 2>&1 || {
+                tail -120 "real-server-cas-results/sample-$sample.log"
+                exit 1
+              }
+            tail -7 "real-server-cas-results/sample-$sample.log"
+          done
+          XD_REAL_SERVER_CAS_SOURCE_SHA="$(git rev-parse HEAD)" \
+            python3 scripts/ci/summarize-real-server-cas-1gib.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-server-postgresql17-cas-1gib-native
+          path: real-server-cas-results/
+          if-no-files-found: warn
+          retention-days: 14

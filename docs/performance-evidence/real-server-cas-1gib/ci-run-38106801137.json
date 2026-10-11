@@ -1,0 +1,169 @@
+{
+  "status": "CURRENT/BEFORE accepted in 3 genuine Go tests; GitHub composite job red *only* because output JSON was written relative to Go test package working dir, and Python expected root working dir. THIS IS NOT PRODUCT PERFORMANCE FAILURE.",
+  "source": {
+    "repository": "lazyxu/xdrive",
+    "head_sha": "ed3f6780a744f558f819110f9d70a2555cb16e67",
+    "url": "https://github.com/lazyxu/xdrive/actions/runs/38106801137",
+    "run_id": 38106801137,
+    "job_id": 114373936237,
+    "runner": "GitHub ubuntu-latest, Go1.25.x, PostgreSQL17-alpine, real production Client/Gin/Postgres/Local CAS",
+    "exact_test": "XD_REAL_SERVER_CAS_LARGE_PERF=1 XD_REAL_SERVER_CAS_SIZE_GIB=1 go test -run '^TestRealServerCASLargeTransferBaseline$' -count=1 -timeout=12m -v ./internal/api",
+    "observedNativeTests": [
+      "2026-10-11T02:58:35.7284894Z --- PASS: TestRealServerCASLargeTransferBaseline (10.84s)",
+      "2026-10-11T02:58:47.7453007Z --- PASS: TestRealServerCASLargeTransferBaseline (10.75s)",
+      "2026-10-11T02:58:59.7519247Z --- PASS: TestRealServerCASLargeTransferBaseline (10.75s)"
+    ]
+  },
+  "workload": {
+    "physical_bytes_per_direction": 1073741824,
+    "round_trip_bytes_per_sample": 2147483648,
+    "source_file": "sparse zero bytes (low entropy); actual CAS fully persisted and SHA256 verified",
+    "batch_size": 8388608,
+    "chunk_puts_each": 128,
+    "get_each": 1,
+    "n": 3,
+    "isolated_schema": true,
+    "isolate_cas": true,
+    "isolate_go_process": true
+  },
+  "before_summary": {
+    "samples": 3,
+    "upload_ms_samples": [
+      9514.071,
+      9530.993,
+      9606.208
+    ],
+    "upload_ms_p50": 9530.993,
+    "upload_mib_s_p50": 107.43895657643994,
+    "download_ms_samples": [
+      844.415,
+      855.663,
+      855.792
+    ],
+    "download_ms_p50": 855.663,
+    "download_mib_s_p50": 1196.7317699462449,
+    "cpu_upload_ms_p50": 7227.962,
+    "cpu_download_ms_p50": 1201.143,
+    "max_go_process_rss_peak_delta_bytes": 17702912,
+    "all_sample_integrity": true
+  },
+  "frozen_gate": {
+    "max_upload_ms_each": 180000,
+    "max_download_ms_each": 120000,
+    "max_peak_rss_growth_bytes_each": 268435456,
+    "all_three_native_go_tests_passed": true
+  },
+  "samples": [
+    {
+      "cas_key": ".xdrive-blobs/sha256/49/49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14",
+      "cas_ref_count": 1,
+      "correct": true,
+      "cpu_download_ms": 1201.143,
+      "cpu_upload_ms": 7252.656,
+      "disk_available_before": 90710679552,
+      "download_bytes": 1073741824,
+      "download_content_length": 1073741824,
+      "download_elapsed_ms": 855.663,
+      "download_header_hash_matches": true,
+      "download_http_get_count": 1,
+      "download_mib_s": 1196.7317699462449,
+      "frozen_budget": {
+        "download_ms_1gib": 120000,
+        "max_peak_rss_growth_bytes": 268435456,
+        "upload_ms_1gib": 180000
+      },
+      "name": "real-server-postgres-cas-1gib-upload-download",
+      "rss_end_bytes": 56893440,
+      "rss_peak_bytes": 56893440,
+      "rss_peak_delta_bytes": 17702912,
+      "rss_start_bytes": 39190528,
+      "sample": "sample-1",
+      "scope": "real Client.UploadFileResumableResult and authenticated Gin UploadSession/part SHA/finalize/PostgreSQL/physical local CAS plus real Gin HTTP GET streaming/checksum; NOT desktop Electron IPC, Web browser, WAN, live 4GiB download, or actual varying file content",
+      "size_bytes": 1073741824,
+      "size_gib": 1,
+      "status": "CURRENT-BEFORE / native production Server API and local CAS",
+      "upload_bytes": 1073741824,
+      "upload_chunk_size": 8388608,
+      "upload_elapsed_ms": 9606.208,
+      "upload_expected_chunks": 128,
+      "upload_http_put_count": 128,
+      "upload_mib_s": 106.59772547602942
+    },
+    {
+      "cas_key": ".xdrive-blobs/sha256/49/49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14",
+      "cas_ref_count": 1,
+      "correct": true,
+      "cpu_download_ms": 1198.383,
+      "cpu_upload_ms": 7206.82,
+      "disk_available_before": 90952871936,
+      "download_bytes": 1073741824,
+      "download_content_length": 1073741824,
+      "download_elapsed_ms": 844.415,
+      "download_header_hash_matches": true,
+      "download_http_get_count": 1,
+      "download_mib_s": 1212.6734824008659,
+      "frozen_budget": {
+        "download_ms_1gib": 120000,
+        "max_peak_rss_growth_bytes": 268435456,
+        "upload_ms_1gib": 180000
+      },
+      "name": "real-server-postgres-cas-1gib-upload-download",
+      "rss_end_bytes": 41811968,
+      "rss_peak_bytes": 56815616,
+      "rss_peak_delta_bytes": 17698816,
+      "rss_start_bytes": 39116800,
+      "sample": "sample-2",
+      "scope": "real Client.UploadFileResumableResult and authenticated Gin UploadSession/part SHA/finalize/PostgreSQL/physical local CAS plus real Gin HTTP GET streaming/checksum; NOT desktop Electron IPC, Web browser, WAN, live 4GiB download, or actual varying file content",
+      "size_bytes": 1073741824,
+      "size_gib": 1,
+      "status": "CURRENT-BEFORE / native production Server API and local CAS",
+      "upload_bytes": 1073741824,
+      "upload_chunk_size": 8388608,
+      "upload_elapsed_ms": 9530.993,
+      "upload_expected_chunks": 128,
+      "upload_http_put_count": 128,
+      "upload_mib_s": 107.43895657643994
+    },
+    {
+      "cas_key": ".xdrive-blobs/sha256/49/49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14",
+      "cas_ref_count": 1,
+      "correct": true,
+      "cpu_download_ms": 1206.274,
+      "cpu_upload_ms": 7227.962,
+      "disk_available_before": 90952425472,
+      "download_bytes": 1073741824,
+      "download_content_length": 1073741824,
+      "download_elapsed_ms": 855.792,
+      "download_header_hash_matches": true,
+      "download_http_get_count": 1,
+      "download_mib_s": 1196.5515804115205,
+      "frozen_budget": {
+        "download_ms_1gib": 120000,
+        "max_peak_rss_growth_bytes": 268435456,
+        "upload_ms_1gib": 180000
+      },
+      "name": "real-server-postgres-cas-1gib-upload-download",
+      "rss_end_bytes": 56795136,
+      "rss_peak_bytes": 56795136,
+      "rss_peak_delta_bytes": 17620992,
+      "rss_start_bytes": 39174144,
+      "sample": "sample-3",
+      "scope": "real Client.UploadFileResumableResult and authenticated Gin UploadSession/part SHA/finalize/PostgreSQL/physical local CAS plus real Gin HTTP GET streaming/checksum; NOT desktop Electron IPC, Web browser, WAN, live 4GiB download, or actual varying file content",
+      "size_bytes": 1073741824,
+      "size_gib": 1,
+      "status": "CURRENT-BEFORE / native production Server API and local CAS",
+      "upload_bytes": 1073741824,
+      "upload_chunk_size": 8388608,
+      "upload_elapsed_ms": 9514.071,
+      "upload_expected_chunks": 128,
+      "upload_http_put_count": 128,
+      "upload_mib_s": 107.63005481141684
+    }
+  ],
+  "failure_after_native_go_measurement": {
+    "reason": "Workflow sets XD_REAL_SERVER_CAS_LARGE_OUTPUT to relative 'real-server-cas-results/sample-i.json'; go test executes binary with cwd internal/api, so JSON landed there while Python aggregator looked in $GITHUB_WORKSPACE/real-server-cas-results; no real Go workload failed",
+    "next": "Fix output path to absolute $GITHUB_WORKSPACE/... and rerun unchanged n3 workload plus fresh exact-head full CI; archive corrected CI after new evidence amendment if needed"
+  },
+  "decision": "Accept existing real production Server/CAS on measured 1GiB zero source for backend benchmark: all absolute budgets passed. No production change, AFTER=N/A, percentage improvement=N/A. Not real Web browser/Desktop Agent IPC or WAN. Do not infer broader 4GiB/real video throughput.",
+  "limitations": "Actual physical Server/CAS throughput in localhost on zero source; not Web browser, Electron Desktop UI, WAN, HDD, random/encrypted data, 4GiB full transfer or durable-task cancellation."
+}
