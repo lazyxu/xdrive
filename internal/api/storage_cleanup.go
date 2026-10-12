@@ -11,6 +11,7 @@ import (
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"gorm.io/gorm"
 )
 
 type storageCacheCleanupDTO struct {
@@ -71,48 +72,55 @@ func (s *Server) cleanupStorageCache(ctx context.Context, kind string) (storageC
 		out.FailedFiles += result.FailedFiles
 	}
 
-	var deletedThumbnailFiles int64
+	// Lock a full cache-eviction pass against generation's physical write
+	// and metadata publication. This lock is shared by Server replicas via
+	// PostgreSQL; unlike a process-local mutex it also fences remote writers.
 	if kind != storageCleanupStaging {
-		walker, ok := s.Store.(storage.ManagedFileWalker)
-		if !ok {
-			return out, errors.New("storage backend does not support managed cache cleanup")
-		}
-		cutoff := time.Now().Add(-storageTempReclaimableAge)
-		var targets []storage.ManagedFile
-		if err := walker.WalkManagedFiles(ctx, func(file storage.ManagedFile) error {
-			if storageCleanupMatches(kind, file, cutoff) {
-				targets = append(targets, file)
+		if err := s.withMediaCacheAdvisoryLock(ctx, true, func(tx *gorm.DB) error {
+			walker, ok := s.Store.(storage.ManagedFileWalker)
+			if !ok {
+				return errors.New("storage backend does not support managed cache cleanup")
+			}
+			cutoff := time.Now().Add(-storageTempReclaimableAge)
+			var targets []storage.ManagedFile
+			if err := walker.WalkManagedFiles(ctx, func(file storage.ManagedFile) error {
+				if storageCleanupMatches(kind, file, cutoff) {
+					targets = append(targets, file)
+				}
+				return nil
+			}); err != nil {
+				return err
+			}
+			var deletedThumbnailFiles int64
+			for _, file := range targets {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				category := storageInventoryCategory(file.Key)
+				if err := s.Store.Delete(ctx, file.Key); err != nil {
+					out.FailedFiles++
+					continue
+				}
+				out.DeletedFiles++
+				out.DeletedBytes += file.Size
+				if category == "media_thumbnail" {
+					deletedThumbnailFiles++
+				}
+			}
+			if deletedThumbnailFiles > 0 {
+				if err := tx.Model(&meta.MediaMetadata{}).
+					Where("thumbnail_key <> ''").
+					Updates(map[string]any{
+						"thumbnail_key":       "",
+						"thumbnail_mime_type": "",
+						"thumbnail_width":     0,
+						"thumbnail_height":    0,
+					}).Error; err != nil {
+					return err
+				}
 			}
 			return nil
 		}); err != nil {
-			return out, err
-		}
-		for _, file := range targets {
-			if err := ctx.Err(); err != nil {
-				return out, err
-			}
-			category := storageInventoryCategory(file.Key)
-			if err := s.Store.Delete(ctx, file.Key); err != nil {
-				out.FailedFiles++
-				continue
-			}
-			out.DeletedFiles++
-			out.DeletedBytes += file.Size
-			if category == "media_thumbnail" {
-				deletedThumbnailFiles++
-			}
-		}
-	}
-
-	if deletedThumbnailFiles > 0 {
-		if err := s.DB.WithContext(ctx).Model(&meta.MediaMetadata{}).
-			Where("thumbnail_key <> ''").
-			Updates(map[string]any{
-				"thumbnail_key":       "",
-				"thumbnail_mime_type": "",
-				"thumbnail_width":     0,
-				"thumbnail_height":    0,
-			}).Error; err != nil {
 			return out, err
 		}
 	}

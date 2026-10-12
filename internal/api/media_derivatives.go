@@ -228,36 +228,40 @@ func (s *Server) generateMediaDerivative(
 	); err != nil {
 		return err
 	}
-	if _, err := s.Store.Put(ctx, key, bytes.NewReader(preview.Data)); err != nil {
-		return fmt.Errorf("store media derivative: %w", err)
-	}
-
-	if kind == mediaDerivativeThumbnail {
-		now := time.Now().UTC()
-		result := s.DB.WithContext(ctx).
-			Model(&meta.MediaMetadata{}).
-			Where(
-				"node_id = ? AND owner_id = ? AND node_revision = ? AND sha256 = ?",
-				node.ID,
-				node.OwnerID,
-				node.Revision,
-				metadata.SHA256,
-			).
-			Updates(map[string]any{
-				"thumbnail_key":       key,
-				"thumbnail_mime_type": preview.MIMEType,
-				"thumbnail_width":     preview.Width,
-				"thumbnail_height":    preview.Height,
-				"updated_at":          now,
-			})
-		if result.Error != nil {
-			return result.Error
+	// Cache cleanup must not delete an already-written derivative between
+	// its physical PUT and its metadata publication. A shared PostgreSQL
+	// advisory lock allows parallel writers and fences admin eviction across
+	// Server instances using the same database.
+	return s.withMediaCacheAdvisoryLock(ctx, false, func(tx *gorm.DB) error {
+		if _, err := s.Store.Put(ctx, key, bytes.NewReader(preview.Data)); err != nil {
+			return fmt.Errorf("store media derivative: %w", err)
 		}
-		if result.RowsAffected != 1 {
-			return background.ErrSuperseded
+		if kind == mediaDerivativeThumbnail {
+			now := time.Now().UTC()
+			result := tx.Model(&meta.MediaMetadata{}).
+				Where(
+					"node_id = ? AND owner_id = ? AND node_revision = ? AND sha256 = ?",
+					node.ID,
+					node.OwnerID,
+					node.Revision,
+					metadata.SHA256,
+				).
+				Updates(map[string]any{
+					"thumbnail_key":       key,
+					"thumbnail_mime_type": preview.MIMEType,
+					"thumbnail_width":     preview.Width,
+					"thumbnail_height":    preview.Height,
+					"updated_at":          now,
+				})
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return background.ErrSuperseded
+			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (s *Server) currentMediaDerivativeInput(

@@ -35,15 +35,17 @@ Rows below index distinct scenarios, rather than counting repeated CI invocation
 
 | R-TR-010 | Older cumulative child + group upload progress (20%) arriving after newer 80% **within same phase and attempt** | [#1495](https://github.com/lazyxu/xdrive/pull/1495) · `TestLateChildAndGroupProgressCannotRewindTransferredBytes` | [Unchanged-production First-red CI](https://github.com/lazyxu/xdrive/actions/runs/38211998634/job/114688037919) → [repaired exact-head CI #38212290600](https://github.com/lazyxu/xdrive/actions/runs/38212290600) (76 jobs; 25 success, 51 skipped, final gate green) | Merged `master@196c0b9f`; [branch cleanup](https://github.com/lazyxu/xdrive/actions/runs/38213076254) success, remote ref 404 |
 
-| R-TR-011 | Equal 100/200-byte callback after child completed/failed: old running-items snapshot erases terminal count | [#1503](https://github.com/lazyxu/xdrive/pull/1503) · `TestLateEqualByteGroupProgressCannotRewindTerminalItemCounts` (2 cases) | [Actual original-production **First-red**, Windows Go job #114696822973](https://github.com/lazyxu/xdrive/actions/runs/38214765852/job/114696822973), test-only SHA `443b0e9f`; repaired CI **pending** | Proven bug; minimal guard submitted for CI |
+| R-TR-011 | Equal-byte late group callback regresses child terminal counts | [#1503](https://github.com/lazyxu/xdrive/pull/1503) · `TestLateEqualByteGroupProgressCannotRewindTerminalItemCounts` | [First-red Windows Go](https://github.com/lazyxu/xdrive/actions/runs/38214765852/job/114696822973) → [repaired exact-head CI #38215092946](https://github.com/lazyxu/xdrive/actions/runs/38215092946) (76 jobs: 25 passed, 51 conditional skips; final gate green) | **Merged** `f200224d`; original test blob unchanged `59099bc...`, branch ref verified absent |
+
+| R-MEDIA-001 | Physical thumbnail PUT → admin eviction → old metadata publication | [#1508](https://github.com/lazyxu/xdrive/pull/1508) · `TestThumbnailCleanupDoesNotResurrectRemovedDerivativeMetadata` | **Authentic test-only First-red:** [Linux API `-race` job #114706604737](https://github.com/lazyxu/xdrive/actions/runs/38217824658/job/114706604737), test-only SHA `f3d4752c`, line 178: stale `thumbnail_key` to deleted physical `.thumb` | Reproduced; exact repair CI pending |
 
 ### R-TR-009 authentic First-red, failure specifics
 
 **Test-only source `cedd8fcce4acb019d0395165550911a3cb868f22`: real First-red confirmed** on [CI #38198337872 / Windows Go job #114645927150](https://github.com/lazyxu/xdrive/actions/runs/38198337872/job/114645927150). Exact original assertion at `group_scan_late_progress_race_test.go:75`: Phase `transferring→scanning`, `ScanComplete true→false`, `BytesDone 60→0`, `ItemsCompleted 1→0`, `ItemsQueued 0→2`, revision `3→4`. The product code was unchanged on this test-only head. The same test remains unmodified on the repair branch. The minimal fix rejects an older scan-progress snapshot only after the current group has already completed scanning. Repaired exact-head source `b892b506ec3823edd763e745e4580fa3a57a0709` passed [all 76 required CI jobs](https://github.com/lazyxu/xdrive/actions/runs/38198569804) (25 success, 51 conditional skips, 0 failure; final-gate green), merged linearly as `master@dcd47cd6e5fb7ecd15e4af3f64d5b858b7bf94ca`; [targeted branch cleanup succeeded](https://github.com/lazyxu/xdrive/actions/runs/38199255127).
 
-### Race file inventory: 34 on GitHub `master@196c0b9f` (2026-10-12)
+### Race file inventory: 36 on test-only R-MEDIA-001 branch (35 on frozen master, plus one new probe)
 
-The following is the **source inventory of 34 `*_race_test.go` files on merged `master@196c0b9fcdce9a3a8a16776808f4999fb068ba68`** (33 files on the frozen parent `9e8f3344`, plus the newly merged R-TR-010 test). It is **not** 34 newly executed tests and does not claim each file separately produced First-red. The accepted test-ordering contracts above, not file counts alone, are the de-duplication authority.
+The following is the source inventory of **35 `*_race_test.go` files on frozen GitHub master** (34 previously recorded plus R-TR-011 merged) and **36 on this test-only branch** (including R-MEDIA-001). It is **not** 34 newly executed tests and does not claim each file separately produced First-red. The accepted test-ordering contracts above, not file counts alone, are the de-duplication authority.
 
 **`internal/background/` (9 files)**
 
@@ -59,7 +61,7 @@ scheduler_parent_clean_exit_race_test.go
 scheduler_stale_progress_race_test.go
 ```
 
-**`internal/transfer/` (23 files)**
+**`internal/transfer/` (24 files)**
 
 ```text
 account_clear_context_race_test.go
@@ -78,6 +80,7 @@ group_finish_clear_handoff_race_test.go
 group_scan_late_progress_race_test.go
 history_pending_group_cancel_race_test.go
 late_child_group_progress_race_test.go
+late_equal_byte_group_terminal_counts_race_test.go
 late_skip_cancel_race_test.go
 late_success_pending_cancel_race_test.go
 late_terminal_callback_race_test.go
@@ -87,7 +90,13 @@ retry_clean_cancel_race_test.go
 terminal_progress_lifecycle_race_test.go
 ```
 
-**`internal/pullworker/` (1 files)**
+**`internal/api/` (1 new file on R-MEDIA-001 branch)**
+
+```text
+media_thumbnail_cleanup_race_test.go
+```
+
+**`internal/pullworker/` (1 file)**
 
 ```text
 queued_cancel_account_waiter_race_test.go
@@ -107,11 +116,20 @@ lock_race_test.go
 - **Assertion:** both child and group keep 80/100 bytes and 80%, `StateRunning`, and the snapshot revision does not advance for the old callback. Goroutine interleaving uses channel barriers; no timing luck or fake transport response.
 - **Frozen original base:** `master@9e8f3344ad88cbf2877be6ed369c77bdc99068fb`; test-only source and CI details will be recorded in PR after the actual execution. **Authentic First-red confirmed** on [Windows Go job #114688037919](https://github.com/lazyxu/xdrive/actions/runs/38211998634/job/114688037919), test-only commit `d332b68db3e01e5eaea207ae41c78c81ee2a434f` (only the race test and registry changed). At `late_child_group_progress_race_test.go:83`, both child and root incorrectly changed `BytesDone 80→20`, `Percent 80→20`, and snapshot revision `4→5` after the controlled late callback. There was no Go compile/format/fixture failure; original production was executed. **The original test Blob SHA must remain unchanged in the repair work commit.** Minimal repair guards older cumulative child progress and older completed-scan in-phase group aggregate callbacks, without modifying `Baseline`, `Retry`, unrelated subsystems, or durable source state. **Confirmed repair and closeout:** original test blob `915beb97599d3a05ddd31495c040ea93367185c5` is unchanged in single work commit `552cde079ac2bbe835d6f92b414f268d5eed8611` (three scoped files, ahead=1/behind=0). [Exact repaired-head CI #38212290600](https://github.com/lazyxu/xdrive/actions/runs/38212290600) completed/success: 76 jobs, 25 success, 51 conditionally skipped, zero failure; [Windows Go](https://github.com/lazyxu/xdrive/actions/runs/38212290600/job/114689045366), [Linux Go `-race`](https://github.com/lazyxu/xdrive/actions/runs/38212290600/job/114689045186), [Linux API `-race`](https://github.com/lazyxu/xdrive/actions/runs/38212290600/job/114689044965), and [final-gate](https://github.com/lazyxu/xdrive/actions/runs/38212290600/job/114691026688) all successful. [PR #1495](https://github.com/lazyxu/xdrive/pull/1495) was rebase-linearly merged as `196c0b9fcdce9a3a8a16776808f4999fb068ba68` on 2026-10-12 06:33 UTC. [Targeted cleanup #38213076254](https://github.com/lazyxu/xdrive/actions/runs/38213076254) succeeded, and exact original remote work branch Ref returned HTTP 404. This proves GitHub CI and cleanup, not GitLab delivery or physical-device coverage.
 
-### R-TR-011 authentic original-production First-red and repair gate
+### R-TR-011 authentic original-production First-red, repaired CI and merge
 
 - Frozen GitHub base: `master@e2c5fc30c21ef0b674906fe6aa57caa73bc4e03b`. Deliberately check the in-phase **equal-byte** interleaving excluded from R-TR-010's decreasing-byte guard. Create two real child transfers; publish one terminal transition, then release an older already prepared group snapshot carrying two running items and zero completed/failed. Two cases: completed child and failed child.
 - **Actual unchanged-production First-red:** test-only commit `443b0e9f9b961efb385083134525b876dc973e9d` (only new test + registry, no production edits), exact test blob `59099bc17abb1377d89465826ba7be007784b76d` (locally `gofmt`-validated). [CI #38214765852 Windows Go #114696822973](https://github.com/lazyxu/xdrive/actions/runs/38214765852/job/114696822973) executes both actual `Handle.UpdateGroup` deliveries; both completed-child and failed-child fail original assertion at `late_equal_byte_group_terminal_counts_race_test.go:111`. The first child's completed/failed counter regresses 1→0 and running counter 1→2; group snapshot revision incorrectly advances 7→8 while cumulative bytes stay 100/200. Neither gofmt nor harness caused the failure.
-- **Minimal repair under CI:** in `Manager.updateGroupLocked`, reject an older same-phase, same-byte upload-group snapshot that decreases already-published completed/failed item counts after `ScanComplete`. Do not touch child progress, scan-incomplete inventory, Retry attempt reset, terminal state, or any other module. Keep original test blob `59099bc...` untouched. Repaired exact source SHA, same-test results, required full CI/final gate and merge/branch cleanup must be recorded **after observing them**, not in anticipation.
+- **Minimal repaired code:** in `Manager.updateGroupLocked`, reject an older same-phase, same-byte upload-group snapshot that decreases already-published completed/failed item counts after `ScanComplete`. Do not touch child progress, scan-incomplete inventory, Retry attempt reset, terminal state, or any other module. Keep original test blob `59099bc...` untouched. Repaired exact source SHA, same-test CI, final gate, merge, and branch cleanup evidence are recorded below.
+
+**R-TR-011 post-merge exact evidence (2026-10-12):** Repaired one-work-commit head `4d216ab05844ea63daf44f47778403b942728e33` preserved original test blob `59099bc17abb1377d89465826ba7be007784b76d`. [Repaired exact-head CI #38215092946](https://github.com/lazyxu/xdrive/actions/runs/38215092946) completed successful: 76 jobs, 25 success, 51 conditional skips, 0 failure; Windows Go and Linux Go/API `-race` plus final-gate all passed. [#1503](https://github.com/lazyxu/xdrive/pull/1503) rebase-linearly merged as `f200224d5bbab2034a5499b0fe887296f7d3042c`. The original work branch ref returned 404. The concurrent master scan cleanup workflow hit an API 403 rate-limit; the ref-absence check, not the failed scan status, establishes branch cleanup. No GitLab or physical E2E claimed.
+
+### R-MEDIA-001 authentic First-red and repair in progress
+
+- Fixed master: `a2d2836cb94fb9a61f0ece8549291db0dfa1fbfa`. One new `internal/api/media_thumbnail_cleanup_race_test.go` integration test runs only with real `XD_TEST_DATABASE_URL`; uses repository's original PostgreSQL17 fixture, authentic uploaded PNG, original `Server.generateMediaDerivative`, local atomic `Local.Put`, original admin `cleanupStorageCache` and physical `Local.Open`. A narrow wrapper pauses after the real physical PUT returns; this is a scheduling barrier, not a fake API/SQL/cache response.
+- Verify the real thumbnail is readable, trigger cache cleanup, release the delayed generator, then require that deleted physical thumbnail has no nonempty `MediaMetadata.thumbnail_key`/MIME/dimensions. A valid serialized cleanup is permitted, without rejecting implementations that serialize correctly.
+- Original test-only work head `f3d4752c157236eaeb104349ff96bc2951b4743b` (only the integration test and registry) produced real [First-red Linux API `-race` #114706604737](https://github.com/lazyxu/xdrive/actions/runs/38217824658/job/114706604737): at line 178 the original physical cache key `.xdrive-media/thumbnails/...-v4-512.thumb` was not readable after successful deletion, yet `MediaMetadata.ThumbnailKey`, MIME and dimensions were republished by the delayed real generator. Only this new test failed; formatting, harness, and database prerequisites succeeded. This is a real logical race, not proof of physical devices or Go memory access races.
+- **Minimal production repair (CI pending):** immutable original test blob `6f082d828a1bbbb65d7d63676f70aba719d82281`. Shared PostgreSQL advisory transaction lock during derivative physical Store.Put + metadata publication; exclusive lock during administrator managed-cache deletion + DB thumbnail-key reset. Shared readers/writers permit independent media producers, exclusive admin cleanup serializes across Server instances using the same DB. Preserve ordinary cache identity and no Source/sync/transfer change. Require unchanged repro green and complete exact-head CI before merging.
 
 ### Known covered test families (avoid category-level duplicate probes)
 
@@ -129,8 +147,8 @@ lock_race_test.go
 | --- | --- | --- |
 | R-TR-009 | Older folder-scanning snapshot delivered after `ScanComplete=true` / `PhaseTransferring` was published | Completed: red → green → merged #1476; exact-head CI success, branch deleted |
 | R-TR-010 | Child `ProgressAndUpdateGroup` callbacks in one running upload attempt: newer 80% then older 20%; child/root/revision must not regress | **Accepted, merged #1495**: [First-red #38211998634](https://github.com/lazyxu/xdrive/actions/runs/38211998634) → [repaired exact-head #38212290600](https://github.com/lazyxu/xdrive/actions/runs/38212290600), original test identical, merge `196c0b9f` and cleanup #38213076254 success |
-| R-TR-011 | Equal 100/200 bytes, first child transitions running→completed/failed between captured callbacks; old aggregate must preserve terminal counters and revision | **Confirmed authentic First-red**: original-production SHA `443b0e9f`, [Windows Go job #114696822973](https://github.com/lazyxu/xdrive/actions/runs/38214765852/job/114696822973) both cases failed at line 111, revision 7→8. Minimal fix submitted; repaired exact-head CI pending. |
-| R-MEDIA-001 | Concurrent thumbnail generation vs deletion/eviction of the same physical cache identity; require actual generation + eviction + reader evidence | Not run in this registry |
+| R-TR-011 | Same 100/200 bytes but older progress precedes a child completion/failure | **Completed**: original test-only `443b0e9f` First-red Windows Go #114696822973; original test blob `59099bc17abb1377d89465826ba7be007784b76d` unchanged in repaired head `4d216ab0`, [CI 38215092946](https://github.com/lazyxu/xdrive/actions/runs/38215092946) success; rebase-linear merged `master@f200224d5bbab2034a5499b0fe887296f7d3042c` and original remote branch Ref 404. Cleanup scan run 38216585134 failed independently due GitHub App API 403 rate limit; not evidence the merged work branch remains. |
+| R-MEDIA-001 | Real PostgreSQL + Local Store: physical derivative PUT paused after atomic write, admin removes it, old generation resumes and republishes missing cache identity | **First-red confirmed**: unchanged production `f3d4752c`, [CI #38217824658 Linux API `-race`](https://github.com/lazyxu/xdrive/actions/runs/38217824658/job/114706604737); only the new test failed, assertion `media_thumbnail_cleanup_race_test.go:178`. Original test blob `6f082d828a1bbbb65d7d63676f70aba719d82281` preserved. DB advisory shared/exclusive lock fix submitted; repaired exact-head CI pending. |
 | R-SYNC-001 | Source deletion/revision revoke vs running durable synchronization; require actual worker/DB fencing and cancellation semantics | Not run in this registry |
 | R-DESKTOP-001 | Renderer window/session switch vs active Agent IPC callbacks; verify old session never updates new session, without aborting durable sync | Not run in this registry |
 
