@@ -229,7 +229,11 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 		if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
 			t.Fatal(err)
 		}
-		if got.SourceID != source.ID || got.Revision != 7 || got.Checked != 1 ||
+		var submitted localEvidenceCloudMetadataRequest
+		if err := json.Unmarshal([]byte(payload), &submitted); err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceID != source.ID || got.Revision != 7 || got.Checked != len(submitted.Items) ||
 			!got.CloudMetadataMatched || !got.PhysicalCASMatched ||
 			got.CloudBytesVerified || got.ContentVerified || got.CommitSupported ||
 			got.Authoritative || got.MissingInferenceSafe {
@@ -237,7 +241,34 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 		}
 	}
 	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
-	sendPhysical(ownerJWT, clone(), original, http.StatusBadRequest) // only one object/read
+	sendPhysical(ownerJWT, clone(), original, http.StatusOK) // two actual CAS objects, atomic batch
+	// Total-read-size and per-request item count are validated before any DB
+	// or Store work, including on otherwise valid ordered native evidence.
+	overBudget := append([]localEvidenceCloudMetadataItem(nil), claims...)
+	overBudget[0].Size = 64 << 20
+	sendPhysical(ownerJWT, clone(), body(previous, current, overBudget), http.StatusBadRequest)
+	tooMany := make([]localEvidenceCloudMetadataItem, 5)
+	for i := range tooMany {
+		tooMany[i] = localEvidenceCloudMetadataItem{
+			EvidenceID: claims[0].EvidenceID + uint64(i),
+			SHA256:     claims[0].SHA256, Size: 0,
+		}
+	}
+	sendPhysical(ownerJWT, clone(), body(previous, current, tooMany), http.StatusBadRequest)
+	// A corrupt second object rejects the WHOLE request, not a 1-of-2 success.
+	originalSecond := fmt.Sprintf("stored-original-%d-%s", 1, rootID)
+	badSecond := strings.Repeat("x", len(originalSecond))
+	written, writeErr := casStore.Put(context.Background(), keys[1], strings.NewReader(badSecond))
+	if writeErr != nil || written != int64(len(badSecond)) {
+		t.Fatalf("failed to corrupt second physical CAS object: %d %v", written, writeErr)
+	}
+	sendPhysical(ownerJWT, clone(), original, http.StatusConflict)
+	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
+	written, writeErr = casStore.Put(context.Background(), keys[1], strings.NewReader(originalSecond))
+	if writeErr != nil || written != int64(len(originalSecond)) {
+		t.Fatalf("failed to restore second physical CAS object: %d %v", written, writeErr)
+	}
+	sendPhysical(ownerJWT, clone(), original, http.StatusOK)
 	sendPhysical(otherJWT, clone(), sample, http.StatusNotFound)
 	sendPhysical(ownerJWT, map[string]string{"If-Match": "\"7\""}, sample, http.StatusForbidden)
 	wrongRevision := clone()

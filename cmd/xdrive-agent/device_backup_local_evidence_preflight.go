@@ -32,11 +32,32 @@ type localEvidencePreflightSummary struct {
 	MissingInferenceSafe     bool
 }
 
+// selectLocalEvidencePhysicalSamples chooses at most four ordered claims,
+// sharing one 64MiB byte budget. Claims omitted from this sampling window
+// are never considered physically verified or committed.
+func selectLocalEvidencePhysicalSamples(
+	claims []client.LocalEvidenceCloudDigest,
+) ([]client.LocalEvidenceCloudDigest, int64) {
+	samples := make([]client.LocalEvidenceCloudDigest, 0, 4)
+	var total int64
+	for _, claim := range claims {
+		if claim.Size < 0 || claim.Size > 64<<20-total {
+			continue
+		}
+		samples = append(samples, claim)
+		total += claim.Size
+		if len(samples) == 4 {
+			break
+		}
+	}
+	return samples, total
+}
+
 // preflightLocalBoundBackupEvidencePage reads one private advisory page and
 // rechecks current Server SourceItem/Node/alias consistency, then hashes the
 // actual current authorized original files against BOTH sealed journals.
-// It also checks current Server File/FileVersion/CAS *metadata* but NEVER
-// reads physical cloud object bytes or issues a durable commit token.
+// It also checks File/FileVersion/CAS metadata and samples bounded physical
+// CAS bytes. Neither result is a durable commit token or upload permission.
 func (c *agentController) preflightLocalBoundBackupEvidencePage(
 	ctx context.Context, sourceID uint64, afterEvidenceID uint64,
 ) (localEvidencePreflightSummary, error) {
@@ -138,24 +159,23 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 			return empty, privateLocalSnapshotError(errors.New("cloud metadata no longer matches local original bytes"))
 		}
 
-		// Proof-of-storage pilot: sample at most ONE small actual CAS object
-		// per explicitly requested private evidence page. This rehashes
-		// Server storage outside the DB lock and repeats DB proof after read.
-		// Other candidates (and any object >64 MiB) remain PHYSICALLY
-		// UNVERIFIED; the complete page is never a commit/mirror token.
-		if len(claims) != 0 && claims[0].Size <= 64<<20 {
-			physical, err := cli.CheckLocalSourceItemCloudBytes(
+		// Sample up to four eligible *ordered* candidates within 64MiB
+		// cumulative physical I/O. Skipped large items remain UNVERIFIED;
+		// this result cannot authorize a whole page or a later write.
+		samples, sampleBytes := selectLocalEvidencePhysicalSamples(claims)
+		if len(samples) != 0 {
+			physical, err := cli.CheckLocalSourceItemCloudBytesBatch(
 				readCtx, sourceID, source.Revision, proof,
-				generation.PreviousSHA256, generation.CurrentSHA256, claims[0])
-			if err != nil || physical.Checked != 1 ||
+				generation.PreviousSHA256, generation.CurrentSHA256, samples)
+			if err != nil || physical.Checked != len(samples) ||
 				!physical.CloudMetadataMatched || !physical.PhysicalCASMatched ||
 				physical.CloudBytesVerified || physical.ContentVerified ||
 				physical.CommitSupported || physical.Authoritative ||
 				physical.MissingInferenceSafe {
-				return empty, privateLocalSnapshotError(errors.New("physical CAS sample no longer matches original"))
+				return empty, privateLocalSnapshotError(errors.New("physical CAS batch no longer matches original"))
 			}
-			result.PhysicalCASObservedFiles = 1
-			result.PhysicalCASObservedBytes = claims[0].Size
+			result.PhysicalCASObservedFiles = len(samples)
+			result.PhysicalCASObservedBytes = sampleBytes
 		}
 		// The expensive local hash may have raced device revoke, Node edits,
 		// alias changes or source configuration changes. Repeat Server proof
