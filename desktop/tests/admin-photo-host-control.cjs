@@ -24,7 +24,7 @@ test('photo-host executor is fixed enable-only, never an admin-supplied Docker c
   assert.ok(read('scripts/ci/gitlab-server-validation.sh').includes('bash scripts/test-photo-host-enable-control.sh'))
 })
 
-test('host-side applied revision proof is readonly until audited Server dispatch exists', () => {
+test('host-side revision proof must bind to audited Server dispatch token', () => {
   const api = read('internal/api/admin_photo_host_desired.go')
   const reader = read('internal/api/admin_photo_host_control_status.go')
   const shared = read('ui/shared/src/service-dependencies.ts')
@@ -44,8 +44,12 @@ test('host-side applied revision proof is readonly until audited Server dispatch
   assert.ok(reader.includes('info.Mode().IsRegular()'))
   assert.ok(reader.includes('!status.ProfileVerified'))
   assert.ok(reader.includes('status.AppliedRevision != status.Revision'))
-  assert.ok(ui.includes('宿主控制证据尚未与管理员审计授权令牌绑定'))
+  assert.ok(ui.includes('未经审计请求令牌匹配的宿主状态不可当作已应用'))
   const router = read('internal/api/router.go')
-  assert.equal(router.includes('"/services/photo-intelligence/host/apply"'), false,
-    'host-side executor does not grant an unaudited public apply endpoint')
+  assert.ok(router.includes('admin.POST("/services/photo-intelligence/host/apply", s.adminPhotoHostApply)'))
+  const dispatcher = read('internal/api/admin_photo_host_apply.go')
+  assert.ok(dispatcher.includes('recordAuditTx('), 'missing durable audit before host request')
+  assert.ok(dispatcher.includes('writePhotoHostApplyRequest('))
+  assert.ok(dispatcher.includes('photoHostApplyBusyTx('))
+  assert.ok(dispatcher.includes('os.Link('), 'fixed host request must be no-clobber')
 })

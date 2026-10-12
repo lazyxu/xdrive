@@ -875,6 +875,8 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
         cloudAdminPhotoHostPreflight: () =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostPreflight>>
+        cloudApplyAdminPhotoHost: (input: import('../../../ui/shared/src').XDrivePhotoHostApplyInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostApplyResult>>
         cloudSetAdminPhotoHost: (input: import('../../../ui/shared/src').XDrivePhotoHostUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
         cloudAdminPhotoHostRevisions: () =>

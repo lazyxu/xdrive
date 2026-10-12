@@ -639,6 +639,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/admin-source-worker/rollback", h.cloudRollbackAdminSourceWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-host", h.cloudAdminPhotoHost)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-host/preflight", h.cloudAdminPhotoHostPreflight)
+	mux.HandleFunc("POST /v1/cloud/admin-photo-host/apply", h.cloudApplyAdminPhotoHost)
 	mux.HandleFunc("PUT /v1/cloud/admin-photo-host", h.cloudSetAdminPhotoHost)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-host/revisions", h.cloudAdminPhotoHostRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-photo-host/rollback", h.cloudRollbackAdminPhotoHost)
@@ -2346,6 +2347,35 @@ func (h *desktopIPCHandler) cloudAdminPhotoHostPreflight(w http.ResponseWriter, 
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+type desktopIPCPhotoHostApplyController interface {
+	CloudApplyAdminPhotoHost(context.Context, client.AdminPhotoHostApplyInput) (client.AdminPhotoHostApplyResult, error)
+}
+
+func (h *desktopIPCHandler) cloudApplyAdminPhotoHost(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCPhotoHostApplyController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_unavailable", "Safe photo host enable unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || *input.Revision == 0 || *input.Revision >= 1<<60 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_host_apply", "Saved enabled photo host revision required")
+		return
+	}
+	out, err := provider.CloudApplyAdminPhotoHost(r.Context(), client.AdminPhotoHostApplyInput{Revision: *input.Revision})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusAccepted, out)
 }
 
 func (h *desktopIPCHandler) cloudSetAdminPhotoHost(w http.ResponseWriter, r *http.Request) {

@@ -47,7 +47,8 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(&meta.User{}, &meta.AuditEvent{},
-		&meta.AdminPhotoHostSetting{}, &meta.AdminPhotoHostRevision{}); err != nil {
+		&meta.AdminPhotoHostSetting{}, &meta.AdminPhotoHostRevision{},
+		&meta.AdminPhotoHostApply{}); err != nil {
 		t.Fatal(err)
 	}
 	s := &Server{
@@ -98,6 +99,7 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		{http.MethodGet, path, ""},
 		{http.MethodGet, path + "/revisions", ""},
 		{http.MethodGet, path + "/preflight", ""},
+		{http.MethodPost, path + "/apply", `{"revision":1}`},
 		{http.MethodPut, path, `{"revision":0,"enabled":true}`},
 		{http.MethodPost, path + "/rollback", `{"revision":1,"target_revision":0}`},
 	} {
@@ -189,8 +191,8 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		preflight.ApplySupported || !preflight.HostControlObserved {
 		t.Fatalf("healthy host preflight incorrectly authorized apply: %d %s", preflightResult.Code, preflightResult.Body.String())
 	}
-	if res := request(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); res.Code != 404 {
-		t.Fatalf("dangerous photo host apply endpoint exposed: %d", res.Code)
+	if res := request(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); res.Code != http.StatusConflict {
+		t.Fatalf("unbound host receipt must not enable re-applying a revision: %d", res.Code)
 	}
 	revs := request(http.MethodGet, path+"/revisions", adminToken, "")
 	var history struct {
@@ -214,7 +216,8 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		t.Fatalf("host desired rollback failed: %d %s", res.Code, res.Body.String())
 	}
 	cfg = get()
-	if cfg.Revision != 3 || !cfg.DesiredEnabled || cfg.ApplyState != "pending" || cfg.ApplySupported {
+	if cfg.Revision != 3 || !cfg.DesiredEnabled || cfg.ApplyState != "pending" ||
+		!cfg.ApplySupported || cfg.ApplyRequestID != "" {
 		t.Fatalf("rollback incorrectly claimed host activation: %+v", cfg)
 	}
 	revs = request(http.MethodGet, path+"/revisions", adminToken, "")

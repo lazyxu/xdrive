@@ -640,6 +640,8 @@ type AdminPhotoHostConfig struct {
 	HostControlRevision        uint64     `json:"host_control_revision"`
 	HostAppliedRevision        uint64     `json:"host_applied_revision"`
 	HostControlProfileVerified bool       `json:"host_control_profile_verified"`
+	ApplyRequestID             string     `json:"apply_request_id,omitempty"`
+	ApplyRevision              uint64     `json:"apply_revision"`
 }
 type AdminPhotoHostPreflightCheck struct {
 	ID     string `json:"id"`
@@ -657,6 +659,14 @@ type AdminPhotoHostPreflight struct {
 	Checks              []AdminPhotoHostPreflightCheck `json:"checks"`
 }
 
+type AdminPhotoHostApplyInput struct {
+	Revision uint64 `json:"revision"`
+}
+type AdminPhotoHostApplyResult struct {
+	State     string `json:"state"`
+	Revision  uint64 `json:"revision"`
+	RequestID string `json:"request_id"`
+}
 type AdminPhotoHostUpdate struct {
 	Revision uint64 `json:"revision"`
 	Enabled  bool   `json:"enabled"`
@@ -683,6 +693,11 @@ func (c *Client) AdminPhotoHostConfig(ctx context.Context) (AdminPhotoHostConfig
 func (c *Client) AdminPhotoHostPreflight(ctx context.Context) (AdminPhotoHostPreflight, error) {
 	var out AdminPhotoHostPreflight
 	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/host/preflight", nil, &out)
+	return out, err
+}
+func (c *Client) ApplyAdminPhotoHost(ctx context.Context, input AdminPhotoHostApplyInput) (AdminPhotoHostApplyResult, error) {
+	var out AdminPhotoHostApplyResult
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/photo-intelligence/host/apply", input, &out)
 	return out, err
 }
 func (c *Client) UpdateAdminPhotoHost(ctx context.Context, input AdminPhotoHostUpdate) (AdminPhotoHostConfig, error) {

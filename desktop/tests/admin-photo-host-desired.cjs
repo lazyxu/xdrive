@@ -33,7 +33,7 @@ test('P1-PH1a has one fixed Photo Intelligence host intent, separate from global
     'admin.POST("/services/photo-intelligence/host/rollback"',
   ]) assert.ok(routing.includes(endpoint), endpoint)
   assert.ok(routing.includes('admin.Use(s.requireAdmin())'))
-  assert.equal(routing.includes('admin.POST("/services/photo-intelligence/host/apply"'), false)
+  assert.ok(routing.includes('admin.POST("/services/photo-intelligence/host/apply", s.adminPhotoHostApply)'))
   for (const forbidden of ['docker.sock', 'docker exec', 'docker compose', 'HostControlDir =', 'SourceCredential']) {
     assert.equal(server.includes(forbidden), false, 'host desired Server must not execute host ops: ' + forbidden)
   }
@@ -69,7 +69,7 @@ test('Photo host desired lifecycle uses the same authenticated Go client and Des
   assert.ok(contents['desktop/src/preload/index.cts'].includes("agent:cloud-set-admin-photo-host"))
 })
 
-test('shared Web/Desktop/Mobile Web panel can edit desired revision but cannot apply host or fabricate healthy models', () => {
+test('shared Web/Desktop/Mobile Web panel separates saving, audited enable and real model effect proof', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const model = read('ui/shared/src/service-dependencies.ts')
   const panel = read('ui/shared/src/mui/PhotoHostDesiredPanel.tsx')
@@ -78,7 +78,7 @@ test('shared Web/Desktop/Mobile Web panel can edit desired revision but cannot a
   const webAPI = read('web/src/api.ts')
   const exports = read('ui/shared/src/mui/index.tsx')
   assert.ok(model.includes('export type XDrivePhotoHostConfig'))
-  assert.ok(model.includes('apply_supported: false'))
+  assert.ok(model.includes('apply_supported: boolean'))
   assert.ok(exports.includes("export * from './PhotoHostDesiredPanel'"))
   assert.ok(page.includes("case 'photo-face': return ['status', 'config', 'verify', 'history']"))
   assert.ok(page.includes("selectedPage === 'photo-face' && currentTab !== 'status'"))
@@ -100,6 +100,8 @@ test('shared Web/Desktop/Mobile Web panel can edit desired revision but cannot a
   assert.ok(panel.includes('创建回滚修订（不应用宿主）'))
   assert.ok(panel.includes('没有操作任何宿主容器'))
   assert.ok(panel.includes("section === 'history' && source.loadPhotoHostRevisions"))
-  assert.equal(panel.includes('applyPhotoHost('), false)
+  assert.ok(panel.includes('source.applyPhotoHost({ revision: config.revision })'))
+  assert.ok(panel.includes('安全启用共享宿主（仅启用）'))
+  assert.ok(panel.includes('具体模型尚未验证') || panel.includes('模型尚未验证'))
   assert.equal(panel.includes('docker.sock'), false)
 })

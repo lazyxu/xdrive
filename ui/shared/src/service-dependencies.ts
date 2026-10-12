@@ -232,9 +232,11 @@ export type XDrivePhotoHostConfig = {
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
-  apply_state: 'unmanaged' | 'pending'
+  apply_state: 'unmanaged' | 'pending' | 'queued' | 'host-verified' | 'failed'
   editable: boolean
-  apply_supported: false
+  apply_supported: boolean
+  apply_request_id?: string
+  apply_revision?: number
   requirement: string
   host_observed: boolean
   host_runtime_state: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
@@ -253,13 +255,15 @@ export type XDrivePhotoHostPreflight = {
   local_checks_complete: boolean
   host_observed: boolean
   host_control_observed: boolean
-  apply_supported: false
+  apply_supported: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'
     detail: string
   }>
 }
+export type XDrivePhotoHostApplyInput = { revision: number }
+export type XDrivePhotoHostApplyResult = { state: 'queued'; revision: number; request_id: string }
 export type XDrivePhotoHostUpdate = { revision: number; enabled: boolean }
 export type XDrivePhotoHostRevisionPage = {
   items: Array<{
