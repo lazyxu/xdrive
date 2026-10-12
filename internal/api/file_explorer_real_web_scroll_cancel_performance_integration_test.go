@@ -23,6 +23,18 @@ import (
 	"github.com/lazyxu/xdrive/internal/storage"
 )
 
+// fileExplorerPhysicalCapacityStore preserves the real production local
+// filesystem capacity contract while retaining existing thumbnail IO counters.
+// Only the opt-in physical Desktop fixture uses this wrapper.
+type fileExplorerPhysicalCapacityStore struct {
+	*fileExplorerMediaPerfStore
+	local *storage.Local
+}
+
+func (s *fileExplorerPhysicalCapacityStore) Capacity(ctx context.Context) (storage.Capacity, error) {
+	return s.local.Capacity(ctx)
+}
+
 // TestFileExplorerRealWebScrollCancelFixture100K supplies actual signed
 // FileExplorer children and image-thumbnail routes to a mounted Web renderer.
 // The 1.5s response writer and statistics endpoints are entirely test-only.
@@ -45,12 +57,30 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		&meta.File{}, &meta.AuditEvent{}, &meta.MediaMetadata{}); err != nil {
 		t.Fatal(err)
 	}
+	// The real Desktop Main/Renderer starts more read-only APIs than the Web-only
+	// viewport fixture. Migrate their genuine models only for this physical
+	// Desktop workload; otherwise unrelated 500s hide its native Files UI.
+	if os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" {
+		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.Source{},
+			&meta.FileRecentAccess{}, &meta.FileFavorite{}, &meta.FileQuickAccess{},
+			&meta.FileSavedSearch{}, &meta.FileTag{}, &meta.FileNodeTag{},
+			&meta.NodeChange{}, &meta.FileOperation{},
+			&meta.PhotoIntelligenceReanalyzeIntent{}, &meta.UploadSession{},
+			&meta.BackgroundOwnerCancellation{}, &meta.SyncRun{},
+			&meta.ArchivePrepareRun{}); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	local, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	store := &fileExplorerMediaPerfStore{inner: local}
+	var serverStore storage.Store = store
+	if os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" {
+		serverStore = &fileExplorerPhysicalCapacityStore{fileExplorerMediaPerfStore: store, local: local}
+	}
 	scheduler := background.NewScheduler(context.Background(), background.Config{
 		Capacity: map[background.ResourceClass]int{background.ResourceMediaCPU: 6},
 		QueueCapacity: map[background.ResourceClass]int{
@@ -59,7 +89,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	})
 	defer scheduler.Close()
 	srv := &Server{
-		DB: db, Store: store,
+		DB: db, Store: serverStore,
 		Auth:       auth.New("file-explorer-real-scroll-perf-secret", time.Hour),
 		RefreshTTL: 24 * time.Hour, AllowedOrigin: "http://localhost",
 		MaxUploadBytes: 16 << 20, BackgroundScheduler: scheduler,
@@ -80,6 +110,24 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1"
 	if physicalMode {
 		distinctPhysicalImages = logicalCount
+	}
+	// The real Desktop shell needs quota + background status to boot its Files
+	// view. Fail BEFORE seeding 100k real JPEG bodies if the test fixture lacks
+	// any native schema/capacity contract; do not mislabel this as a slow UI.
+	if physicalMode {
+		for _, route := range []string{
+			"/api/v1/me/quota",
+			"/api/v1/background-tasks/active-summary",
+			"/api/v1/background-tasks/page?limit=10",
+		} {
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			writer := httptest.NewRecorder()
+			router.ServeHTTP(writer, req)
+			if writer.Code != http.StatusOK {
+				t.Fatalf("physical Desktop fixture prerequisite GET %s returned HTTP %d", route, writer.Code)
+			}
+		}
 	}
 	seedStarted := time.Now()
 	if err := db.Exec(`CREATE TABLE file_explorer_real_scroll_variants (

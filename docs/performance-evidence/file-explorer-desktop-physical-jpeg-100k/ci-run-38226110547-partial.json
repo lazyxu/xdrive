@@ -1,0 +1,121 @@
+{
+  "workload_id": "P035/M002-a",
+  "state": "Partial valid Grid n=1, incomplete full n=3 Grid/Details; Details invalid harness",
+  "source_sha": "21ec96556c5cd12794ff6dd216dd2bb9989f5a94",
+  "ci_run": "https://github.com/lazyxu/xdrive/actions/runs/38226110547",
+  "original_artifact": "https://github.com/lazyxu/xdrive/actions/runs/38226110547/artifacts/11736903597",
+  "physical_jpeg_per_fixture": 100000,
+  "physical_bytes_per_fixture": 70893376,
+  "metrics": {
+    "sample": 1,
+    "view": "grid",
+    "productionDesktop": true,
+    "physicalDistinctJPEGCAS": 100000,
+    "viewportFractions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95
+    ],
+    "viewportRows": [
+      {
+        "fraction": 0,
+        "firstSixDecodedMs": 321.605047,
+        "decoded": 6,
+        "newlyDecoded": 6,
+        "mounted": 64,
+        "scrollTop": 0,
+        "realGoRequests": 18,
+        "realGoBytes": 10257,
+        "goActive": 3,
+        "canceled": 0,
+        "failed": 0
+      },
+      {
+        "fraction": 0.25,
+        "firstSixDecodedMs": 1165.5297770000002,
+        "decoded": 10,
+        "newlyDecoded": 10,
+        "mounted": 88,
+        "scrollTop": 462340,
+        "realGoRequests": 53,
+        "realGoBytes": 33260,
+        "goActive": 5,
+        "canceled": 0,
+        "failed": 0
+      },
+      {
+        "fraction": 0.5,
+        "firstSixDecodedMs": 547.4293349999998,
+        "decoded": 7,
+        "newlyDecoded": 7,
+        "mounted": 40,
+        "scrollTop": 924681,
+        "realGoRequests": 73,
+        "realGoBytes": 48155,
+        "goActive": 2,
+        "canceled": 0,
+        "failed": 0
+      },
+      {
+        "fraction": 0.75,
+        "firstSixDecodedMs": 850.5182140000002,
+        "decoded": 11,
+        "newlyDecoded": 11,
+        "mounted": 88,
+        "scrollTop": 1387022,
+        "realGoRequests": 102,
+        "realGoBytes": 68061,
+        "goActive": 2,
+        "canceled": 1,
+        "failed": 0
+      },
+      {
+        "fraction": 0.95,
+        "firstSixDecodedMs": 596.8623399999997,
+        "decoded": 8,
+        "newlyDecoded": 8,
+        "mounted": 88,
+        "scrollTop": 1756894,
+        "realGoRequests": 133,
+        "realGoBytes": 87242,
+        "goActive": 5,
+        "canceled": 1,
+        "failed": 0
+      }
+    ],
+    "viewportFirstSixP50Ms": 596.8623399999997,
+    "rendererWorkingSetStartBytes": 176291840,
+    "rendererWorkingSetPeakBytes": 255270912,
+    "rendererWorkingSetGrowthBytes": 78979072,
+    "mainCpuUserMs": 435.126,
+    "mainCpuSystemMs": 133.319,
+    "goThumbnailRequests": 133,
+    "goResponseBytes": 87242,
+    "maxGoConcurrent": 6,
+    "canceled": 1,
+    "errors": 0,
+    "budgets": {
+      "viewportMs": 20000,
+      "rendererGrowthBytes": 268435456,
+      "maxGoConcurrent": 6
+    },
+    "exclusions": "Native Linux Xvfb; Grid/Details 5 sampled windows not 100k simultaneous decodes; no H264/Live/RAW/HEVC, no WAN, no Windows hardware and no cancellation-latency proof",
+    "passed": true,
+    "fixtureSeedMs": 58553.469,
+    "persistedPhysicalOriginalBytes": 70893376,
+    "agentRssGrowthBytes": 3235840,
+    "goRssGrowthBytes": 0
+  },
+  "invalid_details": {
+    "file_explorer_mounted": true,
+    "logical_items_visible": 100000,
+    "observed_view": "当前视图：图标 · 中图标",
+    "requested_mode": "details",
+    "cause": "Desktop FileExplorer workspace view state persists inside already initialized React hook, so a localStorage-only mutation on File Sidebar click did not activate Details. The production View menu must be used.",
+    "details_viewport_samples": 0,
+    "full_workload_valid": false
+  },
+  "performance_decision": "Grid sample met originally frozen budgets but n=1 cannot establish full P035. No optimized product code, no matched AFTER; don't compare P006 Web against this run as A/B."
+}

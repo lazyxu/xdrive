@@ -1,0 +1,79 @@
+name: FileExplorer Desktop Real 100k Physical JPEG Agent Grid Details
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  file-explorer-desktop-physical-100k:
+    if: github.head_ref == 'perf/file-explorer-desktop-physical-jpeg-100k-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_DESKTOP_PHYSICAL_100K_PERF: '1'
+      XD_FILEEXPLORER_DESKTOP_API_BINARY: ${{ github.workspace }}/desktop/file-explorer-desktop-physical-100k-bin/api.test
+      XD_FILEEXPLORER_DESKTOP_AGENT_BINARY: ${{ github.workspace }}/desktop/file-explorer-desktop-physical-100k-bin/xdrive-agent
+      XD_FILEEXPLORER_DESKTOP_RESULTS: ${{ github.workspace }}/desktop/file-explorer-desktop-physical-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate reusable native JPEG fixture, branch-only benchmark and integrity guards
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go internal/api/file_explorer_real_physical_jpeg_100k_performance_test.go)"
+          node --check desktop/scripts/file-explorer-desktop-physical-100k-electron-main.cjs
+          node --check desktop/scripts/file-explorer-desktop-physical-100k-runner.cjs
+          node --test desktop/tests/file-explorer-desktop-physical-100k-benchmark.cjs
+      - name: Build actual Web fixture, production Desktop Main/Preload/Renderer and native Gin/Agent
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build
+          npm --prefix desktop run build
+          mkdir -p desktop/file-explorer-desktop-physical-100k-bin
+          go test -c -o "$XD_FILEEXPLORER_DESKTOP_API_BINARY" ./internal/api
+          go build -o "$XD_FILEEXPLORER_DESKTOP_AGENT_BINARY" ./cmd/xdrive-agent
+      - name: Measure unchanged CURRENT 100k distinct physical CAS JPEGs through real Desktop IPC Grid/Details and five virtual viewports
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_DESKTOP_RESULTS"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/file-explorer-desktop-physical-100k-runner.cjs
+          test "$(find "$XD_FILEEXPLORER_DESKTOP_RESULTS" -maxdepth 1 -type f -name 'sample-*-*.json' | wc -l)" -eq 6
+          cat "$XD_FILEEXPLORER_DESKTOP_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-desktop-real-100k-distinct-physical-jpeg-n3
+          path: desktop/file-explorer-desktop-physical-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
