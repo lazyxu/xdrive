@@ -116,7 +116,8 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		preflightResult.Header().Get("Cache-Control") != "no-store" ||
 		json.Unmarshal(preflightResult.Body.Bytes(), &preflight) != nil ||
 		preflight.Action != "unset" || preflight.ApplySupported || preflight.LocalChecksComplete ||
-		len(preflight.Checks) != 7 {
+		len(preflight.Checks) != 7 || preflight.HostRevisionVerified ||
+		len(preflight.ModelInfoChecks) != 4 || preflight.ModelInfoChecks[0].State != "unknown" {
 		t.Fatalf("preflight of unmanaged host was unsafe: %d %s", preflightResult.Code, preflightResult.Body.String())
 	}
 	cfg := get()

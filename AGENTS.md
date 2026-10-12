@@ -78,6 +78,12 @@ Provider delivery rules:
 
 
 
+## P1-PH1b2c1 — Photo Intelligence model Info verification
+
+- Shared Web/Mobile Web/Desktop administrator **系统依赖 → 人脸检测与人物聚类 → 检测** manually requests the existing admin-only, no-store `GET /api/v1/admin/services/photo-intelligence/host/preflight` to inspect four fixed Face, Smart/OCR, Semantic and Creative `Info(ctx)` endpoints. Never probe models from the eleven-service overview, background status refresh or polling.
+- Only when the saved **enabled** revision exactly matches a *durably host-verified* administrator request token with a fresh fixed Host Manager receipt and a clear queue, execute four bounded parallel read-only Info probes. Validate each model Info protocol/schema; return only fixed service IDs, safe states (ready/failed/unconfigured/unknown) and redacted details. A timeout, missing host proof, stale desired revision, host drift or mismatched token must not produce green evidence.
+- Model Info responsiveness and token-bound host revision are **separate** observations. The current analyzer Info contract has no Host Manager instance/request-token attestation; keep `effect-proof=unknown` and four model `activation_state=deployment-only` in the global inventory. Never claim a verified same-host model effect, task success, fleet-wide deployment, generic Docker controls, safe stop/restart or per-user Source data. Old Server/Agent clients show explicitly unavailable optional evidence. See `docs/service-dependencies.md#p1-ph1b2c1-2026-10-12-fixed-four-model-info-observation`.
+
 ## System Dependencies workspace information architecture (2026-10-12)
 
 - Administrator-facing product name is **系统依赖**, not 服务/依赖 wording. Keep internal `admin-services` app ID and existing admin-only HTTP/Agent contracts for backward compatibility. System Dependencies is one global Sidebar destination, not eleven global menu entries.

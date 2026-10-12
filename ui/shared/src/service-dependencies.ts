@@ -248,6 +248,11 @@ export type XDrivePhotoHostConfig = {
   host_applied_revision?: number
   host_control_profile_verified?: boolean
 }
+export type XDrivePhotoHostModelInfoCheck = {
+  id: 'photo-face' | 'photo-smart' | 'photo-semantic' | 'photo-creative'
+  state: 'ready' | 'failed' | 'unconfigured' | 'unknown'
+  detail: string
+}
 export type XDrivePhotoHostPreflight = {
   checked_at: string
   action: 'unset' | 'enable' | 'disable'
@@ -256,6 +261,10 @@ export type XDrivePhotoHostPreflight = {
   host_observed: boolean
   host_control_observed: boolean
   apply_supported: boolean
+  // Optional for older Server/Agent versions; independent model Info is NOT
+  // same-host revision attestation or a successful media analysis job.
+  host_revision_verified?: boolean
+  model_info_checks?: XDrivePhotoHostModelInfoCheck[]
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'
