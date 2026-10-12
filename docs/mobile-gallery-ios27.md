@@ -537,3 +537,13 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 四宽度的 Go Range / 10k 逻辑媒体、Node revision、27/27/42/12 个虚拟 DOM、52px 移动标题栏、外部 Owner 空集/404、无效 JWT 401 均得到真实证据。108 次仅元数据缩略图 503 已精确独立计数（不是物理 CAS/成功解码）；JS PageError=0。
 仍有恰好 **4 次意外 HTTP 500**，全部来自 GET /api/v1/background-tasks/active-summary。Go SQL 明确报 xd_sync_runs 不存在；隔离测试 AutoMigrate 迁移了 meta.Source，却遗漏已有的 meta.SyncRun。
 本次只在原分支同一唯一工作提交中补充隔离测试的 meta.SyncRun 迁移和静态回归。生产 Gallery/API/Task Center/虚拟列表/52px App Frame 未变，任何其他 5xx 继续失败。必须在新精确 HEAD 重跑完整 CI 与 Final Gate 才能宣布验收/合并；真 iOS 27 Safari/PWA/VoiceOver、真实物理媒体解码仍待测。
+
+## P1-3c2a · 真实手动相册写入 Web/Mobile Web 等价（2026-10-12）
+
+**状态：验收候选（非已合并、非真机）**。前置 P1-3c1 #1452 已以完整 25 个成功 Job（包含原生 Chromium/Gin/PostgreSQL17 与 Final Gate）线性合入 master@1147159a，并确认短期分支删除。独立性能专项 #1450 与 Desktop IPC 进度 #1185 尚未完成且不在本轮范围。
+
+这一阶段在已验证的真实 10k 元数据 Gallery Fixture 中仅扩展 **实际 UI 发起的手动相册写入**。用真实生产 Web 在 375px 移动入口与 900px 宽屏入口分别进入同一个 Gallery 页面/虚拟选择/操作工具栏；先使用已授权生产 REST 创建独立手动相册作为测试前置状态，再通过 UI 真正选择两个带 canonical Node ID 的媒体，打开共享已选复核，实际提交 POST /api/v1/media/albums/{id}/items，验证请求的两个 Node ID、If-Match 引号修订 1、HTTP 200、返回修订 2/成员数 2 及独立 GET 读取的持久 PhotoCollectionAsset 成员。取消/重试/其他权限规则不绕过已存在的事务隔离。
+
+进一步以有效 Owner JWT 的旧修订触发真实 HTTP 409；以另一个有效用户 JWT 修改他人相册触发真实 HTTP 404；拒绝后成员关系原样保持。Go 仍检查原 10,000 逻辑 PhotoAsset 不被相册成员创建改动。浏览器不得拦截 /api/v1；记录实际视口、同一共享 REST、请求/响应修订与 Node ID、截图、精确源码哈希，JWT 仅出现在 0600 私有临时 ready 文件。严格判定任何非预期 HTTP 5xx/JS 异常失败；没有物理原件的缩略图 HTTP 503 单独标示为不可用而非成功解码。仅在 test/mobile-gallery-ios27-album-live-go- 前缀 PR 下复用现有 go-linux-api PostgreSQL17 CI，保留全量 Go/Desktop/Web/Windows/打包/Final Gate。
+
+明确不包括：真正图片/RAW/HEVC/Live Motion CAS 原件字节、iOS27 Safari/PWA/VoiceOver 成对像素截图、Task Center 持久工作队列终态，或全部 Web 相册增删改功能。此处相册加入为**同步资源成员操作**，不伪报为上传/删除后台任务。生产 Gallery API、DataSource、虚拟列表、全屏 App Frame 和 52px 全局应用标题栏均不修改。精确 HEAD 的原生 CI 尚未运行，未获得任何新阶段通过记录。
