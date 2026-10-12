@@ -175,6 +175,18 @@ test('the new Mobile UI is independent of the wide FileExplorer while sharing We
   assert.match(sharedExplorer, /export function XDriveFileExplorer\(/)
 })
 
+test('F-iOS27-10D: compact location uses the title menu, not a separate recursive path row', () => {
+  assert.match(mobileSource, /data-mobile-files-location-trigger/)
+  assert.match(mobileSource, /data-mobile-files-location-menu/)
+  assert.match(mobileSource, /aria-haspopup="menu"/)
+  assert.match(mobileSource, /props\.onCrumbClick\(index\)/)
+  assert.match(mobileSource, /externalDragOver\(event, \{ kind: 'crumb', crumb \}\)/)
+  assert.doesNotMatch(mobileSource, /data-mobile-files-location-path|showLocationPath|显示位置路径/)
+  assert.match(webAdapter, /onCrumbClick=\{index => \{ void navigateToCrumb\(index\) \}\}/)
+  assert.match(webAdapter, /onPathSubmit=\{trashActive \? undefined : \(path\) => \{ void submitPath\(path\) \}\}/)
+  assert.match(sharedExplorer, /data-xdrive-file-explorer-address-bar/)
+})
+
 test('iOS presentation keeps global Search semantics and does not change desktop view state', () => {
   assert.match(mobileSource, /搜索范围：全部文件（不限定当前文件夹）/)
   assert.match(mobileSource, /maxHeight: scrollTop > 48/)
