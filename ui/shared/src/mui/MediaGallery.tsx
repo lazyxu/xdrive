@@ -2175,6 +2175,7 @@ export function XDriveMediaGalleryPage({
     selectedItems: MediaItem[],
   ) => {
     if (!source.addToAlbum || !album.revision || selectedItems.length === 0) return
+    const ownerScope = preferenceScope
     setError('')
     try {
       const updated = await source.addToAlbum(
@@ -2182,13 +2183,49 @@ export function XDriveMediaGalleryPage({
         album.revision,
         selectedItems.map((item) => item.node.id),
       )
-      replaceAlbum(updated)
+      if (ownerScope === deletePreferenceScopeRef.current) replaceAlbum(updated)
     } catch (albumError) {
-      setError(xDriveMediaGalleryErrorMessage(albumError))
-      onError?.(albumError)
-      throw albumError
+      // An actual 409 means another authorized writer advanced the manual
+      // album. Refresh its authoritative revision, but NEVER silently replay
+      // the rejected mutation or discard the user's selected Node IDs.
+      const status = albumError && typeof albumError === 'object' && 'status' in albumError
+        ? (albumError as { status?: unknown }).status : undefined
+      let refreshed = false
+      if (status === 409) {
+        try {
+          const currentAlbums = await source.listAlbums()
+          const latest = currentAlbums.find((entry) =>
+            entry.id === album.id && entry.kind === 'manual' &&
+            (entry.revision ?? 0) > (album.revision ?? 0))
+          if (latest && ownerScope === deletePreferenceScopeRef.current) {
+            // Fence stale cross-account effects at UPDATE time as well as when
+            // the network reply settles; an account switch cannot install
+            // an old owner's album into the new session.
+            setAlbums((current) => ownerScope === deletePreferenceScopeRef.current
+              ? current.map((entry) =>
+                entry.id === latest.id && (entry.revision ?? 0) <= (latest.revision ?? 0) ? latest : entry)
+              : current)
+            setCurrentAlbum((current) => ownerScope === deletePreferenceScopeRef.current &&
+              current?.id === latest.id && (current.revision ?? 0) <= (latest.revision ?? 0)
+              ? latest : current)
+            refreshed = true
+          }
+        } catch {
+          // On refresh failure, preserve the original server conflict and
+          // do not claim that a fresh revision is available.
+        }
+      }
+      const feedback = refreshed
+        ? '相册已更新，已获取最新版本，请确认后重新点击加入相册。'
+        : xDriveMediaGalleryErrorMessage(albumError)
+      const displayError = refreshed ? new Error(feedback) : albumError
+      if (ownerScope === deletePreferenceScopeRef.current) {
+        setError(feedback)
+        onError?.(displayError)
+      }
+      throw displayError
     }
-  }, [onError, replaceAlbum, source])
+  }, [onError, preferenceScope, replaceAlbum, source])
 
   const deleteItems = useCallback(async (selectedItems: MediaItem[]) => {
     if (!source.deleteItems || selectedItems.length === 0) return
