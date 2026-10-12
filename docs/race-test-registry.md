@@ -31,15 +31,17 @@ Rows below index distinct scenarios, rather than counting repeated CI invocation
 | R-TR-007 | Concurrent account Clear returns before preceding Clear's I/O teardown | [#1464](https://github.com/lazyxu/xdrive/pull/1464) · `TestConcurrentAccountClearsJoinPendingOldTransport` | [red](https://github.com/lazyxu/xdrive/actions/runs/38191156162) → [green](https://github.com/lazyxu/xdrive/actions/runs/38191447056) | Merged |
 | R-TR-008 | Second Clear during old account handoff leaves new-account transport running | [#1467](https://github.com/lazyxu/xdrive/pull/1467) · `TestSecondClearDuringOldHandoffAlsoCancelsNewAccount` | [red](https://github.com/lazyxu/xdrive/actions/runs/38194135634) → [green](https://github.com/lazyxu/xdrive/actions/runs/38194362963) | Merged |
 | R-PULL-001 | Canceled queued Source still occupies shared provider-account waiter, starving next Source | [#1472](https://github.com/lazyxu/xdrive/pull/1472) · `TestCancelledQueuedSourceDoesNotStarveNextSharedAccountSource` | [red](https://github.com/lazyxu/xdrive/actions/runs/38196710592) → [green](https://github.com/lazyxu/xdrive/actions/runs/38197019592) | Merged on `master@9a49cb7d` |
-| R-TR-009 | Prepared scan-progress callback arrives after the same upload group's scan completed and transfer started | `internal/transfer/group_scan_late_progress_race_test.go` · `TestLateScanProgressCannotReopenCompletedUploadGroup` | [Real test-only First-red: Windows Go job #114645927150](https://github.com/lazyxu/xdrive/actions/runs/38198337872/job/114645927150), `cedd8fcc`. See [#1476](https://github.com/lazyxu/xdrive/pull/1476) for repaired exact-head CI and merge status. | First-red confirmed; fix under CI gate |
+| R-TR-009 | Prepared scanning callback arrives after same upload group completed scan and started transfer | [#1476](https://github.com/lazyxu/xdrive/pull/1476) · `TestLateScanProgressCannotReopenCompletedUploadGroup` | [test-only red](https://github.com/lazyxu/xdrive/actions/runs/38198337872/job/114645927150) → [repaired exact-head CI green](https://github.com/lazyxu/xdrive/actions/runs/38198569804) | Merged `dcd47cd6`; work branch [cleanup success](https://github.com/lazyxu/xdrive/actions/runs/38199255127) |
+
+| R-TR-010 | Older cumulative child + group upload progress (20%) arriving after 80% **within same phase and attempt** | [#1495](https://github.com/lazyxu/xdrive/pull/1495) · `TestLateChildAndGroupProgressCannotRewindTransferredBytes` | [Unmodified production, test-only **First-red** CI #38211998634 / Windows Go](https://github.com/lazyxu/xdrive/actions/runs/38211998634/job/114688037919), SHA `d332b68d`; repaired exact-head CI follows | First-red confirmed; minimal fix under CI gate |
 
 ### R-TR-009 authentic First-red, failure specifics
 
-**Test-only source `cedd8fcce4acb019d0395165550911a3cb868f22`: real First-red confirmed** on [CI #38198337872 / Windows Go job #114645927150](https://github.com/lazyxu/xdrive/actions/runs/38198337872/job/114645927150). Exact original assertion at `group_scan_late_progress_race_test.go:75`: Phase `transferring→scanning`, `ScanComplete true→false`, `BytesDone 60→0`, `ItemsCompleted 1→0`, `ItemsQueued 0→2`, revision `3→4`. The product code was unchanged on this test-only head. The same test remains unmodified on the repair branch. The minimal fix rejects an older scan-progress snapshot only after the current group has already completed scanning. Repaired source/CI and final merge status: follow [#1476](https://github.com/lazyxu/xdrive/pull/1476); acceptance requires its exact repaired head's full CI and final-gate.
+**Test-only source `cedd8fcce4acb019d0395165550911a3cb868f22`: real First-red confirmed** on [CI #38198337872 / Windows Go job #114645927150](https://github.com/lazyxu/xdrive/actions/runs/38198337872/job/114645927150). Exact original assertion at `group_scan_late_progress_race_test.go:75`: Phase `transferring→scanning`, `ScanComplete true→false`, `BytesDone 60→0`, `ItemsCompleted 1→0`, `ItemsQueued 0→2`, revision `3→4`. The product code was unchanged on this test-only head. The same test remains unmodified on the repair branch. The minimal fix rejects an older scan-progress snapshot only after the current group has already completed scanning. Repaired exact-head source `b892b506ec3823edd763e745e4580fa3a57a0709` passed [all 76 required CI jobs](https://github.com/lazyxu/xdrive/actions/runs/38198569804) (25 success, 51 conditional skips, 0 failure; final-gate green), merged linearly as `master@dcd47cd6e5fb7ecd15e4af3f64d5b858b7bf94ca`; [targeted branch cleanup succeeded](https://github.com/lazyxu/xdrive/actions/runs/38199255127).
 
-### Master baseline inventory: all 32 existing `*_race_test.go` files
+### Race file inventory: 33 at frozen master + R-TR-010 = 34 on the work branch
 
-The following is a **source inventory on fixed `master@9a49cb7d`**, not 32 newly executed tests, not proof each had its own red CI, and not a substitute for the 13 evidence-indexed contracts above. Check names and the original test before adding a similar scenario. The new R-TR-009 file is separate from these 32.
+The following is a **source inventory of 33 existing tests at frozen `master@9e8f3344` plus the new R-TR-010 test**, or **34 on the repaired work tree**. It is not 34 newly executed tests and not proof each had its own red CI. Once this PR merges, the same 34 become the master inventory.
 
 **`internal/background/` (9 files)**
 
@@ -55,7 +57,7 @@ scheduler_parent_clean_exit_race_test.go
 scheduler_stale_progress_race_test.go
 ```
 
-**`internal/transfer/` (21 files)**
+**`internal/transfer/` (23 files including new R-TR-010)**
 
 ```text
 account_clear_context_race_test.go
@@ -71,7 +73,9 @@ direct_cancel_binding_owner_race_test.go
 direct_cancel_terminal_handoff_race_test.go
 group_finish_cancel_reentry_race_test.go
 group_finish_clear_handoff_race_test.go
+group_scan_late_progress_race_test.go
 history_pending_group_cancel_race_test.go
+late_child_group_progress_race_test.go
 late_skip_cancel_race_test.go
 late_success_pending_cancel_race_test.go
 late_terminal_callback_race_test.go
@@ -95,6 +99,12 @@ lock_race_test.go
 
 **Other concurrency cases** can exist in files not named `*_race_test.go` (e.g. integrated worker, API, PostgreSQL, and browser tests). Search the affected subsystem's full tests before creating a branch. This manifest is intentionally stable at the frozen baseline and must be refreshed when additional test files merge.
 
+### R-TR-010: new test-only probe and distinction from R-TR-009
+
+- **Scenario identity:** genuine `Handle.ProgressAndUpdateGroup` on the **same child and root** of a live upload; both callbacks explicitly retain `PhaseTransferring` and `ScanComplete=true`; the older 20-byte count is released after an already-published 80-byte count. The prior R-TR-009 involved `UpdateGroup` reverting from **transferring back to scanning**, and does not test cumulative in-phase child progress ordering.
+- **Assertion:** both child and group keep 80/100 bytes and 80%, `StateRunning`, and the snapshot revision does not advance for the old callback. Goroutine interleaving uses channel barriers; no timing luck or fake transport response.
+- **Frozen original base:** `master@9e8f3344ad88cbf2877be6ed369c77bdc99068fb`; test-only source and CI details will be recorded in PR after the actual execution. **Authentic First-red confirmed** on [Windows Go job #114688037919](https://github.com/lazyxu/xdrive/actions/runs/38211998634/job/114688037919), test-only commit `d332b68db3e01e5eaea207ae41c78c81ee2a434f` (only the race test and registry changed). At `late_child_group_progress_race_test.go:83`, both child and root incorrectly changed `BytesDone 80→20`, `Percent 80→20`, and snapshot revision `4→5` after the controlled late callback. There was no Go compile/format/fixture failure; original production was executed. **The original test Blob SHA must remain unchanged in the repair work commit.** Minimal repair guards older cumulative child progress and older completed-scan in-phase group aggregate callbacks, without modifying `Baseline`, `Retry`, unrelated subsystems, or durable source state. Repaired exact-head CI/merge must be verified before declaring completion.
+
 ### Known covered test families (avoid category-level duplicate probes)
 
 - **Transfer:** `internal/transfer/*_race_test.go` also covers child creation vs Clear, cancellation vs complete/retry, old-account stale handoffs, group Finish/trim, progress/terminal revision, and stale network progress observers. Compare the *exact* test's interleaving before repeating.
@@ -109,7 +119,8 @@ lock_race_test.go
 
 | Candidate | Forced interleaving / required evidence | State |
 | --- | --- | --- |
-| R-TR-009 | Older folder-scanning snapshot delivered after `ScanComplete=true` / `PhaseTransferring` was published; original revision and snapshot must remain unchanged | First-red proven on original code; fix under exact-head CI |
+| R-TR-009 | Older folder-scanning snapshot delivered after `ScanComplete=true` / `PhaseTransferring` was published | Completed: red → green → merged #1476; exact-head CI success, branch deleted |
+| R-TR-010 | Child `ProgressAndUpdateGroup` callbacks from one running upload attempt: 80% callback published, then earlier 20% callback released. Neither child nor root may regress or publish a new revision | Genuine First-red CI #38211998634, test-only SHA `d332b68d`, actual assertion at line 83; minimal repair subject to exact-head full CI |
 | R-MEDIA-001 | Concurrent thumbnail generation vs deletion/eviction of the same physical cache identity; require actual generation + eviction + reader evidence | Not run in this registry |
 | R-SYNC-001 | Source deletion/revision revoke vs running durable synchronization; require actual worker/DB fencing and cancellation semantics | Not run in this registry |
 | R-DESKTOP-001 | Renderer window/session switch vs active Agent IPC callbacks; verify old session never updates new session, without aborting durable sync | Not run in this registry |
