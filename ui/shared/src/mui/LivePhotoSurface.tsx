@@ -74,6 +74,9 @@ export function XDriveLivePhotoSurface({
   const motionURLRef = useRef('')
   const motionSourceRef = useRef<XDriveLivePhotoMotionSource | null>(null)
   const loadGenerationRef = useRef(0)
+  // Invalidate asynchronous HTMLMediaElement.play() completions on release,
+  // a new hold, or a different still/source revision.
+  const playbackAttemptRef = useRef(0)
   const loadStartedRef = useRef(false)
   const loadMotionRef = useRef(loadMotion)
   loadMotionRef.current = loadMotion
@@ -87,6 +90,7 @@ export function XDriveLivePhotoSurface({
   const [playing, setPlaying] = useState(false)
 
   const stopPlayback = useCallback(() => {
+    playbackAttemptRef.current += 1
     const video = videoRef.current
     if (video) {
       video.pause()
@@ -100,10 +104,14 @@ export function XDriveLivePhotoSurface({
   }, [])
 
   const playLoadedMotion = useCallback(() => {
-    if (!motionURLRef.current || failed) return
+    if (!motionURLRef.current || failed || !holdActiveRef.current) return
     const video = videoRef.current
     if (!video) return
 
+    // pause() rejects an earlier pending play(). Fence that rejection before
+    // it can turn a new press into a permanent "Live unavailable" state.
+    const attempt = ++playbackAttemptRef.current
+    const generation = loadGenerationRef.current
     video.pause()
     try {
       video.currentTime = 0
@@ -112,24 +120,41 @@ export function XDriveLivePhotoSurface({
     }
     video.volume = 1
     if (video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) setLoading(true)
-    setPlaying(true)
+    // Keep the still visible until the actual video.play() promise succeeds:
+    // an opaque, not-yet-playing video would otherwise flash black.
+    setPlaying(false)
+    const isCurrentHold = () => (
+      playbackAttemptRef.current === attempt &&
+      loadGenerationRef.current === generation &&
+      videoRef.current === video &&
+      holdActiveRef.current
+    )
     void video.play().then(() => {
+      if (!isCurrentHold()) return
       setLoading(false)
-    }).catch(() => {
+      setPlaying(true)
+    }).catch((error: unknown) => {
+      if (!isCurrentHold()) return
       setLoading(false)
       setPlaying(false)
+      // Safari's gesture gate and play/pause interruptions are retryable on
+      // the next explicit hold; genuine decode/media failures remain terminal.
+      if (error && typeof error === 'object' && 'name' in error && (
+        error.name === 'AbortError' || error.name === 'NotAllowedError'
+      )) return
       setFailed(true)
     })
   }, [failed])
 
   const requestMotion = useCallback(() => {
     const loader = loadMotionRef.current
-    if (
-      !loader ||
-      loadStartedRef.current ||
-      motionURLRef.current ||
-      failed
-    ) return
+    if (!loader || motionURLRef.current || failed) return
+    // A released first hold can leave a valid signed URL request in flight.
+    // Re-holding resumes its progress without issuing a second motion request.
+    if (loadStartedRef.current) {
+      setLoading(true)
+      return
+    }
 
     loadStartedRef.current = true
     const generation = loadGenerationRef.current
@@ -186,6 +211,9 @@ export function XDriveLivePhotoSurface({
   const endHold = useCallback(() => {
     holdActiveRef.current = false
     stopPlayback()
+    // Loading an already-requested source may continue for reuse, but the
+    // released still must not remain covered by a playback spinner.
+    setLoading(false)
   }, [stopPlayback])
 
   useEffect(() => {
