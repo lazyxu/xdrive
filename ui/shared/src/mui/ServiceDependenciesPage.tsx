@@ -1,6 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing } from '../system-dependencies-navigation'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
+import SyncRoundedIcon from '@mui/icons-material/SyncRounded'
+import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded'
+import MovieRoundedIcon from '@mui/icons-material/MovieRounded'
+import FaceRoundedIcon from '@mui/icons-material/FaceRounded'
+import ImageSearchRoundedIcon from '@mui/icons-material/ImageSearchRounded'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
+import MapRoundedIcon from '@mui/icons-material/MapRounded'
+import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing } from '../system-dependencies-navigation'
+import { xDriveSystemDependenciesOverviewSummary, xDriveSystemDependencyOverviewSignals } from '../system-dependencies-overview'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -290,6 +305,140 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
         <Chip size="small" color={state.color} variant="outlined" label={state.label} />
       </Stack>
     </Box>
+  )
+}
+
+const serviceOverviewIcons: Record<string, ReactNode> = {
+  database: <StorageRoundedIcon fontSize="small" />,
+  storage: <FolderRoundedIcon fontSize="small" />,
+  'background-worker': <SyncRoundedIcon fontSize="small" />,
+  caddy: <ShieldRoundedIcon fontSize="small" />,
+  'media-worker': <MovieRoundedIcon fontSize="small" />,
+  'photo-face': <FaceRoundedIcon fontSize="small" />,
+  'photo-smart': <ImageSearchRoundedIcon fontSize="small" />,
+  'photo-semantic': <SearchRoundedIcon fontSize="small" />,
+  'photo-creative': <AutoFixHighRoundedIcon fontSize="small" />,
+  'baidu-map': <MapRoundedIcon fontSize="small" />,
+  geonames: <PlaceRoundedIcon fontSize="small" />,
+}
+
+function pageLocalNavSx(selected: boolean) {
+  return {
+    justifyContent: 'flex-start',
+    textAlign: 'left',
+    color: selected ? 'text.primary' : 'text.secondary',
+    bgcolor: selected ? 'action.selected' : 'transparent',
+    borderLeft: '3px solid',
+    borderColor: selected ? 'primary.main' : 'transparent',
+    borderRadius: 1.5,
+    minHeight: 36,
+    px: 1.25,
+    py: 0.75,
+    fontWeight: selected ? 700 : 500,
+    fontSize: '0.8125rem',
+    lineHeight: 1.35,
+    textTransform: 'none',
+    whiteSpace: 'normal',
+    '&:hover': { bgcolor: 'action.hover', color: 'text.primary' },
+  } as const
+}
+
+// Cards navigate to one real service detail. They do not enable, apply, or
+// validate credentials and never turn a legacy ready string into health proof.
+function ServiceOverviewCard({
+  service, onOpen,
+}: {
+  service: XDriveServiceDependency
+  onOpen: () => void
+}) {
+  const status = statusLabels[service.status] ?? statusLabels.unknown
+  const axes = xDriveSystemDependencyOverviewSignals(service)
+  const legacyReadyUnverified = service.status === 'ready' && service.health_state !== 'ready'
+  const configurationHint = configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown
+  return (
+    <Button
+      variant="outlined"
+      color="inherit"
+      onClick={onOpen}
+      aria-label={'查看' + service.label + '详情；健康：' + axes[2].value + '；生效：' + axes[3].value}
+      data-xdrive-system-dependency-overview-card={service.id}
+      title={configurationHint}
+      sx={{
+        display: 'flex',
+        width: '100%',
+        minWidth: 0,
+        minHeight: 160,
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        justifyContent: 'flex-start',
+        px: 1.75,
+        py: 1.5,
+        gap: 1,
+        borderColor: service.health_state === 'failed' ? 'error.main' : 'divider',
+        borderRadius: 2,
+        bgcolor: 'background.paper',
+        textAlign: 'left',
+        textTransform: 'none',
+        '&:hover': {
+          borderColor: service.health_state === 'failed' ? 'error.main' : 'primary.main',
+          bgcolor: 'action.hover',
+        },
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, width: '100%' }}>
+        <Box sx={{
+          width: 32, height: 32, borderRadius: 1.5, bgcolor: 'action.hover',
+          color: 'text.secondary', flexShrink: 0, display: 'grid', placeItems: 'center',
+        }}>
+          {serviceOverviewIcons[service.id]}
+        </Box>
+        <Typography variant="subtitle2" color="text.primary" fontWeight={700}
+          sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
+          {service.label}
+        </Typography>
+        <Chip size="small" variant="outlined"
+          color={legacyReadyUnverified ? 'default' : status.color}
+          label={legacyReadyUnverified ? '健康未核验' : status.label}
+          sx={{ flexShrink: 0, height: 24 }} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary" title={service.detail}
+        sx={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {service.detail}
+      </Typography>
+      <Box sx={{
+        display: 'grid', width: '100%', gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
+        gap: 0.75, pt: 1, borderTop: 1, borderColor: 'divider',
+      }} data-xdrive-service-overview-lifecycle>
+        {axes.map((axis) => (
+          <Stack key={axis.label} direction="row" alignItems="baseline" spacing={0.75} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
+              {axis.label}
+            </Typography>
+            <Typography variant="caption" fontWeight={600} title={axis.value} sx={{
+              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              color: axis.tone === 'positive' ? 'success.main'
+                : axis.tone === 'negative' ? 'error.main'
+                  : axis.tone === 'attention' ? 'warning.main' : 'text.primary',
+            }}>
+              {axis.value}
+            </Typography>
+          </Stack>
+        ))}
+      </Box>
+      <Stack direction="row" alignItems="center" justifyContent="space-between"
+        sx={{ width: '100%', mt: 'auto' }}>
+        <Typography variant="caption" color="text.secondary">
+          {service.config_mode === 'in-app' ? '应用内可配置'
+            : service.config_mode === 'deployment' ? '需受控部署'
+              : service.config_mode === 'planned' ? '暂不支持配置' : '配置能力未知'}
+        </Typography>
+        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ color: 'primary.main' }}>
+          <Typography variant="caption" fontWeight={700}>查看详情</Typography>
+          <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />
+        </Stack>
+      </Stack>
+    </Button>
   )
 }
 
@@ -1028,9 +1177,7 @@ export function XDriveServiceDependenciesPage({
   const selectedPhotoRevision = photoRevisions.find(
     (item) => String(item.revision) === photoRollbackTarget && item.revision < (photoPolicy?.revision ?? 0),
   )
-  const healthy = systemServices.filter((item) => item.status === 'ready').length
-  const unhealthy = systemServices.filter((item) => item.status === 'unavailable').length
-  const pendingCount = systemServices.filter((item) => item.activation_state === 'pending').length
+  const overviewCounts = xDriveSystemDependenciesOverviewSummary(systemServices)
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
   const selectedServiceMissing = xDriveSystemDependencySelectionMissing(selectedPage, systemServices)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
@@ -1043,9 +1190,9 @@ export function XDriveServiceDependenciesPage({
     else navigateTo({ service: page as XDriveSystemDependenciesLocation['service'], tab: 'status' })
   }
   const dependencyNote = (
-    <Typography variant="caption" color="text.secondary">
-      “尚未接入”不代表正在运行；“无法检测”代表没有可靠探针。保存配置与实际生效、部署和健康始终独立；
-      系统级容器操作仍必须由受限部署流程完成。
+    <Typography variant="caption" color="text.secondary" data-xdrive-system-dependencies-safety-note>
+      状态概览只展示已取得的证据：“未知”和“未检测”不等于健康，“已配置”不等于已生效。
+      “已核验”仅限对应服务的观测范围，不代表全集群。启停权限和生效检测以各项详情为准。
     </Typography>
   )
 
@@ -1071,8 +1218,8 @@ export function XDriveServiceDependenciesPage({
           {loading
             ? '正在检查服务…'
             : snapshot
-              ? '检测时间：' + checkedAt + ' · 已就绪 ' + healthy + ' 项 · 已登记服务 ' + systemServices.length + ' 项' +
-                (refreshing ? ' · 正在重新检测（显示上次成功快照）' : '')
+              ? '最近检测：' + checkedAt + ' · 服务状态快照' +
+                (refreshing ? ' · 正在刷新（当前保留上次成功结果）' : '')
               : '尚未取得服务检测结果'}
         </Typography>
         {loading && <CircularProgress size={22} aria-label="正在加载服务状态" />}
@@ -1081,28 +1228,35 @@ export function XDriveServiceDependenciesPage({
         </XDriveStatusAlert>}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
           <Box component="nav" aria-label="系统依赖页内导航" sx={{
-            width: 216, flexShrink: 0, position: { md: 'sticky' }, top: 0,
-            display: { xs: 'none', md: 'block' }, maxHeight: 'calc(100dvh - 200px)',
+            width: 198, flexShrink: 0, position: { md: 'sticky' }, top: 12,
+            display: { xs: 'none', md: 'block' }, maxHeight: 'calc(100dvh - 196px)',
             overflowY: 'auto', borderRight: 1, borderColor: 'divider', pr: 1.5,
           }}>
-            <Button fullWidth size="small" sx={{ justifyContent: 'flex-start', mb: 1 }}
-              variant={selectedPage === 'overview' ? 'contained' : 'text'}
+            <Button fullWidth size="small" variant="text" color="inherit"
+              aria-current={selectedPage === 'overview' ? 'page' : undefined}
+              sx={{ ...pageLocalNavSx(selectedPage === 'overview'), mb: 1.5 }}
               onClick={() => choosePage('overview')}>总览</Button>
             {groups.map((group) => (
               <Box key={group.id} sx={{ mb: 1.5 }}>
-                <Typography variant="caption" fontWeight={700} color="text.secondary"
-                  sx={{ display: 'block', px: 1, mb: 0.5 }}>{group.label}</Typography>
+                <Typography variant="overline" fontWeight={700} color="text.secondary"
+                  sx={{ display: 'block', px: 1.25, mb: 0.25, lineHeight: 1.75 }}>{group.label}</Typography>
                 {systemServices.filter((item) => item.group === group.id).map((service) => (
-                  <Button key={service.id} size="small" fullWidth
-                    variant={selectedPage === service.id ? 'contained' : 'text'}
-                    sx={{ justifyContent: 'flex-start', textAlign: 'left', mb: 0.25,
-                      whiteSpace: 'normal', lineHeight: 1.3 }}
-                    onClick={() => choosePage(service.id)}>{service.label}</Button>
+                  <Button key={service.id} size="small" fullWidth color="inherit" variant="text"
+                    aria-current={selectedPage === service.id ? 'page' : undefined}
+                    sx={{ ...pageLocalNavSx(selectedPage === service.id), mb: 0.25, gap: 0.75 }}
+                    onClick={() => choosePage(service.id)}>
+                    <Box component="span" aria-hidden sx={{
+                      flexShrink: 0, width: 7, height: 7, borderRadius: '50%',
+                      bgcolor: service.health_state === 'ready' ? 'success.main'
+                        : service.health_state === 'failed' ? 'error.main' : 'text.disabled',
+                    }} />
+                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{service.label}</Box>
+                  </Button>
                 ))}
                 {group.id === 'intelligence' && (
-                  <Button size="small" fullWidth
-                    variant={selectedPage === 'photo-auto' ? 'contained' : 'text'}
-                    sx={{ justifyContent: 'flex-start', textAlign: 'left' }}
+                  <Button size="small" fullWidth variant="text" color="inherit"
+                    aria-current={selectedPage === 'photo-auto' ? 'page' : undefined}
+                    sx={pageLocalNavSx(selectedPage === 'photo-auto')}
                     onClick={() => choosePage('photo-auto')}>全局分析策略</Button>
                 )}
               </Box>
@@ -1110,7 +1264,9 @@ export function XDriveServiceDependenciesPage({
           </Box>
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             <TextField select size="small" fullWidth label="选择系统依赖"
-              sx={{ display: { xs: 'block', md: 'none' }, mb: 2 }}
+              sx={{ display: { xs: 'block', md: 'none' }, mb: 2,
+                '& .MuiInputBase-root': { minHeight: 44 },
+              }}
               value={selectedPage}
               onChange={(event) => choosePage(event.target.value)}>
               <MenuItem value="overview">总览</MenuItem>
@@ -1128,47 +1284,84 @@ export function XDriveServiceDependenciesPage({
             </TextField>
             {!loading && snapshot && selectedPage === 'overview' && (
               <Box component="section" aria-label="系统依赖总览" data-xdrive-system-dependencies-overview>
-                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 2 }}>
-                  <Chip variant="outlined" label={`系统依赖 ${systemServices.length} 项`} />
-                  <Chip variant="outlined" color="success" label={`健康 ${healthy} 项`} />
-                  <Chip variant="outlined" color={unhealthy ? 'error' : 'default'}
-                    label={`异常 ${unhealthy} 项`} />
-                  <Chip variant="outlined" color={pendingCount ? 'warning' : 'default'}
-                    label={`待生效 ${pendingCount} 项`} />
-                </Stack>
-                {groups.map((group) => (
-                  <Box key={group.id} sx={{ mb: 2.5 }}>
-                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>{group.label}</Typography>
-                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))' }, gap: 1 }}>
-                      {systemServices.filter((item) => item.group === group.id).map((item) => (
-                        <Button key={item.id} variant="outlined" onClick={() => choosePage(item.id)}
-                          aria-label={`查看${item.label}详情`}
-                          sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
-                            justifyContent: 'center', minHeight: 88, textAlign: 'left',
-                            borderColor: item.status === 'unavailable' ? 'error.main' : 'divider',
-                            px: 1.5, py: 1.25, textTransform: 'none' }}>
-                          <Typography variant="subtitle2" color="text.primary" fontWeight={700}
-                            sx={{ overflowWrap: 'anywhere' }}>{item.label}</Typography>
-                          <Typography variant="caption" color={
-                            item.status === 'unavailable' ? 'error.main' : 'text.secondary'
-                          }>
-                            {statusLabels[item.status]?.label ?? '无法检测'}
-                            {' · '}{activationStateLabels[item.activation_state ?? 'unknown'] ?? '生效未知'}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary"
-                            sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
-                            配置：{configModeLabels[item.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
-                          </Typography>
-                        </Button>
-                      ))}
-                    </Box>
-                    {group.id === 'intelligence' && (
-                      <Button size="small" sx={{ mt: 1 }} variant="text"
-                        onClick={() => choosePage('photo-auto')}>管理全局分析策略（不计入服务数量）</Button>
-                    )}
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}
+                  alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between"
+                  sx={{ mb: 1.5 }}>
+                  <Box>
+                    <Typography variant="h6" component="h2" fontWeight={700}>服务概览</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      先看真实健康与目标修订，再进入单项服务配置、检测或查看历史。
+                    </Typography>
                   </Box>
-                ))}
-                {dependencyNote}
+                  <Chip size="small" variant="outlined"
+                    label={'已报告 ' + overviewCounts.reported + ' / ' + XDRIVE_SYSTEM_DEPENDENCY_IDS.length + ' 项'} />
+                </Stack>
+                <Box component="section" aria-label="系统依赖状态统计"
+                  data-xdrive-system-dependencies-metrics sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: 'repeat(2, minmax(0,1fr))',
+                      sm: 'repeat(3, minmax(0,1fr))',
+                      xl: 'repeat(5, minmax(0,1fr))',
+                    },
+                    gap: 1, mb: 2.5,
+                  }}>
+                  {[
+                    { label: '系统服务', value: String(overviewCounts.reported), hint: '已报告 / 固定 11 项', color: 'text.primary' },
+                    { label: '健康已验证', value: String(overviewCounts.healthVerified), hint: '真实健康探针通过', color: 'success.main' },
+                    { label: '健康异常', value: String(overviewCounts.healthFailed), hint: '存在实际失败证据', color: overviewCounts.healthFailed ? 'error.main' : 'text.primary' },
+                    { label: '健康未核验', value: String(overviewCounts.healthUnverified), hint: '未知或未执行检测', color: overviewCounts.healthUnverified ? 'warning.main' : 'text.primary' },
+                    { label: '生效未核验', value: String(overviewCounts.activationUnverified), hint: '含待应用 ' + overviewCounts.activationPending + ' 项', color: 'text.primary' },
+                  ].map((metric) => (
+                    <Paper key={metric.label} variant="outlined" sx={{
+                      p: 1.5, borderRadius: 2, bgcolor: 'background.paper', minWidth: 0,
+                      gridColumn: metric.label === '生效未核验' ? { xs: 'span 2', sm: 'auto' } : undefined,
+                    }}>
+                      <Typography variant="caption" color="text.secondary">{metric.label}</Typography>
+                      <Typography variant="h6" fontWeight={700} sx={{ color: metric.color, my: 0.25 }}
+                        data-xdrive-system-dependencies-metric-value={metric.label}>{metric.value}</Typography>
+                      <Typography variant="caption" color="text.secondary"
+                        sx={{ display: 'block', overflowWrap: 'anywhere' }}>{metric.hint}</Typography>
+                    </Paper>
+                  ))}
+                </Box>
+                {groups.map((group) => {
+                  const items = systemServices.filter((item) => item.group === group.id)
+                  if (items.length === 0) return null
+                  return (
+                    <Box key={group.id} component="section" aria-label={group.label} sx={{ mb: 2.5 }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}
+                        alignItems={{ xs: 'flex-start', sm: 'baseline' }} sx={{ mb: 1 }}>
+                        <Typography variant="subtitle1" component="h3" fontWeight={700}>{group.label}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {items.length} 项 · {group.description}
+                        </Typography>
+                      </Stack>
+                      <Box sx={{
+                        display: 'grid',
+                        gridTemplateColumns: {
+                          xs: 'minmax(0,1fr)',
+                          sm: 'repeat(2, minmax(0,1fr))',
+                          lg: 'repeat(3, minmax(0,1fr))',
+                          xl: 'repeat(4, minmax(0,1fr))',
+                        },
+                        gap: 1.25,
+                      }}>
+                        {items.map((item) => (
+                          <ServiceOverviewCard key={item.id} service={item}
+                            onOpen={() => choosePage(item.id)} />
+                        ))}
+                      </Box>
+                      {group.id === 'intelligence' && (
+                        <Button size="small" color="inherit" sx={{ mt: 1 }}
+                          onClick={() => choosePage('photo-auto')}>
+                          全局分析策略（独立管理，不计入 11 项服务）
+                          <ChevronRightRoundedIcon sx={{ ml: 0.25, fontSize: 18 }} />
+                        </Button>
+                      )}
+                    </Box>
+                  )
+                })}
               </Box>
             )}
             {!loading && snapshot && selectedServiceMissing && (
@@ -1196,6 +1389,9 @@ export function XDriveServiceDependenciesPage({
                 <Box key={selectedPage} component="section" aria-label={
                   selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label ?? group.label
                 } data-xdrive-system-dependency-detail>
+                  <Button size="small" variant="text" color="inherit" startIcon={<ArrowBackRoundedIcon />}
+                    sx={{ mb: 1, color: 'text.secondary' }}
+                    onClick={() => choosePage('overview')}>返回总览</Button>
                   <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
                     {selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label}
                   </Typography>

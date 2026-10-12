@@ -1110,7 +1110,7 @@ test('System Dependencies preserves eleven global services, scoped editor contro
   assert.ok(page.includes("selectedPage === 'geonames'"))
   assert.ok(page.includes("selectedPage === 'baidu-map'"))
   assert.ok(page.includes("selectedPage === 'photo-auto'"))
-  assert.ok(page.includes('全局分析策略（不计入服务数量）'))
+  assert.ok(page.includes('全局分析策略（独立管理，不计入 11 项服务）'))
   assert.ok(page.includes('onLocationChange?.(visibleLocation, { replace: true })'))
   assert.ok(routes.includes("case 'admin-services':"))
   assert.ok(source.includes('services := []serviceDependency{'))
