@@ -128,7 +128,13 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	written, copyErr := copyWithContext(ctx, tmp, r)
+	// Canonical CAS storage is immutable: the streamed bytes must actually
+	// hash to their claimed key before any publication or existing reuse.
+	input, verifyDigest := immutableCASPutReader(key, r)
+	written, copyErr := copyWithContext(ctx, tmp, input)
+	if copyErr == nil {
+		copyErr = verifyDigest()
+	}
 	if syncErr := tmp.Sync(); copyErr == nil {
 		copyErr = syncErr
 	}
@@ -137,6 +143,21 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 	}
 	if copyErr != nil {
 		return 0, copyErr
+	}
+	// A second cooperating Store holds the same exclusive shard lock. Reuse
+	// already verified canonical content but NEVER rename over it; reject
+	// pre-existing corrupt, non-regular, or mismatching CAS targets.
+	if digest, canonical := canonicalCASDigest(key); canonical {
+		exists, checkErr := verifyExistingCanonicalCAS(ctx, full, digest, written)
+		if checkErr != nil {
+			return 0, checkErr
+		}
+		if exists {
+			return written, nil
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
 	}
 	if err := os.Rename(tmpName, full); err != nil {
 		return 0, err
@@ -364,6 +385,29 @@ func (l *Local) Promote(ctx context.Context, sourceKey, targetKey string, expect
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 		return err
+	}
+	if digest, canonical := canonicalCASDigest(targetKey); canonical {
+		// Staged bytes must be the claimed object, not just the same size.
+		// Refuse target repair/replacement rather than silently changing
+		// content already named by an authoritative CAS digest.
+		sourceMatches, checkErr := verifyExistingCanonicalCAS(ctx, source, digest, expectedSize)
+		if checkErr != nil {
+			return checkErr
+		}
+		if !sourceMatches {
+			return fmt.Errorf("canonical CAS staged content is unavailable")
+		}
+		exists, checkErr := verifyExistingCanonicalCAS(ctx, target, digest, expectedSize)
+		if checkErr != nil {
+			return checkErr
+		}
+		if exists {
+			return nil
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return os.Rename(source, target)
 	}
 	if existing, err := os.Stat(target); err == nil {
 		if existing.Mode().IsRegular() && existing.Size() == expectedSize {

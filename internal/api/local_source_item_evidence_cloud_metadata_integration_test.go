@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -256,18 +258,21 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 	}
 	sendPhysical(ownerJWT, clone(), body(previous, current, tooMany), http.StatusBadRequest)
 	// A corrupt second object rejects the WHOLE request, not a 1-of-2 success.
+	// This fixture models an external disk writer, since the normal Local CAS
+	// writer must now reject bytes that do not match the canonical hash key.
+	putOutOfBand := func(key, data string) {
+		t.Helper()
+		full := filepath.Join(casStore.FilesystemRoot(), filepath.FromSlash(key))
+		if err := os.WriteFile(full, []byte(data), 0o600); err != nil {
+			t.Fatalf("failed to simulate out-of-band physical CAS corruption: %v", err)
+		}
+	}
 	originalSecond := fmt.Sprintf("stored-original-%d-%s", 1, rootID)
 	badSecond := strings.Repeat("x", len(originalSecond))
-	written, writeErr := casStore.Put(context.Background(), keys[1], strings.NewReader(badSecond))
-	if writeErr != nil || written != int64(len(badSecond)) {
-		t.Fatalf("failed to corrupt second physical CAS object: %d %v", written, writeErr)
-	}
+	putOutOfBand(keys[1], badSecond)
 	sendPhysical(ownerJWT, clone(), original, http.StatusConflict)
 	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
-	written, writeErr = casStore.Put(context.Background(), keys[1], strings.NewReader(originalSecond))
-	if writeErr != nil || written != int64(len(originalSecond)) {
-		t.Fatalf("failed to restore second physical CAS object: %d %v", written, writeErr)
-	}
+	putOutOfBand(keys[1], originalSecond)
 	sendPhysical(ownerJWT, clone(), original, http.StatusOK)
 	sendPhysical(otherJWT, clone(), sample, http.StatusNotFound)
 	sendPhysical(ownerJWT, map[string]string{"If-Match": "\"7\""}, sample, http.StatusForbidden)
@@ -280,12 +285,7 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 	// A perfectly valid ready CAS DATABASE row is insufficient when its
 	// backing object is truncated, corrupt at identical length or missing.
 	originalPhysical := fmt.Sprintf("stored-original-%d-%s", 0, rootID)
-	putPhysical := func(data string) {
-		t.Helper()
-		if written, err := casStore.Put(context.Background(), keys[0], strings.NewReader(data)); err != nil || written != int64(len(data)) {
-			t.Fatalf("physical CAS fixture update: %d %v", written, err)
-		}
-	}
+	putPhysical := func(data string) { putOutOfBand(keys[0], data) }
 	putPhysical(strings.Repeat("x", int(claims[0].Size)))
 	sendPhysical(ownerJWT, clone(), sample, http.StatusConflict)
 	putPhysical(originalPhysical[:len(originalPhysical)-1])
