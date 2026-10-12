@@ -334,6 +334,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/evidence-cloud-metadata", s.requireLocalSourceExecutor(), s.readLocalSourceEvidenceCloudMetadata)
 	// One bounded owning-Agent-only actual CAS object read (not a durable proof).
 	authed.POST("/sources/:id/local-identity/evidence-cloud-bytes", s.requireLocalSourceExecutor(), s.readLocalSourceEvidenceCloudBytes)
+	// Private owning-Agent only: durable QUARANTINE, never identity/CAS commit authority.
+	authed.POST("/sources/:id/local-identity/commit-intents", s.requireLocalSourceExecutor(), s.quarantineLocalSourceCommitIntents)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
