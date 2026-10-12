@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B 已编写失效会话安全重选入口和原身份校验；跨刷新真实 Go/Chrome/真机字节级验收待完成 |
 | P1-02 | M39 目录上传：空目录、嵌套、Unicode、相对路径、选择器能力与多文件/ZIP 回退。 | 部分基础有，待验 |
-| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | 票据/流式基础有，待验 |
+| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 增加直写磁盘完成前的字节数核验；原生下载落盘 SHA、Range/票据和 1/4GiB 真机实测仍待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
 | P1-05 | display-mode/standalone 能力检测与安装模式诊断，不依赖 UA 猜测。 | S2A 已编写显示模式/显式 HEAD 诊断；CI/真实运行状态待验 |
 | P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 观察 pageshow/online/offline，只反馈运行状态；实际传输恢复仍待 S4 |
@@ -122,3 +122,9 @@ S3A 用 `navigator.onLine` 表示**浏览器提供的网络提示**，不能证�
 每条记录至少包含：case ID、准确 commit/部署版本、设备/OS/浏览器、真实 display-mode、在线/离线、认证状态、步骤、Server 真实结果/文件字节、实际通过/失败/未执行、截图/视频与 SHA-256。不得放令牌、Cookie、私有文件正文或敏感路径。沿用 docs/mobile-web-platform-matrix.md 和 docs/validation/ 台账。
 
 **注意：** 浏览器声明 standalone ≠ 真实安装；Chrome mock E2E ≠ iOS 真机；公开离线页 ≠ 用户文件可离线访问；Server 持久任务 ≠ Web 前台上传锁屏后必定继续。
+
+## PWA-S4C1 · 直写磁盘文件完成前的长度校验（2026-10-12）
+
+Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入只在 **预期长度校验后** 调用 writable.close()，避免短读或额外数据静默完成。当前文件/历史版本使用授权 Node 元数据大小，ZIP/归档只在无 HTTP 压缩且 Content-Length 为有效非负安全整数时核验。超长块写入前拒绝；短流、Blob fallback 错误及不可信长度都不提交磁盘临时目标，而是沿原路径 abort/失败。不增缓存、API、并发读取或修改 Server。浏览器解码 gzip 的响应不能拿压缩 wire 长度作为解码文件长度。
+
+**未验收**：长度校验不等于 SHA-256。iOS/Android 不提供 File System Access 时，普通文件由浏览器原生下载票据接管，xDrive 无法直接核验真实落盘结果。真实 1GiB/4GiB 和 ZIP 的落盘 SHA、Range 206/416、票据有效期/撤销、断网、取消、后台切换和锁屏仍属 S4C2/S4D/S5；小规模 Node 测试不代表真机已通过。

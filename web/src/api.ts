@@ -3124,6 +3124,7 @@ export class XDriveApi {
         '',
         node.parent_id,
         node.id,
+        version.size,
       )
       return true
     } catch (error) {
@@ -3156,6 +3157,7 @@ export class XDriveApi {
         '',
         node.parent_id,
         node.id,
+        node.size,
       )
       return true
     } catch (error) {
@@ -3421,6 +3423,7 @@ export class XDriveApi {
     networkTransferID = '',
     cloudParentID?: number,
     cloudNodeID?: number,
+    expectedContentBytes?: number,
   ) {
     const session = this.transferContext()
     const transferID = trackTransfer ? webTransferStore.create({
@@ -3455,8 +3458,21 @@ export class XDriveApi {
       tracking.check()
       if (!response.ok) throw new ApiError(response.status, response.statusText || 'Download failed')
 
-      const contentLength = Number(response.headers.get('Content-Length') || '0')
-      const total = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0
+      const lengthHeader = response.headers.get('Content-Length')
+      const declaredLength = lengthHeader === null ? undefined : Number(lengthHeader)
+      const contentEncoding = (response.headers.get('Content-Encoding') || '').trim().toLowerCase()
+      // Fetch yields decoded body bytes; compressed wire size is not file size.
+      const identityEncoded = contentEncoding === '' || contentEncoding === 'identity'
+      const plainContentLength = identityEncoded && typeof declaredLength === 'number' &&
+        Number.isSafeInteger(declaredLength) && declaredLength >= 0 ? declaredLength : undefined
+      if (expectedContentBytes !== undefined &&
+          (!Number.isSafeInteger(expectedContentBytes) || expectedContentBytes < 0)) {
+        throw new Error('无法确认预期下载大小，已终止保存。')
+      }
+      // Node/version size is authoritative even if a proxy omits Content-Length.
+      // Archive uses an identity-encoded response length when available.
+      const exactExpectedBytes = expectedContentBytes ?? plainContentLength
+      const total = exactExpectedBytes ?? 0
       let completed = 0
       if (wireID) {
         transferProgress = xDriveCreateWebDownloadProgressReporter((done) => {
@@ -3476,6 +3492,7 @@ export class XDriveApi {
           (done) => {
             transferProgress?.progress(done)
           },
+          exactExpectedBytes,
         )
       } else {
         const contentType = response.headers.get('Content-Type') || 'application/octet-stream'
@@ -3498,6 +3515,9 @@ export class XDriveApi {
           transferProgress?.progress(completed)
         }
 
+        if (exactExpectedBytes !== undefined && completed !== exactExpectedBytes) {
+          throw new Error('下载内容长度不一致，已终止保存。')
+        }
         tracking.check()
         const url = URL.createObjectURL(blob)
         try {
