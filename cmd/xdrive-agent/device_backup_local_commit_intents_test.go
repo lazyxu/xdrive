@@ -107,6 +107,27 @@ func TestLocalQuarantinePageRejectsForeignStaleAndMalformedCandidates(t *testing
 			p.Items = []client.LocalSourceItemEvidencePageItem{next}
 			return p
 		}(), 42, 7, 5},
+		{"non-hex old key", func() client.LocalSourceItemEvidencePage {
+			p := page
+			next := row
+			next.PreviousPathKey = strings.Repeat("g", 64)
+			p.Items = []client.LocalSourceItemEvidencePageItem{next}
+			return p
+		}(), 42, 7, 5},
+		{"non-hex destination", func() client.LocalSourceItemEvidencePage {
+			p := page
+			next := row
+			next.CurrentPathKey = strings.Repeat("g", 64)
+			p.Items = []client.LocalSourceItemEvidencePageItem{next}
+			return p
+		}(), 42, 7, 5},
+		{"non-hex native identity", func() client.LocalSourceItemEvidencePage {
+			p := page
+			next := row
+			next.NativeIdentityKey = strings.Repeat("g", 64)
+			p.Items = []client.LocalSourceItemEvidencePageItem{next}
+			return p
+		}(), 42, 7, 5},
 		{"overflow page", func() client.LocalSourceItemEvidencePage {
 			p := page
 			p.Items = make([]client.LocalSourceItemEvidencePageItem, 17)

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/client"
@@ -12,6 +11,21 @@ import (
 )
 
 const localQuarantinePageLimit = 16
+
+// validLocalQuarantineDigest accepts only the lower-case ASCII SHA-256 hex
+// keys used by the private evidence contract, never a path or raw identifier.
+func validLocalQuarantineDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if !((b >= '0' && b <= '9') || (b >= 'a' && b <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
 
 // localQuarantinePageSummary never crosses Agent IPC/Preload/Renderer/Web.
 // It reports only quarantined, non-authoritative proposals, never uploads,
@@ -55,11 +69,9 @@ func localQuarantineCandidates(
 	for _, item := range page.Items {
 		if item.EvidenceID <= prev || item.SourceItemID == 0 ||
 			item.PreviousPathKey == item.CurrentPathKey ||
-			len(item.PreviousPathKey) != 64 || len(item.CurrentPathKey) != 64 ||
-			len(item.NativeIdentityKey) != 64 ||
-			strings.ToLower(item.PreviousPathKey) != item.PreviousPathKey ||
-			strings.ToLower(item.CurrentPathKey) != item.CurrentPathKey ||
-			strings.ToLower(item.NativeIdentityKey) != item.NativeIdentityKey {
+			!validLocalQuarantineDigest(item.PreviousPathKey) ||
+			!validLocalQuarantineDigest(item.CurrentPathKey) ||
+			!validLocalQuarantineDigest(item.NativeIdentityKey) {
 			return nil, nil, errors.New("invalid private quarantine candidate")
 		}
 		if _, exists := seenItems[item.SourceItemID]; exists {
