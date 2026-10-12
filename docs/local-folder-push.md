@@ -1543,3 +1543,40 @@ The earlier E1b1b0 branch's [CI #38264555138](https://github.com/lazyxu/xdrive/a
 ### L03-E1b1b0 static Desktop contract synchronization, 2026-10-12
 
 [CI #38271069314](https://github.com/lazyxu/xdrive/actions/runs/38271069314) found that `desktop/tests/device-backup-private-quarantine-content-preflight.cjs` still required the obsolete fixture literal `putOriginal("xyz")` even though production `Local.Put` must reject it. The cross-layer private-route, no-IPC, device-proof and no-canonical-write assertions remain intact. Require the explicit out-of-band tamper fixture and verify the obsolete normal-write bypass is absent. This is a **test-contract update**, not a change to Source authority, upload behavior, Run cancellation or NAS management. Require fresh exact-head full GitHub CI including final-gate before merge.
+
+
+## L03-E1b1b1a · Transaction-scoped canonical CAS GC-hash fence (CI pending)
+
+After L03-E1b1b0 [#1572](https://github.com/lazyxu/xdrive/pull/1572)
+passed full exact-head 76-job GitHub CI and merged into master as
+`61eca20c32f979e1c2e6c79621b75a77ede00724`, the next
+bounded prerequisite is a **private, read-only SQL retention guard**.
+
+`checkLocalQuarantinedCASRetentionTx` takes a caller-owned PostgreSQL
+transaction, a currently authenticated owning-device/Root/revision proof,
+and at most 4 exact quarantined evidence IDs / 64 MiB in total. It
+first independently rechecks current device revocation, Root binding,
+paused Source revision and exact persisted quarantine. It then takes
+`pg_advisory_xact_lock(hashtextextended(sha256,0))` for the **sorted,
+distinct canonical** content hashes before any cloud CAS row `FOR SHARE`
+join; this matches existing refcount release/GC's hash-before-row order.
+The existing SourceItem/alias/Node/File/FileVersion/READY ContentBlob
+consistency check then runs in the very same transaction, and all
+returned objects must match the exact claims. The hash locks remain
+held **until that caller transaction commits or rolls back**, blocking
+cooperating GC/release of these existing ready objects during a future
+canonical mutation. No physical bytes are read while holding SQL locks.
+
+This does NOT increment or persist references, insert an alias, write a
+SourceItem, authorize a commit, or protect the bytes across separate
+transactions. Untrusted device hashes cannot become authoritative.
+The guard is unexported and deliberately has no HTTP/Agent IPC/Desktop
+button/scheduler entrypoint; ordinary `local_folder` activation remains
+denied. Tests cover ordering, duplicate hashes, bounds, owner vs foreign
+device, wrong credential, exact refcount immutability, and no forged
+success. The future authoritative L03-E1b1b1b/E1b2 writer must couple
+*actual durable reference accounting and idempotent SourceItem/alias
+promotion* in that same transaction and independently recheck physical
+remote CAS and owning-device native bytes immediately before commit.
+L03-F/G, L05/L06, L07 native 1k/10k/100k and >=4GiB acceptance,
+and GitLab delivery remain future work.
