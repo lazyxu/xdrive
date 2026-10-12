@@ -183,7 +183,9 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               健康：{healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认'}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              生效：{activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
+              生效：{service.id === 'background-worker' && service.activation_state === 'verified'
+                ? '已观测的在线 Pull Worker 均确认目标修订（不代表全部部署实例）'
+                : activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
             </Typography>
           </Stack>
           {service.config_hint && (

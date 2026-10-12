@@ -58,3 +58,15 @@ test('PostgreSQL and GeoNames overview activation needs matching saved revision 
   assert.ok(lifecycle.includes('s.currentGeoNamesDatasetFingerprint()'))
   assert.ok(page.includes('当前实例目标修订已核验（不代表全集群）'))
 })
+
+test('Pull Worker overview verification reuses actual observed policy revisions without claiming full deployment', () => {
+  const lifecycle = read('internal', 'api', 'admin_service_lifecycle.go')
+  const config = read('internal', 'api', 'admin_source_worker_config.go')
+  const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
+  assert.ok(lifecycle.includes('sourceworkerpolicy.Read(ctx, s.DB)'))
+  assert.ok(lifecycle.includes('summarizeSourceWorkerEffective(desired, rows, truncated)'))
+  assert.ok(lifecycle.includes('item.ActivationState = sourceWorkerLifecycleActivationState('))
+  assert.ok(config.includes('Where("expires_at > ?", time.Now().UTC())'))
+  assert.ok(page.includes('已观测的在线 Pull Worker 均确认目标修订'))
+  assert.equal(page.includes('docker.sock'), false)
+})
