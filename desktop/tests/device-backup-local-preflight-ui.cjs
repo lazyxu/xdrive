@@ -47,7 +47,7 @@ test('physical CAS preflight is owning-Desktop-only and aggregate-redacted throu
   assert.match(page, /verifiedLocalDeviceID === device\.id && !device\.revoked/)
   assert.match(page, /evidencePreflightTarget\.source === source/)
   assert.match(dialog, /physical_unobserved_files/)
-  assert.match(dialog, /value\.commit_supported !== false/)
+  assert.match(dialog, /value\.content_verified === false && value\.commit_supported === false/)
   assert.match(dialog, /actions\.cancel\(requestID\)/)
   assert.match(dialog, /本机内容一致性|内容一致性预检/)
   assert.doesNotMatch(web, /localEvidencePreflight=|getDeviceBackupLocalEvidencePreflight/)

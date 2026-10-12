@@ -984,7 +984,7 @@ SourceRun, auto scheduler/watcher, offline recovery and safe Mirror
 deletion remain separate L03-E–G/L05–L07 work. No GitLab delivery or
 physical-device performance numbers are claimed.
 
-## P0-C4c5d · Owning Desktop manual aggregate content preflight (GitHub PR verification)
+## P0-C4c5d · Owning Desktop manual aggregate content preflight (merged #1493; CI success)
 
 Prerequisite #1484 (L03-D2b2c2b2d) is **merged** after exact-head full
 97-check CI (25 successful, 72 conditionally skipped, 0 failed,
@@ -1054,3 +1054,30 @@ manager, and no Mirror deletion. L03-E durable transactional identity
 commit and L03-F/G uploads are separate future stages with independent
 authorization, physical correctness and crash/replay tests. No GitLab
 push, >=4GiB native transfer or 100k real-device benchmark is claimed.
+
+
+## P0-C4c5e · Desktop manual preflight page/session consistency (PR verification)
+
+After merged #1493 (owning-Desktop-only redacted manual preflight), this
+read-only UI follow-up pins the first successful Source revision for an open
+session. Later pages/retries of another revision are rejected, with a fresh
+manual session required. Results are cursor-bound, preventing the previously
+visible page from appearing under a newly selected page number. Switching
+the authenticated Agent/server source drops prior counts and cancels
+in-flight work.
+
+The UI accumulates only validated aggregate page counters; retrying one
+page replaces rather than doubles its count. It reports the number of
+manually checked candidate pages and locally hashed / physically sampled /
+UNOBSERVED files and bytes. Since each page is checked at a different
+time, the sum is expressly NOT an atomic snapshot, complete cloud
+verification, durable commit token or a 100k-folder acceptance claim.
+Per-page 16-object/256MiB physical sampling and 64MiB individual-object
+caps remain unchanged.
+
+No Server/Agent transport, Root or device permissions, SourceItem/Node/CAS
+write, local Source activation, uploader, watcher/schedule, Mirror delete
+or NAS Push is added. Web/Mobile and foreign Desktop remain read-only.
+Focused static regression is added; native real-device E2E remains
+unmeasured. Exact-head GitHub PR CI is the merge gate; no GitLab delivery
+is claimed for this phase.
