@@ -343,7 +343,9 @@ test('F-iOS-01A: Mobile-only large-title chrome and grouped iOS surfaces preserv
   assert.match(mobileSource, /data-mobile-files-navigation-bar/)
   assert.match(mobileSource, /data-mobile-files-compact-title/)
   assert.match(mobileSource, /data-mobile-files-large-title/)
-  assert.match(mobileSource, /compactTitleVisible = scrollTop > 48/)
+  assert.match(mobileSource, /compactTitleVisible = showDirectory \|\| scrollTop > 48/)
+  assert.match(mobileSource, /!selectionActive && !editTitle && !showDirectory/,
+    'only Browse home may display the large scroll-collapsing heading')
   assert.match(mobileSource, /component="h2"/)
   for (const group of ['locations', 'quick', 'organization', 'directory', 'collection']) {
     assert.ok(mobileSource.includes(`data-mobile-files-group="${group}"`), 'missing Mobile-only native grouped section: ' + group)
@@ -406,7 +408,7 @@ test('F-iOS27-02: target is explicitly iOS 27, while only internal file tabs are
   assert.match(benchmark, /Only internal multiple file tabs/)
   assert.match(benchmark, /shared MUI virtualization-window kernel/)
   assert.match(mobileSource, /backdropFilter: 'blur\(18px\) saturate\(160%\)'/)
-  assert.match(mobileSource, /mb: 'max\(env\(safe-area-inset-bottom\), 6px\)'/)
+  assert.match(mobileSource, /mb: 'max\(env\(safe-area-inset-bottom\), 8px\)'/)
 })
 
 test('F-PARITY-02: Mobile More, item menu, selection all reuse wide-Web undo, history and path-copy actions', () => {
@@ -621,8 +623,8 @@ test('F-iOS27-08A: Files More has explicit paired native view actions and one sh
 
 test('F-iOS27-08B: iOS List dividers follow real text indentation without changing virtual row geometry', () => {
   for (const [depth, normal, selected] of [
-    [0, 72, 108], [1, 88, 124], [2, 104, 140], [4, 136, 172], [99, 136, 172],
-    [-2, 72, 108], [NaN, 72, 108],
+    [0, 84, 120], [1, 100, 136], [2, 116, 152], [4, 148, 184], [99, 148, 184],
+    [-2, 84, 120], [NaN, 84, 120],
   ]) {
     assert.equal(mobileFilesRowTextInset(false, depth), normal)
     assert.equal(mobileFilesRowTextInset(true, depth), selected)
@@ -630,7 +632,7 @@ test('F-iOS27-08B: iOS List dividers follow real text indentation without changi
   assert.match(mobileSource, /left: mobileFilesRowTextInset\(selectionMode, depth\)/)
   assert.match(mobileSource, /left: mobileFilesRowTextInset\(false\)/)
   assert.match(mobileSource, /flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center'/)
-  assert.match(mobileSource, /minHeight: MOBILE_FILES_ROW_HEIGHT, px: 2, gap: 1\.5/)
+  assert.match(mobileSource, /minHeight: MOBILE_FILES_ROW_HEIGHT, px: 3\.5, gap: 1\.5/)
   assert.match(mobileSource, /data-mobile-files-collection-title/)
   assert.match(mobileSource, /data-mobile-files-collection-meta/)
   assert.match(mobileSource, /data-mobile-files-item-title/)

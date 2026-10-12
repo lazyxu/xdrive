@@ -3256,6 +3256,7 @@ jobs:
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-selection-') ||
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
         shell: bash
         run: |
@@ -3330,7 +3331,10 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Verify real Chrome Files 375/390/899/900px shared API parity
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')
+        if: >-
+          github.event_name == 'pull_request' &&
+          (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-'))
         shell: bash
         env:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -3357,7 +3361,10 @@ jobs:
           cat "$RUNNER_TEMP/xdrive-files-ios27/results.json"
           exit "$code"
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')
+        if: >-
+          always() && github.event_name == 'pull_request' &&
+          (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-'))
         with:
           name: files-ios27-browser-parity
           path: ${{ runner.temp }}/xdrive-files-ios27/

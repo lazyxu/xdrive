@@ -345,6 +345,7 @@ export default function MobileFiles(props: Props) {
   const pendingScrollRef = useRef<{ folderID: number; scrollTop: number } | null>(null)
   const [viewport, setViewport] = useState({ width: 375, height: 600 })
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
+  const [showLocationPath, setShowLocationPath] = useState(false)
   const [arrangeAnchor, setArrangeAnchor] = useState<HTMLElement | null>(null)
   const [goToPathOpen, setGoToPathOpen] = useState(false)
   const [goToPathDraft, setGoToPathDraft] = useState('')
@@ -1382,8 +1383,8 @@ export default function MobileFiles(props: Props) {
           minWidth: 0, minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           display: 'flex', flexDirection: effectiveGrid ? 'column' : 'row', alignItems: 'center',
           gap: effectiveGrid ? 0.5 : 1.5, py: effectiveGrid ? 1 : 0.6,
-          px: effectiveGrid ? 0.5 : 2,
-          pl: !effectiveGrid && depth > 0 ? 'calc(16px + ' + Math.min(depth, 4) * 16 + 'px)' : undefined,
+          px: effectiveGrid ? 0.5 : 3.5,
+          pl: !effectiveGrid && depth > 0 ? 'calc(28px + ' + Math.min(depth, 4) * 16 + 'px)' : undefined,
           position: 'relative', cursor: 'pointer',
           bgcolor: chosen || dropFolderID === String(item.id) ? 'action.selected' :
             effectiveGrid ? 'transparent' : (theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff'),
@@ -1412,8 +1413,8 @@ export default function MobileFiles(props: Props) {
           )}
         </Box>
         <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
-          <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
-          <Typography data-mobile-files-item-meta variant="caption" color="text.secondary" noWrap display="block" textAlign={effectiveGrid ? 'center' : 'left'}>
+          <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap sx={{ fontSize: effectiveGrid ? 14 : 16 }} textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
+          <Typography data-mobile-files-item-meta variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: effectiveGrid ? 12 : 13.5 }} textAlign={effectiveGrid ? 'center' : 'left'}>
             {inlineBranch?.error ?? (inlineBranch?.itemCount === 0 ? '空文件夹' :
               item.secondaryLabel || [labelOf(item), item.kind === 'file' && item.size !== undefined ? formatBytes(item.size) : ''].filter(Boolean).join(' · '))}
           </Typography>
@@ -1508,7 +1509,7 @@ export default function MobileFiles(props: Props) {
           action()
         }
       }}
-      sx={{ display: 'flex', alignItems: 'center', minHeight: MOBILE_FILES_ROW_HEIGHT, px: 2, gap: 1.5,
+      sx={{ display: 'flex', alignItems: 'center', minHeight: MOBILE_FILES_ROW_HEIGHT, px: 3.5, gap: 1.5,
         position: 'relative',
         bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff',
         '&:not(:last-child)::after': {
@@ -1590,7 +1591,7 @@ export default function MobileFiles(props: Props) {
   const heading = props.trashActive ? '最近删除' : section === 'recent' ? '最近' : section === 'favorites' ? '收藏' :
     showDirectory ? (props.searchActive ? '搜索结果' : props.crumbs.at(-1)?.name ?? '云端文件') : '浏览'
   const editTitle = editBrowseHome && section === 'browse' && !showDirectory
-  const compactTitleVisible = scrollTop > 48 || selectionActive || editTitle
+  const compactTitleVisible = showDirectory || scrollTop > 48 || selectionActive || editTitle
   const compactTitle = selectionActive ? `已选 ${selection.length} 项` : editTitle ? '整理浏览' : heading
   const overflowAction = (label: string, action: () => void, disabled = false) => (
     <MenuItem key={label} disabled={disabled} onClick={() => { setMoreAnchor(null); action() }} sx={{ minHeight: MIN_TOUCH }}>{label}</MenuItem>
@@ -1613,20 +1614,22 @@ export default function MobileFiles(props: Props) {
       <Box ref={ownerRef} data-xdrive-mobile-files onKeyDown={handleFilesKeyboard} sx={{
         minHeight: 0, minWidth: 0, height: '100%', flex: 1,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
-        bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#f2f2f7',
+        bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         fontFamily: IOS_FILES_MOBILE_FONT,
         '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
       }}>
         <Stack data-mobile-files-navigation-bar direction="row" alignItems="center" sx={{
-          px: 1.5, flexShrink: 0, minHeight: 52, gap: 1,
-          bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#f2f2f7',
-          borderBottom: compactTitleVisible ? 1 : 0,
-          borderColor: 'divider',
+          px: 1.5, flexShrink: 0, minHeight: 56, gap: 1,
+          bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         }}>
           {showDirectory ? (
-            <Button size="small" onClick={navigateUp} startIcon={<ArrowBackIosNewRoundedIcon sx={{ fontSize: 15 }}/>}
-              sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, px: 1, color: IOS_FILES_MOBILE_BLUE }}>返回</Button>
-          ) : null}
+            <IconButton aria-label="返回" onClick={navigateUp} sx={{
+              width: 48, height: 48, flexShrink: 0,
+              color: theme => theme.palette.mode === 'dark' ? '#f7f7f7' : '#111111',
+              bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.035)',
+            }}><ArrowBackIosNewRoundedIcon sx={{ fontSize: 23 }}/></IconButton>
+          ) : <Box aria-hidden="true" sx={{ width: 48, height: 48, flexShrink: 0 }}/>}
           <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
             aria-hidden={!compactTitleVisible}
             sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
@@ -1652,7 +1655,9 @@ export default function MobileFiles(props: Props) {
               sx={{ minWidth: MIN_TOUCH, minHeight: MIN_TOUCH }}>完成</Button>
           ) : (
             <IconButton aria-label="文件操作菜单" onClick={event => setMoreAnchor(event.currentTarget)}
-              sx={{ width: MIN_TOUCH, height: MIN_TOUCH, color: IOS_FILES_MOBILE_BLUE }}><MoreHorizRoundedIcon/></IconButton>
+              sx={{ width: 48, height: 48, flexShrink: 0, color: 'text.primary', borderRadius: '50%',
+                bgcolor: theme => theme.palette.mode === 'dark' ? '#232326' : '#fafafa',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.035)' }}><MoreHorizRoundedIcon sx={{ fontSize: 26 }}/></IconButton>
           )}
         </Stack>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
@@ -1673,15 +1678,15 @@ export default function MobileFiles(props: Props) {
             }
           }}
           sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehaviorY: 'contain' }}>
-          {!selectionActive && !editTitle ? (
+          {!selectionActive && !editTitle && !showDirectory ? (
             <Box data-mobile-files-large-title sx={{ px: 2, pt: 1.75, pb: 0.5 }}>
               <Typography component="h2" sx={{ fontSize: 34, fontWeight: 730,
                 lineHeight: 1.22, letterSpacing: '-0.5px' }}>{heading}</Typography>
             </Box>
           ) : null}
           <Box sx={{ position: 'sticky', top: 0, zIndex: 1,
-            bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#f2f2f7', px: 2,
-            py: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1.5,
+            bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff', px: 2,
+            py: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
             maxHeight: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 198,
             opacity: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
             overflow: 'hidden', transition: 'max-height .16s ease, opacity .16s ease, padding .16s ease' }}>
@@ -1697,8 +1702,8 @@ export default function MobileFiles(props: Props) {
                 }
               }}
               sx={{ '& .MuiOutlinedInput-root': {
-                bgcolor: theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#e3e3e8',
-                borderRadius: 2.5, minHeight: MIN_TOUCH,
+                bgcolor: theme => theme.palette.mode === 'dark' ? '#242427' : '#f9f9fa',
+                borderRadius: '999px', minHeight: 48, boxShadow: '0 2px 16px rgba(0,0,0,0.035)',
                 '& fieldset': { border: 0 },
               } }}
               slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small"/></InputAdornment>,
@@ -1803,7 +1808,8 @@ export default function MobileFiles(props: Props) {
                 </Typography>
               ) : null}
               {!props.searchActive && !props.trashActive && props.crumbs.length > 1 ? (
-                <Stack direction="row" gap={0.5} sx={{ px: 1.5, pb: 1, overflowX: 'auto' }}>
+                <Stack data-mobile-files-location-path direction="row" gap={0.5}
+                  sx={{ display: showLocationPath ? 'flex' : 'none', px: 1.5, pb: 1, overflowX: 'auto' }}>
                   {props.crumbs.map((crumb, i) => (
                     <Button key={String(crumb.id)} data-mobile-files-crumb-id={String(crumb.id)}
                       onDragOver={event => externalDragOver(event, { kind: 'crumb', crumb })}
@@ -1811,13 +1817,13 @@ export default function MobileFiles(props: Props) {
                       variant={i === props.crumbs.length - 1 ? 'outlined' : 'text'}
                       sx={{ whiteSpace: 'nowrap', minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0,
                         bgcolor: dropCrumbID === String(crumb.id) ? 'action.selected' : undefined }}
-                      onClick={() => { props.onCrumbClick(i); browseScrollRef.current = 0; setScrollTop(0); scrollHostRef.current?.scrollTo({ top: 0 }) }}>
+                      onClick={() => { props.onCrumbClick(i); setShowLocationPath(false); browseScrollRef.current = 0; setScrollTop(0); scrollHostRef.current?.scrollTo({ top: 0 }) }}>
                       {crumb.name || '根目录'}
                     </Button>
                   ))}
                 </Stack>
               ) : null}
-              <Typography data-mobile-files-arrangement-status variant="caption" color="text.secondary" sx={{ px: 2, display: 'block', pb: 1 }}>
+              <Typography data-mobile-files-arrangement-status variant="caption" color="text.secondary" sx={{ px: 2, display: props.loading ? 'block' : 'none', pb: 1 }}>
                 {props.loading ? '正在加载…' : `${totalCount} 个项目`} · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {props.loading && totalCount === 0 ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress size={24}/></Box> : null}
@@ -1857,7 +1863,7 @@ export default function MobileFiles(props: Props) {
                 </Box>
               ) : (
                 <Box data-mobile-files-group="directory" sx={{
-                  mx: effectiveGrid ? 0 : 2, borderRadius: effectiveGrid ? 0 : '13px',
+                  mx: 0, borderRadius: 0,
                   overflow: 'hidden', bgcolor: effectiveGrid ? 'transparent' : 'background.paper',
                 }}>
                   <Box sx={{ height: windowRows.before }} />
@@ -1935,24 +1941,26 @@ export default function MobileFiles(props: Props) {
           </Stack>
         ) : (
           <Stack component="nav" direction="row" justifyContent="space-around" sx={{
-            flexShrink: 0, mx: 1.5, mt: 0.75,
-            mb: 'max(env(safe-area-inset-bottom), 6px)',
-            px: 0.5, py: 0.35, borderRadius: '999px',
+            flexShrink: 0, alignSelf: 'center', width: 'calc(100% - 24px)', maxWidth: 320,
+            mt: 0.75,
+            mb: 'max(env(safe-area-inset-bottom), 8px)',
+            px: 0.75, py: 0.5, borderRadius: '999px',
             border: '1px solid', borderColor: 'divider',
             bgcolor: theme => theme.palette.mode === 'dark' ? 'rgba(42,42,45,0.92)' : 'rgba(249,249,253,0.94)',
             backdropFilter: 'blur(18px) saturate(160%)',
             boxShadow: '0 3px 16px rgba(0,0,0,0.10)',
           }} aria-label="文件分类">
             {([
-              ['recent', <HistoryRoundedIcon/>, '最近'],
-              ['browse', <FolderRoundedIcon/>, '浏览'],
+              ['recent', <HistoryRoundedIcon/>, '最近项目'],
               ['favorites', <StarBorderRoundedIcon/>, '收藏'],
+              ['browse', <FolderRoundedIcon/>, '浏览'],
             ] as const).map(([value, icon, label]) => (
               <Button key={value} data-mobile-files-section={value} aria-current={section === value ? 'page' : undefined}
                 onClick={() => changeSection(value)} sx={{
                   flex: 1, flexDirection: 'column', minHeight: 52, gap: 0,
                   color: section === value ? IOS_FILES_MOBILE_BLUE : 'text.secondary',
-                  fontSize: 11, borderRadius: 0,
+                  fontSize: 11, borderRadius: '999px',
+                  bgcolor: section === value ? 'action.selected' : 'transparent',
                 }}>
                 {icon}{label}
               </Button>
@@ -1987,6 +1995,12 @@ export default function MobileFiles(props: Props) {
         </Menu>
         <Menu data-mobile-files-more-menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
           slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 520px)' } } }}>
+          {showDirectory ? <MenuItem disabled data-mobile-files-arrangement-summary sx={{ minHeight: MIN_TOUCH }}>
+            {`${totalCount} 个项目 · ${arrangementLabel}`}
+          </MenuItem> : null}
+          {showDirectory && !props.trashActive && !props.searchActive && props.crumbs.length > 1
+            ? overflowAction(showLocationPath ? '收起位置路径' : '显示位置路径',
+                () => setShowLocationPath(value => !value)) : null}
           {section === 'browse' && !showDirectory ? overflowAction('整理浏览首页', () => setEditBrowseHome(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('选择', () => setSelectionMode(true)) : null}
           {showDirectory && !props.trashActive ? overflowAction('新建文件夹', props.onCreateFolder) : null}

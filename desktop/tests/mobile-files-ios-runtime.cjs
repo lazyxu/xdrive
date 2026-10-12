@@ -252,7 +252,7 @@ test('mounted Files returns from a direct child to cloud root, then Browse home'
   let up = 0
   await withView(async h => {
     const clickBack = async () => {
-      const buttons = h.view.root.findAll(node => node.props?.onClick && node.props.children === '返回')
+      const buttons = h.view.root.findAll(node => node.props?.onClick && node.props['aria-label'] === '返回')
       assert.equal(buttons.length, 1)
       await act(async () => { buttons[0].props.onClick() })
     }
@@ -735,7 +735,7 @@ test('closing system share during preparation cancels its byte-fetch request', a
 test('F-iOS-01A: one visible large heading collapses into the compact title while scroll owner stays mounted', async () => {
   await withView(async h => {
     const nav = find(h.view, 'data-mobile-files-navigation-bar', true)
-    assert.equal(nav.props.sx.minHeight, 52)
+    assert.equal(nav.props.sx.minHeight, 56)
     assert.equal(count(h.view, 'data-mobile-files-large-title'), 1)
     assert.equal(find(h.view, 'data-mobile-files-compact-title', true).props['aria-hidden'], true)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
@@ -1818,12 +1818,12 @@ test('F-iOS27-08B: Recent/Favorites 68px row geometry matches the shared virtual
     await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
     const recent = find(h.view, 'data-mobile-files-collection-row', 'recent')
     assert.equal(recent.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
-    assert.equal(recent.props.sx['&:not(:last-child)::after'].left, 72)
+    assert.equal(recent.props.sx['&:not(:last-child)::after'].left, 84)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
     await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
     const favorite = find(h.view, 'data-mobile-files-collection-row', 'favorites')
     assert.equal(favorite.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
-    assert.equal(favorite.props.sx['&:not(:last-child)::after'].left, 72)
+    assert.equal(favorite.props.sx['&:not(:last-child)::after'].left, 84)
     await act(async () => { find(h.view, 'data-mobile-files-section', 'browse').props.onClick() })
     const cloud = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
       .find(node => textOf(node.props.children).includes('云端文件'))
@@ -1832,14 +1832,17 @@ test('F-iOS27-08B: Recent/Favorites 68px row geometry matches the shared virtual
     let item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
     assert.ok(item)
     assert.equal(item.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
-    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 72)
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 84)
     await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
     const select = h.view.root.findAll(node => node.type === 'MenuItem' && node.props?.children === '选择')[0]
     assert.ok(select)
     await act(async () => { select.props.onClick() })
     item = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)[0]
-    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 108,
-      'selected circle adds exactly its true 36px slot to the separator inset')
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left, 120,
+      '28px native gutter plus the selected circle adds exactly its true 36px slot')
+    assert.equal(item.props.sx['&:not(:last-child)::after'].left -
+      state.mobileFilesRowTextInset(false), 36,
+      'selection must preserve the existing 68px virtual row and only move the divider')
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1)
   })
 })
@@ -2439,4 +2442,37 @@ test('F-iOS27-09E: all Mobile Files menus enforce a 44px MUI paper-level touch m
     assert.equal(count(h.view, 'data-xdrive-mobile-files-scroll'), 1,
       'menus must not create a second virtual scroll owner')
   })
+})
+
+test('F-iOS27-10A: folder navigation is compact, list is continuous, and More reveals full path', async () => {
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-mobile-files-large-title'), 0,
+      'entered folders must not create a second oversized title')
+    const compact = find(h.view, 'data-mobile-files-compact-title', true)
+    assert.equal(compact.props['aria-hidden'], false)
+    assert.equal(textOf(compact.props.children), '照片文件夹')
+    const back = find(h.view, 'aria-label', '返回')
+    assert.equal(back.props.sx.width, 48)
+    assert.equal(back.props.sx.height, 48)
+    const list = find(h.view, 'data-mobile-files-group', 'directory')
+    assert.equal(list.props.sx.mx, 0)
+    assert.equal(list.props.sx.borderRadius, 0)
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
+    assert.equal(find(h.view, 'data-mobile-files-location-path', true).props.sx.display, 'none')
+    const rail = h.view.root.findAll(node => node.props?.['data-mobile-files-section'])
+      .map(node => node.props['data-mobile-files-section'])
+    assert.deepEqual(rail, ['recent', 'favorites', 'browse'])
+    await act(async () => {
+      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
+    })
+    const reveal = h.view.root.findAll(node => node.props?.children === '显示位置路径' && node.props.onClick)
+    assert.equal(reveal.length, 1, 'directory ancestors must remain accessible via More')
+    await act(async () => { reveal[0].props.onClick() })
+    assert.equal(find(h.view, 'data-mobile-files-location-path', true).props.sx.display, 'flex')
+    assert.equal(find(h.view, 'data-mobile-files-crumb-id', '1').props.sx.minHeight, 44)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 2,
+    crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+  } })
 })
