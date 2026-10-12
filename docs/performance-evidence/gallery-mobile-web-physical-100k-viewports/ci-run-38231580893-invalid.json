@@ -1,0 +1,28 @@
+{
+  "workload_id": "P036/M001-c",
+  "run": "https://github.com/lazyxu/xdrive/actions/runs/38231580893",
+  "source_sha": "a8e1a77b5e283ebaab2fdb66ba786a6a3124fa05",
+  "observed_time": "2026-10-12",
+  "status": "Invalid harness / no valid Mobile Web viewport benchmark yet",
+  "baseline_context": {
+    "renderer_target_css_px": 390,
+    "initial_visible_thumbnail_http200_count": 5,
+    "actual_physical_sources": 115000,
+    "actual_physical_source_bytes": 149285128,
+    "logical_gallery_assets": 100000,
+    "live_photo_groups": 15000
+  },
+  "reason": "Original 1440px desktop six-simultaneous-visible-image assertion was reused at 390px mobile and timed out before a valid first viewport metric. Five real thumbnail GETs returned HTTP200; actual visible DOM geometry was not captured in the failed run. New run must explicitly confirm >=4 physically visible distinct decoded stills and two rAF, with DOM/HTTP diagnostic on any further failure.",
+  "metrics": {
+    "first_viewport_latency_ms": null,
+    "all_viewport_n3_ms": null,
+    "after_ms": null
+  },
+  "frozen_unmodified_limits": {
+    "viewport_max_ms": 20000,
+    "concurrent_go_thumbnail_handlers_max": 6,
+    "max_renderer_and_go_rss_growth_bytes_each": 268435456,
+    "min_3_schemas": 3
+  },
+  "red_classification": "Invalid harness; product RED not established; no production code modified"
+}

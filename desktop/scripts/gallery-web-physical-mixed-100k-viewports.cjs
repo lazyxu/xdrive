@@ -9,8 +9,9 @@ const {app, BrowserWindow} = require('electron')
 
 const root = path.resolve(__dirname, '../..')
 const webDist = path.join(root, 'web', 'dist')
+const mobileMode = process.env.XD_GALLERY_WEB_PHYSICAL_MOBILE_100K_PERF === '1'
 const output = path.resolve(process.env.XD_GALLERY_WEB_PHYSICAL_VIEWPORT_RESULTS ||
-  path.join(root, 'desktop', 'gallery-web-physical-mixed-100k-results'))
+  path.join(root, 'desktop', mobileMode ? 'gallery-mobile-web-physical-mixed-100k-results' : 'gallery-web-physical-mixed-100k-results'))
 const goBinary = path.resolve(process.env.XD_GALLERY_WEB_PHYSICAL_GO_BINARY || '')
 const fractions = [0, 0.25, 0.5, 0.75, 0.95]
 const maxFirstSixMs = 20000
@@ -133,9 +134,11 @@ function snapshotActualGallery(){
   const clip=host.getBoundingClientRect()
   const tiles=Array.from(grid.querySelectorAll('[data-xdrive-media-tile]'))
   const decoded=[]
+  let visibleTiles=0
   for(const tile of tiles){
     const box=tile.getBoundingClientRect()
     if(box.bottom<=clip.top||box.top>=clip.bottom)continue
+    visibleTiles++
     const img=tile.querySelector('img')
     if(!(img instanceof HTMLImageElement) || !img.complete ||
        img.naturalWidth<=0 || img.naturalHeight<=0 ||
@@ -144,22 +147,45 @@ function snapshotActualGallery(){
     if(Number.isSafeInteger(index)&&index>=0&&index<100000)
       decoded.push({index,source:img.currentSrc,naturalWidth:img.naturalWidth})
   }
-  return {mounted:tiles.length,decoded,extent:host.scrollHeight-host.clientHeight,
+  return {mounted:tiles.length,visibleTiles,decoded,extent:host.scrollHeight-host.clientHeight,
     scrollTop:host.scrollTop,viewportHeight:host.clientHeight}
 }
-async function decodeAndPaint(win,indices){
+async function decodeAndPaint(win,indices,required=6){
   const script='(async()=>{'+
     'const selected=new Set('+JSON.stringify(indices)+');'+
     'const grid=document.querySelector("[data-xdrive-media-gallery-virtual-grid]");'+
     'if(!grid)throw Error("VirtualGrid disappeared before real image decode");'+
     'const imgs=Array.from(grid.querySelectorAll("[data-xdrive-media-tile]")).filter(t=>'+
     'selected.has(Number(t.getAttribute("data-xdrive-media-index")))).map(t=>t.querySelector("img"));'+
-    'if(imgs.length<6)throw Error("fewer than six fresh real blob JPEG images");'+
-    'await Promise.all(imgs.slice(0,6).map(x=>x.decode()));'+
+    'if(imgs.length<'+required+')throw Error("fewer than required new real blob JPEG images");'+
+    'await Promise.all(imgs.slice(0,'+required+').map(x=>x.decode()));'+
     'await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));'+
-    'return imgs.slice(0,6).every(x=>x.complete&&x.naturalWidth>0&&x.naturalHeight>0);'+
+    'return imgs.slice(0,'+required+').every(x=>x.complete&&x.naturalWidth>0&&x.naturalHeight>0);'+
     '})()'
   return win.webContents.executeJavaScript(script,true)
+}
+
+async function mobileFirstViewportDiagnostics(window,fixture,sample,fraction,reason){
+  try{
+    const dom=await window.webContents.executeJavaScript(
+      '('+function(){
+        const grid=document.querySelector('[data-xdrive-media-gallery-virtual-grid]')
+        const tiles=Array.from(grid?.querySelectorAll('[data-xdrive-media-tile]')||[])
+        const first=tiles.slice(0,18).map(tile=>{
+          const img=tile.querySelector('img')
+          const box=tile.getBoundingClientRect()
+          return {index:tile.getAttribute('data-xdrive-media-index'),
+            y:Math.round(box.y),height:Math.round(box.height),visible:box.bottom>0&&box.top<innerHeight,
+            complete:Boolean(img?.complete),decoded:Boolean(img?.naturalWidth),
+            srcKind:(img?.currentSrc||img?.src||'').slice(0,15)}
+        })
+        return {width:innerWidth,height:innerHeight,tiles:tiles.length,first,
+          gallery:Boolean(grid),body:document.body?.innerText?.slice(0,300)}
+      }.toString()+')()',true)
+    const http=await readJSON(fixture.info.url+'/__perf/physical-thumbnail-stats')
+    console.error('GALLERY_MOBILE_PHYSICAL_100K_DIAGNOSTIC '+JSON.stringify({
+      sample,fraction,reason:String(reason),dom,http}))
+  }catch(error){console.error('GALLERY_MOBILE_PHYSICAL_100K_DIAGNOSTIC_FAILED '+String(error))}
 }
 async function oneSession(sample,tmp){
   let fixture=null,window=null,sampler=null
@@ -172,8 +198,8 @@ async function oneSession(sample,tmp){
       try{peakGoRSS=Math.max(peakGoRSS,nativeStats(fixture.child.pid).rssBytes)}catch(_){}
     },25)
     let before=await readJSON(fixture.info.url+'/__perf/physical-thumbnail-stats')
-    window=new BrowserWindow({show:true,width:1440,height:900,
-      webPreferences:{partition:'xdrive-physical-web-gallery-'+sample,
+    window=new BrowserWindow({show:true,width:mobileMode ? 390 : 1440,height:mobileMode ? 844 : 900,
+      webPreferences:{partition:'xdrive-physical-'+(mobileMode ? 'mobile' : 'web')+'-gallery-'+sample,
         contextIsolation:true,nodeIntegration:false,sandbox:false,webSecurity:true,
         backgroundThrottling:false}})
     window.webContents.on('render-process-gone',(_event,state)=>
@@ -183,6 +209,11 @@ async function oneSession(sample,tmp){
     const navigationStart=performance.now()
     await window.loadURL(fixture.info.url+
       '/?xdriveGalleryRealCold=1&xdriveRealViewportCancel=1&xdriveMediaProgress=off')
+    // CSS-narrow Mobile Web app shell must use the actual shared virtual Gallery Grid.
+    const viewport=await window.webContents.executeJavaScript(
+      '({width:window.innerWidth,height:window.innerHeight,narrow:window.matchMedia("(max-width:899.95px)").matches})',true)
+    if(mobileMode)assert(viewport.narrow&&viewport.width>=360&&viewport.width<=390&&
+      viewport.height>=700,'actual 390px mobile Web viewport did not activate: '+JSON.stringify(viewport))
     const initialWS=rendererWorkingSet()
     // Native loadURL resolves before the React Gallery has necessarily
     // committed the real Grid. Mount readiness is still charged against the
@@ -209,10 +240,15 @@ async function oneSession(sample,tmp){
         if(view.error)throw Error(view.error)
         if(view.mounted>=1000)throw Error('unbounded Web Gallery mounted tile count: '+view.mounted)
         const fresh=view.decoded.filter(x=>!seen.has(x.index))
-        return fresh.length>=6?{...view,fresh}:null
-      },maxFirstSixMs,'6 never-before-viewed authentic Blob JPEG images at '+fraction)
-      const freshIDs=state.fresh.slice(0,6).map(x=>x.index)
-      assert(await decodeAndPaint(window,freshIDs),'real decoded images / two animation frames failed')
+        // A 390px Mobile Web viewport can hold only about five visible tiles;
+        // a six-image visibility requirement is geometrically invalid here.
+        // The original 1440px Web workload still requires six new images.
+        const enough=mobileMode ? (view.visibleTiles>=4&&fresh.length>=4) : fresh.length>=6
+        return enough?{...view,fresh}:null
+      },maxFirstSixMs,(mobileMode?'4':'6')+' never-before-viewed authentic Blob JPEG images at '+fraction)
+      const requiredFresh=mobileMode?4:6
+      const freshIDs=state.fresh.slice(0,requiredFresh).map(x=>x.index)
+      assert(await decodeAndPaint(window,freshIDs,requiredFresh),'real decoded images / two animation frames failed')
       const measuredMs=performance.now()-since
       assert(measuredMs<=maxFirstSixMs,'Web Gallery physical 100k viewport exceeded frozen 20s')
       for(const item of state.decoded)seen.add(item.index)
@@ -224,8 +260,12 @@ async function oneSession(sample,tmp){
       assert(http.max_active<=6,'native Gin thumbnail peak exceeded six bounded handlers')
       before=http
       maxWS=Math.max(maxWS,rendererWorkingSet())
-      const row={fraction,scroll,firstSixDecodedAndTwoFramesMs:measuredMs,
+      const row={fraction,scroll,
+        firstSixDecodedAndTwoFramesMs:mobileMode?null:measuredMs,
+        firstFourDecodedAndTwoFramesMs:mobileMode?measuredMs:null,
+        firstFreshDecodedAndTwoFramesMs:measuredMs,requiredFresh,
         freshDecodedIndices:freshIDs,mountedTiles:state.mounted,
+        visibleTileCount:state.visibleTiles,
         visibleDecodedBlobImages:state.decoded.length,http,store,
         rendererWSBytes:maxWS}
       views.push(row)
@@ -233,28 +273,37 @@ async function oneSession(sample,tmp){
     }
     clearInterval(sampler);sampler=null
     const finalGo=nativeStats(fixture.child.pid)
-    assert(views.length===5&&seen.size>=30,'five independent physical-image windows missing')
+    assert(views.length===5&&seen.size>=(mobileMode?20:30),'five independent physical-image windows missing')
     assert(maxWS-initialWS<=maxRSSGrowth,'Chromium Renderer WS growth over 256MiB')
     assert(peakGoRSS-baselineGo.rssBytes<=maxRSSGrowth,'native Go post-seed RSS growth over 256MiB')
     assert(finalGo.cpuMs>=baselineGo.cpuMs,'Go process CPU sampling invalid')
     const result={
-      sample,workload:'100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports',
+      sample,mobileViewport:mobileMode,viewport,
+      workload: mobileMode
+        ? '100k-logical-115k-physical-mixed-Mobile-Web-390px-shared-Gallery-five-Grid-viewports'
+        : '100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports',
       physicalOriginals:fixture.info.physical_sources,
       physicalOriginalBytes:fixture.info.physical_bytes,
       seedMsExcluded:fixture.info.seed_ms,
       distinctDecodedVisibleIndices:seen.size,views,
-      fiveViewportP50Ms:median(views.map(x=>x.firstSixDecodedAndTwoFramesMs)),
+      fiveViewportP50Ms:median(views.map(x=>x.firstFreshDecodedAndTwoFramesMs)),
       go:{initial:baselineGo,final:finalGo,sampledPeakRSSBytes:peakGoRSS,
         RSSGrowthBytes:Math.max(0,peakGoRSS-baselineGo.rssBytes),
         cpuDeltaMs:finalGo.cpuMs-baselineGo.cpuMs},
       chromium:{firstWSBytes:initialWS,peakWSBytes:maxWS,
         growthBytes:maxWS-initialWS},
-      limitations:'real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN'
+      limitations:mobileMode
+        ? 'Native Chromium/Electron 390px Mobile Web app shell and shared Gallery Grid + API + 115k different physical CAS, four newly visible JPEG/Live stills decoded + two rAF per viewport; physical mobile screen has fewer visible media tiles than 1440px desktop. NOT physical iOS/Android, video/Live motion playback, RAW/HEVC, Desktop Agent, Timeline, WAN'
+        : 'real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN'
     }
     fs.writeFileSync(path.join(output,'sample-'+sample+'.json'),
       JSON.stringify(result,null,2)+'\n')
     console.log('GALLERY_WEB_PHYSICAL_100K_SAMPLE '+JSON.stringify(result))
     return result
+  }catch(error){
+    if(mobileMode && fixture && window && !window.isDestroyed())
+      await mobileFirstViewportDiagnostics(window,fixture,sample,0,error)
+    throw error
   }finally{
     if(sampler)clearInterval(sampler)
     if(window&&!window.isDestroyed())window.destroy()
@@ -274,20 +323,26 @@ async function main(){
     for(let sample=1;sample<=3;sample++)samples.push(await oneSession(sample,tmp))
     const summary={
       status:'measured-current-source-only-no-product-after',
+      mobileMode,cssViewportWidth:mobileMode ? 390 : 1440,
       samples,n:3,logicalCount:100000,physicalOriginals:115000,
       medianOfFixtureFiveViewportP50Ms:median(samples.map(x=>x.fiveViewportP50Ms)),
       maxRendererWorkingSetGrowthBytes:Math.max(...samples.map(x=>x.chromium.growthBytes)),
       maxNativeGoRSSGrowthBytes:Math.max(...samples.map(x=>x.go.RSSGrowthBytes)),
       peakHTTPThumbnailHandlers:Math.max(...samples.flatMap(s=>s.views.map(v=>v.http.max_active))),
       accepted:samples.length===3&&samples.every(s=>s.views.length===5&&
-        s.distinctDecodedVisibleIndices>=30&&
+        s.distinctDecodedVisibleIndices>=(mobileMode?20:30)&&
         s.go.RSSGrowthBytes<=maxRSSGrowth&&s.chromium.growthBytes<=maxRSSGrowth&&
         s.views.every(v=>v.mountedTiles>0&&v.mountedTiles<1000&&
-          v.firstSixDecodedAndTwoFramesMs<=maxFirstSixMs&&
-          v.visibleDecodedBlobImages>=6&&v.http.max_active<=6&&
-          v.http.failed===0&&v.http.response_bytes>0)),
-      limits:'five positions 0/25/50/75/95%; first-six fresh blob JPEG decode + 2 rAF <=20s, mounted<1000, HTTP concurrency<=6, Renderer/Go after-seed RSS growth<=256MiB',
-      caveats:'No matching production BEFORE/AFTER, no validated video H264/Live motion browser playback, RAW/HEVC/LIVP, Timeline, Desktop Agent, WAN or durable task cancellation'
+          v.firstFreshDecodedAndTwoFramesMs<=maxFirstSixMs&&
+          v.visibleTileCount>=(mobileMode?4:6)&&
+          v.visibleDecodedBlobImages>=(mobileMode?4:6)&&v.http.max_active<=6&&
+          v.http.failed===0&&v.http.response_bytes>0)) &&
+        (!mobileMode || samples.every(s=>s.mobileViewport && s.viewport.narrow &&
+          s.viewport.width>=360 && s.viewport.width<=390)),
+      limits:mobileMode ? '390px mobile 0/25/50/75/95%; first-four NEW visible blob JPEG/Live still decode + 2 rAF <=20s per viewport, visible tiles>=4, mounted<1000, HTTP concurrency<=6, Renderer/Go post-seed RSS<=256MiB' : 'five positions 0/25/50/75/95%; first-six fresh blob JPEG decode + 2 rAF <=20s, mounted<1000, HTTP concurrency<=6, Renderer/Go after-seed RSS growth<=256MiB',
+      caveats:mobileMode
+        ? 'Mobile Web 390px Chromium App Frame only; not physical iOS/Android; four decoded NEW JPEG/Live stills per viewport with two rAF (at least four visible tiles confirmed); no H264/Live motion browser playback, RAW/HEVC/LIVP, Timeline, Desktop Agent, WAN or durable task cancellation. CURRENT only, AFTER=N/A.'
+        : 'No matching production BEFORE/AFTER, no validated video H264/Live motion browser playback, RAW/HEVC/LIVP, Timeline, Desktop Agent, WAN or durable task cancellation'
     }
     fs.writeFileSync(path.join(output,'summary.json'),JSON.stringify(summary,null,2)+'\n')
     console.log('GALLERY_WEB_PHYSICAL_100K_SUMMARY '+JSON.stringify(summary))
