@@ -2890,6 +2890,13 @@ export default function App({
         {(view === 'transfers' || view === 'global-tasks') && (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            globalTasksEnabled={status?.role === 'admin'}
+            globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}
+            backgroundScope={view === 'global-tasks' ? 'global' : 'mine'}
+            onBackgroundScopeChange={(scope) => {
+              taskCenter.pageProps.onBackgroundScopeChange?.(scope)
+              setView(scope === 'global' ? 'global-tasks' : 'transfers')
+            }}
             mediaSelectionJobPort={view === 'transfers' ? mediaSelectionJobPort : undefined}
             operationFocusID={filesOperationFocus?.operationID}
             operationFocusRequestID={filesOperationFocus?.requestID}

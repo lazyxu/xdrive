@@ -25,6 +25,7 @@ import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
+import { XDriveTaskCardSurface } from './TaskPresentation'
 
 function operationTone(status: string) {
   if (status === 'completed') return 'good' as const
@@ -102,15 +103,11 @@ function OperationItem({
     Boolean(onResolveConflict)
 
   return (
-    <Box
+    <XDriveTaskCardSurface
       data-xdrive-file-operation-id={operation.id}
       tabIndex={-1}
       role="group"
       aria-label={`${xDriveFileOperationTypeLabel(operation.type)}任务 ${operation.id}`}
-      sx={{
-        border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden',
-        '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
-      }}
     >
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
@@ -281,7 +278,7 @@ function OperationItem({
           <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{operation.error}</XDriveStatusAlert>
         ) : null}
       </Box>
-    </Box>
+    </XDriveTaskCardSurface>
   )
 }
 

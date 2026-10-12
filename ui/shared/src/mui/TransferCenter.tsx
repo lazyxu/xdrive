@@ -35,6 +35,7 @@ import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
+import { XDriveTaskCardSurface } from './TaskPresentation'
 
 function transferTone(state: string) {
   if (state === 'completed') return 'good' as const
@@ -156,7 +157,7 @@ function TransferLeafItem({
   }
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+    <XDriveTaskCardSurface>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} sx={{ px: 1.75, py: 1.5 }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
@@ -216,7 +217,7 @@ function TransferLeafItem({
         </XDriveDescriptionGrid>
         {item.error ? <XDriveStatusAlert tone="bad" sx={{ mt: 1.25 }}>{item.error}</XDriveStatusAlert> : null}
       </Box>
-    </Box>
+    </XDriveTaskCardSurface>
   )
 }
 
@@ -269,7 +270,7 @@ function TransferGroupItem({
     : null
 
   return (
-    <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+    <XDriveTaskCardSurface>
       <Stack direction="row" spacing={1} alignItems="center" sx={{ px: 1.25, py: 1.25 }}>
         <Tooltip title={expanded ? '收起子任务' : '展开子任务'}>
           <IconButton
@@ -407,7 +408,7 @@ function TransferGroupItem({
           )}
         </Box>
       </Collapse>
-    </Box>
+    </XDriveTaskCardSurface>
   )
 }
 
