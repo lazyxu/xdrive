@@ -7,6 +7,7 @@ import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
+import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import {
   AppBar,
   Box,
@@ -35,6 +36,7 @@ import {
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
   XDriveServiceDependenciesPage,
+  XDriveSystemMaintenancePage,
   XDriveSettingsDialog,
   XDriveFeedbackSnackbar,
   XDriveMediaGalleryPage,
@@ -53,7 +55,6 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
-  useXDriveServerUpdateController,
   XDrivePasswordChangeForm,
   xDrivePasswordChangeValidationError,
   XDriveFileNameDialog,
@@ -87,7 +88,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveServerUpdateConfirmationDescription, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -124,7 +125,7 @@ type ConfirmAction = {
 }
 
 type AppView = XDriveWorkspaceViewKey<
-  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services'
+  'overview' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services' | 'admin-maintenance'
 >
 
 function initialSession(): AuthSession {
@@ -138,43 +139,26 @@ function initialSession(): AuthSession {
 
 function WebAccountMenu({
   username,
-  api,
   serverBuild,
   appearance,
-  canUpdateServer,
   disabled = false,
   onAppearanceChange,
   onLogout,
 }: {
   username: string
-  api: XDriveApi
   serverBuild: BuildInfo | null
   appearance: XDriveAppearance
-  canUpdateServer: boolean
   disabled?: boolean
   onAppearanceChange: (appearance: XDriveAppearance) => void
   onLogout: () => void
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [serverUpdateConfirmOpen, setServerUpdateConfirmOpen] = useState(false)
   useEffect(() => {
     if (!disabled) return
     setAnchorEl(null)
     setSettingsOpen(false)
-    setServerUpdateConfirmOpen(false)
   }, [disabled])
-  const serverUpdatePort = useMemo(() => ({
-    getState: () => api.adminServerUpdate(),
-    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
-      api.adminStartServerUpdate(source, channel, backupFileData),
-  }), [api])
-  const serverUpdate = useXDriveServerUpdateController({
-    open: settingsOpen && !disabled,
-    enabled: canUpdateServer,
-    initialChannel: serverBuild?.channel === 'master' ? 'master' : 'stable',
-    port: serverUpdatePort,
-  })
 
   return (
     <>
@@ -202,41 +186,6 @@ function WebAccountMenu({
         appearance={appearance}
         onAppearanceChange={onAppearanceChange}
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
-        serverUpdate={{
-          state: serverUpdate.state,
-          source: serverUpdate.source,
-          channel: serverUpdate.channel,
-          backupFileData: serverUpdate.backupFileData,
-          loading: serverUpdate.busy,
-          disabled: serverUpdate.state === null,
-          canUpdate: canUpdateServer,
-          unavailableMessage: '仅管理员可以更新服务端。',
-          error: serverUpdate.error,
-          onSourceChange: serverUpdate.setSource,
-          onChannelChange: serverUpdate.setChannel,
-          onBackupFileDataChange: serverUpdate.setBackupFileData,
-          onStart: () => { if (!disabled) setServerUpdateConfirmOpen(true) },
-        }}
-      />
-      <XDriveConfirmDialog
-        open={serverUpdateConfirmOpen && !disabled}
-        title="确认更新服务端？"
-        description={xDriveServerUpdateConfirmationDescription({
-          source: serverUpdate.source,
-          channel: serverUpdate.channel,
-          backupFileData: serverUpdate.backupFileData,
-          unavailableLabel: 'Web/API',
-        })}
-        confirmLabel="开始更新"
-        confirmIntent="warning"
-        loading={serverUpdate.busy}
-        loadingLabel="正在提交…"
-        onCancel={() => setServerUpdateConfirmOpen(false)}
-        onConfirm={() => {
-          if (disabled) return
-          setServerUpdateConfirmOpen(false)
-          void serverUpdate.start()
-        }}
       />
     </>
   )
@@ -976,6 +925,12 @@ function FileManager({
     }
   }, [appView, profile])
 
+  const maintenanceUpdatePort = useMemo(() => ({
+    getState: () => api.adminServerUpdate(),
+    startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
+      api.adminStartServerUpdate(source, channel, backupFileData),
+  }), [api])
+
   const serviceDependenciesPort = useMemo(() => ({
     load: () => api.adminServices(),
     loadCaddyHTTPSConfig: () => api.adminCaddyHTTPSConfig(),
@@ -1085,9 +1040,7 @@ function FileManager({
             <XDriveBrandLockup iconSrc={xDriveBrandIcon} variant="titlebar" />
             <WebAccountMenu
               username={username}
-              api={api}
               serverBuild={serverBuild}
-              canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
               appearance={appearance}
               onAppearanceChange={onAppearanceChange}
               onLogout={onLogout}
@@ -1330,6 +1283,11 @@ function FileManager({
               label: '系统依赖',
               icon: <DnsRoundedIcon fontSize="small" />,
             },
+            {
+              key: 'admin-maintenance',
+              label: '系统维护',
+              icon: <BuildRoundedIcon fontSize="small" />,
+            },
           ],
         }]
       : []),
@@ -1368,9 +1326,7 @@ function FileManager({
     <WebAccountMenu
       disabled={viewerActive || (compactWorkspace && !compactNavigationOpen)}
       username={username}
-      api={api}
       serverBuild={serverBuild}
-      canUpdateServer={profile?.role === 'admin' && !profile.must_change_password}
       appearance={appearance}
       onAppearanceChange={onAppearanceChange}
       onLogout={onLogout}
@@ -1386,7 +1342,7 @@ function FileManager({
     overview: '主页', files: '文件', gallery: '图库', 'device-backup': '设备备份', 'remote-pull': '远程拉取',
     transfers: '任务', 'global-tasks': '全局任务', 'local-storage': '本地存储',
     'cloud-storage': '云端存储', 'admin-users': '用户管理',
-    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖',
+    'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖', 'admin-maintenance': '系统维护',
   }
 
   return (
@@ -1717,6 +1673,12 @@ function FileManager({
               { app: 'admin-services', params: next },
               { replace: options?.replace },
             )}
+          />
+        ) : appView === 'admin-maintenance' && profile?.role === 'admin' ? (
+          <XDriveSystemMaintenancePage
+            updatePort={maintenanceUpdatePort}
+            unavailableLabel="Web/API"
+            initialChannel={serverBuild?.channel === 'master' ? 'master' : 'stable'}
           />
         ) : appView === 'admin-storage' && profile?.role === 'admin' ? (
           <StorageStatsPanel

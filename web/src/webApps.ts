@@ -28,6 +28,7 @@ export const XDRIVE_WEB_APPS: Record<XDriveWebAppID, XDriveWebAppDescriptor> = {
   'admin-audit': { id: 'admin-audit', title: '审计日志', presentation: 'workspace', workspaceKey: 'admin-audit', sidebar: true, admin: true },
   'admin-storage': { id: 'admin-storage', title: '全局存储', presentation: 'workspace', workspaceKey: 'admin-storage', sidebar: true, admin: true },
   'admin-services': { id: 'admin-services', title: '系统依赖', presentation: 'workspace', workspaceKey: 'admin-services', sidebar: true, admin: true },
+  'admin-maintenance': { id: 'admin-maintenance', title: '系统维护', presentation: 'workspace', workspaceKey: 'admin-maintenance', sidebar: true, admin: true },
 }
 
 export function xDriveWebAppWorkspaceKey(app: XDriveWebAppID, params?: XDriveWebAppRoute['params']) {

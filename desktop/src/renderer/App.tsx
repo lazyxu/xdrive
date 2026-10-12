@@ -56,6 +56,7 @@ import {
   XDriveLocalStoragePage,
   XDriveWorkspaceSidebar,
   XDriveServiceDependenciesPage,
+  XDriveSystemMaintenancePage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -76,7 +77,6 @@ import {
   useXDriveFileOperationLifecycle,
   useXDriveFileOperationActions,
   useXDriveTaskCenterController,
-  useXDriveServerUpdateController,
 } from '@xdrive/ui/mui'
 import type {
   XDriveFileExplorerNavigationState,
@@ -92,7 +92,6 @@ import {
   xDriveLatestRedoableFileOperation,
   xDriveLatestUndoableFileOperation,
   xDriveLoginCredentialsReady,
-  xDriveServerUpdateConfirmationDescription,
 } from '@xdrive/shared'
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
@@ -109,7 +108,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-services'>
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-services' | 'admin-maintenance'>
 
 type ConfirmDialogState = {
   title: string
@@ -599,18 +598,6 @@ export default function App({
     startUpdate: (source: 'github' | 'gitlab', channel: 'stable' | 'master', backupFileData: boolean) =>
       window.xdriveDesktop.agent.startServerUpdate(source, channel, backupFileData),
   }), [])
-  const serverUpdate = useXDriveServerUpdateController({
-    open: settingsOpen,
-    enabled: agent.connected && configured,
-    supported: serverUpdateSupported,
-    port: serverUpdatePort,
-    unsupportedMessage: '当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。',
-    onBusyChange: (active) => {
-      setBusy((current) => active
-        ? 'server-update'
-        : current === 'server-update' ? '' : current)
-    },
-  })
   const cloudFilesPort = useMemo<XDriveCloudFilesPort<AgentCloudNode, AgentCloudQuota, XDriveFileExplorerSort>>(() => ({
     getRoot: async () => {
       const result = await window.xdriveDesktop.agent.cloudRoot()
@@ -1132,7 +1119,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-services') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -1881,6 +1868,7 @@ export default function App({
           items: [
             { key: 'global-tasks', label: '全局任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
+            { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
           ],
         }]
       : []),
@@ -2777,6 +2765,21 @@ export default function App({
           <XDriveCloudStoragePage source={cloudStorageSource} />
         )}
 
+        {view === 'admin-maintenance' && status?.role === 'admin' && (
+          <XDriveSystemMaintenancePage
+            updatePort={serverUpdatePort}
+            supported={serverUpdateSupported}
+            unavailableLabel="服务端与 Desktop"
+            unsupportedMessage="当前 xdrive-agent 不支持服务端更新，请先更新客户端核心组件。"
+            disabled={!!busy && busy !== 'server-update'}
+            onBusyChange={(active) => {
+              setBusy((current) => active
+                ? 'server-update'
+                : current === 'server-update' ? '' : current)
+            }}
+          />
+        )}
+
         {view === 'admin-services' && status?.role === 'admin' && (
           agent.hello?.capabilities.includes('admin-services') ? (
             <XDriveServiceDependenciesPage source={adminServicesPort}
@@ -2870,29 +2873,6 @@ export default function App({
             { title: 'Desktop 构建信息', info },
             { title: 'Server 构建信息', info: status?.server_build },
           ]}
-          serverUpdate={{
-            state: serverUpdate.state,
-            source: serverUpdate.source,
-            channel: serverUpdate.channel,
-            backupFileData: serverUpdate.backupFileData,
-            loading: serverUpdate.busy,
-            disabled: serverUpdate.state === null || (!!busy && busy !== 'server-update'),
-            error: serverUpdate.error,
-            onSourceChange: serverUpdate.setSource,
-            onChannelChange: serverUpdate.setChannel,
-            onBackupFileDataChange: serverUpdate.setBackupFileData,
-            onStart: () => setConfirmDialog({
-              title: '确认更新服务端？',
-              message: xDriveServerUpdateConfirmationDescription({
-                source: serverUpdate.source,
-                channel: serverUpdate.channel,
-                backupFileData: serverUpdate.backupFileData,
-              }),
-              confirmLabel: '开始更新',
-              tone: 'warning',
-              onConfirm: serverUpdate.start,
-            }),
-          }}
         >
           <DesktopSettingsContent
             desktopPreferences={desktopPreferences}
