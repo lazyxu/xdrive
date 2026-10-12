@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -312,9 +314,19 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	unquarantinedJSON, _ := json.Marshal(unquarantined)
 	checkContent(ownerJWT, copyProof(), string(unquarantinedJSON), http.StatusConflict)
 	// Database-only integrity is not physical content availability.
-	putOriginal("xyz")
+	// The real Local CAS writer now rejects mismatched digest bytes. Inject
+	// physical corruption deliberately outside that cooperating writer to
+	// prove the read-only preflight still detects an untrusted disk change.
+	tamperOutOfBand := func(data string) {
+		t.Helper()
+		full := filepath.Join(casStore.FilesystemRoot(), filepath.FromSlash(key))
+		if err := os.WriteFile(full, []byte(data), 0o600); err != nil {
+			t.Fatalf("failed to inject physical CAS corruption: %v", err)
+		}
+	}
+	tamperOutOfBand("xyz")
 	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
-	putOriginal(original)
+	tamperOutOfBand(original)
 	// A changed quarantine is not a reusable success token.
 	if err := db.Model(&meta.LocalSourceCommitIntent{}).
 		Where("source_id = ? AND evidence_id = ?", source.ID, evidence.ID).

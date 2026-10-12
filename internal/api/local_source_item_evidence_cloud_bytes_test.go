@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -32,23 +34,33 @@ func TestVerifyPhysicalEvidenceCASReadsRealStoredBytesAndFailsClosed(t *testing.
 			t.Fatalf("CAS fixture write: %d %v", size, err)
 		}
 	}
+	// A genuine CAS write goes through Local.Put's digest admission.
+	// Corruption cases below intentionally model an out-of-band filesystem
+	// modification, which cooperating immutable CAS writers must reject.
+	corruptOutOfBand := func(data string) {
+		t.Helper()
+		full := filepath.Join(s.FilesystemRoot(), filepath.FromSlash(key))
+		if err := os.WriteFile(full, []byte(data), 0o600); err != nil {
+			t.Fatalf("out-of-band CAS corruption fixture: %v", err)
+		}
+	}
 	put(body)
 	if err := verifyPhysicalEvidenceCAS(context.Background(), s, object); err != nil {
 		t.Fatalf("genuine physical bytes not verified: %v", err)
 	}
-	put(strings.Repeat("x", len(body)))
+	corruptOutOfBand(strings.Repeat("x", len(body)))
 	if err := verifyPhysicalEvidenceCAS(context.Background(), s, object); err == nil {
 		t.Fatal("same-size corrupted physical CAS bytes passed")
 	}
-	put(body[:len(body)-1])
+	corruptOutOfBand(body[:len(body)-1])
 	if err := verifyPhysicalEvidenceCAS(context.Background(), s, object); err == nil {
 		t.Fatal("truncated physical CAS object passed")
 	}
-	put(body + "overrun")
+	corruptOutOfBand(body + "overrun")
 	if err := verifyPhysicalEvidenceCAS(context.Background(), s, object); err == nil {
 		t.Fatal("oversized physical CAS object passed")
 	}
-	put(body)
+	corruptOutOfBand(body)
 	for _, invalid := range []localEvidenceCloudObject{
 		{SHA256: sha, Size: -1, Key: key},
 		{SHA256: sha, Size: 64<<20 + 1, Key: key},

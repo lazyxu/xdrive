@@ -1502,3 +1502,44 @@ identity promotion, with E1b1a compatible lifetime fencing. This PR
 requires its own exact-head GitHub full CI and final-gate before merge.
 GitLab delivery, actual backup uploads, Windows/Linux physical device
 runs and 100k/at-least-4GiB E2E are not claimed.
+
+
+## L03-E1b1b0 · Immutable canonical CAS write admission (GitHub PR pending)
+
+L03-E1b1a [#1567](https://github.com/lazyxu/xdrive/pull/1567)
+passed full exact-head GitHub PR CI and was merged into `master` as
+`5160679f6fc5818263513a18ac2f0ec2d6579f2b`. Its lifetime locks
+protect cooperating Local Store CAS readers only while their handles are open.
+
+This bounded follow-up makes Local.Put and Local.Promote accept a **canonical**
+`sha256` CAS target only when its *actual streamed bytes* match the target
+digest. Under the existing cross-process per-shard exclusive lease, an
+already-present canonical target must also be a regular file with the exact
+size and SHA-256 digest. A correct existing object is reused without a
+replacement rename. A mismatched, corrupt, missing staging source, symlink
+target or canceled read fails closed; it never overwrites an existing
+canonical CAS object as an implicit repair. Legacy noncanonical and temporary
+keys preserve their existing write behavior. These extra checks are
+bounded-memory but are NOT a zero-cost bulk-upload performance claim.
+
+This prevents **cooperating Local Store Put/Promote** from silently
+overwriting a canonical CAS digest with different content. It does not
+protect against out-of-band filesystem writers, create immutable replicas,
+prove fsync/replica durability or couple CAS reference retention to an SQL
+identity transaction. It adds no Server endpoint, Agent IPC, Web/Desktop
+operation, SourceItem/alias/Node/File/CAS-refcount/SyncRun write, Source
+activation, upload, schedule, Mirror deletion or NAS Push. The final
+L03-E1b writer still needs transaction-coupled CAS retention, independent
+owning-Agent native rechecks, idempotent promotion and crash recovery
+before L03-F/G, L05/L06 and L07 native 100k/at-least-4GiB acceptance.
+GitLab delivery and real native benchmarks are not claimed.
+
+
+### L03-E1b1b0 exact-head test recovery, 2026-10-12
+
+The earlier E1b1b0 branch's [CI #38264555138](https://github.com/lazyxu/xdrive/actions/runs/38264555138) completed red: its `go-linux-api` PostgreSQL race shard had two residual fixtures that attempted to insert mismatched SHA-256 bytes via normal `Local.Put`. That is precisely the production behavior this change must reject; never loosen canonical CAS admission to make those fixtures pass. Preserve the owning-Agent quarantine read failure by *explicitly simulating an out-of-band physical overwrite* in the test. For the unrelated storage-intelligence orphan listing, use the actual content SHA-256 for the unreferenced physical blob, while preserving its zero refcount, deleting state and the separate missing-object metadata. All changes are replaced into the same one-work-commit branch on its original frozen parent; the updated exact-head full CI and `final-gate` are the only merge evidence. Do not claim a real native device upload, CAS transactional retention or an authoritative identity commit.
+
+
+### L03-E1b1b0 static Desktop contract synchronization, 2026-10-12
+
+[CI #38271069314](https://github.com/lazyxu/xdrive/actions/runs/38271069314) found that `desktop/tests/device-backup-private-quarantine-content-preflight.cjs` still required the obsolete fixture literal `putOriginal("xyz")` even though production `Local.Put` must reject it. The cross-layer private-route, no-IPC, device-proof and no-canonical-write assertions remain intact. Require the explicit out-of-band tamper fixture and verify the obsolete normal-write bypass is absent. This is a **test-contract update**, not a change to Source authority, upload behavior, Run cancellation or NAS management. Require fresh exact-head full GitHub CI including final-gate before merge.

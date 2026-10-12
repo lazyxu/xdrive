@@ -20,7 +20,12 @@ test('L03-E1a private quarantined CAS preflight cannot escape Server/Agent autho
   assert.match(tests, /TestLocalQuarantinedEvidenceMustMatchExactPersistedScope/)
   assert.match(integration, /TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites/)
   assert.match(integration, /checkContent\(ownerJWT, foreign, string\(contentJSON\), http.StatusForbidden\)/)
-  assert.match(integration, /putOriginal\("xyz"\)/)
+  // The production Local.Put now rejects non-matching CAS content. Model a
+  // physical corruption outside the cooperating Store instead of relying
+  // on a deliberately invalid normal CAS write.
+  assert.match(integration, /tamperOutOfBand\("xyz"\)/)
+  assert.match(integration, /os\.WriteFile\(full, \[\]byte\(data\), 0o600\)/)
+  assert.doesNotMatch(integration, /putOriginal\("xyz"\)/)
   for (const exposed of [
     read('cmd', 'xdrive-agent', 'desktop_ipc.go'),
     read('desktop', 'src', 'main', 'index.cts'),

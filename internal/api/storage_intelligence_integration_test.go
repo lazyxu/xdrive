@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -194,9 +195,16 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 		t.Fatalf("global page performed physical discovery before the background snapshot: %#v", initialGlobal)
 	}
 	sampleNow := time.Date(2026, 9, 25, 12, 30, 0, 0, time.UTC)
-	unreferencedKey := storage.ContentBlobDir + "/sha256/ff/" + strings.Repeat("f", 64)
+	// The orphan is a valid physical CAS object with zero references;
+	// use its real SHA-256 rather than a placeholder digest rejected by
+	// immutable Local.Put. The separate missing orphan remains synthetic.
+	unreferencedDigest := fmt.Sprintf("%x", sha256.Sum256([]byte("123456789")))
+	unreferencedKey, err := storage.ContentAddressedKey(unreferencedDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := db.Create(&meta.ContentBlob{
-		SHA256:     strings.Repeat("f", 64),
+		SHA256:     unreferencedDigest,
 		StorageKey: unreferencedKey,
 		Size:       9,
 		RefCount:   0,
