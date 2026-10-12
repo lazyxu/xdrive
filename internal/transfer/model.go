@@ -139,6 +139,8 @@ type Manager struct {
 	order        []string
 	entries      map[string]*entry
 	roots        map[string]struct{}
+
+	clearInFlight chan struct{} // Non-nil while old account I/O cancellation is pending.
 }
 
 type Handle struct {
@@ -657,10 +659,20 @@ func (m *Manager) Clear() {
 	m.mu.Lock()
 	// Fence pending old-account callbacks even when history was cleared earlier.
 	m.generation++
+	// A prior Clear may have removed all records but still be waiting for
+	// old-account I/O to stop. A concurrent Clear must join that teardown.
+	if m.clearInFlight != nil {
+		finished := m.clearInFlight
+		m.mu.Unlock()
+		<-finished
+		return
+	}
 	if len(m.entries) == 0 && len(m.order) == 0 {
 		m.mu.Unlock()
 		return
 	}
+	finished := make(chan struct{})
+	m.clearInFlight = finished
 	// Collect old Agent-owned transfer cancellations and publish an empty
 	// account state while holding the lock. A cancellation callback may
 	// synchronously inspect the Manager, so invoke it only after unlocking.
@@ -687,6 +699,12 @@ func (m *Manager) Clear() {
 		}(cancel)
 	}
 	pending.Wait()
+	// Publish completion only after every old cancellation callback has
+	// returned. Waiters join the same cycle even after entries were cleared.
+	m.mu.Lock()
+	m.clearInFlight = nil
+	close(finished)
+	m.mu.Unlock()
 }
 func (m *Manager) ClearHistory(scopes ...string) {
 	if m == nil {
