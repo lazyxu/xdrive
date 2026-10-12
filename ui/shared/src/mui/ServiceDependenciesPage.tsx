@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
+import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey } from '../system-dependencies-navigation'
+import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
+import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
@@ -86,6 +88,23 @@ const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; descripti
   { id: 'intelligence', label: '照片智能分析', description: '共享 Photo Intelligence 容器；分别探测已配置的分析能力。' },
   { id: 'location', label: '地理位置与地图', description: 'GeoNames 只提供可选地名标签；百度地图是唯一地图 Provider。' },
 ]
+
+const dependencyTabLabels: Record<XDriveSystemDependencyTab, string> = {
+  status: '状态', config: '配置', verify: '检测', history: '历史',
+}
+
+function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
+  switch (service) {
+    case 'storage': return ['status']
+    case 'photo-face':
+    case 'photo-smart':
+    case 'photo-semantic':
+    case 'photo-creative': return ['status', 'verify']
+    case 'baidu-map': return ['status', 'config', 'verify']
+    case 'photo-auto': return ['status', 'config', 'history']
+    default: return ['status', 'config', 'verify', 'history']
+  }
+}
 
 const statusLabels: Record<XDriveServiceDependencyState, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
   ready: { label: '可用', color: 'success' },
@@ -254,10 +273,30 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
 
 /** Administrator-only status and encrypted Baidu AK management. No Docker control socket. */
 export function XDriveServiceDependenciesPage({
-  source,
+  source, location, onLocationChange, navigationResetKey = 0,
 }: {
   source: XDriveServiceDependenciesPort
+  location?: XDriveSystemDependenciesLocation
+  onLocationChange?: (next: XDriveSystemDependenciesLocation, options?: { replace?: boolean }) => void
+  navigationResetKey?: number
 }) {
+  const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
+    () => xDriveNormalizeSystemDependenciesLocation(location),
+  )
+  const selectedPage = visibleLocation.policy === 'photo-auto' ? 'photo-auto' : visibleLocation.service ?? 'overview'
+  const selectedTabs = dependencyTabsFor(selectedPage)
+  const currentTab = selectedTabs.includes(visibleLocation.tab ?? 'status')
+    ? visibleLocation.tab ?? 'status' : 'status'
+  const [pendingNavigation, setPendingNavigation] = useState<{
+    next: XDriveSystemDependenciesLocation
+    external: boolean
+  } | null>(null)
+  const [childDirty, setChildDirty] = useState(false)
+  const [caddyHTTPSDirty, setCaddyHTTPSDirty] = useState(false)
+  const [caddyAliDirty, setCaddyAliDirty] = useState(false)
+  const unsavedRef = useRef(false)
+  const resetKeyRef = useRef(navigationResetKey)
+  const externalLocationKey = xDriveSystemDependenciesLocationKey(location ?? {})
   const [snapshot, setSnapshot] = useState<XDriveServiceDependenciesSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -306,6 +345,71 @@ export function XDriveServiceDependenciesPage({
   const [photoHistoryError, setPhotoHistoryError] = useState('')
   const [photoRollbackTarget, setPhotoRollbackTarget] = useState('')
   const [photoRollbackConfirmOpen, setPhotoRollbackConfirmOpen] = useState(false)
+
+  const dirtyBaidu = selectedPage === 'baidu-map' && !!baiduConfig &&
+    (baiduEnabled !== baiduConfig.enabled || baiduAK.length > 0)
+  const dirtyGeoNames = selectedPage === 'geonames' && !!geoNamesConfig &&
+    geoNamesDraftDistance !== String(geoNamesConfig.max_distance_km)
+  const dirtyPhoto = selectedPage === 'photo-auto' && !!photoPolicy &&
+    (photoPolicy.auto_enabled !== photoAutoDraft ||
+      (photoPolicy.kinds != null && photoAutoKindChoices.some(
+        (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
+      )))
+  unsavedRef.current = Boolean(childDirty || caddyHTTPSDirty || caddyAliDirty || dirtyBaidu || dirtyGeoNames || dirtyPhoto)
+
+  // The same guard handles internal links, browser back/forward and the
+  // Desktop global Sidebar reset. Never silently discard an unsaved draft.
+  const navigateTo = (nextInput: XDriveSystemDependenciesLocation) => {
+    const next = xDriveNormalizeSystemDependenciesLocation(nextInput)
+    if (xDriveSystemDependenciesLocationKey(next) ===
+        xDriveSystemDependenciesLocationKey(visibleLocation)) return
+    if (unsavedRef.current) {
+      setPendingNavigation({ next, external: false })
+      return
+    }
+    setChildDirty(false)
+    setCaddyHTTPSDirty(false)
+    setCaddyAliDirty(false)
+    setVisibleLocation(next)
+    onLocationChange?.(next)
+  }
+  useEffect(() => {
+    if (!onLocationChange) return
+    const incoming = xDriveNormalizeSystemDependenciesLocation(location)
+    if (xDriveSystemDependenciesLocationKey(incoming) ===
+        xDriveSystemDependenciesLocationKey(visibleLocation)) return
+    if (unsavedRef.current) setPendingNavigation({ next: incoming, external: true })
+    else {
+      setChildDirty(false)
+      setCaddyHTTPSDirty(false)
+      setCaddyAliDirty(false)
+      setVisibleLocation(incoming)
+    }
+  // External location is the trigger, not local form keystrokes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalLocationKey])
+  useEffect(() => {
+    if (resetKeyRef.current === navigationResetKey) return
+    resetKeyRef.current = navigationResetKey
+    if (xDriveSystemDependenciesLocationKey(visibleLocation) === 'overview') return
+    if (unsavedRef.current) setPendingNavigation({ next: {}, external: false })
+    else {
+      setChildDirty(false)
+      setCaddyHTTPSDirty(false)
+      setCaddyAliDirty(false)
+      setVisibleLocation({})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigationResetKey])
+  useEffect(() => {
+    const guard = (event: BeforeUnloadEvent) => {
+      if (!unsavedRef.current) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', guard)
+    return () => window.removeEventListener('beforeunload', guard)
+  }, [])
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -360,16 +464,13 @@ export function XDriveServiceDependenciesPage({
     setGeoNamesDatasetTarget('')
     setGeoNamesDatasetConfirmOpen(false)
     setGeoNamesRestoreConfirmOpen(false)
-    setLoading(true)
-    setError('')
-    // Do not retain an old server/account snapshot while a different source loads.
-    setSnapshot(null)
+    // Editor data is scoped to the active service. Overview has no private config reads.
     setBaiduConfig(null)
     setBaiduEnabled(false)
     setBaiduAK('')
     setBaiduError('')
     setBaiduNotice('')
-    if (source.loadPhotoAutoConfig) {
+    if (selectedPage === 'photo-auto' && source.loadPhotoAutoConfig) {
       void source.loadPhotoAutoConfig().then((policy) => {
         if (!active) return
         setPhotoPolicy(policy)
@@ -379,7 +480,7 @@ export function XDriveServiceDependenciesPage({
         if (active) setPhotoPolicyError('无法读取照片智能分析策略，请检查 Server 或更新客户端。')
       })
     }
-    if (source.loadPhotoAutoRevisions) {
+    if (selectedPage === 'photo-auto' && currentTab === 'history' && source.loadPhotoAutoRevisions) {
       void source.loadPhotoAutoRevisions().then((page) => {
         if (active && photoHistoryEpoch === photoHistoryEpochRef.current) {
           setPhotoRevisions(page.items)
@@ -391,7 +492,7 @@ export function XDriveServiceDependenciesPage({
         }
       })
     }
-    if (source.loadBaiduMapConfig) {
+    if (selectedPage === 'baidu-map' && currentTab !== 'status' && source.loadBaiduMapConfig) {
       void source.loadBaiduMapConfig().then((config) => {
         if (!active) return
         setBaiduConfig(config)
@@ -400,14 +501,14 @@ export function XDriveServiceDependenciesPage({
         if (active) setBaiduError('无法读取百度地图管理配置，请检查 Server 或更新客户端。')
       })
     }
-    if (source.loadGeoNamesRevisions) {
+    if (selectedPage === 'geonames' && currentTab === 'history' && source.loadGeoNamesRevisions) {
       void source.loadGeoNamesRevisions().then((page) => {
         if (active) setGeoNamesRevisions(page.items)
       }).catch(() => {
         if (active) setGeoNamesHistoryError('当前服务尚无法读取 GeoNames 配置历史，请检查 Server/Agent 版本。')
       })
     }
-    if (source.loadGeoNamesConfig) {
+    if (selectedPage === 'geonames' && currentTab !== 'status' && source.loadGeoNamesConfig) {
       void source.loadGeoNamesConfig().then((config) => {
         if (active) {
           setGeoNamesConfig(config)
@@ -417,13 +518,6 @@ export function XDriveServiceDependenciesPage({
         if (active) setGeoNamesError('无法读取 GeoNames 管理配置，请检查 Server 或更新客户端。')
       })
     }
-    void source.load().then((next) => {
-      if (active) setSnapshot(next)
-    }).catch((err: unknown) => {
-      if (active) setError(err instanceof Error ? err.message : '读取依赖状态失败')
-    }).finally(() => {
-      if (active) setLoading(false)
-    })
     return () => {
       active = false
       ++revealEpochRef.current
@@ -432,6 +526,21 @@ export function XDriveServiceDependenciesPage({
       ++photoPolicyEpochRef.current
       ++photoHistoryEpochRef.current
     }
+  }, [source, refreshID, selectedPage, currentTab])
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    setSnapshot(null)
+    void source.load().then((next) => {
+      if (active) setSnapshot(next)
+    }).catch((err: unknown) => {
+      if (active) setError(err instanceof Error ? err.message : '读取依赖状态失败')
+    }).finally(() => {
+      if (active) setLoading(false)
+    })
+    return () => { active = false }
   }, [source, refreshID])
 
   const revealBaiduAK = async () => {
@@ -869,11 +978,27 @@ export function XDriveServiceDependenciesPage({
     (item) => String(item.revision) === photoRollbackTarget && item.revision < (photoPolicy?.revision ?? 0),
   )
   const healthy = systemServices.filter((item) => item.status === 'ready').length
+  const unhealthy = systemServices.filter((item) => item.status === 'unavailable').length
+  const pendingCount = systemServices.filter((item) => item.activation_state === 'pending').length
+  const selectedItem = systemServices.find((item) => item.id === selectedPage)
+  const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
+
+  const choosePage = (page: string) => {
+    if (page === 'overview') navigateTo({})
+    else if (page === 'photo-auto') navigateTo({ policy: 'photo-auto', tab: 'config' })
+    else navigateTo({ service: page as XDriveSystemDependenciesLocation['service'], tab: 'status' })
+  }
+  const dependencyNote = (
+    <Typography variant="caption" color="text.secondary">
+      “尚未接入”不代表正在运行；“无法检测”代表没有可靠探针。保存配置与实际生效、部署和健康始终独立；
+      系统级容器操作仍必须由受限部署流程完成。
+    </Typography>
+  )
 
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title="服务与依赖"
+      title="系统依赖"
       subtitle="仅管理整个 xDrive 实例的系统服务：查看配置来源、生效方式与真实健康状态；用户同步文件夹不在此管理。"
       pageActions={(
         <Button
@@ -881,7 +1006,7 @@ export function XDriveServiceDependenciesPage({
           variant="outlined"
           startIcon={<RefreshRoundedIcon fontSize="small" />}
           onClick={() => setRefreshID((value) => value + 1)}
-          disabled={loading}
+          disabled={loading || unsavedRef.current}
         >
           刷新状态
         </Button>
@@ -897,28 +1022,161 @@ export function XDriveServiceDependenciesPage({
         </Typography>
         {loading && <CircularProgress size={22} aria-label="正在加载服务状态" />}
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
-        {!loading && snapshot && groups.map((group) => {
-          const items = systemServices.filter((item) => item.group === group.id)
-          if (!items.length) return null
-          return (
-            <Box key={group.id} component="section" aria-label={group.label}>
-              <Typography variant="subtitle1" fontWeight={700}>{group.label}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                {group.description}
-              </Typography>
-              <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                {items.map((service) => <ServiceRow key={service.id} service={service} />)}
-              </Paper>
-              {group.id === 'media' && <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID} />}
-              {group.id === 'core' && <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} />}
-              {group.id === 'core' && <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID}
-                onConfigurationChanged={invalidateCaddyEvidence} />}
-              {group.id === 'core' && <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID}
-                onConfigurationChanged={invalidateCaddyEvidence} />}
-              {group.id === 'core' && <XDriveCaddyPreflightPanel source={source}
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
+          <Box component="nav" aria-label="系统依赖页内导航" sx={{
+            width: 216, flexShrink: 0, position: { md: 'sticky' }, top: 0,
+            display: { xs: 'none', md: 'block' }, maxHeight: 'calc(100dvh - 200px)',
+            overflowY: 'auto', borderRight: 1, borderColor: 'divider', pr: 1.5,
+          }}>
+            <Button fullWidth size="small" sx={{ justifyContent: 'flex-start', mb: 1 }}
+              variant={selectedPage === 'overview' ? 'contained' : 'text'}
+              onClick={() => choosePage('overview')}>总览</Button>
+            {groups.map((group) => (
+              <Box key={group.id} sx={{ mb: 1.5 }}>
+                <Typography variant="caption" fontWeight={700} color="text.secondary"
+                  sx={{ display: 'block', px: 1, mb: 0.5 }}>{group.label}</Typography>
+                {systemServices.filter((item) => item.group === group.id).map((service) => (
+                  <Button key={service.id} size="small" fullWidth
+                    variant={selectedPage === service.id ? 'contained' : 'text'}
+                    sx={{ justifyContent: 'flex-start', textAlign: 'left', mb: 0.25,
+                      whiteSpace: 'normal', lineHeight: 1.3 }}
+                    onClick={() => choosePage(service.id)}>{service.label}</Button>
+                ))}
+                {group.id === 'intelligence' && (
+                  <Button size="small" fullWidth
+                    variant={selectedPage === 'photo-auto' ? 'contained' : 'text'}
+                    sx={{ justifyContent: 'flex-start', textAlign: 'left' }}
+                    onClick={() => choosePage('photo-auto')}>全局分析策略</Button>
+                )}
+              </Box>
+            ))}
+          </Box>
+          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+            <TextField select size="small" fullWidth label="选择系统依赖"
+              sx={{ display: { xs: 'block', md: 'none' }, mb: 2 }}
+              value={selectedPage}
+              onChange={(event) => choosePage(event.target.value)}>
+              <MenuItem value="overview">总览</MenuItem>
+              {groups.map((group) => [
+                <MenuItem key={group.id + '-heading'} value={group.id} disabled>{group.label}</MenuItem>,
+                ...systemServices.filter((item) => item.group === group.id).map((item) => (
+                  <MenuItem key={item.id} value={item.id}>{item.label}</MenuItem>
+                )),
+                ...(group.id === 'intelligence'
+                  ? [<MenuItem key="photo-auto" value="photo-auto">全局分析策略</MenuItem>] : []),
+              ])}
+            </TextField>
+            {!loading && snapshot && selectedPage === 'overview' && (
+              <Box component="section" aria-label="系统依赖总览" data-xdrive-system-dependencies-overview>
+                <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 2 }}>
+                  <Chip variant="outlined" label={`系统依赖 ${systemServices.length} 项`} />
+                  <Chip variant="outlined" color="success" label={`健康 ${healthy} 项`} />
+                  <Chip variant="outlined" color={unhealthy ? 'error' : 'default'}
+                    label={`异常 ${unhealthy} 项`} />
+                  <Chip variant="outlined" color={pendingCount ? 'warning' : 'default'}
+                    label={`待生效 ${pendingCount} 项`} />
+                </Stack>
+                {groups.map((group) => (
+                  <Box key={group.id} sx={{ mb: 2.5 }}>
+                    <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1 }}>{group.label}</Typography>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0,1fr))', lg: 'repeat(3, minmax(0,1fr))' }, gap: 1 }}>
+                      {systemServices.filter((item) => item.group === group.id).map((item) => (
+                        <Button key={item.id} variant="outlined" onClick={() => choosePage(item.id)}
+                          aria-label={`查看${item.label}详情`}
+                          sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start',
+                            justifyContent: 'center', minHeight: 88, textAlign: 'left',
+                            borderColor: item.status === 'unavailable' ? 'error.main' : 'divider',
+                            px: 1.5, py: 1.25, textTransform: 'none' }}>
+                          <Typography variant="subtitle2" color="text.primary" fontWeight={700}
+                            sx={{ overflowWrap: 'anywhere' }}>{item.label}</Typography>
+                          <Typography variant="caption" color={
+                            item.status === 'unavailable' ? 'error.main' : 'text.secondary'
+                          }>
+                            {statusLabels[item.status]?.label ?? '无法检测'}
+                            {' · '}{activationStateLabels[item.activation_state ?? 'unknown'] ?? '生效未知'}
+                          </Typography>
+                        </Button>
+                      ))}
+                    </Box>
+                    {group.id === 'intelligence' && (
+                      <Button size="small" sx={{ mt: 1 }} variant="text"
+                        onClick={() => choosePage('photo-auto')}>管理全局分析策略（不计入服务数量）</Button>
+                    )}
+                  </Box>
+                ))}
+                {dependencyNote}
+              </Box>
+            )}
+            {!loading && snapshot && selectedPage !== 'overview' && groups
+              .filter((group) => group.id === selectedGroup).map((group) => {
+              const items = selectedItem ? [selectedItem] : []
+              if (!items.length && selectedPage !== 'photo-auto') return null
+              return (
+                <Box key={selectedPage} component="section" aria-label={
+                  selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label ?? group.label
+                } data-xdrive-system-dependency-detail>
+                  <Typography variant="h6" fontWeight={700} sx={{ mb: 0.5 }}>
+                    {selectedPage === 'photo-auto' ? '全局分析策略' : selectedItem?.label}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                    {group.description}
+                  </Typography>
+                  <Tabs variant="scrollable" scrollButtons="auto" value={currentTab}
+                    onChange={(_event, next: XDriveSystemDependencyTab) =>
+                      navigateTo(selectedPage === 'photo-auto'
+                        ? { policy: 'photo-auto', tab: next }
+                        : { service: selectedPage as XDriveSystemDependenciesLocation['service'], tab: next })}
+                    sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+                    aria-label="服务详情功能分区">
+                    {selectedTabs.map((tab) => (
+                      <Tab key={tab} value={tab} label={dependencyTabLabels[tab]} />
+                    ))}
+                  </Tabs>
+                  {currentTab === 'status' && items.length > 0 && (
+                    <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                      {items.map((service) => <ServiceRow key={service.id} service={service} />)}
+                    </Paper>
+                  )}
+                  {['photo-face', 'photo-smart', 'photo-semantic'].includes(selectedPage) && currentTab === 'status' && (
+                    <Button size="small" variant="outlined" sx={{ mt: 1.5 }}
+                      onClick={() => choosePage('photo-auto')}>管理全局自动分析策略</Button>
+                  )}
+                  {selectedPage === 'photo-auto' && currentTab === 'status' && (
+                    <Typography variant="body2" color="text.secondary">
+                      全局策略集中控制后续自动分析任务的准入，并不启动、停止或证明模型容器健康。
+                      请进入「配置」调整任务开关，或进入「历史」检查已审计修订。
+                    </Typography>
+                  )}
+                  {currentTab === 'verify' && selectedPage !== 'caddy' &&
+                    selectedPage !== 'baidu-map' && selectedPage !== 'geonames' && (
+                    <Stack spacing={1.5} sx={{ mt: 1 }}>
+                      <Typography variant="body2" color="text.secondary">
+                        当前检测基于 Server 提供的真实探针和本实例生效修订，
+                        不代表所有部署节点，也不等同于一次实际媒体分析或同步任务成功。
+                      </Typography>
+                      {items.map((service) => <ServiceRow key={service.id} service={service} />)}
+                      <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
+                        onClick={() => setRefreshID((value) => value + 1)}
+                        disabled={loading}>重新检测此服务状态</Button>
+                    </Stack>
+                  )}
+                  
+              {selectedPage === 'media-worker' && (currentTab === 'config' || currentTab === 'history') &&
+                <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
+              {selectedPage === 'database' && (currentTab === 'config' || currentTab === 'history') &&
+                <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
+              {selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history') &&
+                <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID}
+                  section={currentTab} onDirtyChange={setCaddyHTTPSDirty}
+                  onConfigurationChanged={invalidateCaddyEvidence} />}
+              {selectedPage === 'caddy' && currentTab === 'config' &&
+                <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID}
+                  onDirtyChange={setCaddyAliDirty} onConfigurationChanged={invalidateCaddyEvidence} />}
+              {selectedPage === 'caddy' && currentTab === 'verify' && <XDriveCaddyPreflightPanel source={source}
                 refreshID={refreshID + caddyEvidenceRevision} />}
-              {group.id === 'core' && <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} />}
-              {group.id === 'intelligence' && (
+              {selectedPage === 'background-worker' && (currentTab === 'config' || currentTab === 'history') &&
+                <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
+              {selectedPage === 'photo-auto' && (currentTab === 'config' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
                     <Typography variant="subtitle2" fontWeight={700}>全局自动分析调度</Typography>
@@ -940,6 +1198,7 @@ export function XDriveServiceDependenciesPage({
                         当前 Server/Agent 暂不支持管理全局自动分析策略；请检查版本。
                       </Typography>
                     )}
+                    {currentTab === 'config' && <Stack spacing={1.5}>
                     <FormControlLabel
                       label="自动安排照片智能分析"
                       control={<Switch checked={photoAutoDraft}
@@ -982,7 +1241,8 @@ export function XDriveServiceDependenciesPage({
                         保存后当前 Server 立即按新的准入策略执行；其他实例在周期刷新后尝试生效。模型与资源仍由受控部署管理。
                       </Typography>
                     </Stack>
-                    {source.loadPhotoAutoRevisions && source.rollbackPhotoAuto && (
+                    </Stack>}
+                    {currentTab === 'history' && source.loadPhotoAutoRevisions && source.rollbackPhotoAuto && (
                       <Stack spacing={1.25}>
                         <Typography variant="subtitle2" fontWeight={700}>配置历史与安全回滚</Typography>
                         <TextField select fullWidth size="small" label="回滚至历史自动分析策略"
@@ -1036,7 +1296,7 @@ export function XDriveServiceDependenciesPage({
                   </Stack>
                 </Paper>
               )}
-              {group.id === 'location' && (
+              {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
                     <Typography variant="subtitle2" fontWeight={700}>百度地图 Server AK</Typography>
@@ -1054,7 +1314,7 @@ export function XDriveServiceDependenciesPage({
                         {' · '}修订 #{baiduConfig.revision}
                       </Typography>
                     )}
-                    {baiduConfig && (
+                    {currentTab === 'config' && baiduConfig && (
                       <XDriveStoredCredentialField
                         label="当前 Server AK"
                         configured={baiduConfig.configured}
@@ -1069,7 +1329,7 @@ export function XDriveServiceDependenciesPage({
                         onHide={hideBaiduAK}
                       />
                     )}
-                    {baiduConfig?.editable ? (
+                    {currentTab === 'config' && (baiduConfig?.editable ? (
                       <>
                         <FormControlLabel
                           label="启用百度地图"
@@ -1109,7 +1369,8 @@ export function XDriveServiceDependenciesPage({
                           ? '当前部署尚未配置服务端凭据加密密钥环，无法在线修改 AK。请先配置 XD_CONNECTOR_SECRET_KEYS 并重新部署一次。'
                           : '当前 Server/Agent 不支持在线配置 AK；更新后即可在此编辑。'}
                       </Typography>
-                    )}
+                    ))}
+                    {currentTab === 'verify' && (
                     <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
                       <Button size="small" variant="outlined"
                         disabled={!baiduConfig?.enabled || !baiduConfig.configured ||
@@ -1123,6 +1384,7 @@ export function XDriveServiceDependenciesPage({
                         不自动轮询，不修改 AK 或启停服务。
                       </Typography>
                     </Stack>
+                    )}
                     {baiduVerification && (
                       <XDriveStatusAlert tone={baiduVerification.image_verified ? 'good' : 'bad'}>
                         {baiduVerification.image_verified
@@ -1147,7 +1409,7 @@ export function XDriveServiceDependenciesPage({
                   />
                 </Paper>
               )}
-              {group.id === 'location' && (
+              {selectedPage === 'geonames' && (currentTab === 'config' || currentTab === 'verify' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
                     <Typography variant="subtitle2" fontWeight={700}>GeoNames 地名索引</Typography>
@@ -1212,6 +1474,7 @@ export function XDriveServiceDependenciesPage({
                         当前 Server/Agent 尚未提供 GeoNames 配置状态，请检查版本或连接。
                       </Typography>
                     )}
+                    {currentTab === 'config' && <Stack spacing={1.5}>
                     <TextField
                       label="地名匹配最大距离（km）"
                       size="small"
@@ -1235,6 +1498,13 @@ export function XDriveServiceDependenciesPage({
                         {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
                       </Button>
                     </Stack>
+                    </Stack>}
+                    {currentTab === 'verify' && <Stack spacing={1.5}>
+                    <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
+                      disabled={geoNamesBusy || !geoNamesConfig?.reload_supported || !source.reloadGeoNames}
+                      onClick={() => { void reloadGeoNames() }}>
+                      {geoNamesBusy ? '正在验证和热加载…' : '校验并热加载 GeoNames 数据'}
+                    </Button>
                     <Stack spacing={1} data-xdrive-geonames-dataset-snapshots>
                       <Typography variant="subtitle2" fontWeight={700}>
                         GeoNames 数据集版本快照
@@ -1375,7 +1645,8 @@ export function XDriveServiceDependenciesPage({
                         onConfirm={() => { void stageGeoNamesSnapshot() }}
                       />
                     </Stack>
-                    {source.loadGeoNamesRevisions && source.rollbackGeoNames && (
+                    </Stack>}
+                    {currentTab === 'history' && source.loadGeoNamesRevisions && source.rollbackGeoNames && (
                       <Stack spacing={1.25}>
                         <TextField select fullWidth size="small" label="回滚至历史匹配距离"
                           value={geoNamesRollbackTarget}
@@ -1424,10 +1695,29 @@ export function XDriveServiceDependenciesPage({
               )}
             </Box>
           )
-        })}
-        <Typography variant="caption" color="text.secondary">
-          “尚未接入”表示功能尚未实现；“无法检测”表示没有可靠的实时健康探针。只有支持在线配置的服务才开放保存操作。容器重启、数据迁移和镜像升级必须由受限部署流程执行，不会仅凭保存表单宣称生效。
-        </Typography>
+            })}
+          </Box>
+        </Stack>
+        <XDriveConfirmDialog
+          open={pendingNavigation !== null}
+          title="离开未保存的系统依赖配置？"
+          description="当前服务的编辑尚未保存。确认离开将放弃这些修改；已经发起的后台操作不会被取消。"
+          confirmLabel="放弃修改并切换"
+          onCancel={() => {
+            if (pendingNavigation?.external) onLocationChange?.(visibleLocation, { replace: true })
+            setPendingNavigation(null)
+          }}
+          onConfirm={() => {
+            if (!pendingNavigation) return
+            setChildDirty(false)
+            setCaddyHTTPSDirty(false)
+            setCaddyAliDirty(false)
+            setVisibleLocation(pendingNavigation.next)
+            if (!pendingNavigation.external) onLocationChange?.(pendingNavigation.next)
+            setPendingNavigation(null)
+          }}
+        />
+        {dependencyNote}
       </Stack>
     </XDriveWorkspaceSurface>
   )
