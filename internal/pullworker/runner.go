@@ -227,6 +227,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 
 	var accountMu sync.Mutex
 	accountWaiters := make(map[string][]int)
+	accountDone := make(map[int]<-chan struct{})
 	for index, job := range jobs {
 		if job.concurrencyKey != "" {
 			accountWaiters[job.concurrencyKey] = append(
@@ -274,6 +275,25 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			accountKey := job.concurrencyKey
 			task.Lease = func(leaseCtx context.Context, _ background.Descriptor) (background.Lease, bool, error) {
 				accountMu.Lock()
+				// Cancelling a queued Scheduler task skips Lease.Release. Reap
+				// settled account queue heads before admitting the next Source.
+				for {
+					waiters := accountWaiters[accountKey]
+					if len(waiters) == 0 || waiters[0] == jobIndex {
+						break
+					}
+					done := accountDone[waiters[0]]
+					if done == nil {
+						break
+					}
+					select {
+					case <-done:
+						removeAccountWaiterLocked(accountKey, waiters[0])
+						continue
+					default:
+					}
+					break
+				}
 				waiters := accountWaiters[accountKey]
 				if len(waiters) == 0 || waiters[0] != jobIndex {
 					accountMu.Unlock()
@@ -320,9 +340,14 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		handle, err := scheduler.Submit(task)
 		scheduled[jobIndex].handle = handle
 		scheduled[jobIndex].submitErr = err
-		if err != nil && job.concurrencyKey != "" {
+		if job.concurrencyKey != "" {
 			accountMu.Lock()
-			removeAccountWaiterLocked(job.concurrencyKey, jobIndex)
+			if handle != nil {
+				accountDone[jobIndex] = handle.Done()
+			}
+			if err != nil {
+				removeAccountWaiterLocked(job.concurrencyKey, jobIndex)
+			}
 			accountMu.Unlock()
 		}
 	}
