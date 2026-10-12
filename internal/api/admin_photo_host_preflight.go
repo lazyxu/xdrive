@@ -21,14 +21,16 @@ type adminPhotoHostPreflightCheck struct {
 }
 
 type adminPhotoHostPreflightDTO struct {
-	CheckedAt           time.Time                      `json:"checked_at"`
-	Action              string                         `json:"action"`
-	DesiredRevision     uint64                         `json:"desired_revision"`
-	LocalChecksComplete bool                           `json:"local_checks_complete"`
-	HostObserved        bool                           `json:"host_observed"`
-	HostControlObserved bool                           `json:"host_control_observed"`
-	ApplySupported      bool                           `json:"apply_supported"`
-	Checks              []adminPhotoHostPreflightCheck `json:"checks"`
+	CheckedAt            time.Time                      `json:"checked_at"`
+	Action               string                         `json:"action"`
+	DesiredRevision      uint64                         `json:"desired_revision"`
+	LocalChecksComplete  bool                           `json:"local_checks_complete"`
+	HostObserved         bool                           `json:"host_observed"`
+	HostControlObserved  bool                           `json:"host_control_observed"`
+	ApplySupported       bool                           `json:"apply_supported"`
+	Checks               []adminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified bool                           `json:"host_revision_verified"`
+	ModelInfoChecks      []photoHostModelInfoCheck      `json:"model_info_checks"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -117,6 +119,27 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		return
 	}
 	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
+	// The administrator's explicit read-only preflight is the only permitted
+	// trigger for the four independent, bounded model Info calls. Missing
+	// trustworthy host revision evidence means that Info is never invoked.
+	report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
+	if hasGate && photoHostModelInfoAllowed(desired, gate, hasGate, s.photoHostApplyReceipt(gate)) {
+		report.HostRevisionVerified = true
+		report.ModelInfoChecks = s.probePhotoHostModelInfo(c.Request.Context())
+		// A newer desired revision or host drift detected during the probes
+		// must not publish stale green model evidence.
+		latest, desiredErr := s.readPhotoHostDesired(c.Request.Context())
+		latestGate, latestPresent, gateErr := s.readPhotoHostApply(c.Request.Context())
+		if desiredErr != nil || gateErr != nil || !latestPresent ||
+			!photoHostModelInfoAllowed(latest, latestGate, true, s.photoHostApplyReceipt(latestGate)) ||
+			latest.Revision != desired.Revision || latestGate.RequestID != gate.RequestID {
+			report.HostRevisionVerified = false
+			report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
+		}
+	}
+	if report.HostRevisionVerified {
+		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；下方模型 Info 是独立状态。当前 Info 协议不携带宿主请求身份，尚不能证明同源模型生效或真实媒体任务成功"
+	}
 	if report.LocalChecksComplete && s.photoHostCanSubmit(desired, gate, hasGate) {
 		// Dispatch-ready is not an effect proof and can become stale before
 		// POST; the real action repeats all checks under a global DB fence.

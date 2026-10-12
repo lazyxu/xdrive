@@ -648,15 +648,22 @@ type AdminPhotoHostPreflightCheck struct {
 	State  string `json:"state"`
 	Detail string `json:"detail"`
 }
+type AdminPhotoHostModelInfoCheck struct {
+	ID     string `json:"id"`
+	State  string `json:"state"`
+	Detail string `json:"detail"`
+}
 type AdminPhotoHostPreflight struct {
-	CheckedAt           time.Time                      `json:"checked_at"`
-	Action              string                         `json:"action"`
-	DesiredRevision     uint64                         `json:"desired_revision"`
-	LocalChecksComplete bool                           `json:"local_checks_complete"`
-	HostObserved        bool                           `json:"host_observed"`
-	HostControlObserved bool                           `json:"host_control_observed"`
-	ApplySupported      bool                           `json:"apply_supported"`
-	Checks              []AdminPhotoHostPreflightCheck `json:"checks"`
+	CheckedAt            time.Time                      `json:"checked_at"`
+	Action               string                         `json:"action"`
+	DesiredRevision      uint64                         `json:"desired_revision"`
+	LocalChecksComplete  bool                           `json:"local_checks_complete"`
+	HostObserved         bool                           `json:"host_observed"`
+	HostControlObserved  bool                           `json:"host_control_observed"`
+	ApplySupported       bool                           `json:"apply_supported"`
+	Checks               []AdminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified bool                           `json:"host_revision_verified"`
+	ModelInfoChecks      []AdminPhotoHostModelInfoCheck `json:"model_info_checks"`
 }
 
 type AdminPhotoHostApplyInput struct {

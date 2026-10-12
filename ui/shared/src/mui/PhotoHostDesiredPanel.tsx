@@ -287,7 +287,8 @@ export function XDrivePhotoHostDesiredPanel({
               <Stack spacing={1} data-xdrive-photo-host-preflight>
                 <Typography variant="subtitle2">宿主安全启用条件（只读）</Typography>
                 <Typography variant="caption" color="text.secondary">
-                  仅读取本机固定宿主证据；任何通过项均不授权启停，不能证明其他 Server 实例的任务空闲或模型已生效。
+                  手动检查固定宿主前置条件；只有已保存的启用修订取得可信宿主回执时，才对四类模型执行独立 Info 探针。
+                  不授权启停，不验证实际照片任务，也不能代表其他 Server 实例。
                 </Typography>
                 <Box>
                   <Button size="small" variant="outlined" onClick={() => { void verifyLocalReadiness() }}
@@ -309,6 +310,29 @@ export function XDrivePhotoHostDesiredPanel({
                         {' · '}{check.detail}
                       </Typography>
                     ))}
+                    <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="subtitle2" sx={{ mt: 1 }}>
+                        四类模型 Info 实际就绪（仅当前 Server）
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {preflight.host_revision_verified
+                          ? '宿主请求令牌及修订号已核验；下列 Info 是独立证据，尚非同源部署证明或成功的图片分析任务。'
+                          : '宿主目标修订尚未取得可信回执；本次没有运行模型 Info，也不会显示绿色生效。'}
+                      </Typography>
+                      {preflight.model_info_checks ? preflight.model_info_checks.map((probe) => (
+                        <Typography key={probe.id} variant="body2" color={probe.state === 'ready' ? 'success.main'
+                          : probe.state === 'failed' ? 'error.main' : 'text.secondary'}>
+                          {probe.id === 'photo-face' ? '人脸／人物' : probe.id === 'photo-smart' ? '视觉／OCR'
+                            : probe.id === 'photo-semantic' ? '语义搜索' : '照片创作'}
+                          {' · '}{probe.state === 'ready' ? 'Info 检测通过'
+                            : probe.state === 'failed' ? 'Info 检测失败'
+                              : probe.state === 'unconfigured' ? '未配置' : '未核验'}
+                          {' · '}{probe.detail}
+                        </Typography>
+                      )) : <Typography variant="caption" color="text.secondary">
+                        当前 Server/Agent 尚未报告独立模型 Info 检测能力。
+                      </Typography>}
+                    </Box>
                     <Typography variant="caption" color="text.secondary">
                       预检时间：{preflight.checked_at}（临时结果；需手动重查）
                     </Typography>
