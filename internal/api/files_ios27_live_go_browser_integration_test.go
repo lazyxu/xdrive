@@ -480,6 +480,19 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 				{ID: wideBatchA.ID, Revision: wideBatchA.Revision, SourceParent: root.ID, Name: wideBatchA.Name, Body: "real Wide bulk delete one"},
 				{ID: wideBatchB.ID, Revision: wideBatchB.Revision, SourceParent: root.ID, Name: wideBatchB.Name, Body: "real Wide bulk delete two"},
 			})
+		// F09I-D4: these two representative 2-source operations were submitted
+		// by actual Mobile/Wide Chromium and completed by D3's real Worker.
+		// Undo and Redo use authenticated HTTP + the SAME production executor.
+		assertIOS27FilesLiveUndoRedo(t, srv, db, router, peer.URL, token, foreignToken,
+			after.OwnerID,
+			[]ios27FilesWorkerEffect{
+				{ID: mobileBatchCopyA.ID, Revision: mobileBatchCopyA.Revision, SourceParent: batchSource.ID, TargetParent: mobileTarget.ID, Name: mobileBatchCopyA.Name, Body: "real Mobile batch copy one"},
+				{ID: mobileBatchCopyB.ID, Revision: mobileBatchCopyB.Revision, SourceParent: batchSource.ID, TargetParent: mobileTarget.ID, Name: mobileBatchCopyB.Name, Body: "real Mobile batch copy two"},
+			},
+			[]ios27FilesWorkerEffect{
+				{ID: wideBatchMoveA.ID, Revision: wideBatchMoveA.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveA.Name, Body: "real Wide batch move one"},
+				{ID: wideBatchMoveB.ID, Revision: wideBatchMoveB.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveB.Name, Body: "real Wide batch move two"},
+			})
 
 	case <-time.After(4 * time.Minute):
 		t.Fatal("live browser did not finish the real Gin/PostgreSQL fixture")

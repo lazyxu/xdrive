@@ -249,3 +249,34 @@ test('09I-D3 actual Chromium queued operations run real Worker, validate physica
   assert.doesNotMatch(worker, /enqueueFileOperation\(|route\.fulfill\(|mockFileOperation\(/)
   assert.ok(ci.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-')"))
 })
+
+
+const undoRedo = read('internal/api/files_ios27_live_go_undo_redo_test.go')
+const app = read('web/src/App.tsx')
+
+test('09I-D4 real Chromium-originated multi-source Copy/Move Undo and Redo retain CAS and owner security', () => {
+  for (const label of [
+    'assertIOS27FilesLiveUndoRedo(t, srv, db, router, peer.URL, token, foreignToken,',
+    'mobileBatchCopyA.ID', 'mobileBatchCopyB.ID', 'wideBatchMoveA.ID', 'wideBatchMoveB.ID',
+  ]) assert.ok(fixture.includes(label), 'missing authentic D4 predecessor source: ' + label)
+  for (const label of [
+    'client.UndoFileOperation(ctx, original.ID)',
+    'client.RedoFileOperation(ctx, undo.ID)',
+    'srv.processNextFileOperation(ctx)', 'meta.FileOperationStatusCompleted',
+    'originalAfterUndo.UndoneByID',
+    'undoAfterRedo.RedoneByID',
+    'client.DownloadTo(ctx, nodeID, &content)',
+    'client.Trash(ctx)',
+    'afterBlobs != beforeBlobs',
+    'foreignToken, nil, http.StatusNotFound',
+    'IOS27_FILES_REAL_UNDO_REDO_COMPLETED',
+    'IOS27_FILES_REAL_UNDO_REDO_CAS_VERIFIED',
+  ]) assert.ok(undoRedo.includes(label), 'missing real HTTP Worker Undo/Redo contract: ' + label)
+  assert.doesNotMatch(undoRedo, /enqueueFileOperation\(|enqueueFileOperationUndo\(|enqueueFileOperationRedo\(/)
+  assert.ok(app.includes('onUndo={() => {'))
+  assert.ok(app.includes('onRedo={() => {'))
+  assert.ok(web.includes('onUndo={trashActive ? undefined : onUndo}'))
+  assert.ok(web.includes('onRedo={trashActive ? undefined : onRedo}'))
+  assert.ok(mobile.includes("overflowAction('撤销', () => props.onUndo?.()"))
+  assert.ok(mobile.includes("overflowAction('重做', () => props.onRedo?.()"))
+})
