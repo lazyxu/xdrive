@@ -20,7 +20,7 @@
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A 已编写登录/账户入口、能力检测、安装引导；CI/真实设备仍待验 |
 | P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | 部分部署基础，未验收 |
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有，安装模式未验 |
-| P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已编写显式 Server readyz 探测、状态区分/可取消超时及手动重试；业务请求级重试仍缺失 |
+| P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
 | P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | 待验 |
 | P0-10 | 320/375/390/430、899/900、短横屏/安全区/软件键盘/200% 字体/暗色/读屏保留 52px Frame。 | 布局基础有，真机 not-run |
@@ -84,6 +84,14 @@ iOS 27 Safari 无 JS install prompt，按 Apple 官方指南显示“页面菜�
 S3A 用 `navigator.onLine` 表示**浏览器提供的网络提示**，不能证明 Server 可用。S3B 新增公开的 `GET /api/v1/readyz` 用户主动检查：`credentials:'omit'`、`cache:'no-store'`、`mode:'same-origin'`、`redirect:'error'`，仅限同源只读、6 秒超时且可在 Dialog 关闭时取消。分别区分：200 Server 就绪、503 未就绪、429 限流、401/403 代理/访问拦截、其他 HTTP 状态、网络失败、超时与显式取消；结果不携带敏感服务器响应、Token、文件或原件。**就绪只表示当时的 Server 状态，不代表已登录、当前文件有权限、传输完整写入或定时任务正常。**“重新检测服务器”只重试这个无副作用诊断，不自动重放上传/下载/删除/变更请求。能力在普通 Web、移动 Web、PWA 安装模式共用同一 UI，且不会新建后端 API（沿用既有公开 readyz）。
 
 **仍需完成的 S3C：** 经服务端契约确认后，将 GET 幂等请求的短时网络失败与 429 有界指数退避（尊重 Retry-After、AbortSignal、可见窗口/取消和上限）接入共享 Web 请求控制器，严格排除上传 chunk、下载票据及任何写操作；同时完成待更新 worker 的人工确认激活前置条件，涵盖全窗口未保存编辑和前台操作。当前不把手动 readiness 再检测标注为“文件上传已自动续传”。S4 对真实大文件及设备生命周期验收另行记录。
+
+## PWA-S3C · Web/Mobile 共用只读文件浏览请求的有界重试（2026-10-12）
+
+**实现交付条件：** 只在共同的 `XDriveApi.request` 中对明确白名单的浏览 GET 使用 `xDriveFetchPwaSafeRead`，包括 `/api/v1/nodes/*`、文件搜索、变更分页、媒体资产/相册/筛选读取、文件收藏、标签、最近和保存搜索。最多只额外发出 **1 次** GET，不缓存私有响应、不更改请求权限和业务控制器。仅重试 429、503 和浏览器 `TypeError` 网络错误；429/503 无明确 `Retry-After` 时分别等 500/300ms；`Retry-After` 超过 1200ms、无法解析或无效时保留原 HTTP 结果，不违背服务端较长冷却。状态 401/403/404/500 不经额外重试，认证 401 的既有会话刷新链路不变；后台页面不开始重试。等待期间 `AbortSignal` 取消立即拒绝，永不再发送第二请求；二次网络尝试失败直接交还上层处理，不进入无限重试。
+
+**坚决排除：** POST/PUT/PATCH/DELETE/HEAD，带请求体的 GET，`/api/v1/uploads*`、分块/预校验/Finalize、`/api/v1/auth*`、私人文件/Archive 下载票据及字节流、公开分享、管理员服务变更，以及不在白名单内的所有接口。原有 `WebFileExplorer`/Mobile Files 和 Gallery 的共享 REST、虚拟化 Range、选择/权限和 Go Server 维持不变；Desktop Agent 传输行为保持独立。一个可取消的 GET 重试不能算上传恢复、浏览器后台持续执行或 Server durable job；本阶段**也不实现**有条件的一键 SW 更新激活，后者必须跨窗口确认没有上传、未保存编辑、正在运行的 Viewer 和其他任务才可以继续。
+
+**证据层：** 单元测试覆盖每个允许/禁止路径、HTTP 429/503、长短 Retry-After、网络异常、后台 visibility、取消信号、单次上限，以及共享 XDriveApi 接线。完整 Web/Windows/Desktop/Go PR CI 才能声明代码交付；真实 100k 高并发异常、iOS 27 Safari/Home Screen、Android Tab/Installed 及物理锁屏/进程恢复仍属 S4/S5 **not-run**，不得从 Node 测试推定性能或真机可靠性。
 
 ## 分期与测试记录
 

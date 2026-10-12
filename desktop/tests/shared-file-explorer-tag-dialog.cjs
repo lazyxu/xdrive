@@ -182,11 +182,27 @@ test('real Web API untagged-node JSON is a known empty assignment, not a render 
   assert.ok(methods.has('request') && methods.has('fileNodeTags'))
   const apiSource = ts.transpileModule(`class LiveQueryAPI { session = { accessToken: 'fixture-only' }; async ensureFresh() {} ${methods.get('request')} ${methods.get('fileNodeTags')} }`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const requests = []
+  // Run the REAL safe-GET adapter in this isolated method extraction. File tag
+  // assignment queries are POST and must bypass any automatic read retry.
+  const safeReadExports = {}
+  const safeReadSource = fs.readFileSync(path.join(repo, 'web/src/pwaSafeReadRetry.ts'), 'utf8')
+  const safeReadCode = ts.transpileModule(safeReadSource, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  new Function('exports', safeReadCode)(safeReadExports)
   // queryFileNodeTags emits an entry for every selected node; its map lookup is
   // a nil []fileTagDTO for an untagged node, which encoding/json sends as null.
   const wire = '[{"node_id":1,"tags":null}]'
-  const api = new Function('fetch', 'API_BASE', apiSource + '\nreturn new LiveQueryAPI();')(async (url, init) => { requests.push({ url, body: JSON.parse(init.body) }); return new Response(wire, { status: 200, headers: { 'Content-Type': 'application/json' } }) }, '')
+  const testFetch = async (url, init) => {
+    requests.push({ url, body: JSON.parse(init.body) })
+    return new Response(wire, { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+  const safeReadFetch = (url, path, init) =>
+    safeReadExports.xDriveFetchPwaSafeRead(url, path, init, testFetch)
+  const api = new Function('fetch', 'API_BASE', 'xDriveFetchPwaSafeRead',
+    apiSource + '\nreturn new LiveQueryAPI();')(testFetch, '', safeReadFetch)
   const data = await api.fileNodeTags([1])
+  assert.equal(requests.length, 1, 'POST node tag query must not be auto-retried')
   assert.deepEqual(data, [{ node_id: 1, tags: null }], 'actual Web query currently passes through the Server JSON')
   const caught = []
   class ErrorBoundary extends React.Component {
