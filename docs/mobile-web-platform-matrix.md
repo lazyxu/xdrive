@@ -14,6 +14,10 @@
 
 新增安装能力模型与只读部署诊断在 `docs/pwa-delivery.md` 中记录。JS `beforeinstallprompt` 模拟/组件测试不等于已在物理设备安装。IOS-TAB、IOS-INSTALLED、ANDROID-TAB、ANDROID-INSTALLED 的安装、外链返回、冷/热启动及真实安全区/键盘均保持 **not-run**，需用真实部署域名及系统主屏幕图标启动验收。Desktop Chromium 也要单列；文件后端 REST 与虚拟列表不复制。
 
+## PWA S3A 更新状态及弱网验收说明（2026-10-12）
+
+Web 只提供显式“检查新版本”与安全更新步骤；浏览器 `navigator.onLine` 是在线/离线**提示**，绝不是 Gin/PostgreSQL/Server health。新的 public-only BroadcastChannel 不携带 Token 或文件信息，也不会自动触发 SW 激活或页面 Reload。iOS Safari / 主屏 PWA、Android 浏览器 / 安装 PWA 四类真实环境在升级、后台及断网恢复时仍为 **not-run**。后续需分别记录下载中/Viewer/未保存编辑的窗口，以及关闭所有已安装应用窗口后新 Worker 是否真正成为 controlling，保留原 Hash Route 和个人文件身份。
+
 ## 1. 结果必须分为四层
 
 | 层次 | 可用状态 | 记录内容 |
