@@ -941,6 +941,14 @@ func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.
 		// rewind cumulative progress that a newer callback already published.
 		return false
 	}
+	if e.task.ScanComplete && progress.ScanComplete &&
+		e.task.Phase == PhaseTransferring && progress.Phase == PhaseTransferring &&
+		progress.BytesDone == e.task.BytesDone &&
+		(progress.CompletedItems < e.task.ItemsCompleted || progress.FailedItems < e.task.ItemsFailed) {
+		// The byte counter can stay equal while a child completes or fails.
+		// Ignore an older aggregate that would undo that terminal item count.
+		return false
+	}
 	if progress.Phase != "" {
 		e.task.Phase = progress.Phase
 		if progress.Phase == PhaseQueued && e.task.State == StateRunning {
