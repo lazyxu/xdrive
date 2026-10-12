@@ -1594,6 +1594,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		http.StatusNotFound,
 	)
 
+	testRealHEICLivePhotoThumbnail(t, db, server, router, folder.ID, token)
 }
 
 func testPNG(t *testing.T, width, height int) []byte {
