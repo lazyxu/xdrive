@@ -113,6 +113,8 @@ func (r *Runner) persistRetryOutcome(
 		class = RetryNone
 	}
 
+	// A run may complete after its Source is reconfigured or paused.
+	// Fence both retry clearing and retry creation to its original revision.
 	hasState := source.RetryAttempt != 0 || source.RetryAt != nil || source.RetryClass != ""
 	if runErr == nil || class == RetryNone {
 		if !hasState {
@@ -121,22 +123,26 @@ func (r *Runner) persistRetryOutcome(
 		if r == nil || r.DB == nil {
 			return fmt.Errorf("pull worker database is unavailable")
 		}
-		return r.DB.WithContext(ctx).Model(&meta.Source{}).Where("id = ?", source.ID).Updates(map[string]any{
-			"retry_attempt": 0,
-			"retry_at":      nil,
-			"retry_class":   "",
-			"updated_at":    now.UTC(),
-		}).Error
+		return r.DB.WithContext(ctx).Model(&meta.Source{}).
+			Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
+			Updates(map[string]any{
+				"retry_attempt": 0,
+				"retry_at":      nil,
+				"retry_class":   "",
+				"updated_at":    now.UTC(),
+			}).Error
 	}
 
 	if r == nil || r.DB == nil {
 		return fmt.Errorf("pull worker database is unavailable")
 	}
 	attempt, retryAt := nextRetryState(source, class, now)
-	return r.DB.WithContext(ctx).Model(&meta.Source{}).Where("id = ?", source.ID).Updates(map[string]any{
-		"retry_attempt": attempt,
-		"retry_at":      retryAt,
-		"retry_class":   string(class),
-		"updated_at":    now.UTC(),
-	}).Error
+	return r.DB.WithContext(ctx).Model(&meta.Source{}).
+		Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
+		Updates(map[string]any{
+			"retry_attempt": attempt,
+			"retry_at":      retryAt,
+			"retry_class":   string(class),
+			"updated_at":    now.UTC(),
+		}).Error
 }
