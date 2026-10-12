@@ -1,0 +1,80 @@
+name: FileExplorer Desktop Go Context Cancellation 100k
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  file-explorer-desktop-go-cancel-100k:
+    if: github.head_ref == 'perf/file-explorer-desktop-go-cancel-100k-p037-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF: '1'
+      XD_FILEEXPLORER_DESKTOP_CANCEL_API_BINARY: ${{ github.workspace }}/desktop/file-explorer-desktop-cancel-p037-bin/api.test
+      XD_FILEEXPLORER_DESKTOP_CANCEL_AGENT_BINARY: ${{ github.workspace }}/desktop/file-explorer-desktop-cancel-p037-bin/xdrive-agent
+      XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS: ${{ github.workspace }}/desktop/file-explorer-desktop-go-cancel-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate native FileExplorer to Go cancellation source and frozen bounds
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go)"
+          node --check desktop/scripts/file-explorer-desktop-go-cancel-100k-runner.cjs
+          node --check desktop/scripts/file-explorer-desktop-go-cancel-100k-electron-main.cjs
+          node --test desktop/tests/file-explorer-desktop-go-cancel-100k-source.cjs
+      - name: Build real native Gin PostgreSQL and authenticated xdrive-agent with production Desktop
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build
+          npm --prefix desktop run build
+          mkdir -p desktop/file-explorer-desktop-cancel-p037-bin
+          go test -c -o "$XD_FILEEXPLORER_DESKTOP_CANCEL_API_BINARY" ./internal/api
+          go build -o "$XD_FILEEXPLORER_DESKTOP_CANCEL_AGENT_BINARY" ./cmd/xdrive-agent
+      - name: Measure 3 independent 100k desktop FileExplorer scrolling app-switch and window teardown Go cancellations
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS"
+          printf 'HEAD=%s\nEVENT=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_SHA" "$GITHUB_RUN_ID" > "$XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" node desktop/scripts/file-explorer-desktop-go-cancel-100k-runner.cjs
+          test "$(find "$XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS" -maxdepth 1 -name 'sample-*-*.json' | wc -l)" -eq 9
+          node -e "const x=require(process.env.XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS+'/summary.json');if(!x.passed||x.cases!==9||x.started!==54||x.actualGoContextDone!==54||x.canceledHandlers!==54||x.wastedOldBytes!==0||x.worstGoNotificationMs>160)process.exit(1);console.log(JSON.stringify({accepted:x.passed,total:x.started,worstMs:x.worstGoNotificationMs}))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-desktop-go-cancel-100k-n3-three-modes
+          path: desktop/file-explorer-desktop-go-cancel-100k-results/
+          if-no-files-found: warn
+          retention-days: 14

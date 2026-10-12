@@ -57,10 +57,13 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		&meta.File{}, &meta.AuditEvent{}, &meta.MediaMetadata{}); err != nil {
 		t.Fatal(err)
 	}
-	// The real Desktop Main/Renderer starts more read-only APIs than the Web-only
-	// viewport fixture. Migrate their genuine models only for this physical
-	// Desktop workload; otherwise unrelated 500s hide its native Files UI.
-	if os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" {
+	// Native Desktop FileExplorer cancellation needs the same real Desktop
+	// read-only schema and Capacity() prerequisites as the accepted P035
+	// physical-JPEG viewport. Keep physicalMode independently controlled so
+	// P037 retains 100k metadata + only 16 actual JPEG originals / slow IO.
+	desktopNeedsBoot := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" ||
+		os.Getenv("XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF") == "1"
+	if desktopNeedsBoot {
 		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.Source{},
 			&meta.FileRecentAccess{}, &meta.FileFavorite{}, &meta.FileQuickAccess{},
 			&meta.FileSavedSearch{}, &meta.FileTag{}, &meta.FileNodeTag{},
@@ -78,7 +81,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	}
 	store := &fileExplorerMediaPerfStore{inner: local}
 	var serverStore storage.Store = store
-	if os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" {
+	if desktopNeedsBoot {
 		serverStore = &fileExplorerPhysicalCapacityStore{fileExplorerMediaPerfStore: store, local: local}
 	}
 	scheduler := background.NewScheduler(context.Background(), background.Config{
@@ -114,7 +117,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	// The real Desktop shell needs quota + background status to boot its Files
 	// view. Fail BEFORE seeding 100k real JPEG bodies if the test fixture lacks
 	// any native schema/capacity contract; do not mislabel this as a slow UI.
-	if physicalMode {
+	if desktopNeedsBoot {
 		for _, route := range []string{
 			"/api/v1/me/quota",
 			"/api/v1/background-tasks/active-summary",
