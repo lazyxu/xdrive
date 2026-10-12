@@ -729,6 +729,35 @@ func (c *agentController) CloudRollbackAdminSourceWorker(ctx context.Context, in
 	return cli.RollbackAdminSourceWorker(ctx, input)
 }
 
+func (c *agentController) CloudAdminPhotoHostConfig(ctx context.Context) (client.AdminPhotoHostConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoHostConfig{}, err
+	}
+	return cli.AdminPhotoHostConfig(ctx)
+}
+func (c *agentController) CloudSetAdminPhotoHost(ctx context.Context, input client.AdminPhotoHostUpdate) (client.AdminPhotoHostConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoHostConfig{}, err
+	}
+	return cli.UpdateAdminPhotoHost(ctx, input)
+}
+func (c *agentController) CloudAdminPhotoHostRevisions(ctx context.Context) (client.AdminPhotoHostRevisionPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoHostRevisionPage{}, err
+	}
+	return cli.AdminPhotoHostRevisions(ctx)
+}
+func (c *agentController) CloudRollbackAdminPhotoHost(ctx context.Context, input client.AdminPhotoHostRollbackInput) (client.AdminPhotoHostConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoHostConfig{}, err
+	}
+	return cli.RollbackAdminPhotoHost(ctx, input)
+}
+
 func (c *agentController) CloudAdminPhotoAutoConfig(ctx context.Context) (client.AdminPhotoAutoConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

@@ -112,6 +112,10 @@ import {
   type AgentAdminSourceWorkerUpdate,
   type AgentAdminSourceWorkerRevisionPage,
   type AgentAdminSourceWorkerRollbackInput,
+  type AgentAdminPhotoHostConfig,
+  type AgentAdminPhotoHostUpdate,
+  type AgentAdminPhotoHostRevisionPage,
+  type AgentAdminPhotoHostRollbackInput,
   type AgentAdminPhotoAutoConfig,
   type AgentAdminPhotoAutoUpdate,
   type AgentAdminPhotoAutoRevisionPage,
@@ -4976,6 +4980,41 @@ function registerIPCHandlers() {
     })
   }, false))
 
+  ipcMain.handle('agent:cloud-admin-photo-host', () => runAgentAction<AgentAdminPhotoHostConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminPhotoHostConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-photo-host', (_event, value: unknown) => runAgentAction<AgentAdminPhotoHostConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminPhotoHostUpdate> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        input.revision < 0 || typeof input.enabled !== 'boolean') {
+      throw new AgentIPCError('invalid_input', 0, 'Photo Intelligence host desired revision and enabled are required.')
+    }
+    return requireAgentClient().cloudSetAdminPhotoHost({ revision: input.revision, enabled: input.enabled })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-photo-host-revisions', () => runAgentAction<AgentAdminPhotoHostRevisionPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminPhotoHostRevisions()
+  }, false))
+  ipcMain.handle('agent:cloud-rollback-admin-photo-host', (_event, value: unknown) => runAgentAction<AgentAdminPhotoHostConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminPhotoHostRollbackInput> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        typeof input.target_revision !== 'number' || !Number.isSafeInteger(input.target_revision) ||
+        input.revision <= 0 || input.target_revision < 0 || input.target_revision >= input.revision) {
+      throw new AgentIPCError('invalid_input', 0, 'Photo Intelligence host rollback requires current and older revisions.')
+    }
+    return requireAgentClient().cloudRollbackAdminPhotoHost({
+      revision: input.revision, target_revision: input.target_revision,
+    })
+  }, false))
   ipcMain.handle('agent:cloud-admin-photo-intelligence', () => runAgentAction<AgentAdminPhotoAutoConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')

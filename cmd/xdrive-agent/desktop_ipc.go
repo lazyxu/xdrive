@@ -626,6 +626,10 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("PUT /v1/cloud/admin-source-worker", h.cloudSetAdminSourceWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-source-worker/revisions", h.cloudAdminSourceWorkerRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-source-worker/rollback", h.cloudRollbackAdminSourceWorker)
+	mux.HandleFunc("GET /v1/cloud/admin-photo-host", h.cloudAdminPhotoHost)
+	mux.HandleFunc("PUT /v1/cloud/admin-photo-host", h.cloudSetAdminPhotoHost)
+	mux.HandleFunc("GET /v1/cloud/admin-photo-host/revisions", h.cloudAdminPhotoHostRevisions)
+	mux.HandleFunc("POST /v1/cloud/admin-photo-host/rollback", h.cloudRollbackAdminPhotoHost)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence", h.cloudAdminPhotoAuto)
 	mux.HandleFunc("PUT /v1/cloud/admin-photo-intelligence", h.cloudSetAdminPhotoAuto)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-intelligence/revisions", h.cloudAdminPhotoAutoRevisions)
@@ -2286,6 +2290,104 @@ func (h *desktopIPCHandler) cloudRollbackAdminSourceWorker(w http.ResponseWriter
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, out)
+}
+
+// Host desired revisions are independent of automatic analysis admission.
+// This transport only forwards an administrator-authorized, versioned setting;
+// it has NO host command, arbitrary Docker target or Source authority.
+type desktopIPCAdminPhotoHostController interface {
+	CloudAdminPhotoHostConfig(context.Context) (client.AdminPhotoHostConfig, error)
+	CloudSetAdminPhotoHost(context.Context, client.AdminPhotoHostUpdate) (client.AdminPhotoHostConfig, error)
+	CloudAdminPhotoHostRevisions(context.Context) (client.AdminPhotoHostRevisionPage, error)
+	CloudRollbackAdminPhotoHost(context.Context, client.AdminPhotoHostRollbackInput) (client.AdminPhotoHostConfig, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminPhotoHost(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoHostController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_unavailable", "Photo host desired control unsupported")
+		return
+	}
+	result, err := provider.CloudAdminPhotoHostConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudSetAdminPhotoHost(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoHostController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_unavailable", "Photo host desired control unsupported")
+		return
+	}
+	var input struct {
+		Revision *uint64 `json:"revision"`
+		Enabled  *bool   `json:"enabled"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.Enabled == nil || *input.Revision >= 1<<60 {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_host_config", "Complete desired revision and enabled flag required")
+		return
+	}
+	result, err := provider.CloudSetAdminPhotoHost(r.Context(), client.AdminPhotoHostUpdate{
+		Revision: *input.Revision, Enabled: *input.Enabled,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudAdminPhotoHostRevisions(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoHostController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_unavailable", "Photo host desired history unsupported")
+		return
+	}
+	result, err := provider.CloudAdminPhotoHostRevisions(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+func (h *desktopIPCHandler) cloudRollbackAdminPhotoHost(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCAdminPhotoHostController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_unavailable", "Photo host desired rollback unsupported")
+		return
+	}
+	var input struct {
+		Revision       *uint64 `json:"revision"`
+		TargetRevision *uint64 `json:"target_revision"`
+	}
+	if !decodeDesktopIPCJSON(w, r, &input) {
+		return
+	}
+	if input.Revision == nil || input.TargetRevision == nil ||
+		*input.Revision == 0 || *input.Revision >= 1<<60 ||
+		*input.TargetRevision >= *input.Revision {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_photo_host_rollback", "Current and older host desired revisions required")
+		return
+	}
+	result, err := provider.CloudRollbackAdminPhotoHost(r.Context(), client.AdminPhotoHostRollbackInput{
+		Revision: *input.Revision, TargetRevision: *input.TargetRevision,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
 }
 
 type desktopIPCAdminPhotoAutoController interface {

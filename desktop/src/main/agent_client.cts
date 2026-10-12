@@ -862,6 +862,25 @@ export type AgentPhotoAutoKinds = {
   person_cluster: boolean
 }
 
+export type AgentAdminPhotoHostConfig = {
+  desired_enabled: boolean
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending'
+  editable: boolean
+  apply_supported: false
+  requirement: string
+  host_observed: boolean
+  host_runtime_state: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
+  host_profile_configured?: boolean
+}
+export type AgentAdminPhotoHostUpdate = { revision: number; enabled: boolean }
+export type AgentAdminPhotoHostRevisionPage = {
+  items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+}
+export type AgentAdminPhotoHostRollbackInput = { revision: number; target_revision: number }
+
 export type AgentAdminPhotoAutoConfig = {
   auto_enabled: boolean
   effective_auto_enabled: boolean
@@ -3456,6 +3475,18 @@ export class AgentIPCClient {
     return this.request<AgentAdminSourceWorkerConfig>('POST', '/v1/cloud/admin-source-worker/rollback', input)
   }
 
+  cloudAdminPhotoHostConfig() {
+    return this.request<AgentAdminPhotoHostConfig>('GET', '/v1/cloud/admin-photo-host')
+  }
+  cloudSetAdminPhotoHost(input: AgentAdminPhotoHostUpdate) {
+    return this.request<AgentAdminPhotoHostConfig>('PUT', '/v1/cloud/admin-photo-host', input)
+  }
+  cloudAdminPhotoHostRevisions() {
+    return this.request<AgentAdminPhotoHostRevisionPage>('GET', '/v1/cloud/admin-photo-host/revisions')
+  }
+  cloudRollbackAdminPhotoHost(input: AgentAdminPhotoHostRollbackInput) {
+    return this.request<AgentAdminPhotoHostConfig>('POST', '/v1/cloud/admin-photo-host/rollback', input)
+  }
   cloudAdminPhotoAutoConfig() {
     return this.request<AgentAdminPhotoAutoConfig>('GET', '/v1/cloud/admin-photo-intelligence')
   }
