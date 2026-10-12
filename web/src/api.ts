@@ -113,6 +113,7 @@ import {
 } from './downloadSink'
 import type { XDriveWebActiveDownloadSink } from './downloadSink'
 import { xDriveTransferAbortError, xDriveUploadBytes, xDriveWaitForTransferPoll } from './transferTransport'
+import { xDriveFetchPwaSafeRead } from './pwaSafeReadRetry'
 
 export type {
   XDriveUploadConflictPolicy,
@@ -663,7 +664,7 @@ export class XDriveApi {
     if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
-    let response = await fetch(`${API_BASE}${path}`, { ...init, headers })
+    let response = await xDriveFetchPwaSafeRead(`${API_BASE}${path}`, path, { ...init, headers })
     if (response.status === 401 && retry && this.session.refreshToken) {
       await this.refresh(true, init.signal)
       if (init.signal?.aborted) throw xDriveTransferAbortError()
