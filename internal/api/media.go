@@ -1535,18 +1535,31 @@ func mediaUsesTIFFEmbeddedPreview(mimeType string) bool {
 	}
 }
 
+// The bytes rendered for a verified .livp thumbnail come from its still
+// resource, not the outer application/x-livp archive. The same effective
+// source MIME must determine support, cache version/identity and alpha policy;
+// otherwise an embedded HEIC/HEIF still is incorrectly rendered as opaque v3.
+func mediaThumbnailSourceMIME(row meta.MediaMetadata) string {
+	mimeType := strings.ToLower(strings.TrimSpace(row.MIMEType))
+	if row.ContainerKind == mediapkg.ContainerKindLIVP {
+		if descriptor, err := mediapkg.ParseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
+			return strings.ToLower(strings.TrimSpace(descriptor.Still.MIMEType))
+		}
+	}
+	return mimeType
+}
+
+func mediaThumbnailVersion(row meta.MediaMetadata) int {
+	return mediapkg.ThumbnailVersionForSource(mediaThumbnailSourceMIME(row))
+}
+
 func mediaThumbnailSupported(row meta.MediaMetadata) bool {
 	if row.ThumbnailKey != "" {
 		return true
 	}
-	mimeType := strings.ToLower(strings.TrimSpace(row.MIMEType))
+	mimeType := mediaThumbnailSourceMIME(row)
 	if mimeType == "image/x-canon-cr3" || mediaUsesTIFFEmbeddedPreview(mimeType) {
 		return true
-	}
-	if row.ContainerKind == mediapkg.ContainerKindLIVP {
-		if descriptor, err := mediapkg.ParseLIVPContainerDescriptor(row.ContainerJSON); err == nil {
-			mimeType = strings.ToLower(strings.TrimSpace(descriptor.Still.MIMEType))
-		}
 	}
 	switch mimeType {
 	case "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
@@ -1562,7 +1575,7 @@ func mediaThumbnailETag(node meta.Node, row meta.MediaMetadata) string {
 		return fmt.Sprintf(
 			"\"media-%s-v%d-%d\"",
 			sha,
-			mediapkg.ThumbnailVersionForSource(row.MIMEType),
+			mediaThumbnailVersion(row),
 			mediaThumbnailEdge,
 		)
 	}
@@ -1570,7 +1583,7 @@ func mediaThumbnailETag(node meta.Node, row meta.MediaMetadata) string {
 		"\"media-node-%d-%d-v%d-%d\"",
 		node.ID,
 		node.Revision,
-		mediapkg.ThumbnailVersionForSource(row.MIMEType),
+		mediaThumbnailVersion(row),
 		mediaThumbnailEdge,
 	)
 }
@@ -1584,7 +1597,7 @@ func mediaThumbnailStorageKey(
 		node.Revision,
 		row.SHA256,
 		mediaThumbnailEdge,
-		row.MIMEType,
+		mediaThumbnailSourceMIME(row),
 	)
 }
 
