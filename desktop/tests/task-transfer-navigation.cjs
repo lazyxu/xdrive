@@ -75,6 +75,7 @@ function controller(input) {
   const background = load('ui/shared/src/background-tasks.ts', { './format': { formatBytes: String } })
   return load('ui/shared/src/mui/TaskCenterController.ts', {
     '..': { ...transfers, ...operations, ...background }, '../transfers': transfers,
+    './TaskWakeRefresh': { xDriveBindTaskWakeRefresh: () => () => {} },
   }).useXDriveTaskCenterController({
     transfers: [], operations: [], operationActions: { busy: false, clearHistoryLoading: false },
     ...input,

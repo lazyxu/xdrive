@@ -251,6 +251,7 @@ function loadHook(name) {
   }).outputText
   const mod = { exports: {} }
   const localRequire = (request) => request === '../file-explorer-controller' ? shared
+    : request === './TaskWakeRefresh' ? loadHook('TaskWakeRefresh')
     : request.startsWith('../') ? loadShared(request.slice(3))
     : require(request)
   new Function('exports', 'module', 'require', 'window', output)(mod.exports, mod, localRequire, {

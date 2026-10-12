@@ -28,6 +28,8 @@ const modules = {
     xDriveFileOperationHasHistory: () => false,
     xDriveNormalizeBackgroundTaskPage: value => value,
   },
+  // Wake observation is exercised separately with the real TS helper.
+  './TaskWakeRefresh': { xDriveBindTaskWakeRefresh: () => () => {} },
   '../transfers': {
     xDriveActiveTransferCount: () => 0,
     xDriveNetworkTransferTasks: () => [],

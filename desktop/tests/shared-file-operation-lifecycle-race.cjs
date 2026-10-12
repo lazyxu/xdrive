@@ -104,6 +104,8 @@ function loadLifecycleHook(react) {
   const localRequire = (request) => {
     if (request === 'react') return react
     if (request === '../file-operations') return model
+    // Mounted legacy lifecycle tests have no browser event emitter.
+    if (request === './TaskWakeRefresh') return { xDriveBindTaskWakeRefresh: () => () => {} }
     return require(request)
   }
   new Function('exports', 'module', 'require', output)(mod.exports, mod, localRequire)
