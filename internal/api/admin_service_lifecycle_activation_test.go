@@ -3,6 +3,9 @@ package api
 import (
 	"strings"
 	"testing"
+
+	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceworkerpolicy"
 )
 
 func TestPostgresPoolLifecycleActivationEvidence(t *testing.T) {
@@ -53,6 +56,42 @@ func TestGeoNamesLifecycleActivationEvidence(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := geoNamesLifecycleActivationState(tc.config, tc.loaded, tc.radius, tc.revision, tc.fingerprint); got != tc.want {
 				t.Fatalf("activation = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSourceWorkerLifecycleActivationNeedsAllObservedWorkerRevisions(t *testing.T) {
+	values := sourceworkerpolicy.Values{ScanIntervalSeconds: 120, PollIntervalSeconds: 30, MaxConcurrency: 4}
+	desired := sourceworkerpolicy.Desired{Values: values, Revision: 5, Source: "saved"}
+	good := meta.SourceWorkerPresence{
+		AppliedRevision: 5, ScanIntervalSeconds: 120, PollIntervalSeconds: 30, MaxConcurrency: 4,
+	}
+	old := good
+	old.AppliedRevision = 4
+	drift := good
+	drift.MaxConcurrency = 2
+	for _, tc := range []struct {
+		name      string
+		desired   sourceworkerpolicy.Desired
+		rows      []meta.SourceWorkerPresence
+		truncated bool
+		health    string
+		want      string
+	}{
+		{name: "defaults do not prove managed revision", desired: sourceworkerpolicy.Desired{Values: values}, rows: []meta.SourceWorkerPresence{good}, health: "ready", want: "unknown"},
+		{name: "saved policy without leases", desired: desired, health: "unknown", want: "pending"},
+		{name: "unavailable worker cannot verify", desired: desired, rows: []meta.SourceWorkerPresence{good}, health: "unavailable", want: "pending"},
+		{name: "unknown liveness cannot verify", desired: desired, rows: []meta.SourceWorkerPresence{good}, health: "unknown", want: "pending"},
+		{name: "wrong revision", desired: desired, rows: []meta.SourceWorkerPresence{old}, health: "ready", want: "pending"},
+		{name: "same revision but wrong effective concurrency", desired: desired, rows: []meta.SourceWorkerPresence{drift}, health: "ready", want: "pending"},
+		{name: "mixed online revisions", desired: desired, rows: []meta.SourceWorkerPresence{good, old}, health: "ready", want: "pending"},
+		{name: "truncated online scan", desired: desired, rows: []meta.SourceWorkerPresence{good}, truncated: true, health: "ready", want: "pending"},
+		{name: "all observed online workers match", desired: desired, rows: []meta.SourceWorkerPresence{good, good}, health: "ready", want: "verified"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sourceWorkerLifecycleActivationState(tc.desired, tc.rows, tc.truncated, tc.health); got != tc.want {
+				t.Fatalf("Pull Worker activation = %q; want %q", got, tc.want)
 			}
 		})
 	}

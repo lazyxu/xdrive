@@ -3,6 +3,10 @@ package api
 import (
 	"context"
 	"strings"
+	"time"
+
+	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/sourceworkerpolicy"
 )
 
 // setServiceLifecycleStates adds four independently supported observations.
@@ -154,7 +158,27 @@ func (s *Server) setServiceLifecycleStates(
 			} else if item.Status == "unavailable" {
 				item.HealthState = "failed" // Expired heartbeat.
 			}
-			// A fresh heartbeat doesn't prove an exact scheduling policy revision.
+			// Process liveness alone cannot prove that a saved global Pull
+			// scheduling policy was applied at a safe task boundary. Reuse
+			// the detailed admin policy evidence for the already observed
+			// online workers; this neither reads user Sources nor contacts a host.
+			if s.DB != nil {
+				if desired, err := sourceworkerpolicy.Read(ctx, s.DB); err == nil && desired.Revision != 0 {
+					item.ConfigurationState = "configured"
+					var rows []meta.SourceWorkerPresence
+					if err := s.DB.WithContext(ctx).
+						Where("expires_at > ?", time.Now().UTC()).
+						Order("instance_id ASC").Limit(101).Find(&rows).Error; err == nil {
+						truncated := len(rows) > 100
+						if truncated {
+							rows = rows[:100]
+						}
+						item.ActivationState = sourceWorkerLifecycleActivationState(
+							desired, rows, truncated, item.Status,
+						)
+					}
+				}
+			}
 		case "caddy":
 			item.ActivationState = "deployment-only"
 			if caddyContainerObserved {
@@ -213,6 +237,27 @@ func geoNamesLifecycleActivationState(
 	if loaded && effectiveRevision == desired.Revision &&
 		effectiveRadius == desired.MaxDistanceKM &&
 		effectiveFingerprint == desired.Fingerprint {
+		return "verified"
+	}
+	return "pending"
+}
+
+// sourceWorkerLifecycleActivationState is only an aggregate observation of
+// fresh independent Pull Worker leases. A saved policy or a live heartbeat
+// alone must never acknowledge its effective revision. An unknown/unavailable
+// heartbeat, truncated scan or mismatching worker always fails closed.
+func sourceWorkerLifecycleActivationState(
+	desired sourceworkerpolicy.Desired, rows []meta.SourceWorkerPresence,
+	truncated bool, healthStatus string,
+) string {
+	if desired.Revision == 0 {
+		return "unknown"
+	}
+	if healthStatus != "ready" {
+		return "pending"
+	}
+	state, _, _ := summarizeSourceWorkerEffective(desired, rows, truncated)
+	if state == "applied" {
 		return "verified"
 	}
 	return "pending"

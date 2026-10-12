@@ -133,6 +133,33 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 		check(method, base+suffix, memberToken, "{}", http.StatusForbidden)
 	}
 	check(http.MethodPut, base, memberToken, `{"revision":0,"desired":{"scan_interval_seconds":120,"poll_interval_seconds":30,"max_concurrency":4}}`, http.StatusForbidden)
+	check(http.MethodGet, "/api/v1/admin/services", memberToken, "", http.StatusForbidden)
+	check(http.MethodGet, "/api/v1/admin/services", "", "", http.StatusUnauthorized)
+
+	assertOverview := func(wantStatus, wantConfig, wantActivation string) {
+		t.Helper()
+		var snapshot serviceDependenciesSnapshot
+		if err := json.Unmarshal(check(http.MethodGet, "/api/v1/admin/services", adminToken, "", http.StatusOK).Body.Bytes(), &snapshot); err != nil {
+			t.Fatal(err)
+		}
+		for _, service := range snapshot.Services {
+			if service.ID != "background-worker" {
+				continue
+			}
+			if service.Status != wantStatus || service.ConfigurationState != wantConfig ||
+				service.ActivationState != wantActivation {
+				t.Fatalf("Pull Worker overview: status=%s config=%s activation=%s, want %s/%s/%s",
+					service.Status, service.ConfigurationState, service.ActivationState,
+					wantStatus, wantConfig, wantActivation)
+			}
+			if (wantStatus == "ready") != (service.InstallationState == "observed") {
+				t.Fatalf("Worker presence and installation evidence disagree: %+v", service)
+			}
+			return
+		}
+		t.Fatal("Pull Worker missing from system-wide inventory")
+	}
+	assertOverview("unknown", "unknown", "unknown")
 
 	var initial sourceWorkerConfigDTO
 	if err := json.Unmarshal(check(http.MethodGet, base, adminToken, "", http.StatusOK).Body.Bytes(), &initial); err != nil {
@@ -157,6 +184,7 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 	if saved.Revision != 1 || saved.ApplyState != "unavailable" || saved.AppliedInstances != 0 {
 		t.Fatalf("saving without an active Worker falsely applied policy: %+v", saved)
 	}
+	assertOverview("unknown", "configured", "pending")
 	check(http.MethodPut, base, adminToken, put, http.StatusConflict)
 	var auditCount int64
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 1 {
@@ -178,6 +206,7 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 	if mixed.ApplyState != "pending" || mixed.ActiveInstances != 2 || mixed.AppliedInstances != 1 {
 		t.Fatalf("mixed live workers incorrectly confirmed: %+v", mixed)
 	}
+	assertOverview("ready", "configured", "pending")
 	if err := db.Model(&meta.SourceWorkerPresence{}).Where("applied_revision = ?", 0).Updates(map[string]any{
 		"scan_interval_seconds": int64(120), "poll_interval_seconds": int64(30),
 		"max_concurrency": 4, "applied_revision": uint64(1),
@@ -191,6 +220,7 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 	if confirmed.ApplyState != "applied" || confirmed.AppliedInstances != 2 {
 		t.Fatalf("workers did not confirm intended effective revision: %+v", confirmed)
 	}
+	assertOverview("ready", "configured", "verified")
 	var history sourceWorkerRevisionPage
 	if err := json.Unmarshal(check(http.MethodGet, base+"/revisions", adminToken, "", http.StatusOK).Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
@@ -207,6 +237,7 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 	if restored.Revision != 2 || restored.ApplyState != "pending" || restored.Desired != sourceworkerpolicy.Defaults() {
 		t.Fatalf("rollback falsely claimed applied or did not restore revision zero: %+v", restored)
 	}
+	assertOverview("ready", "configured", "pending")
 	check(http.MethodPost, base+"/rollback", adminToken, `{"revision":1,"target_revision":0}`, http.StatusConflict)
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 2 {
 		t.Fatalf("expected only save+rollback committed audits: %d %v", auditCount, err)
@@ -217,4 +248,10 @@ func TestAdminSourceWorkerRealPostgresSaveApplyHistoryRollback(t *testing.T) {
 	if len(history.Items) != 3 || history.Items[0].Origin != "rollback" || history.Items[0].Revision != 2 {
 		t.Fatalf("rollback did not append immutable revision: %+v", history)
 	}
+	if err := db.Model(&meta.SourceWorkerPresence{}).
+		Where("expires_at > ?", time.Now().UTC()).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	assertOverview("unavailable", "configured", "pending")
 }
