@@ -122,7 +122,51 @@ func (s *Server) readLocalSourceEvidenceCloudMetadata(c *gin.Context) {
 		return
 	}
 
+	revision, _, err := s.checkLocalEvidenceCloudMetadata(c, sourceID, expected, proof, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
+			fail(c, http.StatusForbidden, "owning device or local Root not authorized")
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			fail(c, http.StatusNotFound, "local Source not found")
+		case errors.Is(err, errRevisionConflict):
+			revisionConflict(c, expected, revision)
+		case errors.Is(err, errLocalEvidenceConflict), errors.Is(err, errLocalBindingStateInvalid):
+			fail(c, http.StatusConflict, "local cloud metadata no longer matches verified advisory evidence")
+		case errors.Is(err, errLocalBindingTypeInvalid):
+			fail(c, http.StatusForbidden, "local folder Push required")
+		default:
+			fail(c, http.StatusInternalServerError, "local cloud metadata unavailable")
+		}
+		return
+	}
+	c.Header("ETag", strconv.Quote(strconv.FormatUint(revision, 10)))
+	c.JSON(http.StatusOK, localEvidenceCloudMetadataResponse{
+		SourceID: sourceID, Revision: revision, Checked: len(input.Items),
+		CloudMetadataMatched: true, CloudBytesVerified: false,
+		ContentVerified: false, CommitSupported: false,
+		Authoritative: false, MissingInferenceSafe: false,
+	})
+}
+
+// localEvidenceCloudObject is derived only from the locked, authorized
+// File/Version/CAS join. Neither keys nor per-file digests are serialized.
+type localEvidenceCloudObject struct {
+	SHA256 string
+	Size   int64
+	Key    string
+}
+
+// checkLocalEvidenceCloudMetadata takes all authorization and version locks
+// only during database verification. The caller may stream physical bytes
+// *after* this transaction, but must call it a second time afterwards.
+// No storage I/O is allowed while its DB locks are held.
+func (s *Server) checkLocalEvidenceCloudMetadata(
+	c *gin.Context, sourceID, expected uint64,
+	proof localSourceExecutorProof, input localEvidenceCloudMetadataRequest,
+) (uint64, []localEvidenceCloudObject, error) {
 	var revision uint64
+	var objects []localEvidenceCloudObject
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
 		// The identical device -> Source -> Root transactional proof fences
 		// revocation/configuration changes. No owner-JWT-only fallback.
@@ -285,31 +329,12 @@ func (s *Server) readLocalSourceEvidenceCloudMetadata(c *gin.Context) {
 				remote.VersionKey != canonicalKey || remote.BlobKey != canonicalKey {
 				return errLocalEvidenceConflict
 			}
+			objects = append(objects, localEvidenceCloudObject{SHA256: claim.SHA256, Size: claim.Size, Key: canonicalKey})
 		}
 		return c.Request.Context().Err()
 	})
 	if err != nil {
-		switch {
-		case errors.Is(err, errLocalSourceExecutorTransactionUnauthorized):
-			fail(c, http.StatusForbidden, "owning device or local Root not authorized")
-		case errors.Is(err, gorm.ErrRecordNotFound):
-			fail(c, http.StatusNotFound, "local Source not found")
-		case errors.Is(err, errRevisionConflict):
-			revisionConflict(c, expected, revision)
-		case errors.Is(err, errLocalEvidenceConflict), errors.Is(err, errLocalBindingStateInvalid):
-			fail(c, http.StatusConflict, "local cloud metadata no longer matches verified advisory evidence")
-		case errors.Is(err, errLocalBindingTypeInvalid):
-			fail(c, http.StatusForbidden, "local folder Push required")
-		default:
-			fail(c, http.StatusInternalServerError, "local cloud metadata unavailable")
-		}
-		return
+		return revision, nil, err
 	}
-	c.Header("ETag", strconv.Quote(strconv.FormatUint(revision, 10)))
-	c.JSON(http.StatusOK, localEvidenceCloudMetadataResponse{
-		SourceID: sourceID, Revision: revision, Checked: len(input.Items),
-		CloudMetadataMatched: true, CloudBytesVerified: false,
-		ContentVerified: false, CommitSupported: false,
-		Authoritative: false, MissingInferenceSafe: false,
-	})
+	return revision, objects, nil
 }

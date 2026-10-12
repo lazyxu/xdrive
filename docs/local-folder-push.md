@@ -744,7 +744,7 @@ Node/CAS modification, upload, Mirror deletion, watcher, schedule or
 NAS Push is enabled here. Native physical 100k/>=4GiB tests and GitLab
 delivery are not claimed.
 
-## L03-D2b2c2b2a · Strict owning-Agent File / FileVersion / CAS metadata cross-check (GitHub PR verification)
+## L03-D2b2c2b2a · Strict owning-Agent File / FileVersion / CAS metadata cross-check (merged #1471; exact-head CI green)
 
 After L03-D2b2c2a (#1456) verified SourceItem, Node and aliases and
 L03-D2b2c2b1 (#1460, merged following 76-job exact-head full CI)
@@ -805,3 +805,57 @@ No local Push activation, uploads, CAS/Node/SourceItem/alias writes,
 watcher, schedule execution, NAS Push or deletion is enabled.
 The 1k/10k/100k and >=4GiB native-machine E2E and GitLab delivery
 remain independently unverified.
+
+## L03-D2b2c2b2b · Bounded actual CAS byte observation (GitHub PR verification)
+
+The preceding cloud **metadata** equality stage (#1471) is merged after
+its own 96-check exact-head CI (25 success, 71 conditional skips, zero
+failures). The next deliberately bounded read-only substage adds an
+owning-Agent-only `POST /api/v1/sources/:id/local-identity/evidence-cloud-bytes`.
+This is **not** an upload API or a general file-integrity scanner.
+
+- Accept only one previously persisted, ordered evidence ID, both sealed
+  inventory digests and the Agent's freshly hashed local SHA256/size. The
+  request uses the same <=16KiB strict JSON schema and existing authenticated
+  owner JWT, unrevoked device credential, verified bound Root/fingerprint,
+  `If-Match` revision and *paused* local_folder/Push gate as #1471. No
+  renderer-supplied storage key, file path, SourceItem ID, Node ID or URL.
+- The Server first repeats the complete transaction-scoped SourceItem/Node/
+  File/exact FileVersion/ready CAS metadata and identity-alias checks from
+  #1471, obtains the *Server-derived canonical* CAS key and closes all DB
+  locks. Only then does it open one real object through the existing Store
+  interface. Read size <=64MiB, SHA256 using a <=256KiB buffer, compare full
+  physical bytes, fail on missing, corrupt/truncated/oversized/nonregular
+  objects, and honor Go context cancellation with a 90-second deadline.
+  Do not hold a transaction open across filesystem I/O.
+- After the physical read, redo the **entire** device->Source->Root and
+  SourceItem/Node/File/FileVersion/CAS proof transaction. Any revocation,
+  stale revision, swapped object metadata, alias conflict or incomplete read
+  fails closed. This is only a point-in-time object observation: even a
+  successful repeat is **not** durable object storage attestation, protection
+  against later object replacement, or an eventual write-transaction proof.
+- Reply is private/no-store, revision-ETag, with
+  `cloud_metadata_matched=true`, `physical_cas_matched=true` and a checked
+  count of ONE. **All authority flags remain false**, including
+  `cloud_bytes_verified`, `content_verified`, `commit_supported`,
+  `authoritative`, and `missing_inference_safe`. Never serialize path,
+  CAS key, stored SHA, token, Root fingerprint or per-file identity.
+- The native Agent preflight uses this private Go Client to sample at most
+  its first candidate when size <=64MiB, only after the real local hash and
+  metadata match; remaining candidates and all large objects remain
+  physically **unverified**. The Agent tracks a private observed sample
+  count, never a verified complete page or commit token. There is NO new
+  Desktop IPC, Preload, Renderer, Web or foreign-device capability.
+- Unit and PostgreSQL integration tests must include real Store.Put/Open,
+  valid bytes, same-size corruption, missing/truncated/oversized files,
+  wrong or foreign device, wrong revision, account isolation, unexpected
+  response authority, no path leakage and cancellation. Authoritative
+  acceptance requires the new exact-head PR CI including final-gate.
+
+**Remaining:** a complete, load-budgeted multi-object verification protocol,
+>=4GiB and 1k/10k/100k physical scaling, crash/replay fencing of physical
+bytes across an eventual write transaction, durable identity advancement,
+resumable upload, SourceRun executor, watcher/scheduler/offline recovery and
+Mirror two-scan/24h/trash-only deletion safety. Push activation stays denied.
+No GitLab delivery or native-device physical throughput measurement is
+claimed by this substage.

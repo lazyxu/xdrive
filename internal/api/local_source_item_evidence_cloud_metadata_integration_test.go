@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -28,6 +29,11 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 	srv.Auth = auth.New("local-private-cloud-metadata", time.Hour)
 	srv.RefreshTTL = 24 * time.Hour
 	router := srv.Router()
+	casStore, storeErr := storage.NewLocal(t.TempDir())
+	if storeErr != nil {
+		t.Fatal(storeErr)
+	}
+	srv.Store = casStore
 	ownerJWT, err := srv.Auth.Issue(owner.ID, owner.SessionVersion)
 	if err != nil {
 		t.Fatal(err)
@@ -87,6 +93,9 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 		key, err := storage.ContentAddressedKey(sha)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if written, putErr := casStore.Put(context.Background(), key, strings.NewReader(payload)); putErr != nil || written != int64(len(payload)) {
+			t.Fatalf("failed to stage genuine CAS object: %d %v", written, putErr)
 		}
 		node := createFilePropertiesFile(t, db, owner.ID, target.ID,
 			fmt.Sprintf("cloud-%d.bin", i), int64(len(payload)))
@@ -195,6 +204,69 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 	}
 	send(ownerJWT, clone(), original, http.StatusOK)
 	send(ownerJWT, clone(), body(previous, current, claims[:1]), http.StatusOK)
+
+	// The new bounded read must open the actual CAS object, without
+	// accepting a path, Node ID or cloud key from the requesting device.
+	physicalURI := fmt.Sprintf("/api/v1/sources/%d/local-identity/evidence-cloud-bytes", source.ID)
+	sample := body(previous, current, claims[:1])
+	sendPhysical := func(jwt string, headers map[string]string, payload string, want int) {
+		t.Helper()
+		resp := requestWithHeaders(t, router, http.MethodPost, physicalURI,
+			jwt, strings.NewReader(payload), want, headers)
+		for _, secret := range []string{tokenA, rootID, keys[0], claims[0].SHA256, "source_item_id", "storage_key"} {
+			if strings.Contains(resp.Body.String(), secret) {
+				t.Fatalf("physical CAS reply leaked private key/path/identity: %s", secret)
+			}
+		}
+		if want != http.StatusOK {
+			return
+		}
+		if resp.Header().Get("Cache-Control") != "private, no-store" ||
+			resp.Header().Get("ETag") != "\"7\"" {
+			t.Fatalf("physical CAS reply missing private no-store and revision: %v", resp.Header())
+		}
+		var got localEvidencePhysicalCASResponse
+		if err := json.Unmarshal(resp.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceID != source.ID || got.Revision != 7 || got.Checked != 1 ||
+			!got.CloudMetadataMatched || !got.PhysicalCASMatched ||
+			got.CloudBytesVerified || got.ContentVerified || got.CommitSupported ||
+			got.Authoritative || got.MissingInferenceSafe {
+			t.Fatalf("physical sample elevated commit authority: %+v", got)
+		}
+	}
+	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
+	sendPhysical(ownerJWT, clone(), original, http.StatusBadRequest) // only one object/read
+	sendPhysical(otherJWT, clone(), sample, http.StatusNotFound)
+	sendPhysical(ownerJWT, map[string]string{"If-Match": "\"7\""}, sample, http.StatusForbidden)
+	wrongRevision := clone()
+	wrongRevision["If-Match"] = "\"6\""
+	sendPhysical(ownerJWT, wrongRevision, sample, http.StatusConflict)
+	foreignProof := clone()
+	foreignProof["X-XDrive-Device-ID"], foreignProof["X-XDrive-Device-Token"] = devB.ID, tokenB
+	sendPhysical(ownerJWT, foreignProof, sample, http.StatusForbidden)
+	// A perfectly valid ready CAS DATABASE row is insufficient when its
+	// backing object is truncated, corrupt at identical length or missing.
+	originalPhysical := fmt.Sprintf("stored-original-%d-%s", 0, rootID)
+	putPhysical := func(data string) {
+		t.Helper()
+		if written, err := casStore.Put(context.Background(), keys[0], strings.NewReader(data)); err != nil || written != int64(len(data)) {
+			t.Fatalf("physical CAS fixture update: %d %v", written, err)
+		}
+	}
+	putPhysical(strings.Repeat("x", int(claims[0].Size)))
+	sendPhysical(ownerJWT, clone(), sample, http.StatusConflict)
+	putPhysical(originalPhysical[:len(originalPhysical)-1])
+	sendPhysical(ownerJWT, clone(), sample, http.StatusConflict)
+	putPhysical(originalPhysical)
+	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
+	if err := casStore.Delete(context.Background(), keys[0]); err != nil {
+		t.Fatal(err)
+	}
+	sendPhysical(ownerJWT, clone(), sample, http.StatusConflict)
+	putPhysical(originalPhysical)
+	sendPhysical(ownerJWT, clone(), sample, http.StatusOK)
 	send(otherJWT, clone(), original, http.StatusNotFound)
 	send(ownerJWT, map[string]string{"If-Match": "\"7\""}, original, http.StatusForbidden)
 	foreign := clone()
@@ -286,4 +358,5 @@ func TestLocalEvidenceCloudMetadataMatchesOnlyCurrentReadyCASRecords(t *testing.
 		t.Fatal(err)
 	}
 	send(ownerJWT, clone(), original, http.StatusForbidden)
+	sendPhysical(ownerJWT, clone(), sample, http.StatusForbidden)
 }
