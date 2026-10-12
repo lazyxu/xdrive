@@ -107,13 +107,13 @@ test('desktop GUI defaults to Chinese', () => {
   for (const text of [
     '主页',
     '文件',
-    '同步文件夹',
+    '远程拉取',
     '立即扫描',
-    '同步文件夹设置',
+    '拉取来源',
     '保存设置',
-    '添加同步文件夹',
+    '添加{sourceNoun}',
     '目标文件夹',
-    '添加同步文件夹',
+    '来源详情',
     '任务',
     '全局任务',
     '存储策略',
@@ -275,8 +275,8 @@ test('desktop gates CfAPI-only storage controls by platform', () => {
 })
 
 test('desktop external sources expose safe source deletion', () => {
-  assert.ok(renderer.includes('删除同步文件夹'), 'missing source delete action')
-  assert.ok(renderer.includes('已同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
+  assert.ok(renderer.includes('删除来源'), 'missing source delete action')
+  assert.ok(renderer.includes('已经同步到 xDrive'), 'missing non-destructive delete confirmation prefix')
   assert.ok(renderer.includes('文件会保留，不会删除'), 'missing non-destructive delete confirmation result')
   assert.ok(desktopSourceAdapter.includes('agent.deleteSource(sourceID, revision)'), 'missing Desktop SourceManager delete transport mapping')
 })
@@ -345,7 +345,7 @@ test('desktop page actions use the cross-client MUI action component', () => {
   assert.equal(renderer.includes('function DesktopActionButton({'), false, 'desktop still owns a local action button implementation')
   assert.ok(sharedActionButton.includes('export function XDriveActionButton({'), 'shared action button is missing')
   assert.ok(sharedActionButton.includes('<CircularProgress size={compact ? 12 : 14}'), 'shared action button does not expose a loading spinner')
-  for (const label of ['重试连接', '添加同步文件夹', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
+  for (const label of ['重试连接', '添加{sourceNoun}', '回收站', '运行诊断', '检查更新', '保存设置', '退出登录']) {
     assert.ok(renderer.includes(label), `missing standardized action label: ${label}`)
   }
   assert.ok(renderer.includes('intent="primary"'), 'primary page action hierarchy is missing')
@@ -461,9 +461,9 @@ test('shared SourceManager owns source cards, states, collections and failure re
   assert.ok(sharedSourceManager.includes('<XDriveSourceSummaryCard'), 'SourceManager must render shared source cards')
   assert.ok(sharedSourceManager.includes('statusTone={card.state.tone}'), 'Source state tone must be passed to the shared card')
   assert.ok(sharedSourceManager.includes('statusLabel={card.state.label}'), 'Source state label must be passed to the shared card')
-  assert.ok(sharedSourceManager.includes('message="尚未添加同步文件夹"'), 'Source empty state must use the shared state panel')
+  assert.ok(sharedSourceManager.includes('message={`尚未添加${sourceNoun}`}'), 'Source empty state must use the shared state panel')
   assert.ok(sharedSourceManager.includes('title="相册与集合"'), 'Source collections section is missing')
-  assert.ok(sharedSourceManager.includes('该同步文件夹暂无相册/集合元数据'), 'Source collection empty state is missing')
+  assert.ok(sharedSourceManager.includes('该来源暂无相册/集合元数据'), 'Source collection empty state is missing')
   assert.ok(sharedSourceManager.includes('<XDriveSourceCollectionSummary'), 'Source collection summary must stay shared')
   assert.ok(sharedSourceManager.includes('<XDriveSourceCollectionItem'), 'Source collection item must stay shared')
   assert.ok(sharedSourceManager.includes('labelPrefix="成员"'), 'Source collection member pagination must stay shared')
@@ -511,8 +511,8 @@ test('shared SourceManager preserves Yike and Synology connector safety UX', () 
   assert.ok(sharedSourceManager.includes('XDriveYikeCookieHelp'), 'shared Yike Cookie guide is missing')
   assert.ok(sharedSourceManager.includes('yikeConnectorNotice'), 'Yike private-API notice is missing')
   assert.ok(sharedSourceManager.includes('yikeRateLimitNotice'), 'Yike rate-limit notice is missing')
-  assert.ok(sharedSourceManager.includes('yikeManagedTargetLabel'), 'Yike managed target label is missing')
-  assert.ok(sharedSourceManager.includes('固定逻辑目录'), 'Yike managed target explanation is missing')
+  assert.ok(sharedSourceManager.includes('yikeManagedTargetDisplayLabel'), 'Yike managed target display label is missing')
+  assert.ok(sharedSourceManager.includes('存储子目录'), 'Yike managed target explanation is missing')
   assert.ok(sharedSourceManager.includes('已自动撤销'), 'Source create rollback feedback is missing')
   assert.ok(sharedSourceManager.includes('自动回滚也失败'), 'Source rollback failure fallback is missing')
   assert.ok(sharedSourceManager.includes('label="已保存 Cookie"'), 'stored Yike Cookie field is missing')

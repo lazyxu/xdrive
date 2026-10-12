@@ -15,7 +15,7 @@ import { XDriveSourceKindIcon } from './SourceKindIcon'
 export function XDriveSourcePresetField({
   value,
   onChange,
-  label = '同步文件夹类型',
+  label = '来源类型',
   allowLocalPush = false,
   directionFilter,
 }: {
@@ -54,7 +54,7 @@ export function XDriveSourcePresetField({
 export function XDriveSourceNameField({
   value,
   onChange,
-  label = '同步文件夹名称',
+  label = '来源名称',
   error = false,
   helperText,
   autoFocus = false,

@@ -50,7 +50,7 @@ test('SourceManager delegates secondary dialogs to an internal shared module', (
     'XDriveSourceFailureItem',
     'formatBytes(item.size)',
     '已经同步到 xDrive 的文件会保留，不会删除',
-    '该 Pull 同步文件夹会自动暂停',
+    '该来源会自动暂停',
     'whiteSpace: \'pre-wrap\'',
   ]) {
     assert.ok(sourceDialogs.includes(token), `SourceManagerDialogs missing: ${token}`)
@@ -79,7 +79,7 @@ test('SourceManager delegates the read-only detail workspace to an internal modu
     'runFailurePageSize',
     '复制运行 ID',
     '相册与集合',
-    '同步历史',
+    '运行记录',
     '下一次扫描会自动重试',
   ]) {
     assert.ok(sourceDetails.includes(token), `SourceManagerDetailsDialog missing: ${token}`)
@@ -122,7 +122,7 @@ test('SourceManager delegates the create dialog to an internal presentation modu
     'XDriveSynologyPhotoSpacesField',
     'XDriveSynologyFileRootsField',
     'XDriveYikeCookieHelp',
-    '固定逻辑目录',
+    '存储子目录',
     '目标文件夹',
     'Synology DSM 连接',
   ]) {
@@ -181,7 +181,7 @@ test('SourceManager delegates the list page to an internal presentation module',
     'externalSourceCardView',
     'externalSourceTriggerActionLabel',
     'formatExternalSourceTime',
-    '添加同步文件夹',
+    '添加{sourceNoun}',
     '查看最近错误',
     'DSM 配置',
     '正在取消…',
@@ -215,7 +215,7 @@ test('long Source dialogs reuse the shared compact-touch full-screen contract', 
   assert.ok(sourceDialogs.includes('fullScreen={compactTouch}'), 'failed-items Source dialog must become full-screen on compact touch')
   assert.ok(sourceDialogs.includes('slotProps={{ paper: dialogPaper }}'))
 
-  assert.ok(sourceDialogs.includes('title="删除同步文件夹？"'))
+  assert.ok(sourceDialogs.includes('title="删除来源？"'))
   assert.ok(sourceDialogs.includes('title={`清除已保存的${credentialLabel}？`}'))
   assert.equal(
     (sourceDialogs.match(/fullScreen=\{compactTouch\}/g) || []).length,

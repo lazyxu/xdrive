@@ -32,6 +32,8 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveYikeCookieHelp } from './YikeCookieHelp'
 import {
   externalSourceConnectorProfile,
+  externalSourceDisplayName,
+  externalSourceDisplayTargetPath,
   externalSourceCredentialTestSuccessLabel,
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
@@ -129,6 +131,7 @@ export function XDriveSourceSettingsDialog({
   onRequestClearCredential: () => void
   onDelete: () => void
 }) {
+  const sourceNoun = setting?.source.direction === 'pull' ? '拉取来源' : '来源'
   const profile = setting
     ? externalSourceConnectorProfile(setting.source.kind, setting.source.direction)
     : null
@@ -147,7 +150,7 @@ export function XDriveSourceSettingsDialog({
       slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
-        title={setting ? `${setting.source.name} · 设置` : '同步文件夹设置'}
+        title={setting ? `${externalSourceDisplayName(setting.source)} · 设置` : `${sourceNoun}设置`}
         onClose={onRequestClose}
         closeDisabled={saving}
       />
@@ -167,7 +170,7 @@ export function XDriveSourceSettingsDialog({
               />
               {setting.source.kind === 'local_folder' ? (
                 <XDriveStatusAlert tone="neutral">
-                  此同步文件夹目前只能管理名称、目标路径和忽略规则。设备授权已可配置，
+                  此来源目前只能管理名称、目标路径和忽略规则。设备授权已可配置，
                   但扫描、上传、镜像删除和自动任务仍未启用，当前不能激活来源。
                 </XDriveStatusAlert>
               ) : (
@@ -177,6 +180,7 @@ export function XDriveSourceSettingsDialog({
                 onChange={(value) => onChange({ run_mode: value })}
               />
               <XDriveSourceSyncModeField
+                label={setting.source.direction === 'pull' ? '数据保留策略' : '同步策略'}
                 value={values.sync_mode}
                 onChange={(value) => onChange({ sync_mode: value })}
               />
@@ -190,14 +194,15 @@ export function XDriveSourceSettingsDialog({
                 </XDriveStatusAlert>
               ) : null}
               <XDriveSourceStatusField
-                label="同步状态"
+                label="运行状态"
                 value={values.status}
                 onChange={(value) => onChange({ status: value })}
               />
                 </>
               )}
               <XDriveSourceTargetField
-                value={setting.source.target_path}
+                value={externalSourceDisplayTargetPath(setting.source)}
+                label={setting.source.kind === 'yike_photos' && setting.source.direction === 'pull' ? '存储子目录' : '目标目录'}
                 managed={setting.source.kind === 'yike_photos'}
               />
               {setting.source.kind !== 'local_folder' ? (
@@ -330,7 +335,7 @@ export function XDriveSourceSettingsDialog({
                       </Stack>
                     </XDriveStatusAlert>
                   ) : connectorConfigLoading ? (
-                    <XDriveStatusAlert tone="neutral">正在读取当前同步范围，完成后才能保存设置。</XDriveStatusAlert>
+                    <XDriveStatusAlert tone="neutral">正在读取远程目录范围，完成后才能保存设置。</XDriveStatusAlert>
                   ) : null}
                   {setting.source.kind === 'synology_photos' ? (
                     <>
@@ -400,7 +405,7 @@ export function XDriveSourceSettingsDialog({
             disabled={saving || setting.latestRun?.status === 'running'}
             onClick={onDelete}
           >
-            删除同步文件夹
+            删除{sourceNoun}
           </XDriveActionButton>
           <XDriveDialogActionSpacer />
           <XDriveActionButton disabled={saving} onClick={onCancel}>取消</XDriveActionButton>

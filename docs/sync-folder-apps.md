@@ -15,7 +15,7 @@ Two **independent first-level applications** replace the old mixed `同步文件
 | 设备备份 | `device-backup` | Devices > local folders > read-only progress/run histories, with own-device Desktop controls |
 | 远程拉取 | `remote-pull` | Yike/Synology Photos/File Station Pull create/configure/run from Web and Desktop |
 
-Continue to use the term **同步文件夹** for the underlying Source objects inside those apps. Preserve xDrive's full-screen App Frame and 52px global header, shared MUI primitives, accessibility and mobile viewport navigation. Do not fork Server business models or REST/Agent transport.
+Use application-specific **user-visible** terminology: **远程拉取** calls its Source objects **拉取来源** (or 来源), with no redundant Pull suffix on cards/presets/tooltips; **设备备份** calls them backups/folders/devices. Keep **同步文件夹** only as a technical/legacy Source/storage term. Yike's existing fixed storage root stays intact; the UI may show a clearly labelled *relative storage subdirectory* instead of repeating that root. Preserve xDrive's full-screen App Frame and 52px global header, shared MUI primitives, accessibility and mobile viewport navigation. Do not fork Server business models or REST/Agent transport.
 
 Legacy `#/app/sync-folders?source=ID`: resolve that Source server-side by stable ID and persisted `direction`; redirect Push to `device-backup` (if authorized to view) and Pull to `remote-pull`. No source ID: route to the remote-pull landing page. An unavailable/foreign ID yields a safe not-found/permission state, not a guessed mode or generated Source. Synology Photos supports **both** directions: classify by `(kind, direction)`, never by `kind` alone.
 
