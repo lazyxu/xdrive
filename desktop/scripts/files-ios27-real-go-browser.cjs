@@ -23,9 +23,9 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-D5', actualGoServer: true, postgresql17: true,
+  phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -421,6 +421,155 @@ async function queueBatchDestinationFromUI(kind, owner, width, nodes, targetID) 
 
 
 
+// F09I-D6: one authentic shared folder-creation dialog on Mobile and Wide.
+// No /api/v1 interception: both must hit the same live Gin/PostgreSQL route.
+async function createRealFoldersFromBothLayouts() {
+  const urlPath = '/api/v1/nodes/' + fixture.root_id + '/directories'
+  for (const spec of [
+    { surface: 'Mobile', width: 375, height: 812,
+      collision: 'mobile-copy-target', name: 'ios27-mobile-created' },
+    { surface: 'Wide', width: 1600, height: 900,
+      collision: 'wide-copy-target', name: 'ios27-wide-created' },
+  ]) {
+    await page.setViewportSize({ width: spec.width, height: spec.height })
+    await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+      { waitUntil: 'domcontentloaded' })
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').first().waitFor()
+    if (spec.surface === 'Mobile') {
+      await page.getByRole('button', { name: '文件操作菜单' }).click()
+      await page.locator('[data-mobile-files-more-menu]')
+        .getByRole('menuitem', { name: '新建文件夹', exact: true }).click()
+    } else {
+      await page.getByRole('button', { name: '新建文件夹', exact: true }).first().click()
+    }
+    const dialog = page.getByRole('dialog', { name: '新建文件夹', exact: true })
+    // Retain an actual DOM screenshot even when the named-dialog assertion fails.
+    await screenshot('live-go-' + spec.surface.toLowerCase() + '-folder-dialog-open')
+    try {
+      await dialog.waitFor()
+    } catch (error) {
+      // A genuine UI failure should report what the browser actually mounted;
+      // do not weaken the named-role or real-server acceptance gate.
+      const observed = await page.evaluate(() => ({
+        location: location.hash,
+        dialogs: Array.from(document.querySelectorAll('[role="dialog"]')).map(el => ({
+          name: el.getAttribute('aria-label'),
+          labelledBy: el.getAttribute('aria-labelledby'),
+          text: (el.textContent || '').slice(0, 140),
+          visible: el.getBoundingClientRect().height > 0,
+          computed: { display: getComputedStyle(el).display,
+            visibility: getComputedStyle(el).visibility,
+            opacity: getComputedStyle(el).opacity },
+          ancestorChain: Array.from((function* () {
+            for (let node = el, depth = 0; node && depth < 9; node = node.parentElement, depth += 1) {
+              yield { tag: node.tagName, class: String(node.className || '').slice(0, 90),
+                role: node.getAttribute('role'), ariaHidden: node.getAttribute('aria-hidden'),
+                inert: node.hasAttribute('inert'), cssVisibility: getComputedStyle(node).visibility,
+                cssDisplay: getComputedStyle(node).display }
+            }
+          })()),
+        })),
+        activeElement: {
+          tag: document.activeElement?.tagName,
+          outerHTML: document.activeElement?.outerHTML.slice(0, 350),
+        },
+        modalRoots: Array.from(document.querySelectorAll('.MuiModal-root')).map(el => ({
+          class: String(el.className || '').slice(0, 120),
+          ariaHidden: el.getAttribute('aria-hidden'),
+          visibility: getComputedStyle(el).visibility,
+          zIndex: getComputedStyle(el).zIndex,
+        })),
+        menus: Array.from(document.querySelectorAll('[data-mobile-files-more-menu]')).map(el => ({
+          visible: el.getBoundingClientRect().height > 0,
+          selected: Array.from(el.querySelectorAll('[role="menuitem"]'))
+            .filter(item => item.getAttribute('aria-selected') === 'true')
+            .map(item => (item.textContent || '').trim()),
+        })),
+      }))
+      await screenshot('live-go-' + spec.surface.toLowerCase() + '-folder-dialog-failed')
+      throw new Error('real shared create-folder dialog not visible after UI action: ' +
+        JSON.stringify(observed) + '; exact visible=' + await dialog.count() +
+        ', hidden-included=' + await page.getByRole('dialog', { name: '新建文件夹', exact: true, includeHidden: true }).count() +
+        '; original: ' + String(error))
+    }
+    // Native accessibility-name acceptance, not a CSS visibility proxy:
+    // the MUI Paper's label must point to exactly one text-only DOM node,
+    // never the DialogTitle wrapper that also contains "关闭弹窗".
+    const labelEvidence = await page.evaluate(() => {
+      const paper = document.querySelector('.MuiDialog-paper[role="dialog"]')
+      const labelID = paper?.getAttribute('aria-labelledby') ?? null
+      const targets = labelID ? Array.from(document.querySelectorAll('[id]'))
+        .filter(el => el.id === labelID) : []
+      return { labelID, targetCount: targets.length,
+        labelText: targets.map(el => (el.textContent || '').trim()),
+        paperLabel: paper?.getAttribute('aria-label') ?? null }
+    })
+    check(labelEvidence.targetCount === 1 &&
+      labelEvidence.labelText[0] === '新建文件夹' &&
+      labelEvidence.paperLabel === '新建文件夹',
+      'real MUI Paper must have a unique exact text-only accessible label', labelEvidence)
+    const input = dialog.getByRole('textbox', { name: '文件夹名称' })
+    const submit = dialog.getByRole('button', { name: '创建', exact: true })
+    if (spec.surface === 'Mobile') {
+      const size = await submit.evaluate(el => {
+        const r = el.getBoundingClientRect()
+        return { width: r.width, height: r.height }
+      })
+      check(size.height >= 44 && size.width >= 44,
+        'Mobile folder submit must be at least a 44 CSS px touch target', size)
+    }
+    await input.fill(spec.collision)
+    const [duplicate] = await Promise.all([
+      page.waitForResponse(r => new URL(r.url()).pathname === urlPath &&
+        r.request().method() === 'POST'),
+      submit.click(),
+    ])
+    const collidedBody = duplicate.request().postDataJSON()
+    check(duplicate.status() === 409 && collidedBody.name === spec.collision,
+      'genuine duplicate-name PostgreSQL 409', { spec, status: duplicate.status(), collidedBody })
+    await dialog.getByRole('alert').waitFor()
+    check(await dialog.isVisible() && await input.inputValue() === spec.collision,
+      '409 must retain the editable draft in the same dialog', spec)
+    await screenshot('live-go-' + spec.surface.toLowerCase() + '-folder-409')
+    await input.fill(spec.name)
+    const [created] = await Promise.all([
+      page.waitForResponse(r => new URL(r.url()).pathname === urlPath &&
+        r.request().method() === 'POST'),
+      submit.click(),
+    ])
+    const posted = created.request().postDataJSON()
+    const node = created.status() === 201 ? await created.json() : null
+    const sample = { surface: spec.surface, width: spec.width,
+      conflict: duplicate.status(), status: created.status(), name: posted.name,
+      id: node?.id, revision: node?.revision, parentID: node?.parent_id, type: node?.type }
+    check(created.status() === 201 && posted.name === spec.name &&
+      node?.type === 'dir' && node?.name === spec.name &&
+      node?.parent_id === fixture.root_id &&
+      Number.isSafeInteger(node?.id) && node.id > 0,
+      'real folder create response must preserve parent, Node and name', sample)
+    await dialog.waitFor({ state: 'hidden' })
+    await page.locator(spec.surface === 'Mobile'
+      ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+      .filter({ hasText: spec.name }).first().waitFor()
+    results.folderCreates.push(sample)
+    await screenshot('live-go-' + spec.surface.toLowerCase() + '-folder-201')
+  }
+  check(results.folderCreates.length === 2 &&
+    new Set(results.folderCreates.map(x => x.id)).size === 2,
+    'both layouts must create independent real folders', results.folderCreates)
+  const denied = await page.evaluate(async ({ token, rootID }) => {
+    const response = await fetch('/api/v1/nodes/' + rootID + '/directories', {
+      method: 'POST', headers: {
+        Authorization: 'Bearer ' + token, 'Content-Type': 'application/json',
+      }, body: JSON.stringify({ name: 'ios27-foreign-forbidden' }),
+    })
+    return response.status
+  }, { token: fixture.foreign_token, rootID: fixture.root_id })
+  check(denied === 404, 'foreign owner cannot create within original root', denied)
+  results.foreignOwner.push({ method: 'POST nodes/:id/directories', status: denied })
+}
+
 // F09I-D5: actual Mobile More and Wide toolbar Undo/Redo clicks. The private
 // test-only endpoints only synchronize/run real Go Worker tasks; every
 // business HTTP POST comes from the original React Web controller.
@@ -735,6 +884,7 @@ async function main() {
       { kind: spec.kind, denied })
     results.foreignOwner.push({ method: 'POST file-operations/' + spec.kind + '-batch', status: denied })
   }
+  await createRealFoldersFromBothLayouts()
   await tapRealUndoRedoFromBothLayouts()
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
@@ -764,7 +914,7 @@ async function main() {
       patches: results.patches.length, copyQueues: results.copyQueues.length,
       mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
       batchDestinations: results.batchDestinations.length,
-      tapUndoRedo: results.tapUndoRedo.length,
+      tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))

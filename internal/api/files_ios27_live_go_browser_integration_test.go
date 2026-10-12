@@ -284,6 +284,48 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		if collision.Name != "occupied.txt" || collision.Revision != occupied.Revision {
 			t.Fatalf("failed rename changed collision sentinel: %+v", collision)
 		}
+		// F09I-D6: real 375px Mobile and 1600px Wide created folders with
+		// the same production Gin endpoint. Neither retry may clone the
+		// existing collision sentinel or persist a cross-owner mutation.
+		createdFolderIDs := make(map[uint64]bool)
+		for _, name := range []string{"ios27-mobile-created", "ios27-wide-created"} {
+			var children []meta.Node
+			if err := db.Where("owner_id = ? AND parent_id = ? AND name = ?",
+				after.OwnerID, root.ID, name).Find(&children).Error; err != nil {
+				t.Fatal(err)
+			}
+			if len(children) != 1 || children[0].ID == 0 ||
+				children[0].Type != meta.NodeTypeDir || createdFolderIDs[children[0].ID] {
+				t.Fatalf("genuine UI create must persist one distinct owner directory: %s %+v",
+					name, children)
+			}
+			createdFolderIDs[children[0].ID] = true
+			request(t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/nodes/%d", children[0].ID),
+				foreignToken, nil, http.StatusNotFound)
+			t.Logf("IOS27_FILES_REAL_FOLDER_CREATED name=%s id=%d parent=%d",
+				name, children[0].ID, root.ID)
+		}
+		for _, original := range []nodeDTO{mobileTarget, wideTarget} {
+			var unchanged meta.Node
+			if err := db.First(&unchanged, original.ID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if unchanged.ID != original.ID || unchanged.Name != original.Name ||
+				unchanged.Revision != original.Revision ||
+				unchanged.ParentID == nil || *unchanged.ParentID != root.ID {
+				t.Fatalf("409 duplicate must not change the original directory: before=%+v after=%+v",
+					original, unchanged)
+			}
+		}
+		var unauthorizedCreates int64
+		if err := db.Model(&meta.Node{}).Where(
+			"parent_id = ? AND name = ?", root.ID, "ios27-foreign-forbidden",
+		).Count(&unauthorizedCreates).Error; err != nil || unauthorizedCreates != 0 {
+			t.Fatalf("foreign-owner folder POST must not persist: count=%d err=%v",
+				unauthorizedCreates, err)
+		}
+		t.Logf("IOS27_FILES_REAL_FOLDER_CREATES_VERIFIED count=%d", len(createdFolderIDs))
 		var queued []meta.FileOperation
 		if err := db.Where("owner_id = ? AND type = ? AND total_items = ?", after.OwnerID, meta.FileOperationTypeCopy, 1).
 			Find(&queued).Error; err != nil {

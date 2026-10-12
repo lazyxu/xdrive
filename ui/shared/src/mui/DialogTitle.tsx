@@ -40,17 +40,24 @@ export function useXDriveCompactTouchDialog() {
 
 export function XDriveDialogTitle({
   title,
+  titleId,
   subtitle,
   onClose,
   closeDisabled = false,
 }: {
   title: ReactNode
+  titleId?: string
   subtitle?: ReactNode
   onClose: () => void
   closeDisabled?: boolean
 }) {
+  // DialogTitle normally inherits the Paper label ID through MUI context.
+  // When the caller labels Paper from the inner text-only Typography, give
+  // this outer wrapper a different ID so the close button cannot enter the
+  // accessible name through a duplicate-ID collision.
   return (
     <DialogTitle
+      id={titleId ? `${titleId}-container` : undefined}
       sx={{
         minHeight: 64,
         px: 2.5,
@@ -62,7 +69,7 @@ export function XDriveDialogTitle({
       }}
     >
       <Box sx={{ minWidth: 0 }}>
-        <Typography component="div" variant="h6" fontWeight={700} sx={{ lineHeight: 1.35, overflowWrap: 'anywhere' }}>
+        <Typography id={titleId} component="div" variant="h6" fontWeight={700} sx={{ lineHeight: 1.35, overflowWrap: 'anywhere' }}>
           {title}
         </Typography>
         {subtitle ? (

@@ -450,3 +450,166 @@ D5 continues the **same** built-Web Chromium 375/390/899/900 → real Gin/Postgr
 The private `/__test/files/process-next` endpoint only calls **real production Go `processNextFileOperation`** on one queued task and returns its observed database completion, never intercepts or mocks an application `/api/v1` response. A Go assertion after browser closure requires four completed persisted operations, expected lineage and two-item count, unchanged original moved Node IDs with exact parent/revision, byte-perfect Gin downloads, no new physical CAS blobs, empty Trash and zero cross-owner operations. Existing App Frame, the 52px global xDrive header, Desktop/Web shared Server/API/virtual list, and Mobile internal-tab-only exception remain untouched.
 
 **Excluded from this gate:** physical iOS 27 Safari/PWA/VoiceOver real touch and pixel-matched Apple Files screenshots, long-running worker scheduling/cancellation, failure/rollback combinations and measured 10k/100k runtime. This is genuine cross-layout Chromium interaction evidence, not a declaration of full visual 1:1 parity. The exact submitted work-head must pass all complete Go Linux/API race, Windows, Web, Desktop, authentic Chromium, artifact tests and Final Gate before linear merge.
+
+
+## 2026-10-12 F09I-D6 · live Mobile/Wide create-folder conflict and owner parity
+
+**Status: candidate for exact-head GitHub CI; not yet merged or native-iOS certified.**
+Frozen baseline: GitHub master at `f701ce7ebf3e422dc78046002b22d51144f5700d`,
+after [F09I-D5 #1459](https://github.com/lazyxu/xdrive/pull/1459) passed
+the authentic Go/Chromium Worker tap acceptance, merged and had its short-lived
+branch removed. No viable outstanding Files PR or branch. Other Gallery,
+performance and device-backup work is independent and untouched.
+
+Extend the *existing* built-Web authenticated Chromium → Gin/PostgreSQL17/Local
+CAS acceptance, preserving all D1–D5 375/390/899/900px, queued/completed
+Copy/Move/Delete, Trash, Undo/Redo and cross-owner security assertions.
+At **375px Mobile Web**, click the actual `文件操作菜单 → 新建文件夹`; at
+**1600px Wide Web**, click its original `新建文件夹` toolbar button. Both
+must open the **same** App-owned `XDriveFileNameDialog`, call the same
+`XDriveApi.createDirectory` and POST to `/api/v1/nodes/:parentID/directories`.
+Submit an existing folder name: require actual Server **409** and a visible
+error with the still-editable draft. Retry with a unique name: require
+actual **201**, the original owner parent, a real Node ID and a visible
+refreshed virtualized row. The Mobile submit target must measure at least
+44 CSS px on both axes. Save the two layouts' actual request/response
+details, screenshot both rejection and success, and retain original
+source hashes; no test HTTP response masquerades as `/api/v1`.
+
+The Go fixture **independently** checks exact PostgreSQL child counts,
+distinct owner Node IDs, unmodified original collision-sentinel directories,
+foreign-owner GET **404** for both new Nodes, and foreign-owner POST
+**404** with zero unauthorized child writes. The genuine Go Worker phase
+then continues as before. This tests genuine Web/Mobile behavior, but
+does not assert physical iOS 27 Safari/PWA/VoiceOver pixel-level
+1:1, 10k/100k native virtual-scroll timings, or every failure/cancel race.
+
+No production Server/REST, Web/Desktop business controller, MUI FileExplorer,
+virtual-list implementation, permissions or transfer semantics change. The
+shared file-name dialog's MUI Paper receives an explicit accessible name
+because only the Paper owns the real `role=dialog`; this is a narrowly
+scoped accessibility correction shared by Web, Mobile and Desktop.
+Keep the existing full-screen App Frame, 52px global title bar, shared
+Web/Desktop backend, and Mobile-only internal multi-tab exception. Merge
+only after the **current one-work-commit head** passes the full Go Linux,
+Windows, Web, Desktop, native Chromium/PostgreSQL, artifact and `final-gate`
+suite; otherwise keep Draft and amend corrections into that one work commit.
+GitLab not written.
+
+
+### F09I-D6 first-red Go/API compilation correction (2026-10-12)
+
+The first one-commit [CI #38191546928](https://github.com/lazyxu/xdrive/actions/runs/38191546928)
+passed Desktop tests, one-commit, Web and other early build gates, but failed
+the pre-existing `go-linux-api` `Race test internal/api` step **before**
+the new live-Chromium test could run. Source audit identified a test-only
+compile-time type mismatch: `requestNode` returns the public `nodeDTO`,
+whereas the new unchanged-collision-sentinel loop incorrectly formed a
+`[]meta.Node` from those DTOs. The correction uses `[]nodeDTO` for the
+input list and still queries the actual full `meta.Node` from PostgreSQL.
+The Desktop source contract now enforces that distinction. No production
+Go handler, Web code or database model is changed. Treat previous red as
+unverified browser work; require **new exact-head** full CI, including a
+successfully reached actual Chromium→Gin/PostgreSQL17 step, before Ready
+or merging.
+
+
+### F09I-D6 second first-red · MUI Paper role-dialog name (2026-10-12)
+
+On amended one-commit HEAD `9178fba18ceb68f0c675bcaf8957b67617d2f4f5`,
+[CI #38191876701](https://github.com/lazyxu/xdrive/actions/runs/38191876701)
+passed Go/API Race, all four real Chromium viewport baselines, four real
+rename responses, genuine Mobile/Wide Copy/Move/Delete, multi-node batch
+tasks, and Desktop/Web/Go Linux/Windows checks. The new first Mobile
+create-folder acceptance timed out waiting for an *accessibly named*
+`role=dialog` (12s), before any folder-creation POST occurred. GitHub's
+native log records `folderCreates: 0`, `widths: 4`, `copyQueues: 2`,
+`mutationQueues: 4`, `batchDeletes: 2`, `batchDestinations: 4`.
+
+The shared `XDriveFileNameDialogView` had `aria-label={title}` on MUI's
+outer `Dialog` root, but MUI places the actual `role=dialog` on its
+Paper slot. Add the same accessible name to `slotProps.paper` and retain
+the exact named-role browser assertion: this fixes a **real screen-reader
+accessible-name defect**, rather than changing the test to match an
+unnamed dialog. Add a source regression and pre-submit dialog screenshot
+for the next genuine CI first-red. No Server API or shared virtualization
+changes; require the new single-commit **exact head** to pass full CI
+before merging.
+
+
+### F09I-D6 third first-red · preserve established rename root label (2026-10-12)
+
+On single-commit head `ed78d0293c5debdfdc96f300d02b00c050b308ab`,
+[CI #38192630130](https://github.com/lazyxu/xdrive/actions/runs/38192630130)
+exposed four existing Mobile rename DOM-runtime contract failures in the
+`desktop-tests` job: each expected one legacy wrapper
+`aria-label=重命名`. The Paper accessible-name correction had removed
+the wrapper attribute, changing an established testing/accessibility
+contract unnecessarily. Keep **both** the existing outer
+`aria-label={title}` and the new `slotProps.paper['aria-label']=title`
+for the genuine `role=dialog`. Existing rename behavior and tests
+must stay unchanged; the new native Chromium test still requires the
+accessible name on the real Paper. Re-run exact-head full CI; do not
+waive either check.
+
+### F09I-D6 fourth native Chromium first-red · Files-owned create destination (2026-10-12)
+
+[Exact-head CI #38192832687](https://github.com/lazyxu/xdrive/actions/runs/38192832687) passed
+`desktop-tests`, Web, Go/Linux+Windows and its prior D1–D5 live Chromium/Gin
+routes (four viewports, real Rename/Copy/Move/Delete queues, owner fences), but
+failed at the first Mobile `新建文件夹`: a real 375px artifact showed the
+More menu without a visible named create dialog; the existing DOM test awaited
+`role=dialog` for 12s and found none. Keeping its strict accessible-name
+assertion is mandatory; the earlier MUI Paper label fix alone did not fix this.
+
+Source-level root-cause candidate: Web `MobileFiles` already shows the
+Server-authorized *inner* `WebFileExplorer` workspace, while the outer App's
+separately initialized `useXDriveCloudFilesController.current` can be absent
+at the instant the user activates the menu. Its existing onCreateFolder action
+silently returned in that case, even though the file browser was interactive.
+The bounded fix makes **one** Files-owned callback resolve its current directory
+ID and pass that to the outer App dialog's stable parent-ID reservation. Mobile,
+Wide and context menu callers share that callback; the existing API and all
+Server permissions remain unchanged. The outer Overview caller retains its
+own established current-directory behavior. An on-failure browser diagnostic
+now stores the *actual* role=dialog and More menu DOM plus a post-timeout
+screenshot without fabricating or accepting any business response. This
+is a candidate fix pending **new exact-head full CI**; not a certified iOS 27
+Safari/PWA/VoiceOver pixel or native touch validation. Do not merge on source
+contracts alone.
+
+### F09I-D6 fifth candidate correction · preserve existing Web create scope contract
+
+[First CI for Files-owned callback #38194410469](https://github.com/lazyxu/xdrive/actions/runs/38194410469)
+reported two Desktop source-contract failures before full completion of the
+native Chromium gate. The pre-existing create-scope unit test compiled the
+old App `onCreateFolder()` handler with an outer `current` and did not
+supply the new Files-owned directory argument. The corrected **stronger**
+regression composes the actual shared Workspace `createFolderInCurrentDirectory`
+callback (directory A) with App's exact `onCreateFolder(directoryID)` while
+`App.current` is **null**, then switches App's `current` to directory B
+before submitting, still requiring that only directory **A** is posted. A
+legacy source-only text assertion requiring the old forwarding prop is replaced
+with the new shared callback assertion, which remains covered by actual
+execution. No additional production code change; no gates waived. Require
+fresh exact-head Desktop, Go, Web, real Chromium/PostgreSQL and final gate.
+
+
+### Sixth real Chrome first-red: duplicate DialogTitle title ID (F09I-D6)
+
+On exact-head CI #38198542744, actual Chromium still saw the focused,
+visible, correctly layered create-folder Paper but exact
+`getByRole('dialog', { name: '新建文件夹' })` did not match. MUI's
+`DialogTitle` automatically inherits the Paper's `aria-labelledby`
+through context. The previously added text-only `Typography` reused
+that same ID, so the DOM had **two elements with one label ID**; the
+earlier outer title included its separate Close action. The shared
+`XDriveDialogTitle` now gives that outer container its own
+`<titleID>-container` when a text-only title ID is specified, preserving
+unchanged defaults for all other dialogs. Real browser acceptance must
+still resolve exact `role=dialog` by name, then assert one referenced
+node whose complete text is `新建文件夹`, while preserving the genuine
+Go/PostgreSQL 409→201 and cross-owner 404 gates. No broad text-match
+fallback, bypassed API or false pass. Implementation amended into the
+existing **single work commit**; this new exact-head CI must be green
+before Ready/merge.

@@ -171,6 +171,10 @@ test('Web create-folder dialog keeps the directory scope that opened it', async 
     ['web', 'src', 'App.tsx'],
     'createFolder',
   )
+  const fileWorkspaceSource = extractVariableExpression(
+    ['web', 'src', 'WebFileExplorer.tsx'],
+    'createFolderInCurrentDirectory',
+  )
 
   const folderParentIDRef = { current: null }
   let folderOpen = false
@@ -179,12 +183,25 @@ test('Web create-folder dialog keeps the directory scope that opened it', async 
     'openCreateFolder',
     openSource.expression,
     {
-      current: { id: 301 },
+      // Initial App.cloudFiles.current may still be null when the shared
+      // FileExplorer workspace has already loaded and offers actions.
+      current: null,
       folderParentIDRef,
       setFolderOpen: (value) => { folderOpen = value },
     },
   )
-  openCreateFolder()
+  const openFileFolder = compileExpression(
+    fileWorkspaceSource.filename,
+    'openFileFolder',
+    fileWorkspaceSource.expression,
+    {
+      useCallback: (callback) => callback,
+      current: { id: 301 },
+      trashActive: false,
+      onCreateFolder: openCreateFolder,
+    },
+  )
+  openFileFolder()
 
   assert.equal(folderOpen, true)
   assert.equal(

@@ -143,7 +143,7 @@ export default function WebFileExplorer({
     parentID: number,
     payload: XDriveFileExplorerExternalDropPayload,
   ) => Promise<void>
-  onCreateFolder: () => void
+  onCreateFolder: (directoryID: number) => void
   onOpenTrash: () => void
   trashActive: boolean
   trashAdapter: XDriveTrashDialogAdapter
@@ -1006,8 +1006,18 @@ export default function WebFileExplorer({
     folderUploadInputRef.current?.click()
   }
 
+  // The actual Files workspace owns navigation. An outer App controller can
+  // still be resolving its initial root when a direct files?dir=... deep link
+  // already renders the shared virtual list. Resolve the target here, exactly
+  // as the folder/file upload pickers do; never use a second Mobile API.
+  const createFolderInCurrentDirectory = useCallback(() => {
+    const directoryID = current?.id
+    if (!directoryID || trashActive) return
+    onCreateFolder(directoryID)
+  }, [current?.id, onCreateFolder, trashActive])
+
   const backgroundMenuItems = xDriveFileExplorerBackgroundMenuItems({
-    onCreateFolder,
+    onCreateFolder: createFolderInCurrentDirectory,
     onUpload: openUploadPicker,
     onUploadFolder: openFolderUploadPicker,
     onRefresh: refresh,
@@ -1229,7 +1239,7 @@ export default function WebFileExplorer({
             if (view === 'grid') inlineStore.clear()
             setViewMode(view)
           }}
-          onCreateFolder={onCreateFolder}
+          onCreateFolder={createFolderInCurrentDirectory}
           onUpload={openUploadPicker}
           onUploadFolder={openFolderUploadPicker}
           onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
@@ -1337,7 +1347,7 @@ export default function WebFileExplorer({
         onUp={() => { void goUp() }}
         onRefresh={trashActive ? () => { void trash.refresh() } : refresh}
         onCrumbClick={trashActive ? undefined : (_crumb, index) => { void navigateToCrumb(index) }}
-        onCreateFolder={trashActive ? undefined : onCreateFolder}
+        onCreateFolder={trashActive ? undefined : createFolderInCurrentDirectory}
         onUpload={trashActive ? undefined : openUploadPicker}
         onUploadFolder={trashActive ? undefined : openFolderUploadPicker}
         onOpenItem={trashActive ? undefined : (item) => { void openItem(item, (node) => openWebNode(node, item)) }}

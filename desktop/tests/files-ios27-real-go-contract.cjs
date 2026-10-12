@@ -320,3 +320,55 @@ test('09I-D5 real 375px Mobile menu and 1600px Wide toolbar click Undo/Redo thro
   assert.ok(mobile.includes("overflowAction('撤销', () => props.onUndo?.()"))
   assert.ok(mobile.includes("overflowAction('重做', () => props.onRedo?.()"))
 })
+
+test('09I-D6 shared real create-folder Mobile/Wide dialogs retry 409 and persist owner-scoped directory', () => {
+  const app = read('web/src/App.tsx')
+  const dialog = read('ui/shared/src/mui/FileNameDialog.tsx')
+  const dialogTitle = read('ui/shared/src/mui/DialogTitle.tsx')
+  const handler = read('internal/api/handlers.go')
+  for (const term of [
+    'async function createRealFoldersFromBothLayouts()',
+    "getByRole('dialog', { name: '新建文件夹', exact: true })",
+    "name: '文件夹名称'", 'duplicate.status() === 409',
+    'created.status() === 201', "node?.type === 'dir'",
+    'await dialog.getByRole', 'results.folderCreates.length === 2',
+    'await createRealFoldersFromBothLayouts()', 'denied === 404',
+    '44 CSS px touch target',
+  ]) assert.ok(browser.includes(term), 'missing actual Mobile/Wide folder create: ' + term)
+  for (const term of [
+    '"ios27-mobile-created"', '"ios27-wide-created"',
+    'IOS27_FILES_REAL_FOLDER_CREATES_VERIFIED',
+    'request(t, router, http.MethodGet,',
+    'unauthorizedCreates != 0', 'unchanged.Revision != original.Revision',
+  ]) assert.ok(fixture.includes(term), 'missing real PostgreSQL folder assert: ' + term)
+  // requestNode exposes the public nodeDTO, not the database meta.Node.
+  assert.ok(fixture.includes('[]nodeDTO{mobileTarget, wideTarget}'))
+  // The Mobile and Wide menus must pass the current Files workspace directory
+  // even if App's separate root bootstrap has not produced its own current.
+  assert.ok(web.includes('const createFolderInCurrentDirectory = useCallback('))
+  assert.ok(web.includes('onCreateFolder(directoryID)'))
+  assert.ok(web.includes('onCreateFolder: createFolderInCurrentDirectory,'))
+  assert.ok(web.includes('onCreateFolder={createFolderInCurrentDirectory}'))
+  assert.ok(web.includes('onCreateFolder={trashActive ? undefined : createFolderInCurrentDirectory}'))
+  assert.ok(app.includes('onCreateFolder={(directoryID) => {'))
+  assert.ok(app.includes('folderParentIDRef.current = directoryID'))
+  assert.ok(!app.includes('folderParentIDRef.current = current.id\n                  setFolderOpen(true)'),
+    'Files create must not use possibly-unready App.current')
+  assert.ok(browser.includes("folder-dialog-failed"), 'retain DOM/screenshot on real failure')
+  assert.ok(app.includes('await api.createDirectory(expectedCurrentID, name)'))
+  assert.ok(app.includes('mode="create-folder"'))
+  assert.ok(web.includes('onCreateFolder={createFolderInCurrentDirectory}'))
+  assert.ok(mobile.includes("overflowAction('新建文件夹', props.onCreateFolder)"))
+  assert.ok(dialog.includes("mode === 'create-folder' ? '创建'"))
+  assert.ok(dialog.includes("paper: { 'aria-label': title, sx: {"),
+    'the accessible dialog name must be on the actual MUI Paper role=dialog')
+  assert.ok(dialog.includes('aria-labelledby={titleID}'))
+  assert.ok(dialog.includes('titleId={titleID}'))
+  assert.ok(dialogTitle.includes('id={titleId}'),
+    'aria-labelledby must point only to the title text, never the close control')
+  assert.ok(dialogTitle.includes('id={titleId ? `${titleId}-container` : undefined}'),
+    'the outer DialogTitle must not duplicate the inner title text ID')
+  assert.ok(handler.includes('fail(c, http.StatusConflict, "name already exists")'))
+  assert.doesNotMatch(browser, /route\.fulfill\(|interceptedAPI:\s*true/)
+  assert.doesNotMatch(fixture, /route\.fulfill\(/)
+})
