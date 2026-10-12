@@ -11,7 +11,7 @@ const files = {
   app: read('src/App.tsx'),
   users: readRepo('ui/shared/src/mui/AdminUsersPage.tsx'),
   audit: readRepo('ui/shared/src/mui/AdminAuditPage.tsx'),
-  storageStats: read('src/StorageStatsPanel.tsx'),
+  storageStats: readRepo('ui/shared/src/mui/GlobalStorageStatsPage.tsx'),
   share: read('src/App.tsx') + read('src/fileDialogAdapters.ts') + readRepo('ui/shared/src/mui/ShareDialog.tsx'),
   shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
   shareList: readRepo('ui/shared/src/mui/ShareList.tsx'),

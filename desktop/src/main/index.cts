@@ -133,6 +133,7 @@ import {
   type AgentAdminUser,
   type AgentAdminAuditRange,
   type AgentAdminAuditRangeQuery,
+  type AgentAdminStorageRequest,
   type AgentAdminCreateUserInput,
   type AgentAdminUpdateUserInput,
   type AgentBackgroundTaskActiveSummary,
@@ -5210,6 +5211,33 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudAdminServices()
   }, false))
 
+  const adminStorageOperations = new Set([
+    'stats', 'health', 'history', 'legacy', 'unreferenced', 'staging',
+    'cleanup-runs', 'cleanup-failures', 'cleanup-staging', 'cleanup-cache',
+  ])
+  ipcMain.handle('agent:cloud-admin-storage', (_event, input: unknown) => runAgentAction<unknown>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-storage')
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid admin storage request.')
+    }
+    const p = input as Partial<AgentAdminStorageRequest>
+    if (!adminStorageOperations.has(String(p.operation)) ||
+      Object.keys(p).some(key => !['operation', 'limit', 'offset', 'cursor', 'days', 'run_id', 'fresh', 'kind'].includes(key)) ||
+      (p.limit !== undefined && (!Number.isSafeInteger(p.limit) || p.limit < 1 || p.limit > 200)) ||
+      (p.offset !== undefined && (!Number.isSafeInteger(p.offset) || p.offset < 0)) ||
+      (p.cursor !== undefined && (typeof p.cursor !== 'string' || p.cursor.length > 2048)) ||
+      (p.days !== undefined && ![30, 90, 180].includes(p.days)) ||
+      (p.run_id !== undefined && (!Number.isSafeInteger(p.run_id) || p.run_id <= 0)) ||
+      (p.fresh !== undefined && typeof p.fresh !== 'boolean') ||
+      (p.operation === 'cleanup-failures' && !p.run_id) ||
+      (p.operation === 'cleanup-cache' &&
+        !['media_thumbnail', 'video_poster', 'analysis_preview', 'upload_staging', 'storage_temp', 'all'].includes(String(p.kind))) ||
+      (p.kind !== undefined && p.operation !== 'cleanup-cache')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid bounded administrator storage query.')
+    }
+    return requireAgentClient().cloudAdminStorage(p as AgentAdminStorageRequest)
+  }, false))
   const requireDesktopAdminAudit = async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-audit')

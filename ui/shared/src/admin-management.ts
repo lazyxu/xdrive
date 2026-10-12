@@ -1,4 +1,9 @@
-import type { AdminUser, AuditEventRange } from './models'
+import type {
+  AdminUser, AuditEventRange, StorageStats, StorageHealth, StorageHistory,
+  StorageLegacyObjectPage, StorageUnreferencedBlobPage, UploadStagingDetail,
+  StagingCleanupRun, StagingCleanupFailure, StorageCacheCleanupKind, StorageCacheCleanup,
+  UploadStagingCleanup,
+} from './models'
 
 export type XDriveAdminCreateUserInput = {
   username: string
@@ -33,4 +38,32 @@ export type XDriveAdminAuditRangeQuery = {
 }
 export type XDriveAdminAuditPort = {
   adminAuditRange(query: XDriveAdminAuditRangeQuery, signal?: AbortSignal): Promise<AuditEventRange>
+}
+
+/** Global Storage operations are administrator-owned and Server-authorized. */
+export type XDriveAdminStorageOperation =
+  | 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced' | 'staging'
+  | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
+export type XDriveAdminStorageRequest = {
+  operation: XDriveAdminStorageOperation
+  limit?: number
+  offset?: number
+  cursor?: string
+  days?: 30 | 90 | 180
+  run_id?: number
+  fresh?: boolean
+  kind?: StorageCacheCleanupKind
+}
+export type XDriveAdminStoragePort = {
+  storageStats(): Promise<StorageStats>
+  adminStorageStats(): Promise<StorageStats>
+  adminStorageHealth(): Promise<StorageHealth>
+  adminStorageHistory(days?: number): Promise<StorageHistory>
+  adminStorageLegacyObjects(limit?: number, cursor?: string): Promise<StorageLegacyObjectPage>
+  adminStorageUnreferencedBlobs(limit?: number, cursor?: string): Promise<StorageUnreferencedBlobPage>
+  adminUploadStaging(limit?: number, cursor?: string, fresh?: boolean): Promise<UploadStagingDetail>
+  adminStagingCleanupRuns(limit?: number, offset?: number): Promise<StagingCleanupRun[]>
+  adminStagingCleanupFailures(runID: number, limit?: number, offset?: number): Promise<StagingCleanupFailure[]>
+  adminCleanupUploadStaging(): Promise<UploadStagingCleanup>
+  adminCleanupStorageCache(kind: StorageCacheCleanupKind): Promise<StorageCacheCleanup>
 }

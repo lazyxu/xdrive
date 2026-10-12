@@ -22,7 +22,7 @@ test('administrator System Maintenance is typed and routed on Web/Desktop', () =
   assert.ok(web.includes("appView === 'admin-maintenance' && profile?.role === 'admin'"))
   assert.ok(web.includes("appView.startsWith('admin-')"))
   assert.ok(desktop.includes("view === 'admin-maintenance' && status?.role === 'admin'"))
-  assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-services' || view === 'admin-maintenance'"))
+  assert.ok(desktop.includes("view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance'"))
 })
 
 test('only admin group exposes System Maintenance in Web/Desktop including Mobile Web', () => {

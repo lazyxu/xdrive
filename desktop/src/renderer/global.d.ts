@@ -822,6 +822,8 @@ declare global {
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
+        cloudAdminStorage: <T>(query: import('../../../ui/shared/src').XDriveAdminStorageRequest) =>
+          Promise<DesktopResult<T>>
         cloudAdminAuditRange: (query: import('../../../ui/shared/src').XDriveAdminAuditRangeQuery, requestID?: string) =>
           Promise<DesktopResult<import('../../../ui/shared/src').AuditEventRange>>
         cloudAdminUsers: () => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>

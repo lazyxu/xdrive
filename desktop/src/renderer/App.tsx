@@ -24,6 +24,7 @@ import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -61,6 +62,7 @@ import {
   XDriveSystemMaintenancePage,
   XDriveAdminUsersPage,
   XDriveAdminAuditPage,
+  XDriveGlobalStorageStatsPage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -98,7 +100,7 @@ import {
   xDriveLoginCredentialsReady,
   xDriveSystemDependenciesNeedsExitConfirmation,
 } from '@xdrive/shared'
-import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort } from '@xdrive/shared'
+import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort, XDriveAdminStoragePort, XDriveAdminStorageRequest } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -113,7 +115,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-audit' | 'admin-services' | 'admin-maintenance'>
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-audit' | 'admin-storage' | 'admin-services' | 'admin-maintenance'>
 
 type ConfirmDialogState = {
   title: string
@@ -1159,7 +1161,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-storage' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -1922,6 +1924,38 @@ export default function App({
     }),
   }), [status?.server, status?.username])
 
+  const adminStorageRequest = async <T,>(input: XDriveAdminStorageRequest): Promise<T> => {
+    const result = await window.xdriveDesktop.agent.cloudAdminStorage<T>(input)
+    if (!result.ok) throw new Error(result.error.message)
+    return result.data
+  }
+  const adminStoragePort = useMemo<XDriveAdminStoragePort>(() => ({
+    // The Desktop administrator route is global-only; self branch is never shown.
+    storageStats: () => adminStorageRequest({ operation: 'stats' }),
+    adminStorageStats: () => adminStorageRequest({ operation: 'stats' }),
+    adminStorageHealth: () => adminStorageRequest({ operation: 'health' }),
+    adminStorageHistory: (days = 30) => adminStorageRequest({
+      operation: 'history', days: days as 30 | 90 | 180,
+    }),
+    adminStorageLegacyObjects: (limit = 20, cursor = '') => adminStorageRequest({
+      operation: 'legacy', limit, cursor,
+    }),
+    adminStorageUnreferencedBlobs: (limit = 20, cursor = '') => adminStorageRequest({
+      operation: 'unreferenced', limit, cursor,
+    }),
+    adminUploadStaging: (limit = 50, cursor = '', fresh = false) => adminStorageRequest({
+      operation: 'staging', limit, cursor, fresh,
+    }),
+    adminStagingCleanupRuns: (limit = 20, offset = 0) => adminStorageRequest({
+      operation: 'cleanup-runs', limit, offset,
+    }),
+    adminStagingCleanupFailures: (runID, limit = 100, offset = 0) => adminStorageRequest({
+      operation: 'cleanup-failures', run_id: runID, limit, offset,
+    }),
+    adminCleanupUploadStaging: () => adminStorageRequest({ operation: 'cleanup-staging' }),
+    adminCleanupStorageCache: (kind) => adminStorageRequest({ operation: 'cleanup-cache', kind }),
+  }), [status?.server, status?.username])
+
   const desktopSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
@@ -1967,6 +2001,7 @@ export default function App({
             { key: 'admin-users', label: '用户管理', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
             { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
             { key: 'admin-audit', label: '审计日志', icon: <AssessmentRoundedIcon fontSize="small" /> },
+            { key: 'admin-storage', label: '全局存储', icon: <StorageRoundedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
             { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
           ],
@@ -2898,6 +2933,24 @@ export default function App({
             <XDriveAdminAuditPage api={adminAuditPort} />
           ) : (
             <XDriveStatePanel message="当前 xdrive-agent 不支持审计日志，请更新客户端核心组件。" />
+          )
+        )}
+
+        {view === 'admin-storage' && status?.role === 'admin' && (
+          agent.hello?.capabilities.includes('admin-storage') ? (
+            <XDriveGlobalStorageStatsPage
+              api={adminStoragePort}
+              scope="global"
+              onOpenTaskCenter={() => setView('global-tasks')}
+              onRunStorageMaintenance={async (kind) => {
+                const result = await window.xdriveDesktop.agent.cloudBackgroundTaskControl(
+                  `system-maintenance:${kind}`, 'run', true,
+                )
+                if (!result.ok) throw new Error(result.error.message)
+              }}
+            />
+          ) : (
+            <XDriveStatePanel message="当前 xdrive-agent 不支持全局存储，请更新客户端核心组件。" />
           )
         )}
 
