@@ -21,6 +21,7 @@ import { XDriveDeviceBackupLocalSnapshotDialog } from './DeviceBackupLocalSnapsh
 import { XDriveDeviceBackupLocalDeltaDialog } from './DeviceBackupLocalDeltaDialog'
 import { XDriveDeviceBackupLocalEvidenceDialog } from './DeviceBackupLocalEvidenceDialog'
 import { XDriveDeviceBackupLocalEvidenceSummaryDialog } from './DeviceBackupLocalEvidenceSummaryDialog'
+import { XDriveDeviceBackupLocalEvidencePreflightDialog } from './DeviceBackupLocalEvidencePreflightDialog'
 import { XDriveDeviceBackupLocalRemoveDialog } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupRemoveActions } from './DeviceBackupLocalRemoveDialog'
 import type { XDriveLocalBackupTargetActions } from './DeviceBackupLocalTargetDialog'
@@ -32,6 +33,7 @@ import type { XDriveLocalBackupSnapshotActions } from './DeviceBackupLocalSnapsh
 import type { XDriveLocalBackupDeltaActions } from './DeviceBackupLocalDeltaDialog'
 import type { XDriveLocalBackupEvidenceActions } from './DeviceBackupLocalEvidenceDialog'
 import type { XDriveLocalBackupEvidenceSummaryActions } from './DeviceBackupLocalEvidenceSummaryDialog'
+import type { XDriveLocalBackupEvidencePreflightActions } from './DeviceBackupLocalEvidencePreflightDialog'
 import type { XDriveLocalBackupSettingsActions } from './DeviceBackupLocalRenameDialog'
 import type { XDriveLocalBackupCreateActions } from './DeviceBackupLocalCreateDialog'
 import type { XDriveSourceTargetBrowser } from './SourceManager'
@@ -96,6 +98,7 @@ export function XDriveDeviceBackupPage({
   localDelta,
   localEvidence,
   localEvidenceSummary,
+  localEvidencePreflight,
   localRemove,
 }: {
   source?: XDriveDeviceBackupDataSource
@@ -113,6 +116,7 @@ export function XDriveDeviceBackupPage({
   localDelta?: XDriveLocalBackupDeltaActions
   localEvidence?: XDriveLocalBackupEvidenceActions
   localEvidenceSummary?: XDriveLocalBackupEvidenceSummaryActions
+  localEvidencePreflight?: XDriveLocalBackupEvidencePreflightActions
   localRemove?: XDriveLocalBackupRemoveActions
 }) {
   const [refreshID, refresh] = useState(0)
@@ -127,6 +131,7 @@ export function XDriveDeviceBackupPage({
   const [deltaTarget, setDeltaTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceTarget, setEvidenceTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [evidenceSummaryTarget, setEvidenceSummaryTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
+  const [evidencePreflightTarget, setEvidencePreflightTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [localMessage, setLocalMessage] = useState('')
   // Late wizard completions must never publish messages into a different
@@ -145,6 +150,7 @@ export function XDriveDeviceBackupPage({
     setDeltaTarget(null)
     setEvidenceTarget(null)
     setEvidenceSummaryTarget(null)
+    setEvidencePreflightTarget(null)
     setRemoveTarget(null)
     setLocalMessage('')
   }, [source])
@@ -417,6 +423,12 @@ export function XDriveDeviceBackupPage({
                             查看本机已暂存候选（只读）
                           </Button>
                         ) : null}
+                        {localEvidencePreflight && verifiedLocalDeviceID === device.id && !device.revoked ? (
+                          <Button size="small" variant="outlined"
+                            onClick={() => setEvidencePreflightTarget({ source, id: folder.source_id })}>
+                            本机内容一致性预检（不上传）
+                          </Button>
+                        ) : null}
                         {localRemove && verifiedLocalDeviceID === device.id && !device.revoked ? (
                           <Button size="small" variant="outlined" color="error"
                             onClick={() => setRemoveTarget({ source, id: folder.source_id })}>
@@ -624,6 +636,17 @@ export function XDriveDeviceBackupPage({
           sourceID={evidenceSummaryTarget.id}
           actions={localEvidenceSummary}
           onClose={() => setEvidenceSummaryTarget(null)}
+        />
+      ) : null}
+      {evidencePreflightTarget && evidencePreflightTarget.source === source && source && localEvidencePreflight &&
+        verifiedLocalDeviceID && overview?.devices.some((device) =>
+          device.id === verifiedLocalDeviceID && !device.revoked &&
+          device.folders.some((folder) => folder.source_id === evidencePreflightTarget.id)) ? (
+        <XDriveDeviceBackupLocalEvidencePreflightDialog
+          key={evidencePreflightTarget.id}
+          sourceID={evidencePreflightTarget.id}
+          actions={localEvidencePreflight}
+          onClose={() => setEvidencePreflightTarget(null)}
         />
       ) : null}
       {removeTarget && removeTarget.source === source && source && localRemove &&

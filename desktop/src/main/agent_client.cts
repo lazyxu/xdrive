@@ -321,6 +321,26 @@ export type AgentLocalBackupEvidence = {
   missing_inference_safe: false
 }
 
+export type AgentLocalBackupEvidencePreflight = {
+  source_id: number
+  revision: number
+  checked: number
+  locally_hashed_files: number
+  locally_hashed_bytes: number
+  metadata_matched_files: number
+  physical_observed_files: number
+  physical_observed_bytes: number
+  physical_unobserved_files: number
+  physical_batch_requests: number
+  has_more: boolean
+  next_after_id: number
+  server_consistent: boolean
+  content_verified: false
+  commit_supported: false
+  authoritative: false
+  missing_inference_safe: false
+}
+
 export type AgentLocalBackupEvidenceSummary = {
   source_id: number
   revision: number
@@ -2986,6 +3006,15 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ source_id: String(sourceID) })
     return this.request<AgentLocalBackupEvidenceSummary>(
       'GET', `/v1/device-backups/local-evidence-summary?${query.toString()}`, undefined, 195_000, signal,
+    )
+  }
+
+  localBoundBackupEvidencePreflight(sourceID: number, afterEvidenceID = 0, signal?: AbortSignal) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID), after_evidence_id: String(afterEvidenceID),
+    })
+    return this.request<AgentLocalBackupEvidencePreflight>(
+      'GET', `/v1/device-backups/local-evidence-preflight?${query.toString()}`, undefined, 315_000, signal,
     )
   }
 
