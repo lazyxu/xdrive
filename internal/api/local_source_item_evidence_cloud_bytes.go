@@ -90,7 +90,15 @@ func verifyPhysicalEvidenceCAS(ctx context.Context, store storage.Store, object 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f, err := store.Open(ctx, key)
+	// Local storage provides a cross-process shared CAS lifetime lease.
+	// Other Store backends retain the old EPHEMERAL reader contract; even
+	// when pinned, this observation MUST NOT authorize any identity write.
+	var f storage.PinnedCASFile
+	if provider, ok := store.(storage.CASReadLeaseProvider); ok {
+		f, err = provider.OpenPinnedCAS(ctx, key)
+	} else {
+		f, err = store.Open(ctx, key)
+	}
 	if err != nil {
 		return errors.New("physical content unavailable")
 	}

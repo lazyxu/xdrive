@@ -51,6 +51,22 @@ type Store interface {
 	Delete(ctx context.Context, key string) error
 }
 
+// PinnedCASFile holds an OS-level shared content lifecycle lock until Close.
+// The handle remains stable during a bounded physical CAS hash; it is NOT a
+// durable CAS reference, a backup checkpoint or an identity commit token.
+type PinnedCASFile interface {
+	io.ReadCloser
+	Stat() (os.FileInfo, error)
+}
+
+// CASReadLeaseProvider is optional. The Local storage backend implements it
+// alongside exclusive fencing of canonical CAS Put/Promote/Delete. Backends
+// without this capability retain their existing EPHEMERAL read behavior;
+// callers must not infer a durable content pin from a normal Store.Open.
+type CASReadLeaseProvider interface {
+	OpenPinnedCAS(context.Context, string) (PinnedCASFile, error)
+}
+
 type ObjectStat struct {
 	Size       int64
 	ModifiedAt time.Time

@@ -101,6 +101,13 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 	if err != nil {
 		return 0, err
 	}
+	// Canonical CAS writes must not replace bytes while an independent
+	// Server instance is hashing a pinned handle from this storage root.
+	releaseCAS, err := l.optionalCASWriteLease(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	defer releaseCAS()
 	// Keep a shared, cross-process lease until the final rename succeeds.
 	// Admin aged-temp cleanup only sweeps files when no producer is active.
 	release, acquired, err := l.tempLifecycleLease(ctx, false, false)
@@ -242,11 +249,16 @@ func probeWritableDirectory(ctx context.Context, dir string) error {
 	return os.Remove(name)
 }
 
-func (l *Local) Delete(_ context.Context, key string) error {
+func (l *Local) Delete(ctx context.Context, key string) error {
 	full, err := l.resolve(key)
 	if err != nil {
 		return err
 	}
+	releaseCAS, err := l.optionalCASWriteLease(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer releaseCAS()
 	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -328,6 +340,13 @@ func (l *Local) Promote(ctx context.Context, sourceKey, targetKey string, expect
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	// Target CAS object replacement/reuse and physical deletion share the
+	// same per-shard cross-process exclusion as Local.Put/Delete.
+	releaseCAS, err := l.optionalCASWriteLease(ctx, targetKey)
+	if err != nil {
+		return err
+	}
+	defer releaseCAS()
 	source, err := l.resolve(sourceKey)
 	if err != nil {
 		return err
