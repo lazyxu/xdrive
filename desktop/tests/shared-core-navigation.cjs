@@ -150,7 +150,10 @@ test('user/owner and admin destinations remain separated in full Web/Desktop Sid
     assert.ok(sections.includes(roleGuard), 'admin section must be role-gated')
     assert.equal((sections.match(/key: 'global-tasks'/g) || []).length, 1)
     const admin = sections.indexOf("key: 'admin',")
-    assert.ok(admin > 0 && sections.indexOf("key: 'global-tasks'", admin) > admin)
+    const globalIndex = sections.indexOf("key: 'global-tasks'", admin)
+    assert.ok(admin > 0 && globalIndex > admin)
+    assert.ok(sections.slice(globalIndex, globalIndex + 195).includes("label: '全局后台任务'"),
+      'global task list must be labeled as administrator background tasks')
     if (source === desktop) {
       const diagnostics = sections.indexOf("key: 'diagnostics',")
       assert.ok(diagnostics > 0 && diagnostics < admin, 'local diagnostics belong before 管理')

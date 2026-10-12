@@ -298,7 +298,10 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
     assert.ok(core && !core.items.some((item) => item.key === 'global-tasks'))
     const admin = result.moreSections.find((section) => section.key === 'admin')
     assert.equal(Boolean(admin), profile?.role === 'admin')
-    if (admin) assert.ok(admin.items.some((item) => item.key === 'global-tasks'))
+    if (admin) {
+      const globalTasks = admin.items.find((item) => item.key === 'global-tasks')
+      assert.equal(globalTasks?.label, '全局后台任务')
+    }
   }
 })
 

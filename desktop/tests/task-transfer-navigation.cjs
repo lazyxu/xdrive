@@ -42,7 +42,7 @@ test('Sidebar exposes personal Tasks, with Global Tasks only for an administrato
   assert.equal(adminCore.find((item) => item.key === 'transfers')?.badge, 2)
   const compact = nav.xDriveCompactWorkspaceNavigation({
     sections: [{ key: 'admin', label: '管理', placement: 'after-core',
-      items: [{ key: 'global-tasks', label: '全局任务', icon: null }] }],
+      items: [{ key: 'global-tasks', label: '全局后台任务', icon: null }] }],
   })
   assert.equal(compact.primary.find((item) => item.key === 'transfers')?.label, '任务')
   assert.equal(compact.moreSections.find((section) => section.key === 'admin')?.items[0]?.key, 'global-tasks')
@@ -143,7 +143,7 @@ test('Tasks keeps archive preparation and other server work without duplicating 
 test('Global Tasks renders an independent administrator page and ordinary users fall back to Tasks', () => {
   const data = [{ id: 'global-job' }]
   const admin = renderTaskPage({ globalTasksEnabled: true, backgroundScope: 'global', globalBackgroundTasks: data })
-  assert.equal(admin.props.title, '全局任务')
+  assert.equal(admin.props.title, '全局后台任务')
   assert.equal(elements(admin, 'BackgroundTaskTable')[0].props.tasks, data)
   assert.equal(elements(admin, 'FileOperationCenter').length, 0)
   const ordinary = renderTaskPage({ backgroundScope: 'global', globalBackgroundTasks: data })

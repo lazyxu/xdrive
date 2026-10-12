@@ -101,7 +101,7 @@ test('shared FileOperationCenter renders progress, history, cancel and retry act
 test('Web and Desktop both render the shared file-operation center through Task Center', () => {
   assert.equal((taskCenter.match(/<XDriveFileOperationCenter\b/g) || []).length, 1, 'shared Task Center must render one FileOperationCenter')
   assert.equal((taskCenter.match(/<XDriveTransferCenter\b/g) || []).length, 1, 'shared Task Center must retain local non-network task history')
-  assert.ok(taskCenter.includes("title={scope === 'global' ? '全局任务' : '任务'}"), 'shared workspace should own the Task Center title')
+  assert.ok(taskCenter.includes("title={scope === 'global' ? '全局后台任务' : '任务'}"), 'shared workspace should own the Task Center title')
   assert.equal((web.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Web must render one shared Task Center')
   assert.equal((desktop.match(/<XDriveTaskCenterPage\b/g) || []).length, 1, 'Desktop must render one shared Task Center')
   assert.equal((web.match(/<XDriveFileOperationCenter\b/g) || []).length, 0, 'Web must not duplicate FileOperationCenter composition')

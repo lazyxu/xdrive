@@ -194,7 +194,7 @@ export function XDriveTaskCenterPage({
   return (
     <XDriveWorkspaceSurface
       presentation="page"
-      title={scope === 'global' ? '全局任务' : '任务'}
+      title={scope === 'global' ? '全局后台任务' : '任务'}
       subtitle={scope === 'global' ? '查看所有用户及系统的后台任务，按权限执行控制操作。' : subtitle}
       pageActions={actions}
     >

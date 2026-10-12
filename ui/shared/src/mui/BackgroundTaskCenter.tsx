@@ -351,10 +351,10 @@ export function XDriveBackgroundTaskTable({
   const compactViewport = useMediaQuery('(max-width:899.95px)')
 
   if (loading && tasks.length === 0) {
-    return <XDriveStatePanel variant="plain" loading message="正在加载全局任务…" />
+    return <XDriveStatePanel variant="plain" loading message="正在加载全局后台任务…" />
   }
   if (tasks.length === 0) {
-    return <XDriveStatePanel variant="plain" message="暂无全局任务" />
+    return <XDriveStatePanel variant="plain" message="暂无全局后台任务" />
   }
 
   if (compactViewport) {

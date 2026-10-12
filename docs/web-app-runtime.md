@@ -16,7 +16,7 @@ Web 端不再把“打开文件”理解成到处创建新的 Dialog state，而
 | `sync-folders` | 旧同步文件夹链接（兼容，不显示在导航） | workspace | `source?` |
 | `device-backup` | 设备备份（Push） | workspace | `source?` |
 | `remote-pull` | 远程拉取（Pull） | workspace | `source?` |
-| `tasks` | 任务 / 全局任务 | workspace | `scope?`, `task?` |
+| `tasks` | 任务 / 全局后台任务 | workspace | `scope?`, `task?` |
 | `local-storage` | 本地存储 | workspace | 无 |
 | `cloud-storage` | 云端存储 | workspace | 无 |
 | `preview` | 预览 / Quick Look | immersive | `node`, `context?` |
@@ -59,7 +59,7 @@ Canonical 文件身份使用 node ID。路径可以由上层调用者解析后�
 
 “系统维护”是管理员专用的独立 Web App，复用服务端更新 REST 接口；Desktop 共享 MUI 页面并通过 Agent IPC 调用，不在个人设置或系统依赖的 11 项服务清单中执行实例升级。
 
-Sidebar 的“任务”与管理员专用“全局任务”是独立入口，分别启动 `tasks?scope=mine` 和 `tasks?scope=global`。它们共用一个 Web 程序与共享任务页面，`task` 参数仍可定位具体后台任务。内部 workspace key 保留 `transfers` 作为“任务”的兼容键，并增加 `global-tasks`；旧的无 scope `tasks` 链接继续进入个人任务。
+Sidebar 的“任务”与管理员专用“全局后台任务”是独立入口，分别启动 `tasks?scope=mine` 和 `tasks?scope=global`。它们共用一个 Web 程序与共享任务页面，`task` 参数仍可定位具体后台任务。内部 workspace key 保留 `transfers` 作为“任务”的兼容键，并增加 `global-tasks`；旧的无 scope `tasks` 链接继续进入个人任务。
 
 上传和下载从任务页面移到共享传输浮层。宽屏 Web/Desktop 在顶栏头像旁打开；Mobile Web 在 App 自有标题栏右侧直接打开上传/下载状态入口，不保留独立全局顶栏或悬浮导航；账号入口在应用导航 Drawer 中。该浮层不是 Web 程序，也不写浏览器历史；打开、关闭或查看传输历史都保留当前目录与页面。Viewer 打开或账号切换时关闭浮层。速度口径与任务范围见 [传输与任务](transfers-and-tasks.md)。
 
