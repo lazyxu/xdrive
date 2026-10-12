@@ -246,6 +246,20 @@ export type XDrivePhotoHostConfig = {
   host_applied_revision?: number
   host_control_profile_verified?: boolean
 }
+export type XDrivePhotoHostPreflight = {
+  checked_at: string
+  action: 'unset' | 'enable' | 'disable'
+  desired_revision: number
+  local_checks_complete: boolean
+  host_observed: boolean
+  host_control_observed: boolean
+  apply_supported: false
+  checks: Array<{
+    id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
+    state: 'pass' | 'missing' | 'blocked' | 'unknown'
+    detail: string
+  }>
+}
 export type XDrivePhotoHostUpdate = { revision: number; enabled: boolean }
 export type XDrivePhotoHostRevisionPage = {
   items: Array<{

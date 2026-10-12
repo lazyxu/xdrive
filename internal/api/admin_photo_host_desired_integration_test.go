@@ -97,6 +97,7 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 	for _, tc := range []struct{ method, path, body string }{
 		{http.MethodGet, path, ""},
 		{http.MethodGet, path + "/revisions", ""},
+		{http.MethodGet, path + "/preflight", ""},
 		{http.MethodPut, path, `{"revision":0,"enabled":true}`},
 		{http.MethodPost, path + "/rollback", `{"revision":1,"target_revision":0}`},
 	} {
@@ -106,6 +107,15 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		if result := request(tc.method, tc.path, memberToken, tc.body); result.Code != 403 {
 			t.Fatalf("non-admin host operation %s %s: %d", tc.method, tc.path, result.Code)
 		}
+	}
+	preflightResult := request(http.MethodGet, path+"/preflight", adminToken, "")
+	var preflight adminPhotoHostPreflightDTO
+	if preflightResult.Code != http.StatusOK ||
+		preflightResult.Header().Get("Cache-Control") != "no-store" ||
+		json.Unmarshal(preflightResult.Body.Bytes(), &preflight) != nil ||
+		preflight.Action != "unset" || preflight.ApplySupported || preflight.LocalChecksComplete ||
+		len(preflight.Checks) != 7 {
+		t.Fatalf("preflight of unmanaged host was unsafe: %d %s", preflightResult.Code, preflightResult.Body.String())
 	}
 	cfg := get()
 	if cfg.Revision != 0 || cfg.Source != "default" || cfg.DesiredEnabled ||
@@ -172,6 +182,12 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		cfg.HostAppliedRevision != 1 || !cfg.HostControlProfileVerified ||
 		cfg.ApplyState != "pending" || cfg.ApplySupported {
 		t.Fatalf("host-side observation falsely authorized saved revision apply: %+v", cfg)
+	}
+	preflightResult = request(http.MethodGet, path+"/preflight", adminToken, "")
+	if json.Unmarshal(preflightResult.Body.Bytes(), &preflight) != nil ||
+		preflight.Action != "enable" || !preflight.LocalChecksComplete ||
+		preflight.ApplySupported || !preflight.HostControlObserved {
+		t.Fatalf("healthy host preflight incorrectly authorized apply: %d %s", preflightResult.Code, preflightResult.Body.String())
 	}
 	if res := request(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); res.Code != 404 {
 		t.Fatalf("dangerous photo host apply endpoint exposed: %d", res.Code)

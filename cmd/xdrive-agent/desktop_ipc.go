@@ -638,6 +638,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/cloud/admin-source-worker/revisions", h.cloudAdminSourceWorkerRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-source-worker/rollback", h.cloudRollbackAdminSourceWorker)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-host", h.cloudAdminPhotoHost)
+	mux.HandleFunc("GET /v1/cloud/admin-photo-host/preflight", h.cloudAdminPhotoHostPreflight)
 	mux.HandleFunc("PUT /v1/cloud/admin-photo-host", h.cloudSetAdminPhotoHost)
 	mux.HandleFunc("GET /v1/cloud/admin-photo-host/revisions", h.cloudAdminPhotoHostRevisions)
 	mux.HandleFunc("POST /v1/cloud/admin-photo-host/rollback", h.cloudRollbackAdminPhotoHost)
@@ -2320,6 +2321,25 @@ func (h *desktopIPCHandler) cloudAdminPhotoHost(w http.ResponseWriter, r *http.R
 		return
 	}
 	result, err := provider.CloudAdminPhotoHostConfig(r.Context())
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeDesktopIPCJSON(w, http.StatusOK, result)
+}
+
+type desktopIPCPhotoHostPreflightController interface {
+	CloudAdminPhotoHostPreflight(context.Context) (client.AdminPhotoHostPreflight, error)
+}
+
+func (h *desktopIPCHandler) cloudAdminPhotoHostPreflight(w http.ResponseWriter, r *http.Request) {
+	provider, ok := h.ctrl.(desktopIPCPhotoHostPreflightController)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "admin_photo_host_preflight_unavailable", "Photo host preflight unsupported")
+		return
+	}
+	result, err := provider.CloudAdminPhotoHostPreflight(r.Context())
 	if err != nil {
 		writeDesktopIPCControllerError(w, err)
 		return

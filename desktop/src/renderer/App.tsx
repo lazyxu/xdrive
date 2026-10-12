@@ -1784,6 +1784,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    loadPhotoHostPreflight: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPhotoHostPreflight()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     savePhotoHostConfig: async (input: import('../../../ui/shared/src').XDrivePhotoHostUpdate) => {
       const result = await window.xdriveDesktop.agent.cloudSetAdminPhotoHost(input)
       if (!result.ok) throw new Error(result.error.message)

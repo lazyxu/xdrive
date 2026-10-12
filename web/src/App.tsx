@@ -1045,6 +1045,7 @@ function FileManager({
     loadSourceWorkerRevisions: () => api.adminSourceWorkerRevisions(),
     rollbackSourceWorker: (input: XDriveSourceWorkerRollbackInput) => api.adminRollbackSourceWorker(input),
     loadPhotoHostConfig: () => api.adminPhotoHostConfig(),
+    loadPhotoHostPreflight: () => api.adminPhotoHostPreflight(),
     savePhotoHostConfig: (input: import('../../ui/shared/src').XDrivePhotoHostUpdate) =>
       api.adminSavePhotoHost(input),
     loadPhotoHostRevisions: () => api.adminPhotoHostRevisions(),
