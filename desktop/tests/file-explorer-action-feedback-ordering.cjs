@@ -14,7 +14,9 @@ function loadShared(name) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }, fileName: filename,
   }).outputText
   const mod = { exports: {} }
-  const localRequire = (request) => request.startsWith('../') ? loadShared(request.slice(3)) : require(request)
+  const localRequire = (request) => request === './TaskWakeRefresh'
+    ? loadShared('mui/TaskWakeRefresh')
+    : request.startsWith('../') ? loadShared(request.slice(3)) : require(request)
   new Function('exports', 'module', 'require', 'window', output)(mod.exports, mod, localRequire, {
     setInterval: () => 1, clearInterval: () => {},
   })

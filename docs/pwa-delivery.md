@@ -33,10 +33,10 @@
 | --- | --- | --- |
 | P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B PR #1535 已通过完整 CI 并合并；真实 Go/Chrome 断点复用最终 SHA 和 iOS/Android 真机验收仍待完成 |
 | P1-02 | M39 目录上传：空目录、嵌套、Unicode、相对路径、选择器能力与多文件/ZIP 回退。 | 部分基础有，待验 |
-| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 直写磁盘长度核验；S4C2 添加独立真实 Gin/CAS/Chromium OPFS 全字节回读验收模式（CI 尚待执行）；原生下载 SHA、Range/票据和 4GiB/真机待验 |
+| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 已合并；S4C2 真实 Chromium/Gin/PG17/CAS→OPFS 1GiB 全字节回读专项作业通过，PR 完整 CI 待合并；任意文件 SHA、原生下载落盘、4GiB/真机仍待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
 | P1-05 | display-mode/standalone 能力检测与安装模式诊断，不依赖 UA 猜测。 | S2A 已编写显示模式/显式 HEAD 诊断；CI/真实运行状态待验 |
-| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 观察 pageshow/online/offline，只反馈运行状态；实际传输恢复仍待 S4 |
+| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 已观察网络与版本；S4D1 补充可见页面恢复时 Server 权威任务/文件操作读刷新（尚待 CI），真实锁屏/进程回收仍待 S5 |
 | P1-07 | 多标签/多账号登录、退出、刷新、撤销与 SW 更新状态一致，不广播 Token。 | 待验 |
 | P1-08 | 浏览器配额/Storage Manager/CacheStorage 清理与可清退说明；清缓存后离线页重装。 | 统计/清理已有，待验 |
 | P1-09 | M44 出站文件字节系统分享：canShare({files})、用户手势、取消、真实接收与下载回退。 | 链接分享已有，字节验收未完成 |
@@ -140,3 +140,17 @@ Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入
 
 
 **S4C2 CI 首轮故障（2026-10-12）：** [真实作业 #38239367800](https://github.com/lazyxu/xdrive/actions/runs/38239367800) 在构建步骤因 Desktop 没有 npm lockfile 而触发 `npm ci` EUSAGE，尚未启动浏览器/Server 的 1GiB 测试。与已有真实 1GiB benchmark 一致改用 Desktop `npm install --no-audit --no-fund`，并加源代码防回归断言；保持原完整 CI/真实测试重新运行后再判断结果。
+
+
+## PWA-S4D1 · 前台恢复时仅刷新 Server 权威任务状态（2026-10-12）
+
+**原问题：** iOS/Android 浏览器切换应用、冻结标签或从锁屏返回时可能长时间节流 `setInterval`。仅依赖轮询的 Server 持久后台任务摘要、当前用户/管理员全局任务列表与个人文件操作队列，回到前台后可能继续显示旧状态；浏览器本地上传不因此被恢复。
+
+**共享增量：** `ui/shared/src/mui/TaskWakeRefresh.ts` 仅监听 `pageshow`、`focus`、`online`、`visibilitychange`，在文档确实可见且 1500ms 窗口内至多触发一次**现有只读刷新回调**；隐藏页面和卸载/换账号后没有请求，时钟异常时不把前台永远锁死。重用共享 Web/Mobile Web/Desktop `TaskCenterController` 的 Server 活跃数量摘要和当前可见的 Mine/Global 列表查询，以及 `FileOperationLifecycle` 的已有 owner 范围 GET；沿用各自的异步世代与账户/范围 fencing、原有授权与分页，不增加新 API、缓存或 Service Worker 操作。未打开任务列表时只刷新 badge 摘要，不强制拉取全局任务历史。
+
+**必须保留：** 事件只通知观察者重新从 Server **读取**，不调用 Cancel/Retry/Upload、`skipWaiting`、`location.reload` 或持久任务控制。用户从后台返回不能误把浏览器前台上传标为完成，也不能改变 Server Durable Task 的实际执行状态。新 source-exact Node 测试覆盖隐藏、连续唤醒合并、卸载清理、异常时间、无浏览器对象、共享 Web/Desktop 接线；既有 Task Center 和文件操作 Race 测试模型仅补上新模块的隔离导入 fixture，不能以这些模拟验证真实 iOS 进程回收。
+
+**未完成验收：** 新 S4D1 PR 完整 CI/Final Gate、真实 iOS 27 Safari/Home Screen、Android Chrome/Installed 的锁屏/杀进程/切 App，真实 Web/Go Durable 任务对照及下载到系统文件夹状态尚未执行或未取得证据。真实文件重新选取、ZIP/Range、断点字节 SHA 按 P0/P1 矩阵继续跟踪。
+
+
+**S4D1 首次完整 CI（2026-10-12）：** [#38241457049](https://github.com/lazyxu/xdrive/actions/runs/38241457049) Desktop 旧测试有 6 项在模块装载阶段失败：`file-explorer-action-feedback-ordering.cjs`、`file-explorer-selection-actions.cjs` 和 `task-transfer-navigation.cjs` 的独立 TS/React 执行器没有解析 `./TaskWakeRefresh`，报 `MODULE_NOT_FOUND`。已只调整这三处测试依赖注入，测试实际业务与 race 断言不放松；新增源代码集成断言，并折叠到原 S4D1 单工作提交后必须重跑完整 CI 才能合并。真实移动 OS 唤醒场景仍未验收。

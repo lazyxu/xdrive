@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { xDriveBindTaskWakeRefresh } from './TaskWakeRefresh'
 import {
   XDRIVE_FILE_OPERATION_HISTORY_LIMIT,
   xDriveFileOperationPollIntervalMs,
@@ -143,6 +144,13 @@ export function useXDriveFileOperationLifecycle<
       window.clearInterval(timer)
     }
   }, [applyRefreshSnapshot, beginRefresh, enabled, lifecycleKey, loadOperations, pollIntervalMs])
+
+  // Browser wake is a read-only reconciliation, not a cancellation or replay.
+  // refreshOperations already fences old session responses and merges new submits.
+  useEffect(() => {
+    if (!enabled) return
+    return xDriveBindTaskWakeRefresh(() => { void refreshOperations() })
+  }, [enabled, lifecycleKey, refreshOperations])
 
   useEffect(() => {
     const transition = xDriveFileOperationTransitionSnapshot(statusRef.current, operations)

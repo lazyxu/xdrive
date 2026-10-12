@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { xDriveBindTaskWakeRefresh } from './TaskWakeRefresh'
 import {
   XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT,
   xDriveActiveFileOperationCount,
@@ -167,6 +168,13 @@ function useXDriveBackgroundTaskActiveSummary({
       summaryRequestRef.current += 1
     }
   }, [enabled, pollIntervalMs, port, refresh])
+
+  // A foreground wake may follow hours of iOS/Android timer throttling.
+  // Reload only the authoritative Server summary; never start/cancel a task.
+  useEffect(() => {
+    if (!enabled || !port?.loadActiveSummary) return
+    return xDriveBindTaskWakeRefresh(() => { void refresh() })
+  }, [enabled, lifecycleKey, port, refresh])
 
   return { summary, refresh }
 }
@@ -360,6 +368,13 @@ function useXDriveBackgroundTasks({
     const timer = window.setInterval(() => { void refresh() }, pollIntervalMs)
     return () => window.clearInterval(timer)
   }, [enabled, pollIntervalMs, port, refresh, visible])
+
+  // Only refresh the mounted Mine/Global page when it is visible.
+  // Existing auth/scope generation fencing rejects late prior-account reads.
+  useEffect(() => {
+    if (!enabled || !visible || !port) return
+    return xDriveBindTaskWakeRefresh(() => { void refresh() })
+  }, [enabled, lifecycleKey, port, refresh, visible, effectiveScope])
 
   return {
     mine: [...scopedMine.current, ...scopedMine.history],
