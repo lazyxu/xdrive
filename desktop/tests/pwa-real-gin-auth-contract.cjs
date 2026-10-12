@@ -102,3 +102,41 @@ test('S2B6 genuine private PNG CAS, authorized Gallery Range and cold Viewer', (
   assert.ok(workflow.includes('x.mediaViewerColdReload'))
   assert.ok(ledger.includes('PWA-S2B6'))
 })
+
+test('S2B7: root App observes public-share hash and isolates share-specific password state', () => {
+  const app = read('web/src/App.tsx')
+  const publicView = read('web/src/PublicShare.tsx')
+  for (const evidence of [
+    'function xDrivePublicShareTokenFromHash(hash: string)',
+    'const [publicShareToken, setPublicShareToken] = useState(',
+    "window.addEventListener('hashchange', syncShareRoute)",
+    "window.addEventListener('popstate', syncShareRoute)",
+    "window.removeEventListener('hashchange', syncShareRoute)",
+    "window.removeEventListener('popstate', syncShareRoute)",
+    '<PublicShareView key={publicShareToken} token={publicShareToken} />',
+  ]) assert.ok(app.includes(evidence), 'missing dynamic share routing: ' + evidence)
+  assert.ok(publicView.includes('new XDriveApi()'))
+  assert.ok(!publicView.includes('localStorage'), 'public share cannot read logged-in credentials')
+  assert.ok(ledger.includes('PWA-S2B7'))
+})
+
+test('S2B7: real Chrome Gin public share, denial, history, isolation and revocation', () => {
+  for (const evidence of [
+    'privateShareTokens = new Set()',
+    'redactedBrowserFailure(error)',
+    "window.location.hash = '#/s/' + token",
+    "const anonymousContext = await browser.newContext(",
+    "metadataPath = '/api/v1/public/share'",
+    "'/api/v1/public/share/download-ticket'",
+    "window.history.back()", "window.history.forward()",
+    "'pwa-s2b6-private.png'",
+    'publicShareAnonymous', 'publicShareWrongPassword',
+    'publicShareHistoryIsolation', 'publicShareRevoked',
+    'publicShareViewerReturn', 'publicSharePublicOnlyCache',
+    "assert.deepEqual(cachePaths, ['/offline.html'])",
+  ]) assert.ok(chrome.includes(evidence), 'missing exact S2B7 acceptance: ' + evidence)
+  assert.ok(!chrome.includes('context.route(') && !chrome.includes('route.fulfill('))
+  assert.ok(workflow.includes("github.head_ref == 'fix/pwa-public-share-hash-history-s2b7-20261012'"))
+  assert.ok(workflow.includes('x.publicShareViewerReturn'))
+  assert.ok(workflow.includes('x.publicShareRevoked'))
+})

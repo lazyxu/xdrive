@@ -230,3 +230,16 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 
 
 **S2B6 首轮红灯定位（2026-10-12）：** 准确 HEAD `ed5e60c` 的 Go Linux 作业在 `gofmt -l` 校验发现测试夹具仅有两处字段对齐空格；完整 CI 因此不得视为通过。独立真实 Gin Chrome 作业在启动 private fixture 时报告缺失 `xd_source_collections` 表，PostgreSQL 服务端日志明确指出源集合关系查询；由独立测试 schema 漏迁移造成，不是主线生产迁移。本次仅向**测试 fixture** 的 AutoMigrate 加入既有 `SourceItem`、`SourceCollection`、`SourceCollectionItem`，并修正两处 gofmt；没有修改产品 Handler、Source 运行/权限或 PWA 缓存。折叠回同一固定 `master@18532d9` 的**单工作提交**后，原 CI 证据作废，需重新跑准确新 HEAD 的完整 CI 与真实浏览器专项。
+
+
+## PWA-S2B6 合并结果（2026-10-12）
+
+[PR #1578](https://github.com/lazyxu/xdrive/pull/1578) 的第二轮准确 HEAD `eabb21c6fa6d1048038a700b611e87c0caa695b6` 已通过 [完整 CI #38266509984](https://github.com/lazyxu/xdrive/actions/runs/38266509984) 与 [真实 Gin/PostgreSQL17/Local CAS/Chrome #38266509563](https://github.com/lazyxu/xdrive/actions/runs/38266509563)，单工作提交 ahead=1/behind=0，线性合并为 `de762161e4ba42b1edae66bcea45d48402684f9d`，短期 PWA 分支经 cleanup workflow 清理。它证明真实测试 PNG 的 owner Gallery Range、Viewer 直接 Hash/冷刷新和不同账号权限，**不证明**真实 iOS/Android OS Installed 或生产公网 TLS。
+
+## PWA-S2B7 · 公开分享 Hash 路由与 Viewer 历史恢复（2026-10-12）
+
+**发现的实际缺陷：** `web/src/App.tsx` 使用无依赖 `useMemo` 只在首次 render 解析 `#/s/<token>`；在单页内通过浏览器 History 或不同公开分享链接切换时，Root App 不重读 Hash，导致可见页面与 URL 不一致，且分享表单可能重用旧密码/错误状态。修复限制在 Root App：从 URL 解析当前 token，用 `hashchange` 和 `popstate` 同步（含 mount 时校验、卸载监听清理），按 token 键隔离 `PublicShareView`；仍不持久化分享 token、账号凭据或任何私有文件，保持 FileManager 业务/52px App Frame 不变。
+
+**真实可验证用例：** 在 S2B6 隔离私有 PNG + Gin JWT + PostgreSQL17 + CAS fixture 中，测试 Chrome desktop 1280px、Android UA/touch 390px。通过真正已登录 owner 的 `POST /api/v1/files/:id/shares` 新建两份仅供 CI 使用的分享（有密码/无密码），不将原始 token 放入 ready JSON 或脱敏 CI 摘要。另一完全匿名 Chrome context 从 `#/s/<token>` 打开，公共元数据 `GET /api/v1/public/share` 必须是 200 + no-store + 无 Authorization/Cookie；错误密码尝试 `download-ticket` 必须 401 且下载计数不变。切换另一 token 清除旧密码/错误，真实浏览器 Back/Forward 与公开分享 → Files 登录页 → Back 保持正确，SW CacheStorage 仅含 `/offline.html`。本人已登录 Viewer → 公开分享 → Back 必须恢复真实 Gin MediaItem 和 Viewer、不强制文档刷新。owner 撤销分享后，匿名页面冷刷新必须从 Gin 收到 410，并显示明确不可用且不保留先前私有文件名。
+
+**安全及证据边界：** 单次测试可有合成分享 token 存在于浏览器和 CI 脚本内存，但不进入 artifact、日志、持久缓存；浏览器错误摘要脱敏。没有自动重载、`skipWaiting`、服务端持久任务取消、真正私有离线浏览或新移动端 API。该测试依旧是 Chrome 桌面与 Android UA/Touch 模拟，绝不能取代 iOS 27 Safari/Home Screen、Android Installed、系统应用图标冷启动、真实证书/DNS、4GiB 传输和锁屏/进程回收验收。初始 PR 必须保持 Draft，等准确 HEAD 的完整 CI / Final Gate 和真实 Gin Chrome 专项全绿后才能 Ready/线性合并。

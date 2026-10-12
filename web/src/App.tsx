@@ -119,6 +119,19 @@ const EXPIRES_KEY = 'xdrive.access_expires_at'
 const LEGACY_TOKEN_KEY = 'xdrive.token'
 const USER_KEY = 'xdrive.username'
 
+// Public share links belong to the current URL, including browser Back/Forward.
+// Do not persist the capability token outside its URL or keep a prior share's
+// password/result when a different link is opened in the same document.
+function xDrivePublicShareTokenFromHash(hash: string): string {
+  const match = hash.match(/^#\/s\/([^/]+)\/?$/)
+  if (!match) return ''
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return ''
+  }
+}
+
 
 type Feedback = {
   tone: 'good' | 'bad' | 'warning' | 'neutral'
@@ -228,13 +241,20 @@ function App({
   const transferApiRef = useRef<XDriveApi | null>(null)
   const transferLifetimeRef = useRef(0)
 
-  const publicShareToken = useMemo(() => {
-    const match = window.location.hash.match(/^#\/s\/([^/]+)\/?$/)
-    if (!match) return ''
-    try {
-      return decodeURIComponent(match[1])
-    } catch {
-      return ''
+  const [publicShareToken, setPublicShareToken] = useState(
+    () => xDrivePublicShareTokenFromHash(window.location.hash),
+  )
+  useEffect(() => {
+    const syncShareRoute = () => {
+      setPublicShareToken(xDrivePublicShareTokenFromHash(window.location.hash))
+    }
+    window.addEventListener('hashchange', syncShareRoute)
+    window.addEventListener('popstate', syncShareRoute)
+    // Covers a route changed between the first render and effect attachment.
+    syncShareRoute()
+    return () => {
+      window.removeEventListener('hashchange', syncShareRoute)
+      window.removeEventListener('popstate', syncShareRoute)
     }
   }, [])
 
@@ -300,7 +320,7 @@ function App({
   }
 
   if (publicShareToken) {
-    return <PublicShareView token={publicShareToken} />
+    return <PublicShareView key={publicShareToken} token={publicShareToken} />
   }
 
   if (!session.accessToken) {
