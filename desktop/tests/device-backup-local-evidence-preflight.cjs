@@ -12,6 +12,7 @@ test('private preflight cannot grant local Push execution or leak its evidence t
   const client = read('internal', 'client', 'local_source_item_evidence_preflight.go')
   const agent = read('cmd', 'xdrive-agent', 'device_backup_local_evidence_preflight.go')
   const ipc = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
+  const ipcProjection = read('cmd', 'xdrive-agent', 'desktop_ipc_device_backup_preflight.go')
   const preload = read('desktop', 'src', 'preload', 'index.cts')
   const web = read('web', 'src', 'App.tsx')
 
@@ -34,7 +35,14 @@ test('private preflight cannot grant local Push execution or leak its evidence t
   assert.match(agent, /cli\.PreflightLocalSourceItemEvidence\(/)
   assert.match(agent, /localBackupRuleSessionUnchanged\(cfg\)/)
   assert.doesNotMatch(agent, /BeginSourceRun|UploadChunk|CommitSourceItem|MirrorDeletion/)
-  assert.doesNotMatch(ipc, /evidence-preflight|preflightLocalBoundBackupEvidencePage/)
-  assert.doesNotMatch(preload, /evidence-preflight|preflightLocalBoundBackupEvidencePage/)
+  // The new Desktop entry is ONLY a manually requested count-only projection.
+  // Server evidence IDs/hashes and the private internal endpoint remain
+  // Agent-internal; this contract still forbids upload or alias promotion.
+  assert.match(ipc, /GET \/v1\/device-backups\/local-evidence-preflight/)
+  assert.match(ipcProjection, /desktopLocalEvidencePreflightProjection\(/)
+  assert.match(ipcProjection, /CommitSupported: false/)
+  assert.match(ipcProjection, /MissingInferenceSafe: false/)
+  assert.doesNotMatch(ipcProjection, /json:"(source_item_id|root_id|root_fingerprint|device_token|sha256|storage_key|previous_path_key|current_path_key)"/)
+  assert.doesNotMatch(preload, /preflightLocalBoundBackupEvidencePage|PreflightLocalSourceItemEvidence|evidence-cloud-bytes/)
   assert.doesNotMatch(web, /evidence-preflight|preflightLocalBoundBackupEvidencePage/)
 })

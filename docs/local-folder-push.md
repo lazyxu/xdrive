@@ -919,7 +919,7 @@ safe scans/24h/trash-only, and NAS Push remains a placeholder.
 Full GitHub exact-head CI is required before merging this phase.
 No GitLab delivery or physical 1k/10k/100k benchmark is claimed.
 
-## L03-D2b2c2b2d · Bounded multi-batch Agent-private physical page window (GitHub PR verification)
+## L03-D2b2c2b2d · Bounded multi-batch Agent-private physical page window (merged #1484; 97-check CI green)
 
 The prerequisite physical-object **Server** batch extension (#1480,
 L03-D2b2c2b2c) is merged following exact-head [Actions #38199969661](https://github.com/lazyxu/xdrive/actions/runs/38199969661):
@@ -983,3 +983,74 @@ fencing, SourceItem aliases, Planner, resumable upload/CAS commit,
 SourceRun, auto scheduler/watcher, offline recovery and safe Mirror
 deletion remain separate L03-E–G/L05–L07 work. No GitLab delivery or
 physical-device performance numbers are claimed.
+
+## P0-C4c5d · Owning Desktop manual aggregate content preflight (GitHub PR verification)
+
+Prerequisite #1484 (L03-D2b2c2b2d) is **merged** after exact-head full
+97-check CI (25 successful, 72 conditionally skipped, 0 failed,
+`final-gate=success`), rebase merge commit
+`b53dc5832c906592a528c04aa186c1a0d67410e5`.
+Merged branch cleanup #38203813847 completed successfully.
+The complete native SHA256 + File/FileVersion/ready CAS metadata + bounded
+physical CAS observation currently exists only in the owning Agent.
+
+This stage makes that genuine **read-only aggregate preflight** usable on the
+owning Windows/Linux Desktop, as an explicit "本机内容一致性预检（不上传）"
+action beside the advisory local evidence counts. It is NOT a general
+user-facing cloud-object verification endpoint and is NOT available to
+Web/Mobile Web or foreign Desktop. The 52px global App titlebar, full-screen
+App Frame, two independent Push/Pull applications and shared backend
+contracts remain intact.
+
+- The Agent advertises `device-backup-local-evidence-preflight` only on
+  supported native operating systems; a dedicated Desktop IPC **GET**
+  `/v1/device-backups/local-evidence-preflight` accepts ONLY one numeric
+  `source_id` and an optional numeric `after_evidence_id` within
+  JavaScript safe integer bounds. It rejects body/unknown query inputs,
+  unauthenticated callers and non-owning controller capability; the Agent
+  itself enforces the enrolled unrevoked OS credential, exact local Root,
+  Source revision, two sealed journal generations, local live original
+  SHA256, whole-page Server identity/CAS metadata and per-object physical
+  samples before returning success. No browser-supplied path, token,
+  SourceItem ID, SHA256 or cloud key is accepted.
+- An explicit **projection layer**, separate from the Agent-private
+  `localEvidencePreflightSummary`, exports **only** Source ID/revision,
+  checked/local-hashed/current-CAS-metadata counts, aggregate hashed and
+  sampled bytes, physically sampled/unsampled counts, bounded HTTP batch
+  count, advisory `has_more`/numeric next-page cursor, and false authority
+  flags. Rejects impossible counts, mismatched Source, oversized or
+  non-safe integer results, unexpected commit/content/deletion authority,
+  invalid cursor and partial failure; never serializes source paths,
+  native identities, per-file SHA256 or Root/device credentials.
+- Electron main owns each request's AbortController, keyed by its renderer
+  sender and UUID request ID. Closing the dialog, unmounting or account/
+  server scope replacement aborts the Electron request and Go Context;
+  a stale completion cannot repopulate a new datasource. Preload exposes
+  only aggregate read/cancel, not the Agent-private cloud-bytes API.
+- The shared MUI page renders the manual action **only if** current
+  `verifiedLocalDeviceID` matches an active owner device containing this
+  Source, and only if the native-only capability is present. The popup
+  makes one 64-candidate advisory page request at a time, with an optional
+  explicit **next page**, displays the 16-object/256MiB physical sampling
+  ceiling and unobserved count, hides raw errors, and repeatedly states
+  that neither a complete backup nor upload/rename/deletion permission
+  has been established. Web/Mobile and foreign Desktop continue seeing
+  owner-scoped, redacted **read-only** device information.
+- Tests cover private GET/query scope, absent native capability, negative
+  projection and unauthorized read, cancel reaching Go Context, and
+  static Electron/Preload/shared UI boundary tests including account
+  changes, no private byte/hash bridge and no Web operation.
+
+**Scope of completion:** a manually useful per-page owning-Desktop
+read-only consistency diagnostic, not an actual backup run. At most
+16 existing stored CAS objects and 256MiB may be physically sampled
+per 64-evidence candidate page; unobserved items and subsequent pages
+remain unverified until separately checked. The UI cannot infer full
+100k-folder verification or represent >64MiB individual originals
+as physically checked. There is NO durable identity promotion, no
+SourceItem/Node/CAS/alias writes, no real Push upload/recovery, no
+SourceRun activation, no watcher, no automatic schedule, no NAS Push
+manager, and no Mirror deletion. L03-E durable transactional identity
+commit and L03-F/G uploads are separate future stages with independent
+authorization, physical correctness and crash/replay tests. No GitLab
+push, >=4GiB native transfer or 100k real-device benchmark is claimed.

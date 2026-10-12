@@ -202,6 +202,7 @@ import {
   type AgentLocalBackupDelta,
   type AgentLocalBackupEvidence,
   type AgentLocalBackupEvidenceSummary,
+  type AgentLocalBackupEvidencePreflight,
   type AgentLocalBoundBackupRemoval,
   type AgentDeviceBackupRunPage,
   type AgentLocalFolderGrant,
@@ -2298,6 +2299,45 @@ function registerIPCHandlers() {
       const key = `${event.sender.id}:${String(requestID)}`
       const found = localEvidenceSummaryRequests.has(key)
       localEvidenceSummaryRequests.get(key)?.abort()
+      return { cancelled: found }
+    }, false))
+  // Renderer sees only redacted aggregate evidence counts. Request keys are
+  // tied to Electron sender, so one window cannot cancel another's preflight.
+  const localEvidencePreflightRequests = new Map<string, AbortController>()
+  ipcMain.handle('agent:get-device-backup-local-evidence-preflight', (event, sourceID: unknown, afterID: unknown, requestID: unknown) => {
+    const key = `${event.sender.id}:${String(requestID)}`
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0 ||
+      typeof afterID !== 'number' || !Number.isSafeInteger(afterID) || afterID < 0 ||
+      !validLocalPreviewID(requestID) || localEvidencePreflightRequests.has(key)) {
+      return runAgentAction<AgentLocalBackupEvidencePreflight>(async () => {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid or duplicate local evidence preflight request.')
+      }, false)
+    }
+    const controller = new AbortController()
+    const onSenderDestroyed = () => controller.abort()
+    event.sender.once('destroyed', onSenderDestroyed)
+    localEvidencePreflightRequests.set(key, controller)
+    return runAgentAction<AgentLocalBackupEvidencePreflight>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'device-backup-local-evidence-preflight')
+      if (controller.signal.aborted) {
+        throw new AgentIPCError('aborted', 0, 'Local evidence preflight was cancelled.')
+      }
+      return requireAgentClient().localBoundBackupEvidencePreflight(sourceID, afterID, controller.signal)
+    }, false).finally(() => {
+      event.sender.removeListener('destroyed', onSenderDestroyed)
+      if (localEvidencePreflightRequests.get(key) === controller) localEvidencePreflightRequests.delete(key)
+      controller.abort()
+    })
+  })
+  ipcMain.handle('agent:cancel-device-backup-local-evidence-preflight', (event, requestID: unknown) =>
+    runAgentAction<{ cancelled: boolean }>(async () => {
+      if (!validLocalPreviewID(requestID)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid local preflight request ID.')
+      }
+      const key = `${event.sender.id}:${String(requestID)}`
+      const found = localEvidencePreflightRequests.has(key)
+      localEvidencePreflightRequests.get(key)?.abort()
       return { cancelled: found }
     }, false))
   ipcMain.handle('agent:remove-device-backup-local-source', (_event, sourceID: unknown, revision: unknown) =>

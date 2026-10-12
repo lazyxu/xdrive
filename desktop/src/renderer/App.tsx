@@ -588,6 +588,22 @@ export default function App({
     }
   }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
 
+  const localBackupEvidencePreflight = useMemo(() => {
+    if (!localBackupSettings ||
+      !agent.hello?.capabilities.includes('device-backup-local-evidence-preflight')) return undefined
+    return {
+      load: async (sourceID: number, afterEvidenceID: number, requestID: string) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupLocalEvidencePreflight(
+          sourceID, afterEvidenceID, requestID)
+        if (!result.ok) throw new Error('Local content preflight failed')
+        return result.data
+      },
+      cancel: async (requestID: string) => {
+        await window.xdriveDesktop.agent.cancelDeviceBackupLocalEvidencePreflight(requestID)
+      },
+    }
+  }, [localBackupSettings, agent.hello?.capabilities, status?.server, status?.username, status?.auth_status])
+
   const localBackupRemove = useMemo(() => {
     if (!localBackupSettings || !agent.hello?.capabilities.includes('device-backup-local-remove')) return undefined
     return {
@@ -2639,6 +2655,7 @@ export default function App({
             localDelta={localBackupDelta}
             localEvidence={localBackupEvidence}
             localEvidenceSummary={localBackupEvidenceSummary}
+            localEvidencePreflight={localBackupEvidencePreflight}
             localRemove={localBackupRemove}
           />
         )}

@@ -172,6 +172,29 @@ export interface XDriveLocalBackupEvidenceSummary {
   missing_inference_safe: false
 }
 
+// A per-page, explicitly manual, owning-Desktop READ-ONLY content check.
+// Missing/unsampled files never imply cloud deletion or upload success.
+// There are no paths, SHA256 digests, Root credentials or per-file IDs here.
+export interface XDriveLocalBackupEvidencePreflight {
+  source_id: number
+  revision: number
+  checked: number
+  locally_hashed_files: number
+  locally_hashed_bytes: number
+  metadata_matched_files: number
+  physical_observed_files: number
+  physical_observed_bytes: number
+  physical_unobserved_files: number
+  physical_batch_requests: number
+  has_more: boolean
+  next_after_id: number
+  server_consistent: boolean
+  content_verified: false
+  commit_supported: false
+  authoritative: false
+  missing_inference_safe: false
+}
+
 // Owning-Agent only. Never expose local Root identity or path.
 export interface XDriveLocalBoundBackupRemoval {
   source_id: number
