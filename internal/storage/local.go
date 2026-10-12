@@ -30,6 +30,45 @@ func NewLocal(root string) (*Local, error) {
 	return local, nil
 }
 
+// A single fixed file coordinates all Local.Put temporary lifetimes across
+// independent Server processes mounting the same storage root. It is not
+// user content and must never be deleted by aged-temp cleanup.
+const tempLifecycleLockFile = ".xdrive-temp-lifecycle.lock"
+
+func (l *Local) tempLifecycleLease(
+	ctx context.Context,
+	exclusive bool,
+	try bool,
+) (release func(), acquired bool, err error) {
+	if l == nil || l.root == "" {
+		return nil, false, fmt.Errorf("local storage root is unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	file, err := os.OpenFile(filepath.Join(l.root, tempLifecycleLockFile), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	acquired, err = lockTempLifecycleFile(ctx, file, exclusive, try)
+	if err != nil || !acquired {
+		_ = file.Close()
+		return nil, false, err
+	}
+	return func() {
+		_ = unlockTempLifecycleFile(file)
+		_ = file.Close()
+	}, true, nil
+}
+
+// TryExclusiveTempCleanup is deliberately non-blocking. An administrator
+// cleanup may reclaim abandoned aged temporary files only when no Local.Put
+// owns an in-progress temporary write; otherwise it leaves them for the next
+// maintenance run instead of interrupting an upload.
+func (l *Local) TryExclusiveTempCleanup(ctx context.Context) (func(), bool, error) {
+	return l.tempLifecycleLease(ctx, true, true)
+}
+
 func (l *Local) FilesystemRoot() string {
 	if l == nil {
 		return ""
@@ -59,6 +98,16 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 	if err != nil {
 		return 0, err
 	}
+	// Keep a shared, cross-process lease until the final rename succeeds.
+	// Admin aged-temp cleanup only sweeps files when no producer is active.
+	release, acquired, err := l.tempLifecycleLease(ctx, false, false)
+	if err != nil {
+		return 0, err
+	}
+	if !acquired {
+		return 0, fmt.Errorf("storage write temporary lease was not acquired")
+	}
+	defer release()
 	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 		return 0, err
 	}
