@@ -21,12 +21,22 @@ func (s *Server) setServiceLifecycleStates(
 	mediaConfigUnreadable bool,
 	caddyContainerObserved bool,
 ) {
+	// Scheduler admission is separate from model installation, analyzer
+	// health and successful execution. Saving an admin switch is not Docker apply.
+	photoAdmission := s.photoAutomaticAdmissionEvidence(ctx)
 	for i := range services {
 		item := &services[i]
 		item.ConfigurationState = "unknown"
 		item.InstallationState = "unknown"
 		item.HealthState = "unknown"
 		item.ActivationState = "unknown"
+		if autoState := photoAdmission.stateForService(item.ID); autoState != "" {
+			item.AutomaticPolicyState = autoState
+			if item.ID != "photo-creative" {
+				item.AutomaticPolicyDesiredRevision = photoAdmission.desiredRevision
+				item.AutomaticPolicyEffectiveRevision = photoAdmission.effectiveRevision
+			}
+		}
 		if item.Status == "ready" {
 			item.HealthState = "ready"
 		} else if item.Status == "disabled" {

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -117,6 +118,65 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 		router.ServeHTTP(rec, req)
 		return rec
 	}
+	// Verify saved/effective scheduling revision in the shared service inventory
+	// without pretending that the optional analyzer model is deployed or healthy.
+	readOverview := func(target *Server) map[string]serviceDependency {
+		t.Helper()
+		record := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(record)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/services", nil)
+		target.adminServiceDependencies(ctx)
+		var result serviceDependenciesSnapshot
+		if record.Code != http.StatusOK || json.Unmarshal(record.Body.Bytes(), &result) != nil {
+			t.Fatalf("service inventory failed: %d %s", record.Code, record.Body.String())
+		}
+		byID := make(map[string]serviceDependency)
+		for _, item := range result.Services {
+			byID[item.ID] = item
+		}
+		return byID
+	}
+	assertPolicy := func(target *Server, face, smart, semantic string, revision uint64) {
+		t.Helper()
+		rows := readOverview(target)
+		for id, want := range map[string]string{
+			"photo-face": face, "photo-smart": smart, "photo-semantic": semantic,
+		} {
+			item := rows[id]
+			if item.AutomaticPolicyState != want ||
+				item.AutomaticPolicyDesiredRevision != revision ||
+				item.ActivationState != "deployment-only" ||
+				item.InstallationState != "unknown" ||
+				item.Status != "disabled" {
+				t.Fatalf("photo policy/model axes drifted for %s: %+v; want %s at revision %d", id, item, want, revision)
+			}
+		}
+		if item := rows["photo-creative"]; item.AutomaticPolicyState != "not-applicable" ||
+			item.AutomaticPolicyDesiredRevision != 0 || item.ActivationState != "deployment-only" {
+			t.Fatalf("creative jobs acquired a false automatic switch: %+v", item)
+		}
+		if rows["database"].AutomaticPolicyState != "" || rows["baidu-map"].AutomaticPolicyState != "" {
+			t.Fatal("photo policy leaked into unrelated dependency rows")
+		}
+	}
+	assertPolicy(s, "unmanaged", "unmanaged", "unmanaged", 0)
+	for _, who := range []struct {
+		token string
+		want  int
+	}{
+		{token: "", want: http.StatusUnauthorized},
+		{token: memberToken, want: http.StatusForbidden},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/services", nil)
+		if who.token != "" {
+			req.Header.Set("Authorization", "Bearer "+who.token)
+		}
+		router.ServeHTTP(rec, req)
+		if rec.Code != who.want {
+			t.Fatalf("service inventory auth status = %d; want %d", rec.Code, who.want)
+		}
+	}
 	if rec := request(http.MethodPut, "", `{"revision":0,"auto_enabled":false}`); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated PUT = %d", rec.Code)
 	}
@@ -138,6 +198,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `"auto_enabled":false`) {
 		t.Fatalf("save did not hot-apply false: %d %s", rec.Code, rec.Body.String())
 	}
+	assertPolicy(s, "paused", "paused", "paused", 1)
 	var row meta.AdminPhotoAutoSetting
 	if err := db.Where("name = ?", photoAutoSettingName).Take(&row).Error; err != nil || row.Revision != 1 || row.AutoEnabled {
 		t.Fatalf("persisted policy is invalid: %+v, %v", row, err)
@@ -154,6 +215,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"apply_state":"pending"`) {
 		t.Fatalf("unrefreshed replica must report pending, not cluster success: %d %s", recorder.Code, recorder.Body.String())
 	}
+	assertPolicy(replica, "pending", "pending", "pending", 1)
 	if err := replica.refreshPhotoAutoPolicy(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +226,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"apply_state":"applied"`) {
 		t.Fatalf("replica refresh did not apply: %d %s", recorder.Code, recorder.Body.String())
 	}
+	assertPolicy(replica, "paused", "paused", "paused", 1)
 	if rec := request(http.MethodPut, adminToken, `{"revision":0,"auto_enabled":true}`); rec.Code != http.StatusConflict {
 		t.Fatalf("stale policy write = %d", rec.Code)
 	}
@@ -171,6 +234,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"auto_enabled":true`) {
 		t.Fatalf("re-enable did not apply: %d %s", rec.Code, rec.Body.String())
 	}
+	assertPolicy(s, "enabled", "enabled", "enabled", 2)
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 2 {
 		t.Fatalf("expected exactly two committed audits, count %d, err %v", auditCount, err)
 	}
@@ -184,6 +248,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 		!strings.Contains(rec.Body.String(), `"apply_state":"applied"`) {
 		t.Fatalf("per-kind policy not applied: %d %s", rec.Code, rec.Body.String())
 	}
+	assertPolicy(s, "partial", "enabled", "paused", 3)
 	if s.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) ||
 		!s.photoAutoAllows(photoIntelligenceSmartSearch, background.TriggerReconcile) ||
 		s.photoAutoAllows(photoIntelligenceSemanticSearch, background.TriggerSystemEvent) ||
@@ -201,10 +266,12 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), `"apply_state":"pending"`) {
 		t.Fatalf("another instance incorrectly claimed apply: %s", recorder.Body.String())
 	}
+	assertPolicy(replica, "pending", "pending", "pending", 3)
 	if err := replica.refreshPhotoAutoPolicy(context.Background()); err != nil ||
 		replica.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) {
 		t.Fatalf("replica policy did not apply: %v", err)
 	}
+	assertPolicy(replica, "partial", "enabled", "paused", 3)
 	// A malformed or partial set never mutates the running policy, revision or audit.
 	for _, body := range []string{
 		`{"revision":3,"auto_enabled":true,"kinds":{"face":false}}`,
@@ -224,6 +291,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"face":false`) {
 		t.Fatalf("legacy write reset per-kind settings: %d %s", rec.Code, rec.Body.String())
 	}
+	assertPolicy(s, "paused", "paused", "paused", 4)
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 4 {
 		t.Fatalf("invalid/stale writes changed audit history: count %d, err %v", auditCount, err)
 	}
@@ -274,6 +342,7 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 		!strings.Contains(rollback.Body.String(), `"face":true`) {
 		t.Fatalf("rollback did not hot-apply historical policy: %d %s", rollback.Code, rollback.Body.String())
 	}
+	assertPolicy(s, "enabled", "enabled", "enabled", 5)
 	if !s.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) ||
 		!s.photoAutoAllows(photoIntelligenceSemanticSearch, background.TriggerSystemEvent) {
 		t.Fatal("rollback did not restore historical automatic task admission")
@@ -289,10 +358,12 @@ func TestAdminPhotoAutoPolicyRevisionAuditAndReplicaApply(t *testing.T) {
 	if !strings.Contains(recorder.Body.String(), `"apply_state":"pending"`) {
 		t.Fatalf("replica must remain pending before next refresh: %s", recorder.Body.String())
 	}
+	assertPolicy(replica, "pending", "pending", "pending", 5)
 	if err := replica.refreshPhotoAutoPolicy(context.Background()); err != nil ||
 		!replica.photoAutoAllows(photoIntelligenceFace, background.TriggerReconcile) {
 		t.Fatalf("replica did not apply rolled-back policy: %v", err)
 	}
+	assertPolicy(replica, "enabled", "enabled", "enabled", 5)
 	if err := db.Model(&meta.AuditEvent{}).Count(&auditCount).Error; err != nil || auditCount != 5 {
 		t.Fatalf("policy rollback must append exactly one audit: count %d err=%v", auditCount, err)
 	}

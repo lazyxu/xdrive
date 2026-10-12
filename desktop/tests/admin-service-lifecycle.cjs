@@ -70,3 +70,28 @@ test('Pull Worker overview verification reuses actual observed policy revisions 
   assert.ok(page.includes('已观测的在线 Pull Worker 均确认目标修订'))
   assert.equal(page.includes('docker.sock'), false)
 })
+
+test('Photo Intelligence automatic admission is revision-proved separately from model health and deployment', () => {
+  const backend = read('internal', 'api', 'admin_service_dependencies.go')
+  const proof = read('internal', 'api', 'admin_photo_auto_lifecycle.go')
+  const lifecycle = read('internal', 'api', 'admin_service_lifecycle.go')
+  const goClient = read('internal', 'client', 'client.go')
+  const agent = read('desktop', 'src', 'main', 'agent_client.cts')
+  const types = read('ui', 'shared', 'src', 'service-dependencies.ts')
+  const page = read('ui', 'shared', 'src', 'mui', 'ServiceDependenciesPage.tsx')
+  for (const field of ['automatic_policy_state', 'automatic_policy_desired_revision', 'automatic_policy_effective_revision']) {
+    assert.ok(backend.includes('json:"' + field + ',omitempty"'), 'missing Go server field ' + field)
+    assert.ok(goClient.includes('json:"' + field + ',omitempty"'), 'missing Go Client field ' + field)
+    assert.ok(agent.includes(field + '?:'), 'missing Electron agent field ' + field)
+    assert.ok(types.includes(field + '?:'), 'missing shared UI field ' + field)
+  }
+  assert.ok(lifecycle.includes('s.photoAutomaticAdmissionEvidence(ctx)'))
+  assert.ok(lifecycle.includes('item.ActivationState = "deployment-only"'))
+  assert.ok(proof.includes('effectivePhotoAutoKinds(effective.Kinds) != effectivePhotoAutoKinds(desired.Kinds)'))
+  assert.ok(proof.includes('return "not-applicable"'))
+  assert.ok(page.includes("service.automatic_policy_state ?? 'unknown'"))
+  assert.ok(page.includes('data-xdrive-photo-auto-policy'))
+  assert.ok(page.includes('不代表模型安装、健康检查或作业执行成功'))
+  assert.equal(proof.includes('docker.sock'), false)
+  assert.equal(page.includes('docker restart'), false)
+})

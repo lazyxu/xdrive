@@ -119,6 +119,18 @@ const activationStateLabels = {
   unknown: '无法确认目标修订生效',
 } as const
 
+// Automatic task admission is separate from analyzer container deployment,
+// model health and actual successful processing.
+const automaticPolicyLabels = {
+  enabled: '当前实例已按目标修订允许自动任务',
+  paused: '当前实例已按目标修订暂停自动任务',
+  partial: '人脸检测与人物聚类的自动任务策略不同（详见下方分项开关）',
+  pending: '目标修订尚未在当前实例确认生效',
+  unmanaged: '使用默认策略，尚无管理员保存的修订',
+  unknown: '无法验证任务策略（旧版服务或配置不可读取）',
+  'not-applicable': '不适用：照片创作当前不受自动分析调度开关控制',
+} as const
+
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
   'task-boundary': '运行批次完成后安全生效',
@@ -188,6 +200,20 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                 : activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
             </Typography>
           </Stack>
+          {service.group === 'intelligence' && (
+            <Stack spacing={0.25} sx={{ mt: 1 }} data-xdrive-photo-auto-policy>
+              <Typography variant="caption" color="text.secondary">
+                自动任务准入：{automaticPolicyLabels[service.automatic_policy_state ?? 'unknown'] ?? automaticPolicyLabels.unknown}
+                {typeof service.automatic_policy_desired_revision === 'number' &&
+                  ` · 目标修订 #${service.automatic_policy_desired_revision}`}
+                {typeof service.automatic_policy_effective_revision === 'number' &&
+                  ` · 当前实例修订 #${service.automatic_policy_effective_revision}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                只影响自动任务的准入策略，不代表模型安装、健康检查或作业执行成功；手动操作另行授权。
+              </Typography>
+            </Stack>
+          )}
           {service.config_hint && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
               {service.config_hint}
