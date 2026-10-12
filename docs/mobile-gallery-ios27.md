@@ -639,3 +639,11 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 
 提交时状态：源码确认缺口，精确单提交 PR CI / Final Gate 尚待确认。共享 XDriveMediaAsyncVideoPoster 遇到实际持久封面缺失且原视频帧无法捕获、Promise reject 时，曾始终保持进度层；已经获得 URL 的图片在真实浏览器解码失败时也无 img.onError 回退。修复仅把当前 Node ID 与 revision 的明确失败显示为既有 fallback 并停止误导性进度；更换修订后沿现有流程重新获取，旧修订错误不得隐藏新封面。无自动全量原片下载、无增加请求、无修改 Live 配对与服务端接口，保留可见窗口限流、取消、Blob URL 生命周期、共同的 Web/Mobile REST/VirtualCollection、全屏 App Frame 和 52px 标题栏。新 React mounted 回归覆盖 null/reject/img-error/过期版本及等价架构。用户截图三张灰色实况静态封面、真实 HEIC/LIVP 解码、真机 iOS27 Safari/PWA/VoiceOver 仍需要原件与真实 HTTP/CAS 证据，不声称已恢复。
 
+
+## P0-L4c1 · 清除无法解码的缩略图 Blob URL 缓存（2026-10-12）
+
+**源码确认的恢复缺口，精确 PR CI 待验，不能冒充用户三张灰色 Live Photo 原件验收。** #1497 修复 HTTP503 失败缓存，#1482 的真实浏览器 `<img onError>` 切换占位后，`XDriveMediaThumbnailScheduler` 却仍可能把同一个无法解码的 Blob URL 保留在 512 条 LRU 中。虚拟照片墙下一次返回相同 Node/修订时直接取得损坏对象 URL，无法在该应用会话中通过重新请求恢复。
+
+**最小变更：** 保留既有可见视口六并发、业务状态、abort 与 512 条 LRU。只有实际 `<img>` 解码错误才报告原 URL，并且调度器只有在 `node_id + revision + failed_url` 三者精确匹配当前缓存项时才删除并释放该对象。错误现场本身不自动重试、不额外读取原件；下次用户访问可见缩略图才按既有 REST/Agent 请求重新获取。旧 revision / 旧 URL 事件不能误删新的封面，正常成功缓存/其它相册不清空，不能以此保证服务端实际文件字节可解码。组件通过同一 `MediaTile`、`XDriveMediaAsyncThumbnail`、Web/Mobile `XDriveMediaGalleryPage`、DataSource/VirtualCollection/Grid/Timeline 覆盖；52px App Frame、Live 语义/播放、Desktop Agent、服务器 API 不变。
+
+**回归：** 真实共享 Scheduler 运行测试包含错误 URL、旧 revision、错 Node、缓存重新命中、准确失效、只有下一次显式 load 才重新下载、旧解码事件隔离以及无关 LRU 不受影响；真实挂载共享 React 图片 `onError` 验证精确 URL 上报与零现场重试。完整 Web/Desktop/Go/Windows/CI Final Gate 与实际三张 HEIC/LIVP 原件解码、iOS 27 Safari/PWA/VoiceOver/成对截图分别验收。性能不作无数据提升承诺。

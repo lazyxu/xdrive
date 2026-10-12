@@ -3382,6 +3382,9 @@ function MediaTile({
       : loadThumbnail(nodeID, signal, item.node.revision, onProgress),
     [loadThumbnail, thumbnailPriority, thumbnailScheduler, item.node.revision],
   )
+  const onThumbnailDecodeError = useCallback((failedURL: string) => {
+    thumbnailScheduler?.invalidateDecodedURL(item.node.id, item.node.revision, failedURL)
+  }, [thumbnailScheduler, item.node.id, item.node.revision])
 
   return (
     <Paper
@@ -3465,6 +3468,7 @@ function MediaTile({
           fallback={xDriveMediaFallback(item.metadata.media_kind)}
           revokeOnDispose={!thumbnailScheduler}
           onImageReadyChange={livePhoto ? onThumbnailReadyChange : undefined}
+          onImageDecodeError={thumbnailScheduler ? onThumbnailDecodeError : undefined}
         />
       )}
       {(selectionMode || selectedForAction) ? (
