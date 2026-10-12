@@ -129,3 +129,77 @@ test('Only an opened service panel fetches its configuration and history', () =>
   const alidns = read('ui/shared/src/mui/CaddyAliDNSPanel.tsx')
   assert.ok(alidns.includes('onDirtyChange?.(keyID.length > 0 || keySecret.length > 0)'))
 })
+
+test('only eleven fixed, correctly grouped services reach the administrator overview', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const valid = nav.XDRIVE_SYSTEM_DEPENDENCY_IDS.map((id) => ({
+    id,
+    group: ['database', 'storage', 'background-worker', 'caddy'].includes(id)
+      ? 'core' : id === 'media-worker' ? 'media'
+      : ['photo-face', 'photo-smart', 'photo-semantic', 'photo-creative'].includes(id)
+        ? 'intelligence' : 'location',
+  }))
+  const poisoned = [
+    { id: 'yike', group: 'core', account: 'sensitive-cookie' },
+    { id: 'sync-folders', group: 'location', account: 'per-user-source' },
+    { id: 'caddy', group: 'location', credential: 'wrong-group' },
+    { id: 'database', group: 'core', credential: 'duplicated-entry' },
+    ...valid.slice().reverse(),
+    { id: 'photo-auto', group: 'intelligence', credential: 'not-a-service' },
+  ]
+  const result = nav.xDriveVisibleSystemDependencies(poisoned)
+  assert.equal(result.length, 10, 'ambiguous duplicate IDs are hidden, not claimed healthy')
+  assert.deepEqual(result.map((item) => item.id),
+    nav.XDRIVE_SYSTEM_DEPENDENCY_IDS.filter((id) => id !== 'database'))
+  assert.equal(result.some((item) => 'account' in item || 'credential' in item), false,
+    'old/malformed provider entries must not leak into global admin inventory')
+  const clean = nav.xDriveVisibleSystemDependencies(valid.slice().reverse())
+  assert.equal(clean.length, 11)
+  assert.deepEqual(clean.map((item) => item.id), nav.XDRIVE_SYSTEM_DEPENDENCY_IDS)
+  assert.deepEqual(nav.xDriveVisibleSystemDependencies([]), [])
+  assert.deepEqual(nav.xDriveVisibleSystemDependencies([
+    { id: 'baidu-map', group: 'core' },
+    { id: 'other', group: 'media' },
+  ]), [])
+})
+
+test('global App exits never silently discard unsaved System Dependencies drafts', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const shouldPrompt = nav.xDriveSystemDependenciesNeedsExitConfirmation
+  assert.equal(shouldPrompt('admin-services', 'files', true), true)
+  assert.equal(shouldPrompt('admin-services', 'gallery', true), true)
+  assert.equal(shouldPrompt('admin-services', 'overview', true), true)
+  assert.equal(shouldPrompt('admin-services', 'admin-services', true), false,
+    'in-page navigation is protected by its independent editor guard')
+  assert.equal(shouldPrompt('admin-services', 'files', false), false)
+  assert.equal(shouldPrompt('admin-services', 'files', true, true), false,
+    'opening a new browser tab does not unmount the active draft')
+  assert.equal(shouldPrompt('files', 'admin-services', true), false)
+  assert.equal(shouldPrompt('admin-services', 'files', true, false), true)
+})
+
+test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard', () => {
+  const web = read('web/src/App.tsx')
+  const desktop = read('desktop/src/renderer/App.tsx')
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const nav = read('ui/shared/src/system-dependencies-navigation.ts')
+  assert.ok(nav.includes('export function xDriveVisibleSystemDependencies'))
+  assert.ok(page.includes('xDriveVisibleSystemDependencies(snapshot?.services ?? [])'))
+  assert.ok(page.includes('onUnsavedChange?.(hasUnsavedEdits)'))
+  assert.ok(page.includes('onUnsavedChange?.(false)'))
+  assert.ok(web.includes('launch: launchWebAppRuntime'))
+  assert.ok(web.includes('xDriveSystemDependenciesNeedsExitConfirmation('))
+  assert.ok(web.includes('onUnsavedChange={setSystemDependenciesDraftDirty}'))
+  assert.ok(web.includes('onBack={exitWebApp}'), 'Mobile Web back must be guarded')
+  assert.ok(web.includes("if (pending.kind === 'exit') exitApp()"))
+  assert.ok(web.includes('else launchWebAppRuntime(pending.next, pending.options)'))
+  assert.ok(desktop.includes('const [view, setViewActual]'))
+  assert.ok(desktop.includes('xDriveSystemDependenciesNeedsExitConfirmation('))
+  assert.ok(desktop.includes('onUnsavedChange={setSystemDependenciesDraftDirty}'))
+  assert.ok(desktop.includes('setViewActual(next)'))
+  for (const content of [web, desktop]) {
+    assert.ok(content.includes('open={pendingSystemDependenciesExit !== null}'))
+    assert.ok(content.includes('放弃修改并离开'))
+  }
+  assert.equal(nav.includes('docker.sock'), false)
+})

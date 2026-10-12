@@ -51,7 +51,11 @@ test('wide Web keeps compact chrome while mobile owns the full-screen title and 
   assert.ok(webApp.includes('transferAction={transferAction}'), 'mobile title always uses the same transfer action as wide Web')
   assert.ok(webApp.includes('onOpenTransfers={() => setTransferPopoverOpen(true)}'), 'home opens the header transfer popover at every mobile width')
   assert.ok(webApp.includes('onOpenApps={() => setCompactNavigationOpen(true)}'), 'mobile title opens application navigation without floating chrome')
-  assert.ok(webApp.includes('onBack={exitApp}'), 'App title back exits the app, not the FileExplorer directory')
+  assert.ok(webApp.includes('onBack={exitWebApp}'),
+    'App title back exits the app using the guarded runtime, not a Files directory action')
+  assert.ok(webApp.includes('const exitWebApp = useCallback('),
+    'Mobile Web back must confirm an unsaved admin service draft before exit')
+  assert.ok(webApp.includes('    exitApp()'), 'normal mobile back still delegates to App runtime')
   assert.ok(appBar.includes('variant="titlebar"'), 'Web AppBar should reuse the Desktop-scale brand lockup')
   assert.ok(appBar.includes("borderBottom: 1"), 'Web AppBar should separate chrome with a divider instead of elevation')
   assert.ok(appBar.includes("minHeight: '48px !important'"), 'Web AppBar should stay at the compact 48px height')

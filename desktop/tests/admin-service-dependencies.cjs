@@ -173,7 +173,8 @@ test('All service rows disclose a grounded configuration and activation mode', (
     assert.equal(contracts.includes('case "' + connector + '"'), false, 'user connector has admin configuration')
   }
   assert.ok(page.includes('systemServices'))
-  assert.ok(page.includes('groups.some((group) => group.id === item.group)'))
+  assert.ok(page.includes('xDriveVisibleSystemDependencies(snapshot?.services ?? [])'),
+    'overview must filter only fixed admin service IDs and expected groups')
   assert.equal(page.includes('docker.sock'), false)
   assert.equal(page.includes('docker restart'), false)
 })
