@@ -86,7 +86,10 @@ test('Both Web and Desktop invalidate sibling Caddy proof on all persisted revis
   const probe = load('ui', 'shared', 'src', 'mui', 'CaddyPreflightPanel.tsx')
   assert.ok(page.includes('caddyEvidenceRevision'))
   assert.equal((page.match(/onConfigurationChanged=\{invalidateCaddyEvidence\}/g) || []).length, 2)
-  assert.ok(page.includes('refreshID={refreshID + caddyEvidenceRevision}'))
+  assert.ok(page.includes('refreshID={caddyEvidenceRevision}'),
+    'Caddy evidence must be invalidated by HTTPS/AliDNS revisions only')
+  assert.equal(page.includes('refreshID={refreshID + caddyEvidenceRevision}'), false,
+    'an inventory-only status refresh must not reissue credential or preflight checks')
   assert.equal((https.match(/onConfigurationChanged\?\.\(\)/g) || []).length, 2)
   assert.equal((dns.match(/onConfigurationChanged\?\.\(\)/g) || []).length, 1)
   assert.ok(probe.includes('verifyCaddyPreflightContract(next)'))

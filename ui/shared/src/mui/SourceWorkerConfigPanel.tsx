@@ -61,7 +61,7 @@ export function XDriveSourceWorkerConfigPanel({
 }: {
   source: XDriveSourceWorkerPort
   refreshID: number
-  section?: 'config' | 'history'
+  section?: 'config' | 'history' | 'verify'
   onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
@@ -126,7 +126,7 @@ export function XDriveSourceWorkerConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraft(valuesToDraft(next.desired))
-      if (source.loadSourceWorkerRevisions) {
+      if (section === 'history' && source.loadSourceWorkerRevisions) {
         try {
           const page = await source.loadSourceWorkerRevisions()
           if (epoch === epochRef.current) {

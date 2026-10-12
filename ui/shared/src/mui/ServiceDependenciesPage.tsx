@@ -300,6 +300,11 @@ export function XDriveServiceDependenciesPage({
   const externalLocationKey = xDriveSystemDependenciesLocationKey(location ?? {})
   const [snapshot, setSnapshot] = useState<XDriveServiceDependenciesSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  // Keep a successfully loaded inventory mounted during status-only refresh.
+  // Only an actual server/account source change may discard the old snapshot.
+  const snapshotSourceRef = useRef<XDriveServiceDependenciesPort | null>(null)
+  const cachedSnapshotRef = useRef<XDriveServiceDependenciesSnapshot | null>(null)
   const [error, setError] = useState('')
   const [refreshID, setRefreshID] = useState(0)
   // Local HTTPS/AliDNS edits invalidate sibling preflight and read-auth proof
@@ -534,19 +539,35 @@ export function XDriveServiceDependenciesPage({
       ++photoPolicyEpochRef.current
       ++photoHistoryEpochRef.current
     }
-  }, [source, refreshID, selectedPage, currentTab])
+  }, [source, selectedPage, currentTab])
 
   useEffect(() => {
     let active = true
-    setLoading(true)
+    const sourceChanged = snapshotSourceRef.current !== source
+    snapshotSourceRef.current = source
+    if (sourceChanged) {
+      // A different account/server must never see the previous inventory.
+      cachedSnapshotRef.current = null
+      setSnapshot(null)
+    }
+    if (cachedSnapshotRef.current === null) {
+      setLoading(true)
+    } else {
+      // Never unmount an active editor or reset an unsaved draft just because
+      // the administrator wants a new read-only health snapshot.
+      setRefreshing(true)
+    }
     setError('')
-    setSnapshot(null)
     void source.load().then((next) => {
-      if (active) setSnapshot(next)
+      if (!active) return
+      cachedSnapshotRef.current = next
+      setSnapshot(next)
     }).catch((err: unknown) => {
       if (active) setError(err instanceof Error ? err.message : '读取依赖状态失败')
     }).finally(() => {
-      if (active) setLoading(false)
+      if (!active) return
+      setLoading(false)
+      setRefreshing(false)
     })
     return () => { active = false }
   }, [source, refreshID])
@@ -990,6 +1011,8 @@ export function XDriveServiceDependenciesPage({
   const pendingCount = systemServices.filter((item) => item.activation_state === 'pending').length
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
+  const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
+    : currentTab === 'history' ? 'history' : 'config'
 
   const choosePage = (page: string) => {
     if (page === 'overview') navigateTo({})
@@ -1014,9 +1037,9 @@ export function XDriveServiceDependenciesPage({
           variant="outlined"
           startIcon={<RefreshRoundedIcon fontSize="small" />}
           onClick={() => setRefreshID((value) => value + 1)}
-          disabled={loading || unsavedRef.current}
+          disabled={loading || refreshing || unsavedRef.current}
         >
-          刷新状态
+          {refreshing ? '正在刷新…' : '刷新状态'}
         </Button>
       )}
     >
@@ -1025,11 +1048,14 @@ export function XDriveServiceDependenciesPage({
           {loading
             ? '正在检查服务…'
             : snapshot
-              ? '检测时间：' + checkedAt + ' · 已就绪 ' + healthy + ' 项 · 已登记服务 ' + systemServices.length + ' 项'
+              ? '检测时间：' + checkedAt + ' · 已就绪 ' + healthy + ' 项 · 已登记服务 ' + systemServices.length + ' 项' +
+                (refreshing ? ' · 正在重新检测（显示上次成功快照）' : '')
               : '尚未取得服务检测结果'}
         </Typography>
         {loading && <CircularProgress size={22} aria-label="正在加载服务状态" />}
-        {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
+        {error && <XDriveStatusAlert tone="bad">
+          {snapshot ? '刷新失败，当前显示上次成功检测的快照，状态可能已过期：' : ''}{error}
+        </XDriveStatusAlert>}
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
           <Box component="nav" aria-label="系统依赖页内导航" sx={{
             width: 216, flexShrink: 0, position: { md: 'sticky' }, top: 0,
@@ -1155,8 +1181,9 @@ export function XDriveServiceDependenciesPage({
                       请进入「配置」调整任务开关，或进入「历史」检查已审计修订。
                     </Typography>
                   )}
-                  {currentTab === 'verify' && selectedPage !== 'caddy' &&
-                    selectedPage !== 'baidu-map' && selectedPage !== 'geonames' && (
+                  {currentTab === 'verify' &&
+                    !['caddy', 'baidu-map', 'geonames', 'database', 'media-worker', 'background-worker']
+                      .includes(selectedPage) && (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
                       <Typography variant="body2" color="text.secondary">
                         当前检测基于 Server 提供的真实探针和本实例生效修订，
@@ -1169,21 +1196,24 @@ export function XDriveServiceDependenciesPage({
                     </Stack>
                   )}
                   
-              {selectedPage === 'media-worker' && (currentTab === 'config' || currentTab === 'history') &&
-                <XDriveMediaWorkerConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
-              {selectedPage === 'database' && (currentTab === 'config' || currentTab === 'history') &&
-                <XDrivePostgresPoolConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
+              {selectedPage === 'media-worker' && currentTab !== 'status' &&
+                <XDriveMediaWorkerConfigPanel source={source} refreshID={0}
+                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
+              {selectedPage === 'database' && currentTab !== 'status' &&
+                <XDrivePostgresPoolConfigPanel source={source} refreshID={0}
+                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
               {selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history') &&
-                <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={refreshID}
+                <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
                   section={currentTab} onDirtyChange={setCaddyHTTPSDirty}
                   onConfigurationChanged={invalidateCaddyEvidence} />}
               {selectedPage === 'caddy' && currentTab === 'config' &&
-                <XDriveCaddyAliDNSPanel source={source} refreshID={refreshID}
+                <XDriveCaddyAliDNSPanel source={source} refreshID={0}
                   onDirtyChange={setCaddyAliDirty} onConfigurationChanged={invalidateCaddyEvidence} />}
               {selectedPage === 'caddy' && currentTab === 'verify' && <XDriveCaddyPreflightPanel source={source}
-                refreshID={refreshID + caddyEvidenceRevision} />}
-              {selectedPage === 'background-worker' && (currentTab === 'config' || currentTab === 'history') &&
-                <XDriveSourceWorkerConfigPanel source={source} refreshID={refreshID} section={currentTab} onDirtyChange={setChildDirty} />}
+                refreshID={caddyEvidenceRevision} />}
+              {selectedPage === 'background-worker' && currentTab !== 'status' &&
+                <XDriveSourceWorkerConfigPanel source={source} refreshID={0}
+                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
               {selectedPage === 'photo-auto' && (currentTab === 'config' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
