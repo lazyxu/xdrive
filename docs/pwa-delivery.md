@@ -18,8 +18,8 @@
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
 | P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A 已合并；有约束的安全激活仍待 S3C，不允许强制 reload |
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A #1516、S2B1 #1557、S2B2 #1560 完整 CI 通过并合并；Chrome 安装资源/离线/登录后 Files 恢复已验，iOS 27/Android 系统安装仍 not-run |
-| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 已通过实际 Chrome loopback；S2B4 增加 HTTPS 协议 vs 本机 HTTP 安全上下文、SW/Manifest/离线页/安装图标 5 项无凭据 HEAD 与 MIME 检查（待 CI）；公网 DNS/CA 与生产 Caddy 仍 not-run |
-| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome 已验证登录前后 Files 深链接和冷刷新；S2B3 真正 Gin/Postgres/JWT 仍待 CI；Gallery/Viewer、安装图标冷启动仍 not-run |
+| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 与 S2B4 #1570 完整 CI / 真实 Chrome 已通过；S2B4 合并 98ffb1f9，验证本机 HTTP 警告与五项公开资源无凭据 HEAD；公网 DNS/CA 与生产 Caddy 仍 not-run |
+| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome Files 深链接已验；S2B3 #1566 真实 Gin/Postgres/JWT 双账号已通过并合并；S2B5 补登录后 Gallery 冷刷新/后退/前进（待 CI），Viewer/分享、安装图标冷启动仍 not-run |
 | P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
 | P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A/S4B 已完整 PR CI 通过并合并；Web 上传仍需人工重新选文件，真实安装模式和进程回收验收待 S5 |
@@ -208,4 +208,13 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 
 诊断项目覆盖 Manifest（JSON MIME、不可长期缓存）、SW（JS MIME、不可长期缓存）、公开 offline.html（HTML MIME、不可长期缓存）、真实 192px/512px PNG 图标（需返回真实 image/png，静态图标允许长期缓存）；HTTP 200 但实际回退为 SPA HTML、404/重定向/网络错误必须判失败。原有 SW 只缓存公开离线页，不对任何 API、图片、下载或私人分享做缓存。新浏览器回归复用实际生产构建/Chrome 的 S2B1 工作流并检查 5 个真实 HEAD、隔离及恢复原文件深链接；单元测试检验 HTTPS、本机 HTTP 区分、图标长缓存允许及 MIME 错误拒绝。
 
-**当前状态：** 本阶段代码与测试拟提交，完整 PR CI/真实 Chrome 尚未通过，不作成功声称。完整公网 HTTPS/DNS/证书与 Caddy 生产验证、iOS27 Safari 主屏、Android 系统安装版、桌面系统安装图标冷启动、Gallery/Viewer 分享路由和后台上传仍需 S2/S5 分别验收，Chrome Android UA 不等于 Android 设备。
+**合并状态：** [PR #1570](https://github.com/lazyxu/xdrive/pull/1570) 准确 HEAD 82dab9b 已通过 [完整 CI #38260127842](https://github.com/lazyxu/xdrive/actions/runs/38260127842)（含 Final Gate）及 [真实 Chrome #38260127409](https://github.com/lazyxu/xdrive/actions/runs/38260127409)，线性合并为 98ffb1f9，临时分支已自动清理。完整公网 HTTPS/DNS/证书与 Caddy 生产验证、iOS27 Safari 主屏、Android 系统安装版、桌面系统安装图标冷启动、Gallery/Viewer 分享路由和后台上传仍需 S2/S5 分别验收，Chrome Android UA 不等于 Android 设备。
+
+
+## PWA-S2B5 · 已登录图库深链接冷恢复与浏览器前进/后退（2026-10-12）
+
+在 S2B3 [真实 Gin/PostgreSQL17/Local CAS + Chrome](https://github.com/lazyxu/xdrive/pull/1566) 的**同一真实后端、零 /api/v1 mock**基础上，复用专用浏览器工作流。桌面 Chrome 1280px 和 Android UA + Touch 390px（仅浏览器模拟、不是 Android 物理设备）以已登录的隔离测试账号，在新标签页从 `#/app/gallery?section=albums` 直接进入图库；检查既有共享图库 React workspace 的 `data-xdrive-gallery-upload-picker` 实际 DOM 挂载、目标 Hash 精确保留、不显示登录表单；强制冷刷新再验。
+
+通过**真实浏览器** Hash History 从图库切到 `#/app/files?dir=<owner node>`，要求文件夹由 Gin 返回 200 且图库组件卸载；Back 恢复图库组件，Forward 恢复 Files。保留原有异主 JWT 404、匿名 401、缓存仅公开 `/offline.html`、无 JS pageerror、测试产物脱敏及 Web/Mobile 共用 Files/Gallery 接口，业务 Go API 不变。
+
+**验收边界：** 仅证明真实 Chrome 已登录图库路由挂载、冷启动 Hash 保留与浏览器历史协作，不证明 Gallery 数据查询成功、缩略图解码、Viewer/公开分享流量、系统图标冷启动、真实 iOS 27 Safari/Home Screen、Android Installed、锁屏后台、公网 TLS，也不代表 Web/Desktop 全功能等价。只有本分支 exact-head 全 CI 和专项真实浏览器均通过才可合并。
