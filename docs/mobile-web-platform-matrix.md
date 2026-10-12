@@ -26,6 +26,10 @@ Web 只提供显式“检查新版本”与安全更新步骤；浏览器 `navig
 
 新有界 GET 重试仅接到 Web/Mobile Web 共用的浏览请求路径。自动化需分别验证：文件夹/搜索/媒体 Range 的首请求 503/429→只额外一次 GET、短 Retry-After/长限流/取消/换窗口/隐藏标签，以及创建/删除/上传分块/Finalize/下载票据 **0 次自动重放**。实际设备另需检测 iOS Safari、iOS 主屏 PWA、Android Chrome/安装模式的前后台切换和网络波动；尚无实机录屏/文件落盘哈希/100k 真实负载，**not-run**，不以 Node 或 Chromium 模拟验收替代。
 
+## PWA S4A 浏览器上传退出保护验收（2026-10-12）
+
+Web/Mobile Web 的 `beforeunload` 只在本窗口有进行中的上传时临时注册，不能阻断应用内导航、Server Durable Task、原生下载或已结束的传输。CI 单元合同只证明状态筛选和注册/注销接线。iOS Safari/主屏 Web App、Android Chrome/安装模式，以及关闭标签、刷新、切应用、锁屏/强杀的真实浏览器对话框表现必须分别记载；OS 直接终止往往不给事件，不能把未显示警告写为 xDrive 代码不具备退出保护或已经成功续传。
+
 ## 1. 结果必须分为四层
 
 | 层次 | 可用状态 | 记录内容 |

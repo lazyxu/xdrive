@@ -22,7 +22,7 @@
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有，安装模式未验 |
 | P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
-| P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | 待验 |
+| P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A 已编写活动上传退出提示，真正的重新选文件恢复/真机退出验收仍待 S4B/S5 |
 | P0-10 | 320/375/390/430、899/900、短横屏/安全区/软件键盘/200% 字体/暗色/读屏保留 52px Frame。 | 布局基础有，真机 not-run |
 | P0-11 | CI 发布 gate：built sw/offline/manifest 的 MIME/范围、离线 E2E、API bypass、更新/回滚、打包完整性。 | 本轮新增 Node 单测，真实部署 gate 待做 |
 | P0-12 | 保留可复核的 iOS 27 Safari+Home Screen、Android Chrome+Installed、Desktop Chrome/Edge 安装 E2E 记录。 | 真机 not-run |
@@ -92,6 +92,14 @@ S3A 用 `navigator.onLine` 表示**浏览器提供的网络提示**，不能证�
 **坚决排除：** POST/PUT/PATCH/DELETE/HEAD，带请求体的 GET，`/api/v1/uploads*`、分块/预校验/Finalize、`/api/v1/auth*`、私人文件/Archive 下载票据及字节流、公开分享、管理员服务变更，以及不在白名单内的所有接口。原有 `WebFileExplorer`/Mobile Files 和 Gallery 的共享 REST、虚拟化 Range、选择/权限和 Go Server 维持不变；Desktop Agent 传输行为保持独立。一个可取消的 GET 重试不能算上传恢复、浏览器后台持续执行或 Server durable job；本阶段**也不实现**有条件的一键 SW 更新激活，后者必须跨窗口确认没有上传、未保存编辑、正在运行的 Viewer 和其他任务才可以继续。
 
 **证据层：** 单元测试覆盖每个允许/禁止路径、HTTP 429/503、长短 Retry-After、网络异常、后台 visibility、取消信号、单次上限，以及共享 XDriveApi 接线。完整 Web/Windows/Desktop/Go PR CI 才能声明代码交付；真实 100k 高并发异常、iOS 27 Safari/Home Screen、Android Tab/Installed 及物理锁屏/进程恢复仍属 S4/S5 **not-run**，不得从 Node 测试推定性能或真机可靠性。
+
+## PWA-S4A · 前台上传退出保护（2026-10-12）
+
+**本轮第一项 S4 可靠性实施：** Web/Mobile Web 共享 `FileManager` 只在当前 Web 传输 Store 中有 `direction:upload` 且状态为 `queued/running/retrying/cancelling` 的任务时，动态注册浏览器 `beforeunload` 提示；当上传完成、失败、取消或任务消失即撤销监听，空闲页面无需负担卸载拦截。用户自主刷新、关闭窗口或离开站点时尽可能提供浏览器原生警告。应用内部 Files/Gallery/Viewer 路由切换不触发此事件，任何提示都不执行 `cancelTransfer`，不触碰 Server Durable Task、后台 Source/设备备份、签名下载票据、原生浏览器下载，也不声称成功保存文件。
+
+**平台限制：** iOS Safari/PWA 和 Android 在锁屏、操作系统回收浏览器进程或强制关闭时，可能根本不派发 `beforeunload`；即使出现提示，浏览器本身也决定是否展示和文案。故这项仅是**最佳努力防误退出**，不能替代已存在的 8MiB 块校验、持久化上传会话、刷新后重新选择同一文件的 S4B 产品入口、实际 1–4GiB 下载完整性 S4C 和跨应用/锁屏恢复 S4D。退出提示绝不是后台上传成功、Server 任务暂停/取消或应用已具备无条件持续运行能力。
+
+**验收：** 短时状态纯函数测试覆盖活动状态与已完成/原生下载排除；浏览器执行的 `beforeunload` 行为及真实设备交互需要另外测试，不能以构造 Event 的 Node 测试冒充系统警告已出现。保留真实传输、跨账号、Viewer 后台切换和不同系统模式的任务证据。
 
 ## 分期与测试记录
 

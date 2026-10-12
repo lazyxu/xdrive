@@ -106,6 +106,7 @@ import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './we
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
+import { xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
@@ -839,6 +840,16 @@ function FileManager({
   }, [api, handleError])
 
   useEffect(() => api.onTransfers(setTransfers), [api])
+
+  // Only actively owned browser uploads can be lost when this tab closes.
+  // Keep the listener absent when idle (including native download hand-offs);
+  // this does NOT protect against iOS process termination or pause Server tasks.
+  const hasPendingUpload = xDriveHasPendingBrowserUpload(transfers)
+  useEffect(() => {
+    if (!hasPendingUpload) return
+    window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
+    return () => window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
+  }, [hasPendingUpload])
 
   const loadFileOperations = useCallback(
     (limit: number) => api.fileOperations(limit),
