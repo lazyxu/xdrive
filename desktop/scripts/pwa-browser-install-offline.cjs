@@ -23,8 +23,9 @@ const evidence = {
   browserVersion: '',
   cases: [], failures: [], publicOnly: !authMode, physicalDevice: false,
 }
-const observed = { readyz: 0, headManifest: 0, headWorker: 0, headOffline: 0, headIcon192: 0, headIcon512: 0, privateApi: 0, credentialLeaks: 0, transportDrops: 0, privateTransportDrops: 0, authLogin: 0, authFileReads: 0, authUnknown: 0, unauthorized: 0, authUnknownRoutes: [], authRecentTouches: [] }
+const observed = { readyz: 0, headManifest: 0, headWorker: 0, headOffline: 0, headIcon192: 0, headIcon512: 0, headIcon512Aborted: 0, privateApi: 0, credentialLeaks: 0, transportDrops: 0, privateTransportDrops: 0, authLogin: 0, authFileReads: 0, authUnknown: 0, unauthorized: 0, authUnknownRoutes: [], authRecentTouches: [] }
 let networkTransportDown = false
+let stallPwaIcon512Head = false
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -156,6 +157,12 @@ const server = http.createServer((req, res) => {
   if (pathname === '/offline.html' && req.method === 'HEAD') observed.headOffline++
   if (pathname === '/pwa-192.png' && req.method === 'HEAD') observed.headIcon192++
   if (pathname === '/pwa-512.png' && req.method === 'HEAD') observed.headIcon512++
+  // Test-only stalled PUBLIC HEAD, never an API, ticket, private file or auth.
+  // A closed install dialog must immediately cancel this real Chrome request.
+  if (pathname === '/pwa-512.png' && req.method === 'HEAD' && stallPwaIcon512Head) {
+    res.once('close', () => { observed.headIcon512Aborted++ })
+    return
+  }
   const requested = pathname === '/' ? '/index.html' : pathname
   let decoded
   try { decoded = decodeURIComponent(requested) }
@@ -188,7 +195,8 @@ async function validateCase(browser, origin, spec) {
     installAssets: false, offlineNavigation: false, privateBypass: false,
     deepLinkPreserved: false, cachedPublicOnly: false, readinessNoCredentials: false,
     loopbackTransportWarning: false, offlineAssetChecked: false, iconsChecked: false,
-    authenticatedDeepLink: false, authenticatedColdReload: false }
+    authenticatedDeepLink: false, authenticatedColdReload: false,
+    pendingInstallProbeCancelled: false }
   let page
   try {
     page = await context.newPage()
@@ -250,7 +258,31 @@ async function validateCase(browser, origin, spec) {
     assert.equal(observed.readyz, readyBefore + 1)
     result.readinessNoCredentials = observed.credentialLeaks === 0
     assert(result.readinessNoCredentials)
-    await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    if (!spec.mobile) {
+      // The second diagnostic deliberately hangs exactly one PUBLIC HEAD.
+      // Closing the actual MUI dialog must abort that browser request.
+      const countBefore = observed.headIcon512
+      const abortBefore = observed.headIcon512Aborted
+      stallPwaIcon512Head = true
+      try {
+        await dialog.locator('[data-xdrive-pwa-check]').click()
+        const until = async (predicate, detail) => {
+          for (let tick = 0; tick < 120; tick++) {
+            if (predicate()) return
+            await new Promise(resolve => setTimeout(resolve, 25))
+          }
+          throw new Error('S2B8 stalled public HEAD not ' + detail)
+        }
+        await until(() => observed.headIcon512 === countBefore + 1, 'started')
+        await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+        await until(() => observed.headIcon512Aborted > abortBefore, 'cancelled on close')
+        result.pendingInstallProbeCancelled = true
+      } finally {
+        stallPwaIcon512Head = false
+      }
+    } else {
+      await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    }
     assert.equal(new URL(page.url()).hash, expectedHash)
 
     const cache = await page.evaluate(async () => {
@@ -347,6 +379,7 @@ async function validateCase(browser, origin, spec) {
     evidence.cases.push(result)
   } finally {
     networkTransportDown = false
+    stallPwaIcon512Head = false
     await context.close()
   }
 }
@@ -367,11 +400,13 @@ async function main() {
     await validateCase(browser, origin, { name: 'desktop-Chromium-browser', width: 1280, height: 800, mobile: false })
     await validateCase(browser, origin, { name: 'Android-UA-mobile-emulation', width: 390, height: 844, mobile: true })
     assert.equal(observed.credentialLeaks, 0)
-    assert.equal(observed.headManifest, 2)
-    assert.equal(observed.headWorker, 2)
-    assert.equal(observed.headOffline, 2)
-    assert.equal(observed.headIcon192, 2)
-    assert.equal(observed.headIcon512, 2)
+    assert.equal(observed.headManifest, 3)
+    assert.equal(observed.headWorker, 3)
+    assert.equal(observed.headOffline, 3)
+    assert.equal(observed.headIcon192, 3)
+    assert.equal(observed.headIcon512, 3)
+    assert.equal(observed.headIcon512Aborted, 1)
+    assert(evidence.cases.some(x => x.pendingInstallProbeCancelled))
     assert(evidence.cases.every(x => x.loopbackTransportWarning && x.offlineAssetChecked && x.iconsChecked))
     assert.equal(observed.readyz, 2)
     if (authMode) {

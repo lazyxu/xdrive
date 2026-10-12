@@ -117,7 +117,9 @@ export function requestXDrivePwaInstall(): Promise<XDrivePwaPromptOutcome> {
   }
 }
 /** Explicit, no-credentials, same-origin HEAD checks; never query private APIs. */
-export async function checkXDrivePwaAssets(): Promise<XDrivePwaAssetCheck[]> {
+export async function checkXDrivePwaAssets(
+  options: { signal?: AbortSignal; timeoutMs?: number } = {},
+): Promise<XDrivePwaAssetCheck[]> {
   const checks: XDrivePwaAssetCheck[] = []
   const secure = typeof window !== 'undefined' && window.isSecureContext
   checks.push({
@@ -140,37 +142,64 @@ export async function checkXDrivePwaAssets(): Promise<XDrivePwaAssetCheck[]> {
         ? '当前仅是本机 HTTP 安全上下文，不等于移动设备可访问的可信 HTTPS。'
         : '当前页面未使用可信的 HTTPS 安全连接；请检查域名、证书和代理配置。',
   })
-  for (const asset of [
+
+  const assets = [
     { id: 'manifest' as const, path: '/site.webmanifest', label: 'Web App Manifest', mime: /^(application\/(manifest\+json|json))\b/i, revalidate: true },
     { id: 'worker' as const, path: '/sw.js', label: 'Service Worker', mime: /^(text|application)\/(javascript|ecmascript)\b/i, revalidate: true },
     { id: 'offline' as const, path: '/offline.html', label: '公开离线页', mime: /^text\/html\b/i, revalidate: true },
     { id: 'icon192' as const, path: '/pwa-192.png', label: '192px 安装图标', mime: /^image\/png\b/i, revalidate: false },
     { id: 'icon512' as const, path: '/pwa-512.png', label: '512px 安装图标', mime: /^image\/png\b/i, revalidate: false },
-  ]) {
-    try {
-      const response = await fetch(asset.path, {
-        method: 'HEAD', credentials: 'omit', cache: 'no-store', redirect: 'error', mode: 'same-origin',
-      })
-      const contentType = response.headers.get('Content-Type') || ''
-      if (response.status !== 200 || !asset.mime.test(contentType)) {
-        checks.push({ id: asset.id, label: asset.label, state: 'fail',
-          detail: 'HTTP ' + response.status + '；类型 ' + (contentType || '未提供') +
-            '。检查静态文件是否误回退为 index.html。' })
-        continue
+  ]
+  // One bounded budget for all five parallel HEADs; a hung proxy must not
+  // retain the dialog indefinitely. Abort on unmount/close/retry as well.
+  const controller = new AbortController()
+  const abortFromCaller = () => { controller.abort() }
+  if (options.signal?.aborted) controller.abort()
+  else options.signal?.addEventListener('abort', abortFromCaller, { once: true })
+  const budget = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.min(6000, Math.floor(options.timeoutMs))) : 6000
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, budget)
+  try {
+    const assetChecks = await Promise.all(assets.map(async (asset): Promise<XDrivePwaAssetCheck> => {
+      try {
+        if (controller.signal.aborted) throw new Error('cancelled')
+        const response = await fetch(asset.path, {
+          method: 'HEAD', credentials: 'omit', cache: 'no-store',
+          redirect: 'error', mode: 'same-origin', signal: controller.signal,
+        })
+        const contentType = response.headers.get('Content-Type') || ''
+        if (response.status !== 200 || !asset.mime.test(contentType)) {
+          return {
+            id: asset.id, label: asset.label, state: 'fail',
+            detail: 'HTTP ' + response.status + '；类型 ' + (contentType || '未提供') +
+              '。检查静态文件是否误回退为 index.html。',
+          }
+        }
+        const cacheControl = response.headers.get('Cache-Control') || ''
+        const revalidated = /\bno-cache\b|\bno-store\b/i.test(cacheControl)
+        return {
+          id: asset.id, label: asset.label,
+          state: !asset.revalidate || revalidated ? 'pass' : 'warn',
+          detail: !asset.revalidate ? '公开安装图标类型正确；静态图标允许缓存。'
+            : revalidated ? '响应类型正确，声明了重新验证缓存。'
+              : '响应类型正确；未检测到禁止长期缓存的头，发布更新可能延迟。',
+        }
+      } catch {
+        return {
+          id: asset.id, label: asset.label, state: 'fail',
+          detail: timedOut ? '公开资源检测超时（最多 6 秒）；请检查反向代理与网络。'
+            : controller.signal.aborted ? '资源检测已取消。'
+              : '同源资源请求失败。请检查网络、HTTPS、代理及文件部署。',
+        }
       }
-      const cacheControl = response.headers.get('Cache-Control') || ''
-      const revalidated = /\bno-cache\b|\bno-store\b/i.test(cacheControl)
-      checks.push({
-        id: asset.id, label: asset.label,
-        state: !asset.revalidate || revalidated ? 'pass' : 'warn',
-        detail: !asset.revalidate ? '公开安装图标类型正确；静态图标允许缓存。'
-          : revalidated ? '响应类型正确，声明了重新验证缓存。'
-            : '响应类型正确；未检测到禁止长期缓存的头，发布更新可能延迟。',
-      })
-    } catch {
-      checks.push({ id: asset.id, label: asset.label, state: 'fail',
-        detail: '同源资源请求失败。请检查网络、HTTPS、代理及文件部署。' })
-    }
+    }))
+    return [...checks, ...assetChecks]
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abortFromCaller)
   }
-  return checks
 }
