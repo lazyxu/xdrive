@@ -14,7 +14,7 @@ const start = original.indexOf('export function XDriveMediaAsyncThumbnail(')
 const end = original.indexOf('\nconst mediaPosterConcurrency', start)
 assert.ok(start >= 0 && end > start, 'the shared production thumbnail component must exist')
 const source = [
-  "import { useEffect, useState } from 'react'",
+  "import { useEffect, useRef, useState } from 'react'",
   "import { Box, Skeleton, XDriveMediaLoadingProgress } from './fixture'",
   'type MediaThumbnailLoader = any; type ReactNode = any',
   "function revokeIfBlob(url: string) { if (url.startsWith('blob:')) URL.revokeObjectURL(url) }",
@@ -165,8 +165,9 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   const thumb = original.slice(start, end)
   assert.doesNotMatch(thumb, /(?:new Image|fetch\(|XMLHttpRequest|preview-ticket)/)
   assert.match(thumb, /onError=\{\(\) => \{/)
+  assert.match(thumb, /key=\{\[sourceIdentity, src\]\.join\('\|'\)\}/)
   assert.match(thumb, /onImageReadyChange\?\.\(false\)/)
-  assert.match(thumb, /setFailed\(true\)/)
+  assert.match(thumb, /setFailedIdentity\(sourceIdentity\)/)
   assert.match(thumb, /onLoad=\{\(event\) => \{/)
   assert.match(thumb, /event\.currentTarget\.naturalWidth > 0/)
 })
@@ -202,4 +203,90 @@ test('P0-L4c1 real thumbnail image onError reports its exact failed URL without 
   assert.match(scheduler, /invalidateDecodedURL = \(nodeID: number, revision: number, failedURL: string\)/)
   assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(api\)/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
+})
+
+
+test('P0-L4c2 stale Live still onError/onLoad cannot poison the newly loaded Node revision', async () => {
+  const requested = []
+  const ready = []
+  const invalidated = []
+  const loadThumbnail = async (_id, _signal, revision) => {
+    requested.push(revision)
+    return 'blob:still-revision-' + revision
+  }
+  const element = revision => React.createElement(Thumb, {
+    nodeID: 808, revision, alt: 'IMG_0808.LIVP',
+    loadThumbnail, fallback, revokeOnDispose: false,
+    onImageReadyChange: value => ready.push([revision, value]),
+    onImageDecodeError: url => invalidated.push(url),
+  })
+  let view
+  await act(async () => { view = renderer.create(element(3)); await flush() })
+  const oldImage = image(view)
+  assert.equal(oldImage?.props.src, 'blob:still-revision-3')
+  // Snapshot the old element's handlers before React switches to revision 4.
+  // Test Renderer instances may reuse their .props to expose the *new*
+  // callbacks, which would incorrectly simulate a failure of the new image.
+  const oldOnError = oldImage.props.onError
+  const oldOnLoad = oldImage.props.onLoad
+  await act(async () => { view.update(element(4)); await flush() })
+  const currentImage = image(view)
+  assert.equal(currentImage?.props.src, 'blob:still-revision-4')
+  assert.notEqual(oldImage, currentImage, 'a source revision change remounts the real image DOM')
+  const readyCount = ready.length
+  await act(async () => {
+    oldOnError()
+    oldOnLoad({ currentTarget: { naturalWidth: 500 } })
+  })
+  assert.equal(image(view)?.props.src, 'blob:still-revision-4')
+  assert.equal(failed(view), false, 'the former still cannot cause a new gray cell')
+  assert.deepEqual(invalidated, [], 'no invalidation from old revision')
+  assert.equal(ready.length, readyCount, 'stale events must not report ready or failed')
+  await act(async () => { currentImage.props.onLoad({ currentTarget: { naturalWidth: 500 } }) })
+  assert.deepEqual(ready.at(-1), [4, true])
+  assert.deepEqual(requested, [3, 4])
+  await act(async () => { view.unmount() })
+})
+
+test('P0-L4c2 stale same-revision URL/unmounted DOM errors cannot poison a replacement', async () => {
+  const errors = []
+  const readiness = []
+  let requests = 0
+  const first = async () => { requests++; return 'blob:previous' }
+  const second = async () => { requests++; return 'blob:replacement' }
+  const onReady = value => readiness.push(value)
+  const onImageDecodeError = url => errors.push(url)
+  const element = loader => React.createElement(Thumb, {
+    nodeID: 809, revision: 7, alt: 'IMG_0809.HEIC',
+    loadThumbnail: loader, fallback, revokeOnDispose: false,
+    onImageReadyChange: onReady, onImageDecodeError,
+  })
+  let view
+  await act(async () => { view = renderer.create(element(first)); await flush() })
+  const oldImage = image(view)
+  assert.equal(oldImage?.props.src, 'blob:previous')
+  const oldOnError = oldImage.props.onError
+  const oldOnLoad = oldImage.props.onLoad
+  await act(async () => { view.update(element(second)); await flush() })
+  const latest = image(view)
+  assert.equal(latest?.props.src, 'blob:replacement')
+  assert.notEqual(oldImage, latest, 'a changed source URL must remount its img element')
+  const latestOnError = latest.props.onError
+  const priorCount = readiness.length
+  await act(async () => {
+    oldOnError()
+    oldOnLoad({ currentTarget: { naturalWidth: 100 } })
+  })
+  assert.equal(image(view)?.props.src, 'blob:replacement')
+  assert.equal(failed(view), false)
+  assert.deepEqual(errors, [])
+  assert.equal(readiness.length, priorCount)
+  await act(async () => { latestOnError() })
+  assert.equal(failed(view), true, 'real current image error must still show fallback')
+  assert.deepEqual(errors, ['blob:replacement'])
+  assert.equal(requests, 2, 'no new original download or automatic retry')
+  await act(async () => { view.unmount() })
+  const count = errors.length
+  await act(async () => { oldOnError(); latestOnError() })
+  assert.equal(errors.length, count, 'unmounted callbacks must not invalidate cache')
 })
