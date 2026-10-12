@@ -100,6 +100,27 @@ func localQuarantineCandidates(
 	return ids, candidates, nil
 }
 
+// localQuarantineReplayMatches ensures an uncertain POST can be replayed
+// ONLY for the exact evidence IDs already returned by the device-bound
+// quarantine readback. nil is reserved for the original E0b first-write path.
+func localQuarantineReplayMatches(ids, expected []uint64) bool {
+	if expected == nil {
+		return true
+	}
+	if len(expected) == 0 || len(expected) > localQuarantinePageLimit ||
+		len(ids) != len(expected) {
+		return false
+	}
+	var previous uint64
+	for i, id := range expected {
+		if id <= previous || ids[i] != id {
+			return false
+		}
+		previous = id
+	}
+	return true
+}
+
 // This helper checks the entire write response and cancellation state, with
 // no partial successes or retry assumptions after an ambiguous connection.
 // Server writes may still have happened on timeout: caller retries only via
@@ -151,6 +172,18 @@ func submitLocalQuarantineBatch(
 func (c *agentController) quarantineLocalBoundBackupEvidencePage(
 	ctx context.Context, sourceID, afterEvidenceID uint64,
 ) (localQuarantinePageSummary, error) {
+	return c.quarantineLocalBoundBackupEvidencePageExpected(
+		ctx, sourceID, afterEvidenceID, 0, nil)
+}
+
+// The expected-ID variant is exclusively for private owning-Agent recovery.
+// Its batch identity is checked before native hashing or any Server write.
+// A changed device/Root/revision or a newly inserted unquarantined candidate
+// must NEVER broaden the uncertain original POST into a new proposal batch.
+func (c *agentController) quarantineLocalBoundBackupEvidencePageExpected(
+	ctx context.Context, sourceID, afterEvidenceID, expectedRevision uint64,
+	expectedIDs []uint64,
+) (localQuarantinePageSummary, error) {
 	var empty localQuarantinePageSummary
 	if ctx == nil || sourceID == 0 {
 		return empty, privateLocalSnapshotError(errors.New("valid local Source required"))
@@ -169,6 +202,9 @@ func (c *agentController) quarantineLocalBoundBackupEvidencePage(
 	source, proof, cli, err := c.localBoundBackupConfig(workCtx, sourceID)
 	if err != nil {
 		return empty, privateLocalSnapshotError(err)
+	}
+	if expectedIDs != nil && (expectedRevision == 0 || source.Revision != expectedRevision) {
+		return empty, privateLocalSnapshotError(errors.New("recovered local Source revision changed"))
 	}
 	rules, err := cli.LocalBoundRules(workCtx, sourceID, proof)
 	if err != nil || rules.SourceID != sourceID || rules.Revision != source.Revision {
@@ -197,6 +233,9 @@ func (c *agentController) quarantineLocalBoundBackupEvidencePage(
 	ids, candidates, err := localQuarantineCandidates(page, sourceID, source.Revision, afterEvidenceID)
 	if err != nil {
 		return empty, privateLocalSnapshotError(err)
+	}
+	if !localQuarantineReplayMatches(ids, expectedIDs) {
+		return empty, privateLocalSnapshotError(errors.New("quarantine replay would broaden recovered evidence"))
 	}
 	if len(ids) != 0 {
 		checked, err := cli.PreflightLocalSourceItemEvidence(
@@ -288,6 +327,13 @@ func (c *agentController) quarantineLocalBoundBackupEvidencePage(
 		// Even if the Server saved proposals, NEVER promote or surface
 		// success after a device revocation or account/Root change.
 		return empty, privateLocalSnapshotError(err)
+	}
+	if expectedIDs != nil {
+		sourceNow, proofNow, _, err := c.localBoundBackupConfig(workCtx, sourceID)
+		if err != nil || sourceNow.Revision != source.Revision ||
+			proofNow != proof || workCtx.Err() != nil {
+			return empty, privateLocalSnapshotError(errors.New("owning quarantine replay authority changed"))
+		}
 	}
 	return result, nil
 }
