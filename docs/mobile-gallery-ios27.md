@@ -702,3 +702,17 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **最小恢复路径：** 仅当某个**授权 Node 的当前角色查询发生资源行缺失**，才额外读取**owner、Node、当前 revision、当前 SHA 严格匹配**、`index_state=ready` 且达到当前 LIVP 资源描述符版本的本地 canonical MediaMetadata。必须成功解析本地校验过的 `container_json`，仍需检查 still/motion **两段字节都完全落在当前原文件大小以内**，才能仅用合法原文件的嵌入式 offset/size 在本次请求中投影 read-only `MediaDerivedResource`。图库详情也仅对缺失的角色做同样的投影；现有成功路径、原媒体索引和 100k 稀疏 Gallery range **不新增扫描或常规 DB 查询**。不修改 Source/PhotoAsset、Node 或 derived-resource DB 行，不写入新的 CAS、不得以文件名/时间或第三方相册配对推断，也不重试不支持的格式。无匹配元数据、坏描述符、越界、不同账号/版本/SHA 都必须失败关闭；已存在但非法的资源行不隐式修好以免绕开原签名票据的失效检查。
 
 **验收与限制：** 在现有真实 PostgreSQL17/Gin 全功能 media 集成用例中，先上传有效 `.livp`、确认有完整 still/motion，然后模拟丢失两个辅助资源行，要求同一授权 Node 的 Details/冷 thumbnail/直接 still+motion/短期签名 ticket+HTTP 206 Range 均正确，且整个恢复**不会重建或改写 DB/CAS**。再核对错误 Owner/Revision/SHA、损坏的描述符和原先已有的失效票据检查。此修复只是证明恢复一个确定可复现的残缺索引场景；用户截图的三张真实灰色 still 若是 CAS 不存在、HEIC 不可解码、真实网络 5xx 或文件格式不受支持，仍需受影响 Node 的本地证据。iOS 27 Safari/PWA/VoiceOver 与同设备照片墙/Viewer 逐像素 1:1 验收继续明确为未运行。
+
+
+## P0-L10 · 实体 HEIC 静态帧在 LIVP 中的真实解码/冷封面验收（2026-10-12）
+
+P0-L9 #1534 已合入并清理分支，但此前集成样本的 LIVP 静态帧为 JPEG，不能充当真实 HEIC 解码证据。本阶段建立明确来源和 MIT 许可的真实 512×512、HEVC 编码 HEIC 二进制样本，用既有图片解码器、Go Server、Gin/PostgreSQL17/CAS、签名 still/motion Range 与缓存进行端到端回归；刻意删除辅助派生资源行验证冷缩略图的只读恢复，核对浏览器可解码 JPEG 响应和版本化缓存。不使用虚假 /api/v1 fixture、第二套 Mobile API、第二个虚拟网格、自动原片批量读取或照片名猜配对。Web/Mobile Web 功能等价、共享 Gallery/VirtualCollection、52px 全屏 App Frame 和 iOS 27 1:1 验收准则不变。
+
+**状态：新增测试候选，尚待精确 SHA CI 真执行。** CI 通过后也不等于用户截图内三张私人原图已恢复；仍需要对应 Node/revision/index_error、缩略图真实 HTTP/CAS 状态及 iOS 27 Safari/PWA/VoiceOver 原机成对截图。没有这些数据，不得作出物理 1:1 达标声明。
+
+
+### P0-L10 first CI: invalid MIME-test assumption (2026-10-12)
+
+[Exact-head CI #38236577183](https://github.com/lazyxu/xdrive/actions/runs/38236577183) on `99be030c` reached the actual `TestRealHEIC8BitThumbnailPixels` test and decoded the 512×512 real HEIC bytes; `image.DecodeConfig`, `image.Decode` and `Extract` returned valid dimensions and no errors. The assertion at `heic_real_decode_test.go:29` nonetheless required only `image/heic`, while `Extract` truthfully returned `image/heif` for this HEIF-family encoded source on the runner. Both are recognized in existing xDrive media thumbnail policy. **Invalid assertion, not a first-red product decoder regression.** No production-code change was made.
+
+The replacement exact one-work-commit test accepts only the already supported pair `image/heic` / `image/heif`, and then requires one consistent observed MIME through persisted LIVP metadata and direct/signed still transport; it does **not** skip actual pixels, disable thumbnail/signed Range/CAS comparisons, lower dimensions, or relax the real DB fixture. Old CI cannot authorize delivery; new exact-head tests/Final Gate and physical affected-file evidence remain required.
