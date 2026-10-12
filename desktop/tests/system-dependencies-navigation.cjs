@@ -163,6 +163,54 @@ test('only eleven fixed, correctly grouped services reach the administrator over
   ]), [])
 })
 
+test('valid fixed service deep links fail closed when old Server omits their inventory rows', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const available = nav.xDriveVisibleSystemDependencies([
+    { id: 'database', group: 'core', status: 'ready' },
+    { id: 'media-worker', group: 'media', status: 'unknown' },
+  ])
+  assert.equal(nav.xDriveSystemDependencySelectionMissing('database', available), false)
+  assert.equal(nav.xDriveSystemDependencySelectionMissing('media-worker', available), false)
+  assert.equal(nav.xDriveSystemDependencySelectionMissing('geonames', available), true)
+  assert.equal(nav.xDriveSystemDependencySelectionMissing('user-source', available), false)
+  for (const id of nav.XDRIVE_SYSTEM_DEPENDENCY_IDS)
+    assert.equal(nav.xDriveSystemDependencySelectionMissing(id, []), true)
+  const duplicates = nav.xDriveVisibleSystemDependencies([
+    { id: 'caddy', group: 'core', status: 'ready' },
+    { id: 'caddy', group: 'core', status: 'unavailable' },
+    { id: 'sync-folders', group: 'core', status: 'ready' },
+  ])
+  assert.equal(nav.xDriveSystemDependencySelectionMissing('caddy', duplicates), true)
+  assert.deepEqual(duplicates, [])
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(page.includes('xDriveSystemDependencySelectionMissing(selectedPage, systemServices)'))
+  assert.ok(page.includes('data-xdrive-system-dependency-unreported'))
+  assert.ok(page.includes('!loading && snapshot && selectedServiceMissing'))
+  assert.ok(page.includes('<MenuItem value={selectedPage} disabled>'))
+  assert.ok(page.includes("onClick={() => navigateTo({})}>返回总览"))
+  assert.ok(page.includes('不会伪造默认绿色状态'))
+})
+
+test('shared Web and Desktop service rows expose true configuration ownership, not fake activation', () => {
+  const model = read('ui/shared/src/service-dependencies.ts')
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(model.includes("XDriveServiceConfigMode = 'in-app' | 'deployment' | 'planned'"))
+  assert.ok(page.includes("Record<XDriveServiceConfigMode | 'unknown', string>"))
+  for (const label of [
+    '配置能力未知（请核对 Server/Agent 版本）',
+    '仅受控部署管理（本页不启停）',
+    '暂未提供应用内配置',
+    '应用内可配置（能否启停以详情页为准）',
+  ]) assert.ok(page.includes(label))
+  assert.ok(page.includes('data-xdrive-service-config-mode'))
+  assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
+  assert.ok(page.includes("configModeLabels[item.config_mode ?? 'unknown']"))
+  assert.ok(page.includes("service.config_mode !== 'in-app'"))
+  assert.equal((page.match(/\?\? configModeLabels\.unknown/g) || []).length, 2,
+    'unrecognized modes from malformed/old Servers must fail closed as unknown')
+  assert.equal(page.includes('docker.sock'), false)
+})
+
 test('global App exits never silently discard unsaved System Dependencies drafts', () => {
   const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
   const shouldPrompt = nav.xDriveSystemDependenciesNeedsExitConfirmation

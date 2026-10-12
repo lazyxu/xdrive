@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies } from '../system-dependencies-navigation'
+import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing } from '../system-dependencies-navigation'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -28,6 +28,7 @@ import type {
   XDriveServiceDependency,
   XDriveServiceDependencyGroup,
   XDriveServiceDependencyState,
+  XDriveServiceConfigMode,
   XDriveServiceApplyMode,
 } from '../service-dependencies'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
@@ -159,6 +160,13 @@ const photoHostStateLabels = {
   unknown: '容器状态不可确认',
 } as const
 
+const configModeLabels: Record<XDriveServiceConfigMode | 'unknown', string> = {
+  'in-app': '应用内可配置（能否启停以详情页为准）',
+  deployment: '仅受控部署管理（本页不启停）',
+  planned: '暂未提供应用内配置',
+  unknown: '配置能力未知（请核对 Server/Agent 版本）',
+}
+
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
   'task-boundary': '运行批次完成后安全生效',
@@ -254,6 +262,19 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                 只影响自动任务的准入策略，不代表模型安装、健康检查或作业执行成功；手动操作另行授权。
               </Typography>
             </Stack>
+          )}
+          <Typography variant="caption" color="text.secondary"
+            data-xdrive-service-config-mode
+            sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
+            配置方式：{configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
+          </Typography>
+          {service.config_mode !== 'in-app' && (
+            <Typography variant="caption" color="text.secondary"
+              sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+              {service.config_mode === 'deployment'
+                ? '当前只能观察状态；启用、停用、重部署必须通过受限宿主维护，不提供网页控制。'
+                : '当前没有经过后端验证的应用内配置或启停能力，本页不会显示无效操作。'}
+            </Typography>
           )}
           {service.config_hint && (
             <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', overflowWrap: 'anywhere' }}>
@@ -1010,6 +1031,7 @@ export function XDriveServiceDependenciesPage({
   const unhealthy = systemServices.filter((item) => item.status === 'unavailable').length
   const pendingCount = systemServices.filter((item) => item.activation_state === 'pending').length
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
+  const selectedServiceMissing = xDriveSystemDependencySelectionMissing(selectedPage, systemServices)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
   const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
     : currentTab === 'history' ? 'history' : 'config'
@@ -1091,6 +1113,9 @@ export function XDriveServiceDependenciesPage({
               value={selectedPage}
               onChange={(event) => choosePage(event.target.value)}>
               <MenuItem value="overview">总览</MenuItem>
+              {selectedServiceMissing && (
+                <MenuItem value={selectedPage} disabled>未报告服务：{selectedPage}</MenuItem>
+              )}
               {groups.map((group) => [
                 <MenuItem key={group.id + '-heading'} value={group.id} disabled>{group.label}</MenuItem>,
                 ...systemServices.filter((item) => item.group === group.id).map((item) => (
@@ -1129,6 +1154,10 @@ export function XDriveServiceDependenciesPage({
                             {statusLabels[item.status]?.label ?? '无法检测'}
                             {' · '}{activationStateLabels[item.activation_state ?? 'unknown'] ?? '生效未知'}
                           </Typography>
+                          <Typography variant="caption" color="text.secondary"
+                            sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
+                            配置：{configModeLabels[item.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
+                          </Typography>
                         </Button>
                       ))}
                     </Box>
@@ -1140,6 +1169,23 @@ export function XDriveServiceDependenciesPage({
                 ))}
                 {dependencyNote}
               </Box>
+            )}
+            {!loading && snapshot && selectedServiceMissing && (
+              <Paper variant="outlined" role="status" data-xdrive-system-dependency-unreported
+                sx={{ p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}>
+                <Stack spacing={1.5}>
+                  <Typography variant="subtitle2" fontWeight={700}>系统依赖状态未报告</Typography>
+                  <XDriveStatusAlert tone="warning">
+                    当前 Server/Agent 未返回此项固定系统依赖（ID：{selectedPage}）的可信状态；
+                    无法确认配置、安装、健康或实际生效。不会伪造默认绿色状态，也不会显示未知的配置或启停操作。
+                  </XDriveStatusAlert>
+                  <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Button variant="outlined" size="small" disabled={loading || refreshing || unsavedRef.current}
+                      onClick={() => setRefreshID((value) => value + 1)}>重新检测状态</Button>
+                    <Button variant="text" size="small" onClick={() => navigateTo({})}>返回总览</Button>
+                  </Stack>
+                </Stack>
+              </Paper>
             )}
             {!loading && snapshot && selectedPage !== 'overview' && groups
               .filter((group) => group.id === selectedGroup).map((group) => {
