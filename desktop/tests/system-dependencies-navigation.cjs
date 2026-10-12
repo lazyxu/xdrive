@@ -163,6 +163,28 @@ test('only eleven fixed, correctly grouped services reach the administrator over
   ]), [])
 })
 
+test('overview projects all eleven fixed services with safe missing-only entries', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const partial = [
+    { id: 'database', group: 'core', label: 'DB', health_state: 'ready' },
+    { id: 'database', group: 'core', label: 'duplicate', health_state: 'ready' },
+    { id: 'photo-face', group: 'intelligence', label: 'Face', health_state: 'failed' },
+    { id: 'yike', group: 'core', label: 'Secret', credential: 'sensitive' },
+    { id: 'caddy', group: 'media', label: 'Invalid', health_state: 'ready' },
+  ]
+  const entries = nav.xDriveSystemDependenciesOverviewEntries(partial)
+  assert.equal(entries.length, 11)
+  assert.deepEqual(entries.map((item) => item.id), nav.XDRIVE_SYSTEM_DEPENDENCY_IDS)
+  assert.deepEqual(entries.filter((item) => item.service !== null).map((item) => item.id), ['photo-face'])
+  assert.deepEqual(entries.filter((item) => item.service === null).map((item) => item.id),
+    nav.XDRIVE_SYSTEM_DEPENDENCY_IDS.filter((id) => id !== 'photo-face'))
+  assert.deepEqual(entries.filter((item) => item.group === 'core').map((item) => item.id),
+    ['database', 'storage', 'background-worker', 'caddy'])
+  assert.equal(entries.find((item) => item.id === 'database').label, 'PostgreSQL')
+  assert.equal(entries.some((item) => 'credential' in item || item.id === 'yike'), false)
+  assert.ok(nav.xDriveSystemDependenciesOverviewEntries([]).every((item) => item.service === null))
+})
+
 test('valid fixed service deep links fail closed when old Server omits their inventory rows', () => {
   const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
   const available = nav.xDriveVisibleSystemDependencies([

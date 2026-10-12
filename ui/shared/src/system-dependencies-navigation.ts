@@ -32,6 +32,21 @@ const groupByService: Record<XDriveSystemDependencyID, 'core' | 'media' | 'intel
   geonames: 'location',
 }
 
+// Missing-service labels are from a fixed allowlist, never an old Server response.
+const missingServiceLabels: Record<XDriveSystemDependencyID, string> = {
+  database: 'PostgreSQL',
+  storage: '文件存储',
+  'background-worker': '后台 Worker',
+  caddy: 'Caddy / HTTPS 网关',
+  'media-worker': 'FFmpeg Media Worker',
+  'photo-face': '人脸检测与人物聚类',
+  'photo-smart': '动物／物体识别与 OCR',
+  'photo-semantic': '图片语义搜索',
+  'photo-creative': '照片创作处理',
+  'baidu-map': '百度地图 Server API',
+  geonames: 'GeoNames 离线地名',
+}
+
 export function xDriveVisibleSystemDependencies<T extends { id: string; group: string }>(
   services: readonly T[],
 ): T[] {
@@ -54,6 +69,21 @@ export function xDriveVisibleSystemDependencies<T extends { id: string; group: s
     const item = recognized.get(id)
     return item ? [item] : []
   })
+}
+
+// Missing entries are independent display-only records, NOT synthesized service
+// status/capabilities. Invalid, duplicate and user-source rows stay excluded.
+export function xDriveSystemDependenciesOverviewEntries<T extends { id: string; group: string }>(
+  services: readonly T[],
+) {
+  const visible = xDriveVisibleSystemDependencies(services)
+  const byID = new Map<string, T>(visible.map((item) => [item.id, item]))
+  return XDRIVE_SYSTEM_DEPENDENCY_IDS.map((id) => ({
+    id,
+    group: groupByService[id],
+    label: missingServiceLabels[id],
+    service: byID.get(id) ?? null,
+  }))
 }
 
 // A fixed ID absent from the allowlisted inventory is unreported, not an

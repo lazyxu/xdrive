@@ -14,8 +14,9 @@ import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
-import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing } from '../system-dependencies-navigation'
-import { xDriveSystemDependenciesOverviewSummary, xDriveSystemDependencyOverviewSignals } from '../system-dependencies-overview'
+import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
+import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
+import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals } from '../system-dependencies-overview'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -320,6 +321,60 @@ const serviceOverviewIcons: Record<string, ReactNode> = {
   'photo-creative': <AutoFixHighRoundedIcon fontSize="small" />,
   'baidu-map': <MapRoundedIcon fontSize="small" />,
   geonames: <PlaceRoundedIcon fontSize="small" />,
+}
+
+// No reported DTO exists here: show only a read-only explanation. The click
+// uses the existing guarded missing-service detail, never an editor or apply.
+function UnreportedServiceOverviewCard({ id, label, onOpen }: {
+  id: string
+  label: string
+  onOpen: () => void
+}) {
+  return (
+    <Button variant="outlined" color="inherit" onClick={onOpen}
+      aria-label={'查看' + label + '未报告详情（只读）'}
+      data-xdrive-system-dependency-unreported-card={id}
+      sx={{
+        display: 'flex', width: '100%', minWidth: 0, minHeight: 160,
+        flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start',
+        px: 1.75, py: 1.5, gap: 1, borderRadius: 2, borderStyle: 'dashed',
+        borderColor: 'divider', bgcolor: 'background.paper',
+        textAlign: 'left', textTransform: 'none',
+        '&:hover': { bgcolor: 'action.hover', borderColor: 'text.disabled' },
+        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ width: '100%', minWidth: 0 }}>
+        <Box sx={{ width: 32, height: 32, borderRadius: 1.5, bgcolor: 'action.hover',
+          color: 'text.disabled', flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+          <HelpOutlineRoundedIcon fontSize="small" />
+        </Box>
+        <Typography variant="subtitle2" color="text.primary" fontWeight={700}
+          sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>{label}</Typography>
+        <Chip size="small" color="default" variant="outlined" label="未报告"
+          sx={{ flexShrink: 0, height: 24 }} />
+      </Stack>
+      <Typography variant="caption" color="text.secondary">
+        当前 Server/Agent 未返回可信状态，无法确认配置、部署、健康或生效。
+      </Typography>
+      <Box data-xdrive-service-overview-lifecycle sx={{
+        display: 'grid', width: '100%', gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
+        gap: 0.75, pt: 1, borderTop: 1, borderColor: 'divider',
+      }}>
+        {(['配置', '部署', '健康', '生效'] as const).map((axis) => (
+          <Stack key={axis} direction="row" spacing={0.75} sx={{ minWidth: 0 }}>
+            <Typography variant="caption" color="text.secondary">{axis}</Typography>
+            <Typography variant="caption" color="text.disabled">未确认</Typography>
+          </Stack>
+        ))}
+      </Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center"
+        sx={{ width: '100%', mt: 'auto' }}>
+        <Typography variant="caption" color="text.secondary">无可用操作</Typography>
+        <Typography variant="caption" color="text.secondary" fontWeight={700}>查看只读说明 ›</Typography>
+      </Stack>
+    </Button>
+  )
 }
 
 function pageLocalNavSx(selected: boolean) {
@@ -1177,7 +1232,8 @@ export function XDriveServiceDependenciesPage({
   const selectedPhotoRevision = photoRevisions.find(
     (item) => String(item.revision) === photoRollbackTarget && item.revision < (photoPolicy?.revision ?? 0),
   )
-  const overviewCounts = xDriveSystemDependenciesOverviewSummary(systemServices)
+  const overviewEntries = xDriveSystemDependenciesOverviewEntries(systemServices)
+  const overviewCounts = xDriveSystemDependenciesOverviewCoverage(systemServices, XDRIVE_SYSTEM_DEPENDENCY_IDS.length)
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
   const selectedServiceMissing = xDriveSystemDependencySelectionMissing(selectedPage, systemServices)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
@@ -1240,17 +1296,19 @@ export function XDriveServiceDependenciesPage({
               <Box key={group.id} sx={{ mb: 1.5 }}>
                 <Typography variant="overline" fontWeight={700} color="text.secondary"
                   sx={{ display: 'block', px: 1.25, mb: 0.25, lineHeight: 1.75 }}>{group.label}</Typography>
-                {systemServices.filter((item) => item.group === group.id).map((service) => (
+                {overviewEntries.filter((item) => item.group === group.id).map((service) => (
                   <Button key={service.id} size="small" fullWidth color="inherit" variant="text"
                     aria-current={selectedPage === service.id ? 'page' : undefined}
                     sx={{ ...pageLocalNavSx(selectedPage === service.id), mb: 0.25, gap: 0.75 }}
                     onClick={() => choosePage(service.id)}>
                     <Box component="span" aria-hidden sx={{
                       flexShrink: 0, width: 7, height: 7, borderRadius: '50%',
-                      bgcolor: service.health_state === 'ready' ? 'success.main'
-                        : service.health_state === 'failed' ? 'error.main' : 'text.disabled',
+                      bgcolor: service.service?.health_state === 'ready' ? 'success.main'
+                        : service.service?.health_state === 'failed' ? 'error.main' : 'text.disabled',
                     }} />
-                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>{service.label}</Box>
+                    <Box component="span" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                      {service.service?.label ?? service.label}{service.service ? '' : '（未报告）'}
+                    </Box>
                   </Button>
                 ))}
                 {group.id === 'intelligence' && (
@@ -1307,11 +1365,11 @@ export function XDriveServiceDependenciesPage({
                     gap: 1, mb: 2.5,
                   }}>
                   {[
-                    { label: '系统服务', value: String(overviewCounts.reported), hint: '已报告 / 固定 11 项', color: 'text.primary' },
+                    { label: '系统服务', value: overviewCounts.reported + ' / ' + XDRIVE_SYSTEM_DEPENDENCY_IDS.length, hint: '未报告 ' + overviewCounts.unreported + ' 项', color: 'text.primary' },
                     { label: '健康已验证', value: String(overviewCounts.healthVerified), hint: '真实健康探针通过', color: 'success.main' },
                     { label: '健康异常', value: String(overviewCounts.healthFailed), hint: '存在实际失败证据', color: overviewCounts.healthFailed ? 'error.main' : 'text.primary' },
-                    { label: '健康未核验', value: String(overviewCounts.healthUnverified), hint: '未知或未执行检测', color: overviewCounts.healthUnverified ? 'warning.main' : 'text.primary' },
-                    { label: '生效未核验', value: String(overviewCounts.activationUnverified), hint: '含待应用 ' + overviewCounts.activationPending + ' 项', color: 'text.primary' },
+                    { label: '健康未核验', value: String(overviewCounts.healthUnverified), hint: '含未报告 ' + overviewCounts.unreported + ' 项；未知或未检测', color: overviewCounts.healthUnverified ? 'warning.main' : 'text.primary' },
+                    { label: '生效未核验', value: String(overviewCounts.activationUnverified), hint: '含待应用 ' + overviewCounts.activationPending + ' 项、未报告 ' + overviewCounts.unreported + ' 项', color: 'text.primary' },
                   ].map((metric) => (
                     <Paper key={metric.label} variant="outlined" sx={{
                       p: 1.5, borderRadius: 2, bgcolor: 'background.paper', minWidth: 0,
@@ -1326,7 +1384,8 @@ export function XDriveServiceDependenciesPage({
                   ))}
                 </Box>
                 {groups.map((group) => {
-                  const items = systemServices.filter((item) => item.group === group.id)
+                  const items = overviewEntries.filter((item) => item.group === group.id)
+                  const reported = items.filter((item) => item.service !== null).length
                   if (items.length === 0) return null
                   return (
                     <Box key={group.id} component="section" aria-label={group.label} sx={{ mb: 2.5 }}>
@@ -1334,7 +1393,7 @@ export function XDriveServiceDependenciesPage({
                         alignItems={{ xs: 'flex-start', sm: 'baseline' }} sx={{ mb: 1 }}>
                         <Typography variant="subtitle1" component="h3" fontWeight={700}>{group.label}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {items.length} 项 · {group.description}
+                          {reported} / {items.length} 已报告 · {group.description}
                         </Typography>
                       </Stack>
                       <Box sx={{
@@ -1347,10 +1406,12 @@ export function XDriveServiceDependenciesPage({
                         },
                         gap: 1.25,
                       }}>
-                        {items.map((item) => (
-                          <ServiceOverviewCard key={item.id} service={item}
-                            onOpen={() => choosePage(item.id)} />
-                        ))}
+                        {items.map((item) => item.service
+                          ? <ServiceOverviewCard key={item.id} service={item.service}
+                              onOpen={() => choosePage(item.id)} />
+                          : <UnreportedServiceOverviewCard key={item.id} id={item.id} label={item.label}
+                              onOpen={() => choosePage(item.id)} />
+                        )}
                       </Box>
                       {group.id === 'intelligence' && (
                         <Button size="small" color="inherit" sx={{ mt: 1 }}
