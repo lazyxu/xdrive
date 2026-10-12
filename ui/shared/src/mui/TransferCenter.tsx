@@ -118,7 +118,7 @@ function TransferLeafItem({
               loadingLabel="正在重试…"
               onClick={() => onRetry(item.id)}
             >
-              重试
+              {item.direction === 'upload' && item.resume_conflict_policy === 'fail' ? '重新选择原文件' : '重试'}
             </XDriveActionButton>
           ) : null}
         </Stack>
@@ -182,7 +182,7 @@ function TransferLeafItem({
             loadingLabel="正在重试…"
             onClick={() => onRetry(item.id)}
           >
-            重试
+            {item.direction === 'upload' && item.resume_conflict_policy === 'fail' ? '重新选择原文件' : '重试'}
           </XDriveActionButton>
         ) : null}
       </Stack>
@@ -306,7 +306,7 @@ function TransferGroupItem({
             loadingLabel="正在重试…"
             onClick={() => onRetry(item.id)}
           >
-            重试
+            {item.direction === 'upload' && item.resume_conflict_policy === 'fail' ? '重新选择原文件' : '重试'}
           </XDriveActionButton>
         ) : null}
       </Stack>

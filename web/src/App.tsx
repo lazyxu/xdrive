@@ -1,6 +1,6 @@
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -107,6 +107,8 @@ import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import { xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
+import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
+import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
 const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
@@ -680,6 +682,9 @@ function FileManager({
   }, [api, route, launchWebApp])
 
   const [transfers, setTransfers] = useState<XDriveTransferTask[]>(() => api.transfers())
+  const resumeUploadPickerRef = useRef<HTMLInputElement>(null)
+  const resumeUploadPendingRef = useRef<XDriveTransferTask | null>(null)
+  const [resumingUpload, setResumingUpload] = useState(false)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const galleryUploadInputRef = useRef<HTMLInputElement>(null)
   const [galleryUploadRevision, setGalleryUploadRevision] = useState(0)
@@ -1392,6 +1397,51 @@ function FileManager({
       : []),
   ]
 
+  const chooseUploadForResume = (id: string) => {
+    if (resumingUpload || fileUploads.busy || viewerActive) return
+    const task = transfers.find((entry) => entry.id === id)
+    if (!xDriveCanResumeBrowserUpload(task)) {
+      setFeedback({ tone: 'warning', message: '原上传已过期或不支持直接续传。请在目标文件夹重新上传。' })
+      return
+    }
+    // Open the actual picker synchronously from a user gesture on iOS/Android.
+    // Never persist a browser File object or launch a network request yet.
+    resumeUploadPendingRef.current = task
+    resumeUploadPickerRef.current?.click()
+  }
+  const resumeSelectedUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const task = resumeUploadPendingRef.current
+    resumeUploadPendingRef.current = null
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!task || !file) return
+    const problem = xDrivePwaResumeFileError(task, file)
+    if (problem || !xDriveCanResumeBrowserUpload(task)) {
+      setFeedback({ tone: 'warning', message: problem || '无法恢复这个上传任务。' })
+      return
+    }
+    // The existing XDriveApi hashes every chunk and verifies the persisted
+    // ordered manifest fingerprint BEFORE requesting a new Server session.
+    // Keep the original attempt available if re-hashing, permissions or network fail.
+    setResumingUpload(true)
+    try {
+      const result = await api.uploadWithConflictPolicy(task.cloud_parent_id, file, 'fail',
+        undefined, '', '', task.resume_manifest_sha256)
+      // Only a verified Server success (including an already-finalized file)
+      // consumes the original retry action. Do so before any UI refresh fails.
+      webTransferStore.markUploadReselected(task.id)
+      await refreshCurrentDirectory(task.cloud_parent_id)
+      await refreshQuota()
+      setFeedback({ tone: 'good', message: result.skipped
+        ? '已核验文件并完成本次上传。'
+        : '上传完成，服务端已校验文件及符合条件的续传分块。' })
+    } catch (error) {
+      handleError(error)
+    } finally {
+      setResumingUpload(false)
+    }
+  }
+
   const transferAction = (
     <XDriveTransferPopover
       transfers={transfers}
@@ -1401,6 +1451,8 @@ function FileManager({
       onOpenChange={setTransferPopoverOpen}
       onClearHistory={() => { api.clearTransferHistory('network') }}
       canCancel={(id) => api.canCancelTransfer(id)}
+      retryDisabled={resumingUpload || fileUploads.busy}
+      onRetry={chooseUploadForResume}
       onCancel={(id) => {
         if (!api.cancelTransfer(id)) {
           setFeedback({ tone: 'warning', message: '这项传输不能从当前页面取消，或已经结束。' })
@@ -1497,6 +1549,14 @@ function FileManager({
         className="web-workspace-shell"
         sx={{ flex: 1, minHeight: 0 }}
       >
+        <input
+          hidden
+          data-xdrive-pwa-upload-resume-picker
+          type="file"
+          aria-label="重新选择需要续传的原文件"
+          ref={resumeUploadPickerRef}
+          onChange={(event) => { void resumeSelectedUpload(event) }}
+        />
         <XDriveWorkspaceSidebar
           ariaLabel="网页端功能区"
           navAriaLabel="网页端功能区导航"

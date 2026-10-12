@@ -30,6 +30,10 @@ Web 只提供显式“检查新版本”与安全更新步骤；浏览器 `navig
 
 Web/Mobile Web 的 `beforeunload` 只在本窗口有进行中的上传时临时注册，不能阻断应用内导航、Server Durable Task、原生下载或已结束的传输。CI 单元合同只证明状态筛选和注册/注销接线。iOS Safari/主屏 Web App、Android Chrome/安装模式，以及关闭标签、刷新、切应用、锁屏/强杀的真实浏览器对话框表现必须分别记载；OS 直接终止往往不给事件，不能把未显示警告写为 xDrive 代码不具备退出保护或已经成功续传。
 
+## PWA S4B 重新选择原文件的真实恢复验收（2026-10-12）
+
+恢复按钮只对失败的非分组、fail-on-conflict Web 上传显示，并须在 24 小时 Server session TTL 前保守尝试（产品窗口为 23 小时）。验收先用 iOS Safari 主屏 PWA、Android 浏览器/安装版、桌面 Chromium 分别注入真实 8MiB+块上传断线，再刷新/强杀/重新打开，重新选同一个文件，核查 owner+target+file name/size/lastModified、重选文件有序分块清单指纹在发起任何新上传 HTTP 前完全匹配、每个 Server received chunk 的 SHA-256、最终 Node Revision/CAS 文件字节哈希、无额外覆盖/重复传输。另测换账号、旧会话过期、文件同名不同字节、lastModified 被系统媒体选择器变更、用户取消选择、Quota/409/403、同一账号多个窗口；这些真实设备与 Server E2E 目前仍为 **not-run**。Node Store 模型和一般 Chromium fixture 通过不代表上述真机结果通过。
+
 ## 1. 结果必须分为四层
 
 | 层次 | 可用状态 | 记录内容 |
