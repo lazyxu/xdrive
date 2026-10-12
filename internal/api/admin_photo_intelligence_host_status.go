@@ -19,6 +19,20 @@ const (
 type photoIntelligenceHostStatus struct {
 	State             string
 	ProfileConfigured bool
+	sessionDigest     string // private host healthcheck output; never serialized
+}
+
+func validPhotoIntelligenceHealthDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func validPhotoIntelligenceHostState(state string) bool {
@@ -51,16 +65,20 @@ func (s *Server) readPhotoIntelligenceHostStatus() (photoIntelligenceHostStatus,
 		return photoIntelligenceHostStatus{}, false
 	}
 	var payload struct {
-		State             string `json:"state"`
-		ProfileConfigured *bool  `json:"profile_configured"`
+		State                    string `json:"state"`
+		ProfileConfigured        *bool  `json:"profile_configured"`
+		HealthcheckSessionDigest string `json:"healthcheck_session_digest"`
 	}
 	if json.Unmarshal(raw, &payload) != nil ||
 		payload.ProfileConfigured == nil ||
-		!validPhotoIntelligenceHostState(payload.State) {
+		!validPhotoIntelligenceHostState(payload.State) ||
+		(payload.HealthcheckSessionDigest != "" &&
+			(payload.State != "healthy" || !validPhotoIntelligenceHealthDigest(payload.HealthcheckSessionDigest))) {
 		return photoIntelligenceHostStatus{}, false
 	}
 	return photoIntelligenceHostStatus{
 		State:             payload.State,
 		ProfileConfigured: *payload.ProfileConfigured,
+		sessionDigest:     payload.HealthcheckSessionDigest,
 	}, true
 }

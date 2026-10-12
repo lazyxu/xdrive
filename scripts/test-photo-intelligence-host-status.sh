@@ -7,6 +7,8 @@ trap 'rm -rf "$scratch"' EXIT
 export XD_CONFIG_DIR="$scratch"
 export XD_PHOTO_HOST_FIXTURE="$scratch/photo-host-health"
 export XD_PHOTO_HOST_CALLS="$scratch/docker-calls"
+export XD_PHOTO_HOST_FAKE_DIGEST="$(printf '%064d' 0)"
+export XD_PHOTO_HOST_FAKE_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 mkdir -p "$scratch/config" "$scratch/fakebin" "$scratch/logs"
 printf 'COMPOSE_PROFILES=media-worker,photo-intelligence\nXD_PHOTO_FACE_ANALYZER_TOKEN=never-log-this\n' > "$scratch/config/.env"
 printf 'services:\n  photo-face:\n    image: fixture\n' > "$scratch/config/docker-compose.yml"
@@ -19,6 +21,11 @@ if [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
       "$4" == xdrive-photo-face ]]; then
   [[ -f "$XD_PHOTO_HOST_FIXTURE" ]] || exit 1
   cat "$XD_PHOTO_HOST_FIXTURE"
+elif [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
+        "$3" == '{{range .State.Health.Log}}{{printf "%v|%v|%s" .End .ExitCode .Output}}{{end}}' &&
+        "$4" == xdrive-photo-face ]]; then
+  printf '%s|0|XD_PHOTO_INSTANCE_SHA256=%s\n' \
+    "$XD_PHOTO_HOST_FAKE_TIME" "$XD_PHOTO_HOST_FAKE_DIGEST"
 else
   exit 2
 fi
@@ -35,12 +42,23 @@ printf 'true|healthy\n' > "$XD_PHOTO_HOST_FIXTURE"
 photo_intelligence_host_refresh
 test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" profile_configured)" = true
+test "$(json_value "$status" healthcheck_session_digest)" = "$XD_PHOTO_HOST_FAKE_DIGEST"
 ! grep -q 'never-log-this' "$status"
 test "$(stat -c %a "$status")" = 660
 
+# The Host Manager refuses malformed or stale runtime evidence.
+export XD_PHOTO_HOST_FAKE_DIGEST=malformed
+photo_intelligence_host_refresh
+test -z "$(json_value "$status" healthcheck_session_digest)"
+export XD_PHOTO_HOST_FAKE_DIGEST="$(printf '%064d' 0)"
+export XD_PHOTO_HOST_FAKE_TIME="$(date -u -d '3 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"
+photo_intelligence_host_refresh
+test -z "$(json_value "$status" healthcheck_session_digest)"
+export XD_PHOTO_HOST_FAKE_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'true|unhealthy\n' > "$XD_PHOTO_HOST_FIXTURE"
 photo_intelligence_host_refresh
 test "$(json_value "$status" state)" = unhealthy
+test -z "$(json_value "$status" healthcheck_session_digest)"
 printf 'true|starting\n' > "$XD_PHOTO_HOST_FIXTURE"
 photo_intelligence_host_refresh
 test "$(json_value "$status" state)" = starting
@@ -76,5 +94,5 @@ test "$(json_value "$status" state)" = unknown
 # The runner must never issue Compose up/stop, Docker control or arbitrary
 # inspect arguments while building this read-only observation.
 ! grep -E '(^| )(up|stop|restart|exec|rm|run|kill|start)( |$)' "$XD_PHOTO_HOST_CALLS"
-test "$(wc -l < "$XD_PHOTO_HOST_CALLS")" -eq 10
+test "$(grep -Fc 'inspect --format {{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}} xdrive-photo-face' "$XD_PHOTO_HOST_CALLS")" -eq 12
 echo "Photo Intelligence fixed Docker observation/profile intent/no secret/no mutation: OK"

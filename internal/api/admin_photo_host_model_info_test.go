@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -135,5 +137,47 @@ func TestPhotoHostFourModelRuntimeSessionCoherence(t *testing.T) {
 				t.Fatal("unsafe model same-process claim")
 			}
 		})
+	}
+}
+
+func TestPhotoHostDockerHealthcheckDigestIsCorroborationNotTaskProof(t *testing.T) {
+	session := "0123456789abcdef0123456789abcdef"
+	ids := [...]string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"}
+	checks := make([]photoHostModelInfoCheck, len(ids))
+	for i, id := range ids {
+		checks[i] = photoHostModelInfoCheck{ID: id, State: "ready", runtimeInstanceID: session}
+	}
+	digestBytes := sha256.Sum256([]byte(session))
+	digest := hex.EncodeToString(digestBytes[:])
+	host := photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, sessionDigest: digest}
+	if !photoHostDockerHealthcheckMatched(checks, host) {
+		t.Fatal("four valid coherent models did not match the fixed-container healthcheck digest")
+	}
+	raw, err := json.Marshal(adminPhotoHostPreflightDTO{
+		ModelInfoChecks: checks, ModelInstanceCoherent: true, DockerHealthcheckMatched: true,
+	})
+	if err != nil || strings.Contains(string(raw), session) || strings.Contains(string(raw), digest) {
+		t.Fatal("private session identity or healthcheck digest leaked to admin JSON")
+	}
+	for _, tc := range []struct {
+		name string
+		host photoIntelligenceHostStatus
+	}{
+		{"legacy host", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true}},
+		{"wrong digest", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, sessionDigest: strings.Repeat("f", 64)}},
+		{"malformed digest", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, sessionDigest: "invalid"}},
+		{"unhealthy", photoIntelligenceHostStatus{State: "unhealthy", ProfileConfigured: true, sessionDigest: digest}},
+		{"profile disabled", photoIntelligenceHostStatus{State: "healthy", sessionDigest: digest}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if photoHostDockerHealthcheckMatched(checks, tc.host) {
+				t.Fatal("unsupported or stale Docker healthcheck was accepted")
+			}
+		})
+	}
+	mixed := append([]photoHostModelInfoCheck(nil), checks...)
+	mixed[1].runtimeInstanceID = strings.Repeat("a", 32)
+	if photoHostDockerHealthcheckMatched(mixed, host) {
+		t.Fatal("mixed model generation was accepted")
 	}
 }

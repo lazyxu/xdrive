@@ -161,3 +161,48 @@ func TestPhotoIntelligenceHostStatusRequiresAdminAuth(t *testing.T) {
 		t.Fatalf("unauthenticated runtime inventory returned HTTP %d", rec.Code)
 	}
 }
+
+func TestPhotoHostFixedHealthcheckDigestMustBeFreshAndWellFormed(t *testing.T) {
+	dir := t.TempDir()
+	srv := &Server{HostControlDir: dir}
+	statusPath := filepath.Join(dir, photoIntelligenceHostStatusName)
+	heartbeat := filepath.Join(dir, "heartbeat")
+	if err := os.WriteFile(heartbeat, []byte("trusted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	write := func(raw string) {
+		t.Helper()
+		if err := os.WriteFile(statusPath, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	good := strings.Repeat("a", 64)
+	write(`{"state":"healthy","profile_configured":true,"healthcheck_session_digest":"` + good + `"}`)
+	host, ok := srv.readPhotoIntelligenceHostStatus()
+	if !ok || host.State != "healthy" || host.sessionDigest != good {
+		t.Fatalf("valid fixed Docker healthcheck not read: %+v observed=%v", host, ok)
+	}
+	for _, invalid := range []string{
+		`{"state":"healthy","profile_configured":true,"healthcheck_session_digest":"short"}`,
+		`{"state":"healthy","profile_configured":true,"healthcheck_session_digest":"` + strings.Repeat("A", 64) + `"}`,
+		`{"state":"unhealthy","profile_configured":true,"healthcheck_session_digest":"` + good + `"}`,
+	} {
+		write(invalid)
+		if _, ok := srv.readPhotoIntelligenceHostStatus(); ok {
+			t.Fatalf("invalid Docker healthcheck digest trusted: %s", invalid)
+		}
+	}
+	write(`{"state":"healthy","profile_configured":true}`)
+	legacy, ok := srv.readPhotoIntelligenceHostStatus()
+	if !ok || legacy.sessionDigest != "" {
+		t.Fatalf("legacy host observation invented identity: %+v", legacy)
+	}
+	write(`{"state":"healthy","profile_configured":true,"healthcheck_session_digest":"` + good + `"}`)
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(statusPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := srv.readPhotoIntelligenceHostStatus(); ok {
+		t.Fatal("stale host healthcheck digest became trusted")
+	}
+}

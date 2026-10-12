@@ -311,6 +311,11 @@ export function XDrivePhotoHostDesiredPanel({
                       </Typography>
                     ))}
                     <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="body2" color="text.secondary" data-xdrive-photo-docker-healthcheck-correspondence>
+                        固定容器 Docker 健康检查摘要：{preflight.docker_healthcheck_matched
+                          ? '与四类 Info 进程代际一致（只读交叉核验）'
+                          : '未核验或不一致；仍不可认定模型部署已生效'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-instance-coherent>
                         四类 Info 进程代际一致性：{preflight.model_instance_coherent
                           ? '同一模型进程（仅自报，尚未与可信宿主绑定）'

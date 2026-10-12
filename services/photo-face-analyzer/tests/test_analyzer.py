@@ -103,6 +103,18 @@ class AnalyzerTests(unittest.TestCase):
         cls.preview_server.server_close()
         cls.preview_thread.join(timeout=5)
 
+    def test_healthcheck_instance_digest_is_bounded_and_nonreversible(self) -> None:
+        session_id = "0123456789abcdef0123456789abcdef"
+        digest = analyzer.healthcheck_session_digest(session_id)
+        self.assertEqual(
+            digest, hashlib.sha256(session_id.encode("ascii")).hexdigest()
+        )
+        self.assertRegex(digest, r"^[0-9a-f]{64}$")
+        self.assertNotEqual(digest, session_id)
+        for invalid in ("", "abc", "A" * 32, "a" * 33, "g" * 32):
+            with self.assertRaises(ValueError):
+                analyzer.healthcheck_session_digest(invalid)
+
     def test_process_boot_session_identity_changes_and_is_shared(self) -> None:
         first = analyzer.AnalyzerState(
             self.runtime, self.smart_runtime, self.semantic_runtime,
