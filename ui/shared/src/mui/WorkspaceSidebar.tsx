@@ -256,6 +256,7 @@ export function XDriveWorkspaceSidebar({
           }}
         >
           <XDriveSidebarStorageSummary
+            label="我的云端存储"
             usedBytes={storageSummary.usedBytes}
             totalBytes={storageSummary.totalBytes}
             diskTotalBytes={storageSummary.diskTotalBytes}
