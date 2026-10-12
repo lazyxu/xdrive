@@ -91,7 +91,7 @@ test('Web and Desktop both render the shared task center workspace', () => {
   assert.equal((desktop.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Desktop must not duplicate the transfer-center workspace')
   assert.equal((web.match(/<XDriveTransferCenter\b/g) || []).length, 0, 'Web must not duplicate the transfer-center workspace')
   assert.match(workspaceNavigation, /key: 'transfers',\s*label: '任务'/, 'shared core navigation model must expose Tasks under its existing workspace key')
-  assert.ok(sidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sidebarNav.includes('primary={destination.label}'), 'shared sidebar must render the Transfers label from its destination')
   assert.ok(web.includes('<XDriveWorkspaceSidebar'), 'Web must consume the shared workspace sidebar')
   assert.ok(desktop.includes('<XDriveWorkspaceSidebar'), 'Desktop must consume the shared workspace sidebar')

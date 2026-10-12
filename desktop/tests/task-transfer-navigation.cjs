@@ -37,12 +37,16 @@ test('Sidebar exposes personal Tasks, with Global Tasks only for an administrato
   assert.equal(ordinary.find((item) => item.key === 'transfers')?.label, '任务')
   assert.equal(ordinary.some((item) => item.key === 'global-tasks'), false)
   assert.equal(ordinary.some((item) => item.label === '传输'), false)
-  const admin = nav.xDriveCoreWorkspaceDestinations({ showGlobalTasks: true, transferBadge: 2 })
-  assert.equal(admin.find((item) => item.key === 'global-tasks')?.label, '全局任务')
-  assert.equal(admin.find((item) => item.key === 'transfers')?.badge, 2)
-  const compact = nav.xDriveCompactWorkspaceNavigation({ showGlobalTasks: true })
+  const adminCore = nav.xDriveCoreWorkspaceDestinations({ transferBadge: 2 })
+  assert.equal(adminCore.some((item) => item.key === 'global-tasks'), false)
+  assert.equal(adminCore.find((item) => item.key === 'transfers')?.badge, 2)
+  const compact = nav.xDriveCompactWorkspaceNavigation({
+    sections: [{ key: 'admin', label: '管理', placement: 'after-core',
+      items: [{ key: 'global-tasks', label: '全局任务', icon: null }] }],
+  })
   assert.equal(compact.primary.find((item) => item.key === 'transfers')?.label, '任务')
-  assert.equal(compact.moreSections.flatMap((section) => section.items).some((item) => item.key === 'global-tasks'), true)
+  assert.equal(compact.moreSections.find((section) => section.key === 'admin')?.items[0]?.key, 'global-tasks')
+  assert.equal(compact.moreSections.find((section) => section.key === 'core')?.items.some((item) => item.key === 'global-tasks'), false)
 })
 
 test('workspace task navigation preserves independent mine/global routes and back links', () => {

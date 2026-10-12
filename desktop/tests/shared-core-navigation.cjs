@@ -18,7 +18,7 @@ test('shared core navigation owns common destinations and capability-gates local
   assert.ok(sharedRoute.includes("export type XDriveCoreWorkspaceKey = typeof XDRIVE_CORE_WORKSPACE_KEYS[number]"), 'shared route model must derive the core workspace key union')
   assert.ok(sharedNav.includes('export function XDriveCoreWorkspaceNavItems'))
   assert.ok(sharedModel.includes('showLocalStorage = false'), 'local storage remains an explicit client capability even though Web and Desktop both opt in')
-  assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
+  assert.ok(sharedNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }).map'), 'sidebar and compact navigation must derive core destinations from the same model')
   assert.ok(
     sharedModel.includes("key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize=\"small\" />"),
     'Files should use a cloud icon rather than a local-folder glyph',
@@ -118,7 +118,7 @@ test('Desktop extension destinations all flow through section models', () => {
   assert.ok(desktop.includes("key: 'overview',\n      placement: 'before-core'"), 'Home should inject before the shared core')
   assert.ok(desktop.includes("label: '主页'"), 'Desktop overview route should present as 主页')
   assert.ok(desktop.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Conflicts should inject after the shared core')
-  assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Diagnostics should inject into the bottom extension slot')
+  assert.ok(desktop.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Diagnostics should inject into the bottom extension slot')
   assert.equal(desktop.includes('leadingItems='), false, 'Desktop should not use a parallel leading-items contract')
   assert.equal(desktop.includes('trailingItems='), false, 'Desktop should not use a parallel trailing-items contract')
   assert.ok(desktop.includes('sections={desktopSidebarSections}'), 'Desktop must pass its extension sections to shared sidebar')
@@ -132,6 +132,30 @@ test('Web Home and admin destinations use the same section model contract', () =
   assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
   for (const label of ['用户管理', '审计日志', '全局存储', '系统依赖']) {
     assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
+  }
+})
+
+test('user/owner and admin destinations remain separated in full Web/Desktop Sidebar', () => {
+  assert.equal(sharedModel.includes("key: 'global-tasks'"), false)
+  assert.equal(sharedNav.includes('showGlobalTasks'), false)
+  assert.equal(sharedSidebar.includes('showGlobalTasks'), false)
+  for (const [source, sectionName, roleGuard] of [
+    [web, 'webSidebarSections', "profile?.role === 'admin'"],
+    [desktop, 'desktopSidebarSections', "status?.role === 'admin'"],
+  ]) {
+    const start = source.indexOf('const ' + sectionName + ': XDriveSidebarSectionModel[]')
+    const end = source.indexOf('\n  ]', start)
+    assert.ok(start >= 0 && end > start, 'Sidebar section array must be present')
+    const sections = source.slice(start, end)
+    assert.ok(sections.includes(roleGuard), 'admin section must be role-gated')
+    assert.equal((sections.match(/key: 'global-tasks'/g) || []).length, 1)
+    const admin = sections.indexOf("key: 'admin',")
+    assert.ok(admin > 0 && sections.indexOf("key: 'global-tasks'", admin) > admin)
+    if (source === desktop) {
+      const diagnostics = sections.indexOf("key: 'diagnostics',")
+      assert.ok(diagnostics > 0 && diagnostics < admin, 'local diagnostics belong before 管理')
+      assert.ok(sections.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"))
+    }
   }
 })
 

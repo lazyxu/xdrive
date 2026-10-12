@@ -6,7 +6,6 @@ import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded'
 import PhotoLibraryRoundedIcon from '@mui/icons-material/PhotoLibraryRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import AssignmentOutlinedIcon from '@mui/icons-material/AssignmentOutlined'
-import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import type { XDriveSidebarBadgeValue } from './SidebarNav'
 import type { XDriveCoreWorkspaceKey } from './WorkspaceRoute'
 
@@ -32,11 +31,9 @@ export type XDriveSidebarSectionModel = {
 export function xDriveCoreWorkspaceDestinations({
   transferBadge,
   showLocalStorage = false,
-  showGlobalTasks = false,
 }: {
   transferBadge?: XDriveSidebarBadgeValue
   showLocalStorage?: boolean
-  showGlobalTasks?: boolean
 } = {}): (XDriveSidebarDestinationModel & { key: XDriveCoreWorkspaceKey })[] {
   return [
     { key: 'files', label: '文件', icon: <CloudOutlinedIcon fontSize="small" /> },
@@ -50,9 +47,6 @@ export function xDriveCoreWorkspaceDestinations({
       icon: <AssignmentOutlinedIcon fontSize="small" />,
       badge: transferBadge,
     },
-    ...(showGlobalTasks
-      ? [{ key: 'global-tasks' as const, label: '全局任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> }]
-      : []),
     ...(showLocalStorage
       ? [{ key: 'local-storage' as const, label: '本地存储', icon: <StorageRoundedIcon fontSize="small" /> }]
       : []),
@@ -66,19 +60,17 @@ export function xDriveCompactWorkspaceNavigation({
   sections = [],
   transferBadge,
   showLocalStorage = false,
-  showGlobalTasks = false,
 }: {
   sections?: XDriveSidebarSectionModel[]
   transferBadge?: XDriveSidebarBadgeValue
   showLocalStorage?: boolean
-  showGlobalTasks?: boolean
 } = {}): {
   primary: XDriveSidebarDestinationModel[]
   moreSections: XDriveSidebarSectionModel[]
 } {
   const orderedSections: XDriveSidebarSectionModel[] = [
     ...sections.filter((section) => section.placement === 'before-core'),
-    { key: 'core', items: xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks }) },
+    { key: 'core', items: xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage }) },
     ...sections.filter((section) => (section.placement ?? 'after-core') === 'after-core'),
     ...sections.filter((section) => section.placement === 'bottom'),
   ]

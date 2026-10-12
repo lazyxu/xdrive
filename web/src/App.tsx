@@ -2,6 +2,7 @@ import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRol
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
+import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
@@ -1310,6 +1311,11 @@ function FileManager({
               icon: <ManageAccountsRoundedIcon fontSize="small" />,
             },
             {
+              key: 'global-tasks',
+              label: '全局任务',
+              icon: <AdminPanelSettingsOutlinedIcon fontSize="small" />,
+            },
+            {
               key: 'admin-audit',
               label: '审计日志',
               icon: <AssessmentRoundedIcon fontSize="small" />,
@@ -1447,7 +1453,6 @@ function FileManager({
           disabled={viewerActive}
           selected={appView}
           transferBadge={taskCenter.badge}
-          showGlobalTasks={profile?.role === 'admin'}
           showLocalStorage
           sections={webSidebarSections}
           storageSummary={xDriveWorkspaceStorageSummary(quota)}

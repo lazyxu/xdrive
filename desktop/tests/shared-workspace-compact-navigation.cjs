@@ -289,11 +289,16 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
   for (const { profile, expectedMore } of [
     { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
     { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'admin-audit', 'admin-storage', 'admin-services'] },
+    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])
     assert.deepEqual(result.moreSections.flatMap((section) => keys(section.items)), expectedMore, `role: ${profile?.role ?? 'missing'}`)
+    const core = result.moreSections.find((section) => section.key === 'core')
+    assert.ok(core && !core.items.some((item) => item.key === 'global-tasks'))
+    const admin = result.moreSections.find((section) => section.key === 'admin')
+    assert.equal(Boolean(admin), profile?.role === 'admin')
+    if (admin) assert.ok(admin.items.some((item) => item.key === 'global-tasks'))
   }
 })
 
