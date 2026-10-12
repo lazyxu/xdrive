@@ -73,70 +73,94 @@ func (s *Server) checkLocalQuarantinedEvidenceScope(
 	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
 	input localEvidenceCloudMetadataRequest,
 ) error {
+	if c == nil || c.Request == nil {
+		return errLocalEvidenceConflict
+	}
+	return s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		return s.checkLocalQuarantinedEvidenceScopeTx(tx, c, sourceID, revision, proof, input)
+	})
+}
+
+// checkLocalQuarantinedEvidenceScopeTx is the independently reusable, exact,
+// transaction-scoped quarantine/evidence guard for a future L03-E1 writer.
+// The caller must use the SAME authorized transaction for any metadata writes.
+// Success is NEVER proof of durable physical CAS bytes or upload completion.
+func (s *Server) checkLocalQuarantinedEvidenceScopeTx(
+	tx *gorm.DB, c *gin.Context, sourceID, revision uint64,
+	proof localSourceExecutorProof, input localEvidenceCloudMetadataRequest,
+) error {
+	if tx == nil || c == nil || c.Request == nil || sourceID == 0 || revision == 0 ||
+		!validLocalQuarantinedContentClaims(input) {
+		return errLocalEvidenceConflict
+	}
+	boundValue, exists := c.Get(localSourceExecutorContextKey)
+	bound, authorized := boundValue.(localSourceExecutorProof)
+	if !exists || !authorized || bound != proof {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+
 	ids := make([]uint64, len(input.Items))
 	for i, item := range input.Items {
 		ids[i] = item.EvidenceID
 	}
 	fingerprint := strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint")))
-	return s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// Match device -> Source -> Root ordering used by revocation and
-		// mutations; never accept a JWT without owning-device credentials.
-		if err := s.requireLocalSourceProofTx(tx, c, sourceID, "", false); err != nil {
-			return err
-		}
-		var source meta.Source
-		if err := tx.Select("id", "owner_id", "kind", "direction", "status", "revision").
-			Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
-			return err
-		}
-		if !isLocalFolderPush(source) {
-			return errLocalBindingTypeInvalid
-		}
-		if source.Revision != revision || proof.SourceRevision != revision {
-			return errRevisionConflict
-		}
-		if source.Status != meta.SourceStatusPaused {
-			return errLocalBindingStateInvalid
-		}
+	// Match device -> Source -> Root ordering used by revocation and
+	// mutations; never accept a JWT without owning-device credentials.
+	if err := s.requireLocalSourceProofTx(tx, c, sourceID, "", false); err != nil {
+		return err
+	}
+	var source meta.Source
+	if err := tx.Select("id", "owner_id", "kind", "direction", "status", "revision").
+		Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		return err
+	}
+	if !isLocalFolderPush(source) {
+		return errLocalBindingTypeInvalid
+	}
+	if source.Revision != revision || proof.SourceRevision != revision {
+		return errRevisionConflict
+	}
+	if source.Status != meta.SourceStatusPaused {
+		return errLocalBindingStateInvalid
+	}
 
-		var intents []meta.LocalSourceCommitIntent
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
-				sourceID, revision, proof.DeviceID, proof.RootID, fingerprint).
-			Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ? AND state = ?",
-				input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256,
-				meta.LocalSourceCommitIntentStateQuarantined).
-			Where("evidence_id IN ?", ids).
-			Order("evidence_id ASC").Limit(localEvidencePhysicalCASLimitItems).
-			Find(&intents).Error; err != nil {
-			return err
-		}
-		if len(intents) != len(ids) {
+	var intents []meta.LocalSourceCommitIntent
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
+			sourceID, revision, proof.DeviceID, proof.RootID, fingerprint).
+		Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ? AND state = ?",
+			input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256,
+			meta.LocalSourceCommitIntentStateQuarantined).
+		Where("evidence_id IN ?", ids).
+		Order("evidence_id ASC").Limit(localEvidencePhysicalCASLimitItems).
+		Find(&intents).Error; err != nil {
+		return err
+	}
+	if len(intents) != len(ids) {
+		return errLocalEvidenceConflict
+	}
+	var evidence []meta.LocalSourceItemEvidence
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
+			sourceID, revision, proof.DeviceID, proof.RootID, fingerprint).
+		Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ?",
+			input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256).
+		Where("id IN ?", ids).
+		Order("id ASC").Limit(localEvidencePhysicalCASLimitItems).
+		Find(&evidence).Error; err != nil {
+		return err
+	}
+	if len(evidence) != len(ids) {
+		return errLocalEvidenceConflict
+	}
+	for i, id := range ids {
+		if intents[i].EvidenceID != id || evidence[i].ID != id ||
+			!sameLocalQuarantinedEvidence(intents[i], evidence[i],
+				sourceID, revision, proof, fingerprint) {
 			return errLocalEvidenceConflict
 		}
-		var evidence []meta.LocalSourceItemEvidence
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
-				sourceID, revision, proof.DeviceID, proof.RootID, fingerprint).
-			Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ?",
-				input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256).
-			Where("id IN ?", ids).
-			Order("id ASC").Limit(localEvidencePhysicalCASLimitItems).
-			Find(&evidence).Error; err != nil {
-			return err
-		}
-		if len(evidence) != len(ids) {
-			return errLocalEvidenceConflict
-		}
-		for i, id := range ids {
-			if intents[i].EvidenceID != id || evidence[i].ID != id ||
-				!sameLocalQuarantinedEvidence(intents[i], evidence[i],
-					sourceID, revision, proof, fingerprint) {
-				return errLocalEvidenceConflict
-			}
-		}
-		return c.Request.Context().Err()
-	})
+	}
+	return c.Request.Context().Err()
 }
 
 // Owning-Agent-only point-in-time inspection of the SAME already quarantined
@@ -182,11 +206,8 @@ func (s *Server) preflightLocalQuarantinedContent(c *gin.Context) {
 	defer cancel()
 	c.Request = c.Request.WithContext(readCtx)
 
-	if err := s.checkLocalQuarantinedEvidenceScope(c, sourceID, expected, proof, input); err != nil {
-		failLocalEvidencePhysicalCAS(c, err, expected, expected)
-		return
-	}
-	revision, objects, err := s.checkLocalEvidenceCloudMetadata(c, sourceID, expected, proof, input)
+	revision, objects, err := s.checkLocalQuarantinedCloudSnapshot(
+		c, sourceID, expected, proof, input)
 	if err != nil {
 		failLocalEvidencePhysicalCAS(c, err, expected, revision)
 		return
@@ -205,11 +226,8 @@ func (s *Server) preflightLocalQuarantinedContent(c *gin.Context) {
 			return
 		}
 	}
-	if err := s.checkLocalQuarantinedEvidenceScope(c, sourceID, expected, proof, input); err != nil {
-		failLocalEvidencePhysicalCAS(c, err, expected, expected)
-		return
-	}
-	revisionAgain, objectsAgain, err := s.checkLocalEvidenceCloudMetadata(c, sourceID, expected, proof, input)
+	revisionAgain, objectsAgain, err := s.checkLocalQuarantinedCloudSnapshot(
+		c, sourceID, expected, proof, input)
 	if err != nil {
 		failLocalEvidencePhysicalCAS(c, err, expected, revisionAgain)
 		return

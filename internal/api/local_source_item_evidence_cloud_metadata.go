@@ -165,176 +165,244 @@ func (s *Server) checkLocalEvidenceCloudMetadata(
 	c *gin.Context, sourceID, expected uint64,
 	proof localSourceExecutorProof, input localEvidenceCloudMetadataRequest,
 ) (uint64, []localEvidenceCloudObject, error) {
-	var revision uint64
-	var objects []localEvidenceCloudObject
+	if c == nil || c.Request == nil {
+		return 0, nil, errLocalEvidenceConflict
+	}
+	var snapshot localEvidenceCloudTxSnapshot
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		// The identical device -> Source -> Root transactional proof fences
-		// revocation/configuration changes. No owner-JWT-only fallback.
-		if err := s.requireLocalSourceProofTx(tx, c, sourceID, "", false); err != nil {
-			return err
-		}
-		var source meta.Source
-		if err := tx.Select("id", "owner_id", "kind", "direction", "status", "revision").
-			Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
-			return err
-		}
-		revision = source.Revision
-		if !isLocalFolderPush(source) {
-			return errLocalBindingTypeInvalid
-		}
-		if revision != expected {
-			return errRevisionConflict
-		}
-		if source.Status != meta.SourceStatusPaused {
-			return errLocalBindingStateInvalid
-		}
-
-		evidenceIDs := make([]uint64, 0, len(input.Items))
-		expectedByID := make(map[uint64]localEvidenceCloudMetadataItem, len(input.Items))
-		for _, item := range input.Items {
-			evidenceIDs = append(evidenceIDs, item.EvidenceID)
-			expectedByID[item.EvidenceID] = item
-		}
-		var rows []meta.LocalSourceItemEvidence
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
-				sourceID, revision, proof.DeviceID, proof.RootID,
-				strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint")))).
-			Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ?",
-				input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256).
-			Where("id IN ?", evidenceIDs).
-			Order("id ASC").Limit(localEvidenceCloudMetadataLimit).
-			Find(&rows).Error; err != nil {
-			return err
-		}
-		if len(rows) != len(input.Items) {
-			return errLocalEvidenceConflict
-		}
-
-		itemIDs := make([]uint64, 0, len(rows))
-		keys := make([]string, 0, 2*len(rows))
-		claimedItem := make(map[uint64]struct{}, len(rows))
-		claimedDestination := make(map[string]struct{}, len(rows))
-		for i, row := range rows {
-			if row.ID != input.Items[i].EvidenceID || row.SourceItemID == 0 ||
-				!validLocalEvidenceDigest(row.PreviousPathKey) ||
-				!validLocalEvidenceDigest(row.CurrentPathKey) ||
-				!validLocalEvidenceDigest(row.NativeIdentityKey) ||
-				row.PreviousPathKey == row.CurrentPathKey {
-				return errLocalEvidenceConflict
-			}
-			if _, seen := claimedItem[row.SourceItemID]; seen {
-				return errLocalEvidenceConflict
-			}
-			if _, seen := claimedDestination[row.CurrentPathKey]; seen {
-				return errLocalEvidenceConflict
-			}
-			claimedItem[row.SourceItemID] = struct{}{}
-			claimedDestination[row.CurrentPathKey] = struct{}{}
-			itemIDs = append(itemIDs, row.SourceItemID)
-			keys = append(keys, row.PreviousPathKey, row.CurrentPathKey)
-		}
-		var items []meta.SourceItem
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("source_id = ? AND id IN ?", sourceID, itemIDs).
-			Order("id ASC").Find(&items).Error; err != nil {
-			return err
-		}
-		if len(items) != len(itemIDs) {
-			return errLocalEvidenceConflict
-		}
-		byID := make(map[uint64]meta.SourceItem, len(items))
-		for _, item := range items {
-			byID[item.ID] = item
-		}
-		index, err := loadSourceIdentityIndex(tx, sourceID, keys)
-		if err != nil {
-			return errLocalEvidenceConflict
-		}
-		nodeIDs := make([]uint64, 0, len(rows))
-		for _, row := range rows {
-			item, found := byID[row.SourceItemID]
-			inputItem := expectedByID[row.ID]
-			if !found || item.Kind != meta.SourceItemKindFile ||
-				item.State != meta.SourceItemStateSynced || item.NodeID == nil ||
-				item.NodeRevision == 0 || item.ExternalID != row.PreviousPathKey ||
-				item.Size != inputItem.Size || item.SHA256 != inputItem.SHA256 {
-				return errLocalEvidenceConflict
-			}
-			relative, err := sourcepkg.NormalizeRelativePath(item.Path)
-			if err != nil || relative == "" || relative != item.Path {
-				return errLocalEvidenceConflict
-			}
-			digest := sha256.Sum256([]byte("xdrive-local-path-v1\x00" +
-				proof.RootID + "\x00file\x00" + item.Path))
-			if hex.EncodeToString(digest[:]) != row.PreviousPathKey {
-				return errLocalEvidenceConflict
-			}
-			old, found, err := index.resolve(row.PreviousPathKey, nil)
-			if err != nil || !found || old.ID != item.ID {
-				return errLocalEvidenceConflict
-			}
-			next, found, err := index.resolve(row.CurrentPathKey, nil)
-			if err != nil || (found && next.ID != item.ID) {
-				return errLocalEvidenceConflict
-			}
-			nodeIDs = append(nodeIDs, *item.NodeID)
-		}
-
-		// One SELECT joins all four current cloud metadata relations, limiting
-		// work to <=64 exact owned nodes. A missing version/blob/file cannot
-		// silently fall back to an older or unverified legacy storage key.
-		var cloud []localEvidenceCloudSnapshot
-		if err := tx.Table("xd_nodes AS n").
-			Select("n.id AS node_id, n.revision AS node_revision, "+
-				"f.size AS file_size, f.sha256 AS file_sha256, f.storage_key AS file_storage_key, "+
-				"v.size AS version_size, v.sha256 AS version_sha256, v.storage_key AS version_key, "+
-				"b.size AS blob_size, b.sha256 AS blob_sha256, b.storage_key AS blob_key, "+
-				"b.state AS blob_state, b.ref_count AS blob_ref_count").
-			Joins("JOIN xd_files AS f ON f.node_id = n.id").
-			Joins("JOIN xd_file_versions AS v ON v.node_id = n.id AND v.revision = n.revision").
-			Joins("JOIN xd_content_blobs AS b ON b.sha256 = f.sha256").
-			Where("n.id IN ? AND n.owner_id = ? AND n.type = ? AND n.deleted_at IS NULL",
-				nodeIDs, source.OwnerID, meta.NodeTypeFile).
-			Clauses(clause.Locking{Strength: "SHARE"}).
-			Order("n.id ASC").Find(&cloud).Error; err != nil {
-			return err
-		}
-		if len(cloud) != len(rows) {
-			return errLocalEvidenceConflict
-		}
-		cloudByNode := make(map[uint64]localEvidenceCloudSnapshot, len(cloud))
-		for _, row := range cloud {
-			if _, seen := cloudByNode[row.NodeID]; seen {
-				return errLocalEvidenceConflict
-			}
-			cloudByNode[row.NodeID] = row
-		}
-		for _, row := range rows {
-			item := byID[row.SourceItemID]
-			claim := expectedByID[row.ID]
-			remote, ok := cloudByNode[*item.NodeID]
-			if !ok || remote.NodeRevision != item.NodeRevision ||
-				remote.FileSize != claim.Size || remote.VersionSize != claim.Size ||
-				remote.BlobSize != claim.Size ||
-				remote.FileSHA256 != claim.SHA256 ||
-				remote.VersionSHA256 != claim.SHA256 ||
-				remote.BlobSHA256 != claim.SHA256 ||
-				remote.BlobState != meta.ContentBlobStateReady ||
-				remote.BlobRefCount <= 0 {
-				return errLocalEvidenceConflict
-			}
-			canonicalKey, err := storage.ContentAddressedKey(claim.SHA256)
-			if err != nil || remote.FileStorageKey != canonicalKey ||
-				remote.VersionKey != canonicalKey || remote.BlobKey != canonicalKey {
-				return errLocalEvidenceConflict
-			}
-			objects = append(objects, localEvidenceCloudObject{SHA256: claim.SHA256, Size: claim.Size, Key: canonicalKey})
-		}
-		return c.Request.Context().Err()
+		return s.checkLocalEvidenceCloudMetadataTx(tx, c, sourceID, expected, proof, input, &snapshot)
 	})
 	if err != nil {
-		return revision, nil, err
+		return snapshot.revision, nil, err
 	}
-	return revision, objects, nil
+	return snapshot.revision, snapshot.objects, nil
+}
+
+// localEvidenceCloudTxSnapshot is solely a locked metadata observation,
+// not physical CAS durability, a mutation permit or a SourceRun token.
+type localEvidenceCloudTxSnapshot struct {
+	revision uint64
+	objects  []localEvidenceCloudObject
+}
+
+// checkLocalEvidenceCloudMetadataTx is a composable read-only SQL guard. The
+// future E1 writer MUST independently prove durable actual bytes before any
+// canonical mutation; this metadata snapshot alone is not authorization.
+func (s *Server) checkLocalEvidenceCloudMetadataTx(
+	tx *gorm.DB, c *gin.Context, sourceID, expected uint64,
+	proof localSourceExecutorProof, input localEvidenceCloudMetadataRequest,
+	out *localEvidenceCloudTxSnapshot,
+) error {
+	if tx == nil || c == nil || c.Request == nil || out == nil ||
+		sourceID == 0 || expected == 0 ||
+		!validLocalEvidenceCloudMetadataRequest(input) {
+		return errLocalEvidenceConflict
+	}
+	boundValue, exists := c.Get(localSourceExecutorContextKey)
+	bound, authorized := boundValue.(localSourceExecutorProof)
+	if !exists || !authorized || bound != proof {
+		return errLocalSourceExecutorTransactionUnauthorized
+	}
+	var revision uint64
+	var objects []localEvidenceCloudObject
+	out.objects = nil
+	defer func() { out.revision = revision }()
+	// The identical device -> Source -> Root transactional proof fences
+	// revocation/configuration changes. No owner-JWT-only fallback.
+	if err := s.requireLocalSourceProofTx(tx, c, sourceID, "", false); err != nil {
+		return err
+	}
+	var source meta.Source
+	if err := tx.Select("id", "owner_id", "kind", "direction", "status", "revision").
+		Where("id = ? AND owner_id = ?", sourceID, userID(c)).Take(&source).Error; err != nil {
+		return err
+	}
+	revision = source.Revision
+	if !isLocalFolderPush(source) {
+		return errLocalBindingTypeInvalid
+	}
+	if revision != expected {
+		return errRevisionConflict
+	}
+	if source.Status != meta.SourceStatusPaused {
+		return errLocalBindingStateInvalid
+	}
+
+	evidenceIDs := make([]uint64, 0, len(input.Items))
+	expectedByID := make(map[uint64]localEvidenceCloudMetadataItem, len(input.Items))
+	for _, item := range input.Items {
+		evidenceIDs = append(evidenceIDs, item.EvidenceID)
+		expectedByID[item.EvidenceID] = item
+	}
+	var rows []meta.LocalSourceItemEvidence
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("source_id = ? AND source_revision = ? AND device_id = ? AND root_id = ? AND root_fingerprint = ?",
+			sourceID, revision, proof.DeviceID, proof.RootID,
+			strings.ToLower(strings.TrimSpace(c.GetHeader("X-XDrive-Local-Root-Fingerprint")))).
+		Where("previous_snapshot_sha256 = ? AND current_snapshot_sha256 = ?",
+			input.PreviousSnapshotSHA256, input.CurrentSnapshotSHA256).
+		Where("id IN ?", evidenceIDs).
+		Order("id ASC").Limit(localEvidenceCloudMetadataLimit).
+		Find(&rows).Error; err != nil {
+		return err
+	}
+	if len(rows) != len(input.Items) {
+		return errLocalEvidenceConflict
+	}
+
+	itemIDs := make([]uint64, 0, len(rows))
+	keys := make([]string, 0, 2*len(rows))
+	claimedItem := make(map[uint64]struct{}, len(rows))
+	claimedDestination := make(map[string]struct{}, len(rows))
+	for i, row := range rows {
+		if row.ID != input.Items[i].EvidenceID || row.SourceItemID == 0 ||
+			!validLocalEvidenceDigest(row.PreviousPathKey) ||
+			!validLocalEvidenceDigest(row.CurrentPathKey) ||
+			!validLocalEvidenceDigest(row.NativeIdentityKey) ||
+			row.PreviousPathKey == row.CurrentPathKey {
+			return errLocalEvidenceConflict
+		}
+		if _, seen := claimedItem[row.SourceItemID]; seen {
+			return errLocalEvidenceConflict
+		}
+		if _, seen := claimedDestination[row.CurrentPathKey]; seen {
+			return errLocalEvidenceConflict
+		}
+		claimedItem[row.SourceItemID] = struct{}{}
+		claimedDestination[row.CurrentPathKey] = struct{}{}
+		itemIDs = append(itemIDs, row.SourceItemID)
+		keys = append(keys, row.PreviousPathKey, row.CurrentPathKey)
+	}
+	var items []meta.SourceItem
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("source_id = ? AND id IN ?", sourceID, itemIDs).
+		Order("id ASC").Find(&items).Error; err != nil {
+		return err
+	}
+	if len(items) != len(itemIDs) {
+		return errLocalEvidenceConflict
+	}
+	byID := make(map[uint64]meta.SourceItem, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	index, err := loadSourceIdentityIndex(tx, sourceID, keys)
+	if err != nil {
+		return errLocalEvidenceConflict
+	}
+	nodeIDs := make([]uint64, 0, len(rows))
+	for _, row := range rows {
+		item, found := byID[row.SourceItemID]
+		inputItem := expectedByID[row.ID]
+		if !found || item.Kind != meta.SourceItemKindFile ||
+			item.State != meta.SourceItemStateSynced || item.NodeID == nil ||
+			item.NodeRevision == 0 || item.ExternalID != row.PreviousPathKey ||
+			item.Size != inputItem.Size || item.SHA256 != inputItem.SHA256 {
+			return errLocalEvidenceConflict
+		}
+		relative, err := sourcepkg.NormalizeRelativePath(item.Path)
+		if err != nil || relative == "" || relative != item.Path {
+			return errLocalEvidenceConflict
+		}
+		digest := sha256.Sum256([]byte("xdrive-local-path-v1\x00" +
+			proof.RootID + "\x00file\x00" + item.Path))
+		if hex.EncodeToString(digest[:]) != row.PreviousPathKey {
+			return errLocalEvidenceConflict
+		}
+		old, found, err := index.resolve(row.PreviousPathKey, nil)
+		if err != nil || !found || old.ID != item.ID {
+			return errLocalEvidenceConflict
+		}
+		next, found, err := index.resolve(row.CurrentPathKey, nil)
+		if err != nil || (found && next.ID != item.ID) {
+			return errLocalEvidenceConflict
+		}
+		nodeIDs = append(nodeIDs, *item.NodeID)
+	}
+
+	// One SELECT joins all four current cloud metadata relations, limiting
+	// work to <=64 exact owned nodes. A missing version/blob/file cannot
+	// silently fall back to an older or unverified legacy storage key.
+	var cloud []localEvidenceCloudSnapshot
+	if err := tx.Table("xd_nodes AS n").
+		Select("n.id AS node_id, n.revision AS node_revision, "+
+			"f.size AS file_size, f.sha256 AS file_sha256, f.storage_key AS file_storage_key, "+
+			"v.size AS version_size, v.sha256 AS version_sha256, v.storage_key AS version_key, "+
+			"b.size AS blob_size, b.sha256 AS blob_sha256, b.storage_key AS blob_key, "+
+			"b.state AS blob_state, b.ref_count AS blob_ref_count").
+		Joins("JOIN xd_files AS f ON f.node_id = n.id").
+		Joins("JOIN xd_file_versions AS v ON v.node_id = n.id AND v.revision = n.revision").
+		Joins("JOIN xd_content_blobs AS b ON b.sha256 = f.sha256").
+		Where("n.id IN ? AND n.owner_id = ? AND n.type = ? AND n.deleted_at IS NULL",
+			nodeIDs, source.OwnerID, meta.NodeTypeFile).
+		Clauses(clause.Locking{Strength: "SHARE"}).
+		Order("n.id ASC").Find(&cloud).Error; err != nil {
+		return err
+	}
+	if len(cloud) != len(rows) {
+		return errLocalEvidenceConflict
+	}
+	cloudByNode := make(map[uint64]localEvidenceCloudSnapshot, len(cloud))
+	for _, row := range cloud {
+		if _, seen := cloudByNode[row.NodeID]; seen {
+			return errLocalEvidenceConflict
+		}
+		cloudByNode[row.NodeID] = row
+	}
+	for _, row := range rows {
+		item := byID[row.SourceItemID]
+		claim := expectedByID[row.ID]
+		remote, ok := cloudByNode[*item.NodeID]
+		if !ok || remote.NodeRevision != item.NodeRevision ||
+			remote.FileSize != claim.Size || remote.VersionSize != claim.Size ||
+			remote.BlobSize != claim.Size ||
+			remote.FileSHA256 != claim.SHA256 ||
+			remote.VersionSHA256 != claim.SHA256 ||
+			remote.BlobSHA256 != claim.SHA256 ||
+			remote.BlobState != meta.ContentBlobStateReady ||
+			remote.BlobRefCount <= 0 {
+			return errLocalEvidenceConflict
+		}
+		canonicalKey, err := storage.ContentAddressedKey(claim.SHA256)
+		if err != nil || remote.FileStorageKey != canonicalKey ||
+			remote.VersionKey != canonicalKey || remote.BlobKey != canonicalKey {
+			return errLocalEvidenceConflict
+		}
+		objects = append(objects, localEvidenceCloudObject{SHA256: claim.SHA256, Size: claim.Size, Key: canonicalKey})
+	}
+	if err := c.Request.Context().Err(); err != nil {
+		return err
+	}
+	out.objects = objects
+	return nil
+}
+
+// checkLocalQuarantinedCloudSnapshot composes BOTH independent E1 guards
+// inside ONE device-first PostgreSQL transaction, instead of trusting two
+// separately accepted snapshots. Storage I/O is deliberately outside this
+// transaction; the byte read is ephemeral and cannot authorize identity
+// promotion or bypass CAS lifecycle fencing.
+func (s *Server) checkLocalQuarantinedCloudSnapshot(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	input localEvidenceCloudMetadataRequest,
+) (uint64, []localEvidenceCloudObject, error) {
+	if c == nil || c.Request == nil {
+		return 0, nil, errLocalEvidenceConflict
+	}
+	var snapshot localEvidenceCloudTxSnapshot
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.checkLocalQuarantinedEvidenceScopeTx(
+			tx, c, sourceID, revision, proof, input); err != nil {
+			return err
+		}
+		return s.checkLocalEvidenceCloudMetadataTx(
+			tx, c, sourceID, revision, proof, input, &snapshot)
+	})
+	if err != nil {
+		if snapshot.revision == 0 {
+			return revision, nil, err
+		}
+		return snapshot.revision, nil, err
+	}
+	return snapshot.revision, snapshot.objects, nil
 }
