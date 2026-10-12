@@ -759,3 +759,9 @@ P0-L9～L11 已交付，其中 #1549 通过 25 项 CI 和 Final Gate 后修复�
 P0-L13 [#1563](https://github.com/lazyxu/xdrive/pull/1563) 已在完整精确 HEAD CI/Final Gate 通过后合入；后续核查发现：虚拟 Grid/Timeline 已使用共享 `XDriveMediaThumbnailScheduler`，但非虚拟的 `MediaTileGrid`（包含本地相册与年份/月/日分组）没有传递 Scheduler，所以不会记录真实 `img.onError` 的一次无缓存恢复机会。该代码级缺口在不同视图中造成不一致，不能推定截图中三张真实灰格一定来自此路径。
 
 仅给已有两个非虚拟调用点接入**同一个页面级 Scheduler**，统一调用既有 `MediaTile` / `XDriveMediaAsyncThumbnail`，在父页面统一保留所有分组的 Node IDs，退出普通相册/概览时取消不再消费的缩略图；不在每个日期分组清空其他组的排队请求。100k 仍走原来的共享 `VirtualCollection`、Grid/Timeline；Web 和 Mobile Web 使用原有同一 REST/DataSource/Viewer，Desktop 不增额外 Agent 接口。无立即 onError 网络请求、无原件批量拉取、保持 52px 全屏 App Frame、按住才加载 Live motion。待专门 PR 精确 HEAD 完整 CI 验证；真实 iOS 27 的像素/手势 1:1 和用户原件仍未验收。
+
+## P0-L15 · Viewer 胶片条实况封面解码恢复（2026-10-12）
+
+P0-L14 [#1576](https://github.com/lazyxu/xdrive/pull/1576) 已完整 CI 和 Final Gate 通过并合入。进一步核查发现同一个 Web/Mobile Web Viewer 的 11 个邻近胶片条缩略图仍绕过 P0-L13 的 Scheduler，真实浏览器解码出错后只能回退而无法记录下一次可见加载的有限无缓存恢复。
+
+仅在既有 `XDriveMediaGalleryFilmstrip` 复用**相同 Scheduler 实现**并限定独立 Viewer 生命周期（并发 3、缓存 32）：不允许图库滚动/日期分组的 retention 取消正在看的 Viewer 缩略图；关闭 Viewer 只取消自己的缩略图，不取消照片墙。继续保持按住才加载 Live motion、相同授权 Web/Mobile REST、Desktop Agent transport、共享单一 Viewer、虚拟化 Grid/Timeline 和 52px 全屏 App Frame。覆盖成功正常缓存、解码失败下一次可见加载最多一次无缓存恢复、修订号隔离及退出取消；不声称用户三张原件或 iOS 27 真机 1:1 已验收。
