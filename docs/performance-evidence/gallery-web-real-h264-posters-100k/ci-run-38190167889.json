@@ -1,0 +1,2527 @@
+{
+  "status": "Accepted measured current n3/15 real Chromium Web Gallery VideoPoster H264 samples / unchanged production / AFTER=N/A / percentage speedup=N/A; evidence-amended exact-head CI pending",
+  "benchmark_id": "P033",
+  "phase": "M001-b",
+  "provenance": {
+    "repo": "lazyxu/xdrive",
+    "measured_source_exact_sha": "40be86cdcf0d1e898cbc6fed1217f0a8e8cac4e8",
+    "fixed_parent": "03dfdf47628c372e8e38e4da8b75910f7d4a6a34",
+    "scoped_native_CI_run": 38190167889,
+    "scoped_native_job": 114621012411,
+    "scoped_CI_url": "https://github.com/lazyxu/xdrive/actions/runs/38190167889",
+    "GitLab_not_run": true
+  },
+  "data": {
+    "logical_PhotoAssets": 100000,
+    "distinct_physical_original_CAS_per_sample": 115000,
+    "physical_original_source_bytes_per_sample": 149285128,
+    "real_JPEG_originals": 85000,
+    "real_physical_MP4_MOV": 30000,
+    "H264_limitation": "30k distinct BMFF video containers reuse one 96x64 encoded H264 sequence, not 30k distinct independent movie frames",
+    "independent_fixtures": 3,
+    "Grid_positions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95
+    ],
+    "real_completed_video_poster_viewports": 15
+  },
+  "frozen_acceptance": {
+    "per_viewport_two_new_visible_video_canvas_JPEG_decode_plus_two_rAF_ms_max": 25000,
+    "distinct_video_poster_IDs_per_fixture_min": 10,
+    "signed_tickets_per_fixture_min": 10,
+    "cold_404_misses_min": 10,
+    "actual_poster_PUT_204_per_fixture_min": 10,
+    "positive_JPEG_PUT_bytes": true,
+    "warm_server_cached_JPEG_200_per_fixture_min": 1,
+    "mounted_DOM_tile_max_exclusive": 1000,
+    "Go_post_seed_RSS_growth_bytes_max": 268435456,
+    "Chromium_post_loadURL_WS_growth_bytes_max": 268435456,
+    "noncanceled_preview_ticket_or_put_errors": 0
+  },
+  "aggregate": {
+    "median_of_fixture_5_position_P50_ms": 2227.2921729999944,
+    "per_position_median_ms": [
+      {
+        "fraction": 0,
+        "median_ms": 1519.0370309999853
+      },
+      {
+        "fraction": 0.25,
+        "median_ms": 2229.236169999989
+      },
+      {
+        "fraction": 0.5,
+        "median_ms": 2197.402781999961
+      },
+      {
+        "fraction": 0.75,
+        "median_ms": 2215.6494390000007
+      },
+      {
+        "fraction": 0.95,
+        "median_ms": 2227.2921729999944
+      }
+    ],
+    "worst_viewport_ms": 2294.8414930000145,
+    "max_mounted_tiles": 99,
+    "max_Go_RSS_growth_bytes": 6365184,
+    "max_renderer_WS_growth_bytes": 165851136
+  },
+  "raw_samples": [
+    {
+      "sample": 1,
+      "logicalAssets": 100000,
+      "physicalCASOriginals": 115000,
+      "originalCASBytes": 149285128,
+      "seedMsExcluded": 112319.458,
+      "distinctVideoPosters": 13,
+      "positions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ],
+      "viewports": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1432.3445219999994,
+          "selectedNodeIDs": [
+            84602,
+            80952
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 63,
+          "poster": {
+            "signedTickets": 5,
+            "posterPuts": 3,
+            "posterPutBytes": 7014,
+            "coldPosterMisses": 6,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              84602,
+              80952,
+              77302,
+              73652,
+              84603
+            ],
+            "savedPosterNodeIDs": [
+              84602,
+              77302,
+              80952
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 59,
+            "DerivativeOpenSuccess": 106,
+            "DerivativePutSuccess": 53
+          },
+          "rendererWorkingSetBytes": 229777408
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1976.128297999996,
+          "selectedNodeIDs": [
+            81824,
+            78174
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 9,
+            "posterPuts": 7,
+            "posterPutBytes": 16366,
+            "coldPosterMisses": 13,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              84602,
+              80952,
+              77302,
+              73652,
+              84603,
+              80953,
+              81824,
+              78174,
+              74524
+            ],
+            "savedPosterNodeIDs": [
+              84602,
+              77302,
+              80952,
+              73652,
+              81824,
+              78174,
+              74524
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 106,
+            "DerivativeOpenSuccess": 180,
+            "DerivativePutSuccess": 90
+          },
+          "rendererWorkingSetBytes": 253472768
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2013.6799000000028,
+          "selectedNodeIDs": [
+            82750,
+            79100
+          ],
+          "visibleRealPersistedPosters": 2,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 17,
+            "posterPuts": 10,
+            "posterPutBytes": 23380,
+            "coldPosterMisses": 18,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              84602,
+              80952,
+              77302,
+              73652,
+              84603,
+              80953,
+              81824,
+              78174,
+              74524,
+              81825,
+              78175,
+              70874,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751
+            ],
+            "savedPosterNodeIDs": [
+              84602,
+              77302,
+              80952,
+              73652,
+              81824,
+              78174,
+              74524,
+              81825,
+              79100,
+              82750
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 161,
+            "DerivativeOpenSuccess": 284,
+            "DerivativePutSuccess": 143
+          },
+          "rendererWorkingSetBytes": 273125376
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2043.216809999998,
+          "selectedNodeIDs": [
+            83676,
+            80026
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 22,
+            "posterPuts": 15,
+            "posterPutBytes": 35070,
+            "coldPosterMisses": 26,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              84602,
+              80952,
+              77302,
+              73652,
+              84603,
+              80953,
+              81824,
+              78174,
+              74524,
+              81825,
+              78175,
+              70874,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751,
+              79101,
+              83676,
+              80026,
+              76376,
+              72726
+            ],
+            "savedPosterNodeIDs": [
+              84602,
+              77302,
+              80952,
+              73652,
+              81824,
+              78174,
+              74524,
+              81825,
+              79100,
+              82750,
+              75450,
+              71800,
+              83676,
+              80026,
+              76376
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 213,
+            "DerivativeOpenSuccess": 372,
+            "DerivativePutSuccess": 188
+          },
+          "rendererWorkingSetBytes": 275386368
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2081.9973499999905,
+          "selectedNodeIDs": [
+            84416,
+            80766
+          ],
+          "visibleRealPersistedPosters": 2,
+          "mountedTiles": 90,
+          "poster": {
+            "signedTickets": 27,
+            "posterPuts": 18,
+            "posterPutBytes": 42084,
+            "coldPosterMisses": 31,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              84602,
+              80952,
+              77302,
+              73652,
+              84603,
+              80953,
+              81824,
+              78174,
+              74524,
+              81825,
+              78175,
+              70874,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751,
+              79101,
+              83676,
+              80026,
+              76376,
+              72726,
+              83675,
+              80025,
+              77116,
+              80766,
+              84416
+            ],
+            "savedPosterNodeIDs": [
+              84602,
+              77302,
+              80952,
+              73652,
+              81824,
+              78174,
+              74524,
+              81825,
+              79100,
+              82750,
+              75450,
+              71800,
+              83676,
+              80026,
+              76376,
+              72726,
+              84416,
+              80766
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 259,
+            "DerivativeOpenSuccess": 456,
+            "DerivativePutSuccess": 229
+          },
+          "rendererWorkingSetBytes": 297398272
+        }
+      ],
+      "fivePositionP50Ms": 2013.6799000000028,
+      "countersAfterWarm": {
+        "signedTickets": 33,
+        "posterPuts": 20,
+        "posterPutBytes": 46760,
+        "coldPosterMisses": 36,
+        "warmPosterGets": 4,
+        "errors": 0,
+        "signedTicketNodeIDs": [
+          84602,
+          80952,
+          77302,
+          73652,
+          84603,
+          80953,
+          81824,
+          78174,
+          74524,
+          81825,
+          78175,
+          70874,
+          79100,
+          82750,
+          75450,
+          71800,
+          82751,
+          79101,
+          83676,
+          80026,
+          76376,
+          72726,
+          83675,
+          80025,
+          77116,
+          80766,
+          84416,
+          73466,
+          84417,
+          80767,
+          80953,
+          73653,
+          77303
+        ],
+        "savedPosterNodeIDs": [
+          84602,
+          77302,
+          80952,
+          73652,
+          81824,
+          78174,
+          74524,
+          81825,
+          79100,
+          82750,
+          75450,
+          71800,
+          83676,
+          80026,
+          76376,
+          72726,
+          84416,
+          80766,
+          77116,
+          73466
+        ]
+      },
+      "posterWarmDelta": 4,
+      "go": {
+        "baseline": {
+          "rssBytes": 74145792,
+          "cpuMs": 22840
+        },
+        "final": {
+          "rssBytes": 50544640,
+          "cpuMs": 23930
+        },
+        "maxRSSBytes": 74280960,
+        "rssGrowthBytes": 135168,
+        "cpuDeltaMs": 1090
+      },
+      "renderer": {
+        "initialWorkingSetBytes": 146042880,
+        "peakWorkingSetBytes": 297398272,
+        "growthBytes": 151355392
+      },
+      "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+    },
+    {
+      "sample": 2,
+      "logicalAssets": 100000,
+      "physicalCASOriginals": 115000,
+      "originalCASBytes": 149285128,
+      "seedMsExcluded": 100235.844,
+      "distinctVideoPosters": 14,
+      "positions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ],
+      "viewports": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1519.0370309999853,
+          "selectedNodeIDs": [
+            84602,
+            80952
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 63,
+          "poster": {
+            "signedTickets": 6,
+            "posterPuts": 3,
+            "posterPutBytes": 7014,
+            "coldPosterMisses": 6,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              77302,
+              84602,
+              80952,
+              73652,
+              84603,
+              80953
+            ],
+            "savedPosterNodeIDs": [
+              77302,
+              84602,
+              80952
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 50,
+            "DerivativeOpenSuccess": 88,
+            "DerivativePutSuccess": 44
+          },
+          "rendererWorkingSetBytes": 227975168
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2258.7242130000086,
+          "selectedNodeIDs": [
+            74524,
+            70874
+          ],
+          "visibleRealPersistedPosters": 2,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 11,
+            "posterPuts": 5,
+            "posterPutBytes": 11690,
+            "coldPosterMisses": 11,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              77302,
+              84602,
+              80952,
+              73652,
+              84603,
+              80953,
+              74524,
+              81825,
+              70874,
+              78175,
+              74525
+            ],
+            "savedPosterNodeIDs": [
+              77302,
+              84602,
+              80952,
+              74524,
+              70874
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 114,
+            "DerivativeOpenSuccess": 202,
+            "DerivativePutSuccess": 101
+          },
+          "rendererWorkingSetBytes": 261607424
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2294.8414930000145,
+          "selectedNodeIDs": [
+            82749,
+            79099
+          ],
+          "visibleRealPersistedPosters": 4,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 19,
+            "posterPuts": 10,
+            "posterPutBytes": 23380,
+            "coldPosterMisses": 19,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              77302,
+              84602,
+              80952,
+              73652,
+              84603,
+              80953,
+              74524,
+              81825,
+              70874,
+              78175,
+              74525,
+              70875,
+              79099,
+              75449,
+              82749,
+              71799,
+              82750,
+              79100,
+              75450
+            ],
+            "savedPosterNodeIDs": [
+              77302,
+              84602,
+              80952,
+              74524,
+              70874,
+              81825,
+              79099,
+              75449,
+              82749,
+              71799
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 189,
+            "DerivativeOpenSuccess": 336,
+            "DerivativePutSuccess": 170
+          },
+          "rendererWorkingSetBytes": 274952192
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2215.6494390000007,
+          "selectedNodeIDs": [
+            83676,
+            80026
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 23,
+            "posterPuts": 14,
+            "posterPutBytes": 32732,
+            "coldPosterMisses": 26,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              77302,
+              84602,
+              80952,
+              73652,
+              84603,
+              80953,
+              74524,
+              81825,
+              70874,
+              78175,
+              74525,
+              70875,
+              79099,
+              75449,
+              82749,
+              71799,
+              82750,
+              79100,
+              75450,
+              80026,
+              83676,
+              76376,
+              72726
+            ],
+            "savedPosterNodeIDs": [
+              77302,
+              84602,
+              80952,
+              74524,
+              70874,
+              81825,
+              79099,
+              75449,
+              82749,
+              71799,
+              82750,
+              76376,
+              80026,
+              83676
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 240,
+            "DerivativeOpenSuccess": 426,
+            "DerivativePutSuccess": 215
+          },
+          "rendererWorkingSetBytes": 285429760
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2294.0587740000046,
+          "selectedNodeIDs": [
+            84417,
+            80767
+          ],
+          "visibleRealPersistedPosters": 2,
+          "mountedTiles": 90,
+          "poster": {
+            "signedTickets": 28,
+            "posterPuts": 16,
+            "posterPutBytes": 37408,
+            "coldPosterMisses": 30,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              77302,
+              84602,
+              80952,
+              73652,
+              84603,
+              80953,
+              74524,
+              81825,
+              70874,
+              78175,
+              74525,
+              70875,
+              79099,
+              75449,
+              82749,
+              71799,
+              82750,
+              79100,
+              75450,
+              80026,
+              83676,
+              76376,
+              72726,
+              83675,
+              80025,
+              80767,
+              84417,
+              77117
+            ],
+            "savedPosterNodeIDs": [
+              77302,
+              84602,
+              80952,
+              74524,
+              70874,
+              81825,
+              79099,
+              75449,
+              82749,
+              71799,
+              82750,
+              76376,
+              80026,
+              83676,
+              80767,
+              84417
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 294,
+            "DerivativeOpenSuccess": 520,
+            "DerivativePutSuccess": 262
+          },
+          "rendererWorkingSetBytes": 307462144
+        }
+      ],
+      "fivePositionP50Ms": 2258.7242130000086,
+      "countersAfterWarm": {
+        "signedTickets": 30,
+        "posterPuts": 18,
+        "posterPutBytes": 42084,
+        "coldPosterMisses": 35,
+        "warmPosterGets": 3,
+        "errors": 0,
+        "signedTicketNodeIDs": [
+          77302,
+          84602,
+          80952,
+          73652,
+          84603,
+          80953,
+          74524,
+          81825,
+          70874,
+          78175,
+          74525,
+          70875,
+          79099,
+          75449,
+          82749,
+          71799,
+          82750,
+          79100,
+          75450,
+          80026,
+          83676,
+          76376,
+          72726,
+          83675,
+          80025,
+          80767,
+          84417,
+          77117,
+          73467,
+          84416
+        ],
+        "savedPosterNodeIDs": [
+          77302,
+          84602,
+          80952,
+          74524,
+          70874,
+          81825,
+          79099,
+          75449,
+          82749,
+          71799,
+          82750,
+          76376,
+          80026,
+          83676,
+          80767,
+          84417,
+          77117,
+          73467
+        ]
+      },
+      "posterWarmDelta": 3,
+      "go": {
+        "baseline": {
+          "rssBytes": 42938368,
+          "cpuMs": 22980
+        },
+        "final": {
+          "rssBytes": 47411200,
+          "cpuMs": 24190
+        },
+        "maxRSSBytes": 49303552,
+        "rssGrowthBytes": 6365184,
+        "cpuDeltaMs": 1210
+      },
+      "renderer": {
+        "initialWorkingSetBytes": 144846848,
+        "peakWorkingSetBytes": 307462144,
+        "growthBytes": 162615296
+      },
+      "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+    },
+    {
+      "sample": 3,
+      "logicalAssets": 100000,
+      "physicalCASOriginals": 115000,
+      "originalCASBytes": 149285128,
+      "seedMsExcluded": 98913.274,
+      "distinctVideoPosters": 15,
+      "positions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ],
+      "viewports": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1570.3150790000218,
+          "selectedNodeIDs": [
+            84602,
+            80952
+          ],
+          "visibleRealPersistedPosters": 4,
+          "mountedTiles": 63,
+          "poster": {
+            "signedTickets": 6,
+            "posterPuts": 4,
+            "posterPutBytes": 9352,
+            "coldPosterMisses": 7,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              84603,
+              80953
+            ],
+            "savedPosterNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 60,
+            "DerivativeOpenSuccess": 106,
+            "DerivativePutSuccess": 53
+          },
+          "rendererWorkingSetBytes": 228184064
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2229.236169999989,
+          "selectedNodeIDs": [
+            74524,
+            70874
+          ],
+          "visibleRealPersistedPosters": 2,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 12,
+            "posterPuts": 8,
+            "posterPutBytes": 18704,
+            "coldPosterMisses": 12,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              84603,
+              80953,
+              77303,
+              74524,
+              70874,
+              81825,
+              78175,
+              74525
+            ],
+            "savedPosterNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              80953,
+              74524,
+              70874,
+              81825
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 128,
+            "DerivativeOpenSuccess": 226,
+            "DerivativePutSuccess": 113
+          },
+          "rendererWorkingSetBytes": 259760128
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2197.402781999961,
+          "selectedNodeIDs": [
+            82750,
+            79100
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 18,
+            "posterPuts": 12,
+            "posterPutBytes": 28056,
+            "coldPosterMisses": 19,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              84603,
+              80953,
+              77303,
+              74524,
+              70874,
+              81825,
+              78175,
+              74525,
+              70875,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751
+            ],
+            "savedPosterNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              80953,
+              74524,
+              70874,
+              81825,
+              78175,
+              75450,
+              82750,
+              79100
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 191,
+            "DerivativeOpenSuccess": 342,
+            "DerivativePutSuccess": 172
+          },
+          "rendererWorkingSetBytes": 280453120
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2266.1307690000394,
+          "selectedNodeIDs": [
+            83675,
+            80025
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 99,
+          "poster": {
+            "signedTickets": 23,
+            "posterPuts": 16,
+            "posterPutBytes": 37408,
+            "coldPosterMisses": 26,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              84603,
+              80953,
+              77303,
+              74524,
+              70874,
+              81825,
+              78175,
+              74525,
+              70875,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751,
+              79101,
+              75451,
+              80025,
+              83675,
+              76375
+            ],
+            "savedPosterNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              80953,
+              74524,
+              70874,
+              81825,
+              78175,
+              75450,
+              82750,
+              79100,
+              71800,
+              80025,
+              83675,
+              76375
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 246,
+            "DerivativeOpenSuccess": 436,
+            "DerivativePutSuccess": 219
+          },
+          "rendererWorkingSetBytes": 287477760
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463
+          },
+          "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2227.2921729999944,
+          "selectedNodeIDs": [
+            84416,
+            80766
+          ],
+          "visibleRealPersistedPosters": 3,
+          "mountedTiles": 90,
+          "poster": {
+            "signedTickets": 30,
+            "posterPuts": 19,
+            "posterPutBytes": 44422,
+            "coldPosterMisses": 31,
+            "warmPosterGets": 0,
+            "errors": 0,
+            "signedTicketNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              84603,
+              80953,
+              77303,
+              74524,
+              70874,
+              81825,
+              78175,
+              74525,
+              70875,
+              79100,
+              82750,
+              75450,
+              71800,
+              82751,
+              79101,
+              75451,
+              80025,
+              83675,
+              76375,
+              83676,
+              80026,
+              72725,
+              84416,
+              80766,
+              77116,
+              73466
+            ],
+            "savedPosterNodeIDs": [
+              80952,
+              77302,
+              84602,
+              73652,
+              80953,
+              74524,
+              70874,
+              81825,
+              78175,
+              75450,
+              82750,
+              79100,
+              71800,
+              80025,
+              83675,
+              76375,
+              84416,
+              80766,
+              77116
+            ]
+          },
+          "realCASStore": {
+            "OriginalOpenSuccess": 303,
+            "DerivativeOpenSuccess": 534,
+            "DerivativePutSuccess": 269
+          },
+          "rendererWorkingSetBytes": 313475072
+        }
+      ],
+      "fivePositionP50Ms": 2227.2921729999944,
+      "countersAfterWarm": {
+        "signedTickets": 34,
+        "posterPuts": 20,
+        "posterPutBytes": 46760,
+        "coldPosterMisses": 36,
+        "warmPosterGets": 5,
+        "errors": 0,
+        "signedTicketNodeIDs": [
+          80952,
+          77302,
+          84602,
+          73652,
+          84603,
+          80953,
+          77303,
+          74524,
+          70874,
+          81825,
+          78175,
+          74525,
+          70875,
+          79100,
+          82750,
+          75450,
+          71800,
+          82751,
+          79101,
+          75451,
+          80025,
+          83675,
+          76375,
+          83676,
+          80026,
+          72725,
+          84416,
+          80766,
+          77116,
+          73466,
+          80767,
+          84417,
+          73653,
+          70003
+        ],
+        "savedPosterNodeIDs": [
+          80952,
+          77302,
+          84602,
+          73652,
+          80953,
+          74524,
+          70874,
+          81825,
+          78175,
+          75450,
+          82750,
+          79100,
+          71800,
+          80025,
+          83675,
+          76375,
+          84416,
+          80766,
+          77116,
+          73466
+        ]
+      },
+      "posterWarmDelta": 5,
+      "go": {
+        "baseline": {
+          "rssBytes": 72019968,
+          "cpuMs": 22510
+        },
+        "final": {
+          "rssBytes": 47976448,
+          "cpuMs": 23690
+        },
+        "maxRSSBytes": 72413184,
+        "rssGrowthBytes": 393216,
+        "cpuDeltaMs": 1180
+      },
+      "renderer": {
+        "initialWorkingSetBytes": 147623936,
+        "peakWorkingSetBytes": 313475072,
+        "growthBytes": 165851136
+      },
+      "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+    }
+  ],
+  "original_benchmark_summary": {
+    "name": "M001-b-real-mounted-Web-Gallery-H264-physical-100k",
+    "status": "CURRENT-before-only-n3",
+    "n": 3,
+    "logicalAssets": 100000,
+    "physicalOriginalCASFiles": 115000,
+    "nRealViewports": 15,
+    "medianOfFixtureP50Ms": 2227.2921729999944,
+    "worstMs": 2294.8414930000145,
+    "maxDOMTiles": 99,
+    "maxGoRSSGrowthBytes": 6365184,
+    "maxRendererGrowthBytes": 165851136,
+    "accepted": true,
+    "samples": [
+      {
+        "sample": 1,
+        "logicalAssets": 100000,
+        "physicalCASOriginals": 115000,
+        "originalCASBytes": 149285128,
+        "seedMsExcluded": 112319.458,
+        "distinctVideoPosters": 13,
+        "positions": [
+          0,
+          0.25,
+          0.5,
+          0.75,
+          0.95
+        ],
+        "viewports": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1432.3445219999994,
+            "selectedNodeIDs": [
+              84602,
+              80952
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 63,
+            "poster": {
+              "signedTickets": 5,
+              "posterPuts": 3,
+              "posterPutBytes": 7014,
+              "coldPosterMisses": 6,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                84602,
+                80952,
+                77302,
+                73652,
+                84603
+              ],
+              "savedPosterNodeIDs": [
+                84602,
+                77302,
+                80952
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 59,
+              "DerivativeOpenSuccess": 106,
+              "DerivativePutSuccess": 53
+            },
+            "rendererWorkingSetBytes": 229777408
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1976.128297999996,
+            "selectedNodeIDs": [
+              81824,
+              78174
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 9,
+              "posterPuts": 7,
+              "posterPutBytes": 16366,
+              "coldPosterMisses": 13,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                84602,
+                80952,
+                77302,
+                73652,
+                84603,
+                80953,
+                81824,
+                78174,
+                74524
+              ],
+              "savedPosterNodeIDs": [
+                84602,
+                77302,
+                80952,
+                73652,
+                81824,
+                78174,
+                74524
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 106,
+              "DerivativeOpenSuccess": 180,
+              "DerivativePutSuccess": 90
+            },
+            "rendererWorkingSetBytes": 253472768
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2013.6799000000028,
+            "selectedNodeIDs": [
+              82750,
+              79100
+            ],
+            "visibleRealPersistedPosters": 2,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 17,
+              "posterPuts": 10,
+              "posterPutBytes": 23380,
+              "coldPosterMisses": 18,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                84602,
+                80952,
+                77302,
+                73652,
+                84603,
+                80953,
+                81824,
+                78174,
+                74524,
+                81825,
+                78175,
+                70874,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751
+              ],
+              "savedPosterNodeIDs": [
+                84602,
+                77302,
+                80952,
+                73652,
+                81824,
+                78174,
+                74524,
+                81825,
+                79100,
+                82750
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 161,
+              "DerivativeOpenSuccess": 284,
+              "DerivativePutSuccess": 143
+            },
+            "rendererWorkingSetBytes": 273125376
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2043.216809999998,
+            "selectedNodeIDs": [
+              83676,
+              80026
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 22,
+              "posterPuts": 15,
+              "posterPutBytes": 35070,
+              "coldPosterMisses": 26,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                84602,
+                80952,
+                77302,
+                73652,
+                84603,
+                80953,
+                81824,
+                78174,
+                74524,
+                81825,
+                78175,
+                70874,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751,
+                79101,
+                83676,
+                80026,
+                76376,
+                72726
+              ],
+              "savedPosterNodeIDs": [
+                84602,
+                77302,
+                80952,
+                73652,
+                81824,
+                78174,
+                74524,
+                81825,
+                79100,
+                82750,
+                75450,
+                71800,
+                83676,
+                80026,
+                76376
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 213,
+              "DerivativeOpenSuccess": 372,
+              "DerivativePutSuccess": 188
+            },
+            "rendererWorkingSetBytes": 275386368
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2081.9973499999905,
+            "selectedNodeIDs": [
+              84416,
+              80766
+            ],
+            "visibleRealPersistedPosters": 2,
+            "mountedTiles": 90,
+            "poster": {
+              "signedTickets": 27,
+              "posterPuts": 18,
+              "posterPutBytes": 42084,
+              "coldPosterMisses": 31,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                84602,
+                80952,
+                77302,
+                73652,
+                84603,
+                80953,
+                81824,
+                78174,
+                74524,
+                81825,
+                78175,
+                70874,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751,
+                79101,
+                83676,
+                80026,
+                76376,
+                72726,
+                83675,
+                80025,
+                77116,
+                80766,
+                84416
+              ],
+              "savedPosterNodeIDs": [
+                84602,
+                77302,
+                80952,
+                73652,
+                81824,
+                78174,
+                74524,
+                81825,
+                79100,
+                82750,
+                75450,
+                71800,
+                83676,
+                80026,
+                76376,
+                72726,
+                84416,
+                80766
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 259,
+              "DerivativeOpenSuccess": 456,
+              "DerivativePutSuccess": 229
+            },
+            "rendererWorkingSetBytes": 297398272
+          }
+        ],
+        "fivePositionP50Ms": 2013.6799000000028,
+        "countersAfterWarm": {
+          "signedTickets": 33,
+          "posterPuts": 20,
+          "posterPutBytes": 46760,
+          "coldPosterMisses": 36,
+          "warmPosterGets": 4,
+          "errors": 0,
+          "signedTicketNodeIDs": [
+            84602,
+            80952,
+            77302,
+            73652,
+            84603,
+            80953,
+            81824,
+            78174,
+            74524,
+            81825,
+            78175,
+            70874,
+            79100,
+            82750,
+            75450,
+            71800,
+            82751,
+            79101,
+            83676,
+            80026,
+            76376,
+            72726,
+            83675,
+            80025,
+            77116,
+            80766,
+            84416,
+            73466,
+            84417,
+            80767,
+            80953,
+            73653,
+            77303
+          ],
+          "savedPosterNodeIDs": [
+            84602,
+            77302,
+            80952,
+            73652,
+            81824,
+            78174,
+            74524,
+            81825,
+            79100,
+            82750,
+            75450,
+            71800,
+            83676,
+            80026,
+            76376,
+            72726,
+            84416,
+            80766,
+            77116,
+            73466
+          ]
+        },
+        "posterWarmDelta": 4,
+        "go": {
+          "baseline": {
+            "rssBytes": 74145792,
+            "cpuMs": 22840
+          },
+          "final": {
+            "rssBytes": 50544640,
+            "cpuMs": 23930
+          },
+          "maxRSSBytes": 74280960,
+          "rssGrowthBytes": 135168,
+          "cpuDeltaMs": 1090
+        },
+        "renderer": {
+          "initialWorkingSetBytes": 146042880,
+          "peakWorkingSetBytes": 297398272,
+          "growthBytes": 151355392
+        },
+        "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+      },
+      {
+        "sample": 2,
+        "logicalAssets": 100000,
+        "physicalCASOriginals": 115000,
+        "originalCASBytes": 149285128,
+        "seedMsExcluded": 100235.844,
+        "distinctVideoPosters": 14,
+        "positions": [
+          0,
+          0.25,
+          0.5,
+          0.75,
+          0.95
+        ],
+        "viewports": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1519.0370309999853,
+            "selectedNodeIDs": [
+              84602,
+              80952
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 63,
+            "poster": {
+              "signedTickets": 6,
+              "posterPuts": 3,
+              "posterPutBytes": 7014,
+              "coldPosterMisses": 6,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                77302,
+                84602,
+                80952,
+                73652,
+                84603,
+                80953
+              ],
+              "savedPosterNodeIDs": [
+                77302,
+                84602,
+                80952
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 50,
+              "DerivativeOpenSuccess": 88,
+              "DerivativePutSuccess": 44
+            },
+            "rendererWorkingSetBytes": 227975168
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2258.7242130000086,
+            "selectedNodeIDs": [
+              74524,
+              70874
+            ],
+            "visibleRealPersistedPosters": 2,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 11,
+              "posterPuts": 5,
+              "posterPutBytes": 11690,
+              "coldPosterMisses": 11,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                77302,
+                84602,
+                80952,
+                73652,
+                84603,
+                80953,
+                74524,
+                81825,
+                70874,
+                78175,
+                74525
+              ],
+              "savedPosterNodeIDs": [
+                77302,
+                84602,
+                80952,
+                74524,
+                70874
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 114,
+              "DerivativeOpenSuccess": 202,
+              "DerivativePutSuccess": 101
+            },
+            "rendererWorkingSetBytes": 261607424
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2294.8414930000145,
+            "selectedNodeIDs": [
+              82749,
+              79099
+            ],
+            "visibleRealPersistedPosters": 4,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 19,
+              "posterPuts": 10,
+              "posterPutBytes": 23380,
+              "coldPosterMisses": 19,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                77302,
+                84602,
+                80952,
+                73652,
+                84603,
+                80953,
+                74524,
+                81825,
+                70874,
+                78175,
+                74525,
+                70875,
+                79099,
+                75449,
+                82749,
+                71799,
+                82750,
+                79100,
+                75450
+              ],
+              "savedPosterNodeIDs": [
+                77302,
+                84602,
+                80952,
+                74524,
+                70874,
+                81825,
+                79099,
+                75449,
+                82749,
+                71799
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 189,
+              "DerivativeOpenSuccess": 336,
+              "DerivativePutSuccess": 170
+            },
+            "rendererWorkingSetBytes": 274952192
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2215.6494390000007,
+            "selectedNodeIDs": [
+              83676,
+              80026
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 23,
+              "posterPuts": 14,
+              "posterPutBytes": 32732,
+              "coldPosterMisses": 26,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                77302,
+                84602,
+                80952,
+                73652,
+                84603,
+                80953,
+                74524,
+                81825,
+                70874,
+                78175,
+                74525,
+                70875,
+                79099,
+                75449,
+                82749,
+                71799,
+                82750,
+                79100,
+                75450,
+                80026,
+                83676,
+                76376,
+                72726
+              ],
+              "savedPosterNodeIDs": [
+                77302,
+                84602,
+                80952,
+                74524,
+                70874,
+                81825,
+                79099,
+                75449,
+                82749,
+                71799,
+                82750,
+                76376,
+                80026,
+                83676
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 240,
+              "DerivativeOpenSuccess": 426,
+              "DerivativePutSuccess": 215
+            },
+            "rendererWorkingSetBytes": 285429760
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2294.0587740000046,
+            "selectedNodeIDs": [
+              84417,
+              80767
+            ],
+            "visibleRealPersistedPosters": 2,
+            "mountedTiles": 90,
+            "poster": {
+              "signedTickets": 28,
+              "posterPuts": 16,
+              "posterPutBytes": 37408,
+              "coldPosterMisses": 30,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                77302,
+                84602,
+                80952,
+                73652,
+                84603,
+                80953,
+                74524,
+                81825,
+                70874,
+                78175,
+                74525,
+                70875,
+                79099,
+                75449,
+                82749,
+                71799,
+                82750,
+                79100,
+                75450,
+                80026,
+                83676,
+                76376,
+                72726,
+                83675,
+                80025,
+                80767,
+                84417,
+                77117
+              ],
+              "savedPosterNodeIDs": [
+                77302,
+                84602,
+                80952,
+                74524,
+                70874,
+                81825,
+                79099,
+                75449,
+                82749,
+                71799,
+                82750,
+                76376,
+                80026,
+                83676,
+                80767,
+                84417
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 294,
+              "DerivativeOpenSuccess": 520,
+              "DerivativePutSuccess": 262
+            },
+            "rendererWorkingSetBytes": 307462144
+          }
+        ],
+        "fivePositionP50Ms": 2258.7242130000086,
+        "countersAfterWarm": {
+          "signedTickets": 30,
+          "posterPuts": 18,
+          "posterPutBytes": 42084,
+          "coldPosterMisses": 35,
+          "warmPosterGets": 3,
+          "errors": 0,
+          "signedTicketNodeIDs": [
+            77302,
+            84602,
+            80952,
+            73652,
+            84603,
+            80953,
+            74524,
+            81825,
+            70874,
+            78175,
+            74525,
+            70875,
+            79099,
+            75449,
+            82749,
+            71799,
+            82750,
+            79100,
+            75450,
+            80026,
+            83676,
+            76376,
+            72726,
+            83675,
+            80025,
+            80767,
+            84417,
+            77117,
+            73467,
+            84416
+          ],
+          "savedPosterNodeIDs": [
+            77302,
+            84602,
+            80952,
+            74524,
+            70874,
+            81825,
+            79099,
+            75449,
+            82749,
+            71799,
+            82750,
+            76376,
+            80026,
+            83676,
+            80767,
+            84417,
+            77117,
+            73467
+          ]
+        },
+        "posterWarmDelta": 3,
+        "go": {
+          "baseline": {
+            "rssBytes": 42938368,
+            "cpuMs": 22980
+          },
+          "final": {
+            "rssBytes": 47411200,
+            "cpuMs": 24190
+          },
+          "maxRSSBytes": 49303552,
+          "rssGrowthBytes": 6365184,
+          "cpuDeltaMs": 1210
+        },
+        "renderer": {
+          "initialWorkingSetBytes": 144846848,
+          "peakWorkingSetBytes": 307462144,
+          "growthBytes": 162615296
+        },
+        "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+      },
+      {
+        "sample": 3,
+        "logicalAssets": 100000,
+        "physicalCASOriginals": 115000,
+        "originalCASBytes": 149285128,
+        "seedMsExcluded": 98913.274,
+        "distinctVideoPosters": 15,
+        "positions": [
+          0,
+          0.25,
+          0.5,
+          0.75,
+          0.95
+        ],
+        "viewports": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 1570.3150790000218,
+            "selectedNodeIDs": [
+              84602,
+              80952
+            ],
+            "visibleRealPersistedPosters": 4,
+            "mountedTiles": 63,
+            "poster": {
+              "signedTickets": 6,
+              "posterPuts": 4,
+              "posterPutBytes": 9352,
+              "coldPosterMisses": 7,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                84603,
+                80953
+              ],
+              "savedPosterNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 60,
+              "DerivativeOpenSuccess": 106,
+              "DerivativePutSuccess": 53
+            },
+            "rendererWorkingSetBytes": 228184064
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2229.236169999989,
+            "selectedNodeIDs": [
+              74524,
+              70874
+            ],
+            "visibleRealPersistedPosters": 2,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 12,
+              "posterPuts": 8,
+              "posterPutBytes": 18704,
+              "coldPosterMisses": 12,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                84603,
+                80953,
+                77303,
+                74524,
+                70874,
+                81825,
+                78175,
+                74525
+              ],
+              "savedPosterNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                80953,
+                74524,
+                70874,
+                81825
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 128,
+              "DerivativeOpenSuccess": 226,
+              "DerivativePutSuccess": 113
+            },
+            "rendererWorkingSetBytes": 259760128
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2197.402781999961,
+            "selectedNodeIDs": [
+              82750,
+              79100
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 18,
+              "posterPuts": 12,
+              "posterPutBytes": 28056,
+              "coldPosterMisses": 19,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                84603,
+                80953,
+                77303,
+                74524,
+                70874,
+                81825,
+                78175,
+                74525,
+                70875,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751
+              ],
+              "savedPosterNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                80953,
+                74524,
+                70874,
+                81825,
+                78175,
+                75450,
+                82750,
+                79100
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 191,
+              "DerivativeOpenSuccess": 342,
+              "DerivativePutSuccess": 172
+            },
+            "rendererWorkingSetBytes": 280453120
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2266.1307690000394,
+            "selectedNodeIDs": [
+              83675,
+              80025
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 99,
+            "poster": {
+              "signedTickets": 23,
+              "posterPuts": 16,
+              "posterPutBytes": 37408,
+              "coldPosterMisses": 26,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                84603,
+                80953,
+                77303,
+                74524,
+                70874,
+                81825,
+                78175,
+                74525,
+                70875,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751,
+                79101,
+                75451,
+                80025,
+                83675,
+                76375
+              ],
+              "savedPosterNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                80953,
+                74524,
+                70874,
+                81825,
+                78175,
+                75450,
+                82750,
+                79100,
+                71800,
+                80025,
+                83675,
+                76375
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 246,
+              "DerivativeOpenSuccess": 436,
+              "DerivativePutSuccess": 219
+            },
+            "rendererWorkingSetBytes": 287477760
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463
+            },
+            "firstTwoNewH264PostersDecodedAndTwoFramesMs": 2227.2921729999944,
+            "selectedNodeIDs": [
+              84416,
+              80766
+            ],
+            "visibleRealPersistedPosters": 3,
+            "mountedTiles": 90,
+            "poster": {
+              "signedTickets": 30,
+              "posterPuts": 19,
+              "posterPutBytes": 44422,
+              "coldPosterMisses": 31,
+              "warmPosterGets": 0,
+              "errors": 0,
+              "signedTicketNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                84603,
+                80953,
+                77303,
+                74524,
+                70874,
+                81825,
+                78175,
+                74525,
+                70875,
+                79100,
+                82750,
+                75450,
+                71800,
+                82751,
+                79101,
+                75451,
+                80025,
+                83675,
+                76375,
+                83676,
+                80026,
+                72725,
+                84416,
+                80766,
+                77116,
+                73466
+              ],
+              "savedPosterNodeIDs": [
+                80952,
+                77302,
+                84602,
+                73652,
+                80953,
+                74524,
+                70874,
+                81825,
+                78175,
+                75450,
+                82750,
+                79100,
+                71800,
+                80025,
+                83675,
+                76375,
+                84416,
+                80766,
+                77116
+              ]
+            },
+            "realCASStore": {
+              "OriginalOpenSuccess": 303,
+              "DerivativeOpenSuccess": 534,
+              "DerivativePutSuccess": 269
+            },
+            "rendererWorkingSetBytes": 313475072
+          }
+        ],
+        "fivePositionP50Ms": 2227.2921729999944,
+        "countersAfterWarm": {
+          "signedTickets": 34,
+          "posterPuts": 20,
+          "posterPutBytes": 46760,
+          "coldPosterMisses": 36,
+          "warmPosterGets": 5,
+          "errors": 0,
+          "signedTicketNodeIDs": [
+            80952,
+            77302,
+            84602,
+            73652,
+            84603,
+            80953,
+            77303,
+            74524,
+            70874,
+            81825,
+            78175,
+            74525,
+            70875,
+            79100,
+            82750,
+            75450,
+            71800,
+            82751,
+            79101,
+            75451,
+            80025,
+            83675,
+            76375,
+            83676,
+            80026,
+            72725,
+            84416,
+            80766,
+            77116,
+            73466,
+            80767,
+            84417,
+            73653,
+            70003
+          ],
+          "savedPosterNodeIDs": [
+            80952,
+            77302,
+            84602,
+            73652,
+            80953,
+            74524,
+            70874,
+            81825,
+            78175,
+            75450,
+            82750,
+            79100,
+            71800,
+            80025,
+            83675,
+            76375,
+            84416,
+            80766,
+            77116,
+            73466
+          ]
+        },
+        "posterWarmDelta": 5,
+        "go": {
+          "baseline": {
+            "rssBytes": 72019968,
+            "cpuMs": 22510
+          },
+          "final": {
+            "rssBytes": 47976448,
+            "cpuMs": 23690
+          },
+          "maxRSSBytes": 72413184,
+          "rssGrowthBytes": 393216,
+          "cpuDeltaMs": 1180
+        },
+        "renderer": {
+          "initialWorkingSetBytes": 147623936,
+          "peakWorkingSetBytes": 313475072,
+          "growthBytes": 165851136
+        },
+        "limitations": "Real mounted production Web Gallery VirtualGrid video poster component cold 404 -> signed preview ticket -> actual H264 browser video decode/canvas JPEG -> revisioned Server CAS PUT -> warm GET. 100k logical/115k distinct physical original sources, only selected new video tiles decoded, 30k MP4/MOV containers share same encoded H264 frames; not independently encoded 15k video scenes, no Live motion, RAW/HEVC, Timeline, Desktop Agent or WAN."
+      }
+    ],
+    "frozenBudget": "3 independent physical 115k CAS cohorts x 5 real virtual video viewports, >=2 new signed-preview/H264-canvas-captured/persisted JPEG posters and decode+2rAF each, each <=25s, n>=10 distinct per fixture, warm cached poster GET >=1, node count <1000, Go/Renderer memory growth <=256MiB, no HTTP/poster failure",
+    "limitation": "Does not prove 15k independently encoded H264 movies, Live motion, 4K, HEVC, RAW, Timeline, Desktop Main/Agent or true WAN."
+  },
+  "decision": "All 3 independent real PostgreSQL17/Gin/CAS+Web Chromium five-position H264 preview-ticket/decoded-canvas-JPEG/poster CAS PUT/warm-HTTP GET workloads passed unchanged; no production optimization or valid matched product BEFORE/AFTER.",
+  "scope_exclusions": "Same H264 encoded essence across distinct containers; NOT 15k independently encoded movies, 4K, HEVC, RAW/LIVP, Live motion playback, Timeline, Desktop Main/Agent, mobile hardware, WAN large-file upload or physical 100k sync/delete. Only selected visible video poster frames captured, not 115k simultaneous decodes. Cas seed excluded; CPU/RSS post-seed and Renderer WS post-loadURL. M005 Go derivative-worker consumer-aware ctx.cancel separately unmeasured."
+}

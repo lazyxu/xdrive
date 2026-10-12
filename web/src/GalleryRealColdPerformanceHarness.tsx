@@ -6,6 +6,32 @@ import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
 const progressMode = new URLSearchParams(window.location.search).get('xdriveMediaProgress') === 'on' ? 'on' : 'off'
 const actualViewportCancelBenchmark = new URLSearchParams(window.location.search)
   .get('xdriveRealViewportCancel') === '1'
+const physicalGalleryH264PosterBenchmark = new URLSearchParams(window.location.search)
+  .get('xdriveGalleryRealH264Poster') === '1'
+
+type GalleryH264PosterBenchmarkStats = {
+  signedTickets: number
+  posterPuts: number
+  posterPutBytes: number
+  coldPosterMisses: number
+  warmPosterGets: number
+  errors: number
+  signedTicketNodeIDs: number[]
+  savedPosterNodeIDs: number[]
+  videoLogicalIndices: number[]
+  videoNodeByLogicalIndex: Record<string, number>
+}
+
+const videoPosterStats: GalleryH264PosterBenchmarkStats = {
+  signedTickets: 0, posterPuts: 0, posterPutBytes: 0,
+  coldPosterMisses: 0, warmPosterGets: 0, errors: 0,
+  signedTicketNodeIDs: [], savedPosterNodeIDs: [], videoLogicalIndices: [], videoNodeByLogicalIndex: {},
+}
+const h264PosterVideoIndexMap = new Map<number, number>()
+const h264PosterSavedNodes = new Set<number>()
+if (physicalGalleryH264PosterBenchmark) {
+  window.__xdriveGalleryRealH264PosterStats = videoPosterStats
+}
 
 type RealColdConfig = {
   token: string
@@ -51,6 +77,7 @@ declare global {
   interface Window {
     __xdriveGalleryRealColdResult?: RealColdMetrics
     __xdriveGalleryRealColdError?: string
+    __xdriveGalleryRealH264PosterStats?: GalleryH264PosterBenchmarkStats
   }
 }
 
@@ -109,6 +136,15 @@ export function XDriveGalleryRealColdPerformanceHarness() {
       const response = await fetch(url, { headers, signal, cache: 'no-store' })
       if (!response.ok) throw new Error('Real 100k Gallery range HTTP ' + response.status)
       const payload = await response.json()
+      if (physicalGalleryH264PosterBenchmark && Array.isArray(payload.items)) {
+        for (let i = 0; i < payload.items.length; i++) {
+          const item = payload.items[i]
+          if (item?.metadata?.media_kind !== 'video' || item?.asset_kind !== 'video') continue
+          h264PosterVideoIndexMap.set(offset + i, item.node.id)
+        }
+        videoPosterStats.videoLogicalIndices = [...h264PosterVideoIndexMap.keys()]
+        videoPosterStats.videoNodeByLogicalIndex = Object.fromEntries(h264PosterVideoIndexMap)
+      }
       if (first) markers.current.rangeResolved = elapsed()
       return payload
     }
@@ -118,6 +154,55 @@ export function XDriveGalleryRealColdPerformanceHarness() {
       listAlbums: async () => [],
       listAlbumItems: async (_album, limit, offset, query) => (await getRange(limit, offset, query)).items,
       listAlbumItemRange: async (_album, limit, offset, query) => getRange(limit, offset, query),
+      // Only the opt-in real Go/CAS Web performance fixture exposes these
+      // callbacks. All ordinary product Gallery adapters remain untouched.
+      ...(physicalGalleryH264PosterBenchmark ? {
+        loadPreviewURL: async (
+          nodeID: number, kind: 'image' | 'video' | 'live_photo',
+          signal?: AbortSignal,
+        ): Promise<string | null> => {
+          if (kind !== 'video' || signal?.aborted) return null
+          const response = await fetch('/api/v1/files/' + nodeID + '/preview-ticket', {
+            method: 'POST', headers, signal, cache: 'no-store',
+          })
+          if (!response.ok) {
+            videoPosterStats.errors++
+            throw new Error('real Gallery H264 signed preview ticket HTTP ' + response.status)
+          }
+          const ticket = await response.json()
+          if (ticket.kind !== 'video' || !ticket.url) {
+            videoPosterStats.errors++
+            throw new Error('real Gallery H264 preview ticket is invalid')
+          }
+          videoPosterStats.signedTickets++
+          videoPosterStats.signedTicketNodeIDs.push(nodeID)
+          return new URL(ticket.url, window.location.origin).href
+        },
+        saveVideoPoster: async (
+          nodeID: number, revision: number, poster: Blob, signal?: AbortSignal,
+        ): Promise<void> => {
+          if (poster.type !== 'image/jpeg' || poster.size < 100) {
+            videoPosterStats.errors++
+            throw new Error('real H264 frame capture did not create a JPEG')
+          }
+          const response = await fetch('/api/v1/media/items/' + nodeID + '/video-poster', {
+            method: 'PUT',
+            headers: {
+              ...headers, 'Content-Type': 'image/jpeg',
+              'If-Match': '"' + revision + '"',
+            },
+            body: poster, signal,
+          })
+          if (response.status !== 204) {
+            videoPosterStats.errors++
+            throw new Error('real Gallery video-poster CAS PUT HTTP ' + response.status)
+          }
+          videoPosterStats.posterPuts++
+          videoPosterStats.posterPutBytes += poster.size
+          videoPosterStats.savedPosterNodeIDs.push(nodeID)
+          h264PosterSavedNodes.add(nodeID)
+        },
+      } : {}),
       // Source-exact paired A/B: the same production helper gets a visible
       // subscriber in ON mode; OFF uses its native Response.blob() fast path.
       // Both modes mount the same real 100k Gallery and fetch Gin/CAS bytes.
@@ -129,8 +214,15 @@ export function XDriveGalleryRealColdPerformanceHarness() {
             headers, signal, cache: 'no-store',
           })
           if (!response.ok) {
+            if (physicalGalleryH264PosterBenchmark && response.status === 404) {
+              videoPosterStats.coldPosterMisses++
+              return null
+            }
             markers.current.errors++
             return null
+          }
+          if (physicalGalleryH264PosterBenchmark && h264PosterSavedNodes.has(nodeID)) {
+            videoPosterStats.warmPosterGets++
           }
           let lastProgressBytes = 0
           let progressEvents = 0
