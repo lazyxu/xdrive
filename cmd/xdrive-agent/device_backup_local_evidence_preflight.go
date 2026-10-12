@@ -13,21 +13,23 @@ import (
 // This deliberately Agent-private summary never enters Web, Desktop IPC,
 // Preload or Renderer. It is NOT a commit token or permission to upload.
 type localEvidencePreflightSummary struct {
-	SourceID             uint64
-	Revision             uint64
-	Checked              int
-	LocallyHashedFiles   int
-	LocallyHashedBytes   int64
-	CloudContentVerified bool
-	CloudMetadataMatched bool
-	MetadataMatchedFiles int
-	HasMore              bool
-	NextAfterID          uint64
-	ServerConsistent     bool
-	ContentVerified      bool
-	CommitSupported      bool
-	Authoritative        bool
-	MissingInferenceSafe bool
+	SourceID                 uint64
+	Revision                 uint64
+	Checked                  int
+	LocallyHashedFiles       int
+	LocallyHashedBytes       int64
+	CloudContentVerified     bool
+	CloudMetadataMatched     bool
+	MetadataMatchedFiles     int
+	PhysicalCASObservedFiles int
+	PhysicalCASObservedBytes int64
+	HasMore                  bool
+	NextAfterID              uint64
+	ServerConsistent         bool
+	ContentVerified          bool
+	CommitSupported          bool
+	Authoritative            bool
+	MissingInferenceSafe     bool
 }
 
 // preflightLocalBoundBackupEvidencePage reads one private advisory page and
@@ -134,6 +136,26 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 			metadata.ContentVerified || metadata.CommitSupported ||
 			metadata.Authoritative || metadata.MissingInferenceSafe {
 			return empty, privateLocalSnapshotError(errors.New("cloud metadata no longer matches local original bytes"))
+		}
+
+		// Proof-of-storage pilot: sample at most ONE small actual CAS object
+		// per explicitly requested private evidence page. This rehashes
+		// Server storage outside the DB lock and repeats DB proof after read.
+		// Other candidates (and any object >64 MiB) remain PHYSICALLY
+		// UNVERIFIED; the complete page is never a commit/mirror token.
+		if len(claims) != 0 && claims[0].Size <= 64<<20 {
+			physical, err := cli.CheckLocalSourceItemCloudBytes(
+				readCtx, sourceID, source.Revision, proof,
+				generation.PreviousSHA256, generation.CurrentSHA256, claims[0])
+			if err != nil || physical.Checked != 1 ||
+				!physical.CloudMetadataMatched || !physical.PhysicalCASMatched ||
+				physical.CloudBytesVerified || physical.ContentVerified ||
+				physical.CommitSupported || physical.Authoritative ||
+				physical.MissingInferenceSafe {
+				return empty, privateLocalSnapshotError(errors.New("physical CAS sample no longer matches original"))
+			}
+			result.PhysicalCASObservedFiles = 1
+			result.PhysicalCASObservedBytes = claims[0].Size
 		}
 		// The expensive local hash may have raced device revoke, Node edits,
 		// alias changes or source configuration changes. Repeat Server proof
