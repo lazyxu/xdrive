@@ -147,7 +147,7 @@ func mediaDerivativeIdentity(
 	case mediaDerivativeThumbnail:
 		return mediaThumbnailStorageKey(node, metadata),
 			mediaThumbnailEdge,
-			mediapkg.ThumbnailVersionForSource(metadata.MIMEType),
+			mediaThumbnailVersion(metadata),
 			nil
 	case mediaDerivativeAnalysis:
 		return mediaAnalysisPreviewStorageKey(node, metadata),
@@ -208,7 +208,7 @@ func (s *Server) generateMediaDerivative(
 	}
 	render := mediapkg.ThumbnailJPEG
 	if kind == mediaDerivativeThumbnail &&
-		mediapkg.ThumbnailVersionForSource(metadata.MIMEType) == mediapkg.ThumbnailAlphaVersion {
+		mediaThumbnailVersion(metadata) == mediapkg.ThumbnailAlphaVersion {
 		render = mediapkg.ThumbnailWithAlpha
 	}
 	preview, err := render(

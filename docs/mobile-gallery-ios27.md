@@ -611,3 +611,12 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **仅共享 UI：** `MediaTile` 使用 `node_id:revision` 标识当前已成功加载的实况静态图；`XDriveMediaAsyncThumbnail` 通过真实浏览器 `<img onLoad>`（自然宽度非 0）报告就绪，开始加载、失效、`onError` 报告不可用。只有当前修订就绪且非选择模式才显示 20px 实况图标；无图、503/415/404/409、坏 Blob、滚动取消或缩略图正在加载时不渲染装饰图标。逻辑 `item.live_photo / asset_kind` 原样，整个 Tile 可聚焦元素的 `aria-label=实况照片` 仍保留。图片 Loader 不重试、不增加 HTTP、Blob/Agent IPC 所有权不变，`VirtualCollection`、Grid/Timeline、52px App Frame 完全保持。新/旧版本竞态仅以当前图片 ID+revision 显示角标，旧回调不能令新图显现或隐藏。
 
 **验收：** 实际共享 `MediaTile` / `XDriveMediaAsyncThumbnail` React 挂载回归覆盖图像尚无 src、浏览器 onLoad（自然宽度0与非0）、onError、版本变更、旧回调、选择模式、视频/普通图片与单一共享虚拟化/API，源代码与完整 Web/Desktop/Go/Windows CI 必须精确头绿色。P032/P033 既有 100k 实际性能基线不可借作当前新渲染代码的实测加速，后续若发现 Long Task/内存变化再使用性能登记簿比较。灰格的**原始失败原因仍未确定**，需要相关 Node/真实 HTTP/派生任务/原件 CAS 和有效 still/motion 资源凭据；Safari/PWA/VoiceOver/像素 1:1 仍 not-run。
+
+
+## P0-L4a · 修复 LIVP 内嵌 HEIC/HEIF 静态照片缩略图缓存版本与渲染策略（2026-10-12）
+
+**状态：已定位并修复候选的真实服务端合同不一致，待精确 PR CI / Final Gate 验证；不是用户截图灰图的最终根因结论。** 此前图库六列实况标签遮挡由 #1479 修复，浏览器解码错误回退由 #1482 修复，加载成功后才显示实况图标由 #1483 修复并合入。继续沿着原图/静态帧/缓存生成路径核查发现：Server 读取合法 `.livp` 描述符中的真实 still MIME 才判断 `has_thumbnail`，却继续以容器 `application/x-livp` 生成缩略图 ETag、派生缓存键和生成方法。这使 HEIC/HEIF 静态封面误落不支持 alpha 的 v3 JPEG 缓存语义，而非应有的 v4 可透明缩略图缓存，缓存版本和服务端声明不一致。
+
+**修复：** 以经过 `ParseLIVPContainerDescriptor` 验证的 still MIME 为唯一有效缩略图源 MIME，统一格式可支持性、ETag、StorageKey、派生任务版本及 `ThumbnailJPEG/ThumbnailWithAlpha` 策略。嵌入式 JPEG 的 LIVP 仍用旧 v3 共享缓存；内嵌 HEIC/HEIF 正确切换到隔离 v4 `.thumb`，避免重用错误的 v3 衍生结果；损坏描述符不猜测类型，不新增 MIME 外部来源、后台扫描或媒体身份模型。普通 Web/Mobile Web/Desktop 都复用现有同一 Go Server 和 `MediaGalleryDataSource`，无新 API、无图片墙全量渲染、无对原片的修改、无自动重试；全屏 App Frame 和 52px 全局标题栏不变。
+
+**验收门槛：** Go 回归分别核对 JPEG/HEIC/HEIF LIVP、错误描述符、旧新缓存键隔离、ETag/derivative version 一致性；完整 Desktop/Web/Go/Windows/打包与 Final Gate 才可合并。真实 HEIC/LIVP 原始文件、用户截图缺失的三张 still、iOS 27 Safari/PWA 视觉及 VoiceOver 尚未提供原始测试证据，继续标注待验，不能虚称灰图原件已经恢复。下一步应以被影响 Node 的真实缩略图 HTTP 状态、CAS still/motion 与派生队列为边界做证据驱动的补修。
