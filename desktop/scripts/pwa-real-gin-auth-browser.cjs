@@ -20,6 +20,7 @@ assert(ready.real_gin === true && ready.postgresql === true &&
 assert(ready.physical_device === false)
 assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(ready.url))
 assert(Number.isSafeInteger(ready.target_id) && ready.target_id > 0)
+assert(Number.isSafeInteger(ready.media_node_id) && ready.media_node_id > 0)
 assert(ready.username === 'pwa-s2b3-owner')
 const executable = process.env.XDRIVE_BROWSER_EXECUTABLE
 assert(executable && fs.existsSync(executable), 'Real system Chrome required')
@@ -52,6 +53,7 @@ async function verifyCase(browser, mobile) {
     crossOwner404: false, invalidToken401: false, publicOnlyWorkerCache: false,
     deepLinkPreserved: false,
     galleryDeepLinkMounted: false, galleryColdReloadMounted: false, galleryHistoryRestored: false,
+    mediaRange200: false, mediaViewer200: false, mediaViewerColdReload: false, mediaForeign404: false,
   }
   try {
     const page = await context.newPage()
@@ -142,6 +144,55 @@ async function verifyCase(browser, mobile) {
     assert.deepEqual(galleryErrors, [])
     sample.galleryHistoryRestored = true
 
+    // S2B6: read the actual owner-scoped sparse Gallery Range. Keep the
+    // JWT only inside the authenticated page and return scalar evidence.
+    const mediaRange = await galleryTab.evaluate(async expectedID => {
+      const token = localStorage.getItem('xdrive.access_token')
+      if (!token) return { status: 0, found: false, total: -1 }
+      const response = await fetch('/api/v1/media/items?range=true&limit=10&offset=0', {
+        headers: { Authorization: 'Bearer ' + token }, cache: 'no-store',
+      })
+      const payload = response.ok ? await response.json() : null
+      return {
+        status: response.status,
+        found: Boolean(payload?.items?.some(item => item.node?.id === expectedID)),
+        total: Number(payload?.total_count ?? -1),
+        noStore: /no-store/i.test(response.headers.get('Cache-Control') || ''),
+      }
+    }, ready.media_node_id)
+    assert.equal(mediaRange.status, 200)
+    assert.equal(mediaRange.found, true)
+    assert(mediaRange.total >= 1)
+    assert.equal(mediaRange.noStore, true)
+    sample.mediaRange200 = true
+
+    // Real Viewer cold launch + hard reload must issue actual Gin MediaItem
+    // reads, not merely keep the URL or mount a loading-only frame.
+    const viewerTab = await context.newPage()
+    const viewerRoute = '#/app/media-viewer?node=' + ready.media_node_id
+    const viewerItemPath = '/api/v1/media/items/' + ready.media_node_id
+    const firstMediaRead = viewerTab.waitForResponse(response =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === viewerItemPath &&
+      response.status() === 200)
+    await viewerTab.goto(ready.url + '/' + viewerRoute, { waitUntil: 'domcontentloaded' })
+    await firstMediaRead
+    await viewerTab.locator('[data-xdrive-web-viewer]').waitFor()
+    await viewerTab.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+    assert.equal(new URL(viewerTab.url()).hash, viewerRoute)
+    sample.mediaViewer200 = true
+
+    const reloadMediaRead = viewerTab.waitForResponse(response =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === viewerItemPath &&
+      response.status() === 200)
+    await viewerTab.reload({ waitUntil: 'domcontentloaded' })
+    await reloadMediaRead
+    await viewerTab.locator('[data-xdrive-web-viewer]').waitFor()
+    await viewerTab.getByText('pwa-s2b6-private.png', { exact: true }).waitFor()
+    assert.equal(new URL(viewerTab.url()).hash, viewerRoute)
+    sample.mediaViewerColdReload = true
+
     // Sign in separately as another real PostgreSQL user. A JWT may be
     // consumed only by the Go Server. Never print or persist its bytes.
     const foreignLogin = await context.request.post(ready.url + '/api/v1/auth/login', {
@@ -155,6 +206,11 @@ async function verifyCase(browser, mobile) {
     })
     assert.equal(forbidden.status(), 404)
     sample.crossOwner404 = true
+    const foreignMedia = await context.request.get(ready.url + '/api/v1/media/items/' + ready.media_node_id, {
+      headers: { Authorization: 'Bearer ' + foreignAuth.access_token },
+    })
+    assert.equal(foreignMedia.status(), 404)
+    sample.mediaForeign404 = true
 
     const cache = await page.evaluate(async () => {
       const names = await caches.keys()
@@ -189,7 +245,8 @@ async function main() {
       x.loginSucceeded && x.ownerDirectory200 && x.coldReload200 &&
       x.newTabRoute200 && x.crossOwner404 && x.invalidToken401 &&
       x.publicOnlyWorkerCache && x.deepLinkPreserved &&
-      x.galleryDeepLinkMounted && x.galleryColdReloadMounted && x.galleryHistoryRestored))
+      x.galleryDeepLinkMounted && x.galleryColdReloadMounted && x.galleryHistoryRestored &&
+      x.mediaRange200 && x.mediaViewer200 && x.mediaViewerColdReload && x.mediaForeign404))
     const completed = await browser.newContext()
     try {
       const response = await completed.request.post(ready.url + '/__test/pwa-s2b3/finish')
