@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -110,6 +112,20 @@ func photoHostModelInstanceCoherent(checks []photoHostModelInfoCheck) bool {
 		}
 	}
 	return true
+}
+
+// This comparison corroborates Docker's fixed-container healthcheck output
+// with the current Server's four model Info replies. Both come from the
+// shared socket; it does NOT prove kernel-level socket/process ownership,
+// durable Host Manager request identity or a real model task execution.
+func photoHostDockerHealthcheckMatched(checks []photoHostModelInfoCheck, host photoIntelligenceHostStatus) bool {
+	if !photoHostModelInstanceCoherent(checks) ||
+		host.State != "healthy" || !host.ProfileConfigured ||
+		!validPhotoIntelligenceHealthDigest(host.sessionDigest) {
+		return false
+	}
+	sum := sha256.Sum256([]byte(checks[0].runtimeInstanceID))
+	return host.sessionDigest == hex.EncodeToString(sum[:])
 }
 
 func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelInfoCheck {

@@ -268,6 +268,9 @@ export type XDrivePhotoHostPreflight = {
   // Four Info endpoints self-report one process boot ID, not a Host Manager
   // container/request attestation, real task completion or fleet readiness.
   model_instance_coherent?: boolean
+  // Docker's fixed-container healthcheck output agrees with all four Info
+  // process hashes. NOT kernel-level socket ownership or real task success.
+  docker_healthcheck_matched?: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

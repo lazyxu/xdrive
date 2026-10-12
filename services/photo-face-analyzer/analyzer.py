@@ -1704,7 +1704,7 @@ def benchmark(
     )
 
 
-def healthcheck(socket_path: str, token: str) -> None:
+def healthcheck(socket_path: str, token: str) -> str:
     checks = (
         ("/v1/info", "X-XDrive-Face-Protocol", PROTOCOL_VERSION),
         (
@@ -1756,6 +1756,16 @@ def healthcheck(socket_path: str, token: str) -> None:
                 raise RuntimeError("analyzer model endpoints span different sessions")
         finally:
             connection.close()
+    if process_session_id is None:
+        raise RuntimeError("no validated model healthcheck session")
+    return process_session_id
+
+
+def healthcheck_session_digest(session_id: str) -> str:
+    """Fixed Docker healthcheck output; not a model credential or attestation."""
+    if not re.fullmatch(r"[0-9a-f]{32}", session_id):
+        raise ValueError("invalid runtime instance identity")
+    return hashlib.sha256(session_id.encode("ascii")).hexdigest()
 
 
 def serve(args: argparse.Namespace) -> None:
@@ -1840,7 +1850,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     if args.healthcheck:
-        healthcheck(args.socket, args.token)
+        session_id = healthcheck(args.socket, args.token)
+        print(
+            "XD_PHOTO_INSTANCE_SHA256="
+            + healthcheck_session_digest(session_id),
+            flush=True,
+        )
         return 0
 
     if args.self_test:

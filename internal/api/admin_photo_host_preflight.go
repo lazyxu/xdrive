@@ -21,17 +21,18 @@ type adminPhotoHostPreflightCheck struct {
 }
 
 type adminPhotoHostPreflightDTO struct {
-	CheckedAt             time.Time                      `json:"checked_at"`
-	Action                string                         `json:"action"`
-	DesiredRevision       uint64                         `json:"desired_revision"`
-	LocalChecksComplete   bool                           `json:"local_checks_complete"`
-	HostObserved          bool                           `json:"host_observed"`
-	HostControlObserved   bool                           `json:"host_control_observed"`
-	ApplySupported        bool                           `json:"apply_supported"`
-	Checks                []adminPhotoHostPreflightCheck `json:"checks"`
-	HostRevisionVerified  bool                           `json:"host_revision_verified"`
-	ModelInfoChecks       []photoHostModelInfoCheck      `json:"model_info_checks"`
-	ModelInstanceCoherent bool                           `json:"model_instance_coherent"`
+	CheckedAt                time.Time                      `json:"checked_at"`
+	Action                   string                         `json:"action"`
+	DesiredRevision          uint64                         `json:"desired_revision"`
+	LocalChecksComplete      bool                           `json:"local_checks_complete"`
+	HostObserved             bool                           `json:"host_observed"`
+	HostControlObserved      bool                           `json:"host_control_observed"`
+	ApplySupported           bool                           `json:"apply_supported"`
+	Checks                   []adminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified     bool                           `json:"host_revision_verified"`
+	ModelInfoChecks          []photoHostModelInfoCheck      `json:"model_info_checks"`
+	ModelInstanceCoherent    bool                           `json:"model_instance_coherent"`
+	DockerHealthcheckMatched bool                           `json:"docker_healthcheck_matched"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -138,6 +139,13 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 			report.HostRevisionVerified = false
 			report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
 			report.ModelInstanceCoherent = false
+		}
+	}
+	if report.HostRevisionVerified && report.ModelInstanceCoherent {
+		// Independently re-read only the fresh fixed-container host bridge,
+		// never invoke Docker from Server or request media/model bytes.
+		if latestHost, valid := s.readPhotoIntelligenceHostStatus(); valid {
+			report.DockerHealthcheckMatched = photoHostDockerHealthcheckMatched(report.ModelInfoChecks, latestHost)
 		}
 	}
 	if report.HostRevisionVerified {

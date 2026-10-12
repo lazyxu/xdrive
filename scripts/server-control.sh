@@ -949,8 +949,28 @@ photo_host_control_process() {
 # Profile presence is *deployment intent*, while Docker inspect reports only
 # the existing xdrive-photo-face process/health. Neither proves model Info health
 # nor authorizes a container start, stop, restart or arbitrary Docker action.
+# Only the fixed photo-face container's recent Docker-recorded healthcheck.
+# A matching hash shows shared-socket healthcheck agreement, NOT authenticated
+# OS-level process ownership or a model task completion.
+photo_intelligence_healthcheck_digest() {
+  local raw latest observed_at epoch now delta digest=""
+  [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || return 0
+  raw="$(timeout 3s docker inspect --format '{{range .State.Health.Log}}{{printf "%v|%v|%s" .End .ExitCode .Output}}{{end}}' xdrive-photo-face 2>/dev/null || true)"
+  [[ -n "$raw" && ${#raw} -le 4096 ]] || return 0
+  latest="${raw##*$'\n'}"
+  [[ "$latest" =~ ^([^|]+)\|0\|XD_PHOTO_INSTANCE_SHA256=([0-9a-f]{64})$ ]] || return 0
+  observed_at="${BASH_REMATCH[1]}"
+  digest="${BASH_REMATCH[2]}"
+  epoch="$(date -u -d "$observed_at" +%s 2>/dev/null || true)"
+  [[ "$epoch" =~ ^[0-9]+$ ]] || return 0
+  now="$(date -u +%s)"
+  delta=$((now - epoch))
+  (( delta >= -15 && delta <= 90 )) || return 0
+  printf '%s\n' "$digest"
+}
+
 photo_intelligence_host_refresh() {
-  local dir tmp profile observed="" state=unknown profile_configured=false
+  local dir tmp profile observed="" state=unknown profile_configured=false session_digest=""
   profile="$(env_value COMPOSE_PROFILES)"
   case ",$profile," in
     *,photo-intelligence,*) profile_configured=true ;;
@@ -968,10 +988,14 @@ photo_intelligence_host_refresh() {
     false\|*) state=stopped ;;
     *) state=unknown ;;
   esac
+  if [[ "$state" == healthy ]]; then
+    session_digest="$(photo_intelligence_healthcheck_digest)"
+  fi
+  [[ "$session_digest" =~ ^[0-9a-f]{64}$ ]] || session_digest=""
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.photo-intelligence-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","profile_configured":%s}\n' \
-    "$state" "$profile_configured" > "$tmp"
+  printf '{"state":"%s","profile_configured":%s,"healthcheck_session_digest":"%s"}\n' \
+    "$state" "$profile_configured" "$session_digest" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/photo-intelligence-runtime-status.json"
 }
