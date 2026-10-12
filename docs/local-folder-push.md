@@ -1263,3 +1263,56 @@ Mirror deletion, automatic watcher, NAS Push, Web/Desktop remote writes or
 transaction-bound durable identity commit, L03-F/G upload/recovery, L05/L06
 execution and L07 native E2E remain separate phases. GitHub exact-head full
 CI including final-gate is the merge requirement; no GitLab delivery claimed.
+
+
+## L03-E1a · Owning-Agent quarantined-content physical preflight (PR verification)
+
+Prerequisite: L03-E0e [#1532](https://github.com/lazyxu/xdrive/pull/1532)
+passed its exact-head 76-job PR CI (25 passed, 51 conditional skips, zero
+failures, final-gate passed) and was rebase-merged to GitHub master as
+`711695292977503ee4b41635689b226d603e5f66`. Its merged work branch
+was removed by the PR-triggered cleanup job.
+
+**This is a restricted READ-ONLY E1 prerequisite, not E1 identity commit.**
+The Server adds an owning-native-Agent-only, device/Root/revision-fenced
+`POST /api/v1/sources/:id/local-identity/commit-intents/content-preflight`
+endpoint that accepts the exact two SHA256 generation digests and 1–4 ordered
+already-quarantined evidence IDs plus bounded original-byte SHA256/size claims.
+The same-account foreign Desktop or Web with owner JWT only cannot use it.
+Request JSON is strictly decoded and limited; physical verification is capped
+at 4 CAS objects / 64 MiB total with request context cancellation and a
+90-second deadline. It uses the existing SHA256 streaming verifier (256 KiB
+buffer), not unbounded object buffering or a path supplied by the client.
+
+The read first transactionally proves the current, unrevoked owning device,
+Root binding, paused Source and exact revision, and that every ID still refers
+to the **identical persisted quarantined intent AND its original advisory
+record**. An independent existing canonical SourceItem/alias/Node and
+File/FileVersion/READY-CAS metadata preflight derives the only allowed storage
+keys. After actual CAS object hashing, both the quarantine/evidence
+transaction and the canonical metadata preflight are executed again;
+mismatches, disappeared rows, replaced objects, revoked devices, changed
+generations, new Source revision or cancellation fail closed. Requests
+containing unquarantined IDs do not silently quarantine them.
+
+A successful response is only a **momentary physical read** with
+`quarantine_matched=true` and `physical_cas_matched=true`, while
+`cloud_bytes_verified=false`, `content_verified=false`,
+`commit_supported=false`, `authoritative=false`, and
+`missing_inference_safe=false` remain strictly false. It neither pins remote
+bytes until a write nor cryptographically attests future local disk state.
+No response contains path, credential, identity key, SourceItem ID, CAS key
+or per-file digest. No canonical SourceItem/SourceItemAlias/Node/File/CAS/
+SyncRun write, Source activation, transfer, Mirror deletion, background
+Agent job, desktop/web control, upload or durable restart checkpoint is added.
+
+Unit and PostgreSQL integration regressions cover exact immutable scope,
+device A vs device B, owner JWT only, invalid Root, revoked token, changed
+Source revision, bad JSON, unquarantined IDs, physical corruption, changed
+quarantine state, no extra canonical writes, and false authority flags.
+Full exact-head GitHub CI and final-gate must pass before merge. Real
+Windows/Linux physical backup tests, GitLab push, native Agent transport and
+true E1b transactional physical-proof-and-identity writer are NOT claimed.
+The writer must independently verify remote content durability and currently
+authorized native file bytes at its own commit boundary; E1a read success
+is **never** a commit token.

@@ -228,6 +228,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/evidence-cloud-bytes", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/commit-intents", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/commit-intents/page", suite: "local-source-devices"},
+		{method: "POST", path: "/api/v1/sources/:id/local-identity/commit-intents/content-preflight", suite: "local-source-devices"},
 		{method: "PATCH", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id/local-draft", suite: "local-source-devices"},
