@@ -1172,7 +1172,7 @@ unmeasured. Exact-head GitHub PR CI is the merge gate; no GitLab delivery
 is claimed for this phase.
 
 
-## L03-E0 · Owning-Agent quarantined identity commit intents (GitHub PR validation)
+## L03-E0 · Owning-Agent quarantined identity commit intents (merged #1502; exact-head 76-job CI green)
 
 This is the **first deliberately non-authoritative durable write** on the path
 toward L03-E identity commit. It stores at most 16 existing, ordered advisory
@@ -1217,3 +1217,16 @@ requests, collision/replay, exact quarantine unique indexes and the absence
 of canonical writes. GitHub exact-head complete CI with \`final-gate\` is
 required before marking this phase merged; no GitLab pipeline or native
 physical benchmark has been performed through this environment.
+
+
+## L03-E0b · Owning-Agent private quarantine transport and local pre-write fencing (PR verification)
+
+**Prerequisite:** #1502 (L03-E0) passed exact-head GitHub CI [#38216448750](https://github.com/lazyxu/xdrive/actions/runs/38216448750), 76 jobs complete: 25 successful, 51 conditionally skipped, zero failures, final-gate success. The rebase-merge commit is \`a2d2836cb94fb9a61f0ece8549291db0dfa1fbfa\`; the related work branch was verified absent. L03-E0 is a separate private \`quarantined\` database relation, never a canonical alias/Node/CAS/Run update.
+
+**E0b contract and scope:**
+- Add a dedicated **Go Client** native-Agent-only \`QuarantineLocalSourceCommitIntents\` transport. The only payload is the two verified generation digests plus 1–16 strictly ascending persisted evidence IDs. Require nonempty local device/Root credential proof and exact Source If-Match revision; do not accept local paths, Root IDs from Renderer, arbitrary SourceItem IDs, SHA256 of cloud bytes, storage keys or names as request input. Only HTTP 201 (new and replayed) or HTTP 200 (all replayed), exact revision ETag and private/no-store are allowed; bounded strictly decoded replies must include explicitly false \`commit_supported\`, \`authoritative\` and \`missing_inference_safe\` and coherent counts. Reject missing flags, mismatched count, unknown fields, trailing JSON, oversized payload, revoked/stale proof response and cancellation.
+- Add an **unexported owning native Agent method**, NOT an Electron/Agent loopback IPC route or a background task yet. Lock the local Root grant operation; resolve OS-stored enrollment and device secret plus Source/Root revision via the existing owning Agent path. Revalidate current private ignore rules and both complete sealed journals; read one bounded 16-record private Server evidence page; check SourceItem/Node/alias preflight, unique native identity and local original SHA256, compare it with current File/FileVersion/READY CAS **metadata**, then repeat Server identity preflight.
+- Immediately **before** contacting the quarantine endpoint, re-load and verify the same physical Root grant, generation integrity, rules and login/session identity. The Server performs a new independent transaction-bound device-first proof check. Immediately **after** the call, recheck local grant/journals/rules/account and reject reporting a successful session that changed. A timeout may have committed the **quarantined rows**, so an exact idempotent retry is the only safe recovery. Never infer a canonical commit, complete cloud verification or any deletion from the response. A no-candidate page causes no write.
+- Add Go Client httptest coverage for forged/missing proof, ordered bounds, HTTP status, 201 vs 200 replay counts, ETag/no-store, strict false authority flags, malformed/oversized responses and request cancellation. Agent helper tests cover wrong source/revision/cursor, duplicate local identities, candidate ordering, cancellation, partial/privileged replies and zero calls for invalid input. Cross-layer test checks that no Web/Renderer/Preload/Electron or general device-backup Agent HTTP route publishes this method.
+
+**Not done:** No Desktop button or runnable Agent job is added. No SourceItem/SourceItemAlias/Node/CAS/File/SyncRun mutation, true L03-E1 identity promotion, uploader/resume, watcher/schedule, Mirror deletion or NAS Push. The CAS check is **metadata-only** and a historical point-in-time read, not physical object durability. Server Source activation remains denied; this private method is not scheduled and cannot be triggered remotely. Full 1k/10k/100k and >=4GiB native E2E and GitLab delivery remain unverified. Only this PR's exact-head full CI, including Go Linux/Windows/race/PostgreSQL/desktop/web/build/artifacts and final-gate, may authorize its merger.
