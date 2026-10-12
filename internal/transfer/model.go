@@ -929,6 +929,11 @@ func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.
 		// Ignore late group progress after cancellation starts or finalizes.
 		return false
 	}
+	if e.task.ScanComplete && (!progress.ScanComplete || progress.Phase == PhaseScanning) {
+		// A delayed scanner snapshot cannot reopen an inventory whose scan
+		// has already completed and entered the transfer phase.
+		return false
+	}
 	if progress.Phase != "" {
 		e.task.Phase = progress.Phase
 		if progress.Phase == PhaseQueued && e.task.State == StateRunning {
