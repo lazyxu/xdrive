@@ -30,6 +30,9 @@ export type XDriveServiceDependency = {
   installation_state?: 'observed' | 'external' | 'unknown'
   health_state?: 'ready' | 'failed' | 'not-checked' | 'unknown'
   activation_state?: 'verified' | 'local-effective' | 'pending' | 'deployment-only' | 'unknown'
+  automatic_policy_state?: 'enabled' | 'paused' | 'partial' | 'pending' | 'unmanaged' | 'unknown' | 'not-applicable'
+  automatic_policy_desired_revision?: number
+  automatic_policy_effective_revision?: number
   // Only Caddy reports these trusted host observations, never the domain itself.
   https_configured?: boolean
   local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'

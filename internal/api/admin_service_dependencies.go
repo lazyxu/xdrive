@@ -11,22 +11,25 @@ import (
 )
 
 type serviceDependency struct {
-	ID                 string `json:"id"`
-	Group              string `json:"group"`
-	Label              string `json:"label"`
-	Status             string `json:"status"`
-	Detail             string `json:"detail"`
-	Version            string `json:"version,omitempty"`
-	Model              string `json:"model,omitempty"`
-	ConfigMode         string `json:"config_mode"`
-	ApplyMode          string `json:"apply_mode"`
-	ConfigHint         string `json:"config_hint,omitempty"`
-	ConfigurationState string `json:"configuration_state"`
-	InstallationState  string `json:"installation_state"`
-	HealthState        string `json:"health_state"`
-	ActivationState    string `json:"activation_state"`
-	HTTPSConfigured    *bool  `json:"https_configured,omitempty"`
-	LocalTLSState      string `json:"local_tls_state,omitempty"`
+	ID                               string `json:"id"`
+	Group                            string `json:"group"`
+	Label                            string `json:"label"`
+	Status                           string `json:"status"`
+	Detail                           string `json:"detail"`
+	Version                          string `json:"version,omitempty"`
+	Model                            string `json:"model,omitempty"`
+	ConfigMode                       string `json:"config_mode"`
+	ApplyMode                        string `json:"apply_mode"`
+	ConfigHint                       string `json:"config_hint,omitempty"`
+	ConfigurationState               string `json:"configuration_state"`
+	InstallationState                string `json:"installation_state"`
+	HealthState                      string `json:"health_state"`
+	ActivationState                  string `json:"activation_state"`
+	AutomaticPolicyState             string `json:"automatic_policy_state,omitempty"`
+	AutomaticPolicyDesiredRevision   uint64 `json:"automatic_policy_desired_revision,omitempty"`
+	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
+	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
+	LocalTLSState                    string `json:"local_tls_state,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
