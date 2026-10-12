@@ -2512,13 +2512,13 @@ test('F-iOS27-09D: Web and Mobile use the identical rename availability conditio
 test('F-iOS27-09E: all Mobile Files menus enforce a 44px MUI paper-level touch minimum', async () => {
   await withView(async h => {
     const menus = h.view.root.findAll(node => node.type === 'Menu')
-    assert.equal(menus.length, 6, 'six distinct Mobile Files menus must have one touch contract')
+    assert.equal(menus.length, 7, 'seven distinct Mobile Files menus must have one touch contract')
     for (const menu of menus) {
       assert.deepEqual(menu.props?.slotProps?.paper?.sx?.['& .MuiMenuItem-root'],
         { minHeight: 44 }, 'Menu paper missing its 44px sm-breakpoint override')
     }
     for (const key of [
-      'data-mobile-files-selection-menu', 'data-mobile-files-more-menu',
+      'data-mobile-files-location-menu', 'data-mobile-files-selection-menu', 'data-mobile-files-more-menu',
       'data-mobile-files-saved-search-menu', 'data-mobile-files-arrange-menu',
       'data-mobile-files-collection-menu',
     ]) {
@@ -2530,10 +2530,13 @@ test('F-iOS27-09E: all Mobile Files menus enforce a 44px MUI paper-level touch m
   })
 })
 
-test('F-iOS27-10A: folder navigation is compact, list is continuous, and More reveals full path', async () => {
+test('F-iOS27-10D: folder title opens ancestors without a second heading or path row', async () => {
+  const jumps = []
   await withView(async h => {
     assert.equal(count(h.view, 'data-mobile-files-large-title'), 0,
       'entered folders must not create a second oversized title')
+    assert.equal(count(h.view, 'data-mobile-files-location-path'), 0,
+      'a recursive full-path row must never consume file-list height')
     const compact = find(h.view, 'data-mobile-files-compact-title', true)
     assert.equal(compact.props['aria-hidden'], false)
     assert.equal(textOf(compact.props.children), '照片文件夹')
@@ -2544,21 +2547,34 @@ test('F-iOS27-10A: folder navigation is compact, list is continuous, and More re
     assert.equal(list.props.sx.mx, 0)
     assert.equal(list.props.sx.borderRadius, 0)
     assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
-    assert.equal(find(h.view, 'data-mobile-files-location-path', true).props.sx.display, 'none')
     const rail = h.view.root.findAll(node => node.props?.['data-mobile-files-section'])
       .map(node => node.props['data-mobile-files-section'])
     assert.deepEqual(rail, ['recent', 'favorites', 'browse'])
-    await act(async () => {
-      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
-    })
-    const reveal = h.view.root.findAll(node => node.props?.children === '显示位置路径' && node.props.onClick)
-    assert.equal(reveal.length, 1, 'directory ancestors must remain accessible via More')
-    await act(async () => { reveal[0].props.onClick() })
-    assert.equal(find(h.view, 'data-mobile-files-location-path', true).props.sx.display, 'flex')
-    assert.equal(find(h.view, 'data-mobile-files-crumb-id', '1').props.sx.minHeight, 44)
+
+    const trigger = find(h.view, 'data-mobile-files-location-trigger', true)
+    assert.equal(trigger.props.sx.minHeight, 44)
+    assert.equal(trigger.props['aria-haspopup'], 'menu')
+    await act(async () => { trigger.props.onClick({ currentTarget: {} }) })
+    assert.equal(find(h.view, 'data-mobile-files-location-menu', true).props.open, true)
+    assert.equal(count(h.view, 'data-mobile-files-crumb-id'), 2)
+    const parent = find(h.view, 'data-mobile-files-crumb-id', '1')
+    assert.equal(typeof parent.props.onDrop, 'function',
+      'ancestor external-drop target must not disappear with the path row')
+    await act(async () => { parent.props.onClick() })
+    assert.deepEqual(jumps, [0], 'ancestor selection must delegate to shared Web navigation')
+    assert.equal(find(h.view, 'data-mobile-files-location-menu', true).props.open, false)
+    assert.equal(count(h.view, 'data-mobile-files-location-path'), 0)
     assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+
+    await h.update({ searchActive: true })
+    assert.equal(count(h.view, 'data-mobile-files-location-trigger'), 0,
+      'global Search must not expose unrelated folder navigation')
+    await h.update({ searchActive: false, trashActive: true })
+    assert.equal(count(h.view, 'data-mobile-files-location-trigger'), 0,
+      'Trash must not expose writable ancestor navigation')
   }, { props: {
     requestedDirectoryID: 2,
     crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    onCrumbClick: index => jumps.push(index),
   } })
 })

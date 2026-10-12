@@ -315,24 +315,28 @@ test('F-iOS27-10C: real Chromium measures native date-size text and real fallbac
   assert.ok(!mobile.includes('fetch('))
 })
 
-test('09H: mobile Files breadcrumb navigation uses measured 44px hit targets', () => {
-  assert.match(mobile,
-    /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}[\s\S]{0,450}minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0/)
+test('09H: mobile Files ancestor menu preserves real 44px navigation without an inline path strip', () => {
+  assert.match(mobile, /data-mobile-files-location-trigger[\s\S]{0,400}minHeight: MIN_TOUCH/)
+  assert.match(mobile, /data-mobile-files-location-menu/)
+  assert.match(mobile, /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}/)
+  assert.match(mobile, /MOBILE_FILES_MENU_TOUCH_SX/)
   assert.ok(runner.includes('async function filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
-  assert.ok(mobile.includes("data-mobile-files-location-path"))
-  assert.ok(mobile.includes("showLocationPath ? 'flex' : 'none'"))
-  assert.ok(mobile.includes("'显示位置路径'"))
-  assert.ok(runner.includes("name: '显示位置路径', exact: true"))
+  assert.ok(!mobile.includes('data-mobile-files-location-path'))
+  assert.ok(!mobile.includes('showLocationPath'))
+  assert.ok(!mobile.includes("'显示位置路径'"))
+  assert.ok(runner.includes("page.locator('[data-mobile-files-location-trigger]')"))
+  assert.ok(runner.includes("page.locator('[data-mobile-files-location-path]').count() === 0"))
   assert.ok(runner.includes("[data-mobile-files-compact-title]"))
   assert.ok(runner.includes('await filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
   for (const required of [
     'data-mobile-files-crumb-id="1"',
     'data-mobile-files-crumb-id="2"',
+    'titleBox.width >= 43.5 && titleBox.height >= 43.5',
     'boxWidth >= 43.5 && item.boxHeight >= 43.5',
-    'parseFloat(item.cssMinWidth) >= 44 && parseFloat(item.cssMinHeight) >= 44',
+    'parseFloat(item.cssMinHeight) >= 44',
     String.raw`page.waitForURL(/\/files\?dir=1$/)`,
     "page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1",
-  ]) assert.ok(runner.includes(required), 'Missing real browser breadcrumb gate: ' + required)
+  ]) assert.ok(runner.includes(required), 'Missing real browser ancestor menu gate: ' + required)
   assert.ok(!mobile.includes('new XDriveApi('))
   assert.ok(!mobile.includes('fetch('))
 })

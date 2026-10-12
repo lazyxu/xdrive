@@ -19,12 +19,15 @@
 5. Viewer is one existing Web App/Preview path and returns to the mounted Files scroll/history. App Header Back exits an App; Files own Back enters its parent folder; workspace historical Back/Forward remains separately reachable.
 6. No false Search scoping. xDrive's current Server Search covers `全部文件`; iOS scoped Search UI may not claim local folder/Recent/Tag scoping until an authoritative Server query supports it.
 
+**F-iOS27-10D · compact folder title and path layout (2026-10-12).** The iOS 27 Files folder view uses one current-folder title in the compact navigation bar, not an additional stand-alone folder heading and a recursive full-path strip over the file list. Mobile Web therefore must not render an inline ancestor-path row or offer a “显示位置路径” toggle. Tapping its current folder title opens an accessible, 44px-target MUI ancestor menu with the same shared Web `onCrumbClick` navigation and existing drag/drop-to-ancestor hooks. Files-internal Back remains the parent-directory action; the existing More → `前往文件夹路径…` and Copy Path retain access to the canonical complete path. Wide Web/Desktop retain their editable breadcrumb/address bar, and the 52px App Frame header, single Server REST/workspace/virtual window, upload and thumbnail semantics are unchanged. Component/source tests and PR CI are implementation gates; native iOS 27 Safari/installed-mode screenshot diff, VoiceOver and physical 10k/100k remain unverified until measured.
+
 ## Reference-state matrix
 
 | Surface/interaction | iOS 27 reference target | Implementation status / acceptance gap |
 | --- | --- | --- |
 | Full-height Files | Native content edge-to-edge within its app | xDrive full App Frame and fixed independent 52px app title retained; verify inner geometry, not remove header |
 | Browse home | Large title → collapsed small title, search, grouped Locations/Favorites/Tags, 44px targets | F-iOS-01A merged; 1:1 screenshot-diff and hardware pending |
+| Entered folder navigation | One compact navigation title with parent Back, no extra folder-name or recursive-path row | F-iOS27-10D replaces the path strip with an on-demand ancestor menu; native iOS 27 screenshots and device verification pending |
 | Bottom navigation | Native Recents / Shared / Browse with blur/translucency, selected state and safe-area handling | xDrive's earlier approved Recents / Browse / Favorites is *not* identical. Favorites is a real xDrive collection; do not mislabel it Shared before a real shared-to-me Server source exists. F-iOS27-02 improves visual treatment only |
 | List/Grid | Native two-line rows, blue folders/document thumbnails, separators, content-aware icons | Current 68px List and 150px Grid are approximations; iOS 27 actual baseline measurement and reduced-motion/dark-mode screenshots pending |
 | More and context | Native grouped More menu, selected view, sort, long-hold rename/copy/move/tags/Quick Look | Real xDrive actions available; check every gesture and selected/disabled state against iOS 27 and Server permissions |

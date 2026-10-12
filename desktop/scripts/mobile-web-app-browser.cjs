@@ -2448,8 +2448,7 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
       rowTitleSize: rowTitle ? parseFloat(getComputedStyle(rowTitle).fontSize) : -1,
       rowMetaSize: rowMeta ? parseFloat(getComputedStyle(rowMeta).fontSize) : -1,
       arrangementDisplay: arrangement ? getComputedStyle(arrangement).display : 'missing',
-      pathDisplay: el('[data-mobile-files-location-path]')
-        ? getComputedStyle(el('[data-mobile-files-location-path]')).display : 'not-needed',
+      pathRowCount: root?.querySelectorAll('[data-mobile-files-location-path]').length ?? -1,
       bottom: rect(bottom), sectionOrder,
       background: root ? getComputedStyle(root).backgroundColor : 'missing',
       scrollOwners: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
@@ -2470,7 +2469,7 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
     measurements.firstRow && measurements.firstRow.y - measurements.nav.bottom < 185 &&
     measurements.rowTitleSize >= 15.5 && measurements.rowMetaSize >= 13 &&
     measurements.arrangementDisplay === 'none' &&
-    measurements.pathDisplay !== 'flex' && measurements.scrollOwners === 1, measurements);
+    measurements.pathRowCount === 0 && measurements.scrollOwners === 1, measurements);
   check(`${label}: native-like Browse-right capsule and white light-mode Files canvas`,
     measurements.bottom?.width <= 321 && measurements.bottom?.width >= 270 &&
     JSON.stringify(measurements.sectionOrder) === '["recent","favorites","browse"]' &&
@@ -2507,9 +2506,17 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   // second Mobile navigation API, business controller, or internal tabs.
   await page.goto(`${origin}/#/app/files?dir=2`, { waitUntil: 'domcontentloaded' });
   await page.reload({ waitUntil: 'domcontentloaded' });
-  // In iOS27 folder mode, More expands the hidden-but-backed location path.
-  await page.getByRole('button', { name: '文件操作菜单' }).click();
-  await page.getByRole('menuitem', { name: '显示位置路径', exact: true }).click();
+  // Preserve iOS 27 compact folder chrome: a title-triggered ancestor menu
+  // replaces the separate recursive path strip, without a new REST adapter.
+  const trigger = page.locator('[data-mobile-files-location-trigger]');
+  await trigger.waitFor();
+  const titleBox = await trigger.boundingBox();
+  check(`${label}: folder title gives a 44px ancestor-menu target without path row`,
+    titleBox && titleBox.width >= 43.5 && titleBox.height >= 43.5 &&
+    await page.locator('[data-mobile-files-location-path]').count() === 0, { titleBox });
+  await trigger.click();
+  await page.getByRole('menu').last().waitFor();
+  await page.waitForTimeout(400);
   const root = page.locator('[data-mobile-files-crumb-id="1"]');
   const folder = page.locator('[data-mobile-files-crumb-id="2"]');
   await root.waitFor();
@@ -2537,7 +2544,7 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   check(`${label}: actual directory breadcrumbs meet the 44px touch target`,
     metrics.length === 2 && ['1', '2'].every(id => metrics.some(item => item.id === id)) &&
     metrics.every(item => item.boxWidth >= 43.5 && item.boxHeight >= 43.5 &&
-      parseFloat(item.cssMinWidth) >= 44 && parseFloat(item.cssMinHeight) >= 44), metrics);
+      parseFloat(item.cssMinHeight) >= 44), metrics);
   await page.screenshot({ path: path.join(outputDir, `${label}-folder.png`) });
   const writesBefore = filesIos27Fixture.accepted.length;
   const childReadsBefore = Object.entries(result.requests)
@@ -2563,8 +2570,7 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   // same mounted Web App, without a second adapter or scroll owner.
   await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
   await page.locator('[data-mobile-files-item]').filter({ hasText: 'nested-002.txt' }).first().waitFor();
-  await page.getByRole('button', { name: '文件操作菜单' }).click();
-  await page.getByRole('menuitem', { name: '显示位置路径', exact: true }).click();
+  await page.locator('[data-mobile-files-location-trigger]').click();
   await folder.waitFor();
   await page.locator('[data-mobile-files-item]')
     .filter({ hasText: 'nested-002.txt' }).first().waitFor();
