@@ -1,0 +1,32 @@
+{
+  "workload_id": "P035/M002-a",
+  "state": "Invalid harness / Not measured",
+  "source_sha": "b18a086cee9e21c7efcde7ce0c3b965a29c82202",
+  "github_actions_run": "https://github.com/lazyxu/xdrive/actions/runs/38217553931",
+  "artifact": "https://github.com/lazyxu/xdrive/actions/runs/38217553931/artifacts/11733506139",
+  "captured_at": "2026-10-12",
+  "fixture": {
+    "physical_jpeg_originals": 100000,
+    "logical_nodes": 100000,
+    "physical_source_bytes": 70893376,
+    "single_fixture_completed": true
+  },
+  "observed_authentic_desktop_dom": {
+    "file_explorer_mounted": true,
+    "sidebar_files_selected": true,
+    "logical_list_display": "100000 个项目",
+    "grid_mounted_items_at_fail": 64,
+    "scroll_extent_px": 1849363,
+    "observed_view_label": "当前视图：图标 · 中图标",
+    "test_expected_label_before_fix": "网格"
+  },
+  "failure": "Source-exact Electron grid session exited on an obsolete view-label assertion before timing any thumbnail viewport. Production wide Grid is called 图标, not 网格 (compact-only).",
+  "measures": {
+    "grid_before_p50_ms": null,
+    "details_before_p50_ms": null,
+    "after_ms": null,
+    "valid_viewport_samples": 0
+  },
+  "corrective_action": "Change only opt-in Electron fixture to assert wide '当前视图：图标 · ' or '当前视图：详细信息 · ', and preserve n3/5-viewports/20s/6-active/256MiB original budgets. Do not change product source.",
+  "provenance_note": "Sanitized from source-exact artifacts; no invalid elapsed time used as a performance result."
+}
