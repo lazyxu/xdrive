@@ -268,3 +268,9 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 ### P1-3c2a · M49.V10 实际相册加入与权限（2026-10-12）
 
 **待原生 Chromium/Gin/PostgreSQL17 运行。** 375px Mobile Gallery 实际选两项，通过更多/手动相册抽屉明确确认；900px 宽 Web 实际选两项，通过共享工具栏的相册下拉执行。同一 Web REST 请求 POST /api/v1/media/albums/{id}/items、精确 Node ID/引号 If-Match，GET 持久关系以及真实 409 旧修订/404 跨用户拒绝，零非预期 5xx。与 P1-3c1 metadata-only 10k Range、100k 物理媒体性能、iOS27 真机 Safari/VoiceOver 1:1 分开记录；不得提前报成已验收。
+
+### P1-3c2b · M49.V10 真正相册移除与原件保留（2026-10-12）
+
+**尚未执行原生 Chromium/完整 CI。** 375px 实际精选集卡片→相册→静止长按→共享属性「从当前相册移除」；900px 相册列表→右键属性执行相同接口。验证真实 Gin/PostgreSQL17 DELETE/If-Match2→revision3、相册仍有另一项，原移出 Node GET200；旧修订409、跨账号404 并保持成员不变。375px 移除控件稳定高度不得小于44 CSS px。10k 仅元数据夹具不证明物理 CAS/缩略图解码；Safari/PWA/VoiceOver 与真机 iOS27 Photos 1:1 分别待验。
+
+**P1-3c2b first-red 2026-10-12：** CI #38190461429 本机真实 Chromium 375px 已走通精选集相册→500ms touch 长按→Context Menu 属性→共享 Inspector 移除按钮，但实测稳定高度 **36.5px <44px**，未开始 DELETE；隔离 PostgreSQL17 缺 PhotoAlbumFolder/SourceItemMetadata 导致另外2次 HTTP500。旧 artifact #11720982903 留存；修复共享 MUI 断点 minHeight44 和测试 schema 后必须精确新 HEAD 重新跑 375/900、DELETE、GET原资产、409/404、零意外5xx。iOS27真机和物理原图仍未验收。
