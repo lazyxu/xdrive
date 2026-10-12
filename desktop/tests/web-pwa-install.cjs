@@ -8,12 +8,14 @@ const root = path.resolve(__dirname, '..', '..')
 const read = file => fs.readFileSync(path.join(root, file), 'utf8')
 const logicSource = read('web/src/pwaInstall.ts')
 
-function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true, fetchReply } = {}) {
+function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true, sw = true,
+  protocol = 'https:', hostname = 'drive.example', fetchReply } = {}) {
   const events = new Map()
   const mediaEvents = new Map()
   const queries = []
   const win = {
     isSecureContext: secure,
+    location: { protocol, hostname },
     addEventListener(name, callback) { events.set(name, callback) },
     matchMedia(query) {
       return { matches: query === '(display-mode: ' + mode + ')',
@@ -24,8 +26,18 @@ function harness({ userAgent = 'Chrome Android', mode = 'browser', secure = true
     maxTouchPoints: userAgent.includes('Touch') ? 5 : 0,
     ...(sw ? { serviceWorker: {} } : {}),
   }
-  const answers = fetchReply ?? (() => ({ status: 200, headers: { get(name) {
-    return name === 'Content-Type' ? 'application/manifest+json' : 'no-cache, must-revalidate'
+  const answers = fetchReply ?? (url => ({ status: 200, headers: { get(name) {
+    if (name === 'Content-Type') {
+      if (url === '/site.webmanifest') return 'application/manifest+json'
+      if (url === '/sw.js') return 'text/javascript'
+      if (url === '/offline.html') return 'text/html'
+      if (url.endsWith('.png')) return 'image/png'
+      return 'text/html'
+    }
+    if (name === 'Cache-Control') {
+      return url.endsWith('.png') ? 'public, max-age=604800' : 'no-cache, must-revalidate'
+    }
+    return null
   } } }))
   const request = async (url, options) => {
     queries.push([url, options])
@@ -97,8 +109,8 @@ test('S2: no-credential HEAD diagnostics reject HTML SPA fallbacks and stale sta
     } } }
   } })
   const checks = await h.mod.checkXDrivePwaAssets()
-  assert.deepEqual(checks.map(x => x.id + ':' + x.state), ['context:pass', 'manifest:fail', 'worker:warn'])
-  assert.deepEqual(h.queries.map(([url]) => url), ['/site.webmanifest', '/sw.js'])
+  assert.deepEqual(checks.map(x => x.id + ':' + x.state), ['context:pass', 'transport:pass', 'manifest:fail', 'worker:warn', 'offline:fail', 'icon192:fail', 'icon512:fail'])
+  assert.deepEqual(h.queries.map(([url]) => url), ['/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png'])
   for (const [, options] of h.queries) {
     assert.equal(options.method, 'HEAD')
     assert.equal(options.credentials, 'omit')
@@ -111,7 +123,7 @@ test('S2: no-credential HEAD diagnostics reject HTML SPA fallbacks and stale sta
 test('S2: blocked browser static resources return diagnostics not false install success', async () => {
   const h = harness({ secure: false, fetchReply() { throw Error('no connection') } })
   const checks = await h.mod.checkXDrivePwaAssets()
-  assert.deepEqual(checks.map(x => x.state), ['fail', 'fail', 'fail'])
+  assert.deepEqual(checks.map(x => x.state), ['fail', 'fail', 'fail', 'fail', 'fail', 'fail', 'fail'])
   assert.ok(checks[0].detail.includes('HTTPS'))
 })
 
@@ -128,9 +140,52 @@ test('S2: UI entries exist before and after login, lazy-load the dialog and pres
   assert.ok(dialog.includes('data-xdrive-pwa-check'))
   assert.ok(dialog.includes('requestXDrivePwaInstall()'))
   assert.ok(dialog.includes('checkXDrivePwaAssets()'))
+  assert.ok(dialog.includes('离线页和安装图标发起无凭据 HEAD 请求'))
+  assert.ok(dialog.includes('区分实际 HTTPS 与本机 HTTP 安全上下文'))
   assert.ok(main.includes('startXDrivePwaInstallObservation()'))
   assert.ok(contract.includes('window.location.hash'))
   assert.ok(app.includes('<XDriveMobileAppHeader'))
   assert.ok(roadmap.includes('PWA-S2A'))
   assert.doesNotMatch(logicSource, /localStorage|sessionStorage|Authorization|api\/v1|window\.location\.reload/)
+})
+
+
+test('S2B4: loopback secure context is a warning, not fake public HTTPS readiness', async () => {
+  const h = harness({ protocol: 'http:', hostname: '127.0.0.1' })
+  const checks = await h.mod.checkXDrivePwaAssets()
+  assert.equal(checks[0].id, 'context')
+  assert.equal(checks[0].state, 'pass')
+  assert.equal(checks[1].id, 'transport')
+  assert.equal(checks[1].state, 'warn')
+  assert.match(checks[1].detail, /本机 HTTP/)
+  assert.deepEqual(checks.slice(2).map(x => x.state),
+    ['pass', 'pass', 'pass', 'pass', 'pass'])
+  assert.equal(h.queries.length, 5)
+})
+
+test('S2B4: icon long-cache is valid but a 200 HTML SPA fallback is not a PNG', async () => {
+  const h = harness({ fetchReply(url) {
+    return { status: 200, headers: { get(name) {
+      if (name === 'Content-Type') return url === '/pwa-512.png' ? 'text/html'
+        : url === '/site.webmanifest' ? 'application/manifest+json'
+          : url === '/sw.js' ? 'text/javascript'
+            : url === '/offline.html' ? 'text/html' : 'image/png'
+      return 'public, max-age=86400'
+    } } }
+  } })
+  const checks = await h.mod.checkXDrivePwaAssets()
+  assert.equal(checks.find(x => x.id === 'manifest').state, 'warn')
+  assert.equal(checks.find(x => x.id === 'worker').state, 'warn')
+  assert.equal(checks.find(x => x.id === 'offline').state, 'warn')
+  assert.equal(checks.find(x => x.id === 'icon192').state, 'pass',
+    'versioned public install icon is allowed a long static cache')
+  assert.equal(checks.find(x => x.id === 'icon512').state, 'fail')
+})
+
+test('S2B4: unsafe non-loopback HTTP cannot be mistaken for mobile HTTPS', async () => {
+  const h = harness({ protocol: 'http:', hostname: 'drive.example', secure: false })
+  const checks = await h.mod.checkXDrivePwaAssets()
+  assert.equal(checks[0].state, 'fail')
+  assert.equal(checks[1].state, 'fail')
+  assert.match(checks[1].detail, /HTTPS/)
 })

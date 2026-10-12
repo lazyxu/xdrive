@@ -23,7 +23,7 @@ const evidence = {
   browserVersion: '',
   cases: [], failures: [], publicOnly: !authMode, physicalDevice: false,
 }
-const observed = { readyz: 0, headManifest: 0, headWorker: 0, privateApi: 0, credentialLeaks: 0, transportDrops: 0, privateTransportDrops: 0, authLogin: 0, authFileReads: 0, authUnknown: 0, unauthorized: 0, authUnknownRoutes: [], authRecentTouches: [] }
+const observed = { readyz: 0, headManifest: 0, headWorker: 0, headOffline: 0, headIcon192: 0, headIcon512: 0, privateApi: 0, credentialLeaks: 0, transportDrops: 0, privateTransportDrops: 0, authLogin: 0, authFileReads: 0, authUnknown: 0, unauthorized: 0, authUnknownRoutes: [], authRecentTouches: [] }
 let networkTransportDown = false
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -132,7 +132,7 @@ const server = http.createServer((req, res) => {
     res.destroy()
     return
   }
-  if (['/sw.js', '/site.webmanifest', '/offline.html', '/api/v1/readyz'].includes(pathname) && (req.headers.authorization || req.headers.cookie)) observed.credentialLeaks++
+  if (['/sw.js', '/site.webmanifest', '/offline.html', '/pwa-192.png', '/pwa-512.png', '/api/v1/readyz'].includes(pathname) && (req.headers.authorization || req.headers.cookie)) observed.credentialLeaks++
   if (pathname === '/api/v1/version' && req.method === 'GET') {
     json(res, 200, { version: 'pwa-s2b1-public-fixture', channel: 'CI', commit: 'fixture', build_time: '2026-10-12T00:00:00Z' }, req.method)
     return
@@ -153,6 +153,9 @@ const server = http.createServer((req, res) => {
   }
   if (pathname === '/site.webmanifest' && req.method === 'HEAD') observed.headManifest++
   if (pathname === '/sw.js' && req.method === 'HEAD') observed.headWorker++
+  if (pathname === '/offline.html' && req.method === 'HEAD') observed.headOffline++
+  if (pathname === '/pwa-192.png' && req.method === 'HEAD') observed.headIcon192++
+  if (pathname === '/pwa-512.png' && req.method === 'HEAD') observed.headIcon512++
   const requested = pathname === '/' ? '/index.html' : pathname
   let decoded
   try { decoded = decodeURIComponent(requested) }
@@ -184,6 +187,7 @@ async function validateCase(browser, origin, spec) {
     secureContext: false, browserMode: '', workerControlled: false,
     installAssets: false, offlineNavigation: false, privateBypass: false,
     deepLinkPreserved: false, cachedPublicOnly: false, readinessNoCredentials: false,
+    loopbackTransportWarning: false, offlineAssetChecked: false, iconsChecked: false,
     authenticatedDeepLink: false, authenticatedColdReload: false }
   let page
   try {
@@ -233,8 +237,13 @@ async function validateCase(browser, origin, spec) {
     assert.match(await dialog.innerText(), /当前显示模式：browser/)
     if (spec.mobile) assert.match(await dialog.innerText(), /Android：/)
     await dialog.locator('[data-xdrive-pwa-check]').click()
+    await dialog.getByText('当前仅是本机 HTTP 安全上下文，不等于移动设备可访问的可信 HTTPS。', { exact: true }).waitFor()
+    result.loopbackTransportWarning = true
     await dialog.getByText('响应类型正确，声明了重新验证缓存。', { exact: true }).first().waitFor()
-    assert((await dialog.getByText('响应类型正确，声明了重新验证缓存。', { exact: true }).count()) >= 2)
+    assert((await dialog.getByText('响应类型正确，声明了重新验证缓存。', { exact: true }).count()) >= 3)
+    assert.equal(await dialog.getByText('公开安装图标类型正确；静态图标允许缓存。', { exact: true }).count(), 2)
+    result.offlineAssetChecked = true
+    result.iconsChecked = true
     const readyBefore = observed.readyz
     await dialog.locator('[data-xdrive-pwa-check-server]').click()
     await dialog.getByText(/xDrive Server 当前报告已就绪/).waitFor()
@@ -360,6 +369,10 @@ async function main() {
     assert.equal(observed.credentialLeaks, 0)
     assert.equal(observed.headManifest, 2)
     assert.equal(observed.headWorker, 2)
+    assert.equal(observed.headOffline, 2)
+    assert.equal(observed.headIcon192, 2)
+    assert.equal(observed.headIcon512, 2)
+    assert(evidence.cases.every(x => x.loopbackTransportWarning && x.offlineAssetChecked && x.iconsChecked))
     assert.equal(observed.readyz, 2)
     if (authMode) {
       assert.equal(observed.authLogin, 2)

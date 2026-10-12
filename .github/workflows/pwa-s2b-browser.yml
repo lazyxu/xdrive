@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pwa-s2b1-browser:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012' || github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:

@@ -97,8 +97,8 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
           <Box>
             <Typography variant="subtitle2" fontWeight={700}>自建部署诊断（只读）</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
-              点击后仅对本站公开的 Manifest 和 Service Worker 发起无凭据 HEAD 请求，
-              不读取账户文件、下载票据或服务器管理员设置。
+              点击后仅对本站公开的 Manifest、Service Worker、离线页和安装图标发起无凭据 HEAD 请求，
+              并区分实际 HTTPS 与本机 HTTP 安全上下文；不读取账户文件、下载票据或服务器管理员设置。
             </Typography>
             <Button data-xdrive-pwa-check variant="outlined" disabled={checking} sx={{ minHeight: 44 }} onClick={inspect}>
               {checking ? '检测中…' : '检查安装环境'}

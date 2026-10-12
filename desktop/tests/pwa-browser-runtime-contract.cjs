@@ -18,6 +18,8 @@ test('S2B1: actual production Chromium with service workers, not a simulated pro
     "page.reload({ waitUntil: 'domcontentloaded' })",
     "data-xdrive-pwa-login-entry", "data-xdrive-pwa-install-dialog",
     "data-xdrive-pwa-check", "data-xdrive-pwa-check-server",
+    'headOffline: 0', 'headIcon192: 0', 'headIcon512: 0',
+    'loopbackTransportWarning = true', 'offlineAssetChecked = true', 'iconsChecked = true',
     'await context.close()', 'cachedPublicOnly = true',
     "No authenticated Server API in S2B1 public fixture",
   ]) assert.ok(script.includes(token), 'missing actual browser contract: ' + token)
@@ -63,6 +65,8 @@ test('S2B1: exact-head CI builds real dist, and does not publish credentials or 
   assert.ok(script.includes('NOT OS-installed PWA'))
   assert.ok(runtime.includes("navigator.serviceWorker.register('/sw.js'"))
   assert.ok(delivery.includes('PWA-S2B1'))
+  assert.ok(delivery.includes('PWA-S2B4'))
+  assert.ok(workflow.includes("github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012'"))
   assert.ok(!workflow.includes('desktop/pwa-s2b1-results/\\n'),
     'CI must not archive arbitrary private browser profile contents')
 })
