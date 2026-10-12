@@ -1,12 +1,47 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Alert, Box, Button, Typography } from '@mui/material'
 import {
   checkXDrivePwaUpdate, subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot,
 } from './pwaUpdates'
+import { xDriveProbePwaServer } from './pwaConnectivity'
+import type { XDrivePwaReadinessResult } from './pwaConnectivity'
 
 export default function XDrivePwaUpdateSection() {
   const state = useSyncExternalStore(subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
+  const [serverChecking, setServerChecking] = useState(false)
+  const [serverResult, setServerResult] = useState<XDrivePwaReadinessResult | null>(null)
+  const serverRequestRef = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    const owned = serverRequestRef.current
+    serverRequestRef.current = null
+    owned?.abort()
+  }, [])
+  const checkServer = () => {
+    serverRequestRef.current?.abort()
+    const controller = new AbortController()
+    serverRequestRef.current = controller
+    setServerChecking(true)
+    setServerResult(null)
+    void xDriveProbePwaServer({ signal: controller.signal }).then(result => {
+      if (serverRequestRef.current === controller && !controller.signal.aborted) {
+        setServerResult(result)
+      }
+    }).finally(() => {
+      if (serverRequestRef.current === controller) {
+        serverRequestRef.current = null
+        setServerChecking(false)
+      }
+    })
+  }
+  const serverText = serverResult?.state === 'ready' ? 'xDrive Server 当前报告已就绪，仍不代表文件传输已完成。'
+    : serverResult?.state === 'server-unavailable' ? 'xDrive Server 尚未就绪，可能正在启动或维护。'
+      : serverResult?.state === 'rate-limited' ? '探测请求受到限流，请稍后由用户主动重试。'
+        : serverResult?.state === 'access-blocked' ? '服务器或反向代理拒绝了匿名就绪检测，请检查部署配置。'
+          : serverResult?.state === 'timed-out' ? '服务器连接检测超时，请检查网络与自建服务状态。'
+            : serverResult?.state === 'network-unavailable' ? '无法访问服务器，请检查 DNS、TLS、网络或代理。'
+              : serverResult?.state === 'unexpected-response' ? '服务器返回非预期状态（HTTP ' + serverResult.httpStatus + '）。'
+                : null
   return (
     <Box data-xdrive-pwa-update-status>
       <Typography variant="subtitle2" fontWeight={700}>版本与网络</Typography>
@@ -49,6 +84,21 @@ export default function XDrivePwaUpdateSection() {
         onClick={() => { void checkXDrivePwaUpdate() }}>
         {state.phase === 'checking' ? '检查中…' : '检查新版本'}
       </Button>
+      <Typography variant="subtitle2" fontWeight={700} sx={{ mt: 2 }}>服务器实际连接</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+        与浏览器 online/offline 提示不同，这项操作会显式查询 xDrive Server 的公开就绪接口。
+        不传输登录凭据，也不会自动重放、重试或取消文件任务。
+      </Typography>
+      <Button data-xdrive-pwa-check-server variant="outlined" sx={{ minHeight: 44 }}
+        disabled={serverChecking} onClick={checkServer}>
+        {serverChecking ? '检测中…' : serverResult ? '重新检测服务器' : '检查服务器连接'}
+      </Button>
+      {serverText ? (
+        <Alert severity={serverResult?.state === 'ready' ? 'success' : 'warning'}
+          role="status" aria-live="polite" sx={{ mt: 1 }}>
+          {serverText}
+        </Alert>
+      ) : null}
     </Box>
   )
 }

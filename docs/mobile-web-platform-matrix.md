@@ -18,6 +18,10 @@
 
 Web 只提供显式“检查新版本”与安全更新步骤；浏览器 `navigator.onLine` 是在线/离线**提示**，绝不是 Gin/PostgreSQL/Server health。新的 public-only BroadcastChannel 不携带 Token 或文件信息，也不会自动触发 SW 激活或页面 Reload。iOS Safari / 主屏 PWA、Android 浏览器 / 安装 PWA 四类真实环境在升级、后台及断网恢复时仍为 **not-run**。后续需分别记录下载中/Viewer/未保存编辑的窗口，以及关闭所有已安装应用窗口后新 Worker 是否真正成为 controlling，保留原 Hash Route 和个人文件身份。
 
+## PWA S3B 弱网与就绪性证据层（2026-10-12）
+
+新增用户主动 `/api/v1/readyz`（公开、无凭据、可取消、超时）检查，不使用 SW 离线页替代 API 响应，也不把浏览器 online 标志当作 Server 就绪。实际 iOS Safari、iOS 主屏、Android 浏览器和 Android 安装模式下，需在正常/断网/DNS 失效/证书失效/503/429/身份过期/进程回收情况下逐项验收；目前**真机仍 not-run**。readiness 成功不能推论私人文件授权、后台任务、上传或下载成功。
+
 ## 1. 结果必须分为四层
 
 | 层次 | 可用状态 | 记录内容 |
