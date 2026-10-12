@@ -59,7 +59,7 @@ import type {
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
-  mobileFilesRowTextInset, MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
+  mobileFilesRowTextInset, mobileFilesNativeMetadata, MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
 
@@ -1439,7 +1439,7 @@ export default function MobileFiles(props: Props) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {item.kind === 'dir' ? <MobileFolderIcon size={effectiveGrid ? 62 : 38} /> : (
             <XDriveFileExplorerThumbnail item={item} eligible={xDriveFileSupportsThumbnail(item.name, item.kind)}
-              fallback={<MobileDocumentIcon item={item} size={effectiveGrid ? 38 : 28}/>}
+              fallback={<MobileDocumentIcon item={item} size={effectiveGrid ? 38 : 36}/>}
               sx={{ width: effectiveGrid ? 64 : selectionMode ? 42 : 40,
                 height: effectiveGrid ? 64 : 42, borderRadius: 0 }}/>
           )}
@@ -1448,7 +1448,7 @@ export default function MobileFiles(props: Props) {
           <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap sx={{ fontSize: effectiveGrid ? 14 : 16 }} textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
           <Typography data-mobile-files-item-meta variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: effectiveGrid ? 12 : 13.5 }} textAlign={effectiveGrid ? 'center' : 'left'}>
             {inlineBranch?.error ?? (inlineBranch?.itemCount === 0 ? '空文件夹' :
-              item.secondaryLabel || [labelOf(item), item.kind === 'file' && item.size !== undefined ? formatBytes(item.size) : ''].filter(Boolean).join(' · '))}
+              mobileFilesNativeMetadata(item) || labelOf(item))}
           </Typography>
         </Box>
         {!effectiveGrid && item.availability ? <XDriveFileExplorerAvailabilityBadge availability={item.availability} compact /> : null}
@@ -1541,12 +1541,13 @@ export default function MobileFiles(props: Props) {
                   ? <MobileFolderIcon size={35}/>
                   : <XDriveFileExplorerThumbnail item={entry}
                       eligible={xDriveFileSupportsThumbnail(entry.name, entry.kind)}
-                      fallback={<MobileDocumentIcon item={entry} size={29}/>}
+                      fallback={<MobileDocumentIcon item={entry} size={36}/>}
                       sx={{ width: 42, height: 42, borderRadius: 0 }}/>}
       </Box>
       <Box minWidth={0} flex={1}>
         <Typography data-mobile-files-collection-title variant="body2" noWrap>{entry.name}</Typography>
-        <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (entry.kind === 'dir' ? '文件夹' : '文件')}</Typography>
+        <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (owner ? mobileFilesNativeMetadata(entry) || (entry.kind === 'dir' ? '文件夹' : '文件')
+          : (entry.kind === 'dir' ? '文件夹' : '文件'))}</Typography>
       </Box>
     </Box>
   )
