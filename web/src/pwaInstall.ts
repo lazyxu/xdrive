@@ -13,7 +13,7 @@ export interface XDrivePwaInstallSnapshot {
   lastPromptOutcome: XDrivePwaPromptOutcome | null
 }
 export interface XDrivePwaAssetCheck {
-  id: 'context' | 'manifest' | 'worker'
+  id: 'context' | 'transport' | 'manifest' | 'worker' | 'offline' | 'icon192' | 'icon512'
   state: 'pass' | 'warn' | 'fail'
   label: string
   detail: string
@@ -125,9 +125,27 @@ export async function checkXDrivePwaAssets(): Promise<XDrivePwaAssetCheck[]> {
     detail: secure ? '浏览器允许安全 Web API（不代表已验证公网 DNS 和证书部署）。'
       : '当前连接不是安全上下文。请先配置浏览器信任的 HTTPS。',
   })
+  // Loopback HTTP is a secure browser context, but not a deployed HTTPS origin.
+  // Do not misrepresent local testing as a trusted mobile device certificate.
+  const origin = typeof window === 'undefined' ? undefined : window.location
+  const https = origin?.protocol === 'https:'
+  const localHTTP = origin?.protocol === 'http:' &&
+    /^(localhost|127\.0\.0\.1|\[::1\])$/i.test(origin.hostname)
+  checks.push({
+    id: 'transport', label: '实际访问协议',
+    state: https && secure ? 'pass' : localHTTP && secure ? 'warn' : 'fail',
+    detail: https && secure
+      ? '当前页面使用 HTTPS。公网 DNS、证书链和更新生效仍需在实际设备与部署环境检查。'
+      : localHTTP && secure
+        ? '当前仅是本机 HTTP 安全上下文，不等于移动设备可访问的可信 HTTPS。'
+        : '当前页面未使用可信的 HTTPS 安全连接；请检查域名、证书和代理配置。',
+  })
   for (const asset of [
-    { id: 'manifest' as const, path: '/site.webmanifest', label: 'Web App Manifest', mime: /^(application\/(manifest\+json|json))\b/i },
-    { id: 'worker' as const, path: '/sw.js', label: 'Service Worker', mime: /^(text|application)\/(javascript|ecmascript)\b/i },
+    { id: 'manifest' as const, path: '/site.webmanifest', label: 'Web App Manifest', mime: /^(application\/(manifest\+json|json))\b/i, revalidate: true },
+    { id: 'worker' as const, path: '/sw.js', label: 'Service Worker', mime: /^(text|application)\/(javascript|ecmascript)\b/i, revalidate: true },
+    { id: 'offline' as const, path: '/offline.html', label: '公开离线页', mime: /^text\/html\b/i, revalidate: true },
+    { id: 'icon192' as const, path: '/pwa-192.png', label: '192px 安装图标', mime: /^image\/png\b/i, revalidate: false },
+    { id: 'icon512' as const, path: '/pwa-512.png', label: '512px 安装图标', mime: /^image\/png\b/i, revalidate: false },
   ]) {
     try {
       const response = await fetch(asset.path, {
@@ -144,9 +162,10 @@ export async function checkXDrivePwaAssets(): Promise<XDrivePwaAssetCheck[]> {
       const revalidated = /\bno-cache\b|\bno-store\b/i.test(cacheControl)
       checks.push({
         id: asset.id, label: asset.label,
-        state: revalidated ? 'pass' : 'warn',
-        detail: revalidated ? '响应类型正确，声明了重新验证缓存。'
-          : '响应类型正确；未检测到禁止长期缓存的头，发布更新可能延迟。',
+        state: !asset.revalidate || revalidated ? 'pass' : 'warn',
+        detail: !asset.revalidate ? '公开安装图标类型正确；静态图标允许缓存。'
+          : revalidated ? '响应类型正确，声明了重新验证缓存。'
+            : '响应类型正确；未检测到禁止长期缓存的头，发布更新可能延迟。',
       })
     } catch {
       checks.push({ id: asset.id, label: asset.label, state: 'fail',
