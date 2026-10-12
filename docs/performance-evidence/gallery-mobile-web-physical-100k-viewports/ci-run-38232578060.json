@@ -1,0 +1,797 @@
+{
+  "workload_id": "P036/M001-c",
+  "status": "Accepted measured CURRENT; no production optimization; AFTER=N/A; final evidence-head validation pending",
+  "evidence_provenance": {
+    "repository": "lazyxu/xdrive",
+    "fixed_work_parent_sha": "b8e84ed88bc9e1f712911571477097c5ad41df85",
+    "measured_source_sha": "507ce23e3300e1db0a33a3c221dcb4feb3ba9799",
+    "source_extraction": "Complete GALLERY_WEB_PHYSICAL_100K_SUMMARY JSON parsed losslessly from original successful GitHub Actions native job stdout (not an invented benchmark or a claim of downloaded binary artifact)",
+    "specialized_native_run": "https://github.com/lazyxu/xdrive/actions/runs/38232578060",
+    "specialized_native_job": "https://github.com/lazyxu/xdrive/actions/runs/38232578060/job/114755370507",
+    "native_artifact": "https://github.com/lazyxu/xdrive/actions/runs/38232578060/artifacts/11739178196",
+    "same_source_full_pr_ci": "https://github.com/lazyxu/xdrive/actions/runs/38232578216",
+    "source_full_ci_final_gate": "success",
+    "evidence_amended_head_ci": "Pending, rerun original native n3 + full CI/final-gate on the revised one-work-commit SHA",
+    "GitLab_push_or_CI": "not performed"
+  },
+  "workload": {
+    "surface": "Actual shared Mobile Web Gallery Grid within production full-screen App Frame under native Chromium/Electron 390px viewport",
+    "renderer_css_width_px": 390,
+    "physical_browser_window": "390x844",
+    "observed_inner_css_height_px": 817,
+    "logical_photo_assets": 100000,
+    "distinct_physical_cas_originals": 115000,
+    "physical_bytes_per_fixture": 149285128,
+    "photo_categories": {
+      "photos": 70000,
+      "videos": 15000,
+      "paired_live": 15000
+    },
+    "independent_n": 3,
+    "total_viewports": 15,
+    "viewport_scroll_fractions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95
+    ],
+    "timing_condition": "Four newly visible distinct blob: JPEG/Live still decoded plus two requestAnimationFrame cycles; physical fixture seeding excluded",
+    "genuine_gin_postgresql17_cas": true,
+    "no_video_or_live_motion_playback_in_scope": true
+  },
+  "frozen_budgets": {
+    "viewport_max_ms": 20000,
+    "mounted_tiles_exclusive_max": 1000,
+    "http_peak_active_max": 6,
+    "go_rss_growth_max_bytes": 268435456,
+    "renderer_working_set_growth_max_bytes": 268435456,
+    "min_new_visible_blob_stills": 4,
+    "independent_samples_min": 3,
+    "noncancelled_http_failures_max": 0
+  },
+  "measured_current": {
+    "median_of_three_fixture_five_viewport_P50_ms": 2081.190451000002,
+    "max_single_viewport_ms": 2281.8057469999767,
+    "median_of_three_first_viewport_ms": 1270.599178000004,
+    "per_position_median_ms": [
+      {
+        "fraction": 0,
+        "median_ms": 1270.599178000004
+      },
+      {
+        "fraction": 0.25,
+        "median_ms": 2013.629442000005
+      },
+      {
+        "fraction": 0.5,
+        "median_ms": 2096.2805020000087
+      },
+      {
+        "fraction": 0.75,
+        "median_ms": 2096.567095999955
+      },
+      {
+        "fraction": 0.95,
+        "median_ms": 2257.861827000015
+      }
+    ],
+    "distinct_visible_decoded_indices_per_fixture": [
+      33,
+      35,
+      33
+    ],
+    "fixture_five_viewport_P50_ms": [
+      2081.190451000002,
+      2023.9640689999796,
+      2096.567095999955
+    ],
+    "max_mounted_tiles": 20,
+    "http_peak_active": 6,
+    "http_thumbnail_requests_started_through_last_position_per_fixture": [
+      62,
+      62,
+      66
+    ],
+    "noncancelled_http_failure_observations": 0,
+    "max_renderer_post_loadURL_working_set_growth_bytes": 79900672,
+    "max_go_post_seed_rss_growth_bytes": 561152,
+    "go_cpu_delta_ms_per_fixture": [
+      480,
+      470,
+      500
+    ],
+    "decision": "Within predeclared latency, memory, DOM and HTTP concurrency budgets; product unchanged, AFTER=N/A, optimization delta N/A"
+  },
+  "out_of_scope": [
+    "Physical iOS/Android acceptance",
+    "H264 posters or playback",
+    "Live Photo motion playback",
+    "HEVC/RAW/LIVP",
+    "Gallery Timeline",
+    "Desktop Agent",
+    "WAN network performance",
+    "Durable tasks and viewport-to-Go cancellation"
+  ],
+  "prior_invalid_harness_run": "https://github.com/lazyxu/xdrive/actions/runs/38231580893",
+  "raw_ci_summary": {
+    "status": "measured-current-source-only-no-product-after",
+    "mobileMode": true,
+    "cssViewportWidth": 390,
+    "samples": [
+      {
+        "sample": 1,
+        "mobileViewport": true,
+        "viewport": {
+          "width": 390,
+          "height": 817,
+          "narrow": true
+        },
+        "workload": "100k-logical-115k-physical-mixed-Mobile-Web-390px-shared-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 126402.265,
+        "distinctDecodedVisibleIndices": 33,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 9474701,
+              "scrollTop": 0,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 1425.3397609999956,
+            "firstFreshDecodedAndTwoFramesMs": 1425.3397609999956,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "mountedTiles": 8,
+            "visibleTileCount": 4,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 4,
+              "failed": 0,
+              "max_active": 4,
+              "response_bytes": 2844,
+              "started": 4
+            },
+            "store": {
+              "OriginalOpenSuccess": 4,
+              "DerivativeOpenSuccess": 8,
+              "DerivativePutSuccess": 4
+            },
+            "rendererWSBytes": 188481536
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 9474701,
+              "scrollTop": 2368675,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2013.629442000005,
+            "firstFreshDecodedAndTwoFramesMs": 2013.629442000005,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              24992,
+              24993,
+              24994,
+              24995
+            ],
+            "mountedTiles": 12,
+            "visibleTileCount": 8,
+            "visibleDecodedBlobImages": 6,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 14,
+              "failed": 0,
+              "max_active": 4,
+              "response_bytes": 9914,
+              "started": 14
+            },
+            "store": {
+              "OriginalOpenSuccess": 14,
+              "DerivativeOpenSuccess": 28,
+              "DerivativePutSuccess": 14
+            },
+            "rendererWSBytes": 198635520
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 9474701,
+              "scrollTop": 4737350,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2096.2805020000087,
+            "firstFreshDecodedAndTwoFramesMs": 2096.2805020000087,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              49992,
+              49993,
+              49994,
+              49995
+            ],
+            "mountedTiles": 18,
+            "visibleTileCount": 10,
+            "visibleDecodedBlobImages": 7,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 28,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 19820,
+              "started": 28
+            },
+            "store": {
+              "OriginalOpenSuccess": 28,
+              "DerivativeOpenSuccess": 56,
+              "DerivativePutSuccess": 28
+            },
+            "rendererWSBytes": 210501632
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 9474701,
+              "scrollTop": 7106025,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2081.190451000002,
+            "firstFreshDecodedAndTwoFramesMs": 2081.190451000002,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              74992,
+              74993,
+              75000,
+              75001
+            ],
+            "mountedTiles": 18,
+            "visibleTileCount": 10,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 3,
+              "canceled": 0,
+              "completed": 38,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 26946,
+              "started": 41
+            },
+            "store": {
+              "OriginalOpenSuccess": 41,
+              "DerivativeOpenSuccess": 78,
+              "DerivativePutSuccess": 40
+            },
+            "rendererWSBytes": 212807680
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 9474701,
+              "scrollTop": 9000966,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2257.861827000015,
+            "firstFreshDecodedAndTwoFramesMs": 2257.861827000015,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              94990,
+              94991,
+              94992,
+              94993
+            ],
+            "mountedTiles": 20,
+            "visibleTileCount": 12,
+            "visibleDecodedBlobImages": 12,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 62,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 43926,
+              "started": 62
+            },
+            "store": {
+              "OriginalOpenSuccess": 62,
+              "DerivativeOpenSuccess": 124,
+              "DerivativePutSuccess": 62
+            },
+            "rendererWSBytes": 227528704
+          }
+        ],
+        "fiveViewportP50Ms": 2081.190451000002,
+        "go": {
+          "initial": {
+            "rssBytes": 72249344,
+            "cpuMs": 29180
+          },
+          "final": {
+            "rssBytes": 45625344,
+            "cpuMs": 29660
+          },
+          "sampledPeakRSSBytes": 72388608,
+          "RSSGrowthBytes": 139264,
+          "cpuDeltaMs": 480
+        },
+        "chromium": {
+          "firstWSBytes": 147628032,
+          "peakWSBytes": 227528704,
+          "growthBytes": 79900672
+        },
+        "limitations": "Native Chromium/Electron 390px Mobile Web app shell and shared Gallery Grid + API + 115k different physical CAS, four newly visible JPEG/Live stills decoded + two rAF per viewport; physical mobile screen has fewer visible media tiles than 1440px desktop. NOT physical iOS/Android, video/Live motion playback, RAW/HEVC, Desktop Agent, Timeline, WAN"
+      },
+      {
+        "sample": 2,
+        "mobileViewport": true,
+        "viewport": {
+          "width": 390,
+          "height": 817,
+          "narrow": true
+        },
+        "workload": "100k-logical-115k-physical-mixed-Mobile-Web-390px-shared-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 112290.186,
+        "distinctDecodedVisibleIndices": 35,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 9474701,
+              "scrollTop": 0,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 1259.605717999977,
+            "firstFreshDecodedAndTwoFramesMs": 1259.605717999977,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "mountedTiles": 8,
+            "visibleTileCount": 4,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 4,
+              "failed": 0,
+              "max_active": 4,
+              "response_bytes": 2844,
+              "started": 4
+            },
+            "store": {
+              "OriginalOpenSuccess": 4,
+              "DerivativeOpenSuccess": 8,
+              "DerivativePutSuccess": 4
+            },
+            "rendererWSBytes": 189575168
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 9474701,
+              "scrollTop": 2368675,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 1998.3839630000293,
+            "firstFreshDecodedAndTwoFramesMs": 1998.3839630000293,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              24992,
+              24994,
+              24996,
+              24997
+            ],
+            "mountedTiles": 12,
+            "visibleTileCount": 8,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 14,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 9914,
+              "started": 14
+            },
+            "store": {
+              "OriginalOpenSuccess": 14,
+              "DerivativeOpenSuccess": 28,
+              "DerivativePutSuccess": 14
+            },
+            "rendererWSBytes": 202133504
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 9474701,
+              "scrollTop": 4737350,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2023.9640689999796,
+            "firstFreshDecodedAndTwoFramesMs": 2023.9640689999796,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              49992,
+              49993,
+              49994,
+              49995
+            ],
+            "mountedTiles": 12,
+            "visibleTileCount": 8,
+            "visibleDecodedBlobImages": 6,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 26,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 18398,
+              "started": 26
+            },
+            "store": {
+              "OriginalOpenSuccess": 26,
+              "DerivativeOpenSuccess": 52,
+              "DerivativePutSuccess": 26
+            },
+            "rendererWSBytes": 209018880
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 9474701,
+              "scrollTop": 7106025,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2168.0657290000236,
+            "firstFreshDecodedAndTwoFramesMs": 2168.0657290000236,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              74992,
+              74993,
+              74994,
+              74995
+            ],
+            "mountedTiles": 18,
+            "visibleTileCount": 10,
+            "visibleDecodedBlobImages": 9,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 42,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 29766,
+              "started": 42
+            },
+            "store": {
+              "OriginalOpenSuccess": 42,
+              "DerivativeOpenSuccess": 84,
+              "DerivativePutSuccess": 42
+            },
+            "rendererWSBytes": 212168704
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 9474701,
+              "scrollTop": 9000966,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2164.8164950000355,
+            "firstFreshDecodedAndTwoFramesMs": 2164.8164950000355,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              94990,
+              94991,
+              94992,
+              94993
+            ],
+            "mountedTiles": 20,
+            "visibleTileCount": 12,
+            "visibleDecodedBlobImages": 12,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 62,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 43926,
+              "started": 62
+            },
+            "store": {
+              "OriginalOpenSuccess": 62,
+              "DerivativeOpenSuccess": 124,
+              "DerivativePutSuccess": 62
+            },
+            "rendererWSBytes": 223150080
+          }
+        ],
+        "fiveViewportP50Ms": 2023.9640689999796,
+        "go": {
+          "initial": {
+            "rssBytes": 71249920,
+            "cpuMs": 29260
+          },
+          "final": {
+            "rssBytes": 46411776,
+            "cpuMs": 29730
+          },
+          "sampledPeakRSSBytes": 71671808,
+          "RSSGrowthBytes": 421888,
+          "cpuDeltaMs": 470
+        },
+        "chromium": {
+          "firstWSBytes": 148262912,
+          "peakWSBytes": 223150080,
+          "growthBytes": 74887168
+        },
+        "limitations": "Native Chromium/Electron 390px Mobile Web app shell and shared Gallery Grid + API + 115k different physical CAS, four newly visible JPEG/Live stills decoded + two rAF per viewport; physical mobile screen has fewer visible media tiles than 1440px desktop. NOT physical iOS/Android, video/Live motion playback, RAW/HEVC, Desktop Agent, Timeline, WAN"
+      },
+      {
+        "sample": 3,
+        "mobileViewport": true,
+        "viewport": {
+          "width": 390,
+          "height": 817,
+          "narrow": true
+        },
+        "workload": "100k-logical-115k-physical-mixed-Mobile-Web-390px-shared-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 99442.052,
+        "distinctDecodedVisibleIndices": 33,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 9474701,
+              "scrollTop": 0,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 1270.599178000004,
+            "firstFreshDecodedAndTwoFramesMs": 1270.599178000004,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "mountedTiles": 8,
+            "visibleTileCount": 4,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 4,
+              "failed": 0,
+              "max_active": 4,
+              "response_bytes": 2844,
+              "started": 4
+            },
+            "store": {
+              "OriginalOpenSuccess": 4,
+              "DerivativeOpenSuccess": 8,
+              "DerivativePutSuccess": 4
+            },
+            "rendererWSBytes": 189091840
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 9474701,
+              "scrollTop": 2368675,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2080.3710629999987,
+            "firstFreshDecodedAndTwoFramesMs": 2080.3710629999987,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              24992,
+              24993,
+              24994,
+              24995
+            ],
+            "mountedTiles": 20,
+            "visibleTileCount": 12,
+            "visibleDecodedBlobImages": 7,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 15,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 10621,
+              "started": 20
+            },
+            "store": {
+              "OriginalOpenSuccess": 20,
+              "DerivativeOpenSuccess": 30,
+              "DerivativePutSuccess": 19
+            },
+            "rendererWSBytes": 201318400
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 9474701,
+              "scrollTop": 4737350,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2132.370484999963,
+            "firstFreshDecodedAndTwoFramesMs": 2132.370484999963,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              49992,
+              49993,
+              49995,
+              49996
+            ],
+            "mountedTiles": 18,
+            "visibleTileCount": 10,
+            "visibleDecodedBlobImages": 4,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 34,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 20527,
+              "started": 34
+            },
+            "store": {
+              "OriginalOpenSuccess": 34,
+              "DerivativeOpenSuccess": 58,
+              "DerivativePutSuccess": 34
+            },
+            "rendererWSBytes": 208953344
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 9474701,
+              "scrollTop": 7106025,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2096.567095999955,
+            "firstFreshDecodedAndTwoFramesMs": 2096.567095999955,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              74992,
+              74993,
+              74994,
+              74995
+            ],
+            "mountedTiles": 18,
+            "visibleTileCount": 10,
+            "visibleDecodedBlobImages": 10,
+            "http": {
+              "active": 0,
+              "canceled": 0,
+              "completed": 48,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 30473,
+              "started": 48
+            },
+            "store": {
+              "OriginalOpenSuccess": 48,
+              "DerivativeOpenSuccess": 86,
+              "DerivativePutSuccess": 48
+            },
+            "rendererWSBytes": 213753856
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 9474701,
+              "scrollTop": 9000966,
+              "viewportHeight": 817
+            },
+            "firstSixDecodedAndTwoFramesMs": null,
+            "firstFourDecodedAndTwoFramesMs": 2281.8057469999767,
+            "firstFreshDecodedAndTwoFramesMs": 2281.8057469999767,
+            "requiredFresh": 4,
+            "freshDecodedIndices": [
+              94990,
+              94991,
+              94992,
+              94993
+            ],
+            "mountedTiles": 20,
+            "visibleTileCount": 12,
+            "visibleDecodedBlobImages": 8,
+            "http": {
+              "active": 6,
+              "canceled": 0,
+              "completed": 60,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 38969,
+              "started": 66
+            },
+            "store": {
+              "OriginalOpenSuccess": 66,
+              "DerivativeOpenSuccess": 110,
+              "DerivativePutSuccess": 64
+            },
+            "rendererWSBytes": 226172928
+          }
+        ],
+        "fiveViewportP50Ms": 2096.567095999955,
+        "go": {
+          "initial": {
+            "rssBytes": 72163328,
+            "cpuMs": 28540
+          },
+          "final": {
+            "rssBytes": 60428288,
+            "cpuMs": 29040
+          },
+          "sampledPeakRSSBytes": 72724480,
+          "RSSGrowthBytes": 561152,
+          "cpuDeltaMs": 500
+        },
+        "chromium": {
+          "firstWSBytes": 148504576,
+          "peakWSBytes": 226172928,
+          "growthBytes": 77668352
+        },
+        "limitations": "Native Chromium/Electron 390px Mobile Web app shell and shared Gallery Grid + API + 115k different physical CAS, four newly visible JPEG/Live stills decoded + two rAF per viewport; physical mobile screen has fewer visible media tiles than 1440px desktop. NOT physical iOS/Android, video/Live motion playback, RAW/HEVC, Desktop Agent, Timeline, WAN"
+      }
+    ],
+    "n": 3,
+    "logicalCount": 100000,
+    "physicalOriginals": 115000,
+    "medianOfFixtureFiveViewportP50Ms": 2081.190451000002,
+    "maxRendererWorkingSetGrowthBytes": 79900672,
+    "maxNativeGoRSSGrowthBytes": 561152,
+    "peakHTTPThumbnailHandlers": 6,
+    "accepted": true,
+    "limits": "390px mobile 0/25/50/75/95%; first-four NEW visible blob JPEG/Live still decode + 2 rAF <=20s per viewport, visible tiles>=4, mounted<1000, HTTP concurrency<=6, Renderer/Go post-seed RSS<=256MiB",
+    "caveats": "Mobile Web 390px Chromium App Frame only; not physical iOS/Android; four decoded NEW JPEG/Live stills per viewport with two rAF (at least four visible tiles confirmed); no H264/Live motion browser playback, RAW/HEVC/LIVP, Timeline, Desktop Agent, WAN or durable task cancellation. CURRENT only, AFTER=N/A."
+  }
+}
