@@ -1318,7 +1318,7 @@ authorized native file bytes at its own commit boundary; E1a read success
 is **never** a commit token.
 
 
-## L03-E1a2 · Native owning-Agent client transport for private content preflight (follow-on PR validation)
+## L03-E1a2 · Native owning-Agent client transport for private content preflight (merged #1547; 76-job exact-head CI green)
 
 Prerequisite L03-E1a is the strict read-only Server-side preflight in
 [#1543](https://github.com/lazyxu/xdrive/pull/1543). This follow-on implements
@@ -1354,3 +1354,55 @@ Source activation, upload, Mirror deletion, NAS Push or Web/Desktop
 remote control. The E1b authoritative writer still requires separate
 physical durability, transaction/fencing, idempotence and real native
 device acceptance; L03-F/G, L05/L06 and L07 remain outstanding.
+
+
+L03-E1a2 [#1547](https://github.com/lazyxu/xdrive/pull/1547) passed its full exact-head [76-job GitHub CI](https://github.com/lazyxu/xdrive/actions/runs/38240326126) (25 successful, 51 conditional skips, zero failed, final-gate success) and was rebase-merged as `c8c5e18725b76f17d9fd70eb685cadf3c954152a`; the related work branch is subject to cleanup automation.
+
+## L03-E1a3 · Owning-Agent exact quarantined physical page (PR verification)
+
+This follows the private bounded Server content preflight (L03-E1a,
+merged #1543) and its independent Agent-private Go Client
+(L03-E1a2, #1547). No new execution permissions are introduced.
+
+The native owning Agent now has an **unexported, uncalled, read-only**
+`preflightLocalBoundBackupQuarantinedPhysicalPage` method. It acquires
+the private Root-grant operation lock, resolves the OS-stored device
+credential and the current paused local Push Source, loads the exact
+private ignore rules and revalidates both sealed inventory generations.
+It reads one bounded 1–4 ID page from the **persisted quarantined**
+Server relation, then an independently authenticated advisory page.
+Every ordered evidence ID and its SourceItem/native/destination key
+must match the same complete advisory page: missing, new/interleaved,
+duplicated, foreign, reordered or changed evidence **fails closed**.
+The returned cursor always belongs to the quarantined relation.
+
+For a nonempty eligible page, the Agent independently preflights
+current Server SourceItem/Node/alias evidence, rehashes the actual
+currently authorized native originals using the existing
+`HashCurrentLocalEvidenceBatch`, and strictly validates the
+1–4-record/64MiB aggregate bound **before any physical Server call**.
+Files too large for the bounded inspection cannot be counted as
+physically observed. It rechecks current File/FileVersion/CAS metadata,
+invokes the private #1547 CAS byte preflight, then rereads the same
+quarantined/advisory pages, identity and metadata. Before any return,
+it repeats the native Root, journal seals, private rules, login/session
+and owning-device Source revision proof. Cancellation or changed
+scope returns a sanitized error and **no partial success**. An empty
+quarantine page causes no content Server request and never claims
+content verification.
+
+Even the best-case summary is **point-in-time only**: the returned
+`cloud_bytes_verified`, `content_verified`, `commit_supported`,
+`authoritative` and `missing_inference_safe` flags remain false.
+There is no upload, canonical SourceItem/Alias/Node/CAS/File/SyncRun
+mutation, Source activation, Mirror deletion, recovery cursor journal,
+automatic scheduling, NAS Push, Loopback Agent API, Electron/Preload,
+Renderer, Web/Mobile Web or foreign Desktop operation.
+
+Go unit negative tests cover exact mapping, extra/interleaved/missing/
+duplicate IDs and keys, wrong Source/revision/cursor, flags, invalid
+hash/byte budget and no fabricated empty success. A cross-layer Node
+regression confirms the method remains private. Full exact-head PR CI
+and final-gate are mandatory before merging. Windows/Linux real-device
+runs, GitLab delivery, 100k/4GiB E2E and an actual E1b transaction-bound
+physical-durability identity writer remain future work.
