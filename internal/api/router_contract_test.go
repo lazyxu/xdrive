@@ -268,6 +268,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/admin/services/source-worker/revisions", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/source-worker/rollback", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/photo-intelligence/host", suite: "admin"},
+		{method: "GET", path: "/api/v1/admin/services/photo-intelligence/host/preflight", suite: "admin"},
 		{method: "PUT", path: "/api/v1/admin/services/photo-intelligence/host", suite: "admin"},
 		{method: "GET", path: "/api/v1/admin/services/photo-intelligence/host/revisions", suite: "admin"},
 		{method: "POST", path: "/api/v1/admin/services/photo-intelligence/host/rollback", suite: "admin"},

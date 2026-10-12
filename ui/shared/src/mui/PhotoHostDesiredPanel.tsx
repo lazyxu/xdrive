@@ -4,6 +4,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import type {
   XDrivePhotoHostConfig,
+  XDrivePhotoHostPreflight,
   XDrivePhotoHostUpdate,
   XDrivePhotoHostRevisionPage,
   XDrivePhotoHostRollbackInput,
@@ -13,6 +14,7 @@ import type {
 // and NOT the separately versioned automatic-task admission policy.
 export type XDrivePhotoHostPort = {
   loadPhotoHostConfig?: () => Promise<XDrivePhotoHostConfig>
+  loadPhotoHostPreflight?: () => Promise<XDrivePhotoHostPreflight>
   savePhotoHostConfig?: (input: XDrivePhotoHostUpdate) => Promise<XDrivePhotoHostConfig>
   loadPhotoHostRevisions?: () => Promise<XDrivePhotoHostRevisionPage>
   rollbackPhotoHost?: (input: XDrivePhotoHostRollbackInput) => Promise<XDrivePhotoHostConfig>
@@ -38,6 +40,9 @@ export function XDrivePhotoHostDesiredPanel({
   const [config, setConfig] = useState<XDrivePhotoHostConfig | null>(null)
   const [draftEnabled, setDraftEnabled] = useState(false)
   const [history, setHistory] = useState<XDrivePhotoHostRevisionPage['items']>([])
+  const [preflight, setPreflight] = useState<XDrivePhotoHostPreflight | null>(null)
+  const [preflightBusy, setPreflightBusy] = useState(false)
+  const [preflightError, setPreflightError] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -59,6 +64,9 @@ export function XDrivePhotoHostDesiredPanel({
     setLoading(true)
     setConfig(null)
     setHistory([])
+    setPreflight(null)
+    setPreflightBusy(false)
+    setPreflightError('')
     setError('')
     setNotice('')
     setHistoryError('')
@@ -88,10 +96,31 @@ export function XDrivePhotoHostDesiredPanel({
     return () => { active = false; ++epochRef.current }
   }, [source, section])
 
+  const verifyLocalReadiness = async () => {
+    if (section !== 'verify' || !source.loadPhotoHostPreflight || loading || preflightBusy) return
+    const epoch = epochRef.current
+    setPreflightBusy(true)
+    setPreflight(null)
+    setPreflightError('')
+    try {
+      const next = await source.loadPhotoHostPreflight()
+      if (epoch === epochRef.current) setPreflight(next)
+    } catch {
+      if (epoch === epochRef.current) {
+        setPreflightError('宿主启用预检不可用；旧版 Server/Agent 不支持，或只读检查失败。')
+      }
+    } finally {
+      if (epoch === epochRef.current) setPreflightBusy(false)
+    }
+  }
+
   const reload = async () => {
     if (!source.loadPhotoHostConfig || busy || dirty) return
     const epoch = ++epochRef.current
     setLoading(true)
+    setPreflightBusy(false)
+    setPreflight(null)
+    setPreflightError('')
     setError('')
     setNotice('')
     try {
@@ -123,6 +152,7 @@ export function XDrivePhotoHostDesiredPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
+      setPreflight(null)
       setNotice('期望启停修订已保存并审计；没有操作任何宿主容器，实际启停仍需后续安全应用功能。')
     } catch {
       if (epoch === epochRef.current) setError('保存失败或修订已冲突；当前草稿未作为宿主已生效状态。请重新核对版本。')
@@ -152,6 +182,7 @@ export function XDrivePhotoHostDesiredPanel({
       setConfig(next)
       setDraftEnabled(next.desired_enabled)
       setRollbackTarget('')
+      setPreflight(null)
       setNotice('已创建并审计新的期望回滚修订；宿主机配置未发生任何变化。')
       if (source.loadPhotoHostRevisions) {
         const revisions = await source.loadPhotoHostRevisions().catch(() => null)
@@ -214,6 +245,39 @@ export function XDrivePhotoHostDesiredPanel({
                 : '待宿主安全应用及按修订号验证（不是已生效）'}
             </Typography>
             <Typography variant="caption" color="text.secondary">{config.requirement}</Typography>
+            {section === 'verify' && (
+              <Stack spacing={1} data-xdrive-photo-host-preflight>
+                <Typography variant="subtitle2">宿主安全启用条件（只读）</Typography>
+                <Typography variant="caption" color="text.secondary">
+                  仅读取本机固定宿主证据；任何通过项均不授权启停，不能证明其他 Server 实例的任务空闲或模型已生效。
+                </Typography>
+                <Box>
+                  <Button size="small" variant="outlined" onClick={() => { void verifyLocalReadiness() }}
+                    disabled={!source.loadPhotoHostPreflight || preflightBusy || loading}>
+                    {preflightBusy ? '正在检查…' : '检查安全启用前置条件'}
+                  </Button>
+                </Box>
+                {preflightError && <XDriveStatusAlert tone="warning">{preflightError}</XDriveStatusAlert>}
+                {preflight && (
+                  <Stack spacing={0.5}>
+                    <Typography variant="body2" fontWeight={600}>
+                      本地预检：{preflight.local_checks_complete ? '部分前置条件已满足，仍禁止应用' : '条件尚不完整'}
+                      {' · '}修订 #{preflight.desired_revision}
+                      {' · '}真实宿主应用：不支持
+                    </Typography>
+                    {preflight.checks.map((check) => (
+                      <Typography key={check.id} variant="body2" color="text.secondary">
+                        {check.state === 'pass' ? '✓' : check.state === 'missing' ? '缺少' : check.state === 'blocked' ? '阻止' : '未知'}
+                        {' · '}{check.detail}
+                      </Typography>
+                    ))}
+                    <Typography variant="caption" color="text.secondary">
+                      预检时间：{preflight.checked_at}（临时结果；需手动重查）
+                    </Typography>
+                  </Stack>
+                )}
+              </Stack>
+            )}
             {section === 'config' && (
               <Stack spacing={1}>
                 <FormControlLabel control={<Switch checked={draftEnabled}

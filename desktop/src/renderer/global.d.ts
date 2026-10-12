@@ -873,6 +873,8 @@ declare global {
         cloudRollbackAdminSourceWorker: (input: XDriveSourceWorkerRollbackInput) => Promise<DesktopResult<XDriveSourceWorkerConfig>>
         cloudAdminPhotoHostConfig: () =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
+        cloudAdminPhotoHostPreflight: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostPreflight>>
         cloudSetAdminPhotoHost: (input: import('../../../ui/shared/src').XDrivePhotoHostUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
         cloudAdminPhotoHostRevisions: () =>

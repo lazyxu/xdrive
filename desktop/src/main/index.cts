@@ -113,6 +113,7 @@ import {
   type AgentAdminSourceWorkerRevisionPage,
   type AgentAdminSourceWorkerRollbackInput,
   type AgentAdminPhotoHostConfig,
+  type AgentAdminPhotoHostPreflight,
   type AgentAdminPhotoHostUpdate,
   type AgentAdminPhotoHostRevisionPage,
   type AgentAdminPhotoHostRollbackInput,
@@ -4990,6 +4991,11 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')
     return requireAgentClient().cloudAdminPhotoHostConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-admin-photo-host-preflight', () => runAgentAction<AgentAdminPhotoHostPreflight>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminPhotoHostPreflight()
   }, false))
   ipcMain.handle('agent:cloud-set-admin-photo-host', (_event, value: unknown) => runAgentAction<AgentAdminPhotoHostConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

@@ -641,6 +641,22 @@ type AdminPhotoHostConfig struct {
 	HostAppliedRevision        uint64     `json:"host_applied_revision"`
 	HostControlProfileVerified bool       `json:"host_control_profile_verified"`
 }
+type AdminPhotoHostPreflightCheck struct {
+	ID     string `json:"id"`
+	State  string `json:"state"`
+	Detail string `json:"detail"`
+}
+type AdminPhotoHostPreflight struct {
+	CheckedAt           time.Time                      `json:"checked_at"`
+	Action              string                         `json:"action"`
+	DesiredRevision     uint64                         `json:"desired_revision"`
+	LocalChecksComplete bool                           `json:"local_checks_complete"`
+	HostObserved        bool                           `json:"host_observed"`
+	HostControlObserved bool                           `json:"host_control_observed"`
+	ApplySupported      bool                           `json:"apply_supported"`
+	Checks              []AdminPhotoHostPreflightCheck `json:"checks"`
+}
+
 type AdminPhotoHostUpdate struct {
 	Revision uint64 `json:"revision"`
 	Enabled  bool   `json:"enabled"`
@@ -662,6 +678,11 @@ type AdminPhotoHostRollbackInput struct {
 func (c *Client) AdminPhotoHostConfig(ctx context.Context) (AdminPhotoHostConfig, error) {
 	var out AdminPhotoHostConfig
 	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/host", nil, &out)
+	return out, err
+}
+func (c *Client) AdminPhotoHostPreflight(ctx context.Context) (AdminPhotoHostPreflight, error) {
+	var out AdminPhotoHostPreflight
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/host/preflight", nil, &out)
 	return out, err
 }
 func (c *Client) UpdateAdminPhotoHost(ctx context.Context, input AdminPhotoHostUpdate) (AdminPhotoHostConfig, error) {

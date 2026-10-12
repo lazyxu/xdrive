@@ -954,6 +954,16 @@ export type AgentAdminPhotoHostConfig = {
   host_applied_revision?: number
   host_control_profile_verified?: boolean
 }
+export type AgentAdminPhotoHostPreflight = {
+  checked_at: string
+  action: 'unset' | 'enable' | 'disable'
+  desired_revision: number
+  local_checks_complete: boolean
+  host_observed: boolean
+  host_control_observed: boolean
+  apply_supported: false
+  checks: Array<{ id: string; state: 'pass' | 'missing' | 'blocked' | 'unknown'; detail: string }>
+}
 export type AgentAdminPhotoHostUpdate = { revision: number; enabled: boolean }
 export type AgentAdminPhotoHostRevisionPage = {
   items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
@@ -3556,6 +3566,9 @@ export class AgentIPCClient {
 
   cloudAdminPhotoHostConfig() {
     return this.request<AgentAdminPhotoHostConfig>('GET', '/v1/cloud/admin-photo-host')
+  }
+  cloudAdminPhotoHostPreflight() {
+    return this.request<AgentAdminPhotoHostPreflight>('GET', '/v1/cloud/admin-photo-host/preflight')
   }
   cloudSetAdminPhotoHost(input: AgentAdminPhotoHostUpdate) {
     return this.request<AgentAdminPhotoHostConfig>('PUT', '/v1/cloud/admin-photo-host', input)
