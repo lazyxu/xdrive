@@ -39,6 +39,9 @@ elif [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
   esac
   printf '%s|0|XD_PHOTO_INSTANCE_SHA256=%s\n' \
     "$XD_PHOTO_HOST_FAKE_TIME" "$XD_PHOTO_HOST_FAKE_DIGEST"
+elif [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
+        "$3" == '{{.State.Pid}}' && "$4" == xdrive-photo-face ]]; then
+  printf '321\n'
 else
   exit 2
 fi
@@ -51,11 +54,44 @@ unset XD_HOST_CONTROL_SOURCE_ONLY
 dir="$(prepare_dir)"
 status="$dir/photo-intelligence-runtime-status.json"
 
+# Synthetic proc kernel evidence: no real privileged Docker/proc required.
+pid=321
+mkdir -p "$scratch/proc/$pid/fd" "$scratch/proc/$pid/net"
+stat_line="$pid (photo face) S"
+for ((field=4; field<=21; field++)); do stat_line+=" 0"; done
+stat_line+=" 987654"
+printf '%s\n' "$stat_line" > "$scratch/proc/$pid/stat"
+ln -s 'socket:[81203]' "$scratch/proc/$pid/fd/4"
+printf '%s\n' 'Num RefCount Protocol Flags Type St Inode Path' \
+  '0000000000000000: 00000002 00000000 00010000 0001 01 81203 /run/xdrive-photo-face/photo-face.sock' \
+  > "$scratch/proc/$pid/net/unix"
+photo_intelligence_socket_owned_by_pid "$pid" "$scratch/proc"
+rm "$scratch/proc/$pid/fd/4"
+ln -s 'socket:[81204]' "$scratch/proc/$pid/fd/4"
+if photo_intelligence_socket_owned_by_pid "$pid" "$scratch/proc"; then
+  echo "mismatched listener inode trusted" >&2; exit 1
+fi
+rm "$scratch/proc/$pid/fd/4"
+ln -s 'socket:[81203]' "$scratch/proc/$pid/fd/4"
+sed -i 's|/run/xdrive-photo-face/photo-face.sock|/tmp/lookalike.sock|' "$scratch/proc/$pid/net/unix"
+if photo_intelligence_socket_owned_by_pid "$pid" "$scratch/proc"; then
+  echo "unrelated socket path trusted" >&2; exit 1
+fi
+sed -i 's|/tmp/lookalike.sock|/run/xdrive-photo-face/photo-face.sock|' "$scratch/proc/$pid/net/unix"
+printf '%s\n' '0000000000000000: 00000002 00000000 00010000 0001 01 81204 /run/xdrive-photo-face/photo-face.sock' >> "$scratch/proc/$pid/net/unix"
+if photo_intelligence_socket_owned_by_pid "$pid" "$scratch/proc"; then
+  echo "ambiguous listener trusted" >&2; exit 1
+fi
+if photo_intelligence_socket_owned_by_pid "321/../other" "$scratch/proc"; then
+  echo "non-Docker numeric PID accepted" >&2; exit 1
+fi
+
 printf 'true|healthy\n' > "$XD_PHOTO_HOST_FIXTURE"
 photo_intelligence_host_refresh
 test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" profile_configured)" = true
 test "$(json_value "$status" healthcheck_session_digest)" = "$XD_PHOTO_HOST_FAKE_DIGEST"
+test "$(json_bool_value "$status" socket_owner_verified)" = false
 ! grep -q 'never-log-this' "$status"
 test "$(stat -c %a "$status")" = 660
 

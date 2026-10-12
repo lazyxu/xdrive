@@ -33,6 +33,7 @@ type adminPhotoHostPreflightDTO struct {
 	ModelInfoChecks          []photoHostModelInfoCheck      `json:"model_info_checks"`
 	ModelInstanceCoherent    bool                           `json:"model_instance_coherent"`
 	DockerHealthcheckMatched bool                           `json:"docker_healthcheck_matched"`
+	SocketOwnerVerified      bool                           `json:"socket_owner_verified"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -146,6 +147,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		// never invoke Docker from Server or request media/model bytes.
 		if latestHost, valid := s.readPhotoIntelligenceHostStatus(); valid {
 			report.DockerHealthcheckMatched = photoHostDockerHealthcheckMatched(report.ModelInfoChecks, latestHost)
+			report.SocketOwnerVerified = photoHostDockerSocketOwnerVerified(report.ModelInfoChecks, latestHost)
 		}
 	}
 	if report.HostRevisionVerified {

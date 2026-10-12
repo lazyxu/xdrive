@@ -271,6 +271,9 @@ export type XDrivePhotoHostPreflight = {
   // Docker's fixed-container healthcheck output agrees with all four Info
   // process hashes. NOT kernel-level socket ownership or real task success.
   docker_healthcheck_matched?: boolean
+  // Linux kernel listener/FD evidence of fixed Docker PID, requires four
+  // Info + digest agreement. Not a real task or stop/restart authorization.
+  socket_owner_verified?: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

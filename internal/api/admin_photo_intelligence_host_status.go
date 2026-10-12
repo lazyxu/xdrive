@@ -20,6 +20,7 @@ type photoIntelligenceHostStatus struct {
 	State             string
 	ProfileConfigured bool
 	sessionDigest     string // private host healthcheck output; never serialized
+	socketOwned       bool   // private kernel listener inode/FD evidence
 }
 
 func validPhotoIntelligenceHealthDigest(value string) bool {
@@ -68,17 +69,20 @@ func (s *Server) readPhotoIntelligenceHostStatus() (photoIntelligenceHostStatus,
 		State                    string `json:"state"`
 		ProfileConfigured        *bool  `json:"profile_configured"`
 		HealthcheckSessionDigest string `json:"healthcheck_session_digest"`
+		SocketOwnerVerified      bool   `json:"socket_owner_verified"`
 	}
 	if json.Unmarshal(raw, &payload) != nil ||
 		payload.ProfileConfigured == nil ||
 		!validPhotoIntelligenceHostState(payload.State) ||
 		(payload.HealthcheckSessionDigest != "" &&
-			(payload.State != "healthy" || !validPhotoIntelligenceHealthDigest(payload.HealthcheckSessionDigest))) {
+			(payload.State != "healthy" || !validPhotoIntelligenceHealthDigest(payload.HealthcheckSessionDigest))) ||
+		(payload.SocketOwnerVerified && payload.State != "healthy") {
 		return photoIntelligenceHostStatus{}, false
 	}
 	return photoIntelligenceHostStatus{
 		State:             payload.State,
 		ProfileConfigured: *payload.ProfileConfigured,
 		sessionDigest:     payload.HealthcheckSessionDigest,
+		socketOwned:       payload.SocketOwnerVerified,
 	}, true
 }

@@ -969,8 +969,53 @@ photo_intelligence_healthcheck_digest() {
   printf '%s\n' "$digest"
 }
 
+# Kernel-only evidence for the fixed photo-face process and Unix listener.
+# proc_root is passed ONLY by local synthetic tests; production uses /proc.
+photo_intelligence_proc_start_ticks() {
+  local pid="$1" proc_root="${2:-/proc}" line rest
+  local -a fields
+  [[ "$pid" =~ ^[1-9][0-9]{0,6}$ ]] || return 1
+  IFS= read -r line < "$proc_root/$pid/stat" || return 1
+  rest="${line##*) }"
+  [[ "$rest" != "$line" ]] || return 1
+  read -r -a fields <<< "$rest"
+  [[ ${#fields[@]} -ge 20 && "${fields[19]}" =~ ^[1-9][0-9]*$ ]] || return 1
+  printf '%s\n' "${fields[19]}"
+}
+photo_intelligence_socket_owned_by_pid() {
+  local pid="$1" proc_root="${2:-/proc}" before after inode fd target
+  local count=0 found=false
+  [[ "$pid" =~ ^[1-9][0-9]{0,6}$ ]] || return 1
+  before="$(photo_intelligence_proc_start_ticks "$pid" "$proc_root")" || return 1
+  [[ -d "$proc_root/$pid/fd" && -r "$proc_root/$pid/net/unix" ]] || return 1
+  inode="$(timeout 2s awk '
+    $4 == "00010000" && $5 == "0001" && $7 ~ /^[1-9][0-9]*$/ &&
+    $8 == "/run/xdrive-photo-face/photo-face.sock" { print $7 }
+  ' "$proc_root/$pid/net/unix" 2>/dev/null)" || return 1
+  [[ "$inode" =~ ^[1-9][0-9]*$ ]] || return 1
+  for fd in "$proc_root/$pid/fd/"*; do
+    [[ -L "$fd" ]] || continue
+    count=$((count + 1))
+    (( count <= 512 )) || return 1
+    target="$(readlink -- "$fd" 2>/dev/null || true)"
+    if [[ "$target" == "socket:[$inode]" ]]; then
+      found=true
+      break
+    fi
+  done
+  [[ "$found" == true ]] || return 1
+  after="$(photo_intelligence_proc_start_ticks "$pid" "$proc_root")" || return 1
+  [[ "$before" == "$after" ]]
+}
+photo_intelligence_socket_owner_observed() {
+  local pid=""
+  [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || return 1
+  pid="$(timeout 3s docker inspect --format '{{.State.Pid}}' xdrive-photo-face 2>/dev/null || true)"
+  photo_intelligence_socket_owned_by_pid "$pid"
+}
+
 photo_intelligence_host_refresh() {
-  local dir tmp profile observed="" state=unknown profile_configured=false session_digest=""
+  local dir tmp profile observed="" state=unknown profile_configured=false session_digest="" socket_owner_verified=false
   profile="$(env_value COMPOSE_PROFILES)"
   case ",$profile," in
     *,photo-intelligence,*) profile_configured=true ;;
@@ -990,12 +1035,15 @@ photo_intelligence_host_refresh() {
   esac
   if [[ "$state" == healthy ]]; then
     session_digest="$(photo_intelligence_healthcheck_digest)"
+    if photo_intelligence_socket_owner_observed; then
+      socket_owner_verified=true
+    fi
   fi
   [[ "$session_digest" =~ ^[0-9a-f]{64}$ ]] || session_digest=""
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.photo-intelligence-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","profile_configured":%s,"healthcheck_session_digest":"%s"}\n' \
-    "$state" "$profile_configured" "$session_digest" > "$tmp"
+  printf '{"state":"%s","profile_configured":%s,"healthcheck_session_digest":"%s","socket_owner_verified":%s}\n' \
+    "$state" "$profile_configured" "$session_digest" "$socket_owner_verified" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/photo-intelligence-runtime-status.json"
 }

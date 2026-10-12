@@ -311,6 +311,11 @@ export function XDrivePhotoHostDesiredPanel({
                       </Typography>
                     ))}
                     <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="body2" color="text.secondary" data-xdrive-photo-socket-owner-proof>
+                        固定容器监听 Socket 归属：{preflight.socket_owner_verified
+                          ? 'Docker 主进程持有固定监听 Socket（宿主内核只读证据；仅本实例）'
+                          : '未核验或不一致（旧版/无权限宿主也可能不支持）；不代表生效'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-docker-healthcheck-correspondence>
                         固定容器 Docker 健康检查摘要：{preflight.docker_healthcheck_matched
                           ? '与四类 Info 进程代际一致（只读交叉核验）'

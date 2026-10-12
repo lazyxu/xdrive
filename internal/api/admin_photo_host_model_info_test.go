@@ -181,3 +181,38 @@ func TestPhotoHostDockerHealthcheckDigestIsCorroborationNotTaskProof(t *testing.
 		t.Fatal("mixed model generation was accepted")
 	}
 }
+
+func TestPhotoHostSocketOwnerRequiresDigestAndFourCoherentInfo(t *testing.T) {
+	session := "0123456789abcdef0123456789abcdef"
+	ids := [...]string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"}
+	checks := make([]photoHostModelInfoCheck, len(ids))
+	for i, id := range ids {
+		checks[i] = photoHostModelInfoCheck{ID: id, State: "ready", runtimeInstanceID: session}
+	}
+	hash := sha256.Sum256([]byte(session))
+	digest := hex.EncodeToString(hash[:])
+	host := photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, sessionDigest: digest, socketOwned: true}
+	if !photoHostDockerSocketOwnerVerified(checks, host) {
+		t.Fatal("valid private kernel+digest Info proof lost")
+	}
+	raw, err := json.Marshal(adminPhotoHostPreflightDTO{ModelInfoChecks: checks, SocketOwnerVerified: true})
+	if err != nil || strings.Contains(string(raw), session) || strings.Contains(string(raw), digest) ||
+		strings.Contains(string(raw), "/run/xdrive-photo-face/") || strings.Contains(string(raw), "81203") {
+		t.Fatal("private host process/socket identity leaked to administrator")
+	}
+	for _, tc := range []struct {
+		name string
+		host photoIntelligenceHostStatus
+	}{
+		{"old runner", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, sessionDigest: digest}},
+		{"no digest", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, socketOwned: true}},
+		{"mismatched digest", photoIntelligenceHostStatus{State: "healthy", ProfileConfigured: true, socketOwned: true, sessionDigest: strings.Repeat("f", 64)}},
+		{"stopped host", photoIntelligenceHostStatus{State: "stopped", ProfileConfigured: true, socketOwned: true, sessionDigest: digest}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if photoHostDockerSocketOwnerVerified(checks, tc.host) {
+				t.Fatal("false-positive host process proof")
+			}
+		})
+	}
+}

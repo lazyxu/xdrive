@@ -78,6 +78,13 @@ Provider delivery rules:
 
 
 
+## P1-PH1b2c2b2a — Fixed Docker PID and Linux Unix socket owner evidence (2026-10-12)
+
+- The trusted Host Manager may read ONLY the fixed `xdrive-photo-face` Docker main PID while its independent health observation is healthy. Inspect only `/proc/PID/stat`, `fd` and `net/unix` for that numeric PID, require one hardcoded `/run/xdrive-photo-face/photo-face.sock` Unix STREAM/LISTEN inode, a matching FD held by that same Docker main PID, and unchanged kernel process start ticks before/after. Never enumerate unrelated host processes, accept browser/Server PID/path, run Docker exec/command inside container, restart services, or touch Source or durable transfers. Rootless/no-proc permissions, non-Linux hosts, ambiguous inode and stale/restarted PID fail closed (unknown/false); never widen access just to make a UI indicator green.
+- Host Manager writes only an optional private `socket_owner_verified` boolean in the existing fixed-status bridge. A manual admin-only `检测` can return `socket_owner_verified=true` only after exact audited enabled revision/request receipt, all FOUR same-session model Info replies, fresh matching fixed Docker healthcheck digest and read-only kernel ownership observation; old hosts return unverified. Web/Mobile Web/Desktop share one typed MUI detail pane. Never expose raw PID, FD, inode, socket path, process nonce or credentials and never probe automatically from the eleven-row overview.
+- Kernel socket ownership is NOT cryptographic request-to-runtime attestation, real Face/OCR/Semantic/Creative task success, fleet activation or safe stop/drain. Leave `effect-proof=unknown`, all four `activation_state=deployment-only`, disable/restart unsupported. Follow P1-PH1b2c2b2b request-to-runtime binding, P1-PH1b2c2c real bounded task effects, P1-PH1b3 cross-instance safe drain.
+- Require fake Docker PID allowlist/synthetic Linux proc inode, path, FD and stable-start-time regressions; Go stale/legacy/redaction/digest conjunction; shared Agent/Web/Desktop tests and exact-head CI/final-gate. Physical Rootless/Linux acceptance and GitLab delivery are separate.
+
 ## P1-PH1b2c2b1 — Fixed Docker healthcheck and model-session digest comparison
 
 - The optional `photo-face` image's already-fixed Docker healthcheck must validate all four model Info endpoints and one identical lowercase 128-bit process-boot ID before emitting **only** `XD_PHOTO_INSTANCE_SHA256=<64 lowercase hex SHA256 of the ASCII instance ID>` on success. No raw session ID, model identifiers, secrets, user URLs or arbitrary arguments are included.
