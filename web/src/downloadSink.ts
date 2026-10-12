@@ -123,9 +123,13 @@ export async function xDriveWriteWebDownloadToSink(
   sink: Extract<XDriveWebActiveDownloadSink, { kind: 'file-system' }>,
   fallbackBlob: () => Promise<Blob>,
   onProgress?: (done: number) => void,
+  expectedBytes?: number,
 ) {
   let completed = 0
   try {
+    if (expectedBytes !== undefined && (!Number.isSafeInteger(expectedBytes) || expectedBytes < 0)) {
+      throw new Error('无法确认预期下载大小，已终止保存。')
+    }
     if (body) {
       let byobReader: ReadableStreamBYOBReader | null = null
       try {
@@ -144,6 +148,9 @@ export async function xDriveWriteWebDownloadToSink(
             ? await readInto(buffer)
             : await (reader as ReadableStreamDefaultReader<Uint8Array>).read()
           if (value && value.byteLength > 0) {
+            if (expectedBytes !== undefined && completed + value.byteLength > expectedBytes) {
+              throw new Error('下载数据超出预期大小，已终止保存。')
+            }
             await sink.writable.write(value)
             completed += value.byteLength
             onProgress?.(completed)
@@ -165,11 +172,18 @@ export async function xDriveWriteWebDownloadToSink(
       }
     } else {
       const blob = await fallbackBlob()
+      if (expectedBytes !== undefined && blob.size !== expectedBytes) {
+        throw new Error('下载内容长度不一致，已终止保存。')
+      }
       await sink.writable.write(blob)
       completed = blob.size
       onProgress?.(completed)
     }
 
+    // A short clean EOF must not commit an incomplete direct-to-disk file.
+    if (expectedBytes !== undefined && completed !== expectedBytes) {
+      throw new Error('下载内容不完整，已终止保存。')
+    }
     await sink.writable.close()
     sink.settled = true
     return completed
