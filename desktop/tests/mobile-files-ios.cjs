@@ -27,7 +27,7 @@ new Function('module', 'exports', 'require', transpiled)(pkg, pkg.exports, modul
   return virtualPkg.exports
 })
 const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved,
-  mobileFilesRowTextInset } = pkg.exports
+  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesNativeSizeLabel } = pkg.exports
 
 test('Mobile Files centralizes Apple-reference blue and document palette across views', () => {
   const start = mobileSource.indexOf('const IOS_FILES_ICON_COLORS =')
@@ -49,6 +49,58 @@ test('Mobile Files centralizes Apple-reference blue and document palette across 
   assert.match(mobileSource, /fill=\{IOS_FILES_ICON_COLORS\.documentFold\}/)
   assert.equal((mobileSource.match(/function MobileFolderIcon\(/g) || []).length, 1)
   assert.equal((mobileSource.match(/function MobileDocumentIcon\(/g) || []).length, 1)
+})
+
+
+test('F-iOS27-10C: native Files metadata uses only true Node timestamps and byte lengths', () => {
+  const now = new Date(2026, 9, 12, 12)
+  const localStamp = (year, month, day, hour = 9) =>
+    new Date(year, month - 1, day, hour, 0, 0).toISOString()
+  assert.equal(mobileFilesNativeMetadata({
+    kind: 'file', updatedAt: localStamp(2026, 2, 26), size: 55_000,
+  }, now), '2026/2/26 - 55 KB')
+  assert.equal(mobileFilesNativeMetadata({
+    kind: 'file', updatedAt: localStamp(2025, 8, 26), size: 2_600_000,
+  }, now), '2025/8/26 - 2.6 MB')
+  assert.equal(mobileFilesNativeMetadata({
+    kind: 'file', updatedAt: localStamp(2025, 5, 9), size: 228,
+  }, now), '2025/5/9 - 228 字节')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'dir',
+    updatedAt: localStamp(2026, 10, 12) }, now), '今天')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'dir',
+    updatedAt: localStamp(2026, 10, 11) }, now), '昨天')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'dir',
+    updatedAt: localStamp(2026, 10, 10) }, now), '前天')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'dir',
+    updatedAt: localStamp(2024, 12, 6) }, now), '2024/12/6')
+
+  // The path is the authoritative Search result identity, not a derived
+  // string from the file name or an incomplete loaded virtual range.
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file',
+    updatedAt: localStamp(2026, 2, 26), size: 55_000,
+    secondaryLabel: '我的文件/同步文件夹/报告.pdf',
+  }, now), '我的文件/同步文件夹/报告.pdf')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file',
+    size: 4096 }, now), '4.1 KB')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file',
+    updatedAt: 'not-a-date', size: 55_000 }, now), '55 KB')
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file',
+    updatedAt: 'not-a-date' }, now), null)
+  assert.equal(mobileFilesNativeMetadata({ kind: 'dir' }, now), null)
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file', size: -1 }, now), null)
+  assert.equal(mobileFilesNativeMetadata({ kind: 'file', size: NaN }, now), null)
+  assert.equal(mobileFilesNativeSizeLabel(0), '0 字节')
+  assert.equal(mobileFilesNativeSizeLabel(999), '999 字节')
+  assert.equal(mobileFilesNativeSizeLabel(999_900), '1 MB')
+  assert.equal(mobileFilesNativeSizeLabel(5_000_000_000), '5 GB')
+  assert.equal(mobileFilesNativeSizeLabel(Number.POSITIVE_INFINITY), null)
+  assert.equal(mobileFilesNativeSizeLabel(Number.MAX_SAFE_INTEGER + 1), null)
+  assert.match(mobileSource, /mobileFilesNativeMetadata\(item\)/)
+  assert.match(mobileSource, /mobileFilesNativeMetadata\(entry\)/)
+  assert.match(mobileSource, /size=\{effectiveGrid \? 38 : 36\}/)
+  assert.match(mobileSource, /MobileDocumentIcon item=\{entry\} size=\{36\}/)
+  assert.match(mobileSource, /xDriveFileSupportsThumbnail\(item\.name, item\.kind\)/)
+  assert.doesNotMatch(mobileSource, /api\.fileTextPreview\(|api\.mediaThumbnail\(|new XDriveApi\(|fetch\(/)
 })
 
 test('iOS Files starts on Browse, restores known folders and rejects corrupted per-account state', () => {
@@ -266,7 +318,9 @@ test('iOS Files icons retain real thumbnail ownership and stable list/grid propo
   assert.match(mobileSource, /<XDriveFileExplorerThumbnail item=\{item\}/)
   assert.match(mobileSource, /borderRadius: 0/)
   assert.match(mobileSource, /<MobileFolderIcon size=\{35\}/)
-  assert.match(mobileSource, /<MobileDocumentIcon item=\{entry\} size=\{29\}/)
+  assert.match(mobileSource, /<MobileDocumentIcon item=\{entry\} size=\{36\}/)
+  assert.match(mobileSource, /fallback=\{<MobileDocumentIcon item=\{item\} size=\{effectiveGrid \? 38 : 36\}/,
+    'native-like List icon grows inside the existing 40×44 CSS px thumbnail cell')
 })
 
 test('Mobile home uses location semantics, not generic folder icons', () => {

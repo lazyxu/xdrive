@@ -732,3 +732,68 @@ browser setup, scenario and artifact upload.
 **Still open:** actual iOS 27 Safari/PWA/VoiceOver, exact licensed
 Apple image thumbnails, reference matched-state pixel diff, and
 native-only actions not implemented by the Server; no 1:1 sign-off.
+
+## 2026-10-12 F-iOS27-10B · final disposition
+
+The previous left-side disclosure correction **merged** as [PR #1487](https://github.com/lazyxu/xdrive/pull/1487), linear master commit `50bba41ca5a0f8656b2145695328e92dc53752ad`. Its full exact-head [CI #38202730461](https://github.com/lazyxu/xdrive/actions/runs/38202730461) passed, including real Chromium Files at 375/390/899/900 CSS px; source branch was removed by repository cleanup. This supersedes the earlier candidate status, **not** the outstanding physical iOS 27 pixel/gesture check.
+
+## 2026-10-12 F-iOS27-10C · Node-backed native-like List metadata and document icon size
+
+**Work candidate — not CI green / merged / physical iOS signed off yet.**
+The user-provided iOS 27 screenshot places genuine file modification date and
+human-readable file size on the second row (`2026/2/26 - 55 KB`,
+`2025/8/26 - 2.6 MB`, `2025/5/9 - 228 字节`). Existing
+xDrive Mobile List projected these **already-authoritative** Server Node
+`updated_at` and `size` fields but displayed only a type, or a Search
+path, by default. This is a presentation mismatch, **not** a missing file API.
+
+This candidate:
+- Adds an **O(1), visible-row-only** pure formatter to
+  `web/src/mobileFilesState.ts`; file entries display their actual local
+  calendar modification date and decimal `KB/MB/GB` or unrounded byte
+  count. Folder entries display 今天 / 昨天 / 前天 only when justified by the
+  user's local calendar, or their true date otherwise. A missing/invalid
+  timestamp never becomes a fictional date. Missing/invalid sizes similarly
+  never become `0`. This is explicitly **display-only**: the shared
+  `formatBytes` IEC semantics, stored byte counts, quotas, Node revisions,
+  API and Web/Desktop business results remain unchanged.
+- Preserves an **authoritative Search result `secondaryLabel` path** ahead
+  of the date; Recent/Favorites show actual metadata only when their existing
+  subtitle is absent. Browse-home categories retain their current genuine
+  labels. This keeps context and navigation parity with wide Web.
+- Increases only the **native-like Mobile document fallback glyph** from 28
+  to 36 CSS px (Recent/Favorites from 29 to 36) inside the *unchanged* 40×44
+  List thumbnail cell. Image/video files still use the **same**
+  `XDriveFileExplorerThumbnailProvider` and existing authorized loader,
+  visibility/cache/AbortSignal lifecycle. PDF/Office/text **do not** request
+  or fake a first-page preview: such a source requires a separate trusted
+  bounded decode/thumbnail contract and genuine performance evidence.
+- Leaves the **68px List/150px Grid virtual row**, Server authoritative
+  paginated Range/count/group/inline identity, 100k bounded DOM, thumbnail
+  cancellation, operations, 52px App Header, full App Frame, and single
+  Web REST business adapter **untouched**.
+
+Verification plan: pure deterministic date/size/invalid/path/unit tests;
+mounted React 55 KB metadata, path priority, proper document fallback and
+one scroll owner; actual built-Web Chromium at **375/390/899px**, with
+**900px wide-Web** unchanged, captures first visible metadata text
+(`2026/10/8 - 4.1 KB`) and SVG icon geometry from the existing
+authorized fixture, plus screenshot output. This visual PR's exact branch
+must be opted into the browser setup, test, and artifact-upload CI steps,
+and the single work commit must pass the full normal final gate before
+merging. **Actual iOS 27 Safari/PWA, document-content thumbnails, physical
+100k throughput and matched-screenshot pixel 1:1 are still separate gaps.**
+
+### F-iOS27-10C first-red: prior icon-size source assertion (2026-10-12)
+
+Initial exact-head CI #38205747171 reached `desktop-tests`: all
+other cases passed, but old test `iOS Files icons retain real thumbnail
+ownership and stable list/grid proportions` still asserted the **old 29px
+Recent/Favorites document fallback**, whereas the deliberate, bounded
+native-like improvement uses 36px inside the original 44px cell. This
+was a **test/source visual-contract mismatch**, not a Server/thumb decode
+failure; retain the legitimate test and update it to verify both the
+new Recent/Favorites **36px** fallback and normal List **36px** fallback
+without changing byte loading or the existing 68px virtual row.
+Amend the same single work commit on its frozen base and require new
+exact-head full CI, including the original test and genuine Chromium.

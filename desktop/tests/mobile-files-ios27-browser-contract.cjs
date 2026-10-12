@@ -290,6 +290,31 @@ test('F-iOS27-10B: this PR actually runs and uploads the existing native Chrome 
   assert.ok(workflow.includes('files-ios27-browser-parity'))
 })
 
+test('F-iOS27-10C: real Chromium measures native date-size text and real fallback icon', () => {
+  const expected = [
+    'const realDocumentFallback = regularFile?.querySelector',
+    "data-xdrive-mobile-document-icon",
+    'regularFileMeta: (regularFileMeta?.textContent',
+    'documentFallback: rect(realDocumentFallback)',
+    "measurements.regularFileMeta === '2026/10/8 - 4.1 KB'",
+    'measurements.documentFallback?.height >= 40',
+    'measurements.fileThumbnailCell?.width === 40',
+  ]
+  for (const needle of expected) {
+    assert.ok(runner.includes(needle), 'missing actual native Chrome file date/size/thumb verification: ' + needle)
+  }
+  const prefix = "startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-')"
+  assert.equal(workflow.split(prefix).length - 1, 3,
+    'all three Chrome Files CI stages must run on the metadata visual branch')
+  assert.ok(workflow.includes('--scenario=files-ios27-chrome'))
+  assert.ok(workflow.includes('files-ios27-browser-parity'))
+  assert.ok(mobile.includes('mobileFilesNativeMetadata(item)'))
+  assert.ok(mobile.includes('mobileFilesNativeMetadata(entry)'))
+  assert.ok(mobile.includes('xDriveFileSupportsThumbnail(item.name, item.kind)'))
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
+
 test('09H: mobile Files breadcrumb navigation uses measured 44px hit targets', () => {
   assert.match(mobile,
     /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}[\s\S]{0,450}minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0/)

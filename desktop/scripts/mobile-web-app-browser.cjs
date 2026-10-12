@@ -2425,6 +2425,9 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
       .find(item => !item.hasAttribute('data-mobile-files-folder-id'));
     const regularFileSpacer = regularFile?.querySelector('[data-mobile-files-leading-spacer]');
     const regularFileTitle = regularFile?.querySelector('[data-mobile-files-item-title]');
+    const regularFileMeta = regularFile?.querySelector('[data-mobile-files-item-meta]');
+    const realDocumentFallback = regularFile?.querySelector('[data-xdrive-mobile-document-icon]');
+    const fileThumbnailCell = regularFile?.querySelector('[data-mobile-files-thumbnail-slot]');
     const arrangement = el('[data-mobile-files-arrangement-status]');
     const bottom = el('nav[aria-label="文件分类"]');
     const sectionOrder = Array.from(bottom?.querySelectorAll('[data-mobile-files-section]') || [])
@@ -2440,6 +2443,8 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
       disclosure: rect(disclosure), disclosureExpanded: disclosure?.getAttribute('aria-expanded'),
       folderThumbnail: rect(folderThumbnail), folderText: rect(folderTitle),
       regularFileSpacer: rect(regularFileSpacer), regularFileText: rect(regularFileTitle),
+      regularFileMeta: (regularFileMeta?.textContent || '').trim(),
+      documentFallback: rect(realDocumentFallback), fileThumbnailCell: rect(fileThumbnailCell),
       rowTitleSize: rowTitle ? parseFloat(getComputedStyle(rowTitle).fontSize) : -1,
       rowMetaSize: rowMeta ? parseFloat(getComputedStyle(rowMeta).fontSize) : -1,
       arrangementDisplay: arrangement ? getComputedStyle(arrangement).display : 'missing',
@@ -2482,6 +2487,17 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
     measurements.regularFileText &&
     Math.abs(measurements.folderText.x - measurements.regularFileText.x) <= 1 &&
     Math.abs(measurements.folderText.x - 84) <= 1,
+    measurements);
+  check(`${label}: native file metadata and document fallback are real, compact and aligned`,
+    measurements.regularFileMeta === '2026/10/8 - 4.1 KB' &&
+    measurements.documentFallback?.width >= 35.5 &&
+    measurements.documentFallback?.height >= 40 &&
+    measurements.documentFallback?.height <= 44 &&
+    measurements.fileThumbnailCell?.width === 40 &&
+    measurements.fileThumbnailCell?.height === 44 &&
+    measurements.regularFileText &&
+    Math.abs(measurements.fileThumbnailCell.x + measurements.fileThumbnailCell.width -
+      measurements.regularFileText.x) <= 0.5,
     measurements);
 }
 async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {

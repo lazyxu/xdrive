@@ -23,6 +23,67 @@ export function mobileFilesRowTextInset(selectionMode: boolean, depth = 0): numb
   return 28 + level * 16 + 44 + 12 + (selectionMode ? 24 + 12 : 0)
 }
 
+// Presentation-only projection from the existing authoritative Node fields.
+// Keep this O(1) per *mounted virtual row*: no directory scan, document read,
+// thumbnail fetch or Mobile-only API is allowed to produce this secondary line.
+export type MobileFilesMetadataSource = {
+  kind: 'dir' | 'file'
+  updatedAt?: string
+  size?: number
+  secondaryLabel?: string
+}
+
+// iOS Files expresses file size in decimal KB/MB rather than the shared
+// FileExplorer's IEC KiB/MiB. Only the display string differs; Server byte
+// counts, download receipts and Web/Desktop storage calculations do not.
+export function mobileFilesNativeSizeLabel(bytes: number): string | null {
+  if (!Number.isSafeInteger(bytes) || bytes < 0) return null
+  if (bytes < 1000) return `${bytes} 字节`
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB'] as const
+  let value = bytes
+  let unit = -1
+  do {
+    value /= 1000
+    unit += 1
+  } while (value >= 1000 && unit < units.length - 1)
+  let displayed = Number(value.toFixed(value < 10 ? 1 : 0))
+  if (displayed >= 1000 && unit < units.length - 1) {
+    unit += 1
+    displayed = 1
+  }
+  return `${displayed.toLocaleString('zh-CN')} ${units[unit]}`
+}
+
+function mobileFilesLocalCalendarOrdinal(date: Date): number {
+  return Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000)
+}
+
+export function mobileFilesNativeMetadata(
+  item: MobileFilesMetadataSource, now: Date = new Date(),
+): string | null {
+  // Search entries keep their authoritative location path. Never replace it
+  // with a date, or synthesize a path from a name or virtual row index.
+  const path = item.secondaryLabel?.trim()
+  if (path) return path
+
+  const modified = item.updatedAt ? new Date(item.updatedAt) : null
+  const validDate = modified !== null && Number.isFinite(modified.getTime())
+  let dateLabel: string | null = null
+  if (validDate && modified) {
+    dateLabel = `${modified.getFullYear()}/${modified.getMonth() + 1}/${modified.getDate()}`
+    if (item.kind === 'dir' && Number.isFinite(now.getTime())) {
+      const days = mobileFilesLocalCalendarOrdinal(now) -
+        mobileFilesLocalCalendarOrdinal(modified)
+      if (days === 0) dateLabel = '今天'
+      else if (days === 1) dateLabel = '昨天'
+      else if (days === 2) dateLabel = '前天'
+    }
+  }
+  if (item.kind === 'dir') return dateLabel
+  const size = item.size === undefined ? null : mobileFilesNativeSizeLabel(item.size)
+  return [dateLabel, size].filter(Boolean).join(' - ') || null
+}
+
 export const mobileFilesDefaultState = (): MobileFilesSavedState => ({
   section: 'browse', folderID: null, scrollTop: 0, view: 'details',
 })

@@ -1182,6 +1182,46 @@ test('F-PARITY-06: stale directory reads never upload to a later account; Trash 
   }, { props: { onExternalFilesDrop: async files => uploads.push(files.map(file => file.name)) } })
 })
 
+
+test('F-iOS27-10C: mounted Files shows genuine date/decimal size without hiding Search paths', async () => {
+  const modified = new Date(2026, 1, 26, 12).toISOString()
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+
+    const row = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      .find(node => node.props['aria-label'] === '报告.pdf')
+    assert.ok(row, 'FileExplorer virtual row must be projected through the shared Node')
+    const label = row.findAll(node => node.props?.['data-mobile-files-item-meta'] !== undefined)[0]
+    assert.equal(textOf(label.props.children), '2026/2/26 - 55 KB')
+    const image = row.findAll(node => node.type === 'file-thumbnail')[0]
+    assert.ok(image)
+    assert.equal(image.props.eligible, false, 'PDF does not invent or request an image thumbnail')
+    assert.equal(image.props.fallback.props.size, 36,
+      'real document fallback should fill the 44px thumbnail cell without clipping')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+
+    await h.update({ items: [{
+      id: 3, name: '报告.pdf', kind: 'file', revision: 1, size: 55_000,
+      updatedAt: modified, secondaryLabel: '我的文件/资料/报告.pdf',
+    }], searchActive: true })
+    const result = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      .find(node => node.props['aria-label'] === '报告.pdf')
+    assert.ok(result)
+    const path = result.findAll(node => node.props?.['data-mobile-files-item-meta'] !== undefined)[0]
+    assert.equal(textOf(path.props.children), '我的文件/资料/报告.pdf',
+      'Search must preserve the authoritative breadcrumb instead of an invented date-only context')
+  }, { props: {
+    items: [
+      { id: 2, name: '照片文件夹', kind: 'dir', revision: 1 },
+      { id: 3, name: '报告.pdf', kind: 'file', revision: 1, size: 55_000, updatedAt: modified },
+    ],
+    recentItems: [{ id: 3, name: '报告.pdf', kind: 'file', revision: 1,
+      size: 55_000, updatedAt: modified }],
+  } })
+})
+
 test('F-iOS27-10B: native List leading disclosure and files share one 84px text baseline', async () => {
   const expanded = []
   const opened = []
