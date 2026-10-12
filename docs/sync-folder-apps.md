@@ -1539,3 +1539,55 @@ private no-IPC exposure, and exact two-sided SQL snapshot invocation.
 These tests remain subject to this new PR's complete exact-head CI and
 `final-gate`; Go/PostgreSQL CI and true physical 100k/≥4GiB benchmarks
 are distinct. No GitLab or native device acceptance is claimed.
+
+
+## L03-E1b1a · Local CAS cross-process read/write/delete lifetime fence (PR verification)
+
+L03-E1b0 [#1558](https://github.com/lazyxu/xdrive/pull/1558)
+passed its own exact-head [76-job GitHub PR CI](https://github.com/lazyxu/xdrive/actions/runs/38248327064)
+(25 success, 51 conditional skips, zero failures, final-gate success)
+and was rebase-merged as `b320c51f9eac3ac5d48b31745a6542f26b2edff8`.
+Its merged task branch was automatically removed. The next phase is
+L03-E1b1a, which is **storage cooperation for CAS byte observations only**,
+not the authoritative E1b SourceItem/alias writer.
+
+The Local storage backend adds a bounded 256-shard operating-system CAS
+lifecycle lock group under `.xdrive-cas-lifecycle-locks/`. Shards are
+selected only from the first byte of a **canonical** SHA-256 CAS key,
+not from a caller-selected arbitrary path. Locks are permanent zero-byte
+coordination metadata; do not unlink, cache-evict or rename them while any
+Server instance could be using the same storage root. A pinned CAS reader
+acquires a **shared** shard lock before opening the object and retains it
+until Close (including failure paths). The existing Local.Put, Local.Promote
+and Local.Delete take an **exclusive** shard lock for their canonical
+CAS target. Different shards can run concurrently, minimizing unnecessary
+serialization. Waiting is context-cancellable and the existing
+cross-process Unix/Windows OS file-lock implementation is reused.
+
+Existing bounded owning-Agent Server physical preflight now prefers
+`storage.CASReadLeaseProvider.OpenPinnedCAS` when available. For a
+backend not implementing that optional interface, the old plain read
+remains an *ephemeral* observation; no unsupported persistent pin is
+invented. A Local pinned read excludes cooperating Local CAS writers
+and deleters **only while the read handle is open**. This does not make
+an object immutable across later reads or commits, does not prevent an
+uncooperative OS process from modifying disk bytes, and does not prove
+replica durability or historical native file consistency.
+
+Full negative regression tests cover two different Local Store instances
+sharing a filesystem: a held pinned reader must prevent same-shard
+Put/Delete/Promote, the lock wait must be cancellable, Close releases the
+lock, and different shards may progress independently. Malformed keys,
+unavailable CAS objects and canceled reads fail closed; admin cache/aged
+temporary cleanup must never classify lock files as disposable content.
+Cross-layer regression ensures no Agent IPC, Renderer or Web access.
+No SourceItem/alias, Node/File/CAS refcount, SyncRun, SourceRun activation,
+Push upload, Mirror deletion or schedule mutation is introduced.
+
+**L03-E1b is still incomplete.** A future authoritative writer must
+separately enforce physical object immutability, source content
+reverification, transactional CAS reference retention and idempotent
+identity promotion, with E1b1a compatible lifetime fencing. This PR
+requires its own exact-head GitHub full CI and final-gate before merge.
+GitLab delivery, actual backup uploads, Windows/Linux physical device
+runs and 100k/at-least-4GiB E2E are not claimed.
