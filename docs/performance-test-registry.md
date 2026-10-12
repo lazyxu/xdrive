@@ -4,7 +4,7 @@
 
 ## 如何使用：每次开始性能专项前必查
 
-1. **先在本表和下方 69 个证据目录中按工作负载身份查重**，再看当前相关开放 PR/分支。工作负载身份至少包含：系统/界面层（Web、Mobile Web、Desktop Main/Agent、Go HTTP、SQL）、操作及请求接口、逻辑条目数、**物理CAS原始数/真实字节及编码种类**、数据分布、缓存冷热、虚拟视口位置、用户操作/取消所有权、传输网络/本地介质、平台与采样方法。只有总量相同不代表测试等价。
+1. **先在本表和下方 70 个证据目录中按工作负载身份查重**，再看当前相关开放 PR/分支。工作负载身份至少包含：系统/界面层（Web、Mobile Web、Desktop Main/Agent、Go HTTP、SQL）、操作及请求接口、逻辑条目数、**物理CAS原始数/真实字节及编码种类**、数据分布、缓存冷热、虚拟视口位置、用户操作/取消所有权、传输网络/本地介质、平台与采样方法。只有总量相同不代表测试等价。
 2. **同等已验收场景不再做一遍探索性测试/盲目优化。** 除非生产热路径变化、确认回归、扩展了未测介质/平台/网络/数据形状、预算发生合理变化、或 `AGENTS.md` 要求的证据修订**准确最终 SHA**复验。因新源码回归复测应在同一 ID 下追加记录，不创建“新性能发现”；说明触发原因与旧来源。
 3. 状态严格区分 **Accepted / Merged**（达到对应冻结预算）、**Measured RED**（真实性能超预算）、**Rejected**（尝试过且未通过保留标准）、**Invalid harness**（样本无效）和 **Blocked / Not measured**。遇到红项先用原始数据归因，再锁定同条件 BEFORE/AFTER 和资源/正确性门槛；不能从失败操作耗时计算“速度提升”。
 4. 新测试/优化 PR **同时更新本登记簿与对应子系统规范**：冻结工作负载 ID、规模和物理数据真实性、命令/环境、样本数、预算、BEFORE/AFTER 与单位、CPU/RSS/IO/请求及字节量、决策、有效 CI/源码 SHA、原始证据链接和未覆盖项。保留失败/拒绝及无效样本，不能覆盖成“通过”。
@@ -51,6 +51,7 @@
 | P031 | 传输·合成大文件 | 历史 Web 1/4GiB Mock HTTP / OPFS 控制器、传输布局/内存分配测试 | 属于合成Mock，不具备真实Gin/PG/CAS效力；不得与P010/P011实际4GiB作A/B | **历史结构／实验诊断** | [原始记录](performance-evidence/web-large-transfer/) |
 | P032 | 图库·Web 100k混合物理多视口解码 | M001-a：100k逻辑/115k不同SHA真实CAS，真实Web Gallery Grid 0/25/50/75/95%滚动，n=3×5次，逐位置≥6个新可见 blob JPEG/Live still decode+两帧；H264/Live motion/RAW/HEVC/Timeline/Desktop不在本轮 | 五视口P50再取n3中位 **2,503.604ms**，首屏中位1,807.785ms，单位置最慢2,621.253ms；三轮新可见不同ID 40/60/47，挂载≤99，HTTP并发6，Go/Renderer内存增长峰值372,736B/137,146,368B；原冻结20s/256MiB等门槛全部通过 | **Accepted CURRENT / M001-a；生产不变，AFTER=N/A。首两次驱动运行无效保留，最终 #1450 原始+证据修订CI成功并已合入** | [原始n3样本](performance-evidence/gallery-web-physical-mixed-100k-viewports/ci-run-38161508404.json) · [专项CI](https://github.com/lazyxu/xdrive/actions/runs/38161508404) · [规范](gallery-performance.md) |
 | P033 | 图库·真实Web H264视频海报 | M001-b：100k PhotoAssets/115k真实SHA不同CAS；生产Web Gallery Grid真实五视口×n3，每处≥2个新视频Tile的冷HTTP404→签名Preview→浏览器H264 canvas JPEG→CAS PUT HTTP204→可见Image.decode+两帧，回首屏warm HTTP200；30k容器共用单一H264编码流，不代表不同视频或实况动图 | **五视口P50再取n3中位 2227.292ms，原始测量单视口最慢 2294.841ms，最终证据头P50 2665.891ms（独立CI波动、非代码提速）；视频不同ID 13/14/15，真实POSTER PUT 20/18/20，热缓存回访 4/3/5；最大挂载99，Go/Renderer RSS最大增长 6365184B/165851136B，原≤25s／≤256MiB门槛全部通过** | **Merged / Accepted CURRENT；精确最终头专项CI #38190978656 + 完整CI #38190978855（final-gate）成功，#1462 已合入 35d717bb；生产无改动，AFTER=N/A** | [原始n3证据](performance-evidence/gallery-web-real-h264-posters-100k/ci-run-38190167889.json) · [专项CI](https://github.com/lazyxu/xdrive/actions/runs/38190167889) · [规范](gallery-performance.md) |
+| P034 | 媒体缓存·10万物理 JPEG 缩略图垃圾清理 | M003-cache：真实本地 FS 100k 不同缓存键与物理文件（63.5MB），2,500 PostgreSQL 引用保护、2,500 年龄未到、95,000 个过期未引用缓存实际 unlink（60.325MB），3 个原始 CAS 哨兵保留；三个独立 Postgres17 / Linux 原生进程，真实 JPEG 6 个抽样解码，非原始 CAS 文件永久删除 | **Dry P50 560.678ms，实际95k unlink P50 80,061.510ms，第二次幂等 P50 45.169ms；Go 后种子 RSS 增长最大 107,757,568B，全部原定 30s/180s/30s、256MiB、精确保护与字节门槛通过** | **Accepted CURRENT / M003-cache；产品不改，AFTER=N/A；前三次夹具验证无效保留，最终归档头CI待通过** | [原始3轮JSON](performance-evidence/media-thumbnail-gc-physical-100k/ci-run-38195255676.json) · [专项CI](https://github.com/lazyxu/xdrive/actions/runs/38195255676) · [范围与限制](gallery-performance.md) |
 
 ## 下一轮真正未覆盖的 P0/P1 范围（不要重复做已有同负载）
 
@@ -58,7 +59,7 @@
 | --- | --- | --- |
 | M001 | 真实 Web/Mobile Web 与 Desktop Gallery 100k **混合物理** Grid/Timeline 中各5+视口缩略图解码：真实 H264、Live still+motion、RAW/HEVC/LIVP，而非只有首屏Gin/CAS或相同bitstream容器 | P032=M001-a已通过并合入；P033=M001-b正测试真实Web Grid五视口H264帧捕获+海报持久化；不同视频编码/Live motion播放、RAW/HEVC、Timeline、Desktop Agent和Mobile Web仍未覆盖，须继续分阶段测试 |
 | M002 | Desktop FileExplorer 100k 原片类型混合（图片/视频/Live/RAW）真实 Main→Agent→Go + Grid/Details 真滚动 | P006仅真实Web JPEG视口，P007仅6份视频取帧；不能视为等效覆盖 |
-| M003 | 100k 完整持久同步/Push/Pull/本机源实际字节与 CAS、失败恢复，及100k真实物理删除/GC/Undo | P021仅变更流元数据，P027–P029主要PG元数据；不得标记完整文件同步/物理CAS回收已测 |
+| M003 | 100k 完整持久同步/Push/Pull/本机源实际字节与 CAS、失败恢复，及100k真实物理删除/GC/Undo | P034 已通过10万物理派生缩略图缓存清理，属于派生缓存而非原片CAS；P021仅变更流元数据，P027–P029主要PG元数据，原片CAS实际删除/GC、文件字节同步Push/Pull仍未测 |
 | M004 | Web/Desktop 4GiB **不可压缩内容、WAN/限速/断线恢复/并发** 场景与真实传输任务用户主动取消 | P010/P011的loopback/稀疏零源不覆盖WAN及持久任务控制，取消不可由窗口unmount驱动 |
 | M005 | 虚拟范围离开时真实全链路请求取消+共享缓存消费者持有的派生计算停止；对快速滚动/重复窗口切换测试0旧Handler/0废弃字节 | P015–P020覆盖指定路径/可见流但不是所有缩略图、预览、数据库或CPU密集共享计算；不得误取消Task Center |
 | M006 | 图库100k持久任务入队新**因果明确且未尝试过**的优化策略：独立PG语句准备、往返/提交及数据索引归因 | P022仍有3s红项，P024–P026的JSONB/COPY/GORM批/UNNEST候选已被否决；不得重复相同方案放宽门槛 |
@@ -72,7 +73,7 @@
 - 覆盖 Web/Desktop/Mobile Web 时标明是否实际挂载共享虚拟列表，是否按 API 返回分页、DOM节点、图像解码、video poster/Live Motion 和 Go ctx.Done 实测；断言 stale result 被忽略不算服务器请求真的取消。
 - **有效最新头 CI** 和合入清理是独立状态；若 CI 中存在测试夹具错误、Postgres磁盘/内存限制或编译失败，记录为 `Invalid harness` 后仅修正夹具并复测，不对生产性能下结论。
 
-## 历史原始证据目录完整索引（69 个，自动按实际 GitHub 目录清点）
+## 历史原始证据目录完整索引（70 个，自动按实际 GitHub 目录清点）
 
 下面是现存全部原始记录目录，仅表示**曾有证据/实验产物**。其中包含 **Accepted、Rejected、Invalid harness、Mock、诊断样本及仍需复验项**。不在上方“已执行场景”表中给出明确状态的，必须打开其原始报告及对应子系统文档判定，**不可默认为通过**。新增任一目录时要同步修改本索引；随附的轻量测试会检查有没有漏记目录。
 
@@ -96,11 +97,11 @@
 
 [`node-changes-request-cancel-100k`](performance-evidence/node-changes-request-cancel-100k/) · [`sync-client-changefeed-100k`](performance-evidence/sync-client-changefeed-100k/) · [`viewport-cancel`](performance-evidence/viewport-cancel/) · [`viewport-cancel-transport`](performance-evidence/viewport-cancel-transport/)
 
-### 其他媒体组件与PhotoAsset诊断（7）
+### 其他媒体组件与PhotoAsset诊断（8）
 
-[`media-shared-progress`](performance-evidence/media-shared-progress/) · [`photoasset-owner-alloc-profile-100k`](performance-evidence/photoasset-owner-alloc-profile-100k/) · [`photoasset-owner-node-preload-100k`](performance-evidence/photoasset-owner-node-preload-100k/) · [`photoasset-owner-reconcile-100k`](performance-evidence/photoasset-owner-reconcile-100k/) · [`photoasset-owner-stale-prune-100k`](performance-evidence/photoasset-owner-stale-prune-100k/) · [`photoasset-owner-write-100k`](performance-evidence/photoasset-owner-write-100k/) · [`preview-image-thumbnail-abort`](performance-evidence/preview-image-thumbnail-abort/)
+[`media-thumbnail-gc-physical-100k`](performance-evidence/media-thumbnail-gc-physical-100k/) · [`media-shared-progress`](performance-evidence/media-shared-progress/) · [`photoasset-owner-alloc-profile-100k`](performance-evidence/photoasset-owner-alloc-profile-100k/) · [`photoasset-owner-node-preload-100k`](performance-evidence/photoasset-owner-node-preload-100k/) · [`photoasset-owner-reconcile-100k`](performance-evidence/photoasset-owner-reconcile-100k/) · [`photoasset-owner-stale-prune-100k`](performance-evidence/photoasset-owner-stale-prune-100k/) · [`photoasset-owner-write-100k`](performance-evidence/photoasset-owner-write-100k/) · [`preview-image-thumbnail-abort`](performance-evidence/preview-image-thumbnail-abort/)
 ## 版本与维护
 
-- 本次初建已清点并链接到 **69 个**实际存在的 `docs/performance-evidence/` 子目录；本表列出 **33 个**已运行或已发现失败/阻塞的命名工作负载和 **7 个**明确待补范围。没有凭空将日志出现或文件夹存在当作性能通过。
+- 本次初建已清点并链接到 **70 个**实际存在的 `docs/performance-evidence/` 子目录；本表列出 **34 个**已运行或已发现失败/阻塞的命名工作负载和 **7 个**明确待补范围。没有凭空将日志出现或文件夹存在当作性能通过。
 - `#1439` 100k混合物理媒体基准已合入，性能未超预算，记录为复用/不改生产代码；`#1185` 的 Desktop IPC 完整字节进度末次验收失败，仍为 Draft，不属于通过的取消/吞吐案例。
 - 以后每个性能 PR 更新同一登记簿，不为每次聊天创建平行索引；完整的失败样本、被拒绝实验和准确头CI仍保留在子系统文档与原始证据目录。

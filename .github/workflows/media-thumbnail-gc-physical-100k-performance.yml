@@ -1,0 +1,118 @@
+name: Media Thumbnail Cache GC Physical 100k Current Baseline
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  media-thumbnail-gc-physical-100k:
+    if: github.head_ref == 'perf/media-thumbnail-cache-gc-physical-100k-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_MEDIA_THUMBNAIL_GC_PHYSICAL_100K_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate frozen physical 100k cache GC source and test-only scope
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/maintenance/media_thumbnail_gc_physical_100k_performance_test.go)"
+          node --test desktop/tests/media-thumbnail-gc-physical-100k-source.cjs
+      - name: Compile native Go physical thumbnail-cache GC test executable once
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/media-thumbnail-gc-physical-100k-bin
+          go test -c -o desktop/media-thumbnail-gc-physical-100k-bin/maintenance.test ./internal/maintenance
+      - name: Execute 3 fresh PostgreSQL17 and 100k real filesystem cache dry/apply/idempotence cohorts
+        run: |
+          set -euo pipefail
+          result_dir=desktop/media-thumbnail-gc-physical-100k-results
+          mkdir -p "$result_dir"
+          printf 'CHECKED_OUT_SHA=%s\nGITHUB_RUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$result_dir/source.txt"
+          for fixture in 1 2 3; do
+            export XD_PHYSICAL_THUMBNAIL_GC_100K_SAMPLE="$fixture"
+            /usr/bin/time -f 'peak_process_rss_kib=%M\nuser_cpu_sec=%U\nsystem_cpu_sec=%S' -o "$result_dir/fixture-$fixture.time" \
+              desktop/media-thumbnail-gc-physical-100k-bin/maintenance.test -test.run '^TestMediaThumbnailGCPhysical100K$' -test.count=1 -test.timeout=12m -test.v \
+              | tee "$result_dir/fixture-$fixture.log"
+          done
+          python3 - "$result_dir" <<'PY'
+          import json, pathlib, re, statistics, sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          budgets={'dry_run_ms':30000,'apply_ms':180000,'idempotent_ms':30000,
+                   'go_postseed_rss_growth_bytes':268435456}
+          for i in range(1,4):
+              log=(root/f'fixture-{i}.log').read_text()
+              matches=re.findall(r'MEDIA_THUMBNAIL_GC_PHYSICAL_100K (\{[^\n]+\})',log)
+              assert len(matches)==1,(i,len(matches))
+              row=json.loads(matches[0])
+              for k,v in {
+                  'physical_cache_files':100000,'protected_references':2500,
+                  'young_unreferenced':2500,'old_orphans':95000,
+                  'dry_scanned':100000,'dry_candidates':95000,
+                  'live_scanned':100000,'live_candidates':95000,
+                  'actual_unlinked':95000,'second_candidates':0,
+                  'reference_rows_after':2500,'sample_physical_jpeg_decodes':6,
+              }.items():
+                  assert row[k]==v,(i,k,row[k],v)
+              for k in ('referenced_preserved','young_preserved','old_orphans_absent',
+                        'physical_sentinel_original_CAS_intact'):
+                  assert row[k] is True,(i,k,row[k])
+              assert row['physically_stored_cache_bytes']==100000*row['valid_jpeg_payload_size'],row
+              assert row['actual_unlinked_bytes']==95000*row['valid_jpeg_payload_size'],row
+              assert row['sharded_directories']>=100,row
+              assert row['native_go_process_cpu_ticks']>=0,row
+              for k,v in budgets.items():
+                  assert row[k]<=v,(i,k,row[k],v)
+              row['whole_go_process_time']=(root/f'fixture-{i}.time').read_text()
+              row['sample']=i
+              rows.append(row)
+          summary={
+            'n':3,'workload':'100k independently materialized physical thumbnail cache paths; 95k orphan deleted, 2.5k DB-referenced and 2.5k young preserved',
+            'status':'ACCEPTED CURRENT only when all original frozen budgets and complete full CI pass',
+            'original_budgets':budgets,
+            'median_dry_ms':statistics.median(r['dry_run_ms'] for r in rows),
+            'median_apply_ms':statistics.median(r['apply_ms'] for r in rows),
+            'median_idempotent_ms':statistics.median(r['idempotent_ms'] for r in rows),
+            'max_go_RSS_growth_bytes':max(r['go_postseed_rss_growth_bytes'] for r in rows),
+            'samples':rows,
+            'exclusions':'Not 100k original CAS blob deletion or full durable file sync; physically unique path and key but identical small valid JPEG cached-image bytes; local Ubuntu disk and PostgreSQL, not WAN/real hardware'
+          }
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('MEDIA_THUMBNAIL_GC_PHYSICAL_100K_N3 '+json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-thumbnail-cache-gc-physical-100k-native-n3
+          path: desktop/media-thumbnail-gc-physical-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
