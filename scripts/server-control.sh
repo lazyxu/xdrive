@@ -955,7 +955,7 @@ photo_host_control_process() {
 photo_intelligence_healthcheck_digest() {
   local raw latest observed_at epoch now delta digest=""
   [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || return 0
-  raw="$(timeout 3s docker inspect --format '{{range .State.Health.Log}}{{printf "%v|%v|%s" .End .ExitCode .Output}}{{end}}' xdrive-photo-face 2>/dev/null || true)"
+  raw="$(timeout 3s docker inspect --format '{{range .State.Health.Log}}{{printf "%v|%v|%s\n" .End .ExitCode .Output}}{{end}}' xdrive-photo-face 2>/dev/null || true)"
   [[ -n "$raw" && ${#raw} -le 4096 ]] || return 0
   latest="${raw##*$'\n'}"
   [[ "$latest" =~ ^([^|]+)\|0\|XD_PHOTO_INSTANCE_SHA256=([0-9a-f]{64})$ ]] || return 0

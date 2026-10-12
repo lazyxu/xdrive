@@ -22,8 +22,21 @@ if [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
   [[ -f "$XD_PHOTO_HOST_FIXTURE" ]] || exit 1
   cat "$XD_PHOTO_HOST_FIXTURE"
 elif [[ "$#" -eq 4 && "$1" == inspect && "$2" == --format &&
-        "$3" == '{{range .State.Health.Log}}{{printf "%v|%v|%s" .End .ExitCode .Output}}{{end}}' &&
+        "$3" == '{{range .State.Health.Log}}{{printf "%v|%v|%s\n" .End .ExitCode .Output}}{{end}}' &&
         "$4" == xdrive-photo-face ]]; then
+  # The fixed Go-template adds a record separator even when an older
+  # healthcheck Output lacks its own trailing newline.
+  case "${XD_PHOTO_HOST_FAKE_LOG_CASE:-single}" in
+    previous_unterminated)
+      printf '%s|1|prior-output-without-lf\n' "$XD_PHOTO_HOST_FAKE_TIME"
+      ;;
+    latest_failed)
+      printf '%s|0|XD_PHOTO_INSTANCE_SHA256=%s\n' \
+        "$XD_PHOTO_HOST_FAKE_TIME" "$XD_PHOTO_HOST_FAKE_DIGEST"
+      printf '%s|1|latest-healthcheck-failed\n' "$XD_PHOTO_HOST_FAKE_TIME"
+      exit 0
+      ;;
+  esac
   printf '%s|0|XD_PHOTO_INSTANCE_SHA256=%s\n' \
     "$XD_PHOTO_HOST_FAKE_TIME" "$XD_PHOTO_HOST_FAKE_DIGEST"
 else
@@ -46,6 +59,15 @@ test "$(json_value "$status" healthcheck_session_digest)" = "$XD_PHOTO_HOST_FAKE
 ! grep -q 'never-log-this' "$status"
 test "$(stat -c %a "$status")" = 660
 
+# Health records must be separated by the fixed template, even if a prior
+# Docker healthcheck Output had no newline. Only the *last* result counts.
+export XD_PHOTO_HOST_FAKE_LOG_CASE=previous_unterminated
+photo_intelligence_host_refresh
+test "$(json_value "$status" healthcheck_session_digest)" = "$XD_PHOTO_HOST_FAKE_DIGEST"
+export XD_PHOTO_HOST_FAKE_LOG_CASE=latest_failed
+photo_intelligence_host_refresh
+test -z "$(json_value "$status" healthcheck_session_digest)"
+unset XD_PHOTO_HOST_FAKE_LOG_CASE
 # The Host Manager refuses malformed or stale runtime evidence.
 export XD_PHOTO_HOST_FAKE_DIGEST=malformed
 photo_intelligence_host_refresh
@@ -94,5 +116,5 @@ test "$(json_value "$status" state)" = unknown
 # The runner must never issue Compose up/stop, Docker control or arbitrary
 # inspect arguments while building this read-only observation.
 ! grep -E '(^| )(up|stop|restart|exec|rm|run|kill|start)( |$)' "$XD_PHOTO_HOST_CALLS"
-test "$(grep -Fc 'inspect --format {{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}} xdrive-photo-face' "$XD_PHOTO_HOST_CALLS")" -eq 12
+test "$(grep -Fc 'inspect --format {{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}} xdrive-photo-face' "$XD_PHOTO_HOST_CALLS")" -eq 14
 echo "Photo Intelligence fixed Docker observation/profile intent/no secret/no mutation: OK"
