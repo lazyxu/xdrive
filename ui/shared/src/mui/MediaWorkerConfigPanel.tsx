@@ -53,7 +53,7 @@ export function XDriveMediaWorkerConfigPanel({
 }: {
   source: XDriveMediaWorkerPort
   refreshID: number
-  section?: 'config' | 'history'
+  section?: 'config' | 'history' | 'verify'
   onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
@@ -130,7 +130,7 @@ export function XDriveMediaWorkerConfigPanel({
       setDraftMemory(String(next.desired_memory_mib ?? 768))
       setDraftCPU(String(next.desired_cpu_milli ?? 750))
       setDraftPIDs(String(next.desired_pids_limit ?? 128))
-      if (source.loadMediaWorkerRevisions) {
+      if (section === 'history' && source.loadMediaWorkerRevisions) {
         const result = await source.loadMediaWorkerRevisions().catch(() => null)
         if (result && epoch === epochRef.current) {
           setHistory(result.items)

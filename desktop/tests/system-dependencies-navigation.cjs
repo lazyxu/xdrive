@@ -96,7 +96,7 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   assert.ok(page.includes("currentTab === 'history'"))
   assert.ok(page.includes("currentTab === 'verify'"))
   assert.ok(page.includes('setPendingNavigation('))
-  assert.ok(page.includes('disabled={loading || unsavedRef.current}'),
+  assert.ok(page.includes('disabled={loading || refreshing || unsavedRef.current}'),
     'manual refresh cannot silently discard an unsaved editor draft')
   assert.ok(page.includes('确认离开将放弃这些修改'))
   assert.ok(page.includes('window.addEventListener(\'beforeunload\''))
@@ -202,4 +202,50 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
     assert.ok(content.includes('放弃修改并离开'))
   }
   assert.equal(nav.includes('docker.sock'), false)
+})
+
+test('Status refresh preserves mounted editor, saved draft and last successful inventory on failure', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(page.includes("}, [source, selectedPage, currentTab])"),
+    'editor scope should not depend on read-only health refreshID')
+  assert.equal(page.includes("}, [source, refreshID, selectedPage, currentTab])"), false)
+  assert.ok(page.includes('const sourceChanged = snapshotSourceRef.current !== source'))
+  assert.ok(page.includes('cachedSnapshotRef.current = null'))
+  assert.ok(page.includes('cachedSnapshotRef.current = next'))
+  assert.ok(page.includes('if (cachedSnapshotRef.current === null)'))
+  assert.ok(page.includes('setRefreshing(true)'))
+  assert.ok(page.includes('刷新失败，当前显示上次成功检测的快照'))
+  assert.ok(page.includes("disabled={loading || refreshing || unsavedRef.current}"))
+  assert.equal((page.match(/setSnapshot\(null\)/g) || []).length, 1,
+    'health refresh must not unmount active forms; only a source change may clear inventory')
+  assert.ok(page.includes("  }, [source, refreshID])"),
+    'the independent inventory effect must respond to explicit refresh')
+  for (const service of ['media-worker', 'database', 'background-worker']) {
+    assert.ok(page.includes("selectedPage === '" + service + "' && currentTab !== 'status'"))
+  }
+  assert.ok(page.includes('section={selectedRuntimeSection} onDirtyChange={setChildDirty}'))
+  assert.ok(page.includes('refreshID={0}'),
+    'read-only inventory refresh must not bump editor instance generations')
+  assert.ok(page.includes('refreshID={caddyEvidenceRevision}'),
+    'Caddy preflight changes only when its own target credentials/revision changes')
+})
+
+test('Runtime verification tabs load exact service-specific status without eager history or edit controls', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(page.includes("const selectedRuntimeSection = currentTab === 'verify' ? 'verify'"))
+  for (const [name, key] of [
+    ['PostgresPoolConfigPanel.tsx', 'PostgresPool'],
+    ['SourceWorkerConfigPanel.tsx', 'SourceWorker'],
+    ['MediaWorkerConfigPanel.tsx', 'MediaWorker'],
+  ]) {
+    const panel = read('ui/shared/src/mui/' + name)
+    assert.ok(panel.includes("section?: 'config' | 'history' | 'verify'"), name)
+    assert.ok(panel.includes("section === 'config'"), name)
+    assert.ok(panel.includes("section === 'history'"), name)
+    assert.ok(panel.includes("if (section === 'history' && source.load" + key + "Revisions)"),
+      'verification must not load audit history for '+ name)
+    assert.ok(panel.includes('const reload = async () => {'), name)
+  }
+  assert.ok(page.includes("'database', 'media-worker', 'background-worker']"))
+  assert.equal(page.includes('docker.sock'), false)
 })

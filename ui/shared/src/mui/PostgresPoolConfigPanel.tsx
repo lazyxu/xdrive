@@ -43,7 +43,7 @@ export function XDrivePostgresPoolConfigPanel({
 }: {
   source: XDrivePostgresPoolPort
   refreshID: number
-  section?: 'config' | 'history'
+  section?: 'config' | 'history' | 'verify'
   onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
@@ -106,7 +106,7 @@ export function XDrivePostgresPoolConfigPanel({
       if (epoch !== epochRef.current) return
       setConfig(next)
       setDraft(asDraft(next.desired))
-      if (source.loadPostgresPoolRevisions) {
+      if (section === 'history' && source.loadPostgresPoolRevisions) {
         const page = await source.loadPostgresPoolRevisions().catch(() => null)
         if (epoch === epochRef.current && page) {
           setHistory(page.items)
