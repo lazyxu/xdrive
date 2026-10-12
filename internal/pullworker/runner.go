@@ -423,7 +423,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			}
 			err := result.err
 			if result.run.ID == "" && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				if recordErr := r.recordPreflightFailure(ctx, source.ID, now, err); recordErr != nil {
+				if recordErr := r.recordPreflightFailure(ctx, source, now, err); recordErr != nil {
 					err = errors.Join(err, fmt.Errorf("record source preflight failure: %w", recordErr))
 				}
 			}
@@ -492,11 +492,20 @@ func (r *Runner) handler(kind string) SourceHandler {
 	return r.Handlers[kind]
 }
 
-func (r *Runner) recordPreflightFailure(ctx context.Context, sourceID uint64, now time.Time, cause error) error {
-	if sourceID == 0 || cause == nil {
+func (r *Runner) recordPreflightFailure(ctx context.Context, source meta.Source, now time.Time, cause error) error {
+	if source.ID == 0 || cause == nil {
 		return nil
 	}
-	return r.DB.WithContext(ctx).Model(&meta.Source{}).Where("id = ?", sourceID).Updates(map[string]any{
+	// Only consume the manual request observed by this Source snapshot.
+	// A newer accepted trigger or config revision owns its own lifecycle.
+	query := r.DB.WithContext(ctx).Model(&meta.Source{}).
+		Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive)
+	if source.RunRequestedAt == nil {
+		query = query.Where("run_requested_at IS NULL")
+	} else {
+		query = query.Where("run_requested_at = ?", *source.RunRequestedAt)
+	}
+	return query.Updates(map[string]any{
 		"last_run_at":      now,
 		"last_error":       truncateError(cause),
 		"run_requested_at": nil,
