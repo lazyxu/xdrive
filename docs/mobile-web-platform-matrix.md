@@ -264,3 +264,7 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 **P1-3c1 首次真实 Backend Chrome 实测：** 375/390/899/900px 四宽度真实Gin/PostgreSQL17已得到10k逻辑PhotoAsset与 27/27/42/12个虚拟Tile、真实 Owner404/401及52px Header；但精确 HEAD CI #38161093303 未通过：28个HTTP500来自隔离测试schema缺表，另105个503来自无物理原件的metadata-only thumbnail，须独立计数而非以已加载图片结论替代。见图库规范及原始 artifact #11710606958。修正后重新跑完整测试才能更新passed，真机Safari/VoiceOver及物理缩略图继续not-run。
 
 **P1-3c1 第二次真实后端红灯（2026-10-12）：** CI #38162226990 的四种宽度 Range/JWT/DOM 正确性已验，剩余四次 HTTP500 都是隔离测试的 xd_sync_runs 缺表导致。已在唯一工作提交补入 meta.SyncRun 模型迁移，等待新精确 HEAD CI 重测。108 个 metadata-only 缩略图503不代表物理缩略图成功；iOS27 真机1:1 尚未验收。
+
+### P1-3c2a · M49.V10 实际相册加入与权限（2026-10-12）
+
+**待原生 Chromium/Gin/PostgreSQL17 运行。** 375px Mobile Gallery 实际选两项，通过更多/手动相册抽屉明确确认；900px 宽 Web 实际选两项，通过共享工具栏的相册下拉执行。同一 Web REST 请求 POST /api/v1/media/albums/{id}/items、精确 Node ID/引号 If-Match，GET 持久关系以及真实 409 旧修订/404 跨用户拒绝，零非预期 5xx。与 P1-3c1 metadata-only 10k Range、100k 物理媒体性能、iOS27 真机 Safari/VoiceOver 1:1 分开记录；不得提前报成已验收。
