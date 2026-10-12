@@ -17,14 +17,14 @@
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
 | P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A 已合并；有约束的安全激活仍待 S3C，不允许强制 reload |
-| P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A 已编写登录/账户入口、能力检测、安装引导；CI/真实设备仍待验 |
-| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | 部分部署基础，未验收 |
-| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有，安装模式未验 |
+| P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A PR #1516 完整 CI 通过且已合并；S2B1 真实 Chromium 安装资源/离线/登录前深链接自动验收待 CI；iOS 27/Android 系统安装仍 not-run |
+| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 将在 Chrome 安全 loopback 实测 SW/Manifest MIME、图标和缓存头；公网可信 HTTPS/DNS/证书与 Caddy 生产部署仍 not-run |
+| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有；S2B1 将验证未登录 Files 深链接经线上/离线/恢复仍保留，实际登录后 Files/Gallery/Viewer 与系统图标启动尚待验 |
 | P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
 | P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A/S4B 已完整 PR CI 通过并合并；Web 上传仍需人工重新选文件，真实安装模式和进程回收验收待 S5 |
 | P0-10 | 320/375/390/430、899/900、短横屏/安全区/软件键盘/200% 字体/暗色/读屏保留 52px Frame。 | 布局基础有，真机 not-run |
-| P0-11 | CI 发布 gate：built sw/offline/manifest 的 MIME/范围、离线 E2E、API bypass、更新/回滚、打包完整性。 | 本轮新增 Node 单测，真实部署 gate 待做 |
+| P0-11 | CI 发布 gate：built sw/offline/manifest 的 MIME/范围、离线 E2E、API bypass、更新/回滚、打包完整性。 | S2B1 新增内置生产 Web 与真实 Chrome SW/离线、API bypass/资源检查作业（待 CI）；更新/回滚、实际证书与安装包完整性仍待验 |
 | P0-12 | 保留可复核的 iOS 27 Safari+Home Screen、Android Chrome+Installed、Desktop Chrome/Edge 安装 E2E 记录。 | 真机 not-run |
 
 ## P1 — 交付质量和主要场景（16 项）
@@ -33,10 +33,10 @@
 | --- | --- | --- |
 | P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B PR #1535 已通过完整 CI 并合并；真实 Go/Chrome 断点复用最终 SHA 和 iOS/Android 真机验收仍待完成 |
 | P1-02 | M39 目录上传：空目录、嵌套、Unicode、相对路径、选择器能力与多文件/ZIP 回退。 | 部分基础有，待验 |
-| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 已合并；S4C2 真实 Chromium/Gin/PG17/CAS→OPFS 1GiB 全字节回读专项作业通过，PR 完整 CI 待合并；任意文件 SHA、原生下载落盘、4GiB/真机仍待验 |
+| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 #1538 与 S4C2 #1545 已完整 CI 通过并合并；真实 Chromium/Gin/PG17/CAS→OPFS 1GiB 全字节回读通过（#38239794346）；4GiB、原生下载落盘 SHA 与真机待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
 | P1-05 | display-mode/standalone 能力检测与安装模式诊断，不依赖 UA 猜测。 | S2A 已编写显示模式/显式 HEAD 诊断；CI/真实运行状态待验 |
-| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 已观察网络与版本；S4D1 补充可见页面恢复时 Server 权威任务/文件操作读刷新（尚待 CI），真实锁屏/进程回收仍待 S5 |
+| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 更新提示已合并；S4D1 #1551 完整 CI 通过并合并，前台可见时只刷新 Server 权威任务状态；真机进程回收与本地上传仍待验 |
 | P1-07 | 多标签/多账号登录、退出、刷新、撤销与 SW 更新状态一致，不广播 Token。 | 待验 |
 | P1-08 | 浏览器配额/Storage Manager/CacheStorage 清理与可清退说明；清缓存后离线页重装。 | 统计/清理已有，待验 |
 | P1-09 | M44 出站文件字节系统分享：canShare({files})、用户手势、取消、真实接收与下载回退。 | 链接分享已有，字节验收未完成 |
@@ -154,3 +154,20 @@ Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入
 
 
 **S4D1 首次完整 CI（2026-10-12）：** [#38241457049](https://github.com/lazyxu/xdrive/actions/runs/38241457049) Desktop 旧测试有 6 项在模块装载阶段失败：`file-explorer-action-feedback-ordering.cjs`、`file-explorer-selection-actions.cjs` 和 `task-transfer-navigation.cjs` 的独立 TS/React 执行器没有解析 `./TaskWakeRefresh`，报 `MODULE_NOT_FOUND`。已只调整这三处测试依赖注入，测试实际业务与 race 断言不放松；新增源代码集成断言，并折叠到原 S4D1 单工作提交后必须重跑完整 CI 才能合并。真实移动 OS 唤醒场景仍未验收。
+
+
+## PWA-S2B1 · 生产 Web 在真实 Chromium 浏览器中的公开安装外壳验收（2026-10-12）
+
+**固定交付边界：** 新增独立 GitHub PR CI workflow、Node 源代码门槛和真实 Chrome/Chromium Playwright 浏览器脚本，按普通 Web 与 390px Android UA/触屏模拟两组测试生产构建的 xDrive App；使用仅侦听 127.0.0.1 的公开静态服务器，真实浏览器视为安全 loopback 上下文，**不能**据此宣称公网 HTTPS 证书/DNS 正确或已从 iOS/Android 系统主屏图标安装成功。本阶段不修改 Server 业务、Web/Desktop 共用 API、Files/Gallery 虚拟化、52px App Frame、认证持久化、SW 缓存范围或任何文件内容。
+
+**实际验证点（PR CI 待执行）：** 独立 Chrome 浏览器页面加载 Web production bundle；真实 Service Worker 注册/接管及 Manifest id/start_url/scope/display、192/512 图标 GET、Manifest/Worker 正确 Content-Type 和禁止长期缓存的 HEAD；登录前点击用户可见安装/运行环境诊断，仅对公开资源 HEAD 并显式无凭证 /api/v1/readyz 查询；Files hash 深链接 #/app/files?dir=42 在未登录、刷新、**真实本地 HTTP 连接失败**时的公开离线 fallback、恢复联网后仍保留；SW CacheStorage **仅** /offline.html，离线导航到受保护下载票据路径时不能把公开 offline.html 作为该私有 URL 的成功响应。测试失败不能伪称服务/登录成功，不记录 JWT/Cookie、私人字节、原件或真实用户路径。
+
+**不覆盖的 P0 后续门槛：** 从桌面 Chrome/Edge 的真实系统安装图标冷启动、登录成功后跨授权 Files/Gallery/Viewer deep link、外链/分享/后退栈、公网部署 HTTPS/可信证书、iOS 27 Safari→添加主屏幕→独立窗口及 Android Chrome→安装版→锁屏/强杀/推送/文件选择器行为。它们仍需对应设备、OS/浏览器版本、访问 URL、原始 HTTP 结果、截图和准确 commit 的独立验收，不能用 UA、display-mode mock 或 localhost 代替。发布默认 PWA 继续无私人文件离线访问与浏览器后台上传承诺。
+
+验收记录：desktop/scripts/pwa-browser-install-offline.cjs、desktop/tests/pwa-browser-runtime-contract.cjs、.github/workflows/pwa-s2b-browser.yml，结果只导出 desktop/pwa-s2b1-results/summary.json。PR 完整 CI + 独立真实浏览器作业必须都通过后才线性合并；本阶段新增真实浏览器自动化不代表已通过。
+
+
+**S2B1 第一轮真实 Chrome 验收（2026-10-12）：** [专项 CI #38247662658](https://github.com/lazyxu/xdrive/actions/runs/38247662658) 已通过生产构建、实机 Chrome 驱动、真实 SW 控制、Manifest 与静态诊断，并正确完成无凭据 readyz；在 Playwright `context.setOffline(true)` 条件下未出现离线页，因没有捕获该时刻 SW 自有 Fetch 的实际网络结果，**不能**认定产品离线页失败。测试改为只针对根 SPA 导航和私有 API 的 socket 级断开（服务器直接 destroy HTTP 连接），保留 Worker 所有真实浏览器 Fetch 行为；要求根导航离线 fallback 成功、私有 URL 确实尝试网络并且不能复用离线页，并重新跑准确提交的整套 CI。此故障不涉及系统 PWA 图标安装/设备认证。
+
+
+**S2B1 第二轮 Chrome 验收（2026-10-12）：** [#38248085397](https://github.com/lazyxu/xdrive/actions/runs/38248085397) 通过了服务端 socket 断线后的真实公开离线页、私人下载路径 network bypass；随后“恢复联网”步骤只调用同一带 hash 的 URL `page.goto()`，Chrome 将该动作保留在离线文档中，导致未显示登录入口。这属于测试夹具同文档导航而非真实 reload，不代表 SW 返回了错误内容。已在服务恢复 HTTP 200 后使用真正的 `page.reload({waitUntil:'load'})`，并新增源代码回归断言。新准确提交的浏览器 E2E 与完整 CI 仍须独立跑绿；公网证书/安装模式/移动真机仍 not-run。
