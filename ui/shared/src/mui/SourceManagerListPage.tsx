@@ -13,6 +13,7 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import {
   externalSourceCardView,
   externalSourceConnectorProfile,
+  externalSourceDisplayName,
   externalSourceTriggerActionLabel,
   formatExternalSourceTime,
 } from '../external-sources'
@@ -20,9 +21,10 @@ import { formatBytes } from '../format'
 import type { ExternalSourceRow } from '../external-sources'
 
 export function XDriveSourceManagerListPage({
-  title = '同步文件夹',
-  subtitle = '统一管理同步文件夹、凭据、调度方式与运行状态。',
+  title = '来源',
+  subtitle = '管理来源连接、凭据、计划和运行状态。',
   rows,
+  directionFilter,
   loading,
   failedItemsLoading,
   triggeringSourceID,
@@ -39,6 +41,7 @@ export function XDriveSourceManagerListPage({
   title?: string
   subtitle?: string
   rows: ExternalSourceRow[]
+  directionFilter?: 'pull'
   loading: boolean
   failedItemsLoading: boolean
   triggeringSourceID: number | null
@@ -52,6 +55,7 @@ export function XDriveSourceManagerListPage({
   onCancelRun: (row: ExternalSourceRow) => void | Promise<void>
   onOpenSettings: (row: ExternalSourceRow) => void
 }) {
+  const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   return (
     <XDriveWorkspaceSurface
       presentation="page"
@@ -72,19 +76,20 @@ export function XDriveSourceManagerListPage({
             startIcon={<AddRoundedIcon />}
             onClick={() => void onAdd()}
           >
-            添加同步文件夹
+            添加{sourceNoun}
           </XDriveActionButton>
         </>
       }
     >
       {loading && rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" loading message="正在加载同步文件夹…" />
+        <XDriveStatePanel variant="plain" loading message={`正在加载${sourceNoun}…`} />
       ) : rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" message="尚未添加同步文件夹" />
+        <XDriveStatePanel variant="plain" message={`尚未添加${sourceNoun}`} />
       ) : (
         <Stack spacing={1.75}>
           {rows.map((row) => {
             const card = externalSourceCardView(row)
+            const sourceName = externalSourceDisplayName(row.source)
             const stats = card.scannedItems === undefined || card.scannedBytes === undefined
               ? '尚无扫描统计'
               : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBytes(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
@@ -92,9 +97,9 @@ export function XDriveSourceManagerListPage({
             return (
               <XDriveSourceSummaryCard
                 key={row.source.id}
-                name={row.source.name}
+                name={sourceName}
                 icon={<XDriveSourceKindIcon kind={row.source.kind} />}
-                modeLabel={`${card.connector.label} · ${card.modeLabel}`}
+                modeLabel={sourceName === card.connector.label ? card.modeLabel : `${card.connector.label} · ${card.modeLabel}`}
                 statusTone={card.state.tone}
                 statusLabel={card.state.label}
                 activity={`${card.lastActivityLabel}：${formatExternalSourceTime(card.lastActivityAt)}`}

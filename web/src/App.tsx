@@ -1663,8 +1663,8 @@ function FileManager({
               variant="plain"
               loading={!legacySourceMissing}
               message={legacySourceMissing
-                ? '该同步文件夹不存在或没有查看权限。请从设备备份或远程拉取重新打开。'
-                : '正在根据原同步文件夹 ID 确认 Push/Pull 归属…'}
+                ? '该来源不存在或没有查看权限，请从设备备份或远程拉取重新打开。'
+                : '正在根据旧链接确认所属应用（设备备份或远程拉取）…'}
             />
           ) : (
             <XDriveSourceManager

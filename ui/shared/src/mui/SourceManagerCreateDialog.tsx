@@ -37,7 +37,7 @@ import {
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
   yikeConnectorNotice,
-  yikeManagedTargetLabel,
+  yikeManagedTargetDisplayLabel,
   yikeRateLimitNotice,
 } from '../external-sources'
 import type {
@@ -132,6 +132,7 @@ export function XDriveSourceCreateDialog({
   onLoadTargetDirectory: (node: SourceTargetNode, crumbs: SourceTargetNode[]) => void
   onTestCredential: () => void
 }) {
+  const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const option = externalSourceCreateOption(values.preset)
   const profile = externalSourceConnectorProfile(option.kind, option.direction)
   const selectedTarget = targetCrumbs.at(-1)
@@ -154,14 +155,14 @@ export function XDriveSourceCreateDialog({
       slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
-        title="添加同步文件夹"
+        title={`添加${sourceNoun}`}
         onClose={onRequestClose}
         closeDisabled={creating}
       />
       <XDriveDialogContent dividers>
         {option.kind === 'yike_photos' ? (
           <XDriveStatusAlert tone="neutral" sx={{ mb: 2 }}>
-            固定逻辑目录：{yikeManagedTargetLabel}。连接成功后由服务器按百度 UID 和账号名称自动创建；底层文件仍使用 xDrive CAS 存储。
+            存储子目录：{yikeManagedTargetDisplayLabel}。连接成功后由服务器在既有固定根目录下按百度 UID 和账号名称创建；底层文件仍使用 xDrive CAS 存储。
           </XDriveStatusAlert>
         ) : targetBrowsingEnabled ? (
           <MuiBox sx={{ mb: 2, border: 1, borderColor: 'divider', borderRadius: 1.5, p: 1.5 }}>
@@ -213,7 +214,7 @@ export function XDriveSourceCreateDialog({
             </Stack>
             {option.direction === 'pull' ? (
               <MuiTypography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Pull 模式由 xDrive Server 直接连接 DSM；请确保服务器网络可以访问下面填写的 DSM 地址。
+                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
               </MuiTypography>
             ) : null}
           </MuiBox>
@@ -225,7 +226,7 @@ export function XDriveSourceCreateDialog({
             </MuiTypography>
             {option.direction === 'pull' ? (
               <MuiTypography variant="body2" sx={{ mt: 0.5 }}>
-                Pull 模式由 xDrive Server 直接连接 DSM；请确保服务器网络可以访问下面填写的 DSM 地址。
+                服务器会直接连接 DSM，请确保 xDrive Server 能访问下面填写的 DSM 地址。
               </MuiTypography>
             ) : null}
           </XDriveStatusAlert>
@@ -359,8 +360,8 @@ export function XDriveSourceCreateDialog({
                 )}
                 <XDriveStatusAlert tone="neutral" sx={{ mb: 1 }}>
                   {option.kind === 'synology_files'
-                    ? 'DSM 凭据只会在服务器端加密保存；Pull worker 通过 File Station API 只读同步所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
-                    : 'DSM 凭据只会在服务器端加密保存；Pull worker 使用 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
+                    ? 'DSM 凭据只会在服务器端加密保存；服务器通过 File Station API 只读拉取所选目录中的所有文件和文件夹，不会修改 NAS 内容。'
+                    : 'DSM 凭据只会在服务器端加密保存；服务器通过 Synology Photos API 只读发现和下载媒体，不会删除 NAS 中的照片。'}
                 </XDriveStatusAlert>
                 <MuiBox>
                   <XDriveActionButton
@@ -393,7 +394,7 @@ export function XDriveSourceCreateDialog({
           loading={creating}
           loadingLabel="正在添加…"
         >
-          添加同步文件夹
+          添加{sourceNoun}
         </XDriveActionButton>
       </XDriveDialogActions>
     </Dialog>

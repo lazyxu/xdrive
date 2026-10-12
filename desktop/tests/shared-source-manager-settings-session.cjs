@@ -86,6 +86,12 @@ function fixture(adapter) {
     settingsSessionRef: { current: 0 },
     externalSourceConnectorProfile: profile,
     externalSourceDefaults: defaults,
+    // Isolated controller handlers close over the app's UI noun and imported
+    // display helper; supply both without copying business mutation logic.
+    sourceNoun: '拉取来源',
+    externalSourceDisplayName: (item) => item.kind === 'synology_photos' && item.direction === 'pull' && item.name === '群晖 Photos Pull'
+      ? '群晖 Photos'
+      : item.name,
     sourceActionErrorMessage: message,
     emptySourceSettingsValues: () => ({ name: '' }),
   }
@@ -179,11 +185,12 @@ test('native form submission cannot save an unloaded or failed connector scope',
   }
 })
 
-function saveFixture(roots) {
-  const row = sourceRow(21)
+function saveFixture(roots, options = {}) {
+  const row = sourceRow(21, options.kind ?? 'synology_files')
+  if (options.persistedName) row.source.name = options.persistedName
   const state = fixture({ sourceConnectorConfig: async () => ({}) })
   let persisted = { ...row.source }
-  let connector = { revision: 8, configured: true, payload: { roots: ['/existing'] } }
+  let connector = { revision: 8, configured: true, payload: options.kind === 'synology_photos' ? { spaces: ['personal', 'shared'] } : { roots: ['/existing'] } }
   const steps = []
   const adapter = {
     async updateSource(id, revision, input) {
@@ -210,7 +217,8 @@ function saveFixture(roots) {
     adapter,
     setting: row,
     settingsValues: {
-      name: '  更新后的名称  ', sync_mode: 'backup', run_mode: 'sync',
+      name: options.formName ?? '  更新后的名称  ', sync_mode: 'backup', run_mode: 'sync',
+      spaces: ['personal', 'shared'],
       status: 'active', schedule_type: 'manual', schedule_expression: '',
       schedule_timezone: 'UTC', ignore_rules: '*.tmp',
       roots,
@@ -241,7 +249,25 @@ test('renaming without a scope change never rewrites the connector roots or targ
   assert.equal(h.getPersisted().target_path, '/My Files/21')
   assert.deepEqual(h.getConnector().payload.roots, ['/existing'])
   assert.equal(h.state.state.setting, null)
-  assert.equal(h.state.feedback, '同步文件夹设置已保存')
+  assert.equal(h.state.feedback, '拉取来源设置已保存')
+})
+
+test('editing legacy Pull display alias does not silently rewrite the persisted Source name', async () => {
+  const h = saveFixture([], {
+    kind: 'synology_photos',
+    persistedName: '群晖 Photos Pull',
+    formName: '群晖 Photos',
+  })
+  await handler('saveSettings', h.context)({ preventDefault() {} })
+  assert.equal(h.getPersisted().name, '群晖 Photos Pull')
+  assert.deepEqual(h.steps.map((item) => item.type), ['source', 'refresh'])
+  const renamed = saveFixture([], {
+    kind: 'synology_photos',
+    persistedName: '群晖 Photos Pull',
+    formName: '家庭照片',
+  })
+  await handler('saveSettings', renamed.context)({ preventDefault() {} })
+  assert.equal(renamed.getPersisted().name, '家庭照片')
 })
 
 test('explicit root change uses pause -> connector scope -> resume then can be reopened', async () => {

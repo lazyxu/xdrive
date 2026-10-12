@@ -17,7 +17,7 @@ test('Synology File Station is a distinct generic Pull preset', () => {
   assert.match(shared, /SupportedExternalSourceKind = 'synology_photos' \| 'synology_files' \| 'yike_photos'/)
   assert.match(shared, /value: 'synology_files_pull'/)
   assert.match(shared, /kind: 'synology_files'/)
-  assert.match(shared, /label: '群晖 File Station · Pull'/)
+  assert.match(shared, /label: '群晖 File Station'/)
   assert.match(shared, /同步选定目录中的任意文件和文件夹/)
 })
 

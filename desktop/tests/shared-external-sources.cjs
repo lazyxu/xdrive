@@ -173,7 +173,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: true,
-      label: '立即唤醒 Pull worker 扫描此同步文件夹；定时轮询作为兜底',
+      label: '立即唤醒服务器拉取任务扫描该来源；定时检查作为兜底',
     },
   )
 
@@ -196,7 +196,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '同步文件夹正在运行',
+      label: '来源正在运行',
     },
   )
 
@@ -208,7 +208,7 @@ test('shared external-source trigger gating matches connector execution model', 
     }),
     {
       ready: false,
-      label: '同步文件夹正在取消',
+      label: '来源正在取消',
     },
   )
 })
@@ -311,7 +311,7 @@ test('shared connector profiles own credential and trigger semantics', () => {
     direction: 'pull',
     credential: 'synology_dsm',
     manualTriggerExecutor: 'pull_worker',
-    defaultName: '群晖 Photos Pull',
+    defaultName: '群晖 Photos',
     defaultIgnoreRules: '',
   })
 
@@ -351,7 +351,7 @@ test('shared Mirror policy labels and safety copy stay explicit', () => {
     direction: 'pull',
     run_mode: 'sync',
     sync_mode: 'mirror',
-  })), 'Pull · 同步 · 镜像')
+  })), '同步 · 镜像')
   assert.match(shared.externalSourceMirrorSafetyNotice, /2 次完整成功扫描/)
   assert.match(shared.externalSourceMirrorSafetyNotice, /24 小时/)
   assert.match(shared.externalSourceMirrorSafetyNotice, /不会删除远端内容/)
@@ -400,7 +400,7 @@ test('shared source detail view keeps connector and credential semantics aligned
 
   const detail = shared.externalSourceDetailView(row)
   assert.equal(detail.kindLabel, '一刻相册')
-  assert.equal(detail.modeLabel, 'Pull · 同步 · 备份')
+  assert.equal(detail.modeLabel, '同步 · 备份')
   assert.equal(detail.targetNodeID, 42)
   assert.equal(detail.lastRunAt, '2026-09-26T17:10:00Z')
   assert.equal(detail.lastSuccessAt, '2026-09-26T16:00:00Z')
@@ -547,7 +547,7 @@ test('shared external-source defaults preserve connector-specific setup rules', 
   })
   assert.deepEqual(shared.externalSourceDefaults('synology_photos', 'pull'), {
     kind: 'synology_photos',
-    name: '群晖 Photos Pull',
+    name: '群晖 Photos',
     direction: 'pull',
     runMode: 'sync',
     ignoreRules: '',
@@ -572,7 +572,7 @@ test('shared create presets distinguish Synology Photos, File Station, and Yike 
       ['local_push', 'local_folder', 'push'],
     ],
   )
-  assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos · Pull')
+  assert.equal(shared.externalSourceCreateOption('synology_pull').label, '群晖 Photos')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'push'), 'synology_push')
   assert.equal(shared.externalSourceCreatePresetFor('synology_photos', 'pull'), 'synology_pull')
   assert.equal(shared.externalSourceCreatePresetFor('synology_files', 'pull'), 'synology_files_pull')
@@ -603,11 +603,11 @@ test('shared Yike credential test messages are actionable', () => {
   assert.equal(shared.externalSourceCredentialTestErrorLabel('yike_rate_limited'), '一刻相册请求过于频繁，请稍后重试')
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_contains_unmanaged_data'),
-    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加同步文件夹',
+    '固定的一刻相册目录中已有未归属文件，请先移动或整理该目录后再重新添加拉取来源',
   )
   assert.equal(
     shared.externalSourceCredentialTestErrorLabel('yike_target_path_conflict'),
-    '固定的一刻相册路径被同名文件占用，请先整理“同步文件夹 / 一刻相册”路径后重试',
+    '一刻相册的固定存储目录被同名文件占用，请在 xDrive 文件管理器中整理该目录后重试',
   )
   assert.equal(
     shared.externalSourceCredentialTestSuccessLabel({ valid: true, kind: 'yike_photos', account_name: 'Alice', account_external_id: '123' }),
@@ -624,6 +624,20 @@ test('shared Yike credential test messages are actionable', () => {
 
 test('shared Yike Cookie guide gives the full-header workflow', () => {
   assert.equal(shared.yikeManagedTargetLabel, '同步文件夹 / 一刻相册 / uid_<百度UID>_<账号名称>')
+  assert.equal(shared.yikeManagedTargetDisplayLabel, '一刻相册 / uid_<百度UID>_<账号名称>')
+  assert.equal(shared.externalSourceDisplayTargetPath({
+    kind: 'yike_photos', direction: 'pull',
+    target_path: '/我的文件/同步文件夹/一刻相册/uid_123_Alice',
+  }), '一刻相册/uid_123_Alice')
+  assert.equal(shared.externalSourceDisplayTargetPath({
+    kind: 'synology_files', direction: 'pull', target_path: '/我的文件/同步文件夹/照片',
+  }), '/我的文件/同步文件夹/照片')
+  assert.equal(shared.externalSourceDisplayName({
+    kind: 'synology_photos', direction: 'pull', name: '群晖 Photos Pull',
+  }), '群晖 Photos')
+  assert.equal(shared.externalSourceDisplayName({
+    kind: 'synology_photos', direction: 'pull', name: '家庭 Photos Pull',
+  }), '家庭 Photos Pull')
   assert.match(shared.yikeConnectorNotice, /未公开接口/)
   assert.match(shared.yikeConnectorNotice, /不会上传、删除或修改/)
   assert.match(shared.yikeRateLimitNotice, /约 2 次\/秒/)
@@ -776,8 +790,8 @@ test('Web and Desktop reuse shared source basic fields', () => {
     'XDriveSourceStatusField',
     'externalSourceCreateOptions',
     'XDriveSourceKindIcon',
-    '同步文件夹类型',
-    '同步文件夹名称',
+    '来源类型',
+    '来源名称',
     '运行模式',
     '启用',
     '暂停',
@@ -898,7 +912,7 @@ test('Desktop source details reuse shared description and section primitives', (
   assert.ok(description.includes("fullColumnsAt?: 'md' | 'lg'"), 'shared description grid should preserve responsive full-column support')
   assert.ok((desktop.match(/<XDriveDescriptionGrid\b/g) || []).length >= 2, 'shared Source details and run metrics should use description grids')
   assert.ok(desktop.includes('title="相册与集合"'), 'Source collection section should use the shared section header')
-  assert.ok(desktop.includes('title="同步历史"'), 'Source history section should use the shared section header')
+  assert.ok(desktop.includes('title="运行记录"'), 'Source history section should use the shared section header')
 
   for (const legacy of ['source-detail-grid', 'source-run-grid', 'source-ignore', 'source-run-heading']) {
     assert.equal(desktop.includes(`className="${legacy}"`), false, `Desktop should not retain local ${legacy} markup`)

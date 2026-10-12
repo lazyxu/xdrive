@@ -91,10 +91,10 @@ export function XDriveSourceDeleteConfirmDialog({
       fullWidth
       slotProps={{ paper: xDriveDialogPaperProps }}
     >
-      <XDriveDialogTitle title="删除同步文件夹？" onClose={onClose} closeDisabled={busy} />
+      <XDriveDialogTitle title="删除来源？" onClose={onClose} closeDisabled={busy} />
       <XDriveDialogContent>
         <DialogContentText>
-          删除“{sourceName}”只会移除同步配置、运行记录、同步文件夹映射和已保存凭据。
+          删除“{sourceName}”只会移除该来源的配置、运行记录、来源映射和已保存凭据。
           已经同步到 xDrive 的文件会保留，不会删除。
         </DialogContentText>
       </XDriveDialogContent>
@@ -107,7 +107,7 @@ export function XDriveSourceDeleteConfirmDialog({
           loadingLabel="正在删除…"
           onClick={onConfirm}
         >
-          删除同步文件夹
+          删除来源
         </XDriveActionButton>
       </XDriveDialogActions>
     </Dialog>
@@ -144,7 +144,7 @@ export function XDriveSourceClearCredentialDialog({
       />
       <XDriveDialogContent>
         <DialogContentText>
-          清除后，该 Pull 同步文件夹会自动暂停，无法继续扫描或同步，直到重新配置有效凭据。
+          清除后，该来源会自动暂停，重新配置有效凭据后才能继续扫描或下载。
         </DialogContentText>
       </XDriveDialogContent>
       <XDriveDialogActions>

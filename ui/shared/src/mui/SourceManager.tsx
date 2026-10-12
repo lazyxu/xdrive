@@ -25,6 +25,7 @@ import {
   externalSourceCredentialLabel,
   externalSourceCredentialTestErrorLabel,
   externalSourceDefaults,
+  externalSourceDisplayName,
   normalizeSynologyFileRoots,
   normalizeSynologyPhotoSpaces,
   synologyFileRootsValidationError,
@@ -186,6 +187,7 @@ export function XDriveSourceManager({
   onSelectedSourceChange,
   onError,
 }: XDriveSourceManagerProps) {
+  const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const initialSourceOpenedRef = useRef<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -535,12 +537,12 @@ export function XDriveSourceManager({
     event.preventDefault()
     const values = createValues
     const normalizedName = values.name.trim()
-    const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
+    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     setCreateNameError(nameError)
     const option = externalSourceCreateOption(values.preset)
     const profile = externalSourceConnectorProfile(option.kind, option.direction)
     if (directionFilter === 'pull' && option.direction !== 'pull') {
-      setErrorDialog({ title: '无法添加同步文件夹', message: '远程拉取只支持 Pull 同步文件夹。' })
+      setErrorDialog({ title: '无法添加拉取来源', message: '此页面只能添加远程拉取来源。' })
       return
     }
     const roots = normalizeSynologyFileRoots(values.roots ?? [])
@@ -554,13 +556,13 @@ export function XDriveSourceManager({
     setCreateRootsError(rootsError)
     if (nameError || spacesError || rootsError) return
     if (option.kind !== 'yike_photos' && !selectedCreateTargetNodeID) {
-      setErrorDialog({ title: '无法添加同步文件夹', message: '当前目标文件夹尚未加载，请稍后重试。' })
+      setErrorDialog({ title: `无法添加${sourceNoun}`, message: '当前目标文件夹尚未加载，请稍后重试。' })
       return
     }
     const credentialPayload = profile.credential ? createCredentialPayload() : null
     if (profile.credential && !credentialPayload) {
       setErrorDialog({
-        title: '无法添加同步文件夹',
+        title: `无法添加${sourceNoun}`,
         message: profile.credential === 'cookie'
           ? '请先填写一刻相册 Cookie。'
           : '请完整填写 Synology DSM 地址、用户名和密码。',
@@ -593,7 +595,7 @@ export function XDriveSourceManager({
         ignore_rules: values.ignore_rules ?? '',
       })
     } catch (error) {
-      showActionError('添加同步文件夹失败', error, '创建同步文件夹失败，请稍后重试。')
+      showActionError(`添加${sourceNoun}失败`, error, `创建${sourceNoun}失败，请稍后重试。`)
       setCreating(false)
       return
     }
@@ -618,7 +620,7 @@ export function XDriveSourceManager({
         await adapter.deleteSource(created.id, created.revision)
         setErrorDialog({
           title: profile.credential === 'synology_dsm' ? '群晖连接配置失败' : 'Cookie 保存失败',
-          message: `刚创建的${profile.label}同步文件夹已自动撤销，请检查配置后重试。`,
+          message: `刚创建的${profile.label}${sourceNoun}已自动撤销，请检查配置后重试。`,
           detail: sourceActionErrorMessage(error, `保存${credentialLabel}失败`),
         })
         await load()
@@ -626,8 +628,8 @@ export function XDriveSourceManager({
         return
       } catch (rollbackError) {
         setErrorDialog({
-          title: '同步文件夹创建未完成',
-          message: `同步文件夹已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该同步文件夹。`,
+          title: `${sourceNoun}创建未完成`,
+          message: `${sourceNoun}已创建，但${credentialLabel}或连接配置保存失败且自动回滚也失败。请进入“设置”修复或删除该来源。`,
           detail: `配置：${sourceActionErrorMessage(error, '保存失败')}；回滚：${sourceActionErrorMessage(rollbackError, '回滚失败')}`,
         })
       }
@@ -643,7 +645,7 @@ export function XDriveSourceManager({
           // cleanup if a Root was bound or the Source gained history.
           try {
             await adapter.deleteSource(created.id, created.revision)
-            setFeedback('已取消创建；本机未绑定的同步文件夹草稿已安全清理')
+            setFeedback('已取消创建；本机未绑定的来源草稿已安全清理')
             setCreateOpen(false)
             setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
             setCreateNameError('')
@@ -664,7 +666,7 @@ export function XDriveSourceManager({
         localAuthorization = 'error'
         setErrorDialog({
           title: '本机文件夹授权未完成',
-          message: '同步文件夹已创建并保持暂停。可从详情重新选择本机目录；当前不会扫描或上传文件。',
+          message: '来源已创建并保持暂停。可从详情重新选择本机目录；当前不会扫描或上传文件。',
           detail: sourceActionErrorMessage(error, '授权失败'),
         })
       }
@@ -673,10 +675,10 @@ export function XDriveSourceManager({
     setFeedback(option.kind === 'local_folder'
       ? localAuthorization === 'bound'
         ? '本机目录已授权；同步执行器尚未启用，目前不会上传文件'
-        : '同步文件夹已创建并暂停；请从详情选择本机目录以完成授权'
+        : '来源已创建并暂停；请从详情选择本机目录以完成授权'
       : option.kind === 'synology_files'
-      ? '群晖 File Station Pull 同步文件夹已添加；将同步所选目录中的所有文件和文件夹'
-      : '同步文件夹已添加')
+      ? '群晖 File Station 拉取来源已添加；将同步所选目录中的所有文件和文件夹'
+      : `${sourceNoun}已添加`)
     setCreateOpen(false)
     setCreateValues(initialCreateSourceValues(directionFilter === 'pull' ? 'synology_pull' : 'synology_push'))
     setCreateNameError('')
@@ -710,7 +712,7 @@ export function XDriveSourceManager({
       const profile = externalSourceConnectorProfile(row.source.kind, row.source.direction)
       setFeedback(profile.manualTriggerExecutor === 'source_agent'
         ? '已请求立即扫描，等待群晖 source-agent 下一次任务检查'
-        : '已请求立即扫描，已主动唤醒 Pull worker；定时轮询仅作为兜底')
+        : '已请求立即扫描，服务器后台拉取任务已唤醒；定时检查仅作为兜底')
       await load()
     } catch (error) {
       showActionError('立即扫描失败', error, '无法提交立即扫描请求，请稍后重试。')
@@ -774,7 +776,7 @@ export function XDriveSourceManager({
     setSettingsConnectorLoading(false)
     setSettingsConnectorError('')
     setSettingsValues({
-      name: row.source.name,
+      name: externalSourceDisplayName(row.source),
       sync_mode: row.source.sync_mode,
       run_mode: row.source.run_mode,
       status: row.source.status,
@@ -900,7 +902,12 @@ export function XDriveSourceManager({
         (settingsConnectorLoading || Boolean(settingsConnectorError) || !settingsConnectorConfig)) return
     const values = settingsValues
     const normalizedName = values.name.trim()
-    const nameError = !normalizedName ? '请填写同步文件夹名称' : normalizedName.length > 128 ? '同步文件夹名称不能超过 128 个字符' : ''
+    // Old generated names may have a display-only alias (e.g. Photos Pull).
+    // Saving schedule/credentials must never silently rename the Source.
+    const nameToPersist = normalizedName === externalSourceDisplayName(setting.source)
+      ? setting.source.name
+      : normalizedName
+    const nameError = !normalizedName ? `请填写${sourceNoun}名称` : normalizedName.length > 128 ? `${sourceNoun}名称不能超过 128 个字符` : ''
     const isSynologyFiles = setting.source.kind === 'synology_files'
     const isLocalFolder = setting.source.kind === 'local_folder'
     const desiredRoots = normalizeSynologyFileRoots(values.roots ?? [])
@@ -957,7 +964,7 @@ export function XDriveSourceManager({
         !connectorConfig?.configured
       )
       let updatedSource = await adapter.updateSource(setting.source.id, setting.source.revision, {
-        name: normalizedName,
+        name: nameToPersist,
         sync_mode: isLocalFolder ? 'backup' : values.sync_mode,
         run_mode: isLocalFolder ? 'sync' : values.run_mode,
         status: isLocalFolder
@@ -996,7 +1003,7 @@ export function XDriveSourceManager({
         }
       }
 
-      setFeedback('同步文件夹设置已保存')
+      setFeedback(`${sourceNoun}设置已保存`)
       ++settingsSessionRef.current
       setSettingsCredentialReveal(null)
       setSetting(null)
@@ -1009,7 +1016,7 @@ export function XDriveSourceManager({
       setSettingsRootsError('')
       await load()
     } catch (error) {
-      showActionError('保存同步文件夹设置失败', error, '同步文件夹设置未保存，请检查后重试。')
+      showActionError(`保存${sourceNoun}设置失败`, error, `${sourceNoun}设置未保存，请检查后重试。`)
       await load()
     } finally {
       setSavingSettings(false)
@@ -1023,7 +1030,7 @@ export function XDriveSourceManager({
     setClearingCookie(true)
     try {
       await adapter.deleteSourceCredential(setting.source.id)
-      setFeedback(`${label}已清除，同步文件夹已自动暂停`)
+      setFeedback(`${label}已清除，该来源已自动暂停`)
       setSettingsCredentialReveal(null)
       setClearCookieConfirmOpen(false)
       setSetting({
@@ -1052,7 +1059,7 @@ export function XDriveSourceManager({
     setDeletingSourceID(row.source.id)
     try {
       await adapter.deleteSource(row.source.id, row.source.revision)
-      setFeedback('同步文件夹已删除；已同步到 xDrive 的文件已保留')
+      setFeedback(`${sourceNoun}已删除；已保存到 xDrive 的文件已保留`)
       if (selected?.source.id === row.source.id) setSelected(null)
       if (setting?.source.id === row.source.id) {
         ++settingsSessionRef.current
@@ -1068,7 +1075,7 @@ export function XDriveSourceManager({
       setDeleteTarget(null)
       await load()
     } catch (error) {
-      showActionError('删除同步文件夹失败', error, '同步文件夹未删除，请稍后重试。')
+      showActionError(`删除${sourceNoun}失败`, error, `${sourceNoun}未删除，请稍后重试。`)
       await load()
     } finally {
       setDeletingSourceID(null)
@@ -1080,7 +1087,7 @@ export function XDriveSourceManager({
     try {
       setCollections(await adapter.sourceCollections(sourceID))
     } catch (error) {
-      showActionError('加载相册/集合失败', error, '无法读取该同步文件夹的相册/集合，请稍后重试。')
+      showActionError('加载相册/集合失败', error, '无法读取该来源的相册/集合，请稍后重试。')
     } finally {
       setCollectionsLoading(false)
     }
@@ -1151,7 +1158,7 @@ export function XDriveSourceManager({
       setFailedItems(items)
       setFailedItemsLimitReached(items.length >= 1000)
     } catch (error) {
-      showActionError('加载同步文件夹详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
+      showActionError('加载来源详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
     } finally {
       setFailedItemsLoading(false)
     }
@@ -1189,9 +1196,10 @@ export function XDriveSourceManager({
   return (
     <>
       <XDriveSourceManagerListPage
-        title={directionFilter === 'pull' ? '远程拉取' : '同步文件夹'}
+        title={directionFilter === 'pull' ? '远程拉取' : '来源'}
         subtitle={directionFilter === 'pull' ? '由 xDrive Server 管理远程连接、扫描和下载。' : undefined}
         rows={rows}
+        directionFilter={directionFilter}
         loading={loading}
         failedItemsLoading={failedItemsLoading}
         triggeringSourceID={triggeringSourceID}
@@ -1199,7 +1207,7 @@ export function XDriveSourceManager({
         onRefresh={load}
         onAdd={openCreate}
         onOpenError={(row) => setErrorDialog({
-          title: `${row.source.name} · 最近一次运行错误`,
+          title: `${externalSourceDisplayName(row.source)} · 最近一次运行错误`,
           message: row.source.last_error || '未提供具体错误信息',
         })}
         onOpenDetails={openDetails}
@@ -1350,7 +1358,7 @@ export function XDriveSourceManager({
 
       <XDriveSourceDeleteConfirmDialog
         open={Boolean(deleteTarget)}
-        sourceName={deleteTarget?.source.name ?? ''}
+        sourceName={deleteTarget ? externalSourceDisplayName(deleteTarget.source) : ''}
         busy={deletingSourceID !== null}
         onClose={() => setDeleteTarget(null)}
         onConfirm={() => void deleteSource()}

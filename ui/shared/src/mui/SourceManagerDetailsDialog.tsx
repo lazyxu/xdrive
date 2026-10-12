@@ -30,6 +30,8 @@ import { XDriveSourceRunSummary } from './SourceRunSummary'
 import {
   externalSourceCardView,
   externalSourceDetailView,
+  externalSourceDisplayName,
+  externalSourceDisplayTargetPath,
   externalSourceMirrorSafetyNotice,
   externalSourceMirrorScanNotice,
   externalSourceRunDetailView,
@@ -129,7 +131,7 @@ export function XDriveSourceDetailsDialog({
       slotProps={{ paper: dialogPaper }}
     >
       <XDriveDialogTitle
-        title={row ? `${row.source.name} · 同步文件夹详情` : '同步文件夹详情'}
+        title={row ? `${externalSourceDisplayName(row.source)} · 来源详情` : '来源详情'}
         onClose={onClose}
       />
       <XDriveDialogContent dividers>
@@ -169,7 +171,7 @@ export function XDriveSourceDetailsDialog({
             ) : null}
 
             <XDriveDescriptionGrid columns={4} fullColumnsAt="md">
-              <XDriveDescriptionItem label="同步文件夹类型">
+              <XDriveDescriptionItem label="来源类型">
                 <Stack direction="row" spacing={0.75} alignItems="center">
                   <XDriveSourceKindIcon kind={row.source.kind} size="small" />
                   <span>{detail.kindLabel}</span>
@@ -179,8 +181,8 @@ export function XDriveSourceDetailsDialog({
               <XDriveDescriptionItem label="状态">
                 <XDriveStatusBadge tone={detail.state.tone} label={detail.state.label} />
               </XDriveDescriptionItem>
-              <XDriveDescriptionItem label="目标目录">
-                {row.source.target_path || (detail.targetNodeID ? `节点 #${detail.targetNodeID}` : '未配置')}
+              <XDriveDescriptionItem label={row.source.kind === 'yike_photos' && row.source.direction === 'pull' ? '存储子目录' : '目标目录'}>
+                {externalSourceDisplayTargetPath(row.source) || (detail.targetNodeID ? `节点 #${detail.targetNodeID}` : '未配置')}
               </XDriveDescriptionItem>
               <XDriveDescriptionItem label="调度">{detail.scheduleLabel}</XDriveDescriptionItem>
               <XDriveDescriptionItem label="上次运行">{formatExternalSourceTime(detail.lastRunAt)}</XDriveDescriptionItem>
@@ -196,7 +198,7 @@ export function XDriveSourceDetailsDialog({
             {collectionsLoading ? (
               <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
             ) : collections.length === 0 ? (
-              <XDriveStatePanel variant="plain" message="该同步文件夹暂无相册/集合元数据" />
+              <XDriveStatePanel variant="plain" message="该来源暂无相册/集合元数据" />
             ) : (
               <Stack spacing={1}>
                 {collections.map((collection) => {
@@ -250,7 +252,7 @@ export function XDriveSourceDetailsDialog({
               </Stack>
             )}
 
-            <XDriveSectionHeader level="h3" title="同步历史" sx={{ my: 2 }} />
+            <XDriveSectionHeader level="h3" title="运行记录" sx={{ my: 2 }} />
             {historyRuns.length > 0 ? (
               <Stack spacing={1}>
                 {historyRuns.map((run) => {
