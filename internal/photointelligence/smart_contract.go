@@ -25,14 +25,15 @@ type SmartAnalyzer interface {
 }
 
 type SmartAnalyzerInfo struct {
-	ProtocolVersion int                      `json:"protocol_version"`
-	Name            string                   `json:"name"`
-	PipelineVersion string                   `json:"pipeline_version"`
-	Classifier      FaceAnalyzerModelInfo    `json:"classifier"`
-	TextDetector    FaceAnalyzerModelInfo    `json:"text_detector"`
-	TextRecognizer  FaceAnalyzerModelInfo    `json:"text_recognizer"`
-	OCRLanguage     string                   `json:"ocr_language"`
-	Runtime         *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	ProtocolVersion   int                      `json:"protocol_version"`
+	Name              string                   `json:"name"`
+	PipelineVersion   string                   `json:"pipeline_version"`
+	Classifier        FaceAnalyzerModelInfo    `json:"classifier"`
+	TextDetector      FaceAnalyzerModelInfo    `json:"text_detector"`
+	TextRecognizer    FaceAnalyzerModelInfo    `json:"text_recognizer"`
+	OCRLanguage       string                   `json:"ocr_language"`
+	Runtime           *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	RuntimeInstanceID string                   `json:"runtime_instance_id,omitempty"`
 }
 
 type SmartAnalysisTask struct {
@@ -60,6 +61,9 @@ func ValidateSmartAnalyzerInfo(info SmartAnalyzerInfo) error {
 			"unsupported smart analyzer protocol version %d",
 			info.ProtocolVersion,
 		)
+	}
+	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {
 		return errors.New("smart analyzer name is required")

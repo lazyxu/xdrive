@@ -78,6 +78,12 @@ Provider delivery rules:
 
 
 
+## P1-PH1b2c2a — Photo Intelligence four-Info process-session consistency
+
+- The single optional `photo-face` Python process generates a new random 128-bit lowercase-hex process-session ID on each AnalyzerState construction and returns that same **self-reported** `runtime_instance_id` in all four fixed, already-authenticated Info responses. The local container healthcheck must reject missing, malformed or different process-session IDs among the four endpoints. Never reuse the ID across process restarts or expose it through the administrator's REST/IPC/UI response.
+- All four existing Go model-info schemas accept absent runtime ID for old Server/model compatibility but reject any non-empty malformed value. The shared manual Photo Host preflight only sets `model_instance_coherent=true` after all FOUR independent bounded Info responses are ready, ordered by the fixed service allowlist, and carry one identical valid process ID. Partial, unconfigured, failed, outdated, missing or mixed-process answers must remain **unverified**; stale host/desired revisions erase the derived observation. No new user parameters, probe endpoint, background poll, image bytes, external URL or privileged Docker command.
+- This is **process-generation consistency**, NOT Host Manager container attestation, request-token binding or real media-task effect. The global lifecycle `activation_state` stays `deployment-only`, the existing preflight `effect-proof` stays unknown and no service can be stopped or restarted. Real fixed-host identity binding and actual representative task execution remain separate P1-PH1b2c2b/c stages. Apply the same Web/Mobile Web/Desktop shared panel and type/Agent path. See `docs/service-dependencies.md#p1-ph1b2c2a-2026-10-12-four-model-process-generation-consistency`.
+
 ## P1-PH1b2c1 — Photo Intelligence model Info verification
 
 - Shared Web/Mobile Web/Desktop administrator **系统依赖 → 人脸检测与人物聚类 → 检测** manually requests the existing admin-only, no-store `GET /api/v1/admin/services/photo-intelligence/host/preflight` to inspect four fixed Face, Smart/OCR, Semantic and Creative `Info(ctx)` endpoints. Never probe models from the eleven-service overview, background status refresh or polling.

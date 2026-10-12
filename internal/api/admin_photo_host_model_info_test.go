@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -43,10 +44,10 @@ func TestPhotoHostModelInfoRequiresExactHostRequestToken(t *testing.T) {
 func TestPhotoHostModelInfoIndependentAndRedacted(t *testing.T) {
 	leak := "SECRET_MODEL_PATH_/run/private"
 	probes := []photoHostModelInfoTask{
-		{ID: "photo-face", Configured: true, Probe: func(context.Context) error { return nil }},
-		{ID: "photo-smart", Configured: true, Probe: func(context.Context) error { return errors.New(leak) }},
+		{ID: "photo-face", Configured: true, Probe: func(context.Context) (string, error) { return "", nil }},
+		{ID: "photo-smart", Configured: true, Probe: func(context.Context) (string, error) { return "", errors.New(leak) }},
 		{ID: "photo-semantic", Configured: false},
-		{ID: "photo-creative", Configured: true, Probe: func(context.Context) error { return nil }},
+		{ID: "photo-creative", Configured: true, Probe: func(context.Context) (string, error) { return "", nil }},
 	}
 	out := runPhotoHostModelInfoChecks(context.Background(), probes)
 	if len(out) != 4 {
@@ -74,12 +75,65 @@ func TestPhotoHostModelInfoTimeoutFailsClosed(t *testing.T) {
 	defer cancel()
 	begin := time.Now()
 	out := runPhotoHostModelInfoChecks(ctx, []photoHostModelInfoTask{
-		{ID: "photo-face", Configured: true, Probe: func(context.Context) error {
+		{ID: "photo-face", Configured: true, Probe: func(context.Context) (string, error) {
 			<-block
-			return nil
+			return "0123456789abcdef0123456789abcdef", nil
 		}},
 	})
 	if time.Since(begin) > time.Second || len(out) != 1 || out[0].State != "unknown" {
 		t.Fatalf("timed-out model probe produced false success or blocked request: %+v", out)
+	}
+}
+
+// The exact 32-char instance nonce must not leak through JSON. A healthy
+// legacy, mixed generation, partial or malformed set never passes coherence.
+func TestPhotoHostFourModelRuntimeSessionCoherence(t *testing.T) {
+	session := "0123456789abcdef0123456789abcdef"
+	tasks := make([]photoHostModelInfoTask, 4)
+	for i, id := range []string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"} {
+		tasks[i] = photoHostModelInfoTask{
+			ID: id, Configured: true, Probe: func(context.Context) (string, error) {
+				return session, nil
+			},
+		}
+	}
+	checks := runPhotoHostModelInfoChecks(context.Background(), tasks)
+	if !photoHostModelInstanceCoherent(checks) {
+		t.Fatalf("all four same-session live responses not recognized: %+v", checks)
+	}
+	raw, err := json.Marshal(checks)
+	if err != nil || strings.Contains(string(raw), session) || strings.Contains(string(raw), "runtimeInstanceID") {
+		t.Fatal("private runtime session leaked in administrator response")
+	}
+	for _, tc := range []struct {
+		name   string
+		change func([]photoHostModelInfoCheck) []photoHostModelInfoCheck
+	}{
+		{"legacy", func(items []photoHostModelInfoCheck) []photoHostModelInfoCheck {
+			items[1].runtimeInstanceID = ""
+			return items
+		}},
+		{"different process", func(items []photoHostModelInfoCheck) []photoHostModelInfoCheck {
+			items[2].runtimeInstanceID = strings.Repeat("a", 32)
+			return items
+		}},
+		{"failed Info", func(items []photoHostModelInfoCheck) []photoHostModelInfoCheck {
+			items[0].State = "failed"
+			return items
+		}},
+		{"partial", func(items []photoHostModelInfoCheck) []photoHostModelInfoCheck {
+			return items[:3]
+		}},
+		{"wrong order", func(items []photoHostModelInfoCheck) []photoHostModelInfoCheck {
+			items[0], items[1] = items[1], items[0]
+			return items
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			copyChecks := append([]photoHostModelInfoCheck(nil), checks...)
+			if photoHostModelInstanceCoherent(tc.change(copyChecks)) {
+				t.Fatal("unsafe model same-process claim")
+			}
+		})
 	}
 }

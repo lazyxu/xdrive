@@ -11,15 +11,16 @@ import (
 const photoHostModelInfoTimeout = 2 * time.Second
 
 type photoHostModelInfoCheck struct {
-	ID     string `json:"id"`
-	State  string `json:"state"`
-	Detail string `json:"detail"`
+	ID                string `json:"id"`
+	State             string `json:"state"`
+	Detail            string `json:"detail"`
+	runtimeInstanceID string // private process-boot marker: never serialized to admin UI
 }
 
 type photoHostModelInfoTask struct {
 	ID         string
 	Configured bool
-	Probe      func(context.Context) error
+	Probe      func(context.Context) (string, error)
 }
 
 func unverifiedPhotoHostModelInfoChecks() []photoHostModelInfoCheck {
@@ -45,8 +46,9 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 	ctx, cancel := context.WithTimeout(parent, photoHostModelInfoTimeout)
 	defer cancel()
 	type outcome struct {
-		index int
-		err   error
+		index      int
+		instanceID string
+		err        error
 	}
 	finished := make(chan outcome, len(tasks))
 	pending := 0
@@ -61,10 +63,10 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			continue
 		}
 		pending++
-		go func(index int, check func(context.Context) error) {
-			err := check(ctx)
+		go func(index int, check func(context.Context) (string, error)) {
+			instanceID, err := check(ctx)
 			select {
-			case finished <- outcome{index: index, err: err}:
+			case finished <- outcome{index: index, instanceID: instanceID, err: err}:
 			case <-ctx.Done():
 			}
 		}(i, task.Probe)
@@ -80,6 +82,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			}
 			if next.err == nil {
 				results[next.index].State = "ready"
+				results[next.index].runtimeInstanceID = next.instanceID
 				results[next.index].Detail = "本实例分析器 Info 协议与模型元数据验证通过"
 			} else {
 				results[next.index].State = "failed"
@@ -88,6 +91,25 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 		}
 	}
 	return results
+}
+
+// All four fixed Info paths must report the same valid process-boot session.
+// This is self-reported local coherence, never host-token binding or task proof.
+func photoHostModelInstanceCoherent(checks []photoHostModelInfoCheck) bool {
+	ids := [...]string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"}
+	if len(checks) != len(ids) {
+		return false
+	}
+	session := checks[0].runtimeInstanceID
+	if !photointelligence.ValidAnalyzerRuntimeInstanceID(session) {
+		return false
+	}
+	for i, id := range ids {
+		if checks[i].ID != id || checks[i].State != "ready" || checks[i].runtimeInstanceID != session {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelInfoCheck {
@@ -101,39 +123,51 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 		{ID: "photo-creative", Configured: s.PhotoCreativeAnalyzer != nil},
 	}
 	if s.PhotoFaceAnalyzer != nil {
-		tasks[0].Probe = func(ctx context.Context) error {
+		tasks[0].Probe = func(ctx context.Context) (string, error) {
 			info, err := s.PhotoFaceAnalyzer.Info(ctx)
 			if err != nil {
-				return err
+				return "", err
 			}
-			return photointelligence.ValidateFaceAnalyzerInfo(info)
+			if err := photointelligence.ValidateFaceAnalyzerInfo(info); err != nil {
+				return "", err
+			}
+			return info.RuntimeInstanceID, nil
 		}
 	}
 	if s.PhotoSmartAnalyzer != nil {
-		tasks[1].Probe = func(ctx context.Context) error {
+		tasks[1].Probe = func(ctx context.Context) (string, error) {
 			info, err := s.PhotoSmartAnalyzer.Info(ctx)
 			if err != nil {
-				return err
+				return "", err
 			}
-			return photointelligence.ValidateSmartAnalyzerInfo(info)
+			if err := photointelligence.ValidateSmartAnalyzerInfo(info); err != nil {
+				return "", err
+			}
+			return info.RuntimeInstanceID, nil
 		}
 	}
 	if s.PhotoSemanticAnalyzer != nil {
-		tasks[2].Probe = func(ctx context.Context) error {
+		tasks[2].Probe = func(ctx context.Context) (string, error) {
 			info, err := s.PhotoSemanticAnalyzer.Info(ctx)
 			if err != nil {
-				return err
+				return "", err
 			}
-			return photointelligence.ValidateSemanticAnalyzerInfo(info)
+			if err := photointelligence.ValidateSemanticAnalyzerInfo(info); err != nil {
+				return "", err
+			}
+			return info.RuntimeInstanceID, nil
 		}
 	}
 	if s.PhotoCreativeAnalyzer != nil {
-		tasks[3].Probe = func(ctx context.Context) error {
+		tasks[3].Probe = func(ctx context.Context) (string, error) {
 			info, err := s.PhotoCreativeAnalyzer.Info(ctx)
 			if err != nil {
-				return err
+				return "", err
 			}
-			return photointelligence.ValidateCreativeAnalyzerInfo(info)
+			if err := photointelligence.ValidateCreativeAnalyzerInfo(info); err != nil {
+				return "", err
+			}
+			return info.RuntimeInstanceID, nil
 		}
 	}
 	return runPhotoHostModelInfoChecks(ctx, tasks)

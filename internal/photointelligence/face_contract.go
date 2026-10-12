@@ -46,6 +46,7 @@ type FaceAnalyzerInfo struct {
 	EmbeddingFormat     string                   `json:"embedding_format"`
 	EmbeddingDimensions int                      `json:"embedding_dimensions"`
 	Runtime             *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	RuntimeInstanceID   string                   `json:"runtime_instance_id,omitempty"`
 }
 
 type FaceAnalysisTask struct {
@@ -80,6 +81,9 @@ func ValidateFaceAnalyzerInfo(info FaceAnalyzerInfo) error {
 			"unsupported face analyzer protocol version %d",
 			info.ProtocolVersion,
 		)
+	}
+	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {
 		return errors.New("face analyzer name is required")

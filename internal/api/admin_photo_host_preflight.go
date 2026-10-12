@@ -21,16 +21,17 @@ type adminPhotoHostPreflightCheck struct {
 }
 
 type adminPhotoHostPreflightDTO struct {
-	CheckedAt            time.Time                      `json:"checked_at"`
-	Action               string                         `json:"action"`
-	DesiredRevision      uint64                         `json:"desired_revision"`
-	LocalChecksComplete  bool                           `json:"local_checks_complete"`
-	HostObserved         bool                           `json:"host_observed"`
-	HostControlObserved  bool                           `json:"host_control_observed"`
-	ApplySupported       bool                           `json:"apply_supported"`
-	Checks               []adminPhotoHostPreflightCheck `json:"checks"`
-	HostRevisionVerified bool                           `json:"host_revision_verified"`
-	ModelInfoChecks      []photoHostModelInfoCheck      `json:"model_info_checks"`
+	CheckedAt             time.Time                      `json:"checked_at"`
+	Action                string                         `json:"action"`
+	DesiredRevision       uint64                         `json:"desired_revision"`
+	LocalChecksComplete   bool                           `json:"local_checks_complete"`
+	HostObserved          bool                           `json:"host_observed"`
+	HostControlObserved   bool                           `json:"host_control_observed"`
+	ApplySupported        bool                           `json:"apply_supported"`
+	Checks                []adminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified  bool                           `json:"host_revision_verified"`
+	ModelInfoChecks       []photoHostModelInfoCheck      `json:"model_info_checks"`
+	ModelInstanceCoherent bool                           `json:"model_instance_coherent"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -126,6 +127,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	if hasGate && photoHostModelInfoAllowed(desired, gate, hasGate, s.photoHostApplyReceipt(gate)) {
 		report.HostRevisionVerified = true
 		report.ModelInfoChecks = s.probePhotoHostModelInfo(c.Request.Context())
+		report.ModelInstanceCoherent = photoHostModelInstanceCoherent(report.ModelInfoChecks)
 		// A newer desired revision or host drift detected during the probes
 		// must not publish stale green model evidence.
 		latest, desiredErr := s.readPhotoHostDesired(c.Request.Context())
@@ -135,6 +137,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 			latest.Revision != desired.Revision || latestGate.RequestID != gate.RequestID {
 			report.HostRevisionVerified = false
 			report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
+			report.ModelInstanceCoherent = false
 		}
 	}
 	if report.HostRevisionVerified {
