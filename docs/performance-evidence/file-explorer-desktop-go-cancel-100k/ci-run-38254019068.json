@@ -1,0 +1,428 @@
+{
+  "workload_id": "P037/M005-f",
+  "status": "Accepted CURRENT on measured source, AFTER=N/A, product unchanged. Must repeat exact head native and full CI after evidence commit.",
+  "source": {
+    "repo": "lazyxu/xdrive",
+    "sha": "08d6f4e0db1469438add7964aecb1069216632cd",
+    "parent": "e00038d3a22e96dbabb43085fd19733d9c126bb0",
+    "native_ci": "https://github.com/lazyxu/xdrive/actions/runs/38254019068",
+    "native_job_id": 114827290948,
+    "artifact": "https://github.com/lazyxu/xdrive/actions/runs/38254019068/artifacts/11749527989",
+    "full_ci": "https://github.com/lazyxu/xdrive/actions/runs/38254019751",
+    "invalid_harness_ci": [
+      "https://github.com/lazyxu/xdrive/actions/runs/38252660274",
+      "https://github.com/lazyxu/xdrive/actions/runs/38253465403"
+    ],
+    "GitLab_not_executed": true
+  },
+  "evidence_method": "Lossless parse of complete FILEEXPLORER_DESKTOP_GO_CANCEL_100K_SUMMARY stdout from successful native job.",
+  "workload": {
+    "true_electron_renderer_main_preload_agent_gin": true,
+    "postgresql_17": true,
+    "logical_files": 100000,
+    "distinct_physical_CAS_JPEGs_per_fixture": 16,
+    "real_signed_streams_per_case": 6,
+    "initial_bytes_per_stream": 256,
+    "artificial_body_hold_ms": 1500,
+    "independent_fixtures": 3,
+    "three_actions": [
+      "virtual-scroll",
+      "app-switch",
+      "window-destroy"
+    ],
+    "case_count": 9
+  },
+  "frozen_budgets": {
+    "cases": 9,
+    "expectedStartedPerCase": 6,
+    "expectedContextDonePerCase": 6,
+    "maxNotificationMs": 160,
+    "activeOldHandlersAt160ms": 0,
+    "staleBytesAt160ms": 0,
+    "agentRssGrowthMaxBytes": 134217728,
+    "recoveredPage": 200,
+    "totalRange": 100000
+  },
+  "result": {
+    "real_54_http_started": 54,
+    "go_ctx_done": 54,
+    "go_cancelled_handlers": 54,
+    "max_go_notification_ms": 72.082,
+    "old_handlers_at_160ms": 0,
+    "wasted_old_bytes": 0,
+    "max_agent_rss_growth_bytes": 5881856,
+    "per_mode_n3": [
+      {
+        "mode": "virtual-scroll",
+        "n": 3,
+        "GoNotificationMs": [
+          42.05,
+          72.082,
+          55.905
+        ],
+        "medianGoNotificationMs": 55.905,
+        "maxGoNotificationMs": 72.082,
+        "goCtxDone": 18,
+        "wastedBytes": 0
+      },
+      {
+        "mode": "app-switch",
+        "n": 3,
+        "GoNotificationMs": [
+          41.438,
+          71.772,
+          35.341
+        ],
+        "medianGoNotificationMs": 41.438,
+        "maxGoNotificationMs": 71.772,
+        "goCtxDone": 18,
+        "wastedBytes": 0
+      },
+      {
+        "mode": "window-destroy",
+        "n": 3,
+        "GoNotificationMs": [
+          5.382,
+          6.463,
+          4.718
+        ],
+        "medianGoNotificationMs": 5.382,
+        "maxGoNotificationMs": 6.463,
+        "goCtxDone": 18,
+        "wastedBytes": 0
+      }
+    ],
+    "all_9_recovered_owner_pages": true,
+    "accepted": true
+  },
+  "limitations": "Actual 100k Node metadata but only 16 actual JPEG original files; no 100k physical image decode, H264/Live/RAW/HEVC, physical Windows, WAN, durable task cancellation or Race proof",
+  "original_complete_native_summary": {
+    "id": "P037/M005-fileexplorer-desktop-real-100k-request-cancel",
+    "status": "Measured CURRENT only, no product change, AFTER=N/A",
+    "platform": "native Linux Xvfb Electron Renderer/Preload/Main -> Go Agent -> Gin/PG17/CAS",
+    "fixtures": 3,
+    "modes": [
+      "virtual-scroll",
+      "app-switch",
+      "window-destroy"
+    ],
+    "cases": 9,
+    "logicalFiles": 100000,
+    "realPhysicalJPEGsPerFixture": 16,
+    "started": 54,
+    "actualGoContextDone": 54,
+    "canceledHandlers": 54,
+    "wastedOldBytes": 0,
+    "worstGoNotificationMs": 72.082,
+    "maxAgentRssGrowthBytes": 5881856,
+    "results": [
+      {
+        "sample": 1,
+        "mode": "virtual-scroll",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 27,
+          "extent": 3599439
+        },
+        "action": {
+          "before": 0,
+          "after": 1799719,
+          "delta": 1799719,
+          "extent": 3599439
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 42.05,
+        "checkedAfterActionMs": 160.6725120000001,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 5881856
+      },
+      {
+        "sample": 1,
+        "mode": "app-switch",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "clicked": true,
+          "wasFiles": true,
+          "filesStillMounted": false
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 41.438,
+        "checkedAfterActionMs": 161.31748200000004,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 5881856
+      },
+      {
+        "sample": 1,
+        "mode": "window-destroy",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "destroyed": true
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 5.382,
+        "checkedAfterActionMs": 160.88396499999988,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 5881856
+      },
+      {
+        "sample": 2,
+        "mode": "virtual-scroll",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "before": 0,
+          "after": 1799691,
+          "delta": 1799691,
+          "extent": 3599383
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 72.082,
+        "checkedAfterActionMs": 161.553759,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3780608
+      },
+      {
+        "sample": 2,
+        "mode": "app-switch",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "clicked": true,
+          "wasFiles": true,
+          "filesStillMounted": false
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 71.772,
+        "checkedAfterActionMs": 161.16638799999987,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3780608
+      },
+      {
+        "sample": 2,
+        "mode": "window-destroy",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "destroyed": true
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 6.463,
+        "checkedAfterActionMs": 160.36756200000013,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3780608
+      },
+      {
+        "sample": 3,
+        "mode": "virtual-scroll",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 27,
+          "extent": 3599439
+        },
+        "action": {
+          "before": 0,
+          "after": 1799719,
+          "delta": 1799719,
+          "extent": 3599439
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 55.905,
+        "checkedAfterActionMs": 160.7187090000001,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3756032
+      },
+      {
+        "sample": 3,
+        "mode": "app-switch",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 27,
+          "extent": 3599439
+        },
+        "action": {
+          "clicked": true,
+          "wasFiles": true,
+          "filesStillMounted": false
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 35.341,
+        "checkedAfterActionMs": 160.70639099999994,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3756032
+      },
+      {
+        "sample": 3,
+        "mode": "window-destroy",
+        "source": "actual Electron Renderer/Preload/Main -> Go Agent IPC -> authenticated Gin/PostgreSQL17/local CAS",
+        "data": {
+          "logicalFiles": 100000,
+          "distinctPhysicalJPEGs": 16,
+          "initialStreams": 6
+        },
+        "initial": {
+          "visibleDOMItems": 29,
+          "extent": 3599383
+        },
+        "action": {
+          "destroyed": true
+        },
+        "startedRequests": 6,
+        "firstBytesTransferred": 1536,
+        "contextDone": 6,
+        "cancelledHandlers": 6,
+        "stillActiveHandlersAt160ms": 0,
+        "wastedBytesAfterAction": 0,
+        "worstGoContextNotificationMs": 4.718,
+        "checkedAfterActionMs": 160.31631299999992,
+        "passed": true,
+        "recovery": {
+          "totalCount": 100000,
+          "returned": 200
+        },
+        "agentRssGrowthBytes": 3756032
+      }
+    ],
+    "budgets": {
+      "cases": 9,
+      "expectedStartedPerCase": 6,
+      "expectedContextDonePerCase": 6,
+      "maxNotificationMs": 160,
+      "activeOldHandlersAt160ms": 0,
+      "staleBytesAt160ms": 0,
+      "agentRssGrowthMaxBytes": 134217728,
+      "recoveredPage": 200,
+      "totalRange": 100000
+    },
+    "passed": true,
+    "exclusions": "Actual 100k Node metadata but only 16 actual JPEG original files; no 100k physical image decode, H264/Live/RAW/HEVC, physical Windows, WAN, durable task cancellation or Race proof"
+  }
+}
