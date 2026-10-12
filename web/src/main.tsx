@@ -7,6 +7,7 @@ import type {
   XDriveGalleryRendererTraceScenario,
 } from '@xdrive/ui/mui/perf'
 import App from './App'
+import { registerXDrivePwa } from './pwaRuntime'
 import './styles.css'
 
 const APPEARANCE_KEY = 'xdrive.appearance'
@@ -138,4 +139,5 @@ if (realGalleryFoldPerf) {
       <Root />
     </React.StrictMode>,
   )
+  registerXDrivePwa()
 }

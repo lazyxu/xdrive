@@ -12,6 +12,10 @@ For every follow-up request to "continue" an ongoing development, audit, or CI/P
 
 The progress report is required even when no code changes are possible. Follow the provider-specific GitHub/GitLab delivery and single-work-commit rules below; do not claim a GitLab push or cleanup if it was not actually performed.
 
+## PWA safe-delivery policy (2026-10-12)
+
+The dedicated PWA audit and release gates are in [docs/pwa-delivery.md](docs/pwa-delivery.md). Preserve the 52px full-screen App Frame, the shared Web/Mobile Web Files/Gallery REST/controllers/ranges and existing durable Server tasks. Register only in a secure production Web context; never persist auth, API, thumbnails, original file bytes, downloads, Range or private Share responses in the public PWA Service Worker cache. Never auto-reload a running transfer/Viewer or claim iOS lock-screen background work. Treat installed-mode native-device acceptance separately from Manifest/source/Chromium tests. Keep PWA changes off unrelated performance/race/gallery branches.
+
 ## Push/Pull apps and device-local backup ownership (2026-10-10)
 
 Read `docs/sync-folder-apps.md` and `docs/local-folder-push.md` before changing synchronization-folder UI, routes, Source handlers, device registration, or execution permissions.
