@@ -675,10 +675,18 @@ func (m *Manager) Clear() {
 	m.roots = make(map[string]struct{})
 	m.touchLocked()
 	m.mu.Unlock()
-	// Account switching must still abort old I/O before Clear returns.
+	// Dispatch independent old-account cancellations concurrently. A slow
+	// transport's teardown must not delay cancellation of unrelated I/O.
+	// Still join every callback before Clear returns to preserve ownership.
+	var pending sync.WaitGroup
+	pending.Add(len(cancels))
 	for _, cancel := range cancels {
-		cancel()
+		go func(cancel context.CancelFunc) {
+			defer pending.Done()
+			cancel()
+		}(cancel)
 	}
+	pending.Wait()
 }
 func (m *Manager) ClearHistory(scopes ...string) {
 	if m == nil {
