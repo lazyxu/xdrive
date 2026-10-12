@@ -270,6 +270,42 @@ export class ApiError extends Error {
   }
 }
 
+
+/**
+ * A thumbnail generator can return 503 with Retry-After during short queue
+ * overloads. Wait at most 8s and retry just ONCE, using cache bypass to
+ * defeat stale negative responses cached by older xDrive Servers. The same
+ * AbortSignal owns the network request and the intervening wait.
+ */
+async function xDriveThumbnailRetryAfter503(
+  response: Response,
+  retryFetch: () => Promise<Response>,
+  signal?: AbortSignal,
+): Promise<Response> {
+  if (response.status !== 503) return response
+  const retryAfter = response.headers.get('Retry-After')?.trim()
+  if (!retryAfter || !/^[1-8]$/.test(retryAfter)) return response
+  signal?.throwIfAborted()
+  await response.body?.cancel().catch(() => undefined)
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(signal?.reason ?? new DOMException('Aborted', 'AbortError'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, Number(retryAfter) * 1000)
+    if (signal?.aborted) {
+      onAbort()
+      return
+    }
+    signal?.addEventListener('abort', onAbort, { once: true })
+  })
+  signal?.throwIfAborted()
+  return retryFetch()
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? ''
 
 
@@ -1828,8 +1864,8 @@ export class XDriveApi {
       ? revision : undefined
     const revisionQuery = sourceRevision ? `&revision=${sourceRevision}` : ''
     const path = `/api/v1/media/items/${nodeID}/thumbnail?v=4${revisionQuery}`
-    const send = () => fetch(`${API_BASE}${path}`, {
-      cache: sourceRevision ? 'default' : 'no-cache',
+    const send = (cacheOverride?: RequestCache) => fetch(`${API_BASE}${path}`, {
+      cache: cacheOverride ?? (sourceRevision ? 'default' : 'no-cache'),
       headers: this.session.accessToken
         ? { Authorization: `Bearer ${this.session.accessToken}` }
         : undefined,
@@ -1841,6 +1877,11 @@ export class XDriveApi {
       signal?.throwIfAborted()
       response = await send()
     }
+    // Only the Server-directed 503 path retries; never replay a permanent
+    // missing/unsupported/revision-conflict result. One bounded retry max.
+    response = await xDriveThumbnailRetryAfter503(
+      response, () => send('no-store'), signal,
+    )
     if (!response.ok) {
       throw new ApiError(
         response.status,

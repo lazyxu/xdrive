@@ -357,6 +357,9 @@ func writeMediaDerivativeError(
 	if c.Request.Context().Err() != nil {
 		return
 	}
+	// mediaThumbnail may already have advertised one-hour positive caching.
+	// Never cache a negative derivative response (including queue-full 503).
+	c.Header("Cache-Control", "private, no-store")
 	switch {
 	case errors.Is(err, background.ErrQueueFull):
 		c.Header("Retry-After", "1")

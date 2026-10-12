@@ -1367,7 +1367,7 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		"poster.mov",
 		string(testLIVPMOV("poster-cache-test")),
 	)
-	request(
+	missingVideoPoster := request(
 		t,
 		router,
 		http.MethodGet,
@@ -1376,6 +1376,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		nil,
 		http.StatusNotFound,
 	)
+	if got := missingVideoPoster.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("cold video poster 404 must not enter the browser cache: %q", got)
+	}
 	posterBytes := testLIVPJPEG(t, "poster-cache-test")
 	requestWithHeaders(
 		t,
@@ -1404,6 +1407,9 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 	}
 	if got := posterResponse.Header().Get("Content-Length"); got != fmt.Sprint(len(posterBytes)) {
 		t.Fatalf("video poster Content-Length=%q want=%d", got, len(posterBytes))
+	}
+	if got := posterResponse.Header().Get("Cache-Control"); got != "private, max-age=3600" {
+		t.Fatalf("successful video poster should preserve positive caching: %q", got)
 	}
 	requestWithHeaders(
 		t,

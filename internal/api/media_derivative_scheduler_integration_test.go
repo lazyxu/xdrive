@@ -284,6 +284,9 @@ func TestMediaDerivativesUseSchedulerSingleflightAndBackpressure(t *testing.T) {
 	if got := res.Header().Get("Retry-After"); got != "1" {
 		t.Fatalf("Retry-After=%q want=1", got)
 	}
+	if got := res.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("transient thumbnail 503 must not enter the browser cache: %q", got)
+	}
 	if after := store.putCount(mediapkg.DefaultThumbnailEdge); after != before {
 		t.Fatalf(
 			"queue-full request performed synchronous derivative work: before=%d after=%d",

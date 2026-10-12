@@ -1165,6 +1165,9 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 		) {
 			return
 		}
+		// A poster may be generated and stored moments later; do not let the
+		// cold 404 inherit the one-hour policy for successful binary responses.
+		c.Header("Cache-Control", "private, no-store")
 		fail(c, http.StatusNotFound, "video poster is not cached")
 		return
 	}
@@ -1216,6 +1219,7 @@ func (s *Server) mediaThumbnail(c *gin.Context) {
 		"image/jpeg",
 		metadata.UpdatedAt,
 	) {
+		c.Header("Cache-Control", "private, no-store")
 		fail(c, http.StatusInternalServerError, "generated thumbnail is unavailable")
 	}
 }
