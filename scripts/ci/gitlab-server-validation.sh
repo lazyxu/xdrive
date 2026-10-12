@@ -23,6 +23,8 @@ bash scripts/test-server-verify.sh
 bash -n scripts/server-control.sh
 bash -n scripts/test-photo-intelligence-host-status.sh
 bash scripts/test-photo-intelligence-host-status.sh
+bash -n scripts/test-photo-host-enable-control.sh
+bash scripts/test-photo-host-enable-control.sh
 bash -n scripts/server-doctor.sh
 bash -n scripts/test-server-doctor.sh
 bash scripts/test-server-doctor.sh

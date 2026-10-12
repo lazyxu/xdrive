@@ -239,6 +239,12 @@ export type XDrivePhotoHostConfig = {
   host_observed: boolean
   host_runtime_state: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
   host_profile_configured?: boolean
+  // Host Manager capability/revision observation only. No admin /apply yet.
+  host_control_supported?: boolean
+  host_control_state?: 'unavailable' | 'idle' | 'queued' | 'running' | 'success' | 'failed'
+  host_control_revision?: number
+  host_applied_revision?: number
+  host_control_profile_verified?: boolean
 }
 export type XDrivePhotoHostUpdate = { revision: number; enabled: boolean }
 export type XDrivePhotoHostRevisionPage = {

@@ -152,6 +152,27 @@ func TestAdminPhotoHostDesiredAuditedRevisionRollbackAndNoHostApply(t *testing.T
 		cfg.ApplyState != "pending" || cfg.ApplySupported {
 		t.Fatalf("host-only observation pretended saved host revision applied: %+v", cfg)
 	}
+	// Host-side success is deliberately not enough until the Server implements
+	// an audited exact-revision request token bridge in a follow-on phase.
+	fixedHostReport := photoHostControlStatus{
+		Supported: true, State: "success", Revision: 1, AppliedRevision: 1,
+		Enabled: true, ProfileVerified: true, ObservedHostState: "healthy",
+		RequestID: "0123456789abcdef01234567",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	report, err := json.Marshal(fixedHostReport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, photoHostControlStatusName), report, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg = get()
+	if !cfg.HostControlSupported || cfg.HostControlState != "success" ||
+		cfg.HostAppliedRevision != 1 || !cfg.HostControlProfileVerified ||
+		cfg.ApplyState != "pending" || cfg.ApplySupported {
+		t.Fatalf("host-side observation falsely authorized saved revision apply: %+v", cfg)
+	}
 	if res := request(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); res.Code != 404 {
 		t.Fatalf("dangerous photo host apply endpoint exposed: %d", res.Code)
 	}
