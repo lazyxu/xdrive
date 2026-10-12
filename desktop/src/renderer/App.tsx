@@ -983,8 +983,8 @@ export default function App({
           supported: true,
           cache_bytes: browserResult.data.used_bytes,
           clear_supported: true,
-          scope_label: 'Electron HTTP 缓存',
-          detail: 'Desktop 的浏览器缓存由 Electron 单独管理；清理不会删除 Cookie、登录状态、token、主题、布局或其他应用偏好。',
+          scope_label: '当前设备 Electron HTTP 缓存（非账号专属）',
+          detail: '范围是当前设备的 xDrive Electron 应用会话 HTTP 缓存，不按当前登录账号隔离；可能包含该会话先前账号访问过的资源。与本机 Agent 文件缓存相互独立。清理不会删除 Cookie、登录状态、token、主题、布局或其他应用偏好。',
         },
         desktopStorage: {
           supported: cacheResult.ok || treeResult.ok,
