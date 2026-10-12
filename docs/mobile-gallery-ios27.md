@@ -620,3 +620,16 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **修复：** 以经过 `ParseLIVPContainerDescriptor` 验证的 still MIME 为唯一有效缩略图源 MIME，统一格式可支持性、ETag、StorageKey、派生任务版本及 `ThumbnailJPEG/ThumbnailWithAlpha` 策略。嵌入式 JPEG 的 LIVP 仍用旧 v3 共享缓存；内嵌 HEIC/HEIF 正确切换到隔离 v4 `.thumb`，避免重用错误的 v3 衍生结果；损坏描述符不猜测类型，不新增 MIME 外部来源、后台扫描或媒体身份模型。普通 Web/Mobile Web/Desktop 都复用现有同一 Go Server 和 `MediaGalleryDataSource`，无新 API、无图片墙全量渲染、无对原片的修改、无自动重试；全屏 App Frame 和 52px 全局标题栏不变。
 
 **验收门槛：** Go 回归分别核对 JPEG/HEIC/HEIF LIVP、错误描述符、旧新缓存键隔离、ETag/derivative version 一致性；完整 Desktop/Web/Go/Windows/打包与 Final Gate 才可合并。真实 HEIC/LIVP 原始文件、用户截图缺失的三张 still、iOS 27 Safari/PWA 视觉及 VoiceOver 尚未提供原始测试证据，继续标注待验，不能虚称灰图原件已经恢复。下一步应以被影响 Node 的真实缩略图 HTTP 状态、CAS still/motion 与派生队列为边界做证据驱动的补修。
+
+
+## P0-L4b · 实况封面在媒体队列短暂繁忙时的真实恢复（2026-10-12）
+
+**状态：修复候选，精确工作提交 PR CI / Final Gate 及 iOS 27 真机尚待执行。** 此前 P0-L1 #1479、P0-L2 #1482、P0-L3 #1483、P0-L4a #1490 均已合并并清理分支。源码与已有原生 Gin 集成用例证明：当缩略图派生任务队列满时，Go 返回 HTTP503 + `Retry-After: 1`，但 `mediaThumbnail` 在失败之前已给成功图片设置 `Cache-Control: private, max-age=3600`，导致失败响应沿用 1 小时正向缓存；Web/Mobile Web 的唯一 `XDriveApi.mediaThumbnail` 抛错后，共享 AsyncThumbnail 直接进入错误占位，当前可见格不会恢复。这是**可重现的瞬时错误处理缺陷**，不是对截图中三张原件错误原因的猜测。
+
+**P0-L4b 同一后端与 REST 恢复：** 所有媒体派生失败响应（503/504/409/415/500 等）显式 `Cache-Control: private, no-store`；冷视频海报 404 和成功派生后意外 500 不允许继承成功图片缓存；实际成功的缩略图和视频海报继续保留 `private, max-age=3600`。统一 Web REST `mediaThumbnail` 对真实 HTTP503 **仅在合法 `Retry-After` 整数 1–8 秒存在时**，等待一次并以 `cache:'no-store'` 执行**最多一个**后续请求，绕过升级前可能缓存的旧 503。缺少合法信号、404/409/415、无限重试、超过8秒等待一律拒绝；使用同一视口 `AbortSignal`，滚动移出、账号/页面变更或窗口关闭应立刻清除等待并阻止重试。原 `XDriveMediaThumbnailScheduler` 仍限制视口请求并发 6；无全量 100k 扫描或额外永久任务。相同 Web Adapter 供 Mobile Web 和宽屏 Web 使用，Desktop Agent 平台传输保持独立、Go 后端相同；不改变全屏 App Frame、52px 顶栏、MUI 网格、Live 身份/导出或 PhotoResource。
+
+**新验收：** 对已有实际 PostgreSQL17/Gin 调度队列满 503 用例，补 `Retry-After:1` 和响应 `no-store`；真实视频海报 GET 404→PUT→GET200 集成链验证错误不缓存、成功仍可缓存。新 `desktop/tests/media-gallery-thumbnail-http-retry.cjs` 从实际 Web `api.ts` 抽取执行已提交的原函数，测试合法一次延迟重试、恶性/永久状态完全不重试、第二次503后立即终止、Abort 清计时器、共享 DataSource/虚拟化和52px约束。只能把 CI 日志称为自动测试，不可冒充真实 iOS27 Safari/PWA/VoiceOver 或截图里三张原件的字节恢复。
+
+**后续未解决：** 真实 HEIC/HEIF 的实体 LIVP 解码仍缺用户原件与具体 Node/HTTP 数据，真正 404/415/500/504 需查看 owner-scoped CAS 原件、MediaMetadata.index_error、资源 still/motion 与后台派生错误后再最小化修复。不得把本次一次性 503 恢复当成全部灰图已经解决；不要重复做 P032/P033 已归档的 100k 负载或自行声称性能提升。
+
+**P0-L4b 首个源准确红灯与 CORS 修订（2026-10-12）：** [PR #1497 首次 CI #38212695632](https://github.com/lazyxu/xdrive/actions/runs/38212695632) 在 Desktop 源码契约测试中出现首红：已有 `media-gallery-thumbnail-http-revision-wiring.cjs` 仍只识别旧版 `cache: sourceRevision ? 'default' : 'no-cache'` 字符串，无法识别本轮保留原行为并允许强制刷新的 `cacheOverride ?? (sourceRevision ? 'default' : 'no-cache')`。新增真实 Web 重试的五个测试全部通过，故首红是测试静态合同未同步，而不是网络重试未生效；**不能因此称完整 CI 通过**。此外发现实际跨域缺陷：Go Server `cors()` 对允许的 Web Origin 暴露 ETag 等头，但未暴露 `Retry-After`，跨域浏览器无法读到 503 等待指令。现于**同一个工作提交**更新旧版源码契约测试（同时严格验证原默认缓存与 `no-store` 重试），向允许 Origin 的 CORS 暴露 `Retry-After`，新增真实 Gin CORS 测试（允许来源、非允许来源、无 Origin；HTTP503+no-store 保留）。要求重新走新精确提交完整 Web/Go API/Desktop/Windows/Final Gate，不以首红 CI 的部分绿灯代替。截图中原件与 iOS 27 真机仍需额外验证。
