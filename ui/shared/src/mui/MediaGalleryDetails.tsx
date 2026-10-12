@@ -682,6 +682,7 @@ export function XDriveMediaDetailsContent({
                     color="error"
                     variant="outlined"
                     disabled={albumBusy}
+                    sx={{ '@media (max-width:899.95px)': { minHeight: 44 } }}
                     onClick={() => {
                       setAlbumBusy(true)
                       setAlbumError('')
