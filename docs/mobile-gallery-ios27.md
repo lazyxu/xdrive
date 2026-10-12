@@ -716,3 +716,15 @@ P0-L9 #1534 已合入并清理分支，但此前集成样本的 LIVP 静态帧�
 [Exact-head CI #38236577183](https://github.com/lazyxu/xdrive/actions/runs/38236577183) on `99be030c` reached the actual `TestRealHEIC8BitThumbnailPixels` test and decoded the 512×512 real HEIC bytes; `image.DecodeConfig`, `image.Decode` and `Extract` returned valid dimensions and no errors. The assertion at `heic_real_decode_test.go:29` nonetheless required only `image/heic`, while `Extract` truthfully returned `image/heif` for this HEIF-family encoded source on the runner. Both are recognized in existing xDrive media thumbnail policy. **Invalid assertion, not a first-red product decoder regression.** No production-code change was made.
 
 The replacement exact one-work-commit test accepts only the already supported pair `image/heic` / `image/heif`, and then requires one consistent observed MIME through persisted LIVP metadata and direct/signed still transport; it does **not** skip actual pixels, disable thumbnail/signed Range/CAS comparisons, lower dimensions, or relax the real DB fixture. Old CI cannot authorize delivery; new exact-head tests/Final Gate and physical affected-file evidence remain required.
+
+
+## P0-L11 · 损坏实况缩略图派生缓存的有限检测与原格式恢复（2026-10-12）
+
+真实 HEIC/LIVP 服务端回归 #1542 已通过 Final Gate 并线性合入；本轮独立排查发现：即使原件和已生成的 still 缩略图曾经正常，恢复/损坏的派生缓存文件仍可能只剩 JPEG 开头或 PNG 部分头。旧 Server 仅因缓存文件可打开就返回 HTTP 200，浏览器因此显示灰图，且同一修订的下次请求继续命中同一坏服务端缓存。最小修复仅在共享 Go 缩略图缓存命中路径做常数大小 JPEG/PNG 文件头尾检查，损坏条目以已有 Scheduler/原文件进行同一 keyed 派生重建，完整真实 HEIC-LIVP/PostgreSQL/CAS 回归断言重新返回有效 512px JPEG，不更改原片/关系/相册/权限。正常图片不全量解码或批量扫描 100k，也不修改唯一的 Web/Mobile Web `MediaGalleryDataSource`、虚拟网格、Viewer、52px 全屏 App Frame。
+
+本修复不能诊断用户截图的三张具体原件；非首尾型内部损坏和浏览器过去已缓存的坏 HTTP 200 需要后续有界证据及针对性措施。真机 iOS 27 Safari/PWA/VoiceOver 视觉/手势 1:1 仍未运行，完整 GitHub 精确 SHA CI/Final Gate 是合并门禁。
+
+
+### P0-L11 first exact-head CI: test fixture type mismatch
+
+[First CI #38240121520](https://github.com/lazyxu/xdrive/actions/runs/38240121520) for work head `caa10f33` failed `go-linux-api` and `go-windows` at compilation: `media_livp_real_heic_integration_test.go:174` passed a `nodeDTO` (from `uploadTestFile`) to the existing `mediaThumbnailStorageKey` function expecting a `meta.Node`. This is **an invalid test fixture/wiring assumption, not a product behavior first-red**: the integration test did not execute its malformed-cache assertions. Production code is unchanged by this correction. The fixture now loads the current owner-scoped `meta.Node` with File preloaded from the real PostgreSQL schema before computing the same physical derivative key; all original HEIC/JPEG recovery/CAS checks remain intact. Old-head CI is not authoritative; a new exact single-commit HEAD must pass full checks and Final Gate.

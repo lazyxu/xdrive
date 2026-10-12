@@ -56,8 +56,11 @@ func (s *Server) ensureMediaDerivative(
 		return "", err
 	}
 	if cached, openErr := s.Store.Open(ctx, key); openErr == nil {
+		valid := mediaDerivativeCacheValid(cached, key)
 		_ = cached.Close()
-		return key, nil
+		if valid {
+			return key, nil
+		}
 	}
 
 	taskKey := fmt.Sprintf(
@@ -134,6 +137,10 @@ func (s *Server) ensureMediaDerivative(
 	if err != nil {
 		return "", fmt.Errorf("open generated media derivative: %w", err)
 	}
+	if !mediaDerivativeCacheValid(cached, key) {
+		_ = cached.Close()
+		return "", errors.New("generated media derivative has an invalid image envelope")
+	}
 	_ = cached.Close()
 	return key, nil
 }
@@ -187,8 +194,11 @@ func (s *Server) generateMediaDerivative(
 		return err
 	}
 	if cached, openErr := s.Store.Open(ctx, key); openErr == nil {
+		valid := mediaDerivativeCacheValid(cached, key)
 		_ = cached.Close()
-		return nil
+		if valid {
+			return nil
+		}
 	}
 
 	file, err := s.Store.Open(ctx, current.File.StorageKey)
@@ -313,6 +323,11 @@ func (s *Server) tryServeMediaDerivative(
 		return false
 	}
 	defer file.Close()
+	// A readable file is not necessarily a usable JPEG/PNG derivative.
+	// Do not send or positively cache a known-truncated thumbnail body.
+	if !mediaDerivativeCacheValid(file, key) {
+		return false
+	}
 	if strings.TrimSpace(contentType) == "" {
 		contentType = "image/jpeg"
 	}
