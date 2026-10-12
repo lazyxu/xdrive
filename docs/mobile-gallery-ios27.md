@@ -603,3 +603,11 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **本阶段最小修复：** 只在共享 `ui/shared/src/mui/MediaGalleryPreviewMedia.tsx` 的图库 async image 元素挂接 `onError={() => setFailed(true)}`，直接复用现有 React fallback，保持源数据、无进度条伪完成、正常加载、图片 URL 所有权、缩略图请求取消及来源 revision fence。**不自动重试、不额外请求原始图片、不对 100k 列表扫图、不改媒体后端或静态 API。** 新的 `desktop/tests/media-gallery-thumbnail-img-error.cjs` 使用实际生产组件的 React mounted 状态机，验证 URL 已成功但图片失败的回退、零重复网络请求、同 Node 新 revision 可重新获取、无 Node/已有请求拒绝的回退与正常可显示路径；全套测试/CI 仍为合入门槛。Web/Mobile Web/Desktop 继续使用同一共享组件、Server API/Agent 适配与 VirtualCollection/Grid/Timeline，全屏 App Frame 与 52px 顶栏不变。
 
 **仍待真实原件诊断：** 截图中的 3 张灰格还可能来自 `has_thumbnail=false`（Server 格式支持标记，非缓存存在证明）、后端缩略图生成失败、原始 still CAS 缺失、陈旧 revision、无可解码资源或网络取消。需要相关 Node IDs、实际状态码、索引/派生任务与 PhotoResource still/motion 的真实证据才可定位具体起因，不应把这个浏览器 fallback 修复称作灰格彻底解决。原生 Safari/PWA、VoiceOver、真机像素 1:1 和实体 Live 图片解码状态单独 not-run。
+
+## P0-L3 · 实况角标仅在静态封面成功加载后显示（2026-10-12）
+
+**状态：共享界面修复候选，完整精确工作 SHA CI / Final Gate 及真实 iOS 27 真机仍需另验。** #1479 已把六列年份图库中的黑色「实况」文字胶囊改成 20px 非交互图标，#1482 已为图片 `<img>` 解码失败补已有 fallback。但截图中灰色格子仍带「实况」装饰角标，和已有 FileExplorer Thumbnail 的“只有实际缩略图才露出角标”规则不一致。无图片的灰格不等于成功加载的照片，应隐藏此**装饰层**而不是误改 Live Photo 类型或媒体 API。
+
+**仅共享 UI：** `MediaTile` 使用 `node_id:revision` 标识当前已成功加载的实况静态图；`XDriveMediaAsyncThumbnail` 通过真实浏览器 `<img onLoad>`（自然宽度非 0）报告就绪，开始加载、失效、`onError` 报告不可用。只有当前修订就绪且非选择模式才显示 20px 实况图标；无图、503/415/404/409、坏 Blob、滚动取消或缩略图正在加载时不渲染装饰图标。逻辑 `item.live_photo / asset_kind` 原样，整个 Tile 可聚焦元素的 `aria-label=实况照片` 仍保留。图片 Loader 不重试、不增加 HTTP、Blob/Agent IPC 所有权不变，`VirtualCollection`、Grid/Timeline、52px App Frame 完全保持。新/旧版本竞态仅以当前图片 ID+revision 显示角标，旧回调不能令新图显现或隐藏。
+
+**验收：** 实际共享 `MediaTile` / `XDriveMediaAsyncThumbnail` React 挂载回归覆盖图像尚无 src、浏览器 onLoad（自然宽度0与非0）、onError、版本变更、旧回调、选择模式、视频/普通图片与单一共享虚拟化/API，源代码与完整 Web/Desktop/Go/Windows CI 必须精确头绿色。P032/P033 既有 100k 实际性能基线不可借作当前新渲染代码的实测加速，后续若发现 Long Task/内存变化再使用性能登记簿比较。灰格的**原始失败原因仍未确定**，需要相关 Node/真实 HTTP/派生任务/原件 CAS 和有效 still/motion 资源凭据；Safari/PWA/VoiceOver/像素 1:1 仍 not-run。

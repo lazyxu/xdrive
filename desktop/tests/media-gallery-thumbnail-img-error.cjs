@@ -76,6 +76,32 @@ test('P0-L2 real Gallery thumbnail switches to fallback on actual image element 
   await act(async () => { view.unmount() })
 })
 
+
+test('P0-L3 real DOM image load only reports valid visible bytes and preserves a single fetch', async () => {
+  const ready = []
+  let calls = 0
+  const loadThumbnail = async () => { calls++; return 'blob:valid-still' }
+  let tree
+  const element = revision => React.createElement(Thumb, {
+    nodeID: 88, revision, alt: 'IMG_0088.LIVP',
+    loadThumbnail, fallback, onImageReadyChange: value => ready.push(value),
+    revokeOnDispose: false,
+  })
+  await act(async () => { tree = renderer.create(element(1)); await flush() })
+  assert.deepEqual(ready, [false])
+  const loaded = image(tree)
+  assert.equal(loaded.props.src, 'blob:valid-still')
+  await act(async () => { loaded.props.onLoad({ currentTarget: { naturalWidth: 0 } }) })
+  assert.deepEqual(ready, [false], 'an undecoded/zero-width image cannot reveal Live glyph')
+  await act(async () => { loaded.props.onLoad({ currentTarget: { naturalWidth: 512 } }) })
+  assert.deepEqual(ready, [false, true])
+  await act(async () => { loaded.props.onError() })
+  assert.deepEqual(ready, [false, true, false])
+  assert.equal(failed(tree), true)
+  assert.equal(calls, 1, 'new presentation state must never trigger another thumbnail request')
+  await act(async () => { tree.unmount() })
+})
+
 test('P0-L2 changed Node revision recovers from an image error without stale fallback persistence', async () => {
   const requests = []
   const loadThumbnail = async (id, signal, rev) => {
@@ -138,5 +164,9 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   // No browser error path may bypass the authenticated Server/API/Agent transport.
   const thumb = original.slice(start, end)
   assert.doesNotMatch(thumb, /(?:new Image|fetch\(|XMLHttpRequest|preview-ticket)/)
-  assert.match(thumb, /onError=\{\(\) => setFailed\(true\)\}/)
+  assert.match(thumb, /onError=\{\(\) => \{/)
+  assert.match(thumb, /onImageReadyChange\?\.\(false\)/)
+  assert.match(thumb, /setFailed\(true\)/)
+  assert.match(thumb, /onLoad=\{\(event\) => \{/)
+  assert.match(thumb, /event\.currentTarget\.naturalWidth > 0/)
 })

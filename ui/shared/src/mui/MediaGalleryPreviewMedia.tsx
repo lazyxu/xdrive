@@ -30,6 +30,7 @@ export function XDriveMediaAsyncThumbnail({
   loadThumbnail,
   fallback,
   revokeOnDispose = true,
+  onImageReadyChange,
 }: {
   nodeID?: number
   revision?: number
@@ -37,6 +38,7 @@ export function XDriveMediaAsyncThumbnail({
   loadThumbnail: MediaThumbnailLoader
   fallback: ReactNode
   revokeOnDispose?: boolean
+  onImageReadyChange?: (ready: boolean) => void
 }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
@@ -48,6 +50,7 @@ export function XDriveMediaAsyncThumbnail({
     setSrc('')
     setFailed(false)
     setProgress({ loadedBytes: 0, alphaMask: null })
+    onImageReadyChange?.(false)
     if (!nodeID) return () => undefined
     const controller = new AbortController()
 
@@ -72,7 +75,7 @@ export function XDriveMediaAsyncThumbnail({
       controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID, revision, revokeOnDispose])
+  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
@@ -92,7 +95,13 @@ export function XDriveMediaAsyncThumbnail({
       // Fetch/Blob success does not prove that the browser can decode the image.
       // A broken source must leave the spinner/image and show the ordinary
       // Gallery fallback without retrying or fetching full original bytes.
-      onError={() => setFailed(true)}
+      onLoad={(event) => {
+        if (event.currentTarget.naturalWidth > 0) onImageReadyChange?.(true)
+      }}
+      onError={() => {
+        onImageReadyChange?.(false)
+        setFailed(true)
+      }}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
     />
   )

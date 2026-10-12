@@ -18,7 +18,7 @@ assert.ok(labelStart >= 0 && labelEnd > labelStart)
 assert.ok(tileStart >= 0 && tileEnd > tileStart, 'test must render the real shared MediaTile')
 
 const src = [
-  "import { useCallback } from 'react'",
+  "import { useCallback, useState } from 'react'",
   "import { Paper, Box, Stack, Chip, Checkbox, Tooltip, IconButton, Button, Typography, ImageIcon, MovieIcon, StarIcon, StarBorderIcon, XDriveLivePhotoGlyph, XDriveMediaAsyncThumbnail, XDriveMediaAsyncVideoPoster, useMediaQuery, xDriveMediaFallback, xDriveMediaFormatDuration } from './fixture'",
   "type MediaItem = any; type MediaThumbnailLoader = any; type XDriveMediaThumbnailScheduler = any; type XDriveMediaThumbnailPriority = any; type MediaPreviewURLLoader = any; type MediaVideoPosterSaver = any; type XDriveByteProgressHandler = any; type ReactMouseEvent<T> = any",
   gallery.slice(labelStart, labelEnd),
@@ -78,6 +78,12 @@ test('real shared Live Photo tile uses 20px icon-only indicator, not full-width 
     touch = pointer
     let tree
     await act(async () => { tree = renderer.create(React.createElement(MediaTile, props(makeItem()))) })
+    // A metadata-only or still-loading Live Photo must not obscure a
+    // gray placeholder; wait for the actual browser-loaded still.
+    assert.equal(liveBadges(tree).length, 0)
+    const asyncThumb = tree.root.findByType('mounted-async-thumbnail')
+    assert.equal(typeof asyncThumb.props.onImageReadyChange, 'function')
+    await act(async () => { asyncThumb.props.onImageReadyChange(true) })
     assert.equal(liveBadges(tree).length, 1)
     const badge = liveBadges(tree)[0]
     assert.equal(badge.props.sx.width, 20)
@@ -101,8 +107,39 @@ test('fallback or unavailable still retains truthful compact Live type but never
   const missingStill = makeItem({ metadata: { media_kind: 'image', has_thumbnail: false, mime_type: 'image/heic' } })
   await act(async () => { tree = renderer.create(React.createElement(MediaTile, props(missingStill))) })
   assert.equal(tree.root.findByType('mounted-async-thumbnail').props.nodeID, undefined)
-  assert.equal(liveBadges(tree).length, 1)
+  assert.equal(liveBadges(tree).length, 0)
+  assert.equal(tree.root.findByType('mounted-gallery-paper').props['aria-label'],
+    'IMG_0041.HEIC，实况照片')
   assert.equal(chips(tree).filter(c => c.props.label === '实况').length, 0)
+  await act(async () => { tree.unmount() })
+})
+
+
+test('P0-L3 visible Live badge follows image load/error and current Node revision, never stale cache status', async () => {
+  touch = true
+  const rev = (version) => props(makeItem({
+    node: { id: 51, name: 'IMG_0051.LIVP', revision: version },
+  }))
+  let tree
+  await act(async () => { tree = renderer.create(React.createElement(MediaTile, rev(1))) })
+  assert.equal(liveBadges(tree).length, 0)
+  const first = tree.root.findByType('mounted-async-thumbnail')
+  const oldReady = first.props.onImageReadyChange
+  await act(async () => { oldReady(true) })
+  assert.equal(liveBadges(tree).length, 1, 'only successful displayed image enables Live glyph')
+  await act(async () => { oldReady(false) })
+  assert.equal(liveBadges(tree).length, 0, 'image error hides Live glyph')
+  await act(async () => { oldReady(true) })
+  assert.equal(liveBadges(tree).length, 1)
+  await act(async () => { tree.update(React.createElement(MediaTile, rev(2))) })
+  assert.equal(liveBadges(tree).length, 0, 'new version is not yet loaded')
+  await act(async () => { oldReady(true) })
+  assert.equal(liveBadges(tree).length, 0, 'obsolete image callback cannot mark newer Node revision ready')
+  const newReady = tree.root.findByType('mounted-async-thumbnail').props.onImageReadyChange
+  await act(async () => { newReady(true) })
+  assert.equal(liveBadges(tree).length, 1)
+  await act(async () => { oldReady(false) })
+  assert.equal(liveBadges(tree).length, 1, 'late error from obsolete image must not hide current still')
   await act(async () => { tree.unmount() })
 })
 
