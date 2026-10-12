@@ -20,6 +20,9 @@ bash -n scripts/server-restore.sh
 bash -n scripts/server-verify.sh
 bash -n scripts/test-server-verify.sh
 bash scripts/test-server-verify.sh
+bash -n scripts/server-control.sh
+bash -n scripts/test-photo-intelligence-host-status.sh
+bash scripts/test-photo-intelligence-host-status.sh
 bash -n scripts/server-doctor.sh
 bash -n scripts/test-server-doctor.sh
 bash scripts/test-server-doctor.sh

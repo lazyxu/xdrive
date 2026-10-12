@@ -30,6 +30,8 @@ type serviceDependency struct {
 	AutomaticPolicyEffectiveRevision uint64 `json:"automatic_policy_effective_revision,omitempty"`
 	HTTPSConfigured                  *bool  `json:"https_configured,omitempty"`
 	LocalTLSState                    string `json:"local_tls_state,omitempty"`
+	PhotoHostRuntimeState            string `json:"photo_host_runtime_state,omitempty"`
+	PhotoHostProfileConfigured       *bool  `json:"photo_host_profile_configured,omitempty"`
 }
 
 type serviceDependenciesSnapshot struct {
@@ -283,6 +285,17 @@ func (s *Server) adminServiceDependencies(c *gin.Context) {
 		}()
 	}
 	wg.Wait()
+	// One allowlisted, short-lived Docker observation describes the single
+	// optional photo-face container backing all four independent analyzers.
+	// It is separate from each analyzer's live Info response and never
+	// authenticates an arbitrary host action or a desired applied revision.
+	if host, valid := s.readPhotoIntelligenceHostStatus(); valid {
+		for _, i := range []int{3, 4, 5, 8} {
+			services[i].PhotoHostRuntimeState = host.State
+			configured := host.ProfileConfigured
+			services[i].PhotoHostProfileConfigured = &configured
+		}
+	}
 	for i := range services {
 		services[i].ConfigMode, services[i].ApplyMode, services[i].ConfigHint =
 			serviceDependencyConfigContract(services[i].ID)

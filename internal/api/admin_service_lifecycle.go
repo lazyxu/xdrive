@@ -200,6 +200,14 @@ func (s *Server) setServiceLifecycleStates(
 			}
 			// Local host TLS evidence never binds to saved HTTPS desired revision.
 		}
+		// A trusted Host Manager may observe the fixed photo-face container
+		// independently of the Server's analyzer socket and Info() probes.
+		// An observed Docker container is not a verified running model or
+		// an applied admin revision. No observer report remains unknown.
+		if item.Group == "intelligence" &&
+			item.PhotoHostRuntimeState != "" && item.PhotoHostRuntimeState != "unknown" {
+			item.InstallationState = "observed"
+		}
 	}
 }
 

@@ -131,6 +131,15 @@ const automaticPolicyLabels = {
   'not-applicable': '不适用：照片创作当前不受自动分析调度开关控制',
 } as const
 
+const photoHostStateLabels = {
+  healthy: '固定容器 Docker 健康检查通过',
+  unhealthy: '固定容器 Docker 健康检查失败',
+  starting: '固定容器正在启动',
+  'running-unverified': '固定容器在运行，但没有可信健康结果',
+  stopped: '固定容器已停止',
+  unknown: '容器状态不可确认',
+} as const
+
 const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
   'task-boundary': '运行批次完成后安全生效',
@@ -200,6 +209,19 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                 : activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
             </Typography>
           </Stack>
+          {service.group === 'intelligence' && (
+            <Stack spacing={0.25} sx={{ mt: 1 }} data-xdrive-photo-host-observation>
+              <Typography variant="caption" color="text.secondary">
+                宿主容器：{photoHostStateLabels[service.photo_host_runtime_state ?? 'unknown']}
+                {' · '}部署 Profile：{typeof service.photo_host_profile_configured === 'boolean'
+                  ? service.photo_host_profile_configured ? '已配置启用意图' : '未配置启用意图'
+                  : '未取得可信配置观测'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                仅观测固定 xdrive-photo-face 容器；不代表各模型 Info 健康、自动任务生效或实际分析作业完成，尚无受限容器启停接口。
+              </Typography>
+            </Stack>
+          )}
           {service.group === 'intelligence' && (
             <Stack spacing={0.25} sx={{ mt: 1 }} data-xdrive-photo-auto-policy>
               <Typography variant="caption" color="text.secondary">

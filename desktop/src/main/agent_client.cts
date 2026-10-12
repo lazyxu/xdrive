@@ -1007,6 +1007,8 @@ export type AgentServiceDependenciesSnapshot = {
     automatic_policy_effective_revision?: number
     https_configured?: boolean
     local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+    photo_host_runtime_state?: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
+    photo_host_profile_configured?: boolean
   }>
 }
 

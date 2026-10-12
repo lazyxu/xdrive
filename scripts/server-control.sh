@@ -756,6 +756,37 @@ caddy_host_refresh() {
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
+# Fixed-container Photo Intelligence Host Manager observation only.
+# Profile presence is *deployment intent*, while Docker inspect reports only
+# the existing xdrive-photo-face process/health. Neither proves model Info health
+# nor authorizes a container start, stop, restart or arbitrary Docker action.
+photo_intelligence_host_refresh() {
+  local dir tmp profile observed="" state=unknown profile_configured=false
+  profile="$(env_value COMPOSE_PROFILES)"
+  case ",$profile," in
+    *,photo-intelligence,*) profile_configured=true ;;
+  esac
+  if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
+    observed="$(timeout 3s docker inspect \
+      --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+      xdrive-photo-face 2>/dev/null || true)"
+  fi
+  case "$observed" in
+    "true|healthy") state=healthy ;;
+    "true|unhealthy") state=unhealthy ;;
+    "true|starting") state=starting ;;
+    "true|") state=running-unverified ;;
+    false\|*) state=stopped ;;
+    *) state=unknown ;;
+  esac
+  dir="$(prepare_dir)"
+  tmp="$(mktemp "$dir/.photo-intelligence-runtime.XXXXXX")" || return 1
+  printf '{"state":"%s","profile_configured":%s}\n' \
+    "$state" "$profile_configured" > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$dir/photo-intelligence-runtime-status.json"
+}
+
 serve_cmd() {
   [[ $# -eq 0 ]] || { echo "usage: server-control.sh serve" >&2; return 2; }
   local dir pid_file existing lock_dir="" source channel interrupted_backup_file_data
@@ -838,6 +869,7 @@ serve_cmd() {
   refresh_storage_host_inventory || true
   media_worker_control_refresh
   caddy_host_refresh || true
+  photo_intelligence_host_refresh || true
   last_storage_inventory_at="$(date +%s)"
   last_caddy_observation_at="$last_storage_inventory_at"
 
@@ -849,6 +881,7 @@ serve_cmd() {
     now="$(date +%s)"
     if (( now - last_caddy_observation_at >= 15 )); then
       caddy_host_refresh || true
+      photo_intelligence_host_refresh || true
       last_caddy_observation_at="$now"
     fi
     if (( now - last_storage_inventory_at >= storage_inventory_interval )); then
