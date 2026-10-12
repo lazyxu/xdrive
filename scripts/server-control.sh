@@ -810,7 +810,7 @@ photo_host_control_probe() {
 }
 photo_host_control_write_status() {
   local state="$1" revision="$2" applied="$3" enabled="$4" request_id="$5"
-  local observed="$6" verified="$7" dir tmp
+  local observed="$6" verified="$7" applied_instance_digest="${8:-}" dir tmp
   case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
   case "$observed" in healthy|unhealthy|starting|running-unverified|stopped|unknown) ;;
     *) observed=unknown ;;
@@ -820,16 +820,20 @@ photo_host_control_write_status() {
   [[ "$enabled" == true ]] || enabled=false
   [[ "$verified" == true ]] || verified=false
   [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
+  if [[ "$state" != success || "$observed" != healthy || "$verified" != true ||
+        ! "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ]]; then
+    applied_instance_digest=""
+  fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.photo-host-control-status.XXXXXX")" || return 1
-  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"profile_verified":%s,"observed_host_state":"%s","request_id":"%s","updated_at":"%s"}\n' \
+  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"profile_verified":%s,"observed_host_state":"%s","request_id":"%s","applied_instance_digest":"%s","updated_at":"%s"}\n' \
     "$state" "$revision" "$applied" "$enabled" "$verified" "$observed" \
-    "$request_id" "$(now_utc)" > "$tmp"
+    "$request_id" "$applied_instance_digest" "$(now_utc)" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/photo-host-control-status.json"
 }
 photo_host_control_refresh() {
-  local dir file state revision applied enabled request_id profile observed verified=false
+  local dir file state revision applied enabled request_id profile observed verified=false applied_instance_digest=""
   dir="$(prepare_dir)"
   file="$dir/photo-host-control-status.json"
   observed="$(photo_host_control_probe)"
@@ -844,6 +848,7 @@ photo_host_control_refresh() {
   applied="$(photo_host_control_uint "$file" applied_revision)"
   enabled="$(json_bool_value "$file" enabled)"
   request_id="$(json_value "$file" request_id)"
+  applied_instance_digest="$(json_value "$file" applied_instance_digest)"
   case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
   [[ "$revision" =~ ^[0-9]+$ && ${#revision} -le 19 ]] || revision=0
   [[ "$applied" =~ ^[0-9]+$ && ${#applied} -le 19 ]] || applied=0
@@ -851,7 +856,7 @@ photo_host_control_refresh() {
     state=failed
   fi
   photo_host_control_write_status "$state" "$revision" "$applied" "$enabled" \
-    "$request_id" "$observed" "$verified"
+    "$request_id" "$observed" "$verified" "$applied_instance_digest"
 }
 photo_host_control_recover() {
   local dir recovery previous before_running
@@ -871,7 +876,7 @@ photo_host_control_recover() {
 }
 photo_host_control_process() {
   local dir request active status request_id revision enabled created_at applied last_state
-  local previous next initial current verified=false launched=false
+  local previous next initial current verified=false launched=false applied_instance_digest=""
   dir="$(prepare_dir)"
   request="$dir/photo-host-control-request.json"
   active="$dir/photo-host-control-active.json"
@@ -933,8 +938,16 @@ photo_host_control_process() {
   current="$(photo_host_control_probe)"
   case ",$(env_value COMPOSE_PROFILES)," in *,photo-intelligence,*) verified=true ;; esac
   if [[ "$launched" == true && "$current" == healthy && "$verified" == true ]]; then
+    # Seal the observed model generation only at THIS audited fixed-host
+    # request's successful completion. Later health refresh cannot re-seal a
+    # replacement model process as if it were this original revision.
+    # Rootless/proc denial is not permission to escalate or restart.
+    if photo_intelligence_socket_owner_observed; then
+      applied_instance_digest="$(photo_intelligence_healthcheck_digest)"
+    fi
+    [[ "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ]] || applied_instance_digest=""
     rm -f "$dir/photo-host-control-recovery"
-    photo_host_control_write_status success "$revision" "$revision" true "$request_id" "$current" true
+    photo_host_control_write_status success "$revision" "$revision" true "$request_id" "$current" true "$applied_instance_digest"
     rm -f "$active"
     return 0
   fi

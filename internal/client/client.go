@@ -654,19 +654,20 @@ type AdminPhotoHostModelInfoCheck struct {
 	Detail string `json:"detail"`
 }
 type AdminPhotoHostPreflight struct {
-	CheckedAt                time.Time                      `json:"checked_at"`
-	Action                   string                         `json:"action"`
-	DesiredRevision          uint64                         `json:"desired_revision"`
-	LocalChecksComplete      bool                           `json:"local_checks_complete"`
-	HostObserved             bool                           `json:"host_observed"`
-	HostControlObserved      bool                           `json:"host_control_observed"`
-	ApplySupported           bool                           `json:"apply_supported"`
-	Checks                   []AdminPhotoHostPreflightCheck `json:"checks"`
-	HostRevisionVerified     bool                           `json:"host_revision_verified"`
-	ModelInfoChecks          []AdminPhotoHostModelInfoCheck `json:"model_info_checks"`
-	ModelInstanceCoherent    bool                           `json:"model_instance_coherent"`
-	DockerHealthcheckMatched bool                           `json:"docker_healthcheck_matched"`
-	SocketOwnerVerified      bool                           `json:"socket_owner_verified"`
+	CheckedAt                   time.Time                      `json:"checked_at"`
+	Action                      string                         `json:"action"`
+	DesiredRevision             uint64                         `json:"desired_revision"`
+	LocalChecksComplete         bool                           `json:"local_checks_complete"`
+	HostObserved                bool                           `json:"host_observed"`
+	HostControlObserved         bool                           `json:"host_control_observed"`
+	ApplySupported              bool                           `json:"apply_supported"`
+	Checks                      []AdminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified        bool                           `json:"host_revision_verified"`
+	ModelInfoChecks             []AdminPhotoHostModelInfoCheck `json:"model_info_checks"`
+	ModelInstanceCoherent       bool                           `json:"model_instance_coherent"`
+	DockerHealthcheckMatched    bool                           `json:"docker_healthcheck_matched"`
+	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
+	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 }
 
 type AdminPhotoHostApplyInput struct {

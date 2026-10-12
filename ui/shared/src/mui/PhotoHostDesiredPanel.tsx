@@ -311,6 +311,11 @@ export function XDrivePhotoHostDesiredPanel({
                       </Typography>
                     ))}
                     <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="body2" color="text.secondary" data-xdrive-photo-request-generation-correlated>
+                        已审计启用请求与当前模型代际：{preflight.request_generation_correlated
+                          ? '宿主启用回执时的模型代际仍一致（仅本宿主的时点交叉核验）'
+                          : '未核验、版本过旧或运行进程已变化；不能判定同次启用仍有效'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-socket-owner-proof>
                         固定容器监听 Socket 归属：{preflight.socket_owner_verified
                           ? 'Docker 主进程持有固定监听 Socket（宿主内核只读证据；仅本实例）'
