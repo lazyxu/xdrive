@@ -217,4 +217,16 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 
 通过**真实浏览器** Hash History 从图库切到 `#/app/files?dir=<owner node>`，要求文件夹由 Gin 返回 200 且图库组件卸载；Back 恢复图库组件，Forward 恢复 Files。保留原有异主 JWT 404、匿名 401、缓存仅公开 `/offline.html`、无 JS pageerror、测试产物脱敏及 Web/Mobile 共用 Files/Gallery 接口，业务 Go API 不变。
 
-**验收边界：** 仅证明真实 Chrome 已登录图库路由挂载、冷启动 Hash 保留与浏览器历史协作，不证明 Gallery 数据查询成功、缩略图解码、Viewer/公开分享流量、系统图标冷启动、真实 iOS 27 Safari/Home Screen、Android Installed、锁屏后台、公网 TLS，也不代表 Web/Desktop 全功能等价。只有本分支 exact-head 全 CI 和专项真实浏览器均通过才可合并。
+**已合并：** [PR #1574](https://github.com/lazyxu/xdrive/pull/1574) 准确 HEAD 2ead8f1 已通过 [完整 CI #38263115175](https://github.com/lazyxu/xdrive/actions/runs/38263115175) 和 [真实 Gin Chrome #38263114590](https://github.com/lazyxu/xdrive/actions/runs/38263114590)，线性合并为 8af11079，临时分支已清理。**验收边界：** 仅证明真实 Chrome 已登录图库路由挂载、冷启动 Hash 保留与浏览器历史协作，不证明 Gallery 数据查询成功、缩略图解码、Viewer/公开分享流量、系统图标冷启动、真实 iOS 27 Safari/Home Screen、Android Installed、锁屏后台、公网 TLS，也不代表 Web/Desktop 全功能等价。只有本分支 exact-head 全 CI 和专项真实浏览器均通过才可合并。
+
+
+## PWA-S2B6 · 真实私有图库 Range、PNG Viewer 深链接冷恢复（2026-10-12）
+
+复用 S2B3/S2B5 已认证的生产 Web → Gin JWT → PostgreSQL17 + Local CAS，使用桌面 Chrome 1280px 和 Android UA/Touch 390px（**模拟，不是真机**）。独立测试数据库迁移现有 Media/PhotoAsset/PhotoResource 表；Go fixture 向私有 Local CAS 写入一张 2×2 PNG，并建立匹配的 Node、File、FileVersion、ContentBlob、MediaMetadata、PhotoAsset 和 Resource。无生产 API、数据库迁移、图库 UI 或 Service Worker 变更。
+
+必须通过真实 Go Handler 及 Chrome：本人图库 `GET /api/v1/media/items?range=true&limit=10&offset=0` HTTP 200 且存在私有图片，返回 no-store；新标签打开 `#/app/media-viewer?node=<真实ID>` 需真实 Gin item 200、共享沉浸式 Viewer 展示图像名称，冷刷新仍成功；异主账号同一 MediaItem 必须 404、匿名 401。原 S2B3 Files 授权、S2B5 Gallery 路由历史、CacheStorage 仅公开 offline.html 等门槛不放松。ready-file 只增加数值 media Node ID，不导出图像字节、CAS 路径、登录 Token、HTTP 私有正文；唯一 artifact 为脱敏 summary.json。
+
+**证据边界：** 该阶段仅是实际 Chrome + 私有测试 PNG 的 Server/Viewer 基础链路验收，不是 iOS 27/Android Installed 真机、系统启动图标、100k 媒体性能、Live Photo、完整分享流、原件落盘 SHA、生产 HTTPS 或后台上传连续性保证。初始状态：单工作提交待 CI；准确 HEAD 完整 PR CI/Final Gate 和真实 Gin Chrome 专项均绿后再合并。
+
+
+**S2B6 首轮红灯定位（2026-10-12）：** 准确 HEAD `ed5e60c` 的 Go Linux 作业在 `gofmt -l` 校验发现测试夹具仅有两处字段对齐空格；完整 CI 因此不得视为通过。独立真实 Gin Chrome 作业在启动 private fixture 时报告缺失 `xd_source_collections` 表，PostgreSQL 服务端日志明确指出源集合关系查询；由独立测试 schema 漏迁移造成，不是主线生产迁移。本次仅向**测试 fixture** 的 AutoMigrate 加入既有 `SourceItem`、`SourceCollection`、`SourceCollectionItem`，并修正两处 gofmt；没有修改产品 Handler、Source 运行/权限或 PWA 缓存。折叠回同一固定 `master@18532d9` 的**单工作提交**后，原 CI 证据作废，需重新跑准确新 HEAD 的完整 CI 与真实浏览器专项。

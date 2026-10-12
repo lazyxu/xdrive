@@ -3,8 +3,14 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,7 +54,15 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		&meta.FileOperation{}, &meta.FileRecentAccess{},
 		&meta.FileFavorite{}, &meta.FileQuickAccess{},
 		&meta.FileTag{}, &meta.FileNodeTag{}, &meta.FileSavedSearch{},
-		&meta.Source{}, &meta.SyncRun{},
+		&meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{},
+		&meta.SourceCollection{}, &meta.SourceCollectionItem{},
+		&meta.MediaMetadata{}, &meta.MediaDerivedResource{},
+		&meta.MediaGroup{}, &meta.MediaGroupItem{},
+		&meta.PhotoAsset{}, &meta.PhotoResource{}, &meta.PhotoMetadata{},
+		&meta.PhotoEditRecipe{}, &meta.PhotoAlbumFolder{},
+		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
+		&meta.PhotoAnalysisState{}, &meta.PhotoVisualLabel{}, &meta.PhotoOCRText{},
+		&meta.PhotoPlaceLabel{}, &meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
 		&meta.PhotoIntelligenceReanalyzeIntent{},
 		&meta.BackgroundOwnerCancellation{}, &meta.ArchivePrepareRun{},
 	); err != nil {
@@ -93,6 +107,94 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	request(t, router, http.MethodGet,
 		fmt.Sprintf("/api/v1/nodes/%d", folder.ID), "", nil, http.StatusUnauthorized)
 
+	// S2B6: a tiny genuine private PNG in Local CAS and the production
+	// Gallery's Node/File/Media/PhotoAsset projection. Never export its bytes.
+	var owner meta.User
+	if err := db.Where("username = ?", ownerName).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	picture := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	picture.Set(0, 0, color.RGBA{R: 20, G: 90, B: 170, A: 255})
+	var pngData bytes.Buffer
+	if err := png.Encode(&pngData, picture); err != nil {
+		t.Fatal(err)
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256(pngData.Bytes()))
+	casKey, err := storage.ContentAddressedKey(hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written, err := local.Put(context.Background(), casKey, bytes.NewReader(pngData.Bytes())); err != nil || written != int64(pngData.Len()) {
+		t.Fatalf("S2B6 physical CAS seed failed: written=%d err=%v", written, err)
+	}
+	picNode := meta.Node{
+		ParentID: &folder.ID, Name: "pwa-s2b6-private.png",
+		Type: meta.NodeTypeFile, OwnerID: owner.ID, Revision: 1,
+	}
+	if err := db.Create(&picNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	picSize := int64(pngData.Len())
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: hash, Size: picSize, StorageKey: casKey,
+		RefCount: 1, State: meta.ContentBlobStateReady,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.File{
+		NodeID: picNode.ID, Size: picSize, StorageKey: casKey, SHA256: hash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.FileVersion{
+		NodeID: picNode.ID, Revision: 1, Size: picSize,
+		StorageKey: casKey, SHA256: hash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.MediaMetadata{
+		NodeID: picNode.ID, OwnerID: owner.ID, NodeRevision: 1, SHA256: hash,
+		MediaKind: meta.MediaKindImage, MIMEType: "image/png",
+		Width: 2, Height: 2, IndexState: meta.MediaIndexStateReady,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	asset := meta.PhotoAsset{
+		OwnerID: owner.ID, PrimaryNodeID: picNode.ID,
+		Kind:        meta.PhotoAssetKindImage,
+		EvidenceKey: fmt.Sprintf("node:%d", picNode.ID),
+	}
+	if err := db.Create(&asset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoMetadata{
+		AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+		MIMEType: "image/png", Width: 2, Height: 2,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.PhotoResource{
+		AssetID: asset.ID, ResourceKind: meta.PhotoResourceKindNode,
+		NodeID: picNode.ID, Role: meta.PhotoResourceRolePrimary,
+		Name: picNode.Name, MediaKind: meta.MediaKindImage,
+		MIMEType: "image/png", Size: picSize, SHA256: hash,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Authoritative owner/foreign/anonymous rules are exercised by Gin.
+	request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d", picNode.ID),
+		ownerToken, nil, http.StatusOK)
+	request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d", picNode.ID),
+		foreignToken, nil, http.StatusNotFound)
+	request(t, router, http.MethodGet,
+		fmt.Sprintf("/api/v1/media/items/%d", picNode.ID),
+		"", nil, http.StatusUnauthorized)
+	request(t, router, http.MethodGet,
+		"/api/v1/media/items?range=true&offset=0&limit=10",
+		ownerToken, nil, http.StatusOK)
+
 	done := make(chan struct{})
 	var once sync.Once
 	fileServer := http.FileServer(http.Dir(dist))
@@ -129,7 +231,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	ready := map[string]any{
 		"url": peer.URL, "username": ownerName, "foreign_username": foreignName,
 		"root_id": root.ID, "target_id": folder.ID, "target_name": folder.Name,
-		"real_gin": true, "postgresql": true, "local_cas": true,
+		"media_node_id": picNode.ID,
+		"real_gin":      true, "postgresql": true, "local_cas": true,
 		"intercepted_api": false, "physical_device": false,
 	}
 	payload, err := json.Marshal(ready)
@@ -154,6 +257,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		}
 		request(t, router, http.MethodGet,
 			fmt.Sprintf("/api/v1/nodes/%d", folder.ID), foreignToken, nil, http.StatusNotFound)
+		request(t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d", picNode.ID), ownerToken, nil, http.StatusOK)
 		t.Logf("PWA_S2B3_REAL_GIN_VERIFIED root=%d target=%d authentic_login=true foreign_404=true", root.ID, folder.ID)
 	case <-time.After(2 * time.Minute):
 		t.Fatal("real Chrome browser did not finish the isolated Gin fixture")

@@ -83,3 +83,22 @@ test('S2B5 genuine Gin Chrome: Gallery deep-link, cold reload and browser histor
   assert.ok(!chrome.includes('context.route(') && !chrome.includes('route.fulfill('))
   assert.ok(ledger.includes('PWA-S2B5'))
 })
+
+test('S2B6 genuine private PNG CAS, authorized Gallery Range and cold Viewer', () => {
+  for (const token of [
+    'storage.ContentAddressedKey(hash)', 'local.Put(context.Background(), casKey',
+    '&meta.MediaMetadata{}', '&meta.PhotoAsset{}', '&meta.PhotoResource{}',
+    '"media_node_id": picNode.ID', 'foreignToken, nil, http.StatusNotFound',
+  ]) assert.ok(go.includes(token), 'S2B6 Go fixture: ' + token)
+  for (const token of [
+    "localStorage.getItem('xdrive.access_token')",
+    '/api/v1/media/items?range=true&limit=10&offset=0',
+    'mediaRange200', 'mediaViewer200', 'mediaViewerColdReload', 'mediaForeign404',
+    "const viewerRoute = '#/app/media-viewer?node='",
+    "viewerTab.locator('[data-xdrive-web-viewer]').waitFor()",
+    "foreignMedia.status(), 404",
+  ]) assert.ok(chrome.includes(token), 'S2B6 Chrome: ' + token)
+  assert.ok(workflow.includes("github.head_ref == 'test/pwa-real-gallery-viewer-s2b6-20261012'"))
+  assert.ok(workflow.includes('x.mediaViewerColdReload'))
+  assert.ok(ledger.includes('PWA-S2B6'))
+})

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pwa-s2b3-real-gin:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-real-gin-auth-s2b3-20261012' || github.head_ref == 'test/pwa-gallery-deeplink-s2b5-20261012'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-real-gin-auth-s2b3-20261012' || github.head_ref == 'test/pwa-gallery-deeplink-s2b5-20261012' || github.head_ref == 'test/pwa-real-gallery-viewer-s2b6-20261012'
     runs-on: ubuntu-latest
     timeout-minutes: 32
     services:
@@ -102,7 +102,7 @@ jobs:
             node desktop/scripts/pwa-real-gin-auth-browser.cjs \
               --ready="$READY" --output-dir="$OUT"
           wait "$FIXTURE_PID" || { echo "real Go fixture validation failed"; exit 1; }
-          node -e "const r=require(process.cwd()+'/desktop/pwa-s2b3-results/summary.json'); if(!r.passed || !r.realGin || r.interceptedApi || r.cases.length !== 2 || r.cases.some(x=>!x.loginSucceeded||!x.crossOwner404||!x.coldReload200||!x.newTabRoute200||!x.publicOnlyWorkerCache||!x.galleryDeepLinkMounted||!x.galleryColdReloadMounted||!x.galleryHistoryRestored))process.exit(1)"
+          node -e "const r=require(process.cwd()+'/desktop/pwa-s2b3-results/summary.json'); if(!r.passed || !r.realGin || r.interceptedApi || r.cases.length !== 2 || r.cases.some(x=>!x.loginSucceeded||!x.crossOwner404||!x.coldReload200||!x.newTabRoute200||!x.publicOnlyWorkerCache||!x.galleryDeepLinkMounted||!x.galleryColdReloadMounted||!x.galleryHistoryRestored||!x.mediaRange200||!x.mediaViewer200||!x.mediaViewerColdReload||!x.mediaForeign404))process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
