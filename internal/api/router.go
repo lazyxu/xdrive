@@ -330,6 +330,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/evidence-page", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidencePage)
 	// Private, device-bound, read-only SourceItem/Node/alias consistency preflight.
 	authed.POST("/sources/:id/local-identity/evidence-preflight", s.requireLocalSourceExecutor(), s.preflightLocalSourceItemEvidence)
+	// Owning-Agent-only comparison to current File/FileVersion/CAS database metadata.
+	authed.POST("/sources/:id/local-identity/evidence-cloud-metadata", s.requireLocalSourceExecutor(), s.readLocalSourceEvidenceCloudMetadata)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.

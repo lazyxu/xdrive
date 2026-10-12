@@ -224,6 +224,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/evidence-summary", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/evidence-page", suite: "local-source-devices"},
 		{method: "POST", path: "/api/v1/sources/:id/local-identity/evidence-preflight", suite: "local-source-devices"},
+		{method: "POST", path: "/api/v1/sources/:id/local-identity/evidence-cloud-metadata", suite: "local-source-devices"},
 		{method: "PATCH", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id", suite: "sources"},
 		{method: "DELETE", path: "/api/v1/sources/:id/local-draft", suite: "local-source-devices"},
