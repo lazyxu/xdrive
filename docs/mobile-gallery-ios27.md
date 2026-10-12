@@ -647,3 +647,15 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **最小变更：** 保留既有可见视口六并发、业务状态、abort 与 512 条 LRU。只有实际 `<img>` 解码错误才报告原 URL，并且调度器只有在 `node_id + revision + failed_url` 三者精确匹配当前缓存项时才删除并释放该对象。错误现场本身不自动重试、不额外读取原件；下次用户访问可见缩略图才按既有 REST/Agent 请求重新获取。旧 revision / 旧 URL 事件不能误删新的封面，正常成功缓存/其它相册不清空，不能以此保证服务端实际文件字节可解码。组件通过同一 `MediaTile`、`XDriveMediaAsyncThumbnail`、Web/Mobile `XDriveMediaGalleryPage`、DataSource/VirtualCollection/Grid/Timeline 覆盖；52px App Frame、Live 语义/播放、Desktop Agent、服务器 API 不变。
 
 **回归：** 真实共享 Scheduler 运行测试包含错误 URL、旧 revision、错 Node、缓存重新命中、准确失效、只有下一次显式 load 才重新下载、旧解码事件隔离以及无关 LRU 不受影响；真实挂载共享 React 图片 `onError` 验证精确 URL 上报与零现场重试。完整 Web/Desktop/Go/Windows/CI Final Gate 与实际三张 HEIC/LIVP 原件解码、iOS 27 Safari/PWA/VoiceOver/成对截图分别验收。性能不作无数据提升承诺。
+
+
+## P0-L4c2 · 实况静态封面 DOM 回调按修订和 URL 隔离（2026-10-12）
+
+**源码确认的独立失败路径；用户截图中三张灰图的物理原因尚未实证。** 先前共享 `XDriveMediaAsyncThumbnail` 的源 URL 与 `failed=true` 都没有当前 Node revision 的身份约束。React 更新同一 Tile 后，旧图片迟到的 `onError` 可能把新修订已经获取成功的静态封面变为灰色 fallback，旧 `onLoad` 也可能错误上报已就绪。P0-L4c1 的精确 LRU 失效仍需要这个 DOM 层防护。
+
+**候选修复：** 将图片 URL 与失败状态归属到 `node_id:revision`，新修订渲染不得展示旧源；真实浏览器 `onLoad/onError` 仅在当前身份与当前 URL 同时匹配时才报告就绪、失败或失效原有缩略图缓存。组件卸载后旧事件无效。不改变 AbortSignal、Blob URL 所有权、已有成功缓存、失败后的零自动重试和不获取原件政策。Web/Mobile Web 共用同一个 REST DataSource 与 VirtualCollection/Grid/Timeline；Desktop 走原 Agent IPC 和同一共享组件。全屏 App Frame、52px 标题栏、iOS 27 1:1 参照、实况按住才播放均不变。
+
+**验收：** 新增生产 React 挂载回归，覆盖旧版本失败与就绪回调不影响当前版本、同版本新 URL 不受旧错误影响、当前失败仍正确回退、卸载后不发送失效通知与零额外下载。必须在精确单工作提交上通过 Web/Desktop/Go/Windows/Final Gate 后合入。真实 LIVP/HEIC CAS 原片、用户截图三项与 iOS 27 Safari/PWA/VoiceOver 及像素成对截图仍待验，不能由组件测试推定成功。
+
+
+**P0-L4c2 第一轮 CI 首红与必要修订（2026-10-12）：** [PR #1512 的 CI #38219332763](https://github.com/lazyxu/xdrive/actions/runs/38219332763) 在 Desktop 新增两个测试中分别于旧事件模拟后看到当前图片消失。真实失败由 React Test Renderer 测试夹具取得 `oldImage` TestInstance、更新后才调用 `oldImage.props.onError/onLoad` 所致；其 `.props` 指向已复用实例的**新**事件处理器，不是旧浏览器回调。因此这轮红灯不能当成“已证实生产修复仍失败”。在同一单工作提交里，改为旧修订更新前快照真实旧回调函数，同时对图片 DOM 设置 `key=[sourceIdentity, src]`，强制不同修订/URL 的原生 `img` 分离，使挂起旧浏览器事件无法落在新元素上。保留旧回调不得触发 fallback/缓存失效、正确当前错误仍失败及卸载隔离的全部严格断言，不跳过测试、不降低门禁。所有构建与测试需在重写后的**精确新 SHA** 上重新通过，旧红灯 CI 不计成功。

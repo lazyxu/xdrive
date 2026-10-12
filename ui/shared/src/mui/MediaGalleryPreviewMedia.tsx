@@ -42,15 +42,22 @@ export function XDriveMediaAsyncThumbnail({
   onImageReadyChange?: (ready: boolean) => void
   onImageDecodeError?: (failedURL: string) => void
 }) {
-  const [src, setSrc] = useState('')
-  const [failed, setFailed] = useState(false)
+  const sourceIdentity = [nodeID ?? 0, revision ?? 0].join(':')
+  const [image, setImage] = useState<{ identity: string; url: string } | null>(null)
+  const [failedIdentity, setFailedIdentity] = useState('')
+  // Reused tiles must not show the previous Node revision's source or failure.
+  const src = image?.identity === sourceIdentity ? image.url : ''
+  const failed = failedIdentity === sourceIdentity
+  const presentedImageRef = useRef<{ identity: string; url: string } | null>(null)
+  presentedImageRef.current = !failed && src ? { identity: sourceIdentity, url: src } : null
+  useEffect(() => () => { presentedImageRef.current = null }, [])
   const [progress, setProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
   useEffect(() => {
     let active = true
     let resolved = ''
-    setSrc('')
-    setFailed(false)
+    setImage(null)
+    setFailedIdentity('')
     setProgress({ loadedBytes: 0, alphaMask: null })
     onImageReadyChange?.(false)
     if (!nodeID) return () => undefined
@@ -61,15 +68,15 @@ export function XDriveMediaAsyncThumbnail({
     })
       .then((value) => {
         if (!value) {
-          if (active) setFailed(true)
+          if (active) setFailedIdentity(sourceIdentity)
           return
         }
         resolved = value
-        if (active) setSrc(value)
+        if (active) setImage({ identity: sourceIdentity, url: value })
         else if (revokeOnDispose) revokeIfBlob(value)
       })
       .catch(() => {
-        if (active) setFailed(true)
+        if (active) setFailedIdentity(sourceIdentity)
       })
 
     return () => {
@@ -77,7 +84,7 @@ export function XDriveMediaAsyncThumbnail({
       controller.abort()
       if (resolved && revokeOnDispose) revokeIfBlob(resolved)
     }
-  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange])
+  }, [loadThumbnail, nodeID, revision, revokeOnDispose, onImageReadyChange, sourceIdentity])
 
   if (!nodeID || failed) return <>{fallback}</>
   if (!src) {
@@ -90,6 +97,7 @@ export function XDriveMediaAsyncThumbnail({
   }
   return (
     <Box
+      key={[sourceIdentity, src].join('|')}
       component="img"
       src={src}
       alt={alt}
@@ -98,14 +106,21 @@ export function XDriveMediaAsyncThumbnail({
       // A broken source must leave the spinner/image and show the ordinary
       // Gallery fallback without retrying or fetching full original bytes.
       onLoad={(event) => {
+        const displayed = presentedImageRef.current
+        if (!displayed || displayed.identity !== sourceIdentity || displayed.url !== src) return
         if (event.currentTarget.naturalWidth > 0) onImageReadyChange?.(true)
       }}
       onError={() => {
+        const displayed = presentedImageRef.current
+        if (!displayed || displayed.identity !== sourceIdentity || displayed.url !== src) return
+        // A late decode error from a recycled Node/revision/URL cannot
+        // replace the new still or invalidate a newer cached derivative.
+        presentedImageRef.current = null
         onImageReadyChange?.(false)
-        // No automatic request here. Allow a future visible mount to re-fetch
-        // instead of repeating this known-broken cached object URL.
+        // Never retry here or load original bytes. A later visible mount
+        // may request the current derivative through the existing adapter.
         onImageDecodeError?.(src)
-        setFailed(true)
+        setFailedIdentity(sourceIdentity)
       }}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
     />
