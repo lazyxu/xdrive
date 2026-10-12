@@ -505,6 +505,14 @@ func (r *Runner) recordPreflightFailure(ctx context.Context, source meta.Source,
 	} else {
 		query = query.Where("run_requested_at = ?", *source.RunRequestedAt)
 	}
+	// A newer authenticated run advances last_run_at without changing the
+	// Source revision or leaving a pending manual request. The original
+	// preflight can publish an error only while that run identity is unchanged.
+	if source.LastRunAt == nil {
+		query = query.Where("last_run_at IS NULL")
+	} else {
+		query = query.Where("last_run_at = ?", *source.LastRunAt)
+	}
 	return query.Updates(map[string]any{
 		"last_run_at":      now,
 		"last_error":       truncateError(cause),
