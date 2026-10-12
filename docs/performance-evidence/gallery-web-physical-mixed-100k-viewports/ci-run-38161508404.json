@@ -1,0 +1,1324 @@
+{
+  "status": "Accepted measured CURRENT / product unchanged / AFTER=N/A / shipped speedup=N/A; evidence-amended final-head CI pending",
+  "registry_id": "P032",
+  "scope": "M001-a",
+  "source": {
+    "repo": "lazyxu/xdrive",
+    "exact_measured_head": "e8efc44ec83b005e2864c6b6c0b2d4b411279193",
+    "fixed_work_parent": "c1b0f2948904c373537ed7f087aa98d46a48eed4",
+    "native_ci_id": 38161508404,
+    "native_job_id": 114535216318,
+    "full_ci_id": 38161508635,
+    "original_full_ci_final_gate": "success",
+    "invalid_harness_runs": [
+      38160589878,
+      38160938179
+    ],
+    "GitLab_not_run": true
+  },
+  "workload": {
+    "logical_photo_assets": 100000,
+    "actual_distinct_physical_CAS_originals": 115000,
+    "actual_physical_source_bytes_each": 149285128,
+    "real_still_JPEGs": 85000,
+    "distinct_valid_video_containers": 30000,
+    "shared_H264_essence_not_distinct_encoded_video": true,
+    "mounted_real_Web_shared_Grid": true,
+    "positions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95
+    ],
+    "independent_n": 3,
+    "actual_viewports": 15,
+    "seed_excluded_from_viewport_timing": true
+  },
+  "frozen_acceptance": {
+    "each_first_six_new_visible_blob_JPEG_decodes_plus_two_rAF_max_ms": 20000,
+    "mounted_tile_count_max_exclusive": 1000,
+    "true_http_thumbnail_peak_active_max": 6,
+    "Go_post_seed_RSS_growth_max_bytes": 268435456,
+    "Chromium_post_loadURL_WS_growth_max_bytes": 268435456,
+    "noncancelled_http_failures_max": 0
+  },
+  "summary": {
+    "median_of_three_five_viewport_P50_ms": 2503.6041320000077,
+    "per_viewport_position_middle_ms": [
+      {
+        "fraction": 0,
+        "median_ms": 1807.7852549999952
+      },
+      {
+        "fraction": 0.25,
+        "median_ms": 2506.078720999998
+      },
+      {
+        "fraction": 0.5,
+        "median_ms": 2478.148218999966
+      },
+      {
+        "fraction": 0.75,
+        "median_ms": 2543.285933999985
+      },
+      {
+        "fraction": 0.95,
+        "median_ms": 2598.878991000005
+      }
+    ],
+    "worst_single_viewport_ms": 2621.2528050000255,
+    "max_mounted_tiles": 99,
+    "max_http_thumbnail_active": 6,
+    "max_Go_post_seed_RSS_growth_bytes": 372736,
+    "max_Chromium_post_loadURL_WS_growth_bytes": 137146368
+  },
+  "samples": [
+    {
+      "sample": 1,
+      "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+      "physicalOriginals": 115000,
+      "physicalOriginalBytes": 149285128,
+      "seedMsExcluded": 133391.246,
+      "distinctDecodedVisibleIndices": 40,
+      "views": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 1914.3794430000125,
+          "freshDecodedIndices": [
+            0,
+            1,
+            2,
+            3,
+            8,
+            9
+          ],
+          "mountedTiles": 63,
+          "visibleDecodedBlobImages": 9,
+          "http": {
+            "active": 2,
+            "canceled": 0,
+            "completed": 18,
+            "failed": 0,
+            "max_active": 5,
+            "response_bytes": 12766,
+            "started": 20
+          },
+          "store": {
+            "OriginalOpenSuccess": 20,
+            "DerivativeOpenSuccess": 38,
+            "DerivativePutSuccess": 19
+          },
+          "rendererWSBytes": 207532032
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2569.6810840000107,
+          "freshDecodedIndices": [
+            25002,
+            25003,
+            25004,
+            25005,
+            25006,
+            25007
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 6,
+          "http": {
+            "active": 4,
+            "canceled": 0,
+            "completed": 41,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 29023,
+            "started": 45
+          },
+          "store": {
+            "OriginalOpenSuccess": 44,
+            "DerivativeOpenSuccess": 82,
+            "DerivativePutSuccess": 44
+          },
+          "rendererWSBytes": 241508352
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2538.807016000006,
+          "freshDecodedIndices": [
+            50004,
+            50005,
+            50006,
+            50007,
+            50008,
+            50009
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 6,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 63,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 44605,
+            "started": 68
+          },
+          "store": {
+            "OriginalOpenSuccess": 66,
+            "DerivativeOpenSuccess": 126,
+            "DerivativePutSuccess": 64
+          },
+          "rendererWSBytes": 253919232
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2606.998853999976,
+          "freshDecodedIndices": [
+            75000,
+            75001,
+            75006,
+            75007,
+            75008,
+            75009
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 7,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 85,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 60151,
+            "started": 90
+          },
+          "store": {
+            "OriginalOpenSuccess": 89,
+            "DerivativeOpenSuccess": 172,
+            "DerivativePutSuccess": 88
+          },
+          "rendererWSBytes": 258699264
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2621.2528050000255,
+          "freshDecodedIndices": [
+            94959,
+            94960,
+            94961,
+            95000,
+            95001,
+            95002
+          ],
+          "mountedTiles": 90,
+          "visibleDecodedBlobImages": 12,
+          "http": {
+            "active": 5,
+            "canceled": 1,
+            "completed": 112,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 78570,
+            "started": 117
+          },
+          "store": {
+            "OriginalOpenSuccess": 115,
+            "DerivativeOpenSuccess": 228,
+            "DerivativePutSuccess": 114
+          },
+          "rendererWSBytes": 281866240
+        }
+      ],
+      "fiveViewportP50Ms": 2569.6810840000107,
+      "go": {
+        "initial": {
+          "rssBytes": 71954432,
+          "cpuMs": 32510
+        },
+        "final": {
+          "rssBytes": 45826048,
+          "cpuMs": 33320
+        },
+        "sampledPeakRSSBytes": 72110080,
+        "RSSGrowthBytes": 155648,
+        "cpuDeltaMs": 810
+      },
+      "chromium": {
+        "firstWSBytes": 144719872,
+        "peakWSBytes": 281866240,
+        "growthBytes": 137146368
+      },
+      "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+    },
+    {
+      "sample": 2,
+      "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+      "physicalOriginals": 115000,
+      "physicalOriginalBytes": 149285128,
+      "seedMsExcluded": 118984.637,
+      "distinctDecodedVisibleIndices": 60,
+      "views": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 1807.7852549999952,
+          "freshDecodedIndices": [
+            0,
+            1,
+            2,
+            3,
+            8,
+            9
+          ],
+          "mountedTiles": 63,
+          "visibleDecodedBlobImages": 14,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 22,
+            "failed": 0,
+            "max_active": 5,
+            "response_bytes": 15594,
+            "started": 27
+          },
+          "store": {
+            "OriginalOpenSuccess": 25,
+            "DerivativeOpenSuccess": 46,
+            "DerivativePutSuccess": 25
+          },
+          "rendererWSBytes": 210833408
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2380.556273999973,
+          "freshDecodedIndices": [
+            24975,
+            24976,
+            24977,
+            24978,
+            24979,
+            24980
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 15,
+          "http": {
+            "active": 1,
+            "canceled": 0,
+            "completed": 58,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 41034,
+            "started": 59
+          },
+          "store": {
+            "OriginalOpenSuccess": 59,
+            "DerivativeOpenSuccess": 116,
+            "DerivativePutSuccess": 59
+          },
+          "rendererWSBytes": 232943616
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2338.3240499999956,
+          "freshDecodedIndices": [
+            49968,
+            49969,
+            49970,
+            49971,
+            49972,
+            49977
+          ],
+          "mountedTiles": 50,
+          "visibleDecodedBlobImages": 10,
+          "http": {
+            "active": 3,
+            "canceled": 0,
+            "completed": 86,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 60842,
+            "started": 89
+          },
+          "store": {
+            "OriginalOpenSuccess": 87,
+            "DerivativeOpenSuccess": 172,
+            "DerivativePutSuccess": 87
+          },
+          "rendererWSBytes": 252686336
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2543.285933999985,
+          "freshDecodedIndices": [
+            75000,
+            75001,
+            75006,
+            75007,
+            75008,
+            75009
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 12,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 119,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 82068,
+            "started": 124
+          },
+          "store": {
+            "OriginalOpenSuccess": 124,
+            "DerivativeOpenSuccess": 232,
+            "DerivativePutSuccess": 119
+          },
+          "rendererWSBytes": 253829120
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2461.209256000002,
+          "freshDecodedIndices": [
+            94959,
+            94960,
+            94961,
+            94962,
+            94963,
+            94964
+          ],
+          "mountedTiles": 59,
+          "visibleDecodedBlobImages": 9,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 145,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 100522,
+            "started": 150
+          },
+          "store": {
+            "OriginalOpenSuccess": 148,
+            "DerivativeOpenSuccess": 284,
+            "DerivativePutSuccess": 145
+          },
+          "rendererWSBytes": 255967232
+        }
+      ],
+      "fiveViewportP50Ms": 2380.556273999973,
+      "go": {
+        "initial": {
+          "rssBytes": 71708672,
+          "cpuMs": 32290
+        },
+        "final": {
+          "rssBytes": 46882816,
+          "cpuMs": 33160
+        },
+        "sampledPeakRSSBytes": 72081408,
+        "RSSGrowthBytes": 372736,
+        "cpuDeltaMs": 870
+      },
+      "chromium": {
+        "firstWSBytes": 145465344,
+        "peakWSBytes": 255967232,
+        "growthBytes": 110501888
+      },
+      "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+    },
+    {
+      "sample": 3,
+      "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+      "physicalOriginals": 115000,
+      "physicalOriginalBytes": 149285128,
+      "seedMsExcluded": 120403.386,
+      "distinctDecodedVisibleIndices": 47,
+      "views": [
+        {
+          "fraction": 0,
+          "scroll": {
+            "fraction": 0,
+            "extent": 1763646,
+            "scrollTop": 0,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 1565.1883210000233,
+          "freshDecodedIndices": [
+            0,
+            1,
+            2,
+            3,
+            8,
+            9
+          ],
+          "mountedTiles": 63,
+          "visibleDecodedBlobImages": 14,
+          "http": {
+            "active": 1,
+            "canceled": 0,
+            "completed": 26,
+            "failed": 0,
+            "max_active": 5,
+            "response_bytes": 18434,
+            "started": 27
+          },
+          "store": {
+            "OriginalOpenSuccess": 27,
+            "DerivativeOpenSuccess": 52,
+            "DerivativePutSuccess": 27
+          },
+          "rendererWSBytes": 208056320
+        },
+        {
+          "fraction": 0.25,
+          "scroll": {
+            "fraction": 0.25,
+            "extent": 1763646,
+            "scrollTop": 440911,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2506.078720999998,
+          "freshDecodedIndices": [
+            24975,
+            24976,
+            24977,
+            24978,
+            24979,
+            24980
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 11,
+          "http": {
+            "active": 4,
+            "canceled": 0,
+            "completed": 55,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 37503,
+            "started": 59
+          },
+          "store": {
+            "OriginalOpenSuccess": 57,
+            "DerivativeOpenSuccess": 106,
+            "DerivativePutSuccess": 57
+          },
+          "rendererWSBytes": 232968192
+        },
+        {
+          "fraction": 0.5,
+          "scroll": {
+            "fraction": 0.5,
+            "extent": 1763646,
+            "scrollTop": 881823,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2478.148218999966,
+          "freshDecodedIndices": [
+            50004,
+            50005,
+            50006,
+            50007,
+            50008,
+            50009
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 6,
+          "http": {
+            "active": 6,
+            "canceled": 0,
+            "completed": 79,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 53788,
+            "started": 85
+          },
+          "store": {
+            "OriginalOpenSuccess": 83,
+            "DerivativeOpenSuccess": 154,
+            "DerivativePutSuccess": 83
+          },
+          "rendererWSBytes": 254251008
+        },
+        {
+          "fraction": 0.75,
+          "scroll": {
+            "fraction": 0.75,
+            "extent": 1763646,
+            "scrollTop": 1322734,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2503.6041320000077,
+          "freshDecodedIndices": [
+            75000,
+            75001,
+            75006,
+            75007,
+            75008,
+            75009
+          ],
+          "mountedTiles": 99,
+          "visibleDecodedBlobImages": 9,
+          "http": {
+            "active": 5,
+            "canceled": 0,
+            "completed": 105,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 71491,
+            "started": 110
+          },
+          "store": {
+            "OriginalOpenSuccess": 109,
+            "DerivativeOpenSuccess": 206,
+            "DerivativePutSuccess": 108
+          },
+          "rendererWSBytes": 259309568
+        },
+        {
+          "fraction": 0.95,
+          "scroll": {
+            "fraction": 0.95,
+            "extent": 1763646,
+            "scrollTop": 1675463,
+            "viewportHeight": 873
+          },
+          "firstSixDecodedAndTwoFramesMs": 2598.878991000005,
+          "freshDecodedIndices": [
+            94959,
+            94960,
+            94961,
+            94962,
+            94963,
+            94964
+          ],
+          "mountedTiles": 90,
+          "visibleDecodedBlobImages": 7,
+          "http": {
+            "active": 4,
+            "canceled": 0,
+            "completed": 130,
+            "failed": 0,
+            "max_active": 6,
+            "response_bytes": 89162,
+            "started": 134
+          },
+          "store": {
+            "OriginalOpenSuccess": 133,
+            "DerivativeOpenSuccess": 252,
+            "DerivativePutSuccess": 133
+          },
+          "rendererWSBytes": 272601088
+        }
+      ],
+      "fiveViewportP50Ms": 2503.6041320000077,
+      "go": {
+        "initial": {
+          "rssBytes": 71860224,
+          "cpuMs": 31940
+        },
+        "final": {
+          "rssBytes": 51204096,
+          "cpuMs": 32810
+        },
+        "sampledPeakRSSBytes": 72105984,
+        "RSSGrowthBytes": 245760,
+        "cpuDeltaMs": 870
+      },
+      "chromium": {
+        "firstWSBytes": 145891328,
+        "peakWSBytes": 272601088,
+        "growthBytes": 126709760
+      },
+      "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+    }
+  ],
+  "source_exact_CI_summary": {
+    "status": "measured-current-source-only-no-product-after",
+    "samples": [
+      {
+        "sample": 1,
+        "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 133391.246,
+        "distinctDecodedVisibleIndices": 40,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 1914.3794430000125,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3,
+              8,
+              9
+            ],
+            "mountedTiles": 63,
+            "visibleDecodedBlobImages": 9,
+            "http": {
+              "active": 2,
+              "canceled": 0,
+              "completed": 18,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 12766,
+              "started": 20
+            },
+            "store": {
+              "OriginalOpenSuccess": 20,
+              "DerivativeOpenSuccess": 38,
+              "DerivativePutSuccess": 19
+            },
+            "rendererWSBytes": 207532032
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2569.6810840000107,
+            "freshDecodedIndices": [
+              25002,
+              25003,
+              25004,
+              25005,
+              25006,
+              25007
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 6,
+            "http": {
+              "active": 4,
+              "canceled": 0,
+              "completed": 41,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 29023,
+              "started": 45
+            },
+            "store": {
+              "OriginalOpenSuccess": 44,
+              "DerivativeOpenSuccess": 82,
+              "DerivativePutSuccess": 44
+            },
+            "rendererWSBytes": 241508352
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2538.807016000006,
+            "freshDecodedIndices": [
+              50004,
+              50005,
+              50006,
+              50007,
+              50008,
+              50009
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 6,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 63,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 44605,
+              "started": 68
+            },
+            "store": {
+              "OriginalOpenSuccess": 66,
+              "DerivativeOpenSuccess": 126,
+              "DerivativePutSuccess": 64
+            },
+            "rendererWSBytes": 253919232
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2606.998853999976,
+            "freshDecodedIndices": [
+              75000,
+              75001,
+              75006,
+              75007,
+              75008,
+              75009
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 7,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 85,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 60151,
+              "started": 90
+            },
+            "store": {
+              "OriginalOpenSuccess": 89,
+              "DerivativeOpenSuccess": 172,
+              "DerivativePutSuccess": 88
+            },
+            "rendererWSBytes": 258699264
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2621.2528050000255,
+            "freshDecodedIndices": [
+              94959,
+              94960,
+              94961,
+              95000,
+              95001,
+              95002
+            ],
+            "mountedTiles": 90,
+            "visibleDecodedBlobImages": 12,
+            "http": {
+              "active": 5,
+              "canceled": 1,
+              "completed": 112,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 78570,
+              "started": 117
+            },
+            "store": {
+              "OriginalOpenSuccess": 115,
+              "DerivativeOpenSuccess": 228,
+              "DerivativePutSuccess": 114
+            },
+            "rendererWSBytes": 281866240
+          }
+        ],
+        "fiveViewportP50Ms": 2569.6810840000107,
+        "go": {
+          "initial": {
+            "rssBytes": 71954432,
+            "cpuMs": 32510
+          },
+          "final": {
+            "rssBytes": 45826048,
+            "cpuMs": 33320
+          },
+          "sampledPeakRSSBytes": 72110080,
+          "RSSGrowthBytes": 155648,
+          "cpuDeltaMs": 810
+        },
+        "chromium": {
+          "firstWSBytes": 144719872,
+          "peakWSBytes": 281866240,
+          "growthBytes": 137146368
+        },
+        "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+      },
+      {
+        "sample": 2,
+        "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 118984.637,
+        "distinctDecodedVisibleIndices": 60,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 1807.7852549999952,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3,
+              8,
+              9
+            ],
+            "mountedTiles": 63,
+            "visibleDecodedBlobImages": 14,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 22,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 15594,
+              "started": 27
+            },
+            "store": {
+              "OriginalOpenSuccess": 25,
+              "DerivativeOpenSuccess": 46,
+              "DerivativePutSuccess": 25
+            },
+            "rendererWSBytes": 210833408
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2380.556273999973,
+            "freshDecodedIndices": [
+              24975,
+              24976,
+              24977,
+              24978,
+              24979,
+              24980
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 15,
+            "http": {
+              "active": 1,
+              "canceled": 0,
+              "completed": 58,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 41034,
+              "started": 59
+            },
+            "store": {
+              "OriginalOpenSuccess": 59,
+              "DerivativeOpenSuccess": 116,
+              "DerivativePutSuccess": 59
+            },
+            "rendererWSBytes": 232943616
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2338.3240499999956,
+            "freshDecodedIndices": [
+              49968,
+              49969,
+              49970,
+              49971,
+              49972,
+              49977
+            ],
+            "mountedTiles": 50,
+            "visibleDecodedBlobImages": 10,
+            "http": {
+              "active": 3,
+              "canceled": 0,
+              "completed": 86,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 60842,
+              "started": 89
+            },
+            "store": {
+              "OriginalOpenSuccess": 87,
+              "DerivativeOpenSuccess": 172,
+              "DerivativePutSuccess": 87
+            },
+            "rendererWSBytes": 252686336
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2543.285933999985,
+            "freshDecodedIndices": [
+              75000,
+              75001,
+              75006,
+              75007,
+              75008,
+              75009
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 12,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 119,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 82068,
+              "started": 124
+            },
+            "store": {
+              "OriginalOpenSuccess": 124,
+              "DerivativeOpenSuccess": 232,
+              "DerivativePutSuccess": 119
+            },
+            "rendererWSBytes": 253829120
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2461.209256000002,
+            "freshDecodedIndices": [
+              94959,
+              94960,
+              94961,
+              94962,
+              94963,
+              94964
+            ],
+            "mountedTiles": 59,
+            "visibleDecodedBlobImages": 9,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 145,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 100522,
+              "started": 150
+            },
+            "store": {
+              "OriginalOpenSuccess": 148,
+              "DerivativeOpenSuccess": 284,
+              "DerivativePutSuccess": 145
+            },
+            "rendererWSBytes": 255967232
+          }
+        ],
+        "fiveViewportP50Ms": 2380.556273999973,
+        "go": {
+          "initial": {
+            "rssBytes": 71708672,
+            "cpuMs": 32290
+          },
+          "final": {
+            "rssBytes": 46882816,
+            "cpuMs": 33160
+          },
+          "sampledPeakRSSBytes": 72081408,
+          "RSSGrowthBytes": 372736,
+          "cpuDeltaMs": 870
+        },
+        "chromium": {
+          "firstWSBytes": 145465344,
+          "peakWSBytes": 255967232,
+          "growthBytes": 110501888
+        },
+        "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+      },
+      {
+        "sample": 3,
+        "workload": "100k-logical-115k-physical-mixed-actual-Web-Gallery-five-Grid-viewports",
+        "physicalOriginals": 115000,
+        "physicalOriginalBytes": 149285128,
+        "seedMsExcluded": 120403.386,
+        "distinctDecodedVisibleIndices": 47,
+        "views": [
+          {
+            "fraction": 0,
+            "scroll": {
+              "fraction": 0,
+              "extent": 1763646,
+              "scrollTop": 0,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 1565.1883210000233,
+            "freshDecodedIndices": [
+              0,
+              1,
+              2,
+              3,
+              8,
+              9
+            ],
+            "mountedTiles": 63,
+            "visibleDecodedBlobImages": 14,
+            "http": {
+              "active": 1,
+              "canceled": 0,
+              "completed": 26,
+              "failed": 0,
+              "max_active": 5,
+              "response_bytes": 18434,
+              "started": 27
+            },
+            "store": {
+              "OriginalOpenSuccess": 27,
+              "DerivativeOpenSuccess": 52,
+              "DerivativePutSuccess": 27
+            },
+            "rendererWSBytes": 208056320
+          },
+          {
+            "fraction": 0.25,
+            "scroll": {
+              "fraction": 0.25,
+              "extent": 1763646,
+              "scrollTop": 440911,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2506.078720999998,
+            "freshDecodedIndices": [
+              24975,
+              24976,
+              24977,
+              24978,
+              24979,
+              24980
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 11,
+            "http": {
+              "active": 4,
+              "canceled": 0,
+              "completed": 55,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 37503,
+              "started": 59
+            },
+            "store": {
+              "OriginalOpenSuccess": 57,
+              "DerivativeOpenSuccess": 106,
+              "DerivativePutSuccess": 57
+            },
+            "rendererWSBytes": 232968192
+          },
+          {
+            "fraction": 0.5,
+            "scroll": {
+              "fraction": 0.5,
+              "extent": 1763646,
+              "scrollTop": 881823,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2478.148218999966,
+            "freshDecodedIndices": [
+              50004,
+              50005,
+              50006,
+              50007,
+              50008,
+              50009
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 6,
+            "http": {
+              "active": 6,
+              "canceled": 0,
+              "completed": 79,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 53788,
+              "started": 85
+            },
+            "store": {
+              "OriginalOpenSuccess": 83,
+              "DerivativeOpenSuccess": 154,
+              "DerivativePutSuccess": 83
+            },
+            "rendererWSBytes": 254251008
+          },
+          {
+            "fraction": 0.75,
+            "scroll": {
+              "fraction": 0.75,
+              "extent": 1763646,
+              "scrollTop": 1322734,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2503.6041320000077,
+            "freshDecodedIndices": [
+              75000,
+              75001,
+              75006,
+              75007,
+              75008,
+              75009
+            ],
+            "mountedTiles": 99,
+            "visibleDecodedBlobImages": 9,
+            "http": {
+              "active": 5,
+              "canceled": 0,
+              "completed": 105,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 71491,
+              "started": 110
+            },
+            "store": {
+              "OriginalOpenSuccess": 109,
+              "DerivativeOpenSuccess": 206,
+              "DerivativePutSuccess": 108
+            },
+            "rendererWSBytes": 259309568
+          },
+          {
+            "fraction": 0.95,
+            "scroll": {
+              "fraction": 0.95,
+              "extent": 1763646,
+              "scrollTop": 1675463,
+              "viewportHeight": 873
+            },
+            "firstSixDecodedAndTwoFramesMs": 2598.878991000005,
+            "freshDecodedIndices": [
+              94959,
+              94960,
+              94961,
+              94962,
+              94963,
+              94964
+            ],
+            "mountedTiles": 90,
+            "visibleDecodedBlobImages": 7,
+            "http": {
+              "active": 4,
+              "canceled": 0,
+              "completed": 130,
+              "failed": 0,
+              "max_active": 6,
+              "response_bytes": 89162,
+              "started": 134
+            },
+            "store": {
+              "OriginalOpenSuccess": 133,
+              "DerivativeOpenSuccess": 252,
+              "DerivativePutSuccess": 133
+            },
+            "rendererWSBytes": 272601088
+          }
+        ],
+        "fiveViewportP50Ms": 2503.6041320000077,
+        "go": {
+          "initial": {
+            "rssBytes": 71860224,
+            "cpuMs": 31940
+          },
+          "final": {
+            "rssBytes": 51204096,
+            "cpuMs": 32810
+          },
+          "sampledPeakRSSBytes": 72105984,
+          "RSSGrowthBytes": 245760,
+          "cpuDeltaMs": 870
+        },
+        "chromium": {
+          "firstWSBytes": 145891328,
+          "peakWSBytes": 272601088,
+          "growthBytes": 126709760
+        },
+        "limitations": "real Web Gallery Grid + API + 115k different physical CAS with new visible JPEG/Live stills decoded and two rAF only; NOT 100k independent H264 encodes, video/Live motion playback, RAW/HEVC, Desktop Main/Agent, Timeline, physical mobile or WAN"
+      }
+    ],
+    "n": 3,
+    "logicalCount": 100000,
+    "physicalOriginals": 115000,
+    "medianOfFixtureFiveViewportP50Ms": 2503.6041320000077,
+    "maxRendererWorkingSetGrowthBytes": 137146368,
+    "maxNativeGoRSSGrowthBytes": 372736,
+    "peakHTTPThumbnailHandlers": 6,
+    "accepted": true,
+    "limits": "five positions 0/25/50/75/95%; first-six fresh blob JPEG decode + 2 rAF <=20s, mounted<1000, HTTP concurrency<=6, Renderer/Go after-seed RSS growth<=256MiB",
+    "caveats": "No matching production BEFORE/AFTER, no validated video H264/Live motion browser playback, RAW/HEVC/LIVP, Timeline, Desktop Agent, WAN or durable task cancellation"
+  },
+  "limitations": "Five real mounted Web Gallery Grid JPEG / Live still viewport image decodes plus two rAF; this does not decode all 115k originals or actual video H264/Live motion, RAW/HEVC/LIVP, Timeline, Desktop Main/Agent, physical mobile, real WAN, durable sync/delete. Renderer memory growth only after loadURL and Go RSS only after CAS seed; fast-stream cancellation counters not a full Go Context.Done guarantee (separate accepted tests)."
+}

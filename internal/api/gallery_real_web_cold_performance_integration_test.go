@@ -84,6 +84,19 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 
 	started := time.Now()
 	mediaGallerySeedFirstOpen100K(t, db, ownerRoot.OwnerID, folder.ID)
+	physicalViewportMode := os.Getenv("XD_GALLERY_WEB_PHYSICAL_MIXED_VIEWPORT_100K_PERF") == "1"
+	if physicalViewportMode && os.Getenv("XD_GALLERY_REAL_VIEWPORT_CANCEL_PERF") == "1" {
+		t.Fatal("physical decoded-viewport benchmark cannot use artificially slowed cancel writer")
+	}
+	var physicalReport galleryPhysicalMixed100KReport
+	if physicalViewportMode {
+		physicalReport = gallerySeedRealPhysicalMixed100K(
+			t, db, countingStore, ownerRoot.OwnerID, folder.ID,
+		)
+		t.Logf("GALLERY_WEB_PHYSICAL_100K_SEED sources=%d physical_bytes=%d verified=%d seed_ms=%.3f",
+			physicalReport.PhysicalSources, physicalReport.PhysicalBytes,
+			physicalReport.VerifiedCASReads, physicalReport.SeedMs)
+	}
 	page, err := server.queryMediaItemRange(
 		context.Background(), ownerRoot.OwnerID, mediaQueryOptions{}, "", 100, 0,
 	)
@@ -94,9 +107,17 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		len(page.Items) < galleryFirstVisibleViewport {
 		t.Fatalf("invalid 100k browser page: total=%d first=%d", page.TotalCount, len(page.Items))
 	}
-	images, videos, liveCount := galleryFirstVisibleSeedObjects(
-		t, db, countingStore, page.Items[:galleryFirstVisibleViewport],
-	)
+	var images, videos []uint64
+	var liveCount int
+	if physicalViewportMode {
+		images, videos, liveCount = galleryPhysicalMixedViewportIDs(
+			t, page.Items[:galleryFirstVisibleViewport],
+		)
+	} else {
+		images, videos, liveCount = galleryFirstVisibleSeedObjects(
+			t, db, countingStore, page.Items[:galleryFirstVisibleViewport],
+		)
+	}
 	if len(images) < 12 || len(videos) == 0 || liveCount == 0 {
 		t.Fatalf("invalid mixed browser fixture: images=%d videos=%d Live=%d",
 			len(images), len(videos), liveCount)
@@ -125,6 +146,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	}
 	seedMS := float64(time.Since(started).Microseconds()) / 1000
 	countingStore.Reset()
+	physicalProbe := &fileExplorerRealPhysicalProbe{} // test-only genuine request/byte/active counts
 	stopped := make(chan struct{})
 	var once sync.Once
 	files := http.FileServer(http.Dir(dist))
@@ -139,6 +161,10 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 				"physical_nodes":     mediaGalleryFirstOpenPhysical,
 				"live_photo_groups":  mediaGalleryFirstOpenLivePhotos,
 				"seed_ms":            seedMS,
+				"physical_mode":      physicalViewportMode,
+				"physical_sources":   physicalReport.PhysicalSources,
+				"physical_bytes":     physicalReport.PhysicalBytes,
+				"physical_verified":  physicalReport.VerifiedCASReads,
 				"fold_enabled":       foldEnabled,
 				"fold_groups":        map[bool]int{true: galleryRealWebFoldGroups, false: 0}[foldEnabled],
 				"fold_visible_count": map[bool]int{true: galleryRealWebFoldVisible, false: mediaGalleryFirstOpenLogicalCount}[foldEnabled],
@@ -146,6 +172,14 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 		case "/__perf/stats":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(countingStore.Snapshot())
+		case "/__perf/physical-thumbnail-stats":
+			if !physicalViewportMode {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			_ = json.NewEncoder(w).Encode(physicalProbe.snapshot())
 		case "/__perf/viewport-cancel-stats":
 			if viewportProbe == nil {
 				http.NotFound(w, r)
@@ -169,6 +203,12 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
+			if physicalViewportMode && r.Method == http.MethodGet &&
+				strings.HasPrefix(r.URL.Path, "/api/v1/media/items/") &&
+				strings.HasSuffix(r.URL.Path, "/thumbnail") {
+				physicalProbe.serve(w, r, router)
+				return
+			}
 			if viewportProbe != nil && r.Method == http.MethodGet &&
 				viewportProbe.matches(r.URL.Path) {
 				viewportProbe.serve(w, r, router)
@@ -185,6 +225,11 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	defer httpServer.Close()
 	ready := map[string]any{
 		"url":                httpServer.URL,
+		"live_photo_groups":  mediaGalleryFirstOpenLivePhotos,
+		"physical_mode":      physicalViewportMode,
+		"physical_sources":   physicalReport.PhysicalSources,
+		"physical_bytes":     physicalReport.PhysicalBytes,
+		"physical_verified":  physicalReport.VerifiedCASReads,
 		"seed_ms":            seedMS,
 		"first_image_nodes":  len(images),
 		"first_video_nodes":  len(videos),
