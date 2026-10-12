@@ -2720,6 +2720,10 @@ export function XDriveMediaGalleryPage({
         onRefresh={refreshGallery}
         />
       </XDriveMediaGalleryCoverProvider>
+      <XDriveMediaGalleryCoverProvider
+        key={`${preferenceScope || 'gallery-default'}:verified-fold`}
+        loadThumbnail={source.loadThumbnail}
+      >
       <Dialog
         open={Boolean(foldDialog)}
         onClose={closeFoldDialog}
@@ -2753,8 +2757,9 @@ export function XDriveMediaGalleryPage({
                   data-xdrive-gallery-verified-fold-member={member.node.id}
                 >
                   <Box sx={{ width: 56, height: 56, flexShrink: 0, overflow: 'hidden' }}>
-                    <XDriveMediaAsyncThumbnail
+                    <XDriveMediaGalleryCoverThumbnail
                       nodeID={member.metadata.has_thumbnail ? member.node.id : undefined}
+                      revision={member.node.revision}
                       alt={member.node.name}
                       loadThumbnail={source.loadThumbnail}
                       fallback={xDriveMediaFallback(member.metadata.media_kind)}
@@ -2791,6 +2796,7 @@ export function XDriveMediaGalleryPage({
           <Button onClick={closeFoldDialog}>关闭</Button>
         </DialogActions>
       </Dialog>
+      </XDriveMediaGalleryCoverProvider>
       {shareDialog ? (
         <XDriveShareDialog
           adapter={shareDialog.adapter}
