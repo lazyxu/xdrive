@@ -38,7 +38,7 @@ func (m *Manager) markHistoryDirtyForLocked(id string) {
 		return
 	}
 	root := m.entries[transferRootID(e.task)]
-	if root != nil && terminalState(root.task.State) && !root.pendingGroupCancel {
+	if root != nil && terminalState(root.task.State) && !root.pendingAgentCancel {
 		m.markHistoryDirtyLocked()
 	}
 }
@@ -71,7 +71,7 @@ func (m *Manager) HistorySnapshot(limit int) []Task {
 			if e.task.ID == rootID && terminalState(e.task.State) {
 				eligible[rootID] = true
 			}
-			if activeState(e.task.State) || e.pendingGroupCancel {
+			if activeState(e.task.State) || e.pendingAgentCancel {
 				active[rootID] = true
 			}
 		}

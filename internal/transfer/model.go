@@ -120,7 +120,7 @@ type entry struct {
 	retry              RetryFunc
 	cancel             context.CancelFunc
 	groupCancelContext context.Context // Agent-owned upload group; never persisted
-	pendingGroupCancel bool            // Keep pending group cancel visible to Clear/trim.
+	pendingAgentCancel bool            // Keep pending Agent-owned cancel visible to Clear/trim.
 	lastBytes          int64
 	lastAt             time.Time
 	rateBaseBytes      int64
@@ -484,7 +484,9 @@ func (h *Handle) BindCancel(cancel context.CancelFunc) bool {
 	if e == nil || !activeState(e.task.State) || e.task.State == StateCancelling || e.cancel != nil {
 		return false
 	}
-	e.cancel = cancel
+	// Clear and Cancel may both join this direct I/O owner concurrently.
+	// The underlying cancel callback must execute only once.
+	e.cancel = sync.OnceFunc(cancel)
 	e.task.Cancelable = true
 	m.touchLocked()
 	return true
@@ -609,6 +611,13 @@ func (m *Manager) Cancel(id string) error {
 		return errors.New("this transfer does not support cancellation")
 	}
 	cancel := e.cancel
+	// Keep a direct owner's handoff visible if Finish publishes a terminal
+	// snapshot before the callback finishes. Group Finish has its own
+	// pending handoff protection.
+	directCancel := e.groupCancelContext == nil
+	if directCancel {
+		e.pendingAgentCancel = true
+	}
 	// Keep the pending cancellation visible to Clear until the transport
 	// callback has actually been invoked outside this lock. A concurrent
 	// account switch must not return while old-account I/O remains alive.
@@ -620,6 +629,24 @@ func (m *Manager) Cancel(id string) error {
 	m.touchLocked()
 	m.mu.Unlock()
 	cancel()
+	if directCancel {
+		// Do not hold Manager.mu while invoking an Agent callback. Concurrent
+		// Clear joins the same OnceFunc before discarding old account state.
+		m.mu.Lock()
+		if m.entries[id] == e {
+			e.pendingAgentCancel = false
+			if terminalState(e.task.State) {
+				e.cancel = nil
+				before := len(m.order)
+				m.trimLocked()
+				if len(m.order) != before {
+					m.touchLocked()
+				}
+				m.markHistoryDirtyLocked()
+			}
+		}
+		m.mu.Unlock()
+	}
 	return nil
 }
 
@@ -678,7 +705,7 @@ func (m *Manager) ClearHistory(scopes ...string) {
 			continue
 		}
 		rootID := transferRootID(e.task)
-		if activeState(e.task.State) || e.pendingGroupCancel {
+		if activeState(e.task.State) || e.pendingAgentCancel {
 			activeRoots[rootID] = true
 		}
 	}
@@ -1116,10 +1143,14 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 		// Keep the callback published while releasing Manager.mu. Concurrent
 		// Clear must join it, and history trimming must not erase the handoff.
 		groupCancel = e.cancel
-		e.pendingGroupCancel = true
+		e.pendingAgentCancel = true
 	} else {
 		e.groupCancelContext = nil
-		e.cancel = nil
+		// Explicit Cancel may still be executing the I/O callback outside
+		// the lock. Clear must continue to see and join that owner.
+		if !e.pendingAgentCancel {
+			e.cancel = nil
+		}
 	}
 	e.task.Cancelable = false
 	e.task.State = state
@@ -1165,7 +1196,7 @@ func (m *Manager) finishStateResult(id, state string, err error) (bool, error) {
 		groupCancel()
 		m.mu.Lock()
 		if m.entries[id] == e {
-			e.pendingGroupCancel = false
+			e.pendingAgentCancel = false
 			e.groupCancelContext = nil
 			e.cancel = nil
 			before := len(m.order)
@@ -1194,7 +1225,9 @@ func (m *Manager) finish(id string, err error) {
 		// nor may a delayed callback rewrite a confirmed terminal result.
 		return
 	}
-	e.cancel = nil
+	if !e.pendingAgentCancel {
+		e.cancel = nil
+	}
 	e.task.Cancelable = false
 	if err == nil {
 		e.task.State = StateCompleted
@@ -1271,7 +1304,7 @@ func (m *Manager) trimLocked() {
 				seen[rootID] = true
 				rootOrder = append(rootOrder, rootID)
 			}
-			if activeState(e.task.State) || e.pendingGroupCancel {
+			if activeState(e.task.State) || e.pendingAgentCancel {
 				activeRoots[rootID] = true
 			}
 		}
