@@ -14,6 +14,8 @@ import { XDriveFileOperationCenter } from './FileOperationCenter'
 import { XDriveMediaSelectionJobCenter } from './MediaSelectionJobCenter'
 import type { XDriveMediaSelectionJobPort } from './MediaSelectionJobCenter'
 import { XDriveTransferCenter } from './TransferCenter'
+import { XDriveTaskCenterSection } from './TaskPresentation'
+import { XDriveStatePanel } from './StatePanel'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
 function XDriveTaskHistorySentinel({
@@ -73,6 +75,7 @@ export interface XDriveTaskCenterPageProps {
   globalBackgroundTasksLoading?: boolean
   backgroundTasksAvailable?: boolean
   globalTasksEnabled?: boolean
+  globalTasksAvailable?: boolean
   backgroundScope?: 'mine' | 'global'
   onBackgroundScopeChange?: (scope: 'mine' | 'global') => void
   backgroundControlKey?: string
@@ -117,7 +120,9 @@ export function XDriveTaskCenterPage({
   globalBackgroundTasksLoading = false,
   backgroundTasksAvailable = false,
   globalTasksEnabled = false,
+  globalTasksAvailable = globalTasksEnabled,
   backgroundScope = 'mine',
+  onBackgroundScopeChange,
   backgroundControlKey = '',
   onBackgroundTaskControl,
   backgroundHasMore = false,
@@ -199,28 +204,58 @@ export function XDriveTaskCenterPage({
       subtitle={scope === 'global' ? '查看所有用户及系统的后台任务，按权限执行控制操作。' : subtitle}
       pageActions={actions}
     >
-      <Stack ref={contentRef} spacing={3}>
+      <Stack ref={contentRef} spacing={2.75}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}
+          alignItems={{ md: 'center' }} justifyContent="space-between">
+          <Typography variant="body2" color="text.secondary">
+            {scope === 'global'
+              ? '管理员视图：跨用户和系统的服务器后台任务，不包含其他设备的本机传输。'
+              : '我的任务：当前用户的文件操作、同步与后台处理；实时上传下载请查看传输入口。'}
+          </Typography>
+          {globalTasksEnabled && onBackgroundScopeChange ? (
+            <ToggleButtonGroup size="small" exclusive value={scope} aria-label="任务查看范围"
+              onChange={(_event, next: 'mine' | 'global' | null) => {
+                if (next && next !== scope) onBackgroundScopeChange(next)
+              }}
+              sx={{
+                alignSelf: { xs: 'stretch', md: 'auto' },
+                '& .MuiToggleButton-root': {
+                  minHeight: 44, flex: { xs: 1, md: 'none' }, whiteSpace: 'nowrap',
+                },
+              }}
+            >
+              <ToggleButton value="mine" aria-label="我的任务">我的任务</ToggleButton>
+              <ToggleButton value="global" aria-label="全局后台任务">全局后台任务</ToggleButton>
+            </ToggleButtonGroup>
+          ) : null}
+        </Stack>
         {scope === 'global' ? (
-          <Box>
+          <XDriveTaskCenterSection title="服务器后台任务"
+            loadedCount={globalTasksAvailable ? globalBackgroundTasks.length : undefined}
+            description="管理员可查看跨用户与系统任务；控制操作由服务端授权决定。">
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}
               justifyContent="space-between" sx={{ mb: 1.5 }}>
               <Typography variant="body2" color="text.secondary">
                 与个人后台任务使用同一任务卡片；全局任务额外显示用户和系统归属。
               </Typography>
-              <ToggleButtonGroup
+              {globalTasksAvailable ? <ToggleButtonGroup
                 size="small"
                 exclusive
                 value={globalTaskView}
                 aria-label="全局后台任务显示方式"
+                sx={{ display: { xs: 'none', md: 'inline-flex' } }}
                 onChange={(_event, next: 'cards' | 'table' | null) => {
                   if (next) setGlobalTaskView(next)
                 }}
               >
                 <ToggleButton value="cards" aria-label="卡片视图">卡片</ToggleButton>
                 <ToggleButton value="table" aria-label="表格视图">表格</ToggleButton>
-              </ToggleButtonGroup>
+              </ToggleButtonGroup> : null}
             </Stack>
-            {globalTaskView === 'cards' ? (
+            {!globalTasksAvailable ? (
+              <XDriveStatePanel variant="plain"
+                message="当前客户端、xdrive-agent 或服务端尚不支持全局后台任务，请更新相应组件后重试。" />
+            ) : globalTaskView === 'cards' ? (
               <XDriveBackgroundTaskList
                 tasks={globalBackgroundTasks}
                 loading={globalBackgroundTasksLoading}
@@ -239,12 +274,12 @@ export function XDriveTaskCenterPage({
                 onControl={onBackgroundTaskControl}
               />
             )}
-            <XDriveTaskHistorySentinel
+            {globalTasksAvailable ? <XDriveTaskHistorySentinel
               hasMore={backgroundHasMore}
               loading={backgroundLoadingMore}
               onLoadMore={onLoadMoreBackground}
-            />
-          </Box>
+            /> : null}
+          </XDriveTaskCenterSection>
         ) : (
           <>
             {mediaSelectionJobPort ? (
@@ -253,10 +288,8 @@ export function XDriveTaskCenterPage({
               </Box>
             ) : null}
             {mediaSelectionJobPort ? <Divider /> : null}
-            <Box>
-              <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                文件操作
-              </Typography>
+            <XDriveTaskCenterSection title="文件操作" loadedCount={operations.length}
+              description="当前用户文件操作；撤销、重做和冲突处理仅在个人任务中提供。">
               <XDriveFileOperationCenter
                 operations={operations}
                 cancellingID={operationCancellingID}
@@ -274,30 +307,25 @@ export function XDriveTaskCenterPage({
                 onRedo={onRedoOperation}
                 onResolveConflict={onResolveOperationConflict}
               />
-            </Box>
+            </XDriveTaskCenterSection>
             {transfers.length > 0 ? (
               <>
                 <Divider />
-                <Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                    本机任务
-                  </Typography>
+                <XDriveTaskCenterSection title="本机任务" loadedCount={transfers.length}
+                  description="当前客户端的本地处理，不属于跨用户服务器任务。">
                   <XDriveTransferCenter
                     transfers={transfers}
                     retryingID={transferRetryingID}
                     retryDisabled={transferRetryDisabled}
                     onRetry={onRetryTransfer}
                   />
-                </Box>
+                </XDriveTaskCenterSection>
               </>
             ) : null}
             {backgroundTasksAvailable ? (
               <>
                 <Divider />
-                <Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                    同步文件夹
-                  </Typography>
+                <XDriveTaskCenterSection title="同步文件夹" loadedCount={syncTasks.length}>
                   <XDriveBackgroundTaskList
                     tasks={syncTasks}
                     loading={backgroundTasksLoading}
@@ -306,12 +334,9 @@ export function XDriveTaskCenterPage({
                     focusedTaskID={backgroundFocusTaskID}
                     onControl={onBackgroundTaskControl}
                   />
-                </Box>
+                </XDriveTaskCenterSection>
                 <Divider />
-                <Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ mb: 1.5 }}>
-                    后台处理
-                  </Typography>
+                <XDriveTaskCenterSection title="后台处理" loadedCount={derivedTasks.length}>
                   <XDriveBackgroundTaskList
                     tasks={derivedTasks}
                     loading={backgroundTasksLoading}
@@ -320,7 +345,7 @@ export function XDriveTaskCenterPage({
                     focusedTaskID={backgroundFocusTaskID}
                     onControl={onBackgroundTaskControl}
                   />
-                </Box>
+                </XDriveTaskCenterSection>
                 <XDriveTaskHistorySentinel
                   hasMore={backgroundHasMore}
                   loading={backgroundLoadingMore}

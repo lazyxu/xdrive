@@ -482,3 +482,10 @@ actual device logs; do not invent benchmark numbers.
 - **全局后台任务（管理员）**仅展示 Server 多用户及系统持久任务，默认使用与个人 Server 后台任务相同的 `BackgroundTaskItem` 卡片、状态、进度条、时间及控制，仅补充归属用户/系统。支持可选「表格」视图便于密集排障；Mobile Web 表格自动采用卡片显示。
 - 使用同一共享 `XDriveTaskCenterPage` 和已有的强类型控制接口；保留已有 `requireAdmin`、`control_actions`、分页加载、任务聚焦与不同账户作用域。严禁把本机网络传输误归入全局任务，或随页面关闭取消持久任务。
 - **验收：** 共享 UI/角色及分页契约测试、Web/Desktop 构建与 PR 准确头 CI；真实设备手工验收另计。此 C4 为视觉/交互一致性，不属于性能提升或 race 修复。
+
+## C5 · 个人与全局任务的统一视图（2026-10-12）
+
+- 个人「任务」和管理员「全局后台任务」共享 Page/Header/Section/TaskCard MUI 外观；相同 Server 任务仍使用 C4 的 `BackgroundTaskItem`，FileOperation 和本机传输保持各自权限/撤销/重试逻辑并复用共享卡片外框；MediaSelection 保留其既有独立任务卡片及专属轮询/控制生命周期，避免将其误当成统一 Server BackgroundTask API。
+- 有权限的管理员可在两页使用「我的任务 / 全局后台任务」范围按钮直接改变现有 workspace 路由。普通用户不显示全局入口。旧 Desktop Agent 不支持全局查询时显示明确不可用，不得回退个人数据并伪造 0 个任务。
+- 数量只标为「已加载 N 项」，分页不完整时不得显示为全集；不会为总数而额外展开 100k 工作队列。Mobile Web 保持同一共享组件与 44px 范围切换，密集表格只能宽屏选择。
+- 不改变 `control_actions`、管理员 `requireAdmin`、持久 Server 任务或窗口关闭取消语义；右上角实时网络传输浮层保持独立。需要准确头 PR CI 和真实设备验收分别证明。详见 [Sidebar 管理员功能等价](sidebar-admin-parity.md)。

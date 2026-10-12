@@ -31,6 +31,7 @@ import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
 import { XDriveTableSurface } from './TableSurface'
+import { XDriveTaskCardSurface } from './TaskPresentation'
 
 function taskTone(state: string) {
   if (state === 'completed') return 'good' as const
@@ -184,16 +185,12 @@ function BackgroundTaskItem({
     : xDriveBackgroundTaskKindLabel(task.kind)
 
   return (
-    <Box
+    <XDriveTaskCardSurface
       data-xdrive-background-task-id={task.id}
       tabIndex={focused ? -1 : undefined}
-      sx={{
-        border: 1,
-        borderColor: focused ? 'primary.main' : 'divider',
-        borderRadius: 2,
-        overflow: 'hidden',
-        bgcolor: focused ? 'action.selected' : undefined,
-      }}
+      focused={focused}
+      role="group"
+      aria-label={title}
     >
       <Stack spacing={1.25} sx={{ px: 1.75, py: 1.5 }}>
         <Stack
@@ -289,7 +286,7 @@ function BackgroundTaskItem({
         <BackgroundTaskOperationalMetadata task={task} />
         {task.error ? <XDriveStatusAlert tone="bad">{task.error}</XDriveStatusAlert> : null}
       </Stack>
-    </Box>
+    </XDriveTaskCardSurface>
   )
 }
 

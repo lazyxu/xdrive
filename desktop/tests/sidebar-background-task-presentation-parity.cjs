@@ -7,6 +7,11 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8')
 const page = read('ui', 'shared', 'src', 'mui', 'TaskCenterPage.tsx')
 const bg = read('ui', 'shared', 'src', 'mui', 'BackgroundTaskCenter.tsx')
 const controller = read('ui', 'shared', 'src', 'mui', 'TaskCenterController.ts')
+const presentation = read('ui', 'shared', 'src', 'mui', 'TaskPresentation.tsx')
+const operation = read('ui', 'shared', 'src', 'mui', 'FileOperationCenter.tsx')
+const transfer = read('ui', 'shared', 'src', 'mui', 'TransferCenter.tsx')
+const web = read('web', 'src', 'App.tsx')
+const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 test('personal and global Server background tasks default to the same reusable card', () => {
   assert.ok(page.includes("useState<'cards' | 'table'>('cards')"))
   assert.ok(page.includes("globalTaskView === 'cards'"))
@@ -28,4 +33,27 @@ test('tasks remain separate owner scope with existing controls and pagination', 
   assert.ok(page.includes('onBackgroundTaskControl'))
   assert.ok(controller.includes("effectiveScope === 'global'"))
   assert.ok(controller.includes('port.loadGlobalPage'))
+})
+
+test('all task variants use a single MUI card chrome and section language', () => {
+  assert.ok(presentation.includes('export function XDriveTaskCardSurface('))
+  assert.ok(presentation.includes('export function XDriveTaskCenterSection('))
+  for (const component of [bg, operation, transfer]) {
+    assert.ok(component.includes("from './TaskPresentation'"))
+    assert.ok(component.includes('<XDriveTaskCardSurface'))
+  }
+  assert.ok(page.includes('<XDriveTaskCenterSection'))
+  assert.ok(page.includes('aria-label="任务查看范围"'))
+  assert.ok(page.includes('globalTasksAvailable'))
+})
+
+test('Web and Desktop use real route changes for personal/global tasks', () => {
+  for (const app of [web, desktop]) {
+    assert.ok(app.includes('globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}'))
+    assert.ok(app.includes('onBackgroundScopeChange={(scope) => {'))
+    assert.ok(app.includes("scope === 'global' ? 'global-tasks' : 'transfers'"))
+    assert.ok(app.includes('<XDriveTaskCenterPage'))
+  }
+  assert.ok(controller.includes('port.loadGlobalPage'))
+  assert.ok(controller.includes("effectiveScope === 'global'"))
 })

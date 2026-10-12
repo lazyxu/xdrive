@@ -1806,6 +1806,14 @@ function FileManager({
         ) : appView === 'transfers' || appView === 'global-tasks' ? (
           <XDriveTaskCenterPage
             {...taskCenter.pageProps}
+            globalTasksEnabled={profile?.role === 'admin'}
+            globalTasksAvailable={Boolean(taskCenter.pageProps.globalTasksEnabled)}
+            backgroundScope={appView === 'global-tasks' ? 'global' : 'mine'}
+            onBackgroundScopeChange={(scope) => {
+              taskCenter.pageProps.onBackgroundScopeChange?.(scope)
+              setTaskCenterFocus(null)
+              setAppView(scope === 'global' ? 'global-tasks' : 'transfers')
+            }}
             mediaSelectionJobPort={appView === 'transfers' ? mediaSelectionJobPort : undefined}
             operationFocusID={filesOperationFocus?.operationID}
             operationFocusRequestID={filesOperationFocus?.requestID}

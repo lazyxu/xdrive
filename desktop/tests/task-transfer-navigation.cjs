@@ -106,7 +106,9 @@ test('external global navigation honors the administrator gate', () => {
 
 function renderTaskPage(props) {
   return load('ui/shared/src/mui/TaskCenterPage.tsx', {
-    '@mui/material': { Box: 'Box', CircularProgress: 'CircularProgress', Divider: 'Divider', Stack: 'Stack', Typography: 'Typography' },
+    '@mui/material': { Box: 'Box', CircularProgress: 'CircularProgress', Divider: 'Divider', Stack: 'Stack', ToggleButton: 'ToggleButton', ToggleButtonGroup: 'ToggleButtonGroup', Typography: 'Typography' },
+    './TaskPresentation': { XDriveTaskCenterSection: 'TaskSection' },
+    './StatePanel': { XDriveStatePanel: 'StatePanel' },
     './ActionButton': { XDriveActionButton: 'ActionButton' },
     './BackgroundTaskCenter': { XDriveBackgroundTaskList: 'BackgroundTaskList', XDriveBackgroundTaskTable: 'BackgroundTaskTable' },
     './FileOperationCenter': { XDriveFileOperationCenter: 'FileOperationCenter' },
@@ -151,4 +153,52 @@ test('Global Tasks renders an independent administrator page and ordinary users 
   const ordinary = renderTaskPage({ backgroundScope: 'global', globalBackgroundTasks: data })
   assert.equal(ordinary.props.title, '任务')
   assert.equal(elements(ordinary, 'BackgroundTaskTable').length, 0)
+})
+
+test('owner and global task pages use the same section and range switch', () => {
+  const choices = []
+  const owner = renderTaskPage({
+    globalTasksEnabled: true, backgroundScope: 'mine', backgroundTasksAvailable: true,
+    onBackgroundScopeChange: (scope) => choices.push(scope),
+  })
+  const global = renderTaskPage({
+    globalTasksEnabled: true, globalTasksAvailable: true,
+    backgroundScope: 'global', globalBackgroundTasks: [{ id: 'global-task' }],
+    onBackgroundScopeChange: (scope) => choices.push(scope),
+  })
+  const scopeSelect = (tree) => elements(tree, 'ToggleButtonGroup')
+    .find((element) => element.props['aria-label'] === '任务查看范围')
+  assert.equal(scopeSelect(owner)?.props.value, 'mine')
+  assert.equal(scopeSelect(global)?.props.value, 'global')
+  scopeSelect(owner).props.onChange(null, 'global')
+  scopeSelect(global).props.onChange(null, 'mine')
+  scopeSelect(global).props.onChange(null, null)
+  assert.deepEqual(choices, ['global', 'mine'])
+  assert.ok(elements(owner, 'TaskSection').some((item) => item.props.title === '文件操作'))
+  assert.ok(elements(global, 'TaskSection').some((item) => item.props.title === '服务器后台任务'))
+})
+
+test('unsupported global task capability shows unavailable, not a fake personal page', () => {
+  const page = renderTaskPage({
+    globalTasksEnabled: true,
+    globalTasksAvailable: false,
+    backgroundScope: 'global',
+    onBackgroundScopeChange: () => {},
+  })
+  assert.equal(page.props.title, '全局后台任务')
+  assert.equal(elements(page, 'BackgroundTaskList').length, 0)
+  assert.ok(elements(page, 'StatePanel').some((item) => item.props.message.includes('不支持全局后台任务')))
+  assert.equal(elements(page, 'ToggleButtonGroup')
+    .filter((item) => item.props['aria-label'] === '任务查看范围').length, 1)
+})
+
+test('non-admin cannot access global view or the range selector even via requested scope', () => {
+  const page = renderTaskPage({
+    globalTasksEnabled: false, backgroundScope: 'global',
+    globalBackgroundTasks: [{ id: 'administrator-only' }], onBackgroundScopeChange: () => {},
+  })
+  assert.equal(page.props.title, '任务')
+  assert.equal(elements(page, 'BackgroundTaskTable').length, 0)
+  assert.equal(elements(page, 'ToggleButtonGroup')
+    .filter((item) => item.props['aria-label'] === '任务查看范围').length, 0)
 })
