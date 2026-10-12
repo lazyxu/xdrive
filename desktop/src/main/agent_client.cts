@@ -20,6 +20,39 @@ export type AgentBuildInfo = {
   build_time?: string
 }
 
+// CommonJS Main DTO types must remain inside desktop/src; the renderer uses
+// the canonical shared admin-management contract separately.
+export type AgentAdminUser = {
+  id: number
+  username: string
+  role: 'user' | 'admin'
+  disabled: boolean
+  must_change_password: boolean
+  quota_bytes: number
+  physical_used_bytes: number
+  reserved_bytes: number
+  available_bytes: number
+  logical_file_bytes: number
+  trash_bytes: number
+  history_bytes: number
+  over_quota: boolean
+  last_login_at?: string
+  created_at: string
+  updated_at: string
+}
+export type AgentAdminCreateUserInput = {
+  username: string
+  password: string
+  role: 'user' | 'admin'
+  must_change_password: boolean
+  quota_bytes: number
+}
+export type AgentAdminUpdateUserInput = {
+  role?: 'user' | 'admin'
+  disabled?: boolean
+  quota_bytes?: number
+}
+
 export type AgentStatus = {
   revision: number
   configured: boolean
@@ -3511,6 +3544,25 @@ export class AgentIPCClient {
 
   cloudAdminServices() {
     return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
+  }
+  cloudAdminUsers() {
+    return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users')
+  }
+  cloudAdminCreateUser(input: AgentAdminCreateUserInput) {
+    return this.request<AgentAdminUser>('POST', '/v1/cloud/admin-users', input)
+  }
+  cloudAdminUpdateUser(id: number, input: AgentAdminUpdateUserInput) {
+    return this.request<AgentAdminUser>('PATCH', `/v1/cloud/admin-users/${id}`, input)
+  }
+  cloudAdminResetUserPassword(id: number, password: string, mustChangePassword = true) {
+    return this.request<{ ok: boolean }>('POST', `/v1/cloud/admin-users/${id}/reset-password`,
+      { password, must_change_password: mustChangePassword })
+  }
+  cloudAdminRevokeUserSessions(id: number) {
+    return this.request<{ ok: boolean }>('POST', `/v1/cloud/admin-users/${id}/revoke-sessions`)
+  }
+  cloudAdminDeleteUser(id: number) {
+    return this.request<{ ok: boolean }>('DELETE', `/v1/cloud/admin-users/${id}`)
   }
 
   cloudBackgroundTaskActiveSummary() {

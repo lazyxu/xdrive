@@ -822,6 +822,15 @@ declare global {
         ) => Promise<DesktopResult<XDriveFileExplorerMediaDetails[]>>
         cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: AgentCloudBatchNodeRef[], parentID?: number) => Promise<DesktopResult<AgentCloudFileOperation>>
         cloudAdminServices: () => Promise<DesktopResult<XDriveServiceDependenciesSnapshot>>
+        cloudAdminUsers: () => Promise<DesktopResult<import('../../../ui/shared/src').AdminUser[]>>
+        cloudAdminCreateUser: (input: import('../../../ui/shared/src').XDriveAdminCreateUserInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').AdminUser>>
+        cloudAdminUpdateUser: (id: number, input: import('../../../ui/shared/src').XDriveAdminUpdateUserInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').AdminUser>>
+        cloudAdminResetUserPassword: (id: number, password: string, mustChangePassword: boolean) =>
+          Promise<DesktopResult<{ ok: boolean }>>
+        cloudAdminRevokeUserSessions: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
+        cloudAdminDeleteUser: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
         cloudAdminCaddyHTTPSConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
         cloudSetAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>

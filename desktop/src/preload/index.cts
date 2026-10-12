@@ -671,6 +671,15 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-file-media-details', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
+  cloudAdminUsers: () => ipcRenderer.invoke('agent:cloud-admin-users'),
+  cloudAdminCreateUser: (input: import('../main/agent_client.cjs').AgentAdminCreateUserInput) =>
+    ipcRenderer.invoke('agent:cloud-admin-users-create', input),
+  cloudAdminUpdateUser: (id: number, input: import('../main/agent_client.cjs').AgentAdminUpdateUserInput) =>
+    ipcRenderer.invoke('agent:cloud-admin-users-update', id, input),
+  cloudAdminResetUserPassword: (id: number, password: string, mustChangePassword: boolean) =>
+    ipcRenderer.invoke('agent:cloud-admin-users-reset-password', id, password, mustChangePassword),
+  cloudAdminRevokeUserSessions: (id: number) => ipcRenderer.invoke('agent:cloud-admin-users-revoke-sessions', id),
+  cloudAdminDeleteUser: (id: number) => ipcRenderer.invoke('agent:cloud-admin-users-delete', id),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
   cloudAdminCaddyHTTPSConfig: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https'),
   cloudSetAdminCaddyHTTPS: (input: { revision: number; enabled: boolean; domain: string }) =>

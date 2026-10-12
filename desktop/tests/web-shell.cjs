@@ -22,7 +22,7 @@ const sharedAccount = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 const sharedBrand = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'BrandLockup.tsx'), 'utf8')
 const sharedGallery = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MediaGallery.tsx'), 'utf8')
 const sharedAuthSurface = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AuthSurface.tsx'), 'utf8')
-const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
+const adminUsers = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AdminUsersPage.tsx'), 'utf8')
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
 const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
 

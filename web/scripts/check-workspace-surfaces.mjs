@@ -29,7 +29,7 @@ const sources = [
 ].map((name) => readRepo(`ui/shared/src/mui/${name}`)).join('\n')
 const storage = read('src/StorageStatsPanel.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
-const adminUsers = read('src/AdminUsers.tsx')
+const adminUsers = readRepo('ui/shared/src/mui/AdminUsersPage.tsx')
 const adminAudit = read('src/AdminAudit.tsx')
 
 const requireText = (source, values, label) => {
