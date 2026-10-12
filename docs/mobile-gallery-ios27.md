@@ -633,3 +633,9 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **后续未解决：** 真实 HEIC/HEIF 的实体 LIVP 解码仍缺用户原件与具体 Node/HTTP 数据，真正 404/415/500/504 需查看 owner-scoped CAS 原件、MediaMetadata.index_error、资源 still/motion 与后台派生错误后再最小化修复。不得把本次一次性 503 恢复当成全部灰图已经解决；不要重复做 P032/P033 已归档的 100k 负载或自行声称性能提升。
 
 **P0-L4b 首个源准确红灯与 CORS 修订（2026-10-12）：** [PR #1497 首次 CI #38212695632](https://github.com/lazyxu/xdrive/actions/runs/38212695632) 在 Desktop 源码契约测试中出现首红：已有 `media-gallery-thumbnail-http-revision-wiring.cjs` 仍只识别旧版 `cache: sourceRevision ? 'default' : 'no-cache'` 字符串，无法识别本轮保留原行为并允许强制刷新的 `cacheOverride ?? (sourceRevision ? 'default' : 'no-cache')`。新增真实 Web 重试的五个测试全部通过，故首红是测试静态合同未同步，而不是网络重试未生效；**不能因此称完整 CI 通过**。此外发现实际跨域缺陷：Go Server `cors()` 对允许的 Web Origin 暴露 ETag 等头，但未暴露 `Retry-After`，跨域浏览器无法读到 503 等待指令。现于**同一个工作提交**更新旧版源码契约测试（同时严格验证原默认缓存与 `no-store` 重试），向允许 Origin 的 CORS 暴露 `Retry-After`，新增真实 Gin CORS 测试（允许来源、非允许来源、无 Origin；HTTP503+no-store 保留）。要求重新走新精确提交完整 Web/Go API/Desktop/Windows/Final Gate，不以首红 CI 的部分绿灯代替。截图中原件与 iOS 27 真机仍需额外验证。
+
+
+## P0-L5 · 视频封面终止失败与浏览器解码错误回退（2026-10-12）
+
+提交时状态：源码确认缺口，精确单提交 PR CI / Final Gate 尚待确认。共享 XDriveMediaAsyncVideoPoster 遇到实际持久封面缺失且原视频帧无法捕获、Promise reject 时，曾始终保持进度层；已经获得 URL 的图片在真实浏览器解码失败时也无 img.onError 回退。修复仅把当前 Node ID 与 revision 的明确失败显示为既有 fallback 并停止误导性进度；更换修订后沿现有流程重新获取，旧修订错误不得隐藏新封面。无自动全量原片下载、无增加请求、无修改 Live 配对与服务端接口，保留可见窗口限流、取消、Blob URL 生命周期、共同的 Web/Mobile REST/VirtualCollection、全屏 App Frame 和 52px 标题栏。新 React mounted 回归覆盖 null/reject/img-error/过期版本及等价架构。用户截图三张灰色实况静态封面、真实 HEIC/LIVP 解码、真机 iOS27 Safari/PWA/VoiceOver 仍需要原件与真实 HTTP/CAS 证据，不声称已恢复。
+

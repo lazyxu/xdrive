@@ -233,7 +233,13 @@ export function XDriveMediaAsyncVideoPoster({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const [visible, setVisible] = useState(false)
-  const [src, setSrc] = useState('')
+  const posterIdentity = `${nodeID}:${revision}`
+  const currentPosterIdentityRef = useRef(posterIdentity)
+  currentPosterIdentityRef.current = posterIdentity
+  const [poster, setPoster] = useState<{ identity: string; url: string } | null>(null)
+  const [failedIdentity, setFailedIdentity] = useState('')
+  const src = poster?.identity === posterIdentity ? poster.url : ''
+  const failed = failedIdentity === posterIdentity
   const [posterStage, setPosterStage] = useState<XDriveMediaLoadStage>('poster_lookup')
   const [posterProgress, setPosterProgress] = useState<{ loadedBytes: number; totalBytes?: number; alphaMask?: string | null }>({ loadedBytes: 0, alphaMask: null })
 
@@ -258,7 +264,8 @@ export function XDriveMediaAsyncVideoPoster({
   useEffect(() => {
     let active = true
     let resolved = ''
-    setSrc('')
+    setPoster(null)
+    setFailedIdentity('')
     setPosterStage('poster_lookup')
     setPosterProgress({ loadedBytes: 0, alphaMask: null })
     if (!visible) return () => { active = false }
@@ -280,12 +287,17 @@ export function XDriveMediaAsyncVideoPoster({
     }))
     void scheduled.promise
       .then((value) => {
-        if (!value) return
+        if (!value) {
+          if (active) setFailedIdentity(posterIdentity)
+          return
+        }
         resolved = value
-        if (active) setSrc(value)
+        if (active) setPoster({ identity: posterIdentity, url: value })
         else revokeIfBlob(value)
       })
-      .catch(() => undefined)
+      .catch(() => {
+        if (active) setFailedIdentity(posterIdentity)
+      })
 
     return () => {
       active = false
@@ -297,6 +309,7 @@ export function XDriveMediaAsyncVideoPoster({
     loadThumbnail,
     saveVideoPoster,
     revision,
+    posterIdentity,
     nodeID,
     rotationDegrees,
     sourceHeight,
@@ -306,17 +319,23 @@ export function XDriveMediaAsyncVideoPoster({
 
   return (
     <Box ref={rootRef} sx={{ width: '100%', height: '100%' }}>
-      {src ? (
+      {src && !failed ? (
         <Box
           component="img"
           src={src}
           alt={alt}
+          onError={() => {
+            // Late failure from a replaced video poster cannot hide the new one.
+            if (currentPosterIdentityRef.current === posterIdentity) {
+              setFailedIdentity(posterIdentity)
+            }
+          }}
           sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
         />
       ) : (
         <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
           {fallback}
-          {visible ? <XDriveMediaLoadingProgress compact stage={posterStage} {...posterProgress} /> : null}
+          {visible && !failed ? <XDriveMediaLoadingProgress compact stage={posterStage} {...posterProgress} /> : null}
         </Box>
       )}
     </Box>
