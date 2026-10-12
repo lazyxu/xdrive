@@ -423,11 +423,13 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 			}
 			err := result.err
 			if result.run.ID == "" && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
-				if recordErr := r.recordPreflightFailure(ctx, source, now, err); recordErr != nil {
+				// No SyncRun owns this preflight. Publish its error AND retry
+				// outcome in the same Source-snapshot-fenced SQL write so a
+				// later successful run cannot inherit an obsolete retry.
+				if recordErr := r.recordPreflightFailure(ctx, source, job.handler, now, err); recordErr != nil {
 					err = errors.Join(err, fmt.Errorf("record source preflight failure: %w", recordErr))
 				}
-			}
-			if retryErr := r.persistRetryOutcome(ctx, source, job.handler, result.err, now); retryErr != nil {
+			} else if retryErr := r.persistRetryOutcome(ctx, source, job.handler, result.err, now); retryErr != nil {
 				err = errors.Join(err, fmt.Errorf("persist source retry state: %w", retryErr))
 			}
 			report.Failed++
@@ -492,7 +494,7 @@ func (r *Runner) handler(kind string) SourceHandler {
 	return r.Handlers[kind]
 }
 
-func (r *Runner) recordPreflightFailure(ctx context.Context, source meta.Source, now time.Time, cause error) error {
+func (r *Runner) recordPreflightFailure(ctx context.Context, source meta.Source, handler SourceHandler, now time.Time, cause error) error {
 	if source.ID == 0 || cause == nil {
 		return nil
 	}
@@ -513,12 +515,30 @@ func (r *Runner) recordPreflightFailure(ctx context.Context, source meta.Source,
 	} else {
 		query = query.Where("last_run_at = ?", *source.LastRunAt)
 	}
-	return query.Updates(map[string]any{
+	// The Source's error, timestamp, and retry schedule describe the SAME
+	// preflight generation. Splitting them into two UPDATEs would allow a
+	// newer success to commit between them and inherit the old retry.
+	updates := map[string]any{
 		"last_run_at":      now,
 		"last_error":       truncateError(cause),
 		"run_requested_at": nil,
 		"updated_at":       now,
-	}).Error
+	}
+	class := classifyPullRetry(handler, cause)
+	if source.ScheduleType == sourceschedule.TypeManual {
+		class = RetryNone
+	}
+	if class != RetryNone {
+		attempt, retryAt := nextRetryState(source, class, now)
+		updates["retry_attempt"] = attempt
+		updates["retry_at"] = retryAt
+		updates["retry_class"] = string(class)
+	} else if source.RetryAttempt != 0 || source.RetryAt != nil || source.RetryClass != "" {
+		updates["retry_attempt"] = 0
+		updates["retry_at"] = nil
+		updates["retry_class"] = ""
+	}
+	return query.Updates(updates).Error
 }
 
 func (r *Runner) logger() *slog.Logger {
