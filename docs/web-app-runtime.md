@@ -67,6 +67,9 @@ Sidebar 的“任务”与管理员专用“全局后台任务”是独立入口
 
 ## 历史模型
 
+系统依赖页的浏览器跨应用历史保护：`webAppRuntime` 在处理 `popstate/hashchange` 时先检查管理员配置是否有未保存的草稿，再决定是否提交新的 React App 路由。内部写入的历史项保留递增 `xdriveHistoryIndex`：取消恢复原始条目，不新增虚假的浏览器历史项；确认重放真实 Back/Forward。手动输入或旧版本未标记的 Hash 条目无法安全证明方向，采用 URL 原位恢复的保守模式，其旧历史顺序可能不完全保留。系统依赖内的服务/详情 Tab 切换仍使用共享编辑器自身的离开确认；浏览器跨页面关闭继续使用原生 `beforeunload`。Web/Mobile Web 共用此入口，Desktop 仍使用自己的视图守卫。
+
+
 **浏览器历史只负责程序级跳转。** Files → Viewer、Gallery → Viewer、workspace → workspace 会产生浏览器级历史项；Viewer 中切换上一项/下一项只 replace 当前 Viewer route，不逐项污染浏览器历史。**手机 App Frame 左上角返回**只退出当前 Web App：若当前 route 的内部 history state 记录了上一个 App，则浏览器 Back 回到该 App；直接 deep-link 无内部调用方则 replace 至 Overview。它不执行 FileExplorer 的目录后退/上一级，避免跨层混淆。
 
 **FileExplorer 自己维护目录与内部标签历史。** FileExplorer 的 Back/Forward、内部 Tabs、Search、目录导航仍由现有 workspace controller 管理。当前目录变化仅 replace `#/app/files?dir=<id>`，不额外 push 浏览器 history。

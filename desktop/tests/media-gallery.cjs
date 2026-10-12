@@ -1351,7 +1351,7 @@ test('Desktop navigation exposes Gallery as a first-class view', () => {
 
 test('Web exposes Home, files, Gallery, two independent Push/Pull apps, Local Storage, and Cloud Storage as first-class workspace views', () => {
   assert.ok(webApp.includes('type AppView = XDriveWorkspaceViewKey<'), 'Web workspace view type must include Local Storage')
-  assert.ok(webApp.includes('useXDriveWebAppRuntime()'), 'Web workspace selection must come from the Web App Runtime')
+  assert.ok(webApp.includes('useXDriveWebAppRuntime('), 'Web workspace selection must come from the Web App Runtime')
   assert.ok(webApp.includes("?? 'overview'"), 'Home should remain the fallback initial Web workspace')
   assert.ok(webApp.includes("key: 'overview'") && webApp.includes("label: '主页'"), 'Web must expose Home before the shared core')
   for (const view of ['files', 'gallery', 'device-backup', 'remote-pull', 'local-storage', 'cloud-storage']) {
