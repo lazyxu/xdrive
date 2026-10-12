@@ -26,17 +26,22 @@ type photoHostDesired struct {
 }
 
 type adminPhotoHostConfigDTO struct {
-	DesiredEnabled        bool       `json:"desired_enabled"`
-	Revision              uint64     `json:"revision"`
-	Source                string     `json:"source"`
-	UpdatedAt             *time.Time `json:"updated_at,omitempty"`
-	ApplyState            string     `json:"apply_state"`
-	Editable              bool       `json:"editable"`
-	ApplySupported        bool       `json:"apply_supported"`
-	Requirement           string     `json:"requirement"`
-	HostObserved          bool       `json:"host_observed"`
-	HostRuntimeState      string     `json:"host_runtime_state"`
-	HostProfileConfigured *bool      `json:"host_profile_configured,omitempty"`
+	DesiredEnabled             bool       `json:"desired_enabled"`
+	Revision                   uint64     `json:"revision"`
+	Source                     string     `json:"source"`
+	UpdatedAt                  *time.Time `json:"updated_at,omitempty"`
+	ApplyState                 string     `json:"apply_state"`
+	Editable                   bool       `json:"editable"`
+	ApplySupported             bool       `json:"apply_supported"`
+	Requirement                string     `json:"requirement"`
+	HostObserved               bool       `json:"host_observed"`
+	HostRuntimeState           string     `json:"host_runtime_state"`
+	HostProfileConfigured      *bool      `json:"host_profile_configured,omitempty"`
+	HostControlSupported       bool       `json:"host_control_supported"`
+	HostControlState           string     `json:"host_control_state"`
+	HostControlRevision        uint64     `json:"host_control_revision"`
+	HostAppliedRevision        uint64     `json:"host_applied_revision"`
+	HostControlProfileVerified bool       `json:"host_control_profile_verified"`
 }
 
 type adminPhotoHostRevisionDTO struct {
@@ -85,7 +90,7 @@ func (s *Server) adminPhotoHostConfig(c *gin.Context) {
 		DesiredEnabled: desired.Enabled, Revision: desired.Revision,
 		Source: desired.Source, UpdatedAt: desired.UpdatedAt, ApplyState: state,
 		Editable: true, ApplySupported: false, Requirement: photoHostRequirement,
-		HostRuntimeState: "unknown",
+		HostRuntimeState: "unknown", HostControlState: "unavailable",
 	}
 	if host, observed := s.readPhotoIntelligenceHostStatus(); observed {
 		result.HostObserved = true
@@ -93,6 +98,15 @@ func (s *Server) adminPhotoHostConfig(c *gin.Context) {
 		profile := host.ProfileConfigured
 		result.HostProfileConfigured = &profile
 	}
+	if control, supported := s.readPhotoHostControlStatus(); supported {
+		result.HostControlSupported = true
+		result.HostControlState = control.State
+		result.HostControlRevision = control.Revision
+		result.HostAppliedRevision = control.AppliedRevision
+		result.HostControlProfileVerified = control.ProfileVerified
+	}
+	// PH1b1 observation is NOT admin-authorized application. Preserve pending
+	// until a separate audited revision/token-fenced dispatch exists.
 	c.JSON(http.StatusOK, result)
 }
 

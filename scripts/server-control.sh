@@ -756,6 +756,195 @@ caddy_host_refresh() {
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
+
+# Restricted Photo Intelligence *enable-only* bridge. Never stop/recreate a
+# running analyzer or accept a service name, command, image or arbitrary path.
+photo_host_control_uint() {
+  local file="$1" key="$2"
+  [[ -f "$file" ]] || return 0
+  sed -nE "s/.*\"$key\"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p" "$file" | head -n1
+}
+photo_host_control_profiles() {
+  local profiles="$1" item next=""
+  [[ ${#profiles} -le 512 && "$profiles" =~ ^[A-Za-z0-9,_-]*$ ]] || return 1
+  local -a items=()
+  IFS=',' read -r -a items <<< "$profiles"
+  for item in "${items[@]}"; do
+    [[ -n "$item" && "$item" != photo-intelligence ]] || continue
+    [[ -z "$next" ]] || next+=","
+    next+="$item"
+  done
+  [[ -z "$next" ]] || next+=","
+  printf '%s\n' "${next}photo-intelligence"
+}
+photo_host_control_set_profiles() {
+  local profiles="$1" tmp
+  [[ ${#profiles} -le 512 && "$profiles" =~ ^[A-Za-z0-9,_-]*$ ]] || return 1
+  [[ -f "$ENV_PATH" && ! -L "$ENV_PATH" && -f "$COMPOSE_PATH" ]] || return 1
+  tmp="$(mktemp "$CONFIG_DIR/.photo-host-env.XXXXXX")" || return 1
+  awk -v profiles="$profiles" '
+    /^COMPOSE_PROFILES=/ {
+      if (!seen) print "COMPOSE_PROFILES=" profiles
+      seen=1; next
+    }
+    { print }
+    END { if (!seen) print "COMPOSE_PROFILES=" profiles }
+  ' "$ENV_PATH" > "$tmp" || { rm -f "$tmp"; return 1; }
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$ENV_PATH"
+}
+photo_host_control_probe() {
+  local raw=""
+  [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]] || { printf 'unknown\n'; return; }
+  raw="$(timeout 3s docker inspect \
+    --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+    xdrive-photo-face 2>/dev/null || true)"
+  case "$raw" in
+    'true|healthy') printf 'healthy\n' ;;
+    'true|unhealthy') printf 'unhealthy\n' ;;
+    'true|starting') printf 'starting\n' ;;
+    'true|') printf 'running-unverified\n' ;;
+    false\|*) printf 'stopped\n' ;;
+    *) printf 'unknown\n' ;;
+  esac
+}
+photo_host_control_write_status() {
+  local state="$1" revision="$2" applied="$3" enabled="$4" request_id="$5"
+  local observed="$6" verified="$7" dir tmp
+  case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
+  case "$observed" in healthy|unhealthy|starting|running-unverified|stopped|unknown) ;;
+    *) observed=unknown ;;
+  esac
+  [[ "$revision" =~ ^[0-9]+$ && ${#revision} -le 19 ]] || revision=0
+  [[ "$applied" =~ ^[0-9]+$ && ${#applied} -le 19 ]] || applied=0
+  [[ "$enabled" == true ]] || enabled=false
+  [[ "$verified" == true ]] || verified=false
+  [[ "$request_id" =~ ^[0-9a-f]{24}$ ]] || request_id=""
+  dir="$(prepare_dir)"
+  tmp="$(mktemp "$dir/.photo-host-control-status.XXXXXX")" || return 1
+  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"profile_verified":%s,"observed_host_state":"%s","request_id":"%s","updated_at":"%s"}\n' \
+    "$state" "$revision" "$applied" "$enabled" "$verified" "$observed" \
+    "$request_id" "$(now_utc)" > "$tmp"
+  chmod 0660 "$tmp"
+  mv -f "$tmp" "$dir/photo-host-control-status.json"
+}
+photo_host_control_refresh() {
+  local dir file state revision applied enabled request_id profile observed verified=false
+  dir="$(prepare_dir)"
+  file="$dir/photo-host-control-status.json"
+  observed="$(photo_host_control_probe)"
+  profile="$(env_value COMPOSE_PROFILES)"
+  case ",$profile," in *,photo-intelligence,*) verified=true ;; esac
+  if [[ ! -f "$file" ]]; then
+    photo_host_control_write_status idle 0 0 false "" "$observed" "$verified"
+    return
+  fi
+  state="$(json_value "$file" state)"
+  revision="$(photo_host_control_uint "$file" revision)"
+  applied="$(photo_host_control_uint "$file" applied_revision)"
+  enabled="$(json_bool_value "$file" enabled)"
+  request_id="$(json_value "$file" request_id)"
+  case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
+  [[ "$revision" =~ ^[0-9]+$ && ${#revision} -le 19 ]] || revision=0
+  [[ "$applied" =~ ^[0-9]+$ && ${#applied} -le 19 ]] || applied=0
+  if [[ "$state" == success && ( "$observed" != healthy || "$verified" != true ) ]]; then
+    state=failed
+  fi
+  photo_host_control_write_status "$state" "$revision" "$applied" "$enabled" \
+    "$request_id" "$observed" "$verified"
+}
+photo_host_control_recover() {
+  local dir recovery previous before_running
+  dir="$(prepare_dir)"
+  recovery="$dir/photo-host-control-recovery"
+  [[ -f "$recovery" && ! -L "$recovery" ]] || return 0
+  previous="$(head -n1 "$recovery" | tr -d '\r')"
+  before_running="$(sed -n '2p' "$recovery" | tr -d '\r')"
+  [[ "$previous" =~ ^[A-Za-z0-9,_-]*$ && ${#previous} -le 512 ]] || return 1
+  [[ "$before_running" == true || "$before_running" == false ]] || return 1
+  photo_host_control_set_profiles "$previous" || return 1
+  if [[ "$before_running" == false ]]; then
+    timeout 20s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
+      -f "$COMPOSE_PATH" stop photo-face >/dev/null 2>&1 || true
+  fi
+  rm -f "$recovery"
+}
+photo_host_control_process() {
+  local dir request active status request_id revision enabled created_at applied last_state
+  local previous next initial current verified=false launched=false
+  dir="$(prepare_dir)"
+  request="$dir/photo-host-control-request.json"
+  active="$dir/photo-host-control-active.json"
+  status="$dir/photo-host-control-status.json"
+  [[ -f "$request" && ! -L "$request" ]] || return 0
+  [[ "$(wc -c < "$request")" -le 512 ]] || { rm -f "$request"; return 0; }
+  if ! mv "$request" "$active" 2>/dev/null; then return 0; fi
+  request_id="$(json_value "$active" request_id)"
+  revision="$(photo_host_control_uint "$active" revision)"
+  enabled="$(json_bool_value "$active" enabled)"
+  created_at="$(json_value "$active" created_at)"
+  applied="$(photo_host_control_uint "$status" applied_revision)"
+  last_state="$(json_value "$status" state)"
+  [[ "$applied" =~ ^[0-9]+$ && ${#applied} -le 19 ]] || applied=0
+  initial="$(photo_host_control_probe)"
+  # A disabled request is always rejected: no global active-job drain exists.
+  if [[ ! "$request_id" =~ ^[0-9a-f]{24}$ || ! "$revision" =~ ^[1-9][0-9]*$ ||
+        ${#revision} -gt 19 || "$revision" -ge 1152921504606846976 ||
+        "$enabled" != true || "$revision" -lt "$applied" ||
+        ( "$revision" -eq "$applied" && "$last_state" != failed ) ]] ||
+        ! request_time_is_fresh "$created_at"; then
+    photo_host_control_write_status failed "$applied" "$applied" false "" "$initial" false
+    rm -f "$active"
+    return 0
+  fi
+  previous="$(env_value COMPOSE_PROFILES)"
+  if ! next="$(photo_host_control_profiles "$previous")" ||
+      [[ "$initial" != healthy && "$initial" != stopped ]] ||
+      ! timeout 10s docker info >/dev/null 2>&1 ||
+      ! timeout 10s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
+        -f "$COMPOSE_PATH" config --quiet >/dev/null 2>&1; then
+    photo_host_control_write_status failed "$revision" "$applied" true "$request_id" "$initial" false
+    rm -f "$active"
+    return 0
+  fi
+  # A previous interrupted transaction must be recovered explicitly first.
+  if [[ -e "$dir/photo-host-control-recovery" ]]; then
+    photo_host_control_write_status failed "$revision" "$applied" true "$request_id" "$initial" false
+    rm -f "$active"
+    return 0
+  fi
+  photo_host_control_write_status running "$revision" "$applied" true "$request_id" "$initial" false
+  printf '%s\n%s\n' "$previous" \
+    "$([[ "$initial" == healthy ]] && echo true || echo false)" \
+    > "$dir/photo-host-control-recovery"
+  chmod 0600 "$dir/photo-host-control-recovery"
+  if photo_host_control_set_profiles "$next"; then
+    if [[ "$initial" == healthy ]]; then
+      launched=true
+    elif timeout 25s docker compose --profile photo-intelligence --env-file "$ENV_PATH" \
+        -f "$COMPOSE_PATH" up -d --no-deps photo-face >/dev/null 2>&1; then
+      for _ in $(seq 1 20); do
+        touch_heartbeat
+        if [[ "$(photo_host_control_probe)" == healthy ]]; then launched=true; break; fi
+        sleep 1
+      done
+    fi
+  fi
+  current="$(photo_host_control_probe)"
+  case ",$(env_value COMPOSE_PROFILES)," in *,photo-intelligence,*) verified=true ;; esac
+  if [[ "$launched" == true && "$current" == healthy && "$verified" == true ]]; then
+    rm -f "$dir/photo-host-control-recovery"
+    photo_host_control_write_status success "$revision" "$revision" true "$request_id" "$current" true
+    rm -f "$active"
+    return 0
+  fi
+  # Revert only newly started optional photo-face and former profile scalar.
+  photo_host_control_recover || true
+  photo_host_control_write_status failed "$revision" "$applied" true "$request_id" \
+    "$(photo_host_control_probe)" false
+  rm -f "$active"
+}
+
 # Fixed-container Photo Intelligence Host Manager observation only.
 # Profile presence is *deployment intent*, while Docker inspect reports only
 # the existing xdrive-photo-face process/health. Neither proves model Info health
@@ -836,7 +1025,20 @@ serve_cmd() {
     media_worker_control_write_status failed "$rev" "$applied" "$enabled" "$observed" ""
   fi
 
-  # Publish liveness before any externally visible idle/recovery status. This
+    # A crashed enable must never become an implicit success.
+  if [[ -f "$dir/photo-host-control-active.json" ||
+        -f "$dir/photo-host-control-recovery" ]]; then
+    photo_host_control_recover || true
+    rm -f "$dir/photo-host-control-active.json"
+    photo_host_control_refresh
+    local previous_status="$dir/photo-host-control-status.json"
+    photo_host_control_write_status failed \
+      "$(photo_host_control_uint "$previous_status" revision)" \
+      "$(photo_host_control_uint "$previous_status" applied_revision)" \
+      false "" "$(photo_host_control_probe)" false
+  fi
+
+# Publish liveness before any externally visible idle/recovery status. This
   # prevents API/UI consumers from observing a ready-looking status while the
   # host-control heartbeat is still absent during startup.
   touch_heartbeat
@@ -870,6 +1072,7 @@ serve_cmd() {
   media_worker_control_refresh
   caddy_host_refresh || true
   photo_intelligence_host_refresh || true
+  photo_host_control_refresh || true
   last_storage_inventory_at="$(date +%s)"
   last_caddy_observation_at="$last_storage_inventory_at"
 
@@ -878,6 +1081,8 @@ serve_cmd() {
     [[ -f "$dir/request.json" ]] && process_request
     [[ -f "$dir/media-worker-control-request.json" ]] && media_worker_control_process
     media_worker_control_refresh
+    [[ -f "$dir/photo-host-control-request.json" ]] && photo_host_control_process
+    photo_host_control_refresh || true
     now="$(date +%s)"
     if (( now - last_caddy_observation_at >= 15 )); then
       caddy_host_refresh || true

@@ -197,6 +197,18 @@ export function XDrivePhotoHostDesiredPanel({
                 ? '未知'
                 : config.host_profile_configured ? '宿主已配置启用意图' : '宿主未配置启用意图'}
             </Typography>
+            <Typography variant="body2" color="text.secondary">
+              受限宿主控制器：{config.host_control_supported
+                ? '已取得新鲜只读控制证据' : '未安装、版本过旧或无法验证'}
+              {' · '}执行状态：{config.host_control_supported
+                ? ({ idle: '空闲', queued: '排队', running: '执行中', success: '宿主已确认执行', failed: '宿主执行失败',
+                  unavailable: '不可用' }[config.host_control_state ?? 'unavailable'] ?? '未知')
+                : '未知'}
+              {' · '}宿主侧记录修订：{config.host_applied_revision ?? '未知'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              宿主控制证据尚未与管理员审计授权令牌绑定；即使显示宿主侧成功也不代表此期望修订已由 xDrive 管理界面应用。
+            </Typography>
             <Typography variant="body2" fontWeight={600}>
               生效结论：{config.apply_state === 'unmanaged' ? '没有已保存的期望修订'
                 : '待宿主安全应用及按修订号验证（不是已生效）'}

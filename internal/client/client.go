@@ -624,17 +624,22 @@ func (c *Client) RollbackAdminSourceWorker(ctx context.Context, input AdminSourc
 // One fixed shared Photo Intelligence host/profile target. Desired state is
 // NEVER independently verified as applied until a host transaction exists.
 type AdminPhotoHostConfig struct {
-	DesiredEnabled        bool       `json:"desired_enabled"`
-	Revision              uint64     `json:"revision"`
-	Source                string     `json:"source"`
-	UpdatedAt             *time.Time `json:"updated_at,omitempty"`
-	ApplyState            string     `json:"apply_state"`
-	Editable              bool       `json:"editable"`
-	ApplySupported        bool       `json:"apply_supported"`
-	Requirement           string     `json:"requirement"`
-	HostObserved          bool       `json:"host_observed"`
-	HostRuntimeState      string     `json:"host_runtime_state"`
-	HostProfileConfigured *bool      `json:"host_profile_configured,omitempty"`
+	DesiredEnabled             bool       `json:"desired_enabled"`
+	Revision                   uint64     `json:"revision"`
+	Source                     string     `json:"source"`
+	UpdatedAt                  *time.Time `json:"updated_at,omitempty"`
+	ApplyState                 string     `json:"apply_state"`
+	Editable                   bool       `json:"editable"`
+	ApplySupported             bool       `json:"apply_supported"`
+	Requirement                string     `json:"requirement"`
+	HostObserved               bool       `json:"host_observed"`
+	HostRuntimeState           string     `json:"host_runtime_state"`
+	HostProfileConfigured      *bool      `json:"host_profile_configured,omitempty"`
+	HostControlSupported       bool       `json:"host_control_supported"`
+	HostControlState           string     `json:"host_control_state"`
+	HostControlRevision        uint64     `json:"host_control_revision"`
+	HostAppliedRevision        uint64     `json:"host_applied_revision"`
+	HostControlProfileVerified bool       `json:"host_control_profile_verified"`
 }
 type AdminPhotoHostUpdate struct {
 	Revision uint64 `json:"revision"`
