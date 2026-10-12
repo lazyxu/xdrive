@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import re
+import secrets
 import signal
 import socket
 import socketserver
@@ -1144,6 +1145,12 @@ class AnalyzerState:
         self.creative_runtime = creative_runtime
         self.preview_origin = normalize_origin(preview_origin)
         self.token = token.strip()
+        # One process-boot session, shared by four independently checked model APIs.
+        # It is self-reported, not Docker/Host Manager attestation or a secret.
+        self.runtime_instance_id = secrets.token_hex(16)
+
+    def info_with_session(self, info: dict[str, Any]) -> dict[str, Any]:
+        return {**info, "runtime_instance_id": self.runtime_instance_id}
 
 
 class ThreadingUnixHTTPServer(
@@ -1206,7 +1213,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     PROTOCOL_VERSION,
                     "face",
                 )
-                self._write_json(200, self.server.state.runtime.info())
+                self._write_json(200, self.server.state.info_with_session(self.server.state.runtime.info()))
                 return
             if method == "GET" and target == "/v1/smart-info":
                 self._require_protocol(
@@ -1215,7 +1222,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     SMART_PROTOCOL_VERSION,
                     "smart",
                 )
-                self._write_json(200, self.server.state.smart_runtime.info())
+                self._write_json(200, self.server.state.info_with_session(self.server.state.smart_runtime.info()))
                 return
             if method == "GET" and target == "/v1/semantic-info":
                 self._require_protocol(
@@ -1224,7 +1231,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     SEMANTIC_PROTOCOL_VERSION,
                     "semantic",
                 )
-                self._write_json(200, self.server.state.semantic_runtime.info())
+                self._write_json(200, self.server.state.info_with_session(self.server.state.semantic_runtime.info()))
                 return
             if method == "GET" and target == "/v1/creative-info":
                 self._require_protocol(
@@ -1233,7 +1240,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     CREATIVE_PROTOCOL_VERSION,
                     "creative",
                 )
-                self._write_json(200, self.server.state.creative_runtime.info())
+                self._write_json(200, self.server.state.info_with_session(self.server.state.creative_runtime.info()))
                 return
             if method == "POST" and target in (
                 "/v1/analyze",
@@ -1716,6 +1723,7 @@ def healthcheck(socket_path: str, token: str) -> None:
             CREATIVE_PROTOCOL_VERSION,
         ),
     )
+    process_session_id: str | None = None
     for target, protocol_header, protocol_version in checks:
         connection = UnixHTTPConnection(socket_path, timeout=5)
         headers = {
@@ -1737,6 +1745,15 @@ def healthcheck(socket_path: str, token: str) -> None:
                 raise RuntimeError(
                     f"analyzer protocol version mismatch for {target}"
                 )
+            session_id = payload.get("runtime_instance_id")
+            if not isinstance(session_id, str) or not re.fullmatch(
+                r"[0-9a-f]{32}", session_id
+            ):
+                raise RuntimeError("analyzer runtime session unavailable")
+            if process_session_id is None:
+                process_session_id = session_id
+            elif process_session_id != session_id:
+                raise RuntimeError("analyzer model endpoints span different sessions")
         finally:
             connection.close()
 

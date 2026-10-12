@@ -103,6 +103,23 @@ class AnalyzerTests(unittest.TestCase):
         cls.preview_server.server_close()
         cls.preview_thread.join(timeout=5)
 
+    def test_process_boot_session_identity_changes_and_is_shared(self) -> None:
+        first = analyzer.AnalyzerState(
+            self.runtime, self.smart_runtime, self.semantic_runtime,
+            self.creative_runtime, self.preview_origin, "secret",
+        )
+        second = analyzer.AnalyzerState(
+            self.runtime, self.smart_runtime, self.semantic_runtime,
+            self.creative_runtime, self.preview_origin, "secret",
+        )
+        self.assertRegex(first.runtime_instance_id, r"^[0-9a-f]{32}$")
+        self.assertNotEqual(first.runtime_instance_id, second.runtime_instance_id)
+        self.assertEqual(
+            first.info_with_session(self.runtime.info())["runtime_instance_id"],
+            first.info_with_session(self.semantic_runtime.info())["runtime_instance_id"],
+        )
+        self.assertNotIn("runtime_instance_id", self.runtime.info())
+
     def test_model_manifest_and_dimensions(self) -> None:
         info = self.runtime.info()
         self.assertEqual(info["protocol_version"], 1)
@@ -271,6 +288,9 @@ class AnalyzerTests(unittest.TestCase):
             )
             thread.start()
             try:
+                # Real healthcheck verifies all four fixed Info endpoints
+                # respond from the same process-boot session.
+                analyzer.healthcheck(socket_path, "secret")
                 unauthorized = analyzer.UnixHTTPConnection(socket_path)
                 unauthorized.request("GET", "/v1/info")
                 response = unauthorized.getresponse()
@@ -292,6 +312,7 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 self.assertEqual(info["embedding_dimensions"], 128)
                 self.assertEqual(info["runtime"]["device"], "cpu")
+                self.assertEqual(info["runtime_instance_id"], state.runtime_instance_id)
                 connection.close()
 
                 payload = json.dumps(task).encode("utf-8")
@@ -327,6 +348,7 @@ class AnalyzerTests(unittest.TestCase):
                 smart_info = json.loads(response.read())
                 self.assertEqual(response.status, 200)
                 self.assertEqual(smart_info["ocr_language"], "zh-en")
+                self.assertEqual(smart_info["runtime_instance_id"], state.runtime_instance_id)
                 connection.close()
 
                 connection = analyzer.UnixHTTPConnection(socket_path)
@@ -365,6 +387,7 @@ class AnalyzerTests(unittest.TestCase):
                     semantic_info["embedding_dimensions"],
                     analyzer.SEMANTIC_DIMENSIONS,
                 )
+                self.assertEqual(semantic_info["runtime_instance_id"], state.runtime_instance_id)
                 connection.close()
 
                 connection = analyzer.UnixHTTPConnection(socket_path)
@@ -624,6 +647,7 @@ class AnalyzerTests(unittest.TestCase):
                 response = connection.getresponse()
                 info = json.loads(response.read())
                 self.assertEqual(response.status, 200)
+                self.assertEqual(info["runtime_instance_id"], state.runtime_instance_id)
                 self.assertEqual(
                     info["capabilities"],
                     [

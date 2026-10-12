@@ -311,6 +311,11 @@ export function XDrivePhotoHostDesiredPanel({
                       </Typography>
                     ))}
                     <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-instance-coherent>
+                        四类 Info 进程代际一致性：{preflight.model_instance_coherent
+                          ? '同一模型进程（仅自报，尚未与可信宿主绑定）'
+                          : '未核验或不一致（旧版模型也可能不支持）'}
+                      </Typography>
                       <Typography variant="subtitle2" sx={{ mt: 1 }}>
                         四类模型 Info 实际就绪（仅当前 Server）
                       </Typography>

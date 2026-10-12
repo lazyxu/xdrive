@@ -265,6 +265,9 @@ export type XDrivePhotoHostPreflight = {
   // same-host revision attestation or a successful media analysis job.
   host_revision_verified?: boolean
   model_info_checks?: XDrivePhotoHostModelInfoCheck[]
+  // Four Info endpoints self-report one process boot ID, not a Host Manager
+  // container/request attestation, real task completion or fleet readiness.
+  model_instance_coherent?: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

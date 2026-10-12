@@ -50,12 +50,13 @@ type CreativeAnalyzer interface {
 }
 
 type CreativeAnalyzerInfo struct {
-	ProtocolVersion int                      `json:"protocol_version"`
-	Name            string                   `json:"name"`
-	PipelineVersion string                   `json:"pipeline_version"`
-	SegmentModel    FaceAnalyzerModelInfo    `json:"segment_model"`
-	Capabilities    []string                 `json:"capabilities"`
-	Runtime         *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	ProtocolVersion   int                      `json:"protocol_version"`
+	Name              string                   `json:"name"`
+	PipelineVersion   string                   `json:"pipeline_version"`
+	SegmentModel      FaceAnalyzerModelInfo    `json:"segment_model"`
+	Capabilities      []string                 `json:"capabilities"`
+	Runtime           *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	RuntimeInstanceID string                   `json:"runtime_instance_id,omitempty"`
 }
 
 type CreativePoint struct {
@@ -144,6 +145,9 @@ func normalizeCreativeCapabilities(values []string) ([]string, error) {
 func ValidateCreativeAnalyzerInfo(info CreativeAnalyzerInfo) error {
 	if info.ProtocolVersion != CreativeAnalyzerProtocolVersion {
 		return fmt.Errorf("unsupported creative analyzer protocol version %d", info.ProtocolVersion)
+	}
+	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {
 		return errors.New("creative analyzer name is required")

@@ -32,6 +32,7 @@ type SemanticAnalyzerInfo struct {
 	EmbeddingFormat     string                   `json:"embedding_format"`
 	EmbeddingDimensions int                      `json:"embedding_dimensions"`
 	Runtime             *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
+	RuntimeInstanceID   string                   `json:"runtime_instance_id,omitempty"`
 }
 
 type SemanticImageTask struct {
@@ -53,6 +54,9 @@ func ValidateSemanticAnalyzerInfo(info SemanticAnalyzerInfo) error {
 			"unsupported semantic analyzer protocol version %d",
 			info.ProtocolVersion,
 		)
+	}
+	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {
 		return errors.New("semantic analyzer name is required")
