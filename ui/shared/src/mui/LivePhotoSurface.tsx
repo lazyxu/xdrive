@@ -78,6 +78,10 @@ export function XDriveLivePhotoSurface({
   // a new hold, or a different still/source revision.
   const playbackAttemptRef = useRef(0)
   const loadStartedRef = useRef(false)
+  // A failed motion-ticket lookup must be retryable on a NEW explicit hold,
+  // but never automatically retry while the finger remains down.
+  const retryableMotionLoadRef = useRef(false)
+  const motionLoadAttemptRef = useRef(0)
   const loadMotionRef = useRef(loadMotion)
   loadMotionRef.current = loadMotion
   const holdActiveRef = useRef(false)
@@ -148,23 +152,33 @@ export function XDriveLivePhotoSurface({
 
   const requestMotion = useCallback(() => {
     const loader = loadMotionRef.current
-    if (!loader || motionURLRef.current || failed) return
-    // A released first hold can leave a valid signed URL request in flight.
-    // Re-holding resumes its progress without issuing a second motion request.
+    // A genuine playback/codec failure remains terminal for this Viewer
+    // source. A ticket lookup failure allows one fresh request per new hold.
+    if (!loader || motionURLRef.current || (failed && !retryableMotionLoadRef.current)) return
+    // Re-holding while the first signed-ticket request is in flight must
+    // reuse that request, not issue duplicate authenticated calls.
     if (loadStartedRef.current) {
       setLoading(true)
       return
     }
 
     loadStartedRef.current = true
+    retryableMotionLoadRef.current = false
     const generation = loadGenerationRef.current
+    const attempt = ++motionLoadAttemptRef.current
+    const isCurrentRequest = () => (
+      loadGenerationRef.current === generation &&
+      motionLoadAttemptRef.current === attempt &&
+      loadStartedRef.current
+    )
+    setFailed(false)
     setLoading(true)
     setLoadProgress(null)
     setMotionBytes({ loadedBytes: 0 })
     setBufferProgress({ bufferedSeconds: 0 })
 
     const onProgress: XDriveByteProgressHandler = (loadedBytes, totalBytes) => {
-      if (loadGenerationRef.current !== generation) return
+      if (!isCurrentRequest()) return
       setLoadProgress(livePhotoProgressPercent(loadedBytes, totalBytes))
       setMotionBytes({ loadedBytes, totalBytes })
     }
@@ -172,19 +186,23 @@ export function XDriveLivePhotoSurface({
     void loader(onProgress)
       .then((value) => {
         if (!value) {
-          if (loadGenerationRef.current === generation) {
+          if (isCurrentRequest()) {
+            loadStartedRef.current = false
+            retryableMotionLoadRef.current = true
             setLoading(false)
             setFailed(true)
           }
           return
         }
-        if (loadGenerationRef.current !== generation) {
+        if (!isCurrentRequest()) {
           disposeLivePhotoMotion(value)
           return
         }
         const url = livePhotoMotionURL(value)
         if (!url) {
           disposeLivePhotoMotion(value)
+          loadStartedRef.current = false
+          retryableMotionLoadRef.current = true
           setLoading(false)
           setFailed(true)
           return
@@ -194,7 +212,9 @@ export function XDriveLivePhotoSurface({
         setMotionURL(url)
       })
       .catch(() => {
-        if (loadGenerationRef.current === generation) {
+        if (isCurrentRequest()) {
+          loadStartedRef.current = false
+          retryableMotionLoadRef.current = true
           setLoading(false)
           setFailed(true)
         }
@@ -233,7 +253,9 @@ export function XDriveLivePhotoSurface({
 
   useEffect(() => {
     loadGenerationRef.current += 1
+    motionLoadAttemptRef.current += 1
     loadStartedRef.current = false
+    retryableMotionLoadRef.current = false
     holdActiveRef.current = false
     stopPlayback()
 
