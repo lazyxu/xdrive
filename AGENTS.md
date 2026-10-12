@@ -103,6 +103,8 @@ Provider delivery rules:
 
 ## Race and concurrency specialization policy
 
+- **Mandatory Race registry and de-duplication:** Before any Race/concurrency investigation, read [`docs/race-test-registry.md`](docs/race-test-registry.md) and compare the exact subsystem, competing operations, forced interleaving, identity/lifecycle and platform. Do not repeat accepted unchanged scenarios merely to restart a new chat. New source changes, new orderings/platforms, regressions and mandatory exact-head CI are legitimate repeat reasons. In the same one-work-commit PR, record every new meaningful probe and its authentic test-only First-red, rejected/invalid harness failures, unchanged reproducer, repaired exact-head CI and merge/branch disposition in that registry. Never claim an unrun test, physical E2E or GitLab validation.
+
 - For a race/concurrency specialization task, **test first and do not change production behavior until a real failure is reproduced**. Continue running or extending the relevant race/stress/interleaving tests until one of them fails because of an actual product concurrency/lifecycle bug.
 - A test harness, fixture, mock, parser, selector, timing assumption, CI infrastructure issue, or unrelated existing failure does **not** count as the required reproduction. Fix the test/harness itself and rerun without changing production code.
 - The first-red evidence must be deterministic enough to identify the violated contract (for example: stale completion overwrites a newer scope, old lifecycle retains busy ownership, duplicate same-tick submission, old request crosses account/session identity, or a newer revision is regressed). Record that failing assertion/path in the PR description or test name.
