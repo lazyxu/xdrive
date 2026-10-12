@@ -188,6 +188,73 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	if replayed.Quarantined != 0 || replayed.Replayed != 1 {
 		t.Fatalf("idempotent replay incorrect: %+v", replayed)
 	}
+
+	// Recovery readback must not accept the owner JWT without the exact
+	// enrolled device credential, Root proof and Source revision.
+	pageURI := uri + "/page"
+	pageInput := localCommitIntentPageRequest{
+		PreviousSnapshotSHA256: evidence.PreviousSnapshotSHA256,
+		CurrentSnapshotSHA256:  evidence.CurrentSnapshotSHA256,
+		Limit:                  1,
+	}
+	pageJSON, err := json.Marshal(pageInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readPage := func(jwt string, headers map[string]string, body string, status int) localCommitIntentPageResponse {
+		t.Helper()
+		rec := requestWithHeaders(t, router, http.MethodPost, pageURI, jwt, strings.NewReader(body), status, headers)
+		for _, forbidden := range []string{rootID, fingerprint, deviceSecret, "cloud-old.jpg"} {
+			if strings.Contains(rec.Body.String(), forbidden) {
+				t.Fatalf("quarantine read leaked private value %q", forbidden)
+			}
+		}
+		var got localCommitIntentPageResponse
+		if status != http.StatusOK {
+			return got
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" ||
+			rec.Header().Get("ETag") != `"7"` {
+			t.Fatalf("unfenced quarantine page: %v", rec.Header())
+		}
+		for _, forbidden := range []string{
+			"root_id", "device_id", "device_token", "source_item_id",
+			"previous_path_key", "native_identity_key", "sha256",
+		} {
+			if strings.Contains(rec.Body.String(), forbidden) {
+				t.Fatalf("quarantine read leaked field %q", forbidden)
+			}
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceID != source.ID || got.Revision != source.Revision ||
+			got.CommitSupported || got.Authoritative || got.MissingInferenceSafe {
+			t.Fatalf("quarantine read promoted authority: %+v", got)
+		}
+		return got
+	}
+	readPage(ownerJWT, map[string]string{"If-Match": `"7"`}, string(pageJSON), http.StatusForbidden)
+	readPage(otherJWT, copyProof(), string(pageJSON), http.StatusNotFound)
+	readPage(ownerJWT, foreign, string(pageJSON), http.StatusForbidden)
+	readPage(ownerJWT, badRoot, string(pageJSON), http.StatusForbidden)
+	readPage(ownerJWT, stale, string(pageJSON), http.StatusConflict)
+	readPage(ownerJWT, copyProof(), `{"limit":1,"unexpected":true}`, http.StatusBadRequest)
+	readPage(ownerJWT, copyProof(), string(pageJSON)+"{}", http.StatusBadRequest)
+	first := readPage(ownerJWT, copyProof(), string(pageJSON), http.StatusOK)
+	if len(first.EvidenceIDs) != 1 || first.EvidenceIDs[0] != evidence.ID ||
+		first.HasMore || first.NextAfterID != evidence.ID {
+		t.Fatalf("quarantined evidence cannot be recovered: %+v", first)
+	}
+	pageInput.AfterEvidenceID = evidence.ID
+	afterJSON, err := json.Marshal(pageInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := readPage(ownerJWT, copyProof(), string(afterJSON), http.StatusOK)
+	if len(last.EvidenceIDs) != 0 || last.HasMore || last.NextAfterID != 0 {
+		t.Fatalf("quarantine readback cursor did not terminate: %+v", last)
+	}
 	var stored meta.LocalSourceCommitIntent
 	if err := db.Where("source_id = ? AND evidence_id = ?", source.ID, evidence.ID).
 		First(&stored).Error; err != nil {
@@ -230,6 +297,7 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 		t.Fatal(err)
 	}
 	send(ownerJWT, copyProof(), string(body), http.StatusForbidden)
+	readPage(ownerJWT, copyProof(), string(pageJSON), http.StatusForbidden)
 }
 
 func TestValidateLocalCommitIntentBatchFailsClosed(t *testing.T) {
