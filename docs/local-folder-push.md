@@ -642,7 +642,7 @@ identity. No `SourceItemAlias` or SourceItem move, upload, CAS/Node
 mutation, SourceRun activation, scheduled execution, Mirror deletion or
 NAS Push is enabled here. The 100k and >=4GiB physical tests are still L07.
 
-## L03-D2b2c2a · Owning-Agent server-side advisory candidate preflight (GitHub PR verification)
+## L03-D2b2c2a · Owning-Agent server-side advisory candidate preflight (merged #1456; 76-job CI green)
 
 The previous L03-D2b2c1 stage (#1451, merged after its own 76-job exact-head
 CI) delivered encrypted-channel, bounded, owner/device/Root/generation-scoped
@@ -691,3 +691,55 @@ Push activation, resumed uploads, Mirror delete, watcher, auto-schedule,
 remote control or new NAS agent. Real 100k/4GiB native-device acceptance
 remains unmeasured. Exact-head full GitHub CI, actual merge and branch
 cleanup are separate required gates.
+
+## L03-D2b2c2b1 · Owning-Agent live original file hashing against both sealed generations (GitHub PR verification)
+
+The preceding stages are merged: #1451 supports credential/Root/revision-
+fenced private advisory pagination; #1456 supplies server-side SourceItem,
+Node and alias consistency preflight. Neither alone proves that the file
+still on the local disk matches the recorded native identity or its bytes.
+
+This phase adds an **owning native Agent-only** bounded `HashCurrentLocalEvidenceBatch`
+primitive (1–64 claims). Each candidate has only the opaque PREVIOUS/CURRENT
+path SHA-256 keys and a root-scoped native identity key; it never accepts a
+caller-supplied absolute local path or a Web/Renderer file selection. The
+Agent authenticates the OS-held device credential, bound Root and Source
+revision, reloads private saved ignore rules and a sealed two-generation
+advisory manifest, reads a <=64-item Server candidate page, and checks the
+entire page with the already implemented Server consistency preflight.
+
+The local verifier streams both complete, SHA-256-checked private journals
+in <=500-item callbacks. Every claimed strong native identity must match
+**exactly one nonignored, unique-single-link regular file in each generation**
+at the two expected Root-scoped hashed paths. No directory, symlink,
+hard-link ambiguity, missing current file or unrelated native ID can be
+accepted. Only after both generations completely validate does the Agent
+hash each current original using the existing secure Root-scoped file-open
+primitive and 256-KiB bounded reads. The existing hasher checks file type,
+size, mtime, native identity and OS file handle before/after, detects Root
+swap, and propagates Go context cancellation. The entire batch fails closed
+on any error; no partially verified result or cache is returned. After
+hashing, the Agent repeats the Server preflight and reloads the local
+manifest and saved rules/session so revocation, Source/Node/alias changes,
+snapshot rotation or account changes invalidate the response.
+
+The per-file SHA256 digests exist only ephemerally in the owning Agent.
+The private returned summary contains counts and summed hashed bytes,
+never local filenames, hashed path keys, SourceItem/Node IDs, original
+file contents, native credentials or per-file hashes. It is NOT wired to
+the renderer, Electron Preload, Web/Mobile Web, foreign Desktop or a
+background executor.
+
+**Crucial safety limit:** `LocallyHashedFiles` and `LocallyHashedBytes`
+mean only that the on-disk current file bytes were read and SHA256-hashed
+under the current native Root grant. The values are **NOT compared with
+the already committed Server File/FileVersion/CAS digest or physical
+cloud blob**. `CloudContentVerified`, `ContentVerified`,
+`CommitSupported`, `Authoritative` and `MissingInferenceSafe` must
+therefore all remain **false**. A later phase must cryptographically
+compare current local bytes against the trusted stored cloud content
+metadata and recheck version/revocation/root proof within an eventual
+write transaction. No SourceRun activation, SourceItem alias promotion,
+Node/CAS modification, upload, Mirror deletion, watcher, schedule or
+NAS Push is enabled here. Native physical 100k/>=4GiB tests and GitLab
+delivery are not claimed.
