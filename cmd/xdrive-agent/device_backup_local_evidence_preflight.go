@@ -13,44 +13,25 @@ import (
 // This deliberately Agent-private summary never enters Web, Desktop IPC,
 // Preload or Renderer. It is NOT a commit token or permission to upload.
 type localEvidencePreflightSummary struct {
-	SourceID                 uint64
-	Revision                 uint64
-	Checked                  int
-	LocallyHashedFiles       int
-	LocallyHashedBytes       int64
-	CloudContentVerified     bool
-	CloudMetadataMatched     bool
-	MetadataMatchedFiles     int
-	PhysicalCASObservedFiles int
-	PhysicalCASObservedBytes int64
-	HasMore                  bool
-	NextAfterID              uint64
-	ServerConsistent         bool
-	ContentVerified          bool
-	CommitSupported          bool
-	Authoritative            bool
-	MissingInferenceSafe     bool
-}
-
-// selectLocalEvidencePhysicalSamples chooses at most four ordered claims,
-// sharing one 64MiB byte budget. Claims omitted from this sampling window
-// are never considered physically verified or committed.
-func selectLocalEvidencePhysicalSamples(
-	claims []client.LocalEvidenceCloudDigest,
-) ([]client.LocalEvidenceCloudDigest, int64) {
-	samples := make([]client.LocalEvidenceCloudDigest, 0, 4)
-	var total int64
-	for _, claim := range claims {
-		if claim.Size < 0 || claim.Size > 64<<20-total {
-			continue
-		}
-		samples = append(samples, claim)
-		total += claim.Size
-		if len(samples) == 4 {
-			break
-		}
-	}
-	return samples, total
+	SourceID                   uint64
+	Revision                   uint64
+	Checked                    int
+	LocallyHashedFiles         int
+	LocallyHashedBytes         int64
+	CloudContentVerified       bool
+	CloudMetadataMatched       bool
+	MetadataMatchedFiles       int
+	PhysicalCASObservedFiles   int
+	PhysicalCASObservedBytes   int64
+	PhysicalCASUnobservedFiles int
+	PhysicalCASBatchRequests   int
+	HasMore                    bool
+	NextAfterID                uint64
+	ServerConsistent           bool
+	ContentVerified            bool
+	CommitSupported            bool
+	Authoritative              bool
+	MissingInferenceSafe       bool
 }
 
 // preflightLocalBoundBackupEvidencePage reads one private advisory page and
@@ -159,24 +140,29 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 			return empty, privateLocalSnapshotError(errors.New("cloud metadata no longer matches local original bytes"))
 		}
 
-		// Sample up to four eligible *ordered* candidates within 64MiB
-		// cumulative physical I/O. Skipped large items remain UNVERIFIED;
-		// this result cannot authorize a whole page or a later write.
-		samples, sampleBytes := selectLocalEvidencePhysicalSamples(claims)
-		if len(samples) != 0 {
-			physical, err := cli.CheckLocalSourceItemCloudBytesBatch(
-				readCtx, sourceID, source.Revision, proof,
-				generation.PreviousSHA256, generation.CurrentSHA256, samples)
-			if err != nil || physical.Checked != len(samples) ||
-				!physical.CloudMetadataMatched || !physical.PhysicalCASMatched ||
-				physical.CloudBytesVerified || physical.ContentVerified ||
-				physical.CommitSupported || physical.Authoritative ||
-				physical.MissingInferenceSafe {
-				return empty, privateLocalSnapshotError(errors.New("physical CAS batch no longer matches original"))
-			}
-			result.PhysicalCASObservedFiles = len(samples)
-			result.PhysicalCASObservedBytes = sampleBytes
+		// At most four sequential, privately authenticated 1–4 item
+		// requests (16 files / 256MiB aggregate). Any later failure or
+		// context cancellation discards ALL earlier observed results.
+		// Large and omitted items remain explicitly UNOBSERVED.
+		plan, err := planLocalEvidencePhysicalPage(claims)
+		if err != nil {
+			return empty, privateLocalSnapshotError(errors.New("invalid private physical evidence page"))
 		}
+		observedFiles, observedBytes, err := observeLocalEvidencePhysicalBatches(
+			readCtx, sourceID, source.Revision, plan.Batches,
+			func(ctx context.Context, batch []client.LocalEvidenceCloudDigest) (client.LocalEvidencePhysicalCAS, error) {
+				return cli.CheckLocalSourceItemCloudBytesBatch(
+					ctx, sourceID, source.Revision, proof,
+					generation.PreviousSHA256, generation.CurrentSHA256, batch)
+			})
+		if err != nil || observedFiles != plan.SelectedFiles ||
+			observedBytes != plan.SelectedBytes {
+			return empty, privateLocalSnapshotError(errors.New("physical CAS page observation failed"))
+		}
+		result.PhysicalCASObservedFiles = observedFiles
+		result.PhysicalCASObservedBytes = observedBytes
+		result.PhysicalCASUnobservedFiles = len(claims) - observedFiles
+		result.PhysicalCASBatchRequests = len(plan.Batches)
 		// The expensive local hash may have raced device revoke, Node edits,
 		// alias changes or source configuration changes. Repeat Server proof
 		// after the hashing pass; a previously passing preflight is not durable.
@@ -188,6 +174,19 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 			again.Authoritative || again.MissingInferenceSafe ||
 			again.Checked != len(page.Items) {
 			return empty, privateLocalSnapshotError(errors.New("owning Server identity changed during live hash"))
+		}
+		// Recheck ALL original File/FileVersion/CAS metadata after every
+		// streamed sub-batch, not just the final sub-batch's candidates.
+		// A positive response is ephemeral and cannot authorize a write.
+		metadataAgain, err := cli.CheckLocalSourceItemCloudMetadata(
+			readCtx, sourceID, source.Revision, proof,
+			generation.PreviousSHA256, generation.CurrentSHA256, claims)
+		if err != nil || !metadataAgain.CloudMetadataMatched ||
+			metadataAgain.Checked != len(claims) ||
+			metadataAgain.CloudBytesVerified || metadataAgain.ContentVerified ||
+			metadataAgain.CommitSupported || metadataAgain.Authoritative ||
+			metadataAgain.MissingInferenceSafe {
+			return empty, privateLocalSnapshotError(errors.New("cloud metadata changed during physical page observation"))
 		}
 		result.Checked = checked.Checked
 		result.ServerConsistent = true

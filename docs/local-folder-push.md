@@ -860,7 +860,7 @@ Mirror two-scan/24h/trash-only deletion safety. Push activation stays denied.
 No GitLab delivery or native-device physical throughput measurement is
 claimed by this substage.
 
-## L03-D2b2c2b2c · Atomic bounded multi-object physical CAS observation (GitHub PR verification)
+## L03-D2b2c2b2c · Atomic bounded multi-object physical CAS observation (merged #1480; 97-check CI green)
 
 The prior L03-D2b2c2b2b (#1475) is merged after full exact-head CI:
 97 checks, 25 success / 72 conditional skips / zero failures, including the
@@ -918,3 +918,68 @@ background schedule or offline recovery; Mirror still requires two full
 safe scans/24h/trash-only, and NAS Push remains a placeholder.
 Full GitHub exact-head CI is required before merging this phase.
 No GitLab delivery or physical 1k/10k/100k benchmark is claimed.
+
+## L03-D2b2c2b2d · Bounded multi-batch Agent-private physical page window (GitHub PR verification)
+
+The prerequisite physical-object **Server** batch extension (#1480,
+L03-D2b2c2b2c) is merged following exact-head [Actions #38199969661](https://github.com/lazyxu/xdrive/actions/runs/38199969661):
+97 checks, 25 successes, 72 conditional skips, zero failures and a green
+`final-gate`. Its redundant branch was removed by cleanup
+[#38200716701](https://github.com/lazyxu/xdrive/actions/runs/38200716701).
+No new Server route, CAS write path, Web API or Desktop IPC is introduced here.
+
+This stage removes the owning native Agent's hard stop after the first
+4-object sample, while keeping the **existing** Server 1–4-object /
+64MiB / 90-second / device-and-Root-fenced read API unchanged.
+For one *already locally SHA256-verified* and current metadata-checked
+<=64-candidate advisory evidence page, the Agent deterministically plans
+up to **four sequential Server calls**, each for <=4 ordered items and
+<=64MiB, with a total **16 sampled items and 256MiB** upper bound.
+All other items, including each item >64MiB, explicitly remain
+UNOBSERVED. A zero-byte object counts toward the 16-item ceiling.
+Claims are never reordered or manufactured; malformed/nonascending IDs
+or negative sizes fail closed. No state is cached between requests.
+
+Before the first physical read, the Agent validates the **complete**
+four-call plan, including cross-batch increasing evidence IDs,
+per-batch and aggregate bytes, and item limits. A malformed later batch
+can never cause an earlier physical request. Batches execute
+**sequentially** through the same authenticated owning-Agent Go Client
+under the existing 300-second overall private preflight context.
+Every request repeats the Server's transaction-scoped
+device->Source->Root->SourceItem/alias->Node/File/FileVersion/ready CAS
+proof before AND after Store.Open/SHA256 reads. A failed, revoked,
+stale, partially checked, canceled, mismatched or authority-elevating
+later response fails the **entire** local page observation, returning
+ZERO counts, never an earlier batch's partial success.
+
+After all physical reads, the Agent repeats the original full-page
+SourceItem/Node/alias Server preflight AND the full-page current
+File/FileVersion/CAS metadata equality check, followed by local sealed
+inventory, ignore-rule and account/Root/session revalidation.
+The only additional Agent-private values are bounded aggregate
+`PhysicalCASObservedFiles`, `PhysicalCASObservedBytes`,
+`PhysicalCASUnobservedFiles` and `PhysicalCASBatchRequests`.
+They never enter Electron IPC, Preload, Web/Mobile Web or foreign
+Desktop. No per-file digests/paths/object keys leave the owning Agent's
+private protocol; the Server response remains no-store, count-only,
+and `cloud_bytes_verified=false`, `content_verified=false`,
+`commit_supported=false`, `authoritative=false`,
+`missing_inference_safe=false`.
+
+Go tests cover 4x4 objects/256MiB, zero-sized 64-item page, oversized
+local file skip, split batches by 64MiB, ordered IDs, malformed late
+work before any read, second-batch corruption/authority escalation,
+and cancellation after a successful earlier batch. The original
+single-batch/physical Store/PostgreSQL CI is retained, along with
+Desktop no-leak contracts and exact-head final gate.
+
+**This is still a point-in-time, partial page SAMPLE, not an
+entire-folder verification, reliable durability/commit token, or
+permission to start Push.** The 64MiB per-object limit, 16/256MiB
+per-page window and lack of a cross-page cursor/checkpoint leave
+100k complete scans and >=4GiB originals unverified. Durable write
+fencing, SourceItem aliases, Planner, resumable upload/CAS commit,
+SourceRun, auto scheduler/watcher, offline recovery and safe Mirror
+deletion remain separate L03-E–G/L05–L07 work. No GitLab delivery or
+physical-device performance numbers are claimed.
