@@ -55,7 +55,16 @@ function fakeWindow(initialRoute, existingState) {
   let position = 0
   const entries = [{ hash: hash(initialRoute), state: existingState ?? null }]
   const listeners = new Map()
-  const location = { hash: entries[0].hash }
+  const location = { hash: entries[0].hash, href: 'https://xdrive.test/' + entries[0].hash }
+  const extractHash = (value) => {
+    const raw = String(value ?? location.href)
+    const hashStart = raw.indexOf('#')
+    return hashStart >= 0 ? raw.slice(hashStart) : raw
+  }
+  const updateLocation = () => {
+    location.hash = entries[position].hash
+    location.href = 'https://xdrive.test/' + location.hash
+  }
   const api = {
     location,
     addEventListener: (type, cb) => {
@@ -72,20 +81,22 @@ function fakeWindow(initialRoute, existingState) {
     get length() { return entries.length },
     pushState(state, _title, next) {
       entries.splice(++position)
-      entries.push({ hash: next, state })
-      location.hash = next
+      entries.push({ hash: extractHash(next), state })
+      updateLocation()
     },
     replaceState(state, _title, next) {
-      entries[position] = { hash: next, state }
-      location.hash = next
+      entries[position] = { hash: extractHash(next), state }
+      updateLocation()
     },
-    back() {
-      if (position === 0) return
-      position -= 1
-      location.hash = entries[position].hash
+    go(delta) {
+      const target = position + delta
+      if (target < 0 || target >= entries.length) return
+      position = target
+      updateLocation()
       notify('popstate')
       notify('hashchange')
     },
+    back() { this.go(-1) },
   }
   return api
 }

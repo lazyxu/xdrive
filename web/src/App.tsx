@@ -434,17 +434,30 @@ function FileManager({
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
-  const { route, launch: launchWebAppRuntime, closeViewer, exitApp, canExitApp } = useXDriveWebAppRuntime()
   const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
   const [pendingSystemDependenciesExit, setPendingSystemDependenciesExit] = useState<
     | { kind: 'route'; next: XDriveWebAppRoute;
         options: { replace?: boolean; newTab?: boolean; viewerReturn?: boolean } }
     | { kind: 'exit' }
+    | { kind: 'history' }
     | null
   >(null)
-  const activeAppRef = useRef(route.app)
   const systemDependenciesDraftRef = useRef(false)
   const adminRoleRef = useRef(false)
+  // popstate/hashchange bypass the regular launcher. The runtime must stop a
+  // cross-app browser transition before React unmounts an unsaved admin form.
+  const guardBrowserNavigation = useCallback((from: XDriveWebAppRoute, to: XDriveWebAppRoute) => {
+    if (!adminRoleRef.current || !xDriveSystemDependenciesNeedsExitConfirmation(
+      from.app, to.app, systemDependenciesDraftRef.current,
+    )) return false
+    setPendingSystemDependenciesExit({ kind: 'history' })
+    return true
+  }, [])
+  const {
+    route, launch: launchWebAppRuntime, closeViewer, exitApp, canExitApp,
+    cancelHistoryNavigation, confirmHistoryNavigation,
+  } = useXDriveWebAppRuntime(guardBrowserNavigation)
+  const activeAppRef = useRef(route.app)
   activeAppRef.current = route.app
   systemDependenciesDraftRef.current = systemDependenciesDraftDirty
   adminRoleRef.current = profile?.role === 'admin'
@@ -1769,14 +1782,18 @@ function FileManager({
         title="离开未保存的系统依赖配置？"
         description="系统依赖中有尚未保存的修改。放弃草稿后才能进入其他应用；已提交的后台任务不会被取消。"
         confirmLabel="放弃修改并离开"
-        onCancel={() => setPendingSystemDependenciesExit(null)}
+        onCancel={() => {
+          if (pendingSystemDependenciesExit?.kind === 'history') cancelHistoryNavigation()
+          setPendingSystemDependenciesExit(null)
+        }}
         onConfirm={() => {
           const pending = pendingSystemDependenciesExit
           if (!pending) return
           systemDependenciesDraftRef.current = false
           setSystemDependenciesDraftDirty(false)
           setPendingSystemDependenciesExit(null)
-          if (pending.kind === 'exit') exitApp()
+          if (pending.kind === 'history') confirmHistoryNavigation()
+          else if (pending.kind === 'exit') exitApp()
           else launchWebAppRuntime(pending.next, pending.options)
         }}
       />
