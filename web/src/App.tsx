@@ -1303,7 +1303,7 @@ function FileManager({
             },
             {
               key: 'global-tasks',
-              label: '全局任务',
+              label: '全局后台任务',
               icon: <AdminPanelSettingsOutlinedIcon fontSize="small" />,
             },
             {
@@ -1378,7 +1378,7 @@ function FileManager({
   )
   const mobileAppTitles: Record<string, string> = {
     overview: '主页', files: '文件', gallery: '图库', 'device-backup': '设备备份', 'remote-pull': '远程拉取',
-    transfers: '任务', 'global-tasks': '全局任务', 'local-storage': '本地存储',
+    transfers: '任务', 'global-tasks': '全局后台任务', 'local-storage': '本地存储',
     'cloud-storage': '云端存储', 'admin-users': '用户管理',
     'admin-audit': '审计日志', 'admin-storage': '全局存储', 'admin-services': '系统依赖', 'admin-maintenance': '系统维护',
   }

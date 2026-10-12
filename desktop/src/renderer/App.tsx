@@ -1886,7 +1886,7 @@ export default function App({
           ariaLabel: '管理员功能',
           placement: 'after-core' as const,
           items: [
-            { key: 'global-tasks', label: '全局任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
+            { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
             { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
           ],
