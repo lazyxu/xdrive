@@ -22,6 +22,7 @@ import {
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -57,6 +58,7 @@ import {
   XDriveWorkspaceSidebar,
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
+  XDriveAdminUsersPage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -94,7 +96,7 @@ import {
   xDriveLoginCredentialsReady,
   xDriveSystemDependenciesNeedsExitConfirmation,
 } from '@xdrive/shared'
-import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource } from '@xdrive/shared'
+import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -109,7 +111,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-services' | 'admin-maintenance'>
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-services' | 'admin-maintenance'>
 
 type ConfirmDialogState = {
   title: string
@@ -1155,7 +1157,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -1860,6 +1862,36 @@ export default function App({
     },
   }), [status?.server, status?.username])
 
+  const adminUsersPort = useMemo<XDriveAdminUsersPort>(() => ({
+    adminUsers: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminUsers()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    adminCreateUser: async (input) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCreateUser(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    adminUpdateUser: async (id, input) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminUpdateUser(id, input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    adminResetPassword: async (id, password, mustChangePassword = true) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminResetUserPassword(id, password, mustChangePassword)
+      if (!result.ok) throw new Error(result.error.message)
+    },
+    adminRevokeSessions: async (id) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminRevokeUserSessions(id)
+      if (!result.ok) throw new Error(result.error.message)
+    },
+    adminDeleteUser: async (id) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminDeleteUser(id)
+      if (!result.ok) throw new Error(result.error.message)
+    },
+  }), [status?.server, status?.username])
+
   const desktopSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
@@ -1902,6 +1934,7 @@ export default function App({
           ariaLabel: '管理员功能',
           placement: 'after-core' as const,
           items: [
+            { key: 'admin-users', label: '用户管理', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
             { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
             { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
@@ -2815,6 +2848,18 @@ export default function App({
                 : current === 'server-update' ? '' : current)
             }}
           />
+        )}
+
+        {view === 'admin-users' && status?.role === 'admin' && (
+          agent.hello?.capabilities.includes('admin-users') ? (
+            <XDriveAdminUsersPage
+              api={adminUsersPort}
+              currentUsername={status.username}
+              onChanged={() => { void refreshCloudQuota() }}
+            />
+          ) : (
+            <XDriveStatePanel message="当前 xdrive-agent 不支持用户管理，请更新客户端核心组件。" />
+          )
         )}
 
         {view === 'admin-services' && status?.role === 'admin' && (

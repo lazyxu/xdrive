@@ -126,6 +126,9 @@ import {
   type AgentAdminGeoNamesRevisionPage,
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
+  type AgentAdminUser,
+  type AgentAdminCreateUserInput,
+  type AgentAdminUpdateUserInput,
   type AgentBackgroundTaskActiveSummary,
   type AgentBackgroundTaskControlResult,
   type AgentCloudFileOperation,
@@ -5165,6 +5168,65 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'admin-services')
     return requireAgentClient().cloudAdminServices()
   }, false))
+
+  const requireDesktopAdminUsers = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-users')
+    return requireAgentClient()
+  }
+  const checkedAdminUserID = (id: unknown): number => {
+    if (typeof id !== 'number' || !Number.isSafeInteger(id) || id <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid administrator user ID.')
+    }
+    return id
+  }
+  ipcMain.handle('agent:cloud-admin-users', () => runAgentAction<AgentAdminUser[]>(async () =>
+    (await requireDesktopAdminUsers()).cloudAdminUsers(), false))
+  ipcMain.handle('agent:cloud-admin-users-create', (_event, input: unknown) =>
+    runAgentAction<AgentAdminUser>(async () => {
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid create-user request.')
+      }
+      const value = input as Partial<AgentAdminCreateUserInput>
+      if (typeof value.username !== 'string' || value.username.trim().length < 3 || value.username.length > 64 ||
+          typeof value.password !== 'string' || value.password.length < 8 || value.password.length > 1024 ||
+          (value.role !== 'user' && value.role !== 'admin') ||
+          typeof value.must_change_password !== 'boolean' ||
+          !Number.isSafeInteger(value.quota_bytes) || (value.quota_bytes ?? -1) < 0) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid create-user fields.')
+      }
+      return (await requireDesktopAdminUsers()).cloudAdminCreateUser(value as AgentAdminCreateUserInput)
+    }, false))
+  ipcMain.handle('agent:cloud-admin-users-update', (_event, id: unknown, input: unknown) =>
+    runAgentAction<AgentAdminUser>(async () => {
+      const userID = checkedAdminUserID(id)
+      if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid user update.')
+      }
+      const value = input as Partial<AgentAdminUpdateUserInput>
+      if (!('role' in value || 'disabled' in value || 'quota_bytes' in value) ||
+          (value.role !== undefined && value.role !== 'user' && value.role !== 'admin') ||
+          (value.disabled !== undefined && typeof value.disabled !== 'boolean') ||
+          (value.quota_bytes !== undefined && (!Number.isSafeInteger(value.quota_bytes) || value.quota_bytes < 0))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid user update values.')
+      }
+      return (await requireDesktopAdminUsers()).cloudAdminUpdateUser(userID, value)
+    }, false))
+  ipcMain.handle('agent:cloud-admin-users-reset-password', (_event, id: unknown, password: unknown, mustChange: unknown) =>
+    runAgentAction<{ ok: boolean }>(async () => {
+      const userID = checkedAdminUserID(id)
+      if (typeof password !== 'string' || password.length < 8 || password.length > 1024 ||
+          typeof mustChange !== 'boolean') {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid password reset fields.')
+      }
+      return (await requireDesktopAdminUsers()).cloudAdminResetUserPassword(userID, password, mustChange)
+    }, false))
+  ipcMain.handle('agent:cloud-admin-users-revoke-sessions', (_event, id: unknown) =>
+    runAgentAction<{ ok: boolean }>(async () =>
+      (await requireDesktopAdminUsers()).cloudAdminRevokeUserSessions(checkedAdminUserID(id)), false))
+  ipcMain.handle('agent:cloud-admin-users-delete', (_event, id: unknown) =>
+    runAgentAction<{ ok: boolean }>(async () =>
+      (await requireDesktopAdminUsers()).cloudAdminDeleteUser(checkedAdminUserID(id)), false))
   ipcMain.handle(
     'agent:cloud-background-task-summary',
     () => runAgentAction<AgentBackgroundTaskActiveSummary>(async () => {

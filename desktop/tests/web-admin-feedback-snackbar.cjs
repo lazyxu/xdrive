@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
-const adminUsers = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
+const adminUsers = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AdminUsersPage.tsx'), 'utf8')
 
 test('Web AdminUsers reuses shared feedback snackbar', () => {
   assert.ok(adminUsers.includes('XDriveFeedbackSnackbar'), 'AdminUsers should consume the shared feedback snackbar')

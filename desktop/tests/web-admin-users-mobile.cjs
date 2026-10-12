@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const source = fs.readFileSync(path.join(repo, 'web', 'src', 'AdminUsers.tsx'), 'utf8')
+const source = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'AdminUsersPage.tsx'), 'utf8')
 
 test('admin users table projects to card rows below md without duplicating actions', () => {
   for (const token of [

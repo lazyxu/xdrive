@@ -82,6 +82,7 @@ var desktopIPCCapabilities = []string{
 	"background-tasks",
 	"background-task-summary",
 	"admin-services",
+	"admin-users",
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
@@ -600,6 +601,12 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
 	mux.HandleFunc("GET /v1/cloud/admin-services", h.cloudAdminServices)
+	mux.HandleFunc("GET /v1/cloud/admin-users", h.cloudAdminUsers)
+	mux.HandleFunc("POST /v1/cloud/admin-users", h.cloudAdminCreateUser)
+	mux.HandleFunc("PATCH /v1/cloud/admin-users/{id}", h.cloudAdminUpdateUser)
+	mux.HandleFunc("DELETE /v1/cloud/admin-users/{id}", h.cloudAdminDeleteUser)
+	mux.HandleFunc("POST /v1/cloud/admin-users/{id}/reset-password", h.cloudAdminResetUserPassword)
+	mux.HandleFunc("POST /v1/cloud/admin-users/{id}/revoke-sessions", h.cloudAdminRevokeUserSessions)
 	mux.HandleFunc("GET /v1/cloud/admin-baidu-map", h.cloudAdminBaiduMap)
 	mux.HandleFunc("PUT /v1/cloud/admin-baidu-map", h.cloudSetAdminBaiduMap)
 	mux.HandleFunc("POST /v1/cloud/admin-baidu-map/reveal", h.cloudRevealAdminBaiduMapAK)
