@@ -204,7 +204,7 @@ test('shared Web and Desktop service rows expose true configuration ownership, n
   ]) assert.ok(page.includes(label))
   assert.ok(page.includes('data-xdrive-service-config-mode'))
   assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
-  assert.ok(page.includes("configModeLabels[item.config_mode ?? 'unknown']"))
+  assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
   assert.ok(page.includes("service.config_mode !== 'in-app'"))
   assert.equal((page.match(/\?\? configModeLabels\.unknown/g) || []).length, 2,
     'unrecognized modes from malformed/old Servers must fail closed as unknown')
