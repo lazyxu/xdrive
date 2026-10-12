@@ -27,7 +27,7 @@ const sources = [
   'SourceManagerSettingsDialog.tsx',
   'SourceManagerListPage.tsx',
 ].map((name) => readRepo(`ui/shared/src/mui/${name}`)).join('\n')
-const storage = read('src/StorageStatsPanel.tsx')
+const storage = readRepo('ui/shared/src/mui/GlobalStorageStatsPage.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
 const adminUsers = readRepo('ui/shared/src/mui/AdminUsersPage.tsx')
 const adminAudit = readRepo('ui/shared/src/mui/AdminAuditPage.tsx')

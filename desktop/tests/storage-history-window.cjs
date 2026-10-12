@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const panel = fs.readFileSync(path.join(repo, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
+const panel = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx'), 'utf8')
 const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')
 const docs = fs.readFileSync(path.join(repo, 'docs', 'storage-inventory.md'), 'utf8')
 

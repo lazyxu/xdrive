@@ -40,6 +40,17 @@ export type AgentAdminUser = {
   created_at: string
   updated_at: string
 }
+export type AgentAdminStorageRequest = {
+  operation: 'stats' | 'health' | 'history' | 'legacy' | 'unreferenced'
+    | 'staging' | 'cleanup-runs' | 'cleanup-failures' | 'cleanup-staging' | 'cleanup-cache'
+  limit?: number
+  offset?: number
+  cursor?: string
+  days?: 30 | 90 | 180
+  run_id?: number
+  fresh?: boolean
+  kind?: 'media_thumbnail' | 'video_poster' | 'analysis_preview' | 'upload_staging' | 'storage_temp' | 'all'
+}
 export type AgentAdminAuditRangeQuery = {
   limit: number
   offset: number
@@ -3605,6 +3616,9 @@ export class AgentIPCClient {
 
   cloudAdminServices() {
     return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
+  }
+  cloudAdminStorage(query: AgentAdminStorageRequest) {
+    return this.request<unknown>('POST', '/v1/cloud/admin-storage', query, 120_000)
   }
   cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
     return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)

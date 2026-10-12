@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const source = fs.readFileSync(path.join(repo, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
+const source = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx'), 'utf8')
 
 test('admin storage diagnostics use cards on compact layouts', () => {
   for (const token of [

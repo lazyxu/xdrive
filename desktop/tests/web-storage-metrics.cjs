@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repoRoot = path.join(__dirname, '..', '..')
-const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
+const storageStats = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx'), 'utf8')
 const cloudStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStoragePage.tsx'), 'utf8')
 const cloudStorageAdapter = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'CloudStorageAdapter.ts'), 'utf8')
 const storageInventory = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'StorageInventorySection.tsx'), 'utf8')

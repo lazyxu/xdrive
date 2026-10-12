@@ -24,7 +24,7 @@ const sharedGallery = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src',
 const sharedAuthSurface = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AuthSurface.tsx'), 'utf8')
 const adminUsers = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AdminUsersPage.tsx'), 'utf8')
 const adminAudit = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'AdminAuditPage.tsx'), 'utf8')
-const storageStats = fs.readFileSync(path.join(repoRoot, 'web', 'src', 'StorageStatsPanel.tsx'), 'utf8')
+const storageStats = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'GlobalStorageStatsPage.tsx'), 'utf8')
 
 test('wide Web keeps compact chrome while mobile owns the full-screen title and global controls', () => {
   // Anchor on the actual workspace JSX, not the first source-text mention:
