@@ -1,0 +1,429 @@
+{
+  "workload_id": "P038 / M002-b1",
+  "result": "PARTIAL / NOT ACCEPTED",
+  "label": "Original source-exact partial run and aborted-HTTP500 attribution invalid harness",
+  "source_sha": "eae3be2df7c3538195a4876678ac825a5d876323",
+  "workflow_run": 38266101039,
+  "job_id": 114868538969,
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38266101039/artifacts/11755775758",
+  "changedProductionCode": false,
+  "validCompleteFixtures": 1,
+  "expectedCompleteFixtures": 3,
+  "nativeElectronSessionsCompleted": 3,
+  "expectedSessions": 6,
+  "achievedViewports": 15,
+  "expectedViewports": 30,
+  "freshData": {
+    "logicalPhotoAssets": 100000,
+    "physicalNodeCAS": 115000,
+    "pairedLivePhotos": 15000,
+    "physicalBytesPerFixture": 149285128,
+    "H264EncodedStreamUnique": false
+  },
+  "validOriginalRendererRows": [
+    {
+      "sample": 1,
+      "view": "grid",
+      "productionDesktop": true,
+      "physicalMixedOriginalCAS": 115000,
+      "logicalPhotoAssets": 100000,
+      "pairedLivePhotoGroups": 15000,
+      "viewportFractions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ],
+      "viewportRows": [
+        {
+          "fraction": 0,
+          "expectedKind": "liveMotion",
+          "minimumDecoded": 2,
+          "firstExpectedDecodedMs": 337.3498519999998,
+          "decoded": 11,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 64,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 11,
+            "other": 0
+          },
+          "newlyDecoded": 11,
+          "mounted": 64,
+          "scrollTop": 0,
+          "realGoRequests": 17,
+          "realGoBytes": 646,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 17
+        },
+        {
+          "fraction": 0.25,
+          "expectedKind": "liveStill",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 568.4031359999999,
+          "decoded": 20,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 88,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 20,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 20,
+          "mounted": 88,
+          "scrollTop": 531715,
+          "realGoRequests": 50,
+          "realGoBytes": 19965,
+          "goActive": 5,
+          "canceled": 0,
+          "failed": 18
+        },
+        {
+          "fraction": 0.5,
+          "expectedKind": "photo",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 582.4148889999999,
+          "decoded": 16,
+          "visibleKinds": {
+            "photo": 88,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 16,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 16,
+          "mounted": 88,
+          "scrollTop": 1063431,
+          "realGoRequests": 76,
+          "realGoBytes": 38535,
+          "goActive": 5,
+          "canceled": 0,
+          "failed": 18
+        },
+        {
+          "fraction": 0.75,
+          "expectedKind": "photo",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 719.548088,
+          "decoded": 12,
+          "visibleKinds": {
+            "photo": 88,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 12,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 12,
+          "mounted": 88,
+          "scrollTop": 1595147,
+          "realGoRequests": 106,
+          "realGoBytes": 58527,
+          "goActive": 4,
+          "canceled": 0,
+          "failed": 18
+        },
+        {
+          "fraction": 0.95,
+          "expectedKind": "video",
+          "minimumDecoded": 2,
+          "firstExpectedDecodedMs": 928.243958,
+          "decoded": 6,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 88,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 6,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 6,
+          "mounted": 88,
+          "scrollTop": 2020519,
+          "realGoRequests": 133,
+          "realGoBytes": 66325,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 36
+        }
+      ],
+      "viewportFirstExpectedP50Ms": 582.4148889999999,
+      "rendererWorkingSetStartBytes": 184020992,
+      "rendererWorkingSetPeakBytes": 287526912,
+      "rendererWorkingSetGrowthBytes": 103505920,
+      "mainCpuUserMs": 390.901,
+      "mainCpuSystemMs": 162.754,
+      "goThumbnailRequests": 133,
+      "goResponseBytes": 66325,
+      "maxGoConcurrent": 6,
+      "canceled": 0,
+      "errors": 36,
+      "budgets": {
+        "viewportMs": 20000,
+        "rendererGrowthBytes": 268435456,
+        "maxGoConcurrent": 6
+      },
+      "exclusions": "Linux Xvfb five sampled real Desktop Files Grid/Details viewports, 100k logical Gallery assets and 115k physically distinct JPEG/MP4/Live still-motion CAS; H264 files reuse one encoded 96x64 stream, no RAW/HEVC/LIVP archive, WAN, actual Windows hardware, or cancellation-latency proof",
+      "passed": true,
+      "fixtureSeedMs": 100892.239,
+      "persistedPhysicalOriginalBytes": 149285128,
+      "agentRssGrowthBytes": 3743744,
+      "goRssGrowthBytes": 0
+    },
+    {
+      "sample": 1,
+      "view": "details",
+      "productionDesktop": true,
+      "physicalMixedOriginalCAS": 115000,
+      "logicalPhotoAssets": 100000,
+      "pairedLivePhotoGroups": 15000,
+      "viewportFractions": [
+        0,
+        0.25,
+        0.5,
+        0.75,
+        0.95
+      ],
+      "viewportRows": [
+        {
+          "fraction": 0,
+          "expectedKind": "liveMotion",
+          "minimumDecoded": 2,
+          "firstExpectedDecodedMs": 194.74841300000003,
+          "decoded": 6,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 29,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 6,
+            "other": 0
+          },
+          "newlyDecoded": 6,
+          "mounted": 29,
+          "scrollTop": 0,
+          "realGoRequests": 145,
+          "realGoBytes": 94381,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 36
+        },
+        {
+          "fraction": 0.25,
+          "expectedKind": "liveStill",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 612.819546,
+          "decoded": 19,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 39,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 0,
+            "liveStill": 19,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 19,
+          "mounted": 39,
+          "scrollTop": 1034845,
+          "realGoRequests": 150,
+          "realGoBytes": 94571,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 41
+        },
+        {
+          "fraction": 0.5,
+          "expectedKind": "photo",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 484.7022390000002,
+          "decoded": 12,
+          "visibleKinds": {
+            "photo": 39,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 12,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 12,
+          "mounted": 39,
+          "scrollTop": 2069691,
+          "realGoRequests": 151,
+          "realGoBytes": 95290,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 41
+        },
+        {
+          "fraction": 0.75,
+          "expectedKind": "photo",
+          "minimumDecoded": 6,
+          "firstExpectedDecodedMs": 1.8080500000000939,
+          "decoded": 18,
+          "visibleKinds": {
+            "photo": 39,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 18,
+            "video": 0,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 6,
+          "mounted": 39,
+          "scrollTop": 3104537,
+          "realGoRequests": 151,
+          "realGoBytes": 95290,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 41
+        },
+        {
+          "fraction": 0.95,
+          "expectedKind": "video",
+          "minimumDecoded": 2,
+          "firstExpectedDecodedMs": 574.8875200000002,
+          "decoded": 7,
+          "visibleKinds": {
+            "photo": 0,
+            "video": 39,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "decodedKinds": {
+            "photo": 0,
+            "video": 7,
+            "liveStill": 0,
+            "liveMotion": 0,
+            "other": 0
+          },
+          "newlyDecoded": 7,
+          "mounted": 39,
+          "scrollTop": 3932413,
+          "realGoRequests": 166,
+          "realGoBytes": 95860,
+          "goActive": 0,
+          "canceled": 0,
+          "failed": 56
+        }
+      ],
+      "viewportFirstExpectedP50Ms": 484.7022390000002,
+      "rendererWorkingSetStartBytes": 193310720,
+      "rendererWorkingSetPeakBytes": 288686080,
+      "rendererWorkingSetGrowthBytes": 95375360,
+      "mainCpuUserMs": 243.334,
+      "mainCpuSystemMs": 84.214,
+      "goThumbnailRequests": 33,
+      "goResponseBytes": 29535,
+      "maxGoConcurrent": 6,
+      "canceled": 0,
+      "errors": 56,
+      "budgets": {
+        "viewportMs": 20000,
+        "rendererGrowthBytes": 268435456,
+        "maxGoConcurrent": 6
+      },
+      "exclusions": "Linux Xvfb five sampled real Desktop Files Grid/Details viewports, 100k logical Gallery assets and 115k physically distinct JPEG/MP4/Live still-motion CAS; H264 files reuse one encoded 96x64 stream, no RAW/HEVC/LIVP archive, WAN, actual Windows hardware, or cancellation-latency proof",
+      "passed": true,
+      "fixtureSeedMs": 100892.239,
+      "persistedPhysicalOriginalBytes": 149285128,
+      "agentRssGrowthBytes": 0,
+      "goRssGrowthBytes": 0
+    }
+  ],
+  "thirdSession": {
+    "sample": 2,
+    "view": "grid",
+    "status": "all five genuine viewport decodes complete but final raw 5xx gate failed",
+    "viewportFirstExpectedP50Ms": 521.933426,
+    "perViewportMs": [
+      267.450823,
+      521.933426,
+      510.66277300000024,
+      646.7303920000004,
+      643.4080960000001
+    ],
+    "rendererWorkingSetGrowthBytes": 90042368,
+    "goThumbnailRequests": 148,
+    "goResponseBytes": 77690,
+    "maxGoConcurrent": 6,
+    "nonCanceled5xxOriginalProbe": 1,
+    "originalPassed": false,
+    "rawTrace": "fixture-2.log 2026-10-12T14:59:03Z GET /api/v1/media/items/:id/thumbnail status=500 duration_ms=9.272; adjacent GORM SELECT xd_media_metadata WHERE node_id=56264 returns context canceled",
+    "fullRawElectronRow": "https://github.com/lazyxu/xdrive/actions/runs/38266101039/artifacts/11755775758 (sample-2-grid.json; unmodified source evidence)"
+  },
+  "attribution": "Old probe counted all status>=500 as server_errors even after r.Context().Err()!=nil on a deliberately aborted fast-scroll thumbnail. Actual raw HTTP 500 remains recorded; corrected probe adds total_5xx, canceled_5xx and unexpected/live-client 5xx. Existing original zero-all-5xx criterion failed in this source run; this is not silently overwritten or counted as successful n3.",
+  "originalFreeze": {
+    "viewportMsMax": 20000,
+    "domMaxExclusive": 1000,
+    "maxConcurrent": 6,
+    "maxProcessRssGrowthB": 268435456,
+    "initialRawHttp5xxAllowed": 0
+  },
+  "beforeAfter": {
+    "before": "partial ORIGINAL only",
+    "after": null,
+    "speedup": null
+  },
+  "decision": "No production change. Original completed per-viewport timings are diagnostics only; the source run is not a valid complete n3 performance acceptance.",
+  "next": "Run corrected source-exact n3 and retain both raw total_5xx and canceled 5xx in each result. Do not compare separate runner medians as a performance A/B."
+}

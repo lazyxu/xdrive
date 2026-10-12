@@ -49,11 +49,27 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
+	desktopFileExplorerMixed := os.Getenv("XD_GALLERY_DESKTOP_FILES_MIXED_PHYSICAL_100K_PERF") == "1"
+	if desktopFileExplorerMixed {
+		// Reuse only P035's Desktop bootstrap schema; no product route or task change.
+		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.FileRecentAccess{},
+			&meta.FileFavorite{}, &meta.FileQuickAccess{}, &meta.FileSavedSearch{},
+			&meta.FileTag{}, &meta.FileNodeTag{}, &meta.NodeChange{},
+			&meta.FileOperation{}, &meta.PhotoIntelligenceReanalyzeIntent{},
+			&meta.UploadSession{}, &meta.BackgroundOwnerCancellation{},
+			&meta.SyncRun{}, &meta.ArchivePrepareRun{}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	local, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	countingStore := &fileExplorerMediaPerfStore{inner: local}
+	var serverStore storage.Store = countingStore
+	if desktopFileExplorerMixed {
+		serverStore = &fileExplorerPhysicalCapacityStore{fileExplorerMediaPerfStore: countingStore, local: local}
+	}
 	scheduler := background.NewScheduler(context.Background(), background.Config{
 		Capacity: map[background.ResourceClass]int{
 			background.ResourceMediaCPU: galleryFirstVisibleThumbnailConcurrency,
@@ -64,7 +80,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	})
 	defer scheduler.Close()
 	server := &Server{
-		DB: db, Store: countingStore,
+		DB: db, Store: serverStore,
 		Auth:                auth.New("gallery-real-web-cold-100k", time.Hour),
 		RefreshTTL:          24 * time.Hour,
 		AllowedOrigin:       "http://localhost",
@@ -77,6 +93,20 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	folder := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"100k Browser Cold Gallery"}`), http.StatusCreated)
+	if desktopFileExplorerMixed {
+		for _, route := range []string{
+			"/api/v1/me/quota", "/api/v1/background-tasks/active-summary",
+			"/api/v1/background-tasks/page?limit=10",
+		} {
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("mixed physical Desktop bootstrap %s returned HTTP %d", route, recorder.Code)
+			}
+		}
+	}
 	var ownerRoot meta.Node
 	if err := db.First(&ownerRoot, root.ID).Error; err != nil {
 		t.Fatal(err)
@@ -84,7 +114,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 
 	started := time.Now()
 	mediaGallerySeedFirstOpen100K(t, db, ownerRoot.OwnerID, folder.ID)
-	physicalViewportMode := os.Getenv("XD_GALLERY_WEB_PHYSICAL_MIXED_VIEWPORT_100K_PERF") == "1"
+	physicalViewportMode := os.Getenv("XD_GALLERY_WEB_PHYSICAL_MIXED_VIEWPORT_100K_PERF") == "1" || desktopFileExplorerMixed
 	if physicalViewportMode && os.Getenv("XD_GALLERY_REAL_VIEWPORT_CANCEL_PERF") == "1" {
 		t.Fatal("physical decoded-viewport benchmark cannot use artificially slowed cancel writer")
 	}
@@ -255,7 +285,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	case <-stopped:
 		t.Logf("GALLERY_REAL_WEB_COLD_100K_STOP seed_ms=%.3f images=%d videos=%d live=%d",
 			seedMS, len(images), len(videos), liveCount)
-	case <-time.After(6 * time.Minute):
+	case <-time.After(map[bool]time.Duration{true: 16 * time.Minute, false: 6 * time.Minute}[desktopFileExplorerMixed]):
 		t.Fatal("browser did not finish real Web Gallery first-paint workload")
 	}
 }
