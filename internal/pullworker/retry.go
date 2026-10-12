@@ -8,6 +8,8 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/sourceschedule"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type RetryClass string
@@ -107,42 +109,70 @@ func (r *Runner) persistRetryOutcome(
 	handler SourceHandler,
 	runErr error,
 	now time.Time,
+	runID string,
 ) error {
 	class := classifyPullRetry(handler, runErr)
 	if source.ScheduleType == sourceschedule.TypeManual {
 		class = RetryNone
 	}
 
-	// A run may complete after its Source is reconfigured or paused.
-	// Fence both retry clearing and retry creation to its original revision.
 	hasState := source.RetryAttempt != 0 || source.RetryAt != nil || source.RetryClass != ""
+	updates := map[string]any{"updated_at": now.UTC()}
 	if runErr == nil || class == RetryNone {
 		if !hasState {
 			return nil
 		}
-		if r == nil || r.DB == nil {
-			return fmt.Errorf("pull worker database is unavailable")
-		}
-		return r.DB.WithContext(ctx).Model(&meta.Source{}).
-			Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
-			Updates(map[string]any{
-				"retry_attempt": 0,
-				"retry_at":      nil,
-				"retry_class":   "",
-				"updated_at":    now.UTC(),
-			}).Error
+		updates["retry_attempt"] = 0
+		updates["retry_at"] = nil
+		updates["retry_class"] = ""
+	} else {
+		attempt, retryAt := nextRetryState(source, class, now)
+		updates["retry_attempt"] = attempt
+		updates["retry_at"] = retryAt
+		updates["retry_class"] = string(class)
 	}
 
 	if r == nil || r.DB == nil {
 		return fmt.Errorf("pull worker database is unavailable")
 	}
-	attempt, retryAt := nextRetryState(source, class, now)
-	return r.DB.WithContext(ctx).Model(&meta.Source{}).
-		Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
-		Updates(map[string]any{
-			"retry_attempt": attempt,
-			"retry_at":      retryAt,
-			"retry_class":   string(class),
-			"updated_at":    now.UTC(),
-		}).Error
+	write := func(tx *gorm.DB) error {
+		return tx.Model(&meta.Source{}).
+			Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
+			Updates(updates).Error
+	}
+	if runID == "" {
+		// Only legacy/no-run outcomes use the existing Source revision fence.
+		// A failed preflight without a SyncRun is separately fenced by
+		// recordPreflightFailure.
+		return write(r.DB.WithContext(ctx))
+	}
+
+	// An old durable SyncRun may have been superseded after a lost heartbeat
+	// without any Source revision change. Its late retry/clear must not
+	// overwrite the latest run's state. Lock Source first, matching the
+	// HTTP begin/finish lock order, then inspect the latest durable run under
+	// the same transaction so a new begin cannot race this decision.
+	return r.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var current meta.Source
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND revision = ? AND status = ?", source.ID, source.Revision, meta.SourceStatusActive).
+			First(&current).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		var latest meta.SyncRun
+		if err := tx.Where("source_id = ?", source.ID).
+			Order("run_number DESC").First(&latest).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if latest.ID != runID {
+			return nil
+		}
+		return write(tx)
+	})
 }
