@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,12 +15,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/storage"
 )
 
 func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t *testing.T) {
 	db, server, owner, other, root := setupFilePropertiesTestDB(t)
 	if err := db.AutoMigrate(&meta.ClientDevice{}, &meta.LocalSourceBinding{},
-		&meta.SourceItemAlias{}, &meta.SyncRun{},
+		&meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.LocalSourceItemEvidence{}, &meta.LocalSourceCommitIntent{}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +191,122 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 		t.Fatalf("idempotent replay incorrect: %+v", replayed)
 	}
 
+	// L03-E1a ties the persisted quarantine IDs to *actual* currently
+	// readable CAS bytes, but remains a time-bounded non-authoritative check.
+	// The existing E0 write did NOT need CAS bytes; prepare a real fixture now.
+	casStore, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Store = casStore
+	original := "abc"
+	sum := sha256.Sum256([]byte(original))
+	sha := hex.EncodeToString(sum[:])
+	key, err := storage.ContentAddressedKey(sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+	putOriginal := func(payload string) {
+		t.Helper()
+		if n, err := casStore.Put(context.Background(), key, strings.NewReader(payload)); err != nil || n != int64(len(payload)) {
+			t.Fatalf("CAS fixture write failed: %d %v", n, err)
+		}
+	}
+	putOriginal(original)
+	if err := db.Model(&meta.File{}).Where("node_id = ?", node.ID).
+		Updates(map[string]any{"sha256": sha, "storage_key": key}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.SourceItem{}).Where("id = ?", item.ID).
+		Update("sha256", sha).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.FileVersion{
+		NodeID: node.ID, Revision: node.Revision, Size: 3,
+		SHA256: sha, StorageKey: key, CreatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.ContentBlob{
+		SHA256: sha, Size: 3, StorageKey: key,
+		State: meta.ContentBlobStateReady, RefCount: 1,
+		CreatedAt: now, UpdatedAt: now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	contentInput := localEvidenceCloudMetadataRequest{
+		PreviousSnapshotSHA256: evidence.PreviousSnapshotSHA256,
+		CurrentSnapshotSHA256:  evidence.CurrentSnapshotSHA256,
+		Items: []localEvidenceCloudMetadataItem{
+			{EvidenceID: evidence.ID, SHA256: sha, Size: 3},
+		},
+	}
+	contentJSON, err := json.Marshal(contentInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentURI := uri + "/content-preflight"
+	checkContent := func(jwt string, headers map[string]string, payload string, status int) {
+		t.Helper()
+		rec := requestWithHeaders(t, router, http.MethodPost, contentURI, jwt, strings.NewReader(payload), status, headers)
+		for _, private := range []string{rootID, fingerprint, deviceSecret, key, "cloud-old.jpg"} {
+			if strings.Contains(rec.Body.String(), private) {
+				t.Fatalf("quarantine physical response leaked private value")
+			}
+		}
+		if status != http.StatusOK {
+			return
+		}
+		if rec.Header().Get("Cache-Control") != "private, no-store" ||
+			rec.Header().Get("ETag") != "\"7\"" {
+			t.Fatalf("quarantine content preflight lost privacy/revision fence")
+		}
+		var got localQuarantinedContentResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.SourceID != source.ID || got.Revision != 7 || got.Checked != 1 ||
+			!got.QuarantineMatched || !got.PhysicalCASMatched ||
+			got.CloudBytesVerified || got.ContentVerified ||
+			got.CommitSupported || got.Authoritative || got.MissingInferenceSafe {
+			t.Fatalf("quarantine physical preflight falsely granted commit authority: %+v", got)
+		}
+	}
+	checkContent(ownerJWT, map[string]string{"If-Match": "\"7\""}, string(contentJSON), http.StatusForbidden)
+	checkContent(otherJWT, copyProof(), string(contentJSON), http.StatusNotFound)
+	checkContent(ownerJWT, foreign, string(contentJSON), http.StatusForbidden)
+	checkContent(ownerJWT, badToken, string(contentJSON), http.StatusForbidden)
+	checkContent(ownerJWT, badRoot, string(contentJSON), http.StatusForbidden)
+	checkContent(ownerJWT, stale, string(contentJSON), http.StatusConflict)
+	checkContent(ownerJWT, copyProof(), "{}", http.StatusBadRequest)
+	checkContent(ownerJWT, copyProof(), string(contentJSON)+"{}", http.StatusBadRequest)
+	checkContent(ownerJWT, copyProof(), strings.Replace(string(contentJSON), "}", ",\"untrusted\":true}", 1), http.StatusBadRequest)
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusOK)
+	// A valid, unquarantined evidence ID must not gain precommit status.
+	unquarantined := contentInput
+	unquarantined.Items = []localEvidenceCloudMetadataItem{
+		{EvidenceID: evidence.ID + 1000, SHA256: sha, Size: 3},
+	}
+	unquarantinedJSON, _ := json.Marshal(unquarantined)
+	checkContent(ownerJWT, copyProof(), string(unquarantinedJSON), http.StatusConflict)
+	// Database-only integrity is not physical content availability.
+	putOriginal("xyz")
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
+	putOriginal(original)
+	// A changed quarantine is not a reusable success token.
+	if err := db.Model(&meta.LocalSourceCommitIntent{}).
+		Where("source_id = ? AND evidence_id = ?", source.ID, evidence.ID).
+		Update("state", "expired").Error; err != nil {
+		t.Fatal(err)
+	}
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
+	if err := db.Model(&meta.LocalSourceCommitIntent{}).
+		Where("source_id = ? AND evidence_id = ?", source.ID, evidence.ID).
+		Update("state", meta.LocalSourceCommitIntentStateQuarantined).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusOK)
+
 	// Recovery readback must not accept the owner JWT without the exact
 	// enrolled device credential, Root proof and Source revision.
 	pageURI := uri + "/page"
@@ -298,6 +416,7 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	}
 	send(ownerJWT, copyProof(), string(body), http.StatusForbidden)
 	readPage(ownerJWT, copyProof(), string(pageJSON), http.StatusForbidden)
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusForbidden)
 }
 
 func TestValidateLocalCommitIntentBatchFailsClosed(t *testing.T) {

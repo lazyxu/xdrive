@@ -339,6 +339,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/commit-intents", s.requireLocalSourceExecutor(), s.quarantineLocalSourceCommitIntents)
 	// Native owning-Agent only: bounded QUARANTINED recovery read, never commit authority.
 	authed.POST("/sources/:id/local-identity/commit-intents/page", s.requireLocalSourceExecutor(), s.readLocalSourceCommitIntentPage)
+	// L03-E1a: private bounded physical CAS check of exact quarantined IDs; never a commit token.
+	authed.POST("/sources/:id/local-identity/commit-intents/content-preflight", s.requireLocalSourceExecutor(), s.preflightLocalQuarantinedContent)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
