@@ -128,3 +128,44 @@ test('Gallery thumbnail scheduler reuses cached URLs and evicts least-recently-u
   assert.equal(secondLoadOfTwo, 'blob:node-2-call-2')
   scheduler.dispose()
 })
+
+
+test('P0-L4c1 decode-failed URL is evicted only for the exact Node revision and cached URL', async () => {
+  const revoked = []
+  const calls = new Map()
+  const scheduler = new XDriveMediaThumbnailScheduler(async (id) => {
+    const count = (calls.get(id) ?? 0) + 1
+    calls.set(id, count)
+    return 'blob:thumb-' + id + '-response-' + count
+  }, {
+    concurrency: 2,
+    revokeURL: (url) => revoked.push(url),
+  })
+  const old = await scheduler.load(71, 0, 9)
+  const unaffected = await scheduler.load(72, 0, 9)
+  await flush()
+  assert.equal(old, 'blob:thumb-71-response-1')
+  assert.equal(scheduler.invalidateDecodedURL(71, 9, 'blob:other-url'), false)
+  assert.equal(scheduler.invalidateDecodedURL(71, 8, old), false)
+  assert.equal(scheduler.invalidateDecodedURL(72, 9, old), false)
+  assert.equal(scheduler.invalidateDecodedURL(0, 9, old), false)
+  assert.equal(await scheduler.load(71, 0, 9), old, 'mismatched callback never evicts valid cache')
+  assert.equal(calls.get(71), 1)
+  assert.deepEqual(revoked, [])
+  assert.equal(scheduler.invalidateDecodedURL(71, 9, old), true)
+  assert.deepEqual(revoked, [old], 'only the proven broken Blob URL is released')
+  assert.equal(calls.get(71), 1, 'the decode error must not launch a background retry')
+  const recovered = await scheduler.load(71, 0, 9)
+  await flush()
+  assert.equal(recovered, 'blob:thumb-71-response-2')
+  assert.equal(calls.get(71), 2, 'only the next explicit visible request reacquires pixels')
+  assert.equal(scheduler.invalidateDecodedURL(71, 9, old), false,
+    'late error from superseded Blob cannot evict the replacement')
+  assert.equal(await scheduler.load(71, 0, 9), recovered)
+  assert.equal(calls.get(71), 2)
+  assert.equal(await scheduler.load(72, 0, 9), unaffected,
+    'independent thumbnails retain their successful LRU entries')
+  assert.equal(calls.get(72), 1)
+  scheduler.dispose()
+  assert.ok(revoked.includes(recovered) && revoked.includes(unaffected))
+})

@@ -170,3 +170,36 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   assert.match(thumb, /onLoad=\{\(event\) => \{/)
   assert.match(thumb, /event\.currentTarget\.naturalWidth > 0/)
 })
+
+
+test('P0-L4c1 real thumbnail image onError reports its exact failed URL without refetching', async () => {
+  const broken = []
+  let requests = 0
+  const loader = async () => {
+    requests += 1
+    return 'blob:stale-cached-thumb'
+  }
+  let tree
+  await act(async () => {
+    tree = renderer.create(React.createElement(Thumb, {
+      nodeID: 710, revision: 9, alt: 'IMG_0710.LIVP',
+      loadThumbnail: loader, fallback, revokeOnDispose: false,
+      onImageDecodeError: value => broken.push(value),
+    }))
+    await flush()
+  })
+  assert.equal(image(tree)?.props.src, 'blob:stale-cached-thumb')
+  await act(async () => { image(tree).props.onError() })
+  assert.deepEqual(broken, ['blob:stale-cached-thumb'])
+  assert.equal(failed(tree), true)
+  assert.equal(requests, 1, 'an image decoder failure must never launch a retry in the same mount')
+  await act(async () => { tree.unmount() })
+
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const scheduler = read('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
+  assert.match(gallery, /onImageDecodeError=\{thumbnailScheduler \? onThumbnailDecodeError : undefined\}/)
+  assert.match(gallery, /thumbnailScheduler\?\.invalidateDecodedURL\(item\.node\.id, item\.node\.revision, failedURL\)/)
+  assert.match(scheduler, /invalidateDecodedURL = \(nodeID: number, revision: number, failedURL: string\)/)
+  assert.match(read('web/src/App.tsx'), /createWebMediaGalleryDataSource\(api\)/)
+  assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
+})

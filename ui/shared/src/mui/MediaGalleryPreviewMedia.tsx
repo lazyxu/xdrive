@@ -31,6 +31,7 @@ export function XDriveMediaAsyncThumbnail({
   fallback,
   revokeOnDispose = true,
   onImageReadyChange,
+  onImageDecodeError,
 }: {
   nodeID?: number
   revision?: number
@@ -39,6 +40,7 @@ export function XDriveMediaAsyncThumbnail({
   fallback: ReactNode
   revokeOnDispose?: boolean
   onImageReadyChange?: (ready: boolean) => void
+  onImageDecodeError?: (failedURL: string) => void
 }) {
   const [src, setSrc] = useState('')
   const [failed, setFailed] = useState(false)
@@ -100,6 +102,9 @@ export function XDriveMediaAsyncThumbnail({
       }}
       onError={() => {
         onImageReadyChange?.(false)
+        // No automatic request here. Allow a future visible mount to re-fetch
+        // instead of repeating this known-broken cached object URL.
+        onImageDecodeError?.(src)
         setFailed(true)
       }}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}

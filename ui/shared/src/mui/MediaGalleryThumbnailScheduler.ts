@@ -146,6 +146,22 @@ export class XDriveMediaThumbnailScheduler {
     return promise
   }
 
+  // Browser image decoding happens after a successful network/Blob response.
+  // A failed decoded URL must not poison this node+revision's LRU on a later
+  // viewport remount. Match the exact returned URL: an old onError callback
+  // must never evict a newer replacement for the same logical asset.
+  invalidateDecodedURL = (nodeID: number, revision: number, failedURL: string): boolean => {
+    if (this.disposed || !Number.isSafeInteger(nodeID) || nodeID <= 0 || !failedURL) {
+      return false
+    }
+    const currentRevision = Number.isSafeInteger(revision) && revision > 0 ? revision : 0
+    const key = `${nodeID}:${currentRevision}`
+    if (this.cache.get(key) !== failedURL) return false
+    this.cache.delete(key)
+    this.revokeURL(failedURL)
+    return true
+  }
+
   setRetention(nodeIDs: Iterable<number>) {
     const retained = new Set(nodeIDs)
     for (const task of [...this.queue]) {
