@@ -282,6 +282,28 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	checkContent(ownerJWT, copyProof(), string(contentJSON)+"{}", http.StatusBadRequest)
 	checkContent(ownerJWT, copyProof(), strings.Replace(string(contentJSON), "}", ",\"untrusted\":true}", 1), http.StatusBadRequest)
 	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusOK)
+	// L03-E1b0: the combined quarantine+cloud metadata transaction must
+	// fail closed when current FileVersion/CAS rows drift, without reusing
+	// either a previous quarantine read or a positive physical observation.
+	if err := db.Model(&meta.FileVersion{}).Where("node_id = ? AND revision = ?", node.ID, node.Revision).
+		Update("sha256", strings.Repeat("f", 64)).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
+	if err := db.Model(&meta.FileVersion{}).Where("node_id = ? AND revision = ?", node.ID, node.Revision).
+		Update("sha256", sha).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&meta.ContentBlob{}).Where("sha256 = ?", sha).
+		Update("ref_count", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
+	if err := db.Model(&meta.ContentBlob{}).Where("sha256 = ?", sha).
+		Update("ref_count", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusOK)
 	// A valid, unquarantined evidence ID must not gain precommit status.
 	unquarantined := contentInput
 	unquarantined.Items = []localEvidenceCloudMetadataItem{

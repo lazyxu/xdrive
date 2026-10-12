@@ -1447,7 +1447,7 @@ device acceptance; L03-F/G, L05/L06 and L07 remain outstanding.
 
 L03-E1a2 [#1547](https://github.com/lazyxu/xdrive/pull/1547) passed its full exact-head [76-job GitHub CI](https://github.com/lazyxu/xdrive/actions/runs/38240326126) (25 successful, 51 conditional skips, zero failed, final-gate success) and was rebase-merged as `c8c5e18725b76f17d9fd70eb685cadf3c954152a`; the related work branch is subject to cleanup automation.
 
-## L03-E1a3 · Owning-Agent exact quarantined physical page (PR verification)
+## L03-E1a3 · Owning-Agent exact quarantined physical page (merged #1553; 76-job exact-head CI green)
 
 This follows the private bounded Server content preflight (L03-E1a,
 merged #1543) and its independent Agent-private Go Client
@@ -1495,3 +1495,47 @@ regression confirms the method remains private. Full exact-head PR CI
 and final-gate are mandatory before merging. Windows/Linux real-device
 runs, GitLab delivery, 100k/4GiB E2E and an actual E1b transaction-bound
 physical-durability identity writer remain future work.
+
+
+## L03-E1b0 · Atomic quarantine and CAS metadata snapshot (PR validation)
+
+The preceding L03-E1a3 owning-Agent read-only physical preflight
+[#1553](https://github.com/lazyxu/xdrive/pull/1553) passed its exact-head
+[76-job CI](https://github.com/lazyxu/xdrive/actions/runs/38242524837)
+(25 successful, 51 conditional skips, 0 failures, `final-gate` successful)
+and was rebase-merged as `10486b5a5f9d58ff5f7491980c4a05620016a466`.
+The former task branch is closed/merged; branch cleanup remains an
+independent workflow verification.
+
+**This E1b0 stage is a transaction-composability prerequisite, NOT the
+authority-granting E1b writer.** The existing quarantined-intent/evidence
+scope guard and independently verified SourceItem/alias/Node/File/
+FileVersion/READY CAS metadata guard are refactored to accept the **same
+caller-supplied GORM PostgreSQL transaction**. Both still independently
+repeat owning-device, Root, exact Source revision, paused local Push Source
+and current non-authoritative generation/identity/collision checks. A new
+private `checkLocalQuarantinedCloudSnapshot` composes the two guards in
+one device-first transaction, returning only an ephemeral exact metadata
+snapshot, not a durable proof or write token.
+
+The E1a Server preflight now takes **one shared SQL transaction before**
+streaming bounded actual CAS bytes and **a second shared transaction
+after** the read, comparing exact Source revision and derived CAS objects.
+Crucially **all physical storage I/O remains outside SQL transactions**;
+no long-held DB locks, writer tokens or CAS lease is invented. The two
+separate time points do NOT prove that the object remains durably pinned,
+that a future local file still matches, or that a canonical mutation is
+safe; the upcoming E1b writer must acquire its own enforceable CAS
+lifecycle pin/lease, independently verify native bytes and perform
+transaction-bound alias/SourceItem writes and idempotent recovery.
+
+The existing public/foreign-Desktop APIs and owning-Agent preflight wire
+contract are unchanged. No new endpoint, CAS blob, SourceItem/alias, Node,
+File/Version, SyncRun, Source revision or Mirror deletion mutation occurs.
+The local SourceRun activation gate stays closed. Added regression checks
+cover absent/foreign device proof at the reusable SQL-transaction guards,
+stale FileVersion digest or CAS ref_count, failure without canonical writes,
+private no-IPC exposure, and exact two-sided SQL snapshot invocation.
+These tests remain subject to this new PR's complete exact-head CI and
+`final-gate`; Go/PostgreSQL CI and true physical 100k/≥4GiB benchmarks
+are distinct. No GitLab or native device acceptance is claimed.

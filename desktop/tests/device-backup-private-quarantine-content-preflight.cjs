@@ -13,7 +13,7 @@ test('L03-E1a private quarantined CAS preflight cannot escape Server/Agent autho
   assert.match(route, /commit-intents\/content-preflight", s\.requireLocalSourceExecutor\(\), s\.preflightLocalQuarantinedContent/)
   assert.match(content, /requireLocalSourceProofTx\(/)
   assert.match(content, /sameLocalQuarantinedEvidence\(/)
-  assert.match(content, /checkLocalEvidenceCloudMetadata\(/)
+  assert.match(content, /checkLocalQuarantinedCloudSnapshot\(/)
   assert.match(content, /verifyPhysicalEvidenceCAS\(/)
   assert.match(content, /CloudBytesVerified:\s*false, ContentVerified:\s*false/)
   assert.match(content, /CommitSupported:\s*false, Authoritative:\s*false, MissingInferenceSafe:\s*false/)
