@@ -1354,7 +1354,7 @@ execution and L07 native E2E remain separate phases. GitHub exact-head full
 CI including final-gate is the merge requirement; no GitLab delivery claimed.
 
 
-## L03-E1a · Owning-Agent quarantined-content physical preflight (PR verification)
+## L03-E1a · Owning-Agent quarantined-content physical preflight (merged #1543; 75-job exact-head CI green)
 
 Prerequisite: L03-E0e [#1532](https://github.com/lazyxu/xdrive/pull/1532)
 passed its exact-head 76-job PR CI (25 passed, 51 conditional skips, zero
@@ -1399,9 +1399,47 @@ Unit and PostgreSQL integration regressions cover exact immutable scope,
 device A vs device B, owner JWT only, invalid Root, revoked token, changed
 Source revision, bad JSON, unquarantined IDs, physical corruption, changed
 quarantine state, no extra canonical writes, and false authority flags.
-Full exact-head GitHub CI and final-gate must pass before merge. Real
+Exact-head GitHub CI [#38238286009](https://github.com/lazyxu/xdrive/actions/runs/38238286009) passed (25 success, 50 conditional skips, zero failures and final-gate success), and [#1543](https://github.com/lazyxu/xdrive/pull/1543) was rebase-merged as `178e4b12540b1b16763c155bb10818f7bf5c4992`. Real
 Windows/Linux physical backup tests, GitLab push, native Agent transport and
 true E1b transactional physical-proof-and-identity writer are NOT claimed.
 The writer must independently verify remote content durability and currently
 authorized native file bytes at its own commit boundary; E1a read success
 is **never** a commit token.
+
+
+## L03-E1a2 · Native owning-Agent client transport for private content preflight (follow-on PR validation)
+
+Prerequisite L03-E1a is the strict read-only Server-side preflight in
+[#1543](https://github.com/lazyxu/xdrive/pull/1543). This follow-on implements
+**only the Go Client transport** for the owning native Agent, without a
+call site, background driver, Electron/Agent loopback IPC method, Desktop
+button or browser API.
+
+`PreflightLocalQuarantinedPhysicalContentBatch` accepts an authenticated
+device/Root proof, exact Source and If-Match revision, two distinct
+lowercase SHA256 sealed-generation digests and a sorted unique batch of
+1–4 local evidence IDs with fresh original-file SHA256/size claims. It
+rejects malformed, negative, duplicate, out-of-order or >64MiB combined
+claims **before** any HTTP request; it never sends arbitrary paths, CAS
+storage keys, SourceItem/Node IDs or User-Agent/device-header inference.
+
+For a 200 response it requires the exact Source/revision/count, revision
+ETag, private no-store semantics and strictly decoded size-bounded JSON.
+The booleans `quarantine_matched` and `physical_cas_matched` must both
+be present and true. The five flags `cloud_bytes_verified`,
+`content_verified`, `commit_supported`, `authoritative` and
+`missing_inference_safe` must be present and false. Unknown fields,
+trailing data, unexpectedly successful status codes, stale ETag,
+wrong counts, missing flags, forged/privileged flags and cancellation
+fail closed. The normalized return value retains all privilege flags false.
+
+Client httptest exercises the exact wire contract and rejection matrix;
+a cross-layer Node regression asserts no UI/IPC exposure. These tests do
+not attest production CAS durability or complete a backup. E1a2 only
+prepares an internal Agent caller to independently recheck current local
+Root and live native file bytes in a later phase. No canonical
+SourceItem/SourceItemAlias, Node, File, CAS or SyncRun mutation; no
+Source activation, upload, Mirror deletion, NAS Push or Web/Desktop
+remote control. The E1b authoritative writer still requires separate
+physical durability, transaction/fencing, idempotence and real native
+device acceptance; L03-F/G, L05/L06 and L07 remain outstanding.
