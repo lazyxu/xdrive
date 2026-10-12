@@ -229,7 +229,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   assert.equal(rendererApp.includes('trailingItems='), false, 'Desktop must not keep the legacy trailing-items extension contract')
   assert.ok(rendererApp.includes("key: 'overview',\n      placement: 'before-core'"), 'Desktop overview should be injected before shared core navigation')
   assert.ok(rendererApp.includes("key: 'conflicts',\n      placement: 'after-core'"), 'Desktop conflicts should be injected after shared core navigation')
-  assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'bottom'"), 'Desktop diagnostics should use the bottom extension slot')
+  assert.ok(rendererApp.includes("ariaLabel: '桌面版辅助功能',\n      placement: 'after-core'"), 'Desktop diagnostics should appear before the administrator section')
   assert.ok(rendererApp.includes("label: '主页'"), 'Desktop home extension is missing')
   assert.ok(rendererApp.includes("label: '冲突'"), 'Desktop conflict extension is missing')
   assert.ok(rendererApp.includes("label: '诊断'"), 'Desktop diagnostics extension is missing')
@@ -253,7 +253,7 @@ test('desktop sidebar uses the shared complete sidebar renderer with Desktop-onl
   ]) {
     assert.ok(sharedWorkspaceNavigation.includes(icon), `missing shared core navigation icon: ${icon}`)
   }
-  assert.ok(sharedSidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage, showGlobalTasks })'), 'shared sidebar must consume the canonical core navigation model')
+  assert.ok(sharedSidebarNav.includes('xDriveCoreWorkspaceDestinations({ transferBadge, showLocalStorage })'), 'shared sidebar must consume the canonical core navigation model')
   assert.ok(sharedSidebarNav.includes('icon={destination.icon}'), 'shared sidebar must render the icon supplied by each core destination')
   assert.ok(sharedSidebarNav.includes('showLocalStorage = false'), 'shared core navigation must retain an explicit Local Storage capability gate')
   assert.ok(sharedWorkspaceSidebar.includes('export function XDriveWorkspaceSidebar'), 'shared complete sidebar renderer is missing')

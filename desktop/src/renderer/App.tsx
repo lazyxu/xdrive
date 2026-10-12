@@ -21,6 +21,7 @@ import {
   Typography,
 } from '@mui/material'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
+import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -1860,21 +1861,10 @@ export default function App({
         },
       ],
     },
-    ...(status?.role === 'admin'
-      ? [{
-          key: 'admin',
-          label: '管理',
-          ariaLabel: '管理员功能',
-          placement: 'after-core' as const,
-          items: [
-            { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
-          ],
-        }]
-      : []),
     {
       key: 'diagnostics',
       ariaLabel: '桌面版辅助功能',
-      placement: 'bottom',
+      placement: 'after-core',
       items: [
         {
           key: 'diagnostics',
@@ -1882,7 +1872,18 @@ export default function App({
           icon: <BuildRoundedIcon fontSize="small" />,
         },
       ],
-    },
+    },    ...(status?.role === 'admin'
+      ? [{
+          key: 'admin',
+          label: '管理',
+          ariaLabel: '管理员功能',
+          placement: 'after-core' as const,
+          items: [
+            { key: 'global-tasks', label: '全局任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
+            { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
+          ],
+        }]
+      : []),
   ]
 
   if (!agent.connected) {
@@ -2485,7 +2486,6 @@ export default function App({
         className="sidebar"
         selected={view}
         transferBadge={taskCenter.badge}
-        showGlobalTasks={status?.role === 'admin'}
         showLocalStorage
         sections={desktopSidebarSections}
         storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}

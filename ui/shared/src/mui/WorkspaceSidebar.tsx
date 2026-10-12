@@ -114,7 +114,6 @@ export function XDriveWorkspaceSidebar({
   selected,
   transferBadge,
   showLocalStorage = false,
-  showGlobalTasks = false,
   sections = [],
   storageSummary,
   appearance = 'light',
@@ -132,7 +131,6 @@ export function XDriveWorkspaceSidebar({
   selected?: string
   transferBadge?: XDriveSidebarBadgeValue
   showLocalStorage?: boolean
-  showGlobalTasks?: boolean
   sections?: XDriveSidebarSectionModel[]
   storageSummary?: XDriveWorkspaceSidebarStorageSummary | null
   appearance?: XDriveSidebarAppearance
@@ -149,7 +147,7 @@ export function XDriveWorkspaceSidebar({
 }) {
   const narrow = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'))
   if (responsive && narrow) {
-    const navigation = xDriveCompactWorkspaceNavigation({ sections, transferBadge, showLocalStorage, showGlobalTasks })
+    const navigation = xDriveCompactWorkspaceNavigation({ sections, transferBadge, showLocalStorage })
     return (
       <XDriveWorkspaceCompactNavigation
         {...navigation}
@@ -211,7 +209,6 @@ export function XDriveWorkspaceSidebar({
           transferBadge={transferBadge}
           appearance={appearance}
           showLocalStorage={showLocalStorage}
-          showGlobalTasks={showGlobalTasks}
           onSelect={(key, event) => onSelect(key, event)}
         />
         {afterCoreInlineItems.map((destination) => (
