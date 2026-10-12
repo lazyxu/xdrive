@@ -728,3 +728,10 @@ The replacement exact one-work-commit test accepts only the already supported pa
 ### P0-L11 first exact-head CI: test fixture type mismatch
 
 [First CI #38240121520](https://github.com/lazyxu/xdrive/actions/runs/38240121520) for work head `caa10f33` failed `go-linux-api` and `go-windows` at compilation: `media_livp_real_heic_integration_test.go:174` passed a `nodeDTO` (from `uploadTestFile`) to the existing `mediaThumbnailStorageKey` function expecting a `meta.Node`. This is **an invalid test fixture/wiring assumption, not a product behavior first-red**: the integration test did not execute its malformed-cache assertions. Production code is unchanged by this correction. The fixture now loads the current owner-scoped `meta.Node` with File preloaded from the real PostgreSQL schema before computing the same physical derivative key; all original HEIC/JPEG recovery/CAS checks remain intact. Old-head CI is not authoritative; a new exact single-commit HEAD must pass full checks and Final Gate.
+
+
+## P0-L12 · 浏览器历史 HTTP200 坏封面缓存的有限恢复（2026-10-12）
+
+P0-L9～L11 已交付，其中 #1549 通过 25 项 CI 和 Final Gate 后修复了 Server 侧已损坏缩略图缓存；但是旧浏览器可能依然缓存一份已损坏、HTTP200 的同 revision JPEG/PNG。既有 Web `mediaThumbnail` 对此正常缓存 URL 使用 `cache:default`，使虚拟列表下次显示同一图格时重复获取坏像素。P0-L12 仅在已经读到的可见缩略图响应里做固定 JPEG/PNG 头尾结构验证，明确无效才对**相同 Node/Revision、同一授权**追加至多一次 `cache:no-store`。重取失败、再次坏图或 404/409/415 应终止并回退；既有 503 有界重试后不追加第三次请求。支持 AbortSignal 立即取消，不自动加载整段图片/视频，不改变成功缓存、Web/Mobile Web 共用 REST 与虚拟化、52px 全屏 App Frame 和按住才加载实况 motion 规则。校验只覆盖显然损坏的结构，不承诺图片内部任意位损坏皆可检测。
+
+新增以真实产品 Web API method、真实 Blob 读流配合受控 fetch 返回模拟浏览器旧坏 HTTP200 与 Server 修复后好 HTTP200，明确归类为自动化 HTTP/Blob 合同验证，不是用户原始三图、iOS 27 Safari/PWA/VoiceOver 真机或像素 1:1 验收。CI 精确 SHA 全套与 Final Gate 是合并要求；真实 iOS27 同版本参照仍要独立补证。

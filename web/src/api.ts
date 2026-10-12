@@ -307,6 +307,37 @@ async function xDriveThumbnailRetryAfter503(
   return retryFetch()
 }
 
+
+/**
+ * Inspect only a bounded header/trailer of a decoded thumbnail Blob. A
+ * previously cached HTTP 200 can contain truncated JPEG/PNG bytes even after
+ * Server-side derived-cache repair. This is an envelope check, not a
+ * whole-image decode or a request for original photo bytes.
+ */
+async function xDriveThumbnailHasSafeImageEnvelope(
+  blob: Blob,
+  contentType: string | null,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const mime = contentType?.split(';', 1)[0]?.trim().toLowerCase()
+  const jpeg = mime === 'image/jpeg'
+  const png = mime === 'image/png'
+  if ((!jpeg && !png) || blob.size < (jpeg ? 64 : 45)) return false
+  signal?.throwIfAborted()
+  const head = new Uint8Array(await blob.slice(0, 8).arrayBuffer())
+  signal?.throwIfAborted()
+  const tail = new Uint8Array(await blob.slice(-12).arrayBuffer())
+  signal?.throwIfAborted()
+  if (jpeg) {
+    return head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff &&
+      tail[10] === 0xff && tail[11] === 0xd9
+  }
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10]
+  const iend = [0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]
+  return signature.every((part, index) => head[index] === part) &&
+    iend.every((part, index) => tail[index] === part)
+}
+
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ?? ''
 
 
@@ -1916,6 +1947,9 @@ export class XDriveApi {
     }
     // Only the Server-directed 503 path retries; never replay a permanent
     // missing/unsupported/revision-conflict result. One bounded retry max.
+    // A Server-directed 503 already gets one bounded uncached retry.
+    // Never turn that into a third request if its resulting bytes are bad.
+    const retried503 = response.status === 503
     response = await xDriveThumbnailRetryAfter503(
       response, () => send('no-store'), signal,
     )
@@ -1925,7 +1959,32 @@ export class XDriveApi {
         response.statusText || 'Thumbnail unavailable',
       )
     }
-    return xDriveMediaResponseBlob(response, signal, onProgress, true)
+    let blob = await xDriveMediaResponseBlob(response, signal, onProgress, true)
+    if (await xDriveThumbnailHasSafeImageEnvelope(blob, response.headers.get('Content-Type'), signal)) {
+      return blob
+    }
+    if (retried503) {
+      throw new ApiError(502, 'Invalid thumbnail image bytes')
+    }
+    // A formerly cached HTTP 200 may be broken although the Server's
+    // canonical derivative has already recovered. Only this visible
+    // request may bypass that cache, and at most once. No image onError
+    // loop, source download, or second gallery/virtualization code path.
+    signal?.throwIfAborted()
+    try { onProgress?.(0, undefined, null) } catch { /* UI callbacks do not own I/O */ }
+    signal?.throwIfAborted()
+    response = await send('no-store')
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        response.statusText || 'Thumbnail unavailable',
+      )
+    }
+    blob = await xDriveMediaResponseBlob(response, signal, onProgress, true)
+    if (!(await xDriveThumbnailHasSafeImageEnvelope(blob, response.headers.get('Content-Type'), signal))) {
+      throw new ApiError(502, 'Invalid thumbnail image bytes')
+    }
+    return blob
   }
   /**
    * Authenticated bounded JPEG derivative for RAW images whose canonical
