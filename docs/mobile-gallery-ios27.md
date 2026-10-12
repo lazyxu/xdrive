@@ -659,3 +659,12 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 
 
 **P0-L4c2 第一轮 CI 首红与必要修订（2026-10-12）：** [PR #1512 的 CI #38219332763](https://github.com/lazyxu/xdrive/actions/runs/38219332763) 在 Desktop 新增两个测试中分别于旧事件模拟后看到当前图片消失。真实失败由 React Test Renderer 测试夹具取得 `oldImage` TestInstance、更新后才调用 `oldImage.props.onError/onLoad` 所致；其 `.props` 指向已复用实例的**新**事件处理器，不是旧浏览器回调。因此这轮红灯不能当成“已证实生产修复仍失败”。在同一单工作提交里，改为旧修订更新前快照真实旧回调函数，同时对图片 DOM 设置 `key=[sourceIdentity, src]`，强制不同修订/URL 的原生 `img` 分离，使挂起旧浏览器事件无法落在新元素上。保留旧回调不得触发 fallback/缓存失效、正确当前错误仍失败及卸载隔离的全部严格断言，不跳过测试、不降低门禁。所有构建与测试需在重写后的**精确新 SHA** 上重新通过，旧红灯 CI 不计成功。
+
+
+## P0-L6 · Live Photo 按住播放的异步状态与静态封面隔离（2026-10-12）
+
+**范围：共享 Viewer/Preview Engine Live Photo 组件；不是用户截图中三张灰色缩略图的物理根因结论。** 在 `XDriveLivePhotoSurface` 中，旧实现先将 `playing=true` 才等待 `video.play()`，黑色不透明视频层可能在等待浏览器实际开始播放时遮住静态照片；若在 `play()` Promise 未完成时松手，`pause()` 所造成的迟到拒绝可能错误地设为“实况不可用”，后续按住无法重试。
+
+**修复合同：** 用每次播放尝试的序号及资源 generation 围住 `play()` 的成功/失败回调，只有当前来源、当前视频元素且手指仍按住时才提交状态；成功后才显示视频画面。松手立刻回到静态封面并隐藏等待进度。`AbortError`／`NotAllowedError` 不把媒体标记成永久损坏，用户下一次显式按住可以重试。若在首次请求仍进行时再次按住，沿用原请求，不重复请求 motion URL。保留声音、按住才加载、Web/Mobile 一套 Viewer 与 Preview Engine、Desktop 共享 MUI、独立 52px App Header 和已有真实 Server/Agent 签名资源与 Range 合同。
+
+**验收：** 新增生产组件挂载回归，检查 `play()` 待决时封面可见、松手后旧 Promise 拒绝不致死、下一次按住恢复播放、真实播放异常继续显示静态封面，以及首次请求期间松手/再次按住不会重复请求。精确 GitHub PR work SHA 的 CI/Final Gate 及 iOS 27 Safari/PWA 设备画面对比须分别确认；用户受影响三张 `.livp`/HEIC 封面仍需授权原件或 Node/HTTP/索引证据，不能声称已恢复。
