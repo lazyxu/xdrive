@@ -46,7 +46,7 @@ const component = loadSource('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx',
   'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': tags,
   '@mui/icons-material': icons,
-  './MediaGalleryPreviewMedia': { XDriveMediaAsyncThumbnail: 'thumbnail' },
+  './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
   './MediaGalleryAlbumOrganization': preferences,
   './MediaGalleryAlbumFolderModel': folders,
 }, true).XDriveMediaGalleryAlbumOrganizer

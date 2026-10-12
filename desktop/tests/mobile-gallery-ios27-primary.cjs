@@ -37,7 +37,7 @@ const mocks={
   '@mui/icons-material/ArrowDownwardRounded':'icon',
   '@mui/icons-material/AddCircleOutlineRounded':'icon',
   '@mui/icons-material/RemoveCircleOutlineRounded':'icon',
-  './MediaGalleryPreviewMedia': {XDriveMediaAsyncThumbnail:'thumbnail'},
+  './MediaGalleryCoverThumbnail': {XDriveMediaGalleryCoverThumbnail:'thumbnail'},
   './MediaGalleryAlbumOrganization': sharedAlbumOrganization,
 }
 const output={exports:{}}

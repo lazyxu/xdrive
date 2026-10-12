@@ -115,6 +115,7 @@ import { XDriveMobileGalleryChrome } from './MobileGalleryChrome'
 import { XDriveMobileGalleryCollections } from './MobileGalleryCollections'
 import { XDriveMediaGalleryPlacesMap } from './MediaGalleryPlacesMap'
 import { XDriveMediaGalleryMemories } from './MediaGalleryMemories'
+import { XDriveMediaGalleryCoverProvider, XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { XDriveMediaGalleryCleanup } from './MediaGalleryCleanup'
 import { XDriveMediaGalleryDuplicateOrganizePreview } from './MediaGalleryDuplicateOrganizePreview'
 import { XDriveMediaGalleryPets } from './MediaGalleryPets'
@@ -2435,7 +2436,11 @@ export function XDriveMediaGalleryPage({
 
   return (
     <XDriveWorkspaceSurface presentation="page" title="图库" showPageHeader={false}>
-      <XDriveMediaGallery
+      <XDriveMediaGalleryCoverProvider
+        key={preferenceScope || "gallery-default"}
+        loadThumbnail={source.loadThumbnail}
+      >
+        <XDriveMediaGallery
         key={preferenceScope || 'gallery-default'}
         preferenceScope={preferenceScope}
         mobileWebChrome={mobileWebChrome}
@@ -2713,7 +2718,8 @@ export function XDriveMediaGalleryPage({
         onSplitPerson={source.splitPerson ? splitPerson : undefined}
         onBack={leaveCollection}
         onRefresh={refreshGallery}
-      />
+        />
+      </XDriveMediaGalleryCoverProvider>
       <Dialog
         open={Boolean(foldDialog)}
         onClose={closeFoldDialog}
@@ -6510,7 +6516,7 @@ export function XDriveMediaGallery({
                   }}
                 >
                   <Box sx={{ aspectRatio: '16 / 9', overflow: 'hidden' }}>
-                    <XDriveMediaAsyncThumbnail
+                    <XDriveMediaGalleryCoverThumbnail
                       nodeID={folder.cover_node_id}
                       alt={folder.source_name}
                       loadThumbnail={loadThumbnail}
@@ -6610,7 +6616,7 @@ export function XDriveMediaGallery({
                   }}
                 >
                   <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-                    <XDriveMediaAsyncThumbnail
+                    <XDriveMediaGalleryCoverThumbnail
                       nodeID={place.cover_node_id}
                       alt={place.name}
                       loadThumbnail={loadThumbnail}
@@ -6706,7 +6712,7 @@ export function XDriveMediaGallery({
                   }}
                 >
                   <Box sx={{ aspectRatio: '1 / 1', overflow: 'hidden' }}>
-                    <XDriveMediaAsyncThumbnail
+                    <XDriveMediaGalleryCoverThumbnail
                       nodeID={person.cover_node_id}
                       alt={person.name || '未命名人物'}
                       loadThumbnail={loadThumbnail}
@@ -6810,7 +6816,7 @@ export function XDriveMediaGallery({
                 }}
               >
                 <Box sx={{ aspectRatio: '1 / 1', overflow: 'hidden' }}>
-                  <XDriveMediaAsyncThumbnail
+                  <XDriveMediaGalleryCoverThumbnail
                     nodeID={person.cover_node_id}
                     alt="人物建议"
                     loadThumbnail={loadThumbnail}

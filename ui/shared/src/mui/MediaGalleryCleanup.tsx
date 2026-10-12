@@ -18,7 +18,7 @@ import type {
   MediaGalleryIndexStatus,
 } from '../models'
 import { XDriveMediaGalleryCleanupIndexStatus } from './MediaGalleryCleanupIndexStatus'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 
@@ -33,7 +33,7 @@ function CleanupThumbnail({
 }) {
   return (
     <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-      <XDriveMediaAsyncThumbnail
+      <XDriveMediaGalleryCoverThumbnail
         nodeID={nodeID}
         alt={label}
         loadThumbnail={loadThumbnail}

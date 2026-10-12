@@ -13,7 +13,7 @@ import {
   Typography,
 } from '@mui/material'
 import type { MediaMemory } from '../models'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 
@@ -131,7 +131,7 @@ export function XDriveMediaGalleryMemories({
                   }}
                 >
                   <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-                    <XDriveMediaAsyncThumbnail
+                    <XDriveMediaGalleryCoverThumbnail
                       nodeID={memory.cover_node_id}
                       alt={memory.title}
                       loadThumbnail={loadThumbnail}

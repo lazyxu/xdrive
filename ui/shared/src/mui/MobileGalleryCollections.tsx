@@ -15,7 +15,7 @@ import type {
 } from '../models'
 import type { MediaThumbnailLoader } from './MediaGallery'
 import type { MediaGallerySection } from './MediaGalleryNavigation'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import { changeAlbumPin, readMediaAlbumPreferences, sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences } from './MediaGalleryAlbumOrganization'
 
 
@@ -238,7 +238,7 @@ function CollectionCover({
     <Box ref={host} sx={{ aspectRatio: '1 / 1', width: '100%',
       overflow: 'hidden', borderRadius: 2.5, bgcolor: 'action.hover' }}>
       {nearViewport && nodeID ? (
-        <XDriveMediaAsyncThumbnail
+        <XDriveMediaGalleryCoverThumbnail
           nodeID={nodeID} alt={title} loadThumbnail={loadThumbnail}
           fallback={(
             <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}>
