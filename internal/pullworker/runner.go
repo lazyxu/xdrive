@@ -429,7 +429,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 				if recordErr := r.recordPreflightFailure(ctx, source, job.handler, now, err); recordErr != nil {
 					err = errors.Join(err, fmt.Errorf("record source preflight failure: %w", recordErr))
 				}
-			} else if retryErr := r.persistRetryOutcome(ctx, source, job.handler, result.err, now); retryErr != nil {
+			} else if retryErr := r.persistRetryOutcome(ctx, source, job.handler, result.err, now, result.run.ID); retryErr != nil {
 				err = errors.Join(err, fmt.Errorf("persist source retry state: %w", retryErr))
 			}
 			report.Failed++
@@ -438,7 +438,7 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 				"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind, "error", err)
 			continue
 		}
-		if retryErr := r.persistRetryOutcome(ctx, source, job.handler, nil, now); retryErr != nil {
+		if retryErr := r.persistRetryOutcome(ctx, source, job.handler, nil, now, result.run.ID); retryErr != nil {
 			errs = append(errs, fmt.Errorf("source %d (%s) clear retry state: %w", source.ID, source.Name, retryErr))
 			r.logger().Error("pull_source_retry_state_clear_failed",
 				"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind, "error", retryErr)
