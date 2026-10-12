@@ -687,7 +687,7 @@ automatic schedule, NAS Push, 100k/4GiB physical acceptance and GitLab
 delivery remain separately blocked. PR #1445 passed the full 76-job exact-head CI and is merged; the related
 work branch was automatically removed. This is presence only, not Push execution.
 
-## L03-D2b2c1 · Owning-Agent private paginated advisory reconciliation readback (GitHub PR verification)
+## L03-D2b2c1 · Owning-Agent private paginated advisory reconciliation readback (merged #1451; 76-job CI green)
 
 After #1422/#1429 persisted candidate evidence and #1437/#1441 added an
 own-device **count-only** recovery view, the owning native Agent needs a
@@ -730,3 +730,53 @@ alias collisions, live Root/source, and actual content before promoting
 identity. No `SourceItemAlias` or SourceItem move, upload, CAS/Node
 mutation, SourceRun activation, scheduled execution, Mirror deletion or
 NAS Push is enabled here. The 100k and >=4GiB physical tests are still L07.
+
+## L03-D2b2c2a · Owning-Agent server-side advisory candidate preflight (GitHub PR verification)
+
+The previous L03-D2b2c1 stage (#1451, merged after its own 76-job exact-head
+CI) delivered encrypted-channel, bounded, owner/device/Root/generation-scoped
+**private candidate pagination**. This step checks the canonical Server
+identity currently associated with those records before any future mutation.
+
+The owning Agent may send a strictly bounded POST to
+`/api/v1/sources/:id/local-identity/evidence-preflight` with the two
+opaque generation SHA-256 checksums and 1–64 strictly increasing existing
+evidence IDs (body <= 2 KiB). The current account JWT, OS-enrolled
+non-revoked device token, bound Root ID/fingerprint and `If-Match` Source
+revision are mandatory. Authorization is repeated transactionally in the
+device -> Source -> Root order; only **paused** `local_folder/push` is
+eligible. Every requested row must still belong to exactly that Source,
+revision, device, Root and generation; unknown, conflicting or stale
+candidate IDs fail the entire batch closed.
+
+Within that same **read-only** transaction, the Server locks existing
+SourceItem, canonical/alias identity references and live owned file Nodes.
+Each candidate's previous opaque path key must still be the canonical
+external ID rederived from the saved normalized SourceItem relative path
+and authenticated Root; its SourceItem must remain synced and bound to
+an existing file Node at the exact saved Node revision. A proposed new
+path key must not resolve to a different SourceItem or ambiguous alias.
+Any old/new identity collision, foreign/dangling alias, missing/deleted Node,
+stale revision or altered SourceItem prevents even a positive preflight.
+
+The Server returns only source_id, revision, checked count and
+`server_consistent=true` after checking *all* candidates, with
+`content_verified=false`, `commit_supported=false`,
+`authoritative=false` and `missing_inference_safe=false` fixed.
+The private Go Client bounds/strictly validates requests and responses.
+An **Agent-private, non-IPC helper** verifies native Root authorization,
+private rules and sealed CURRENT/PREVIOUS snapshots before and after it
+reads a <=64-item page and asks the Server to preflight those exact IDs.
+No SourceItem IDs, hashed native keys, filesystem paths, Root fingerprints,
+credentials or actions are exposed to Web/Mobile Web/other Desktop.
+
+**This is only a point-in-time Server DB consistency observation.** It
+neither independently checks current local file bytes nor proves uploaded
+CAS content; even an eligible result MUST NOT be reused as commit authority
+or persisted as a SourceRun checkpoint. A future write transaction must
+repeat the complete proof and validate content afresh. In this phase
+there is **no** alias promotion, Node/SourceItem/CAS/SourceRun write, local
+Push activation, resumed uploads, Mirror delete, watcher, auto-schedule,
+remote control or new NAS agent. Real 100k/4GiB native-device acceptance
+remains unmeasured. Exact-head full GitHub CI, actual merge and branch
+cleanup are separate required gates.
