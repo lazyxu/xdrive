@@ -165,4 +165,73 @@ func testRealHEICLivePhotoThumbnail(t *testing.T, db *gorm.DB, server *Server, r
 			t.Fatalf("stale HEIC revision must not cache: %q", stale.Header().Get("Cache-Control"))
 		}
 	})
+
+	t.Run("truncated HEIC derivative cache heals without returning a gray image", func(t *testing.T) {
+		var row meta.MediaMetadata
+		if err := db.Where("node_id = ?", node.ID).First(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		var cacheNode meta.Node
+		if err := db.Preload("File").First(&cacheNode, node.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		key := mediaThumbnailStorageKey(cacheNode, row)
+		uri := fmt.Sprintf("/api/v1/media/items/%d/thumbnail?revision=%d", node.ID, node.Revision)
+		baseline := request(t, router, http.MethodGet, uri, token, nil, http.StatusOK)
+		originalDerivative := append([]byte(nil), baseline.Body.Bytes()...)
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(originalDerivative))
+		if err != nil || cfg.Width != 512 || cfg.Height != 512 {
+			t.Fatalf("valid HEIC derivative missing before corruption: %+v err=%v", cfg, err)
+		}
+		for _, tc := range []struct {
+			name string
+			data []byte
+		}{
+			{"truncated JPEG", originalDerivative[:len(originalDerivative)-2]},
+			{"orphan PNG header", []byte{137, 80, 78, 71, 13, 10, 26, 10}},
+			{"empty derivative", nil},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				if _, err := server.Store.Put(context.Background(), key, bytes.NewReader(tc.data)); err != nil {
+					t.Fatal(err)
+				}
+				repaired := request(t, router, http.MethodGet, uri, token, nil, http.StatusOK)
+				config, err := jpeg.DecodeConfig(bytes.NewReader(repaired.Body.Bytes()))
+				if err != nil || config.Width != 512 || config.Height != 512 {
+					t.Fatalf("cached HEIC still remained corrupt: image=%+v err=%v", config, err)
+				}
+				if !bytes.Equal(repaired.Body.Bytes(), originalDerivative) {
+					t.Fatal("repaired thumbnail differs from canonical decoded HEIC still")
+				}
+				if got := repaired.Header().Get("ETag"); got != baseline.Header().Get("ETag") {
+					t.Fatalf("same source revision changed cache ETag: %q", got)
+				}
+				if got := repaired.Header().Get("Cache-Control"); got != "private, max-age=3600" {
+					t.Fatalf("successful regenerated JPEG has unexpected cache policy: %q", got)
+				}
+			})
+		}
+		// Repairing only a derived thumbnail may never rewrite the LIVP
+		// original, its still/motion byte ranges or their persisted rows.
+		var current meta.Node
+		if err := db.Preload("File").First(&current, node.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		canonical, err := server.Store.Open(context.Background(), current.File.StorageKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, readErr := io.ReadAll(canonical)
+		closeErr := canonical.Close()
+		if readErr != nil || closeErr != nil || !bytes.Equal(body, original) {
+			t.Fatalf("corrupt-cache repair modified original LIVP: read=%v close=%v", readErr, closeErr)
+		}
+		var rows int64
+		if err := db.Model(&meta.MediaDerivedResource{}).Where("node_id = ?", node.ID).Count(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if rows != 0 {
+			t.Fatalf("thumbnail repair unexpectedly wrote %d derived-range records", rows)
+		}
+	})
 }
