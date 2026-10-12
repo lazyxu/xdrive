@@ -580,6 +580,94 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      # P1-3c1: real Gallery in the existing Go API PostgreSQL17 job, PR-only.
+      - uses: actions/setup-node@v4
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-go-')
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build authentic Web for Gallery Gin acceptance
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-go-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          mkdir -p "$RUNNER_TEMP/xdrive-ios27-gallery-playwright"
+          npm install --prefix "$RUNNER_TEMP/xdrive-ios27-gallery-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          command -v google-chrome-stable || command -v google-chrome || command -v chromium
+      - name: Actual Chromium Gallery 375/390/899/900 to Gin and PostgreSQL17
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-go-')
+        shell: bash
+        env:
+          XD_GALLERY_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/xdrive-ios27-gallery-live-go"
+          READY="$RUNNER_TEMP/xdrive-ios27-gallery-private-ready.json"
+          mkdir -p "$OUT"
+          echo "$XD_GALLERY_PR_HEAD" > "$OUT/pr-head.sha"
+          git rev-parse HEAD > "$OUT/tested-checkout.sha"
+          if [ "$(git rev-parse HEAD)" != "$XD_GALLERY_PR_HEAD" ]; then
+            git cat-file -p HEAD | grep -Fx "parent $XD_GALLERY_PR_HEAD" >/dev/null || {
+              echo "Actual test checkout lacks the submitted PR head"; exit 1;
+            }
+          fi
+          go test -c -o "$RUNNER_TEMP/xdrive-gallery-live-go-api.test" ./internal/api
+          XD_GALLERY_IOS27_LIVE_GO=1 \
+          XD_GALLERY_IOS27_READY_FILE="$READY" \
+          XD_GALLERY_IOS27_DIST="$GITHUB_WORKSPACE/web/dist" \
+            "$RUNNER_TEMP/xdrive-gallery-live-go-api.test" \
+              -test.run='^TestIOS27GalleryLiveGoFixture$' -test.count=1 -test.v -test.timeout=6m \
+              > "$OUT/gin-postgresql.log" 2>&1 &
+          FIXTURE_PID=$!
+          cleanup() {
+            if kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              kill "$FIXTURE_PID" || true
+              wait "$FIXTURE_PID" || true
+            fi
+            rm -f "$READY"
+          }
+          trap cleanup EXIT
+          for trial in $(seq 1 120); do
+            if [ -s "$READY" ]; then break; fi
+            if ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              cat "$OUT/gin-postgresql.log"; exit 1;
+            fi
+            sleep 1
+          done
+          test -s "$READY" || { cat "$OUT/gin-postgresql.log"; exit 1; }
+          if command -v google-chrome-stable >/dev/null; then
+            CHROME="$(command -v google-chrome-stable)"
+          elif command -v google-chrome >/dev/null; then
+            CHROME="$(command -v google-chrome)"
+          else
+            CHROME="$(command -v chromium)"
+          fi
+          set +e
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-ios27-gallery-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$CHROME" \
+            node desktop/scripts/gallery-ios27-real-go-browser.cjs \
+              --ready="$READY" --output-dir="$OUT"
+          RESULT=$?
+          set -e
+          if [ "$RESULT" -ne 0 ]; then
+            cat "$OUT/results.json" || true
+            cat "$OUT/gin-postgresql.log"
+            exit "$RESULT"
+          fi
+          wait "$FIXTURE_PID" || { cat "$OUT/gin-postgresql.log"; exit 1; }
+          cat "$OUT/results.json"
+          grep -q 'IOS27_GALLERY_LIVE_GO_VERIFIED' "$OUT/gin-postgresql.log"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-go-')
+        with:
+          name: gallery-ios27-real-go-postgres
+          path: ${{ runner.temp }}/xdrive-ios27-gallery-live-go/
+          if-no-files-found: warn
+          retention-days: 7
+
   gallery-first-open-performance:
     if: github.event_name == 'pull_request' && github.head_ref == 'perf/gallery-100k-thumbnail-baseline'
     runs-on: ubuntu-latest

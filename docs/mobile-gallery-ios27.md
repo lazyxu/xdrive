@@ -510,3 +510,30 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
   **P1-3b 第七次原生 Web 断点验收红灯（2026-10-12，新精确 HEAD 待验证）：** [CI #38154872541](https://github.com/lazyxu/xdrive/actions/runs/38154872541) 的真实 Web Job 已成功 lint/build， Desktop/Linux/Windows、Go、镜像、source-agent 与单工作提交检查均通过，但原生 Chromium `gallery-selection` 60 项中 **59 通过、1 失败**（[原始 artifact #11708127302](https://github.com/lazyxu/xdrive/actions/runs/38154872541/artifacts/11708127302)）。 只有原 `Gallery 900px: identical canonical selection stays mounted` 断言失败： 切换为宽 Web 的稀疏新排序时，真实工具栏仍显示「已选择3项」，但 DOM 上 `input:checked` 数组暂时为空。 真实相册 POST 的三个 Node ID `1000/1001/1002`、明确 `403→200` 重试、修订头、焦点恢复、 375/390/899/900→390 和零未知 HTTP/页面错误均通过；故**不能把可见虚拟 DOM 行缺失判成选择 Map 丢失**， 也不应强迫 100k 虚拟列表保持旧选中单元挂载。 本轮只修复此验收口径：在 375/390/899/390px 继续检查精确 `[0,1,2]` 已挂载勾选项； 900px 改为实际打开共享 `查看已选项` 的有界复核对话框，并逐条验证精确 Node ID `1000/1001/1002` 及对应三个文件名，关闭后继续保持 3 项选择，最后仍检查全部真实 REST 拒绝、修订、重试、提交和焦点门槛。 增加对应静态回归和 900px 复核截图，**不修改生产代码/API/虚拟化，绝不跳过真实 ID 验证**。 旧 SHA 的成功检查不算新 HEAD 通过；本单提交改写后必须对新准确 HEAD 重跑完整 CI、原生 Chrome 与 final-gate。 真实 iOS 27 Safari/PWA/VoiceOver/1:1 成对截图与 100k 实体 RAW/HEVC/Live Photo 仍单独待验。
 
 **P1-3b 第八次真实 Chromium 验收定位修正（2026-10-12）：** [CI #38155788544](https://github.com/lazyxu/xdrive/actions/runs/38155788544) 精确 HEAD `574c5a800a7a7546eb448702ca23ade728c89e4c` 的 Web lint/build 成功， 原生浏览器 26 项已执行检查均通过，随后 Playwright 超时在 `getByRole('dialog', {name:'查看已选项'})`。 [失败 artifact #11708004138](https://github.com/lazyxu/xdrive/actions/runs/38155788544/artifacts/11708004138) 的实际 900px 截图/可访问性树证实**共享 Review 真实已打开，DOM 含 Node 1000/1001/1002 和三份准确文件名**， 对话框真实可访问名称为标题「已选择 3 项」，而「查看已选项」是触发按钮的可访问名称： 因此失败是 Playwright 角色名称选择器错误，不是生产状态或虚拟化缺陷。 本次只把测试定位改为对实际 MUI Dialog 名称的严格正则 `^已选择\s*3\s*项$`， 独立断言相同可访问标题，并保留真实三 Node ID 的 Review、实际 POST 的 revision/403→200/焦点、跨断点、44px 门禁； 不改 Gallery/REST/虚拟化/52px App Frame，增加静态回归。 本轮新单提交仍须重新通过原生 Chromium、完整 CI 与 final-gate， 真实 iOS 27 Safari/PWA/VoiceOver 1:1 成对截图及实体 100k RAW/HEVC/Live Photo 继续为未验收项。
+
+
+## P1-3c1 · 真实 Gin/PostgreSQL17 的 Web/Mobile Web 图库 Range 等价（2026-10-12）
+
+**状态：待新提交真实 CI/Final Gate 验收的候选改动，不代表已合入或真机 1:1 已通过。**
+
+**前置依据：** P1-3a #1431、P1-3b #1434 已通过精确头 CI 合并并清理分支；独立物理 CAS 首屏性能基线 #1439 已合并。Gallery 性能进度 #1185 仍是阻塞中的 Draft，不能关闭。固定新工作基线和唯一提交以本 P1-3c1 PR 记录为准。
+
+**针对现有未测试场景：** 之前 P1-3b 的构建 Web 浏览器相册选择使用受控 HTTP fixture，不能证明真实 Go JWT 权限、PostgreSQL 所有者查询及 10k 虚拟 Range 正确性。此轮复用仓库已有 mediaGallerySeedFirstOpenScaled 数据构造器，建立 10,000 个逻辑 PhotoAsset，含 70% JPEG / 15% MP4 / 15% Live Photo（11,500 个媒体 Node）。数据为投影元数据，**不是** 11,500 个真实物理 CAS 原件或浏览器解码性能测试。通过独立 PostgreSQL17 schema、生产 Gin Server.Router、真实 JWT、真实构建 Web 与原生 Chromium，不制造任何 /api/v1 响应。
+
+**精确场景：** 375/390/899/900 CSS px，每个宽度在真实路由 /#/app/gallery 上记录 Go GET /api/v1/media/items 的 Range 响应，验证 HTTP 200、Cache-Control:no-store、total_count=10000、单次返回不超过128项、真实 Node 身份/修订、浏览器只挂载有界的虚拟照片单元以及唯一 Gallery 与原移动52px标题栏。使用第二账号的有效 JWT 验证空列表和禁止访问原账号 Node 的 404；无效 JWT 须401。原生浏览器记录精确提交、代码 SHA256、范围偏移/大小及截图；JWT 只保留于 Runner 私有 0600 ready 文件，决不上传。新测试仅在 test/mobile-gallery-ios27-real-go- 前缀 PR 的现有 go-linux-api PostgreSQL17 Job 执行，且完整 Desktop/Web/Windows/打包/Final Gate 仍是合并门槛。
+
+**不能冒充的结果：** 本测试既不测真实图片、HEVC/RAW/.livp 原件，也不覆盖缩略图解码、去重、性能 FPS/时间、相册写入、Task Center 任务终态或实际 iOS 27 Safari/PWA/VoiceOver/同帧像素级1:1。10k 有界 DOM 与真实 Go Range 是功能正确性而不是提速声明。以上分别留待 P1-3c2 真实写入/权限与后续物理媒体/真机验收。生产 Gallery DataSource、虚拟化列表、全屏 App Frame、52px 全局标题栏和 Web/Desktop Server 完全不改。
+
+
+**P1-3c1 首次真实 Chromium→Gin/PostgreSQL17 红灯（2026-10-12；修正后须重跑精确 SHA）：**
+[完整 CI #38161093303](https://github.com/lazyxu/xdrive/actions/runs/38161093303) 的真正 go-linux-api Chrome/Postgres 结果和 [原始截图、请求 JSON/Go 日志 artifact #11710606958](https://github.com/lazyxu/xdrive/actions/runs/38161093303/artifacts/11710606958) 证实四个真实宽度已完成业务验收：
+375/390/899 的共享 iOS27 Mobile Gallery 请求相同 Gin 路径及拍摄升序尾部 offset=9900, returned=100, total=10000；900px 宽屏同路径、排序降序 offset=0, returned=100, total=10000，有效 Node revision=1。虚拟 DOM 在四视口分别 27/27/42/12 个 Tile，52px 移动 App Header 测量通过。第二 JWT 访问 PhotoAsset 详情为真实404，另一 Owner 的媒体 Range 200/空集，无效 JWT 为401，浏览器 PageError=0。
+
+但该首测最终**未通过**：浏览器严格网络审计发现28个 HTTP500（每视口重复，实际端点为人物建议/身份、宠物、地点、文件操作、配额和活动任务）；SQL 日志准确显示独立测试 schema 未迁移 xd_photo_person_clusters、xd_photo_people、xd_photo_visual_labels、xd_photo_place_labels、xd_file_operations 和 xd_upload_sessions。另外105个 HTTP503 均为 /api/v1/media/items/<id>/thumbnail，是本阶段刻意只写元数据、无物理 CAS 原片的**预期不可生成缩略图**响应，不是已验证缩略图加载成功。第一张图的占位图标不等于真实图像解码。
+
+**有限修订：** 补齐隔离测试所需且生产已存在的模型 AutoMigrate（人物/宠物/地点/文件操作/上传会话），生产 API、媒体模型和真实 Server 访问权限均不修改；浏览器只把此 metadata-only 运行下精确 /media/items/<id>/thumbnail 返回503计入独立 metadataOnlyThumbnail503，其它任何 5xx、陌生请求、JS 异常继续严格失败。新增对应静态回归，不忽略 500、不伪造响应、不声称真实缩略图成功。需对新同一工作提交重新通过实体 Go/Chromium、Go race、Desktop/Web/Windows、打包、Final Gate，不能以旧 SHA 的部分通过项替代。iOS27 真机视觉与物理媒体性能仍为 not-run。
+
+**P1-3c1 第二次精确 HEAD 真实 Chromium 红灯（2026-10-12）：** [CI #38162226990](https://github.com/lazyxu/xdrive/actions/runs/38162226990)（工作提交 e7c6e553）的 23 个非跳过 Job 通过，go-linux-api 中原生 Chromium、依赖它的 Final Gate 失败。
+四宽度的 Go Range / 10k 逻辑媒体、Node revision、27/27/42/12 个虚拟 DOM、52px 移动标题栏、外部 Owner 空集/404、无效 JWT 401 均得到真实证据。108 次仅元数据缩略图 503 已精确独立计数（不是物理 CAS/成功解码）；JS PageError=0。
+仍有恰好 **4 次意外 HTTP 500**，全部来自 GET /api/v1/background-tasks/active-summary。Go SQL 明确报 xd_sync_runs 不存在；隔离测试 AutoMigrate 迁移了 meta.Source，却遗漏已有的 meta.SyncRun。
+本次只在原分支同一唯一工作提交中补充隔离测试的 meta.SyncRun 迁移和静态回归。生产 Gallery/API/Task Center/虚拟列表/52px App Frame 未变，任何其他 5xx 继续失败。必须在新精确 HEAD 重跑完整 CI 与 Final Gate 才能宣布验收/合并；真 iOS 27 Safari/PWA/VoiceOver、真实物理媒体解码仍待测。
