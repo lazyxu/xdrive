@@ -10,6 +10,10 @@
 
 设备专项用例：短按打开；原地长按 450ms 菜单；长按后有效 Files 拖放；未达阈值先滑动只滚动；空目标、跨目录、取消、失焦、第二指针不提交；Gallery 时间线不允许任意拖放、已有合法相册目标才可移动；批量选择/键盘替代；Live Photo Viewer 保留按住播放；横屏、键盘、安全区与 200% 字体下均不重叠。真实 iOS Safari/主屏安装、Android Chrome/安装模式和模拟浏览器证据分开记录，**当前真机未执行**。
 
+## PWA S2A 平台验收映射（2026-10-12）
+
+新增安装能力模型与只读部署诊断在 `docs/pwa-delivery.md` 中记录。JS `beforeinstallprompt` 模拟/组件测试不等于已在物理设备安装。IOS-TAB、IOS-INSTALLED、ANDROID-TAB、ANDROID-INSTALLED 的安装、外链返回、冷/热启动及真实安全区/键盘均保持 **not-run**，需用真实部署域名及系统主屏幕图标启动验收。Desktop Chromium 也要单列；文件后端 REST 与虚拟列表不复制。
+
 ## 1. 结果必须分为四层
 
 | 层次 | 可用状态 | 记录内容 |
