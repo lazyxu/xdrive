@@ -1064,6 +1064,9 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			out = run
 			return nil
 		}
+		// A SyncRun owns its original Source revision, not a later target or
+		// policy revision committed while its long-running worker was active.
+		sourceOwnsRun := source.Revision == run.SourceRevision && source.Status == meta.SourceStatusActive
 
 		status := req.Status
 		if run.CancelRequestedAt != nil {
@@ -1075,7 +1078,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		inventoryComplete := req.CompleteInventory &&
 			(status == meta.SyncRunStatusCompleted || status == meta.SyncRunStatusPartial)
 		missingItems := make([]meta.SourceItem, 0)
-		if inventoryComplete {
+		if inventoryComplete && sourceOwnsRun {
 			matcher, err := sourcepkg.CompileIgnoreRules(run.IgnoreRules)
 			if err != nil {
 				return fmt.Errorf("compile stored ignore rules: %w", err)
@@ -1158,7 +1161,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		var deletedItems int64
-		if req.CompleteInventory && status == meta.SyncRunStatusCompleted {
+		if sourceOwnsRun && req.CompleteInventory && status == meta.SyncRunStatusCompleted {
 			var mirrorErr error
 			deletedItems, mirrorErr = advanceMirrorMissingEvidenceTx(
 				tx,
@@ -1206,7 +1209,11 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		} else {
 			sourceUpdates["last_error"] = run.Error
 		}
-		if err := tx.Model(&meta.Source{}).Where("id = ?", source.ID).Updates(sourceUpdates).Error; err != nil {
+		// A stale SyncRun may keep its terminal history but cannot publish its
+		// old target's checkpoint or completion state into a revised Source.
+		if err := tx.Model(&meta.Source{}).
+			Where("id = ? AND revision = ? AND status = ?", source.ID, run.SourceRevision, meta.SourceStatusActive).
+			Updates(sourceUpdates).Error; err != nil {
 			return err
 		}
 		out = run
