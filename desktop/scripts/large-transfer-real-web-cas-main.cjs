@@ -14,6 +14,7 @@ if (!scenario || !sample) throw Error('upload|download sample-N required')
 const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
 if (![1,4].includes(sizeGiB)) throw Error('real Web CAS benchmark size must be 1 or 4 GiB')
 const sizeBytes = sizeGiB * 2 ** 30
+const pwaReadbackParam = process.env.XD_PWA_FULL_OPFS_READBACK === '1' ? '&xdrivePwaFullReadback=1' : ''
 const chunkSize = 8 * 1024 * 1024
 const desktopRoot = path.resolve(__dirname, '..')
 const resultsDir = path.resolve(process.env.XD_REAL_WEB_CAS_RESULTS || path.join(desktopRoot, 'real-web-cas-results'))
@@ -135,7 +136,7 @@ app.whenReady().then(async () => {
     })
 
     await win.loadURL(
-      `${base}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}&xdriveLargeTransferRealCAS=1`,
+      `${base}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}&xdriveLargeTransferRealCAS=1${pwaReadbackParam}`,
     )
     if (scenario === 'upload') {
       await waitForSelector(win, '[data-xdrive-large-transfer-upload-file]')
@@ -183,7 +184,8 @@ app.whenReady().then(async () => {
         throw new Error('real signed chunk upload/metadata integrity failed: ' + JSON.stringify(stats))
       }
     } else if (stats.download_get_count !== 1 ||
-        combined.downloadSpotCheckedBytes !== 3 * 1024 * 1024) {
+        combined.downloadSpotCheckedBytes !== 3 * 1024 * 1024 ||
+        (process.env.XD_PWA_FULL_OPFS_READBACK === '1' && combined.downloadFullVerifiedBytes !== sizeBytes)) {
       throw new Error('real authenticated Gin GET / browser OPFS readback integrity failed: ' + JSON.stringify(stats))
     }
 

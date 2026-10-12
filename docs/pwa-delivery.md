@@ -22,7 +22,7 @@
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有，安装模式未验 |
 | P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
-| P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A 已编写活动上传退出提示，真正的重新选文件恢复/真机退出验收仍待 S4B/S5 |
+| P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A/S4B 已完整 PR CI 通过并合并；Web 上传仍需人工重新选文件，真实安装模式和进程回收验收待 S5 |
 | P0-10 | 320/375/390/430、899/900、短横屏/安全区/软件键盘/200% 字体/暗色/读屏保留 52px Frame。 | 布局基础有，真机 not-run |
 | P0-11 | CI 发布 gate：built sw/offline/manifest 的 MIME/范围、离线 E2E、API bypass、更新/回滚、打包完整性。 | 本轮新增 Node 单测，真实部署 gate 待做 |
 | P0-12 | 保留可复核的 iOS 27 Safari+Home Screen、Android Chrome+Installed、Desktop Chrome/Edge 安装 E2E 记录。 | 真机 not-run |
@@ -31,9 +31,9 @@
 
 | ID | 项目与交付验收 | 当前状态 |
 | --- | --- | --- |
-| P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B 已编写失效会话安全重选入口和原身份校验；跨刷新真实 Go/Chrome/真机字节级验收待完成 |
+| P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B PR #1535 已通过完整 CI 并合并；真实 Go/Chrome 断点复用最终 SHA 和 iOS/Android 真机验收仍待完成 |
 | P1-02 | M39 目录上传：空目录、嵌套、Unicode、相对路径、选择器能力与多文件/ZIP 回退。 | 部分基础有，待验 |
-| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 增加直写磁盘完成前的字节数核验；原生下载落盘 SHA、Range/票据和 1/4GiB 真机实测仍待验 |
+| P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 直写磁盘长度核验；S4C2 添加独立真实 Gin/CAS/Chromium OPFS 全字节回读验收模式（CI 尚待执行）；原生下载 SHA、Range/票据和 4GiB/真机待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
 | P1-05 | display-mode/standalone 能力检测与安装模式诊断，不依赖 UA 猜测。 | S2A 已编写显示模式/显式 HEAD 诊断；CI/真实运行状态待验 |
 | P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 观察 pageshow/online/offline，只反馈运行状态；实际传输恢复仍待 S4 |
@@ -103,6 +103,8 @@ S3A 用 `navigator.onLine` 表示**浏览器提供的网络提示**，不能证�
 
 ## PWA-S4B · 中断上传的原文件重选及现有 8MiB 分块续传（2026-10-12）
 
+**交付证据：** [PR #1535](https://github.com/lazyxu/xdrive/pull/1535) 经完整 [CI #38234206118](https://github.com/lazyxu/xdrive/actions/runs/38234206118)（含 Final Gate），线性合并为 `db056b57`，临时分支已自动清理。源代码单测、完整 PR CI 和合并已完成；真实 Go/Chromium 断点后的最终文件 SHA，以及 iOS 27/Android 安装模式、锁屏和进程回收均 **not-run**。
+
 **实现边界：** 不设计第二条上传 API，不缓存 File/Blob、原件、上传块、Cookie 或访问令牌。共享 Web/Mobile Web 的普通文件上传会通过 `XDriveApi.uploadWithConflictPolicy` 和 `WebTransferStore.create` 仅在非破坏性 `fail` 冲突策略时，保存目标云端目录 ID、原文件名、大小、`lastModified`、原始策略，以及完成初次预哈希后生成的**有序分块 SHA-256 清单的 SHA-256 指纹**（只保留 64 字符摘要、不保存原始文件或上传块），至**已按当前登录账号与 Origin 分区的传输历史**；保留原有一条文件传输记录，页面刷新后将未结束的 Web 记录显示为失败、可重新选择文件，绝不能伪称浏览器后台仍持有 File 对象。
 
 在上传/下载历史中，只有非分组的失败 Web 上传、可信目标 ID、原策略 `fail`、原开始时间在最近 23 小时内才显示 **“重新选择原文件”**。按钮直接打开真实系统文件选择器（iOS Safari/主屏、Android 和桌面均复用同一入口）；若取消，不发 HTTP。明确比对文件名、大小、修改时间，任何不一致均停止，绝不绕过原权限进行上传或猜测目标路径。匹配元数据后，先重新计算文件全部 8MiB 分块的 SHA-256，再比较清单指纹。**内容指纹不同则在任何新上传请求之前拒绝**；首次预哈希尚未完成、没有指纹的中断记录也不能直接续传。内容核验通过后，才启动一条**新的** Browser 传输，使用保存的可信目标及相同 fail-on-conflict 策略调用既有 `uploadWithConflictPolicy`。Server 的 owner+resume_key+parent+name+size+chunk_sha256 校验仍为唯一权威：24 小时内相同会话返回已接收分块索引，客户端对每个分块重新计算 SHA-256、只复用 size/hash 真正匹配的块，最终仍须 Server Finalize。只有服务端明确返回恢复成功（或原文件已经 Finalize）后，旧失败历史才永久关闭重选入口并清除旧指纹；内容不匹配、取消选择、网络/权限/Quota 错误仍可重新选择原文件，且页面刷新后不能重新激活已成功处理的旧入口。旧历史不会被伪造为“完成”或直接覆写历史。
@@ -128,3 +130,13 @@ S3A 用 `navigator.onLine` 表示**浏览器提供的网络提示**，不能证�
 Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入只在 **预期长度校验后** 调用 writable.close()，避免短读或额外数据静默完成。当前文件/历史版本使用授权 Node 元数据大小，ZIP/归档只在无 HTTP 压缩且 Content-Length 为有效非负安全整数时核验。超长块写入前拒绝；短流、Blob fallback 错误及不可信长度都不提交磁盘临时目标，而是沿原路径 abort/失败。不增缓存、API、并发读取或修改 Server。浏览器解码 gzip 的响应不能拿压缩 wire 长度作为解码文件长度。
 
 **未验收**：长度校验不等于 SHA-256。iOS/Android 不提供 File System Access 时，普通文件由浏览器原生下载票据接管，xDrive 无法直接核验真实落盘结果。真实 1GiB/4GiB 和 ZIP 的落盘 SHA、Range 206/416、票据有效期/撤销、断网、取消、后台切换和锁屏仍属 S4C2/S4D/S5；小规模 Node 测试不代表真机已通过。
+
+
+## PWA-S4C2 · 真实 1 GiB Web/OPFS 全字节回读门槛（2026-10-12）
+
+复用已存在的 `real-web-cas-transfer-runner.cjs`、真实编译 Gin/PostgreSQL17/Local CAS fixture、实际 Chromium/Electron 浏览器和共享 `XDriveApi`。仅在 `XD_PWA_FULL_OPFS_READBACK=1` 的独立发布验收模式下，下载完成并关闭真实 OPFS 文件后，从第一个字节到最后一个字节按 **至多 1 MiB 的小块**逐字节验证稀疏全零 fixture 内容；校验准确总大小、浏览器和 Server 的真实 GET 计数、CAS 完整性。**全文件回读在已完成的传输计时后运行**，不改变现有 n=3 性能基线/吞吐预算或生产 Web/PWA Service Worker。失败时直接使验证作业失败；CI 仅上传脱敏后可核对的 summary/sample JSON，**不归档可能含临时下载票据的 Gin/Chromium 原始日志**。
+
+新 CI workflow `.github/workflows/pwa-full-opfs-readback.yml` 只对专项 PR 分支运行 **一次 1 GiB 真实测试**，也支持手动指定 4 GiB（需要足够 runner 存储）。此处的全字节相等是针对确定性**零字节**输入，并非浏览器计算任意文件的流式 SHA-256。其他类型真实文件、iOS 27 Safari/主屏、Android Chrome/安装模式及 Browser-owned 原生下载落盘内容仍为 `not-run`，不允许由 Chromium OPFS 的成功结果代替。这是 S4C2 测试能力，不是新的文件下载实现。
+
+
+**S4C2 CI 首轮故障（2026-10-12）：** [真实作业 #38239367800](https://github.com/lazyxu/xdrive/actions/runs/38239367800) 在构建步骤因 Desktop 没有 npm lockfile 而触发 `npm ci` EUSAGE，尚未启动浏览器/Server 的 1GiB 测试。与已有真实 1GiB benchmark 一致改用 Desktop `npm install --no-audit --no-fund`，并加源代码防回归断言；保持原完整 CI/真实测试重新运行后再判断结果。

@@ -1,0 +1,84 @@
+name: PWA Real OPFS Full-Byte Readback
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      size_gib:
+        description: 'Real CAS download fixture size in GiB (requires enough runner storage)'
+        type: choice
+        options: ['1', '4']
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-full-opfs-readback:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-full-opfs-s4c2-20261012'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_REAL_CAS_SIZE_GIB: ${{ github.event_name == 'workflow_dispatch' && inputs.size_gib || '1' }}
+      XD_PWA_FULL_OPFS_READBACK: '1'
+      XD_REAL_WEB_CAS_RESULTS: ${{ github.workspace }}/desktop/pwa-full-opfs-results
+      XD_REAL_WEB_CAS_TEST_BINARY: ${{ github.workspace }}/desktop/real-web-cas-bin/api.test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build production Web API and real Postgres/CAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm ci --no-audit --no-fund)
+          # Desktop intentionally has no npm lockfile; use the established
+          # real-transfer fixture install command, not npm ci.
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/real-web-cas-bin
+          go test -c -o desktop/real-web-cas-bin/api.test ./internal/api
+          node --test desktop/tests/web-pwa-full-readback.cjs
+      - name: Exercise actual one GiB Chromium + Go + PostgreSQL + CAS + full OPFS disk readback
+        run: |
+          set -euo pipefail
+          xvfb-run -a --server-args='-screen 0 1920x1200x24' node desktop/scripts/real-web-cas-transfer-runner.cjs
+          test "$(find "$XD_REAL_WEB_CAS_RESULTS" -maxdepth 1 -name 'sample-*.json' -type f | wc -l)" -eq 1
+          node -e "const f=require(process.env.XD_REAL_WEB_CAS_RESULTS+'/summary.json'); if (!f.passed || !f.pwaFullOPFSReadback || f.downloadFullVerifiedBytes !== Number(process.env.XD_REAL_CAS_SIZE_GIB)*2**30) process.exit(1)"
+          cat "$XD_REAL_WEB_CAS_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-full-opfs-readback-${{ env.XD_REAL_CAS_SIZE_GIB }}gib
+          # No raw Gin/Chromium logs: those may contain signed ticket URLs.
+          # Export only deterministic, token-free validated summaries.
+          path: |
+            desktop/pwa-full-opfs-results/summary.json
+            desktop/pwa-full-opfs-results/sample-*.json
+          if-no-files-found: warn
+          retention-days: 14
