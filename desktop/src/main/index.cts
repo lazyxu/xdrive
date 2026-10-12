@@ -127,6 +127,8 @@ import {
   type AgentAdminBaiduMapUpdate,
   type AgentServiceDependenciesSnapshot,
   type AgentAdminUser,
+  type AgentAdminAuditRange,
+  type AgentAdminAuditRangeQuery,
   type AgentAdminCreateUserInput,
   type AgentAdminUpdateUserInput,
   type AgentBackgroundTaskActiveSummary,
@@ -5169,6 +5171,30 @@ function registerIPCHandlers() {
     return requireAgentClient().cloudAdminServices()
   }, false))
 
+  const requireDesktopAdminAudit = async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-audit')
+    return requireAgentClient()
+  }
+  ipcMain.handle('agent:cloud-admin-audit-range', (event, query: unknown, requestID: unknown) =>
+    runAgentAction<AgentAdminAuditRange>(() => viewportRequests.run(event.sender, requestID, async (signal) => {
+      if (!query || typeof query !== 'object' || Array.isArray(query)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid audit filter object.')
+      }
+      const value = query as Partial<AgentAdminAuditRangeQuery>
+      if (typeof value.limit !== 'number' || !Number.isSafeInteger(value.limit) || value.limit < 1 || value.limit > 200 ||
+          typeof value.offset !== 'number' || !Number.isSafeInteger(value.offset) || value.offset < 0 ||
+          (value.snapshot_max_id !== undefined &&
+            (typeof value.snapshot_max_id !== 'number' || !Number.isSafeInteger(value.snapshot_max_id) || value.snapshot_max_id < 0)) ||
+          (value.action !== undefined && (typeof value.action !== 'string' || value.action.length > 80)) ||
+          (value.result !== undefined && value.result !== 'success' && value.result !== 'failure') ||
+          (value.actor !== undefined && (typeof value.actor !== 'string' || value.actor.length > 64)) ||
+          Object.keys(value).some(key => !['limit', 'offset', 'snapshot_max_id', 'action', 'result', 'actor'].includes(key))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid bounded audit range or filters.')
+      }
+      if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Audit range was cancelled.')
+      return (await requireDesktopAdminAudit()).cloudAdminAuditRange(value as AgentAdminAuditRangeQuery, signal)
+    }), false))
   const requireDesktopAdminUsers = async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-users')

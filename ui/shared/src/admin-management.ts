@@ -1,4 +1,4 @@
-import type { AdminUser } from './models'
+import type { AdminUser, AuditEventRange } from './models'
 
 export type XDriveAdminCreateUserInput = {
   username: string
@@ -20,4 +20,17 @@ export type XDriveAdminUsersPort = {
   adminResetPassword(id: number, password: string, mustChangePassword?: boolean): Promise<void>
   adminRevokeSessions(id: number): Promise<void>
   adminDeleteUser(id: number): Promise<void>
+}
+
+/** Shared snapshot-bound admin audit pages, scoped to the authenticated session. */
+export type XDriveAdminAuditRangeQuery = {
+  limit: number
+  offset: number
+  snapshot_max_id?: number
+  action?: string
+  result?: 'success' | 'failure'
+  actor?: string
+}
+export type XDriveAdminAuditPort = {
+  adminAuditRange(query: XDriveAdminAuditRangeQuery, signal?: AbortSignal): Promise<AuditEventRange>
 }

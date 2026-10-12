@@ -4,7 +4,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const repo = path.join(__dirname, '..', '..')
-const source = fs.readFileSync(path.join(repo, 'web', 'src', 'AdminAudit.tsx'), 'utf8')
+const source = fs.readFileSync(path.join(repo, 'ui', 'shared', 'src', 'mui', 'AdminAuditPage.tsx'), 'utf8')
 
 test('admin audit keeps VirtualCollection and switches only the row renderer below 900px', () => {
   for (const token of [

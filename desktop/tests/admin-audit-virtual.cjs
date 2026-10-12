@@ -6,7 +6,7 @@ const path = require('node:path')
 const repo = path.join(__dirname, '..', '..')
 const read = (...parts) => fs.readFileSync(path.join(repo, ...parts), 'utf8')
 
-const auditPage = read('web', 'src', 'AdminAudit.tsx')
+const auditPage = read('ui', 'shared', 'src', 'mui', 'AdminAuditPage.tsx')
 const webApi = read('web', 'src', 'api.ts')
 const models = read('ui', 'shared', 'src', 'models.ts')
 const virtualCollection = read('ui', 'shared', 'src', 'virtual-collection.ts')

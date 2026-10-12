@@ -83,6 +83,7 @@ var desktopIPCCapabilities = []string{
 	"background-task-summary",
 	"admin-services",
 	"admin-users",
+	"admin-audit",
 	"file-text-preview",
 	"file-preview-stream",
 	"archive-download",
@@ -601,6 +602,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cloud/file-operations", h.cloudCreateFileOperation)
 	mux.HandleFunc("GET /v1/cloud/background-task-summary", h.cloudBackgroundTaskActiveSummary)
 	mux.HandleFunc("GET /v1/cloud/admin-services", h.cloudAdminServices)
+	mux.HandleFunc("POST /v1/cloud/admin-audit/range", h.cloudAdminAuditRange)
 	mux.HandleFunc("GET /v1/cloud/admin-users", h.cloudAdminUsers)
 	mux.HandleFunc("POST /v1/cloud/admin-users", h.cloudAdminCreateUser)
 	mux.HandleFunc("PATCH /v1/cloud/admin-users/{id}", h.cloudAdminUpdateUser)

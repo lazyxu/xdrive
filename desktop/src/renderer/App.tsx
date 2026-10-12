@@ -23,6 +23,7 @@ import {
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
@@ -59,6 +60,7 @@ import {
   XDriveServiceDependenciesPage,
   XDriveSystemMaintenancePage,
   XDriveAdminUsersPage,
+  XDriveAdminAuditPage,
   XDriveWorkspaceContent,
   xDriveWorkspacePresentation,
   xDriveWorkspaceStorageSummary,
@@ -96,7 +98,7 @@ import {
   xDriveLoginCredentialsReady,
   xDriveSystemDependenciesNeedsExitConfirmation,
 } from '@xdrive/shared'
-import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort } from '@xdrive/shared'
+import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource, XDriveAdminUsersPort, XDriveAdminAuditPort } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
 import type { DesktopFileExplorerAction, DesktopFileExplorerActionIntent } from './DesktopFileExplorer'
 import { DesktopOverviewPage } from './DesktopOverviewPage'
@@ -111,7 +113,7 @@ import type {
   XDriveCloudFilesPort,
 } from '@xdrive/shared'
 
-type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-services' | 'admin-maintenance'>
+type View = XDriveWorkspaceViewKey<'overview' | 'conflicts' | 'diagnostics' | 'admin-users' | 'admin-audit' | 'admin-services' | 'admin-maintenance'>
 
 type ConfirmDialogState = {
   title: string
@@ -1157,7 +1159,7 @@ export default function App({
   }, [acceptTransferSnapshot, status?.server, status?.username])
 
   useEffect(() => {
-    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
+    if ((view === 'global-tasks' || view === 'admin-users' || view === 'admin-audit' || view === 'admin-services' || view === 'admin-maintenance') && status?.role !== 'admin') setView('transfers')
   }, [view, status?.role])
 
   useEffect(() => {
@@ -1892,6 +1894,14 @@ export default function App({
     },
   }), [status?.server, status?.username])
 
+  const adminAuditPort = useMemo<XDriveAdminAuditPort>(() => ({
+    adminAuditRange: (params, signal) => xDriveDesktopViewportRequest(signal, async (requestID) => {
+      const result = await window.xdriveDesktop.agent.cloudAdminAuditRange(params, requestID)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    }),
+  }), [status?.server, status?.username])
+
   const desktopSidebarSections: XDriveSidebarSectionModel[] = [
     {
       key: 'overview',
@@ -1936,6 +1946,7 @@ export default function App({
           items: [
             { key: 'admin-users', label: '用户管理', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
             { key: 'global-tasks', label: '全局后台任务', icon: <AdminPanelSettingsOutlinedIcon fontSize="small" /> },
+            { key: 'admin-audit', label: '审计日志', icon: <AssessmentRoundedIcon fontSize="small" /> },
             { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
             { key: 'admin-maintenance', label: '系统维护', icon: <BuildRoundedIcon fontSize="small" /> },
           ],
@@ -2859,6 +2870,14 @@ export default function App({
             />
           ) : (
             <XDriveStatePanel message="当前 xdrive-agent 不支持用户管理，请更新客户端核心组件。" />
+          )
+        )}
+
+        {view === 'admin-audit' && status?.role === 'admin' && (
+          agent.hello?.capabilities.includes('admin-audit') ? (
+            <XDriveAdminAuditPage api={adminAuditPort} />
+          ) : (
+            <XDriveStatePanel message="当前 xdrive-agent 不支持审计日志，请更新客户端核心组件。" />
           )
         )}
 
