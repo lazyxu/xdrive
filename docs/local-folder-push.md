@@ -1081,3 +1081,50 @@ or NAS Push is added. Web/Mobile and foreign Desktop remain read-only.
 Focused static regression is added; native real-device E2E remains
 unmeasured. Exact-head GitHub PR CI is the merge gate; no GitLab delivery
 is claimed for this phase.
+
+
+## L03-E0 · Owning-Agent quarantined identity commit intents (GitHub PR validation)
+
+This is the **first deliberately non-authoritative durable write** on the path
+toward L03-E identity commit. It stores at most 16 existing, ordered advisory
+evidence IDs in \`xd_local_source_commit_intents\` as \`quarantined\`, with
+Source ID, exact revision, owning device/Root/fingerprint, both sealed
+generation digests, SourceItem ID, old/new root-scoped path keys and native
+identity digest. The table is **not** a planner input, alias registry, commit
+token, runnable queue, checkpoint or permission to delete remote files.
+
+Only the registered/unrevoked owning Agent may use the private
+\`POST /api/v1/sources/:id/local-identity/commit-intents\` endpoint. An owner
+JWT alone, Web/Mobile Web and foreign Desktop (including same-account
+Desktop B) cannot use it. The request has an exact If-Match Source revision,
+bounded JSON with only two generation digests and 1–16 ordered evidence IDs.
+The transaction rechecks device-first authorization, exact native Root,
+paused local Push Source, persisted source/revision/device/generation evidence,
+stable existing synced SourceItems, canonical old path digests, collision-free
+alias namespace and live Node revisions. Only after validating the *entire*
+batch does it insert idempotent quarantined rows. Same evidence replay yields
+a count-only response, and a divergent replay or configuration/revoke/path
+collision fails closed. A unique database index fences concurrent duplicate
+evidence, SourceItem and destination claims.
+
+All responses expose only Source ID/revision and quarantined/replayed counts,
+with \`commit_supported=false\`, \`authoritative=false\`,
+\`missing_inference_safe=false\`; private paths, root/device tokens, native
+identities, digest/key material and item IDs remain undisclosed.
+
+**No physical bytes are checked in this write.** Prior sample observations
+are NOT transformed into durable content verification. This stage changes
+*only* the quarantined intent table; SourceItem, SourceItemAlias, Node, CAS,
+SourceRun, Mirror history and cloud objects are unchanged. The Server still
+denies local-folder SourceRun activation. No Desktop/Web UI action or new
+native Agent IPC/client call exists yet. A later owning-Agent private
+transport plus independent L03-E1 transaction-bound verification is needed
+before any alias promotion. L03-F/G uploader/resume/recovery, L05 scheduler
+and L07 100k/≥4GiB physical E2E remain unimplemented.
+
+Dedicated PostgreSQL integration tests assert owner A/foreign device B,
+missing/forged/revoked proof, Root and revision mismatch, malformed bounded
+requests, collision/replay, exact quarantine unique indexes and the absence
+of canonical writes. GitHub exact-head complete CI with \`final-gate\` is
+required before marking this phase merged; no GitLab pipeline or native
+physical benchmark has been performed through this environment.
