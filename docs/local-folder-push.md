@@ -692,7 +692,7 @@ remote control or new NAS agent. Real 100k/4GiB native-device acceptance
 remains unmeasured. Exact-head full GitHub CI, actual merge and branch
 cleanup are separate required gates.
 
-## L03-D2b2c2b1 · Owning-Agent live original file hashing against both sealed generations (GitHub PR verification)
+## L03-D2b2c2b1 · Owning-Agent live original file hashing against both sealed generations (merged #1460; 76-job CI green)
 
 The preceding stages are merged: #1451 supports credential/Root/revision-
 fenced private advisory pagination; #1456 supplies server-side SourceItem,
@@ -743,3 +743,65 @@ write transaction. No SourceRun activation, SourceItem alias promotion,
 Node/CAS modification, upload, Mirror deletion, watcher, schedule or
 NAS Push is enabled here. Native physical 100k/>=4GiB tests and GitLab
 delivery are not claimed.
+
+## L03-D2b2c2b2a · Strict owning-Agent File / FileVersion / CAS metadata cross-check (GitHub PR verification)
+
+After L03-D2b2c2a (#1456) verified SourceItem, Node and aliases and
+L03-D2b2c2b1 (#1460, merged following 76-job exact-head full CI)
+independently streamed SHA256 of the actual current file on an OS-approved
+Root, the owning Agent can perform a narrowly scoped **read-only,
+point-in-time cloud DATABASE metadata** equality check. This is not a
+claim about actual physical object bytes.
+
+A dedicated private POST
+`/api/v1/sources/:id/local-identity/evidence-cloud-metadata` accepts
+only the sealed CURRENT/PREVIOUS generation digests, strictly increasing
+evidence IDs (1–64), current local-file SHA256 digests and sizes. The
+request is <=16 KiB, with no OS path, Node/SourceItem ID or cloud storage
+key. Owner JWT alone does NOT suffice: the Server demands the owning
+device's unrevoked OS-stored token, current bound Root and fingerprint
+plus the exact If-Match Source revision. Only a **paused**
+`local_folder/push` Source is admitted.
+
+Within a single read-only PostgreSQL transaction, the Server repeats
+the device->Source->Root proof under transactional locks and matches
+**every** evidence ID against its source/revision/device/Root/both
+generations. It rechecks stable synced SourceItem and old/new canonical
+and alias identity conflicts (including the saved normalized original
+path digest and live owner-scoped Node revision). A bounded single JOIN
+of current `Node`, `File`, **exact-revision FileVersion**, and
+`ContentBlob` must locate exactly one row per claim. SourceItem/File/
+FileVersion/ContentBlob sizes and SHA256 must all exactly match the
+newly claimed local digest. The File, version and blob must all refer
+to the canonical SHA256-addressed object-storage key, with
+`ContentBlob.state=ready` and positive refcount. Legacy files with
+missing/unverified hashes or versions, deleted/stale Node, changed
+content/version, bad CAS state/key/refcount, identity collision and
+revoked or other-device claims fail the entire batch closed.
+
+The reply is narrow, no-store and ETagged: only Source ID/revision,
+checked count and `cloud_metadata_matched=true`; permanently
+`cloud_bytes_verified=false`, `content_verified=false`,
+`commit_supported=false`, `authoritative=false`,
+`missing_inference_safe=false`. No Node ID, relative/absolute path,
+per-file hash, raw fingerprint, storage key or secret is serialized.
+A strict Go Client validates the entire response, including rejecting
+any falsely claimed physical-byte or commit authority. The Agent
+privately calls this after it hashes the current files, then performs
+another independent Source/Node/alias preflight and rechecks its sealed
+inventory generations, saved local rules and account/device session.
+Only aggregate matched counts are retained inside Agent memory.
+No new Desktop/Preload/Renderer/Web/Mobile Web/foreign-device API.
+
+**Safety and next delivery:** this check compares an Agent-supplied
+current SHA256 with xDrive's *existing verified/canonical database
+metadata*. The Server does NOT open or rehash the physical remote CAS
+object; a local-client digest is not hardware attestation. Positive
+metadata equality cannot be used as a commit token, permission to
+rename, proof of physical durability, Mirror missing inference, or
+SourceRun checkpoint. Actual cloud storage object streaming/verification
+and transaction-bound identity advancement remain subsequent stages.
+No local Push activation, uploads, CAS/Node/SourceItem/alias writes,
+watcher, schedule execution, NAS Push or deletion is enabled.
+The 1k/10k/100k and >=4GiB native-machine E2E and GitLab delivery
+remain independently unverified.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
@@ -18,6 +19,8 @@ type localEvidencePreflightSummary struct {
 	LocallyHashedFiles   int
 	LocallyHashedBytes   int64
 	CloudContentVerified bool
+	CloudMetadataMatched bool
+	MetadataMatchedFiles int
 	HasMore              bool
 	NextAfterID          uint64
 	ServerConsistent     bool
@@ -30,7 +33,8 @@ type localEvidencePreflightSummary struct {
 // preflightLocalBoundBackupEvidencePage reads one private advisory page and
 // rechecks current Server SourceItem/Node/alias consistency, then hashes the
 // actual current authorized original files against BOTH sealed journals.
-// It NEVER compares local hashes to trusted cloud CAS bytes or issues a commit token.
+// It also checks current Server File/FileVersion/CAS *metadata* but NEVER
+// reads physical cloud object bytes or issues a durable commit token.
 func (c *agentController) preflightLocalBoundBackupEvidencePage(
 	ctx context.Context, sourceID uint64, afterEvidenceID uint64,
 ) (localEvidencePreflightSummary, error) {
@@ -111,6 +115,26 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 			hashed.MissingInferenceSafe {
 			return empty, privateLocalSnapshotError(errors.New("current native file content is no longer consistent"))
 		}
+		// Cross-check the ephemeral native digest against the Server's current
+		// File, exact FileVersion and ready CAS ContentBlob metadata. No file
+		// path, cloud storage key or per-file digest is returned from Server.
+		claims := make([]client.LocalEvidenceCloudDigest, 0, len(page.Items))
+		for i, item := range page.Items {
+			claims = append(claims, client.LocalEvidenceCloudDigest{
+				EvidenceID: item.EvidenceID,
+				SHA256:     hashed.Digests[i].SHA256,
+				Size:       hashed.Digests[i].Size,
+			})
+		}
+		metadata, err := cli.CheckLocalSourceItemCloudMetadata(
+			readCtx, sourceID, source.Revision, proof,
+			generation.PreviousSHA256, generation.CurrentSHA256, claims)
+		if err != nil || !metadata.CloudMetadataMatched ||
+			metadata.Checked != len(claims) || metadata.CloudBytesVerified ||
+			metadata.ContentVerified || metadata.CommitSupported ||
+			metadata.Authoritative || metadata.MissingInferenceSafe {
+			return empty, privateLocalSnapshotError(errors.New("cloud metadata no longer matches local original bytes"))
+		}
 		// The expensive local hash may have raced device revoke, Node edits,
 		// alias changes or source configuration changes. Repeat Server proof
 		// after the hashing pass; a previously passing preflight is not durable.
@@ -127,6 +151,8 @@ func (c *agentController) preflightLocalBoundBackupEvidencePage(
 		result.ServerConsistent = true
 		result.LocallyHashedFiles = len(hashed.Digests)
 		result.LocallyHashedBytes = hashed.HashedBytes
+		result.CloudMetadataMatched = true
+		result.MetadataMatchedFiles = metadata.Checked
 	}
 
 	// Both local inventory seals and owning credentials must remain valid
