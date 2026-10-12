@@ -17,7 +17,7 @@ import {
   IconButton, MenuItem, Paper, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -109,7 +109,7 @@ function AlbumCard({
       }}
     >
       <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-        <XDriveMediaAsyncThumbnail
+        <XDriveMediaGalleryCoverThumbnail
           nodeID={album.cover_node_id}
           alt={album.name}
           loadThumbnail={loadThumbnail}

@@ -44,7 +44,7 @@ const component = load('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx', {
   'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': tags,
   '@mui/icons-material': new Proxy({}, { get: (_, name) => String(name) }),
-  './MediaGalleryPreviewMedia': { XDriveMediaAsyncThumbnail: 'thumbnail' },
+  './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
   './MediaGalleryAlbumOrganization': organization,
   './MediaGalleryAlbumFolderModel': folderModel,
 }, true).XDriveMediaGalleryAlbumOrganizer

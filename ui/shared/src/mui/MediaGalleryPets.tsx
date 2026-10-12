@@ -1,7 +1,7 @@
 import { Pets as PetsIcon } from '@mui/icons-material'
 import { Box, Chip, Paper, Stack, Typography } from '@mui/material'
 import type { MediaPetFacet } from '../models'
-import { XDriveMediaAsyncThumbnail } from './MediaGalleryPreviewMedia'
+import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 
@@ -65,7 +65,7 @@ export function XDriveMediaGalleryPets({
             }}
           >
             <Box sx={{ aspectRatio: '16 / 10', overflow: 'hidden' }}>
-              <XDriveMediaAsyncThumbnail
+              <XDriveMediaGalleryCoverThumbnail
                 nodeID={pet.cover_node_id}
                 alt={pet.name}
                 loadThumbnail={loadThumbnail}
