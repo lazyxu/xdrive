@@ -216,3 +216,76 @@ func TestPhotoHostSocketOwnerRequiresDigestAndFourCoherentInfo(t *testing.T) {
 		})
 	}
 }
+
+func TestPhotoHostEnableRequestGenerationCorrelationFailsClosedOnRestart(t *testing.T) {
+	session := "0123456789abcdef0123456789abcdef"
+	ids := [...]string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"}
+	checks := make([]photoHostModelInfoCheck, len(ids))
+	for i, id := range ids {
+		checks[i] = photoHostModelInfoCheck{ID: id, State: "ready", runtimeInstanceID: session}
+	}
+	sha := sha256.Sum256([]byte(session))
+	digest := hex.EncodeToString(sha[:])
+	requestID := "0123456789abcdef01234567"
+	host := photoIntelligenceHostStatus{
+		State: "healthy", ProfileConfigured: true, sessionDigest: digest, socketOwned: true,
+	}
+	control := photoHostControlStatus{
+		Supported: true, State: "success", Revision: 7, AppliedRevision: 7,
+		Enabled: true, ProfileVerified: true, ObservedHostState: "healthy",
+		RequestID: requestID, AppliedInstanceDigest: digest,
+	}
+	gate := meta.AdminPhotoHostApply{State: "host-verified", Revision: 7, RequestID: requestID}
+	if !photoHostRequestGenerationCorrelated(checks, host, control, gate) {
+		t.Fatal("fresh audited request and pinned model generation were not correlated")
+	}
+	for _, tc := range []struct {
+		name    string
+		host    photoIntelligenceHostStatus
+		control photoHostControlStatus
+		gate    meta.AdminPhotoHostApply
+	}{
+		{"legacy no generation receipt", host, func() photoHostControlStatus { old := control; old.AppliedInstanceDigest = ""; return old }(), gate},
+		{"untrusted control bridge", host, func() photoHostControlStatus { old := control; old.Supported = false; return old }(), gate},
+		{"wrong request token", host, control, meta.AdminPhotoHostApply{State: "host-verified", Revision: 7, RequestID: "ffffffffffffffffffffffff"}},
+		{"stale desired revision", host, control, meta.AdminPhotoHostApply{State: "host-verified", Revision: 8, RequestID: requestID}},
+		{"new model generation", func() photoIntelligenceHostStatus {
+			newer := host
+			newer.sessionDigest = strings.Repeat("f", 64)
+			return newer
+		}(), control, gate},
+		{"kernel socket owner absent", func() photoIntelligenceHostStatus { newer := host; newer.socketOwned = false; return newer }(), control, gate},
+		{"failed host request", host, func() photoHostControlStatus { changed := control; changed.State = "failed"; return changed }(), gate},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if photoHostRequestGenerationCorrelated(checks, tc.host, tc.control, tc.gate) {
+				t.Fatal("stale, mismatched, or untrusted action-time model generation passed")
+			}
+		})
+	}
+	// A replacement model that is internally consistent with a NEW healthcheck
+	// and kernel-owned Socket must still fail the OLD request-time seal.
+	restartedSession := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	restartedChecks := append([]photoHostModelInfoCheck(nil), checks...)
+	for i := range restartedChecks {
+		restartedChecks[i].runtimeInstanceID = restartedSession
+	}
+	restartedHash := sha256.Sum256([]byte(restartedSession))
+	restartedHost := host
+	restartedHost.sessionDigest = hex.EncodeToString(restartedHash[:])
+	if !photoHostDockerSocketOwnerVerified(restartedChecks, restartedHost) {
+		t.Fatal("test fixture replacement generation must have valid current health")
+	}
+	if photoHostRequestGenerationCorrelated(restartedChecks, restartedHost, control, gate) {
+		t.Fatal("new coherent model process inherited old audited enable generation")
+	}
+	raw, err := json.Marshal(adminPhotoHostPreflightDTO{
+		RequestGenerationCorrelated: true,
+		ModelInfoChecks:             checks,
+	})
+	if err != nil || strings.Contains(string(raw), digest) ||
+		strings.Contains(string(raw), session) ||
+		strings.Contains(string(raw), requestID) {
+		t.Fatal("private request/session generation evidence leaked through preflight")
+	}
+}

@@ -21,19 +21,20 @@ type adminPhotoHostPreflightCheck struct {
 }
 
 type adminPhotoHostPreflightDTO struct {
-	CheckedAt                time.Time                      `json:"checked_at"`
-	Action                   string                         `json:"action"`
-	DesiredRevision          uint64                         `json:"desired_revision"`
-	LocalChecksComplete      bool                           `json:"local_checks_complete"`
-	HostObserved             bool                           `json:"host_observed"`
-	HostControlObserved      bool                           `json:"host_control_observed"`
-	ApplySupported           bool                           `json:"apply_supported"`
-	Checks                   []adminPhotoHostPreflightCheck `json:"checks"`
-	HostRevisionVerified     bool                           `json:"host_revision_verified"`
-	ModelInfoChecks          []photoHostModelInfoCheck      `json:"model_info_checks"`
-	ModelInstanceCoherent    bool                           `json:"model_instance_coherent"`
-	DockerHealthcheckMatched bool                           `json:"docker_healthcheck_matched"`
-	SocketOwnerVerified      bool                           `json:"socket_owner_verified"`
+	CheckedAt                   time.Time                      `json:"checked_at"`
+	Action                      string                         `json:"action"`
+	DesiredRevision             uint64                         `json:"desired_revision"`
+	LocalChecksComplete         bool                           `json:"local_checks_complete"`
+	HostObserved                bool                           `json:"host_observed"`
+	HostControlObserved         bool                           `json:"host_control_observed"`
+	ApplySupported              bool                           `json:"apply_supported"`
+	Checks                      []adminPhotoHostPreflightCheck `json:"checks"`
+	HostRevisionVerified        bool                           `json:"host_revision_verified"`
+	ModelInfoChecks             []photoHostModelInfoCheck      `json:"model_info_checks"`
+	ModelInstanceCoherent       bool                           `json:"model_instance_coherent"`
+	DockerHealthcheckMatched    bool                           `json:"docker_healthcheck_matched"`
+	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
+	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -148,6 +149,11 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		if latestHost, valid := s.readPhotoIntelligenceHostStatus(); valid {
 			report.DockerHealthcheckMatched = photoHostDockerHealthcheckMatched(report.ModelInfoChecks, latestHost)
 			report.SocketOwnerVerified = photoHostDockerSocketOwnerVerified(report.ModelInfoChecks, latestHost)
+			if latestControl, trusted := s.readPhotoHostControlStatus(); trusted {
+				report.RequestGenerationCorrelated = photoHostRequestGenerationCorrelated(
+					report.ModelInfoChecks, latestHost, latestControl, gate,
+				)
+			}
 		}
 	}
 	if report.HostRevisionVerified {

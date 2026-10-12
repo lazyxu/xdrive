@@ -17,15 +17,16 @@ const (
 var photoHostControlRequestID = regexp.MustCompile(`^[0-9a-f]{24}$`)
 
 type photoHostControlStatus struct {
-	Supported         bool   `json:"supported"`
-	State             string `json:"state"`
-	Revision          uint64 `json:"revision"`
-	AppliedRevision   uint64 `json:"applied_revision"`
-	Enabled           bool   `json:"enabled"`
-	ProfileVerified   bool   `json:"profile_verified"`
-	ObservedHostState string `json:"observed_host_state"`
-	RequestID         string `json:"request_id"`
-	UpdatedAt         string `json:"updated_at"`
+	Supported             bool   `json:"supported"`
+	State                 string `json:"state"`
+	Revision              uint64 `json:"revision"`
+	AppliedRevision       uint64 `json:"applied_revision"`
+	Enabled               bool   `json:"enabled"`
+	ProfileVerified       bool   `json:"profile_verified"`
+	ObservedHostState     string `json:"observed_host_state"`
+	RequestID             string `json:"request_id"`
+	UpdatedAt             string `json:"updated_at"`
+	AppliedInstanceDigest string `json:"-"`
 }
 
 func validPhotoHostControlState(state string) bool {
@@ -57,13 +58,23 @@ func (s *Server) readPhotoHostControlStatus() (photoHostControlStatus, bool) {
 		return photoHostControlStatus{}, false
 	}
 	var status photoHostControlStatus
-	if json.Unmarshal(data, &status) != nil || !status.Supported ||
+	// The action-time digest is private to Server-side proof checks. Never
+	// export it through this status object's JSON or any admin DTO.
+	var sealed struct {
+		Digest string `json:"applied_instance_digest"`
+	}
+	if json.Unmarshal(data, &status) != nil || json.Unmarshal(data, &sealed) != nil || !status.Supported ||
 		!validPhotoHostControlState(status.State) ||
 		!validPhotoIntelligenceHostState(status.ObservedHostState) ||
 		status.Revision >= 1<<60 || status.AppliedRevision > status.Revision ||
 		(status.RequestID != "" && !photoHostControlRequestID.MatchString(status.RequestID)) {
 		return photoHostControlStatus{}, false
 	}
+	if sealed.Digest != "" && (status.State != "success" ||
+		!validPhotoIntelligenceHealthDigest(sealed.Digest)) {
+		return photoHostControlStatus{}, false
+	}
+	status.AppliedInstanceDigest = sealed.Digest
 	if status.State == "idle" && (status.Revision != 0 || status.AppliedRevision != 0 ||
 		status.Enabled || status.RequestID != "") {
 		return photoHostControlStatus{}, false

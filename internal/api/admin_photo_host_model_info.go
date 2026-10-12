@@ -134,6 +134,28 @@ func photoHostDockerSocketOwnerVerified(checks []photoHostModelInfoCheck, host p
 	return host.socketOwned && photoHostDockerHealthcheckMatched(checks, host)
 }
 
+// A fixed Host Manager seals one model-generation digest at the completion of
+// its already audited enable-only request. Re-check that exact immutable
+// request/revision association against the CURRENT fixed-container
+// healthcheck, kernel-owned listener and four-model Info generation.
+// This is time-bound corroboration, NOT model-side request-token attestation,
+// real task effect, fleet readiness or safe disable authorization.
+func photoHostRequestGenerationCorrelated(
+	checks []photoHostModelInfoCheck,
+	host photoIntelligenceHostStatus,
+	control photoHostControlStatus,
+	gate meta.AdminPhotoHostApply,
+) bool {
+	return control.Supported && gate.State == "host-verified" && gate.Revision > 0 &&
+		control.State == "success" && control.Enabled && control.ProfileVerified &&
+		control.ObservedHostState == "healthy" &&
+		control.Revision == gate.Revision && control.AppliedRevision == gate.Revision &&
+		control.RequestID == gate.RequestID && photoHostControlRequestID.MatchString(gate.RequestID) &&
+		validPhotoIntelligenceHealthDigest(control.AppliedInstanceDigest) &&
+		control.AppliedInstanceDigest == host.sessionDigest &&
+		photoHostDockerSocketOwnerVerified(checks, host)
+}
+
 func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelInfoCheck {
 	if s == nil {
 		return unverifiedPhotoHostModelInfoChecks()

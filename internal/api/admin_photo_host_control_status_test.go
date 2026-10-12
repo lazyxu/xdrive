@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +89,63 @@ func TestPhotoHostControlStatusNoAvailableRunner(t *testing.T) {
 	var s Server
 	if status, ok := s.readPhotoHostControlStatus(); ok || status.Supported {
 		t.Fatalf("missing Host Manager advertised control: %+v", status)
+	}
+}
+
+func TestPhotoHostControlGenerationSealIsPrivateAndValidOnlyForSuccess(t *testing.T) {
+	dir := t.TempDir()
+	s := &Server{HostControlDir: dir}
+	if err := os.WriteFile(filepath.Join(dir, "heartbeat"), []byte("trusted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	control := photoHostControlStatus{
+		Supported: true, State: "success", Revision: 7, AppliedRevision: 7,
+		Enabled: true, ProfileVerified: true, ObservedHostState: "healthy",
+		RequestID: "0123456789abcdef01234567",
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	base, err := json.Marshal(control)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := strings.Repeat("a", 64)
+	write := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, photoHostControlStatusName), []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(string(base))
+	old, ok := s.readPhotoHostControlStatus()
+	if !ok || old.AppliedInstanceDigest != "" {
+		t.Fatal("old Host Manager invented applied generation")
+	}
+	withDigest := strings.Replace(string(base),
+		`"updated_at":`, `"applied_instance_digest":"`+digest+`","updated_at":`, 1)
+	write(withDigest)
+	current, ok := s.readPhotoHostControlStatus()
+	if !ok || current.AppliedInstanceDigest != digest {
+		t.Fatal("fresh exact host request generation was not retained")
+	}
+	serialized, err := json.Marshal(current)
+	if err != nil || strings.Contains(string(serialized), digest) ||
+		strings.Contains(string(serialized), "applied_instance_digest") {
+		t.Fatal("private action-time model generation escaped through status JSON")
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"malformed", strings.Replace(withDigest, digest, "bad", 1)},
+		{"uppercase", strings.Replace(withDigest, digest, strings.ToUpper(digest), 1)},
+		{"failed state", strings.Replace(withDigest, `"state":"success"`, `"state":"failed"`, 1)},
+		{"wrong JSON type", strings.Replace(withDigest, `"applied_instance_digest":"`+digest+`"`, `"applied_instance_digest":true`, 1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			write(tc.body)
+			if _, valid := s.readPhotoHostControlStatus(); valid {
+				t.Fatal("invalid or non-success generation receipt was trusted")
+			}
+		})
 	}
 }

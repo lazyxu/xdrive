@@ -67,6 +67,19 @@ test "$(json_value "$status" state)" = success
 test "$(photo_host_control_uint "$status" applied_revision)" = 2
 test "$(grep -c 'up -d --no-deps photo-face' "$XD_PHOTO_HOST_FAKE_CALLS")" = "$before"
 
+# Action-time generation is pinned; status refresh must never re-seal it.
+# The synthetic digest below is a fixture, not production model evidence.
+sealed_digest="$(printf '%064d' 7)"
+photo_host_control_write_status success 2 2 true '0123456789abcdef01234567' healthy true "$sealed_digest"
+test "$(json_value "$status" applied_instance_digest)" = "$sealed_digest"
+photo_host_control_refresh
+test "$(json_value "$status" applied_instance_digest)" = "$sealed_digest"
+photo_host_control_write_status success 2 2 true '0123456789abcdef01234567' healthy true invalid
+test -z "$(json_value "$status" applied_instance_digest)"
+photo_host_control_write_status failed 3 2 true '0123456789abcdef01234567' unhealthy false "$sealed_digest"
+test -z "$(json_value "$status" applied_instance_digest)"
+photo_host_control_write_status success 2 2 true '0123456789abcdef01234567' healthy true "$sealed_digest"
+
 # Disable is strictly rejected, not translated into an unauthorized stop.
 make_request 3 false
 photo_host_control_process

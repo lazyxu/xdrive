@@ -274,6 +274,10 @@ export type XDrivePhotoHostPreflight = {
   // Linux kernel listener/FD evidence of fixed Docker PID, requires four
   // Info + digest agreement. Not a real task or stop/restart authorization.
   socket_owner_verified?: boolean
+  // One audited Host Manager enable-revision/request receipt pinned an earlier
+  // same-session model digest, still matching today's owner/digest/Info check.
+  // Not cryptographic model request attestation or a completed photo job.
+  request_generation_correlated?: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'
