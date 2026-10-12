@@ -743,6 +743,13 @@ func (c *agentController) CloudAdminPhotoHostPreflight(ctx context.Context) (cli
 	}
 	return cli.AdminPhotoHostPreflight(ctx)
 }
+func (c *agentController) CloudApplyAdminPhotoHost(ctx context.Context, input client.AdminPhotoHostApplyInput) (client.AdminPhotoHostApplyResult, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminPhotoHostApplyResult{}, err
+	}
+	return cli.ApplyAdminPhotoHost(ctx, input)
+}
 func (c *agentController) CloudSetAdminPhotoHost(ctx context.Context, input client.AdminPhotoHostUpdate) (client.AdminPhotoHostConfig, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

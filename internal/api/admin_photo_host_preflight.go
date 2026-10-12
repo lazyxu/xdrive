@@ -111,5 +111,18 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	}
 	host, observed := s.readPhotoIntelligenceHostStatus()
 	control, supported := s.readPhotoHostControlStatus()
-	c.JSON(http.StatusOK, photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear()))
+	gate, hasGate, err := s.readPhotoHostApply(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "photo host dispatch status unavailable")
+		return
+	}
+	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
+	if report.LocalChecksComplete && s.photoHostCanSubmit(desired, gate, hasGate) {
+		// Dispatch-ready is not an effect proof and can become stale before
+		// POST; the real action repeats all checks under a global DB fence.
+		report.ApplySupported = true
+		report.Checks[5].State = "pass"
+		report.Checks[5].Detail = "可经管理员授权提交固定宿主启用请求；仍需实际回执和模型检测"
+	}
+	c.JSON(http.StatusOK, report)
 }

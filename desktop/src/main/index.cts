@@ -115,6 +115,8 @@ import {
   type AgentAdminPhotoHostConfig,
   type AgentAdminPhotoHostPreflight,
   type AgentAdminPhotoHostUpdate,
+  type AgentAdminPhotoHostApplyInput,
+  type AgentAdminPhotoHostApplyResult,
   type AgentAdminPhotoHostRevisionPage,
   type AgentAdminPhotoHostRollbackInput,
   type AgentAdminPhotoAutoConfig,
@@ -4996,6 +4998,17 @@ function registerIPCHandlers() {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'admin-services')
     return requireAgentClient().cloudAdminPhotoHostPreflight()
+  }, false))
+  ipcMain.handle('agent:cloud-apply-admin-photo-host', (_event, value: unknown) => runAgentAction<AgentAdminPhotoHostApplyResult>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    const input = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Partial<AgentAdminPhotoHostApplyInput> : null
+    if (!input || typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) ||
+        input.revision <= 0 || input.revision >= 2 ** 60) {
+      throw new AgentIPCError('invalid_input', 0, 'A saved positive Photo Intelligence revision is required.')
+    }
+    return requireAgentClient().cloudApplyAdminPhotoHost({ revision: input.revision })
   }, false))
   ipcMain.handle('agent:cloud-set-admin-photo-host', (_event, value: unknown) => runAgentAction<AgentAdminPhotoHostConfig>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

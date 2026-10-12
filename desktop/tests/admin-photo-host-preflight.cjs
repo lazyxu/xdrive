@@ -11,7 +11,7 @@ test('Photo Intelligence preflight is read-only, administrator-only and does not
   const manifest = read('internal/api/router_contract_test.go')
   assert.ok(router.includes('admin.GET("/services/photo-intelligence/host/preflight", s.adminPhotoHostPreflight)'))
   assert.ok(manifest.includes('"/api/v1/admin/services/photo-intelligence/host/preflight"'))
-  assert.equal(router.includes('"/services/photo-intelligence/host/apply"'), false)
+  assert.ok(router.includes('admin.POST("/services/photo-intelligence/host/apply", s.adminPhotoHostApply)'))
   for (const marker of ['ApplySupported: false', 'photoHostLocalQueueClear()', 'os.Lstat', '"admin-dispatch"', '"effect-proof"', '"work-queue"']) {
     assert.ok(preflight.includes(marker), 'lost safety check: '+marker)
   }

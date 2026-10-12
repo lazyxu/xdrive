@@ -941,9 +941,11 @@ export type AgentAdminPhotoHostConfig = {
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
-  apply_state: 'unmanaged' | 'pending'
+  apply_state: 'unmanaged' | 'pending' | 'queued' | 'host-verified' | 'failed'
   editable: boolean
-  apply_supported: false
+  apply_supported: boolean
+  apply_request_id?: string
+  apply_revision?: number
   requirement: string
   host_observed: boolean
   host_runtime_state: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
@@ -961,9 +963,11 @@ export type AgentAdminPhotoHostPreflight = {
   local_checks_complete: boolean
   host_observed: boolean
   host_control_observed: boolean
-  apply_supported: false
+  apply_supported: boolean
   checks: Array<{ id: string; state: 'pass' | 'missing' | 'blocked' | 'unknown'; detail: string }>
 }
+export type AgentAdminPhotoHostApplyInput = { revision: number }
+export type AgentAdminPhotoHostApplyResult = { state: 'queued'; revision: number; request_id: string }
 export type AgentAdminPhotoHostUpdate = { revision: number; enabled: boolean }
 export type AgentAdminPhotoHostRevisionPage = {
   items: Array<{ revision: number; enabled: boolean; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
@@ -3569,6 +3573,9 @@ export class AgentIPCClient {
   }
   cloudAdminPhotoHostPreflight() {
     return this.request<AgentAdminPhotoHostPreflight>('GET', '/v1/cloud/admin-photo-host/preflight')
+  }
+  cloudApplyAdminPhotoHost(input: AgentAdminPhotoHostApplyInput) {
+    return this.request<AgentAdminPhotoHostApplyResult>('POST', '/v1/cloud/admin-photo-host/apply', input)
   }
   cloudSetAdminPhotoHost(input: AgentAdminPhotoHostUpdate) {
     return this.request<AgentAdminPhotoHostConfig>('PUT', '/v1/cloud/admin-photo-host', input)

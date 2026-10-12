@@ -720,6 +720,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-rollback-admin-source-worker', input),
   cloudAdminPhotoHostConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-host'),
   cloudAdminPhotoHostPreflight: () => ipcRenderer.invoke('agent:cloud-admin-photo-host-preflight'),
+  cloudApplyAdminPhotoHost: (input: { revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-apply-admin-photo-host', input),
   cloudSetAdminPhotoHost: (input: { revision: number; enabled: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-photo-host', input),
   cloudAdminPhotoHostRevisions: () => ipcRenderer.invoke('agent:cloud-admin-photo-host-revisions'),

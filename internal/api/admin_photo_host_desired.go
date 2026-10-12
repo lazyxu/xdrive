@@ -14,7 +14,7 @@ import (
 )
 
 const photoHostSettingName = "photo-intelligence-host"
-const photoHostRequirement = "仅记录共享 Photo Intelligence 宿主容器的期望启停修订；目前不提供宿主机应用操作。需另行实现经审计、版本校验、可回滚且仅作用于固定 photo-intelligence Profile 的 Host Manager 事务，并核验目标修订与实际容器状态、模型探针后才能宣称生效。自动分析任务准入另由全局分析策略管理。"
+const photoHostRequirement = "仅支持管理员经审计的固定 photo-intelligence 宿主启用；保存配置不会启动容器，提交请求也不等于生效。宿主回执必须匹配唯一请求令牌、修订号和实际 Docker 健康。具体模型 Info 及多实例运行状态仍须独立验证；因缺少跨实例任务排空，停用与重启一律禁止。"
 
 var errPhotoHostRevisionConflict = errors.New("Photo Intelligence host desired revision changed")
 
@@ -42,6 +42,8 @@ type adminPhotoHostConfigDTO struct {
 	HostControlRevision        uint64     `json:"host_control_revision"`
 	HostAppliedRevision        uint64     `json:"host_applied_revision"`
 	HostControlProfileVerified bool       `json:"host_control_profile_verified"`
+	ApplyRequestID             string     `json:"apply_request_id,omitempty"`
+	ApplyRevision              uint64     `json:"apply_revision"`
 }
 
 type adminPhotoHostRevisionDTO struct {
@@ -86,6 +88,11 @@ func (s *Server) adminPhotoHostConfig(c *gin.Context) {
 	if desired.Revision > 0 {
 		state = "pending"
 	}
+	gate, hasGate, gateErr := s.reconcilePhotoHostApply(c.Request.Context())
+	if gateErr != nil {
+		fail(c, http.StatusServiceUnavailable, "photo host apply status unavailable")
+		return
+	}
 	result := adminPhotoHostConfigDTO{
 		DesiredEnabled: desired.Enabled, Revision: desired.Revision,
 		Source: desired.Source, UpdatedAt: desired.UpdatedAt, ApplyState: state,
@@ -105,8 +112,25 @@ func (s *Server) adminPhotoHostConfig(c *gin.Context) {
 		result.HostAppliedRevision = control.AppliedRevision
 		result.HostControlProfileVerified = control.ProfileVerified
 	}
-	// PH1b1 observation is NOT admin-authorized application. Preserve pending
-	// until a separate audited revision/token-fenced dispatch exists.
+	if hasGate {
+		result.ApplyRevision = gate.Revision
+		result.ApplyRequestID = gate.RequestID
+		if gate.Revision == desired.Revision {
+			switch gate.State {
+			case "reserved", "queued":
+				result.ApplyState = "queued"
+			case "failed":
+				result.ApplyState = "failed"
+			case "host-verified":
+				// Host-only proof; real model Info effect is still unverified.
+				if s.photoHostApplyReceipt(gate) == "host-verified" {
+					result.ApplyState = "host-verified"
+				}
+			}
+		}
+	}
+	result.ApplySupported = s.photoHostCanSubmit(desired, gate, hasGate)
+	// Even token-bound host success never claims independent model Info.
 	c.JSON(http.StatusOK, result)
 }
 
@@ -151,6 +175,9 @@ func (s *Server) adminSavePhotoHostDesired(c *gin.Context) {
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("name = ?", photoHostSettingName).Take(&old).Error
 		exists := err == nil
+		if busy := photoHostApplyBusyTx(tx); busy != nil {
+			return busy
+		}
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
@@ -195,6 +222,10 @@ func (s *Server) adminSavePhotoHostDesired(c *gin.Context) {
 			map[string]any{"revision": next, "desired_enabled": *input.Enabled, "host_applied": false},
 		))
 	})
+	if errors.Is(err, errPhotoHostApplyBusy) {
+		fail(c, http.StatusConflict, "photo host operation pending; saved desire cannot change")
+		return
+	}
 	if errors.Is(err, errPhotoHostRevisionConflict) {
 		fail(c, http.StatusConflict, "Photo Intelligence host desired revision changed; refresh")
 		return
@@ -253,6 +284,9 @@ func (s *Server) adminRollbackPhotoHostDesired(c *gin.Context) {
 			Where("name = ?", photoHostSettingName).Take(&row).Error; err != nil {
 			return err
 		}
+		if busy := photoHostApplyBusyTx(tx); busy != nil {
+			return busy
+		}
 		if row.Revision != *input.Revision {
 			return errPhotoHostRevisionConflict
 		}
@@ -284,6 +318,10 @@ func (s *Server) adminRollbackPhotoHostDesired(c *gin.Context) {
 				"desired_enabled": history.Enabled, "host_applied": false},
 		))
 	})
+	if errors.Is(err, errPhotoHostApplyBusy) {
+		fail(c, http.StatusConflict, "photo host operation pending; rollback is blocked")
+		return
+	}
 	if errors.Is(err, errPhotoHostRevisionConflict) {
 		fail(c, http.StatusConflict, "Photo Intelligence host desired revision changed")
 		return

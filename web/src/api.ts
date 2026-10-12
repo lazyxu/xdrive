@@ -880,6 +880,13 @@ export class XDriveApi {
       '/api/v1/admin/services/photo-intelligence/host/preflight', { cache: 'no-store' },
     )
   }
+  adminApplyPhotoHost(input: import('../../ui/shared/src').XDrivePhotoHostApplyInput) {
+    return this.request<import('../../ui/shared/src').XDrivePhotoHostApplyResult>(
+      '/api/v1/admin/services/photo-intelligence/host/apply', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
   adminSavePhotoHost(input: import('../../ui/shared/src').XDrivePhotoHostUpdate) {
     return this.request<import('../../ui/shared/src').XDrivePhotoHostConfig>(
       '/api/v1/admin/services/photo-intelligence/host', {

@@ -398,6 +398,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/services/source-worker/rollback", s.adminRollbackSourceWorkerConfig)
 	admin.GET("/services/photo-intelligence/host", s.adminPhotoHostConfig)
 	admin.GET("/services/photo-intelligence/host/preflight", s.adminPhotoHostPreflight)
+	admin.POST("/services/photo-intelligence/host/apply", s.adminPhotoHostApply)
 	admin.PUT("/services/photo-intelligence/host", s.adminSavePhotoHostDesired)
 	admin.GET("/services/photo-intelligence/host/revisions", s.adminPhotoHostRevisions)
 	admin.POST("/services/photo-intelligence/host/rollback", s.adminRollbackPhotoHostDesired)
