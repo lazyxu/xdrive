@@ -196,7 +196,7 @@ async function validateCase(browser, origin, spec) {
     deepLinkPreserved: false, cachedPublicOnly: false, readinessNoCredentials: false,
     loopbackTransportWarning: false, offlineAssetChecked: false, iconsChecked: false,
     authenticatedDeepLink: false, authenticatedColdReload: false,
-    pendingInstallProbeCancelled: false }
+    pendingInstallProbeCancelled: false, updateCheckSettled: false }
   let page
   try {
     page = await context.newPage()
@@ -258,6 +258,22 @@ async function validateCase(browser, origin, spec) {
     assert.equal(observed.readyz, readyBefore + 1)
     result.readinessNoCredentials = observed.credentialLeaks === 0
     assert(result.readinessNoCredentials)
+    // A real user click calls the browser's registration.update(); it must
+    // settle in the UI without changing the initial Files hash or document.
+    await page.evaluate(() => {
+      document.documentElement.dataset.xdriveS3D1Document = 'original'
+    })
+    await dialog.locator('[data-xdrive-pwa-check-update]').click()
+    await page.waitForFunction(() => {
+      const button = document.querySelector('[data-xdrive-pwa-check-update]')
+      return Boolean(button && !button.hasAttribute('disabled') &&
+        button.textContent?.includes('检查新版本'))
+    }, null, { timeout: 12000 })
+    assert.match(await dialog.innerText(), /已检查更新|新版本已经准备好/)
+    assert.equal(new URL(page.url()).hash, expectedHash)
+    assert.equal(await page.evaluate(
+      () => document.documentElement.dataset.xdriveS3D1Document), 'original')
+    result.updateCheckSettled = true
     if (!spec.mobile) {
       // The second diagnostic deliberately hangs exactly one PUBLIC HEAD.
       // Closing the actual MUI dialog must abort that browser request.
@@ -407,6 +423,7 @@ async function main() {
     assert.equal(observed.headIcon512, 3)
     assert.equal(observed.headIcon512Aborted, 1)
     assert(evidence.cases.some(x => x.pendingInstallProbeCancelled))
+    assert(evidence.cases.every(x => x.updateCheckSettled))
     assert(evidence.cases.every(x => x.loopbackTransportWarning && x.offlineAssetChecked && x.iconsChecked))
     assert.equal(observed.readyz, 2)
     if (authMode) {

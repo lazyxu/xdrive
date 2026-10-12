@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pwa-s2b1-browser:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012' || github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012' || github.head_ref == 'fix/pwa-install-diagnostics-cancel-s2b8-20261012'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-browser-shell-s2b1-20261012' || github.head_ref == 'feat/pwa-public-asset-diagnostics-s2b4-20261012' || github.head_ref == 'fix/pwa-install-diagnostics-cancel-s2b8-20261012' || github.head_ref == 'fix/pwa-update-check-timeout-s3d1-20261013'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -51,7 +51,7 @@ jobs:
           set -euo pipefail
           export XD_PR_HEAD="$(git rev-parse HEAD)"
           node desktop/scripts/pwa-browser-install-offline.cjs
-          node -e "const r=require(process.env.XD_PWA_S2B_RESULT_DIR+'/summary.json');if(!r.passed||r.cases.length!==2||r.cases.some(x=>!x.cachedPublicOnly||!x.offlineNavigation||!x.deepLinkPreserved||!x.privateBypass||r.publicRequestSummary.headIcon512Aborted!==1||!r.cases.some(x=>x.pendingInstallProbeCancelled)))process.exit(1)"
+          node -e "const r=require(process.env.XD_PWA_S2B_RESULT_DIR+'/summary.json');if(!r.passed||r.cases.length!==2||r.cases.some(x=>!x.cachedPublicOnly||!x.offlineNavigation||!x.deepLinkPreserved||!x.privateBypass||!x.updateCheckSettled||r.publicRequestSummary.headIcon512Aborted!==1||!r.cases.some(x=>x.pendingInstallProbeCancelled)))process.exit(1)"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -14,6 +14,8 @@ let registration: ServiceWorkerRegistration | null = null
 let channel: BroadcastChannel | null = null
 let remoteUpdateHint = false
 let snapshot: XDrivePwaUpdateSnapshot | null = null
+let updateCheckInFlight: Promise<XDrivePwaUpdatePhase> | null = null
+const maxUpdateCheckMs = 8000
 const listeners = new Set<() => void>()
 const observedRegistrations = new WeakSet<ServiceWorkerRegistration>()
 
@@ -106,25 +108,66 @@ export function startXDrivePwaUpdateObservation(): void {
   // First-time S1 registration happens AFTER window.load; ready resolves when it becomes active.
   void navigator.serviceWorker.ready.then(observeRegistration).catch(() => {})
 }
-/** Explicit user action; no automatic skipWaiting, Client.postMessage or page reload. */
-export async function checkXDrivePwaUpdate(): Promise<XDrivePwaUpdatePhase> {
-  if (typeof window === 'undefined' || !window.isSecureContext ||
-      !('serviceWorker' in navigator)) return 'unsupported'
+/** An internal ServiceWorkerRegistration.update has no AbortSignal. Bound the
+ * caller's wait without pretending to cancel the browser's own operation. */
+async function checkXDrivePwaUpdateOnce(options: { timeoutMs?: number }): Promise<XDrivePwaUpdatePhase> {
   publish(makeSnapshot('checking'))
+  const budget = typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+    ? Math.max(1, Math.min(maxUpdateCheckMs, Math.floor(options.timeoutMs)))
+    : maxUpdateCheckMs
+  let expired = false
+  let timer: ReturnType<typeof setTimeout> | null = null
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => {
+      expired = true
+      reject(new Error('update-check-deadline'))
+    }, budget)
+  })
   try {
-    const found = registration ?? await navigator.serviceWorker.getRegistration()
+    // Registration discovery and update share ONE timeout; neither is aborted.
+    const found = registration ?? await Promise.race([
+      navigator.serviceWorker.getRegistration(), deadline,
+    ])
     if (!found) {
       publish(makeSnapshot('error', '尚未检测到此网站的 Service Worker。请联网重新打开后再检查。'))
       return 'error'
     }
     if (registration !== found) observeRegistration(found)
-    await found.update()
+    await Promise.race([found.update(), deadline])
     remoteUpdateHint = false
-    const phase: XDrivePwaUpdatePhase = found.waiting && navigator.serviceWorker.controller ? 'waiting' : 'checked'
+    const phase: XDrivePwaUpdatePhase = found.waiting && navigator.serviceWorker.controller
+      ? 'waiting' : 'checked'
     publish(makeSnapshot(phase))
     return phase
   } catch {
-    publish(makeSnapshot('error', '版本检查失败：网络或服务端可能暂时不可用。'))
+    // A real worker's waiting status is stronger evidence than the result of
+    // this one user-initiated check. Preserve it when the timeout expires.
+    if (registration?.waiting && navigator.serviceWorker?.controller) {
+      markWaiting()
+      return 'waiting'
+    }
+    publish(makeSnapshot('error', expired
+      ? '版本检查等待超过 8 秒；浏览器可能仍在后台检查。不会强制更新或刷新。'
+      : '版本检查失败：网络或服务端可能暂时不可用。'))
     return 'error'
+  } finally {
+    if (timer !== null) clearTimeout(timer)
   }
+}
+
+/** Explicit user action; coalesce repeated clicks, never force activation. */
+export function checkXDrivePwaUpdate(
+  options: { timeoutMs?: number } = {},
+): Promise<XDrivePwaUpdatePhase> {
+  if (updateCheckInFlight) return updateCheckInFlight
+  if (typeof window === 'undefined' || !window.isSecureContext ||
+    !('serviceWorker' in navigator)) return Promise.resolve('unsupported')
+  const pending = checkXDrivePwaUpdateOnce(options)
+  updateCheckInFlight = pending
+  const release = () => {
+    if (updateCheckInFlight === pending) updateCheckInFlight = null
+  }
+  // Never create a rejected, unhandled promise from a detached finally().
+  void pending.then(release, release)
+  return pending
 }

@@ -6,18 +6,18 @@ const ts = require('typescript')
 
 const root = path.resolve(__dirname, '../..')
 const source = fs.readFileSync(path.join(root, 'web/src/pwaUpdates.ts'), 'utf8')
-function harness({ supported = true, secure = true, waiting = true, online = true } = {}) {
+function harness({ supported = true, secure = true, waiting = true, online = true, updateGate = null, lookupGate = null } = {}) {
   const events = new Map(), workerEvents = new Map(), regEvents = new Map(), messages = []
   let checked = 0
   const registration = {
     waiting: waiting ? {} : null, installing: null,
     addEventListener(kind, fn) { regEvents.set(kind, fn) },
-    async update() { checked += 1 },
+    async update() { checked += 1; if (updateGate) await updateGate },
   }
   const worker = {
     controller: {},
     ready: Promise.resolve(registration),
-    async getRegistration() { return registration },
+    async getRegistration() { return lookupGate ? await lookupGate : registration },
     addEventListener(kind, fn) { workerEvents.set(kind, fn) },
   }
   const win = { isSecureContext: secure, addEventListener(kind, fn) { events.set(kind, fn) } }
@@ -102,4 +102,79 @@ test('S3A: actual Web install dialog exposes safe update status only on demand',
   assert.ok(section.includes('不会因该确认自动关闭、重载或中断'))
   assert.ok(docs.includes('PWA-S3A'))
   assert.doesNotMatch(section, /skipWaiting|location\.reload|api\/v1/)
+})
+
+test('S3D1: repeated clicks reuse one in-flight browser update()', async () => {
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  const h = harness({ waiting: false, updateGate: held })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  const first = h.mod.checkXDrivePwaUpdate({ timeoutMs: 1000 })
+  const second = h.mod.checkXDrivePwaUpdate({ timeoutMs: 1000 })
+  assert.strictEqual(second, first)
+  await flush()
+  assert.equal(h.checked, 1)
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checking')
+  release()
+  assert.deepEqual(await Promise.all([first, second]), ['checked', 'checked'])
+  assert.equal(h.checked, 1)
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked')
+})
+
+test('S3D1: expired update() stops waiting, late completion cannot fake success, retry works', async () => {
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  const h = harness({ waiting: false, updateGate: held })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  assert.equal(await h.mod.checkXDrivePwaUpdate({ timeoutMs: 20 }), 'error')
+  assert.match(h.mod.xDrivePwaUpdateSnapshot().lastError, /仍在后台检查/)
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'error')
+  assert.equal(h.checked, 1)
+  release()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'error')
+  h.registration.update = async () => {}
+  assert.equal(await h.mod.checkXDrivePwaUpdate({ timeoutMs: 100 }), 'checked')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'checked')
+})
+
+test('S3D1: registration lookup and update share a bounded deadline', async () => {
+  const h = harness({ waiting: false, lookupGate: new Promise(() => {}) })
+  assert.equal(await h.mod.checkXDrivePwaUpdate({ timeoutMs: 20 }), 'error')
+  assert.equal(h.checked, 0)
+  assert.match(h.mod.xDrivePwaUpdateSnapshot().lastError, /仍在后台检查/)
+})
+
+test('S3D1: genuine waiting worker takes precedence over timeout', async () => {
+  let release
+  const h = harness({ waiting: false, updateGate: new Promise(r => { release = r }) })
+  h.mod.startXDrivePwaUpdateObservation()
+  await flush()
+  const pending = h.mod.checkXDrivePwaUpdate({ timeoutMs: 20 })
+  h.registration.waiting = {}
+  assert.equal(await pending, 'waiting')
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+  release()
+  await flush()
+  assert.equal(h.mod.xDrivePwaUpdateSnapshot().phase, 'waiting')
+})
+
+test('S3D1: UI and actual Chrome guards never skipWaiting or force reload', () => {
+  const ui = fs.readFileSync(path.join(root, 'web/src/PwaUpdateSection.tsx'), 'utf8')
+  const docs = fs.readFileSync(path.join(root, 'docs/pwa-delivery.md'), 'utf8')
+  const workflow = fs.readFileSync(path.join(root, '.github/workflows/pwa-s2b-browser.yml'), 'utf8')
+  const browser = fs.readFileSync(path.join(root, 'desktop/scripts/pwa-browser-install-offline.cjs'), 'utf8')
+  assert.ok(source.includes('const maxUpdateCheckMs = 8000'))
+  assert.ok(source.includes('updateCheckInFlight = pending'))
+  assert.ok(source.includes('Promise.race([found.update(), deadline])'))
+  assert.ok(ui.includes('data-xdrive-pwa-update-checking'))
+  assert.ok(ui.includes('浏览器内部检查仍可能继续'))
+  assert.ok(browser.includes('result.updateCheckSettled = true'))
+  assert.ok(workflow.includes("github.head_ref == 'fix/pwa-update-check-timeout-s3d1-20261013'"))
+  assert.ok(workflow.includes('x.updateCheckSettled'))
+  assert.ok(docs.includes('PWA-S3D1'))
+  assert.doesNotMatch(source, /skipWaiting\s*\(|location\.reload\s*\(|Client\.postMessage\s*\(/)
+  assert.doesNotMatch(ui, /skipWaiting|location\.reload|api\/v1/)
 })
