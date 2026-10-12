@@ -452,6 +452,8 @@ function accountMenuHarness() {
     ...Object.fromEntries([
       'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'XDriveAccountMenuActions',
       'XDriveSettingsDialog',
+      'MenuItem', 'ListItemIcon', 'ListItemText', 'InstallDesktopRoundedIcon',
+      'Suspense', 'XDrivePwaInstallDialog',
     ].map((name) => [name, name])),
   }
   const mod = { exports: {} }
@@ -510,5 +512,25 @@ test('disabled personal account controls cannot reopen Settings or trigger logou
   assert.equal(only(tree, 'XDriveSettingsDialog').props.open, false)
   assert.equal(only(tree, 'XDriveSettingsDialog').props.serverUpdate, undefined)
   assert.equal(nodes(tree).filter((node) => node.type === 'XDriveConfirmDialog').length, 0)
+  assert.deepEqual(harness.effects, [])
+})
+
+
+test('PWA install dialog belongs to the account session and closes before Viewer exit', () => {
+  const harness = accountMenuHarness()
+  const anchor = { id: 'account-button' }
+  only(harness.render(), 'XDriveAccountAvatarButton').props.onClick({ currentTarget: anchor })
+  let tree = harness.render()
+  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, anchor)
+  only(tree, 'MenuItem').props.onClick()
+  tree = harness.render()
+  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
+  assert.equal(only(tree, 'XDrivePwaInstallDialog').props.open, true)
+  assert.equal(only(tree, 'XDriveSettingsDialog').props.open, false)
+
+  tree = harness.render({ disabled: true })
+  assert.equal(nodes(tree).filter((node) => node.type === 'XDrivePwaInstallDialog').length, 0)
+  tree = harness.render({ disabled: false })
+  assert.equal(nodes(tree).filter((node) => node.type === 'XDrivePwaInstallDialog').length, 0)
   assert.deepEqual(harness.effects, [])
 })

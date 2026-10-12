@@ -1,10 +1,11 @@
 import type { XDriveBaiduMapAdminUpdate, XDriveGeoNamesUpdate, XDriveGeoNamesRollbackInput, XDrivePhotoAutoUpdate, XDrivePhotoAutoRollbackInput, XDriveSourceWorkerUpdate, XDriveSourceWorkerRollbackInput } from '../../ui/shared/src'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import AssessmentRoundedIcon from '@mui/icons-material/AssessmentRounded'
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
 import DashboardRoundedIcon from '@mui/icons-material/DashboardRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
+import InstallDesktopRoundedIcon from '@mui/icons-material/InstallDesktopRounded'
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
 import BuildRoundedIcon from '@mui/icons-material/BuildRounded'
@@ -13,6 +14,9 @@ import {
   Box,
   Button,
   Chip,
+  ListItemIcon,
+  ListItemText,
+  MenuItem,
   Stack,
   TextField,
   Toolbar,
@@ -104,6 +108,8 @@ import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVers
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
 
+const XDrivePwaInstallDialog = lazy(() => import('./PwaInstallDialog'))
+
 const ACCESS_KEY = 'xdrive.access_token'
 const REFRESH_KEY = 'xdrive.refresh_token'
 const EXPIRES_KEY = 'xdrive.access_expires_at'
@@ -154,10 +160,12 @@ function WebAccountMenu({
 }) {
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [installOpen, setInstallOpen] = useState(false)
   useEffect(() => {
     if (!disabled) return
     setAnchorEl(null)
     setSettingsOpen(false)
+    setInstallOpen(false)
   }, [disabled])
 
   return (
@@ -173,6 +181,13 @@ function WebAccountMenu({
         secondary={`Server ${serverBuild?.version || '未知'}`}
         status="已登录"
       >
+        <MenuItem data-xdrive-pwa-account-entry onClick={() => {
+          setAnchorEl(null)
+          setInstallOpen(true)
+        }}>
+          <ListItemIcon><InstallDesktopRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>安装应用 / 运行环境</ListItemText>
+        </MenuItem>
         <XDriveAccountMenuActions
           onClose={() => setAnchorEl(null)}
           onSettings={() => { if (!disabled) setSettingsOpen(true) }}
@@ -187,6 +202,11 @@ function WebAccountMenu({
         onAppearanceChange={onAppearanceChange}
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       />
+      {installOpen && !disabled ? (
+        <Suspense fallback={null}>
+          <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />
+        </Suspense>
+      ) : null}
     </>
   )
 }
@@ -326,6 +346,7 @@ function AuthView({
   const [password, setPassword] = useState('')
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [installOpen, setInstallOpen] = useState(false)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -408,6 +429,15 @@ function AuthView({
         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
           账户由 xDrive 管理员创建。
         </Typography>
+        <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
+          onClick={() => setInstallOpen(true)}>
+          安装 xDrive 到主屏幕 / 桌面
+        </Button>
+        {installOpen ? (
+          <Suspense fallback={null}>
+            <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />
+          </Suspense>
+        ) : null}
       </XDriveAuthPanel>
     </XDriveAuthShell>
   )

@@ -8,6 +8,7 @@ import type {
 } from '@xdrive/ui/mui/perf'
 import App from './App'
 import { registerXDrivePwa } from './pwaRuntime'
+import { startXDrivePwaInstallObservation } from './pwaInstall'
 import './styles.css'
 
 const APPEARANCE_KEY = 'xdrive.appearance'
@@ -134,6 +135,7 @@ if (realGalleryFoldPerf) {
     console.error('__XDRIVE_FILE_EXPLORER_PERF_BOOT_ERROR__' + message)
   })
 } else {
+  startXDrivePwaInstallObservation()
   root.render(
     <React.StrictMode>
       <Root />
