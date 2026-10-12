@@ -1232,3 +1232,47 @@ physical benchmark has been performed through this environment.
 **Not done:** No Desktop button or runnable Agent job is added. No SourceItem/SourceItemAlias/Node/CAS/File/SyncRun mutation, true L03-E1 identity promotion, uploader/resume, watcher/schedule, Mirror deletion or NAS Push. The CAS check is **metadata-only** and a historical point-in-time read, not physical object durability. Server Source activation remains denied; this private method is not scheduled and cannot be triggered remotely. Full 1k/10k/100k and >=4GiB native E2E and GitLab delivery remain unverified. #1513 passed its own exact-head GitHub CI and final-gate before merger; native physical tests and GitLab delivery remain separate.
 
 **Delivery correction (2026-10-12):** L03-E0b was accepted and merged as [#1513](https://github.com/lazyxu/xdrive/pull/1513), `c5888f38c788dda3b59cd51c739d5f0205132d09`. The native quarantine helper remains unexposed to Renderer/IPC/Web and does not enable SourceRun, upload, canonical alias promotion or Mirror deletion. A follow-up validates lowercase ASCII hexadecimal evidence digests at the Agent boundary before preflight/write; this is defense in depth, not L03-E1 identity commitment.
+
+## L03-E0c · Owning-Agent private quarantined-intent recovery readback (PR validation)
+
+After L03-E0/#1502 and L03-E0b/#1513 merged, a successful POST may be ambiguous
+to its native Agent if the connection drops after the Server transaction.
+This bounded **read-only recovery prerequisite** reports which persisted
+`quarantined` evidence IDs exist for an exact owning Source/device/Root,
+Source revision and pair of sealed inventory generation digests.
+
+- Only credential-verified owning Agent callers may POST
+  `/api/v1/sources/:id/local-identity/commit-intents/page`. The revision is
+  mandatory in `If-Match`; the two 64-digit lowercase hex generation digests,
+  numeric `after_evidence_id` and 1–16 page size are accepted in a strictly
+  bounded request body, not URL query parameters. Transactional read repeats
+  device-first revocation, Source and bound Root proofs, paused local-Push
+  state and revision fencing, then reads **only** quarantined rows in ascending
+  evidence-ID order using limit+1 keyset pagination. Old revisions, different
+  devices/Roots and other generation pairs cannot access each other's rows.
+- The private response contains only Source ID, revision, ordered opaque
+  evidence IDs, cursor/has-more and three explicit hard-false authority flags.
+  It does **not** return paths, device credentials, Root identity, SourceItem IDs,
+  file hashes, CAS keys, freeform errors or any operation capability.
+  `private, no-store` and the exact revision ETag are required.
+- Dedicated Go Client transport validates response status, ETag, cache policy,
+  non-null/strictly increasing bounded IDs, coherent cursor and explicit
+  false `commit_supported`, `authoritative`, `missing_inference_safe`
+  flags. Browser, Renderer, Electron and Agent loopback IPC do not expose it.
+  This transport is **not** a scheduled/runnable background Agent recovery
+  loop yet; that requires a later local Root/journal revalidation call site.
+- Server integration and client negative tests cover owner JWT alone,
+  foreign same-account device, different account, Root mismatch, stale revision,
+  revoked credential, invalid inputs, cursor termination and missing or forged
+  success fields. Readback must not mutate SourceItem, alias, Node, CAS or runs.
+
+A readback ID confirms *only a previously stored quarantine proposal*.
+It is **never** evidence that live native bytes still match, physical CAS
+objects are durable, the proposal is eligible to commit, a file was uploaded,
+or missing files may be deleted. Any retry must independently re-run E0b's
+local checks and the Server's write transaction; actual L03-E1 promotion
+requires a separate transactional content-proven writer, while L03-F/G upload
+and crash recovery, L05 scheduled Agent work and L07 real-device benchmarks
+remain unimplemented. GitHub exact-head complete CI and final-gate are
+required before merging this stage; no GitLab pipeline or native 100k/4GiB
+acceptance is claimed.
