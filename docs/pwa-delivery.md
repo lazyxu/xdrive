@@ -171,3 +171,15 @@ Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入
 
 
 **S2B1 第二轮 Chrome 验收（2026-10-12）：** [#38248085397](https://github.com/lazyxu/xdrive/actions/runs/38248085397) 通过了服务端 socket 断线后的真实公开离线页、私人下载路径 network bypass；随后“恢复联网”步骤只调用同一带 hash 的 URL `page.goto()`，Chrome 将该动作保留在离线文档中，导致未显示登录入口。这属于测试夹具同文档导航而非真实 reload，不代表 SW 返回了错误内容。已在服务恢复 HTTP 200 后使用真正的 `page.reload({waitUntil:'load'})`，并新增源代码回归断言。新准确提交的浏览器 E2E 与完整 CI 仍须独立跑绿；公网证书/安装模式/移动真机仍 not-run。
+
+
+## PWA-S2B2 · Chrome 真实登录与 Files 深链接恢复（2026-10-12）
+
+**交付目标：** 复用 S2B1 的生产 Web/真实 Chrome 与 Server-side 隔离 loopback fixture，增加可选 XD_PWA_S2B_AUTH=1 模式。在桌面 1280px 和 Android UA/390px 触控模拟的实际浏览器里，保持同一登录前 Files 深链接 #/app/files?dir=42；通过真实登录页面输入一组**仅供 CI 使用的虚构账号**，由严格限定的假 Server 响应模拟 AuthResult 及受保护的 Node/Children、任务摘要和 FileOperations GET，必须发送正确的 Bearer fixture token 才能访问私有 URL。登录成功后实际进入同一个 Files 路由，冷刷新后已授权会话与目标目录恢复；SW 仍只能缓存公开 /offline.html，不能把认证数据/票据写入 CacheStorage，浏览器 profile 不归档。
+
+**安全隔离：** 所有 token/密码均为测试专用固定假值，没有真实服务器、有效身份或 CAS 凭据；只上报请求计数和验收布尔值，CI 只归档 summary.json，不归档浏览器登录数据、HTTP 正文或下载票据。未在自建生产 HTTPS 或真实 iOS/Android/PWA 安装模式运行，不能推断系统凭证链、Cookie/权限、浏览器系统文件管理能力和网络恢复完整可靠性。此阶段不新增 Web/Mobile Web API，也不改 Server 登录/权限契约；复用现有 React AuthView→FileManager 及共享虚拟列表。
+
+**验收：** 新 desktop/tests/pwa-auth-deeplink-contract.cjs、独立 .github/workflows/pwa-s2b-auth.yml，代码/测试应作为严格单提交挂在 S2B1 的 HEAD 上，等待父 PR 线性合并再重新构建到 master、跑本分支完整 CI 与真实浏览器 CI。登录后的图库、Viewer、分享/浏览器返回栈以及 Desktop Chrome/Edge 系统安装冷启动仍属后续 S2B/S5，实际 iOS 27 Safari、Android 安装版真机 not-run。
+
+
+**S2B2 第一次真实浏览器验收（2026-10-12）：** [专项作业 #38252576485](https://github.com/lazyxu/xdrive/actions/runs/38252576485) 中 Chrome 已完成真实表单登录、11 次授权目标目录 Node 请求、冷刷新及相同深链接保留，且无 401 或凭据泄露；但严格测试 fixture 漏列了 Web 文件管理器默认加载的 `GET /api/v1/sources`、`GET /api/v1/file-recent` 与目录访问 recent-touch，返回 501 使 `authUnknown=4`，最终拒绝验收。已仅按现有共享 XDriveApi 定义为这些**固定且有限**的路径增加明确允许条目，不放行任意私有 API 或写操作；未知端点仍返回 501，并只记录测试本地 HTTP 方法+静态 pathname 供准确排查，绝不写入 token、Cookie、查询字符串或敏感文件路径。新提交的完整 PR CI 与专项 Chrome 必须全部重新通过才合并，仍不构成实机 iOS/Android 安装验证。
