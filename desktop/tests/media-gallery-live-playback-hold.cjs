@@ -328,3 +328,88 @@ test('P0-L7 still readiness loss immediately hides motion and stops playback wit
   assert.equal(plays, previousPlays + 1, 'new intentional hold resumes cached motion')
   await act(async () => { release(tree); tree.unmount() })
 })
+
+
+test('P0-L8 manual hold retries a failed motion ticket exactly once without automatic polling', async () => {
+  let loads = 0
+  let plays = 0
+  const loader = async () => {
+    loads += 1
+    if (loads === 1) throw Error('transient signed ticket lookup failure')
+    return 'https://example.invalid/live-recovered.mov'
+  }
+  const player = makePlayer(() => { plays++; return Promise.resolve() })
+  let tree
+  await act(async () => { tree = mount(player, loader, 'still:recover'); await flush() })
+  assert.equal(loads, 0, 'idle Viewer must not request motion')
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 1)
+  assert.equal(label(tree), '实况不可用')
+  assert.equal(plays, 0)
+  // A rejected Promise alone cannot schedule a second ticket request.
+  await act(async () => { await flush() })
+  assert.equal(loads, 1, 'never automatically retry under a continued hold')
+  await act(async () => { release(tree); await flush() })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 2, 'the next explicit press triggers exactly one new ticket')
+  assert.equal(label(tree), '实况')
+  assert.equal(plays, 1)
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { release(tree); tree.unmount() })
+})
+
+test('P0-L8 null ticket result can recover on a new press and old attempt progress is fenced', async () => {
+  const progressHandlers = []
+  const second = deferred()
+  let loads = 0
+  const player = makePlayer(() => Promise.resolve())
+  const loader = onProgress => {
+    progressHandlers.push(onProgress)
+    loads++
+    return loads === 1 ? Promise.resolve(null) : second.promise
+  }
+  let tree
+  await act(async () => { tree = mount(player, loader, 'still:progress'); await flush() })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(label(tree), '实况不可用')
+  await act(async () => { release(tree); press(tree); await flush() })
+  assert.equal(loads, 2)
+  assert.equal(surface(tree).props['aria-busy'], true)
+  await act(async () => {
+    progressHandlers[1](12, 100)
+    progressHandlers[0](96, 100)
+    await flush()
+  })
+  const current = tree.root.findAll(x => x.type === 'mounted-live-progress')[0]
+  assert.equal(current.props.loadedBytes, 12, 'completed old request must not overwrite the retry progress')
+  await act(async () => { release(tree); await flush() })
+  await act(async () => {
+    second.resolve('https://example.invalid/late-recovery.mov')
+    await flush()
+  })
+  assert.equal(loads, 2)
+  assert.equal(video(tree).props.preload, 'none')
+  assert.equal(video(tree).props.sx.opacity, 0, 'a result after release cannot autoplay')
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 2, 'recovered signed URL is reused instead of requested again')
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { release(tree); tree.unmount() })
+})
+
+test('P0-L8 a true current video decoding failure still does not reissue a motion ticket', async () => {
+  let loads = 0
+  let plays = 0
+  const player = makePlayer(() => { plays++; return Promise.reject(new Error('unsupported HEVC codec')) })
+  let tree
+  await act(async () => {
+    tree = mount(player, async () => { loads++; return 'https://example.invalid/invalid-codec.mov' })
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(label(tree), '实况不可用')
+  await act(async () => { release(tree); press(tree); await flush() })
+  assert.equal(loads, 1, 'media decode error is not mistaken for a transient ticket failure')
+  assert.equal(plays, 1, 'unsupported video is not replayed without replacing the source')
+  assert.equal(video(tree).props.sx.opacity, 0)
+  await act(async () => { release(tree); tree.unmount() })
+})

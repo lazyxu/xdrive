@@ -684,3 +684,12 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 
 
 **P0-L7 首轮精确 CI 首红与修订（2026-10-12）：** [PR #1524 第一轮 CI #38225608191](https://github.com/lazyxu/xdrive/actions/runs/38225608191) 的 Desktop tests 实际 2362 pass / 1 fail / 1 skipped；三个新增 P0-L7 生产 React mounted 回归全部通过，唯一失败是 `desktop/tests/shared-open-preview.cjs` 仍断言旧的 `preload="metadata"` 常量。这是与新的“按住时 metadata、松手后 none”产品合同冲突的过期静态夹具，不是媒体组件执行失败。仅把该断言改为明确匹配新条件式，同时保留共享 LIVP URL 释放和有界请求检查；保留单工作提交，完整 CI 必须对修订后的精确 SHA 重新运行。
+
+
+## P0-L8 · 实况视频票据失败后的显式重试与旧进度隔离（2026-10-12）
+
+**现象与源码根因（不替代三张灰色 still 原件的诊断）：** 在共用 `XDriveLivePhotoSurface` 的首次按住中，`loadMotion` 若返回 null 或 Promise reject（例如临时网络异常），旧代码会将 `failed=true`，却始终保留 `loadStartedRef.current=true`；`requestMotion` 随后因 `failed` 直接返回。即使网络恢复，用户松手后再次按住也无法恢复，不得用重新安装/刷新整个 Gallery 的方式掩盖这个状态错误。
+
+**修复与安全边界：** 仅被当前 source/revision 证实的一次 motion-ticket 获取失败可标记为“下一次明确按住可重试”；完成的失败请求必须释放 inflight 标记。随后新按住才发起**至多一个**同一 Web REST/桌面 Agent 授权请求，不做定时、自动、递归或指数退避重试，不获取整段视频 Blob；请求中途松手与重复按住仍复用在途票据。用单源的单次请求序号围住所有进度、成功、失败回调，禁止前一次已结束的进度覆盖新请求。已获得签名 URL 的真实视频解码/编码失败仍保持终止状态，不能当成短暂票据失败无限重播；切换 Node/sourceKey 清除旧请求身份与重试权限。保持原图库 still 封面、52px 全屏 App Frame、同一 Web/Mobile Web `MediaGalleryDataSource`、共享虚拟化集合、用户授权、原有 Range 传输和音频能力。
+
+**验收：** 扩充既有实际生产共享 React 组件挂载测试，核对首按请求失败、长按不自动重试、松手后新按恢复、null 结果恢复、旧进度回调忽略、迟到 URL 不自动播放、真正 codec 失败不重复取票据，以及 Web/Mobile Web 统一 Viewer/虚拟化/REST 传输的回归。完整源准确 GitHub CI 和 Final Gate 是合并条件；实际 iOS 27 Safari/PWA/VoiceOver 同视口截图与用户真实三张灰色 LIVP/HEIC still 原件恢复仍单独待验。服务端静态图 CAS / `MediaMetadata.index_error` / 真实缩略图 HTTP 状态仍需实证才能判定具体截图根因。
