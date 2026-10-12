@@ -10,6 +10,7 @@ export type XDriveMediaThumbnailSourceLoader = (
   signal?: AbortSignal,
   revision?: number,
   onProgress?: XDriveByteProgressHandler,
+  bypassHTTPCache?: boolean,
 ) => Promise<string | null>
 
 type ThumbnailProgressSubscriber = {
@@ -27,6 +28,8 @@ type ThumbnailTask = {
   resolve: (value: string | null) => void
   reject: (error: unknown) => void
   cancelled: boolean
+  /** True only during an explicit visible repair of a decoder-proven bad URL. */
+  bypassHTTPCache: boolean
   controller: AbortController
   progressListeners: Set<ThumbnailProgressSubscriber>
 }
@@ -50,6 +53,20 @@ export class XDriveMediaThumbnailScheduler {
   private readonly queued = new Map<string, ThumbnailTask>()
   private readonly inFlight = new Map<string, ThumbnailTask>()
   private readonly cache = new Map<string, string>()
+  // Bounded to the existing thumbnail LRU capacity. The first genuine DOM
+  // decode error permits ONE future uncached attempt; another decode error
+  // for that same Node:revision exhausts it. Never launch work in onError.
+  private readonly decodeRecovery = new Map<string, 'pending' | 'attempted' | 'exhausted'>()
+
+  private rememberDecodeRecovery(key: string, state: 'pending' | 'attempted' | 'exhausted') {
+    this.decodeRecovery.delete(key)
+    this.decodeRecovery.set(key, state)
+    while (this.decodeRecovery.size > this.maxCacheEntries) {
+      const oldest = this.decodeRecovery.keys().next().value
+      if (typeof oldest !== 'string') break
+      this.decodeRecovery.delete(oldest)
+    }
+  }
 
   constructor(
     loader: XDriveMediaThumbnailSourceLoader,
@@ -81,6 +98,9 @@ export class XDriveMediaThumbnailScheduler {
     }
     const currentRevision = Number.isSafeInteger(revision) && revision > 0 ? revision : 0
     const key = `${nodeID}:${currentRevision}`
+    // A real browser decode failure after the one uncached retry is terminal
+    // for this mounted Gallery session. Changing revision gets a new identity.
+    if (this.decodeRecovery.get(key) === 'exhausted') return Promise.resolve(null)
 
     // A new source revision supersedes only the old requests for this Node,
     // not independent requests for other Nodes or the durable media indexer.
@@ -135,6 +155,7 @@ export class XDriveMediaThumbnailScheduler {
       resolve,
       reject,
       cancelled: false,
+      bypassHTTPCache: false,
       controller: new AbortController(),
       progressListeners: new Set(),
     }
@@ -159,6 +180,14 @@ export class XDriveMediaThumbnailScheduler {
     if (this.cache.get(key) !== failedURL) return false
     this.cache.delete(key)
     this.revokeURL(failedURL)
+    const state = this.decodeRecovery.get(key)
+    if (state === 'attempted') {
+      // The fresh bytes also failed in the actual browser image decoder.
+      // No third GET for this Node/revision from further virtual remounts.
+      this.rememberDecodeRecovery(key, 'exhausted')
+    } else if (!state) {
+      this.rememberDecodeRecovery(key, 'pending')
+    }
     return true
   }
 
@@ -184,6 +213,7 @@ export class XDriveMediaThumbnailScheduler {
     this.inFlight.clear()
     for (const url of this.cache.values()) this.revokeURL(url)
     this.cache.clear()
+    this.decodeRecovery.clear()
   }
 
   private trackProgress(
@@ -212,6 +242,11 @@ export class XDriveMediaThumbnailScheduler {
   private cancelTask(task: ThumbnailTask) {
     if (task.cancelled) return
     task.cancelled = true
+    if (task.bypassHTTPCache && this.decodeRecovery.get(task.key) === 'attempted') {
+      // The viewport abandoned the uncached request before it completed.
+      // Give its next genuinely visible mount the same single opportunity.
+      this.rememberDecodeRecovery(task.key, 'pending')
+    }
     this.clearProgress(task)
     task.controller.abort()
     if (this.queued.get(task.key) === task) this.queued.delete(task.key)
@@ -254,6 +289,8 @@ export class XDriveMediaThumbnailScheduler {
       if (task.cancelled) continue
       this.active += 1
       this.inFlight.set(task.key, task)
+      task.bypassHTTPCache = this.decodeRecovery.get(task.key) === 'pending'
+      if (task.bypassHTTPCache) this.rememberDecodeRecovery(task.key, 'attempted')
       // Prefetch-only work with no UI subscriber uses the native Blob fast path;
       // subscribers arriving mid-request still get its final image, but do not
       // retroactively turn a no-observer HTTP response into a counted stream.
@@ -265,16 +302,23 @@ export class XDriveMediaThumbnailScheduler {
             }
           }
         : undefined
-      void this.loader(task.nodeID, task.controller.signal, task.revision || undefined, notify)
+      void this.loader(
+        task.nodeID, task.controller.signal, task.revision || undefined,
+        notify, task.bypassHTTPCache || undefined,
+      )
         .then((url) => {
           if (task.cancelled || this.disposed) {
             if (url) this.revokeURL(url)
             return
           }
+          // The bytes were delivered; a later actual image onError decides
+          // whether the already-attempted recovery has exhausted its chance.
+          task.bypassHTTPCache = false
           if (url) this.cacheURL(task.key, url)
           task.resolve(url)
         })
         .catch((error) => {
+          task.bypassHTTPCache = false
           if (!task.cancelled && !this.disposed) task.reject(error)
         })
         .finally(() => {

@@ -175,7 +175,7 @@ import type {
   XDriveMediaThumbnailPriority,
 } from './MediaGalleryThumbnailScheduler'
 
-export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<string | null>
+export type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler, bypassHTTPCache?: boolean) => Promise<string | null>
 export type MediaMotionLoader = (
   nodeID: number,
   onProgress?: XDriveByteProgressHandler,

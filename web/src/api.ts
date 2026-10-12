@@ -1922,7 +1922,7 @@ export class XDriveApi {
     )
   }
 
-  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number, alphaMask?: string | null) => void): Promise<Blob> {
+  async mediaThumbnail(nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: (loaded: number, total?: number, alphaMask?: string | null) => void, bypassHTTPCache = false): Promise<Blob> {
     await this.ensureFresh(signal)
     signal?.throwIfAborted()
     // Known source revisions get immutable browser-cache URL identities.
@@ -1939,20 +1939,25 @@ export class XDriveApi {
         : undefined,
       signal,
     })
-    let response = await send()
+    // The shared Scheduler allows this only after a real browser <img> decode
+    // error, on its NEXT visible mount, not from a speculative prefetch.
+    // Preserve the exact authenticated path/revision and request AbortSignal.
+    let response = await send(bypassHTTPCache ? 'no-store' : undefined)
     if (response.status === 401 && this.session.refreshToken) {
       await this.refresh(true, signal)
       signal?.throwIfAborted()
-      response = await send()
+      response = await send(bypassHTTPCache ? 'no-store' : undefined)
     }
     // Only the Server-directed 503 path retries; never replay a permanent
     // missing/unsupported/revision-conflict result. One bounded retry max.
     // A Server-directed 503 already gets one bounded uncached retry.
     // Never turn that into a third request if its resulting bytes are bad.
     const retried503 = response.status === 503
-    response = await xDriveThumbnailRetryAfter503(
-      response, () => send('no-store'), signal,
-    )
+    if (!bypassHTTPCache) {
+      response = await xDriveThumbnailRetryAfter503(
+        response, () => send('no-store'), signal,
+      )
+    }
     if (!response.ok) {
       throw new ApiError(
         response.status,
@@ -1963,7 +1968,9 @@ export class XDriveApi {
     if (await xDriveThumbnailHasSafeImageEnvelope(blob, response.headers.get('Content-Type'), signal)) {
       return blob
     }
-    if (retried503) {
+    if (retried503 || bypassHTTPCache) {
+      // A forced uncached HTTP200 must not initiate yet another recovery
+      // request: an actual DOM decoder will settle success/failure later.
       throw new ApiError(502, 'Invalid thumbnail image bytes')
     }
     // A formerly cached HTTP 200 may be broken although the Server's

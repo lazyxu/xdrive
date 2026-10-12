@@ -110,7 +110,7 @@ test('P0-L4b Web/Mobile uses same REST transport, forces uncached second GET and
   assert.match(api, /const send = \(cacheOverride\?: RequestCache\) => fetch/)
   assert.match(api, /cache: cacheOverride \?\? \(sourceRevision \? 'default' : 'no-cache'\)/)
   assert.match(api, /response = await xDriveThumbnailRetryAfter503\(\s*response, \(\) => send\('no-store'\), signal/)
-  assert.match(web, /loadThumbnail: \(nodeID, signal, revision, onProgress\) => api\.mediaThumbnail/)
+  assert.match(web, /loadThumbnail: \(nodeID, signal, revision, onProgress, bypassHTTPCache\) => api\.mediaThumbnail\(nodeID, signal, revision, onProgress, bypassHTTPCache\)/)
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
   assert.match(gallery, /<MediaVirtualTimeline/)

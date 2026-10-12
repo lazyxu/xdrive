@@ -143,7 +143,7 @@ test('P0-L12 preserves shared Web/Mobile Gallery and iOS27 App Frame without a s
   const web = read('web/src/mediaGalleryAdapter.ts')
   const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
   const scheduler = read('ui/shared/src/mui/MediaGalleryThumbnailScheduler.ts')
-  assert.match(web, /loadThumbnail: \(nodeID, signal, revision, onProgress\) => api\.mediaThumbnail/)
+  assert.match(web, /loadThumbnail: \(nodeID, signal, revision, onProgress, bypassHTTPCache\) => api\.mediaThumbnail\(nodeID, signal, revision, onProgress, bypassHTTPCache\)/)
   assert.match(api, /const send = \(cacheOverride\?: RequestCache\) => fetch/)
   assert.match(api, /response = await send\('no-store'\)/)
   assert.match(api, /const retried503 = response\.status === 503/)
