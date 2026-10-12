@@ -36,6 +36,10 @@ export type XDriveServiceDependency = {
   // Only Caddy reports these trusted host observations, never the domain itself.
   https_configured?: boolean
   local_tls_state?: 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  // Trusted Host Manager observation of one fixed photo-face container;
+  // NEVER a saved/effective model revision or a model Info health response.
+  photo_host_runtime_state?: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
+  photo_host_profile_configured?: boolean
 }
 
 export type XDriveServiceDependenciesSnapshot = {

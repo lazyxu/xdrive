@@ -2534,6 +2534,8 @@ jobs:
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
           bash scripts/test-caddy-host-status.sh
+          bash -n scripts/test-photo-intelligence-host-status.sh
+          bash scripts/test-photo-intelligence-host-status.sh
           bash -n scripts/server-doctor.sh
           bash -n scripts/test-server-doctor.sh
           bash scripts/test-server-doctor.sh

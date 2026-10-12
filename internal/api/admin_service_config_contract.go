@@ -16,10 +16,10 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。其他 Server 实例每 30 秒尝试读取最新匹配距离、校验现有只读数据集并热生效；失败保留旧索引并显示待生效。状态仅代表当前实例，不是集群确认；GeoNames 仅提供地名标签"
 	case "photo-face", "photo-smart", "photo-semantic":
 		return "deployment", "controlled-restart",
-			"模型容器、Socket 和资源参数仍由受控部署管理；本页可独立配置人脸、视觉/OCR、语义、人物聚类四类自动任务的准入策略并热生效，不会启动/停止容器或取消运行中任务"
+			"模型容器、Socket 和资源参数仍由受控部署管理；Host Manager 只读核验固定 photo-face 容器运行与健康状态，模型 Info 独立核验。本页可配置自动任务准入，不会启动/停止容器。实际启停仍需受限审计、回滚和宿主效果证明"
 	case "photo-creative":
 		return "deployment", "controlled-restart",
-			"统一使用可选 photo-intelligence 容器；配置 COMPOSE_PROFILES、XD_PHOTO_FACE_ANALYZER_SOCKET 及模型镜像。容器/Socket 变更需部署操作；本页只检测实际模型连接，不假装开关可启动容器"
+			"统一使用可选 photo-intelligence 容器；Host Manager 只读观察部署 Profile 与固定 photo-face 容器状态，创作模型 Info 独立核验。在线启停和模型镜像/Socket 变更仍缺受限执行、审计与安全回滚，不提供虚假开关"
 	case "media-worker":
 		return "in-app", "controlled-restart",
 			"本页可版本化保存启停目标、内存上限（256–4096 MiB）、CPU 上限（250–4000 mCPU）和 PID 上限（64–1024）；保存不会直接操作容器。仅受限 Host Manager 可单独应用并重建 media-worker；仅在期望修订与实际启停状态、Docker 内存/CPU/PID 限制和 FFmpeg/FFprobe 探针全部匹配时确认生效。旧版控制器和配额漂移不得显示成功。镜像及挂载仍由部署管理，不重启其他服务。"
