@@ -2450,6 +2450,7 @@ export class XDriveApi {
     onProgress?: (percent: number) => void,
     transferID = '',
     groupID = '',
+    expectedResumeManifestSHA256 = '',
   ): Promise<XDriveUploadResult> {
     const session = this.transferContext()
     const managedExternally = Boolean(transferID)
@@ -2460,6 +2461,8 @@ export class XDriveApi {
       kind: 'upload',
       bytesTotal: file.size,
       speedSource: 'client',
+      resumeFileLastModified: conflictPolicy === 'fail' ? file.lastModified : undefined,
+      resumeConflictPolicy: conflictPolicy === 'fail' ? 'fail' : undefined,
     })
     const owned = managedExternally ? null : this.cancellableTransferContext(activeTransferID, session)
     const groupOwner = groupID ? webUploadGroupOwners.get(groupID) : undefined
@@ -2482,6 +2485,20 @@ export class XDriveApi {
         const start = index * chunkSize
         const end = Math.min(file.size, start + chunkSize)
         chunkHashes.push(await sha256Blob(file.slice(start, end), hashScratch))
+      }
+
+      // A small ordered chunk-manifest digest binds a resumed file to its
+      // original bytes before any Server mutation or resumed chunk request.
+      const manifestSHA256 = await sha256Buffer(
+        new TextEncoder().encode(chunkHashes.join('\n')).buffer,
+      )
+      tracking.check()
+      if (expectedResumeManifestSHA256 &&
+          manifestSHA256 !== expectedResumeManifestSHA256) {
+        throw new Error('所选文件内容与原上传不同；未向服务器发起续传请求。')
+      }
+      if (!managedExternally && conflictPolicy === 'fail') {
+        webTransferStore.setUploadResumeManifest(activeTransferID, manifestSHA256)
       }
 
       const resumeIdentity = conflictPolicy === 'fail'

@@ -31,6 +31,12 @@ export type XDriveTransferTask = {
   // Server-resolved cloud location; never infer this from the local "path".
   cloud_parent_id?: number
   cloud_node_id?: number
+  // Web-only, account-scoped resume metadata: no file bytes, token or local path.
+  // Only a recently interrupted direct fail-on-conflict upload may be reselected.
+  resume_file_last_modified?: number
+  resume_conflict_policy?: string
+  // Digest of the ordered per-chunk SHA-256 manifest, not cached file bytes.
+  resume_manifest_sha256?: string
   // Set by owning Desktop Agent only; never inferred from a filename.
   local_revealable?: boolean
   kind: 'upload' | 'download' | 'hydration' | 'dehydration' | string

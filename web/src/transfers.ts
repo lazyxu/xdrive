@@ -1,5 +1,6 @@
 import { xDriveNormalizeTransferTask, xDriveTransferActive } from '../../ui/shared/src'
 import type { XDriveTransferTask } from '../../ui/shared/src'
+import { xDriveCanResumeBrowserUpload } from './pwaUploadResume'
 
 const STORAGE_KEY = 'xdrive.web.transfer_history'
 const MAX_HISTORY = 200
@@ -52,8 +53,12 @@ function loadTransferHistory(storageKey = STORAGE_KEY): XDriveTransferTask[] {
         .filter((item): item is XDriveTransferTask => Boolean(item && typeof item.id === 'string'))
         .map((item) => {
           const normalized = xDriveNormalizeTransferTask(item)
-          if (!xDriveTransferActive(normalized)) return normalized
-          return {
+          if (!xDriveTransferActive(normalized)) {
+            return normalized.state === 'failed'
+              ? { ...normalized, retryable: xDriveCanResumeBrowserUpload(normalized, now) }
+              : normalized
+          }
+          const interrupted = {
             ...normalized,
             state: 'failed',
             instant_bytes_per_second: 0,
@@ -67,6 +72,7 @@ function loadTransferHistory(storageKey = STORAGE_KEY): XDriveTransferTask[] {
             updated_at: nowISO(now),
             completed_at: nowISO(now),
           }
+          return { ...interrupted, retryable: xDriveCanResumeBrowserUpload(interrupted, now) }
         }),
     )
   } catch {
@@ -187,6 +193,8 @@ class WebTransferStore {
     kind: 'upload' | 'download'
     bytesTotal?: number
     speedSource?: 'client' | 'server'
+    resumeFileLastModified?: number
+    resumeConflictPolicy?: string
   }) {
     const now = Date.now()
     const id = `web-${now}-${++this.sequence}`
@@ -200,6 +208,8 @@ class WebTransferStore {
       path: input.path || input.fileName,
       cloud_parent_id: input.cloudParentID,
       cloud_node_id: input.cloudNodeID,
+      resume_file_last_modified: input.resumeFileLastModified,
+      resume_conflict_policy: input.resumeConflictPolicy,
       kind: input.kind,
       direction: input.kind,
       state: 'running',
@@ -577,9 +587,30 @@ class WebTransferStore {
       instant_bytes_per_second: 0,
       elapsed_ms: Math.max(0, now - new Date(item.started_at).getTime()),
       error: error instanceof Error ? error.message : String(error || '传输失败'),
-      retryable: false,
+      retryable: xDriveCanResumeBrowserUpload({ ...item, state: 'failed' }, now),
       updated_at: nowISO(now),
       completed_at: nowISO(now),
+    }))
+  }
+
+  setUploadResumeManifest(id: string, manifestSHA256: string) {
+    // Only an eligible direct file upload may persist the tiny content digest.
+    if (!/^[0-9a-f]{64}$/.test(manifestSHA256)) return
+    this.patch(id, (task) => ({
+      ...task,
+      resume_manifest_sha256: task.direction === 'upload' &&
+        task.resume_conflict_policy === 'fail' ? manifestSHA256 : undefined,
+    }))
+  }
+
+  markUploadReselected(id: string) {
+    this.patch(id, (task) => ({
+      ...task,
+      // Clearing the manifest makes this confirmed old attempt ineligible
+      // even after loadTransferHistory() recalculates retryable on refresh.
+      resume_manifest_sha256: undefined,
+      retryable: false,
+      error: '原文件已核验并完成恢复，请查看新的传输记录。',
     }))
   }
 

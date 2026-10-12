@@ -7,11 +7,25 @@ const ts = require('typescript')
 
 const repo = path.join(__dirname, '..', '..')
 
+// Evaluate the actual production resume eligibility helper, not a second
+// mock implementation, before loading the isolated TransferStore VM.
+function loadPwaUploadResume() {
+  const filename = path.join(repo, 'web', 'src', 'pwaUploadResume.ts')
+  const compiled = ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
+    fileName: filename,
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  const module = { exports: {} }
+  new Function('module', 'exports', compiled)(module, module.exports)
+  return module.exports.xDriveCanResumeBrowserUpload
+}
+
 function loadWebTransferStore() {
   let source = fs.readFileSync(path.join(repo, 'web', 'src', 'transfers.ts'), 'utf8')
   source = source
     .replace("import { xDriveNormalizeTransferTask, xDriveTransferActive } from '../../ui/shared/src'\n", '')
     .replace("import type { XDriveTransferTask } from '../../ui/shared/src'\n", '')
+    .replace("import { xDriveCanResumeBrowserUpload } from './pwaUploadResume'\n", '')
     .replace(
       'export const webTransferStore = new WebTransferStore()',
       'globalThis.__WebTransferStore = WebTransferStore',
@@ -42,6 +56,7 @@ function loadWebTransferStore() {
       },
     },
     xDriveNormalizeTransferTask: (item) => item,
+    xDriveCanResumeBrowserUpload: loadPwaUploadResume(),
     xDriveTransferActive: (item) => (
       item.state === 'queued' ||
       item.state === 'running' ||
