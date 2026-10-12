@@ -3360,6 +3360,19 @@ function MediaTile({
   const video = item.metadata.media_kind === 'video'
   const livePhoto = Boolean(item.live_photo || item.asset_kind === 'live_photo')
   const mediaBadgeLabel = mediaAssetChipLabel(item)
+  // Only an actual loaded still earns a visible Live badge. Keep the media
+  // identity on the focusable tile even if its thumbnail is unavailable.
+  // Include revision so a recycled/updated tile never shows a stale glyph.
+  const thumbnailIdentity = `${item.node.id}:${item.node.revision}`
+  const [readyThumbnailIdentity, setReadyThumbnailIdentity] = useState('')
+  const onThumbnailReadyChange = useCallback((ready: boolean) => {
+    setReadyThumbnailIdentity((current) => ready
+      ? thumbnailIdentity
+      : current === thumbnailIdentity ? '' : current)
+  }, [thumbnailIdentity])
+  const showMediaBadge = Boolean(mediaBadgeLabel && (
+    !livePhoto || readyThumbnailIdentity === thumbnailIdentity
+  ))
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
   const openPreview = () => onPreview(item)
 
@@ -3451,6 +3464,7 @@ function MediaTile({
           loadThumbnail={effectiveThumbnailLoader}
           fallback={xDriveMediaFallback(item.metadata.media_kind)}
           revokeOnDispose={!thumbnailScheduler}
+          onImageReadyChange={livePhoto ? onThumbnailReadyChange : undefined}
         />
       )}
       {(selectionMode || selectedForAction) ? (
@@ -3513,7 +3527,7 @@ function MediaTile({
           </IconButton>
         </Tooltip>
       ) : null}
-      {!selectionMode && (recommendedForCleanup || mediaBadgeLabel || (item.fold_member_ids?.length ?? 0) > 1 || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
+      {!selectionMode && (recommendedForCleanup || showMediaBadge || (item.fold_member_ids?.length ?? 0) > 1 || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
         <Stack
           spacing={0.5}
           alignItems="flex-end"
@@ -3556,7 +3570,7 @@ function MediaTile({
               }}
             />
           ) : null}
-          {mediaBadgeLabel ? (
+          {showMediaBadge ? (
             livePhoto ? (
               // At six-column Year density a full "实况" MUI Chip can be wider
               // than its square tile. The compact SF glyph keeps the real
