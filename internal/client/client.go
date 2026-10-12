@@ -666,6 +666,7 @@ type AdminPhotoHostPreflight struct {
 	ModelInfoChecks          []AdminPhotoHostModelInfoCheck `json:"model_info_checks"`
 	ModelInstanceCoherent    bool                           `json:"model_instance_coherent"`
 	DockerHealthcheckMatched bool                           `json:"docker_healthcheck_matched"`
+	SocketOwnerVerified      bool                           `json:"socket_owner_verified"`
 }
 
 type AdminPhotoHostApplyInput struct {

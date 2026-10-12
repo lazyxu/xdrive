@@ -206,3 +206,38 @@ func TestPhotoHostFixedHealthcheckDigestMustBeFreshAndWellFormed(t *testing.T) {
 		t.Fatal("stale host healthcheck digest became trusted")
 	}
 }
+
+func TestPhotoHostSocketOwnerStatusIsPrivateAndFailClosed(t *testing.T) {
+	dir := t.TempDir()
+	srv := &Server{HostControlDir: dir}
+	if err := os.WriteFile(filepath.Join(dir, "heartbeat"), []byte("trusted"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, photoIntelligenceHostStatusName)
+	write := func(value string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(value), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"state":"healthy","profile_configured":true,"socket_owner_verified":true}`)
+	observed, ok := srv.readPhotoIntelligenceHostStatus()
+	if !ok || !observed.socketOwned {
+		t.Fatalf("fresh private host ownership lost: %+v %v", observed, ok)
+	}
+	write(`{"state":"healthy","profile_configured":true}`)
+	legacy, ok := srv.readPhotoIntelligenceHostStatus()
+	if !ok || legacy.socketOwned {
+		t.Fatalf("legacy runner invented owner evidence: %+v", legacy)
+	}
+	for _, invalid := range []string{
+		`{"state":"unhealthy","profile_configured":true,"socket_owner_verified":true}`,
+		`{"state":"healthy","profile_configured":true,"socket_owner_verified":"true"}`,
+		`{"state":"stopped","profile_configured":true,"socket_owner_verified":true}`,
+	} {
+		write(invalid)
+		if _, ok := srv.readPhotoIntelligenceHostStatus(); ok {
+			t.Fatal("invalid/impossible owner proof accepted")
+		}
+	}
+}

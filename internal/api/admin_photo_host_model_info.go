@@ -128,6 +128,12 @@ func photoHostDockerHealthcheckMatched(checks []photoHostModelInfoCheck, host ph
 	return host.sessionDigest == hex.EncodeToString(sum[:])
 }
 
+// Kernel evidence of the fixed Docker main PID's listening Socket FD is
+// additive to, never a replacement for, four Info + healthcheck coherence.
+func photoHostDockerSocketOwnerVerified(checks []photoHostModelInfoCheck, host photoIntelligenceHostStatus) bool {
+	return host.socketOwned && photoHostDockerHealthcheckMatched(checks, host)
+}
+
 func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelInfoCheck {
 	if s == nil {
 		return unverifiedPhotoHostModelInfoChecks()
