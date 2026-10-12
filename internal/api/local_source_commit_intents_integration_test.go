@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
+	"gorm.io/gorm"
 )
 
 func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t *testing.T) {
@@ -327,6 +330,58 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 	tamperOutOfBand("xyz")
 	checkContent(ownerJWT, copyProof(), string(contentJSON), http.StatusConflict)
 	tamperOutOfBand(original)
+	// L03-E1b1b1a: an owning-device, paused Source may use the private
+	// same-transaction GC hash guard. It is DB-only, increments no references,
+	// changes no SourceItem/alias, and grants no identity commit authority.
+	guardContext, _ := gin.CreateTestContext(httptest.NewRecorder())
+	guardContext.Request = httptest.NewRequest(http.MethodPost, contentURI, nil)
+	for key, value := range proof {
+		guardContext.Request.Header.Set(key, value)
+	}
+	guardContext.Set("userID", owner.ID)
+	owningProof := localSourceExecutorProof{
+		DeviceID: deviceA.ID, RootID: rootID, SourceRevision: source.Revision,
+	}
+	guardContext.Set(localSourceExecutorContextKey, owningProof)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		snapshot, guardErr := server.checkLocalQuarantinedCASRetentionTx(
+			tx, guardContext, source.ID, source.Revision, owningProof, contentInput)
+		if guardErr != nil {
+			return guardErr
+		}
+		if snapshot.revision != source.Revision || len(snapshot.objects) != 1 ||
+			snapshot.objects[0].SHA256 != sha || snapshot.objects[0].Key != key {
+			return fmt.Errorf("CAS retention guard fabricated mismatched objects: %+v", snapshot)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("owning CAS retention guard rejected current canonical evidence: %v", err)
+	}
+	var retained meta.ContentBlob
+	if err := db.Where("sha256 = ?", sha).First(&retained).Error; err != nil ||
+		retained.RefCount != 1 || retained.State != meta.ContentBlobStateReady {
+		t.Fatalf("read-only retention guard modified canonical reference: %+v %v", retained, err)
+	}
+	guardContext.Set(localSourceExecutorContextKey, localSourceExecutorProof{
+		DeviceID: deviceB.ID, RootID: rootID, SourceRevision: source.Revision,
+	})
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, guardErr := server.checkLocalQuarantinedCASRetentionTx(
+			tx, guardContext, source.ID, source.Revision, owningProof, contentInput)
+		return guardErr
+	}); !errors.Is(err, errLocalSourceExecutorTransactionUnauthorized) {
+		t.Fatalf("foreign device could lock owning CAS for commit: %v", err)
+	}
+	guardContext.Set(localSourceExecutorContextKey, owningProof)
+	guardContext.Request.Header.Set("X-XDrive-Device-Token", otherSecret)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, guardErr := server.checkLocalQuarantinedCASRetentionTx(
+			tx, guardContext, source.ID, source.Revision, owningProof, contentInput)
+		return guardErr
+	}); !errors.Is(err, errLocalSourceExecutorTransactionUnauthorized) {
+		t.Fatalf("wrong credential could lock CAS for commit: %v", err)
+	}
+	guardContext.Request.Header.Set("X-XDrive-Device-Token", deviceSecret)
 	// A changed quarantine is not a reusable success token.
 	if err := db.Model(&meta.LocalSourceCommitIntent{}).
 		Where("source_id = ? AND evidence_id = ?", source.ID, evidence.ID).
