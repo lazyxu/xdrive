@@ -1,7 +1,8 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { Box, ButtonBase, Stack, Typography } from '@mui/material'
 import type { MediaItem } from '../models'
 import type { MediaThumbnailLoader } from './MediaGallery'
+import { XDriveMediaThumbnailScheduler } from './MediaGalleryThumbnailScheduler'
 import {
   XDriveMediaAsyncThumbnail,
   xDriveMediaFallback,
@@ -24,6 +25,29 @@ export function XDriveMediaGalleryFilmstrip({
   onSelect: (index: number) => void
 }) {
   const stripRef = useRef<HTMLDivElement>(null)
+  // A Viewer filmstrip owns its small bounded queue. Sharing the wall's
+  // Scheduler instance would let Grid/Timeline viewport retention cancel
+  // these independently visible Viewer thumbnails while the Viewer is open.
+  // Reuse the same recovery/caching implementation, never a second API.
+  const thumbnailScheduler = useMemo(
+    () => new XDriveMediaThumbnailScheduler(loadThumbnail, {
+      concurrency: 3,
+      maxCacheEntries: 32,
+    }),
+    [loadThumbnail],
+  )
+  const loadFilmstripThumbnail = useCallback<MediaThumbnailLoader>(
+    (nodeID, signal, revision, onProgress) =>
+      thumbnailScheduler.load(nodeID, 0, revision, onProgress, signal),
+    [thumbnailScheduler],
+  )
+  useEffect(() => {
+    thumbnailScheduler.setRetention(entries.map(({ item }) => item.node.id))
+  }, [entries, thumbnailScheduler])
+  useEffect(() => () => {
+    thumbnailScheduler.dispose()
+  }, [thumbnailScheduler])
+
   const entryIDs = entries.map(({ item }) => item.node.id).join(',')
   useLayoutEffect(() => {
     const strip = stripRef.current
@@ -93,7 +117,11 @@ export function XDriveMediaGalleryFilmstrip({
                 nodeID={item.metadata.has_thumbnail || item.metadata.media_kind === 'video' ? item.node.id : undefined}
                 revision={item.node.revision}
                 alt={item.node.name}
-                loadThumbnail={loadThumbnail}
+                loadThumbnail={loadFilmstripThumbnail}
+                revokeOnDispose={false}
+                onImageDecodeError={(failedURL) => {
+                  thumbnailScheduler.invalidateDecodedURL(item.node.id, item.node.revision, failedURL)
+                }}
                 fallback={xDriveMediaFallback(item.metadata.media_kind)}
               />
               {item.metadata.media_kind === 'video' ? (
