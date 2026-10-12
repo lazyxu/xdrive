@@ -107,6 +107,20 @@ func sourceRunContinueError(run meta.SyncRun) error {
 	return nil
 }
 
+// sourceRunContinueForCurrentSource fences all in-flight mutation endpoints.
+// Each caller owns a SHARE lock on the Source row before locking the SyncRun,
+// so a concurrent Source PATCH cannot slip between this check and the write.
+// Terminal historical finish remains a separate, already fenced contract.
+func sourceRunContinueForCurrentSource(source meta.Source, run meta.SyncRun) error {
+	if err := sourceRunContinueError(run); err != nil {
+		return err
+	}
+	if source.Revision != run.SourceRevision {
+		return errSourceExecutionConflict
+	}
+	return nil
+}
+
 func sourceRunSummaryUpdates(summary sourcepkg.Summary) map[string]any {
 	return map[string]any{
 		"scanned_items":           summary.ScannedItems,
@@ -330,7 +344,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if err := sourceRunContinueError(run); err != nil {
+		if err := sourceRunContinueForCurrentSource(source, run); err != nil {
 			return err
 		}
 		matcher, err := sourcepkg.CompileIgnoreRules(run.IgnoreRules)
@@ -511,7 +525,8 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		}
 
 		var source meta.Source
-		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
 		if source.Status != meta.SourceStatusActive {
@@ -522,7 +537,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if err := sourceRunContinueError(run); err != nil {
+		if err := sourceRunContinueForCurrentSource(source, run); err != nil {
 			return err
 		}
 		if run.Mode != meta.SourceRunModeSync || run.TargetNodeID == nil {
@@ -721,7 +736,8 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 		}
 
 		var source meta.Source
-		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
 		if source.Status != meta.SourceStatusActive {
@@ -733,7 +749,7 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if err := sourceRunContinueError(run); err != nil {
+		if err := sourceRunContinueForCurrentSource(source, run); err != nil {
 			return err
 		}
 
@@ -838,7 +854,8 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 		}
 
 		var source meta.Source
-		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
 		if source.Status != meta.SourceStatusActive {
@@ -849,7 +866,7 @@ func (s *Server) progressSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if err := sourceRunContinueError(run); err != nil {
+		if err := sourceRunContinueForCurrentSource(source, run); err != nil {
 			return err
 		}
 		updates := map[string]any{"updated_at": now}
@@ -989,7 +1006,8 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 		}
 
 		var source meta.Source
-		if err := tx.Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("id = ? AND owner_id = ?", sourceID, userID(c)).First(&source).Error; err != nil {
 			return err
 		}
 		if source.Status != meta.SourceStatusActive {
@@ -1000,7 +1018,7 @@ func (s *Server) heartbeatSourceRun(c *gin.Context) {
 			Where("id = ? AND source_id = ?", runID, sourceID).First(&run).Error; err != nil {
 			return err
 		}
-		if err := sourceRunContinueError(run); err != nil {
+		if err := sourceRunContinueForCurrentSource(source, run); err != nil {
 			return err
 		}
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
