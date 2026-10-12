@@ -875,6 +875,163 @@ func TestMediaGalleryIndexesOrdinaryFilesWithoutSourceMembership(t *testing.T) {
 		t.Fatalf("livp detail=%+v", liveDetail)
 	}
 
+	// P0-L9: an interrupted restore/migration may leave a valid, current
+	// canonical LIVP descriptor but lose its auxiliary byte-range rows. Before
+	// this fix the detail omitted both rows and a cold still thumbnail returned
+	// 415 even though has_thumbnail=true. Reconstruct ONLY this requested
+	// Node's current still/motion views, without reindexing the CAS original or
+	// writing extra rows during a read.
+	var originalLIVPResources []meta.MediaDerivedResource
+	if err := db.Where("node_id = ?", liveNode.ID).
+		Order("role ASC").Find(&originalLIVPResources).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(originalLIVPResources) != 2 {
+		t.Fatalf("expected two indexed LIVP resources before recovery test; got %d", len(originalLIVPResources))
+	}
+	if err := db.Where("node_id = ?", liveNode.ID).
+		Delete(&meta.MediaDerivedResource{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Run("current LIVP index safely serves missing still and motion resource rows", func(t *testing.T) {
+		path := fmt.Sprintf("/api/v1/media/items/%d", liveNode.ID)
+		response := request(t, router, http.MethodGet, path, token, nil, http.StatusOK)
+		var detail mediaItemDTO
+		if err := json.Unmarshal(response.Body.Bytes(), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if !detail.Metadata.HasThumbnail || len(detail.DerivedResources) != 2 {
+			t.Fatalf("LIVP detail lost reconstructible still/motion metadata: %+v", detail)
+		}
+		thumbnail := request(
+			t, router, http.MethodGet,
+			fmt.Sprintf("/api/v1/media/items/%d/thumbnail?revision=%d", liveNode.ID, liveNode.Revision),
+			token, nil, http.StatusOK,
+		)
+		config, err := jpeg.DecodeConfig(bytes.NewReader(thumbnail.Body.Bytes()))
+		if err != nil || config.Width != 2 || config.Height != 2 {
+			t.Fatalf("recovered LIVP still thumbnail config=%+v err=%v", config, err)
+		}
+		for _, item := range []struct {
+			role  string
+			kind  string
+			uri   string
+			bytes []byte
+		}{
+			{meta.MediaDerivedResourceRoleStill, "image", "live-photo-still-ticket", stillBytes},
+			{meta.MediaDerivedResourceRoleMotion, "video", "live-photo-motion-ticket", motionBytes},
+		} {
+			direct := request(
+				t, router, http.MethodGet,
+				fmt.Sprintf("/api/v1/media/items/%d/resources/%s", liveNode.ID, item.role),
+				token, nil, http.StatusOK,
+			)
+			if !bytes.Equal(direct.Body.Bytes(), item.bytes) {
+				t.Fatalf("recovered %s resource returned incorrect original bytes", item.role)
+			}
+			ticketResponse := request(
+				t, router, http.MethodPost,
+				fmt.Sprintf("/api/v1/media/items/%d/%s", liveNode.ID, item.uri),
+				token, nil, http.StatusOK,
+			)
+			var ticket filePreviewTicketDTO
+			if err := json.Unmarshal(ticketResponse.Body.Bytes(), &ticket); err != nil {
+				t.Fatal(err)
+			}
+			if ticket.Kind != item.kind || !strings.Contains(ticket.URL, "ticket=") {
+				t.Fatalf("recovered %s signed ticket=%+v", item.role, ticket)
+			}
+			partial := requestWithHeaders(
+				t, router, http.MethodGet, ticket.URL, "", nil,
+				http.StatusPartialContent, map[string]string{"Range": "bytes=0-7"},
+			)
+			if !bytes.Equal(partial.Body.Bytes(), item.bytes[:8]) {
+				t.Fatalf("recovered signed %s Range returned wrong bytes", item.role)
+			}
+		}
+		var persistedCount int64
+		if err := db.Model(&meta.MediaDerivedResource{}).
+			Where("node_id = ?", liveNode.ID).Count(&persistedCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		if persistedCount != 0 {
+			t.Fatalf("read recovery wrote %d resource rows; expected read-only fallback", persistedCount)
+		}
+		var currentNode meta.Node
+		if err := db.Preload("File").First(&currentNode, liveNode.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, modified := range []meta.Node{
+			func() meta.Node { n := currentNode; n.OwnerID++; return n }(),
+			func() meta.Node { n := currentNode; n.Revision++; return n }(),
+			func() meta.Node {
+				n := currentNode
+				f := *n.File
+				f.SHA256 = strings.Repeat("f", 64)
+				n.File = &f
+				return n
+			}(),
+		} {
+			if _, err := server.validatedLIVPResourceFromCurrentIndex(
+				context.Background(), modified, meta.MediaDerivedResourceRoleStill,
+			); err == nil {
+				t.Fatal("a different owner, revision or SHA was allowed to reconstruct Live bytes")
+			}
+		}
+		var currentIndex meta.MediaMetadata
+		if err := db.Where("node_id = ?", liveNode.ID).First(&currentIndex).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("container_json", `{"still":{},"motion":{}}`).Error; err != nil {
+			t.Fatal(err)
+		}
+		request(t, router, http.MethodPost,
+			fmt.Sprintf("/api/v1/media/items/%d/live-photo-still-ticket", liveNode.ID),
+			token, nil, http.StatusNotFound)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("container_json", currentIndex.ContainerJSON).Error; err != nil {
+			t.Fatal(err)
+		}
+		var container mediapkg.LIVPContainerDescriptor
+		if err := json.Unmarshal([]byte(currentIndex.ContainerJSON), &container); err != nil {
+			t.Fatal(err)
+		}
+		container.Still.Offset = currentNode.File.Size + 1
+		invalidRange, err := json.Marshal(container)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("container_json", string(invalidRange)).Error; err != nil {
+			t.Fatal(err)
+		}
+		request(t, router, http.MethodPost,
+			fmt.Sprintf("/api/v1/media/items/%d/live-photo-still-ticket", liveNode.ID),
+			token, nil, http.StatusNotFound)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("container_json", currentIndex.ContainerJSON).Error; err != nil {
+			t.Fatal(err)
+		}
+		// A newer unrecognized projection schema must not be silently
+		// interpreted by this older Server during rollback.
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("derived_resource_version", mediapkg.LIVPDerivedResourceVersion+1).Error; err != nil {
+			t.Fatal(err)
+		}
+		request(t, router, http.MethodPost,
+			fmt.Sprintf("/api/v1/media/items/%d/live-photo-still-ticket", liveNode.ID),
+			token, nil, http.StatusNotFound)
+		if err := db.Model(&meta.MediaMetadata{}).Where("node_id = ?", liveNode.ID).
+			Update("derived_resource_version", currentIndex.DerivedResourceVersion).Error; err != nil {
+			t.Fatal(err)
+		}
+	})
+	// Leave the original later signed-ticket and invalid-range tests untouched.
+	if err := db.Create(&originalLIVPResources).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	stillResponse := request(
 		t,
 		router,

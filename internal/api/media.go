@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1985,11 +1986,91 @@ func (s *Server) listMediaDerivedResources(
 		Find(&rows).Error; err != nil {
 		return nil, err
 	}
+	// A partial migration/restore may preserve a validated local LIVP index
+	// but lose the separately materialized range-view rows. Project only the
+	// missing roles from that exact current source; never read all originals,
+	// change the media index, or mutate CAS during a detail read.
+	if strings.EqualFold(filepath.Ext(node.Name), ".livp") && len(rows) < 2 {
+		present := make(map[string]bool, len(rows))
+		for _, row := range rows {
+			present[row.Role] = true
+		}
+		for _, role := range []string{
+			meta.MediaDerivedResourceRoleStill,
+			meta.MediaDerivedResourceRoleMotion,
+		} {
+			if present[role] {
+				continue
+			}
+			recovered, err := s.validatedLIVPResourceFromCurrentIndex(ctx, node, role)
+			if err == nil {
+				rows = append(rows, recovered)
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Role < rows[j].Role })
 	out := make([]mediaDerivedResourceDTO, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toMediaDerivedResourceDTO(row))
 	}
 	return out, nil
+}
+
+// validatedLIVPResourceFromCurrentIndex reconstructs a read-only byte range
+// when its separately persisted resource row is missing. The source index is
+// local/canonical and already validated by Extract/InspectLIVP: no remote
+// provider hints, basename matching, CAS re-read, index write or broad scan.
+// Fail closed if identity, index readiness, or either byte range is invalid.
+func (s *Server) validatedLIVPResourceFromCurrentIndex(
+	ctx context.Context,
+	node meta.Node,
+	role string,
+) (meta.MediaDerivedResource, error) {
+	var missing meta.MediaDerivedResource
+	if node.Type != meta.NodeTypeFile || node.File == nil ||
+		node.File.Size <= 0 || strings.TrimSpace(node.File.SHA256) == "" ||
+		!strings.EqualFold(filepath.Ext(node.Name), ".livp") ||
+		!meta.ValidMediaDerivedResourceRole(role) {
+		return missing, gorm.ErrRecordNotFound
+	}
+	var indexed meta.MediaMetadata
+	if err := s.DB.WithContext(ctx).
+		Where(
+			"node_id = ? AND owner_id = ? AND node_revision = ? AND sha256 = ? AND container_kind = ? AND index_state = ? AND derived_resource_version = ?",
+			node.ID, node.OwnerID, node.Revision, node.File.SHA256,
+			mediapkg.ContainerKindLIVP, meta.MediaIndexStateReady,
+			mediapkg.LIVPDerivedResourceVersion,
+		).
+		Take(&indexed).Error; err != nil {
+		return missing, err
+	}
+	resources, err := mediaDerivedResourcesFromLIVPContainer(indexed.ContainerJSON)
+	if err != nil || len(resources) != 2 {
+		return missing, gorm.ErrRecordNotFound
+	}
+	// Validate BOTH members even for a still-only request: a malformed
+	// container must never be partially presented as a valid Live Photo.
+	for i := range resources {
+		entry := &resources[i]
+		if entry.ByteOffset < 0 || entry.ByteSize <= 0 ||
+			entry.ByteOffset > node.File.Size ||
+			entry.ByteSize > node.File.Size-entry.ByteOffset {
+			return missing, gorm.ErrRecordNotFound
+		}
+		entry.NodeID = node.ID
+		entry.OwnerID = node.OwnerID
+		entry.NodeRevision = node.Revision
+		entry.SHA256 = node.File.SHA256
+		if entry.Role == role {
+			missing = *entry
+		}
+	}
+	if missing.Role == "" {
+		return missing, gorm.ErrRecordNotFound
+	}
+	return missing, nil
 }
 
 func (s *Server) currentMediaDerivedResource(
@@ -2011,6 +2092,9 @@ func (s *Server) currentMediaDerivedResource(
 			node.File.SHA256,
 		).
 		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return s.validatedLIVPResourceFromCurrentIndex(ctx, node, role)
+		}
 		return row, err
 	}
 	if row.ByteOffset < 0 || row.ByteSize <= 0 ||
