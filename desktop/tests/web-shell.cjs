@@ -245,7 +245,9 @@ test('Shared sidebar uses compact system navigation chrome', () => {
 })
 
 test('Web and Desktop pass account quota into the shared sidebar footer', () => {
-  assert.ok(sharedStorageSummary.includes("label = '云端存储'"), 'shared storage summary should identify account usage as cloud storage')
+  assert.ok(sharedStorageSummary.includes("label = '我的云端存储'"), 'shared storage summary must identify current-account usage explicitly')
+  assert.ok(sharedWorkspaceSidebar.includes('label="我的云端存储"'), 'the Web/Desktop sidebar must keep the personal quota label')
+  assert.ok(sharedStorageSummary.includes('data-xdrive-server-disk-usage'), 'unlimited quota must use a separately identified host disk bar')
   assert.ok(sharedStorageSummary.includes("'无容量限制'"), 'unlimited accounts should use a natural capacity label')
   assert.ok(sharedStorageSummary.includes('diskPercentage'), 'unlimited storage footer should derive disk usage percentage')
   assert.ok(sharedStorageSummary.includes('<LinearProgress'), 'shared storage summary should show quota or disk progress')

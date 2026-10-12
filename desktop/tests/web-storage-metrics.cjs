@@ -10,6 +10,7 @@ const cloudStorageAdapter = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 
 const storageInventory = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'StorageInventorySection.tsx'), 'utf8')
 const storageDistribution = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'StorageDistributionChart.tsx'), 'utf8')
 const sidebarStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SidebarStorageSummary.tsx'), 'utf8')
+const sharedSidebar = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'WorkspaceSidebar.tsx'), 'utf8')
 const metricCards = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'MetricCards.tsx'), 'utf8')
 const sectionHeader = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'SectionHeader.tsx'), 'utf8')
 const localStorage = fs.readFileSync(path.join(repoRoot, 'ui', 'shared', 'src', 'mui', 'LocalStoragePage.tsx'), 'utf8')
@@ -110,20 +111,29 @@ test('Local storage is one shared Web/Desktop page with platform-specific sectio
 })
 
 
-test('unlimited cloud storage distinguishes xDrive bytes from other disk usage', () => {
+test('unlimited sidebar quota shows account charges and server disk pressure as distinct metrics', () => {
   for (const token of [
-    'data-xdrive-storage-breakdown',
-    'data-xdrive-storage-segment="mine"',
-    'data-xdrive-storage-segment="other"',
-    "bgcolor: 'primary.main'",
-    "bgcolor: 'secondary.main'",
-    'otherDiskUsedBytes',
+    "label = '我的云端存储'",
+    'label="我的云端存储"',
+    '我的用量',
+    '无容量限制',
+    '服务器存储磁盘（非个人配额）',
+    'data-xdrive-server-disk-usage',
+    'quotaProgress',
+    'diskProgress',
+    'diskAvailableBytes',
+  ]) {
+    assert.ok((sidebarStorage + sharedSidebar).includes(token),
+      'sidebar must distinguish user quota and host filesystem capacity: ' + token)
+  }
+  for (const forbidden of [
+    'xdriveDiskUsedBytes', 'otherDiskUsedBytes',
+    'data-xdrive-storage-segment="mine"', 'data-xdrive-storage-segment="other"',
     '其他占用',
-  ]) assert.ok(sidebarStorage.includes(token), 'storage usage color contract missing: ' + token)
-  assert.ok(
-    sidebarStorage.includes('Math.max(0, diskUsedBytes - xdriveDiskUsedBytes)'),
-    'other disk usage must exclude current xDrive storage',
-  )
+  ]) {
+    assert.equal(sidebarStorage.includes(forbidden), false,
+      'cannot attribute host disk consumption to an account by subtracting quota bytes: ' + forbidden)
+  }
 })
 
 
