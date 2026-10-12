@@ -70,3 +70,17 @@ test('S2B1: exact-head CI builds real dist, and does not publish credentials or 
   assert.ok(!workflow.includes('desktop/pwa-s2b1-results/\\n'),
     'CI must not archive arbitrary private browser profile contents')
 })
+
+test('S2B8: real Chrome hangs only a public install icon HEAD and proves network abort on dialog close', () => {
+  for (const snippet of [
+    'stallPwaIcon512Head = true',
+    "res.once('close', () => { observed.headIcon512Aborted++ })",
+    "observed.headIcon512Aborted > abortBefore",
+    'pendingInstallProbeCancelled = true',
+    'observed.headIcon512Aborted, 1',
+  ]) assert.ok(script.includes(snippet), 'missing S2B8 browser evidence: ' + snippet)
+  assert.ok(workflow.includes("github.head_ref == 'fix/pwa-install-diagnostics-cancel-s2b8-20261012'"))
+  assert.ok(workflow.includes('x.pendingInstallProbeCancelled'))
+  assert.ok(delivery.includes('PWA-S2B8'))
+  assert.ok(!script.includes('context.route('), 'must abort a real browser HEAD, not a stubbed route')
+})

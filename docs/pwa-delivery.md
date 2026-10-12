@@ -243,3 +243,19 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **真实可验证用例：** 在 S2B6 隔离私有 PNG + Gin JWT + PostgreSQL17 + CAS fixture 中，测试 Chrome desktop 1280px、Android UA/touch 390px。通过真正已登录 owner 的 `POST /api/v1/files/:id/shares` 新建两份仅供 CI 使用的分享（有密码/无密码），不将原始 token 放入 ready JSON 或脱敏 CI 摘要。另一完全匿名 Chrome context 从 `#/s/<token>` 打开，公共元数据 `GET /api/v1/public/share` 必须是 200 + no-store + 无 Authorization/Cookie；错误密码尝试 `download-ticket` 必须 401 且下载计数不变。切换另一 token 清除旧密码/错误，真实浏览器 Back/Forward 与公开分享 → Files 登录页 → Back 保持正确，SW CacheStorage 仅含 `/offline.html`。本人已登录 Viewer → 公开分享 → Back 必须恢复真实 Gin MediaItem 和 Viewer、不强制文档刷新。owner 撤销分享后，匿名页面冷刷新必须从 Gin 收到 410，并显示明确不可用且不保留先前私有文件名。
 
 **安全及证据边界：** 单次测试可有合成分享 token 存在于浏览器和 CI 脚本内存，但不进入 artifact、日志、持久缓存；浏览器错误摘要脱敏。没有自动重载、`skipWaiting`、服务端持久任务取消、真正私有离线浏览或新移动端 API。该测试依旧是 Chrome 桌面与 Android UA/Touch 模拟，绝不能取代 iOS 27 Safari/Home Screen、Android Installed、系统应用图标冷启动、真实证书/DNS、4GiB 传输和锁屏/进程回收验收。初始 PR 必须保持 Draft，等准确 HEAD 的完整 CI / Final Gate 和真实 Gin Chrome 专项全绿后才能 Ready/线性合并。
+
+
+## PWA-S2B7 合并结果（2026-10-12）
+[PR #1582](https://github.com/lazyxu/xdrive/pull/1582) 准确单提交 `18767bc8` 在 [完整 CI #38271244201](https://github.com/lazyxu/xdrive/actions/runs/38271244201)（含 Final Gate）与 [真实 Gin/PostgreSQL17/Chrome #38271243815](https://github.com/lazyxu/xdrive/actions/runs/38271243815) 均通过后，线性合并为 `60fac3585b0e020cbb75d3a37cf6e2d6c34dba29`。自动清理已验证，当前无未处理 PWA 专项 PR 或分支；物理安装未验。
+
+## PWA-S2B8 · 安装环境诊断的并行有界请求与实时取消（2026-10-12）
+**现有缺口：** Web/Mobile Web 共用的“检查安装环境”将 Manifest、Worker、offline 与两个图标按顺序对公有静态资源发起 HEAD；自建代理让任何一个 HEAD 无限挂起时，整段诊断会一直停留在“检测中”。关闭弹窗时原有代码仅挡住最终写入，没有真正对网络发送 AbortSignal，造成后台浪费请求和错误的移动弱网体验。
+
+**有界实现：** 继续由用户显式点击后触发，五个公开 HEAD 同时开始，**整个批次共享最多 6 秒总预算**，每个请求仍然严格 `HEAD`、`credentials=omit`、`same-origin`、`no-store`、`redirect=error`，仅允许固定五个资源，无新增 API。浏览器 `AbortController` 在超时、弹窗关闭/卸载和重复检测时直接取消所有未完成请求；网络故障、超时和用户取消不能误报为成功。结果仍严格按原五资源顺序显示；正常诊断用例保持原语义。绝不读取 Token/下载票据/私人字节，也不新增 Service Worker 缓存或后台轮询；不会中断正在运行的 File/Viewer/Server Durable Task。
+
+**验收：** 独立 Node 测试要验证全部五个 HEAD 同时发出、悬挂单个 HEAD 触发超时、显式取消传播到五个信号、已经取消时零请求、可重复执行且状态不污染；真实 Chromium 生产 Web 的 Desktop 1280 / Android UA Touch 390 用例保留正常检查与离线恢复，在桌面模式特意让服务端挂住**一条公开 `/pwa-512.png` HEAD**，用户关闭真实 MUI Dialog 后必须观察到实际 HTTP 响应连接立即关闭，不能用 mock 拦截。CI 仅归档无私人数据的 summary.json。需要准确 HEAD 完整 CI/Final Gate 和 Chrome 专项双绿后合并。
+
+**证据边界：** 这提供有界移动弱网体验和真实浏览器 HTTP abort 证据，不代表可信公网 TLS/DNS、已安装主屏 App、Android 设备真机、iOS 27 Safari、进程回收后网页后台上传或 OS 桌面图标启动。S2 真机矩阵仍待 S5 独立验收。
+
+
+**S2B8 首轮 CI 故障及重建：** 工作提交 `89889667` 的 [真实 Chrome #38274175092](https://github.com/lazyxu/xdrive/actions/runs/38274175092) 通过了产物/资源/实际挂起 HEAD 网络取消；完整 [CI #38274175434](https://github.com/lazyxu/xdrive/actions/runs/38274175434) 的 desktop-tests 仅有 1 项失败（2482 passed、1 failed、1 skipped）：旧 `web-pwa-install.cjs` 还查找不带参数的 `checkXDrivePwaAssets()` 代码片段，但本功能为实际取消必须改成 `checkXDrivePwaAssets({ signal: controller.signal })`。原有 Node 超时、五请求并行、显式取消、已取消零网络请求测试均成功；本次仅修改这条静态断言以及此段交付说明，不放宽任何行为断言。重新构造同一冻结 master 的单工作提交，旧红灯与旧绿灯均不得用于新准确 HEAD 的合并验收。

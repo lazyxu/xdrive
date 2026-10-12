@@ -139,7 +139,7 @@ test('S2: UI entries exist before and after login, lazy-load the dialog and pres
   assert.ok(dialog.includes('data-xdrive-pwa-prompt'))
   assert.ok(dialog.includes('data-xdrive-pwa-check'))
   assert.ok(dialog.includes('requestXDrivePwaInstall()'))
-  assert.ok(dialog.includes('checkXDrivePwaAssets()'))
+  assert.ok(dialog.includes('checkXDrivePwaAssets({ signal: controller.signal })'))
   assert.ok(dialog.includes('离线页和安装图标发起无凭据 HEAD 请求'))
   assert.ok(dialog.includes('区分实际 HTTPS 与本机 HTTP 安全上下文'))
   assert.ok(main.includes('startXDrivePwaInstallObservation()'))
@@ -188,4 +188,82 @@ test('S2B4: unsafe non-loopback HTTP cannot be mistaken for mobile HTTPS', async
   assert.equal(checks[0].state, 'fail')
   assert.equal(checks[1].state, 'fail')
   assert.match(checks[1].detail, /HTTPS/)
+})
+
+function successfulPublicHead(url) {
+  const mime = url === '/site.webmanifest' ? 'application/manifest+json'
+    : url === '/sw.js' ? 'text/javascript'
+      : url === '/offline.html' ? 'text/html' : 'image/png'
+  return { status: 200, headers: { get(name) {
+    return name === 'Content-Type' ? mime : name === 'Cache-Control'
+      ? 'no-cache, must-revalidate' : null
+  } } }
+}
+
+test('S2B8: five public HEADs start concurrently and the single 6s maximum budget aborts a hung one', async () => {
+  let cancelled = 0
+  const h = harness({ fetchReply(url, options) {
+    if (url !== '/sw.js') return successfulPublicHead(url)
+    return new Promise((_, reject) => {
+      options.signal.addEventListener('abort', () => {
+        cancelled++
+        reject(new Error('aborted'))
+      }, { once: true })
+    })
+  } })
+  const resultPromise = h.mod.checkXDrivePwaAssets({ timeoutMs: 30 })
+  assert.deepEqual(h.queries.map(([url]) => url),
+    ['/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png'],
+    'requests must begin in parallel rather than five serial waits')
+  const result = await resultPromise
+  assert.equal(cancelled, 1)
+  assert.deepEqual(result.map(x => x.id), [
+    'context', 'transport', 'manifest', 'worker', 'offline', 'icon192', 'icon512',
+  ], 'result order remains stable despite parallel completion')
+  assert.deepEqual(result.map(x => x.state), ['pass', 'pass', 'pass', 'fail', 'pass', 'pass', 'pass'])
+  assert.match(result[3].detail, /超时/)
+  for (const [, options] of h.queries) {
+    assert.equal(options.method, 'HEAD')
+    assert.equal(options.credentials, 'omit')
+    assert.equal(options.redirect, 'error')
+    assert.equal(options.cache, 'no-store')
+    assert.equal(options.mode, 'same-origin')
+    assert(options.signal instanceof AbortSignal)
+  }
+})
+
+test('S2B8: closing a diagnosis cancels all outstanding fetches without private calls or timer leaks', async () => {
+  const source = new AbortController()
+  let aborted = 0
+  const h = harness({ fetchReply(_url, options) {
+    return new Promise((_, reject) => {
+      options.signal.addEventListener('abort', () => {
+        aborted++
+        reject(new Error('aborted'))
+      }, { once: true })
+    })
+  } })
+  const pending = h.mod.checkXDrivePwaAssets({ signal: source.signal, timeoutMs: 1000 })
+  assert.equal(h.queries.length, 5)
+  source.abort()
+  const result = await pending
+  assert.equal(aborted, 5)
+  assert.deepEqual(result.slice(2).map(x => x.state), Array(5).fill('fail'))
+  assert(result.slice(2).every(x => /取消/.test(x.detail)))
+  assert.deepEqual(h.queries.map(([url]) => url),
+    ['/site.webmanifest', '/sw.js', '/offline.html', '/pwa-192.png', '/pwa-512.png'])
+  const dialog = read('web/src/PwaInstallDialog.tsx')
+  for (const term of ['inspectionRef.current?.abort()', 'checkXDrivePwaAssets({ signal: controller.signal })',
+    '!controller.signal.aborted', 'inspectionRef.current = null']) {
+    assert(dialog.includes(term), 'missing component cancellation: ' + term)
+  }
+})
+
+test('S2B8: an already cancelled check must issue zero network requests', async () => {
+  const source = new AbortController()
+  source.abort()
+  const h = harness()
+  const result = await h.mod.checkXDrivePwaAssets({ signal: source.signal })
+  assert.equal(h.queries.length, 0)
+  assert(result.slice(2).every(x => /取消/.test(x.detail)))
 })

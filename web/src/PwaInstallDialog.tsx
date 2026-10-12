@@ -17,14 +17,25 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   const [checking, setChecking] = useState(false)
   const [feedback, setFeedback] = useState<XDrivePwaPromptOutcome | null>(null)
   const generation = useRef(0)
-  useEffect(() => () => { generation.current += 1 }, [])
+  const inspectionRef = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    generation.current += 1
+    inspectionRef.current?.abort()
+    inspectionRef.current = null
+  }, [])
   const inspect = () => {
     const id = ++generation.current
+    inspectionRef.current?.abort()
+    const controller = new AbortController()
+    inspectionRef.current = controller
     setChecking(true)
     setChecks(null)
-    void checkXDrivePwaAssets().then(result => {
-      if (id === generation.current) setChecks(result)
-    }).finally(() => { if (id === generation.current) setChecking(false) })
+    void checkXDrivePwaAssets({ signal: controller.signal }).then(result => {
+      if (id === generation.current && !controller.signal.aborted) setChecks(result)
+    }).finally(() => {
+      if (inspectionRef.current === controller) inspectionRef.current = null
+      if (id === generation.current) setChecking(false)
+    })
   }
   const install = () => {
     // Browser prompt must run in the originating click, not after an await.
@@ -98,7 +109,8 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
             <Typography variant="subtitle2" fontWeight={700}>自建部署诊断（只读）</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
               点击后仅对本站公开的 Manifest、Service Worker、离线页和安装图标发起无凭据 HEAD 请求，
-              并区分实际 HTTPS 与本机 HTTP 安全上下文；不读取账户文件、下载票据或服务器管理员设置。
+              并区分实际 HTTPS 与本机 HTTP 安全上下文；五项资源并行检测最多等待 6 秒，关闭弹窗即取消未完成请求。
+              不读取账户文件、下载票据或服务器管理员设置。
             </Typography>
             <Button data-xdrive-pwa-check variant="outlined" disabled={checking} sx={{ minHeight: 44 }} onClick={inspect}>
               {checking ? '检测中…' : '检查安装环境'}
