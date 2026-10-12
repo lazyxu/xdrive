@@ -280,3 +280,43 @@ test('09I-D4 real Chromium-originated multi-source Copy/Move Undo and Redo retai
   assert.ok(mobile.includes("overflowAction('撤销', () => props.onUndo?.()"))
   assert.ok(mobile.includes("overflowAction('重做', () => props.onRedo?.()"))
 })
+
+
+const tapUndoRedo = read('internal/api/files_ios27_live_go_tap_undo_redo_test.go')
+
+test('09I-D5 real 375px Mobile menu and 1600px Wide toolbar click Undo/Redo through Go Worker', () => {
+  for (const label of [
+    'executeStarted := make(chan struct{})',
+    'executeDone := make(chan struct{})',
+    '"/__test/files/execute"',
+    '"/__test/files/process-next"',
+    'srv.processNextFileOperation(r.Context())',
+    'case <-executeStarted:', 'close(executeDone)',
+    'assertIOS27FilesLiveTapUndoRedo(',
+    'IOS27_FILES_REAL_MOBILE_WIDE_TAP_UNDO_REDO_COMPLETED',
+  ]) assert.ok((fixture + tapUndoRedo).includes(label), 'missing actual Go test phase: ' + label)
+  for (const label of [
+    'async function tapRealUndoRedoFromBothLayouts()',
+    "fixture.url + '/__test/files/execute'",
+    "{ width: 375, height: 812, surface: 'Mobile' }",
+    "{ width: 1600, height: 900, surface: 'Wide' }",
+    "name: '文件操作菜单'",
+    "'[data-mobile-files-more-menu]'",
+    "name: action === 'undo' ? '撤销' : '重做', exact: true",
+    "item.click()", "r.request().method() === 'POST'",
+    "response.status() === 202",
+    "queued.redo_of_id === previousUndoID",
+    "fixture.url + '/__test/files/process-next'",
+    "result.status === 'completed'",
+    "results.tapUndoRedo.length === 4",
+  ]) assert.ok(browser.includes(label), 'missing native DOM Web/Mobile UI tap: ' + label)
+  assert.ok(browser.includes('await tapRealUndoRedoFromBothLayouts()'))
+  assert.doesNotMatch(browser, /route\.fulfill\(/)
+  assert.doesNotMatch(tapUndoRedo, /enqueueFileOperationUndo\(|enqueueFileOperationRedo\(|route\.fulfill\(/)
+  assert.ok(app.includes('onUndo={() => {'))
+  assert.ok(app.includes('onRedo={() => {'))
+  assert.ok(web.includes('onUndo={trashActive ? undefined : onUndo}'))
+  assert.ok(web.includes('onRedo={trashActive ? undefined : onRedo}'))
+  assert.ok(mobile.includes("overflowAction('撤销', () => props.onUndo?.()"))
+  assert.ok(mobile.includes("overflowAction('重做', () => props.onRedo?.()"))
+})
