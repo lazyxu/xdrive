@@ -11,7 +11,7 @@ import type { XDriveMediaLoadStage } from './MediaLoadProgress'
 import type { MediaMetadata } from '../models'
 import { xDriveCaptureVideoPosterBlob, xDriveResolveMediaVideoPoster } from './MediaGalleryVideoPoster'
 
-type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<string | null>
+type MediaThumbnailLoader = (nodeID: number, signal?: AbortSignal, revision?: number, onProgress?: XDriveByteProgressHandler, bypassHTTPCache?: boolean) => Promise<string | null>
 type MediaPreviewURLLoader = (
   nodeID: number,
   kind: 'image' | 'video',

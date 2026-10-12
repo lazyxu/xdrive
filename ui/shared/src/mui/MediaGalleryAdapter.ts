@@ -253,6 +253,7 @@ export interface XDriveMediaGalleryPort {
     signal?: AbortSignal,
     revision?: number,
     onProgress?: XDriveByteProgressHandler,
+    bypassHTTPCache?: boolean,
   ) => Promise<XDriveMediaGalleryTransportResult<XDriveMediaGalleryBinaryResource>>
   loadLivePhotoMotion?: (
     nodeID: number,
@@ -630,8 +631,8 @@ export function createXDriveMediaGalleryDataSource(
     listAlbumItemRange: (albumID, limit, offset, query) => resolveXDriveTransport(
       port.listAlbumItemRange(albumID, limit, offset, query),
     ),
-    loadThumbnail: async (nodeID, signal, revision, onProgress) => mediaResourceURL(
-      await resolveXDriveTransport(port.loadThumbnail(nodeID, signal, revision, onProgress)),
+    loadThumbnail: async (nodeID, signal, revision, onProgress, bypassHTTPCache) => mediaResourceURL(
+      await resolveXDriveTransport(port.loadThumbnail(nodeID, signal, revision, onProgress, bypassHTTPCache)),
       'image/jpeg',
     ),
     loadLivePhotoMotion: port.loadLivePhotoMotion

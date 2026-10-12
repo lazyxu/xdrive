@@ -158,7 +158,7 @@ test('P0-L2 Web/Mobile/desktop share unchanged thin transport and Gallery virtua
   assert.match(page, /<MediaVirtualTileGrid/)
   assert.match(page, /<MediaVirtualTimeline/)
   assert.match(page, /<XDriveMediaAsyncThumbnail/)
-  assert.match(adapter, /loadThumbnail: \(nodeID, signal, revision, onProgress\) =>/)
+  assert.match(adapter, /loadThumbnail: \(nodeID, signal, revision, onProgress, bypassHTTPCache\) =>/)
   assert.match(read('ui/shared/src/mui/MobileAppHeader.tsx'),
     /calc\(52px \+ env\(safe-area-inset-top\)\)/)
   // No browser error path may bypass the authenticated Server/API/Agent transport.

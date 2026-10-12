@@ -242,7 +242,7 @@ test('shared Gallery/Viewer/Explorer consumers keep the same progress contract',
   assert.match(main, /agent:media-binary-progress/)
   assert.match(preload, /value\.request_id !== requestID/)
   assert.match(preload, /removeListener\(progressChannel, listener\)/)
-  assert.match(adapter, /port\.loadThumbnail\(nodeID, signal, revision, onProgress\)/)
+  assert.match(adapter, /port\.loadThumbnail\(nodeID, signal, revision, onProgress, bypassHTTPCache\)/)
   assert.match(preview, /setProgress\(\{ loadedBytes, totalBytes \}\)/)
   assert.match(explorer, /scheduleFileThumbnail\(\(signal\) => loadThumbnail\(/)
   assert.match(explorer, /scheduled\.cancel\(\)/)

@@ -735,3 +735,21 @@ The replacement exact one-work-commit test accepts only the already supported pa
 P0-L9～L11 已交付，其中 #1549 通过 25 项 CI 和 Final Gate 后修复了 Server 侧已损坏缩略图缓存；但是旧浏览器可能依然缓存一份已损坏、HTTP200 的同 revision JPEG/PNG。既有 Web `mediaThumbnail` 对此正常缓存 URL 使用 `cache:default`，使虚拟列表下次显示同一图格时重复获取坏像素。P0-L12 仅在已经读到的可见缩略图响应里做固定 JPEG/PNG 头尾结构验证，明确无效才对**相同 Node/Revision、同一授权**追加至多一次 `cache:no-store`。重取失败、再次坏图或 404/409/415 应终止并回退；既有 503 有界重试后不追加第三次请求。支持 AbortSignal 立即取消，不自动加载整段图片/视频，不改变成功缓存、Web/Mobile Web 共用 REST 与虚拟化、52px 全屏 App Frame 和按住才加载实况 motion 规则。校验只覆盖显然损坏的结构，不承诺图片内部任意位损坏皆可检测。
 
 新增以真实产品 Web API method、真实 Blob 读流配合受控 fetch 返回模拟浏览器旧坏 HTTP200 与 Server 修复后好 HTTP200，明确归类为自动化 HTTP/Blob 合同验证，不是用户原始三图、iOS 27 Safari/PWA/VoiceOver 真机或像素 1:1 验收。CI 精确 SHA 全套与 Final Gate 是合并要求；真实 iOS27 同版本参照仍要独立补证。
+
+
+## P0-L13 · 实况封面真实浏览器解码失败后的下一次可见请求恢复（2026-10-12）
+
+**首轮真实 red：** #1563 `0ceecabd` 的 Desktop 已执行测试证实，共享缩略图组件发生真实 `img.onError` 后虽然释放旧 Blob，Scheduler 并不会通知 Web API 下一次按同一 Node/revision 无缓存重取；当 HTTP200 的 JPEG/PNG 文件头尾合法但内部损坏时，P0-L12 的常数字节校验仍无法判断，用户可反复看见灰色回退。首轮测试的另外两项失败来自 Scheduler Promise 已解决而 finally 尚未退出的测试时序，属于无效夹具，已在同一单提交中修复测试而非产品逻辑。
+
+只在已挂载的共享 `MediaTile` 实际解码错误后，为该 Node/revision 的下一次可见加载保留一次独立缓存重取权；失败事件本身零现场 GET，成功封面零额外请求，第二次仍无法解码则终止当前 Gallery Session 的该身份自动请求，滚动取消不消耗唯一机会。继续沿用相同认证 REST、同源 revision URL、既有 503 处理与 `AbortSignal`，不加载完整原片，不引入 Mobile 专用 API/业务 Controller/虚拟化组件，不修改 Desktop Agent 路由和 Live Photo 按住才加载动图的规则。
+
+此阶段只证明源码组件、受控网络与浏览器事件合同，不冒充真实原始灰格的诊断，不冒充 iOS27 Safari/PWA/VoiceOver 真机视觉与手势 1:1。保持既有全屏 App Frame、52px 全局应用标题栏和 Web/Mobile 功能等价。
+
+
+### P0-L13: amended exact-head CI static adapter test contract (2026-10-12)
+[First-red test-only CI #38253097385](https://github.com/lazyxu/xdrive/actions/runs/38253097385) established missing one-shot HTTP cache bypass after true decoder failure. On the first **production-fix head** `20e441e7`, [CI #38253914544](https://github.com/lazyxu/xdrive/actions/runs/38253914544) ran all six P0-L13 source-executed scheduler/HTTP tests **PASS**, but Desktop tests were RED because five historical static source contracts still looked for the old four-argument `loadThumbnail` adapter path, rather than validating the new optional `bypassHTTPCache` parameter. These are obsolete assertion shapes, not a failed code-path test. Keep the original JWT, revision, progress, desktop Agent and sparse Gallery checks, and **strengthen** each static contract to require forwarding the fifth parameter through the one Web/Mobile Gallery port. No production-code change in this amend. A fresh exact new work-head CI/Final Gate must pass before merging; old-head partial green checks are not completion evidence. The user's three physical gray files and iOS27 Safari/PWA 1:1 remain unverified.
+
+
+### P0-L13 second exact implementation CI: final obsolete test-format assertion
+
+[Source-exact CI #38254765079](https://github.com/lazyxu/xdrive/actions/runs/38254765079) on `e82809f0` ran all six P0-L13 actual production Scheduler/Web API regressions successfully, with one remaining old Desktop-only source assertion failing: `media-gallery-thumbnail-http-revision-wiring.cjs` expected the legacy single-line `this.loader(task.nodeID,...)` shape. Production correctly invokes the SAME shared loader with a multiline `this.loader(` and the new explicit fifth `task.bypassHTTPCache || undefined` parameter. This is a stale regex/test formatting contract, not a demonstrated product regression. The replacement asserts the full exact argument order including both Progress and the one-shot cache hint while tolerating whitespace, and does not weaken revision/Agent/Web shared-wire guards. All source edits remain in ONE commit on the frozen baseline, and full CI/Final Gate are required anew. Physical affected Live photos and native iOS 27 Safari/PWA/VoiceOver remain unverified.
