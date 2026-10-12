@@ -30,7 +30,7 @@ const sources = [
 const storage = read('src/StorageStatsPanel.tsx')
 const cloudStorage = readRepo('ui/shared/src/mui/CloudStoragePage.tsx')
 const adminUsers = readRepo('ui/shared/src/mui/AdminUsersPage.tsx')
-const adminAudit = read('src/AdminAudit.tsx')
+const adminAudit = readRepo('ui/shared/src/mui/AdminAuditPage.tsx')
 
 const requireText = (source, values, label) => {
   for (const value of values) {

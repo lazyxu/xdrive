@@ -40,6 +40,36 @@ export type AgentAdminUser = {
   created_at: string
   updated_at: string
 }
+export type AgentAdminAuditRangeQuery = {
+  limit: number
+  offset: number
+  snapshot_max_id?: number
+  action?: string
+  result?: 'success' | 'failure'
+  actor?: string
+}
+export type AgentAdminAuditEvent = {
+  id: number
+  actor_user_id?: number
+  actor_username?: string
+  actor_role?: string
+  action: string
+  target_type?: string
+  target_id?: string
+  target_label?: string
+  result: 'success' | 'failure'
+  request_id?: string
+  ip_address?: string
+  metadata?: Record<string, unknown>
+  created_at: string
+}
+export type AgentAdminAuditRange = {
+  items: AgentAdminAuditEvent[]
+  total_count: number
+  offset: number
+  limit: number
+  snapshot_max_id: number
+}
 export type AgentAdminCreateUserInput = {
   username: string
   password: string
@@ -3544,6 +3574,9 @@ export class AgentIPCClient {
 
   cloudAdminServices() {
     return this.request<AgentServiceDependenciesSnapshot>('GET', '/v1/cloud/admin-services')
+  }
+  cloudAdminAuditRange(query: AgentAdminAuditRangeQuery, signal?: AbortSignal) {
+    return this.request<AgentAdminAuditRange>('POST', '/v1/cloud/admin-audit/range', query, 20_000, signal)
   }
   cloudAdminUsers() {
     return this.request<AgentAdminUser[]>('GET', '/v1/cloud/admin-users')

@@ -671,6 +671,8 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-file-media-details', items),
   cloudCreateFileOperation: (type: 'copy' | 'move' | 'delete', items: Array<{ id: number; revision: number }>, parentID?: number) => ipcRenderer.invoke('agent:cloud-file-operation-create', type, items, parentID),
   cloudAdminServices: () => ipcRenderer.invoke('agent:cloud-admin-services'),
+  cloudAdminAuditRange: (query: import('../main/agent_client.cjs').AgentAdminAuditRangeQuery, requestID?: string) =>
+    ipcRenderer.invoke('agent:cloud-admin-audit-range', query, requestID),
   cloudAdminUsers: () => ipcRenderer.invoke('agent:cloud-admin-users'),
   cloudAdminCreateUser: (input: import('../main/agent_client.cjs').AgentAdminCreateUserInput) =>
     ipcRenderer.invoke('agent:cloud-admin-users-create', input),

@@ -188,7 +188,7 @@ func (s *Server) adminAuditEvents(c *gin.Context) {
 		return
 	}
 
-	query := applyAuditEventFilters(s.DB.Model(&meta.AuditEvent{}), filters)
+	query := applyAuditEventFilters(s.DB.WithContext(c.Request.Context()).Model(&meta.AuditEvent{}), filters)
 	if rangeRequested {
 		if strings.TrimSpace(c.Query("before_id")) != "" {
 			fail(c, http.StatusBadRequest, "before_id is not supported with range=true")

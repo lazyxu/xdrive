@@ -10,7 +10,7 @@ const readRepo = (name) => fs.readFileSync(path.join(repo, name), 'utf8')
 const files = {
   app: read('src/App.tsx'),
   users: readRepo('ui/shared/src/mui/AdminUsersPage.tsx'),
-  audit: read('src/AdminAudit.tsx'),
+  audit: readRepo('ui/shared/src/mui/AdminAuditPage.tsx'),
   storageStats: read('src/StorageStatsPanel.tsx'),
   share: read('src/App.tsx') + read('src/fileDialogAdapters.ts') + readRepo('ui/shared/src/mui/ShareDialog.tsx'),
   shareFields: readRepo('ui/shared/src/mui/ShareFields.tsx'),
