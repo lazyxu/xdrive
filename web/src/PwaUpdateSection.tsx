@@ -50,6 +50,12 @@ export default function XDrivePwaUpdateSection() {
           state.connectionHint === 'online' ? '设备显示联网（不代表 xDrive Server 可用）' : '网络状态未知'}。
         此提示不代表传输已经暂停、恢复或完成。
       </Typography>
+      {state.phase === 'checking' ? (
+        <Alert data-xdrive-pwa-update-checking severity="info" sx={{ mb: 1 }}>
+          正在检查新版本，最多等待 8 秒。超时仅结束当前页面等待；
+          浏览器内部检查仍可能继续，不会自动激活、重载或取消文件任务。
+        </Alert>
+      ) : null}
       {state.phase === 'waiting' ? (
         <Alert severity="info" sx={{ mb: 1 }}>
           新版本已经准备好。为避免中断上传、下载、编辑和 Viewer，本应用不会强制激活或刷新。

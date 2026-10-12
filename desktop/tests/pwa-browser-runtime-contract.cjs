@@ -84,3 +84,16 @@ test('S2B8: real Chrome hangs only a public install icon HEAD and proves network
   assert.ok(delivery.includes('PWA-S2B8'))
   assert.ok(!script.includes('context.route('), 'must abort a real browser HEAD, not a stubbed route')
 })
+
+test('S3D1: actual Chrome manually checks update without auto reload or routing changes', () => {
+  for (const token of [
+    "dialog.locator('[data-xdrive-pwa-check-update]')",
+    "button.textContent?.includes('检查新版本')",
+    'result.updateCheckSettled = true',
+    'evidence.cases.every(x => x.updateCheckSettled)',
+    'document.documentElement.dataset.xdriveS3D1Document',
+  ]) assert.ok(script.includes(token), 'missing S3D1 browser guard: ' + token)
+  assert.ok(workflow.includes("github.head_ref == 'fix/pwa-update-check-timeout-s3d1-20261013'"))
+  assert.ok(workflow.includes('x.updateCheckSettled'))
+  assert.ok(delivery.includes('PWA-S3D1'))
+})

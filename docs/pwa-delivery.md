@@ -259,3 +259,16 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 
 
 **S2B8 首轮 CI 故障及重建：** 工作提交 `89889667` 的 [真实 Chrome #38274175092](https://github.com/lazyxu/xdrive/actions/runs/38274175092) 通过了产物/资源/实际挂起 HEAD 网络取消；完整 [CI #38274175434](https://github.com/lazyxu/xdrive/actions/runs/38274175434) 的 desktop-tests 仅有 1 项失败（2482 passed、1 failed、1 skipped）：旧 `web-pwa-install.cjs` 还查找不带参数的 `checkXDrivePwaAssets()` 代码片段，但本功能为实际取消必须改成 `checkXDrivePwaAssets({ signal: controller.signal })`。原有 Node 超时、五请求并行、显式取消、已取消零网络请求测试均成功；本次仅修改这条静态断言以及此段交付说明，不放宽任何行为断言。重新构造同一冻结 master 的单工作提交，旧红灯与旧绿灯均不得用于新准确 HEAD 的合并验收。
+
+
+## PWA-S2B8 合并结果（2026-10-12）
+[PR #1586](https://github.com/lazyxu/xdrive/pull/1586) 准确单提交 `d06102c1` 通过 [完整 CI #38274742433](https://github.com/lazyxu/xdrive/actions/runs/38274742433)（Final Gate）以及 [真实 Chrome #38274742099](https://github.com/lazyxu/xdrive/actions/runs/38274742099) 后，以 rebase merge 合并至 `5ec371a75e808d35aa0ba6afc7d34ec6634cd6ec`。确认生产共享安装弹窗中五项公开资源并行 HEAD、6 秒总预算、关闭弹窗时真实 Chrome HTTP 取消。未执行真实 iOS/Android 系统安装或公网 CA/DNS 验收。
+
+## PWA-S3D1 · Service Worker 手动版本检查有界等待（2026-10-13）
+**既有真实缺口：** 浏览器的 `ServiceWorkerRegistration.getRegistration()/update()` 可以因弱网/代理阻塞，使共享 Web/Mobile Web 的“检查新版本”一直显示“检查中”。`registration.update()` 不提供 AbortSignal；前端无法证明已取消浏览器内部 SW 下载。
+
+**本阶段实现：** 对**用户显式点击**触发的注册查找和 `update()` 设置同一 8 秒**界面等待总预算**。连续点击合并成一个 Promise。时间到后显示准确的超时提示，并允许新的用户显式重试；浏览器中的既有更新可能继续。迟到的 `update()` 结果不能覆盖 timeout 状态；独立 `updatefound/statechange` 检测到真实 waiting Worker 时仍应正确显示 waiting。任何情形都不得调用 `skipWaiting`、`location.reload`、自动关闭窗口、取消 Server Durable Task、浏览器上传或 Viewer；任何下载/用户媒体仍不得进入公共 SW CacheStorage。
+
+**验收要求：** Node TS 执行器验证重复点击只调用一次 update、注册查找或 worker 更新两种阻塞均有超时、超时后迟到结果不能伪装成功、再次手动检查能恢复、实际 waiting 状态优先。桌面实际 Chrome 1280px 与 Android UA/Touch 390px 在正常同源 loopback 的生产 Web 上执行用户点击版本检查，要求有限时间内恢复按钮、Files URL 和文档 DOM 完全不动，继续保留 S2B8 真实挂起公开图标 HEAD 取消、S1 公开离线页隔离门槛。专项输出仅脱敏 summary.json。
+
+**仍待完成：** 这只是手动检查的 UI 时间边界与真实 Chrome 常规交互；不能证明取消浏览器内部更新、自动安全激活或跨窗口真实活动已可信判断，也不是 iOS 27/Android Installed 真机、桌面系统图标、生产公网 HTTPS、100k 性能、4GiB 原生下载 SHA 或 OS 进程回收证据。后续 S3D2 要在共享 Files/Gallery/Viewer/编辑/传输真实活动及跨窗口 fencing 可信可用后才讨论一键安全激活。本阶段必须准确 HEAD 完整 GitHub PR CI + Final Gate 与真实 Chrome 专项均绿后线性合并。
