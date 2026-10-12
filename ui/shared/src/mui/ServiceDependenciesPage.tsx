@@ -38,11 +38,12 @@ import { XDriveStoredCredentialField } from './SourceCredentialFields'
 import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
 import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
 import { XDriveMediaWorkerConfigPanel, type XDriveMediaWorkerPort } from './MediaWorkerConfigPanel'
+import { XDrivePhotoHostDesiredPanel, type XDrivePhotoHostPort } from './PhotoHostDesiredPanel'
 import { XDriveCaddyHTTPSDesiredPanel, type XDriveCaddyHTTPSPort } from './CaddyHTTPSDesiredPanel'
 import { XDriveCaddyAliDNSPanel, type XDriveCaddyAliDNSPort } from './CaddyAliDNSPanel'
 import { XDriveCaddyPreflightPanel, type XDriveCaddyPreflightPort } from './CaddyPreflightPanel'
 
-export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
+export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMediaWorkerPort & XDrivePhotoHostPort & XDriveCaddyHTTPSPort & XDriveCaddyAliDNSPort & XDriveCaddyPreflightPort & {
   load: () => Promise<XDriveServiceDependenciesSnapshot>
   loadSourceWorkerConfig?: () => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
   saveSourceWorkerConfig?: (input: import('../service-dependencies').XDriveSourceWorkerUpdate) => Promise<import('../service-dependencies').XDriveSourceWorkerConfig>
@@ -97,7 +98,7 @@ const dependencyTabLabels: Record<XDriveSystemDependencyTab, string> = {
 function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
   switch (service) {
     case 'storage': return ['status']
-    case 'photo-face':
+    case 'photo-face': return ['status', 'config', 'verify', 'history']
     case 'photo-smart':
     case 'photo-semantic':
     case 'photo-creative': return ['status', 'verify']
@@ -1221,6 +1222,12 @@ export function XDriveServiceDependenciesPage({
                     <Button size="small" variant="outlined" sx={{ mt: 1.5 }}
                       onClick={() => choosePage('photo-auto')}>管理全局自动分析策略</Button>
                   )}
+                  {['photo-face', 'photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && currentTab === 'status' && (
+                    <Button size="small" variant="text" sx={{ mt: 1 }}
+                      onClick={() => navigateTo({ service: 'photo-face', tab: 'config' })}>
+                      查看共享 Photo Intelligence 宿主期望配置（不启停）
+                    </Button>
+                  )}
                   {selectedPage === 'photo-auto' && currentTab === 'status' && (
                     <Typography variant="body2" color="text.secondary">
                       全局策略集中控制后续自动分析任务的准入，并不启动、停止或证明模型容器健康。
@@ -1242,6 +1249,10 @@ export function XDriveServiceDependenciesPage({
                     </Stack>
                   )}
                   
+              {selectedPage === 'photo-face' && currentTab !== 'status' &&
+                <XDrivePhotoHostDesiredPanel source={source}
+                  section={currentTab === 'history' ? 'history' : currentTab === 'verify' ? 'verify' : 'config'}
+                  onDirtyChange={setChildDirty} />}
               {selectedPage === 'media-worker' && currentTab !== 'status' &&
                 <XDriveMediaWorkerConfigPanel source={source} refreshID={0}
                   section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}

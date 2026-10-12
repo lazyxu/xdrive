@@ -621,6 +621,60 @@ func (c *Client) RollbackAdminSourceWorker(ctx context.Context, input AdminSourc
 	return out, err
 }
 
+// One fixed shared Photo Intelligence host/profile target. Desired state is
+// NEVER independently verified as applied until a host transaction exists.
+type AdminPhotoHostConfig struct {
+	DesiredEnabled        bool       `json:"desired_enabled"`
+	Revision              uint64     `json:"revision"`
+	Source                string     `json:"source"`
+	UpdatedAt             *time.Time `json:"updated_at,omitempty"`
+	ApplyState            string     `json:"apply_state"`
+	Editable              bool       `json:"editable"`
+	ApplySupported        bool       `json:"apply_supported"`
+	Requirement           string     `json:"requirement"`
+	HostObserved          bool       `json:"host_observed"`
+	HostRuntimeState      string     `json:"host_runtime_state"`
+	HostProfileConfigured *bool      `json:"host_profile_configured,omitempty"`
+}
+type AdminPhotoHostUpdate struct {
+	Revision uint64 `json:"revision"`
+	Enabled  bool   `json:"enabled"`
+}
+type AdminPhotoHostRevision struct {
+	Revision  uint64    `json:"revision"`
+	Enabled   bool      `json:"enabled"`
+	Origin    string    `json:"origin"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type AdminPhotoHostRevisionPage struct {
+	Items []AdminPhotoHostRevision `json:"items"`
+}
+type AdminPhotoHostRollbackInput struct {
+	Revision       uint64 `json:"revision"`
+	TargetRevision uint64 `json:"target_revision"`
+}
+
+func (c *Client) AdminPhotoHostConfig(ctx context.Context) (AdminPhotoHostConfig, error) {
+	var out AdminPhotoHostConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/host", nil, &out)
+	return out, err
+}
+func (c *Client) UpdateAdminPhotoHost(ctx context.Context, input AdminPhotoHostUpdate) (AdminPhotoHostConfig, error) {
+	var out AdminPhotoHostConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/photo-intelligence/host", input, &out)
+	return out, err
+}
+func (c *Client) AdminPhotoHostRevisions(ctx context.Context) (AdminPhotoHostRevisionPage, error) {
+	var out AdminPhotoHostRevisionPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/photo-intelligence/host/revisions", nil, &out)
+	return out, err
+}
+func (c *Client) RollbackAdminPhotoHost(ctx context.Context, input AdminPhotoHostRollbackInput) (AdminPhotoHostConfig, error) {
+	var out AdminPhotoHostConfig
+	err := c.json(ctx, http.MethodPost, "/api/v1/admin/services/photo-intelligence/host/rollback", input, &out)
+	return out, err
+}
+
 type AdminPhotoAutoKinds struct {
 	Face          bool `json:"face"`
 	Smart         bool `json:"smart"`

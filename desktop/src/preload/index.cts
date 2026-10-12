@@ -716,6 +716,12 @@ const agent = Object.freeze({
   cloudAdminSourceWorkerRevisions: () => ipcRenderer.invoke('agent:cloud-admin-source-worker-revisions'),
   cloudRollbackAdminSourceWorker: (input: { revision: number; target_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-rollback-admin-source-worker', input),
+  cloudAdminPhotoHostConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-host'),
+  cloudSetAdminPhotoHost: (input: { revision: number; enabled: boolean }) =>
+    ipcRenderer.invoke('agent:cloud-set-admin-photo-host', input),
+  cloudAdminPhotoHostRevisions: () => ipcRenderer.invoke('agent:cloud-admin-photo-host-revisions'),
+  cloudRollbackAdminPhotoHost: (input: { revision: number; target_revision: number }) =>
+    ipcRenderer.invoke('agent:cloud-rollback-admin-photo-host', input),
   cloudAdminPhotoAutoConfig: () => ipcRenderer.invoke('agent:cloud-admin-photo-intelligence'),
   cloudSetAdminPhotoAutoConfig: (input: { revision: number; auto_enabled: boolean; kinds?: { face: boolean; smart: boolean; semantic: boolean; person_cluster: boolean } }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-photo-intelligence', input),

@@ -225,6 +225,32 @@ export type XDrivePostgresPoolRevisionPage = {
 }
 export type XDrivePostgresPoolRollbackInput = { revision: number; target_revision: number }
 
+// This contract is for the ONE shared Photo Intelligence host. It is
+// independent from the per-kind automatic-analysis scheduling policy.
+export type XDrivePhotoHostConfig = {
+  desired_enabled: boolean
+  revision: number
+  source: 'default' | 'saved'
+  updated_at?: string
+  apply_state: 'unmanaged' | 'pending'
+  editable: boolean
+  apply_supported: false
+  requirement: string
+  host_observed: boolean
+  host_runtime_state: 'healthy' | 'unhealthy' | 'starting' | 'running-unverified' | 'stopped' | 'unknown'
+  host_profile_configured?: boolean
+}
+export type XDrivePhotoHostUpdate = { revision: number; enabled: boolean }
+export type XDrivePhotoHostRevisionPage = {
+  items: Array<{
+    revision: number
+    enabled: boolean
+    origin: 'default' | 'saved' | 'rollback'
+    created_at: string
+  }>
+}
+export type XDrivePhotoHostRollbackInput = { revision: number; target_revision: number }
+
 export type XDrivePhotoAutoKinds = {
   face: boolean
   smart: boolean

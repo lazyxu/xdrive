@@ -1014,6 +1014,12 @@ function FileManager({
     saveSourceWorkerConfig: (input: XDriveSourceWorkerUpdate) => api.adminSaveSourceWorkerConfig(input),
     loadSourceWorkerRevisions: () => api.adminSourceWorkerRevisions(),
     rollbackSourceWorker: (input: XDriveSourceWorkerRollbackInput) => api.adminRollbackSourceWorker(input),
+    loadPhotoHostConfig: () => api.adminPhotoHostConfig(),
+    savePhotoHostConfig: (input: import('../../ui/shared/src').XDrivePhotoHostUpdate) =>
+      api.adminSavePhotoHost(input),
+    loadPhotoHostRevisions: () => api.adminPhotoHostRevisions(),
+    rollbackPhotoHost: (input: import('../../ui/shared/src').XDrivePhotoHostRollbackInput) =>
+      api.adminRollbackPhotoHost(input),
     loadPhotoAutoConfig: () => api.adminPhotoAutoConfig(),
     savePhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => api.adminSavePhotoAutoConfig(input),
     loadPhotoAutoRevisions: () => api.adminPhotoAutoRevisions(),

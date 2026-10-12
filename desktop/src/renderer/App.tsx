@@ -1777,6 +1777,26 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    loadPhotoHostConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPhotoHostConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    savePhotoHostConfig: async (input: import('../../../ui/shared/src').XDrivePhotoHostUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminPhotoHost(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    loadPhotoHostRevisions: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminPhotoHostRevisions()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    rollbackPhotoHost: async (input: import('../../../ui/shared/src').XDrivePhotoHostRollbackInput) => {
+      const result = await window.xdriveDesktop.agent.cloudRollbackAdminPhotoHost(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadPhotoAutoConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminPhotoAutoConfig()
       if (!result.ok) throw new Error(result.error.message)

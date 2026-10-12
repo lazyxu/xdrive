@@ -869,6 +869,30 @@ export class XDriveApi {
     })
   }
 
+  adminPhotoHostConfig() {
+    return this.request<import('../../ui/shared/src').XDrivePhotoHostConfig>(
+      '/api/v1/admin/services/photo-intelligence/host', { cache: 'no-store' },
+    )
+  }
+  adminSavePhotoHost(input: import('../../ui/shared/src').XDrivePhotoHostUpdate) {
+    return this.request<import('../../ui/shared/src').XDrivePhotoHostConfig>(
+      '/api/v1/admin/services/photo-intelligence/host', {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+  adminPhotoHostRevisions() {
+    return this.request<import('../../ui/shared/src').XDrivePhotoHostRevisionPage>(
+      '/api/v1/admin/services/photo-intelligence/host/revisions', { cache: 'no-store' },
+    )
+  }
+  adminRollbackPhotoHost(input: import('../../ui/shared/src').XDrivePhotoHostRollbackInput) {
+    return this.request<import('../../ui/shared/src').XDrivePhotoHostConfig>(
+      '/api/v1/admin/services/photo-intelligence/host/rollback', {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
   adminPhotoAutoConfig() {
     return this.request<XDrivePhotoAutoConfig>('/api/v1/admin/services/photo-intelligence')
   }

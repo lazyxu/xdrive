@@ -869,6 +869,14 @@ declare global {
         cloudSetAdminSourceWorkerConfig: (input: XDriveSourceWorkerUpdate) => Promise<DesktopResult<XDriveSourceWorkerConfig>>
         cloudAdminSourceWorkerRevisions: () => Promise<DesktopResult<XDriveSourceWorkerRevisionPage>>
         cloudRollbackAdminSourceWorker: (input: XDriveSourceWorkerRollbackInput) => Promise<DesktopResult<XDriveSourceWorkerConfig>>
+        cloudAdminPhotoHostConfig: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
+        cloudSetAdminPhotoHost: (input: import('../../../ui/shared/src').XDrivePhotoHostUpdate) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
+        cloudAdminPhotoHostRevisions: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostRevisionPage>>
+        cloudRollbackAdminPhotoHost: (input: import('../../../ui/shared/src').XDrivePhotoHostRollbackInput) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDrivePhotoHostConfig>>
         cloudAdminPhotoAutoConfig: () => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudSetAdminPhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => Promise<DesktopResult<XDrivePhotoAutoConfig>>
         cloudAdminPhotoAutoRevisions: () => Promise<DesktopResult<XDrivePhotoAutoRevisionPage>>
