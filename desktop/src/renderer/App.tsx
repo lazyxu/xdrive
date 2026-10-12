@@ -92,6 +92,7 @@ import {
   xDriveLatestRedoableFileOperation,
   xDriveLatestUndoableFileOperation,
   xDriveLoginCredentialsReady,
+  xDriveSystemDependenciesNeedsExitConfirmation,
 } from '@xdrive/shared'
 import type { XDriveFileExplorerDownloadResult, XDriveDeviceBackupDataSource } from '@xdrive/shared'
 import { DesktopFilesPage } from './DesktopFilesPage'
@@ -202,7 +203,25 @@ export default function App({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
-  const [view, setView] = useState<View>('overview')
+  const [view, setViewActual] = useState<View>('overview')
+  const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
+  const [pendingSystemDependenciesExit, setPendingSystemDependenciesExit] = useState<View | null>(null)
+  const activeViewRef = useRef<View>(view)
+  const systemDependenciesDraftRef = useRef(false)
+  const systemDependenciesAdminRef = useRef(false)
+  activeViewRef.current = view
+  systemDependenciesDraftRef.current = systemDependenciesDraftDirty
+
+  const setView = useCallback((next: View) => {
+    if (systemDependenciesAdminRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
+      activeViewRef.current, next, systemDependenciesDraftRef.current,
+    )) {
+      setPendingSystemDependenciesExit(next)
+      return
+    }
+    setViewActual(next)
+  }, [])
+
   const [systemDependenciesNavigationResetKey, setSystemDependenciesNavigationResetKey] = useState(0)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [busy, setBusy] = useState('')
@@ -333,6 +352,7 @@ export default function App({
   const savedPasswordAvailable = password.length === 0 && hasStoredPassword
 
   const status = agent.status
+  systemDependenciesAdminRef.current = status?.role === 'admin'
   const cloudFileExplorerNavigationState =
     cloudFileExplorerNavigationSnapshot &&
     cloudFileExplorerNavigationSnapshot.server === status?.server &&
@@ -2783,6 +2803,7 @@ export default function App({
         {view === 'admin-services' && status?.role === 'admin' && (
           agent.hello?.capabilities.includes('admin-services') ? (
             <XDriveServiceDependenciesPage source={adminServicesPort}
+              onUnsavedChange={setSystemDependenciesDraftDirty}
               navigationResetKey={systemDependenciesNavigationResetKey} />
           ) : (
             <XDriveStatePanel message="当前 xdrive-agent 不支持服务状态查询，请更新客户端核心组件。" />
@@ -2908,6 +2929,22 @@ export default function App({
             }}
           />
         </XDriveSettingsDialog>
+
+      <XDriveConfirmDialog
+        open={pendingSystemDependenciesExit !== null}
+        title="离开未保存的系统依赖配置？"
+        description="离开系统依赖将放弃当前未保存的修改；已提交的宿主机或后台任务不会被取消。"
+        confirmLabel="放弃修改并离开"
+        onCancel={() => setPendingSystemDependenciesExit(null)}
+        onConfirm={() => {
+          const next = pendingSystemDependenciesExit
+          if (!next) return
+          systemDependenciesDraftRef.current = false
+          setSystemDependenciesDraftDirty(false)
+          setPendingSystemDependenciesExit(null)
+          setViewActual(next)
+        }}
+      />
 
       <XDriveConfirmDialog
         open={!!confirmDialog}

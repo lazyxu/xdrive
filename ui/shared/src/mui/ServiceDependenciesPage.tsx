@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey } from '../system-dependencies-navigation'
+import { xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies } from '../system-dependencies-navigation'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -273,11 +273,12 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
 
 /** Administrator-only status and encrypted Baidu AK management. No Docker control socket. */
 export function XDriveServiceDependenciesPage({
-  source, location, onLocationChange, navigationResetKey = 0,
+  source, location, onLocationChange, onUnsavedChange, navigationResetKey = 0,
 }: {
   source: XDriveServiceDependenciesPort
   location?: XDriveSystemDependenciesLocation
   onLocationChange?: (next: XDriveSystemDependenciesLocation, options?: { replace?: boolean }) => void
+  onUnsavedChange?: (hasUnsavedEdits: boolean) => void
   navigationResetKey?: number
 }) {
   const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
@@ -355,7 +356,14 @@ export function XDriveServiceDependenciesPage({
       (photoPolicy.kinds != null && photoAutoKindChoices.some(
         (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
       )))
-  unsavedRef.current = Boolean(childDirty || caddyHTTPSDirty || caddyAliDirty || dirtyBaidu || dirtyGeoNames || dirtyPhoto)
+  const hasUnsavedEdits = Boolean(
+    childDirty || caddyHTTPSDirty || caddyAliDirty || dirtyBaidu || dirtyGeoNames || dirtyPhoto,
+  )
+  unsavedRef.current = hasUnsavedEdits
+  useEffect(() => {
+    onUnsavedChange?.(hasUnsavedEdits)
+    return () => { onUnsavedChange?.(false) }
+  }, [onUnsavedChange, hasUnsavedEdits])
 
   // The same guard handles internal links, browser back/forward and the
   // Desktop global Sidebar reset. Never silently discard an unsaved draft.
@@ -970,7 +978,7 @@ export function XDriveServiceDependenciesPage({
     ? new Date(snapshot.checked_at).toLocaleString()
     : ''
   // Ignore user-level connector rows returned by older Server versions.
-  const systemServices = snapshot?.services.filter((item) => groups.some((group) => group.id === item.group)) ?? []
+  const systemServices = xDriveVisibleSystemDependencies(snapshot?.services ?? [])
   const photoKindsChanged = !!photoPolicy?.kinds && photoAutoKindChoices.some(
     (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
   )

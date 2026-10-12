@@ -88,7 +88,7 @@ import type {
   XDriveWebAppBrowseContext,
   XDriveWebAppRoute,
 } from '../../ui/shared/src'
-import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer } from '../../ui/shared/src'
+import { XDRIVE_FILE_EXPLORER_DEFAULT_SORT, xDriveFileExplorerCaseInsensitiveNameLookupPageOptions, xDriveFileExplorerEnsureUploadDirectory, xDriveFileExplorerResolveFolderUploadTargets, xDriveLatestRedoableFileOperation, xDriveLatestUndoableFileOperation, xDriveUsernameValidationError, xDrivePasswordValidationError, xDriveWebAppViewer, xDriveSystemDependenciesNeedsExitConfirmation } from '../../ui/shared/src'
 import AdminUsersPanel from './AdminUsers'
 import AdminAuditPanel from './AdminAudit'
 import PublicShareView from './PublicShare'
@@ -434,7 +434,45 @@ function FileManager({
   const [profile, setProfile] = useState<MeResult | null>(null)
   const [folderOpen, setFolderOpen] = useState(false)
   const folderParentIDRef = useRef<number | null>(null)
-  const { route, launch: launchWebApp, closeViewer, exitApp, canExitApp } = useXDriveWebAppRuntime()
+  const { route, launch: launchWebAppRuntime, closeViewer, exitApp, canExitApp } = useXDriveWebAppRuntime()
+  const [systemDependenciesDraftDirty, setSystemDependenciesDraftDirty] = useState(false)
+  const [pendingSystemDependenciesExit, setPendingSystemDependenciesExit] = useState<
+    | { kind: 'route'; next: XDriveWebAppRoute;
+        options: { replace?: boolean; newTab?: boolean; viewerReturn?: boolean } }
+    | { kind: 'exit' }
+    | null
+  >(null)
+  const activeAppRef = useRef(route.app)
+  const systemDependenciesDraftRef = useRef(false)
+  const adminRoleRef = useRef(false)
+  activeAppRef.current = route.app
+  systemDependenciesDraftRef.current = systemDependenciesDraftDirty
+  adminRoleRef.current = profile?.role === 'admin'
+
+  // Route intent is guarded before the Web runtime changes the active app.
+  // In-app System Dependencies tab/deeplink transitions use their own guard.
+  const launchWebApp = useCallback((
+    next: XDriveWebAppRoute,
+    options: { replace?: boolean; newTab?: boolean; viewerReturn?: boolean } = {},
+  ) => {
+    if (adminRoleRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
+      activeAppRef.current, next.app, systemDependenciesDraftRef.current, Boolean(options.newTab),
+    )) {
+      setPendingSystemDependenciesExit({ kind: 'route', next, options })
+      return
+    }
+    launchWebAppRuntime(next, options)
+  }, [launchWebAppRuntime])
+
+  const exitWebApp = useCallback(() => {
+    if (adminRoleRef.current && xDriveSystemDependenciesNeedsExitConfirmation(
+      activeAppRef.current, 'overview', systemDependenciesDraftRef.current,
+    )) {
+      setPendingSystemDependenciesExit({ kind: 'exit' })
+      return
+    }
+    exitApp()
+  }, [exitApp])
   const workspaceRouteKey = xDriveWebAppWorkspaceKey(route.app, route.params)
   const [lastWorkspaceView, setLastWorkspaceView] = useState<AppView>(
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
@@ -1429,7 +1467,7 @@ function FileManager({
               title={mobileAppTitles[appView] ?? 'xDrive'}
               canGoBack={canExitApp}
               disabled={viewerActive}
-              onBack={exitApp}
+              onBack={exitWebApp}
               onOpenApps={() => setCompactNavigationOpen(true)}
               transferAction={transferAction}
             />
@@ -1668,6 +1706,7 @@ function FileManager({
         ) : appView === 'admin-services' && profile?.role === 'admin' ? (
           <XDriveServiceDependenciesPage
             source={serviceDependenciesPort}
+            onUnsavedChange={setSystemDependenciesDraftDirty}
             location={route.app === 'admin-services' ? route.params : undefined}
             onLocationChange={(next, options) => launchWebApp(
               { app: 'admin-services', params: next },
@@ -1724,6 +1763,23 @@ function FileManager({
           onError={handleError}
         />
       ) : null}
+
+      <XDriveConfirmDialog
+        open={pendingSystemDependenciesExit !== null}
+        title="离开未保存的系统依赖配置？"
+        description="系统依赖中有尚未保存的修改。放弃草稿后才能进入其他应用；已提交的后台任务不会被取消。"
+        confirmLabel="放弃修改并离开"
+        onCancel={() => setPendingSystemDependenciesExit(null)}
+        onConfirm={() => {
+          const pending = pendingSystemDependenciesExit
+          if (!pending) return
+          systemDependenciesDraftRef.current = false
+          setSystemDependenciesDraftDirty(false)
+          setPendingSystemDependenciesExit(null)
+          if (pending.kind === 'exit') exitApp()
+          else launchWebAppRuntime(pending.next, pending.options)
+        }}
+      />
 
       <XDriveUploadConflictDialog {...fileUploads.dialogProps} />
 
