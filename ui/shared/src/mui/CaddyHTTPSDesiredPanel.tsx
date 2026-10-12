@@ -34,11 +34,13 @@ const tlsLabels: Record<XDriveCaddyHTTPSConfig['host_tls_state'], string> = {
 }
 
 export function XDriveCaddyHTTPSDesiredPanel({
-  source, refreshID, onConfigurationChanged,
+  source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange,
 }: {
   source: XDriveCaddyHTTPSPort
   refreshID: number
   onConfigurationChanged?: () => void
+  section?: 'config' | 'history'
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveCaddyHTTPSConfig | null>(null)
@@ -80,7 +82,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
     } else {
       setLoading(false)
     }
-    if (source.loadCaddyHTTPSRevisions) {
+    if (section === 'history' && source.loadCaddyHTTPSRevisions) {
       void source.loadCaddyHTTPSRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
@@ -88,7 +90,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
       })
     }
     return () => { active = false; ++epochRef.current }
-  }, [source, refreshID])
+  }, [source, refreshID, section])
 
   const reload = async () => {
     if (!source.loadCaddyHTTPSConfig || busy) return
@@ -170,6 +172,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
   const changed = !!config && (
     enabled !== config.desired_enabled || domain.toLowerCase() !== config.desired_domain
   )
+  useEffect(() => { onDirtyChange?.(changed) }, [onDirtyChange, changed])
+
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
       data-xdrive-admin-caddy-https-desired>
@@ -199,6 +203,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
                 config.host_https_configured ? '配置了 HTTPS' : '未配置 HTTPS'}
               {' · '}{tlsLabels[config.host_tls_state] ?? '状态未知'}
             </Typography>
+            {section === 'config' && (<>
             <FormControlLabel
               control={<Switch checked={enabled} disabled={!canEdit}
                 onChange={(event) => setEnabled(event.target.checked)} />}
@@ -221,7 +226,8 @@ export function XDriveCaddyHTTPSDesiredPanel({
               {config.apply_supported ? '宿主机控制能力待独立验证' : '实际应用尚未开放：没有可安全操作网关的控制接口。'}
               {' '}本机 TLS 验证不等于公网 HTTPS 可访问。
             </Typography>
-            {source.loadCaddyHTTPSRevisions && source.rollbackCaddyHTTPS && (
+            </>)}
+            {section === 'history' && source.loadCaddyHTTPSRevisions && source.rollbackCaddyHTTPS && (
               <Box>
                 <Typography variant="subtitle2" fontWeight={700}>历史修订与审计回滚</Typography>
                 <TextField fullWidth select size="small" label="选择历史期望配置"

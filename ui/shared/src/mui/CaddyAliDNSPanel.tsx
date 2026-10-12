@@ -15,10 +15,11 @@ function validSecret(value: string, min: number, max: number) {
 }
 
 // Global credentials are staged only. This panel never controls Caddy or DNS.
-export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged }: {
+export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChanged, onDirtyChange }: {
   source: XDriveCaddyAliDNSPort
   refreshID: number
   onConfigurationChanged?: () => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const requestEpochRef = useRef(0)
   const revealEpochRef = useRef(0)
@@ -138,6 +139,9 @@ export function XDriveCaddyAliDNSPanel({ source, refreshID, onConfigurationChang
       if (epoch === revealEpochRef.current) setRevealing(false)
     }
   }
+
+  useEffect(() => { onDirtyChange?.(keyID.length > 0 || keySecret.length > 0) },
+    [onDirtyChange, keyID, keySecret])
 
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}

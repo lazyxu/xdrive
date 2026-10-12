@@ -130,7 +130,7 @@ test('Web Home and admin destinations use the same section model contract', () =
   assert.ok(web.includes("label: '主页'"))
   assert.ok(web.includes("...(profile?.role === 'admin'"), 'admin section must remain role-gated')
   assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
-  for (const label of ['用户管理', '审计日志', '全局存储', '服务与依赖']) {
+  for (const label of ['用户管理', '审计日志', '全局存储', '系统依赖']) {
     assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
   }
 })
@@ -152,5 +152,8 @@ test('Desktop Files routing uses the shared files key directly', () => {
   assert.equal(desktop.includes("view === 'cloud'"), false, 'legacy cloud view key must be removed')
   assert.equal(desktop.includes("setView('cloud')"), false, 'legacy cloud navigation must be removed')
   assert.ok(desktop.includes('selected={view}'), 'Desktop shared sidebar selection should use the real view directly')
-  assert.ok(desktop.includes('onSelect={(destination) => setView(destination as View)}'), 'Desktop shared sidebar should route directly')
+  assert.ok(desktop.includes("onSelect={(destination) => {"), 'Desktop shared Sidebar must keep a real navigation handler')
+  assert.ok(desktop.includes("setView(destination as View)"), 'Desktop shared sidebar should route directly')
+  assert.ok(desktop.includes("setSystemDependenciesNavigationResetKey((value) => value + 1)"),
+    'system dependencies entry must reset to overview without changing the global App Frame')
 })

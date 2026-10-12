@@ -39,10 +39,12 @@ function summary(values: XDrivePostgresPoolValues): string {
 
 export function XDrivePostgresPoolConfigPanel({
   source,
-  refreshID,
+  refreshID, section = 'config', onDirtyChange,
 }: {
   source: XDrivePostgresPoolPort
   refreshID: number
+  section?: 'config' | 'history'
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDrivePostgresPoolConfig | null>(null)
@@ -84,7 +86,7 @@ export function XDrivePostgresPoolConfigPanel({
     } else {
       setLoading(false)
     }
-    if (source.loadPostgresPoolRevisions) {
+    if (section === 'history' && source.loadPostgresPoolRevisions) {
       void source.loadPostgresPoolRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
@@ -92,7 +94,7 @@ export function XDrivePostgresPoolConfigPanel({
       })
     }
     return () => { active = false; ++epochRef.current }
-  }, [source, refreshID])
+  }, [source, refreshID, section])
 
   const reload = async () => {
     if (!source.loadPostgresPoolConfig || busy) return
@@ -190,6 +192,9 @@ export function XDrivePostgresPoolConfigPanel({
     parsed.max_idle_connections !== config.desired.max_idle_connections
   )
 
+  useEffect(() => { onDirtyChange?.(Boolean(config && (!parsed || changed))) },
+    [onDirtyChange, config, parsed?.max_open_connections, parsed?.max_idle_connections, changed])
+
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-postgres-pool>
@@ -256,6 +261,7 @@ export function XDrivePostgresPoolConfigPanel({
                 当前 Server/Agent 尚不支持 PostgreSQL 多实例观测，不能确认其他实例是否生效。
               </Typography>
             )}
+            {section === 'config' && (<>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
               <TextField size="small" fullWidth type="number" label="最大打开连接数" value={draft.open}
                 helperText="0（Go 默认不限额）或 8–256"
@@ -275,6 +281,7 @@ export function XDrivePostgresPoolConfigPanel({
               description={parsed ? `应用新的连接池配置：${summary(parsed)}。仅作用于本应用进程，可能改变请求等待时间，不会修改数据库服务端、容器或数据目录；其他 Server 需独立确认。` : '配置无效'}
               confirmLabel="校验并保存" onCancel={() => setConfirmSave(false)}
               onConfirm={() => { void save() }} />
+            </>)}
           </>
         ) : (
           <Typography variant="body2" color="text.secondary">
@@ -282,7 +289,7 @@ export function XDrivePostgresPoolConfigPanel({
               '此 Server/Agent 版本不支持连接池在线配置；不会提供无效的编辑按钮。'}
           </Typography>
         )}
-        {config && source.loadPostgresPoolRevisions && source.rollbackPostgresPool && (
+        {section === 'history' && config && source.loadPostgresPoolRevisions && source.rollbackPostgresPool && (
           <Box>
             <Stack spacing={1}>
               <Typography variant="subtitle2" fontWeight={700}>版本历史与安全回滚</Typography>

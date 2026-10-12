@@ -1,4 +1,6 @@
 import type { MediaGalleryQuery } from './models'
+import { xDriveNormalizeSystemDependenciesLocation } from './system-dependencies-navigation'
+import type { XDriveSystemDependenciesLocation } from './system-dependencies-navigation'
 import type { XDriveFileExplorerGrouping } from './file-explorer-grouping'
 import type { XDriveFileExplorerSearchFilters } from './file-explorer-search'
 
@@ -102,7 +104,7 @@ export interface XDriveWebAppLaunchMap {
   'admin-users': { user?: number }
   'admin-audit': Record<string, never>
   'admin-storage': { section?: string; task?: string }
-  'admin-services': Record<string, never>
+  'admin-services': XDriveSystemDependenciesLocation
 }
 
 export type XDriveWebAppRoute = {
@@ -190,6 +192,10 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
     }
     case 'admin-users':
       return { app, params: { user: positiveInteger(query.get('user')) } }
+    case 'admin-services':
+      return { app, params: xDriveNormalizeSystemDependenciesLocation({
+        service: query.get('service'), policy: query.get('policy'), tab: query.get('tab'),
+      }) }
     case 'admin-storage':
       return {
         app,
@@ -202,7 +208,6 @@ export function xDriveParseWebAppHash(hash: string): XDriveWebAppRoute | null {
     case 'local-storage':
     case 'cloud-storage':
     case 'admin-audit':
-    case 'admin-services':
       return { app, params: {} } as XDriveWebAppRoute
   }
 }

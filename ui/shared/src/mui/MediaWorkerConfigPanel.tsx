@@ -49,10 +49,12 @@ const states: Record<XDriveMediaWorkerConfig['apply_state'], string> = {
 }
 
 export function XDriveMediaWorkerConfigPanel({
-  source, refreshID,
+  source, refreshID, section = 'config', onDirtyChange,
 }: {
   source: XDriveMediaWorkerPort
   refreshID: number
+  section?: 'config' | 'history'
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveMediaWorkerConfig | null>(null)
@@ -105,7 +107,7 @@ export function XDriveMediaWorkerConfigPanel({
     } else {
       setLoading(false)
     }
-    if (source.loadMediaWorkerRevisions) {
+    if (section === 'history' && source.loadMediaWorkerRevisions) {
       void source.loadMediaWorkerRevisions().then((page) => {
         if (active && epoch === epochRef.current) setHistory(page.items)
       }).catch(() => {
@@ -113,7 +115,7 @@ export function XDriveMediaWorkerConfigPanel({
       })
     }
     return () => { active = false; ++epochRef.current }
-  }, [source, refreshID])
+  }, [source, refreshID, section])
 
   const reload = async () => {
     if (!source.loadMediaWorkerConfig || busy) return
@@ -242,6 +244,15 @@ export function XDriveMediaWorkerConfigPanel({
   const canEdit = !!config?.editable && typeof config?.desired_memory_mib === 'number' &&
     typeof config?.desired_cpu_milli === 'number' && typeof config?.desired_pids_limit === 'number' &&
     !busy && !operationActive
+  useEffect(() => {
+    onDirtyChange?.(Boolean(config && (
+      draftEnabled !== config.desired_enabled ||
+      draftMemory !== String(config.desired_memory_mib ?? 768) ||
+      draftCPU !== String(config.desired_cpu_milli ?? 750) ||
+      draftPIDs !== String(config.desired_pids_limit ?? 128)
+    )))
+  }, [onDirtyChange, config, draftEnabled, draftMemory, draftCPU, draftPIDs])
+
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-media-worker-control>
@@ -283,6 +294,7 @@ export function XDriveMediaWorkerConfigPanel({
                 (config.host.observed_enabled ? '（Docker 实际限制已核验）' : '（停用后配置文件已核验）') : '未核验'}
               {' · '}执行状态：{config.host.state}
             </Typography>
+            {section === 'config' && (<>
             <FormControlLabel
               control={<Switch checked={draftEnabled} disabled={!canEdit}
                 onChange={(event) => setDraftEnabled(event.target.checked)} />}
@@ -341,7 +353,8 @@ export function XDriveMediaWorkerConfigPanel({
                 '。启用时仅重建 media-worker，并实际核验容器内存/CPU/PID 限制和 FFmpeg 探针。'}
               confirmLabel="提交受限执行" onCancel={() => setConfirmApply(false)}
               onConfirm={() => { void apply() }} />
-            {source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
+            </>)}
+            {section === 'history' && source.loadMediaWorkerRevisions && source.rollbackMediaWorker && (
               <Box>
                 <Typography variant="subtitle2" fontWeight={700}>历史配置与安全回滚</Typography>
                 <TextField select fullWidth size="small" label="选择历史修订" value={rollbackTarget}

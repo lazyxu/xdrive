@@ -57,10 +57,12 @@ const applyLabels: Record<XDriveSourceWorkerConfig['apply_state'], string> = {
 
 export function XDriveSourceWorkerConfigPanel({
   source,
-  refreshID,
+  refreshID, section = 'config', onDirtyChange,
 }: {
   source: XDriveSourceWorkerPort
   refreshID: number
+  section?: 'config' | 'history'
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const epochRef = useRef(0)
   const [config, setConfig] = useState<XDriveSourceWorkerConfig | null>(null)
@@ -102,7 +104,7 @@ export function XDriveSourceWorkerConfigPanel({
     } else {
       setLoading(false)
     }
-    if (source.loadSourceWorkerRevisions) {
+    if (section === 'history' && source.loadSourceWorkerRevisions) {
       void source.loadSourceWorkerRevisions().then((next) => {
         if (active && epoch === epochRef.current) setHistory(next.items)
       }).catch(() => {
@@ -112,7 +114,7 @@ export function XDriveSourceWorkerConfigPanel({
       })
     }
     return () => { active = false; ++epochRef.current }
-  }, [source, refreshID])
+  }, [source, refreshID, section])
 
   const reload = async () => {
     if (!source.loadSourceWorkerConfig || busy) return
@@ -239,6 +241,10 @@ export function XDriveSourceWorkerConfigPanel({
     parsed.max_concurrency !== config.desired.max_concurrency
   )
 
+  useEffect(() => { onDirtyChange?.(Boolean(config && (!parsed || changed))) },
+    [onDirtyChange, config, parsed?.scan_interval_seconds, parsed?.poll_interval_seconds,
+      parsed?.max_concurrency, changed])
+
   return (
     <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}
       data-xdrive-admin-source-worker>
@@ -286,7 +292,7 @@ export function XDriveSourceWorkerConfigPanel({
               '当前 Server/Agent 不支持 Pull Worker 参数管理，不能提供虚假的启用或保存按钮。'}
           </Typography>
         )}
-        {config && (
+        {section === 'config' && config && (
           <>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
               <TextField size="small" fullWidth type="number" label="扫描间隔（秒）"
@@ -312,7 +318,7 @@ export function XDriveSourceWorkerConfigPanel({
             </Stack>
           </>
         )}
-        {!!source.loadSourceWorkerRevisions && !!source.rollbackSourceWorker && !!config && (
+        {section === 'history' && !!source.loadSourceWorkerRevisions && !!source.rollbackSourceWorker && !!config && (
           <Box>
             <Stack spacing={1}>
               <Typography variant="subtitle2" fontWeight={700}>版本历史与审计回滚</Typography>

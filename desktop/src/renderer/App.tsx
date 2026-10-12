@@ -203,6 +203,7 @@ export default function App({
   const [windowMaximized, setWindowMaximized] = useState(false)
   const [agent, setAgent] = useState<AgentConnectionState>({ connected: false })
   const [view, setView] = useState<View>('overview')
+  const [systemDependenciesNavigationResetKey, setSystemDependenciesNavigationResetKey] = useState(0)
   const [transferPopoverOpen, setTransferPopoverOpen] = useState(false)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -1866,7 +1867,7 @@ export default function App({
           ariaLabel: '管理员功能',
           placement: 'after-core' as const,
           items: [
-            { key: 'admin-services', label: '服务与依赖', icon: <DnsRoundedIcon fontSize="small" /> },
+            { key: 'admin-services', label: '系统依赖', icon: <DnsRoundedIcon fontSize="small" /> },
           ],
         }]
       : []),
@@ -2488,7 +2489,12 @@ export default function App({
         showLocalStorage
         sections={desktopSidebarSections}
         storageSummary={xDriveWorkspaceStorageSummary(cloudQuota)}
-        onSelect={(destination) => setView(destination as View)}
+        onSelect={(destination) => {
+          if (destination === 'admin-services') {
+            setSystemDependenciesNavigationResetKey((value) => value + 1)
+          }
+          setView(destination as View)
+        }}
       />
 
       <XDriveWorkspaceContent presentation={xDriveWorkspacePresentation(view)}>
@@ -2773,7 +2779,8 @@ export default function App({
 
         {view === 'admin-services' && status?.role === 'admin' && (
           agent.hello?.capabilities.includes('admin-services') ? (
-            <XDriveServiceDependenciesPage source={adminServicesPort} />
+            <XDriveServiceDependenciesPage source={adminServicesPort}
+              navigationResetKey={systemDependenciesNavigationResetKey} />
           ) : (
             <XDriveStatePanel message="当前 xdrive-agent 不支持服务状态查询，请更新客户端核心组件。" />
           )
