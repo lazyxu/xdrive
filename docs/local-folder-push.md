@@ -1144,7 +1144,7 @@ physical benchmark has been performed through this environment.
 
 **Delivery correction (2026-10-12):** L03-E0b was accepted and merged as [#1513](https://github.com/lazyxu/xdrive/pull/1513), `c5888f38c788dda3b59cd51c739d5f0205132d09`. The native quarantine helper remains unexposed to Renderer/IPC/Web and does not enable SourceRun, upload, canonical alias promotion or Mirror deletion. A follow-up validates lowercase ASCII hexadecimal evidence digests at the Agent boundary before preflight/write; this is defense in depth, not L03-E1 identity commitment.
 
-## L03-E0c · Owning-Agent private quarantined-intent recovery readback (PR validation)
+## L03-E0c · Owning-Agent private quarantined-intent recovery readback (merged #1526; full CI green)
 
 After L03-E0/#1502 and L03-E0b/#1513 merged, a successful POST may be ambiguous
 to its native Agent if the connection drops after the Server transaction.
@@ -1187,3 +1187,36 @@ and crash recovery, L05 scheduled Agent work and L07 real-device benchmarks
 remain unimplemented. GitHub exact-head complete CI and final-gate are
 required before merging this stage; no GitLab pipeline or native 100k/4GiB
 acceptance is claimed.
+
+## L03-E0d · Owning-Agent private quarantine recovery page (PR validation)
+
+L03-E0c was accepted and merged as [#1526](https://github.com/lazyxu/xdrive/pull/1526),
+commit `1f2c1b39652e28f158d3056f5c66ba1f3815f22d`, after an exact-head
+76-job GitHub CI (25 success, 51 conditional skips, final-gate success).
+The new Server readback is a *quarantined evidence query*, never canonical
+SourceItem/alias authority or a completed backup.
+
+E0d wires its Go Client readback into a **native, unexported owning-Agent**
+method taking only the existing Source ID and an evidence-ID cursor. It first
+locks local Root-grant operations, resolves the authenticated owning Agent's
+OS-encrypted device token and bound paused Source, re-reads private ignore
+rules, loads and re-verifies the native approved Root and BOTH sealed journal
+generations, then requests one 16-ID page with the exact revision and
+generation pair. A second local validation rejects mismatched IDs, partial
+has-more pages, incoherent cursors and any commit, authoritative or deletion
+flag. It rechecks the native Root, sealed journal integrity, private rules,
+session/server/account and current bound device token/Source revision after
+the network response; any cancellation, changed scope or revoked device
+returns a sanitized failure rather than old IDs.
+
+The method never crosses Desktop IPC, Electron Main/Preload, Renderer, Web or
+Mobile Web. There is **no background runner, automatic startup traversal,
+scheduled replay or remote operation**. E0d does not re-quarantine, commit,
+upload, mutate SourceItem/alias/Node/CAS/SyncRun, grant Mirror deletion or
+change the existing fail-closed local Push activation gate. An E0c recovery
+read is not a replacement for E0b's live native hashing and Server's
+transaction-fenced write checks. A later, separately authorized native
+recovery driver and independent L03-E1 physical CAS durability/identity
+commit, L03-F/G uploader/restart protocol, L05 watcher/scheduler and L07
+1k/10k/100k >=4GiB physical E2E are still required. No GitLab push,
+Windows/Linux physical-device run or complete backup result is claimed.
