@@ -22,6 +22,22 @@ test('09C: real Chrome 375/390/899/900 acceptance is actually part of Web CI', (
   }
 })
 
+test('F-iOS27-10A: dedicated visual branch actually executes real Chrome geometry and uploads screenshots', () => {
+  const prefix = "startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-')"
+  assert.equal(workflow.split(prefix).length - 1, 3,
+    'preparation, real Files acceptance and screenshot upload must all opt in')
+  const preparation = workflow.slice(workflow.indexOf('name: Prepare opt-in native Chrome iOS 27 Web acceptance'),
+    workflow.indexOf('name: Real Web Gallery iOS 27 360-900px browser geometry and actions'))
+  const acceptance = workflow.slice(workflow.indexOf('name: Verify real Chrome Files 375/390/899/900px shared API parity'),
+    workflow.indexOf('name: Native built Web Gallery Mobile/Wide selection with exact REST and focus'))
+  assert.ok(preparation.includes(prefix), 'native Chromium and CJK fonts must be installed for this branch')
+  assert.equal(acceptance.split(prefix).length - 1, 2,
+    'the Files browser scenario and its screenshot artifact must both run')
+  assert.ok(acceptance.includes('--scenario=files-ios27-chrome'))
+  assert.ok(acceptance.includes('files-ios27-browser-parity'))
+  assert.ok(runner.includes('filesIos27CompactFolderGeometryAcceptance(viewport)'))
+})
+
 test('09C: authentic built Web and Mobile use exactly one business and scroll owner', () => {
   for (const key of ['max-width:899.95px', 'compactMobile ? (', '<MobileFiles',
     'useXDriveFileExplorerWorkspace', 'getSelectionActionDisabledReason={getSelectionActionDisabledReason}']) {
@@ -225,10 +241,36 @@ test('09G: Chrome collection DELETE success matches genuine Gin 204 and one shar
   assert.ok(!mobile.includes('fetch('))
 })
 
+test('F-iOS27-10A: real Chromium samples folder geometry at 375/390/899px without changing REST owner', () => {
+  for (const needle of [
+    'async function filesIos27CompactFolderGeometryAcceptance(viewport)',
+    'await filesIos27CompactFolderGeometryAcceptance(viewport)',
+    'data-mobile-files-navigation-bar',
+    'data-mobile-files-compact-title',
+    'data-mobile-files-group="directory"',
+    'data-xdrive-mobile-app-header',
+    'data-xdrive-file-explorer-scroll-host',
+    "measurements.arrangementDisplay === 'none'",
+    "measurements.search?.height >= 47.5",
+    "JSON.stringify(measurements.sectionOrder)",
+    'result.samples[label] = measurements',
+    "page.screenshot({ path: path.join(outputDir, `${label}-folder.png`) })",
+  ]) assert.ok(runner.includes(needle), 'missing authentic screenshot geometry gate: ' + needle)
+  assert.ok(mobile.includes('showDirectory || scrollTop > 48'))
+  assert.ok(mobile.includes("mx: 0, borderRadius: 0"))
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
+
 test('09H: mobile Files breadcrumb navigation uses measured 44px hit targets', () => {
   assert.match(mobile,
     /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}[\s\S]{0,450}minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0/)
   assert.ok(runner.includes('async function filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
+  assert.ok(mobile.includes("data-mobile-files-location-path"))
+  assert.ok(mobile.includes("showLocationPath ? 'flex' : 'none'"))
+  assert.ok(mobile.includes("'显示位置路径'"))
+  assert.ok(runner.includes("name: '显示位置路径', exact: true"))
+  assert.ok(runner.includes("[data-mobile-files-compact-title]"))
   assert.ok(runner.includes('await filesIos27BreadcrumbTouchAcceptance(viewport, origin)'))
   for (const required of [
     'data-mobile-files-crumb-id="1"',

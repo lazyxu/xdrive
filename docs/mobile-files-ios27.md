@@ -613,3 +613,86 @@ Go/PostgreSQL 409→201 and cross-owner 404 gates. No broad text-match
 fallback, bypassed API or false pass. Implementation amended into the
 existing **single work commit**; this new exact-head CI must be green
 before Ready/merge.
+
+
+## 2026-10-12 F-iOS27-10A · screenshot P0 directory chrome and continuous List
+
+**Implementation on a stacked one-commit PR, not merged or certified 1:1.** Screenshot reference:
+left = actual native iOS 27 Files, directory `我的 iPhone`; right = previous
+xDrive Mobile Web Files, directory `yy`. Different entries/locations cannot
+be treated as a file-content parity measurement. Compare *layout states* below
+the preserved 52px xDrive App Header and safe area, not Apple's status bar.
+
+P0 screenshot mismatches addressed in this candidate:
+- Directory navigation uses an immediately visible compact centered current title,
+  separate ≥44px rounded Back/More controls, and no second 34px title. The
+  App Header remains a separate xDrive-level exit, transfer and switching surface.
+- The Files canvas/search surface is white in light mode; Search uses a 48px
+  rounded capsule. The true all-files Search scope and real filter control are
+  unchanged. No simulated microphone or falsely scoped folder Search is added.
+- The default nested directory view no longer consumes a full row of
+  ancestor chips or a permanent item-count/sort legend. More can expand the
+  same old real ≥44px ancestor chips and continues to provide supported
+  Server-authoritative sort/grouping and List/Grid toggles. The item count and
+  current arrangement remain readable at the top of More; error/loading
+  feedback is still visible in the viewport.
+- Ungrouped List is one full-width continuous paper surface, not an inset
+  13px rounded card. The 68px virtual row and window/inline-range indexing,
+  existing thumbnail provider, Server ranges, scroll owner, selected state and
+  request cancellation are unchanged. The 28px icon gutter and matching 84px
+  text separator inset are present in List, Recent and Favorites.
+- Browse is placed at the right of a narrower translucent bottom rail with a
+  selected capsule; real Favorites remains labeled 收藏 because the Server
+  lacks a genuine native Shared-to-me collection. This is **not** a claim
+  that Recents/Favorites/Browse exactly matches native Recents/Shared/Browse.
+
+Test intent: mounted React checks centered folder title, visible 48px Back,
+one virtual scroll owner, full-width List and hidden/revealable location path;
+native Chrome 375/390/899px breadcrumb checks explicitly open More before
+measuring both real ancestor hit boxes and verify return/re-entry compact
+title state. Wide Web remains on the exact same Web REST adapter and business
+controllers. Exact-head CI, physical iOS 27 Safari/PWA comparison,
+VoiceOver/dynamic type, row icon/disclosure placement, inline document
+preview fidelity and pixel-diff metrics remain **unverified** and must not be
+reported as merged or completed.
+
+### Browser geometry acceptance added to this candidate
+
+The existing bounded real-Chromium `files-ios27-chrome` scenario now captures a
+named `-compact-folder.png` screenshot and measured DOM rectangles at **375,
+390 and 899 CSS px**, validating the actual 52px App Header separately from
+the 56px Files-internal navigation, ≥44px Back/More targets, centered title,
+single virtual scroll owner, 48px Search capsule, no large directory title,
+continuous full-width List (zero outer radius/margin), first-row vertical
+budget, hidden default path/status, and right-most Browse capsule. Record
+renderer evidence per exact test head; this is not an iOS 27 physical
+Safari/PWA or screenshot-diff proof. On the 900px boundary, wide Web retains
+the existing shared file operation controller and measured request/identity
+tests, not a second mobile virtualizer.
+
+### F-iOS27-10A browser CI activation correction
+
+The visual branch `fix/mobile-files-ios27-compact-folder-list-*` is explicitly
+included alongside the pre-existing dedicated `test/mobile-files-ios27-real-chrome-*`
+in all **three** relevant Web CI gates: Playwright/Chromium and CJK font
+preparation, real `--scenario=files-ios27-chrome` execution, and
+`files-ios27-browser-parity` screenshot+result artifact upload. The existing
+normal broad Web/Go/Desktop CI cannot substitute for this opt-in hardware-like
+Chromium geometry scenario; a green CI without it is insufficient evidence.
+A source regression test checks all three opt-in paths. Every screenshot is
+still a Chromium simulation, not actual iOS 27 Safari/PWA 1:1 sign-off.
+
+### F-iOS27-10A legacy Desktop visual-contract migration
+
+The first complete visual PR CI #38200606179 **passed real Chrome**
+(`Verify real Chrome Files 375/390/899/900px shared API parity`) but
+`desktop-tests` exposed **four outdated geometry/source assertions**:
+the prior 72/108px List divider offset assumed a 16px left gutter, the
+old `compactTitleVisible = scrollTop > 48` excluded native compact
+directory titles, and the old bottom safe-area minimum assumed 6px.
+The exact first-red assertions are updated to the new deliberate
+28px left gutter (84px normal / 120px selected, always 36px between),
+8px safe-area minimum, and folder-only compact title while preserving
+the 68px virtual row, 44px menu targets, same real Web workspace,
+Browse-home large heading, and all operational acceptance tests.
+Do not skip the tests; full fresh exact-head CI is still required.

@@ -2396,6 +2396,70 @@ async function filesIos27RenameAcceptance(viewport, narrow, row) {
 }
 
 
+// Real Chromium geometry acceptance for the user-supplied iOS 27 folder screenshot.
+// This cannot replace native iOS screenshot-diff or physical Safari acceptance.
+async function filesIos27CompactFolderGeometryAcceptance(viewport) {
+  const label = `user-files-ios27-${viewport.width}x${viewport.height}-compact`;
+  const measurements = await page.evaluate(() => {
+    const root = document.querySelector('[data-xdrive-mobile-files]');
+    const el = selector => root?.querySelector(selector) ?? null;
+    const rect = node => {
+      const r = node?.getBoundingClientRect();
+      return r ? { x: r.x, y: r.y, width: r.width, height: r.height, bottom: r.bottom } : null;
+    };
+    const appHeader = document.querySelector('[data-xdrive-mobile-app-header]');
+    const nav = el('[data-mobile-files-navigation-bar]');
+    const back = el('button[aria-label="返回"]');
+    const more = el('button[aria-label="文件操作菜单"]');
+    const title = el('[data-mobile-files-compact-title]');
+    const search = el('input[placeholder="搜索全部文件"]')?.closest('.MuiOutlinedInput-root');
+    const list = el('[data-mobile-files-group="directory"]');
+    const firstRow = el('[data-mobile-files-item]');
+    const rowTitle = firstRow?.querySelector('[data-mobile-files-item-title]');
+    const rowMeta = firstRow?.querySelector('[data-mobile-files-item-meta]');
+    const arrangement = el('[data-mobile-files-arrangement-status]');
+    const bottom = el('nav[aria-label="文件分类"]');
+    const sectionOrder = Array.from(bottom?.querySelectorAll('[data-mobile-files-section]') || [])
+      .map(element => element.getAttribute('data-mobile-files-section'));
+    return {
+      appHeader: rect(appHeader), nav: rect(nav), back: rect(back), more: rect(more),
+      title: rect(title), titleText: title?.textContent?.trim(),
+      largeTitles: root?.querySelectorAll('[data-mobile-files-large-title]').length ?? -1,
+      search: rect(search), searchRadius: search ? parseFloat(getComputedStyle(search).borderTopLeftRadius) : -1,
+      list: rect(list), listMarginLeft: list ? parseFloat(getComputedStyle(list).marginLeft) : -1,
+      listRadius: list ? parseFloat(getComputedStyle(list).borderTopLeftRadius) : -1,
+      firstRow: rect(firstRow),
+      rowTitleSize: rowTitle ? parseFloat(getComputedStyle(rowTitle).fontSize) : -1,
+      rowMetaSize: rowMeta ? parseFloat(getComputedStyle(rowMeta).fontSize) : -1,
+      arrangementDisplay: arrangement ? getComputedStyle(arrangement).display : 'missing',
+      pathDisplay: el('[data-mobile-files-location-path]')
+        ? getComputedStyle(el('[data-mobile-files-location-path]')).display : 'not-needed',
+      bottom: rect(bottom), sectionOrder,
+      background: root ? getComputedStyle(root).backgroundColor : 'missing',
+      scrollOwners: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+    };
+  });
+  result.samples[label] = measurements;
+  await page.screenshot({ path: path.join(outputDir, `${label}-folder.png`) });
+  check(`${label}: independent 52px App Header and compact native folder navigation`,
+    measurements.appHeader && measurements.appHeader.height >= 51.5 &&
+    measurements.nav && measurements.nav.height >= 55.5 && measurements.nav.height <= 57 &&
+    measurements.nav.y >= measurements.appHeader.bottom - 1 &&
+    measurements.back?.width >= 44 && measurements.back?.height >= 44 &&
+    measurements.more?.width >= 44 && measurements.more?.height >= 44 &&
+    measurements.titleText === '我的文件' && measurements.largeTitles === 0, measurements);
+  check(`${label}: no duplicate title/breadcrumb/status rows before the continuous List`,
+    measurements.search?.height >= 47.5 && measurements.searchRadius >= 24 &&
+    measurements.list && measurements.listMarginLeft === 0 && measurements.listRadius === 0 &&
+    measurements.firstRow && measurements.firstRow.y - measurements.nav.bottom < 185 &&
+    measurements.rowTitleSize >= 15.5 && measurements.rowMetaSize >= 13 &&
+    measurements.arrangementDisplay === 'none' &&
+    measurements.pathDisplay !== 'flex' && measurements.scrollOwners === 1, measurements);
+  check(`${label}: native-like Browse-right capsule and white light-mode Files canvas`,
+    measurements.bottom?.width <= 321 && measurements.bottom?.width >= 270 &&
+    JSON.stringify(measurements.sectionOrder) === '["recent","favorites","browse"]' &&
+    measurements.background === 'rgb(255, 255, 255)', measurements);
+}
 async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   const label = `user-files-ios27-${viewport.width}x${viewport.height}-breadcrumbs`;
   activeStage = label;
@@ -2403,6 +2467,9 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   // second Mobile navigation API, business controller, or internal tabs.
   await page.goto(`${origin}/#/app/files?dir=2`, { waitUntil: 'domcontentloaded' });
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // In iOS27 folder mode, More expands the hidden-but-backed location path.
+  await page.getByRole('button', { name: '文件操作菜单' }).click();
+  await page.getByRole('menuitem', { name: '显示位置路径', exact: true }).click();
   const root = page.locator('[data-mobile-files-crumb-id="1"]');
   const folder = page.locator('[data-mobile-files-crumb-id="2"]');
   await root.waitFor();
@@ -2446,7 +2513,8 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
     .reduce((total, [, count]) => total + count, 0);
   check(`${label}: ancestor navigation does not bounce to the old nested route`,
     page.url().endsWith('/files?dir=1') &&
-    await page.getByRole('heading', { name: '我的文件', level: 2 }).isVisible() &&
+    await page.locator('[data-mobile-files-compact-title]').isVisible() &&
+    (await page.locator('[data-mobile-files-compact-title]').innerText()).trim() === '我的文件' &&
     await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1 &&
     filesIos27Fixture.accepted.length === writesBefore,
     { url: page.url(), childReadsBefore, childReadsAfter, operations: filesIos27Fixture.accepted.length });
@@ -2454,6 +2522,9 @@ async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   // A fresh external route intent must be able to revisit this folder in the
   // same mounted Web App, without a second adapter or scroll owner.
   await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'nested-002.txt' }).first().waitFor();
+  await page.getByRole('button', { name: '文件操作菜单' }).click();
+  await page.getByRole('menuitem', { name: '显示位置路径', exact: true }).click();
   await folder.waitFor();
   await page.locator('[data-mobile-files-item]')
     .filter({ hasText: 'nested-002.txt' }).first().waitFor();
@@ -2698,6 +2769,7 @@ async function filesIos27ChromeAcceptance(origin) {
       await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
       { url: page.url(), narrow, viewport });
     const sample = await geometry(activeStage);
+    if (narrow) await filesIos27CompactFolderGeometryAcceptance(viewport);
     const visibleRows = await page.locator(narrow ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]').count();
     const scrollHosts = await page.locator('[data-xdrive-file-explorer-scroll-host]').count();
     const initial = {
