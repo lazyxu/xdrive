@@ -108,3 +108,10 @@ type ManagedFile struct {
 type ManagedFileWalker interface {
 	WalkManagedFiles(context.Context, func(ManagedFile) error) error
 }
+
+// ManagedTempCleanupLocker fences aged atomic-temporary-file deletion against
+// live Local.Put writers, including writers in another process using the same
+// filesystem. A busy lease means skip those files without waiting.
+type ManagedTempCleanupLocker interface {
+	TryExclusiveTempCleanup(context.Context) (release func(), acquired bool, err error)
+}

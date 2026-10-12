@@ -81,10 +81,33 @@ func (s *Server) cleanupStorageCache(ctx context.Context, kind string) (storageC
 			if !ok {
 				return errors.New("storage backend does not support managed cache cleanup")
 			}
+			// Coordinate with still-active atomic Local.Put writers on this
+			// storage root. If even one writer owns a shared lease, do not
+			// delete aged write-temp files during this cleanup pass.
+			allowTempReclaim := true
+			if kind == storageCleanupTemp || kind == storageCleanupAll {
+				locker, ok := s.Store.(storage.ManagedTempCleanupLocker)
+				if !ok {
+					return errors.New("storage backend cannot safely reclaim active write temporary files")
+				}
+				release, acquired, err := locker.TryExclusiveTempCleanup(ctx)
+				if err != nil {
+					return err
+				}
+				if acquired {
+					defer release()
+				} else {
+					allowTempReclaim = false
+				}
+			}
 			cutoff := time.Now().Add(-storageTempReclaimableAge)
 			var targets []storage.ManagedFile
 			if err := walker.WalkManagedFiles(ctx, func(file storage.ManagedFile) error {
 				if storageCleanupMatches(kind, file, cutoff) {
+					category := storageInventoryCategory(file.Key)
+					if !allowTempReclaim && (category == "write_temp" || category == "readiness_temp") {
+						return nil
+					}
 					targets = append(targets, file)
 				}
 				return nil
