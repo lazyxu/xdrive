@@ -23,6 +23,20 @@ export function xDriveSystemDependenciesOverviewSummary(services: readonly XDriv
   }
 }
 
+// Missing fixed IDs are unverified, not healthy, failed or actually applied.
+export function xDriveSystemDependenciesOverviewCoverage(
+  services: readonly XDriveServiceDependency[], expectedServiceCount: number,
+) {
+  const observed = xDriveSystemDependenciesOverviewSummary(services)
+  const unreported = Math.max(0, expectedServiceCount - observed.reported)
+  return {
+    ...observed,
+    unreported,
+    healthUnverified: observed.healthUnverified + unreported,
+    activationUnverified: observed.activationUnverified + unreported,
+  }
+}
+
 export function xDriveSystemDependencyOverviewSignals(
   service: XDriveServiceDependency,
 ): XDriveServiceOverviewSignal[] {

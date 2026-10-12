@@ -17,7 +17,8 @@ const moduleExports = {}
 new Function('exports', 'require', compiled.outputText)(moduleExports, () => {
   throw new Error('overview status helpers must not need network or runtime dependencies')
 })
-const { xDriveSystemDependenciesOverviewSummary, xDriveSystemDependencyOverviewSignals } = moduleExports
+const { xDriveSystemDependenciesOverviewSummary, xDriveSystemDependenciesOverviewCoverage,
+  xDriveSystemDependencyOverviewSignals } = moduleExports
 
 test('overview metrics distinguish observed health from unverified deployment and revision', () => {
   const services = [
@@ -40,6 +41,22 @@ test('overview metrics distinguish observed health from unverified deployment an
   assert.deepEqual(xDriveSystemDependenciesOverviewSummary([]), {
     reported: 0, healthVerified: 0, healthFailed: 0,
     healthUnverified: 0, activationUnverified: 0, activationPending: 0,
+  })
+})
+
+test('missing fixed services count as unverified without fabricating healthy/apply', () => {
+  const partial = [
+    { id: 'database', health_state: 'ready', activation_state: 'verified' },
+    { id: 'photo-smart', health_state: 'failed', activation_state: 'pending' },
+    { id: 'baidu-map', status: 'ready' },
+  ]
+  assert.deepEqual(xDriveSystemDependenciesOverviewCoverage(partial, 11), {
+    reported: 3, unreported: 8, healthVerified: 1, healthFailed: 1,
+    healthUnverified: 9, activationUnverified: 10, activationPending: 1,
+  })
+  assert.deepEqual(xDriveSystemDependenciesOverviewCoverage([], 11), {
+    reported: 0, unreported: 11, healthVerified: 0, healthFailed: 0,
+    healthUnverified: 11, activationUnverified: 11, activationPending: 0,
   })
 })
 
@@ -70,7 +87,11 @@ test('shared overview follows fixed service navigation with compact cards and no
   assert.ok(page.includes('data-xdrive-system-dependencies-metrics'))
   assert.ok(page.includes('data-xdrive-system-dependency-overview-card={service.id}'))
   assert.ok(page.includes('data-xdrive-service-overview-lifecycle'))
-  assert.ok(page.includes('xDriveSystemDependenciesOverviewSummary(systemServices)'))
+  assert.ok(page.includes('xDriveSystemDependenciesOverviewCoverage(systemServices, XDRIVE_SYSTEM_DEPENDENCY_IDS.length)'))
+  assert.ok(page.includes('xDriveSystemDependenciesOverviewEntries(systemServices)'))
+  assert.ok(page.includes('data-xdrive-system-dependency-unreported-card={id}'))
+  assert.ok(page.includes('item.service !== null'))
+  assert.ok(page.includes('overviewCounts.unreported'))
   assert.ok(page.includes('xDriveSystemDependencyOverviewSignals(service)'))
   assert.ok(page.includes('XDRIVE_SYSTEM_DEPENDENCY_IDS.length'))
   assert.ok(page.includes("xs: 'minmax(0,1fr)'"))
