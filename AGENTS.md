@@ -168,7 +168,7 @@ Provider delivery rules:
 
 - **Explicit product decision:** Desktop administrator navigation and functionality must equal Web, not a permitted platform exception. In the identical order: 用户管理, 全局后台任务, 审计日志, 全局存储, 系统依赖, 系统维护. No read-only placeholder for Web write operations.
 - Cross-platform administrator views must be one shared MUI component per page, fed by Web's authenticated REST or Desktop's explicit authenticated Renderer → Main → Agent IPC → Go Client → Server admin API. Do not export tokens into Desktop Renderer, use a generic privileged URL/path proxy, or weaken Server `requireAdmin()`, self/last-admin invariants or audit. Old Agents show an unavailable explanation instead of a nonfunctional button.
-- Complete and merge all C1 user management, C2 virtualized audit, C3 full global storage phases (including tests) before reporting finished Sidebar parity or resuming the performance-only mainline. Track progress and evidence in [`docs/sidebar-admin-parity.md`](docs/sidebar-admin-parity.md).
+- Complete and merge C1 user management, C2 virtualized audit, C3 full global storage, and **C4 personal/global background task UI parity**, including tests, before reporting finished Sidebar parity or resuming the performance-only mainline. Track progress and evidence in [`docs/sidebar-admin-parity.md`](docs/sidebar-admin-parity.md).
 
 ## Sidebar privilege partitions (2026-10-12)
 
@@ -176,6 +176,7 @@ Provider delivery rules:
 - Preserve existing workspace route keys, 52px App Frame header, task navigation/deep links, user-only tasks and Desktop device-only diagnostics; do not collapse global maintenance into a personal task or infer that a Desktop device operation is instance-global. Tests must verify Web/Desktop full Sidebar and compact Mobile menus for ordinary/admin role and the admin-boundary ordering.
 
 - The administrator destination is displayed as **全局后台任务**, explicitly meaning Server-side tasks across users and system maintenance; ordinary **任务** remains current-owner/local-scoped. Reuse the stable `global-tasks` workspace key, `tasks?scope=global` deep links, `requireAdmin` and Server `control_actions`. Do not conflate the list with transient Web/Desktop network transfer popovers.
+- **C4 Task Center UI parity:** personal and global Server background tasks default to one shared MUI task card (status, progress, elapsed time, actions); global additionally shows actual owner/system/instance context and can optionally use a dense table on wide viewports, but mobile always uses cards. Personal FileOperation undo/redo/conflict actions and local transfers do not belong to global Server tasks. Do not change task ownership, `control_actions`, pagination or durable-task cancellation when unifying UI. See [`docs/transfers-and-tasks.md`](docs/transfers-and-tasks.md).
 
 ## UI policy
 

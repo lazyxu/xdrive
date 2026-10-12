@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Box, CircularProgress, Divider, Stack, Typography } from '@mui/material'
+import { Box, CircularProgress, Divider, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import type {
   XDriveBackgroundTask,
   XDriveBackgroundTaskControlAction,
@@ -149,6 +149,7 @@ export function XDriveTaskCenterPage({
   const scope = globalTasksEnabled ? backgroundScope : 'mine'
   const contentRef = useRef<HTMLDivElement>(null)
   const focusedRequestRef = useRef(0)
+  const [globalTaskView, setGlobalTaskView] = useState<'cards' | 'table'>('cards')
 
   useEffect(() => {
     if (
@@ -201,13 +202,43 @@ export function XDriveTaskCenterPage({
       <Stack ref={contentRef} spacing={3}>
         {scope === 'global' ? (
           <Box>
-            <XDriveBackgroundTaskTable
-              tasks={globalBackgroundTasks}
-              loading={globalBackgroundTasksLoading}
-              controlKey={backgroundControlKey}
-              focusedTaskID={backgroundFocusTaskID}
-              onControl={onBackgroundTaskControl}
-            />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}
+              justifyContent="space-between" sx={{ mb: 1.5 }}>
+              <Typography variant="body2" color="text.secondary">
+                与个人后台任务使用同一任务卡片；全局任务额外显示用户和系统归属。
+              </Typography>
+              <ToggleButtonGroup
+                size="small"
+                exclusive
+                value={globalTaskView}
+                aria-label="全局后台任务显示方式"
+                onChange={(_event, next: 'cards' | 'table' | null) => {
+                  if (next) setGlobalTaskView(next)
+                }}
+              >
+                <ToggleButton value="cards" aria-label="卡片视图">卡片</ToggleButton>
+                <ToggleButton value="table" aria-label="表格视图">表格</ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+            {globalTaskView === 'cards' ? (
+              <XDriveBackgroundTaskList
+                tasks={globalBackgroundTasks}
+                loading={globalBackgroundTasksLoading}
+                emptyMessage="暂无全局后台任务"
+                controlKey={backgroundControlKey}
+                focusedTaskID={backgroundFocusTaskID}
+                showOwners
+                onControl={onBackgroundTaskControl}
+              />
+            ) : (
+              <XDriveBackgroundTaskTable
+                tasks={globalBackgroundTasks}
+                loading={globalBackgroundTasksLoading}
+                controlKey={backgroundControlKey}
+                focusedTaskID={backgroundFocusTaskID}
+                onControl={onBackgroundTaskControl}
+              />
+            )}
             <XDriveTaskHistorySentinel
               hasMore={backgroundHasMore}
               loading={backgroundLoadingMore}

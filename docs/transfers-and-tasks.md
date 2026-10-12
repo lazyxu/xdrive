@@ -475,3 +475,10 @@ Treat the GitHub Windows runner and HTTP `httptest` as *automated verification*,
 not physical hardware acceptance. Record HTTP active-request count, bytes
 sent after cancel, terminal state, retained completed files, and latency in
 actual device logs; do not invent benchmark numbers.
+
+## C4：个人任务与全局后台任务统一展示（2026-10-12）
+
+- **任务（当前用户）**展示个人文件操作、媒体任务、来源同步及个人后台处理；上传/下载即时速度属于右上角传输浮层，本机任务仅在 Desktop 展示。
+- **全局后台任务（管理员）**仅展示 Server 多用户及系统持久任务，默认使用与个人 Server 后台任务相同的 `BackgroundTaskItem` 卡片、状态、进度条、时间及控制，仅补充归属用户/系统。支持可选「表格」视图便于密集排障；Mobile Web 表格自动采用卡片显示。
+- 使用同一共享 `XDriveTaskCenterPage` 和已有的强类型控制接口；保留已有 `requireAdmin`、`control_actions`、分页加载、任务聚焦与不同账户作用域。严禁把本机网络传输误归入全局任务，或随页面关闭取消持久任务。
+- **验收：** 共享 UI/角色及分页契约测试、Web/Desktop 构建与 PR 准确头 CI；真实设备手工验收另计。此 C4 为视觉/交互一致性，不属于性能提升或 race 修复。
