@@ -220,6 +220,17 @@ export function XDriveLivePhotoSurface({
     if (motionURL && holdActiveRef.current && !failed) playLoadedMotion()
   }, [failed, motionURL, playLoadedMotion])
 
+  // A still decoder failure or a recycled Viewer source revokes permission
+  // to keep the associated motion playing. Do not leave audio/video active
+  // underneath the newly unavailable still or automatically resume later.
+  useEffect(() => {
+    if (!stillReady) {
+      holdActiveRef.current = false
+      stopPlayback()
+      setLoading(false)
+    }
+  }, [stillReady, stopPlayback])
+
   useEffect(() => {
     loadGenerationRef.current += 1
     loadStartedRef.current = false
@@ -335,13 +346,22 @@ export function XDriveLivePhotoSurface({
           src={motionURL}
           controls={false}
           playsInline
-          preload="metadata"
+          // A ticket resolved AFTER pointer-up must not start a new Range
+          // read just because the video node mounts. Native play() still
+          // controls Range buffering during an active press.
+          preload={holdActiveRef.current && stillReady ? 'metadata' : 'none'}
           disablePictureInPicture
-          onLoadedMetadata={() => {
+          onLoadedMetadata={(event) => {
+            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL) return
             if (!holdActiveRef.current) setLoading(false)
           }}
-          onCanPlay={() => setLoading(false)}
+          onCanPlay={(event) => {
+            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL ||
+              !holdActiveRef.current || !stillReady) return
+            setLoading(false)
+          }}
           onProgress={(event) => {
+            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL) return
             const video = event.currentTarget
             let bufferedSeconds = 0
             let bufferedStartSeconds: number | undefined
@@ -356,10 +376,17 @@ export function XDriveLivePhotoSurface({
             setBufferProgress({ bufferedSeconds, bufferedStartSeconds, durationSeconds:
               Number.isFinite(video.duration) && video.duration > 0 ? video.duration : undefined })
           }}
-          onEnded={stopPlayback}
-          onError={() => {
+          onEnded={(event) => {
+            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL) return
+            stopPlayback()
+          }}
+          onError={(event) => {
+            // A released/old video request must not poison a newer Live Photo
+            // or turn an idle still into a permanent "motion unavailable" tile.
+            if (event.currentTarget !== videoRef.current || motionURLRef.current !== motionURL ||
+              !holdActiveRef.current || !stillReady) return
+            stopPlayback()
             setLoading(false)
-            setPlaying(false)
             setFailed(true)
           }}
           sx={{
@@ -370,7 +397,7 @@ export function XDriveLivePhotoSurface({
             display: 'block',
             objectFit: 'contain',
             bgcolor: 'black',
-            opacity: playing ? 1 : 0,
+            opacity: stillReady && playing ? 1 : 0,
             transition: 'opacity 120ms ease',
             pointerEvents: 'none',
           }}

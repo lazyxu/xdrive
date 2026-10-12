@@ -223,7 +223,7 @@ test('FileExplorer LIVP preview reuses the shared Live Photo surface on Web and 
   assert.ok(
     previewModel.includes('XDriveLivePhotoMotionSource') &&
       livePhoto.includes('disposeLivePhotoMotion') &&
-      livePhoto.includes('preload="metadata"'),
+      livePhoto.includes("preload={holdActiveRef.current && stillReady ? 'metadata' : 'none'}"),
     'shared Live Photo surface must own stream URL disposal and bounded preloading',
   )
   assert.ok(
