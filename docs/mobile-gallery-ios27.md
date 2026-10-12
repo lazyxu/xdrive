@@ -584,3 +584,14 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **P1-3c2c 第三轮精确 HEAD 原生浏览器红灯与监听器修正（2026-10-12）：** [CI #38195536315](https://github.com/lazyxu/xdrive/actions/runs/38195536315)、[go-linux-api job #114637453579](https://github.com/lazyxu/xdrive/actions/runs/38195536315/job/114637453579) 测试修复候选 `3b9a02d44c25bb4b3e2590a9cd0fb787eab1475d`。真实 PostgreSQL17/Gin 日志已观测第二持权写入 **POST 200**、Mobile Web 旧修订 **POST 409**、紧接着 Owner 权威相册清单 **GET 200**，证明修复至少发起了合法服务端刷新。**但不能称通过**：Playwright `postObserver` 用原样 `albumPath(album)`（`manual%3A...`）作为 expected，与 `decodeURIComponent(new URL(response.url()).pathname)`（`manual:...`）比较，造成真实 409 已发生却被错误过滤，最后 `waitForResponse` 30 秒超时。测试 JSON：`accepted=[]`、`pageErrors=[]`、`httpErrors=[]`、仅 metadata-only CAS thumbnail 503 共30个；尚未执行完整 409→选择保留→明确重试→200/三成员持久化、900px 宽屏。另 13 个适用基础 Job（Desktop/Web/Go/Windows/镜像等）通过，不代替原生门禁及 Final Gate。
 
 修订仅修正 `desktop/scripts/gallery-ios27-real-go-conflict-browser.cjs` **期望路径与实际 URL 同时解码**，并在 `desktop/tests/gallery-ios27-real-go-conflict-contract.cjs` 追加 `manual:` 资源 ID 的路径规范化测试；保留原所有真实 409/GET/200/成员断言及 `MediaGallery.tsx` 的 Owner 隔离/显式重试业务修复，绝不放宽通过条件。此改动仍归属原 #1468 的**同一个工作提交**，重新触发精确 HEAD 原生 CI 后再决定 Ready/merge；不涉及 Desktop IPC #1185、性能、Race 或其它 PR。
+
+
+## P0-L1 · 六列年份图库实况角标越界修复（2026-10-12）
+
+**交付状态：仅修复候选，尚待精确工作提交完整 GitHub PR CI / 真实 iOS 27 Safari 验收；不可将源代码或 Chromium 验证冒充像素 1:1。** 用户提供的真实 Mobile Web 截图中，年份图库 19 个条目在约六列方形照片墙内显示过宽的黑色「实况」Chip：20px 实况图标加文字、背景及内边距超出小图格，遮挡缩略图并在边缘裁掉图标。少数灰色格子也显示相同角标，这只证明角标独立于缩略图加载状态，尚不能证明它们不是合法 Live Photo 或定位到缩略图 503/无派生封面的具体原因。
+
+**限定修复：** 仅修改共有的 `ui/shared/src/mui/MediaGallery.tsx` 中 `MediaTile`，对有确切 `live_photo` / `asset_kind=live_photo` 的资产，将文字 Chip 改为位于右上角、20×20 CSS px 圆形半透明背景内的 13px 共享 `XDriveLivePhotoGlyph`；语义 `aria-label` 归属可聚焦的缩略图按钮，不为小图标创建第二个按钮。小网格其它 badge Stack 限定到图格宽度以内，进入多选模式时暂不显示装饰性媒体角标，让左侧 44px 选择框拥有视觉优先权。无实况证据的普通图片不新增 Live 标识；大视频/RAW/GIF 等原有媒体类型、操作、过滤仍在共享数据源里，不改变原件。
+
+**架构不变量：** Web/Mobile Web/Desktop 仍共用一个 Gallery Page、`MediaTile`、`MediaGalleryDataSource` 对应的 REST/Agent 适配及 `VirtualCollection` / `MediaVirtualTileGrid` / `MediaVirtualTimeline`。不改变全屏 App Frame、52px 全局标题栏、网格列数和虚拟布局、照片选择/Viewer/450ms 长按、Live motion 首次按住才加载、PhotoAsset 配对身份、Server API 或上传/下载/持久任务。该展示改动无需重新测试已验收的同负载 P032/P033 性能基线；如果真实浏览器发现新请求、DOM 数、帧率、锚点退化，应单列性能回归。
+
+**验收计划与未完成项：** 在共享 MediaTile 真正 React mounted 测试中，检查有/无 Live 语义、禁用文字实况 Chip、20px 最大角标、触控/鼠标、缩略图无资源时不遮图、选择模式与单击打开、视频标识保留；完整 Web/Desktop/Go/Windows/Final Gate 均需通过。截图中的灰色缩略图原因（`has_thumbnail=false`、真实 GET 状态、原图 CAS、iOS 专有配对封面或派生海报）须另用原资产与请求证据定位，禁止将隐藏角标充当加载修复。最终 iOS 27 Safari / PWA 与 Apple 同版真机参考双图、VoiceOver 仍为 not-run。

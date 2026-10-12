@@ -3376,6 +3376,7 @@ function MediaTile({
       data-xdrive-media-tile
       data-xdrive-media-index={logicalIndex}
       role="button"
+      aria-label={livePhoto ? item.node.name + '，实况照片' : undefined}
       tabIndex={0}
       onClick={(event) => {
         if (selectionMode || event.ctrlKey || event.metaKey || event.shiftKey) {
@@ -3512,15 +3513,16 @@ function MediaTile({
           </IconButton>
         </Tooltip>
       ) : null}
-      {(recommendedForCleanup || mediaBadgeLabel || (item.fold_member_ids?.length ?? 0) > 1 || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
+      {!selectionMode && (recommendedForCleanup || mediaBadgeLabel || (item.fold_member_ids?.length ?? 0) > 1 || (item.edit_recipe?.source_current && item.edit_recipe.revision > 0)) ? (
         <Stack
           spacing={0.5}
           alignItems="flex-end"
           data-xdrive-media-tile-badges
           sx={{
             position: 'absolute',
-            top: 8,
-            right: 8,
+            top: 4,
+            right: 4,
+            maxWidth: 'calc(100% - 8px)',
             zIndex: 4,
             pointerEvents: 'none',
           }}
@@ -3536,7 +3538,7 @@ function MediaTile({
               onClick={(event: ReactMouseEvent<HTMLElement>) => event.stopPropagation()}
               sx={{
                 pointerEvents: compactTouch ? 'none' : 'auto', bgcolor: 'rgba(0,0,0,.75)',
-                color: '#fff', fontWeight: 700,
+                color: '#fff', fontWeight: 700, maxWidth: '100%',
               }}
             />
           ) : null}
@@ -3546,6 +3548,7 @@ function MediaTile({
               label="建议保留"
               data-xdrive-media-cleanup-recommended
               sx={{
+                maxWidth: '100%',
                 bgcolor: 'background.paper',
                 color: 'text.primary',
                 boxShadow: 1,
@@ -3554,16 +3557,41 @@ function MediaTile({
             />
           ) : null}
           {mediaBadgeLabel ? (
-            <Chip
-              icon={livePhoto ? <XDriveLivePhotoGlyph size={20} /> : video ? <MovieIcon /> : <ImageIcon />}
-              label={mediaBadgeLabel}
-              size="small"
-              sx={{
-                bgcolor: 'rgba(0,0,0,.66)',
-                color: '#fff',
-                '& .MuiChip-icon': { color: '#fff' },
-              }}
-            />
+            livePhoto ? (
+              // At six-column Year density a full "实况" MUI Chip can be wider
+              // than its square tile. The compact SF glyph keeps the real
+              // media identity without obscuring or overflowing the photo.
+              <Box
+                component="span"
+                aria-hidden="true"
+                data-xdrive-media-live-indicator
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  bgcolor: 'rgba(0,0,0,.5)',
+                  color: '#fff',
+                  flexShrink: 0,
+                }}
+              >
+                <XDriveLivePhotoGlyph size={13} />
+              </Box>
+            ) : (
+              <Chip
+                icon={video ? <MovieIcon /> : <ImageIcon />}
+                label={mediaBadgeLabel}
+                size="small"
+                sx={{
+                  maxWidth: '100%',
+                  bgcolor: 'rgba(0,0,0,.66)',
+                  color: '#fff',
+                  '& .MuiChip-icon': { color: '#fff' },
+                }}
+              />
+            )
           ) : null}
           {item.edit_recipe?.source_current && item.edit_recipe.revision > 0 ? (
             <Chip
@@ -3571,6 +3599,7 @@ function MediaTile({
               size="small"
               data-xdrive-media-edited
               sx={{
+                maxWidth: '100%',
                 bgcolor: 'rgba(0,0,0,.66)',
                 color: '#fff',
               }}
