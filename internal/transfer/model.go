@@ -934,6 +934,13 @@ func (m *Manager) updateGroupLocked(id string, progress GroupProgress, now time.
 		// has already completed and entered the transfer phase.
 		return false
 	}
+	if e.task.ScanComplete && progress.ScanComplete &&
+		e.task.Phase == PhaseTransferring && progress.Phase == PhaseTransferring &&
+		progress.BytesDone < e.task.BytesDone {
+		// An older aggregate callback from the same upload phase cannot
+		// rewind cumulative progress that a newer callback already published.
+		return false
+	}
 	if progress.Phase != "" {
 		e.task.Phase = progress.Phase
 		if progress.Phase == PhaseQueued && e.task.State == StateRunning {
@@ -1070,6 +1077,11 @@ func (m *Manager) progressLocked(id string, done, total int64, now time.Time) bo
 	}
 	if done < 0 {
 		done = 0
+	}
+	if done < e.task.BytesDone {
+		// Progress is cumulative within one active attempt. Baseline can
+		// explicitly rebase resumed bytes and Retry resets for a new attempt.
+		return false
 	}
 	nextTotal := e.task.BytesTotal
 	if total >= 0 {
