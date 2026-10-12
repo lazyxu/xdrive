@@ -56,6 +56,16 @@ export function xDriveVisibleSystemDependencies<T extends { id: string; group: s
   })
 }
 
+// A fixed ID absent from the allowlisted inventory is unreported, not an
+// implicit healthy service or permission to show configuration controls.
+export function xDriveSystemDependencySelectionMissing(
+  selectedID: string,
+  visibleServices: readonly { id: string }[],
+): boolean {
+  return validServiceIDs.has(selectedID) &&
+    !visibleServices.some((item) => item.id === selectedID)
+}
+
 // In-app route changes and Desktop workspace changes share the same exit
 // policy. Opening another browser tab never leaves the existing editor.
 export function xDriveSystemDependenciesNeedsExitConfirmation(
