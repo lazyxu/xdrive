@@ -68,3 +68,18 @@ test('S2B3 CI builds authentic production Web and compiled Go fixture without le
   assert.equal(workflow.includes('desktop/pwa-s2b3-results/\n'), false)
   assert.ok(ledger.includes('PWA-S2B3'))
 })
+
+test('S2B5 genuine Gin Chrome: Gallery deep-link, cold reload and browser history', () => {
+  for (const token of [
+    "const galleryRoute = '#/app/gallery?section=albums'",
+    "galleryTab.goto(ready.url + '/' + galleryRoute",
+    "[data-xdrive-gallery-upload-picker]",
+    "await galleryTab.reload({ waitUntil: 'domcontentloaded' })",
+    "window.history.back()", "window.history.forward()",
+    "galleryDeepLinkMounted", "galleryColdReloadMounted", "galleryHistoryRestored",
+  ]) assert.ok(chrome.includes(token), 'missing S2B5 acceptance: ' + token)
+  assert.ok(workflow.includes("github.head_ref == 'test/pwa-gallery-deeplink-s2b5-20261012'"))
+  assert.ok(workflow.includes('x.galleryDeepLinkMounted'))
+  assert.ok(!chrome.includes('context.route(') && !chrome.includes('route.fulfill('))
+  assert.ok(ledger.includes('PWA-S2B5'))
+})

@@ -51,6 +51,7 @@ async function verifyCase(browser, mobile) {
     ownerDirectory200: false, coldReload200: false, newTabRoute200: false,
     crossOwner404: false, invalidToken401: false, publicOnlyWorkerCache: false,
     deepLinkPreserved: false,
+    galleryDeepLinkMounted: false, galleryColdReloadMounted: false, galleryHistoryRestored: false,
   }
   try {
     const page = await context.newPage()
@@ -104,6 +105,43 @@ async function verifyCase(browser, mobile) {
     sample.newTabRoute200 = true
     sample.deepLinkPreserved = true
 
+    // S2B5: real authenticated Chrome tab mounts the shared Web/Mobile Gallery.
+    // This covers hash restoration and history, not media decode or OS installation.
+    const galleryRoute = '#/app/gallery?section=albums'
+    const galleryTab = await context.newPage()
+    const galleryErrors = []
+    galleryTab.on('pageerror', error => galleryErrors.push(error.name))
+    await galleryTab.goto(ready.url + '/' + galleryRoute, { waitUntil: 'domcontentloaded' })
+    await galleryTab.locator('[data-xdrive-gallery-upload-picker]').waitFor({ state: 'attached' })
+    assert.equal(new URL(galleryTab.url()).hash, galleryRoute)
+    assert.equal(await galleryTab.locator('#web-login-username').count(), 0)
+    sample.galleryDeepLinkMounted = true
+
+    await galleryTab.reload({ waitUntil: 'domcontentloaded' })
+    await galleryTab.locator('[data-xdrive-gallery-upload-picker]').waitFor({ state: 'attached' })
+    assert.equal(new URL(galleryTab.url()).hash, galleryRoute)
+    assert.equal(await galleryTab.locator('#web-login-username').count(), 0)
+    sample.galleryColdReloadMounted = true
+
+    // Browser-generated history must unmount/remount the actual Gallery input.
+    // The Files transition must still read its owner-scoped Node from real Gin.
+    const historyFileRead = galleryTab.waitForResponse(response =>
+      response.request().method() === 'GET' &&
+      new URL(response.url()).pathname === targetPath &&
+      response.status() === 200)
+    await galleryTab.evaluate(hash => { window.location.hash = hash }, deepLink)
+    await historyFileRead
+    await galleryTab.locator('[data-xdrive-gallery-upload-picker]').waitFor({ state: 'detached' })
+    assert.equal(new URL(galleryTab.url()).hash, deepLink)
+    await galleryTab.evaluate(() => window.history.back())
+    await galleryTab.waitForFunction(expected => window.location.hash === expected, galleryRoute)
+    await galleryTab.locator('[data-xdrive-gallery-upload-picker]').waitFor({ state: 'attached' })
+    await galleryTab.evaluate(() => window.history.forward())
+    await galleryTab.waitForFunction(expected => window.location.hash === expected, deepLink)
+    await galleryTab.locator('[data-xdrive-gallery-upload-picker]').waitFor({ state: 'detached' })
+    assert.deepEqual(galleryErrors, [])
+    sample.galleryHistoryRestored = true
+
     // Sign in separately as another real PostgreSQL user. A JWT may be
     // consumed only by the Go Server. Never print or persist its bytes.
     const foreignLogin = await context.request.post(ready.url + '/api/v1/auth/login', {
@@ -150,7 +188,8 @@ async function main() {
     assert(summary.cases.every(x =>
       x.loginSucceeded && x.ownerDirectory200 && x.coldReload200 &&
       x.newTabRoute200 && x.crossOwner404 && x.invalidToken401 &&
-      x.publicOnlyWorkerCache && x.deepLinkPreserved))
+      x.publicOnlyWorkerCache && x.deepLinkPreserved &&
+      x.galleryDeepLinkMounted && x.galleryColdReloadMounted && x.galleryHistoryRestored))
     const completed = await browser.newContext()
     try {
       const response = await completed.request.post(ready.url + '/__test/pwa-s2b3/finish')
