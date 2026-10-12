@@ -20,9 +20,10 @@ const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
 assert([1,4].includes(sizeGiB), 'real CAS browser workload supports only 1 or 4 GiB')
 const sizes = { gib: sizeGiB, bytes: sizeGiB * 2 ** 30, putCount: sizeGiB * 128 }
 const maxDirectionMs = sizeGiB === 4 ? 360000 : 240000
-const trials = 3
+const fullPwaReadback = process.env.XD_PWA_FULL_OPFS_READBACK === '1'
+const trials = fullPwaReadback ? 1 : 3
 const modes = ['upload', 'download']
-const median = values => [...values].sort((a,b)=>a-b)[1]
+const median = values => [...values].sort((a,b)=>a-b)[Math.floor(values.length / 2)]
 const clockTicksPerSecond = Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim())
 assert(Number.isFinite(clockTicksPerSecond) && clockTicksPerSecond > 0)
 function cpuTicks(pid) {
@@ -162,6 +163,8 @@ async function sampleTrial(index,tmp) {
         assert(/^[a-f0-9]{64}$/i.test(result.uploadedSHA256))
       }else{
         assert.equal(result.downloadSpotCheckedBytes,3*1024*1024)
+        if (fullPwaReadback) assert.equal(result.downloadFullVerifiedBytes,sizes.bytes,
+          'PWA release check must read every OPFS byte, not just three 1MiB spot samples')
       }
       rows.push(result)
     }
@@ -222,6 +225,7 @@ async function main() {
     }
     const result={
       name:`real-web-xdriveapi-postgres17-local-cas-${sizeGiB}gib-upload-download`,
+      ...(fullPwaReadback ? { pwaFullOPFSReadback: true, downloadFullVerifiedBytes: sizes.bytes } : {}),
       status:'CURRENT/BEFORE only - no production optimization',
       n:rows.length,
       bytesPerDirection:sizes.bytes,
@@ -239,10 +243,13 @@ async function main() {
         individualUploadMs:maxDirectionMs,individualDownloadMs:maxDirectionMs,
         browserWorkingSetDeltaMaxMiB:256,serverRSSPeakGrowthMaxMiB:256,
         uploadHTTPPutCount:sizes.putCount,downloadHTTPGetCount:1,
-        spotCheckThreeDistinctMiB:true
+        spotCheckThreeDistinctMiB:true,
+        ...(fullPwaReadback ? {fullOPFSReadbackBytes:sizes.bytes} : {})
       },
       passed:true,
-      boundary:`Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
+      boundary:fullPwaReadback
+        ? `PWA release gate: authentic Chromium->Gin/PostgreSQL17/Local CAS->OPFS; every one of ${sizes.bytes} downloaded sparse-zero fixture bytes reread and compared with expected zero after timed transfer. Not a browser computed SHA256, physical iOS/Android, arbitrary-media integrity, WAN or native download. No durable Task Center abort.`
+        : `Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
     }
     fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
     console.log('REAL_WEB_CAS_SUMMARY '+JSON.stringify(result))
