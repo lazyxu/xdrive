@@ -753,3 +753,9 @@ P0-L9～L11 已交付，其中 #1549 通过 25 项 CI 和 Final Gate 后修复�
 ### P0-L13 second exact implementation CI: final obsolete test-format assertion
 
 [Source-exact CI #38254765079](https://github.com/lazyxu/xdrive/actions/runs/38254765079) on `e82809f0` ran all six P0-L13 actual production Scheduler/Web API regressions successfully, with one remaining old Desktop-only source assertion failing: `media-gallery-thumbnail-http-revision-wiring.cjs` expected the legacy single-line `this.loader(task.nodeID,...)` shape. Production correctly invokes the SAME shared loader with a multiline `this.loader(` and the new explicit fifth `task.bypassHTTPCache || undefined` parameter. This is a stale regex/test formatting contract, not a demonstrated product regression. The replacement asserts the full exact argument order including both Progress and the one-shot cache hint while tolerating whitespace, and does not weaken revision/Agent/Web shared-wire guards. All source edits remain in ONE commit on the frozen baseline, and full CI/Final Gate are required anew. Physical affected Live photos and native iOS 27 Safari/PWA/VoiceOver remain unverified.
+
+## P0-L14 · 普通相册和日期分组实况静态封面恢复统一（2026-10-12）
+
+P0-L13 [#1563](https://github.com/lazyxu/xdrive/pull/1563) 已在完整精确 HEAD CI/Final Gate 通过后合入；后续核查发现：虚拟 Grid/Timeline 已使用共享 `XDriveMediaThumbnailScheduler`，但非虚拟的 `MediaTileGrid`（包含本地相册与年份/月/日分组）没有传递 Scheduler，所以不会记录真实 `img.onError` 的一次无缓存恢复机会。该代码级缺口在不同视图中造成不一致，不能推定截图中三张真实灰格一定来自此路径。
+
+仅给已有两个非虚拟调用点接入**同一个页面级 Scheduler**，统一调用既有 `MediaTile` / `XDriveMediaAsyncThumbnail`，在父页面统一保留所有分组的 Node IDs，退出普通相册/概览时取消不再消费的缩略图；不在每个日期分组清空其他组的排队请求。100k 仍走原来的共享 `VirtualCollection`、Grid/Timeline；Web 和 Mobile Web 使用原有同一 REST/DataSource/Viewer，Desktop 不增额外 Agent 接口。无立即 onError 网络请求、无原件批量拉取、保持 52px 全屏 App Frame、按住才加载 Live motion。待专门 PR 精确 HEAD 完整 CI 验证；真实 iOS 27 的像素/手势 1:1 和用户原件仍未验收。

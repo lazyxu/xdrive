@@ -3680,6 +3680,7 @@ function MediaTileGrid({
   referenceColumnWidth,
   baselineColumns,
   loadThumbnail,
+  thumbnailScheduler,
   loadPreviewURL,
   saveVideoPoster,
   onSetFavorite,
@@ -3703,6 +3704,7 @@ function MediaTileGrid({
   onSelect: (item: MediaItem, index: number, modifiers: MediaSelectionModifiers) => void
   indexOffset?: number
   loadThumbnail: MediaThumbnailLoader
+  thumbnailScheduler: XDriveMediaThumbnailScheduler
   loadPreviewURL?: MediaPreviewURLLoader
   saveVideoPoster?: MediaVideoPosterSaver
   onSetFavorite?: (item: MediaItem, favorite: boolean) => Promise<void>
@@ -3768,6 +3770,7 @@ function MediaTileGrid({
           recommendedForCleanup={item.node.id === recommendedNodeID}
           onSelect={onSelect}
           loadThumbnail={loadThumbnail}
+          thumbnailScheduler={thumbnailScheduler}
           loadPreviewURL={loadPreviewURL}
           saveVideoPoster={saveVideoPoster}
           onSetFavorite={onSetFavorite}
@@ -5517,6 +5520,30 @@ export function XDriveMediaGallery({
     logicalItemCount === 0 &&
     !loading,
   )
+  // Non-virtual album/group views use the same bounded thumbnail Scheduler as
+  // the sparse Grid/Timeline. Many dense date groups can be mounted together:
+  // only their owning Gallery page may set retention, never an individual group.
+  useEffect(() => {
+    if (virtualCollection) return
+    const denseVisible = showPhotoCollection &&
+      !mobileCollectionsOverview &&
+      !blockingCollectionError &&
+      logicalItemCount > 0
+    thumbnailScheduler.setRetention(
+      denseVisible
+        ? items.filter((item) => item.metadata.has_thumbnail).map((item) => item.node.id)
+        : [],
+    )
+  }, [
+    blockingCollectionError,
+    items,
+    logicalItemCount,
+    mobileCollectionsOverview,
+    showPhotoCollection,
+    thumbnailScheduler,
+    virtualCollection,
+  ])
+
   const emptyCollectionTitle = isTrashSection
     ? '回收站为空'
     : currentFolderView
@@ -7160,6 +7187,7 @@ export function XDriveMediaGallery({
                     selectedNodeIDs={selectedNodeIDs}
                     onSelect={handleMediaSelect}
                     loadThumbnail={loadThumbnail}
+                    thumbnailScheduler={thumbnailScheduler}
                     loadPreviewURL={collectionPreviewURL}
                     saveVideoPoster={saveVideoPoster}
                     onSetFavorite={collectionSetFavorite}
@@ -7211,6 +7239,7 @@ export function XDriveMediaGallery({
             selectedNodeIDs={selectedNodeIDs}
             onSelect={handleMediaSelect}
             loadThumbnail={loadThumbnail}
+            thumbnailScheduler={thumbnailScheduler}
             loadPreviewURL={collectionPreviewURL}
             saveVideoPoster={saveVideoPoster}
             onSetFavorite={collectionSetFavorite}
