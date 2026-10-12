@@ -33,7 +33,10 @@ func NewLocal(root string) (*Local, error) {
 // A single fixed file coordinates all Local.Put temporary lifetimes across
 // independent Server processes mounting the same storage root. It is not
 // user content and must never be deleted by aged-temp cleanup.
-const tempLifecycleLockFile = ".xdrive-temp-lifecycle.lock"
+// TempLifecycleLockFile is the fixed, zero-byte file coordinating active
+// atomic writes and managed temporary cleanup across Server processes.
+// It is internal storage state, not a user blob or disposable cache.
+const TempLifecycleLockFile = ".xdrive-temp-lifecycle.lock"
 
 func (l *Local) tempLifecycleLease(
 	ctx context.Context,
@@ -46,7 +49,7 @@ func (l *Local) tempLifecycleLease(
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	file, err := os.OpenFile(filepath.Join(l.root, tempLifecycleLockFile), os.O_CREATE|os.O_RDWR, 0o600)
+	file, err := os.OpenFile(filepath.Join(l.root, TempLifecycleLockFile), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false, err
 	}

@@ -268,6 +268,14 @@ func VerifyWithContext(
 			return err
 		}
 		key := filepath.ToSlash(rel)
+		if key == storage.TempLifecycleLockFile && info.Size() == 0 {
+			// The root-scoped file is held open by Local.Put and the
+			// administrator's temp cleanup across Server processes.
+			// Ignore only this exact, empty internal lockfile. Nonempty
+			// lookalikes and all other unreferenced blobs remain orphans.
+			report.IgnoredTemps++
+			return nil
+		}
 		if isDerivedStorageKey(key) {
 			// .xdrive-media contains generated previews such as thumbnails.
 			// They are disposable caches, not canonical file/version blobs, so

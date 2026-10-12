@@ -450,6 +450,27 @@ func (s *Server) cleanupUploadStaging(ctx context.Context, trigger string) (uplo
 	}
 	inspector, ok := s.Store.(storage.StagingInspector)
 	if ok {
+		// A still-running Local.Put is not yet represented by UploadPart.
+		// Its atomic temp can cross the orphan grace threshold while open.
+		// Reuse the storage-root lifetime lease: the cleanup must never
+		// unlink a writer-owned staged temp, including across Server replicas.
+		locker, safe := s.Store.(storage.ManagedTempCleanupLocker)
+		if !safe {
+			return failRun(errors.New("storage backend cannot safely reclaim active staging temporary files"))
+		}
+		release, acquired, leaseErr := locker.TryExclusiveTempCleanup(ctx)
+		if leaseErr != nil {
+			return failRun(leaseErr)
+		}
+		if !acquired {
+			// Defer orphan reclaim until all active atomic writes have
+			// finished; do not block or abort a live user upload.
+			ok = false
+		} else {
+			defer release()
+		}
+	}
+	if ok {
 		failures := make([]meta.StagingCleanupFailure, 0, stagingCleanupFailureBatchSize)
 		flushFailures := func() error {
 			if len(failures) == 0 {
