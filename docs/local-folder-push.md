@@ -1188,7 +1188,7 @@ remain unimplemented. GitHub exact-head complete CI and final-gate are
 required before merging this stage; no GitLab pipeline or native 100k/4GiB
 acceptance is claimed.
 
-## L03-E0d · Owning-Agent private quarantine recovery page (PR validation)
+## L03-E0d · Owning-Agent private quarantine recovery page (merged #1530; 76-job exact-head CI green)
 
 L03-E0c was accepted and merged as [#1526](https://github.com/lazyxu/xdrive/pull/1526),
 commit `1f2c1b39652e28f158d3056f5c66ba1f3815f22d`, after an exact-head
@@ -1220,3 +1220,46 @@ recovery driver and independent L03-E1 physical CAS durability/identity
 commit, L03-F/G uploader/restart protocol, L05 watcher/scheduler and L07
 1k/10k/100k >=4GiB physical E2E are still required. No GitLab push,
 Windows/Linux physical-device run or complete backup result is claimed.
+
+## L03-E0e · Private owning-Agent exact quarantine replay (PR validation)
+
+L03-E0d's native-only authenticated readback and post-read Root/rules/session/
+device revalidation merged as [#1530](https://github.com/lazyxu/xdrive/pull/1530),
+commit `5b6783c6eaaa07ae756f32dca09558d43c86b2e2`, after 76-job
+exact-head GitHub CI (25 success, 51 conditional skips, final-gate success).
+The one-work-commit branch was automatically removed after the rebase merge.
+
+**This follow-on implements only a bounded Agent-private idempotent replay
+of previously persisted quarantined proposals.** A new unexported method first
+uses E0d's credential-verified, revision-fenced and native Root/journal/rules/
+account-checked recovery read to obtain up to 16 sorted persisted evidence
+IDs. If none exist it makes no Server write. Otherwise it re-runs E0b's
+complete independent owning-device/Root/source verification, live original
+hashing, current File/FileVersion/CAS metadata and SourceItem/alias/Node
+preflight, plus server-side transaction-guarded idempotent quarantine POST.
+The E0b implementation now **compares the entire freshly read candidate page
+against the exact recovery IDs BEFORE hashing or sending any write** and
+rejects changed Source revision or a broader/different page. If the Server
+response is anything other than a zero-created, exact-count replay with all
+authority flags false, no success is reported. Final owning-device credential,
+Source revision, Root, journal and rules checks are repeated.
+
+An earlier successful E0c read MUST NOT allow E0b to include newly discovered
+or previously unquarantined candidates after an interruption. When quarantined
+IDs do not align with an entire current bounded advisory evidence page
+(for example, interleaved non-quarantined candidates), replay **fails
+closed**; it does not skip or secretly quarantine unrelated records. No
+general restart scheduler/driver, Cursor persistence across process restarts
+or UI/IPC endpoint is introduced; this remains an unexported private
+callable. A lost HTTP acknowledgment after an actual Server quarantine write
+may still be ambiguous and should be reconciled by another exact verified
+read, never counted as a completed backup.
+
+Neither a readback nor a replay gives a durable physical CAS proof or changes
+canonical SourceItem/SourceItemAlias, Node, File, CAS or SourceRun. The Server
+still denies ordinary local-folder SourceRun activation. No actual upload,
+Mirror deletion, automatic watcher, NAS Push, Web/Desktop remote writes or
+1k/10k/100k >=4GiB physical device acceptance is claimed. L03-E1
+transaction-bound durable identity commit, L03-F/G upload/recovery, L05/L06
+execution and L07 native E2E remain separate phases. GitHub exact-head full
+CI including final-gate is the merge requirement; no GitLab delivery claimed.
