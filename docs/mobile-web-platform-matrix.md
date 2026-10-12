@@ -274,3 +274,11 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 **尚未执行原生 Chromium/完整 CI。** 375px 实际精选集卡片→相册→静止长按→共享属性「从当前相册移除」；900px 相册列表→右键属性执行相同接口。验证真实 Gin/PostgreSQL17 DELETE/If-Match2→revision3、相册仍有另一项，原移出 Node GET200；旧修订409、跨账号404 并保持成员不变。375px 移除控件稳定高度不得小于44 CSS px。10k 仅元数据夹具不证明物理 CAS/缩略图解码；Safari/PWA/VoiceOver 与真机 iOS27 Photos 1:1 分别待验。
 
 **P1-3c2b first-red 2026-10-12：** CI #38190461429 本机真实 Chromium 375px 已走通精选集相册→500ms touch 长按→Context Menu 属性→共享 Inspector 移除按钮，但实测稳定高度 **36.5px <44px**，未开始 DELETE；隔离 PostgreSQL17 缺 PhotoAlbumFolder/SourceItemMetadata 导致另外2次 HTTP500。旧 artifact #11720982903 留存；修复共享 MUI 断点 minHeight44 和测试 schema 后必须精确新 HEAD 重新跑 375/900、DELETE、GET原资产、409/404、零意外5xx。iOS27真机和物理原图仍未验收。
+
+### P1-3c2c · M49.V10 手动相册真正 409 与用户确认后重试（2026-10-12）
+
+**计划与测试候选，非已通过：** 真实 Go JWT/PostgreSQL17 并发将手动相册revision1→2；375px Mobile Web 底部抽屉、900px Web 选择下拉框均先 POST If-Match1→409，监听同一共享 DataSource 重新 GET 权威相册/新修订2，保留两份 canonical Node 选择、提示变更，由用户再次明确触发 POST If-Match2→200/revision3，验证三个成员的实体数据库持久化与0意外 HTTP5xx。不可自动替用户重发变更；10k metadata-only CAS 503、iOS27 Safari/PWA/VoiceOver 真机1:1 和 Task Center 终态单独待验。
+
+**P1-3c2c 真实 409 首红（2026-10-12）：** CI #38194312754 的 Gin/PostgreSQL17 已产生真实相册 POST 409，但浏览器 30 秒没有观察到 `/api/v1/media/albums` 权威刷新（共享控制器缓存修订缺口）；同时未处理的 Playwright 等待超时使结果 JSON 丢失。当前在原一个工作提交中增加源目录版本更新、账号作用域隔离、保留两项选区且仅用户显式重试，以及将等待失败转为正常可存档的测试断言。**精确新 HEAD CI 尚未通过**，不可视作已验收；不改 52px App Frame 或 Go Server/虚拟化。
+
+**P1-3c2c 第二轮类型检查阻塞（2026-10-12）：** CI #38195189927 Windows Desktop typecheck 检测到共享 MediaAlbum.revision 可能 undefined (TS18048)，补充双方 `revision ?? 0` 的显式可选类型比较及静态守卫，避免假定所有客户端/旧记录有必填 revision。生产后端和52px App Frame不变；需新精确提交原生 CI 全绿才能称验收完成。
