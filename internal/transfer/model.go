@@ -659,18 +659,22 @@ func (m *Manager) Clear() {
 	m.mu.Lock()
 	// Fence pending old-account callbacks even when history was cleared earlier.
 	m.generation++
-	// A prior Clear may have removed all records but still be waiting for
-	// old-account I/O to stop. A concurrent Clear must join that teardown.
-	if m.clearInFlight != nil {
-		finished := m.clearInFlight
-		m.mu.Unlock()
-		<-finished
-		return
-	}
+	// Snapshot the prior teardown under the lock. A second Clear must
+	// cancel any tasks already present for a newly signed-in account, but
+	// must not remove tasks started *after* this Clear was invoked.
+	prior := m.clearInFlight
 	if len(m.entries) == 0 && len(m.order) == 0 {
 		m.mu.Unlock()
+		// No tasks belonged to this invocation. Join the earlier account
+		// teardown without deleting a subsequent account's restored state.
+		if prior != nil {
+			<-prior
+		}
 		return
 	}
+	// Chain teardown generations. An account B cancellation can begin
+	// without waiting for slow account A I/O to finish, while any later
+	// Clear still joins both generations before it returns.
 	finished := make(chan struct{})
 	m.clearInFlight = finished
 	// Collect old Agent-owned transfer cancellations and publish an empty
@@ -699,10 +703,17 @@ func (m *Manager) Clear() {
 		}(cancel)
 	}
 	pending.Wait()
-	// Publish completion only after every old cancellation callback has
-	// returned. Waiters join the same cycle even after entries were cleared.
+	// This Clear joins earlier teardown even though its own independent
+	// I/O cancellations were started immediately.
+	if prior != nil {
+		<-prior
+	}
 	m.mu.Lock()
-	m.clearInFlight = nil
+	// A newer Clear may have published its own joined completion signal.
+	// Do not discard that newer account's still-pending handoff.
+	if m.clearInFlight == finished {
+		m.clearInFlight = nil
+	}
 	close(finished)
 	m.mu.Unlock()
 }
