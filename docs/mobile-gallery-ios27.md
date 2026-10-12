@@ -693,3 +693,12 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **修复与安全边界：** 仅被当前 source/revision 证实的一次 motion-ticket 获取失败可标记为“下一次明确按住可重试”；完成的失败请求必须释放 inflight 标记。随后新按住才发起**至多一个**同一 Web REST/桌面 Agent 授权请求，不做定时、自动、递归或指数退避重试，不获取整段视频 Blob；请求中途松手与重复按住仍复用在途票据。用单源的单次请求序号围住所有进度、成功、失败回调，禁止前一次已结束的进度覆盖新请求。已获得签名 URL 的真实视频解码/编码失败仍保持终止状态，不能当成短暂票据失败无限重播；切换 Node/sourceKey 清除旧请求身份与重试权限。保持原图库 still 封面、52px 全屏 App Frame、同一 Web/Mobile Web `MediaGalleryDataSource`、共享虚拟化集合、用户授权、原有 Range 传输和音频能力。
 
 **验收：** 扩充既有实际生产共享 React 组件挂载测试，核对首按请求失败、长按不自动重试、松手后新按恢复、null 结果恢复、旧进度回调忽略、迟到 URL 不自动播放、真正 codec 失败不重复取票据，以及 Web/Mobile Web 统一 Viewer/虚拟化/REST 传输的回归。完整源准确 GitHub CI 和 Final Gate 是合并条件；实际 iOS 27 Safari/PWA/VoiceOver 同视口截图与用户真实三张灰色 LIVP/HEIC still 原件恢复仍单独待验。服务端静态图 CAS / `MediaMetadata.index_error` / 真实缩略图 HTTP 状态仍需实证才能判定具体截图根因。
+
+
+## P0-L9 · 有效 LIVP 原始 still 的缺失派生资源行只读恢复（2026-10-12）
+
+**已定位的代码级故障路径，不等于用户截图三张灰格的物理确诊。** 既有 Server 的 `has_thumbnail` 只报告媒体格式可生成缩略图。`ensureMediaMetadata` 对当前 `node_id:revision:sha256` 且 `derived_resource_version` 最新的有效 `.livp` 直接返回现有索引，但 `currentMediaDerivedResource` 若独立的 `xd_media_derived_resources` 行缺失，直接报 NotFound。于是尚未缓存的 still 缩略图需要读取内嵌 still 时会失败为 415，原始静态图的签名 ticket 和 Motion 也可能返回 404/500；移动、宽 Web 与 Desktop 共享这个 Server 失败。
+
+**最小恢复路径：** 仅当某个**授权 Node 的当前角色查询发生资源行缺失**，才额外读取**owner、Node、当前 revision、当前 SHA 严格匹配**、`index_state=ready` 且达到当前 LIVP 资源描述符版本的本地 canonical MediaMetadata。必须成功解析本地校验过的 `container_json`，仍需检查 still/motion **两段字节都完全落在当前原文件大小以内**，才能仅用合法原文件的嵌入式 offset/size 在本次请求中投影 read-only `MediaDerivedResource`。图库详情也仅对缺失的角色做同样的投影；现有成功路径、原媒体索引和 100k 稀疏 Gallery range **不新增扫描或常规 DB 查询**。不修改 Source/PhotoAsset、Node 或 derived-resource DB 行，不写入新的 CAS、不得以文件名/时间或第三方相册配对推断，也不重试不支持的格式。无匹配元数据、坏描述符、越界、不同账号/版本/SHA 都必须失败关闭；已存在但非法的资源行不隐式修好以免绕开原签名票据的失效检查。
+
+**验收与限制：** 在现有真实 PostgreSQL17/Gin 全功能 media 集成用例中，先上传有效 `.livp`、确认有完整 still/motion，然后模拟丢失两个辅助资源行，要求同一授权 Node 的 Details/冷 thumbnail/直接 still+motion/短期签名 ticket+HTTP 206 Range 均正确，且整个恢复**不会重建或改写 DB/CAS**。再核对错误 Owner/Revision/SHA、损坏的描述符和原先已有的失效票据检查。此修复只是证明恢复一个确定可复现的残缺索引场景；用户截图的三张真实灰色 still 若是 CAS 不存在、HEIC 不可解码、真实网络 5xx 或文件格式不受支持，仍需受影响 Node 的本地证据。iOS 27 Safari/PWA/VoiceOver 与同设备照片墙/Viewer 逐像素 1:1 验收继续明确为未运行。

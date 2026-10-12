@@ -860,3 +860,10 @@ Known limitation: exceptionally complex alpha rasters whose mask exceeds the
 header budget intentionally suppress the download sector instead of cropping
 inaccurately. No performance or physical iOS acceptance is claimed without
 those tests.
+
+
+### Missing current LIVP derived-range recovery
+
+The canonical `.livp` container index is a validated local description of immutable original byte offsets; the separate still/motion derived-resource rows only materialize those non-owning byte-range views. If a row is absent but the **same owner's current Node revision/SHA**, ready local index and current descriptor version all match, the Server may project the missing view on demand after validating **both** still and motion ranges against the current parent file size. It does not re-download or decode the original file, run a full index scan, trust a provider hint, create a persistent Node/PhotoAsset/PhotoResource/CAS file, or write missing database rows from a GET. Only a missing resource row activates this path; an existing invalid row, obsolete index, malformed descriptor or mismatched owner/revision/SHA must fail closed. Successful signed still/motion transport retains its existing per-session resource fingerprint, GET/HEAD/Range checks and source revision fencing. Gallery item details may project missing roles from that same validated local descriptor without changing Web/Mobile Web or Desktop business contracts.
+
+This is consistency recovery for a source-proven missing-resource-record scenario, **not** evidence that a particular user's HEIC/LIVP byte stream, thumbnail decoder, native iOS 27 Safari or iPhone photo pixel rendering succeeded.
