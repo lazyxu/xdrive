@@ -109,6 +109,9 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".xdrive-ready-crash-leftover"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	uploadTemp := filepath.Join(root, ".xdrive-uploads", "session", "000000")
 	if err := os.MkdirAll(filepath.Dir(uploadTemp), 0o750); err != nil {
 		t.Fatal(err)
@@ -125,7 +128,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 2 || report.IgnoredDerived != 1 {
+		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -136,6 +139,28 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	}
 	if len(report.Orphans) != 1 || report.Orphans[0].StorageKey != "orphan.bin" {
 		t.Fatalf("derived media cache must be ignored while real orphans remain visible: %+v", report.Orphans)
+	}
+	// The internal lockfile is valid only while it is a zero-byte
+	// root-scoped sentinel; corruption must still be reported as an orphan.
+	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), []byte("unexpected"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unsafeReport, err := Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundUnsafeLock := false
+	for _, orphan := range unsafeReport.Orphans {
+		if orphan.StorageKey == storage.TempLifecycleLockFile {
+			foundUnsafeLock = true
+			break
+		}
+	}
+	if !foundUnsafeLock {
+		t.Fatalf("nonempty internal-lock lookalike was wrongly ignored: %+v", unsafeReport.Orphans)
+	}
+	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	if len(report.HashMismatches) != 1 || report.HashMismatches[0].NodeID != hashID {
 		t.Fatalf("hash mismatches=%+v want node=%d", report.HashMismatches, hashID)
