@@ -89,6 +89,10 @@ export function XDriveMediaAsyncThumbnail({
       src={src}
       alt={alt}
       loading="lazy"
+      // Fetch/Blob success does not prove that the browser can decode the image.
+      // A broken source must leave the spinner/image and show the ordinary
+      // Gallery fallback without retrying or fetching full original bytes.
+      onError={() => setFailed(true)}
       sx={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }}
     />
   )

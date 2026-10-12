@@ -595,3 +595,11 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **架构不变量：** Web/Mobile Web/Desktop 仍共用一个 Gallery Page、`MediaTile`、`MediaGalleryDataSource` 对应的 REST/Agent 适配及 `VirtualCollection` / `MediaVirtualTileGrid` / `MediaVirtualTimeline`。不改变全屏 App Frame、52px 全局标题栏、网格列数和虚拟布局、照片选择/Viewer/450ms 长按、Live motion 首次按住才加载、PhotoAsset 配对身份、Server API 或上传/下载/持久任务。该展示改动无需重新测试已验收的同负载 P032/P033 性能基线；如果真实浏览器发现新请求、DOM 数、帧率、锚点退化，应单列性能回归。
 
 **验收计划与未完成项：** 在共享 MediaTile 真正 React mounted 测试中，检查有/无 Live 语义、禁用文字实况 Chip、20px 最大角标、触控/鼠标、缩略图无资源时不遮图、选择模式与单击打开、视频标识保留；完整 Web/Desktop/Go/Windows/Final Gate 均需通过。截图中的灰色缩略图原因（`has_thumbnail=false`、真实 GET 状态、原图 CAS、iOS 专有配对封面或派生海报）须另用原资产与请求证据定位，禁止将隐藏角标充当加载修复。最终 iOS 27 Safari / PWA 与 Apple 同版真机参考双图、VoiceOver 仍为 not-run。
+
+## P0-L2 · 缩略图 Blob 获取成功但图片解码失败时恢复占位（2026-10-12）
+
+**状态：独立的共享 UI 修复候选；精确 GitHub PR CI/Final Gate 和真机 iOS 27 对照仍待运行。** P0-L1 #1479 已以单提交线性合并，修复小网格实况文字 Chip 越界。对其截图中余下的灰色缩略图进行源码审计发现另一类**可独立复现的显示缺陷**：`XDriveMediaAsyncThumbnail` 异步调用 `loadThumbnail` 得到 Blob/ObjectURL 就挂载 `<img>`，而图片元素本身在浏览器解码或读取失败时此前没有 `onError`，因此可能留下一张损坏／空白图而不走已有回退。请求成功不代表真实浏览器图片解码成功。
+
+**本阶段最小修复：** 只在共享 `ui/shared/src/mui/MediaGalleryPreviewMedia.tsx` 的图库 async image 元素挂接 `onError={() => setFailed(true)}`，直接复用现有 React fallback，保持源数据、无进度条伪完成、正常加载、图片 URL 所有权、缩略图请求取消及来源 revision fence。**不自动重试、不额外请求原始图片、不对 100k 列表扫图、不改媒体后端或静态 API。** 新的 `desktop/tests/media-gallery-thumbnail-img-error.cjs` 使用实际生产组件的 React mounted 状态机，验证 URL 已成功但图片失败的回退、零重复网络请求、同 Node 新 revision 可重新获取、无 Node/已有请求拒绝的回退与正常可显示路径；全套测试/CI 仍为合入门槛。Web/Mobile Web/Desktop 继续使用同一共享组件、Server API/Agent 适配与 VirtualCollection/Grid/Timeline，全屏 App Frame 与 52px 顶栏不变。
+
+**仍待真实原件诊断：** 截图中的 3 张灰格还可能来自 `has_thumbnail=false`（Server 格式支持标记，非缓存存在证明）、后端缩略图生成失败、原始 still CAS 缺失、陈旧 revision、无可解码资源或网络取消。需要相关 Node IDs、实际状态码、索引/派生任务与 PhotoResource still/motion 的真实证据才可定位具体起因，不应把这个浏览器 fallback 修复称作灰格彻底解决。原生 Safari/PWA、VoiceOver、真机像素 1:1 和实体 Live 图片解码状态单独 not-run。
