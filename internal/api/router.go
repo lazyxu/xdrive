@@ -328,6 +328,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/evidence-summary", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidenceSummary)
 	// Native owning-Agent only: ordered, capped private advisory candidate readback.
 	authed.POST("/sources/:id/local-identity/evidence-page", s.requireLocalSourceExecutor(), s.readLocalSourceItemEvidencePage)
+	// Private, device-bound, read-only SourceItem/Node/alias consistency preflight.
+	authed.POST("/sources/:id/local-identity/evidence-preflight", s.requireLocalSourceExecutor(), s.preflightLocalSourceItemEvidence)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
