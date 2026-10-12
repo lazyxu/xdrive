@@ -23,9 +23,9 @@ const output = path.resolve(args['output-dir'])
 fs.mkdirSync(output, { recursive: true })
 const hash = file => createHash('sha256').update(fs.readFileSync(path.join(root, file))).digest('hex')
 const results = {
-  phase: 'F-iOS27-09I-D2', actualGoServer: true, postgresql17: true,
+  phase: 'F-iOS27-09I-D5', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
-  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [],
+  initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [],
   foreignOwner: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
@@ -420,6 +420,82 @@ async function queueBatchDestinationFromUI(kind, owner, width, nodes, targetID) 
 }
 
 
+
+// F09I-D5: actual Mobile More and Wide toolbar Undo/Redo clicks. The private
+// test-only endpoints only synchronize/run real Go Worker tasks; every
+// business HTTP POST comes from the original React Web controller.
+async function tapRealUndoRedoFromBothLayouts() {
+  const stage = await fetch(fixture.url + '/__test/files/execute', { method: 'POST' })
+  check(stage.status === 204, 'real Gin Worker verification prerequisite failed', stage.status)
+  for (const spec of [
+    { width: 375, height: 812, surface: 'Mobile' },
+    { width: 1600, height: 900, surface: 'Wide' },
+  ]) {
+    await page.setViewportSize({ width: spec.width, height: spec.height })
+    await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
+      { waitUntil: 'domcontentloaded' })
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await page.locator('[data-xdrive-file-explorer-scroll-host]').first().waitFor()
+    let previousUndoID = null
+    for (const action of ['undo', 'redo']) {
+      let item
+      if (spec.surface === 'Mobile') {
+        await page.getByRole('button', { name: '文件操作菜单' }).click()
+        item = page.locator('[data-mobile-files-more-menu]')
+          .getByRole('menuitem', { name: action === 'undo' ? '撤销' : '重做', exact: true })
+      } else {
+        item = page.getByRole('button', {
+          name: action === 'undo' ? '撤销' : '重做', exact: true,
+        }).first()
+      }
+      await item.waitFor({ state: 'visible' })
+      // Existing FileOperation lifecycle loads completed tasks asynchronously.
+      for (let poll = 0; poll < 50 && !(await item.isEnabled()); poll++) {
+        await page.waitForTimeout(100)
+      }
+      check(await item.isEnabled(), spec.surface + ' ' + action + ' never enabled from real task history')
+      const [response] = await Promise.all([
+        page.waitForResponse(r =>
+          /^\/api\/v1\/file-operations\/[^/]+\/(undo|redo)$/.test(new URL(r.url()).pathname) &&
+          new URL(r.url()).pathname.endsWith('/' + action) &&
+          r.request().method() === 'POST'),
+        item.click(),
+      ])
+      const queued = await response.json()
+      const sample = {
+        surface: spec.surface, width: spec.width, action,
+        status: response.status(), type: queued.type, id: queued.id,
+        undoOfID: queued.undo_of_id, redoOfID: queued.redo_of_id,
+      }
+      check(response.status() === 202 && queued.type === action &&
+        queued.status === 'queued' && typeof queued.id === 'string' && queued.id.length > 0,
+        'real UI ' + spec.surface + ' ' + action + ' must create authenticated task', sample)
+      if (action === 'redo') {
+        check(queued.redo_of_id === previousUndoID,
+          'real UI Redo must reference preceding clicked Undo operation', sample)
+      } else {
+        check(typeof queued.undo_of_id === 'string' && queued.undo_of_id.length > 0,
+          'real UI Undo must point to an existing completed operation', sample)
+        previousUndoID = queued.id
+      }
+      const workerResponse = await fetch(fixture.url + '/__test/files/process-next',
+        { method: 'POST' })
+      const result = workerResponse.status === 200
+        ? await workerResponse.json() : await workerResponse.text()
+      check(workerResponse.status === 200 && result.id === queued.id &&
+        result.type === action && result.status === 'completed',
+        'actual production Go Worker must finish exactly clicked UI task', { sample, result })
+      results.tapUndoRedo.push(sample)
+      await screenshot('live-go-' + spec.surface.toLowerCase() + '-tap-' + action)
+      await page.reload({ waitUntil: 'domcontentloaded' })
+      await page.locator('[data-xdrive-file-explorer-scroll-host]').first().waitFor()
+    }
+  }
+  check(results.tapUndoRedo.length === 4 &&
+    new Set(results.tapUndoRedo.map(x => x.id)).size === 4,
+    'real Mobile/Wide Undo/Redo actions must create four distinct tasks', results.tapUndoRedo)
+}
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -659,6 +735,7 @@ async function main() {
       { kind: spec.kind, denied })
     results.foreignOwner.push({ method: 'POST file-operations/' + spec.kind + '-batch', status: denied })
   }
+  await tapRealUndoRedoFromBothLayouts()
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -687,6 +764,7 @@ async function main() {
       patches: results.patches.length, copyQueues: results.copyQueues.length,
       mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
       batchDestinations: results.batchDestinations.length,
+      tapUndoRedo: results.tapUndoRedo.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))

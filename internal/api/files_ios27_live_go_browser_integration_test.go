@@ -126,8 +126,71 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 
 	stopped := make(chan struct{})
 	var stopOnce sync.Once
+	// Test-only barrier: the browser queues real requests before D3/D4
+	// assertions, then remains live for Mobile/Wide Undo/Redo taps.
+	executeStarted := make(chan struct{})
+	executeDone := make(chan struct{})
+	var executeOnce sync.Once
+	var tapMu sync.Mutex
+	tapIDs := make([]string, 0, 4)
 	fileServer := http.FileServer(http.Dir(dist))
 	mux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__test/files/execute" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "POST required", http.StatusMethodNotAllowed)
+				return
+			}
+			executeOnce.Do(func() { close(executeStarted) })
+			select {
+			case <-executeDone:
+				w.WriteHeader(http.StatusNoContent)
+			case <-r.Context().Done():
+				return
+			}
+			return
+		}
+		if r.URL.Path == "/__test/files/process-next" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "POST required", http.StatusMethodNotAllowed)
+				return
+			}
+			select {
+			case <-executeDone:
+			default:
+				http.Error(w, "original real-browser operation queue not yet verified", http.StatusConflict)
+				return
+			}
+			tapMu.Lock()
+			defer tapMu.Unlock()
+			if len(tapIDs) >= 4 {
+				http.Error(w, "real tap limit exceeded", http.StatusConflict)
+				return
+			}
+			var pending []meta.FileOperation
+			if err := db.Where("status = ?", meta.FileOperationStatusQueued).
+				Find(&pending).Error; err != nil || len(pending) != 1 {
+				http.Error(w, fmt.Sprintf("expected one queued UI task, got %d: %v", len(pending), err), http.StatusConflict)
+				return
+			}
+			operationID := pending[0].ID
+			processed, err := srv.processNextFileOperation(r.Context())
+			if err != nil || !processed {
+				http.Error(w, fmt.Sprintf("real Worker failed: processed=%v err=%v", processed, err), http.StatusInternalServerError)
+				return
+			}
+			var done meta.FileOperation
+			if err := db.Where("id = ?", operationID).First(&done).Error; err != nil ||
+				done.Status != meta.FileOperationStatusCompleted {
+				http.Error(w, fmt.Sprintf("real Worker did not complete UI task: %v %+v", err, done), http.StatusInternalServerError)
+				return
+			}
+			tapIDs = append(tapIDs, operationID)
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id": operationID, "type": done.Type, "status": done.Status,
+			})
+			return
+		}
 		if r.URL.Path == "/__test/files/finish" {
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -206,7 +269,7 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		peer.URL, root.ID, file.ID, file.Revision)
 
 	select {
-	case <-stopped:
+	case <-executeStarted:
 		var after, collision meta.Node
 		if err := db.First(&after, file.ID).Error; err != nil {
 			t.Fatal(err)
@@ -493,7 +556,26 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 				{ID: wideBatchMoveA.ID, Revision: wideBatchMoveA.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveA.Name, Body: "real Wide batch move one"},
 				{ID: wideBatchMoveB.ID, Revision: wideBatchMoveB.Revision, SourceParent: batchSource.ID, TargetParent: wideMoveTarget.ID, Name: wideBatchMoveB.Name, Body: "real Wide batch move two"},
 			})
-
+		var casBeforeTaps int64
+		if err := db.Model(&meta.ContentBlob{}).Count(&casBeforeTaps).Error; err != nil {
+			t.Fatal(err)
+		}
+		close(executeDone)
+		select {
+		case <-stopped:
+		case <-time.After(2 * time.Minute):
+			t.Fatal("real Mobile/Wide Undo/Redo taps did not finish")
+		}
+		tapMu.Lock()
+		observedTapIDs := append([]string(nil), tapIDs...)
+		tapMu.Unlock()
+		assertIOS27FilesLiveTapUndoRedo(t, db, peer.URL, token, after.OwnerID,
+			observedTapIDs, casBeforeTaps, []ios27FilesWorkerEffect{
+				{ID: wideBatchMoveA.ID, Revision: wideBatchMoveA.Revision, TargetParent: wideMoveTarget.ID, Body: "real Wide batch move one"},
+				{ID: wideBatchMoveB.ID, Revision: wideBatchMoveB.Revision, TargetParent: wideMoveTarget.ID, Body: "real Wide batch move two"},
+			})
+	case <-stopped:
+		t.Fatal("browser stopped before genuine Worker/Undo/Redo phases")
 	case <-time.After(4 * time.Minute):
 		t.Fatal("live browser did not finish the real Gin/PostgreSQL fixture")
 	}
