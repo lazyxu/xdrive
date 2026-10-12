@@ -1182,6 +1182,52 @@ test('F-PARITY-06: stale directory reads never upload to a later account; Trash 
   }, { props: { onExternalFilesDrop: async files => uploads.push(files.map(file => file.name)) } })
 })
 
+test('F-iOS27-10B: native List leading disclosure and files share one 84px text baseline', async () => {
+  const expanded = []
+  const opened = []
+  await withView(async h => {
+    const location = h.view.root.findAll(node => node.props?.role === 'button' && node.props?.onClick)
+      .find(node => textOf(node.props.children).includes('云端文件'))
+    await act(async () => { location.props.onClick() })
+    const row = find(h.view, 'data-mobile-files-folder-id', '2')
+    const disclosure = find(h.view, 'data-mobile-files-folder-disclosure', '2')
+    const thumb = row.findAll(node =>
+      node.props?.['data-mobile-files-thumbnail-slot'] !== undefined)[0]
+    assert.ok(thumb, 'the folder still owns one thumbnail slot')
+    assert.equal(row.children[0], disclosure,
+      'the genuine accessible disclosure must precede the folder thumbnail and text')
+    assert.equal(disclosure.props.sx.width, 44)
+    assert.equal(disclosure.props.sx.height, 44)
+    assert.equal(row.props.sx.gap, 0)
+    assert.equal(row.props.sx.px, 0)
+    assert.equal(thumb.props.sx.width, 40)
+    assert.equal(row.props.sx['&:not(:last-child)::after'].left, 84)
+    const ordinary = h.view.root.findAll(node => node.props?.['data-mobile-files-item'] !== undefined)
+      .find(node => node.props['aria-label'] === '说明.txt')
+    assert.ok(ordinary)
+    assert.equal(ordinary.children[0].props['data-mobile-files-leading-spacer'], true)
+    assert.equal(ordinary.props.sx.gap, 0)
+    assert.equal(ordinary.props.sx.px, 0)
+    assert.equal(ordinary.props.sx['&:not(:last-child)::after'].left, 84)
+    let stopped = 0
+    await act(async () => { disclosure.props.onClick({ stopPropagation() { stopped++ } }) })
+    assert.equal(stopped, 1)
+    assert.deepEqual(expanded, [[2, 1, 0]])
+    assert.deepEqual(opened, [], 'leading disclosure must not enter a folder')
+    await act(async () => { row.props.onClick() })
+    assert.deepEqual(opened, [[2, 1]], 'folder row must still open through the shared workspace')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    await act(async () => { find(h.view, 'data-mobile-files-view-option', 'grid').props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-folder-disclosure'), 0,
+      'Grid may not pretend to implement inline List expansion')
+  }, { props: {
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onToggleInlineFolder: (item, owner, index) => expanded.push([item.id, owner, index]),
+    onOpenItem: (item, owner) => { opened.push([item.id, owner]); return false },
+  } })
+})
+
 test('F-PARITY-07B: List disclosure is independent of row Open and uses a 44px button', async () => {
   const toggles = []
   const opens = []

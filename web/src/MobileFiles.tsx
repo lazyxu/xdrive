@@ -1382,9 +1382,14 @@ export default function MobileFiles(props: Props) {
         sx={{
           minWidth: 0, minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           display: 'flex', flexDirection: effectiveGrid ? 'column' : 'row', alignItems: 'center',
-          gap: effectiveGrid ? 0.5 : 1.5, py: effectiveGrid ? 1 : 0.6,
-          px: effectiveGrid ? 0.5 : 3.5,
-          pl: !effectiveGrid && depth > 0 ? 'calc(28px + ' + Math.min(depth, 4) * 16 + 'px)' : undefined,
+          // Reserve a genuine 44px leading touch zone in List, whether a
+          // directory can expand in place or the cell is an ordinary file.
+          // Thumbnail/text columns therefore never shift between file types.
+          gap: effectiveGrid ? 0.5 : selectionMode ? 1.5 : 0, py: effectiveGrid ? 1 : 0.6,
+          px: effectiveGrid ? 0.5 : selectionMode ? 3.5 : 0,
+          pl: !effectiveGrid && depth > 0
+            ? 'calc(' + (selectionMode ? 28 : 0) + 'px + ' + Math.min(depth, 4) * 16 + 'px)'
+            : undefined,
           position: 'relative', cursor: 'pointer',
           bgcolor: chosen || dropFolderID === String(item.id) ? 'action.selected' :
             effectiveGrid ? 'transparent' : (theme => theme.palette.mode === 'dark' ? '#1c1c1e' : '#ffffff'),
@@ -1398,18 +1403,45 @@ export default function MobileFiles(props: Props) {
           } } : {}),
         }}
       >
+        {!effectiveGrid && !selectionMode ? (
+          canDisclose ? (
+            <IconButton data-mobile-files-folder-disclosure={String(item.id)}
+              aria-label={inlineBranch?.error ? '重试展开 ' + item.name :
+                inlineBranch ? '收起 ' + item.name : '展开 ' + item.name}
+              aria-expanded={Boolean(inlineBranch)}
+              disabled={Boolean(inlineBranch?.loading)}
+              onClick={event => {
+                event.stopPropagation()
+                if (inlineBranch?.error) props.onRetryInlineFolder?.(Number(item.id))
+                else props.onToggleInlineFolder?.(item, ownerID, sourceIndex)
+              }}
+              onPointerDown={event => event.stopPropagation()}
+              onPointerUp={event => event.stopPropagation()}
+              onKeyDown={event => event.stopPropagation()}
+              sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0,
+                color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
+              {inlineBranch?.loading ? <CircularProgress size={18}/> :
+                <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
+                  transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>}
+            </IconButton>
+          ) : <Box data-mobile-files-leading-spacer aria-hidden="true"
+              sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0 }} />
+        ) : null}
         {selectionMode ? (
           <Box sx={{ color: chosen ? 'primary.main' : 'text.disabled', width: 24, height: 24,
             flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {chosen ? <CheckCircleRoundedIcon fontSize="small"/> : <RadioButtonUncheckedRoundedIcon fontSize="small"/>}
           </Box>
         ) : null}
-        <Box sx={{ flexShrink: 0, width: effectiveGrid ? 70 : 44, height: effectiveGrid ? 70 : 44,
+        <Box data-mobile-files-thumbnail-slot sx={{
+          flexShrink: 0, width: effectiveGrid ? 70 : selectionMode ? 44 : 40,
+          height: effectiveGrid ? 70 : 44,
           display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
           {item.kind === 'dir' ? <MobileFolderIcon size={effectiveGrid ? 62 : 38} /> : (
             <XDriveFileExplorerThumbnail item={item} eligible={xDriveFileSupportsThumbnail(item.name, item.kind)}
               fallback={<MobileDocumentIcon item={item} size={effectiveGrid ? 38 : 28}/>}
-              sx={{ width: effectiveGrid ? 64 : 42, height: effectiveGrid ? 64 : 42, borderRadius: 0 }}/>
+              sx={{ width: effectiveGrid ? 64 : selectionMode ? 42 : 40,
+                height: effectiveGrid ? 64 : 42, borderRadius: 0 }}/>
           )}
         </Box>
         <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
@@ -1420,29 +1452,7 @@ export default function MobileFiles(props: Props) {
           </Typography>
         </Box>
         {!effectiveGrid && item.availability ? <XDriveFileExplorerAvailabilityBadge availability={item.availability} compact /> : null}
-        {canDisclose ? (
-          <IconButton data-mobile-files-folder-disclosure={String(item.id)}
-            aria-label={inlineBranch?.error ? '重试展开 ' + item.name :
-              inlineBranch ? '收起 ' + item.name : '展开 ' + item.name}
-            aria-expanded={Boolean(inlineBranch)}
-            disabled={Boolean(inlineBranch?.loading)}
-            onClick={event => {
-              event.stopPropagation()
-              if (inlineBranch?.error) props.onRetryInlineFolder?.(Number(item.id))
-              else props.onToggleInlineFolder?.(item, ownerID, sourceIndex)
-            }}
-            onPointerDown={event => event.stopPropagation()}
-            onPointerUp={event => event.stopPropagation()}
-            onKeyDown={event => event.stopPropagation()}
-            sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0,
-              color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
-            {inlineBranch?.loading ? <CircularProgress size={18}/> :
-              <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
-                transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>}
-          </IconButton>
-        ) : !effectiveGrid && item.kind === 'dir' ? (
-          <ArrowBackIosNewRoundedIcon sx={{ fontSize: 13, transform: 'rotate(180deg)', color: 'text.disabled' }}/>
-        ) : null}
+        {/* Native List expands only from its leading disclosure; row activation still opens. */}
       </Box>
     )
   }

@@ -2417,6 +2417,14 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
     const firstRow = el('[data-mobile-files-item]');
     const rowTitle = firstRow?.querySelector('[data-mobile-files-item-title]');
     const rowMeta = firstRow?.querySelector('[data-mobile-files-item-meta]');
+    const expandable = el('[data-mobile-files-folder-id="2"]');
+    const disclosure = expandable?.querySelector('[data-mobile-files-folder-disclosure="2"]');
+    const folderThumbnail = expandable?.querySelector('[data-mobile-files-thumbnail-slot]');
+    const folderTitle = expandable?.querySelector('[data-mobile-files-item-title]');
+    const regularFile = Array.from(root?.querySelectorAll('[data-mobile-files-item]') || [])
+      .find(item => !item.hasAttribute('data-mobile-files-folder-id'));
+    const regularFileSpacer = regularFile?.querySelector('[data-mobile-files-leading-spacer]');
+    const regularFileTitle = regularFile?.querySelector('[data-mobile-files-item-title]');
     const arrangement = el('[data-mobile-files-arrangement-status]');
     const bottom = el('nav[aria-label="文件分类"]');
     const sectionOrder = Array.from(bottom?.querySelectorAll('[data-mobile-files-section]') || [])
@@ -2429,6 +2437,9 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
       list: rect(list), listMarginLeft: list ? parseFloat(getComputedStyle(list).marginLeft) : -1,
       listRadius: list ? parseFloat(getComputedStyle(list).borderTopLeftRadius) : -1,
       firstRow: rect(firstRow),
+      disclosure: rect(disclosure), disclosureExpanded: disclosure?.getAttribute('aria-expanded'),
+      folderThumbnail: rect(folderThumbnail), folderText: rect(folderTitle),
+      regularFileSpacer: rect(regularFileSpacer), regularFileText: rect(regularFileTitle),
       rowTitleSize: rowTitle ? parseFloat(getComputedStyle(rowTitle).fontSize) : -1,
       rowMetaSize: rowMeta ? parseFloat(getComputedStyle(rowMeta).fontSize) : -1,
       arrangementDisplay: arrangement ? getComputedStyle(arrangement).display : 'missing',
@@ -2459,6 +2470,19 @@ async function filesIos27CompactFolderGeometryAcceptance(viewport) {
     measurements.bottom?.width <= 321 && measurements.bottom?.width >= 270 &&
     JSON.stringify(measurements.sectionOrder) === '["recent","favorites","browse"]' &&
     measurements.background === 'rgb(255, 255, 255)', measurements);
+  check(`${label}: iOS 27 folder disclosure is on the left, independent of row Open`,
+    measurements.disclosure?.width >= 44 && measurements.disclosure?.height >= 44 &&
+    measurements.folderThumbnail && measurements.folderText &&
+    measurements.disclosure.x + measurements.disclosure.width <=
+      measurements.folderThumbnail.x + 0.5 &&
+    measurements.folderThumbnail.x + measurements.folderThumbnail.width <=
+      measurements.folderText.x + 0.5 &&
+    measurements.disclosureExpanded === 'false' &&
+    measurements.regularFileSpacer?.width >= 44 &&
+    measurements.regularFileText &&
+    Math.abs(measurements.folderText.x - measurements.regularFileText.x) <= 1 &&
+    Math.abs(measurements.folderText.x - 84) <= 1,
+    measurements);
 }
 async function filesIos27BreadcrumbTouchAcceptance(viewport, origin) {
   const label = `user-files-ios27-${viewport.width}x${viewport.height}-breadcrumbs`;
