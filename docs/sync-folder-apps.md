@@ -895,7 +895,7 @@ watcher, schedule execution, NAS Push or deletion is enabled.
 The 1k/10k/100k and >=4GiB native-machine E2E and GitLab delivery
 remain independently unverified.
 
-## L03-D2b2c2b2b · Bounded actual CAS byte observation (GitHub PR verification)
+## L03-D2b2c2b2b · Bounded actual CAS byte observation (merged #1475; full 97-check CI green)
 
 The preceding cloud **metadata** equality stage (#1471) is merged after
 its own 96-check exact-head CI (25 success, 71 conditional skips, zero
@@ -948,3 +948,62 @@ resumable upload, SourceRun executor, watcher/scheduler/offline recovery and
 Mirror two-scan/24h/trash-only deletion safety. Push activation stays denied.
 No GitLab delivery or native-device physical throughput measurement is
 claimed by this substage.
+
+## L03-D2b2c2b2c · Atomic bounded multi-object physical CAS observation (GitHub PR verification)
+
+The prior L03-D2b2c2b2b (#1475) is merged after full exact-head CI:
+97 checks, 25 success / 72 conditional skips / zero failures, including the
+final-gate; its remote work branch was removed by the successful cleanup
+workflow #38198963997. This continuation **extends the same private
+Server/Agent protocol** without enabling physical Push uploads.
+
+The owner JWT plus currently enrolled unrevoked native Agent credential,
+exact Root and fingerprint, paused local_folder/Push Source, and If-Match
+Source revision are mandatory. The request accepts ONLY 1–4 strictly
+ascending existing private evidence IDs, sealed PREVIOUS/CURRENT SHA256
+generation values, and newly computed *local* SHA256 plus size per item.
+No filesystem path, Node/SourceItem ID, object key, URL or credential
+may be chosen or returned by Renderer or Web.
+
+The Server caps the **sum of all submitted object sizes** at 64MiB, not
+just the largest object; four 64MiB objects are explicitly rejected.
+It runs the existing full device→Source→Root→SourceItem→Node→
+File/Version/CAS/alias transaction proof once for the entire batch, releases
+all database locks, opens each Server-derived canonical CAS object
+**sequentially** through the existing Store, and hashes every physical
+object with a <=256KiB buffer. A single 90-second request deadline and
+Go context cancellation bound total work. Missing, changed, corrupt,
+truncated or oversized physical bytes fail the whole operation; no
+per-item or partial-success response is emitted. A second complete
+transactional proof must pass for *every* object after the I/O, with the
+identical ordered Server-derived object metadata. No Store read takes place
+inside a database transaction, and there are no SourceItem/Node/CAS/Run writes.
+
+Existing single-item Go Client calls remain valid. The new strict batch
+method rejects empty, unordered, duplicate, too-many, oversized or
+over-budget requests locally and validates the entire private response.
+The owning Agent may select up to four eligible ordered candidates
+within the cumulative 64MiB budget from a previously hashed and
+metadata-checked evidence page; objects excluded by the budget and other
+pages remain **not physically verified**. A successful result exposes
+only private aggregate sampled file/byte counts inside Agent memory,
+not a file listing, hash list or completion proof. No new IPC,
+Electron Preload, Renderer, Web/Mobile or foreign Desktop capability.
+
+The no-store reply has source_id, revision, checked count and
+`cloud_metadata_matched=true`, `physical_cas_matched=true`; all
+`cloud_bytes_verified`, `content_verified`, `commit_supported`,
+`authoritative`, `missing_inference_safe` remain **false**.
+Tests include valid two-object Store reads, corruption of the second
+object (whole batch fails), one-item legacy compatibility, invalid
+5-object/over-64MiB batches, unauthorized device/Root, account scope,
+stale version and strict client response validation. CI and native
+device tests are independent gates, not assumed.
+
+**Still NOT done:** verifying all 64 page items or the whole 100k library,
+4GiB streaming, durable proof across subsequent writes, SourceItem alias
+promotion, Planner, upload/resume/commit, SourceRun activation, watcher,
+background schedule or offline recovery; Mirror still requires two full
+safe scans/24h/trash-only, and NAS Push remains a placeholder.
+Full GitHub exact-head CI is required before merging this phase.
+No GitLab delivery or physical 1k/10k/100k benchmark is claimed.

@@ -98,3 +98,36 @@ func TestPhysicalCASContextReaderStopsMidstreamBeforeReportingSuccess(t *testing
 		t.Fatalf("canceled reader continued: n=%d err=%v", n, err)
 	}
 }
+
+func TestPhysicalEvidenceBatchBudgetFailsClosed(t *testing.T) {
+	item := func(id uint64, size int64) localEvidenceCloudMetadataItem {
+		return localEvidenceCloudMetadataItem{
+			EvidenceID: id, SHA256: strings.Repeat("a", 64), Size: size,
+		}
+	}
+	valid := [][]localEvidenceCloudMetadataItem{
+		{item(1, 0)},
+		{item(1, 1), item(2, 2)},
+		{item(1, 64<<20)},
+		{item(1, 32<<20), item(2, 32<<20)},
+		{item(1, 2), item(2, 3), item(3, 4), item(4, 5)},
+	}
+	for _, batch := range valid {
+		if !validLocalEvidencePhysicalCASBatch(batch) {
+			t.Fatalf("valid bounded physical batch rejected: %+v", batch)
+		}
+	}
+	invalid := [][]localEvidenceCloudMetadataItem{
+		nil,
+		{},
+		{item(1, -1)},
+		{item(1, 64<<20+1)},
+		{item(1, 32<<20), item(2, 32<<20+1)},
+		{item(1, 1), item(2, 1), item(3, 1), item(4, 1), item(5, 1)},
+	}
+	for _, batch := range invalid {
+		if validLocalEvidencePhysicalCASBatch(batch) {
+			t.Fatalf("oversized or empty physical batch accepted: %+v", batch)
+		}
+	}
+}

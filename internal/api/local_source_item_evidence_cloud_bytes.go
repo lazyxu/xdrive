@@ -18,9 +18,27 @@ import (
 )
 
 const (
+	localEvidencePhysicalCASLimitItems = 4
 	localEvidencePhysicalCASLimitBytes = int64(64 << 20)
 	localEvidencePhysicalCASDeadline   = 90 * time.Second
 )
+
+// validLocalEvidencePhysicalCASBatch caps both logical items and cumulative
+// physical read I/O; the parent metadata validator additionally enforces
+// strictly increasing evidence IDs and lowercase SHA256 for every claim.
+func validLocalEvidencePhysicalCASBatch(items []localEvidenceCloudMetadataItem) bool {
+	if len(items) == 0 || len(items) > localEvidencePhysicalCASLimitItems {
+		return false
+	}
+	var total int64
+	for _, item := range items {
+		if item.Size < 0 || item.Size > localEvidencePhysicalCASLimitBytes-total {
+			return false
+		}
+		total += item.Size
+	}
+	return true
+}
 
 // An ephemeral observation, NOT a durable proof or a write authorization.
 // CloudBytesVerified intentionally remains false: only a point-in-time read
@@ -101,8 +119,8 @@ func verifyPhysicalEvidenceCAS(ctx context.Context, store storage.Store, object 
 	return nil
 }
 
-// readLocalSourceEvidenceCloudBytes performs at most ONE explicitly requested
-// small physical-object sample. It accepts only owning-Agent proven evidence,
+// readLocalSourceEvidenceCloudBytes checks 1–4 strictly ordered physical
+// CAS objects, with an aggregate read budget of <=64MiB, atomically. It accepts only owning-Agent proven evidence,
 // never caller-provided paths/keys or Node IDs. All I/O occurs OUTSIDE the
 // database transaction. The second full metadata check fences concurrent
 // revocation, version/alias edits and CAS metadata replacement.
@@ -128,7 +146,7 @@ func (s *Server) readLocalSourceEvidenceCloudBytes(c *gin.Context) {
 	decoder.DisallowUnknownFields()
 	var input localEvidenceCloudMetadataRequest
 	if err := decoder.Decode(&input); err != nil || !validLocalEvidenceCloudMetadataRequest(input) ||
-		len(input.Items) != 1 || input.Items[0].Size > localEvidencePhysicalCASLimitBytes {
+		!validLocalEvidencePhysicalCASBatch(input.Items) {
 		fail(c, http.StatusBadRequest, "invalid or oversized physical content sample")
 		return
 	}
@@ -150,17 +168,21 @@ func (s *Server) readLocalSourceEvidenceCloudBytes(c *gin.Context) {
 		failLocalEvidencePhysicalCAS(c, err, expected, revision)
 		return
 	}
-	if len(objects) != 1 {
+	if len(objects) != len(input.Items) {
 		fail(c, http.StatusConflict, "physical content source no longer matches")
 		return
 	}
-	if err := verifyPhysicalEvidenceCAS(readCtx, s.Store, objects[0]); err != nil {
-		if readCtx.Err() != nil {
-			fail(c, http.StatusServiceUnavailable, "physical content verification interrupted")
-		} else {
-			fail(c, http.StatusConflict, "physical content could not be verified")
+	// A single failure invalidates the *whole* logical batch. No per-item
+	// results are emitted, and none of these physical reads hold DB locks.
+	for _, object := range objects {
+		if err := verifyPhysicalEvidenceCAS(readCtx, s.Store, object); err != nil {
+			if readCtx.Err() != nil {
+				fail(c, http.StatusServiceUnavailable, "physical content verification interrupted")
+			} else {
+				fail(c, http.StatusConflict, "physical content could not be verified")
+			}
+			return
 		}
-		return
 	}
 
 	// A physical hash can race revocation, source edits, CAS garbage collection,
@@ -171,14 +193,20 @@ func (s *Server) readLocalSourceEvidenceCloudBytes(c *gin.Context) {
 		failLocalEvidencePhysicalCAS(c, err, expected, revisionAgain)
 		return
 	}
-	if revisionAgain != revision || len(objectsAgain) != 1 || objectsAgain[0] != objects[0] ||
+	if revisionAgain != revision || len(objectsAgain) != len(objects) ||
 		readCtx.Err() != nil {
 		fail(c, http.StatusConflict, "physical content source changed during read")
 		return
 	}
+	for i := range objects {
+		if objectsAgain[i] != objects[i] {
+			fail(c, http.StatusConflict, "physical content source changed during read")
+			return
+		}
+	}
 	c.Header("ETag", strconv.Quote(strconv.FormatUint(revision, 10)))
 	c.JSON(http.StatusOK, localEvidencePhysicalCASResponse{
-		SourceID: sourceID, Revision: revision, Checked: 1,
+		SourceID: sourceID, Revision: revision, Checked: len(objects),
 		CloudMetadataMatched: true, PhysicalCASMatched: true,
 		CloudBytesVerified: false, ContentVerified: false,
 		CommitSupported: false, Authoritative: false, MissingInferenceSafe: false,

@@ -25,13 +25,28 @@ type LocalEvidencePhysicalCAS struct {
 	MissingInferenceSafe bool   `json:"missing_inference_safe"`
 }
 
-// CheckLocalSourceItemCloudBytes allows the owning Agent to ask the Server to
-// hash ONE canonical CAS object <=64 MiB after independently hashing the local
-// original. The Server rechecks all DB evidence after the physical read.
-// No token/path/key/Node ID is accepted or returned. Deliberately not IPC.
+const (
+	localPhysicalCASBatchMaxItems = 4
+	localPhysicalCASBatchMaxBytes = int64(64 << 20)
+)
+
+// CheckLocalSourceItemCloudBytes retains the single-item native Agent client
+// contract. The bounded batch variant is used by newer Agent preflights.
 func (c *Client) CheckLocalSourceItemCloudBytes(
 	ctx context.Context, sourceID, revision uint64, proof LocalBoundSourceProof,
 	previousSHA256, currentSHA256 string, item LocalEvidenceCloudDigest,
+) (LocalEvidencePhysicalCAS, error) {
+	return c.CheckLocalSourceItemCloudBytesBatch(ctx, sourceID, revision, proof,
+		previousSHA256, currentSHA256, []LocalEvidenceCloudDigest{item})
+}
+
+// CheckLocalSourceItemCloudBytesBatch asks Server to stream one to four
+// canonical CAS objects with an aggregate <=64MiB byte budget. It accepts
+// neither a caller-chosen key nor a file path. The complete response is
+// point-in-time, non-authoritative, and strictly all-or-nothing.
+func (c *Client) CheckLocalSourceItemCloudBytesBatch(
+	ctx context.Context, sourceID, revision uint64, proof LocalBoundSourceProof,
+	previousSHA256, currentSHA256 string, items []LocalEvidenceCloudDigest,
 ) (LocalEvidencePhysicalCAS, error) {
 	var empty LocalEvidencePhysicalCAS
 	if ctx == nil || sourceID == 0 || revision == 0 ||
@@ -39,10 +54,20 @@ func (c *Client) CheckLocalSourceItemCloudBytes(
 		proof.RootID == "" || proof.RootFingerprint == "" ||
 		!validLocalEvidenceGenerationDigest(previousSHA256) ||
 		!validLocalEvidenceGenerationDigest(currentSHA256) ||
-		previousSHA256 == currentSHA256 || item.EvidenceID == 0 ||
-		item.Size < 0 || item.Size > 64<<20 ||
-		!validLocalEvidenceGenerationDigest(item.SHA256) {
-		return empty, fmt.Errorf("invalid physical CAS sample")
+		previousSHA256 == currentSHA256 ||
+		len(items) == 0 || len(items) > localPhysicalCASBatchMaxItems {
+		return empty, fmt.Errorf("invalid physical CAS batch")
+	}
+	var previousID uint64
+	var total int64
+	for _, item := range items {
+		if item.EvidenceID <= previousID || item.Size < 0 ||
+			item.Size > localPhysicalCASBatchMaxBytes-total ||
+			!validLocalEvidenceGenerationDigest(item.SHA256) {
+			return empty, fmt.Errorf("invalid ordered physical CAS claim")
+		}
+		previousID = item.EvidenceID
+		total += item.Size
 	}
 	body, err := json.Marshal(struct {
 		PreviousSHA256 string                     `json:"previous_snapshot_sha256"`
@@ -50,7 +75,7 @@ func (c *Client) CheckLocalSourceItemCloudBytes(
 		Items          []LocalEvidenceCloudDigest `json:"items"`
 	}{
 		PreviousSHA256: previousSHA256, CurrentSHA256: currentSHA256,
-		Items: []LocalEvidenceCloudDigest{item},
+		Items: items,
 	})
 	if err != nil {
 		return empty, err
@@ -89,7 +114,7 @@ func (c *Client) CheckLocalSourceItemCloudBytes(
 	if err := decoder.Decode(&trailing); err != io.EOF {
 		return empty, fmt.Errorf("trailing physical CAS sample reply")
 	}
-	if got.SourceID != sourceID || got.Revision != revision || got.Checked != 1 ||
+	if got.SourceID != sourceID || got.Revision != revision || got.Checked != len(items) ||
 		!got.CloudMetadataMatched || !got.PhysicalCASMatched ||
 		got.CloudBytesVerified || got.ContentVerified ||
 		got.CommitSupported || got.Authoritative || got.MissingInferenceSafe {
