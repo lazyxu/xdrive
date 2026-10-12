@@ -17,9 +17,9 @@
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
 | P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A 已合并；有约束的安全激活仍待 S3C，不允许强制 reload |
-| P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A PR #1516 完整 CI 通过且已合并；S2B1 真实 Chromium 安装资源/离线/登录前深链接自动验收待 CI；iOS 27/Android 系统安装仍 not-run |
-| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 将在 Chrome 安全 loopback 实测 SW/Manifest MIME、图标和缓存头；公网可信 HTTPS/DNS/证书与 Caddy 生产部署仍 not-run |
-| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有；S2B1 将验证未登录 Files 深链接经线上/离线/恢复仍保留，实际登录后 Files/Gallery/Viewer 与系统图标启动尚待验 |
+| P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A #1516、S2B1 #1557、S2B2 #1560 完整 CI 通过并合并；Chrome 安装资源/离线/登录后 Files 恢复已验，iOS 27/Android 系统安装仍 not-run |
+| P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 已在真实 Chrome 安全 loopback 通过 SW/Manifest MIME、图标与缓存头；公网可信 HTTPS/DNS/CA 与 Caddy 生产部署仍 not-run |
+| P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome 已验证登录前后 Files 深链接和冷刷新；S2B3 真正 Gin/Postgres/JWT 仍待 CI；Gallery/Viewer、安装图标冷启动仍 not-run |
 | P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3B 已有可取消 Server 诊断；S3C 已接入有限白名单 GET 一次重试；认证/上传/下载和其他接口仍保持原流程 |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
 | P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | S4A/S4B 已完整 PR CI 通过并合并；Web 上传仍需人工重新选文件，真实安装模式和进程回收验收待 S5 |
@@ -183,3 +183,16 @@ Web/Mobile Web 支持 File System Access 时，原有 BYOB/常规流顺序写入
 
 
 **S2B2 第一次真实浏览器验收（2026-10-12）：** [专项作业 #38252576485](https://github.com/lazyxu/xdrive/actions/runs/38252576485) 中 Chrome 已完成真实表单登录、11 次授权目标目录 Node 请求、冷刷新及相同深链接保留，且无 401 或凭据泄露；但严格测试 fixture 漏列了 Web 文件管理器默认加载的 `GET /api/v1/sources`、`GET /api/v1/file-recent` 与目录访问 recent-touch，返回 501 使 `authUnknown=4`，最终拒绝验收。已仅按现有共享 XDriveApi 定义为这些**固定且有限**的路径增加明确允许条目，不放行任意私有 API 或写操作；未知端点仍返回 501，并只记录测试本地 HTTP 方法+静态 pathname 供准确排查，绝不写入 token、Cookie、查询字符串或敏感文件路径。新提交的完整 PR CI 与专项 Chrome 必须全部重新通过才合并，仍不构成实机 iOS/Android 安装验证。
+
+
+## PWA-S2B2 合并结果（2026-10-12）
+
+PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专项 #38253266692，线性合并为 096e23d8，临时分支已由清理流程删除。S2B2 真实 Chrome 登录表单 2 次、21 次授权目录读、Desktop 1280px/Android UA 390px 触控模拟冷刷新和 CacheStorage 公开离线页隔离均通过。注意：S2B2 使用隔离的模拟 Server API，并不能替代真实 Go Server JWT 和 OS 安装模式真机。
+
+## PWA-S2B3 · 真实 Gin/PostgreSQL17/Local CAS 浏览器登录与跨用户授权（2026-10-12）
+
+本阶段在已有 S2B2 基础上，改为不拦截和不伪造任何 /api/v1 响应。直接复用 internal/api 的独立 PostgreSQL schema、生产 Gin Router、auth.HashPassword/createTestUser 及临时 Local CAS，构建生产 Web，用真实 Chrome 用户界面登录由 Go 服务签发 JWT 的隔离测试账号；访问目标 Node、冷刷新和同一 Chrome profile 内另一个新标签打开相同 Files hash 后，都必须读回真实授权文件夹。跨用户 JWT 访问同一目录必须返回 404；匿名访问返回 401。Service Worker CacheStorage 仍然只有公开 offline.html。
+
+新增 internal/api/pwa_s2b3_real_gin_auth_integration_test.go、desktop/scripts/pwa-real-gin-auth-browser.cjs、desktop/tests/pwa-real-gin-auth-contract.cjs 和 branch-scoped .github/workflows/pwa-s2b3-real-gin.yml。CI 专项测试使用私有 ready 文件和临时数据库，产物仅上传脱敏 summary.json，绝不上传 JWT、密码、HTTP 正文、Gin 私有日志、浏览器 Profile 和私有文件字节；不向真实用户系统发送请求。
+
+**证据边界：** 本阶段尚待 CI 实跑，不能认定真实 Gin 登录已通过。真实 Safari iOS27/Home Screen、Android Installed、桌面 Chrome/Edge 系统安装图标冷启动、公网 HTTPS/证书、Gallery/Viewer/分享、后台上传保证、锁屏/进程回收和 4GiB SHA 验收仍为 not-run。继续保持 52px App Frame、统一 Web/Mobile Web 后端接口/虚拟化列表与公开 SW 离线缓存限制。
