@@ -299,6 +299,7 @@ export function XDriveBackgroundTaskList({
   emptyMessage = '暂无任务',
   controlKey = '',
   focusedTaskID = '',
+  showOwners = false,
   onControl,
 }: {
   tasks: XDriveBackgroundTask[]
@@ -306,6 +307,7 @@ export function XDriveBackgroundTaskList({
   emptyMessage?: string
   controlKey?: string
   focusedTaskID?: string
+  showOwners?: boolean
   onControl?: (
     task: XDriveBackgroundTask,
     action: XDriveBackgroundTaskControlAction,
@@ -325,6 +327,10 @@ export function XDriveBackgroundTaskList({
           task={task}
           controlKey={controlKey}
           focused={task.id === focusedTaskID}
+          ownerLabel={showOwners
+            ? task.owner_username ||
+              (task.scope === 'system' ? '系统' : task.owner_id ? `#${task.owner_id}` : '—')
+            : undefined}
           onControl={onControl}
         />
       ))}

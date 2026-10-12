@@ -144,7 +144,9 @@ test('Global Tasks renders an independent administrator page and ordinary users 
   const data = [{ id: 'global-job' }]
   const admin = renderTaskPage({ globalTasksEnabled: true, backgroundScope: 'global', globalBackgroundTasks: data })
   assert.equal(admin.props.title, '全局后台任务')
-  assert.equal(elements(admin, 'BackgroundTaskTable')[0].props.tasks, data)
+  assert.equal(elements(admin, 'BackgroundTaskList')[0].props.tasks, data)
+  assert.equal(elements(admin, 'BackgroundTaskList')[0].props.showOwners, true)
+  assert.equal(elements(admin, 'BackgroundTaskTable').length, 0)
   assert.equal(elements(admin, 'FileOperationCenter').length, 0)
   const ordinary = renderTaskPage({ backgroundScope: 'global', globalBackgroundTasks: data })
   assert.equal(ordinary.props.title, '任务')
