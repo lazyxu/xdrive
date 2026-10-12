@@ -696,3 +696,39 @@ The exact first-red assertions are updated to the new deliberate
 the 68px virtual row, 44px menu targets, same real Web workspace,
 Browse-home large heading, and all operational acceptance tests.
 Do not skip the tests; full fresh exact-head CI is still required.
+
+## 2026-10-12 F-iOS27-10B · screenshot left-side List disclosure
+
+**Work candidate, not yet validated or merged.** After F-iOS27-10A merged
+in #1474, the authentic 390 CSS px Chromium screenshot still showed the
+expandable folder's chevron at the **right** edge of its row. The supplied
+iOS 27 Files screenshot places the distinct disclosure at the **left** of
+the folder icon; short-tapping the rest of the row still enters the folder.
+
+The Mobile-only List renderer now reserves a real **44 CSS px leading
+touch slot** on every unselected List row: the existing disclosure
+button appears there for Server-backed expandable folders, and an
+inert spacer appears for ordinary files or contexts where inline
+expansion is not supported. The thumbnail is placed in a 40px slot,
+so both filename text columns and the thin separators remain at the
+existing **84px** leading inset; selection mode keeps its original
+28px padding, 24px circle, 12px gaps and 120px text inset. The
+68px logical row, bounded visible virtual window, 10k/100k run-length
+inline projection, shared `api.listRange`, AbortSignal propagation,
+group membership and Node identity are unchanged. Grid retains no
+inline expansion control, nor does Search/Trash falsely claim it.
+
+The click/keyboard/right-click/hold/drag owner stays on the same row;
+the 44px leading IconButton stops event propagation and invokes the
+**existing** `onToggleInlineFolder` or retry handler, never row Open,
+an additional Mobile REST route or a second business controller.
+A mounted React runtime test asserts button-first DOM order, shared
+file/folder 84px text baseline, noninteractive spacer, separate Expand
+versus Open, and Grid suppression. Real Chromium 375/390/899px checks
+the rendered hitbox and geometry with folder icon alignment, and
+records screenshots. CI must opt in for this specific work branch in
+browser setup, scenario and artifact upload.
+
+**Still open:** actual iOS 27 Safari/PWA/VoiceOver, exact licensed
+Apple image thumbnails, reference matched-state pixel diff, and
+native-only actions not implemented by the Server; no 1:1 sign-off.

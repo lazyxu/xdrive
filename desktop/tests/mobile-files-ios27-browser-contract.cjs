@@ -262,6 +262,34 @@ test('F-iOS27-10A: real Chromium samples folder geometry at 375/390/899px withou
   assert.ok(!mobile.includes('fetch('))
 })
 
+test('F-iOS27-10B: real 44px disclosure is left of the native List thumbnail without new API', () => {
+  for (const needle of [
+    'async function filesIos27CompactFolderGeometryAcceptance(viewport)',
+    'data-mobile-files-folder-id="2"',
+    'data-mobile-files-folder-disclosure="2"',
+    'regularFileSpacer: rect(regularFileSpacer)',
+    'measurements.disclosure?.width >= 44',
+    'measurements.disclosure.x + measurements.disclosure.width',
+    'Math.abs(measurements.folderText.x - measurements.regularFileText.x) <= 1',
+    'Math.abs(measurements.folderText.x - 84) <= 1',
+  ]) assert.ok(runner.includes(needle), 'missing actual Chrome left disclosure gate: ' + needle)
+  assert.ok(mobile.includes('data-mobile-files-leading-spacer'))
+  assert.ok(mobile.includes('data-mobile-files-thumbnail-slot'))
+  assert.ok(mobile.includes('onToggleInlineFolder?.(item, ownerID, sourceIndex)'))
+  assert.ok(!mobile.includes(") : !effectiveGrid && item.kind === 'dir' ? ("),
+    'do not keep the former right-facing fallback arrow')
+  assert.ok(!mobile.includes('new XDriveApi('))
+  assert.ok(!mobile.includes('fetch('))
+})
+
+test('F-iOS27-10B: this PR actually runs and uploads the existing native Chrome Files scenario', () => {
+  const optIn = "startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-')"
+  assert.equal(workflow.split(optIn).length - 1, 3,
+    'Chrome preparation, scenario and artifacts must opt in for the exact visual branch')
+  assert.ok(workflow.includes('--scenario=files-ios27-chrome'))
+  assert.ok(workflow.includes('files-ios27-browser-parity'))
+})
+
 test('09H: mobile Files breadcrumb navigation uses measured 44px hit targets', () => {
   assert.match(mobile,
     /data-mobile-files-crumb-id=\{String\(crumb\.id\)\}[\s\S]{0,450}minWidth: MIN_TOUCH, minHeight: MIN_TOUCH, flexShrink: 0/)
