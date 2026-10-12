@@ -10,9 +10,10 @@ const sharedCard = read('ui', 'shared', 'src', 'mui', 'ServerUpdateCard.tsx')
 const sharedModel = read('ui', 'shared', 'src', 'server-update.ts')
 const sharedController = read('ui', 'shared', 'src', 'mui', 'ServerUpdateController.ts')
 const sharedSettings = read('ui', 'shared', 'src', 'mui', 'SettingsDialog.tsx')
-const web = read('web', 'src', 'App.tsx') + sharedSettings
+const maintenance = read('ui', 'shared', 'src', 'mui', 'SystemMaintenancePage.tsx')
+const web = read('web', 'src', 'App.tsx')
 const webApi = read('web', 'src', 'api.ts')
-const desktop = read('desktop', 'src', 'renderer', 'App.tsx') + sharedSettings
+const desktop = read('desktop', 'src', 'renderer', 'App.tsx')
 const preload = read('desktop', 'src', 'preload', 'index.cts')
 const desktopMain = read('desktop', 'src', 'main', 'index.cts')
 const agentIPC = read('cmd', 'xdrive-agent', 'desktop_ipc.go')
@@ -57,23 +58,25 @@ test('shared server update model owns the confirmation summary', () => {
   ]) {
     assert.ok(sharedModel.includes(token), `shared server update confirmation missing: ${token}`)
   }
-  assert.ok(web.includes('xDriveServerUpdateConfirmationDescription({'), 'Web must use the shared update confirmation formatter')
-  assert.ok(web.includes("unavailableLabel: 'Web/API'"), 'Web should keep only its availability subject platform-local')
-  assert.ok(desktop.includes('xDriveServerUpdateConfirmationDescription({'), 'Desktop must use the shared update confirmation formatter')
+  assert.ok(maintenance.includes('xDriveServerUpdateConfirmationDescription({'), 'shared administrator page must use shared formatter')
+  assert.ok(web.includes('unavailableLabel="Web/API"'), 'Web keeps the Web/API interruption context')
+  assert.ok(desktop.includes('unavailableLabel="服务端与 Desktop"'), 'Desktop keeps its interruption context')
   assert.equal(web.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Web must not duplicate update confirmation formatting')
   assert.equal(desktop.includes("来源：${serverUpdate.source === 'gitlab'"), false, 'Desktop must not duplicate update confirmation formatting')
 })
 
 test('Web and Desktop use the same server update card', () => {
-  assert.equal((web.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
-  assert.equal((desktop.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal((maintenance.match(/<XDriveServerUpdateCard\b/g) || []).length, 1)
+  assert.equal((web.match(/<XDriveSystemMaintenancePage\b/g) || []).length, 1)
+  assert.equal((desktop.match(/<XDriveSystemMaintenancePage\b/g) || []).length, 1)
+  assert.equal(sharedSettings.includes('XDriveServerUpdateCard'), false)
   assert.ok(webApi.includes("'/api/v1/admin/update'"), 'Web API server update endpoint missing')
   assert.ok(preload.includes('getServerUpdate'), 'Desktop preload server update getter missing')
   assert.ok(preload.includes('startServerUpdate'), 'Desktop preload server update action missing')
   assert.ok(desktopMain.includes("requireAgentCapability(hello, 'server-update')"), 'Desktop main must gate server update by capability')
   assert.ok(agentIPC.includes('"server-update"'), 'Agent IPC server-update capability missing')
-  assert.ok(web.includes('确认更新服务端？'), 'Web server update must require confirmation')
-  assert.ok(desktop.includes('确认更新服务端？'), 'Desktop server update must require confirmation')
+  assert.ok(maintenance.includes('确认更新服务端？'), 'shared admin page must require confirmation')
+  assert.ok(maintenance.includes('confirmIntent="warning"'))
 })
 
 test('shared Server Update controller owns polling, transport normalization and submit state', () => {
@@ -97,8 +100,9 @@ test('shared Server Update controller owns polling, transport normalization and 
     assert.ok(sharedController.includes(token), `shared Server Update controller missing: ${token}`)
   }
 
+  assert.ok(maintenance.includes('useXDriveServerUpdateController({'))
   for (const [label, source] of [['Web', web], ['Desktop', desktop]]) {
-    assert.ok(source.includes('useXDriveServerUpdateController({'), `${label} must consume shared Server Update controller`)
+    assert.ok(source.includes('<XDriveSystemMaintenancePage'), `${label} must use the shared administrator page`)
     assert.equal(source.includes('setServerUpdateSource'), false, `${label} must not own update-source state`)
     assert.equal(source.includes('setServerUpdateChannel'), false, `${label} must not own update-channel state`)
     assert.equal(source.includes('setServerUpdateBackupFileData'), false, `${label} must not own update backup state`)

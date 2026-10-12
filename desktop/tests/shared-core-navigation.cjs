@@ -130,7 +130,7 @@ test('Web Home and admin destinations use the same section model contract', () =
   assert.ok(web.includes("label: '主页'"))
   assert.ok(web.includes("...(profile?.role === 'admin'"), 'admin section must remain role-gated')
   assert.ok(web.includes("ariaLabel: '管理员功能',\n          placement: 'after-core'"))
-  for (const label of ['用户管理', '审计日志', '全局存储', '系统依赖']) {
+  for (const label of ['用户管理', '审计日志', '全局存储', '系统依赖', '系统维护']) {
     assert.ok(web.includes(`label: '${label}'`), `missing Web admin destination: ${label}`)
   }
 })

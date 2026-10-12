@@ -19,7 +19,7 @@ test('Web App Registry includes all current first-party programs', () => {
     'overview', 'files', 'gallery', 'sync-folders', 'device-backup', 'remote-pull', 'tasks',
     'local-storage', 'cloud-storage', 'preview', 'media-viewer',
     'text-viewer', 'pdf-viewer', 'audio-player',
-    'admin-users', 'admin-audit', 'admin-storage',
+    'admin-users', 'admin-audit', 'admin-storage', 'admin-maintenance',
   ]) {
     assert.ok(model.includes(`'${id}'`), 'missing Web App id: ' + id)
   }

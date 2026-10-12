@@ -289,7 +289,7 @@ test('the actual Web role-filtered sections feed the same compact menu for admin
   for (const { profile, expectedMore } of [
     { profile: undefined, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
     { profile: { role: 'user' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage'] },
-    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services'] },
+    { profile: { role: 'admin' }, expectedMore: ['device-backup', 'remote-pull', 'local-storage', 'cloud-storage', 'admin-users', 'global-tasks', 'admin-audit', 'admin-storage', 'admin-services', 'admin-maintenance'] },
   ]) {
     const result = xDriveCompactWorkspaceNavigation({ sections: productionWebSections(profile), showLocalStorage: true })
     assert.deepEqual(keys(result.primary), ['overview', 'files', 'gallery', 'transfers'])
@@ -444,17 +444,11 @@ function accountMenuHarness() {
   const declaration = sourceFile.statements.find((node) => ts.isFunctionDeclaration(node) && node.name?.text === 'WebAccountMenu')
   assert.ok(declaration, 'Web owns its account menu and platform actions')
   const effects = []
-  const controller = {
-    state: null, source: 'github', channel: 'stable', backupFileData: false, busy: false, error: null,
-    setSource() {}, setChannel() {}, setBackupFileData() {}, start() { effects.push('update') },
-  }
   const dependencies = {
     ...runtime.react,
-    useXDriveServerUpdateController: () => controller,
-    xDriveServerUpdateConfirmationDescription: () => 'test confirmation',
     ...Object.fromEntries([
       'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'XDriveAccountMenuActions',
-      'XDriveSettingsDialog', 'XDriveConfirmDialog',
+      'XDriveSettingsDialog',
     ].map((name) => [name, name])),
   }
   const mod = { exports: {} }
@@ -465,7 +459,7 @@ function accountMenuHarness() {
     return jsxRuntime
   }, ...Object.values(dependencies))
   let props = {
-    username: 'test', api: {}, serverBuild: null, appearance: 'light', canUpdateServer: true,
+    username: 'test', serverBuild: null, appearance: 'light',
     onAppearanceChange() {}, onLogout() { effects.push('logout') }, disabled: false,
   }
   return {
@@ -487,32 +481,31 @@ test('entering Viewer closes the account menu and returning does not restore its
   assert.deepEqual(harness.effects, [])
 })
 
-test('entering Viewer also clears account settings and update confirmation without taking an action', () => {
+test('entering Viewer clears personal Settings and cannot expose an administrator update confirmation', () => {
   const harness = accountMenuHarness()
   only(harness.render(), 'XDriveAccountMenuActions').props.onSettings()
   let tree = harness.render()
   assert.equal(only(tree, 'XDriveSettingsDialog').props.open, true)
-  only(tree, 'XDriveSettingsDialog').props.serverUpdate.onStart()
-  assert.equal(only(harness.render(), 'XDriveConfirmDialog').props.open, true)
+  assert.equal(only(tree, 'XDriveSettingsDialog').props.serverUpdate, undefined)
+  assert.equal(nodes(tree).filter((node) => node.type === 'XDriveConfirmDialog').length, 0)
   for (const disabled of [true, false]) {
     tree = harness.render({ disabled })
     assert.equal(only(tree, 'XDriveSettingsDialog').props.open, false)
-    assert.equal(only(tree, 'XDriveConfirmDialog').props.open, false)
+    assert.equal(nodes(tree).filter((node) => node.type === 'XDriveConfirmDialog').length, 0)
   }
   assert.deepEqual(harness.effects, [])
 })
 
-test('disabled account controls cannot reopen portals or trigger account actions during exit transitions', () => {
+test('disabled personal account controls cannot reopen Settings or trigger logout during exit', () => {
   const harness = accountMenuHarness()
   let tree = harness.render({ disabled: true })
   only(tree, 'XDriveAccountAvatarButton').props.onClick({ currentTarget: {} })
   only(tree, 'XDriveAccountMenuActions').props.onSettings()
   only(tree, 'XDriveAccountMenuActions').props.onLogout()
-  only(tree, 'XDriveSettingsDialog').props.serverUpdate.onStart()
-  only(tree, 'XDriveConfirmDialog').props.onConfirm()
   tree = harness.render()
   assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
   assert.equal(only(tree, 'XDriveSettingsDialog').props.open, false)
-  assert.equal(only(tree, 'XDriveConfirmDialog').props.open, false)
+  assert.equal(only(tree, 'XDriveSettingsDialog').props.serverUpdate, undefined)
+  assert.equal(nodes(tree).filter((node) => node.type === 'XDriveConfirmDialog').length, 0)
   assert.deepEqual(harness.effects, [])
 })
