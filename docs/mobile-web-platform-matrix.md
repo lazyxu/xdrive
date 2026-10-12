@@ -254,3 +254,13 @@ The [M11 ledger](validation/mobile-panels-short-viewport-2026-10-09.json) preser
 
 
 **P1-3b 当前真实浏览器结果（CI #38154363890，未合入）：** 60项中58通过/2失败，375/390/899/900→390同一选区、实际403→200相册POST（Node IDs+revision）、取消和成功焦点已得到真实构建Web证据；仅展开期间菜单Grow动画测得的24.75px高度不代表稳定44px，需要等待动画结束后执行原门槛。新增纯Scope键测试3通过，Desktop存在2条测试代码需要迁移，修订后整套CI仍待验；真机不变not-run。
+
+
+### P1-3c1 · M49.V10 真实 Go Gallery 四宽度功能等价（2026-10-12）
+
+**未完成原生 CI 交付。** P1-3c1 新增真实 Chromium 经 JWT/Gin/PostgreSQL17 的 375/390/899/900px metadata-only 10k 图库 Range/虚拟 DOM/所有者隔离检查。与此前拦截式浏览器 fixture、Desktop IPC 进度、10k/100k 物理 CAS 性能以及 iOS27 Safari/PWA/VoiceOver 真机 1:1 相互独立。每条证据必须显示准确提交、环境、业务响应及界限；这一阶段不声称完成相册写入、Task Center 任务或物理编解码。
+
+
+**P1-3c1 首次真实 Backend Chrome 实测：** 375/390/899/900px 四宽度真实Gin/PostgreSQL17已得到10k逻辑PhotoAsset与 27/27/42/12个虚拟Tile、真实 Owner404/401及52px Header；但精确 HEAD CI #38161093303 未通过：28个HTTP500来自隔离测试schema缺表，另105个503来自无物理原件的metadata-only thumbnail，须独立计数而非以已加载图片结论替代。见图库规范及原始 artifact #11710606958。修正后重新跑完整测试才能更新passed，真机Safari/VoiceOver及物理缩略图继续not-run。
+
+**P1-3c1 第二次真实后端红灯（2026-10-12）：** CI #38162226990 的四种宽度 Range/JWT/DOM 正确性已验，剩余四次 HTTP500 都是隔离测试的 xd_sync_runs 缺表导致。已在唯一工作提交补入 meta.SyncRun 模型迁移，等待新精确 HEAD CI 重测。108 个 metadata-only 缩略图503不代表物理缩略图成功；iOS27 真机1:1 尚未验收。
