@@ -34,10 +34,10 @@ export async function createWebBrowserStorageSnapshot(): Promise<XDriveBrowserSt
     cache_bytes: estimate?.usageDetails?.caches,
     cache_entries: cacheNames?.length,
     clear_supported: Boolean(cacheStorage),
-    scope_label: '当前 xDrive 站点',
+    scope_label: '当前浏览器资料中的 xDrive 站点（非账号专属）',
     detail: cacheStorage
-      ? 'Web 只清理当前 xDrive 站点的 Cache Storage；浏览器 HTTP 缓存由浏览器自身管理。不会清除 Cookie、登录令牌、主题、布局或其他应用偏好。'
-      : '当前浏览器不允许页面主动清理 Cache Storage；Cookie、登录令牌和本地偏好不会被修改。',
+      ? '范围是当前浏览器资料下的当前 xDrive 站点（同一 Origin），不是单个登录账号。清理会删除该站点所有 Cache Storage 缓存容器，可能影响此前在此站点登录的其他账号；浏览器 HTTP 缓存由浏览器自身管理。不会清除 Cookie、登录令牌、主题、布局或其他应用偏好。'
+      : '当前浏览器不允许页面主动清理 Cache Storage；站点存储占用可能包含其他账号和非缓存数据。Cookie、登录令牌和本地偏好不会被修改。',
   }
 }
 

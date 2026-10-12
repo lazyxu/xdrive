@@ -303,16 +303,16 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
 
   const browserCacheDescription = browser?.cache_bytes === undefined
     ? '浏览器未提供精确的可清理缓存字节数。'
-    : '预计可释放 ' + formatBytes(browser.cache_bytes) + '。'
-  const desktopCacheDescription = cache ? '预计可释放 ' + formatBytes(cache.reclaimable_bytes) + '。' : ''
+    : '浏览器报告的 Cache Storage 估计占用为 ' + formatBytes(browser.cache_bytes) + '；实际释放量可能不同。'
+  const desktopCacheDescription = cache ? '当前设备 Agent 预计可释放 ' + formatBytes(cache.reclaimable_bytes) + '。' : ''
 
   return (
     <XDriveWorkspaceSurface
       presentation="page"
       title="本地存储"
       subtitle={desktop
-        ? '分别管理浏览器缓存、Desktop 本地文件缓存与离线保留策略。'
-        : '查看当前浏览器为 xDrive 使用的本地存储与可安全清理缓存。'}
+        ? '当前设备：分别管理 Electron HTTP 缓存、Agent 本地文件缓存与离线保留策略；不代表当前账号的云端配额。'
+        : '当前浏览器资料中的 xDrive 站点缓存，可由此前登录的多个账号共用；不代表当前账号的云端配额。'}
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
@@ -333,7 +333,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
       {snapshot ? (
         <Stack spacing={3}>
           <Stack spacing={1.5}>
-            <XDriveSectionHeader level="h3" title="浏览器存储" subtitle={browser?.scope_label || '当前 xDrive 客户端的浏览器侧存储'} />
+            <XDriveSectionHeader level="h3" title="浏览器存储" subtitle={browser?.scope_label || '当前客户端站点缓存（非账号专属）'} />
             {!browser?.supported ? (
               <XDriveStatusAlert tone="neutral">{browser?.reason || '当前环境不提供浏览器存储统计。'}</XDriveStatusAlert>
             ) : (
@@ -345,7 +345,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
                   <XDriveMetricCard title="缓存容器" value={browser.cache_entries === undefined ? '—' : browser.cache_entries.toLocaleString()} suffix={browser.cache_entries === undefined ? '当前环境未提供' : '当前站点 Cache Storage'} />
                 </XDriveMetricGrid>
                 <XDriveStatusAlert tone="neutral">
-                  {browser.detail || '清理操作只删除可重新生成的浏览器缓存，不会清除 Cookie、登录令牌、主题、布局或其他应用偏好。'}
+                  {browser.detail || '当前客户端的站点缓存不按登录账号隔离。清理操作只删除可重新生成的缓存，不会清除 Cookie、登录令牌、主题、布局或其他应用偏好。'}
                 </XDriveStatusAlert>
                 <Box>
                   <XDriveActionButton
@@ -362,7 +362,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
 
           {desktop ? (
             <Stack spacing={2}>
-              <XDriveSectionHeader level="h3" title="Desktop 存储" subtitle="管理 xdrive-agent 在当前设备保存的本地文件缓存；与浏览器缓存相互独立。" />
+              <XDriveSectionHeader level="h3" title="Desktop 存储" subtitle="仅管理当前设备 xdrive-agent 的本地文件缓存；与 Electron HTTP 缓存及服务器账号容量相互独立。" />
               {!desktop.supported ? (
                 <XDriveStatusAlert tone="neutral">{desktop.reason || '当前 Desktop 核心组件不提供本地文件缓存管理。'}</XDriveStatusAlert>
               ) : (
@@ -443,8 +443,8 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
         open={pendingAction !== null}
         title={pendingAction === 'browser' ? '清理浏览器缓存？' : '释放 Desktop 缓存？'}
         description={pendingAction === 'browser'
-          ? browserCacheDescription + ' 只会删除可重新生成的浏览器缓存，不会清除 Cookie、登录状态、token、主题或布局偏好。'
-          : desktopCacheDescription + ' 只会释放可回收的按需文件缓存；已固定或“始终保留”的内容不会删除。'}
+          ? browserCacheDescription + ' 清理范围是当前客户端的整个站点或 Electron 会话缓存，而非当前登录账号：同一会话其他账号可能需要重新下载缓存资源。不会清除 Cookie、登录状态、token、主题或布局偏好。'
+          : desktopCacheDescription + ' 只会释放当前设备 Agent 可回收的按需文件缓存，不会删除服务器上的原始文件；已固定或“始终保留”的内容不会删除。'}
         confirmLabel={pendingAction === 'browser' ? '清理缓存' : '释放缓存'}
         confirmIntent="warning"
         loading={action === 'browser-cache' || action === 'desktop-cache'}
