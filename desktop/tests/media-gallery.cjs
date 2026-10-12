@@ -610,7 +610,7 @@ test('Live Photo is one press-and-hold Gallery surface', () => {
     'video.currentTime = 0',
     'controls={false}',
     'playsInline',
-    'preload="metadata"',
+    "preload={holdActiveRef.current && stillReady ? 'metadata' : 'none'}",
     'loadStartedRef.current',
     'loader(onProgress)',
     "variant={loadProgress === null ? 'indeterminate' : 'determinate'}",

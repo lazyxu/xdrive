@@ -223,5 +223,108 @@ test('P0-L6 mobile and wide Web reuse shared Live presentation, API and virtual 
   assert.match(gallery, /useXDriveVirtualCollection<MediaItem>/)
   assert.match(gallery, /<MediaVirtualTileGrid/)
   assert.match(gallery, /<MediaVirtualTimeline/)
-  assert.match(read('ui/shared/src/mui/LivePhotoSurface.tsx'), /preload="metadata"/)
+  assert.match(read('ui/shared/src/mui/LivePhotoSurface.tsx'), /preload=\{holdActiveRef\.current && stillReady \? 'metadata' : 'none'\}/)
+})
+
+test('P0-L7 delayed motion ticket after release stays preload=none until next explicit hold', async () => {
+  const ticket = deferred()
+  let loads = 0
+  let plays = 0
+  const player = makePlayer(() => { plays++; return Promise.resolve() })
+  let tree
+  await act(async () => {
+    tree = mount(player, () => { loads++; return ticket.promise }, 'delayed:1')
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 1)
+  assert.equal(plays, 0)
+  await act(async () => { release(tree); await flush() })
+  await act(async () => { ticket.resolve('https://example.invalid/delayed.mov'); await flush() })
+  assert.equal(video(tree).props.preload, 'none', 'released video cannot initiate a metadata preload')
+  assert.equal(video(tree).props.sx.opacity, 0)
+  assert.equal(plays, 0, 'ticket resolution after release cannot autoplay')
+  assert.equal(label(tree), '实况')
+  await act(async () => { press(tree); await flush() })
+  assert.equal(loads, 1, 'next hold should reuse the valid signed URL')
+  assert.equal(plays, 1)
+  assert.equal(video(tree).props.preload, 'metadata')
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { release(tree); await flush() })
+  assert.equal(video(tree).props.preload, 'none')
+  assert.equal(video(tree).props.sx.opacity, 0)
+  await act(async () => { tree.unmount() })
+})
+
+test('P0-L7 late video error from released or previous still does not poison current motion', async () => {
+  const player = makePlayer(() => Promise.resolve())
+  const oldSource = async () => 'https://example.invalid/old.mov'
+  const newSource = async () => 'https://example.invalid/new.mov'
+  const element = (sourceKey, loader) => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'),
+    stillReady: true, sourceKey, loadMotion: loader,
+  })
+  let tree
+  await act(async () => {
+    tree = renderer.create(element('still:101', oldSource), {
+      createNodeMock: entry =>
+        entry.type === 'mounted-live-box' && entry.props.component === 'video'
+          ? player : null,
+    })
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  const staleError = video(tree).props.onError
+  const oldURL = video(tree).props.src
+  await act(async () => { release(tree); await flush() })
+  await act(async () => { staleError({ currentTarget: player }); await flush() })
+  assert.equal(label(tree), '实况', 'late error after release must not mark Live unavailable')
+
+  await act(async () => { tree.update(element('still:102', newSource)); await flush() })
+  await act(async () => { press(tree); await flush() })
+  assert.notEqual(video(tree).props.src, oldURL)
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { staleError({ currentTarget: player }); await flush() })
+  assert.equal(label(tree), '实况', 'old source error cannot poison new still')
+  assert.equal(video(tree).props.sx.opacity, 1)
+  await act(async () => { video(tree).props.onError({ currentTarget: player }); await flush() })
+  assert.equal(label(tree), '实况不可用', 'real error for current held video remains terminal')
+  assert.equal(video(tree).props.sx.opacity, 0, 'static still remains visible')
+  await act(async () => { tree.unmount() })
+})
+
+test('P0-L7 still readiness loss immediately hides motion and stops playback without auto-restart', async () => {
+  let plays = 0
+  const player = makePlayer(() => { plays++; return Promise.resolve() })
+  const loader = async () => 'https://example.invalid/live.mov'
+  const element = stillReady => React.createElement(Live, {
+    still: React.createElement('mounted-live-still'), stillReady,
+    sourceKey: 'still:90', loadMotion: loader,
+  })
+  let tree
+  await act(async () => {
+    tree = renderer.create(element(true), {
+      createNodeMock: entry =>
+        entry.type === 'mounted-live-box' && entry.props.component === 'video'
+          ? player : null,
+    })
+    await flush()
+  })
+  await act(async () => { press(tree); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 1)
+  const pauseBefore = player.pauseCalls
+  await act(async () => { tree.update(element(false)); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0, 'a gray/failed still must not keep showing motion')
+  assert.equal(video(tree).props.preload, 'none')
+  assert.equal(surface(tree).props['aria-disabled'], true)
+  assert.ok(player.pauseCalls > pauseBefore, 'losing still must stop video and audio')
+  const previousPlays = plays
+  await act(async () => { press(tree); await flush() })
+  assert.equal(plays, previousPlays, 'disabled still does not load motion')
+  await act(async () => { tree.update(element(true)); await flush() })
+  assert.equal(video(tree).props.sx.opacity, 0, 'still recovery must not autoplay')
+  assert.equal(plays, previousPlays)
+  await act(async () => { press(tree); await flush() })
+  assert.equal(plays, previousPlays + 1, 'new intentional hold resumes cached motion')
+  await act(async () => { release(tree); tree.unmount() })
 })

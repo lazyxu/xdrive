@@ -668,3 +668,19 @@ React mounted 回归覆盖操作回调、身份防串、空相册、零选区、
 **修复合同：** 用每次播放尝试的序号及资源 generation 围住 `play()` 的成功/失败回调，只有当前来源、当前视频元素且手指仍按住时才提交状态；成功后才显示视频画面。松手立刻回到静态封面并隐藏等待进度。`AbortError`／`NotAllowedError` 不把媒体标记成永久损坏，用户下一次显式按住可以重试。若在首次请求仍进行时再次按住，沿用原请求，不重复请求 motion URL。保留声音、按住才加载、Web/Mobile 一套 Viewer 与 Preview Engine、Desktop 共享 MUI、独立 52px App Header 和已有真实 Server/Agent 签名资源与 Range 合同。
 
 **验收：** 新增生产组件挂载回归，检查 `play()` 待决时封面可见、松手后旧 Promise 拒绝不致死、下一次按住恢复播放、真实播放异常继续显示静态封面，以及首次请求期间松手/再次按住不会重复请求。精确 GitHub PR work SHA 的 CI/Final Gate 及 iOS 27 Safari/PWA 设备画面对比须分别确认；用户受影响三张 `.livp`/HEIC 封面仍需授权原件或 Node/HTTP/索引证据，不能声称已恢复。
+
+
+### P0-L6 交付核验（2026-10-12）
+
+[#1517](https://github.com/lazyxu/xdrive/pull/1517) 已在精确提交 `84566066` 通过完整 GitHub CI 与 `final-gate`，其中 Desktop tests 2351 passed / 1 skipped / 0 failed、新增共享 Live Photo React 挂载测试 5/5 成功；以 rebase 线性合并至 `master@46941b1e`，任务分支已确认自动删除。仅证明浏览器播放状态与回调修复，不代表用户截图中的三个原始 LIVP/HEIC 灰格已完成真实 CAS 诊断或 iOS 27 真机截图验收。
+
+## P0-L7 · 松手后迟到的动图票据不得预加载、失败不能污染封面（2026-10-12）
+
+**源码确认：** 上一阶段已修复 `video.play()` Promise 过期回调，但新的 `motionURL` 可以在用户松手后才抵达，此时旧共享 Live Photo 组件仍挂载 `preload="metadata"` 的播放器，导致已经没有按住意图的组件可能主动发起新的 HTTP Range 元数据读；旧 `video.onError` 无条件 `setFailed(true)`，也可把已经松手的静态封面误标“实况不可用”。若源静态封面在播放途中变成不可用，旧组件不会停止 motion/audio。
+
+**最小修复：** 同一 `XDriveLivePhotoSurface` 仅在 `holdActive && stillReady` 时使用 metadata 预加载；松手后才到达的 URL 挂载为 `preload=none`，不主动启动新媒体预加载（该属性并不保证取消已启动的浏览器网络请求）。视频的 onError/onCanPlay/onProgress/onLoadedMetadata/onEnded 严格检查当前 DOM/video URL，onError 额外要求仍持有有效按住意图和静态封面可用。stillReady 变为 false 时立即隐藏视频并在 effect 中 pause，避免未就绪静态图下面继续播放音频；恢复 stillReady 不自动启动动图。重按复用仍有效的同一签名 motion URL，不添加额外服务器读、无限重试或视频转 Blob。
+
+**验证边界：** 扩展既有的真实生产组件 React 挂载测试，覆盖松手后票据迟到、当前/旧视频错误与静态封面失效；静态检查仍保障一套 Web REST / Mobile Gallery 控制器与虚拟化集合、Desktop 共用 MUI、52px 全屏 App Frame。真 iOS 27 Safari/PWA 在多码率/弱网/安全区的 Network Range、影片解码与原生 1:1 截图仍需独立实机验证，用户原始灰图的 Node/HTTP/CAS 证据依然未提供。
+
+
+**P0-L7 首轮精确 CI 首红与修订（2026-10-12）：** [PR #1524 第一轮 CI #38225608191](https://github.com/lazyxu/xdrive/actions/runs/38225608191) 的 Desktop tests 实际 2362 pass / 1 fail / 1 skipped；三个新增 P0-L7 生产 React mounted 回归全部通过，唯一失败是 `desktop/tests/shared-open-preview.cjs` 仍断言旧的 `preload="metadata"` 常量。这是与新的“按住时 metadata、松手后 none”产品合同冲突的过期静态夹具，不是媒体组件执行失败。仅把该断言改为明确匹配新条件式，同时保留共享 LIVP URL 释放和有界请求检查；保留单工作提交，完整 CI 必须对修订后的精确 SHA 重新运行。
