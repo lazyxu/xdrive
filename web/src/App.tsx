@@ -1540,9 +1540,11 @@ function FileManager({
                 onUploadFolderFiles={uploadFolderFiles}
                 onUploadDroppedFiles={(parentID, files) => uploadFilesTo(parentID, files, 'drop-upload')}
                 onUploadDroppedFolderEntries={uploadDroppedFolderEntries}
-                onCreateFolder={() => {
-                  if (!current) return
-                  folderParentIDRef.current = current.id
+                onCreateFolder={(directoryID) => {
+                  // The Files workspace, not App's asynchronously bootstrapped
+                  // root, owns the exact destination that the user is viewing.
+                  if (!Number.isSafeInteger(directoryID) || directoryID <= 0) return
+                  folderParentIDRef.current = directoryID
                   setFolderOpen(true)
                 }}
                 onOpenTrash={openTrash}

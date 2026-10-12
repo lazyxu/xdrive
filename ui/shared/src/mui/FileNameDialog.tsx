@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { Ref } from 'react'
 import { Box, Button, Dialog, Stack, TextField } from '@mui/material'
 import { XDriveActionButton } from './ActionButton'
@@ -41,6 +41,10 @@ export function XDriveFileNameDialogView({
   disableRestoreFocus?: boolean
 }) {
   const title = mode === 'create-folder' ? '新建文件夹' : mode === 'saved-search' ? '保存搜索' : '重命名'
+  // The shared DialogTitle includes a close IconButton. Naming the MUI Paper
+  // from that whole container reads "新建文件夹 关闭弹窗" instead of the exact
+  // document title. Give the text-only node its own stable ID for VoiceOver.
+  const titleID = useId()
   const label = mode === 'create-folder' ? '文件夹名称' : mode === 'saved-search' ? '智能文件夹名称' : '名称'
   const submitLabel = mode === 'create-folder' ? '创建' : '保存'
   const loadingLabel = mode === 'create-folder' ? '正在创建…' : '正在保存…'
@@ -55,8 +59,12 @@ export function XDriveFileNameDialogView({
       maxWidth="sm"
       fullWidth
       disableRestoreFocus={disableRestoreFocus}
+      // Preserve the established root label for existing rename contracts.
       aria-label={title}
-      slotProps={{ paper: { sx: {
+      aria-labelledby={titleID}
+      // MUI assigns role="dialog" to the Paper, not the Modal root.
+      // Label that real focus/VoiceOver surface rather than its wrapper.
+      slotProps={{ paper: { 'aria-label': title, sx: {
         ...xDriveDialogPaperProps.sx,
         minHeight: 0,
         '@media (max-width:899.95px)': {
@@ -69,7 +77,7 @@ export function XDriveFileNameDialogView({
         },
       } } }}
     >
-      <XDriveDialogTitle title={title} onClose={close} closeDisabled={submitting} />
+      <XDriveDialogTitle title={title} titleId={titleID} onClose={close} closeDisabled={submitting} />
       <Box component="form" sx={{ minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }} onSubmit={(event) => {
         event.preventDefault()
         onSubmit()
