@@ -8,6 +8,7 @@ import {
   subscribeXDrivePwaInstall, xDrivePwaInstallSnapshot,
 } from './pwaInstall'
 import type { XDrivePwaAssetCheck, XDrivePwaPromptOutcome } from './pwaInstall'
+import XDrivePwaUpdateSection from './PwaUpdateSection'
 
 export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const compact = useMediaQuery('(max-width:599.95px)')
@@ -113,6 +114,8 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
               </Stack>
             ) : null}
           </Box>
+          <Divider />
+          <XDrivePwaUpdateSection />
         </Stack>
       </DialogContent>
       <DialogActions sx={{ pb: 'max(12px, env(safe-area-inset-bottom))' }}>

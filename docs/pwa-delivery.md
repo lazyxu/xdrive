@@ -16,11 +16,11 @@
 | --- | --- | --- |
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
-| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | 缺失 |
+| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A 已编写等待提示与跨窗口通知；有约束的安全激活仍待 S3B |
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A 已编写登录/账户入口、能力检测、安装引导；CI/真实设备仍待验 |
 | P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | 部分部署基础，未验收 |
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | Web Runtime 已有，安装模式未验 |
-| P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S1 仅导航离线；应用内待做 |
+| P0-07 | 应用在线时区分无网、Server 不可达、401/403、429、超时、取消；消息可重试但不报假成功。 | S3A 仅提供 browser online/offline 提示；真实 Server/请求错误分类及重试仍待 S3B |
 | P0-08 | iOS/Android tab 与安装模式的真实任务恢复：上传、下载、任务、Viewer、切 App/锁屏/断网/进程回收。 | 业务基础有，真机 not-run |
 | P0-09 | SW 安装/更新、手动刷新或退出时不误取消 Durable Server Task；非持久浏览器上传需重新选文件的情况明确告知。 | 待验 |
 | P0-10 | 320/375/390/430、899/900、短横屏/安全区/软件键盘/200% 字体/暗色/读屏保留 52px Frame。 | 布局基础有，真机 not-run |
@@ -36,7 +36,7 @@
 | P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | 票据/流式基础有，待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
 | P1-05 | display-mode/standalone 能力检测与安装模式诊断，不依赖 UA 猜测。 | S2A 已编写显示模式/显式 HEAD 诊断；CI/真实运行状态待验 |
-| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | 局部实现，整体待验 |
+| P1-06 | visibilitychange、pageshow/pagehide、network 变化恢复任务，避免旧请求和意外取消。 | S3A 观察 pageshow/online/offline，只反馈运行状态；实际传输恢复仍待 S4 |
 | P1-07 | 多标签/多账号登录、退出、刷新、撤销与 SW 更新状态一致，不广播 Token。 | 待验 |
 | P1-08 | 浏览器配额/Storage Manager/CacheStorage 清理与可清退说明；清缓存后离线页重装。 | 统计/清理已有，待验 |
 | P1-09 | M44 出站文件字节系统分享：canShare({files})、用户手势、取消、真实接收与下载回退。 | 链接分享已有，字节验收未完成 |
@@ -65,13 +65,19 @@
 
 ## PWA-S2A · 安装入口与能力诊断（2026-10-12）
 
-**本次工作提交，待完整 CI/合并。** 登录页和账户菜单新增“安装 xDrive”入口；打开时按需加载一个共享的响应式 MUI 安装对话框，不新增 Web App route、不影响 52px App Frame。页面尽早订阅 `beforeinstallprompt`，只在浏览器真正提供该事件时显示原生安装按钮，必须由用户点击直接调用一次 `prompt()`；接受、取消、失败和未知结果分别展示，不能从普通 browser tab 推断“未安装”。
+**S2A 已合并：** [PR #1516](https://github.com/lazyxu/xdrive/pull/1516) 经完整 [CI #38221562395](https://github.com/lazyxu/xdrive/actions/runs/38221562395) 与 Final Gate 合并为 `99b58378`，临时分支已清理。真机安装尚未执行。登录页和账户菜单新增“安装 xDrive”入口；打开时按需加载一个共享的响应式 MUI 安装对话框，不新增 Web App route、不影响 52px App Frame。页面尽早订阅 `beforeinstallprompt`，只在浏览器真正提供该事件时显示原生安装按钮，必须由用户点击直接调用一次 `prompt()`；接受、取消、失败和未知结果分别展示，不能从普通 browser tab 推断“未安装”。
 
 iOS 27 Safari 无 JS install prompt，按 Apple 官方指南显示“页面菜单/分享 → 添加到主屏幕 → 打开作为 Web App → 添加”；Android/桌面 Chrome/Edge 在未提供 prompt 事件时显示浏览器菜单指引，不创建失效按钮。**能力由浏览器事件、安全上下文、`display-mode` 与 `navigator.standalone` 实际观察**，UA 仅选用中文引导语，不作为功能授权或浏览器黑名单。
 
 “检查安装环境”仅在显式点按后，向同源公开静态资源 `/site.webmanifest`、`/sw.js` 请求 `HEAD`，带 `credentials:'omit'`、`cache:'no-store'`、`redirect:'error'`，检查 HTTP 200、正确 MIME、更新缓存头以及浏览器 `isSecureContext`。可以识别代理把静态资源误返回为 HTML，但不能把安全上下文误宣称公网证书/DNS/设备安装验收通过。模块不读写登录 Token、私有 API、图片、上传任务或下载票据；不新增 SW 私有缓存或后台任务。
 
 **验证层：** 独立 Node install prompt/模式/同源无凭据 HEAD/HTML 错误回退测试通过；接入 Web Auth/账户菜单/路由的源代码回归属于交付门槛。完整 Web 构建、PR CI、浏览器/真机安装是分开的阶段。S2B 仍需真实 Android/iOS Home Screen/standalone 启动、HTTPS 证书与深链接外链/返回的端到端验收；S3 才能增加更新/弱网恢复策略。
+
+## PWA-S3A · 无中断更新观察及浏览器弱网提示（2026-10-12）
+
+**本次独立工作提交，待 CI/合并：** 在普通 Web App 启动时订阅同源 Service Worker 注册、首次注册完成、`updatefound` / `statechange`、`controllerchange`、`pageshow` 和浏览器 online/offline 提示。只在用户打开“安装与运行环境”时按需显示“版本与网络”；显式点击“检查新版本”会调用浏览器 `registration.update()`，**不** `skipWaiting`、不 `clients.claim`（S1 原有 activate 行为不变）、不自动重载、不中断传输、Viewer 或编辑工作。通过仅包含固定事件名的 BroadcastChannel 将“其他窗口发现更新”作为提醒，当前窗口仍须自行检查，绝不广播 Token、账号、设备信息、业务状态或凭证。若显示 waiting，只提供人工确认的安全更新步骤：结束所有前台操作并关闭同源窗口后由浏览器控制新 SW 激活，不暗示点击确认即完成更新。
+
+**未完成：** S3B 需建立 Server 可用性检测、取消/拒绝/超时/429 的请求级分流和具实测预算的安全重试；必须由 Files/Gallery/Transfer/系统依赖统一提供“无进行中上传/下载、无未保存编辑、无 Viewer、无其他窗口正执行任务”的**可信可取消条件**后，才能讨论一键确认激活。当前实现既不绕过这些门槛，也不能宣称强制退出后浏览器任务仍会继续。S4 再验证 8MiB 上传分块恢复、真实大文件下载、前后台/锁屏与 Server durable task 边界。仅模拟 JS 事件的 Node 测试不能替代 Chrome/iOS/Android 物理设备和实际服务器验证。
 
 ## 分期与测试记录
 

@@ -5,6 +5,9 @@ export function registerXDrivePwa(): void {
     void navigator.serviceWorker.register('/sw.js', {
       scope: '/',
       updateViaCache: 'none',
+    }).then(() => {
+      // A late first-time registration must become observable to S3 without polling.
+      window.dispatchEvent(new Event('xdrive-pwa-registered'))
     }).catch(() => {
       // A blocked Service Worker must not stop the regular online Web app.
     })
