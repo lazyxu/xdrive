@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
-| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A 已合并；有约束的安全激活仍待 S3C，不允许强制 reload |
+| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A、S3D1 已合并；S3D2A 为本窗口只读活动诊断，跨窗口安全激活仍未实现，不允许强制 reload |
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A #1516、S2B1 #1557、S2B2 #1560 完整 CI 通过并合并；Chrome 安装资源/离线/登录后 Files 恢复已验，iOS 27/Android 系统安装仍 not-run |
 | P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 与 S2B4 #1570 完整 CI / 真实 Chrome 已通过；S2B4 合并 98ffb1f9，验证本机 HTTP 警告与五项公开资源无凭据 HEAD；公网 DNS/CA 与生产 Caddy 仍 not-run |
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome Files 深链接已验；S2B3 #1566 真实 Gin/Postgres/JWT 双账号已通过并合并；S2B5 补登录后 Gallery 冷刷新/后退/前进（待 CI），Viewer/分享、安装图标冷启动仍 not-run |
@@ -272,3 +272,14 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **验收要求：** Node TS 执行器验证重复点击只调用一次 update、注册查找或 worker 更新两种阻塞均有超时、超时后迟到结果不能伪装成功、再次手动检查能恢复、实际 waiting 状态优先。桌面实际 Chrome 1280px 与 Android UA/Touch 390px 在正常同源 loopback 的生产 Web 上执行用户点击版本检查，要求有限时间内恢复按钮、Files URL 和文档 DOM 完全不动，继续保留 S2B8 真实挂起公开图标 HEAD 取消、S1 公开离线页隔离门槛。专项输出仅脱敏 summary.json。
 
 **仍待完成：** 这只是手动检查的 UI 时间边界与真实 Chrome 常规交互；不能证明取消浏览器内部更新、自动安全激活或跨窗口真实活动已可信判断，也不是 iOS 27/Android Installed 真机、桌面系统图标、生产公网 HTTPS、100k 性能、4GiB 原生下载 SHA 或 OS 进程回收证据。后续 S3D2 要在共享 Files/Gallery/Viewer/编辑/传输真实活动及跨窗口 fencing 可信可用后才讨论一键安全激活。本阶段必须准确 HEAD 完整 GitHub PR CI + Final Gate 与真实 Chrome 专项均绿后线性合并。
+
+
+## PWA-S3D2A · 当前 Web/Mobile 窗口的更新阻塞活动观察（2026-10-13）
+
+**前置交付：** S3D1 [PR #1592](https://github.com/lazyxu/xdrive/pull/1592) 已在准确 HEAD `5777d418` 的 [完整 CI #38277431405](https://github.com/lazyxu/xdrive/actions/runs/38277431405) 和 [真实 Chrome #38277430794](https://github.com/lazyxu/xdrive/actions/runs/38277430794) 成功后，以单提交 rebase merge `d938592d` 合并。已确认该 PWA 临时分支被清理。原有 8 秒限时版本检查不变。
+
+**S3D2A 增量（候选，需当前提交准确 CI）：** 共用 Web/Mobile `FileManager` 仅将当前页面前台浏览器上传、前台下载、Viewer 是否打开、系统依赖配置是否有未保存草稿的 **四个布尔状态**写入内存观察者。读写者以独立 FileManager lease 防止注销/切账号后旧组件异步清理覆盖新页面；真正卸载时状态回归 unknown。安装对话框只在 Service Worker waiting 时列出已知阻塞项，或明确未知/仅当前窗口空闲。状态不持久化、不读账号 Token/路径/文件正文、不广播给其他窗口，不产生新 HTTP 请求。
+
+**安全边界：** 已知项全为 false 也绝不是跨窗口安全激活证明；未覆盖其他编辑器草稿、浏览器已接管的原生下载、同时打开的同源标签页/窗口、后台系统任务。没有 `skipWaiting`、`clients.claim`、自动 reload、一键激活或上传/下载/Viewer Cancel；仍要求用户完成正在运行的工作，关闭全部同源窗口，再重新打开。Server Durable Task 不属于浏览器传输；PWA 锁屏/杀进程后不保证传输。后续 S3D2B 须先补各编辑器真实脏状态与可信跨窗口 fail-closed 协调，再讨论是否需要任何一键更新。
+
+**独立验收：** 新 Node TS 运行测试覆盖默认 unknown、四个阻塞项、相同状态不重复通知、注销/重挂旧 owner 清理隔离、下载与上传区别、真实 App/UI 连接及无隐私持久化断言；隔离环境 pure TS 首四项已通过，完整 Web/Windows/Desktop/Go CI 及真机 iOS27/Android Installed 均待该阶段准确证据。此只读 UX 改动不能替代 S5 真机/HTTPS/4GiB SHA 验收。

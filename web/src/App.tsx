@@ -106,7 +106,8 @@ import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './we
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
-import { xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
+import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
+import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
 import { webTransferStore } from './transfers'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
@@ -875,6 +876,22 @@ function FileManager({
     window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
     return () => window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
   }, [hasPendingUpload])
+
+  // S3D2A: observe only this mounted Web/Mobile Web FileManager. Do not
+  // interpret idle/unknown as cross-window permission to activate a SW.
+  const hasPendingDownload = xDriveHasPendingBrowserDownload(transfers)
+  const pwaActivityOwner = useRef({})
+  useEffect(() => {
+    xDriveReportPwaWindowActivity(pwaActivityOwner.current, {
+      browserUpload: hasPendingUpload,
+      browserDownload: hasPendingDownload,
+      viewerOpen: viewerActive,
+      unsavedSystemDependencies: systemDependenciesDraftDirty,
+    })
+  }, [hasPendingUpload, hasPendingDownload, viewerActive, systemDependenciesDraftDirty])
+  useEffect(() => () => {
+    xDriveClearPwaWindowActivity(pwaActivityOwner.current)
+  }, [])
 
   const loadFileOperations = useCallback(
     (limit: number) => api.fileOperations(limit),
