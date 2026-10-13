@@ -13,16 +13,23 @@ import (
 const photoHostModelInfoTimeout = 2 * time.Second
 
 type photoHostModelInfoCheck struct {
-	ID                string `json:"id"`
-	State             string `json:"state"`
-	Detail            string `json:"detail"`
-	runtimeInstanceID string // private process-boot marker: never serialized to admin UI
+	ID                string                              `json:"id"`
+	State             string                              `json:"state"`
+	Detail            string                              `json:"detail"`
+	runtimeInstanceID string                              // private process-boot marker: never serialized to admin UI
+	hostReceipt       *photointelligence.HostApplyReceipt // never serialized to admin UI
+}
+
+type photoHostModelInfoEvidence struct {
+	instanceID string
+	receipt    *photointelligence.HostApplyReceipt
 }
 
 type photoHostModelInfoTask struct {
-	ID         string
-	Configured bool
-	Probe      func(context.Context) (string, error)
+	ID           string
+	Configured   bool
+	Probe        func(context.Context) (string, error) // legacy test fixture path
+	ReceiptProbe func(context.Context) (photoHostModelInfoEvidence, error)
 }
 
 func unverifiedPhotoHostModelInfoChecks() []photoHostModelInfoCheck {
@@ -50,6 +57,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 	type outcome struct {
 		index      int
 		instanceID string
+		receipt    *photointelligence.HostApplyReceipt
 		err        error
 	}
 	finished := make(chan outcome, len(tasks))
@@ -61,17 +69,27 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			results[i].Detail = "当前 Server 未配置此分析器"
 			continue
 		}
-		if task.Probe == nil {
+		if task.Probe == nil && task.ReceiptProbe == nil {
 			continue
 		}
 		pending++
-		go func(index int, check func(context.Context) (string, error)) {
-			instanceID, err := check(ctx)
+		go func(index int, legacy func(context.Context) (string, error),
+			attested func(context.Context) (photoHostModelInfoEvidence, error)) {
+			var instanceID string
+			var receipt *photointelligence.HostApplyReceipt
+			var err error
+			if attested != nil {
+				var evidence photoHostModelInfoEvidence
+				evidence, err = attested(ctx)
+				instanceID, receipt = evidence.instanceID, evidence.receipt
+			} else {
+				instanceID, err = legacy(ctx)
+			}
 			select {
-			case finished <- outcome{index: index, instanceID: instanceID, err: err}:
+			case finished <- outcome{index: index, instanceID: instanceID, receipt: receipt, err: err}:
 			case <-ctx.Done():
 			}
-		}(i, task.Probe)
+		}(i, task.Probe, task.ReceiptProbe)
 	}
 	for pending > 0 {
 		select {
@@ -85,6 +103,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			if next.err == nil {
 				results[next.index].State = "ready"
 				results[next.index].runtimeInstanceID = next.instanceID
+				results[next.index].hostReceipt = next.receipt
 				results[next.index].Detail = "本实例分析器 Info 协议与模型元数据验证通过"
 			} else {
 				results[next.index].State = "failed"
@@ -156,6 +175,31 @@ func photoHostRequestGenerationCorrelated(
 		photoHostDockerSocketOwnerVerified(checks, host)
 }
 
+// The trusted fixed Host Manager observed a request-specific model receipt,
+// and ALL four read-only model Info responses echo its exact revision/token.
+// This proves only request acknowledgment by one current process, not a real
+// model task result, a fleet rollout, or permission to stop the host.
+func photoHostModelRequestAckVerified(
+	checks []photoHostModelInfoCheck,
+	host photoIntelligenceHostStatus,
+	control photoHostControlStatus,
+	gate meta.AdminPhotoHostApply,
+) bool {
+	if !control.ModelAckAtApply ||
+		!photoHostRequestGenerationCorrelated(checks, host, control, gate) {
+		return false
+	}
+	for _, item := range checks {
+		receipt := item.hostReceipt
+		if receipt == nil || receipt.Revision != gate.Revision ||
+			receipt.RequestID != gate.RequestID ||
+			!photointelligence.ValidAnalyzerHostRequestID(receipt.RequestID) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelInfoCheck {
 	if s == nil {
 		return unverifiedPhotoHostModelInfoChecks()
@@ -167,51 +211,51 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 		{ID: "photo-creative", Configured: s.PhotoCreativeAnalyzer != nil},
 	}
 	if s.PhotoFaceAnalyzer != nil {
-		tasks[0].Probe = func(ctx context.Context) (string, error) {
+		tasks[0].ReceiptProbe = func(ctx context.Context) (photoHostModelInfoEvidence, error) {
 			info, err := s.PhotoFaceAnalyzer.Info(ctx)
 			if err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
 			if err := photointelligence.ValidateFaceAnalyzerInfo(info); err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
-			return info.RuntimeInstanceID, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
 		}
 	}
 	if s.PhotoSmartAnalyzer != nil {
-		tasks[1].Probe = func(ctx context.Context) (string, error) {
+		tasks[1].ReceiptProbe = func(ctx context.Context) (photoHostModelInfoEvidence, error) {
 			info, err := s.PhotoSmartAnalyzer.Info(ctx)
 			if err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
 			if err := photointelligence.ValidateSmartAnalyzerInfo(info); err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
-			return info.RuntimeInstanceID, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
 		}
 	}
 	if s.PhotoSemanticAnalyzer != nil {
-		tasks[2].Probe = func(ctx context.Context) (string, error) {
+		tasks[2].ReceiptProbe = func(ctx context.Context) (photoHostModelInfoEvidence, error) {
 			info, err := s.PhotoSemanticAnalyzer.Info(ctx)
 			if err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
 			if err := photointelligence.ValidateSemanticAnalyzerInfo(info); err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
-			return info.RuntimeInstanceID, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
 		}
 	}
 	if s.PhotoCreativeAnalyzer != nil {
-		tasks[3].Probe = func(ctx context.Context) (string, error) {
+		tasks[3].ReceiptProbe = func(ctx context.Context) (photoHostModelInfoEvidence, error) {
 			info, err := s.PhotoCreativeAnalyzer.Info(ctx)
 			if err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
 			if err := photointelligence.ValidateCreativeAnalyzerInfo(info); err != nil {
-				return "", err
+				return photoHostModelInfoEvidence{}, err
 			}
-			return info.RuntimeInstanceID, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
 		}
 	}
 	return runPhotoHostModelInfoChecks(ctx, tasks)

@@ -57,6 +57,7 @@ type CreativeAnalyzerInfo struct {
 	Capabilities      []string                 `json:"capabilities"`
 	Runtime           *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
 	RuntimeInstanceID string                   `json:"runtime_instance_id,omitempty"`
+	HostApplyReceipt  *HostApplyReceipt        `json:"host_apply_receipt,omitempty"`
 }
 
 type CreativePoint struct {
@@ -147,6 +148,9 @@ func ValidateCreativeAnalyzerInfo(info CreativeAnalyzerInfo) error {
 		return fmt.Errorf("unsupported creative analyzer protocol version %d", info.ProtocolVersion)
 	}
 	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
+	}
+	if err := validateOptionalAnalyzerHostApplyReceipt(info.HostApplyReceipt); err != nil {
 		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {

@@ -34,6 +34,7 @@ type SmartAnalyzerInfo struct {
 	OCRLanguage       string                   `json:"ocr_language"`
 	Runtime           *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
 	RuntimeInstanceID string                   `json:"runtime_instance_id,omitempty"`
+	HostApplyReceipt  *HostApplyReceipt        `json:"host_apply_receipt,omitempty"`
 }
 
 type SmartAnalysisTask struct {
@@ -63,6 +64,9 @@ func ValidateSmartAnalyzerInfo(info SmartAnalyzerInfo) error {
 		)
 	}
 	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
+	}
+	if err := validateOptionalAnalyzerHostApplyReceipt(info.HostApplyReceipt); err != nil {
 		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {

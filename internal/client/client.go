@@ -668,6 +668,7 @@ type AdminPhotoHostPreflight struct {
 	DockerHealthcheckMatched    bool                           `json:"docker_healthcheck_matched"`
 	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
+	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 }
 
 type AdminPhotoHostApplyInput struct {

@@ -35,6 +35,7 @@ type adminPhotoHostPreflightDTO struct {
 	DockerHealthcheckMatched    bool                           `json:"docker_healthcheck_matched"`
 	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
+	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -153,11 +154,21 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 				report.RequestGenerationCorrelated = photoHostRequestGenerationCorrelated(
 					report.ModelInfoChecks, latestHost, latestControl, gate,
 				)
+				// Host Manager's private action-time receipt and all four model
+				// Info acknowledgments must match the same durable admin gate.
+				// The local queue is rechecked; do not promote on a new action.
+				if report.RequestGenerationCorrelated && s.photoHostLocalQueueClear() {
+					report.ModelRequestAckVerified = photoHostModelRequestAckVerified(
+						report.ModelInfoChecks, latestHost, latestControl, gate,
+					)
+				}
 			}
 		}
 	}
-	if report.HostRevisionVerified {
-		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；下方模型 Info 是独立状态。当前 Info 协议不携带宿主请求身份，尚不能证明同源模型生效或真实媒体任务成功"
+	if report.ModelRequestAckVerified {
+		report.Checks[6].Detail = "四类模型确认了已审计的同一次宿主启用请求；但真实媒体任务、跨实例部署及安全停用仍未验证"
+	} else if report.HostRevisionVerified {
+		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；模型请求回执尚未完成独立核验，不能证明同源请求确认或真实媒体任务成功"
 	}
 	if report.LocalChecksComplete && s.photoHostCanSubmit(desired, gate, hasGate) {
 		// Dispatch-ready is not an effect proof and can become stale before

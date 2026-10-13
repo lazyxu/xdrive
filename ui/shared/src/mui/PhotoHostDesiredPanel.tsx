@@ -311,6 +311,11 @@ export function XDrivePhotoHostDesiredPanel({
                       </Typography>
                     ))}
                     <Box component="section" aria-label="四类模型实时 Info" data-xdrive-photo-host-model-info>
+                      <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
+                        四类模型确认原始启用请求：{preflight.model_request_ack_verified
+                          ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'
+                          : '未核验或回执不一致；不能认为四类模型已确认原始启用请求'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-request-generation-correlated>
                         已审计启用请求与当前模型代际：{preflight.request_generation_correlated
                           ? '宿主启用回执时的模型代际仍一致（仅本宿主的时点交叉核验）'
