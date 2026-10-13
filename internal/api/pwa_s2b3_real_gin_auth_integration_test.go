@@ -49,12 +49,19 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
 	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
+	folderResumeMode := os.Getenv("XD_PWA_S4B3_REAL_FOLDER") == "1"
+	if folderResumeMode && (!resumeMode || largeResumeMode) {
+		t.Fatal("B3B folder fault requires standalone isolated 17 MiB resume mode")
+	}
 	if largeResumeMode && !resumeMode {
 		t.Fatal("1 GiB upload fault requires the isolated S4B2 resume fixture")
 	}
 	resumeFileName := "pwa-s4b2-17m.bin"
 	resumeExpectedBytes := int64(17 << 20)
 	resumeExpectedChunks := int64(3)
+	if folderResumeMode {
+		resumeFileName = "pwa-b3b-dynamic-child"
+	}
 	if largeResumeMode {
 		resumeFileName = "pwa-s4b2-1gib.bin"
 		resumeExpectedBytes = 1 << 30
@@ -266,10 +273,15 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 						chunk0Requests.Add(1)
 					case strings.HasSuffix(request.URL.Path, "/chunks/1"):
 						chunk1Requests.Add(1)
-						// Browser network stacks can silently replay an idempotent PUT
-						// after a dropped socket. Keep the FIRST upload session offline
-						// until a user-driven new POST creates session two.
-						if uploadSessions.Load() < 2 {
+						// Real browsers can retry dropped PUTs. The folder workflow lets
+						// the first actual FileList child finish, fails only session 2,
+						// and accepts a user-reselected session 3. No filename sorting.
+						faultRecoverySession := int64(2)
+						if folderResumeMode {
+							faultRecoverySession = 3 // The first browser-enumerated child was committed.
+						}
+						if uploadSessions.Load() < faultRecoverySession &&
+							(!folderResumeMode || uploadSessions.Load() == faultRecoverySession-1) {
 							injectedNetworkDrops.Add(1)
 							conn, _, err := w.(http.Hijacker).Hijack()
 							if err != nil {
@@ -319,6 +331,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		ready["upload_size_bytes"] = resumeExpectedBytes
 		ready["expected_chunks"] = resumeExpectedChunks
 		ready["pwa_s4b2_large_resume"] = largeResumeMode
+		ready["pwa_s4b3_folder"] = folderResumeMode
 		ready["intercepted_api"] = true // Private TCP interruption, never an API mock.
 	}
 	payload, err := json.Marshal(ready)
@@ -349,9 +362,19 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		if resumeMode {
 			// The first 8 MiB must remain in the original Server session. The
 			// reselected original must reuse it, not upload that chunk twice.
-			if uploadSessions.Load() != 2 || chunk0Requests.Load() != 1 ||
-				chunk1Requests.Load() < 2 || chunk2Requests.Load() != 1 ||
-				injectedNetworkDrops.Load() != chunk1Requests.Load()-1 {
+			expectedSessions := int64(2)
+			expectedChunk0 := int64(1)
+			expectedChunk2 := int64(1)
+			expectedAcceptedChunk1 := int64(1)
+			if folderResumeMode {
+				expectedSessions = 3
+				expectedChunk0 = 2
+				expectedChunk2 = 2
+				expectedAcceptedChunk1 = 2
+			}
+			if uploadSessions.Load() != expectedSessions || chunk0Requests.Load() != expectedChunk0 ||
+				chunk1Requests.Load() < expectedAcceptedChunk1+1 || chunk2Requests.Load() != expectedChunk2 ||
+				injectedNetworkDrops.Load() != chunk1Requests.Load()-expectedAcceptedChunk1 {
 				t.Fatalf("S4B2 HTTP resume was not reused: sessions=%d chunk0=%d chunk1=%d chunk2=%d injectedDrops=%d",
 					uploadSessions.Load(), chunk0Requests.Load(), chunk1Requests.Load(),
 					chunk2Requests.Load(), injectedNetworkDrops.Load())
@@ -360,9 +383,109 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 				totalChunkRequests.Load() < resumeExpectedChunks+injectedNetworkDrops.Load()) {
 				t.Fatal("S4B2 1GiB last chunk or distinct chunk PUT coverage missing")
 			}
+			expectedParentID := folder.ID
+			if folderResumeMode {
+				// Server-side postflight reads full actual CAS for every committed
+				// file, independent of OS folder enumeration order.
+				var album, nested meta.Node
+				if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+					owner.ID, folder.ID, "pwa-b3b-album").First(&album).Error; err != nil {
+					t.Fatalf("B3B album target folder missing: %v", err)
+				}
+				if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+					owner.ID, album.ID, "nested").First(&nested).Error; err != nil {
+					t.Fatalf("B3B nested directory missing: %v", err)
+				}
+				request(t, router, http.MethodGet,
+					fmt.Sprintf("/api/v1/nodes/%d", album.ID), foreignToken, nil, http.StatusNotFound)
+				type folderCandidate struct {
+					name   string
+					nested bool
+					seed   int64
+				}
+				candidates := []folderCandidate{
+					{name: "00-root-a.bin", seed: 1},
+					{name: "10-root-b.mov", seed: 2},
+					{name: "20-nested-c.bin", nested: true, seed: 3},
+				}
+				committedCount, missingCount := 0, 0
+				for _, spec := range candidates {
+					parentID := album.ID
+					if spec.nested {
+						parentID = nested.ID
+					}
+					var present int64
+					if err := db.Model(&meta.Node{}).
+						Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+							owner.ID, parentID, spec.name).Count(&present).Error; err != nil {
+						t.Fatal(err)
+					}
+					if present == 0 {
+						missingCount++
+						continue
+					}
+					if present != 1 {
+						t.Fatal("B3B committed child identity not unique")
+					}
+					committedCount++
+					var node meta.Node
+					if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
+						owner.ID, parentID, spec.name).First(&node).Error; err != nil {
+						t.Fatal(err)
+					}
+					request(t, router, http.MethodGet,
+						fmt.Sprintf("/api/v1/nodes/%d", node.ID), foreignToken, nil, http.StatusNotFound)
+					var file meta.File
+					if err := db.Where("node_id = ?", node.ID).First(&file).Error; err != nil {
+						t.Fatal(err)
+					}
+					if file.Size != resumeExpectedBytes {
+						t.Fatal("B3B committed child size mismatch")
+					}
+					wanted := sha256.New()
+					buffer := make([]byte, 64<<10)
+					for offset := int64(0); offset < resumeExpectedBytes; offset += int64(len(buffer)) {
+						for index := range buffer {
+							n := offset + int64(index)
+							buffer[index] = byte((n*31 + (n >> 7) + spec.seed*13) % 251)
+						}
+						_, _ = wanted.Write(buffer)
+					}
+					expectedHash := fmt.Sprintf("%x", wanted.Sum(nil))
+					if file.SHA256 != expectedHash {
+						t.Fatal("B3B committed child independent SHA256 mismatch")
+					}
+					var blob meta.ContentBlob
+					if err := db.Where("sha256 = ?", file.SHA256).First(&blob).Error; err != nil {
+						t.Fatal(err)
+					}
+					key, keyErr := storage.ContentAddressedKey(expectedHash)
+					if keyErr != nil || key != file.StorageKey || key != blob.StorageKey ||
+						blob.RefCount < 1 || blob.State != meta.ContentBlobStateReady ||
+						blob.Size != resumeExpectedBytes {
+						t.Fatal("B3B committed child physical CAS reference mismatch")
+					}
+					object, openErr := local.Open(context.Background(), key)
+					if openErr != nil {
+						t.Fatal(openErr)
+					}
+					actual := sha256.New()
+					copied, copyErr := io.Copy(actual, object)
+					closeErr := object.Close()
+					if copyErr != nil || closeErr != nil || copied != resumeExpectedBytes ||
+						fmt.Sprintf("%x", actual.Sum(nil)) != expectedHash {
+						t.Fatal("B3B committed child physical CAS bytes mismatch")
+					}
+				}
+				if committedCount != 2 || missingCount != 1 {
+					t.Fatal("B3B expected exactly two physical CAS child files and one cancelled sibling")
+				}
+				t.Log("PWA_S4B3_AUTHENTIC_FOLDER_VERIFIED actualFileListOrderIndependent=true twoPhysicalCAS_SHA256=true cancelledSiblingAbsent=true")
+				return
+			}
 			var resumed meta.Node
 			if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
-				owner.ID, folder.ID, resumeFileName).First(&resumed).Error; err != nil {
+				owner.ID, expectedParentID, resumeFileName).First(&resumed).Error; err != nil {
 				t.Fatalf("S4B2 final original file missing: %v", err)
 			}
 			var file meta.File
@@ -411,6 +534,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			}
 			t.Logf("PWA_S4B2_AUTHENTIC_RESUME_VERIFIED bytes=%d sessions=%d reusedFirstChunk=true injectedDrops=%d physicalCAS_SHA256=true",
 				verifiedBytes, uploadSessions.Load(), injectedNetworkDrops.Load())
+			if folderResumeMode {
+				t.Log("PWA_S4B3_AUTHENTIC_FOLDER_VERIFIED completedChildCAS=true recoveredChildCAS=true unstartedSiblingAbsent=true")
+			}
 		}
 
 	case <-time.After(func() time.Duration {
