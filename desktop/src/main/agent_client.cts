@@ -1677,6 +1677,9 @@ export type AgentMediaAlbum = {
 }
 
 export type AgentMediaPlaceFacet = {
+  sample_latitude?: number
+  sample_longitude?: number
+  coordinate_kind?: 'grid_cell_center'
   id: string
   name: string
   latitude: number
@@ -1686,6 +1689,14 @@ export type AgentMediaPlaceFacet = {
   updated_at?: string
   attribution?: string
   attribution_url?: string
+}
+
+export type AgentMediaPlacesPage = {
+  items: AgentMediaPlaceFacet[]
+  total_count: number
+  offset: number
+  limit: number
+  has_more: boolean
 }
 
 export type AgentMediaMemory = {
@@ -2486,6 +2497,11 @@ export class AgentIPCClient {
       width: String(width), height: String(height),
     })
     return this.requestBinary(`/v1/media/baidu-static?${query.toString()}`, 12_000, signal)
+  }
+
+  mediaPlacesPage(limit = 48, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    return this.request<AgentMediaPlacesPage>('GET', `/v1/media/places/page?${query.toString()}`)
   }
 
   mediaPlaces(limit = 24) {

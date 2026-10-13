@@ -52,6 +52,7 @@ import type {
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
+  MediaPlacesPage,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -1394,6 +1395,16 @@ export class XDriveApi {
     const blob = await response.blob()
     if (blob.size > 3 * 1024 * 1024 || !blob.size) throw new Error('百度地图图片大小无效')
     return blob
+  }
+
+  // P0-Places-A1: bounded, owner-scoped location pages. Legacy array API
+  // remains for older clients and independent gallery previews.
+  mediaPlacesPage(limit = 48, offset = 0) {
+    const query = new URLSearchParams({
+      limit: String(Math.min(100, Math.max(1, Math.trunc(limit)))),
+      offset: String(Math.max(0, Math.trunc(offset))),
+    })
+    return this.request<MediaPlacesPage>(`/api/v1/media/places/page?${query.toString()}`)
   }
 
   mediaPlaces(limit = 24) {

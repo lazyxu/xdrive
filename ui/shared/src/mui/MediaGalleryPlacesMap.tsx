@@ -11,12 +11,14 @@ import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
  * its map projection, and all offline fallback UI have been retired. */
 export function XDriveMediaGalleryPlacesMap({
   places,
+  totalCount,
   getBaiduMapProvider,
   loadBaiduStaticMap,
   activePlaceID,
   onOpenPlace,
 }: {
   places: MediaPlaceFacet[]
+  totalCount?: number | null
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   activePlaceID?: string
@@ -44,10 +46,12 @@ export function XDriveMediaGalleryPlacesMap({
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Typography variant="subtitle2" fontWeight={700}>地图</Typography>
           <Typography variant="caption" color="text.secondary">
-            仅使用百度地图 Server API
+            地点按约 0.01° GPS 网格分组；本页地图使用代表照片的真实坐标，仅使用百度地图 Server API
           </Typography>
         </Box>
-        <Chip size="small" label={`${places.length.toLocaleString('zh-CN')} 个地点`} />
+        <Chip size="small" label={totalCount === null || totalCount === undefined
+          ? `本页 ${places.length.toLocaleString('zh-CN')} 个地点`
+          : `共 ${totalCount.toLocaleString('zh-CN')} 个地点 · 本页 ${places.length.toLocaleString('zh-CN')} 个`} />
       </Stack>
       <Stack
         direction={{ xs: 'column', sm: 'row' }}

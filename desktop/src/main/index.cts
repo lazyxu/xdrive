@@ -182,6 +182,7 @@ import {
   type AgentMediaAlbum,
   type AgentMediaAlbumFolder,
   type AgentMediaPlaceFacet,
+  type AgentMediaPlacesPage,
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
   type AgentMediaBurstReviewList,
@@ -2908,6 +2909,17 @@ function registerIPCHandlers() {
     }
     return requireAgentClient().mediaPlaces(requestedLimit)
   }, false))
+
+  ipcMain.handle('agent:get-media-places-page', (_event, limit: unknown = 48, offset: unknown = 0) =>
+    runAgentAction<AgentMediaPlacesPage>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000) {
+        throw new AgentIPCError('invalid_input', 0, 'Media places pagination is invalid.')
+      }
+      return requireAgentClient().mediaPlacesPage(limit, offset)
+    }, false))
 
   ipcMain.handle(
     'agent:get-media-memories',

@@ -1765,3 +1765,7 @@ their existing download paths. Selection/query scopes and virtualization
 stay owned by the existing Gallery controller. Support for particular
 RAW/Live originals follows the existing upload/download source contracts,
 not a new media copy.
+
+## Places iOS 27 1:1 staged roadmap (2026-10-13)
+
+The approved, evidence-scoped implementation order for the shared Gallery Places is [P0-A1 → A2 → A3 → A4 → P1-B1 → B2 → B3 → P2-C1](gallery-places-ios27-roadmap.md). A1 fixes the truncated Places facets, true owner-scoped counts and confusion between GPS grid centers and real source coordinates using a paginated shared Web/Desktop interface. It does not establish a fully interactive map. Baidu JSAPI 4.0 through an authenticated AK-hidden Server proxy is **approved for security/licensing review**, not runtime-activated until the independent browser-AK, origin/proxy, quota and official entitlement gates are met. The same iOS 27 reference, 52px App Frame, common Web/Mobile Web REST/virtualized Gallery, Desktop Agent bridge and Baidu-only map provider remain mandatory.

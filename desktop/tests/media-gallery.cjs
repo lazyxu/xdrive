@@ -555,8 +555,8 @@ test('Gallery Places renders only Baidu Server map with no offline fallback', ()
   for (const token of [
     '<XDriveMediaGalleryPlacesMap',
     'placesExpandedRef',
-    'source.listPlaces(placesExpandedRef.current ? 1000 : 24)',
-    'places.slice(0, 24)',
+    'placesExpandedRef.current && source.listPlacesPage',
+    'places.map((place) => (',
     '地点列表',
     '地图仅使用百度地图 Server API',
   ]) {

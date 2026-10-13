@@ -56,6 +56,7 @@ import type {
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
+  MediaPlacesPage,
   XDriveBaiduMapProviderInfo,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
@@ -550,6 +551,7 @@ declare global {
           albumID: string, revision: number, folderID: number,
         ) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
+        getMediaPlacesPage: (limit?: number, offset?: number) => Promise<DesktopResult<MediaPlacesPage>>
         getMediaMemories: (
           anchorDate?: string,
           limit?: number,

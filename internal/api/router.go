@@ -247,6 +247,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/resources/:role", s.mediaDerivedResourceContent)
 	authed.GET("/media/albums", s.listMediaAlbums)
 	authed.GET("/media/places", s.listMediaPlaces)
+	authed.GET("/media/places/page", s.listMediaPlacesPage)
 	authed.GET("/media/places/map-provider", s.mediaMapProviderStatus)
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	authed.GET("/media/memories", s.listMediaMemories)

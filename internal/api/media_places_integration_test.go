@@ -196,4 +196,157 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 	if !got[nodes[0].ID] || !got[nodes[1].ID] || got[nodes[2].ID] {
 		t.Fatalf("filtered ids=%v", got)
 	}
+
+	// P0-Places-A1: the legacy top-24 collection is deliberately incomplete.
+	// The page endpoint must count EVERY owner-scoped valid GPS cell and let
+	// Web/Mobile Web/Desktop reach cells beyond the first and thousandth.
+	firstPage, err := queryMediaPlacesPage(context.Background(), db, owner.ID, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstPage.TotalCount != 2 || len(firstPage.Items) != 1 ||
+		!firstPage.HasMore || firstPage.Offset != 0 {
+		t.Fatalf("initial page=%+v", firstPage)
+	}
+	if firstPage.Items[0].CoordinateKind != "grid_cell_center" ||
+		firstPage.Items[0].SampleLatitude == firstPage.Items[0].Latitude &&
+			firstPage.Items[0].SampleLongitude == firstPage.Items[0].Longitude {
+		t.Fatalf("must distinguish a real representative GPS from grid center: %+v", firstPage.Items[0])
+	}
+
+	addGPSAsset := func(label string, lat, lon *float64, userID, rootID uint64) uint64 {
+		t.Helper()
+		node := meta.Node{
+			ParentID: &rootID, Name: label, Type: meta.NodeTypeFile,
+			OwnerID: userID, Revision: 1,
+		}
+		if err := db.Create(&node).Error; err != nil {
+			t.Fatal(err)
+		}
+		file := meta.File{
+			NodeID: node.ID, Size: 100, StorageKey: "gps-" + label,
+			SHA256: fmt.Sprintf("%064x", node.ID),
+		}
+		if err := db.Create(&file).Error; err != nil {
+			t.Fatal(err)
+		}
+		mm := meta.MediaMetadata{
+			NodeID: node.ID, OwnerID: userID, NodeRevision: 1,
+			SHA256: file.SHA256, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", Latitude: lat, Longitude: lon,
+			CapturedAt: &captured, IndexState: meta.MediaIndexStateReady,
+		}
+		if err := db.Create(&mm).Error; err != nil {
+			t.Fatal(err)
+		}
+		asset := meta.PhotoAsset{
+			OwnerID: userID, PrimaryNodeID: node.ID,
+			Kind: meta.PhotoAssetKindImage, EvidenceKey: fmt.Sprintf("node:%d", node.ID),
+		}
+		if err := db.Create(&asset).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoMetadata{
+			AssetID: asset.ID, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", CapturedAt: &captured,
+			Latitude: lat, Longitude: lon,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&meta.PhotoResource{
+			AssetID: asset.ID, ResourceKind: meta.PhotoResourceKindNode,
+			NodeID: node.ID, Role: meta.PhotoResourceRolePrimary,
+			Name: label, MediaKind: meta.MediaKindImage,
+			MIMEType: "image/jpeg", Size: 100,
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+		return node.ID
+	}
+	for i := 0; i < 27; i++ {
+		lat, lon := 10.001+float64(i)*0.1, 20.002
+		addGPSAsset(fmt.Sprintf("cell-%02d.jpg", i), &lat, &lon, owner.ID, root.ID)
+	}
+	zero := 0.0
+	zeroID := addGPSAsset("zero.jpg", &zero, &zero, owner.ID, root.ID)
+	edgeLat, edgeLon := 90.0, 180.0
+	addGPSAsset("valid-edge.jpg", &edgeLat, &edgeLon, owner.ID, root.ID)
+	invalidLat, invalidLon := 91.0, 11.0
+	invalidID := addGPSAsset("invalid-lat.jpg", &invalidLat, &invalidLon, owner.ID, root.ID)
+	partialLat := 12.0
+	partialID := addGPSAsset("partial-gps.jpg", &partialLat, nil, owner.ID, root.ID)
+	other := meta.User{
+		Username: "another-place-owner", PasswordHash: "unused",
+		Role: meta.UserRoleUser, SessionVersion: 1,
+	}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherRoot := meta.Node{Name: "", Type: meta.NodeTypeDir, OwnerID: other.ID, Revision: 1}
+	if err := db.Create(&otherRoot).Error; err != nil {
+		t.Fatal(err)
+	}
+	otherLat, otherLon := 45.013, -73.456
+	addGPSAsset("other-owner.jpg", &otherLat, &otherLon, other.ID, otherRoot.ID)
+
+	const expectedCells = 31 // 2 existing, 27 extra, zero and 90/180
+	gotCells := make(map[string]bool)
+	for offset := 0; offset < expectedCells; offset += 24 {
+		page, err := queryMediaPlacesPage(context.Background(), db, owner.ID, 24, offset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if page.TotalCount != expectedCells || page.Offset != offset || page.Limit != 24 ||
+			page.HasMore != (offset+len(page.Items) < expectedCells) {
+			t.Fatalf("page at offset %d: %+v", offset, page)
+		}
+		for _, place := range page.Items {
+			if gotCells[place.ID] {
+				t.Fatalf("duplicate place page member %q", place.ID)
+			}
+			gotCells[place.ID] = true
+			if place.CoordinateKind != "grid_cell_center" ||
+				place.SampleLatitude < -90 || place.SampleLatitude > 90 ||
+				place.SampleLongitude < -180 || place.SampleLongitude > 180 {
+				t.Fatalf("invalid representative point %+v", place)
+			}
+		}
+	}
+	if len(gotCells) != expectedCells || !gotCells["place:0:0"] ||
+		!gotCells["place:9000:18000"] {
+		t.Fatalf("missing valid zero/edge cells: %v", gotCells)
+	}
+	afterEnd, err := queryMediaPlacesPage(context.Background(), db, owner.ID, 24, 500)
+	if err != nil || afterEnd.TotalCount != expectedCells ||
+		len(afterEnd.Items) != 0 || afterEnd.HasMore {
+		t.Fatalf("past-last page=%+v error=%v", afterEnd, err)
+	}
+	withGPS, withoutGPS := true, false
+	present, err := server.queryMediaItems(
+		context.Background(), owner.ID, mediaQueryOptions{HasLocation: &withGPS},
+		"", 100, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absent, err := server.queryMediaItems(
+		context.Background(), owner.ID, mediaQueryOptions{HasLocation: &withoutGPS},
+		"", 100, 0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seenWith := map[uint64]bool{}
+	for _, item := range present {
+		seenWith[item.Node.ID] = true
+	}
+	seenWithout := map[uint64]bool{}
+	for _, item := range absent {
+		seenWithout[item.Node.ID] = true
+	}
+	if !seenWith[zeroID] || seenWith[invalidID] || seenWith[partialID] ||
+		seenWithout[zeroID] || !seenWithout[invalidID] || !seenWithout[partialID] {
+		t.Fatalf("GPS presence must use same valid predicate as Places: with=%v without=%v", seenWith, seenWithout)
+	}
+
 }

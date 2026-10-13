@@ -844,6 +844,10 @@ export type XDriveBaiduStaticMapRequest = {
 
 export interface MediaPlaceFacet {
   id: string
+  /** Exact GPS of ONE representative photo, distinct from the historical cell center. */
+  sample_latitude?: number
+  sample_longitude?: number
+  coordinate_kind?: 'grid_cell_center'
   name: string
   latitude: number
   longitude: number
@@ -852,6 +856,14 @@ export interface MediaPlaceFacet {
   updated_at?: string
   attribution?: string
   attribution_url?: string
+}
+
+export interface MediaPlacesPage {
+  items: MediaPlaceFacet[]
+  total_count: number
+  offset: number
+  limit: number
+  has_more: boolean
 }
 
 export interface MediaMemory {

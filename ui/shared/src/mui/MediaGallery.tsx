@@ -81,6 +81,7 @@ import type {
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
+  MediaPlacesPage,
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
   MediaTimelineGroupSets,
@@ -247,6 +248,7 @@ export interface MediaGalleryDataSource {
   deleteAlbumFolder?: (folderID: number, revision: number) => Promise<void>
   moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
+  listPlacesPage?: (limit?: number, offset?: number) => Promise<MediaPlacesPage>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
@@ -577,6 +579,11 @@ export function XDriveMediaGalleryPage({
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
   const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [placesTotalCount, setPlacesTotalCount] = useState<number | null>(null)
+  const [placesPageOffset, setPlacesPageOffset] = useState(0)
+  const [placesPagePending, setPlacesPagePending] = useState(false)
+  const [placesPageError, setPlacesPageError] = useState('')
+  const placePageRequestID = useRef(0)
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
@@ -908,11 +915,20 @@ export function XDriveMediaGalleryPage({
       )
       if (target.kind === 'all' && !target.query.folder_id) {
         setPlacesStatus('loading')
+        placePageRequestID.current += 1
+        setPlacesPagePending(false)
+        setPlacesPageError('')
         const facetsPromise = Promise.all([
           source.listAlbums(),
-          source.listPlaces
-            ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
-            : Promise.resolve([]),
+          // The ordinary Gallery preview must not wait for a grouped COUNT
+          // across potentially 100k GPS cells; count only inside Places.
+          placesExpandedRef.current && source.listPlacesPage
+            ? source.listPlacesPage(48, 0)
+            : source.listPlaces
+              ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
+              : source.listPlacesPage
+                ? source.listPlacesPage(24, 0)
+                : Promise.resolve([]),
           source.listPets ? source.listPets() : Promise.resolve([]),
           source.listSuggestedPeople
             ? source.listSuggestedPeople(true, 100)
@@ -969,7 +985,9 @@ export function XDriveMediaGalleryPage({
             nextPeople,
           ] = result.values
           setAlbums(nextAlbums)
-          setPlaces(nextPlaces)
+          setPlaces(Array.isArray(nextPlaces) ? nextPlaces : nextPlaces.items)
+          setPlacesTotalCount(Array.isArray(nextPlaces) ? null : nextPlaces.total_count)
+          setPlacesPageOffset(0)
           setPlacesStatus('ready')
           setPets(nextPets)
           setSuggestedPeople(
@@ -1336,6 +1354,9 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, loadFirstPage, onError, query.include_descendants, source])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    placePageRequestID.current += 1
+    setPlacesPagePending(false)
+    setPlacesPageError('')
     onSectionRouteChange?.(nextSection)
     syncFolderRequestID.current += 1
     setCurrentFolderView(null)
@@ -1374,6 +1395,35 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders, onSectionRouteChange])
+
+  // Page replacement (not append) bounds the number of live location cards.
+  // The photo-wall remains on the existing shared sparse VirtualCollection.
+  const changePlacesPage = useCallback(async (nextOffset: number) => {
+    if (!source.listPlacesPage || placesPagePending || placesStatus !== 'ready' ||
+        !Number.isSafeInteger(nextOffset) || nextOffset < 0 ||
+        nextOffset >= (placesTotalCount ?? 0)) return
+    const generation = ++placePageRequestID.current
+    const rangeGeneration = requestID.current
+    setPlacesPagePending(true)
+    setPlacesPageError('')
+    try {
+      const page = await source.listPlacesPage(48, nextOffset)
+      if (generation !== placePageRequestID.current ||
+          rangeGeneration !== requestID.current || section !== 'places') return
+      if (page.offset !== nextOffset || !Array.isArray(page.items) ||
+          !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
+          page.items.length > 48) throw new Error('地点分页响应与请求不一致')
+      setPlaces(page.items)
+      setPlacesPageOffset(nextOffset)
+      setPlacesTotalCount(page.total_count)
+    } catch (loadError) {
+      if (generation !== placePageRequestID.current ||
+          rangeGeneration !== requestID.current) return
+      setPlacesPageError(xDriveMediaGalleryErrorMessage(loadError))
+    } finally {
+      if (generation === placePageRequestID.current) setPlacesPagePending(false)
+    }
+  }, [placesPagePending, placesStatus, placesTotalCount, section, source])
 
   const requestIndexStatus = useCallback(async () => {
     if (!source.getIndexStatus) return
@@ -2491,6 +2541,11 @@ export function XDriveMediaGalleryPage({
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
         placesStatus={placesStatus}
+        placesTotalCount={placesTotalCount}
+        placesPageOffset={placesPageOffset}
+        placesPagePending={placesPagePending}
+        placesPageError={placesPageError}
+        onPlacesPageChange={source.listPlacesPage ? changePlacesPage : undefined}
         memories={memories}
         burstReviews={burstReviews}
         pets={pets}
@@ -2901,6 +2956,11 @@ export interface XDriveMediaGalleryProps {
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   placesStatus?: 'loading' | 'ready' | 'error'
+  placesTotalCount?: number | null
+  placesPageOffset?: number
+  placesPagePending?: boolean
+  placesPageError?: string
+  onPlacesPageChange?: (offset: number) => void
   memories?: MediaMemory[]
   burstReviews?: MediaBurstReviewList | null
   pets?: MediaPetFacet[]
@@ -4501,6 +4561,11 @@ export function XDriveMediaGallery({
   getBaiduMapProvider,
   loadBaiduStaticMap,
   placesStatus = 'ready',
+  placesTotalCount = null,
+  placesPageOffset = 0,
+  placesPagePending = false,
+  placesPageError = '',
+  onPlacesPageChange,
   memories = [],
   burstReviews = null,
   pets = [],
@@ -6573,6 +6638,7 @@ export function XDriveMediaGallery({
 
           <XDriveMediaGalleryPlacesMap
             places={places}
+            totalCount={placesTotalCount}
             getBaiduMapProvider={getBaiduMapProvider}
             loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}
@@ -6590,7 +6656,7 @@ export function XDriveMediaGallery({
                 gap: 1.5,
               }}
             >
-              {places.slice(0, 24).map((place) => (
+              {places.map((place) => (
                 <Paper
                   key={place.id}
                   variant="outlined"
@@ -6635,6 +6701,41 @@ export function XDriveMediaGallery({
                 </Paper>
               ))}
             </Box>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap"
+              data-xdrive-places-pagination sx={{ mt: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">
+                {placesTotalCount === null
+                  ? '当前仅有旧版地点列表（' + places.length + ' 个，可能不完整），请更新 Server/Agent'
+                  : '已显示 ' + (placesPageOffset + (places.length ? 1 : 0)) + '–' +
+                    (placesPageOffset + places.length) + ' / 共 ' +
+                    placesTotalCount.toLocaleString('zh-CN') + ' 个地点'}
+              </Typography>
+              {onPlacesPageChange && placesTotalCount !== null ? (
+                <>
+                  <Button size="small" variant="outlined"
+                    sx={{ minHeight: { xs: 44, sm: 36 } }}
+                    disabled={placesPagePending || placesPageOffset === 0}
+                    onClick={() => onPlacesPageChange(Math.max(0, placesPageOffset - 48))}>
+                    上一页
+                  </Button>
+                  <Button size="small" variant="outlined"
+                    sx={{ minHeight: { xs: 44, sm: 36 } }}
+                    disabled={placesPagePending ||
+                      placesPageOffset + places.length >= placesTotalCount}
+                    onClick={() => onPlacesPageChange(placesPageOffset + places.length)}>
+                    下一页
+                  </Button>
+                </>
+              ) : null}
+              {placesPagePending ? (
+                <Typography role="status" variant="caption">正在加载地点…</Typography>
+              ) : null}
+              {placesPageError ? (
+                <Typography role="alert" variant="caption" color="error">
+                  {placesPageError}
+                </Typography>
+              ) : null}
+            </Stack>
           </Box>
         </Stack>
       ) : null}

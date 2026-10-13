@@ -257,15 +257,19 @@ type MediaFolderView struct {
 }
 
 type MediaPlaceFacet struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	Latitude       float64    `json:"latitude"`
-	Longitude      float64    `json:"longitude"`
-	ItemCount      int64      `json:"item_count"`
-	CoverNodeID    *uint64    `json:"cover_node_id,omitempty"`
-	UpdatedAt      *time.Time `json:"updated_at,omitempty"`
-	Attribution    string     `json:"attribution,omitempty"`
-	AttributionURL string     `json:"attribution_url,omitempty"`
+	// latitude/longitude are backward-compatible cell centers, not GPS points.
+	SampleLatitude  float64    `json:"sample_latitude"`
+	SampleLongitude float64    `json:"sample_longitude"`
+	CoordinateKind  string     `json:"coordinate_kind"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Latitude        float64    `json:"latitude"`
+	Longitude       float64    `json:"longitude"`
+	ItemCount       int64      `json:"item_count"`
+	CoverNodeID     *uint64    `json:"cover_node_id,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	Attribution     string     `json:"attribution,omitempty"`
+	AttributionURL  string     `json:"attribution_url,omitempty"`
 }
 
 type MediaFacetOption struct {
@@ -988,6 +992,23 @@ func (c *Client) MediaBaiduStaticMap(
 		return nil, fmt.Errorf("invalid static map size")
 	}
 	return data, nil
+}
+
+type MediaPlacesPage struct {
+	Items      []MediaPlaceFacet `json:"items"`
+	TotalCount int64             `json:"total_count"`
+	Offset     int               `json:"offset"`
+	Limit      int               `json:"limit"`
+	HasMore    bool              `json:"has_more"`
+}
+
+func (c *Client) MediaPlacesPage(ctx context.Context, limit, offset int) (MediaPlacesPage, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(limit))
+	query.Set("offset", strconv.Itoa(offset))
+	var out MediaPlacesPage
+	err := c.json(ctx, http.MethodGet, "/api/v1/media/places/page?"+query.Encode(), nil, &out)
+	return out, err
 }
 
 func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet, error) {
