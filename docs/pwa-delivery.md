@@ -419,3 +419,13 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **独立 CI 及交付门槛：** `.github/workflows/pwa-s4c3-real-native-download.yml` 仅对这一 B1 PR 专项分支或手动 dispatch 执行，默认两个环境各 **一次 1 GiB**，4 GiB 为有真实磁盘 preflight 的单独 `workflow_dispatch` 选项，**未运行不得宣称 4 GiB native 通过**。固定唯一 work commit、准确 HEAD 的完整 PR CI/Final Gate **以及** Chrome+Go 实体专项两者皆成功后才允许 Draft→Ready→单提交线性 merge→核对自动 cleanup。失败先区分本测试夹具/浏览器选择与产品缺陷，不降低全字节 SHA/Owner/权限/缓存/空间门槛。
 
 **平台和下一阶段：** Chrome Android 触摸/UA 390px 只是模拟，不是 Android `OS Installed`，更不是 iOS 27 Safari/Home Screen，不能保证锁屏或强杀后台仍能下载，也未验浏览器管理的中断下载后自动 Range 续传、系统实际 Download Manager、iOS Files App 目标或 4 GiB 已安装模式。本测试检查“正常完整下载后实际落盘 SHA”，不把既有 OPFS 测试冒充 native。S4C3-B2 继续 4 GiB native 下载与取消/过期/撤销/自动 Range 续传，随后 S4D 前后台生命周期、S5 真机 HTTPS/性能/隐私/发布回滚。保留 52px App Frame、Web/Mobile Web 共享 REST/虚拟组件与 Server Durable Task 边界。
+
+## PWA-S4C3-B2a · 实际浏览器原生下载 4 GiB 全字节物理落盘验收（2026-10-13）
+
+**接续证据：** S4C3-B1 [PR #1659](https://github.com/lazyxu/xdrive/pull/1659) 准确提交 `bb845d509960bee73d7f150f6dd9794b851b5ec0` 在[真实 Chrome/Gin/PostgreSQL/CAS #38365060202](https://github.com/lazyxu/xdrive/actions/runs/38365060202) 的 Desktop 1280px 和 Android UA/Touch 390px 模拟下，1 GiB 浏览器原生下载到真正 Linux 磁盘、完整 SHA-256、独立 Go CAS 校验、Range 206/416 和 signed ticket 权限全绿；[完整 PR CI #38365060421](https://github.com/lazyxu/xdrive/actions/runs/38365060421) 25 required jobs incl Final Gate success。单提交 rebase 已合入冻结 `master@e52bd6bf36989462c74d4a1dc368d2468022d69b`，原短期 PWA 分支查得 Git Ref 404，开放相关 PR/分支为零。
+
+**B2a 具体边界：** 只在既有 B1 专项工作流中加入有明确目标的 `test/pwa-native-4gib-s4c3b2a-20261013` 分支自动验收；`XD_PWA_S4C3_SIZE_GIB=4`，真实源 `4,294,967,296 B` 的 AES-256-CTR 确定性非稀疏磁盘实体写入 immutable CAS（Linux 实际占盘≥98%），Desktop/Android-UA 390px 两次独立真实 Chrome 浏览器的 Web/Mobile Web 文件管理器 UI → 签名下载 → Browser Download event → `saveAs` 真正 OS 目的文件。每次对整个落盘原生文件流式读取 SHA-256（**不是** OPFS, Blob, sparse-zero 或只验首尾 1MiB），与生产 Gin/PostgreSQL/CAS 源 Hash/字节相同，独立 Go 再完整读取原件 CAS；真实 Range 206 首尾 32 B、越界 416、无票据 401、SW 公共离线页缓存仍维持。既有 1 GiB B1 工作流触发和 `workflow_dispatch` 可选 1/4 GiB 不改变；扩大 `desktop/tests/pwa-s4c3-native-4gib-contract.cjs` 的源代码/安全 CI 合约。
+
+**安全与门槛：** 真正 4 GiB 原生测试必须有合理可用磁盘（Runner preflight ≥12 GiB），不足空间直接失败，不降级 sparse fixture 或缩小负载。两种真实浏览器模式串行，测试实例独立；签名 URL/JWT、物理文件字节、Gin 私有日志和 Profile 不归档，只允许脱敏 JSON 的阶段、真值与总大小。新增分支必须在准确 **一个**工作提交之上，**专用原生测试及完整 CI Final Gate 双绿**才可 Ready→线性合并→工作分支自动清理，不借旧 B1 CI 证据代替新 HEAD 验收。
+
+**未完成不冒充：** 这不是 iOS 27 Safari/Home Screen、Android 真机 `OS Installed` 或真实下载管理器落盘/锁屏/进程回收验收。此时原生网络传输取消后是否真正停止 Go 请求、用户手动中断后的 HTTP Range 自动恢复、浏览器原生下载系统文件权限，以及票据过期/账户撤销仍须 S4C3-B2b/B2c 独立验证。之后 S4D 前后台/任务状态，S5 iOS/Android Installed、HTTPS/CA、性能/安全和发布回滚。
