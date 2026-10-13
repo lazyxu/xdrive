@@ -35,3 +35,16 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 - **A4、B1–B3、C1**：Owner 有界 Nearby Range、语义地区、准确旅程、定位编辑/隐私和 iOS 27 真机像素/交互测试另行开发。
 
 **不改变 xDrive 全屏 App Frame、52px 全局栏、Web/Desktop 共享后端、Web/Mobile Web 功能等价。没有真实授权或未达到安全门禁前，不得宣称 JSAPI 已可用，也不得用 OSM、Google、SVG 等另一地图源降级。**
+
+
+## A3b2a · 浏览器 HAR 泄漏审计门禁（2026-10-13）
+
+本步骤仅提供**本地、离线、只输出固定错误码的审计程序**，不是 JSAPI 生产代理，也不是百度真实账号的法律授权证明。A3b1 的 `runtime_enabled=false` 保持不变，不增加任何 Server 路由、JSAPI loader 或第三方动态脚本。唯一 Provider 仍为百度，静态地图 Server AK 功能不变。
+
+- 审计实现：`scripts/ci/baidu-jsapi4-browser-har-audit.cjs`；可执行合成正反例：`desktop/tests/baidu-jsapi4-browser-har-audit.cjs`，自动纳入 Desktop `node --test tests/*.cjs`。
+- **拟议尚未上线的协议**：已登录客户端通过 Server Bearer 申请 `POST /api/v1/media/places/baidu-jsapi/session`；Server 校验当前用户、授权、修订和撤销状态后，发给地图资源专用、最多 300 秒的 `XD_BMAP_SESSION` HttpOnly + Secure + SameSite + Path=/_BMapService/ Cookie。代理载入 `/_BMapService/api?v=4.0`，后续子资源同源，Browser AK 仅由 Server 注入百度上游。此处的路径/Cookie 只是未来必须满足的验收合同，**端点和 Cookie 均尚未实现，不能调用**。
+- **离线执行**：先在隔离环境从 Web、Mobile Web、Desktop 各自导出包含响应体的完整地图启动+平移/缩放 HAR；在本地安全终端由秘密管理器注入 `XD_BAIDU_JSAPI_AK_CANARY`（仅审计进程环境，勿出现在命令行、仓库、CI 产物或聊天记录），运行 `node scripts/ci/baidu-jsapi4-browser-har-audit.cjs /secure/path/session.har https://your-actual-origin.example web`。第三参数依次可为 `web`、`mobile-web`、`desktop`，每平台独立运行；退出码 0 才表示**该份完整采样 HAR 的浏览器侧检查通过**，并非 JSAPI 已上线。
+- 必须拒绝：无真实密钥比对标记、浏览器 URL/Header/脚本 Body 的 AK 泄露、`ak` 查询参数、任意外域直连、重定向、Service Worker/浏览器缓存、HTTP 非成功、缺失 `no-store` / `nosniff` / `no-referrer`、Bearer 出现在代理资源请求、无地图专用 Cookie、没有 loader+子资源、无响应文本 body 或过长会话 TTL。仅输出固定码/汇总计数，不回显 URL、路径、Cookie、密钥或原始响应。
+- **隐私**：真实 HAR 可能含 GPS、访问令牌、Cookie 和源图请求。严禁上传至 GitHub、提交仓库、生成 CI 附件或分享给第三方；采用按需访问和受控销毁。只有无密钥合成 fixture 可入库。
+
+**明确未通过的生产门禁**：真实百度 Browser 类型 AK 及账户合法许可、自托管/Electron/商用边界、官方实际完整 loader/JS/WASM/瓦片/字体/样式请求清单、严格逐 host/path/method/query 白名单、Server 注入/上游返回原始字节无 AK 泄漏、跨副本配额与会话撤销、反向代理/CSP/Electron 沙盒、真实 iOS 27 Safari/PWA、Android、Desktop 验收。HAR 仅能证明采集的浏览器侧样本，不可证明未被采集的服务端上游或移动系统行为；模拟测试通过时 **A3b2/b3 仍为 NO-GO**。
