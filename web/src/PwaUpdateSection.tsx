@@ -4,6 +4,7 @@ import {
   checkXDrivePwaUpdate, subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot,
 } from './pwaUpdates'
 import { xDriveProbePwaServer } from './pwaConnectivity'
+import { subscribeXDrivePwaPeerActivity, xDrivePwaPeerActivitySnapshot } from './pwaPeerActivity'
 import {
   subscribeXDrivePwaWindowActivity, xDrivePwaKnownWindowBlockers,
   xDrivePwaWindowActivitySnapshot,
@@ -14,6 +15,7 @@ export default function XDrivePwaUpdateSection() {
   const state = useSyncExternalStore(subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot)
   const currentWindow = useSyncExternalStore(subscribeXDrivePwaWindowActivity, xDrivePwaWindowActivitySnapshot)
   const windowBlockers = xDrivePwaKnownWindowBlockers(currentWindow)
+  const peers = useSyncExternalStore(subscribeXDrivePwaPeerActivity, xDrivePwaPeerActivitySnapshot)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
   const [serverChecking, setServerChecking] = useState(false)
   const [serverResult, setServerResult] = useState<XDrivePwaReadinessResult | null>(null)
@@ -92,8 +94,26 @@ export default function XDrivePwaUpdateSection() {
           </Typography>
           <Typography variant="body2" sx={{ mt: 1 }}>
             当前只检测 Web/Mobile Web 前台传输、Viewer 与系统依赖草稿；
-            无法证明其他窗口、其他编辑器草稿或浏览器接管的下载已经结束。
+            无法证明其他窗口已经结束所有工作；其他编辑器草稿和浏览器接管的下载同样可能未被观察到。
             不会自动刷新或激活更新；请人工确认并关闭所有 xDrive 窗口后重新打开。
+          </Typography>
+        </Alert>
+      ) : null}
+      {state.phase === 'waiting' ? (
+        <Alert data-xdrive-pwa-peer-activity severity="warning" role="status" sx={{ mb: 1 }}>
+          <Typography variant="body2" fontWeight={700}>其他窗口的近期活动（只读提示）</Typography>
+          <Typography variant="body2">
+            {!peers.available
+              ? '当前环境没有可用的跨窗口通信，其他窗口活动无法被完整证明。'
+              : peers.knownPeerBusy
+                ? '另一窗口近期报告有正在执行的前台操作；请先在所有窗口完成工作。'
+                : peers.knownPeerUnknown
+                  ? '另一窗口近期报告活动状态未确认，请逐个核实。'
+                  : '没有观察到其他窗口的已知前台任务；其他窗口活动无法被完整证明。'}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            页面冻结、进程回收、浏览器隔离或超时可能导致消息缺失。该提示不能授权一键激活、
+            强制重载或取消任务，请手动关闭所有 xDrive 窗口后重新打开。
           </Typography>
         </Alert>
       ) : null}
