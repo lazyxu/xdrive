@@ -1,4 +1,4 @@
-name: PWA S4C3 Real Native Browser Download SHA
+name: PWA S4C3 Real Native Browser Download SHA (1 and 4 GiB)
 
 on:
   pull_request:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   real-native-download:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-native-disk-s4c3b1-20261013'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-native-disk-s4c3b1-20261013' || github.head_ref == 'test/pwa-native-4gib-s4c3b2a-20261013'
     runs-on: ubuntu-latest
     timeout-minutes: 80
     services:
@@ -36,7 +36,7 @@ jobs:
           --health-retries 20
     env:
       XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
-      XD_PWA_S4C3_SIZE_GIB: ${{ github.event_name == 'workflow_dispatch' && inputs.size_gib || '1' }}
+      XD_PWA_S4C3_SIZE_GIB: ${{ github.event_name == 'workflow_dispatch' && inputs.size_gib || (github.head_ref == 'test/pwa-native-4gib-s4c3b2a-20261013' && '4') || '1' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,7 +55,7 @@ jobs:
           set -euo pipefail
           test -z "$(gofmt -l internal/api/pwa_s2b3_real_gin_auth_integration_test.go internal/api/pwa_s4c3_native_download_fixture_test.go)"
           node --check desktop/scripts/pwa-s4c3-native-download-browser.cjs
-          node --test desktop/tests/pwa-s4c3-native-download-contract.cjs
+          node --test desktop/tests/pwa-s4c3-native-download-contract.cjs desktop/tests/pwa-s4c3-native-4gib-contract.cjs
           npm --prefix web ci --no-audit --no-fund
           npm --prefix web run build
           go test -c -o "$RUNNER_TEMP/pwa-s4c3-api.test" ./internal/api
@@ -71,7 +71,7 @@ jobs:
             echo 'Real system Chrome required' >&2
             exit 1
           fi
-      - name: Real Chrome native OS 1 GiB download and physical SHA, desktop and Android emulation
+      - name: Real Chrome native OS 1 or 4 GiB download and physical SHA, desktop and Android emulation
         shell: bash
         env:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
