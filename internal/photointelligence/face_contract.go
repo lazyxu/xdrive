@@ -47,6 +47,7 @@ type FaceAnalyzerInfo struct {
 	EmbeddingDimensions int                      `json:"embedding_dimensions"`
 	Runtime             *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
 	RuntimeInstanceID   string                   `json:"runtime_instance_id,omitempty"`
+	HostApplyReceipt    *HostApplyReceipt        `json:"host_apply_receipt,omitempty"`
 }
 
 type FaceAnalysisTask struct {
@@ -83,6 +84,9 @@ func ValidateFaceAnalyzerInfo(info FaceAnalyzerInfo) error {
 		)
 	}
 	if err := validateOptionalAnalyzerRuntimeInstanceID(info.RuntimeInstanceID); err != nil {
+		return err
+	}
+	if err := validateOptionalAnalyzerHostApplyReceipt(info.HostApplyReceipt); err != nil {
 		return err
 	}
 	if strings.TrimSpace(info.Name) == "" {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
+	"github.com/lazyxu/xdrive/internal/photointelligence"
 )
 
 func TestPhotoHostModelInfoRequiresExactHostRequestToken(t *testing.T) {
@@ -287,5 +288,101 @@ func TestPhotoHostEnableRequestGenerationCorrelationFailsClosedOnRestart(t *test
 		strings.Contains(string(raw), session) ||
 		strings.Contains(string(raw), requestID) {
 		t.Fatal("private request/session generation evidence leaked through preflight")
+	}
+}
+
+func TestModelRequestAckRequiresAllFourExactModelReceiptsAndPinnedHost(t *testing.T) {
+	session := "0123456789abcdef0123456789abcdef"
+	requestID := "0123456789abcdef01234567"
+	sum := sha256.Sum256([]byte(session))
+	digest := hex.EncodeToString(sum[:])
+	ids := [...]string{"photo-face", "photo-smart", "photo-semantic", "photo-creative"}
+	tasks := make([]photoHostModelInfoTask, 4)
+	for i, id := range ids {
+		tasks[i] = photoHostModelInfoTask{
+			ID: id, Configured: true,
+			ReceiptProbe: func(context.Context) (photoHostModelInfoEvidence, error) {
+				return photoHostModelInfoEvidence{
+					instanceID: session,
+					receipt:    &photointelligence.HostApplyReceipt{Revision: 7, RequestID: requestID},
+				}, nil
+			},
+		}
+	}
+	checks := runPhotoHostModelInfoChecks(context.Background(), tasks)
+	host := photoIntelligenceHostStatus{
+		State: "healthy", ProfileConfigured: true, sessionDigest: digest, socketOwned: true,
+	}
+	control := photoHostControlStatus{
+		Supported: true, State: "success", Revision: 7, AppliedRevision: 7,
+		Enabled: true, ProfileVerified: true, ObservedHostState: "healthy",
+		RequestID: requestID, AppliedInstanceDigest: digest, ModelAckAtApply: true,
+	}
+	gate := meta.AdminPhotoHostApply{State: "host-verified", Revision: 7, RequestID: requestID}
+	if !photoHostModelRequestAckVerified(checks, host, control, gate) {
+		t.Fatal("four same-process Info receipts + fixed audited host receipt were not recognized")
+	}
+	public, err := json.Marshal(adminPhotoHostPreflightDTO{
+		ModelInfoChecks: checks, ModelRequestAckVerified: true,
+	})
+	if err != nil || strings.Contains(string(public), requestID) ||
+		strings.Contains(string(public), session) || strings.Contains(string(public), digest) ||
+		strings.Contains(string(public), "host_receipt") {
+		t.Fatal("private model receipt or session leaked to administrator preflight")
+	}
+	for name, mutate := range map[string]func([]photoHostModelInfoCheck, *photoIntelligenceHostStatus, *photoHostControlStatus, *meta.AdminPhotoHostApply){
+		"no action-time model ACK": func(_ []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, c *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c.ModelAckAtApply = false
+		},
+		"stale audited request": func(_ []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, g *meta.AdminPhotoHostApply) {
+			g.RequestID = "ffffffffffffffffffffffff"
+		},
+		"model-side old ID": func(c []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c[1].hostReceipt.RequestID = "ffffffffffffffffffffffff"
+		},
+		"model-side wrong revision": func(c []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c[2].hostReceipt.Revision = 6
+		},
+		"legacy Info no ACK": func(c []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c[0].hostReceipt = nil
+		},
+		"failed model Info": func(c []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c[3].State = "failed"
+		},
+		"restart digest": func(_ []photoHostModelInfoCheck, h *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			h.sessionDigest = strings.Repeat("f", 64)
+		},
+		"lost kernel owner": func(_ []photoHostModelInfoCheck, h *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			h.socketOwned = false
+		},
+		"lost action-time generation": func(_ []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, c *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			c.AppliedInstanceDigest = ""
+		},
+		"unverified gate": func(_ []photoHostModelInfoCheck, _ *photoIntelligenceHostStatus, _ *photoHostControlStatus, g *meta.AdminPhotoHostApply) {
+			g.State = "queued"
+		},
+		"host unhealthy": func(_ []photoHostModelInfoCheck, h *photoIntelligenceHostStatus, _ *photoHostControlStatus, _ *meta.AdminPhotoHostApply) {
+			h.State = "unhealthy"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			copyChecks := append([]photoHostModelInfoCheck(nil), checks...)
+			for i := range copyChecks {
+				if copyChecks[i].hostReceipt != nil {
+					copyReceipt := *copyChecks[i].hostReceipt
+					copyChecks[i].hostReceipt = &copyReceipt
+				}
+			}
+			copyHost, copyControl, copyGate := host, control, gate
+			mutate(copyChecks, &copyHost, &copyControl, &copyGate)
+			if photoHostModelRequestAckVerified(copyChecks, copyHost, copyControl, copyGate) {
+				t.Fatal("stale, mismatched or untrusted model acknowledgment produced success")
+			}
+		})
+	}
+	for _, incomplete := range [][]photoHostModelInfoCheck{checks[:3], {}} {
+		if photoHostModelRequestAckVerified(incomplete, host, control, gate) {
+			t.Fatal("partial model receipt passed full four-model requirement")
+		}
 	}
 }

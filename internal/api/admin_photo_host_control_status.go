@@ -27,6 +27,7 @@ type photoHostControlStatus struct {
 	RequestID             string `json:"request_id"`
 	UpdatedAt             string `json:"updated_at"`
 	AppliedInstanceDigest string `json:"-"`
+	ModelAckAtApply       bool   `json:"-"`
 }
 
 func validPhotoHostControlState(state string) bool {
@@ -62,6 +63,7 @@ func (s *Server) readPhotoHostControlStatus() (photoHostControlStatus, bool) {
 	// export it through this status object's JSON or any admin DTO.
 	var sealed struct {
 		Digest string `json:"applied_instance_digest"`
+		Ack    *bool  `json:"model_ack_at_apply"`
 	}
 	if json.Unmarshal(data, &status) != nil || json.Unmarshal(data, &sealed) != nil || !status.Supported ||
 		!validPhotoHostControlState(status.State) ||
@@ -74,7 +76,16 @@ func (s *Server) readPhotoHostControlStatus() (photoHostControlStatus, bool) {
 		!validPhotoIntelligenceHealthDigest(sealed.Digest)) {
 		return photoHostControlStatus{}, false
 	}
+	// Legacy Host Managers have no model receipt. A true action-time receipt
+	// without an exact successful host request and pinned generation is invalid,
+	// not permission to create a public application/effect claim.
+	if sealed.Ack != nil && *sealed.Ack &&
+		(status.State != "success" || sealed.Digest == "" ||
+			status.RequestID == "" || status.AppliedRevision == 0) {
+		return photoHostControlStatus{}, false
+	}
 	status.AppliedInstanceDigest = sealed.Digest
+	status.ModelAckAtApply = sealed.Ack != nil && *sealed.Ack
 	if status.State == "idle" && (status.Revision != 0 || status.AppliedRevision != 0 ||
 		status.Enabled || status.RequestID != "") {
 		return photoHostControlStatus{}, false

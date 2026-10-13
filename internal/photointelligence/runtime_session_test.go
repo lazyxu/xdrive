@@ -50,3 +50,52 @@ func TestInfoRuntimeInstanceIDValidationAndLegacyCompatibility(t *testing.T) {
 		t.Fatal("instance identity format check incorrect")
 	}
 }
+
+func TestOptionalHostApplyReceiptFourModelValidation(t *testing.T) {
+	validID := "0123456789abcdef01234567"
+	for _, tc := range []struct {
+		name  string
+		check func(*HostApplyReceipt) error
+	}{
+		{"face", func(v *HostApplyReceipt) error {
+			info := testFaceAnalyzerInfo()
+			info.HostApplyReceipt = v
+			return ValidateFaceAnalyzerInfo(info)
+		}},
+		{"smart", func(v *HostApplyReceipt) error {
+			info := testSmartAnalyzerInfo()
+			info.HostApplyReceipt = v
+			return ValidateSmartAnalyzerInfo(info)
+		}},
+		{"semantic", func(v *HostApplyReceipt) error {
+			info := testSemanticAnalyzerInfo()
+			info.HostApplyReceipt = v
+			return ValidateSemanticAnalyzerInfo(info)
+		}},
+		{"creative", func(v *HostApplyReceipt) error {
+			info := testCreativeInfo()
+			info.HostApplyReceipt = v
+			return ValidateCreativeAnalyzerInfo(info)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.check(nil); err != nil {
+				t.Fatalf("old analyzer Info without receipt rejected: %v", err)
+			}
+			if err := tc.check(&HostApplyReceipt{Revision: 7, RequestID: validID}); err != nil {
+				t.Fatalf("valid host receipt rejected: %v", err)
+			}
+			for _, bad := range []*HostApplyReceipt{
+				{Revision: 0, RequestID: validID},
+				{Revision: 1 << 60, RequestID: validID},
+				{Revision: 7, RequestID: "raw-client-token"},
+				{Revision: 7, RequestID: strings.ToUpper(validID)},
+				{Revision: 7, RequestID: strings.Repeat("a", 23)},
+			} {
+				if err := tc.check(bad); err == nil {
+					t.Fatalf("untrusted host receipt accepted: %+v", bad)
+				}
+			}
+		})
+	}
+}

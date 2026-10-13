@@ -149,3 +149,69 @@ func TestPhotoHostControlGenerationSealIsPrivateAndValidOnlyForSuccess(t *testin
 		})
 	}
 }
+
+func TestPhotoHostPrivateModelAckIsValidatedAndNeverSerialized(t *testing.T) {
+	dir := t.TempDir()
+	server := &Server{HostControlDir: dir}
+	if err := os.WriteFile(filepath.Join(dir, "heartbeat"), []byte("alive"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	requestID := "0123456789abcdef01234567"
+	digest := strings.Repeat("a", 64)
+	base, err := json.Marshal(photoHostControlStatus{
+		Supported: true, State: "success", Revision: 9, AppliedRevision: 9,
+		Enabled: true, ProfileVerified: true, ObservedHostState: "healthy",
+		RequestID: requestID, UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) (photoHostControlStatus, bool) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, photoHostControlStatusName), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return server.readPhotoHostControlStatus()
+	}
+	withDigest := strings.Replace(string(base), `"updated_at":`,
+		`"applied_instance_digest":"`+digest+`","updated_at":`, 1)
+	legacy, ok := write(withDigest)
+	if !ok || legacy.ModelAckAtApply {
+		t.Fatal("old host invented model-side receipt")
+	}
+	ack := strings.Replace(withDigest, `"updated_at":`,
+		`"model_ack_at_apply":true,"updated_at":`, 1)
+	got, ok := write(ack)
+	if !ok || !got.ModelAckAtApply || got.AppliedInstanceDigest != digest {
+		t.Fatalf("fresh fixed host receipt lost: %+v valid=%v", got, ok)
+	}
+	public, err := json.Marshal(got)
+	if err != nil || strings.Contains(string(public), digest) ||
+		strings.Contains(string(public), "model_ack_at_apply") ||
+		strings.Contains(string(public), "applied_instance_digest") {
+		t.Fatal("private host model receipt leaked to public JSON")
+	}
+	for name, body := range map[string]string{
+		"no sealed generation": strings.Replace(ack,
+			`"applied_instance_digest":"`+digest+`",`, "", 1),
+		"bad ack type": strings.Replace(ack, `"model_ack_at_apply":true`,
+			`"model_ack_at_apply":"true"`, 1),
+		"failed receipt": strings.Replace(ack,
+			`"state":"success"`, `"state":"failed"`, 1),
+		"unhealthy": strings.Replace(ack,
+			`"observed_host_state":"healthy"`,
+			`"observed_host_state":"unhealthy"`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, valid := write(body); valid {
+				t.Fatal("invalid private model acknowledgment was accepted")
+			}
+		})
+	}
+	without := strings.Replace(ack, `"model_ack_at_apply":true`,
+		`"model_ack_at_apply":false`, 1)
+	actual, valid := write(without)
+	if !valid || actual.ModelAckAtApply {
+		t.Fatal("negative model acknowledgment must remain negative")
+	}
+}

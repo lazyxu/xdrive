@@ -278,6 +278,9 @@ export type XDrivePhotoHostPreflight = {
   // same-session model digest, still matching today's owner/digest/Info check.
   // Not cryptographic model request attestation or a completed photo job.
   request_generation_correlated?: boolean
+  // All four Info endpoints echo the same audited model-side host request.
+  // This is request acknowledgment, NOT a successful model/media task.
+  model_request_ack_verified?: boolean
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'
