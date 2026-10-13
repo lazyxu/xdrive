@@ -202,3 +202,10 @@ A3b2c2a / #1639 的每用户 PostgreSQL `epoch`、原子递增和 Access Token �
 继 #1649 资源身份与逐请求可信状态预检已通过 exact-head 完整 CI/Final Gate 并线性合入，此子阶段将禁用用户（有效状态切换）、管理员重设密码、管理员撤销会话和用户修改密码四条真实授权处理链路接入同一个 PostgreSQL 地图撤销 epoch。业务修改、地图失效和脱敏审计全部位于各自已有单个事务；地图撤销失败会回滚账户更改，重新启用不会恢复旧 Cookie。Browser AK 配置更改沿用已有配置 revision + 审计，通过 #1649 的每资源重读使旧 Cookie 失效，避免无界全用户 epoch 扫描。
 
 仍然没有公开 JSAPI Session/Loader/瓦片路由，没有合法许可证和真实完整子资源及泄漏证据，也无多副本配额和 Web/Mobile Web/Desktop 动态图库地图。保持 `runtime_enabled=false`；下一步 A3b2c2d 跨副本配额与代理固定资源准入，再到 A3b3/A4/B1–B3/C1；不将纯 Go / PostgreSQL / CI 检查算作 iOS 27 真机逐像素验收。
+
+
+## A3b2d1 · JSAPI4 Loader 跨副本计数与有界请求预留（2026-10-13）
+
+前序 #1649、#1655 均通过 exact-head 完整 CI/Final Gate 并线性合入，相关分支已清理。当前只补充 `meta.BaiduJSAPIQuotaBucket` 和纯 Server 侧、无公开 Router 的原子 PostgreSQL 准入构件；数据库单调分钟桶由 `clock_timestamp()` 确定，按 **fleet → trusted Owner** 固定顺序在同一事务中预留。生产固定 12 次 Loader GET/Owner/分钟、全局 240 次/分钟；每次按 Loader 已有最大响应 2MiB 保守扣除预算，拒绝后不额外扣全局计数。两独立连接、并发、Owner 互不借用、回滚、分钟翻转、坏表、迁移均应有独立 PostgreSQL 回归。
+
+**状态仍为 NO-GO：** quota 是构件，不是合法商业授权或完整 JSAPI4 子资源 allowlist。没有公开 Map Cookie 签发/资源代理、没有 Browser AK 发送或动态地图组件，也没有实际字节/并发在途额度、真实 Server upstream/HAR 密钥验收、Electron/PWA/Caddy 和 iOS 27/Android/Desktop 真机体验证。`runtime_enabled=false` 保持不变。下一步 A3b2d2 必须将法律证据/全量子资源白名单/跨副本资源配额/可信发布门禁连成真实只允许合法范围的 Server 链路，通过后再实现 A3b3 共享连续地图交互与照片聚合，然后 A4、B1–B3、C1。保持唯一百度 Provider、iOS 27「照片」1:1 基准、52px 全屏 App Frame 和三端共用 Gallery 核心。
