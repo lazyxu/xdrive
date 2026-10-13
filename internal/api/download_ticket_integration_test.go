@@ -2,9 +2,12 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -260,6 +263,69 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 	if got, want := beyondEOF.Header().Get("Content-Range"), fmt.Sprintf("bytes */%d", largeSize); got != want {
 		t.Fatalf("out-of-bounds Range Content-Range=%q want=%q", got, want)
 	}
+	// S4C3-B2b: a real TCP/HTTP response cancellation must reach Go's
+	// Request.Context(), finish native transfer observation as cancelled,
+	// and stop sending well before a 4 GiB sparse Range would complete.
+	// This probes transport cancellation only: the independent B2a test
+	// covers non-sparse 4 GiB browser-native full disk SHA-256.
+	t.Run("cancel live signed 4 GiB HTTP Range", func(t *testing.T) {
+		if largeTicket.TransferID == "" {
+			t.Fatal("real signed native download must have a transfer progress id")
+		}
+		peer := httptest.NewServer(router)
+		defer peer.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, peer.URL+largeTicket.URL, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Range", fmt.Sprintf("bytes=0-%d", largeSize-1))
+		resp, err := peer.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp.StatusCode != http.StatusPartialContent ||
+			resp.Header.Get("Content-Range") != fmt.Sprintf("bytes 0-%d/%d", largeSize-1, largeSize) {
+			_ = resp.Body.Close()
+			t.Fatal("real live 4 GiB signed Range headers invalid")
+		}
+		chunk := make([]byte, 32<<10)
+		if _, err := io.ReadFull(resp.Body, chunk); err != nil {
+			_ = resp.Body.Close()
+			t.Fatalf("real live 4 GiB native Range never started: %v", err)
+		}
+		cancel() // The real httptest TCP client aborts only this request.
+		_ = resp.Body.Close()
+		deadline := time.Now().Add(12 * time.Second)
+		for time.Now().Before(deadline) {
+			var progress meta.DownloadProgress
+			if err := db.Where("id = ? AND owner_id = ?",
+				largeTicket.TransferID, user.ID).First(&progress).Error; err != nil {
+				t.Fatal(err)
+			}
+			if progress.State == "cancelled" && progress.ActiveRequests == 0 {
+				if progress.BytesSent <= 0 || progress.BytesSent >= largeSize {
+					t.Fatalf("cancelled 4 GiB response reported invalid byte count=%d", progress.BytesSent)
+				}
+				if progress.FailureState != "cancelled" {
+					t.Fatalf("cancelled 4 GiB response failure state=%q", progress.FailureState)
+				}
+				// Cancellation is request-scoped, not a permanent ticket ban.
+				// A later small tail Range is still authenticated and intact.
+				tail := requestWithHeaders(t, router, http.MethodGet, largeTicket.URL, "", nil,
+					http.StatusPartialContent, map[string]string{
+						"Range": fmt.Sprintf("bytes=%d-%d", tailOffset, largeSize-1),
+					})
+				if !bytes.Equal(tail.Body.Bytes(), tailMarker) {
+					t.Fatal("new Range after cancelled request lost tail CAS bytes")
+				}
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatal("HTTP client cancellation did not finish the Go download progress as cancelled")
+	})
 	// Token revocation must fence even a previously valid >4 GiB Range.
 	if err := db.Model(&meta.User{}).Where("id = ?", user.ID).Update("session_version", 2).Error; err != nil {
 		t.Fatal(err)
