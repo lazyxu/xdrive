@@ -179,7 +179,7 @@ const photoHostStateLabels = {
 
 const configModeLabels: Record<XDriveServiceConfigMode | 'unknown', string> = {
   'in-app': '应用内可配置（能否启停以详情页为准）',
-  deployment: '仅受控部署管理（本页不启停）',
+  deployment: '模型／资源由受控部署管理（具体能力见详情）',
   planned: '暂未提供应用内配置',
   unknown: '配置能力未知（请核对 Server/Agent 版本）',
 }
@@ -188,7 +188,7 @@ const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
   immediate: '保存后立即生效',
   'task-boundary': '运行批次完成后安全生效',
   'manual-reload': '管理员校验后手动热加载',
-  'controlled-restart': '受控重启／重新部署后生效',
+  'controlled-restart': '需受控宿主处理（具体支持范围见详情）',
   'not-available': '尚无安全配置执行接口',
 }
 
@@ -262,7 +262,7 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
                   : '未取得可信配置观测'}
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                仅观测固定 xdrive-photo-face 容器；不代表各模型 Info 健康、自动任务生效或实际分析作业完成，尚无受限容器启停接口。
+                共享宿主仅支持审计后的安全启用，停用／重启尚未开放；此处宿主状态不代表各模型 Info 健康、自动任务准入或实际分析作业完成。
               </Typography>
             </Stack>
           )}
@@ -288,9 +288,11 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
           {service.config_mode !== 'in-app' && (
             <Typography variant="caption" color="text.secondary"
               sx={{ mt: 0.5, display: 'block', overflowWrap: 'anywhere' }}>
-              {service.config_mode === 'deployment'
-                ? '当前只能观察状态；启用、停用、重部署必须通过受限宿主维护，不提供网页控制。'
-                : '当前没有经过后端验证的应用内配置或启停能力，本页不会显示无效操作。'}
+              {service.group === 'intelligence'
+                ? '此模型没有独立启停；可在共享宿主详情保存期望、按预检安全启用，尚不能停用或重启。'
+                : service.config_mode === 'deployment'
+                  ? '此项需受控部署管理，本页不会提供尚未实现的在线操作。'
+                  : '当前没有经过后端验证的应用内配置或启停能力，本页不会显示无效操作。'}
             </Typography>
           )}
           {service.config_hint && (
@@ -1482,7 +1484,7 @@ export function XDriveServiceDependenciesPage({
                   {['photo-face', 'photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && currentTab === 'status' && (
                     <Button size="small" variant="text" sx={{ mt: 1 }}
                       onClick={() => navigateTo({ service: 'photo-face', tab: 'config' })}>
-                      查看共享 Photo Intelligence 宿主期望配置（不启停）
+                      管理共享 Photo Intelligence 宿主（仅支持安全启用）
                     </Button>
                   )}
                   {selectedPage === 'photo-auto' && currentTab === 'status' && (
@@ -1500,6 +1502,12 @@ export function XDriveServiceDependenciesPage({
                         不代表所有部署节点，也不等同于一次实际媒体分析或同步任务成功。
                       </Typography>
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
+                      {['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && (
+                        <Button variant="text" size="small" sx={{ alignSelf: 'flex-start' }}
+                          onClick={() => navigateTo({ service: 'photo-face', tab: 'verify' })}>
+                          检测共享宿主与四类模型 Info（手动、只读）
+                        </Button>
+                      )}
                       <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
                         onClick={() => setRefreshID((value) => value + 1)}
                         disabled={loading}>重新检测此服务状态</Button>

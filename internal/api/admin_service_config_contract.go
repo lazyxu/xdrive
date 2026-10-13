@@ -14,12 +14,12 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 	case "geonames":
 		return "in-app", "immediate",
 			"在管理员页面持久化修改匹配距离（大于0且不超过500 km）并热生效；完整数据集可手动验证重载。数据根目录仍是受信任的只读部署挂载。其他 Server 实例每 30 秒尝试读取最新匹配距离、校验现有只读数据集并热生效；失败保留旧索引并显示待生效。状态仅代表当前实例，不是集群确认；GeoNames 仅提供地名标签"
-	case "photo-face", "photo-smart", "photo-semantic":
+	case "photo-face":
+		return "in-app", "controlled-restart",
+			"本页可保存和回滚共享 Photo Intelligence 宿主的启停期望；仅对已保存启用修订提供管理员确认、审计和固定 Host Manager 的安全启用（仅启用）流程。已验证宿主请求不等于四类模型实际任务生效；停用、重启、模型镜像、Socket 和资源参数仍由受控部署管理，自动任务准入由全局分析策略独立控制"
+	case "photo-smart", "photo-semantic", "photo-creative":
 		return "deployment", "controlled-restart",
-			"模型容器、Socket 和资源参数仍由受控部署管理；本页可独立保存共享 Photo Intelligence 宿主启停期望（含审计与历史回滚），但尚不能实际应用容器；Host Manager 只读核验固定 photo-face 容器状态，模型 Info 独立核验。自动任务准入另由全局策略控制。实际启停仍需受限审计、回滚和宿主修订效果证明"
-	case "photo-creative":
-		return "deployment", "controlled-restart",
-			"统一使用可选 photo-intelligence 容器；Host Manager 只读观察部署 Profile 与固定 photo-face 容器状态，创作模型 Info 独立核验。在线启停和模型镜像/Socket 变更仍缺受限执行、审计与安全回滚，不提供虚假开关"
+			"此模型没有独立启停接口；共享 Photo Intelligence 宿主的期望配置、历史及仅启用操作集中在人脸检测与人物聚类详情。模型镜像、Socket 与资源参数由受控部署管理，停用和重启尚未开放；每类模型 Info 需独立检测，宿主健康与请求代际关联均不等于实际媒体任务成功"
 	case "media-worker":
 		return "in-app", "controlled-restart",
 			"本页可版本化保存启停目标、内存上限（256–4096 MiB）、CPU 上限（250–4000 mCPU）和 PID 上限（64–1024）；保存不会直接操作容器。仅受限 Host Manager 可单独应用并重建 media-worker；仅在期望修订与实际启停状态、Docker 内存/CPU/PID 限制和 FFmpeg/FFprobe 探针全部匹配时确认生效。旧版控制器和配额漂移不得显示成功。镜像及挂载仍由部署管理，不重启其他服务。"

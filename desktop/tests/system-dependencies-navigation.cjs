@@ -220,10 +220,16 @@ test('shared Web and Desktop service rows expose true configuration ownership, n
   assert.ok(page.includes("Record<XDriveServiceConfigMode | 'unknown', string>"))
   for (const label of [
     '配置能力未知（请核对 Server/Agent 版本）',
-    '仅受控部署管理（本页不启停）',
+    '模型／资源由受控部署管理（具体能力见详情）',
     '暂未提供应用内配置',
     '应用内可配置（能否启停以详情页为准）',
   ]) assert.ok(page.includes(label))
+  // Shared host has a reviewed enable-only operation: the display contract
+  // cannot regress to claiming that absolutely no in-app host operation exists.
+  assert.ok(page.includes('共享宿主仅支持审计后的安全启用'))
+  assert.ok(page.includes('管理共享 Photo Intelligence 宿主（仅支持安全启用）'))
+  assert.ok(page.includes('检测共享宿主与四类模型 Info（手动、只读）'))
+  assert.equal(page.includes('尚无受限容器启停接口'), false)
   assert.ok(page.includes('data-xdrive-service-config-mode'))
   assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
   assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
