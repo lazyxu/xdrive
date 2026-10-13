@@ -1073,8 +1073,13 @@ export default function App({
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
     })
+    // The React state setter has a stable identity for this App instance.
+    // Only a newer successful settings write may invalidate this bootstrap read.
+    const preferencesRevisionAtBootstrap = Reflect.get(setDesktopPreferences, Symbol.for('xdrive.desktop.preferencesUserWriteRevision')) ?? 0
     void window.xdriveDesktop.getPreferences().then((value) => {
-      if (active) setDesktopPreferences(value)
+      if (!active) return
+      if ((Reflect.get(setDesktopPreferences, Symbol.for('xdrive.desktop.preferencesUserWriteRevision')) ?? 0) !== preferencesRevisionAtBootstrap) return
+      setDesktopPreferences(value)
     })
     void window.xdriveDesktop.getLoginHistory().then((value) => {
       if (!active || hasLoginHistoryEvent) return
@@ -1332,6 +1337,9 @@ export default function App({
       setError(result.error.message)
       return
     }
+    // An acknowledged user change owns the setting over an older startup read.
+    const revisionKey = Symbol.for('xdrive.desktop.preferencesUserWriteRevision')
+    Reflect.set(setDesktopPreferences, revisionKey, (Reflect.get(setDesktopPreferences, revisionKey) ?? 0) + 1)
     setDesktopPreferences((current) => ({ ...current, start_at_login: result.data.start_at_login }))
     setNotice(enabled ? 'xDrive 桌面版将在登录系统后自动启动。' : '已关闭开机启动。')
   }
