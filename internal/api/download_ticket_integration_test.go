@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -184,8 +185,86 @@ func TestAuthenticatedDownloadTicketsStreamWithoutBearerAndFenceState(t *testing
 		t.Fatalf("version bytes=%q want=%q", versionRes.Body.Bytes(), versionBytes)
 	}
 
+	// S4C3-A: authentic signed-download 64-bit HTTP Range boundary coverage.
+	// Sparse file is deliberately NOT a whole-file SHA or native OS-download proof.
+	const largeSize int64 = (4 << 30) + 17
+	const cross2GiB int64 = (2 << 30) - 8
+	largeKey := "download/pwa-s4c3a-sparse-large.bin"
+	filePath := filepath.Join(store.FilesystemRoot(), filepath.FromSlash(largeKey))
+	largeFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crossMarker := []byte("S4C3-2GiB-crossing-marker")
+	tailMarker := []byte("S4C3-after-4GiB")
+	tailOffset := largeSize - int64(len(tailMarker))
+	if err := largeFile.Truncate(largeSize); err != nil {
+		_ = largeFile.Close()
+		t.Fatal(err)
+	}
+	if _, err := largeFile.WriteAt(crossMarker, cross2GiB); err != nil {
+		_ = largeFile.Close()
+		t.Fatal(err)
+	}
+	if _, err := largeFile.WriteAt(tailMarker, tailOffset); err != nil {
+		_ = largeFile.Close()
+		t.Fatal(err)
+	}
+	if err := largeFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	largeNode := meta.Node{Name: "pwa-s4c3a-sparse-large.bin", Type: meta.NodeTypeFile, OwnerID: user.ID, Revision: 7}
+	if err := db.Create(&largeNode).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&meta.File{NodeID: largeNode.ID, Size: largeSize, StorageKey: largeKey,
+		SHA256: strings.Repeat("c", 64)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	largeTicketResponse := request(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/files/%d/download-ticket", largeNode.ID), accessToken, nil, http.StatusOK)
+	var largeTicket authenticatedDownloadTicketDTO
+	if err := json.Unmarshal(largeTicketResponse.Body.Bytes(), &largeTicket); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		offset int64
+		want   []byte
+	}{
+		{name: "cross 2 GiB", offset: cross2GiB, want: crossMarker},
+		{name: "last 16+ bytes beyond 4 GiB", offset: tailOffset, want: tailMarker},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rangeHeader := fmt.Sprintf("bytes=%d-%d", tc.offset, tc.offset+int64(len(tc.want))-1)
+			resp := requestWithHeaders(t, router, http.MethodGet, largeTicket.URL, "", nil,
+				http.StatusPartialContent, map[string]string{"Range": rangeHeader})
+			if got, want := resp.Header().Get("Content-Range"),
+				fmt.Sprintf("bytes %d-%d/%d", tc.offset, tc.offset+int64(len(tc.want))-1, largeSize); got != want {
+				t.Fatalf("Content-Range=%q want=%q", got, want)
+			}
+			if got, want := resp.Header().Get("Content-Length"), fmt.Sprint(len(tc.want)); got != want {
+				t.Fatalf("Content-Length=%q want=%q", got, want)
+			}
+			if got := resp.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+				t.Fatalf("private download response must not be cached: %q", got)
+			}
+			if !bytes.Equal(resp.Body.Bytes(), tc.want) {
+				t.Fatalf("sparse Range payload mismatch at offset %d", tc.offset)
+			}
+		})
+	}
+	beyondEOF := requestWithHeaders(t, router, http.MethodGet, largeTicket.URL, "", nil,
+		http.StatusRequestedRangeNotSatisfiable,
+		map[string]string{"Range": fmt.Sprintf("bytes=%d-", largeSize)})
+	if got, want := beyondEOF.Header().Get("Content-Range"), fmt.Sprintf("bytes */%d", largeSize); got != want {
+		t.Fatalf("out-of-bounds Range Content-Range=%q want=%q", got, want)
+	}
+	// Token revocation must fence even a previously valid >4 GiB Range.
 	if err := db.Model(&meta.User{}).Where("id = ?", user.ID).Update("session_version", 2).Error; err != nil {
 		t.Fatal(err)
 	}
+	requestWithHeaders(t, router, http.MethodGet, largeTicket.URL, "", nil,
+		http.StatusUnauthorized, map[string]string{"Range": fmt.Sprintf("bytes=%d-", tailOffset)})
 	request(t, router, http.MethodGet, versionTicket.URL, "", nil, http.StatusUnauthorized)
 }
