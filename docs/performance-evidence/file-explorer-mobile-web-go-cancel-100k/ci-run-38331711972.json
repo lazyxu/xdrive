@@ -1,0 +1,380 @@
+{
+  "provenance": {
+    "run_id": 38331711972,
+    "job_id": 115082676555,
+    "source_commit_sha": "9f3081cddc7a0d36545499bcd076c18d7ae57dd6",
+    "workflow": "Mobile Web FileExplorer 100k Go Context Cancellation P040",
+    "source_url": "https://github.com/lazyxu/xdrive/actions/runs/38331711972",
+    "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38331711972/artifacts/11783601327",
+    "artifact_id": 11783601327,
+    "workload_id": "P040",
+    "dataset": "100000 logical File/Node/MediaMetadata records per fresh PostgreSQL17 fixture, only 16 distinct physical JPEG CAS originals",
+    "platform": "Linux GitHub Actions/Xvfb Electron Chromium 390px BrowserWindow (actual document clientWidth 375px), production shared Web FileExplorer Grid/Details",
+    "cache": "real initial 6 first visible JPEG HTTP slow streams 256 B each then test-only 1.5 s deliberate wait",
+    "samples": "Grid n=3, Details n=3, 6 independent real database fixtures",
+    "not_valid_for": [
+      "real installed PWA",
+      "Android/iOS physical devices",
+      "100k different physical JPEGs",
+      "production WAN/media throughput",
+      "durable Task Center cancellation"
+    ]
+  },
+  "freeze": {
+    "contextDoneRequired": 36,
+    "canceledHandlersRequired": 36,
+    "maxNotificationMs": 160,
+    "oldHandlersAfter160ms": 0,
+    "bytesWastedAfterScroll": 0,
+    "requiredNarrowCssWidth": [
+      375,
+      390
+    ],
+    "logicalItems": 100000,
+    "distinctPhysicalJpegOriginals": 16,
+    "successfulRangePageSize": 200,
+    "rendererAndGoRssGrowthLimitBytes": 134217728
+  },
+  "before": {
+    "status": "Accepted CURRENT",
+    "samples": 6,
+    "statistics": {
+      "sessionCount": 6,
+      "requestsStarted": 36,
+      "goContextDone": 36,
+      "goHandlersCanceled": 36,
+      "oldHandlersAt160ms": 0,
+      "bytesBeforeEviction": 9216,
+      "bytesWastedAfterEviction": 0,
+      "goCancelWorstMs": 21.979,
+      "gridMedianOfPerSessionWorstMs": 15.346,
+      "detailsMedianOfPerSessionWorstMs": 15.664,
+      "mountedBeforeScrollMax": 23,
+      "goRssGrowthMaxBytes": 20480,
+      "rendererRssGrowthMaxBytes": 3088384,
+      "goCpuDeltasMs": [
+        20,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "rendererCpuDeltasMs": [
+        20,
+        20,
+        10,
+        20,
+        30,
+        20
+      ],
+      "electronMainCpuDeltasMs": [
+        10.054,
+        8.256,
+        9.241,
+        7.925,
+        7.388,
+        8.058
+      ]
+    }
+  },
+  "after": null,
+  "speedup": null,
+  "raw": {
+    "summary": {
+      "status": "measured-Mobile-Web-390px-FileExplorer-100k-scroll-to-real-Go-cancellation",
+      "mobileCancelMode": true,
+      "cssWindowWidth": 390,
+      "observedDocumentWidth": 375,
+      "sampleCount": 6,
+      "eachModeSamples": 3,
+      "budgetMs": 160,
+      "views": [
+        "grid",
+        "details"
+      ],
+      "worstGoContextMs": 21.979,
+      "passed": true,
+      "limits": "390px shared Web FileExplorer, 100k metadata + only 16 physical JPEG originals, 6 first-chunk slow HTTP requests per Grid/Details view; 3 independent runs each. Actual Electron Chromium 375px document and Linux native Go Context.Done, not full Mobile App Frame, real iOS/Android device, installed PWA, sustained Go/Renderer peak or durable Task Center cancellation."
+    },
+    "samples": [
+      {
+        "view": "grid",
+        "sample": 1,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8935.017,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 3699691,
+          "extent": 7399382,
+          "viewportHeight": 630,
+          "mountedBefore": 16,
+          "loadedImagesBefore": 16
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 21.979
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 48902144,
+          "goRssAfterBytes": 45035520,
+          "goRssGrowthBytes": 0,
+          "goCpuDeltaMs": 20,
+          "rendererRssBeforeBytes": 175865856,
+          "rendererRssAfterBytes": 178954240,
+          "rendererRssGrowthBytes": 3088384,
+          "rendererCpuDeltaMs": 20,
+          "electronMainCpuDeltaMs": 10.054
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      },
+      {
+        "view": "grid",
+        "sample": 2,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8899.439,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 3699691,
+          "extent": 7399382,
+          "viewportHeight": 630,
+          "mountedBefore": 16,
+          "loadedImagesBefore": 16
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 12.325
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 55791616,
+          "goRssAfterBytes": 55799808,
+          "goRssGrowthBytes": 8192,
+          "goCpuDeltaMs": 0,
+          "rendererRssBeforeBytes": 174755840,
+          "rendererRssAfterBytes": 177725440,
+          "rendererRssGrowthBytes": 2969600,
+          "rendererCpuDeltaMs": 20,
+          "electronMainCpuDeltaMs": 8.256
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      },
+      {
+        "view": "grid",
+        "sample": 3,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8964.833,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 3699691,
+          "extent": 7399382,
+          "viewportHeight": 630,
+          "mountedBefore": 16,
+          "loadedImagesBefore": 16
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 15.346
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 46804992,
+          "goRssAfterBytes": 46817280,
+          "goRssGrowthBytes": 12288,
+          "goCpuDeltaMs": 0,
+          "rendererRssBeforeBytes": 176717824,
+          "rendererRssAfterBytes": 178798592,
+          "rendererRssGrowthBytes": 2080768,
+          "rendererCpuDeltaMs": 10,
+          "electronMainCpuDeltaMs": 9.241
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      },
+      {
+        "view": "details",
+        "sample": 1,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8920.996,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 2599701,
+          "extent": 5199402,
+          "viewportHeight": 630,
+          "mountedBefore": 23,
+          "loadedImagesBefore": 23
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 15.664
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 45658112,
+          "goRssAfterBytes": 45658112,
+          "goRssGrowthBytes": 0,
+          "goCpuDeltaMs": 0,
+          "rendererRssBeforeBytes": 176230400,
+          "rendererRssAfterBytes": 178728960,
+          "rendererRssGrowthBytes": 2498560,
+          "rendererCpuDeltaMs": 20,
+          "electronMainCpuDeltaMs": 7.925
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      },
+      {
+        "view": "details",
+        "sample": 2,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8762.894,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 2599701,
+          "extent": 5199402,
+          "viewportHeight": 630,
+          "mountedBefore": 23,
+          "loadedImagesBefore": 23
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 11.681
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 44498944,
+          "goRssAfterBytes": 44515328,
+          "goRssGrowthBytes": 16384,
+          "goCpuDeltaMs": 0,
+          "rendererRssBeforeBytes": 176300032,
+          "rendererRssAfterBytes": 178601984,
+          "rendererRssGrowthBytes": 2301952,
+          "rendererCpuDeltaMs": 30,
+          "electronMainCpuDeltaMs": 7.388
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      },
+      {
+        "view": "details",
+        "sample": 3,
+        "logicalNodes": 100000,
+        "physicalJPEGOriginals": 16,
+        "seedMsExcluded": 8824.288,
+        "mobileCancelMode": true,
+        "mobileCssWindowWidth": 390,
+        "scroll": {
+          "clientWidth": 375,
+          "narrowBreakpoint": true,
+          "oldScrollTop": 0,
+          "newScrollTop": 2599701,
+          "extent": 5199402,
+          "viewportHeight": 630,
+          "mountedBefore": 23,
+          "loadedImagesBefore": 23
+        },
+        "go": {
+          "started": 6,
+          "contextDone": 6,
+          "canceled": 6,
+          "stillActiveAt160ms": 0,
+          "oldBytesBeforeScroll": 1536,
+          "staleBytesAfterScroll": 0,
+          "worstContextNotificationMs": 16.354
+        },
+        "resource": {
+          "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+          "goRssBeforeBytes": 45875200,
+          "goRssAfterBytes": 45895680,
+          "goRssGrowthBytes": 20480,
+          "goCpuDeltaMs": 0,
+          "rendererRssBeforeBytes": 178102272,
+          "rendererRssAfterBytes": 180289536,
+          "rendererRssGrowthBytes": 2187264,
+          "rendererCpuDeltaMs": 20,
+          "electronMainCpuDeltaMs": 8.058
+        },
+        "healthy": {
+          "status": 200,
+          "total": 100000,
+          "returned": 200
+        },
+        "scope": "Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN."
+      }
+    ]
+  },
+  "decision": "ACCEPT CURRENT / no production change, 0 performance RED. First invalid harness run 38331391630 failed gofmt before collecting samples; fixed format only and preserved separately."
+}

@@ -3,14 +3,31 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const { performance } = require('node:perf_hooks')
 const { app, BrowserWindow } = require('electron')
 
 const root = path.resolve(__dirname, '..', '..')
 const dist = path.join(root, 'web', 'dist')
-const out = path.join(__dirname, '..', 'file-explorer-real-scroll-results')
+// P040 is a new narrow-viewport measurement, not a re-run of accepted wide-Web P015.
+const mobileCancelMode = process.env.XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF === '1'
+const out = path.resolve(process.env.XD_FILEEXPLORER_REAL_SCROLL_RESULTS ||
+  path.join(__dirname, '..', mobileCancelMode ?
+    'file-explorer-mobile-go-cancel-100k-results' : 'file-explorer-real-scroll-results'))
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+const ticksPerSecond = mobileCancelMode ?
+  Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim()) : 0
+if (mobileCancelMode) assert(ticksPerSecond > 0, 'Linux CLK_TCK required for real Go/Renderer CPU')
+function processSnapshot(pid) {
+  assert(Number.isSafeInteger(pid) && pid > 0, 'real native process PID required')
+  const status = fs.readFileSync('/proc/' + pid + '/status', 'utf8')
+  const rss = status.match(/^VmRSS:\s+(\d+) kB/m)
+  const stat = fs.readFileSync('/proc/' + pid + '/stat', 'utf8')
+  const fields = stat.slice(stat.lastIndexOf(')') + 2).trim().split(/\s+/)
+  const ticks = Number(fields[11]) + Number(fields[12])
+  assert(rss && Number.isFinite(ticks), 'real Linux process CPU/RSS unavailable')
+  return { pid, rssBytes: Number(rss[1]) * 1024, cpuMs: ticks * 1000 / ticksPerSecond }
+}
 app.on('window-all-closed', () => {})
 app.commandLine.appendSwitch('no-sandbox')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
@@ -83,6 +100,8 @@ function scrollMountedFileExplorer() {
     host.scrollTop = Math.floor(extent * 0.5)
     host.dispatchEvent(new Event('scroll'))
     return {
+      clientWidth: document.documentElement.clientWidth,
+      narrowBreakpoint: matchMedia('(max-width: 899px)').matches,
       oldScrollTop, newScrollTop: host.scrollTop,
       extent, viewportHeight: host.clientHeight, mountedBefore,
       loadedImagesBefore: document.querySelectorAll('[data-xdrive-file-explorer-item-visual]').length,
@@ -121,9 +140,11 @@ async function sampleOnce(view, sample, readyFile) {
     assert.equal(fixture.config.logical_count, 100000)
     assert.equal(fixture.config.first_image_nodes.length, 6)
     window = new BrowserWindow({
-      show: true, width: 1440, height: 900,
+      show: true, width: mobileCancelMode ? 390 : 1440,
+      height: mobileCancelMode ? 844 : 900,
       webPreferences: {
-        partition: 'real-file-explorer-scroll-' + view + '-' + sample,
+        partition: (mobileCancelMode ? 'mobile-file-explorer-go-cancel-' :
+          'real-file-explorer-scroll-') + view + '-' + sample,
         sandbox: false, nodeIntegration: false, contextIsolation: true,
         webSecurity: true, backgroundThrottling: false,
       },
@@ -145,6 +166,13 @@ async function sampleOnce(view, sample, readyFile) {
       return current.started === 6 && current.active === 6 &&
         current.first_chunks === 6 && current.emitted_bytes === 1536 ? current : null
     }, 60000, 'six first-viewport genuine HTTP JPEG streams (' + view + ')')
+    // Read resource counters from the actual Go test process and Electron Renderer.
+    // Only the 160 ms cancellation interval is compared; cold boot/100k seed excluded.
+    if (mobileCancelMode) assert(Number.isSafeInteger(fixture.config.server_pid) &&
+      fixture.config.server_pid > 0, 'real Go fixture PID missing')
+    const goBefore = mobileCancelMode ? processSnapshot(fixture.config.server_pid) : null
+    const rendererBefore = mobileCancelMode ? processSnapshot(window.webContents.getOSProcessId()) : null
+    const electronCPUStart = mobileCancelMode ? process.cpuUsage() : null
     const marker = await fetch(fixture.config.url + '/__perf/viewport-cancel-mark', {
       method: 'POST',
     })
@@ -156,6 +184,9 @@ async function sampleOnce(view, sample, readyFile) {
       'real 100k FileExplorer scroll did not advance: ' + JSON.stringify(scroll))
     assert(scroll.mountedBefore > 0 && scroll.mountedBefore < 1000,
       'mounted FileExplorer item window is unbounded: ' + JSON.stringify(scroll))
+    if (mobileCancelMode) assert(scroll.narrowBreakpoint &&
+      scroll.clientWidth >= 375 && scroll.clientWidth <= 390,
+      'actual shared Mobile Web 390px breakpoint is not active: ' + JSON.stringify(scroll))
     await sleep(160)
     const after = await stats(fixture.config.url)
     const go = {
@@ -169,11 +200,33 @@ async function sampleOnce(view, sample, readyFile) {
     }
     console.log('FILEEXPLORER_REAL_WEB_SCROLL_100K_PRE_RANGE ' +
       JSON.stringify({ view, sample, scroll, go }))
+    const resource = mobileCancelMode ? (() => {
+      const goAfter = processSnapshot(fixture.config.server_pid)
+      const rendererAfter = processSnapshot(window.webContents.getOSProcessId())
+      const cpu = process.cpuUsage(electronCPUStart)
+      return {
+        scope: 'actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak',
+        goRssBeforeBytes: goBefore.rssBytes, goRssAfterBytes: goAfter.rssBytes,
+        goRssGrowthBytes: Math.max(0, goAfter.rssBytes - goBefore.rssBytes),
+        goCpuDeltaMs: Math.max(0, goAfter.cpuMs - goBefore.cpuMs),
+        rendererRssBeforeBytes: rendererBefore.rssBytes,
+        rendererRssAfterBytes: rendererAfter.rssBytes,
+        rendererRssGrowthBytes: Math.max(0, rendererAfter.rssBytes - rendererBefore.rssBytes),
+        rendererCpuDeltaMs: Math.max(0, rendererAfter.cpuMs - rendererBefore.cpuMs),
+        electronMainCpuDeltaMs: (cpu.user + cpu.system) / 1000,
+      }
+    })() : null
     const healthy = await independentRange(fixture)
     const row = {
       view, sample, logicalNodes: 100000, physicalJPEGOriginals: 16,
-      seedMsExcluded: fixture.config.seed_ms, scroll, go, healthy,
+      seedMsExcluded: fixture.config.seed_ms, mobileCancelMode,
+      mobileCssWindowWidth: mobileCancelMode ? 390 : 1440,
+      scroll, go, resource, healthy,
       scope: 'Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN.',
+    }
+    if (mobileCancelMode && (resource.goRssGrowthBytes > 134217728 ||
+      resource.rendererRssGrowthBytes > 134217728)) {
+      throw Error('P040 real 160ms Go/Renderer RSS growth exceeded 128MiB: ' + JSON.stringify(row))
     }
     if (go.started !== 6 || go.contextDone !== 6 || go.canceled !== 6 ||
       go.stillActiveAt160ms !== 0 || go.staleBytesAfterScroll !== 0 ||
@@ -204,7 +257,11 @@ async function main() {
       }
     }
     const summary = {
-      status: 'measured-real-Web-FileExplorer-Grid-Details-100k-scroll-to-Go-cancellation',
+      status: mobileCancelMode ?
+        'measured-Mobile-Web-390px-FileExplorer-100k-scroll-to-real-Go-cancellation' :
+        'measured-real-Web-FileExplorer-Grid-Details-100k-scroll-to-Go-cancellation',
+      mobileCancelMode, cssWindowWidth: mobileCancelMode ? 390 : 1440,
+      observedDocumentWidth: mobileCancelMode ? 375 : null,
       sampleCount: rows.length, eachModeSamples: 3, budgetMs: 160,
       views: ['grid', 'details'],
       worstGoContextMs: Math.max(...rows.map(row => row.go.worstContextNotificationMs)),
@@ -212,11 +269,19 @@ async function main() {
         row.go.contextDone === 6 && row.go.canceled === 6 &&
         row.go.stillActiveAt160ms === 0 && row.go.staleBytesAfterScroll === 0 &&
         row.go.worstContextNotificationMs <= 160 &&
+        (!mobileCancelMode || (row.scroll.narrowBreakpoint &&
+          row.scroll.clientWidth >= 375 && row.scroll.clientWidth <= 390 &&
+          row.resource?.goRssGrowthBytes <= 134217728 &&
+          row.resource?.rendererRssGrowthBytes <= 134217728)) &&
         row.healthy.total === 100000 && row.healthy.returned === 200),
-      limits: '100k image Nodes/Files/MediaMetadata but only 16 distinct physical JPEG CAS originals; actual mounted Web Grid/Details and Go HTTP; no Windows or Desktop Main/Agent, native Live/RAW/video codec, full-file network throughput or peak RSS.',
+      limits: mobileCancelMode ?
+        '390px shared Web FileExplorer, 100k metadata + only 16 physical JPEG originals, 6 first-chunk slow HTTP requests per Grid/Details view; 3 independent runs each. Actual Electron Chromium 375px document and Linux native Go Context.Done, not full Mobile App Frame, real iOS/Android device, installed PWA, sustained Go/Renderer peak or durable Task Center cancellation.' :
+        '100k image Nodes/Files/MediaMetadata but only 16 distinct physical JPEG CAS originals; actual mounted Web Grid/Details and Go HTTP; no Windows or Desktop Main/Agent, native Live/RAW/video codec, full-file network throughput or peak RSS.',
     }
     fs.writeFileSync(path.join(out, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
-    console.log('FILEEXPLORER_REAL_WEB_SCROLL_100K_SUMMARY ' + JSON.stringify(summary))
+    console.log((mobileCancelMode ?
+      'FILEEXPLORER_MOBILE_WEB_GO_CANCEL_100K_SUMMARY ' :
+      'FILEEXPLORER_REAL_WEB_SCROLL_100K_SUMMARY ') + JSON.stringify(summary))
     assert(summary.passed, 'mounted FileExplorer Grid/Details cancellation budget failed')
   } finally {
     fs.rmSync(temp, { recursive: true, force: true })

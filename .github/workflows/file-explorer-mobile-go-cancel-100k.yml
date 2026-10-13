@@ -1,0 +1,74 @@
+name: Mobile Web FileExplorer 100k Go Context Cancellation P040
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-fileexplorer-go-cancel-100k:
+    if: github.head_ref == 'perf/file-explorer-mobile-go-cancel-100k-p040-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF: '1'
+      XD_FILEEXPLORER_REAL_SCROLL_RESULTS: ${{ github.workspace }}/desktop/file-explorer-mobile-go-cancel-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source-exact P040 narrow UI and real Go cancellation contract
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go)"
+          node --check desktop/scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+          node --test desktop/tests/file-explorer-mobile-go-cancel-100k-source.cjs
+      - name: Build actual shared Web Files and Electron with native Go PostgreSQL17 Gin CAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      - name: Measure 100k authentic narrow Grid and Details virtual scroll upstream Go Context Done n3
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS"
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+          test "$(find "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS" -maxdepth 1 -name '*-sample-*.json' | wc -l)" -eq 6
+          node -e "const s=require(process.env.XD_FILEEXPLORER_REAL_SCROLL_RESULTS+'/summary.json');if(!s.passed||!s.mobileCancelMode||s.cssWindowWidth!==390||s.sampleCount!==6||s.worstGoContextMs>160)process.exit(1);console.log(JSON.stringify({passed:s.passed,samples:s.sampleCount,worstGoContextMs:s.worstGoContextMs}))"
+          cat "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-mobile-web-390px-100k-go-cancel-n3
+          path: desktop/file-explorer-mobile-go-cancel-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
