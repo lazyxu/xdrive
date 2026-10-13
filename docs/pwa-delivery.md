@@ -409,3 +409,13 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **必须严格区分：** 稀疏文件和少量 Range 校验证明的是 **64 位 seek / HTTP 响应与权限边界**，**绝不能**证明完整 4 GiB 字节 SHA、Chrome/Android 浏览器 Native Download 真正写盘成功、取消后本机部分文件被正确丢弃、Range 自动重试或 iOS 27 Home Screen 真机能力；这些维持 `not-run`。P044 只证明 Web/OPFS 高熵完整下载，不可移作 Native Download 证据。
 
 **门槛与后续：** 本阶段 Go 源文件 gofmt 和独立 Go 标准库 sparse/ServeContent 64 位 range 探针通过；完整仓库集成/CI 需在准确 PR HEAD 验证。保持单工作提交 + Draft，完整 PR CI 与 Final Gate 成功后才可 Ready/线性合并并核查分支清理。接着 S4C3-B 应使用真实 Playwright Chrome 浏览器接管原生下载，验证实际下载盘文件 1/4 GiB SHA-256、取消/票据失效和 206/416；之后推进 S4D 生命周期与 S5 iOS/Android Installed/HTTPS/回滚真机验收。
+
+## PWA-S4C3-B1 · 真实 Chrome 原生下载到 OS 文件并校验完整 SHA-256（2026-10-13）
+
+**已收尾的上游：** S4C3-A [PR #1654](https://github.com/lazyxu/xdrive/pull/1654)，准确 HEAD `a9531ce0` 的[完整 CI #38361675993](https://github.com/lazyxu/xdrive/actions/runs/38361675993) **25 成功/51 条件跳过，Final Gate success**，已单提交线性合入 `master@2f04e5612bc4b2bfb72162ab9bb5b2c5d985f230`，旧分支清理，开放 PWA PR/分支为空。冻结这个 master 继续 B1，不重复 P044 的 Web/OPFS 4 GiB 完整高熵性能回归。
+
+**B1 的独立、可复核真实验收范围：** 复用隔离 `TestPWAS2B3RealGinAuthFixture` 的真 Gin Router / PostgreSQL17 schema / Web 生产构建 / Owner 登录和严格目录路由，仅在 `XD_PWA_S4C3_NATIVE_DOWNLOAD=1` 的 test-only 模式种入 **1 GiB 真正写盘（Linux allocated ≥98%）的 AES-256-CTR 合成源**到 immutable canonical Local CAS。生成流两遍、第一遍计算 SHA-256、第二遍写入并被 Storage 自身验证；独立 Go 后置全读 CAS 检查 SHA、数据库 Owner/文件/Blob 引用不变。Node Playwright 通过真实桌面与 Android UA/touch 390px 的 Web/Mobile Web 文件管理器菜单点击“下载”，测试时明确关闭 `showSaveFilePicker` **能力以走浏览器原生下载回退**，不 mock HTTP、Server、File/Blob 或下载响应。真正的 Chrome `Download` 保存到临时 OS 文件，要求实际占盘率≥98%、完整大小和 Node 流式重新读取的全量 SHA 等于 Gin CAS 原始 SHA；原生签名 URL 在内存内复验真实 `206` 首/尾 Range、`416` 越界和无票据 `401`，SW CacheStorage 只能含公开 `/offline.html`。真实下载文件、JWT、ticket URL、浏览器 profile、Gin 原始日志绝不归档，只存不含凭据的阶段/布尔/大小摘要。
+
+**独立 CI 及交付门槛：** `.github/workflows/pwa-s4c3-real-native-download.yml` 仅对这一 B1 PR 专项分支或手动 dispatch 执行，默认两个环境各 **一次 1 GiB**，4 GiB 为有真实磁盘 preflight 的单独 `workflow_dispatch` 选项，**未运行不得宣称 4 GiB native 通过**。固定唯一 work commit、准确 HEAD 的完整 PR CI/Final Gate **以及** Chrome+Go 实体专项两者皆成功后才允许 Draft→Ready→单提交线性 merge→核对自动 cleanup。失败先区分本测试夹具/浏览器选择与产品缺陷，不降低全字节 SHA/Owner/权限/缓存/空间门槛。
+
+**平台和下一阶段：** Chrome Android 触摸/UA 390px 只是模拟，不是 Android `OS Installed`，更不是 iOS 27 Safari/Home Screen，不能保证锁屏或强杀后台仍能下载，也未验浏览器管理的中断下载后自动 Range 续传、系统实际 Download Manager、iOS Files App 目标或 4 GiB 已安装模式。本测试检查“正常完整下载后实际落盘 SHA”，不把既有 OPFS 测试冒充 native。S4C3-B2 继续 4 GiB native 下载与取消/过期/撤销/自动 Range 续传，随后 S4D 前后台生命周期、S5 真机 HTTPS/性能/隐私/发布回滚。保留 52px App Frame、Web/Mobile Web 共享 REST/虚拟组件与 Server Durable Task 边界。
