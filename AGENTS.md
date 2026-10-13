@@ -12,6 +12,12 @@ For every follow-up request to "continue" an ongoing development, audit, or CI/P
 
 The progress report is required even when no code changes are possible. Follow the provider-specific GitHub/GitLab delivery and single-work-commit rules below; do not claim a GitLab push or cleanup if it was not actually performed.
 
+## P1-PH1b2c2c3b1 — Fixed Smart visual/OCR model execution safety (2026-10-13)
+
+- Only the existing administrator-only, no-store manual Photo Host 检测 may invoke the authenticated fixed Unix `GET /v1/smart-model-canary`. The Smart model generates the entire 'XDRIVE' and 'XD' synthetic input internally. No browser text, media bytes, preview URL, Source, ticket, arbitrary host path, or Docker command crosses the boundary.
+- Require exact audited Host Manager enable request, four same-process Info ACKs, Docker generation and Linux kernel Socket owner, and empty queue before invocation. Share the current Go text/image/YuNet/Smart mutex and separate 60-second Smart cooldown; run bounded model inference and re-read current Smart Info and trusted host revision/ACK afterward. Missing new model/Agent capabilities fail closed. Return only sanitized optional `smart_model_task_state` via the shared Web/Mobile Web/Desktop MUI.
+- Count bounds and executed flags establish real MobileNetV2, PP-OCR detector, CRNN execution, not recognition correctness: zero boxes/characters/labels do not prove successful OCR of the synthetic text. **Never** elevate global `effect-proof=unknown` or four `activation_state=deployment-only`, grant safe stop/restart, or claim real gallery, SFace, Creative or fleet readiness. See [docs/service-dependencies.md](docs/service-dependencies.md#p1-ph1b2c2c3b1-2026-10-13-fixed-smart-visual--ocr-execution-on-model-local-glyphs).
+
 ## P1-PH1b2c2c3a — Fixed YuNet detector test (2026-10-13)
 
 - Only the administrator's explicitly invoked no-store Photo Host **检测** may call authenticated, fixed model Unix `GET /v1/face-detector-canary`. Python generates deterministic NON-person pixels internally. Never accept user media, preview URL, arbitrary path/query/body, Source task, or grant Server/Renderer host control.
