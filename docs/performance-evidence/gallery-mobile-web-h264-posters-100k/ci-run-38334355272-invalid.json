@@ -1,0 +1,39 @@
+{
+  "benchmark_id": "P041",
+  "stage": "Invalid harness / no valid H264 visible viewport measurements",
+  "source_commit_sha": "23d81e09077aa19ede2b19d0cfd786760a0099c2",
+  "run_id": 38334355272,
+  "job_id": 115090988658,
+  "url": "https://github.com/lazyxu/xdrive/actions/runs/38334355272",
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38334355272/artifacts/11784143275",
+  "physical_dataset_observed": {
+    "logical_assets": 100000,
+    "distinct_physical_CAS_originals": 115000,
+    "physical_original_bytes": 149285128,
+    "verified_source_readbacks": 12,
+    "live_photo_groups": 15000,
+    "server_seed_ms": 96910.806
+  },
+  "first_real_web_viewport": {
+    "css_window_width_px": 390,
+    "viewport_fraction_target": 0,
+    "complete_viewport_sample": false,
+    "observed_http": {
+      "thumbnail_GET_200_four_JPEG_static_requests": true,
+      "observed_JPEG_response_sizes_bytes": [
+        707,
+        707,
+        715,
+        715
+      ],
+      "video_preview_or_poster_put_observed": false
+    },
+    "error_in_CI": "GALLERY_REAL_H264_100K_ERROR Error: timeout two new visible real signed-H264 captured-and-saved posters fraction 0",
+    "clarification": "The error retains P033's wide-mode literal 'two'; P041 configured a minimum of one video poster. The network log showed only four initial static JPEG GETs, with no observed H264 poster path. This does NOT establish any decoded H264 viewport timing or an actual product performance RED."
+  },
+  "decision": "Invalid harness or missing visible video at the specific nominal narrow viewport. Improve ONLY benchmark test driver to find actual H264 video tiles using bounded real DOM virtual scroll (max10 neighbor moves) while preserving 25s combined seek+decode timer and all CPU/RSS/CAS/correctness gates. Re-test source-exact, do not modify product.",
+  "before_ms": null,
+  "after_ms": null,
+  "speedup_pct": null,
+  "samples_valid": 0
+}
