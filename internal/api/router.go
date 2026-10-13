@@ -344,6 +344,11 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/local-identity/commit-intents/page", s.requireLocalSourceExecutor(), s.readLocalSourceCommitIntentPage)
 	// L03-E1a: private bounded physical CAS check of exact quarantined IDs; never a commit token.
 	authed.POST("/sources/:id/local-identity/commit-intents/content-preflight", s.requireLocalSourceExecutor(), s.preflightLocalQuarantinedContent)
+	// Owning-Agent-only temporary byte transfer. No canonical upload, Node, SourceItem or Run writes.
+	authed.POST("/sources/:id/local-staging", s.requireLocalSourceExecutor(), s.createLocalPushStage)
+	authed.GET("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.getLocalPushStage)
+	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
+	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
 	authed.DELETE("/sources/:id", s.requireLocalSourceExecutor(), s.deleteSource)
 	// Only the enrolled creator Agent may discard a never-bound, empty draft.
