@@ -21,6 +21,7 @@ test('Photo Intelligence preflight is read-only, administrator-only and does not
 })
 
 test('Photo Intelligence local preflight has one lazy shared UI path across Web/Mobile Web/Desktop', () => {
+  const preflight = read('internal/api/admin_photo_host_preflight.go')
   const page = read('ui/shared/src/mui/PhotoHostDesiredPanel.tsx')
   const type = read('ui/shared/src/service-dependencies.ts')
   const client = read('internal/client/client.go')
@@ -50,6 +51,13 @@ test('Photo Intelligence local preflight has one lazy shared UI path across Web/
   assert.ok(page.includes('data-xdrive-photo-model-request-ack-verified'))
   assert.ok(page.includes('preflight.model_request_ack_verified'))
   assert.ok(type.includes('model_request_ack_verified?: boolean'))
+  assert.ok(type.includes('semantic_text_task_state?:'))
+  assert.ok(page.includes('data-xdrive-photo-semantic-text-task-state'))
+  assert.ok(page.includes("preflight.semantic_text_task_state === 'verified'"))
+  assert.ok(preflight.includes('s.photoHostSemanticTextProbe('))
+  assert.ok(read('internal/api/admin_photo_host_semantic_probe.go').includes('photoHostSemanticProbeText'))
+  assert.ok(client.includes('SemanticTextTaskState'))
+  assert.ok(desktopClient.includes('semantic_text_task_state?:'))
   assert.ok(client.includes('ModelRequestAckVerified'))
   assert.ok(read('internal/api/admin_photo_host_preflight.go').includes('photoHostModelRequestAckVerified('))
   assert.ok(read('internal/api/admin_photo_host_model_info.go').includes('photoHostModelRequestAckVerified'))
