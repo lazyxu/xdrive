@@ -60,6 +60,26 @@ test('S4B2-A: native Chrome uses actual Files picker, hard reload and original-f
   assert.ok(!chrome.includes('skipWaiting('))
 })
 
+test('S4B2-B1: native Chrome rejects wrong name and equal-metadata changed bytes before Gin', () => {
+  const chrome = read('desktop/scripts/pwa-real-gin-upload-resume-browser.cjs')
+  for (const token of [
+    "wrongNamePath = path.join(temp, 'pwa-s4b2-wrong-name.bin')",
+    "alteredContentPath = path.join(temp, 'altered', ready.upload_name)",
+    "first[0] ^= 0xff",
+    'Math.trunc(changed.mtimeMs), Math.trunc(expected.mtimeMs)',
+    'await assertRejectedReselection(wrongNamePath,',
+    'await assertRejectedReselection(alteredContentPath,',
+    'uploadSessionRequests.length, 0',
+    "(await readRequestCounters()).session_posts, 1",
+    'x.id === originalTaskID',
+    'summary.originalRetryPreserved = true',
+    'document.body?.innerText.includes(expected) === true',
+    'await again.setFiles(filepath)',
+  ]) assert.ok(chrome.includes(token), token)
+  assert.doesNotMatch(chrome, /page\.route\(|context\.route\(|route\.fulfill\(/)
+  assert.doesNotMatch(chrome, /readFileSync\(filepath\)/)
+})
+
 test('S4B2-A: input differs from sparse-zero 1 GiB benchmark; Go and Node agree independently', () => {
   const go = read('internal/api/pwa_s2b3_real_gin_auth_integration_test.go')
   const chrome = read('desktop/scripts/pwa-real-gin-upload-resume-browser.cjs')
@@ -91,7 +111,7 @@ test('S4B2-A: real branch scoped CI never archives credentials, profiles or CAS 
   const workflow = read('.github/workflows/pwa-s4b2-real-resume.yml')
   const docs = read('docs/pwa-delivery.md')
   const script = read('desktop/scripts/pwa-real-gin-upload-resume-browser.cjs')
-  assert.ok(workflow.includes("github.head_ref == 'test/pwa-gin-chrome-upload-resume-s4b2-20261013'"))
+  assert.ok(workflow.includes("github.head_ref == 'test/pwa-upload-wrong-file-reject-s4b2b1-20261013'"))
   assert.ok(workflow.includes('node desktop/scripts/pwa-real-gin-upload-resume-browser.cjs'))
   assert.ok(workflow.includes('XD_PWA_S4B2_REAL_RESUME=1'))
   assert.ok(workflow.includes('git rev-parse HEAD'))

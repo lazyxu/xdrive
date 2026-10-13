@@ -32,6 +32,8 @@ const outputDir = path.resolve(args['output-dir'])
 fs.mkdirSync(outputDir, { recursive: true })
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-pwa-s4b2-'))
 const filepath = path.join(temp, ready.upload_name)
+const wrongNamePath = path.join(temp, 'pwa-s4b2-wrong-name.bin')
+const alteredContentPath = path.join(temp, 'altered', ready.upload_name)
 const summary = {
   phase: 'PWA-S4B2',
   mode: args.mode === 'mobile' ? 'Chrome Android UA/touch 390px emulation' : 'native Chrome desktop 1280px',
@@ -41,6 +43,8 @@ const summary = {
   inputBytes: ready.upload_size_bytes, verifiedOriginalSha256: false,
   interrupted: false, failedAttemptPersisted: false, reselectOfferedAfterReload: false,
   targetFolderReady: false, finalizedInTargetFolder: false,
+  wrongNameRejected: false, alteredContentRejected: false,
+  rejectedRequestsNeverReachedServer: false, originalRetryPreserved: false,
   completed: false, onlyPublicOfflineCache: false, browserVersion: '', passed: false,
   stage: 'setup', observedTransfers: [], serverRequestCounters: null,
 }
@@ -62,6 +66,30 @@ function originalInput() {
   assert.equal(actual.size, ready.upload_size_bytes)
   return hash.digest('hex')
 }
+// Test-only wrong candidates live on disk, never in CacheStorage or artifacts.
+// The altered file has exactly the original name, size and integer-millisecond
+// mtime: only a *full ordered chunk-manifest digest* may reject its content.
+function prepareRejectedInputs() {
+  const fixedMs = Math.trunc(fs.statSync(filepath).mtimeMs)
+  const fixedTime = new Date(fixedMs)
+  fs.utimesSync(filepath, fixedTime, fixedTime)
+  fs.copyFileSync(filepath, wrongNamePath)
+  fs.utimesSync(wrongNamePath, fixedTime, fixedTime)
+  fs.mkdirSync(path.dirname(alteredContentPath), { recursive: true })
+  fs.copyFileSync(filepath, alteredContentPath)
+  const fd = fs.openSync(alteredContentPath, 'r+')
+  try {
+    const first = Buffer.alloc(1)
+    assert.equal(fs.readSync(fd, first, 0, 1, 0), 1)
+    first[0] ^= 0xff
+    assert.equal(fs.writeSync(fd, first, 0, 1, 0), 1)
+  } finally { fs.closeSync(fd) }
+  fs.utimesSync(alteredContentPath, fixedTime, fixedTime)
+  const expected = fs.statSync(filepath)
+  const changed = fs.statSync(alteredContentPath)
+  assert.equal(changed.size, expected.size)
+  assert.equal(Math.trunc(changed.mtimeMs), Math.trunc(expected.mtimeMs))
+}
 function transferSnapshot(page) {
   return page.evaluate(({ origin, username, name }) => {
     const key = 'xdrive.web.transfer_history:' + encodeURIComponent(origin + ':' + username)
@@ -75,6 +103,7 @@ function transferSnapshot(page) {
 }
 async function run() {
   const expectedHash = originalInput()
+  prepareRejectedInputs()
   let browser
   let diagnosticsPage = null
   try {
@@ -170,9 +199,54 @@ async function run() {
       x.state === 'failed' && x.retryable && x.hasManifest))
     summary.reselectOfferedAfterReload = true
 
-    summary.stage = 'reselect'
+    summary.stage = 'reject-different-candidates'
     await page.locator('button[aria-label^="上传与下载"]').click()
     await page.getByRole('tab', { name: /历史记录/ }).click()
+    const originalTaskID = old.find(x => x.retryable).id
+    const uploadSessionRequests = []
+    // Observe only; do not intercept or mock even one authenticated API request.
+    page.on('request', request => {
+      if (request.method() === 'POST' &&
+          new URL(request.url()).pathname === '/api/v1/uploads') {
+        uploadSessionRequests.push(1)
+      }
+    })
+    async function readRequestCounters() {
+      const response = await fetch(ready.url + '/__test/pwa-s4b2/stats', {
+        cache: 'no-store', signal: AbortSignal.timeout(2500),
+      })
+      assert.equal(response.status, 200)
+      return response.json()
+    }
+    assert.equal((await readRequestCounters()).session_posts, 1)
+    async function assertRejectedReselection(filename, message, stage) {
+      summary.stage = stage
+      const action = page.getByRole('button', { name: '重新选择原文件', exact: true })
+      await action.waitFor()
+      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), action.click()])
+      await chooser.setFiles(filename)
+      // Snackbar and failed transfer row may both show the same message.
+      // A strict text locator would reject the correct product behavior.
+      await page.waitForFunction(expected => document.body?.innerText.includes(expected) === true,
+        message, { timeout: 30_000 })
+      assert.equal(uploadSessionRequests.length, 0, 'a rejected file initiated a session request')
+      assert.equal((await readRequestCounters()).session_posts, 1,
+        'a rejected file reached the real Gin upload session')
+      const attempts = await transferSnapshot(page)
+      assert(attempts.some(x => x.id === originalTaskID &&
+        x.state === 'failed' && x.retryable && x.hasManifest),
+      'rejection consumed the original retryable upload')
+    }
+    await assertRejectedReselection(wrongNamePath,
+      '所选文件与原任务的名称、大小或修改时间不一致', 'reject-name-before-server')
+    summary.wrongNameRejected = true
+    await assertRejectedReselection(alteredContentPath,
+      '所选文件内容与原上传不同', 'reject-content-before-server')
+    summary.alteredContentRejected = true
+    summary.rejectedRequestsNeverReachedServer = true
+    summary.originalRetryPreserved = true
+
+    summary.stage = 'reselect-original'
     const reselect = page.getByRole('button', { name: '重新选择原文件', exact: true })
     await reselect.waitFor()
     const [again] = await Promise.all([page.waitForEvent('filechooser'), reselect.click()])
