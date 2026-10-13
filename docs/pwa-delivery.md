@@ -357,3 +357,16 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 
 
 **B1 第一轮真实 Chrome 失败记录（2026-10-13）：** 首个 HEAD \`d29fc33ff0a82f93ff31cf164e4c20abbcde0765\` 的 [专项真实 Chrome #38340988519](https://github.com/lazyxu/xdrive/actions/runs/38340988519) 在 Desktop 模式的 \`reject-content-before-server\` 阶段红灯，\`PWA_S4B2_FAILED category=Error\`。脱敏 summary 证明 \`wrongNameRejected=true\`、旧失败任务仍为 \`retryable=true,hasManifest=true\`，另外产生一个 \`retryable=false,hasManifest=false\` 的失败记录，\`session_posts=1\`，首次请求计数保持不变。**这是浏览器断言未通过，不是已证明产品向服务器上传了错误文件。** 原断言 \`page.getByText(message)\` 可能在 Snackbar 和失败任务行存在相同错误文案时触发 Playwright strict locator 错误（日志仅给 Error 类别，不能作更强断言）；改为等待当前可见 document body 包含精确错误消息，并继续保留浏览器 POST=0、Gin session=1、旧任务不消失及原文件最终物理 CAS SHA 校验。修订进固定基线的同一唯一工作提交后，**旧 HEAD 的所有 CI 不得作为新的验收依据**；当前准确 HEAD 的完整 CI、Final Gate 与 Chrome 双环境专项需重新通过。
+
+
+## PWA-S4B2-B2 · 独立真实 1 GiB 中断上传／断点复用验收（2026-10-13）
+
+**已合并上游与阶段：** B1 [PR #1626](https://github.com/lazyxu/xdrive/pull/1626) 在准确 HEAD `03802776533843fb0afe6f442af796cb3d34aa58` 的 [完整 CI #38341340388](https://github.com/lazyxu/xdrive/actions/runs/38341340388)（25 个作业含 Final Gate）与 [真实 Chrome/Gin #38341340220](https://github.com/lazyxu/xdrive/actions/runs/38341340220) 双绿后线性合并为 `80731cdd8c46b0bc9d766e7e6bfbb4b137f49208`；相关 PWA 分支已核实删除。本阶段固定 GitHub `master@c9d5210cbff8351bd9896e36d7834839a255cebe`，新建唯一工作提交；没有其他打开的 PWA PR/分支。全局清理 workflow 因 GitHub App 403 限流曾失败，不能把它误归结为 B1 合并失败。
+
+**B2 冻结负载与真正的物理凭据：** 另启专属 branch-scoped workflow `.github/workflows/pwa-s4b2-real-1gib-resume.yml`，仅在显式环境标记 `XD_PWA_S4B2_LARGE_RESUME=1` 下，将现有 *隔离测试* Go/Gin/JWT/PostgreSQL17/Local CAS fixture 提升为确切的 **1,073,741,824 B（128×8 MiB）**，普通生产服务限额/上传 API 不变。真实 Chrome Desktop 1280px、Android UA/Touch 390px **模拟**分别在独立测试实例写入/fsync 一份非零确定性源文件，检查源文件真实磁盘分配≥98%，不是 sparse-zero benchmark。首会话仅接受 chunk0 后连续 TCP 丢弃 chunk1，强制失败/持久 manifest/冷刷新；实际 UI 人工重选同一物理文件后必须复用首块，完成 chunk1–127，证实 final chunk127 只请求一次、最终文件大小/父目录/Owner/SHA、Server 上传分块会话和独立 Go 对物理 CAS 全部 1 GiB 字节的 SHA-256 均匹配；SW 仍只缓存公开 `/offline.html`。Go 案例不会在日志/产物保存 Token、路径、File 或原件字节；两个产物只包含脱敏阶段、布尔结果和计数。
+
+**不重复与平台边界：** B1 的 17 MiB 两类错误重选已独立真实 Chrome 双平台验证，本轮 1 GiB 不再生成两份额外 1 GiB 错误副本（避免将磁盘需求无意义扩大三倍）；继续保留已有小负载代码和原工作流不变。1 GiB 不间断真实性能 P042 与新的真实 TCP 中断人工续传 *不是*相同测试。内存、速度和 4 GiB 不代表自动通过；任何真实失败需先鉴别 Node/Playwright/Go/Docker/CI 磁盘 harness 问题，不能把不合理 fixture 当生产 BUG，也不降低既定 CAS SHA、目标目录、chunk0 复用、最后一块验收。先保持 Draft，**准确 HEAD 专项成功 + 完整 GitHub CI/Final Gate 通过**后才能 Ready→单提交 rebase merge→核实冗余分支清理。
+
+**仍未实测：** 本测试的 Android UA/Touch 390px **不是**真实 Android 已安装系统 PWA；iOS 27 Safari 与主屏模式、桌面 Chrome/Edge 已安装图标、公网 HTTPS/CA、真实后台锁屏/强杀、文件夹分组失败续传、4 GiB 原生下载落盘 SHA/撤销和 S5 发布回滚独立保留。不存在保证 iOS 锁屏浏览器持续上传的行为，也不新增 Service Worker 私有缓存/后台重放/自动激活，保留 52px 全屏 App Frame 和 Web/Mobile 共用 API。
+
+**S4B2-B2 首轮 Invalid harness（2026-10-13）：** 唯一原提交 `6cd4bc0e072a2ab9648281607815801504efa029` 的 [真实 Gin/Chrome 专项 #38347122987](https://github.com/lazyxu/xdrive/actions/runs/38347122987) 已成功完成真实 Web 生产构建，但在进入 Go 测试编译/浏览器前，执行 `gofmt -l internal/api/pwa_s2b3_real_gin_auth_integration_test.go` 返回非空，导致专属工作流格式门槛中止（没有两份 summary，也没有 1 GiB 文件/HTTP 续传测量）。原因是新增 `map[string]int64` 计数字段的 Go 字面量列间空格不符合 gofmt；只修正测试夹具对齐与本记录，不更动生产 API、浏览器上传逻辑、强制丢包、物理字节或 SHA 验收。以相同固定 `master@c9d5210cbff8351bd9896e36d7834839a255cebe` 重新创建**唯一一条**工作提交；旧 HEAD 全部 CI 证据作废，严格要求新 HEAD 完整 CI/Final Gate 和真实 Chrome/Gin 专项重新验证。此为测试夹具/格式错误，绝非已经观测到产品性能下降或上传失败。

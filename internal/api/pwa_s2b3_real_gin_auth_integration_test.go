@@ -48,6 +48,18 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
+	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
+	if largeResumeMode && !resumeMode {
+		t.Fatal("1 GiB upload fault requires the isolated S4B2 resume fixture")
+	}
+	resumeFileName := "pwa-s4b2-17m.bin"
+	resumeExpectedBytes := int64(17 << 20)
+	resumeExpectedChunks := int64(3)
+	if largeResumeMode {
+		resumeFileName = "pwa-s4b2-1gib.bin"
+		resumeExpectedBytes = 1 << 30
+		resumeExpectedChunks = 128
+	}
 	db := fileExplorerMediaPerfDatabase(t, dsn)
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{},
@@ -90,6 +102,10 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	maxUploadBytes := int64(10 << 20)
 	if resumeMode {
 		maxUploadBytes = 32 << 20
+	}
+	if largeResumeMode {
+		// Only this private test fixture lifts its per-file limit.
+		maxUploadBytes = 2 << 30
 	}
 	srv := &Server{
 		DB: db, Store: local,
@@ -206,6 +222,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	var chunk0Requests atomic.Int64
 	var chunk1Requests atomic.Int64
 	var chunk2Requests atomic.Int64
+	var lastChunkRequests atomic.Int64
+	var totalChunkRequests atomic.Int64
 	var injectedNetworkDrops atomic.Int64
 	done := make(chan struct{})
 	var once sync.Once
@@ -220,11 +238,13 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]int64{
-				"session_posts": uploadSessions.Load(),
-				"chunk0_puts":   chunk0Requests.Load(),
-				"chunk1_puts":   chunk1Requests.Load(),
-				"chunk2_puts":   chunk2Requests.Load(),
-				"tcp_drops":     injectedNetworkDrops.Load(),
+				"session_posts":    uploadSessions.Load(),
+				"chunk0_puts":      chunk0Requests.Load(),
+				"chunk1_puts":      chunk1Requests.Load(),
+				"chunk2_puts":      chunk2Requests.Load(),
+				"last_chunk_puts":  lastChunkRequests.Load(),
+				"total_chunk_puts": totalChunkRequests.Load(),
+				"tcp_drops":        injectedNetworkDrops.Load(),
 			})
 			return
 		case request.URL.Path == "/__test/pwa-s2b3/finish":
@@ -240,6 +260,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 					uploadSessions.Add(1)
 				}
 				if request.Method == http.MethodPut && strings.HasPrefix(request.URL.Path, "/api/v1/uploads/") {
+					totalChunkRequests.Add(1)
 					switch {
 					case strings.HasSuffix(request.URL.Path, "/chunks/0"):
 						chunk0Requests.Add(1)
@@ -260,6 +281,8 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 						}
 					case strings.HasSuffix(request.URL.Path, "/chunks/2"):
 						chunk2Requests.Add(1)
+					case largeResumeMode && strings.HasSuffix(request.URL.Path, "/chunks/127"):
+						lastChunkRequests.Add(1)
 					}
 				}
 			}
@@ -292,9 +315,11 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	}
 	if resumeMode {
 		ready["pwa_s4b2_resume"] = true
-		ready["upload_name"] = "pwa-s4b2-17m.bin"
-		ready["upload_size_bytes"] = int64(17 << 20)
-		ready["intercepted_api"] = true // A SINGLE deliberate test-only network drop.
+		ready["upload_name"] = resumeFileName
+		ready["upload_size_bytes"] = resumeExpectedBytes
+		ready["expected_chunks"] = resumeExpectedChunks
+		ready["pwa_s4b2_large_resume"] = largeResumeMode
+		ready["intercepted_api"] = true // Private TCP interruption, never an API mock.
 	}
 	payload, err := json.Marshal(ready)
 	if err != nil {
@@ -331,9 +356,13 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 					uploadSessions.Load(), chunk0Requests.Load(), chunk1Requests.Load(),
 					chunk2Requests.Load(), injectedNetworkDrops.Load())
 			}
+			if largeResumeMode && (lastChunkRequests.Load() != 1 ||
+				totalChunkRequests.Load() < resumeExpectedChunks+injectedNetworkDrops.Load()) {
+				t.Fatal("S4B2 1GiB last chunk or distinct chunk PUT coverage missing")
+			}
 			var resumed meta.Node
 			if err := db.Where("owner_id = ? AND parent_id = ? AND name = ? AND deleted_at IS NULL",
-				owner.ID, folder.ID, "pwa-s4b2-17m.bin").First(&resumed).Error; err != nil {
+				owner.ID, folder.ID, resumeFileName).First(&resumed).Error; err != nil {
 				t.Fatalf("S4B2 final original file missing: %v", err)
 			}
 			var file meta.File
@@ -341,8 +370,12 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 				t.Fatal(err)
 			}
 			const expectedBytes = int64(17 << 20)
-			if file.Size != expectedBytes {
-				t.Fatalf("S4B2 finalized file size=%d expected=%d", file.Size, expectedBytes)
+			verifiedBytes := expectedBytes
+			if largeResumeMode {
+				verifiedBytes = resumeExpectedBytes
+			}
+			if file.Size != verifiedBytes {
+				t.Fatalf("S4B2 finalized file size=%d expected=%d", file.Size, verifiedBytes)
 			}
 			var blob meta.ContentBlob
 			if err := db.Where("sha256 = ?", file.SHA256).First(&blob).Error; err != nil {
@@ -350,7 +383,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			}
 			key, err := storage.ContentAddressedKey(file.SHA256)
 			if err != nil || key != blob.StorageKey || blob.RefCount < 1 ||
-				blob.State != meta.ContentBlobStateReady || blob.Size != expectedBytes {
+				blob.State != meta.ContentBlobStateReady || blob.Size != verifiedBytes {
 				t.Fatalf("S4B2 CAS identity or reference invalid")
 			}
 			object, err := local.Open(context.Background(), key)
@@ -360,13 +393,13 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			actual := sha256.New()
 			copied, copyErr := io.Copy(actual, object)
 			closeErr := object.Close()
-			if copyErr != nil || closeErr != nil || copied != expectedBytes {
+			if copyErr != nil || closeErr != nil || copied != verifiedBytes {
 				t.Fatalf("S4B2 physical CAS readback invalid: bytes=%d copyErr=%v closeErr=%v",
 					copied, copyErr, closeErr)
 			}
 			wanted := sha256.New()
 			buffer := make([]byte, 64<<10)
-			for start := int64(0); start < expectedBytes; start += int64(len(buffer)) {
+			for start := int64(0); start < verifiedBytes; start += int64(len(buffer)) {
 				for index := range buffer {
 					i := start + int64(index)
 					buffer[index] = byte((i*31 + (i >> 7)) % 251)
@@ -377,10 +410,15 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 				t.Fatalf("S4B2 complete physical nonzero-file SHA256 mismatch")
 			}
 			t.Logf("PWA_S4B2_AUTHENTIC_RESUME_VERIFIED bytes=%d sessions=%d reusedFirstChunk=true injectedDrops=%d physicalCAS_SHA256=true",
-				expectedBytes, uploadSessions.Load(), injectedNetworkDrops.Load())
+				verifiedBytes, uploadSessions.Load(), injectedNetworkDrops.Load())
 		}
 
-	case <-time.After(5 * time.Minute):
+	case <-time.After(func() time.Duration {
+		if largeResumeMode {
+			return 15 * time.Minute
+		}
+		return 5 * time.Minute
+	}()):
 		t.Fatal("real Chrome browser did not finish the isolated Gin fixture")
 	}
 }
