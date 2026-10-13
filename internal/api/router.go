@@ -347,6 +347,8 @@ func (s *Server) Router() *gin.Engine {
 	// Owning-Agent-only temporary byte transfer. No canonical upload, Node, SourceItem or Run writes.
 	authed.POST("/sources/:id/local-staging", s.requireLocalSourceExecutor(), s.createLocalPushStage)
 	authed.GET("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.getLocalPushStage)
+	// Read-only, owning-Agent, point-in-time physical bytes; NEVER canonical commit authority.
+	authed.GET("/sources/:id/local-staging/:stageID/content-preflight", s.requireLocalSourceExecutor(), s.preflightLocalPushStagePhysical)
 	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)

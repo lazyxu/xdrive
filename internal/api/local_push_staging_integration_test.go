@@ -167,6 +167,18 @@ func TestLocalPushStagingOwnDeviceActualBytesNeverCommitSource(t *testing.T) {
 	foreignProof["X-XDrive-Device-Token"] = foreignSecret
 	post(ownerJWT, foreignProof, marshal(input), http.StatusForbidden)
 
+	physicalURL := url + "/" + stage.StageID + "/content-preflight"
+	requestWithHeaders(t, router, http.MethodGet, physicalURL,
+		ownerJWT, nil, http.StatusConflict, cloneProof())
+	requestWithHeaders(t, router, http.MethodGet, physicalURL,
+		ownerJWT, nil, http.StatusForbidden,
+		map[string]string{"If-Match": "\"7\""})
+	foreignPhysical := cloneProof()
+	foreignPhysical["X-XDrive-Device-ID"] = foreignDevice.ID
+	foreignPhysical["X-XDrive-Device-Token"] = foreignSecret
+	requestWithHeaders(t, router, http.MethodGet, physicalURL,
+		ownerJWT, nil, http.StatusForbidden, foreignPhysical)
+
 	bytesURL := url + "/" + stage.StageID + "/content"
 	response := requestWithHeaders(t, router, http.MethodPut, bytesURL,
 		ownerJWT, bytes.NewReader(payload), http.StatusOK, cloneProof())
@@ -195,6 +207,21 @@ func TestLocalPushStagingOwnDeviceActualBytesNeverCommitSource(t *testing.T) {
 	if !strings.Contains(status.Body.String(), "\"status\":\"staged\"") {
 		t.Fatalf("owning Agent staging readback missing ready state: %s", status.Body.String())
 	}
+	physical := requestWithHeaders(t, router, http.MethodGet,
+		physicalURL, ownerJWT, nil, http.StatusOK, cloneProof())
+	if physical.Header().Get("Cache-Control") != "private, no-store" ||
+		physical.Header().Get("ETag") != "\"7\"" {
+		t.Fatal("physical staging preflight lacked no-store or revision fence")
+	}
+	var checked localPushStagePhysicalResponse
+	if err := json.Unmarshal(physical.Body.Bytes(), &checked); err != nil ||
+		checked.StageID != stage.StageID || checked.SourceID != source.ID ||
+		checked.Revision != 7 || checked.Size != int64(len(payload)) ||
+		!checked.PhysicalStagingMatched || checked.ContentVerified ||
+		checked.CommitSupported || checked.Authoritative || checked.MissingInferenceSafe {
+		t.Fatalf("private physical staging readback is not safe: %+v err=%v", checked, err)
+	}
+
 	var sources int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ?", source.ID).Count(&sources).Error; err != nil || sources != 0 {
 		t.Fatalf("staging unexpectedly committed SourceItems: count=%d err=%v", sources, err)
@@ -217,6 +244,14 @@ func TestLocalPushStagingOwnDeviceActualBytesNeverCommitSource(t *testing.T) {
 		source.Status != meta.SourceStatusPaused {
 		t.Fatalf("staging activated local Source: status=%q err=%v", source.Status, err)
 	}
+	// Even if a rogue process changes the same-size temporary bytes in
+	// place, physical readback cannot infer success from status/size alone.
+	corrupt := bytes.Repeat([]byte{0x9f}, len(payload))
+	if _, err := local.Put(context.Background(), key, bytes.NewReader(corrupt)); err != nil {
+		t.Fatal(err)
+	}
+	requestWithHeaders(t, router, http.MethodGet,
+		physicalURL, ownerJWT, nil, http.StatusConflict, cloneProof())
 	requestWithHeaders(t, router, http.MethodDelete, url+"/"+stage.StageID,
 		ownerJWT, nil, http.StatusNoContent, cloneProof())
 	if _, err := local.Open(context.Background(), key); !os.IsNotExist(err) {
