@@ -189,3 +189,9 @@ A3b2c2a / #1639 的每用户 PostgreSQL `epoch`、原子递增和 Access Token �
 独立的 `auth.Manager.ParseMapAccess` 只接受签名/时效/Subject/iat/SessionVersion 全部有效的 Access JWT；`verifiedMapBootstrapIdentity` 从 Server DB **重新读取真实用户、会话版本和地图撤销 epoch**，拒绝登出前签发的旧 JWT 重新申请地图 Cookie。当前它仅是 Server 内部预检，不提供 Session 路由，不读取/返回 AK，不等于 JSAPI 上线。
 
 下一步继续 A3b2c2c：把管理员禁用/密码变更/强制撤销和 Browser AK 轮换的地图撤销状态统一审计，并实现逐资源 DB 权限、跨副本配额、固定白名单。只有真实许可证、全量上游资源及 HAR/原始字节泄漏审计、CSP/Electron/移动真机通过后才允许 A3b2d JSAPI 4.0 动态地图，继而 A3b3 三端共用 Marker/聚合，接续 A4、B1–B3、C1。继续保持 iOS 27「照片」1:1 基准、52px 全屏 App Frame 和 Web/Mobile Web/Desktop 共用图库后端。
+
+## A3b2c2c1 · 地图资源逐请求身份与配置快照（2026-10-13）
+
+继 A3b2c2b 的真实登出撤销与已签名 JWT 严格验证，新增无公开路由的内部地图资源预检：先通过 AES-GCM 认证短期 Cookie 提取 Owner 身份，随后从 PostgreSQL 实时读取用户状态、JSAPI Browser AK 配置修订和地图撤销 epoch；仅接受已审核的 Loader 精确路径，拒绝 Bearer、重复 Cookie、跨站或客户端 AK/URL。测试覆盖 Cookie 篡改/过期、密钥轮换、停用和撤销版本。**返回的 RuntimeAuthorized 固定 false，仍禁止 JSAPI 动态网络访问。**
+
+下一步 A3b2c2c2：完成管理员账号安全动作与地图撤销事件的安全审计、真实可验证的运行时证据、跨副本配额及完整百度子资源白名单，再在许可通过后接入代理及共享 Web/Mobile Web/Desktop 动态地图。A3b3 照片 Marker/聚合、A4 附近照片、B1–B3/C1 按原顺序继续。保留 iOS 27「照片」1:1、52px App Frame 及共享虚拟列表。
