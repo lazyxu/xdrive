@@ -95,3 +95,10 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 地图 JS/瓦片 GET 无法使用常规 Bearer，因此先对仅供地图资源的 120 秒 Cookie 进行 AEAD 认证，严禁从 URL/Host/Header 推断 Owner。内部 `InspectMapSessionOwner` 只返回经密码认证的 OwnerID，**不是权限**。`baiduJSAPIResourceSnapshot` 继续逐请求读取用户活跃状态、session version、JSAPI Browser AK 的 desired-config revision 和持久 epoch。当前仅允许 `/_BMapService/api?v=4.0` 的严格请求外形，拒绝重复 Cookie、任意来源、客户端 AK 与未登记的子资源。所有结果 `RuntimeAuthorized=false`，当前并不存在动态 JSAPI 代理或 JSAPI Map 会话签发 HTTP 端点。
 
 独立 PostgreSQL 隔离测试会模拟已签发 Cookie，在配置轮换、关闭、Epoch 递增、账号禁用后证明旧 Cookie 不能通过新的状态；测试中人为将授权 Boolean 设为 true 只是密码学断言，绝非真实授权。完整百度许可、子资源清单/实时上游响应字节与 HAR 泄露检测、跨实例限额、CSP/Electron 沙盒及 iOS 27/Android/Desktop 物理验收仍为严格 NO-GO 门禁。
+
+
+## A3b2c2c2 · Account-security mutations and map-only revocation (2026-10-13)
+
+Account disabled transition, administrator password reset, administrator session revoke and authenticated password change must atomically bump only the affected Owner's durable map epoch with their existing User/RefreshToken changes and redacted audit. Audit includes only a non-secret epoch marker; failure to persist revocation rolls back the entire mutation. Re-enabling the same account never rolls the epoch backward; another Owner's active map Cookie must not be invalidated. For Browser AK updates, the existing atomic encrypted-config revision increment plus audit and #1649's per-resource live revision check already invalidates all old map Cookies, with no unbounded mass UPDATE of owner epochs. Direct DB out-of-band changes remain unsupported bypasses that need operator policy; account-security UI must use audited Server routes.
+
+**Still fail closed:** A3b2c2c2 does not mint a map Cookie or create public `/_BMapService/` routes. It does not establish Baidu licences, observed full JSAPI4 upstream child requests, real AK non-disclosure, multi-replica quota, native sandbox isolation, or Apple Photos iOS 27 1:1 visual equivalence. Static Baidu Server-AK rendering continues; Browser-type AK remains encrypted and dynamic `runtime_enabled=false`.

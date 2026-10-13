@@ -259,6 +259,17 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 				return err
 			}
 		}
+		// A true disable transition revokes existing map-only sessions in the
+		// SAME transaction as the account/session change and audit. Re-enabling
+		// never resurrects old epochs or cookies.
+		var mapRevocationEpoch uint64
+		if req.Disabled != nil && *req.Disabled && target.DisabledAt == nil {
+			epoch, err := advanceBaiduMapEpochTx(c.Request.Context(), tx, target.ID, time.Now().UTC())
+			if err != nil {
+				return err
+			}
+			mapRevocationEpoch = epoch.Epoch
+		}
 		if err := tx.First(&updated, target.ID).Error; err != nil {
 			return err
 		}
@@ -288,9 +299,11 @@ func (s *Server) adminUpdateUser(c *gin.Context) {
 			if updatedDisabled {
 				action = auditpkg.ActionAdminUserDisable
 			}
-			if err := recordAuditTx(tx, auditUserEvent(c, actor, action, target, auditpkg.ResultSuccess, map[string]any{
-				"disabled": updatedDisabled,
-			})); err != nil {
+			details := map[string]any{"disabled": updatedDisabled}
+			if updatedDisabled {
+				details["map_revocation_epoch"] = mapRevocationEpoch
+			}
+			if err := recordAuditTx(tx, auditUserEvent(c, actor, action, target, auditpkg.ResultSuccess, details)); err != nil {
 				return err
 			}
 		}
@@ -363,8 +376,12 @@ func (s *Server) adminResetPassword(c *gin.Context) {
 		if err := revokeUserSessions(tx, id); err != nil {
 			return err
 		}
+		epoch, err := advanceBaiduMapEpochTx(c.Request.Context(), tx, target.ID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
 		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminPasswordReset, target, auditpkg.ResultSuccess, map[string]any{
-			"must_change_password": mustChange,
+			"must_change_password": mustChange, "map_revocation_epoch": epoch.Epoch,
 		}))
 	})
 	if err != nil {
@@ -397,7 +414,12 @@ func (s *Server) adminRevokeSessions(c *gin.Context) {
 		if err := revokeUserSessions(tx, id); err != nil {
 			return err
 		}
-		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminSessionRevoke, target, auditpkg.ResultSuccess, nil))
+		epoch, err := advanceBaiduMapEpochTx(c.Request.Context(), tx, target.ID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
+		return recordAuditTx(tx, auditUserEvent(c, actor, auditpkg.ActionAdminSessionRevoke, target, auditpkg.ResultSuccess,
+			map[string]any{"map_revocation_epoch": epoch.Epoch}))
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -551,6 +573,10 @@ func (s *Server) changePassword(c *gin.Context) {
 		if err := revokeUserSessions(tx, user.ID); err != nil {
 			return err
 		}
+		epoch, err := advanceBaiduMapEpochTx(c.Request.Context(), tx, user.ID, time.Now().UTC())
+		if err != nil {
+			return err
+		}
 		if err := tx.First(&user, user.ID).Error; err != nil {
 			return err
 		}
@@ -558,7 +584,8 @@ func (s *Server) changePassword(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		return recordAuditTx(tx, auditUserEvent(c, user, auditpkg.ActionPasswordChange, user, auditpkg.ResultSuccess, nil))
+		return recordAuditTx(tx, auditUserEvent(c, user, auditpkg.ActionPasswordChange, user, auditpkg.ResultSuccess,
+			map[string]any{"map_revocation_epoch": epoch.Epoch}))
 	})
 	if err != nil {
 		if errors.Is(err, errInvalidCurrentPassword) {
