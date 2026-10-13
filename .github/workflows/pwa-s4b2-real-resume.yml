@@ -1,0 +1,133 @@
+name: PWA S4B2 Actual Browser Upload Resume
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s4b2-real-resume:
+    if: github.head_ref == 'test/pwa-gin-chrome-upload-resume-s4b2-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build authentic production Web and private Gin/PostgreSQL/CAS fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          npm --prefix web run build
+          test -z "$(gofmt -l internal/api/pwa_s2b3_real_gin_auth_integration_test.go)"
+          node --check desktop/scripts/pwa-real-gin-upload-resume-browser.cjs
+          node --test desktop/tests/pwa-s4b2-real-upload-resume-contract.cjs
+          go test -c -o "$RUNNER_TEMP/pwa-s4b2-api.test" ./internal/api
+          mkdir -p "$RUNNER_TEMP/pwa-s4b2-driver"
+          npm install --prefix "$RUNNER_TEMP/pwa-s4b2-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_PWA_CHROME=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_PWA_CHROME=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_PWA_CHROME=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Actual Chrome binary is missing" >&2
+            exit 1
+          fi
+      - name: Actual Chrome Files upload fault and same-file reselect over real Gin PostgreSQL CAS
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          OUT="$GITHUB_WORKSPACE/desktop/pwa-s4b2-results"
+          mkdir -p "$OUT"
+          FIXTURE_PID=""
+          READY=""
+          cleanup() {
+            if [ -n "$FIXTURE_PID" ] && kill -0 "$FIXTURE_PID" 2>/dev/null; then
+              kill "$FIXTURE_PID" || true
+              wait "$FIXTURE_PID" || true
+            fi
+            if [ -n "$READY" ]; then rm -f "$READY"; fi
+          }
+          trap cleanup EXIT
+          for MODE in desktop mobile; do
+            READY="$RUNNER_TEMP/pwa-s4b2-$MODE-ready.json"
+            XD_PWA_S2B3_REAL_GIN=1 \
+            XD_PWA_S4B2_REAL_RESUME=1 \
+            XD_PWA_S2B3_READY_FILE="$READY" \
+            XD_PWA_S2B3_DIST="$GITHUB_WORKSPACE/web/dist" \
+              "$RUNNER_TEMP/pwa-s4b2-api.test" \
+                -test.run='^TestPWAS2B3RealGinAuthFixture$' \
+                -test.count=1 -test.v -test.timeout=6m \
+                > "$RUNNER_TEMP/pwa-s4b2-private-gin-$MODE.log" 2>&1 &
+            FIXTURE_PID=$!
+            for attempt in $(seq 1 120); do
+              if [ -s "$READY" ]; then break; fi
+              if ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
+                echo "Isolated Gin fixture failed before readiness ($MODE)" >&2
+                exit 1
+              fi
+              sleep 1
+            done
+            test -s "$READY" || { echo "No private Go readiness signal"; exit 1; }
+            XDRIVE_BROWSER_EXECUTABLE="$XD_PWA_CHROME" \
+            XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/pwa-s4b2-driver/node_modules/playwright-core" \
+            XD_PR_HEAD="$XD_PR_HEAD" \
+              node desktop/scripts/pwa-real-gin-upload-resume-browser.cjs \
+                --ready="$READY" --output-dir="$OUT" --mode="$MODE"
+            if ! wait "$FIXTURE_PID"; then
+              # Print ONLY literal, known test-failure categories. Never print
+              # raw Go/Gin logs (they could contain private HTTP details).
+              if [ -f "$RUNNER_TEMP/pwa-s4b2-private-gin-$MODE.log" ]; then
+                grep -oE 'S4B2 (HTTP resume was not reused|final original file missing|finalized file size|CAS identity or reference invalid|physical CAS readback invalid|complete physical nonzero-file SHA256 mismatch)' "$RUNNER_TEMP/pwa-s4b2-private-gin-$MODE.log" | sort -u || true
+              fi
+              echo "Real Go/PostgreSQL/CAS validation failed ($MODE); raw fixture log remains private" >&2
+              exit 1
+            fi
+            FIXTURE_PID=""
+            rm -f "$READY"
+            READY=""
+            node -e "const r=require(process.cwd()+'/desktop/pwa-s4b2-results/summary-$MODE.json');if(!r.passed||!r.realGin||!r.realPostgreSQL||!r.realLocalCAS||!r.simulatedNetworkDrop||!r.failedAttemptPersisted||!r.reselectOfferedAfterReload||!r.targetFolderReady||!r.finalizedInTargetFolder||!r.completed||!r.verifiedOriginalSha256||!r.onlyPublicOfflineCache||r.physicalDevice||r.systemInstalled)process.exit(1)"
+          done
+          test "$(find "$OUT" -maxdepth 1 -name 'summary-*.json' -type f | wc -l)" -eq 2
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-s4b2-chrome-gin-resume-sanitized
+          # Never upload Gin logs, JWT, browser profile, File blobs or private readiness metadata.
+          path: desktop/pwa-s4b2-results/summary-*.json
+          if-no-files-found: warn
+          retention-days: 14
