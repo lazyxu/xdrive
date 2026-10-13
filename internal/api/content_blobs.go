@@ -212,36 +212,6 @@ func contentReferenceUpdateValues(count int) string {
 	return strings.TrimSuffix(strings.Repeat("(?::text, ?::bigint, ?::text),", count), ",")
 }
 
-func contentReferenceLockValues(count int) string {
-	return strings.TrimSuffix(strings.Repeat("(?::text),", count), ",")
-}
-
-func lockContentReferenceBatchTx(
-	tx *gorm.DB,
-	batch []contentReferenceRelease,
-) error {
-	if len(batch) == 0 {
-		return nil
-	}
-	args := make([]any, 0, len(batch))
-	for _, item := range batch {
-		args = append(args, item.SHA256)
-	}
-	query := fmt.Sprintf(`
-SELECT pg_advisory_xact_lock(hashtextextended(requested.sha256, 0))
-FROM (VALUES %s) AS requested(sha256)
-ORDER BY requested.sha256
-`, contentReferenceLockValues(len(batch)))
-	rows, err := tx.Raw(query, args...).Rows()
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-	}
-	return rows.Err()
-}
-
 func loadContentReferenceBatchTx(
 	tx *gorm.DB,
 	batch []contentReferenceRelease,
@@ -348,9 +318,10 @@ func (s *Server) releaseContentReferencesTx(
 	for start := 0; start < len(releases); start += contentReferenceReleaseBatchSize {
 		end := min(start+contentReferenceReleaseBatchSize, len(releases))
 		batch := releases[start:end]
-		if err := lockContentReferenceBatchTx(tx, batch); err != nil {
-			return nil, nil, err
-		}
+		// All released hashes have existing ContentBlob rows. SELECT FOR UPDATE
+		// serializes refcount changes with retain/finalize's row locks; holding
+		// one advisory xact lock per hash until COMMIT exhausted PostgreSQL
+		// shared lock memory on real 100k-object permanent deletes.
 		rows, err := loadContentReferenceBatchTx(tx, batch)
 		if err != nil {
 			return nil, nil, err

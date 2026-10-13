@@ -1,0 +1,27 @@
+{
+  "workload_id": "P047",
+  "status": "Invalid harness",
+  "repository": "lazyxu/xdrive",
+  "source_exact_head": "f8dea528d870931a41b1780d9bacf9e9f66252a7",
+  "run_id": 38359837015,
+  "failed_job_id": 115171163526,
+  "failed_step": "Verify production-only HTTP path, physical 100k original contents and frozen budgets",
+  "stage": "gofmt -l source preflight before Node test / Go compile / PostgreSQL fixture / physical CAS source seed / authenticated HTTP DELETE",
+  "diagnosis": "gofmt diff: Go const block and result map key alignment",
+  "real_100k_physical_cas_seed_executed": false,
+  "real_http_delete_executed": false,
+  "sample_count": 0,
+  "CURRENT": null,
+  "BEFORE": null,
+  "AFTER": null,
+  "speedup": null,
+  "frozen_original_gates": {
+    "n": 3,
+    "physical_distinct_originals_per_cohort": 100000,
+    "bytes_each": 1024,
+    "HTTP_each_max_ms": 1200000,
+    "Go_RSS_postseed_max_growth_B": 536870912
+  },
+  "fix_scope": "test-only gofmt and format-tolerant static source check; no product optimization",
+  "native_url": "https://github.com/lazyxu/xdrive/actions/runs/38359837015"
+}
