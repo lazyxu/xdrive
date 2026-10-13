@@ -3,7 +3,7 @@
 **Decision:** 2026-10-13 (Asia/Tokyo). **Provider:** GitHub `lazyxu/xdrive`.
 **Frozen implementation baseline:** `master@3c92bd846ba1655df58bbdad38d3a44118a58a48`.
 **Accepted order:** P0-Places-A1 → A2 → A3 → A4 → P1-B1 → B2 → B3 → P2-C1.
-**Current delivery:** A1 exact-head PR and full CI **pending**; all other phases unimplemented.
+**Current delivery (2026-10-13):** A1 #1593 and A2 #1598 merged; A3a dual-AK proxy review PR #1599 pending; separate encrypted Browser AK desired-config #1607 had green exact-head CI but was closed under an obsolete limitation and is not merged. JSAPI runtime and A4/B1–B3/C1 remain unaccepted.
 No physical iOS 27 Safari/PWA, Android or Electron measurements are asserted.
 
 ## Non-negotiable application contract
@@ -101,65 +101,17 @@ concurrent media edits, or that a full 100k-item native browser benchmark ran.
 - Tests: Web 1280, mobile 375/390/899/900, Desktop route, navigation Back,
   selection/Viewer and a real 100k sparse-range fixture (no dense list).
 
-## A3 · Baidu JSAPI 4.0 server-side proxy security/licence review
+## A3 · 百度双 AK 与 JSAPI 4.0 安全代理（2026-10-13 最新批准）
 
-**Approved by user:** research a Baidu **JSAPI 4.0 proxy** so pan, pinch
-zoom, interactive photo markers and count clustering can approach Apple Photos
-behavior. This approves a feasibility and security review, **not** shipping an
-unauthenticated HTTP proxy or reusing a credential type without validation.
+**最新决定：Server AK、Browser AK 按百度服务要求分别使用，密钥只保留在 xDrive Server。** Server AK 专供已有 Static Map v2；JSAPI 4.0 必须申请独立的 Browser AK，并且仅可通过已登录 xDrive Server 的严格同源代理使用。两种地图实现都是**百度地图唯一 Provider**，绝不把 Server AK 冒充 Browser AK。参阅 [安全/许可评审](gallery-places-jsapi4-proxy-review.md)。
 
-**Official documents (read 2026-10-13):**
+- **A3a 方案/安全评审**：确认 JSAPI 官方代理加载规范、Browser AK 独立存储、商用/自托管授权、完整实际 JS/瓦片依赖、CSP、Cookie/Token 权限、配额与 Electron/Agent 隔离，评审完成不意味着上线代理。
+- **A3b1 独立 Browser AK desired-config**：恢复复用 PR #1607 的已测试单提交，而不是另建相同配置；管理员加密保存/修订号/审计/关闭，**runtime_enabled=false** 即使保存成功。
+- **A3b2 代理门禁**：要求有法定授权且实测完整 JSAPI 4.0 子资源的固定上游 host/path/method/query 白名单。为无法带 REST Bearer 的浏览器地图脚本/图片颁发由 Server 登录态验证的短时、HttpOnly/Secure/SameSite、地图专用同源会话；严禁通配 Nginx 代理、任意 URL、客户端 AK、重定向、跨副本无限请求或 Service Worker 缓存。
+- **A3b3 交互与集成**：完成安全和许可门禁后在 Web/Mobile Web/Desktop 共用的共享 MUI 地图中实现连续平移/缩放、photo marker、Server 限量聚合与打开现有照片 Range/Viewer。不得让浏览器下载 100k 全量 GPS 列表。Desktop 必须证明 Electron sandbox/contextIsolation 与 Agent bridge 不赋予第三方 JS 文件/同步任务权限。
+- **不满足门禁时**：仍使用**现有已授权的百度 Static Map v2**，明确显示动态不可用状态；PNG 不等于连续动态瓦片。不得用 OSM、Google、SVG 或假地理坐标兜底。
 
-- [JSAPI 4.0 overview](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Findex):
-  interactive Web maps, overlays, touch and desktop browser support.
-- [Use proxy to protect AK](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcepts%2Fproxy):
-  `_BMapSecurityConfig.serviceHost`, own-origin JSAPI loader, controlled
-  `BMAP_PROXY_URL` rewriting, and server-side credential injection.
-- [Loader proxy mode](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcepts%2Fload):
-  `BMapLoader.load({version:"4.0",serviceHost:"https://.../"})`;
-  no credential in renderer source or URLs.
-- [JSAPI preparation](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fquickstart%2Fprepare):
-  **browser-type AK** is required for JSAPI. The existing xDrive **Server
-  Static Map AK** must not be assumed to work for JSAPI. Any additional AK
-  needs encrypted Server persistence, admin-only revision-guarded enable/edit/
-  clear/audited temporary reveal, separate verification and no plaintext
-  logs. Enabled, configured, remotely verified and currently effective are
-  distinct states.
-- Read the applicable [Baidu Maps terms](https://map.baidu.com/zt/client/service/index.html)
-  and account-specific commercial/API licensing terms with the real intended
-  distribution (self-hosted multiuser Web/Desktop/PWA), before accepting a
-  production licence. The existence of technical API docs does not grant
-  unrestricted redistribution or basemap-asset caching rights.
-
-**Go/no-go requirements before enabling interactive JSAPI:**
-
-1. Authentication and owner authorization before every proxy endpoint,
-   bounded fixed upstream host **and path/method allowlist**, sanitized query,
-   no arbitrary URL fetch, path traversal, redirects, Host headers or
-   attacker-selected `serviceHost`. A proxy example using an unbounded
-   `location ~*` rewrite is **not** a production security architecture.
-2. No AK in JS globals, rendered URLs, source maps, HTTP redirect
-   `Location`, Referrer, response bodies, browser console, Electron preload,
-   logs, traces, telemetry, SW caches, URLs after errors, browser history,
-   or browser-accessible headers. Confirm with real instrumented network
-   and response-body audits, not a source-only assertion.
-3. Known-allowed Baidu subresources, CSP/sandbox/WebGL on Safari, Android
-   and Desktop Electron; do not allow a remote script to access Node IPC or
-   native privileges. Review all transitive scripts/tiles/fonts.
-4. Quota protection shared across Server replicas, scoped rate limits,
-   cancellation and owner privacy disclosure; no bulk EXIF coordinate
-   export. Default map disabled unless explicitly enabled; failures show
-   Baidu-unavailable state, never alternate providers or global Gallery crash.
-5. Explicit online trial with legally valid **browser-type AK**, recorded
-   service level, API compatibility, attribution, entitlement and real
-   iOS/Android/Desktop results. No live credentials in CI/PR.
-
-**A3 design direction:** A securely proxied Baidu renderer can own only
-basemap, camera gesture and native overlay positioning. xDrive remains the
-authoritative owner for PhotoAsset, grid/region/cluster semantics, viewport
-spatial query, counts, media thumbnails, Viewer and user-selected precision.
-Baidu's appearance differs from Apple's basemap; record it as a provider
-exception to iOS Photos 1:1 rather than silently changing vendor.
+A4 才交付 Owner-scoped 附近照片 bbox/半径 Range，B1–B3 和 C1 独立完成；真机 iOS 27 视觉 1:1、Android/Desktop 功能、GPS 隐私/分享与性能不得由源码断言代替。
 
 ## A4 · nearby photos
 
@@ -199,3 +151,8 @@ GitHub result. Do not mark A2–C1 complete or JSAPI released based on this plan
 ## P0-Places-A2 导航候选（2026-10-13）
 
 本阶段使用同一共享图库视图增加图库「显示地图」入口；地点列表保留既有可授权 Server Range 与虚拟化媒体查询；从分地点照片墙返回时保存最大 48 条的当前地点页/选择 ID，不以全量地点数组恢复位置。真实 Web/Mobile Web 路由 Viewer 与 Desktop 内嵌 Viewer 复用唯一照片位置 Dialog 和既有百度静态 PNG Server 接口，遇到缺失/无效 GPS 不请求地图，不引入 JSAPI/其他 Provider。新的静态地图不是 A3 的平移/聚合实现，原生 iOS 27 Safari 截图及真实权限端到端仍须 CI 与设备验收。
+
+
+### A3a · 2026-10-13 最新授权更正
+
+先前的 Server AK-only / #1607 不得交付的临时决议已由用户撤回；按实际服务分别使用 Server AK (Static v2) 和 Browser AK (JSAPI 4.0) 并强制 Server 代理。#1607 可恢复为配置前置，但不自动解除 JSAPI 代理、许可、跨客户端安全及 C1 真机门禁。
