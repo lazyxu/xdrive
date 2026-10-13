@@ -24,8 +24,17 @@ assert.equal(ready.local_cas, true)
 assert.equal(ready.intercepted_api, true, 'test fixture must declare one real TCP interruption')
 assert.equal(ready.physical_device, false)
 assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(ready.url))
-assert.equal(ready.upload_name, 'pwa-s4b2-17m.bin')
-assert.equal(ready.upload_size_bytes, 17 * 1024 * 1024)
+const largeResume = ready.pwa_s4b2_large_resume === true
+assert.equal(largeResume, process.env.XD_PWA_S4B2_LARGE_RESUME === '1')
+if (largeResume) {
+  assert.equal(ready.upload_name, 'pwa-s4b2-1gib.bin')
+  assert.equal(ready.upload_size_bytes, 1 * 1024 * 1024 * 1024)
+  assert.equal(ready.expected_chunks, 128)
+} else {
+  assert.equal(ready.upload_name, 'pwa-s4b2-17m.bin')
+  assert.equal(ready.upload_size_bytes, 17 * 1024 * 1024)
+  assert.equal(ready.expected_chunks, 3)
+}
 const chrome = process.env.XDRIVE_BROWSER_EXECUTABLE
 assert(chrome && fs.existsSync(chrome), 'Native installed Chrome binary required')
 const outputDir = path.resolve(args['output-dir'])
@@ -41,6 +50,8 @@ const summary = {
   realGin: true, realPostgreSQL: true, realLocalCAS: true,
   simulatedNetworkDrop: true, noApiMocks: true,
   inputBytes: ready.upload_size_bytes, verifiedOriginalSha256: false,
+  largeResume, expectedChunks: ready.expected_chunks,
+  sourceAllocatedBytes: 0, lastChunkVerified: false,
   interrupted: false, failedAttemptPersisted: false, reselectOfferedAfterReload: false,
   targetFolderReady: false, finalizedInTargetFolder: false,
   wrongNameRejected: false, alteredContentRejected: false,
@@ -58,12 +69,19 @@ function originalInput() {
         const i = start + n
         scratch[n] = (i * 31 + (i >> 7)) % 251
       }
-      fs.writeSync(fd, scratch)
+      assert.equal(fs.writeSync(fd, scratch), scratch.length)
       hash.update(scratch)
     }
+    if (largeResume) fs.fsyncSync(fd)
   } finally { fs.closeSync(fd) }
   const actual = fs.statSync(filepath)
   assert.equal(actual.size, ready.upload_size_bytes)
+  if (largeResume) {
+    // A logical-size-only sparse/truncated fixture is NOT a 1 GiB test.
+    summary.sourceAllocatedBytes = actual.blocks * 512
+    assert(summary.sourceAllocatedBytes >= Math.ceil(actual.size * 0.98),
+      'actual 1 GiB disk file must have >=98% physical allocation')
+  }
   return hash.digest('hex')
 }
 // Test-only wrong candidates live on disk, never in CacheStorage or artifacts.
@@ -103,7 +121,8 @@ function transferSnapshot(page) {
 }
 async function run() {
   const expectedHash = originalInput()
-  prepareRejectedInputs()
+  // B1 exercises both misleading-file cases; do not triple disk usage on 1 GiB.
+  if (!largeResume) prepareRejectedInputs()
   let browser
   let diagnosticsPage = null
   try {
@@ -119,7 +138,7 @@ async function run() {
     })
     const page = await context.newPage()
     diagnosticsPage = page
-    page.setDefaultTimeout(30_000)
+    page.setDefaultTimeout(largeResume ? 150_000 : 30_000)
     const pageErrors = []
     page.on('pageerror', error => pageErrors.push(error.name))
     const filesHash = '#/app/files?dir=' + ready.target_id
@@ -169,7 +188,7 @@ async function run() {
       return items.some(x => x.file_name === name && x.direction === 'upload' &&
         x.state === 'failed' && x.retryable === true && /^[0-9a-f]{64}$/.test(x.resume_manifest_sha256 || ''))
     }, { origin: new URL(ready.url).origin, username: ready.username, name: ready.upload_name },
-    { timeout: 45_000 })
+    { timeout: largeResume ? 360_000 : 45_000 })
     summary.interrupted = true
     summary.failedAttemptPersisted = true
     const old = await transferSnapshot(page)
@@ -203,48 +222,57 @@ async function run() {
     await page.locator('button[aria-label^="上传与下载"]').click()
     await page.getByRole('tab', { name: /历史记录/ }).click()
     const originalTaskID = old.find(x => x.retryable).id
-    const uploadSessionRequests = []
-    // Observe only; do not intercept or mock even one authenticated API request.
-    page.on('request', request => {
-      if (request.method() === 'POST' &&
-          new URL(request.url()).pathname === '/api/v1/uploads') {
-        uploadSessionRequests.push(1)
+    if (!largeResume) {
+      const uploadSessionRequests = []
+      // Observe only; do not intercept or mock even one authenticated API request.
+      page.on('request', request => {
+        if (request.method() === 'POST' &&
+            new URL(request.url()).pathname === '/api/v1/uploads') {
+          uploadSessionRequests.push(1)
+        }
+      })
+      async function readRequestCounters() {
+        const response = await fetch(ready.url + '/__test/pwa-s4b2/stats', {
+          cache: 'no-store', signal: AbortSignal.timeout(2500),
+        })
+        assert.equal(response.status, 200)
+        return response.json()
       }
-    })
-    async function readRequestCounters() {
-      const response = await fetch(ready.url + '/__test/pwa-s4b2/stats', {
+      assert.equal((await readRequestCounters()).session_posts, 1)
+      async function assertRejectedReselection(filename, message, stage) {
+        summary.stage = stage
+        const action = page.getByRole('button', { name: '重新选择原文件', exact: true })
+        await action.waitFor()
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), action.click()])
+        await chooser.setFiles(filename)
+        // Snackbar and failed transfer row may both show the same message.
+        // A strict text locator would reject the correct product behavior.
+        await page.waitForFunction(expected => document.body?.innerText.includes(expected) === true,
+          message, { timeout: 30_000 })
+        assert.equal(uploadSessionRequests.length, 0, 'a rejected file initiated a session request')
+        assert.equal((await readRequestCounters()).session_posts, 1,
+          'a rejected file reached the real Gin upload session')
+        const attempts = await transferSnapshot(page)
+        assert(attempts.some(x => x.id === originalTaskID &&
+          x.state === 'failed' && x.retryable && x.hasManifest),
+        'rejection consumed the original retryable upload')
+      }
+      await assertRejectedReselection(wrongNamePath,
+        '所选文件与原任务的名称、大小或修改时间不一致', 'reject-name-before-server')
+      summary.wrongNameRejected = true
+      await assertRejectedReselection(alteredContentPath,
+        '所选文件内容与原上传不同', 'reject-content-before-server')
+      summary.alteredContentRejected = true
+      summary.rejectedRequestsNeverReachedServer = true
+      summary.originalRetryPreserved = true
+    } else {
+      // Before the user reselects, Gin still has only one original session.
+      const stats = await fetch(ready.url + '/__test/pwa-s4b2/stats', {
         cache: 'no-store', signal: AbortSignal.timeout(2500),
       })
-      assert.equal(response.status, 200)
-      return response.json()
+      assert.equal(stats.status, 200)
+      assert.equal((await stats.json()).session_posts, 1)
     }
-    assert.equal((await readRequestCounters()).session_posts, 1)
-    async function assertRejectedReselection(filename, message, stage) {
-      summary.stage = stage
-      const action = page.getByRole('button', { name: '重新选择原文件', exact: true })
-      await action.waitFor()
-      const [chooser] = await Promise.all([page.waitForEvent('filechooser'), action.click()])
-      await chooser.setFiles(filename)
-      // Snackbar and failed transfer row may both show the same message.
-      // A strict text locator would reject the correct product behavior.
-      await page.waitForFunction(expected => document.body?.innerText.includes(expected) === true,
-        message, { timeout: 30_000 })
-      assert.equal(uploadSessionRequests.length, 0, 'a rejected file initiated a session request')
-      assert.equal((await readRequestCounters()).session_posts, 1,
-        'a rejected file reached the real Gin upload session')
-      const attempts = await transferSnapshot(page)
-      assert(attempts.some(x => x.id === originalTaskID &&
-        x.state === 'failed' && x.retryable && x.hasManifest),
-      'rejection consumed the original retryable upload')
-    }
-    await assertRejectedReselection(wrongNamePath,
-      '所选文件与原任务的名称、大小或修改时间不一致', 'reject-name-before-server')
-    summary.wrongNameRejected = true
-    await assertRejectedReselection(alteredContentPath,
-      '所选文件内容与原上传不同', 'reject-content-before-server')
-    summary.alteredContentRejected = true
-    summary.rejectedRequestsNeverReachedServer = true
-    summary.originalRetryPreserved = true
 
     summary.stage = 'reselect-original'
     const reselect = page.getByRole('button', { name: '重新选择原文件', exact: true })
@@ -254,7 +282,7 @@ async function run() {
     const finalize = page.waitForResponse(response =>
       response.request().method() === 'POST' &&
       /\/api\/v1\/uploads\/[^/]+\/finalize$/.test(new URL(response.url()).pathname) &&
-      response.status() === 200, { timeout: 70_000 })
+      response.status() === 200, { timeout: largeResume ? 720_000 : 70_000 })
     await again.setFiles(filepath)
     const response = await finalize
     const final = await response.json()
@@ -300,6 +328,12 @@ async function run() {
     assert(summary.serverRequestCounters.chunk1_puts >= 2)
     assert.equal(summary.serverRequestCounters.tcp_drops,
       summary.serverRequestCounters.chunk1_puts - 1)
+    if (largeResume) {
+      assert.equal(summary.serverRequestCounters.last_chunk_puts, 1)
+      assert(summary.serverRequestCounters.total_chunk_puts >=
+        ready.expected_chunks + summary.serverRequestCounters.tcp_drops)
+      summary.lastChunkVerified = true
+    }
     const stop = await fetch(ready.url + '/__test/pwa-s2b3/finish', { method: 'POST' })
     assert.equal(stop.status, 204)
     summary.passed = true
