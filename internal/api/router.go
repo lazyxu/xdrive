@@ -250,6 +250,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/page", s.listMediaPlacesPage)
 	authed.GET("/media/places/map-provider", s.mediaMapProviderStatus)
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
+	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
+	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)
@@ -413,6 +415,8 @@ func (s *Server) Router() *gin.Engine {
 	admin.PUT("/services/baidu-map", s.adminSaveBaiduMapConfig)
 	admin.POST("/services/baidu-map/reveal", s.adminRevealBaiduMapAK)
 	admin.POST("/services/baidu-map/verify", s.adminVerifyBaiduMap)
+	admin.GET("/services/baidu-jsapi", s.adminBaiduJSAPIConfig)
+	admin.PUT("/services/baidu-jsapi", s.adminSaveBaiduJSAPIConfig)
 	admin.GET("/services/geonames", s.adminGeoNamesConfig)
 	admin.PUT("/services/geonames", s.adminSaveGeoNamesConfig)
 	admin.POST("/services/geonames/reload", s.adminGeoNamesReload)
