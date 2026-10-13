@@ -759,6 +759,110 @@ caddy_host_refresh() {
 
 # Restricted Photo Intelligence *enable-only* bridge. Never stop/recreate a
 # running analyzer or accept a service name, command, image or arbitrary path.
+
+
+# Optional host-to-model receipt after the existing fixed, audited enable-only
+# action. No arbitrary command, destination, Docker control or workload changes.
+# The separate operator-only credential travels on stdin, never in process argv.
+photo_host_model_ack_at_apply() {
+  local revision="$1" request_id="$2" digest="$3"
+  local token runtime_dir socket_path pid start_ticks reply=""
+  [[ "$revision" =~ ^[1-9][0-9]*$ && ${#revision} -le 19 ]] || return 1
+  (( revision < 1152921504606846976 )) || return 1
+  [[ "$request_id" =~ ^[0-9a-f]{24}$ && "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
+  [[ -f "$ENV_PATH" && ! -L "$ENV_PATH" ]] || return 1
+  [[ "$(grep -c '^XD_PHOTO_HOST_APPLY_TOKEN=' "$ENV_PATH" || true)" == 1 ]] || return 1
+  token="$(env_value XD_PHOTO_HOST_APPLY_TOKEN)"
+  [[ "$token" =~ ^[0-9a-f]{64}$ ]] || return 1
+  runtime_dir="$(env_value XD_PHOTO_FACE_RUNTIME_DIR)"
+  [[ -n "$runtime_dir" ]] || runtime_dir="$STATE_DIR/photo-face"
+  [[ "$runtime_dir" == /* && "$runtime_dir" != *'/../'* &&
+     "$runtime_dir" != *'/./'* && "$runtime_dir" != *'/..' &&
+     "$runtime_dir" != *'/.' && "$runtime_dir" != *$'\n'* &&
+     "$runtime_dir" != *$'\r'* ]] || return 1
+  socket_path="$runtime_dir/photo-face.sock"
+  [[ -S "$socket_path" && ! -L "$socket_path" ]] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  pid="$(timeout 3s docker inspect --format '{{.State.Pid}}' xdrive-photo-face 2>/dev/null || true)"
+  [[ "$pid" =~ ^[1-9][0-9]{0,6}$ ]] || return 1
+  start_ticks="$(photo_intelligence_proc_start_ticks "$pid")" || return 1
+  photo_intelligence_socket_owned_by_pid "$pid" || return 1
+  # Before sending the operator secret, the Unix peer must prove it is the
+  # very same fixed Docker main PID AND kernel process birth generation.
+  # A replaced host socket path must NEVER receive this credential.
+  reply="$(printf '%s\n' "$token" | timeout 5s python3 -c '
+import http.client
+import json
+import re
+import socket
+import struct
+import sys
+
+path, pid_text, expected_ticks, revision, request_id, digest = sys.argv[1:]
+secret = sys.stdin.readline(80).rstrip("\n")
+if not re.fullmatch(r"[0-9a-f]{64}", secret):
+    sys.exit(1)
+
+def process_ticks():
+    try:
+        with open("/proc/" + pid_text + "/stat", "r", encoding="ascii") as stream:
+            data = stream.readline(4096)
+        fields = data.rsplit(") ", 1)[1].split()
+        return fields[19] if len(fields) >= 20 else ""
+    except Exception:
+        return ""
+
+if process_ticks() != expected_ticks or not expected_ticks:
+    sys.exit(1)
+payload = json.dumps({
+    "request_id": request_id,
+    "revision": int(revision),
+    "runtime_instance_sha256": digest,
+}, separators=(",", ":")).encode("ascii")
+expected = {
+    "acknowledged": True,
+    "revision": int(revision),
+    "request_id": request_id,
+    "runtime_instance_sha256": digest,
+}
+try:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as peer:
+        peer.settimeout(3)
+        peer.connect(path)
+        credentials = peer.getsockopt(
+            socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+        )
+        peer_pid, _, _ = struct.unpack("3i", credentials)
+        if peer_pid != int(pid_text) or process_ticks() != expected_ticks:
+            sys.exit(1)
+        head = (
+            "POST /v1/host-apply-ack HTTP/1.1\r\n"
+            "Host: localhost\r\n"
+            "Connection: close\r\n"
+            "Content-Type: application/json\r\n"
+            "X-XDrive-Host-Apply-Protocol: 1\r\n"
+            + "Authorization: Bearer " + secret + "\r\n"
+            + "Content-Length: " + str(len(payload)) + "\r\n\r\n"
+        )
+        peer.sendall(head.encode("ascii") + payload)
+        response = http.client.HTTPResponse(peer)
+        response.begin()
+        length = response.getheader("Content-Length", "")
+        if response.status != 200 or not length.isdecimal() or int(length) > 512:
+            sys.exit(1)
+        body = response.read(513)
+        if len(body) != int(length) or json.loads(body) != expected:
+            sys.exit(1)
+        if process_ticks() != expected_ticks:
+            sys.exit(1)
+except Exception:
+    sys.exit(1)
+print("ACK_OK")
+' "$socket_path" "$pid" "$start_ticks" "$revision" "$request_id" "$digest" \
+    2>/dev/null)" || return 1
+  [[ "$reply" == ACK_OK ]]
+}
+
 photo_host_control_uint() {
   local file="$1" key="$2"
   [[ -f "$file" ]] || return 0
@@ -810,7 +914,7 @@ photo_host_control_probe() {
 }
 photo_host_control_write_status() {
   local state="$1" revision="$2" applied="$3" enabled="$4" request_id="$5"
-  local observed="$6" verified="$7" applied_instance_digest="${8:-}" dir tmp
+  local observed="$6" verified="$7" applied_instance_digest="${8:-}" model_ack_at_apply="${9:-false}" dir tmp
   case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
   case "$observed" in healthy|unhealthy|starting|running-unverified|stopped|unknown) ;;
     *) observed=unknown ;;
@@ -824,16 +928,20 @@ photo_host_control_write_status() {
         ! "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ]]; then
     applied_instance_digest=""
   fi
+  if [[ "$state" != success || ! "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ||
+        ! "$request_id" =~ ^[0-9a-f]{24}$ || "$model_ack_at_apply" != true ]]; then
+    model_ack_at_apply=false
+  fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.photo-host-control-status.XXXXXX")" || return 1
-  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"profile_verified":%s,"observed_host_state":"%s","request_id":"%s","applied_instance_digest":"%s","updated_at":"%s"}\n' \
+  printf '{"supported":true,"state":"%s","revision":%s,"applied_revision":%s,"enabled":%s,"profile_verified":%s,"observed_host_state":"%s","request_id":"%s","applied_instance_digest":"%s","model_ack_at_apply":%s,"updated_at":"%s"}\n' \
     "$state" "$revision" "$applied" "$enabled" "$verified" "$observed" \
-    "$request_id" "$applied_instance_digest" "$(now_utc)" > "$tmp"
+    "$request_id" "$applied_instance_digest" "$model_ack_at_apply" "$(now_utc)" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/photo-host-control-status.json"
 }
 photo_host_control_refresh() {
-  local dir file state revision applied enabled request_id profile observed verified=false applied_instance_digest=""
+  local dir file state revision applied enabled request_id profile observed verified=false applied_instance_digest="" model_ack_at_apply=false
   dir="$(prepare_dir)"
   file="$dir/photo-host-control-status.json"
   observed="$(photo_host_control_probe)"
@@ -849,6 +957,7 @@ photo_host_control_refresh() {
   enabled="$(json_bool_value "$file" enabled)"
   request_id="$(json_value "$file" request_id)"
   applied_instance_digest="$(json_value "$file" applied_instance_digest)"
+  model_ack_at_apply="$(json_bool_value "$file" model_ack_at_apply)"
   case "$state" in idle|queued|running|success|failed) ;; *) state=failed ;; esac
   [[ "$revision" =~ ^[0-9]+$ && ${#revision} -le 19 ]] || revision=0
   [[ "$applied" =~ ^[0-9]+$ && ${#applied} -le 19 ]] || applied=0
@@ -856,7 +965,7 @@ photo_host_control_refresh() {
     state=failed
   fi
   photo_host_control_write_status "$state" "$revision" "$applied" "$enabled" \
-    "$request_id" "$observed" "$verified" "$applied_instance_digest"
+    "$request_id" "$observed" "$verified" "$applied_instance_digest" "$model_ack_at_apply"
 }
 photo_host_control_recover() {
   local dir recovery previous before_running
@@ -876,7 +985,7 @@ photo_host_control_recover() {
 }
 photo_host_control_process() {
   local dir request active status request_id revision enabled created_at applied last_state
-  local previous next initial current verified=false launched=false applied_instance_digest=""
+  local previous next initial current verified=false launched=false applied_instance_digest="" model_ack_at_apply=false
   dir="$(prepare_dir)"
   request="$dir/photo-host-control-request.json"
   active="$dir/photo-host-control-active.json"
@@ -944,10 +1053,16 @@ photo_host_control_process() {
     # Rootless/proc denial is not permission to escalate or restart.
     if photo_intelligence_socket_owner_observed; then
       applied_instance_digest="$(photo_intelligence_healthcheck_digest)"
+      if [[ "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ]] &&
+          photo_host_model_ack_at_apply "$revision" "$request_id" "$applied_instance_digest" &&
+          photo_intelligence_socket_owner_observed &&
+          [[ "$(photo_intelligence_healthcheck_digest)" == "$applied_instance_digest" ]]; then
+        model_ack_at_apply=true
+      fi
     fi
     [[ "$applied_instance_digest" =~ ^[0-9a-f]{64}$ ]] || applied_instance_digest=""
     rm -f "$dir/photo-host-control-recovery"
-    photo_host_control_write_status success "$revision" "$revision" true "$request_id" "$current" true "$applied_instance_digest"
+    photo_host_control_write_status success "$revision" "$revision" true "$request_id" "$current" true "$applied_instance_digest" "$model_ack_at_apply"
     rm -f "$active"
     return 0
   fi
