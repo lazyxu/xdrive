@@ -1066,6 +1066,8 @@ export default function App({
     // A newer state IPC push owns this Renderer session. An older bootstrap
     // getState() response may arrive afterward, but may not restore old auth.
     let hasAgentStateEvent = false
+    // An IPC history push supersedes the independently requested bootstrap history.
+    let hasLoginHistoryEvent = false
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
     })
@@ -1073,7 +1075,7 @@ export default function App({
       if (active) setDesktopPreferences(value)
     })
     void window.xdriveDesktop.getLoginHistory().then((value) => {
-      if (!active) return
+      if (!active || hasLoginHistoryEvent) return
       setLoginHistory(value)
       const latest = value.profiles[0]
       if (latest) {
@@ -1096,7 +1098,9 @@ export default function App({
       setAgent(value)
     })
     const unsubscribeLoginHistory = window.xdriveDesktop.onLoginHistory((value) => {
-      if (active) setLoginHistory(value)
+      if (!active) return
+      hasLoginHistoryEvent = true
+      setLoginHistory(value)
     })
     const unsubscribeTransfers = window.xdriveDesktop.agent.onTransfers((value) => {
       if (active) {
