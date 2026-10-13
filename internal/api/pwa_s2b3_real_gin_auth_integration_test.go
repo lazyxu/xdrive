@@ -47,9 +47,13 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	}
 
 	gin.SetMode(gin.TestMode)
+	nativeDownloadMode := os.Getenv("XD_PWA_S4C3_NATIVE_DOWNLOAD") == "1"
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
 	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
 	folderResumeMode := os.Getenv("XD_PWA_S4B3_REAL_FOLDER") == "1"
+	if nativeDownloadMode && (resumeMode || largeResumeMode || folderResumeMode) {
+		t.Fatal("S4C3 native-download fixture cannot alter S4B2 upload fault mode")
+	}
 	if folderResumeMode && (!resumeMode || largeResumeMode) {
 		t.Fatal("B3B folder fault requires standalone isolated 17 MiB resume mode")
 	}
@@ -225,6 +229,23 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		"/api/v1/media/items?range=true&offset=0&limit=10",
 		ownerToken, nil, http.StatusOK)
 
+	// S4C3-B1: a real, physically allocated, independently SHA-verified
+	// encrypted synthetic CAS fixture, never user media or a sparse file.
+	var nativeSeed pwaS4C3NativeSeed
+	if nativeDownloadMode {
+		sizeGiB := int64(1)
+		if requested := strings.TrimSpace(os.Getenv("XD_PWA_S4C3_SIZE_GIB")); requested != "" {
+			switch requested {
+			case "1":
+				sizeGiB = 1
+			case "4":
+				sizeGiB = 4
+			default:
+				t.Fatal("S4C3 native download fixture accepts only 1 or 4 GiB")
+			}
+		}
+		nativeSeed = pwaS4C3SeedNativeFile(t, db, local, owner.ID, folder.ID, sizeGiB)
+	}
 	var uploadSessions atomic.Int64
 	var chunk0Requests atomic.Int64
 	var chunk1Requests atomic.Int64
@@ -325,6 +346,14 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		"real_gin":      true, "postgresql": true, "local_cas": true,
 		"intercepted_api": false, "physical_device": false,
 	}
+	if nativeDownloadMode {
+		ready["pwa_s4c3_native_download"] = true
+		ready["native_download_node_id"] = nativeSeed.nodeID
+		ready["native_download_name"] = nativeSeed.name
+		ready["native_download_size_bytes"] = nativeSeed.size
+		ready["native_download_sha256"] = nativeSeed.sha
+		ready["native_download_physically_allocated"] = nativeSeed.allocated >= nativeSeed.size*98/100
+	}
 	if resumeMode {
 		ready["pwa_s4b2_resume"] = true
 		ready["upload_name"] = resumeFileName
@@ -359,6 +388,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		request(t, router, http.MethodGet,
 			fmt.Sprintf("/api/v1/media/items/%d", picNode.ID), ownerToken, nil, http.StatusOK)
 		t.Logf("PWA_S2B3_REAL_GIN_VERIFIED root=%d target=%d authentic_login=true foreign_404=true", root.ID, folder.ID)
+		if nativeDownloadMode {
+			pwaS4C3VerifyPhysicalCAS(t, db, local, nativeSeed)
+		}
 		if resumeMode {
 			// The first 8 MiB must remain in the original Server session. The
 			// reselected original must reuse it, not upload that chunk twice.
@@ -540,6 +572,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		}
 
 	case <-time.After(func() time.Duration {
+		if nativeDownloadMode {
+			return 24 * time.Minute
+		}
 		if largeResumeMode {
 			return 15 * time.Minute
 		}
