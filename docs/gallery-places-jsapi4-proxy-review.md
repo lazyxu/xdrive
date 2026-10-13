@@ -71,3 +71,12 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 本阶段仍然 **NO-GO**：未创建数据库撤销状态、登录/登出接口联动、地图授权签发路由、真实动态 JSAPI、跨副本限流或任何客户端 JS Loader。用户要求的 Viewer/标记与聚合、A4 附近照片及 B/C 系列另行实现。单测能核查加密、过期、密钥不一致、篡改、会话版本/配置修订/epoch 变化、同源 POST 和带 AK 的跨站 GET 均被拒绝；**单测 12/12（含 A3b2b 的 7）不能冒充实际授权或设备验收**。
 
 生产中必须先完成 A3b2c2 的持久会话撤销、Owner 授权、真实启用门禁和完整 Server/Agent/Browser 多平台隔离，再实施 A3b2d 代理/动态客户端。
+
+
+## A3b2c2a · 持久撤销版本及 Access Token 签发截止线（2026-10-13）
+
+本小阶段在 A3b2c1 加密 Cookie 合入之后，将未来多 Server 副本共同依赖的撤销状态置于 PostgreSQL：新增 `xd_baidu_jsapi_map_epochs` 每 Owner 一行、非零 `epoch`、可为空的 `revoked_after`，删除 Owner 时级联清理。缺行/0 版本一律拒绝，不把客户端 Cookie 或浏览器传入的用户/版本当作授权依据。`ensureBaiduMapEpochTx` 对真实有效账号初始化版本 1，冲突时保留此前状态；`advanceBaiduMapEpochTx` 使用单条原子 PostgreSQL `INSERT ON CONFLICT ... RETURNING`，以 `GREATEST` 避免时钟回拨导致撤销截止线倒退。所有操作使用请求 Context/DB 事务，回滚不误提升版本。
+
+额外的纯 Go `AccessAfterRevocation` 对未来**已验签且仍有效的 Access JWT** 的 `iat` 与数据库撤销截止线做严格比较：旧 token、同秒签发 token、未来 token 不得重新申请地图 Session；空截止线表示此前未发生显式撤销，仍必须由 Server 执行正常账号/JWT 鉴权以及真实 JSAPI Runtime 放行证据。此逻辑不是 Cookie 本身的授权。
+
+**限制必须明确**：当前尚未把原 `/auth/logout`、账户安全操作与这些 DB helpers 连线；也没有地图 Session HTTP 端点、正式百度 Browser AK 代理、子资源白名单或跨副本配额。保存 Browser AK 不会开放 JSAPI，`runtime_enabled=false` 不变。只有下一阶段 A3b2c2b 通过真实 refresh token 所属用户事务性推进 epoch、从受信 JWT 解析 `iat` 并且每次资源请求读取最新用户/配置/epoch 后，才可把“退出即撤销地图 Session”称为已实现。完整许可、Server 原始字节 + HAR 防泄漏、CSP/Electron/移动真机证据仍为后续上线强制门禁。
