@@ -1717,3 +1717,28 @@ increment CAS references. No path enters Web/foreign Desktop read DTOs.
 This phase is Draft until its *own* exact-head full CI/final-gate and
 rebuild onto merged upstream master; GitLab/native 100k/4GiB tests are not
 claimed.
+
+## L03-E1b1b1b2 · Owning-Agent CURRENT path transaction guard (PR validation)
+
+The native owning Agent's independently verified CURRENT relative path is
+not a Server authorization token. The new unexported
+checkLocalQuarantinedCurrentPathsTx first takes the existing
+transaction-scoped owning-device/Root/Source revision, quarantine,
+SourceItem/alias/Node/File/FileVersion/READY CAS and hash-before-GC lock
+guard, then compares strictly normalized current relative paths from
+matching ordered private evidence IDs to the persisted quarantine's
+Root-scoped CurrentPathKey under the same caller-owned transaction.
+Noncanonical/unsafe paths, drive letters, traversal, duplicate/missing
+IDs, stale evidence and mismatched path keys fail closed without echoing
+local paths. Another-device or owner-JWT-only callers cannot bypass proof.
+
+This is a reusable READ-ONLY internal Server transaction helper only.
+No public route, Agent transport, Desktop IPC, Web/Mobile Web field,
+SourceItem/alias/Node/Run/CAS reference write, physical file/CAS read,
+upload, scheduler, Mirror inference, or NAS Push is enabled. The future
+writer must recheck current Agent-native bytes and Root immediately before
+the signed owning-device request; independently prove remote CAS bytes and
+perform idempotent canonical identity/alias transitions within the same
+guarded transaction. Metadata-only rename must not add CAS references.
+Require exact-head Linux/Windows, PostgreSQL integration, Desktop/Web,
+full final-gate CI; GitLab and real 100k/4GiB tests remain separate.
