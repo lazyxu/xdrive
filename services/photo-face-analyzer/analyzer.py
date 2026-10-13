@@ -1330,6 +1330,28 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 )
                 self._write_json(200, self.server.state.info_with_session(self.server.state.semantic_runtime.info()))
                 return
+            if method == "GET" and target == "/v1/semantic-image-canary":
+                # Exactly one fixed in-memory image. The actual semantic
+                # image encoder runs; no external preview URL or caller bytes.
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-semantic-protocol",
+                    SEMANTIC_PROTOCOL_VERSION,
+                    "semantic",
+                )
+                if not self.server.state.token:
+                    raise RequestError(503, "synthetic image canary requires auth")
+                if headers.get("transfer-encoding") or headers.get(
+                    "content-length", "0"
+                ) != "0":
+                    raise RequestError(400, "synthetic image canary rejects a body")
+                self._write_json(
+                    200,
+                    self.server.state.semantic_runtime.embed_image(
+                        synthetic_image(SEMANTIC_IMAGE_SIZE, SEMANTIC_IMAGE_SIZE)
+                    ),
+                )
+                return
             if method == "GET" and target == "/v1/creative-info":
                 self._require_protocol(
                     headers,

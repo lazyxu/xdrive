@@ -50,6 +50,15 @@ func TestUnixSemanticAnalyzerContract(t *testing.T) {
 					Format:     SemanticEmbeddingFormatI8Norm,
 					Dimensions: info.EmbeddingDimensions,
 				})
+			case "/v1/semantic-image-canary":
+				if r.Method != http.MethodGet || r.URL.RawQuery != "" || r.ContentLength > 0 {
+					t.Fatal("fixed canary must use a body-free GET with no query")
+				}
+				raw := make([]byte, info.EmbeddingDimensions)
+				raw[2] = 127
+				_ = json.NewEncoder(w).Encode(SemanticEmbedding{
+					Embedding: raw, Format: info.EmbeddingFormat, Dimensions: info.EmbeddingDimensions,
+				})
 			case "/v1/semantic-text":
 				var payload map[string]string
 				if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -102,6 +111,14 @@ func TestUnixSemanticAnalyzerContract(t *testing.T) {
 	}
 	if len(image.Embedding) != info.EmbeddingDimensions || int8(image.Embedding[0]) != 127 {
 		t.Fatalf("image embedding=%+v", image)
+	}
+	canary, err := analyzer.ProbeSyntheticImage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	canary, err = ValidateSemanticEmbedding(info, canary)
+	if err != nil || int8(canary.Embedding[2]) != 127 {
+		t.Fatalf("invalid fixed synthetic image inference: %v", err)
 	}
 	textEmbedding, err := analyzer.EmbedText(context.Background(), "海边的狗")
 	if err != nil {

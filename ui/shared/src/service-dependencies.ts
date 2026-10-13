@@ -284,6 +284,9 @@ export type XDrivePhotoHostPreflight = {
   // Only ONE fixed synthetic semantic text inference; not a media/image,
   // Face, OCR, Creative, fleet activation or safe-stop proof.
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  // Actual semantic image encoder on fixed model-local synthetic pixels.
+  // Does not prove real gallery images, other models or fleet activation.
+  semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

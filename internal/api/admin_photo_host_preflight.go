@@ -37,6 +37,7 @@ type adminPhotoHostPreflightDTO struct {
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
+	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -126,10 +127,11 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	}
 	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
 	// Only the administrator's explicit no-store preflight may trigger the
-	// four model Info checks and (after proven ACK) one bounded fixed-text task. Missing
+	// four Info checks and (after proven ACK) bounded fixed synthetic tasks. Missing
 	// trustworthy host revision evidence means that Info is never invoked.
 	report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
 	report.SemanticTextTaskState = "unverified"
+	report.SemanticImageTaskState = "unverified"
 	if hasGate && photoHostModelInfoAllowed(desired, gate, hasGate, s.photoHostApplyReceipt(gate)) {
 		report.HostRevisionVerified = true
 		report.ModelInfoChecks = s.probePhotoHostModelInfo(c.Request.Context())
@@ -168,12 +170,30 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		}
 	}
 	if report.ModelRequestAckVerified {
-		// A real task is separate from host and four-Info ACK proof. It must
-		// never promote the global effect-proof state to pass.
+		// Two bounded synthetic tasks remain distinct from the ACK and
+		// global effect-proof axis; neither accepts user media or changes
+		// durable task ownership.
 		report.SemanticTextTaskState = s.photoHostSemanticTextProbe(
 			c.Request.Context(), desired, gate, report.ModelInfoChecks,
 		)
-		report.Checks[6].Detail = "四类模型确认了已审计的同一次宿主启用请求；但真实媒体任务、跨实例部署及安全停用仍未验证"
+		report.SemanticImageTaskState = s.photoHostSemanticImageProbe(
+			c.Request.Context(), desired, gate, report.ModelInfoChecks,
+		)
+		// Reject green evidence if the host/model changes during either task.
+		if !s.photoHostSemanticEvidenceCurrent(c.Request.Context(), desired, gate, report.ModelInfoChecks) {
+			report.HostRevisionVerified = false
+			report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
+			report.ModelInstanceCoherent = false
+			report.DockerHealthcheckMatched = false
+			report.SocketOwnerVerified = false
+			report.RequestGenerationCorrelated = false
+			report.ModelRequestAckVerified = false
+			report.SemanticTextTaskState = "unverified"
+			report.SemanticImageTaskState = "unverified"
+		}
+	}
+	if report.ModelRequestAckVerified {
+		report.Checks[6].Detail = "四模型确认原始已审计宿主请求；固定文本及合成图片的实际推理单独显示，其他媒体任务、全集群及安全停用仍未验证"
 	} else if report.HostRevisionVerified {
 		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；模型请求回执尚未完成独立核验，不能证明同源请求确认或真实媒体任务成功"
 	}
