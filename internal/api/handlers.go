@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/auth"
+	"github.com/lazyxu/xdrive/internal/baidumapjsapi"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/gorm"
@@ -194,15 +195,61 @@ func (s *Server) refresh(c *gin.Context) {
 }
 
 func (s *Server) logout(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	var req refreshRequest
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
 	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.RefreshToken) == "" {
+		http.SetCookie(c.Writer, baidumapjsapi.MapSessionRevocationCookie())
 		c.Status(http.StatusNoContent)
 		return
 	}
-	now := time.Now()
-	_ = s.DB.Model(&meta.RefreshToken{}).
-		Where("token_hash = ? AND revoked_at IS NULL", auth.HashRefreshToken(req.RefreshToken)).
-		Update("revoked_at", now).Error
+	if s == nil || s.DB == nil {
+		fail(c, http.StatusServiceUnavailable, "logout is unavailable")
+		return
+	}
+	now := time.Now().UTC()
+	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// A refresh token is the authority for this particular logout. Lock it
+		// before changing map state so replay, expiry and parallel submissions
+		// cannot repeatedly revoke other sessions for this owner.
+		var refresh meta.RefreshToken
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
+				auth.HashRefreshToken(req.RefreshToken), now).
+			Take(&refresh).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil // Preserve idempotent 204 without touching any owner's epoch.
+		}
+		if err != nil {
+			return err
+		}
+		var owner meta.User
+		if err := tx.Where("id = ?", refresh.UserID).Take(&owner).Error; err != nil {
+			return err
+		}
+		update := tx.Model(&meta.RefreshToken{}).
+			Where("id = ? AND revoked_at IS NULL", refresh.ID).
+			Update("revoked_at", now)
+		if update.Error != nil {
+			return update.Error
+		}
+		if update.RowsAffected != 1 {
+			return errBaiduMapEpochUnavailable
+		}
+		epoch, err := advanceBaiduMapEpochTx(c.Request.Context(), tx, owner.ID, now)
+		if err != nil {
+			return err
+		}
+		// Metadata-only audit commits atomically with refresh+map revocation.
+		return recordAuditTx(tx, auditUserEvent(c, owner,
+			"auth.logout.baidu_jsapi_map_session", owner, auditpkg.ResultSuccess,
+			map[string]any{"epoch": epoch.Epoch, "scope": "map-only"}))
+	})
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "logout is unavailable")
+		return
+	}
+	http.SetCookie(c.Writer, baidumapjsapi.MapSessionRevocationCookie())
 	c.Status(http.StatusNoContent)
 }
 

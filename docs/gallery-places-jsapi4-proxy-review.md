@@ -80,3 +80,12 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 额外的纯 Go `AccessAfterRevocation` 对未来**已验签且仍有效的 Access JWT** 的 `iat` 与数据库撤销截止线做严格比较：旧 token、同秒签发 token、未来 token 不得重新申请地图 Session；空截止线表示此前未发生显式撤销，仍必须由 Server 执行正常账号/JWT 鉴权以及真实 JSAPI Runtime 放行证据。此逻辑不是 Cookie 本身的授权。
 
 **限制必须明确**：当前尚未把原 `/auth/logout`、账户安全操作与这些 DB helpers 连线；也没有地图 Session HTTP 端点、正式百度 Browser AK 代理、子资源白名单或跨副本配额。保存 Browser AK 不会开放 JSAPI，`runtime_enabled=false` 不变。只有下一阶段 A3b2c2b 通过真实 refresh token 所属用户事务性推进 epoch、从受信 JWT 解析 `iat` 并且每次资源请求读取最新用户/配置/epoch 后，才可把“退出即撤销地图 Session”称为已实现。完整许可、Server 原始字节 + HAR 防泄漏、CSP/Electron/移动真机证据仍为后续上线强制门禁。
+
+
+## A3b2c2b · Owner 退出后不能通过旧 JWT 重建地图授权（2026-10-13）
+
+在已合入 A3b2c2a 的 PostgreSQL `xd_baidu_jsapi_map_epochs` 之上，将现有 `/auth/logout` 与地图撤销事务结合。只有服务器按 SHA256 找到 **有效且尚未撤销** 的 Refresh Token 并锁行时，才把它置为 revoked，同时提升其真实 Owner 的地图 epoch、更新时间截止线、写入无 AK/JWT/Refresh Token 的脱敏审计。审计或 DB 更新失败则整笔事务回滚，并返回不可误报成功的服务不可用状态。缺失、已过期、重复提交或伪造的 Refresh Token 保持幂等 204，但**不触发其他用户撤销**。所有正常退出都向客户端写入 host-only、HttpOnly、Secure、SameSite=Strict、Path=/_BMapService/ 的清除 Cookie 头。
+
+`internal/auth/map_access.go` 采用与常规登录独立的严格 JWT 校验，检查 HS256 签名、精确 Access Token 类型、非零 SessionVersion、精确 Subject、`iat` 和 `exp`。`verifiedMapBootstrapIdentity` 额外查询当前 DB 用户（非禁用、无需强制改密码）、会话版本和地图 epoch，并比较 **签发时间严格晚于撤销截止线**，从而阻止退出后仍未过期的旧 Access JWT 重新申请地图授权。普通 Access JWT 可能在自身有效期内继续适用于原有普通 API，地图预检则必须拒绝。精确时间比较可能导致撤销同一秒新签发的 JWT 也被拒绝，这是保守的安全结果。
+
+安全门禁仍为 **NO-GO**：无实际 Session 签发 HTTP 路由、无 JSAPI Loader/瓦片公开代理、无真实百度 Browser AK 请求；`runtime_enabled=false` 不变。管理员强制撤销、账户禁用和密钥轮换已有各自其他认证/配置保护，但后续仍需将地图 epoch/audit 与其准确联动及逐资源重新鉴权。必须完成法律许可、全量资源 allowlist、AK 原始上游响应+浏览器 HAR 防泄漏、跨副本资源配额、Caddy HTTPS、Electron 沙盒与 iOS 27/Android/桌面真机验收，才可以声称动态地图可用。

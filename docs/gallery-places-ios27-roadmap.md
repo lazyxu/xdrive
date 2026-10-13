@@ -180,3 +180,12 @@ A3b2a 浏览器 HAR 安全审计 #1624 在 exact-head 完整 CI/Final Gate 通�
 在 #1633 / A3b2c1 完整 CI 成功并线性合入后，新增独立 PostgreSQL `BaiduJSAPIMapEpoch` 持久撤销记录：每 Owner 初始版本 1，缺行/版本 0 失败关闭；事务内原子提升版本及不可回退的时间截止线，跨副本实时可读。`AccessAfterRevocation` 独立验证已经签名的 Access JWT 签发时间必须严格晚于撤销截止线，禁止旧 Token 再次签发地图 Cookie。新增隔离数据库/两个连接/回滚/账号隔离/禁用账号/必改密码测试，生产环境仍不开放 JSAPI 路由或百度密钥。
 
 后续必须先做 A3b2c2b：实际 logout/管理员撤销与持久 epoch 原子联动，地图授权签发时核验真实用户、JWT iat/会话版本及 JSAPI 安全许可，并在每次地图资源请求重新读取数据库与跨副本配额。完成真实百度官方许可、全部子资源白名单及密钥泄漏验收后才可启用 A3b2d 代理，随后 A3b3 连续地图和照片 Marker/聚合，再推进 A4 附近照片、B1/B2/B3 和 C1 iOS 27 1:1 真机/性能验收。始终保留 52px App Frame，Web/Mobile Web/Desktop 共享图库后端与虚拟化组件，百度唯一地图 Provider。
+
+
+## A3b2c2b · 退出登录撤销地图会话与已验签 JWT 校验（2026-10-13）
+
+A3b2c2a / #1639 的每用户 PostgreSQL `epoch`、原子递增和 Access Token 截止线已完整 CI/Final Gate 通过并线性合入。此阶段将 **真实 `/api/v1/auth/logout`** 的有效、未过期 Refresh Token 事务性撤销与地图 `epoch`、脱敏审计一起提交；失败全部回滚，重复/失效 Token 不能反复提高版本。退出时清除路径限定的短期 `XD_BMAP_SESSION` Cookie，不改变普通用户 Access JWT 的现有生命周期，也不取消后台传输/同步。
+
+独立的 `auth.Manager.ParseMapAccess` 只接受签名/时效/Subject/iat/SessionVersion 全部有效的 Access JWT；`verifiedMapBootstrapIdentity` 从 Server DB **重新读取真实用户、会话版本和地图撤销 epoch**，拒绝登出前签发的旧 JWT 重新申请地图 Cookie。当前它仅是 Server 内部预检，不提供 Session 路由，不读取/返回 AK，不等于 JSAPI 上线。
+
+下一步继续 A3b2c2c：把管理员禁用/密码变更/强制撤销和 Browser AK 轮换的地图撤销状态统一审计，并实现逐资源 DB 权限、跨副本配额、固定白名单。只有真实许可证、全量上游资源及 HAR/原始字节泄漏审计、CSP/Electron/移动真机通过后才允许 A3b2d JSAPI 4.0 动态地图，继而 A3b3 三端共用 Marker/聚合，接续 A4、B1–B3、C1。继续保持 iOS 27「照片」1:1 基准、52px 全屏 App Frame 和 Web/Mobile Web/Desktop 共用图库后端。
