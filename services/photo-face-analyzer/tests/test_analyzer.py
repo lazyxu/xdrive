@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import http.client
 import io
 import json
+import socket
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tempfile
@@ -131,6 +133,181 @@ class AnalyzerTests(unittest.TestCase):
             first.info_with_session(self.semantic_runtime.info())["runtime_instance_id"],
         )
         self.assertNotIn("runtime_instance_id", self.runtime.info())
+
+    def test_host_only_apply_ack_is_process_bound_and_not_a_task_effect(self) -> None:
+        host_token = "a" * 64
+        request_id = "0123456789abcdef01234567"
+        second_id = "fedcba987654321001234567"
+        state = analyzer.AnalyzerState(
+            self.runtime, self.smart_runtime, self.semantic_runtime,
+            self.creative_runtime, self.preview_origin, "ordinary-token",
+            host_apply_token=host_token,
+        )
+        digest = analyzer.healthcheck_session_digest(state.runtime_instance_id)
+
+        def host_ack_exchange(
+            socket_path: str, supplied: str | None, payload_bytes: bytes,
+            protocol: str = "1",
+        ) -> tuple[int, dict]:
+            # Send headers and the short body as ONE Unix-stream write.
+            # Unauthorized/invalid-protocol peers correctly reject after
+            # headers, so a split http.client write can race with the server's
+            # early close and raise BrokenPipeError before reading HTTP 401.
+            # Do not move production authentication behind body reads.
+            lines = [
+                "POST /v1/host-apply-ack HTTP/1.1",
+                "Host: localhost",
+                "Connection: close",
+                "Content-Type: application/json",
+                "Content-Length: " + str(len(payload_bytes)),
+                "X-XDrive-Host-Apply-Protocol: " + protocol,
+            ]
+            if supplied is not None:
+                lines.append("Authorization: Bearer " + supplied)
+            raw_request = ("\r\n".join(lines) + "\r\n\r\n").encode("ascii") + payload_bytes
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(3)
+                client.connect(socket_path)
+                client.sendall(raw_request)
+                response = http.client.HTTPResponse(client)
+                response.begin()
+                return response.status, json.loads(response.read())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_path = str(Path(tmp) / "host-apply.sock")
+            server = analyzer.ThreadingUnixHTTPServer(
+                socket_path, analyzer.AnalyzerHandler, state
+            )
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+
+            def invoke(token: str | None, payload: dict | None = None,
+                       protocol: str = "1") -> tuple[int, dict]:
+                encoded = json.dumps(payload).encode("utf-8") if payload is not None else b""
+                return host_ack_exchange(socket_path, token, encoded, protocol)
+
+            def info(path: str, protocol: str) -> dict:
+                connection = analyzer.UnixHTTPConnection(socket_path)
+                try:
+                    connection.request("GET", path, headers={
+                        "Authorization": "Bearer ordinary-token",
+                        protocol: "1",
+                    })
+                    response = connection.getresponse()
+                    self.assertEqual(response.status, 200)
+                    return json.loads(response.read())
+                finally:
+                    connection.close()
+
+            receipt = {
+                "request_id": request_id,
+                "revision": 2,
+                "runtime_instance_sha256": digest,
+            }
+            try:
+                self.assertNotIn(
+                    "host_apply_receipt", info("/v1/info", "X-XDrive-Face-Protocol")
+                )
+                for wrong_token in (None, "ordinary-token", "b" * 64):
+                    status, payload = invoke(wrong_token, receipt)
+                    self.assertEqual(status, 401)
+                    self.assertNotIn(host_token, str(payload))
+                status, _ = invoke(host_token, {
+                    **receipt, "runtime_instance_sha256": "0" * 64
+                })
+                self.assertEqual(status, 409)
+                status, _ = invoke(host_token, {**receipt, "revision": True})
+                self.assertEqual(status, 400)
+                status, _ = invoke(host_token, {**receipt, "extra": True})
+                self.assertEqual(status, 400)
+                status, _ = invoke(host_token, {**receipt, "padding": "x" * 300})
+                self.assertEqual(status, 413)
+                duplicate_json = (
+                    '{"request_id":"' + request_id + '","request_id":"' + request_id
+                    + '","revision":2,"runtime_instance_sha256":"' + digest + '"}'
+                ).encode("utf-8")
+                duplicate_status, _ = host_ack_exchange(
+                    socket_path, host_token, duplicate_json
+                )
+                self.assertEqual(duplicate_status, 400)
+                status, _ = invoke(host_token, receipt, protocol="2")
+                self.assertEqual(status, 400)
+                self.assertNotIn(
+                    "host_apply_receipt", info("/v1/info", "X-XDrive-Face-Protocol")
+                )
+                status, payload = invoke(host_token, receipt)
+                self.assertEqual(status, 200)
+                self.assertTrue(payload["acknowledged"])
+                self.assertEqual(payload["runtime_instance_sha256"], digest)
+                self.assertNotIn("runtime_instance_id", payload)
+                self.assertNotIn(host_token, str(payload))
+                for route, protocol in (
+                    ("/v1/info", "X-XDrive-Face-Protocol"),
+                    ("/v1/smart-info", "X-XDrive-Smart-Protocol"),
+                    ("/v1/semantic-info", "X-XDrive-Semantic-Protocol"),
+                    ("/v1/creative-info", "X-XDrive-Creative-Protocol"),
+                ):
+                    model_info = info(route, protocol)
+                    self.assertEqual(
+                        model_info["host_apply_receipt"],
+                        {"revision": 2, "request_id": request_id},
+                    )
+                self.assertEqual(invoke(host_token, receipt)[0], 200)
+                self.assertEqual(invoke(
+                    host_token, {**receipt, "request_id": second_id}
+                )[0], 409)
+                self.assertEqual(invoke(
+                    host_token, {**receipt, "revision": 1}
+                )[0], 409)
+                self.assertEqual(
+                    info("/v1/info", "X-XDrive-Face-Protocol")["host_apply_receipt"],
+                    {"revision": 2, "request_id": request_id},
+                )
+                self.assertEqual(invoke(
+                    host_token, {**receipt, "request_id": second_id, "revision": 3}
+                )[0], 200)
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join(timeout=5)
+
+        restarted = analyzer.AnalyzerState(
+            self.runtime, self.smart_runtime, self.semantic_runtime,
+            self.creative_runtime, self.preview_origin, "ordinary-token",
+            host_apply_token=host_token,
+        )
+        self.assertNotEqual(state.runtime_instance_id, restarted.runtime_instance_id)
+        self.assertNotIn("host_apply_receipt", restarted.info_with_session(
+            self.runtime.info()
+        ))
+        default_state = analyzer.AnalyzerState(
+            self.runtime, self.smart_runtime, self.semantic_runtime,
+            self.creative_runtime, self.preview_origin, "ordinary-token",
+        )
+        self.assertFalse(default_state.host_apply_token)
+        with tempfile.TemporaryDirectory() as disabled_tmp:
+            socket_path = str(Path(disabled_tmp) / "host-apply-disabled.sock")
+            server = analyzer.ThreadingUnixHTTPServer(
+                socket_path, analyzer.AnalyzerHandler, default_state
+            )
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                disabled_status, _ = host_ack_exchange(
+                    socket_path, host_token, json.dumps(receipt).encode("utf-8")
+                )
+                self.assertEqual(disabled_status, 404)
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join(timeout=5)
+        for wrong in ("x", "A" * 64, "0" * 63, "a" * 64 + " "):
+            with self.assertRaises(ValueError):
+                analyzer.AnalyzerState(
+                    self.runtime, self.smart_runtime, self.semantic_runtime,
+                    self.creative_runtime, self.preview_origin,
+                    "ordinary-token", host_apply_token=wrong,
+                )
 
     def test_model_manifest_and_dimensions(self) -> None:
         info = self.runtime.info()
