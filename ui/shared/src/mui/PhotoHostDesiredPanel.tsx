@@ -288,7 +288,7 @@ export function XDrivePhotoHostDesiredPanel({
                 <Typography variant="subtitle2">宿主安全启用条件（只读）</Typography>
                 <Typography variant="caption" color="text.secondary">
                   手动检查固定宿主前置条件；只有已保存的启用修订取得可信宿主回执时，才对四类模型执行独立 Info 探针。
-                  不授权启停；宿主 ACK 核验后仅执行固定文本与模型内合成图片的真实语义推理，不读取用户照片，也不能代表其他 Server 实例。
+                  不授权启停；可信 ACK 后可运行固定语义文本／图片和 YuNet 合成图片检测烟测，均不读取用户照片，也不代表其他 Server 实例。
                 </Typography>
                 <Box>
                   <Button size="small" variant="outlined" onClick={() => { void verifyLocalReadiness() }}
@@ -339,6 +339,18 @@ export function XDrivePhotoHostDesiredPanel({
                             : preflight.semantic_image_task_state === 'throttled'
                               ? '检测频率受限或正在执行；未验证'
                               : '未运行、回执不足或旧版 Server/Agent/模型不支持'}
+                      </Typography>
+                      <Typography variant="body2"
+                        color={preflight.face_detector_task_state === 'verified' ? 'success.main'
+                          : preflight.face_detector_task_state === 'failed' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-face-detector-task-state>
+                        合成图片人脸检测器：{preflight.face_detector_task_state === 'verified'
+                          ? '真实 YuNet 已执行且返回合法结果（可能检测到 0 人脸；不代表识别准确、SFace 或真实图库成功）'
+                          : preflight.face_detector_task_state === 'failed'
+                            ? '检测器或返回结果验证失败；不能报告生效'
+                            : preflight.face_detector_task_state === 'throttled'
+                              ? '限流或已有检测运行；本次未验证'
+                              : '未运行、宿主 ACK 不完整或旧版 Server/Agent/模型不支持'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-request-generation-correlated>
                         已审计启用请求与当前模型代际：{preflight.request_generation_correlated

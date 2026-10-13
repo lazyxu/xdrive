@@ -78,6 +78,34 @@ func (a *UnixFaceAnalyzer) Info(
 	return out, nil
 }
 
+// FaceDetectorCanary proves a bounded response from the actual YuNet
+// path on fixed, non-person pixels; zero faces is a valid result.
+type FaceDetectorCanary struct {
+	DetectorExecuted bool `json:"detector_executed"`
+	FaceCount        int  `json:"face_count"`
+}
+
+// ProbeSyntheticFaceDetection uses only a fixed authenticated Unix GET.
+func (a *UnixFaceAnalyzer) ProbeSyntheticFaceDetection(
+	ctx context.Context,
+) (FaceDetectorCanary, error) {
+	var out FaceDetectorCanary
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"http://xdrive-photo-face/v1/face-detector-canary",
+		nil,
+	)
+	if err != nil {
+		return out, err
+	}
+	a.addHeaders(req)
+	if err := a.doJSON(req, &out); err != nil {
+		return FaceDetectorCanary{}, err
+	}
+	return out, nil
+}
+
 func (a *UnixFaceAnalyzer) Analyze(
 	ctx context.Context,
 	task FaceAnalysisTask,

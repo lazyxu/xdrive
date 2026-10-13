@@ -13,12 +13,13 @@ const photoHostSemanticProbeText = "a photo of a dog"
 const photoHostSemanticProbeTimeout = 6 * time.Second
 const photoHostSemanticProbeCooldown = 60 * time.Second
 
-// Rate-limit expensive real inference per Server process. No user-provided
-// text, image bytes, URL, Source ID or host command reaches this diagnostic.
+// Rate-limit bounded synthetic inference per process. Semantic text/image
+// and YuNet detection share one mutex; no user input or URL is accepted.
 var photoHostSemanticProbeGate = struct {
 	sync.Mutex
 	lastAttempt      time.Time
 	lastImageAttempt time.Time
+	lastFaceAttempt  time.Time
 }{}
 
 // Shared real synthetic-inference validator: require exact host ACK before

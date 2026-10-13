@@ -287,6 +287,9 @@ export type XDrivePhotoHostPreflight = {
   // Actual semantic image encoder on fixed model-local synthetic pixels.
   // Does not prove real gallery images, other models or fleet activation.
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  // YuNet executed on fixed NON-person pixels; zero faces is acceptable.
+  // Not a SFace identification, real-photo or model accuracy proof.
+  face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

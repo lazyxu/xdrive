@@ -1312,6 +1312,26 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 )
                 self._write_json(200, self.server.state.info_with_session(self.server.state.runtime.info()))
                 return
+            if method == "GET" and target == "/v1/face-detector-canary":
+                # True YuNet invocation on fixed non-person pixels only.
+                # A zero-face result proves execution, not recognition.
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-face-protocol",
+                    PROTOCOL_VERSION,
+                    "face",
+                )
+                if not self.server.state.token:
+                    raise RequestError(503, "face detector canary requires auth")
+                if headers.get("transfer-encoding") or headers.get(
+                    "content-length", "0"
+                ) != "0":
+                    raise RequestError(400, "face detector canary rejects a body")
+                faces = self.server.state.runtime.analyze(synthetic_image())
+                self._write_json(
+                    200, {"detector_executed": True, "face_count": len(faces)}
+                )
+                return
             if method == "GET" and target == "/v1/smart-info":
                 self._require_protocol(
                     headers,

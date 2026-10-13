@@ -962,6 +962,7 @@ export type AgentAdminPhotoHostPreflight = {
   model_request_ack_verified?: boolean
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   checked_at: string
   action: 'unset' | 'enable' | 'disable'
   desired_revision: number

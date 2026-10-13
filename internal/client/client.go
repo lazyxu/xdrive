@@ -671,6 +671,7 @@ type AdminPhotoHostPreflight struct {
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
+	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
 }
 
 type AdminPhotoHostApplyInput struct {
