@@ -36,6 +36,7 @@ type adminPhotoHostPreflightDTO struct {
 	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
+	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 }
 
 // Any queued/active file, symlink, or unexpected filesystem error fails closed.
@@ -124,10 +125,11 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		return
 	}
 	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
-	// The administrator's explicit read-only preflight is the only permitted
-	// trigger for the four independent, bounded model Info calls. Missing
+	// Only the administrator's explicit no-store preflight may trigger the
+	// four model Info checks and (after proven ACK) one bounded fixed-text task. Missing
 	// trustworthy host revision evidence means that Info is never invoked.
 	report.ModelInfoChecks = unverifiedPhotoHostModelInfoChecks()
+	report.SemanticTextTaskState = "unverified"
 	if hasGate && photoHostModelInfoAllowed(desired, gate, hasGate, s.photoHostApplyReceipt(gate)) {
 		report.HostRevisionVerified = true
 		report.ModelInfoChecks = s.probePhotoHostModelInfo(c.Request.Context())
@@ -166,6 +168,11 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		}
 	}
 	if report.ModelRequestAckVerified {
+		// A real task is separate from host and four-Info ACK proof. It must
+		// never promote the global effect-proof state to pass.
+		report.SemanticTextTaskState = s.photoHostSemanticTextProbe(
+			c.Request.Context(), desired, gate, report.ModelInfoChecks,
+		)
 		report.Checks[6].Detail = "四类模型确认了已审计的同一次宿主启用请求；但真实媒体任务、跨实例部署及安全停用仍未验证"
 	} else if report.HostRevisionVerified {
 		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；模型请求回执尚未完成独立核验，不能证明同源请求确认或真实媒体任务成功"

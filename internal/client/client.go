@@ -669,6 +669,7 @@ type AdminPhotoHostPreflight struct {
 	SocketOwnerVerified         bool                           `json:"socket_owner_verified"`
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
+	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 }
 
 type AdminPhotoHostApplyInput struct {
