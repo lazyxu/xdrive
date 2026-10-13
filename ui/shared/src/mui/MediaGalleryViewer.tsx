@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import AutoFixHighRoundedIcon from '@mui/icons-material/AutoFixHighRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
@@ -16,6 +17,8 @@ import type {
   MediaCreativeGeneration,
   MediaCreativeInput,
   MediaItem,
+  XDriveBaiduMapProviderInfo,
+  XDriveBaiduStaticMapRequest,
 } from '../models'
 import {
   xDriveMediaItemSupportsBasicEditing,
@@ -27,6 +30,7 @@ import {
   xDriveMediaItemSupportsCreative,
 } from './MediaGalleryCreativeDialog'
 import { XDriveMediaGalleryEditDialog } from './MediaGalleryEditDialog'
+import { XDriveMediaGalleryViewerLocationDialog } from './MediaGalleryViewerLocationDialog'
 import { XDriveMediaGalleryFilmstrip } from './MediaGalleryFilmstrip'
 import type { XDriveMediaGalleryFilmstripEntry } from './MediaGalleryFilmstrip'
 import { XDriveMediaViewerContent } from './MediaViewerContent'
@@ -49,6 +53,8 @@ export function XDriveMediaGalleryViewer({
   loadThumbnail,
   loadLivePhotoMotion,
   loadPreviewURL,
+  getBaiduMapProvider,
+  loadBaiduStaticMap,
   onPrevious,
   onNext,
   onFilmstripSelect,
@@ -75,6 +81,8 @@ export function XDriveMediaGalleryViewer({
   loadThumbnail: MediaThumbnailLoader
   loadLivePhotoMotion?: MediaMotionLoader
   loadPreviewURL?: MediaPreviewURLLoader
+  getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
+  loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
@@ -109,6 +117,7 @@ export function XDriveMediaGalleryViewer({
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [creativeOpen, setCreativeOpen] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [locationOpen, setLocationOpen] = useState(false)
   // The visible Viewer can change while a durable action is still running.
   // Pending work keeps running, but only its initiating media session may own
   // the action chrome or close that session on completion.
@@ -166,10 +175,16 @@ export function XDriveMediaGalleryViewer({
     setDeleteOpen(false)
     setCreativeOpen(false)
     setEditOpen(false)
+    setLocationOpen(false)
     setFullScreen(false)
     onClose()
   }
 
+  const latitude = item?.metadata.latitude
+  const longitude = item?.metadata.longitude
+  const hasPhotoGPS = typeof latitude === 'number' && typeof longitude === 'number' &&
+    Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
   const actions = item ? (
     <Stack direction="row" spacing={0.25} alignItems="center">
       {onToggleFavorite ? (
@@ -212,6 +227,13 @@ export function XDriveMediaGalleryViewer({
             onClick={() => setEditOpen(true)}
           >
             <EditRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {hasPhotoGPS && getBaiduMapProvider && loadBaiduStaticMap ? (
+        <Tooltip title="在地图上查看照片">
+          <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
+            <MapOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -323,6 +345,14 @@ export function XDriveMediaGalleryViewer({
           />
         ) : null}
       </XDriveOpenPreviewDialog>
+
+      <XDriveMediaGalleryViewerLocationDialog
+        open={locationOpen}
+        item={item}
+        getBaiduMapProvider={getBaiduMapProvider}
+        loadBaiduStaticMap={loadBaiduStaticMap}
+        onClose={() => setLocationOpen(false)}
+      />
 
       <XDriveMediaGalleryCreativeDialog
         open={creativeOpen}

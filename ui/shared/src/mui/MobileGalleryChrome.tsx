@@ -52,6 +52,8 @@ export interface XDriveMobileGalleryChromeProps {
   canReturnToPosition?: boolean
   onReturnToPosition?: () => void
   onRefresh?: () => void
+  /** Uses the existing Gallery Places controller, never a mobile-only map API. */
+  onShowMap?: () => void
   // Only real shared Gallery actions may expose More on Collections overview.
   showOverviewActions?: boolean
   extraActions?: ReactNode
@@ -68,7 +70,7 @@ export function XDriveMobileGalleryChrome({
   onTimeZoneChange, aspectMode, onAspectModeChange, density, densityMin,
   densityMax, densityStep, onDensityChange, foldDuplicates,
   onFoldDuplicatesChange, jumpGroups, onJumpGroup, onJumpDay,
-  canReturnToPosition, onReturnToPosition, onRefresh, showOverviewActions, extraActions,
+  canReturnToPosition, onReturnToPosition, onRefresh, onShowMap, showOverviewActions, extraActions,
 }: XDriveMobileGalleryChromeProps) {
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchFocus, setSearchFocus] = useState(false)
@@ -437,6 +439,12 @@ export function XDriveMobileGalleryChrome({
                   </Button>
                 ) : null}
               </>
+            ) : null}
+            {onShowMap ? (
+              <Button variant="outlined" data-xdrive-mobile-gallery-show-map
+                onClick={() => { setMoreOpen(false); onShowMap() }} sx={{ minHeight: 44 }}>
+                显示地图
+              </Button>
             ) : null}
             {onRefresh ? <Button onClick={onRefresh}>刷新图库</Button> : null}
             {extraActions}

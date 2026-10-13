@@ -18,10 +18,13 @@ type ProviderResult =
  * or emergency fallback. Neither the AK nor the upstream URL reaches clients. */
 export function XDriveMediaGalleryBaiduStaticMap({
   place,
+  location,
   getProvider,
   loadStaticMap,
 }: {
   place?: MediaPlaceFacet
+  /** Exact photo GPS supplied by Viewer, never a synthesized grid center. */
+  location?: { latitude: number; longitude: number; name?: string }
   getProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
 }) {
@@ -50,8 +53,10 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const enabled = provider.kind === 'available' && provider.info.enabled
   // The existing latitude/longitude fields describe a GPS grid CENTER,
   // not a real photo. A1 adds an exact representative Node coordinate.
-  const latitude = place?.sample_latitude ?? place?.latitude
-  const longitude = place?.sample_longitude ?? place?.longitude
+  const latitude = location?.latitude ?? (place?.sample_latitude ?? place?.latitude)
+  const longitude = location?.longitude ?? (place?.sample_longitude ?? place?.longitude)
+  const hasLocation = Boolean(location || place)
+  const mapName = location?.name ?? place?.name ?? ''
 
   useEffect(() => {
     const controller = new AbortController()
@@ -100,21 +105,21 @@ export function XDriveMediaGalleryBaiduStaticMap({
       : provider.kind === 'unavailable' ? '无法连接百度地图服务，请检查 Server 和客户端版本。'
       : !provider.info.enabled ? '百度地图未启用，请管理员在 Server 配置有效的百度地图 AK。'
       : !loadStaticMap ? '当前客户端不支持百度地图图片传输，请更新客户端。'
-      : !place ? '没有可显示的地点。'
+      : !hasLocation ? '没有可显示的地点。'
       : error || (busy ? '正在加载百度地图…' : '百度地图暂无可显示的图片。')
 
   return (
     <Box component="section" data-xdrive-baidu-static-map sx={{ px: { xs: 1.25, sm: 1.5 }, pb: 1.5 }}>
       <Stack direction="row" alignItems="center" spacing={1}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
-          <Typography variant="subtitle2">百度地图{place ? ` · ${place.name}` : ''}</Typography>
+          <Typography variant="subtitle2">百度地图{mapName ? ` · ${mapName}` : ''}</Typography>
           <Typography variant="caption" color="text.secondary">
             百度地图 Server API · {provider.kind === 'available' ? provider.info.attribution : '© 百度地图'}
           </Typography>
         </Box>
         <Tooltip title="缩小百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !place || busy || zoom <= 3}
+            <IconButton size="small" disabled={!enabled || !hasLocation || busy || zoom <= 3}
               onClick={() => setZoom((value) => Math.max(3, value - 1))}
               aria-label="缩小百度地图">
               <ZoomOutRoundedIcon fontSize="small" />
@@ -124,7 +129,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         <Typography variant="caption" color="text.secondary">{zoom}</Typography>
         <Tooltip title="放大百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !place || busy || zoom >= 18}
+            <IconButton size="small" disabled={!enabled || !hasLocation || busy || zoom >= 18}
               onClick={() => setZoom((value) => Math.min(18, value + 1))}
               aria-label="放大百度地图">
               <ZoomInRoundedIcon fontSize="small" />
@@ -133,7 +138,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         </Tooltip>
         <Tooltip title="重新加载百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !place || !loadStaticMap || busy}
+            <IconButton size="small" disabled={!enabled || !hasLocation || !loadStaticMap || busy}
               onClick={() => setRequestID((value) => value + 1)}
               aria-label="重新加载百度地图">
               <RefreshRoundedIcon fontSize="small" />
@@ -154,7 +159,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         overflow: 'hidden',
       }}>
         {imageURL && !error ? (
-          <Box component="img" src={imageURL} alt={`百度地图：${place?.name ?? ''}`}
+          <Box component="img" src={imageURL} alt={`百度地图：${mapName}`}
             onError={() => setError('百度地图返回的图片无法显示，请重试。')}
             sx={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : (

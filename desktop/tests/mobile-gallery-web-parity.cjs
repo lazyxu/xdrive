@@ -181,7 +181,10 @@ test('P0-3f mounted Web and Mobile share same account-pinned album notifications
 test('P1-1a Mobile Collections overview reuses the Wide Web Gallery upload entry and native picker', () => {
   assert.match(page, /const galleryUploadAction = onUploadRequested &&/)
   assert.match(page, /!isTrashSection \|\| \(compactGallery && mobileCollectionsOverview\)/)
-  assert.match(page, /showOverviewActions=\{Boolean\(galleryUploadAction\)\}/)
+  // Map is a second authorized entry; it must not hide the existing upload entry.
+  assert.match(page, /showOverviewActions=\{Boolean\(galleryUploadAction \|\| onShowMap\)\}/)
+  assert.match(page, /extraActions=\{mobileCollectionsOverview \? galleryUploadAction :/)
+  assert.match(chrome, /data-xdrive-mobile-gallery-show-map/)
   assert.match(page, /extraActions=\{mobileCollectionsOverview \? galleryUploadAction :/)
   assert.match(page, /\{contextualHeaderActions\}/)
   assert.match(page, /data-xdrive-gallery-upload/)
