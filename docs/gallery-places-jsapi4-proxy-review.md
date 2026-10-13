@@ -89,3 +89,9 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 `internal/auth/map_access.go` 采用与常规登录独立的严格 JWT 校验，检查 HS256 签名、精确 Access Token 类型、非零 SessionVersion、精确 Subject、`iat` 和 `exp`。`verifiedMapBootstrapIdentity` 额外查询当前 DB 用户（非禁用、无需强制改密码）、会话版本和地图 epoch，并比较 **签发时间严格晚于撤销截止线**，从而阻止退出后仍未过期的旧 Access JWT 重新申请地图授权。普通 Access JWT 可能在自身有效期内继续适用于原有普通 API，地图预检则必须拒绝。精确时间比较可能导致撤销同一秒新签发的 JWT 也被拒绝，这是保守的安全结果。
 
 安全门禁仍为 **NO-GO**：无实际 Session 签发 HTTP 路由、无 JSAPI Loader/瓦片公开代理、无真实百度 Browser AK 请求；`runtime_enabled=false` 不变。管理员强制撤销、账户禁用和密钥轮换已有各自其他认证/配置保护，但后续仍需将地图 epoch/audit 与其准确联动及逐资源重新鉴权。必须完成法律许可、全量资源 allowlist、AK 原始上游响应+浏览器 HAR 防泄漏、跨副本资源配额、Caddy HTTPS、Electron 沙盒与 iOS 27/Android/桌面真机验收，才可以声称动态地图可用。
+
+## A3b2c2c1 · Cookie 认证身份与 Server 逐请求数据校验（2026-10-13）
+
+地图 JS/瓦片 GET 无法使用常规 Bearer，因此先对仅供地图资源的 120 秒 Cookie 进行 AEAD 认证，严禁从 URL/Host/Header 推断 Owner。内部 `InspectMapSessionOwner` 只返回经密码认证的 OwnerID，**不是权限**。`baiduJSAPIResourceSnapshot` 继续逐请求读取用户活跃状态、session version、JSAPI Browser AK 的 desired-config revision 和持久 epoch。当前仅允许 `/_BMapService/api?v=4.0` 的严格请求外形，拒绝重复 Cookie、任意来源、客户端 AK 与未登记的子资源。所有结果 `RuntimeAuthorized=false`，当前并不存在动态 JSAPI 代理或 JSAPI Map 会话签发 HTTP 端点。
+
+独立 PostgreSQL 隔离测试会模拟已签发 Cookie，在配置轮换、关闭、Epoch 递增、账号禁用后证明旧 Cookie 不能通过新的状态；测试中人为将授权 Boolean 设为 true 只是密码学断言，绝非真实授权。完整百度许可、子资源清单/实时上游响应字节与 HAR 泄露检测、跨实例限额、CSP/Electron 沙盒及 iOS 27/Android/Desktop 物理验收仍为严格 NO-GO 门禁。
