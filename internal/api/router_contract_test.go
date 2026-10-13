@@ -161,6 +161,7 @@ func TestEveryRegisteredAPIEndpointIsInCoverageManifest(t *testing.T) {
 		{method: "GET", path: "/api/v1/media/items/:id/resources/:role", suite: "media"},
 		{method: "GET", path: "/api/v1/media/albums", suite: "media"},
 		{method: "GET", path: "/api/v1/media/places", suite: "media"},
+		{method: "GET", path: "/api/v1/media/places/page", suite: "media-places"},
 		{method: "GET", path: "/api/v1/media/places/map-provider", suite: "media"},
 		{method: "GET", path: "/api/v1/media/places/baidu-static", suite: "media"},
 		{method: "GET", path: "/api/v1/media/pets", suite: "media"},

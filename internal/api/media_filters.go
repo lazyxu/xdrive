@@ -393,9 +393,9 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 	}
 	if options.HasLocation != nil {
 		if *options.HasLocation {
-			query = query.Where("xd_media_metadata.latitude IS NOT NULL AND xd_media_metadata.longitude IS NOT NULL")
+			query = query.Where(mediaPlaceValidGPSPredicate)
 		} else {
-			query = query.Where("xd_media_metadata.latitude IS NULL OR xd_media_metadata.longitude IS NULL")
+			query = query.Where("NOT " + mediaPlaceValidGPSPredicate)
 		}
 	}
 	if options.Favorite != nil {
@@ -415,6 +415,7 @@ func applyMediaQueryFilters(query *gorm.DB, options mediaQueryOptions, ownerID u
 	}
 	if options.Place != nil {
 		latMin, latMax, lonMin, lonMax := mediaPlaceBounds(*options.Place)
+		query = query.Where(mediaPlaceValidGPSPredicate)
 		query = query.Where(
 			"xd_media_metadata.latitude >= ? AND xd_media_metadata.latitude < ? AND "+
 				"xd_media_metadata.longitude >= ? AND xd_media_metadata.longitude < ?",

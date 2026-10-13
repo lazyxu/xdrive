@@ -48,8 +48,10 @@ export function XDriveMediaGalleryBaiduStaticMap({
   }, [getProvider])
 
   const enabled = provider.kind === 'available' && provider.info.enabled
-  const latitude = place?.latitude
-  const longitude = place?.longitude
+  // The existing latitude/longitude fields describe a GPS grid CENTER,
+  // not a real photo. A1 adds an exact representative Node coordinate.
+  const latitude = place?.sample_latitude ?? place?.latitude
+  const longitude = place?.sample_longitude ?? place?.longitude
 
   useEffect(() => {
     const controller = new AbortController()

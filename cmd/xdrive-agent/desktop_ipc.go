@@ -717,6 +717,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("DELETE /v1/media/album-folder", h.deleteMediaAlbumFolder)
 	mux.HandleFunc("PATCH /v1/media/album/folder", h.moveMediaAlbumToFolder)
 	mux.HandleFunc("GET /v1/media/places", h.mediaPlaces)
+	mux.HandleFunc("GET /v1/media/places/page", h.mediaPlacesPage)
 	mux.HandleFunc("GET /v1/media/map-provider", h.mediaBaiduMapProvider)
 	mux.HandleFunc("GET /v1/media/baidu-static", h.mediaBaiduStaticMap)
 	mux.HandleFunc("GET /v1/media/memories", h.mediaMemories)
@@ -4592,6 +4593,42 @@ func (h *desktopIPCHandler) mediaPlaces(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+func (h *desktopIPCHandler) mediaPlacesPage(w http.ResponseWriter, r *http.Request) {
+	limit := 48
+	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 100 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_limit", "page limit must be between 1 and 100")
+			return
+		}
+		limit = value
+	}
+	offset := 0
+	if raw := strings.TrimSpace(r.URL.Query().Get("offset")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || value > 10000000 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_media_place_offset", "place offset is invalid")
+			return
+		}
+		offset = value
+	}
+	// Optional Desktop Agent paging capability: older test/controllers and
+	// older Agents may implement only the original array-based Places API.
+	pager, ok := h.ctrl.(interface {
+		CloudMediaPlacesPage(context.Context, int, int) (client.MediaPlacesPage, error)
+	})
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "unsupported_media_places_paging", "Media Places pagination requires an updated Agent")
+		return
+	}
+	page, err := pager.CloudMediaPlacesPage(r.Context(), limit, offset)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) mediaMemories(w http.ResponseWriter, r *http.Request) {

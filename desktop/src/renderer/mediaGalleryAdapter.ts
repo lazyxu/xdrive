@@ -65,6 +65,7 @@ export function createDesktopMediaGalleryDataSource(
     moveAlbumToFolder: (albumID, revision, folderID) =>
       agent.moveMediaAlbumToFolder(albumID, revision, folderID),
     listPlaces: (limit = 24) => agent.getMediaPlaces(limit),
+    listPlacesPage: (limit = 48, offset = 0) => agent.getMediaPlacesPage(limit, offset),
     getBaiduMapProvider: () => agent.getBaiduMapProvider(),
     loadBaiduStaticMap: async (input, signal) => {
       const result = await xDriveDesktopViewportRequest(signal, (requestID) =>

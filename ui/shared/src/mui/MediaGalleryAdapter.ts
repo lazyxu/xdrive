@@ -30,6 +30,7 @@ import type {
   MediaPersonIdentity,
   MediaPersonSplit,
   MediaPlaceFacet,
+  MediaPlacesPage,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
 } from '../models'
@@ -137,6 +138,7 @@ export interface XDriveMediaGalleryPort {
   listPlaces?: (
     limit?: number,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlaceFacet[]>>
+  listPlacesPage?: (limit?: number, offset?: number) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesPage>>
   getBaiduMapProvider?: () => Promise<XDriveMediaGalleryTransportResult<XDriveBaiduMapProviderInfo>>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<Blob>>
   listMemories?: (
@@ -520,6 +522,9 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     listPlaces: port.listPlaces
       ? (limit) => resolveXDriveTransport(port.listPlaces!(limit))
+      : undefined,
+    listPlacesPage: port.listPlacesPage
+      ? (limit, offset) => resolveXDriveTransport(port.listPlacesPage!(limit, offset))
       : undefined,
     getBaiduMapProvider: port.getBaiduMapProvider
       ? () => resolveXDriveTransport(port.getBaiduMapProvider!())

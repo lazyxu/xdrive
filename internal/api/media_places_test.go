@@ -58,3 +58,29 @@ func TestMediaPlaceMapFacetLimit(t *testing.T) {
 		t.Fatalf("max limit=%d want 1000", mediaPlaceMaxLimit)
 	}
 }
+
+func TestMediaPlacePageCountAndGPSPredicate(t *testing.T) {
+	for _, tc := range []struct {
+		total            int64
+		offset, returned int
+		more             bool
+	}{
+		{total: 31, offset: 0, returned: 24, more: true},
+		{total: 31, offset: 24, returned: 7, more: false},
+		{total: 0, offset: 0, returned: 0, more: false},
+		{total: 100000, offset: 99948, returned: 48, more: true},
+		{total: 100000, offset: 99996, returned: 4, more: false},
+	} {
+		if got := mediaPlaceHasMore(tc.total, tc.offset, tc.returned); got != tc.more {
+			t.Fatalf("page total=%d offset=%d returned=%d: has_more=%v want %v",
+				tc.total, tc.offset, tc.returned, got, tc.more)
+		}
+	}
+	if mediaPlacePageDefaultLimit != 48 || mediaPlacePageMaxLimit != 100 ||
+		mediaPlacePageMaxOffset < 100000 {
+		t.Fatal("page defaults should preserve 100k+ sparse navigation")
+	}
+	if mediaPlaceValidGPSPredicate == "" {
+		t.Fatal("Gallery GPS and Places must share one valid coordinate predicate")
+	}
+}
