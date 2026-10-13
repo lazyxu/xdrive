@@ -1,0 +1,65 @@
+{
+  "workload_id": "P046",
+  "phase": "M003-a",
+  "classification": "Invalid harness",
+  "source_exact_sha": "f4753feeac12631bb1e4fcae3b35bb994b4cbefb",
+  "run_id": 38355923753,
+  "job_id": 115158675632,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38355923753",
+  "stage": "native source gofmt preflight with full `gofmt -d` diagnostic",
+  "why": "Go formatter identified string concatenation, subtraction spacing, and map literal column alignment differences in test-only file. The gate failed immediately after printing diff, before Node source contract/Go build/PostgreSQL+Local CAS real 100k seed.",
+  "nonproduct_scope": true,
+  "physical_objects_created": 0,
+  "physical_objects_deleted": 0,
+  "valid_n": 0,
+  "before_ms": null,
+  "after_ms": null,
+  "speedup_pct": null,
+  "exact_changes": [
+    {
+      "before": "Username: \"cas-original-\"+sample",
+      "after": "Username: \"cas-original-\" + sample"
+    },
+    {
+      "before": "cpuDelta := cpuAfter-cpuBefore",
+      "after": "cpuDelta := cpuAfter - cpuBefore"
+    },
+    {
+      "before": "\"sample\": sample, \"status\":",
+      "after": "\"sample\":   sample, \"status\":"
+    },
+    {
+      "before": "\"deleting_originals\": p046Removed,",
+      "after": "\"deleting_originals\":    p046Removed,"
+    },
+    {
+      "before": "\"physically_deleted_objects\": beforeCount-afterCount,",
+      "after": "\"physically_deleted_objects\": beforeCount - afterCount,"
+    },
+    {
+      "before": "\"physically_deleted_bytes\": beforeBytes-afterBytes,",
+      "after": "\"physically_deleted_bytes\":   beforeBytes - afterBytes,"
+    },
+    {
+      "before": "\"remaining_CAS_DB_rows\": remain,",
+      "after": "\"remaining_CAS_DB_rows\":      remain,"
+    },
+    {
+      "before": "\"protected_File_DB_rows\": fileRefs,",
+      "after": "\"protected_File_DB_rows\":            fileRefs,"
+    },
+    {
+      "before": "\"fixture_seed_ms_excluded\": seedMS,",
+      "after": "\"fixture_seed_ms_excluded\":          seedMS,"
+    },
+    {
+      "before": "\"frozen_finalize_budget_ms\": p046BudgetMS,",
+      "after": "\"frozen_finalize_budget_ms\":  p046BudgetMS,"
+    },
+    {
+      "before": "\"finalization_error\": fmt.Sprint(releaseErr),",
+      "after": "\"finalization_error\":         fmt.Sprint(releaseErr),"
+    }
+  ],
+  "decision": "Invalid harness; amend formatting only and rerun original frozen n3, 95k physical CAS delete, <=900000ms, <=256MiB peak VmRSS. No production code changed."
+}

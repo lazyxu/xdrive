@@ -1,0 +1,19 @@
+{
+  "workload_id": "P046",
+  "phase": "M003-a",
+  "classification": "Invalid harness",
+  "repository": "lazyxu/xdrive",
+  "original_work_sha": "c0458d2a129094d96f61c84b6667ebbb73cd5724",
+  "run_id": 38355620529,
+  "job_id": 115157702662,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38355620529",
+  "failure_stage": "source preflight / gofmt -l internal/api/physical_cas_original_finalize_100k_performance_test.go",
+  "evidence": "Go formatting check had nonempty output; set -euo pipefail plus test -z returned exit code 1; source contract/Go compilation and real physical fixture did not execute.",
+  "original_objects_created": 0,
+  "originals_removed": 0,
+  "valid_samples": 0,
+  "before_ms": null,
+  "after_ms": null,
+  "speedup_pct": null,
+  "follow_up": "Print actual gofmt -d output, fix test-only formatting, retain original 100k/95k true CAS, <=900000ms physical finalize and <=256MiB postseed VmRSS budgets unchanged. Rerun exact native and full CI. This is not a product performance RED."
+}
