@@ -4,10 +4,16 @@ import {
   checkXDrivePwaUpdate, subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot,
 } from './pwaUpdates'
 import { xDriveProbePwaServer } from './pwaConnectivity'
+import {
+  subscribeXDrivePwaWindowActivity, xDrivePwaKnownWindowBlockers,
+  xDrivePwaWindowActivitySnapshot,
+} from './pwaWorkloadSafety'
 import type { XDrivePwaReadinessResult } from './pwaConnectivity'
 
 export default function XDrivePwaUpdateSection() {
   const state = useSyncExternalStore(subscribeXDrivePwaUpdates, xDrivePwaUpdateSnapshot)
+  const currentWindow = useSyncExternalStore(subscribeXDrivePwaWindowActivity, xDrivePwaWindowActivitySnapshot)
+  const windowBlockers = xDrivePwaKnownWindowBlockers(currentWindow)
   const [instructionsOpen, setInstructionsOpen] = useState(false)
   const [serverChecking, setServerChecking] = useState(false)
   const [serverResult, setServerResult] = useState<XDrivePwaReadinessResult | null>(null)
@@ -73,6 +79,22 @@ export default function XDrivePwaUpdateSection() {
       {state.otherWindowReportedUpdate ? (
         <Alert severity="info" sx={{ mb: 1 }}>
           此站点的另一窗口报告可能有新版本；请在当前窗口主动检查确认。
+        </Alert>
+      ) : null}
+      {state.phase === 'waiting' ? (
+        <Alert data-xdrive-pwa-activity-guard severity="warning" role="status" sx={{ mb: 1 }}>
+          <Typography variant="body2" fontWeight={700}>当前窗口的工作状态（只读）</Typography>
+          <Typography variant="body2">
+            {!currentWindow.observed ? '当前业务活动尚不可确认。'
+              : windowBlockers.length > 0
+                ? `检测到：${windowBlockers.join('、')}；请先完成或保存。`
+                : '未检测到已接入的前台任务；不代表可以立即激活更新。'}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 1 }}>
+            当前只检测 Web/Mobile Web 前台传输、Viewer 与系统依赖草稿；
+            无法证明其他窗口、其他编辑器草稿或浏览器接管的下载已经结束。
+            不会自动刷新或激活更新；请人工确认并关闭所有 xDrive 窗口后重新打开。
+          </Typography>
         </Alert>
       ) : null}
       {state.phase === 'waiting' && !instructionsOpen ? (
