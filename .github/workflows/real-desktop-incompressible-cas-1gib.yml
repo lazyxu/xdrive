@@ -1,0 +1,82 @@
+name: Desktop real 1GiB high-entropy CAS Agent IPC performance P043
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-incompressible-cas-1gib:
+    if: github.head_ref == 'perf/desktop-incompressible-cas-1gib-p043-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_REAL_CAS_SIZE_GIB: '1'
+      XD_REAL_DESKTOP_INCOMPRESSIBLE_PERF: '1'
+      XD_REAL_DESKTOP_CAS_RESULTS: ${{ github.workspace }}/desktop/real-desktop-incompressible-1gib-results
+      XD_REAL_DESKTOP_AGENT_BINARY: ${{ github.workspace }}/desktop/real-desktop-cas-bin/xdrive-agent
+      XD_REAL_DESKTOP_CAS_TEST_BINARY: ${{ github.workspace }}/desktop/real-desktop-cas-bin/api.test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify P043 native Desktop Agent high-entropy physical source and unchanged 1GiB sparse baseline
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/real_web_cas_transfer_fixture_performance_integration_test.go)"
+          node --check desktop/scripts/real-desktop-cas-runner.cjs
+          node --check desktop/scripts/real-desktop-cas-electron-main.cjs
+          node --test desktop/tests/real-desktop-incompressible-cas-1gib-source.cjs
+      - name: Build actual shared Desktop Renderer Preload Main and Go Agent plus Gin PostgreSQL17 CAS
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          npm --prefix web run build -- --config vite.config.ts
+          npm --prefix desktop run build
+          mkdir -p desktop/real-desktop-cas-bin
+          go build -o desktop/real-desktop-cas-bin/xdrive-agent ./cmd/xdrive-agent
+          go test -c -o desktop/real-desktop-cas-bin/api.test ./internal/api
+      - name: Measure three independent 1GiB non-sparse Desktop Agent IPC upload and full SHA downloaded file
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_REAL_DESKTOP_CAS_RESULTS"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_REAL_DESKTOP_CAS_RESULTS/source.txt"
+          xvfb-run -a --server-args='-screen 0 1920x1200x24' node desktop/scripts/real-desktop-cas-runner.cjs
+          test "$(find "$XD_REAL_DESKTOP_CAS_RESULTS" -maxdepth 1 -type f -name 'sample-*.json' | wc -l)" -eq 3
+          node -e "const s=require(process.env.XD_REAL_DESKTOP_CAS_RESULTS+'/summary.json');if(!s.passed||!s.highEntropyDesktop||s.n!==3||!s.samples.every(x=>x.highEntropyDesktop&&x.physicalSource?.allocatedBytes>=1073741824*.98&&x.physicalSource.sourceSHA256===x.server.file_sha256&&x.downloadSHA256===x.physicalSource.sourceSHA256&&x.server.cas_valid&&x.server.put_count===128&&x.server.download_get_count===1))process.exit(1);console.log(JSON.stringify({passed:s.passed,uploadMs:s.uploadMedianMs,downloadMs:s.downloadMedianMs}))"
+          cat "$XD_REAL_DESKTOP_CAS_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-native-agent-high-entropy-1gib-n3
+          path: desktop/real-desktop-incompressible-1gib-results/
+          if-no-files-found: warn
+          retention-days: 14
