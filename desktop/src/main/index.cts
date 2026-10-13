@@ -597,7 +597,11 @@ async function applyStartAtLogin(enabled: boolean) {
 
 async function setStartAtLogin(enabled: boolean) {
   await saveDesktopPreferences({ ...desktopPreferences, start_at_login: enabled })
-  await applyStartAtLogin(enabled)
+  // The existing preference side-effect queue also orders native autostart
+  // operations; otherwise a late removal can undo a newer successful enable.
+  const pendingApply = desktopPreferencesWriteQueue.then(() => applyStartAtLogin(enabled))
+  desktopPreferencesWriteQueue = pendingApply.catch(() => {})
+  await pendingApply
   return { start_at_login: desktopPreferences.start_at_login }
 }
 
