@@ -738,6 +738,7 @@ function WebMediaViewerApp({
   onClose,
   onFileOperationQueued,
   onCreativeCompleted,
+  onMediaEditorActivityChange,
   onError,
 }: {
   route: Extract<XDriveWebAppRoute, { app: 'media-viewer' }>
@@ -749,6 +750,7 @@ function WebMediaViewerApp({
   onClose: (node: Node | null) => void
   onFileOperationQueued?: () => void
   onCreativeCompleted?: () => void
+  onMediaEditorActivityChange?: (active: boolean) => void
   onError: (error: unknown) => void
 }) {
   const viewer = useViewerNode({
@@ -824,6 +826,17 @@ function WebMediaViewerApp({
     creativeTarget.revision === mediaItem.node.revision &&
     creativeTarget.context === route.params.context ? mediaItem : null
   const creativeOpen = Boolean(creativeItem)
+
+  // Report the already-owned dialog sessions, not their media contents. A
+  // mounted edit/creative dialog can hold an unsaved draft or active action.
+  // Closing/switching Viewer clears the hint, but never cancels Server work.
+  useEffect(() => {
+    onMediaEditorActivityChange?.(editOpen || creativeOpen)
+  }, [editOpen, creativeOpen, onMediaEditorActivityChange])
+  useEffect(() => () => {
+    onMediaEditorActivityChange?.(false)
+  }, [onMediaEditorActivityChange])
+
   const deletingItem = mediaItem && viewer.node?.id === mediaItem.node.id &&
     deleteTarget?.id === mediaItem.node.id && deleteTarget.revision === mediaItem.node.revision
       ? mediaItem : null
@@ -1399,6 +1412,7 @@ export function WebFileViewerApps({
   onClose,
   onFileOperationQueued,
   onCreativeCompleted,
+  onMediaEditorActivityChange,
   onError,
 }: {
   route: XDriveWebAppRoute
@@ -1410,6 +1424,7 @@ export function WebFileViewerApps({
   onClose: (node: Node | null) => void
   onFileOperationQueued?: () => void
   onCreativeCompleted?: () => void
+  onMediaEditorActivityChange?: (active: boolean) => void
   onError: (error: unknown) => void
 }) {
   if (route.app === 'preview') {
@@ -1443,6 +1458,7 @@ export function WebFileViewerApps({
         onClose={onClose}
         onFileOperationQueued={onFileOperationQueued}
         onCreativeCompleted={onCreativeCompleted}
+        onMediaEditorActivityChange={onMediaEditorActivityChange}
         onError={onError}
       />
     )

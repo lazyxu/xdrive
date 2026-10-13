@@ -29,10 +29,12 @@ test('S4A: native beforeunload warning is non-destructive and not a Server cance
   assert.equal(event.returnValue,'')
   assert.doesNotMatch(source,/cancelTransfer|fetch\(|skipWaiting|removeEventListener\(|api\/v1/)
 })
-test('S4A: shared Web/Mobile frame wires warning only for current active foreground upload',()=>{
+test('S4A/S3D2C: shared Web/Mobile frame warns on uploads and unsaved local work',()=>{
   const app=fs.readFileSync(path.join(root,'web/src/App.tsx'),'utf8')
   assert.ok(app.includes('xDriveHasPendingBrowserUpload(transfers)'))
   assert.ok(app.includes("window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
   assert.ok(app.includes("window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)"))
+  assert.ok(app.includes("const hasBlockingUnloadWork = hasPendingUpload || systemDependenciesDraftDirty || hasBlockingMediaEditor"))
+  assert.ok(app.includes("  if (!hasBlockingUnloadWork) return"))
   assert.ok(app.includes("<XDriveMobileAppHeader"))
 })

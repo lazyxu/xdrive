@@ -93,7 +93,7 @@ export default function XDrivePwaUpdateSection() {
                 : '未检测到已接入的前台任务；不代表可以立即激活更新。'}
           </Typography>
           <Typography variant="body2" sx={{ mt: 1 }}>
-            当前只检测 Web/Mobile Web 前台传输、Viewer 与系统依赖草稿；
+            当前检测 Web/Mobile Web 前台传输、Viewer、媒体编辑/创意对话框与系统依赖草稿；
             无法证明其他窗口已经结束所有工作；其他编辑器草稿和浏览器接管的下载同样可能未被观察到。
             不会自动刷新或激活更新；请人工确认并关闭所有 xDrive 窗口后重新打开。
           </Typography>

@@ -546,6 +546,10 @@ function FileManager({
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
+  // A conservative PWA update/unload blocker: an open media editor might
+  // contain unsaved edits even when its exact draft state is not observable.
+  const [mediaEditorActive, setMediaEditorActive] = useState(false)
+  const hasBlockingMediaEditor = viewerActive && mediaEditorActive
   // Only a Gallery-launched media Viewer may restore its already-mounted
   // caller scroll host. Do not apply this snapshot to Files, another account,
   // a different workspace route or a different final viewport width.
@@ -867,15 +871,16 @@ function FileManager({
 
   useEffect(() => api.onTransfers(setTransfers), [api])
 
-  // Only actively owned browser uploads can be lost when this tab closes.
-  // Keep the listener absent when idle (including native download hand-offs);
-  // this does NOT protect against iOS process termination or pause Server tasks.
+  // Browser-owned uploads, unsaved admin settings, and open media editors
+  // deserve one best-effort navigation warning. iOS can omit beforeunload;
+  // none of these actions cancels a durable Server task or native download.
   const hasPendingUpload = xDriveHasPendingBrowserUpload(transfers)
+  const hasBlockingUnloadWork = hasPendingUpload || systemDependenciesDraftDirty || hasBlockingMediaEditor
   useEffect(() => {
-    if (!hasPendingUpload) return
+    if (!hasBlockingUnloadWork) return
     window.addEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
     return () => window.removeEventListener('beforeunload', xDriveWarnBeforeLeavingUpload)
-  }, [hasPendingUpload])
+  }, [hasBlockingUnloadWork])
 
   // S3D2A: observe only this mounted Web/Mobile Web FileManager. Do not
   // interpret idle/unknown as cross-window permission to activate a SW.
@@ -886,9 +891,10 @@ function FileManager({
       browserUpload: hasPendingUpload,
       browserDownload: hasPendingDownload,
       viewerOpen: viewerActive,
+      mediaEditorOpen: hasBlockingMediaEditor,
       unsavedSystemDependencies: systemDependenciesDraftDirty,
     })
-  }, [hasPendingUpload, hasPendingDownload, viewerActive, systemDependenciesDraftDirty])
+  }, [hasPendingUpload, hasPendingDownload, viewerActive, hasBlockingMediaEditor, systemDependenciesDraftDirty])
   useEffect(() => () => {
     xDriveClearPwaWindowActivity(pwaActivityOwner.current)
   }, [])
@@ -1922,6 +1928,7 @@ function FileManager({
             void refreshFileOperations()
             setFeedback({ tone: 'good', message: '已提交删除任务；实际执行结果请查看任务中心。' })
           }}
+          onMediaEditorActivityChange={setMediaEditorActive}
           onCreativeCompleted={() => {
             // Generated media is a new canonical file; reload the mounted
             // Gallery's shared sparse range without replacing its Viewer.

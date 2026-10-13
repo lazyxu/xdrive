@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
-| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A/S3D1/S3D2A 已合并；S3D2B 只增加跨窗口匿名忙态提示，没有可信激活许可，不允许强制 reload |
+| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A/S3D1/S3D2A/S3D2B 已合并；S3D2C 扩展当前窗口媒体编辑与退出提醒；跨窗口仍无可信自动激活许可 |
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A #1516、S2B1 #1557、S2B2 #1560 完整 CI 通过并合并；Chrome 安装资源/离线/登录后 Files 恢复已验，iOS 27/Android 系统安装仍 not-run |
 | P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 与 S2B4 #1570 完整 CI / 真实 Chrome 已通过；S2B4 合并 98ffb1f9，验证本机 HTTP 警告与五项公开资源无凭据 HEAD；公网 DNS/CA 与生产 Caddy 仍 not-run |
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome Files 深链接已验；S2B3 #1566 真实 Gin/Postgres/JWT 双账号已通过并合并；S2B5 补登录后 Gallery 冷刷新/后退/前进（待 CI），Viewer/分享、安装图标冷启动仍 not-run |
@@ -296,3 +296,18 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **不可放松的约束：** 同源浏览器窗口可能被 iOS 27 的主屏 Web App 隔离、锁屏、冻结或操作系统杀死；消息丢失和已过期都不能意味着其他窗口已关闭。账号切换、其他编辑器未保存草稿、浏览器原生下载与 Server 持久任务并不在此协议可信验证范围；其他窗口未报告忙态也绝对不代表所有 xDrive 工作已完成。只在已有 Service Worker waiting 更新提示内展示报告；没有 skipWaiting、clients.claim、location.reload、自动 Cancel、强制登出、跨窗口任务命令或一键激活。保持 52px 全屏 App Frame、Web/Mobile 相同 Files/Gallery 后端与虚拟列表，以及公有 offline.html 之外不缓存任何用户数据的原有策略。
 
 **测试与门槛：** Node TypeScript 执行器验证不支持/不安全回退、两窗口匿名状态、任务消退、TTL/页面冻结、重复过期序号/无效消息、真实入口/UI/文档接线；本地隔离环境的 strict tsc 与前四个协议行为测试已通过，第五个接线测试需要完整仓库执行，不得以局部 stub 结果代替。必须准确 HEAD 完整 GitHub PR CI + Final Gate 全绿才能由 Draft 转 Ready、rebase merge；真实多窗口 Chrome 和 iOS 27 Safari/Home Screen、Android OS Installed、桌面 Edge、真 HTTPS/CA、4GiB 原生下载落盘 SHA/签名/锁屏进程恢复均未完成。后续 S3D2C 优先覆盖图库编辑器、创意生成等未保存草稿和真实活动；未覆盖所有编辑面之前不得开发一键强制更新。
+
+
+## PWA-S3D2B 合并结果（2026-10-13）
+
+[PR #1602](https://github.com/lazyxu/xdrive/pull/1602) 的唯一工作提交 `ce7198b9ffcf1027f5e2a37a3e34baf789e7a498` 通过准确 HEAD 的 [完整 CI #38330534346](https://github.com/lazyxu/xdrive/actions/runs/38330534346)（Final Gate、Desktop/Web、Go Linux/Windows、Client installers/rollback/upgrade、相关镜像全部通过），按单提交 rebase merge 合并为 `4dc1b4c0f87f4f8eacbc79ae5c06f9476ce0515d`。跨窗口信息只是匿名忙态提示，不能授权强制更新。合并后临时分支由 cleanup-merged-branches 自动清理；需独立确认是否已删除。未经物理设备测试，不宣称 iOS/Android Installed、跨 App 容器活动发现或后台传输能力通过。
+
+## PWA-S3D2C · 共享媒体编辑会话与未保存配置退出保护（2026-10-13）
+
+**具体源代码增量（候选，待准确 HEAD CI）：** 共用 Web/Mobile Web 的 `WebMediaViewerApp` 从其现有实际 `editOpen/creativeOpen` 状态报告“媒体编辑/创意对话框正在打开”，关闭会话或卸载时主动清理。由 FileManager 统一聚合进入 `pwaWorkloadSafety.ts` 的 `mediaEditorOpen` 内存布尔值，S3D2B 现有匿名跨窗口忙态推断自动将其纳入。不广播/存储 Node ID、编辑参数、图像内容、文件名、账号或任务详情；不新增 Server API、Service Worker 缓存或上传/下载后台工作。
+
+**保守退出提示：** 原有 `beforeunload` 仅在当前 Web 上传活跃时注册；现扩展至未保存的系统依赖设置草稿，以及正在打开的媒体编辑或创意对话框。仍只维护一个事件监听器，三类情况全部结束即解除注册，绝不主动 `cancelTransfer`、`skipWaiting`、`location.reload`、关闭窗口、保存草稿或取消持久后台任务。具体“编辑器是否有未保存修改”在此阶段**未精确探测**：把打开的编辑/创意对话框保守视为可能含草稿，避免误判空闲；图库其他未接入的编辑/选择/组织弹窗仍未覆盖。
+
+**平台约束：** iOS Safari/主屏 PWA 和 Android 在锁屏、系统杀进程、后台回收时可能不触发 `beforeunload`，不能据此保证数据恢复或 Desktop 等价。Browser-owned native downloads、另外浏览器容器和所有已运行的 Server Durable Tasks 不受这一事件控制。所有窗口消息只能提示可能忙，绝不能证明跨窗口安全激活，因此依旧仅让用户完成工作、手动关闭所有 xDrive 窗口并重新打开。
+
+**精确测试与交付门槛：** 新 Node/TS 动态测试执行真实当前窗口活动 store，验证媒体编辑标志、其他阻塞持续保留、清理、UI/Viewer/React 接线、最佳努力退出监听、不含强制 Service Worker 操作；既有 S3D2A/B 和 S4A 及 Web/Windows/Desktop/Go 全 CI 仍需成功。源码级约束与浏览器模拟不等于真实 iOS/Android Installed 或跨进程行为；本阶段不新增强制一键更新。PWA S4 待完成 4GiB 落盘 SHA/真实移动端恢复，S5 仍待公网 HTTPS/证书、真实 iOS 27、Android Installed、桌面 Chrome/Edge 安装、锁屏/回收、发布回滚和截图/证据矩阵验收。
