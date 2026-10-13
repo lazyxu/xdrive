@@ -7,6 +7,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import EditRoundedIcon from '@mui/icons-material/EditRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import MapOutlinedIcon from '@mui/icons-material/MapOutlined'
 import KeyboardArrowLeftRoundedIcon from '@mui/icons-material/KeyboardArrowLeftRounded'
 import KeyboardArrowRightRoundedIcon from '@mui/icons-material/KeyboardArrowRightRounded'
 import LocalOfferOutlinedIcon from '@mui/icons-material/LocalOfferOutlined'
@@ -33,6 +34,7 @@ import {
   XDriveFileTagDialog,
   XDriveMediaDetailsInspector,
   XDriveMediaGalleryFilmstrip,
+  XDriveMediaGalleryViewerLocationDialog,
   XDriveMediaGalleryEditDialog,
   XDriveMediaGalleryCreativeDialog,
   xDriveMediaItemSupportsCreative,
@@ -767,6 +769,7 @@ function WebMediaViewerApp({
   const [shareOpen, setShareOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
+  const [locationOpen, setLocationOpen] = useState(false)
   // A dialog belongs to one actual Node revision. Navigating the bounded
   // Filmstrip must never reopen a previous asset's editor on the next photo.
   const [editTarget, setEditTarget] = useState<{ id: number; revision: number } | null>(null)
@@ -793,6 +796,7 @@ function WebMediaViewerApp({
     setCreativeTarget(null)
     setDeleteTarget(null)
     setMoreAnchor(null)
+    setLocationOpen(false)
   }, [route.params.node, route.params.context, viewer.node?.revision])
   // A More sheet opened at 899px must not reappear if the viewport crosses
   // 900px and returns. Menu ownership belongs to the current compact chrome.
@@ -870,6 +874,11 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
     void task.catch(onError)
   }
 
+  const latitude = mediaItem?.metadata.latitude
+  const longitude = mediaItem?.metadata.longitude
+  const hasPhotoGPS = typeof latitude === 'number' && typeof longitude === 'number' &&
+    Number.isFinite(latitude) && Number.isFinite(longitude) &&
+    Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
   const actions = !viewer.loading && !viewer.error && supported && viewer.node && mediaItem && mediaItem.node.id === viewer.node.id ? (
     <Stack direction="row" spacing={0.25} data-xdrive-gallery-viewer-actions>
       {mediaItem && gallerySource.setFavorite ? (
@@ -931,6 +940,13 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
             })}
           >
             <DeleteOutlineRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      ) : null}
+      {!narrowMediaViewer && hasPhotoGPS && gallerySource.getBaiduMapProvider && gallerySource.loadBaiduStaticMap ? (
+        <Tooltip title="在地图上查看照片">
+          <IconButton size="small" aria-label="在地图上查看照片" onClick={() => setLocationOpen(true)}>
+            <MapOutlinedIcon fontSize="small" />
           </IconButton>
         </Tooltip>
       ) : null}
@@ -999,7 +1015,7 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
         positionLabel={viewer.totalCount > 0 ? `${viewer.activeIndex + 1} / ${viewer.totalCount}` : undefined}
         immersive
         photosViewer
-        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen || Boolean(moreAnchor)}
+        keepChromeVisible={infoOpen || editOpen || creativeOpen || deleteOpen || locationOpen || Boolean(moreAnchor)}
         canPrevious={Boolean(viewer.previous)}
         canNext={Boolean(viewer.next)}
         onPrevious={viewer.goPrevious}
@@ -1043,6 +1059,15 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
           maxHeight="none"
         />}
       </WebViewerFrame>
+      {locationOpen && mediaItem ? (
+        <XDriveMediaGalleryViewerLocationDialog
+          open
+          item={mediaItem}
+          getBaiduMapProvider={gallerySource.getBaiduMapProvider}
+          loadBaiduStaticMap={gallerySource.loadBaiduStaticMap}
+          onClose={() => setLocationOpen(false)}
+        />
+      ) : null}
       <Menu
         id="xdrive-gallery-viewer-more"
         anchorEl={moreAnchor}
@@ -1061,6 +1086,12 @@ const canCreate = Boolean(gallerySource.createCreativeGeneration &&
               context: route.params.context,
             })
           }}>创作图片</MenuItem>
+        ) : null}
+        {hasPhotoGPS && gallerySource.getBaiduMapProvider && gallerySource.loadBaiduStaticMap ? (
+          <MenuItem aria-label="在地图上查看照片" onClick={() => {
+            setMoreAnchor(null)
+            setLocationOpen(true)
+          }}>在地图上查看照片</MenuItem>
         ) : null}
         <MenuItem aria-label="查看属性" onClick={() => {
           setMoreAnchor(null)

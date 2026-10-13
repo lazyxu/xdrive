@@ -194,3 +194,8 @@ evidence for source checks, CI, controlled Chromium, real Baidu, and devices.
 
 **Handoff:** A1 PR/CI/merge state must be updated from an actual exact-head
 GitHub result. Do not mark A2–C1 complete or JSAPI released based on this plan.
+
+
+## P0-Places-A2 导航候选（2026-10-13）
+
+本阶段使用同一共享图库视图增加图库「显示地图」入口；地点列表保留既有可授权 Server Range 与虚拟化媒体查询；从分地点照片墙返回时保存最大 48 条的当前地点页/选择 ID，不以全量地点数组恢复位置。真实 Web/Mobile Web 路由 Viewer 与 Desktop 内嵌 Viewer 复用唯一照片位置 Dialog 和既有百度静态 PNG Server 接口，遇到缺失/无效 GPS 不请求地图，不引入 JSAPI/其他 Provider。新的静态地图不是 A3 的平移/聚合实现，原生 iOS 27 Safari 截图及真实权限端到端仍须 CI 与设备验收。

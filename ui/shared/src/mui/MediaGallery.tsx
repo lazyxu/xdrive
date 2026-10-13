@@ -584,6 +584,18 @@ export function XDriveMediaGalleryPage({
   const [placesPagePending, setPlacesPagePending] = useState(false)
   const [placesPageError, setPlacesPageError] = useState('')
   const placePageRequestID = useRef(0)
+  const placesReturnPageRef = useRef<{
+    items: MediaPlaceFacet[]
+    offset: number
+    totalCount: number
+  } | null>(null)
+  const [lastOpenedPlaceID, setLastOpenedPlaceID] = useState<string | null>(null)
+  const placeOpenedFromCollectionsRef = useRef(false)
+  useEffect(() => {
+    placeOpenedFromCollectionsRef.current = false
+    placesReturnPageRef.current = null
+    setLastOpenedPlaceID(null)
+  }, [preferenceScope])
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
@@ -914,6 +926,13 @@ export function XDriveMediaGalleryPage({
         target, 0, pageSize, undefined, firstAtLatest ? 'latest' : undefined,
       )
       if (target.kind === 'all' && !target.query.folder_id) {
+        // Returning from a place photo wall preserves the current bounded
+        // Places page instead of jumping to the first 48 locations.
+        const returningPlacePage = section === 'places' && !target.query.place
+          ? placesReturnPageRef.current : null
+        const retainedPlacePage = returningPlacePage ??
+          (section === 'places' && target.query.place ? placesReturnPageRef.current : null)
+        if (returningPlacePage) placesReturnPageRef.current = null
         setPlacesStatus('loading')
         placePageRequestID.current += 1
         setPlacesPagePending(false)
@@ -922,7 +941,10 @@ export function XDriveMediaGalleryPage({
           source.listAlbums(),
           // The ordinary Gallery preview must not wait for a grouped COUNT
           // across potentially 100k GPS cells; count only inside Places.
-          placesExpandedRef.current && source.listPlacesPage
+          retainedPlacePage ? Promise.resolve({
+            items: retainedPlacePage.items,
+            total_count: retainedPlacePage.totalCount,
+          }) : placesExpandedRef.current && source.listPlacesPage
             ? source.listPlacesPage(48, 0)
             : source.listPlaces
               ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
@@ -987,7 +1009,7 @@ export function XDriveMediaGalleryPage({
           setAlbums(nextAlbums)
           setPlaces(Array.isArray(nextPlaces) ? nextPlaces : nextPlaces.items)
           setPlacesTotalCount(Array.isArray(nextPlaces) ? null : nextPlaces.total_count)
-          setPlacesPageOffset(0)
+          setPlacesPageOffset(retainedPlacePage?.offset ?? 0)
           setPlacesStatus('ready')
           setPets(nextPets)
           setSuggestedPeople(
@@ -1354,6 +1376,9 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, loadFirstPage, onError, query.include_descendants, source])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
+    placesReturnPageRef.current = null
+    placeOpenedFromCollectionsRef.current = false
+    setLastOpenedPlaceID(null)
     placePageRequestID.current += 1
     setPlacesPagePending(false)
     setPlacesPageError('')
@@ -1413,6 +1438,7 @@ export function XDriveMediaGalleryPage({
       if (page.offset !== nextOffset || !Array.isArray(page.items) ||
           !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
           page.items.length > 48) throw new Error('地点分页响应与请求不一致')
+      setLastOpenedPlaceID(null)
       setPlaces(page.items)
       setPlacesPageOffset(nextOffset)
       setPlacesTotalCount(page.total_count)
@@ -1716,6 +1742,11 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, query])
 
   const openPlace = useCallback((place: MediaPlaceFacet, fromCollections = false) => {
+    placeOpenedFromCollectionsRef.current = fromCollections
+    if (section === 'places' && !query.place && placesTotalCount !== null && places.length <= 48) {
+      placesReturnPageRef.current = { items: [...places], offset: placesPageOffset, totalCount: placesTotalCount }
+    }
+    setLastOpenedPlaceID(place.id)
     placesExpandedRef.current = true
     setSection('places')
     setActiveMediaType('')
@@ -1728,7 +1759,7 @@ export function XDriveMediaGalleryPage({
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(null, nextQuery)
-  }, [draftFilters, loadFirstPage])
+  }, [draftFilters, loadFirstPage, places, placesPageOffset, placesTotalCount, query.place, section])
 
   const openPet = useCallback((pet: MediaPetFacet) => {
     setCurrentPet(pet)
@@ -1807,6 +1838,12 @@ export function XDriveMediaGalleryPage({
     if (section === 'media-types' && activeMediaType) {
       setActiveMediaType('')
     }
+    if (section === 'places' && query.place && placeOpenedFromCollectionsRef.current) {
+      // An iOS 27 Collections -> Place drill-down returns to Collections,
+      // not an unrelated root Places index or an empty Library screen.
+      placeOpenedFromCollectionsRef.current = false
+      setMobileCollectionsOverview(true)
+    }
     const nextDraft = mediaGallerySectionDraft(section)
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
     setDraftFilters(nextDraft)
@@ -1822,6 +1859,7 @@ export function XDriveMediaGalleryPage({
     loadFirstPage,
     loadMemories,
     openSyncFolderDirectory,
+    query.place,
     section,
     selectSection,
   ])
@@ -2498,6 +2536,7 @@ export function XDriveMediaGalleryPage({
         mobileCollectionsOverview={mobileCollectionsOverview}
         onMobileCollectionsOverviewChange={setMobileCollectionsOverview}
         onOpenMobileFilters={() => { void requestFacets() }}
+        onShowMap={() => { setMobileCollectionsOverview(false); selectSection('places') }}
         onMobilePrimaryTabChange={(tab) => {
           if (tab === 'collections') {
             warmMobileCollectionsPreview()
@@ -2538,6 +2577,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
+        focusPlaceID={lastOpenedPlaceID ?? undefined}
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
         placesStatus={placesStatus}
@@ -2953,6 +2993,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   placesStatus?: 'loading' | 'ready' | 'error'
@@ -3053,6 +3094,7 @@ export interface XDriveMediaGalleryProps {
   onAddToAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onRemoveFromAlbum?: (album: MediaAlbum, item: MediaItem) => Promise<MediaAlbum>
   onSectionChange?: (section: MediaGallerySection) => void
+  onShowMap?: () => void
   onOpenMediaType?: (assetKind: string) => void
   onOpenAlbum?: (album: MediaAlbum) => void
   onOpenSyncFolder?: (folder: MediaSyncFolder) => void
@@ -4558,6 +4600,7 @@ export function XDriveMediaGallery({
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
+  focusPlaceID,
   getBaiduMapProvider,
   loadBaiduStaticMap,
   placesStatus = 'ready',
@@ -4643,6 +4686,7 @@ export function XDriveMediaGallery({
   onAddToAlbum,
   onRemoveFromAlbum,
   onSectionChange,
+  onShowMap,
   onOpenMediaType,
   onOpenAlbum,
   onOpenSyncFolder,
@@ -4680,6 +4724,7 @@ export function XDriveMediaGallery({
   const [selected, setSelected] = useState<MediaItem | null>(null)
   const [mediaContextMenu, setMediaContextMenu] = useState<{ item: MediaItem; index: number; top: number; left: number } | null>(null)
   const [previewItem, setPreviewItem] = useState<MediaItem | null>(null)
+  const placesReturnAnchorRef = useRef<HTMLDivElement | null>(null)
   const [previewLogicalIndex, setPreviewLogicalIndex] = useState<number | null>(null)
   const [pendingPreviewIndex, setPendingPreviewIndex] = useState<number | null>(null)
   const [viewPreferences, setViewPreferences] = useState<MediaGalleryViewPreferences>(
@@ -5554,6 +5599,14 @@ export function XDriveMediaGallery({
       : undefined
   const showAlbumIndex = isRootSection && section === 'albums'
   const showPlacesIndex = isRootSection && section === 'places'
+  useEffect(() => {
+    if (!showPlacesIndex || !focusPlaceID || !placesReturnAnchorRef.current) return
+    const anchor = placesReturnAnchorRef.current
+    const frame = window.requestAnimationFrame(() => {
+      if (anchor.isConnected) anchor.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [showPlacesIndex, focusPlaceID, placesPageOffset])
   const showPeopleIndex = isRootSection && section === 'people'
   const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
   const isTrashSection = isRootSection && section === 'trash'
@@ -5799,6 +5852,12 @@ export function XDriveMediaGallery({
           sx={{ flex: '1 1 auto', minWidth: 0 }}
         >
           {galleryUploadAction}
+          {section === 'library' && isRootSection && onShowMap && !compactGallery ? (
+            <Button size="small" variant="outlined" data-xdrive-gallery-show-map
+              sx={{ minHeight: { xs: 44, sm: 36 } }} onClick={onShowMap}>
+              显示地图
+            </Button>
+          ) : null}
           {showCollectionFilters && filters && !compactGallery ? (
             <Box sx={{ flex: '1 1 360px', minWidth: { xs: 0, sm: 300 }, maxWidth: 560 }}>
               {filters}
@@ -6019,9 +6078,11 @@ export function XDriveMediaGallery({
           canReturnToPosition={timelineReturnAnchor !== null}
           onReturnToPosition={returnToTimelineAnchor}
           onRefresh={onRefresh}
+          onShowMap={onShowMap && (mobileCollectionsOverview || (section === 'library' && isRootSection))
+            ? onShowMap : undefined}
           // Collections overview must not hide the Wide Web upload action.
           // The same callback opens the existing Web multi-file picker.
-          showOverviewActions={Boolean(galleryUploadAction)}
+          showOverviewActions={Boolean(galleryUploadAction || onShowMap)}
           extraActions={mobileCollectionsOverview ? galleryUploadAction : (
             <>
               {contextualHeaderActions}
@@ -6642,6 +6703,7 @@ export function XDriveMediaGallery({
             getBaiduMapProvider={getBaiduMapProvider}
             loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}
+            focusPlaceID={focusPlaceID}
             onOpenPlace={onOpenPlace}
           />
 
@@ -6659,6 +6721,8 @@ export function XDriveMediaGallery({
               {places.map((place) => (
                 <Paper
                   key={place.id}
+                  ref={place.id === focusPlaceID ? placesReturnAnchorRef : undefined}
+                  data-xdrive-places-return-anchor={place.id === focusPlaceID ? 'true' : undefined}
                   variant="outlined"
                   role={onOpenPlace ? 'button' : undefined}
                   tabIndex={onOpenPlace ? 0 : undefined}
@@ -7480,6 +7544,8 @@ export function XDriveMediaGallery({
         loadThumbnail={loadThumbnail}
         loadLivePhotoMotion={loadLivePhotoMotion}
         loadPreviewURL={loadPreviewURL}
+        getBaiduMapProvider={getBaiduMapProvider}
+        loadBaiduStaticMap={loadBaiduStaticMap}
         onPrevious={() => requestPreviewIndex(previewIndex - 1)}
         onNext={() => requestPreviewIndex(previewIndex + 1)}
         onFilmstripSelect={requestPreviewIndex}

@@ -46,6 +46,7 @@ const sharedUI = {
   XDriveMediaGalleryFilmstrip: (props) => React.createElement('gallery-filmstrip', props),
   XDriveMediaGalleryEditDialog: (props) => React.createElement('edit-dialog', props),
   XDriveMediaGalleryCreativeDialog: (props) => React.createElement('creative-dialog', props),
+  XDriveMediaGalleryViewerLocationDialog: (props) => React.createElement('photo-location-dialog', props),
   xDriveMediaItemSupportsCreative: (item) => Boolean(item &&
     item.metadata.media_kind === 'image' && item.metadata.index_state === 'ready' &&
     item.asset_kind === 'image' && !item.live_photo),
@@ -186,6 +187,56 @@ async function mount(app, name, capturedAt = '2026-10-09T00:12:34Z') {
   })
   return renderer
 }
+
+test('P0-Places-A2 real routed Viewer opens one shared GPS map on narrow and wide Web', async () => {
+  for (const width of [390, 900]) {
+    compactTouch = width < 900
+    viewportWidth = width
+    const node = { id: 4102, revision: 3, type: 'file', name: 'gps-photo.jpg', size: 4096 }
+    const item = { node, metadata: {
+      media_kind: 'image', mime_type: 'image/jpeg', index_state: 'ready',
+      latitude: 39.91234, longitude: 116.41234,
+    } }
+    const getBaiduMapProvider = async () => ({ provider: 'baidu-server-static', enabled: true })
+    const loadBaiduStaticMap = async () => new Blob([])
+    let renderer
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(WebFileViewerApps, {
+          route: { app: 'media-viewer', params: { node: node.id } },
+          api: { node: async () => node, mediaItem: async () => item },
+          gallerySource: { getBaiduMapProvider, loadBaiduStaticMap },
+          shareDialogAdapter: {}, onClose() {}, onReplaceRoute() {},
+          onError(error) { throw error },
+        }), { createNodeMock: () => ({ focus() {} }) })
+      })
+      const dialogs = () => renderer.root.findAll(el => el.type === 'photo-location-dialog')
+      assert.equal(dialogs().length, 0, 'closed map must not initialize external provider')
+      if (width < 900) {
+        await openGalleryMore(renderer)
+        const action = galleryMoreItems(renderer, '在地图上查看照片')[0]
+        assert.ok(action, 'compact More must expose the authorized GPS map')
+        await act(async () => action.props.onClick())
+      } else {
+        const trigger = buttons(renderer, '在地图上查看照片')[0]
+        assert.ok(trigger, 'wide Viewer must expose the same GPS map')
+        await act(async () => trigger.props.onClick())
+      }
+      assert.equal(dialogs().length, 1)
+      assert.equal(dialogs()[0].props.open, true)
+      assert.equal(dialogs()[0].props.item.metadata.latitude, 39.91234)
+      assert.equal(dialogs()[0].props.item.metadata.longitude, 116.41234)
+      assert.equal(dialogs()[0].props.getBaiduMapProvider, getBaiduMapProvider)
+      assert.equal(dialogs()[0].props.loadBaiduStaticMap, loadBaiduStaticMap)
+      await act(async () => dialogs()[0].props.onClose())
+      assert.equal(dialogs().length, 0, 'close releases the owned map component')
+    } finally {
+      if (renderer) await act(async () => renderer.unmount())
+      compactTouch = false
+      viewportWidth = 390
+    }
+  }
+})
 
 test('Media Viewer displays capture time and distinguishes missing metadata', async () => {
   for (const [capturedAt, expected] of [['2026-10-09T00:12:34Z', '2026'], ['', '未记录'], ['invalid', '未记录']]) {

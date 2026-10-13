@@ -15,6 +15,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduMapProvider,
   loadBaiduStaticMap,
   activePlaceID,
+  focusPlaceID,
   onOpenPlace,
 }: {
   places: MediaPlaceFacet[]
@@ -22,11 +23,13 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   activePlaceID?: string
+  focusPlaceID?: string
   onOpenPlace?: (place: MediaPlaceFacet) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
+    places.find((item) => item.id === focusPlaceID) ??
     places.find((item) => item.id === activePlaceID) ??
     places[0]
   )
