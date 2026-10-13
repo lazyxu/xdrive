@@ -32,10 +32,25 @@ type VerifiedInventoryFileDigest struct {
 //
 // Only use on locally authorized files after verifying a completed journal.
 // This operation neither uploads nor writes a local/remote Source checkpoint.
+// Existing hashing callers keep the unchanged, no-output behavior.
 func HashVerifiedInventoryFile(
 	ctx context.Context,
 	grant RootGrant,
 	item InventoryItem,
+	onProgress func(done, total int64) error,
+) (VerifiedInventoryFileDigest, error) {
+	return streamVerifiedInventoryFileBytes(ctx, grant, item, nil, onProgress)
+}
+
+// streamVerifiedInventoryFileBytes shares the SAME secure handle, native ID,
+// Root and post-read path checks for both hashing-only and staging copies.
+// A staging writer may contain PARTIAL bytes on error: callers MUST discard
+// uncommitted staging rather than finalize or reuse its content.
+func streamVerifiedInventoryFileBytes(
+	ctx context.Context,
+	grant RootGrant,
+	item InventoryItem,
+	staging io.Writer,
 	onProgress func(done, total int64) error,
 ) (VerifiedInventoryFileDigest, error) {
 	var empty VerifiedInventoryFileDigest
@@ -112,6 +127,18 @@ func HashVerifiedInventoryFile(
 			}
 			if _, err := digest.Write(buf[:n]); err != nil {
 				return empty, err
+			}
+			if staging != nil {
+				written, writeErr := staging.Write(buf[:n])
+				if writeErr != nil {
+					return empty, fmt.Errorf("write private staging bytes: %w", writeErr)
+				}
+				if written != n {
+					return empty, io.ErrShortWrite
+				}
+				if err := ctx.Err(); err != nil {
+					return empty, err
+				}
 			}
 			if onProgress != nil {
 				if err := onProgress(processed, item.Size); err != nil {
