@@ -12,6 +12,12 @@ For every follow-up request to "continue" an ongoing development, audit, or CI/P
 
 The progress report is required even when no code changes are possible. Follow the provider-specific GitHub/GitLab delivery and single-work-commit rules below; do not claim a GitLab push or cleanup if it was not actually performed.
 
+## P1-PH1b2c2c2 — Fixed synthetic-image canary safety (2026-10-13)
+
+- The explicit administrator-only no-store **系统依赖 → Photo Intelligence → 检测** may invoke the model's authenticated, fixed Unix `/v1/semantic-image-canary` with deterministic model-local pixels only, no task body/query, external URL, Source/CAS or user photo. Do not grant Docker/socket authority or arbitrary model inputs to Server/Renderer.
+- Require the exact saved enabled host revision, globally audited Host Apply/Host Manager ACK, four same-process Info acknowledgments, fixed Docker digest, kernel Socket owner and clear host queue before inference; after each call independently recheck Info and current host state. One shared Go text/image mutex with independent 60-second cooldowns. Old models/Agents fail closed; only the sanitized optional `semantic_image_task_state` may be shown via existing Web/Desktop shared MUI.
+- Synthetic semantic image success cannot promote global `effect-proof=unknown`, four `activation_state=deployment-only`, gallery byte access, Face/OCR/Creative, fleet effect or safe disable/restart. Physical Linux/Rootless/model-job validation is separate. See [docs/service-dependencies.md](docs/service-dependencies.md#p1-ph1b2c2c2-2026-10-13-fixed-synthetic-image-semantic-encoder-effect-in-administrator-detection).
+
 ## PWA safe-delivery policy (2026-10-12)
 
 The dedicated PWA audit and release gates are in [docs/pwa-delivery.md](docs/pwa-delivery.md). Preserve the 52px full-screen App Frame, the shared Web/Mobile Web Files/Gallery REST/controllers/ranges and existing durable Server tasks. Register only in a secure production Web context; never persist auth, API, thumbnails, original file bytes, downloads, Range or private Share responses in the public PWA Service Worker cache. Never auto-reload a running transfer/Viewer or claim iOS lock-screen background work. Treat installed-mode native-device acceptance separately from Manifest/source/Chromium tests. Keep PWA changes off unrelated performance/race/gallery branches.

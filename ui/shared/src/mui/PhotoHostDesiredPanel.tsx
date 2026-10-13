@@ -288,7 +288,7 @@ export function XDrivePhotoHostDesiredPanel({
                 <Typography variant="subtitle2">宿主安全启用条件（只读）</Typography>
                 <Typography variant="caption" color="text.secondary">
                   手动检查固定宿主前置条件；只有已保存的启用修订取得可信宿主回执时，才对四类模型执行独立 Info 探针。
-                  不授权启停；完成宿主回执检测后可尝试一次固定文本的真实语义推理，不读取用户照片，也不能代表其他 Server 实例。
+                  不授权启停；宿主 ACK 核验后仅执行固定文本与模型内合成图片的真实语义推理，不读取用户照片，也不能代表其他 Server 实例。
                 </Typography>
                 <Box>
                   <Button size="small" variant="outlined" onClick={() => { void verifyLocalReadiness() }}
@@ -327,6 +327,18 @@ export function XDrivePhotoHostDesiredPanel({
                             : preflight.semantic_text_task_state === 'throttled'
                               ? '检测频率受限或正在执行；本次未验证'
                               : '未运行、宿主回执不足或旧版 Server/Agent 不支持'}
+                      </Typography>
+                      <Typography variant="body2"
+                        color={preflight.semantic_image_task_state === 'verified' ? 'success.main'
+                          : preflight.semantic_image_task_state === 'failed' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-semantic-image-task-state>
+                        合成图片语义推理：{preflight.semantic_image_task_state === 'verified'
+                          ? '真实图片编码器与向量通过（仅模型内合成图，不代表图库照片、人脸、OCR 或创作任务成功）'
+                          : preflight.semantic_image_task_state === 'failed'
+                            ? '合成图片推理或向量验证失败，不报告生效'
+                            : preflight.semantic_image_task_state === 'throttled'
+                              ? '检测频率受限或正在执行；未验证'
+                              : '未运行、回执不足或旧版 Server/Agent/模型不支持'}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-request-generation-correlated>
                         已审计启用请求与当前模型代际：{preflight.request_generation_correlated

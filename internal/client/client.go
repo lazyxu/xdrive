@@ -670,6 +670,7 @@ type AdminPhotoHostPreflight struct {
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
+	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 }
 
 type AdminPhotoHostApplyInput struct {

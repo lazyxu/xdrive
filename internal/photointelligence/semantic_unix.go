@@ -78,6 +78,28 @@ func (a *UnixSemanticAnalyzer) Info(
 	return out, nil
 }
 
+// ProbeSyntheticImage requests only deterministic model-local pixels through
+// the configured authenticated Unix socket; no user task or preview URL.
+func (a *UnixSemanticAnalyzer) ProbeSyntheticImage(
+	ctx context.Context,
+) (SemanticEmbedding, error) {
+	var out SemanticEmbedding
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"http://xdrive-photo-semantic/v1/semantic-image-canary",
+		nil,
+	)
+	if err != nil {
+		return out, err
+	}
+	a.addHeaders(req)
+	if err := a.doJSON(req, &out); err != nil {
+		return SemanticEmbedding{}, err
+	}
+	return out, nil
+}
+
 func (a *UnixSemanticAnalyzer) EmbedImage(
 	ctx context.Context,
 	task SemanticImageTask,

@@ -601,6 +601,61 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(semantic_image["format"], "i8norm-v1")
                 connection.close()
 
+                # No user preview, task body or privileged model metadata.
+                unauth = analyzer.UnixHTTPConnection(socket_path)
+                unauth.request(
+                    "GET", "/v1/semantic-image-canary",
+                    headers={"X-XDrive-Semantic-Protocol": "1"},
+                )
+                response = unauth.getresponse()
+                response.read()
+                self.assertEqual(response.status, 401)
+                unauth.close()
+
+                wrong_version = analyzer.UnixHTTPConnection(socket_path)
+                wrong_version.request(
+                    "GET", "/v1/semantic-image-canary",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Semantic-Protocol": "0",
+                    },
+                )
+                response = wrong_version.getresponse()
+                response.read()
+                self.assertEqual(response.status, 400)
+                wrong_version.close()
+
+                query = analyzer.UnixHTTPConnection(socket_path)
+                query.request(
+                    "GET", "/v1/semantic-image-canary?preview_url=private",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Semantic-Protocol": "1",
+                    },
+                )
+                response = query.getresponse()
+                response.read()
+                self.assertEqual(response.status, 404)
+                query.close()
+
+                probe = analyzer.UnixHTTPConnection(socket_path)
+                probe.request(
+                    "GET", "/v1/semantic-image-canary",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Semantic-Protocol": "1",
+                    },
+                )
+                response = probe.getresponse()
+                canary = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(canary["format"], "i8norm-v1")
+                self.assertEqual(canary["dimensions"], analyzer.SEMANTIC_DIMENSIONS)
+                vector_bytes = base64.b64decode(canary["embedding"])
+                self.assertEqual(len(vector_bytes), analyzer.SEMANTIC_DIMENSIONS)
+                self.assertTrue(any(vector_bytes))
+                probe.close()
+
                 text_payload = json.dumps(
                     {"text": "海边的狗"},
                     ensure_ascii=False,

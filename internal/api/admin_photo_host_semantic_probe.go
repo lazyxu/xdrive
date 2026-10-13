@@ -17,19 +17,20 @@ const photoHostSemanticProbeCooldown = 60 * time.Second
 // text, image bytes, URL, Source ID or host command reaches this diagnostic.
 var photoHostSemanticProbeGate = struct {
 	sync.Mutex
-	lastAttempt time.Time
+	lastAttempt      time.Time
+	lastImageAttempt time.Time
 }{}
 
-// Only an authenticated, fixed-prompt, real semantic text embedding counts.
-// Recheck the same model generation and exact audited request AFTER inference.
-func runPhotoHostSemanticTextInference(
+// Shared real synthetic-inference validator: require exact host ACK before
+// the model call, then validate result and same process generation afterward.
+func runPhotoHostSemanticTaskInference(
 	ctx context.Context,
 	check photoHostModelInfoCheck,
 	gate meta.AdminPhotoHostApply,
-	embed func(context.Context, string) (photointelligence.SemanticEmbedding, error),
+	infer func(context.Context) (photointelligence.SemanticEmbedding, error),
 	readInfo func(context.Context) (photointelligence.SemanticAnalyzerInfo, error),
 ) bool {
-	if ctx == nil || embed == nil || readInfo == nil ||
+	if ctx == nil || infer == nil || readInfo == nil ||
 		check.ID != "photo-semantic" || check.State != "ready" ||
 		!photointelligence.ValidAnalyzerRuntimeInstanceID(check.runtimeInstanceID) ||
 		gate.State != "host-verified" || gate.Revision == 0 ||
@@ -38,7 +39,7 @@ func runPhotoHostSemanticTextInference(
 		check.hostReceipt.RequestID != gate.RequestID || ctx.Err() != nil {
 		return false
 	}
-	vector, err := embed(ctx, photoHostSemanticProbeText)
+	vector, err := infer(ctx)
 	if err != nil || ctx.Err() != nil {
 		return false
 	}
@@ -53,6 +54,24 @@ func runPhotoHostSemanticTextInference(
 	}
 	_, err = photointelligence.ValidateSemanticEmbedding(info, vector)
 	return err == nil && ctx.Err() == nil
+}
+
+// The original text canary always uses a fixed literal, never browser input.
+func runPhotoHostSemanticTextInference(
+	ctx context.Context,
+	check photoHostModelInfoCheck,
+	gate meta.AdminPhotoHostApply,
+	embed func(context.Context, string) (photointelligence.SemanticEmbedding, error),
+	readInfo func(context.Context) (photointelligence.SemanticAnalyzerInfo, error),
+) bool {
+	if embed == nil {
+		return false
+	}
+	return runPhotoHostSemanticTaskInference(ctx, check, gate,
+		func(ctx context.Context) (photointelligence.SemanticEmbedding, error) {
+			return embed(ctx, photoHostSemanticProbeText)
+		}, readInfo,
+	)
 }
 
 // The global audited enable record, immutable action-time model receipt,
@@ -84,7 +103,7 @@ func (s *Server) photoHostSemanticEvidenceCurrent(
 }
 
 // Invoked only by explicit administrator preflight after four Info ACKs pass.
-// "verified" is ONE synthetic semantic text task on this host, never a
+// "verified" is ONE fixed semantic text task on this host, never a
 // Face/OCR/Creative/image job result, global activation or stop authorization.
 func (s *Server) photoHostSemanticTextProbe(
 	parent context.Context,
