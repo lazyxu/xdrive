@@ -208,9 +208,36 @@ test('valid fixed service deep links fail closed when old Server omits their inv
   assert.ok(page.includes('xDriveSystemDependencySelectionMissing(selectedPage, systemServices)'))
   assert.ok(page.includes('data-xdrive-system-dependency-unreported'))
   assert.ok(page.includes('!loading && snapshot && selectedServiceMissing'))
-  assert.ok(page.includes('<MenuItem value={selectedPage} disabled>'))
+  assert.equal(page.includes('<MenuItem value={selectedPage} disabled>'), false)
   assert.ok(page.includes("onClick={() => navigateTo({})}>返回总览"))
   assert.ok(page.includes('不会伪造默认绿色状态'))
+})
+
+test('mobile selector keeps all eleven fixed dependencies navigable when Server or Agent omits rows', () => {
+  const nav = loadTs('ui/shared/src/system-dependencies-navigation.ts')
+  const entries = nav.xDriveSystemDependenciesOverviewEntries([
+    { id: 'database', group: 'core', label: 'PostgreSQL (observed)' },
+    { id: 'baidu-map', group: 'location', label: 'Baidu (observed)' },
+    { id: 'photo-face', group: 'core', label: 'wrong group must be ignored' },
+    { id: 'sync-folders', group: 'core', label: 'personal data must be ignored' },
+  ])
+  assert.deepEqual(entries.map((item) => item.id), nav.XDRIVE_SYSTEM_DEPENDENCY_IDS)
+  assert.equal(entries.filter((item) => item.service !== null).length, 2)
+  assert.equal(entries.find((item) => item.id === 'photo-face').service, null)
+  assert.equal(entries.find((item) => item.id === 'photo-face').label, '人脸检测与人物聚类')
+  const source = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const selector = source.split('<TextField select size="small" fullWidth label="选择系统依赖"')[1]?.split('</TextField>')[0]
+  assert.ok(selector, 'compact selector must exist for Mobile Web')
+  assert.ok(selector.includes('overviewEntries.filter((item) => item.group === group.id)'),
+    'mobile must use the same allowlisted projection as the overview and desktop local nav')
+  assert.ok(selector.includes('item.service?.label ?? item.label'))
+  assert.ok(selector.includes("item.service ? '' : '（未报告）'"))
+  assert.equal(selector.includes('systemServices.filter'), false,
+    'partial or old Agent inventory must not hide entries from mobile navigation')
+  assert.equal(selector.includes('<MenuItem value={selectedPage} disabled>'), false,
+    'missing fixed ID must be navigable to read-only missing-state explanation')
+  assert.ok(source.includes('data-xdrive-system-dependency-unreported'))
+  assert.ok(source.includes('不会伪造默认绿色状态'))
 })
 
 test('shared Web and Desktop service rows expose true configuration ownership, not fake activation', () => {
