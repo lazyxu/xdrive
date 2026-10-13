@@ -734,6 +734,9 @@ export function useXDriveFileExplorerUploadController<TFile>({
           if (terminalChildren.has(childID)) continue
           await finishQuietly(childID, { state: 'cancelled' })
           terminalChildren.add(childID)
+          // No child should remain displayed as queued after the parent is
+          // terminal; cancelled siblings are processed, not completed.
+          aggregate.processed += 1
         }
       }
 

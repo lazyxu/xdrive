@@ -2553,6 +2553,16 @@ export class XDriveApi {
     }
 
     try {
+      tracking.check()
+      // The shared folder controller owns the child's terminal state, but
+      // only this Web transport knows its trustworthy cloud destination and
+      // original File metadata. Bind them to the existing child before I/O.
+      // Never persist the File/Blob, local absolute path or upload session key.
+      if (managedExternally && groupID && conflictPolicy === 'fail') {
+        webTransferStore.setUploadResumeContext(
+          activeTransferID, groupID, parentID, file.name, file.size, file.lastModified,
+        )
+      }
       const chunkSize = 8 * 1024 * 1024
       const chunkCount = file.size === 0 ? 0 : Math.ceil(file.size / chunkSize)
       const chunkHashes: string[] = []
@@ -2574,7 +2584,9 @@ export class XDriveApi {
           manifestSHA256 !== expectedResumeManifestSHA256) {
         throw new Error('所选文件内容与原上传不同；未向服务器发起续传请求。')
       }
-      if (!managedExternally && conflictPolicy === 'fail') {
+      if (conflictPolicy === 'fail' && (!managedExternally || Boolean(groupID))) {
+        // Only a matching, active child with its cloud parent bound can retain
+        // this digest; destructive conflict modes are never resumeable.
         webTransferStore.setUploadResumeManifest(activeTransferID, manifestSHA256)
       }
 
@@ -2663,6 +2675,11 @@ export class XDriveApi {
       if (!managedExternally && !session.signal.aborted) {
         if (owned?.requestedByUser()) webTransferStore.finishLifecycle(activeTransferID, { state: 'cancelled' })
         else webTransferStore.fail(activeTransferID, error)
+      } else if (managedExternally && groupID && !session.signal.aborted && !tracking.signal.aborted) {
+        // The group controller still finalizes the child and parent. Preserve
+        // only this failed child's validated resume identity before that
+        // terminal receipt; never relabel a cancelled group as a failure.
+        webTransferStore.fail(activeTransferID, error)
       }
       throw error
     } finally {

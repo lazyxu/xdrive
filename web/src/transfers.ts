@@ -236,6 +236,33 @@ class WebTransferStore {
     return id
   }
 
+  // Called only by the Web group transport, after its parent owner has been
+  // checked. The caller-supplied relativePath is never used as a cloud target.
+  setUploadResumeContext(
+    id: string, groupID: string, cloudParentID: number,
+    filename: string, size: number, lastModified: number,
+  ) {
+    if (!Number.isSafeInteger(cloudParentID) || cloudParentID <= 0 ||
+        !Number.isSafeInteger(size) || size < 0 ||
+        !Number.isSafeInteger(lastModified) || lastModified < 0) return
+    const parent = this.items.find((item) =>
+      item.id === groupID && item.scope === 'group' &&
+      item.kind === 'upload' && xDriveTransferActive(item))
+    if (!parent) return
+    this.patch(id, (item) => {
+      if (item.parent_id !== groupID || item.scope !== 'item' ||
+          item.kind !== 'upload' || item.direction !== 'upload' ||
+          !xDriveTransferActive(item) ||
+          item.file_name !== filename || item.bytes_total !== size) return item
+      return {
+        ...item,
+        cloud_parent_id: cloudParentID,
+        resume_file_last_modified: lastModified,
+        resume_conflict_policy: 'fail',
+      }
+    })
+  }
+
   startGroup(input: {
     fileName: string
     path?: string
@@ -481,6 +508,12 @@ class WebTransferStore {
         ...item,
         state: input.state,
         phase: 'finalizing',
+        // Never leave a manifest on a finished/skipped/cancelled child. Only
+        // failed child uploads with an exact cloud destination may retry.
+        resume_manifest_sha256: input.state === 'failed'
+          ? item.resume_manifest_sha256 : undefined,
+        retryable: input.state === 'failed'
+          ? xDriveCanResumeBrowserUpload({ ...item, state: 'failed' }, now) : false,
         bytes_done: skipped ? 0 : finalDone,
         percent: completed ? 100 : item.percent,
         items_completed: item.scope === 'item' && completed ? 1 : item.items_completed,
@@ -594,13 +627,17 @@ class WebTransferStore {
   }
 
   setUploadResumeManifest(id: string, manifestSHA256: string) {
-    // Only an eligible direct file upload may persist the tiny content digest.
+    // No cached source bytes or original chunk hashes; only an ordered
+    // SHA-256 manifest digest, after the destination is securely bound.
     if (!/^[0-9a-f]{64}$/.test(manifestSHA256)) return
-    this.patch(id, (task) => ({
-      ...task,
-      resume_manifest_sha256: task.direction === 'upload' &&
-        task.resume_conflict_policy === 'fail' ? manifestSHA256 : undefined,
-    }))
+    this.patch(id, (task) => {
+      if (task.direction !== 'upload' ||
+          task.resume_conflict_policy !== 'fail' ||
+          !xDriveTransferActive(task) ||
+          !Number.isSafeInteger(task.cloud_parent_id) ||
+          !(task.cloud_parent_id! > 0)) return task
+      return { ...task, resume_manifest_sha256: manifestSHA256 }
+    })
   }
 
   markUploadReselected(id: string) {

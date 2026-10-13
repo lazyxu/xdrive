@@ -2,7 +2,9 @@ import type { XDriveTransferTask } from '../../ui/shared/src'
 
 const RESUME_WINDOW_MS = 23 * 60 * 60 * 1000 // Server sessions expire after 24h.
 
-/** Only direct browser file uploads with a non-destructive fail-on-conflict policy. */
+/** Only recent browser uploads with a real cloud parent, exact source fingerprint
+ * and fail-on-conflict policy: standalone files or safely bound folder children.
+ * Group roots, canceled siblings and destructive policies never qualify. */
 export function xDriveCanResumeBrowserUpload(
   task: XDriveTransferTask | null | undefined, now = Date.now(),
 ): task is XDriveTransferTask & {
