@@ -1068,6 +1068,8 @@ export default function App({
     let hasAgentStateEvent = false
     // An IPC history push supersedes the independently requested bootstrap history.
     let hasLoginHistoryEvent = false
+    // Live maximize/restore events supersede the asynchronous startup snapshot.
+    let hasWindowStateEvent = false
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
     })
@@ -1087,7 +1089,7 @@ export default function App({
       }
     })
     void window.xdriveDesktop.getWindowState().then((value) => {
-      if (active) setWindowMaximized(value.maximized)
+      if (active && !hasWindowStateEvent) setWindowMaximized(value.maximized)
     })
     void window.xdriveDesktop.agent.getState().then((value) => {
       if (active && !hasAgentStateEvent) setAgent(value)
@@ -1109,7 +1111,9 @@ export default function App({
       }
     })
     const unsubscribeWindowState = window.xdriveDesktop.onWindowState((value) => {
-      if (active) setWindowMaximized(value.maximized)
+      if (!active) return
+      hasWindowStateEvent = true
+      setWindowMaximized(value.maximized)
     })
     const unsubscribeNavigate = window.xdriveDesktop.onNavigate((target) => {
       if (!active) return
