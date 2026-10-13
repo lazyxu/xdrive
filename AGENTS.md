@@ -12,6 +12,12 @@ For every follow-up request to "continue" an ongoing development, audit, or CI/P
 
 The progress report is required even when no code changes are possible. Follow the provider-specific GitHub/GitLab delivery and single-work-commit rules below; do not claim a GitLab push or cleanup if it was not actually performed.
 
+## P1-PH1b2c2c3a — Fixed YuNet detector test (2026-10-13)
+
+- Only the administrator's explicitly invoked no-store Photo Host **检测** may call authenticated, fixed model Unix `GET /v1/face-detector-canary`. Python generates deterministic NON-person pixels internally. Never accept user media, preview URL, arbitrary path/query/body, Source task, or grant Server/Renderer host control.
+- Check saved enabled host revision, audited Host Manager apply request, all four Info ACKs, current Docker generation/kernel Socket owner and empty host queue before detector invocation. Share the per-process mutex with semantic text/image, use a separate 60-second face cooldown and bounded context, and revalidate exact Face Info/process/ACK and host after inference. Old model/Agent falls back to unknown, not success.
+- Synthetic YuNet returning **zero faces is valid** and proves only detector execution, never positive face detection, SFace embedding/identity, OCR/Creative, real gallery or fleet readiness. Keep global `effect-proof=unknown` and all four `activation_state=deployment-only`; do not enable host stop/restart. Details: [docs/service-dependencies.md](docs/service-dependencies.md#p1-ph1b2c2c3a-2026-10-13-fixed-yunet-detector-execution-on-non-person-pixels).
+
 ## P1-PH1b2c2c2 — Fixed synthetic-image canary safety (2026-10-13)
 
 - The explicit administrator-only no-store **系统依赖 → Photo Intelligence → 检测** may invoke the model's authenticated, fixed Unix `/v1/semantic-image-canary` with deterministic model-local pixels only, no task body/query, external URL, Source/CAS or user photo. Do not grant Docker/socket authority or arbitrary model inputs to Server/Renderer.

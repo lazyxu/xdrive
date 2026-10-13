@@ -36,6 +36,15 @@ func TestUnixFaceAnalyzerContract(t *testing.T) {
 			switch r.URL.Path {
 			case "/v1/info":
 				_ = json.NewEncoder(w).Encode(info)
+			case "/v1/face-detector-canary":
+				if r.Method != http.MethodGet || r.URL.RawQuery != "" ||
+					r.ContentLength > 0 {
+					t.Fatal("fixed detector canary must be a body-free GET")
+				}
+				_ = json.NewEncoder(w).Encode(FaceDetectorCanary{
+					DetectorExecuted: true,
+					FaceCount:        0,
+				})
 			case "/v1/analyze":
 				if r.Method != http.MethodPost {
 					t.Fatalf("method=%s", r.Method)
@@ -99,6 +108,10 @@ func TestUnixFaceAnalyzerContract(t *testing.T) {
 		gotInfo.Detector.SHA256 != info.Detector.SHA256 ||
 		gotInfo.Embedding.SHA256 != info.Embedding.SHA256 {
 		t.Fatalf("info=%+v", gotInfo)
+	}
+	canary, err := analyzer.ProbeSyntheticFaceDetection(context.Background())
+	if err != nil || !canary.DetectorExecuted || canary.FaceCount != 0 {
+		t.Fatalf("fixed detector canary result=%+v, err=%v", canary, err)
 	}
 	faces, err := analyzer.Analyze(
 		context.Background(),

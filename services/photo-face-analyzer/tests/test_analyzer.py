@@ -524,6 +524,56 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertLessEqual(len(result["faces"]), analyzer.MAX_FACES)
                 connection.close()
 
+                # Fixed YuNet detector executes on synthetic non-person
+                # pixels without receiving user previews or media bytes.
+                for path, protocol, body, expected in (
+                    ("/v1/face-detector-canary", "0", None, 400),
+                    ("/v1/face-detector-canary?preview_url=private", "1", None, 404),
+                    ("/v1/face-detector-canary", "1", b"{}", 400),
+                ):
+                    check = analyzer.UnixHTTPConnection(socket_path)
+                    check.request(
+                        "GET", path, body=body,
+                        headers={
+                            "Authorization": "Bearer secret",
+                            "X-XDrive-Face-Protocol": protocol,
+                        },
+                    )
+                    response = check.getresponse()
+                    response.read()
+                    self.assertEqual(response.status, expected)
+                    check.close()
+
+                unauth_face = analyzer.UnixHTTPConnection(socket_path)
+                unauth_face.request(
+                    "GET", "/v1/face-detector-canary",
+                    headers={"X-XDrive-Face-Protocol": "1"},
+                )
+                response = unauth_face.getresponse()
+                response.read()
+                self.assertEqual(response.status, 401)
+                unauth_face.close()
+
+                fixed_face = analyzer.UnixHTTPConnection(socket_path)
+                fixed_face.request(
+                    "GET", "/v1/face-detector-canary",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Face-Protocol": "1",
+                    },
+                )
+                response = fixed_face.getresponse()
+                canary = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertIs(canary["detector_executed"], True)
+                self.assertIsInstance(canary["face_count"], int)
+                self.assertGreaterEqual(canary["face_count"], 0)
+                self.assertLessEqual(canary["face_count"], analyzer.MAX_FACES)
+                self.assertEqual(
+                    set(canary), {"detector_executed", "face_count"}
+                )
+                fixed_face.close()
+
                 connection = analyzer.UnixHTTPConnection(socket_path)
                 connection.request(
                     "GET",
