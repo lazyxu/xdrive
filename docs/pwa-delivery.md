@@ -399,3 +399,13 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **B3B 真目录枚举顺序 First-red（2026-10-13）：** 真实 Chrome/Gin 专项 [#38357602475](https://github.com/lazyxu/xdrive/actions/runs/38357602475) 确实通过系统 FileChooser 选择物理目录并进入真实 Gin/PG，但 Desktop 等待 `await-partial-group` 状态超时。脱敏摘要：`folderPicker=true`、`session_posts=1`、`chunk0_puts=1`、`tcp_drops=7`、`chunk2_puts=0`。说明实际浏览器枚举首先上传了测试指定为故障文件的 MOV，原先假定第一个小文件必定成功的测试夹具无效；**不是已证实的产品漏传/物理 CAS 失败**。共享 `xDriveFileExplorerFolderUploadPlan` 按浏览器 FileList 顺序保留文件项，OS 目录顺序本来不可猜，不改变生产排序来迎合测试。
 
 **B3B 顺序无关修正：** 使用一个真实系统目录中的两个根文件和一个嵌套文件，每个都是磁盘实际写入、fsync 的 **17 MiB 非零确定性数据**，三文件不同 seed 与原始 SHA。让真实 FileList 中**第一项完全上传并完成**，只对第二个上传会话的 chunk1 真 TCP 连续断线；第三项始终取消，不得提交。通过真实历史记录动态识别完成、失败、取消三种子任务，失败后冷刷新，在“重新选择原文件”中选取对应磁盘原件，保留真实目标 parent、原始摘要、失败父组 `partial`。HTTP 必须 3 个 POST session、2 个 chunk0、2 个成功 chunk2，首会话成功+恢复会话成功的 chunk1 共2次，首故障会话的重复断线数等于 `chunk1_puts-2`。Go 不根据文件名假定处理顺序，逐一检查三个固定候选的 Owner/parent、独立全量 SHA 与真实 Local CAS 字节，**恰好2个有效文件、1个未提交文件**，嵌套目录存在且外部用户不能读取。两个源文件归档 summary 只含脱敏布尔/计数/阶段与枚举不相关的任务状态，不含本地路径、文件名、JWT 或原始 Gin 日志。B2 小文件/1GiB 旧模式仍保持原首会话断线、2个会话和1次 chunk0 的严格合同。需要新准确 HEAD 的真实 Chrome/Gin 专项和完整 CI/Final Gate **双绿**才可合并。
+
+## PWA-S4C3-A · 4 GiB signed native-download Range transport gate (2026-10-13)
+
+**本次实际范围（非完整 native 下载验收）：** S1–S3 已合并，S4B2-B3B [#1646](https://github.com/lazyxu/xdrive/pull/1646) 在准确 HEAD 的真实 Chrome/Gin/PostgreSQL/CAS 和完整 CI/Final Gate 双绿后于 2026-10-13 合并，PWA 相关短期分支已清理；当前从冻结 GitHub `master@30148b3e356be76e7f595d6b656ee41d9ef446de` 开始 **S4C3-A**，不与 performance P044 的 4 GiB Web/OPFS 整文件高熵验证重复。AGENTS.md 的入口仍指向本台账。
+
+**新增边界回归：** 在现有独立 PostgreSQL schema + 真实 Gin Router + 本地 Store + 已登录 Owner 签名 ticket 集成测试内，增加 **4 GiB + 17 B 稀疏文件**；只读取恰好跨越 2 GiB 的标记区和 **超过 4 GiB** 的尾段，断言 `206`、64 位 `Content-Range`、`Content-Length`、确切响应字节与 `Cache-Control: no-store`。对第一条越界 Range 验证 `416` 和 `Content-Range: bytes */total`；会话撤销后，同一 4 GiB ticket 的 Range 必须 `401`。真实端点与鉴权复用生产代码，测试目录内容仅合成且不缓存原件。
+
+**必须严格区分：** 稀疏文件和少量 Range 校验证明的是 **64 位 seek / HTTP 响应与权限边界**，**绝不能**证明完整 4 GiB 字节 SHA、Chrome/Android 浏览器 Native Download 真正写盘成功、取消后本机部分文件被正确丢弃、Range 自动重试或 iOS 27 Home Screen 真机能力；这些维持 `not-run`。P044 只证明 Web/OPFS 高熵完整下载，不可移作 Native Download 证据。
+
+**门槛与后续：** 本阶段 Go 源文件 gofmt 和独立 Go 标准库 sparse/ServeContent 64 位 range 探针通过；完整仓库集成/CI 需在准确 PR HEAD 验证。保持单工作提交 + Draft，完整 PR CI 与 Final Gate 成功后才可 Ready/线性合并并核查分支清理。接着 S4C3-B 应使用真实 Playwright Chrome 浏览器接管原生下载，验证实际下载盘文件 1/4 GiB SHA-256、取消/票据失效和 206/416；之后推进 S4D 生命周期与 S5 iOS/Android Installed/HTTPS/回滚真机验收。
