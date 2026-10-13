@@ -16,7 +16,15 @@ test('L03-E1b1a pinned CAS reads fence local Store writes and GC deletes', () =>
   assert.match(contract, /OpenPinnedCAS\(context.Context, string\) \(PinnedCASFile, error\)/)
   assert.match(api, /store\.\(storage\.CASReadLeaseProvider\)/)
   assert.match(api, /provider\.OpenPinnedCAS\(ctx, key\)/)
-  assert.match(lock, /lockTempLifecycleFile\(ctx, file, exclusive, false\)/)
+  // Preserve the blocking default and prove that only the new CAS try read
+  // sets nonblocking=true on the already existing cross-process OS lock.
+  assert.ok(lock.includes('casLifecycleLeaseMode(ctx, hash, exclusive, false)'))
+  assert.ok(lock.includes('lockTempLifecycleFile(ctx, file, exclusive, try)'))
+  assert.ok(lock.includes('casLifecycleLeaseMode(ctx, hash, false, true)'))
+  assert.ok(lock.includes('func (l *Local) TryOpenPinnedCAS('))
+  const tryChecks = read('internal', 'storage', 'cas_lifecycle_try_test.go')
+  assert.ok(tryChecks.includes('TestLocalCASTryPinnedCASReportsBusyWithoutBlocking'))
+  assert.ok(tryChecks.includes('TestLocalCASTryPinnedCASRejectsInvalidMissingAndCanceled'))
   assert.match(lock, /func \(f \*pinnedLocalCASFile\) Close\(\) error/)
   assert.match(lock, /func \(l \*Local\) OpenPinnedCAS\(/)
   assert.match(store, /func \(l \*Local\) Put\(/)
