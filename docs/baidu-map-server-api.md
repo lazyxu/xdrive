@@ -68,3 +68,12 @@ XD_BAIDU_MAP_AK=在百度控制台申请的Server类型AK
 ## Future JSAPI 4.0 feasibility — approved review, not a live switch (2026-10-13)
 
 The user approved investigating an AK-hidden authenticated Server proxy for **Baidu JSAPI 4.0** as the sole dynamic map provider in the [Places iOS 27 staged roadmap](gallery-places-ios27-roadmap.md). This is *not* a change to the currently deployed Static Map v2 contract; do not put `ak` in the client, create an open wildcard reverse proxy, silently enable paid map requests or fallback to another basemap. [Baidu's JSAPI preparation](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fquickstart%2Fprepare) requires a **browser-type AK**; existing encrypted static Server AK configuration does not implicitly satisfy this. [Official proxy guidance](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcepts%2Fproxy) describes `_BMapSecurityConfig.serviceHost` and `BMAP_PROXY_URL`, but xDrive still requires a fixed upstream/method/path allowlist, auth, credential secrecy, owner quota, CSP/Electron sandbox and actual network/response-leak tests. Validate applicable self-hosted/multiuser licensing, attribution, Apple-iOS gesture expectations and real Android/Desktop compatibility before any activation. Until A3 passes these gates, this file's Static-only production contract continues to apply.
+
+
+## P0-Places-A3 · JSAPI 许可门禁前的百度静态图分步平移
+
+作为**同一百度 Provider** 的安全降级交互，现有共享 MUI Static Map 地图框支持鼠标/触屏拖动**松手后仅请求一次**、44px 方向键和键盘方向键移动中心，另可用原有缩放与重新加载。偏移算法只计算有限的 WGS84 相机中心：地图像素仍由百度 Static Map v2 Server API 绘制，绝不由 xDrive 自己构建离线底图/投影/瓦片/照片坐标。日期变更/不同地点使用独立中心；日期和地点业务仍来自原来 owner-scoped Source/Range。
+
+每次操作复用完全相同的 Web/Mobile Web Gallery DataSource 或 Desktop Agent IPC；新的请求会通过既有 AbortController 取消旧 PNG 请求并释放旧 Blob URL。快速连续交互和真实网络延迟不能被误报为 JSAPI 原生连续 WebGL/地图瓦片；离开 Viewer 不会取消持久上传/下载/同步。对自动化测试，验证世界经度换边、极区裁剪、方向键与拖动一次刷新、缺 AK 不请求、AK 永不出现在浏览器 URL；iOS 27、Android、Desktop 物理设备视觉与手势性能仍按 [C1](gallery-places-ios27-roadmap.md) 实测。
+
+按用户最新授权，未来 JSAPI 4.0 可使用**单独的 Browser AK** 配合严格 Server 同源代理，而此处 Static Map v2 始终保持加密 Server AK。详细许可、动态代理资源白名单及安全门禁见 [A3a 双 AK 评审](gallery-places-jsapi4-proxy-review.md)，不能把本静态平移作为 JSAPI 4.0 运行时合格的证据。

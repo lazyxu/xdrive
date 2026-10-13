@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded'
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded'
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
+import { xDriveBaiduStaticStepCenter } from '../media-gallery-baidu-camera'
 import type {
   MediaPlaceFacet,
   XDriveBaiduMapProviderInfo,
@@ -34,6 +40,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const [requestID, setRequestID] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [camera, setCamera] = useState<{ key: string; latitude: number; longitude: number } | null>(null)
+  const dragStart = useRef<{ pointer: number; x: number; y: number } | null>(null)
 
   useEffect(() => {
     let active = true
@@ -57,6 +65,57 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const longitude = location?.longitude ?? (place?.sample_longitude ?? place?.longitude)
   const hasLocation = Boolean(location || place)
   const mapName = location?.name ?? place?.name ?? ''
+  const originKey = location
+    ? `photo:${location.name ?? ''}:${latitude}:${longitude}`
+    : `place:${place?.id ?? ''}`
+  const centerLatitude = camera?.key === originKey ? camera.latitude : latitude
+  const centerLongitude = camera?.key === originKey ? camera.longitude : longitude
+  const validCenter = centerLatitude !== undefined && centerLongitude !== undefined &&
+    Number.isFinite(centerLatitude) && Math.abs(centerLatitude) <= 85 &&
+    Number.isFinite(centerLongitude) && Math.abs(centerLongitude) <= 180
+
+  const pan = (eastPixels: number, southPixels: number) => {
+    if (!enabled || !loadStaticMap || !validCenter ||
+        centerLatitude === undefined || centerLongitude === undefined) return
+    const next = xDriveBaiduStaticStepCenter(
+      { latitude: centerLatitude, longitude: centerLongitude }, zoom, eastPixels, southPixels)
+    setCamera({ key: originKey, ...next })
+  }
+  const onMapKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const steps: Record<string, [number, number]> = {
+      ArrowUp: [0, -80], ArrowDown: [0, 80], ArrowLeft: [-80, 0], ArrowRight: [80, 0],
+    }
+    if (steps[event.key]) {
+      if (!enabled || !loadStaticMap || !validCenter) return
+      event.preventDefault()
+      pan(...steps[event.key])
+    } else if (event.key === '+' || event.key === '=') {
+      if (!enabled || !validCenter) return
+      event.preventDefault()
+      setZoom(value => Math.min(18, value + 1))
+    } else if (event.key === '-') {
+      if (!enabled || !validCenter) return
+      event.preventDefault()
+      setZoom(value => Math.max(3, value - 1))
+    }
+  }
+  const onMapPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!enabled || !loadStaticMap || !validCenter ||
+        (event.pointerType === 'mouse' && event.button !== 0)) return
+    dragStart.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY }
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onMapPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = dragStart.current
+    dragStart.current = null
+    if (!start || start.pointer !== event.pointerId) return
+    const deltaX = event.clientX - start.x
+    const deltaY = event.clientY - start.y
+    // One Server request on release, none per pointer move.
+    if (Math.hypot(deltaX, deltaY) < 18) return
+    pan(-deltaX * 480 / (event.currentTarget.clientWidth || 480),
+      -deltaY * 280 / (event.currentTarget.clientHeight || 280))
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -66,19 +125,20 @@ export function XDriveMediaGalleryBaiduStaticMap({
     setError('')
     setBusy(false)
 
-    if (!enabled || !loadStaticMap || latitude === undefined || longitude === undefined) {
+    if (!enabled || !loadStaticMap ||
+        centerLatitude === undefined || centerLongitude === undefined) {
       return () => { active = false; controller.abort() }
     }
-    if (!Number.isFinite(latitude) || Math.abs(latitude) > 85 ||
-        !Number.isFinite(longitude) || Math.abs(longitude) > 180) {
+    if (!Number.isFinite(centerLatitude) || Math.abs(centerLatitude) > 85 ||
+        !Number.isFinite(centerLongitude) || Math.abs(centerLongitude) > 180) {
       setError('地点坐标超出百度地图支持范围。')
       return () => { active = false; controller.abort() }
     }
 
     setBusy(true)
     void loadStaticMap({
-      latitude,
-      longitude,
+      latitude: centerLatitude,
+      longitude: centerLongitude,
       zoom,
       width: 480,
       height: 280,
@@ -98,7 +158,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
       controller.abort()
       if (imageObjectURL) URL.revokeObjectURL(imageObjectURL)
     }
-  }, [enabled, latitude, longitude, loadStaticMap, zoom, requestID])
+  }, [enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID])
 
   const message =
     provider.kind === 'checking' ? '正在检查百度地图服务…'
@@ -119,7 +179,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         </Box>
         <Tooltip title="缩小百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !hasLocation || busy || zoom <= 3}
+            <IconButton size="small" disabled={!enabled || !validCenter || !loadStaticMap || zoom <= 3}
               onClick={() => setZoom((value) => Math.max(3, value - 1))}
               aria-label="缩小百度地图">
               <ZoomOutRoundedIcon fontSize="small" />
@@ -129,7 +189,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         <Typography variant="caption" color="text.secondary">{zoom}</Typography>
         <Tooltip title="放大百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !hasLocation || busy || zoom >= 18}
+            <IconButton size="small" disabled={!enabled || !validCenter || !loadStaticMap || zoom >= 18}
               onClick={() => setZoom((value) => Math.min(18, value + 1))}
               aria-label="放大百度地图">
               <ZoomInRoundedIcon fontSize="small" />
@@ -138,7 +198,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         </Tooltip>
         <Tooltip title="重新加载百度地图">
           <span>
-            <IconButton size="small" disabled={!enabled || !hasLocation || !loadStaticMap || busy}
+            <IconButton size="small" disabled={!enabled || !validCenter || !loadStaticMap}
               onClick={() => setRequestID((value) => value + 1)}
               aria-label="重新加载百度地图">
               <RefreshRoundedIcon fontSize="small" />
@@ -146,7 +206,29 @@ export function XDriveMediaGalleryBaiduStaticMap({
           </span>
         </Tooltip>
       </Stack>
-      <Box sx={{
+      <Stack data-xdrive-baidu-static-step-pan direction="row" spacing={0.25}
+        justifyContent="center" alignItems="center" sx={{ mt: 0.75 }}>
+        {([
+          ['west', '地图向西移动', -80, 0, <ArrowBackRoundedIcon key="west" fontSize="small" />],
+          ['north', '地图向北移动', 0, -80, <ArrowUpwardRoundedIcon key="north" fontSize="small" />],
+          ['south', '地图向南移动', 0, 80, <ArrowDownwardRoundedIcon key="south" fontSize="small" />],
+          ['east', '地图向东移动', 80, 0, <ArrowForwardRoundedIcon key="east" fontSize="small" />],
+        ] as const).map(([direction, label, dx, dy, icon]) => (
+          <Tooltip key={direction} title={label}>
+            <span><IconButton aria-label={label} size="small"
+              disabled={!enabled || !validCenter || !loadStaticMap}
+              sx={{ minWidth: 44, minHeight: 44 }} onClick={() => pan(dx, dy)}>
+              {icon}
+            </IconButton></span>
+          </Tooltip>
+        ))}
+      </Stack>
+      <Box role="group" tabIndex={enabled && validCenter ? 0 : -1}
+        aria-label="百度地图：方向键移动，按加号或减号缩放，拖动松开后更新"
+        onKeyDown={onMapKeyDown} onPointerDown={onMapPointerDown}
+        onPointerUp={onMapPointerUp} onPointerCancel={() => { dragStart.current = null }}
+        sx={{
+        touchAction: enabled ? 'none' : 'auto', cursor: enabled ? 'grab' : 'default',
         bgcolor: 'action.hover',
         borderRadius: 1,
         mt: 1,
@@ -170,6 +252,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
       </Box>
       {provider.kind === 'available' && provider.info.enabled ? (
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+          拖动或按方向键后才重新请求百度静态底图；不等同于 JSAPI 4.0 连续动态地图。{' '}
           {provider.info.privacy}
         </Typography>
       ) : null}
