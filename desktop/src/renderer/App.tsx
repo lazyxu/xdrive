@@ -1350,6 +1350,9 @@ export default function App({
       setError(result.error.message)
       return
     }
+    // A saved close-to-tray choice supersedes an older startup preferences read.
+    const revisionKey = Symbol.for('xdrive.desktop.preferencesUserWriteRevision')
+    Reflect.set(setDesktopPreferences, revisionKey, (Reflect.get(setDesktopPreferences, revisionKey) ?? 0) + 1)
     setDesktopPreferences(result.data)
     setNotice(enabled ? '关闭窗口时将继续在系统托盘后台运行。' : '关闭窗口时将退出 xDrive 桌面版。')
   }
