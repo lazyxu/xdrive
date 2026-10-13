@@ -1600,3 +1600,31 @@ separate L03-E1b1b1b writer still needs a physically verified, atomic and
 idempotent identity + reference-accounting transaction. GitHub exact-head
 CI (including real PostgreSQL integration) is the acceptance gate; GitLab,
 native Windows/Linux devices and 100k/4GiB benchmarks are not claimed.
+
+## L03-E1b1b1b1 · Agent-private CURRENT relative path witness (stacked PR)
+
+The next authoritative local Push identity writer cannot derive a canonical
+`SourceItem.Path` from its 64-character `CurrentPathKey`: hashes are
+non-invertible and path guessing is forbidden. The owning Agent already scans
+both complete, sealed journal generations and rehashes actual native file
+handles via `HashCurrentLocalEvidenceBatch`. This bounded continuation
+preserves the *same* CURRENT generation's verified relative path in its
+**private, transient** `LocalEvidenceContentDigest.CurrentRelativePath`
+result, with `json:"-"` to fail closed on accidental serialization.
+The path is paired by input index with the candidate's exact current path
+hash, unique strong native identity and current live-byte hash. Linux/Windows
+native test fixtures check that binding and explicit JSON path redaction.
+
+This is not a Server write, new API/IPC capability, durable path grant,
+cryptographic file attestation, `SourceItem/alias` promotion, CAS reference
+count mutation, Source activation, upload, scheduler, Mirror deletion or NAS
+Push management. A later **owning-Agent-only** writer must recheck the Root,
+sealed generations, native bytes and current relative path immediately before
+its authenticated Server commit; the Server must bind and normalize the
+relative path, verify its Root-scoped `CurrentPathKey`, protect current
+CAS metadata/physical bytes, and atomically couple any true new CAS reference
+to a canonical Node/File/SourceItem mutation. Metadata-only rename must not
+increment CAS references. No path enters Web/foreign Desktop read DTOs.
+This phase is Draft until its *own* exact-head full CI/final-gate and
+rebuild onto merged upstream master; GitLab/native 100k/4GiB tests are not
+claimed.

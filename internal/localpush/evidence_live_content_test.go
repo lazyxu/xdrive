@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -77,11 +78,29 @@ func TestLocalEvidenceLiveHashValidatesBothGenerationsAndOriginalBytes(t *testin
 		t.Fatalf("not a bounded native-only content verification: %+v err=%v", result, err)
 	}
 	observed := make(map[string]int64)
-	for _, got := range result.Digests {
+	for i, got := range result.Digests {
 		if got.Size <= 0 || len(got.SHA256) != 64 {
 			t.Fatalf("invalid private digest: %+v", got)
 		}
+		// The relative path is derived only from the sealed CURRENT journal
+		// matched by strong native identity and rehashed live file content,
+		// never invented from a client-supplied hash or stale previous path.
+		pathKey, keyErr := LocalInventoryPathKey(grant, "file", got.CurrentRelativePath)
+		if keyErr != nil || pathKey != candidates[i].CurrentPathKey {
+			t.Fatalf("private live path is not bound to the current identity: %+v %v", got, keyErr)
+		}
 		observed[got.SHA256] = got.Size
+	}
+	// Even accidental JSON serialization of this Agent-private result must
+	// not expose a local file name to Web, Desktop or a log payload.
+	serialized, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"CurrentRelativePath", "after-a.txt", "after-b.txt"} {
+		if strings.Contains(string(serialized), forbidden) {
+			t.Fatalf("private source path leaked through JSON: %q", forbidden)
+		}
 	}
 	for _, payload := range []string{"immutable-original-A", "immutable-original-B"} {
 		digest := sha256.Sum256([]byte(payload))

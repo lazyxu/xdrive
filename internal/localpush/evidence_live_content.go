@@ -25,6 +25,11 @@ type LocalEvidenceContentCandidate struct {
 type LocalEvidenceContentDigest struct {
 	SHA256 string
 	Size   int64
+	// CurrentRelativePath comes only from the freshly reverified CURRENT
+	// inventory and live native file handle. This short-lived Agent-private
+	// value is intentionally excluded from every JSON representation.
+	// A future writer MUST independently reverify it at its commit boundary.
+	CurrentRelativePath string `json:"-"`
 }
 
 type LocalEvidenceContentBatch struct {
@@ -191,6 +196,7 @@ func HashCurrentLocalEvidenceBatch(
 		result.HashedBytes += digest.Size
 		result.Digests = append(result.Digests, LocalEvidenceContentDigest{
 			SHA256: digest.SHA256, Size: digest.Size,
+			CurrentRelativePath: item.Path,
 		})
 	}
 	last, err := LoadLocalReconcileEvidence(ctx, configDir, grant, sourceRevision)
