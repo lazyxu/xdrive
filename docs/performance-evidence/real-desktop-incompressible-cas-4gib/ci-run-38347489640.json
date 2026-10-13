@@ -1,0 +1,268 @@
+{
+  "workload_id": "P045",
+  "phase": "M004-d",
+  "state": "Accepted valid original CURRENT native n3 / production unchanged / BEFORE=CURRENT / AFTER=N/A / speedup=N/A; final evidence-head CI pending",
+  "provenance": {
+    "repository": "lazyxu/xdrive",
+    "original_exact_sha": "ec98b265939bd239dd288293c2449cfcdcd0a7a9",
+    "original_stacked_base_sha": "82e031487c108f83579a81b8ed2175f571019bd6",
+    "current_reconstructed_base_sha": "e70465b202775f4e249ec81a8f95ebb88013094b",
+    "source_run_id": 38347489640,
+    "job_id": 115132162691,
+    "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38347489640",
+    "artifact_id": 11789204550,
+    "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38347489640/artifacts/11789204550"
+  },
+  "shape": {
+    "bytes_each": 4294967296,
+    "independent_real_physical_files": 3,
+    "distinct_SHA256": 3,
+    "platform": "Linux GitHub Actions real Electron Renderer→Preload→Main→Go Agent IPC→Gin/PostgreSQL17/Local physical CAS and native local file save; not OS-installed PWA or Windows physical hardware",
+    "physical_allocation_each": [
+      4294971392,
+      4294971392,
+      4294971392
+    ],
+    "source_SHA256": [
+      "5e30c9b355ea1e462b7b148c10df4bb9bb048d07202d60b5e8b4a9bb3cef6392",
+      "a4a4b72c03f976eaeee8fb008e5779ccafe309722501c713c406471dfc26fcce",
+      "dae449e13818b6ccf5774384706fa20d2b0766884718a33195e81b4b65ff2fe7"
+    ],
+    "actual_puts_each": 512,
+    "actual_get_each": 1,
+    "full_download_sha256_checked_each": true,
+    "baseline_data_outside_timed_sections": true,
+    "not_measured": [
+      "WAN",
+      "Android/iOS native devices",
+      "installed PWA",
+      "Windows physical host",
+      "100k real media originals"
+    ]
+  },
+  "frozen": {
+    "n": 3,
+    "per_direction_each_elapsed_ms_max": 360000,
+    "Agent_and_Go_and_Renderer_growth_B_max": 268435456,
+    "min_real_source_alloc_fraction": 0.98,
+    "required_signed_PUTs_each": 512,
+    "required_GETs_each": 1,
+    "exact_original_CAS_full_download_SHA": true,
+    "distinct_original_hashes": 3
+  },
+  "valid_original": {
+    "upload_p50_ms": 55087.089368999994,
+    "download_p50_ms": 21968.577082,
+    "upload_p50_MiBps": 74.35499037829007,
+    "download_p50_MiBps": 186.4481247333978,
+    "Agent_RSS_peak_delta_B": 18874368,
+    "Go_Server_RSS_peak_delta_B": 4935680,
+    "renderer_working_set_peak_growth_KiB": 157156,
+    "n": 3,
+    "passed": true
+  },
+  "raw_native_summary": {
+    "name": "desktop-renderer-preload-main-agent-postgres17-physical-cas-4gib-high-entropy",
+    "highEntropyDesktop": true,
+    "status": "CURRENT-BEFORE only / no production code optimization",
+    "n": 3,
+    "uploadMedianMs": 55087.089368999994,
+    "downloadMedianMs": 21968.577082,
+    "uploadMedianMiBps": 74.35499037829007,
+    "downloadMedianMiBps": 186.4481247333978,
+    "maxAgentRSSGrowthBytes": 18874368,
+    "maxServerRSSGrowthBytes": 4935680,
+    "maxRendererWorkingSetGrowthKiB": 157156,
+    "budgets": {
+      "perDirectionBytes": 4294967296,
+      "uploadMsEachMax": 360000,
+      "downloadMsEachMax": 360000,
+      "agentRssPeakGrowthMaxMiB": 256,
+      "serverRssPeakGrowthMaxMiB": 256,
+      "rendererWSGrowthMaxMiB": 256,
+      "expectedPUTsEach": 512,
+      "expectedGETsEach": 1
+    },
+    "actualRealUIBoundary": "P043 authenticated actual Desktop Renderer/Preload/Main/Go Agent IPC -> Gin/PostgreSQL17/physically allocated high-entropy 1GiB original CAS; source file SHA256 equals complete downloaded Desktop File SHA256 and actual Server CAS SHA. Linux loopback, NOT actual Windows desktop, WAN, 4GiB high-entropy, PWA, permanent task cancellation or FileExplorer button clicks; no production changes.",
+    "samples": [
+      {
+        "sample": "sample-1",
+        "uploadedBytes": 4294967296,
+        "downloadedBytes": 4294967296,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "5e30c9b355ea1e462b7b148c10df4bb9bb048d07202d60b5e8b4a9bb3cef6392",
+          "allocatedBytes": 4294971392,
+          "sourceBytes": 4294967296
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 55087.089368999994,
+          "throughputMiBps": 74.35499037829007,
+          "rendererWorkingSetStartKiB": 135044,
+          "rendererWorkingSetPeakKiB": 292200,
+          "rendererWorkingSetGrowthKiB": 157156,
+          "electronMainCPUUserMs": 3233.953,
+          "electronMainCPUSystemMs": 1066.769
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 21968.577082,
+          "throughputMiBps": 186.4481247333978,
+          "rendererWorkingSetStartKiB": 142412,
+          "rendererWorkingSetPeakKiB": 173048,
+          "rendererWorkingSetGrowthKiB": 30636,
+          "electronMainCPUUserMs": 523.29,
+          "electronMainCPUSystemMs": 342.985,
+          "destination": "/tmp/xdrive-desktop-real-cas-jIBbZP/download-sample-1.bin"
+        },
+        "server": {
+          "cas_bytes": 4294967296,
+          "cas_valid": true,
+          "declared_upload_bytes": 4294967296,
+          "download_get_count": 1,
+          "file_bytes": 4294967296,
+          "file_sha256": "5e30c9b355ea1e462b7b148c10df4bb9bb048d07202d60b5e8b4a9bb3cef6392",
+          "node_revision": 1,
+          "put_count": 512,
+          "root_id": 1,
+          "sample": "sample-1",
+          "size_bytes": 4294967296,
+          "upload_name": "upload-sample-1.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "5e30c9b355ea1e462b7b148c10df4bb9bb048d07202d60b5e8b4a9bb3cef6392",
+        "agentRssGrowthBytes": 18829312,
+        "serverRssGrowthBytes": 2875392,
+        "agentCpuDeltaTicks": 1114,
+        "serverCpuDeltaTicks": 1697
+      },
+      {
+        "sample": "sample-2",
+        "uploadedBytes": 4294967296,
+        "downloadedBytes": 4294967296,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "a4a4b72c03f976eaeee8fb008e5779ccafe309722501c713c406471dfc26fcce",
+          "allocatedBytes": 4294971392,
+          "sourceBytes": 4294967296
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 41979.754178,
+          "throughputMiBps": 97.57084290280477,
+          "rendererWorkingSetStartKiB": 148024,
+          "rendererWorkingSetPeakKiB": 273488,
+          "rendererWorkingSetGrowthKiB": 125464,
+          "electronMainCPUUserMs": 3334.676,
+          "electronMainCPUSystemMs": 919.046
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 21906.687688,
+          "throughputMiBps": 186.97486622971752,
+          "rendererWorkingSetStartKiB": 141004,
+          "rendererWorkingSetPeakKiB": 172208,
+          "rendererWorkingSetGrowthKiB": 31204,
+          "electronMainCPUUserMs": 513.759,
+          "electronMainCPUSystemMs": 299.553,
+          "destination": "/tmp/xdrive-desktop-real-cas-jIBbZP/download-sample-2.bin"
+        },
+        "server": {
+          "cas_bytes": 4294967296,
+          "cas_valid": true,
+          "declared_upload_bytes": 4294967296,
+          "download_get_count": 1,
+          "file_bytes": 4294967296,
+          "file_sha256": "a4a4b72c03f976eaeee8fb008e5779ccafe309722501c713c406471dfc26fcce",
+          "node_revision": 1,
+          "put_count": 512,
+          "root_id": 1,
+          "sample": "sample-2",
+          "size_bytes": 4294967296,
+          "upload_name": "upload-sample-2.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "a4a4b72c03f976eaeee8fb008e5779ccafe309722501c713c406471dfc26fcce",
+        "agentRssGrowthBytes": 18821120,
+        "serverRssGrowthBytes": 2674688,
+        "agentCpuDeltaTicks": 1100,
+        "serverCpuDeltaTicks": 1715
+      },
+      {
+        "sample": "sample-3",
+        "uploadedBytes": 4294967296,
+        "downloadedBytes": 4294967296,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "dae449e13818b6ccf5774384706fa20d2b0766884718a33195e81b4b65ff2fe7",
+          "allocatedBytes": 4294971392,
+          "sourceBytes": 4294967296
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 65086.901981999996,
+          "throughputMiBps": 62.931248458142356,
+          "rendererWorkingSetStartKiB": 145884,
+          "rendererWorkingSetPeakKiB": 283512,
+          "rendererWorkingSetGrowthKiB": 137628,
+          "electronMainCPUUserMs": 2911.905,
+          "electronMainCPUSystemMs": 1130.898
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 4294967296,
+          "elapsedMs": 22240.867826,
+          "throughputMiBps": 184.16547555809387,
+          "rendererWorkingSetStartKiB": 140052,
+          "rendererWorkingSetPeakKiB": 203004,
+          "rendererWorkingSetGrowthKiB": 62952,
+          "electronMainCPUUserMs": 757.383,
+          "electronMainCPUSystemMs": 362.541,
+          "destination": "/tmp/xdrive-desktop-real-cas-jIBbZP/download-sample-3.bin"
+        },
+        "server": {
+          "cas_bytes": 4294967296,
+          "cas_valid": true,
+          "declared_upload_bytes": 4294967296,
+          "download_get_count": 1,
+          "file_bytes": 4294967296,
+          "file_sha256": "dae449e13818b6ccf5774384706fa20d2b0766884718a33195e81b4b65ff2fe7",
+          "node_revision": 1,
+          "put_count": 512,
+          "root_id": 1,
+          "sample": "sample-3",
+          "size_bytes": 4294967296,
+          "upload_name": "upload-sample-3.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "dae449e13818b6ccf5774384706fa20d2b0766884718a33195e81b4b65ff2fe7",
+        "agentRssGrowthBytes": 18874368,
+        "serverRssGrowthBytes": 4935680,
+        "agentCpuDeltaTicks": 1032,
+        "serverCpuDeltaTicks": 1809
+      }
+    ],
+    "passed": true
+  },
+  "after": null,
+  "speedup_pct": null,
+  "decision": "Accept unchanged production because all original frozen budgets passed; original stacked-source CI is real and must not be compared to other source/platform sparse workloads as A/B. Archive changes commit head and targeting current master requires exact new native and full PR CI/final-gate before merge."
+}
