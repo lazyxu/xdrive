@@ -48,3 +48,15 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 - **隐私**：真实 HAR 可能含 GPS、访问令牌、Cookie 和源图请求。严禁上传至 GitHub、提交仓库、生成 CI 附件或分享给第三方；采用按需访问和受控销毁。只有无密钥合成 fixture 可入库。
 
 **明确未通过的生产门禁**：真实百度 Browser 类型 AK 及账户合法许可、自托管/Electron/商用边界、官方实际完整 loader/JS/WASM/瓦片/字体/样式请求清单、严格逐 host/path/method/query 白名单、Server 注入/上游返回原始字节无 AK 泄漏、跨副本配额与会话撤销、反向代理/CSP/Electron 沙盒、真实 iOS 27 Safari/PWA、Android、Desktop 验收。HAR 仅能证明采集的浏览器侧样本，不可证明未被采集的服务端上游或移动系统行为；模拟测试通过时 **A3b2/b3 仍为 NO-GO**。
+
+
+## A3b2b · 只可内部调用的 Loader 请求及响应安全合同（2026-10-13）
+
+下一步交付 \`internal/baidumapjsapi/loader_guard.go\`（独立 Go 标准库包），不增加公开 Router、授权 Session、Loader 脚本或百度上游网络请求；\`A3b1.runtime_enabled=false\` 维持原状。这是完整 JSAPI 代理的**构件**，不是可以上线的反向代理。
+
+- **固定上游**：当前仅承认对 \`GET /_BMapService/api?v=4.0\` 的精确匹配，才能在**可信配置的 HTTPS origin** 基础上形成 \`BMAP_PROXY_URL\`。服务端内部上游固定 \`https://api.map.baidu.com/api\`，按 JSAPI 4.0 类型注入单独的加密 Browser AK；从不采用浏览器提交的 Host、X-Forwarded-Host、上游 URL、query AK 或其它泛化参数。所有尚未通过真实授权账号观测的瓦片/样式/WASM/字体等子资源**默认拒绝**，没有通配路径或通配主机。
+- **五项独立放行条件**：合法许可、完整真实子资源清单、原始字节密钥泄漏实证、可撤销 Owner 地图会话及跨副本配额、Web/Mobile Web/Desktop 隔离证据。目前缺证据，构件无生产路由，任何保存的 desired-config 都不触发调用。测试可以人为构造 \`ReleaseGates{...}\` 校验纯函数，绝不代表真实门禁已满足。真实门禁必须由可信、可审计、不可伪造的 Server 证据落实。
+- **保守上游检查**：限制 2 MiB JavaScript 响应体、严格 MIME、HTTP 200、拒绝重定向和压缩编码，常见原文/URL/base64 AK 在响应字节中一旦出现即拒绝，不透明的客户端可见错误；回送标头采用固定白名单 \`no-store/nosniff/no-referrer/CORP\`，上游 Set-Cookie、Location、ETag、缓存和 CORS 不透传。安全 HTTP Client 不读环境代理、不跟跳转，5s 超时并支持调用者的 \`context.Context\` 取消。
+- **测试**：\`GO111MODULE=off go test -count=1 ./internal/baidumapjsapi\`，本地 Go 标准库 7 个测试组验证恶意资源路径、URL 编码/额外 AK、假 origin、缺失五项门禁、服务端请求不带 Cookie/Bearer、无密钥响应、上游 MIME/大小/重定向/压缩拒绝、标头白名单、真实 httptest 跳转不跟随及 ctx 取消。完整仓库 Go/Web/Desktop CI 与实际百度授权/设备验收必须独立区分。
+
+**未具备上线条件**：本阶段并未取得合法百度账户许可或实际子资源清单，JavaScript 任意编码可能绕开常见密钥模式，因此还需要真实 upstream 原始字节及浏览器 HAR 的端到端安全审计；还欠地图专用 Session 与撤销、跨副本配额、真实上游资源白名单、Caddy/Electron 路由隔离、共享 UI/聚合/附近照片。不得在生产从任何客户端或管理开关调用 \`NewLoaderRequest\`，不得把此构件的单元测试当作 JSAPI4 可用证明。
