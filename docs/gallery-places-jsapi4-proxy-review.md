@@ -60,3 +60,14 @@ PR #1607 曾在 Server-AK-only 临时约束下关闭，已有准确的完整 CI 
 - **测试**：\`GO111MODULE=off go test -count=1 ./internal/baidumapjsapi\`，本地 Go 标准库 7 个测试组验证恶意资源路径、URL 编码/额外 AK、假 origin、缺失五项门禁、服务端请求不带 Cookie/Bearer、无密钥响应、上游 MIME/大小/重定向/压缩拒绝、标头白名单、真实 httptest 跳转不跟随及 ctx 取消。完整仓库 Go/Web/Desktop CI 与实际百度授权/设备验收必须独立区分。
 
 **未具备上线条件**：本阶段并未取得合法百度账户许可或实际子资源清单，JavaScript 任意编码可能绕开常见密钥模式，因此还需要真实 upstream 原始字节及浏览器 HAR 的端到端安全审计；还欠地图专用 Session 与撤销、跨副本配额、真实上游资源白名单、Caddy/Electron 路由隔离、共享 UI/聚合/附近照片。不得在生产从任何客户端或管理开关调用 \`NewLoaderRequest\`，不得把此构件的单元测试当作 JSAPI4 可用证明。
+
+
+## A3b2c1 · 带撤销版本的短期地图专用 Cookie 原语（2026-10-13）
+
+承接 A3b2b（固定百度 Loader 请求/响应安全组件），新增 **零公开路由、零实际百度网络请求**的 `internal/baidumapjsapi/session.go`，与 5 组会话加密和 HTTP 预检测试。通过随机 nonce 的 AES-256-GCM、专有密码域、固定格式和 120 秒有效期创建 `XD_BMAP_SESSION` host-only Cookie（`HttpOnly; Secure; SameSite=Strict; Path=/_BMapService/`）；只包含加密过的 Owner ID、SessionVersion、JSAPI 配置修订、撤销 epoch、签发/截止时间及随机数；绝不包含 AK 或 Bearer。
+
+**签发和每资源验证都必须读可信 Server/DB 当前状态**，并验证用户活跃、地图运行时确有完整安全及合法许可授权、Owner ID/session version/配置 revision/撤销 epoch 一致，否则拒绝。缺失/0 epoch 不允许签发。浏览器只能在精确受控 HTTPS origin 下通过同源 `POST /api/v1/media/places/baidu-jsapi/session` 请求短会话（这一 HTTP 端点尚未实现），资源 GET 禁止 Bearer、跨站请求以及客户端 AK/token/url 参数。资源方法与查询检查不取代上阶段**逐资源白名单**。Cookie 清除是浏览器端清除动作，不能代替 Server 提升持久撤销 epoch。
+
+本阶段仍然 **NO-GO**：未创建数据库撤销状态、登录/登出接口联动、地图授权签发路由、真实动态 JSAPI、跨副本限流或任何客户端 JS Loader。用户要求的 Viewer/标记与聚合、A4 附近照片及 B/C 系列另行实现。单测能核查加密、过期、密钥不一致、篡改、会话版本/配置修订/epoch 变化、同源 POST 和带 AK 的跨站 GET 均被拒绝；**单测 12/12（含 A3b2b 的 7）不能冒充实际授权或设备验收**。
+
+生产中必须先完成 A3b2c2 的持久会话撤销、Owner 授权、真实启用门禁和完整 Server/Agent/Browser 多平台隔离，再实施 A3b2d 代理/动态客户端。
