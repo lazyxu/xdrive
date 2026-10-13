@@ -2,6 +2,7 @@
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const {createHash,createCipheriv} = require('node:crypto')
 const { app, BrowserWindow } = require('electron')
 
 // This launcher calls the EXACT shared Web XDriveApi upload/download/OPFS
@@ -14,6 +15,10 @@ if (!scenario || !sample) throw Error('upload|download sample-N required')
 const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
 if (![1,4].includes(sizeGiB)) throw Error('real Web CAS benchmark size must be 1 or 4 GiB')
 const sizeBytes = sizeGiB * 2 ** 30
+const highEntropy = process.env.XD_REAL_CAS_INCOMPRESSIBLE_PERF === '1'
+const highEntropyQuery = highEntropy ? '&xdriveCasIncompressible=1' : ''
+let physicalSeedSHA256 = null
+let sourceAllocatedBytes = null
 const pwaReadbackParam = process.env.XD_PWA_FULL_OPFS_READBACK === '1' ? '&xdrivePwaFullReadback=1' : ''
 const chunkSize = 8 * 1024 * 1024
 const desktopRoot = path.resolve(__dirname, '..')
@@ -23,7 +28,38 @@ const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'xdrive-web-real-cas-'))
 const uploadFixture = path.join(userData, 'upload-' + sample + '.bin')
 if (scenario === 'upload') {
   const fd = fs.openSync(uploadFixture, 'w')
-  try { fs.ftruncateSync(fd, sizeBytes) } finally { fs.closeSync(fd) }
+  try {
+    if (!highEntropy) {
+      fs.ftruncateSync(fd, sizeBytes)
+    } else {
+      // 1–4 GiB truly allocated, non-sparse AES-CTR CSPRNG stream.
+      // Streaming seed and hash are outside the user-upload stopwatch.
+      const key = createHash('sha256').update('xdrive-p042-cas-aes256ctr:' + sample).digest()
+      const cipher = createCipheriv('aes-256-ctr', key, Buffer.alloc(16))
+      const sha = createHash('sha256')
+      const zeros = Buffer.alloc(8 * 1024 * 1024)
+      let remaining = sizeBytes
+      while (remaining > 0) {
+        const n = Math.min(zeros.length, remaining)
+        const payload = cipher.update(zeros.subarray(0, n))
+        let written = 0
+        while (written < payload.length) {
+          const count = fs.writeSync(fd, payload, written, payload.length - written)
+          if (count <= 0) throw Error('Cannot persist incompressible physical CAS input')
+          written += count
+        }
+        sha.update(payload)
+        remaining -= n
+      }
+      if (cipher.final().length !== 0) throw Error('AES-CTR benchmark stream misaligned')
+      fs.fsyncSync(fd)
+      physicalSeedSHA256 = sha.digest('hex')
+      sourceAllocatedBytes = fs.fstatSync(fd).blocks * 512
+      if (sourceAllocatedBytes < sizeBytes * 0.98) {
+        throw Error('Benchmark source is sparse or compressed: actual physical bytes ' + sourceAllocatedBytes)
+      }
+    }
+  } finally { fs.closeSync(fd) }
 }
 app.setPath('userData', userData)
 fs.mkdirSync(resultsDir, { recursive: true })
@@ -54,7 +90,7 @@ async function waitForSelector(win, selector, timeoutMs = 30_000) {
 }
 
 async function waitForResult(win) {
-  const deadline = Date.now() + (sizeGiB === 4 ? 6 : 5) * 60_000
+  const deadline = Date.now() + (highEntropy ? 9 : (sizeGiB === 4 ? 6 : 5)) * 60_000
   let workingSetStartKB = null
   let workingSetPeakKB = null
   let started = false
@@ -136,7 +172,7 @@ app.whenReady().then(async () => {
     })
 
     await win.loadURL(
-      `${base}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}&xdriveLargeTransferRealCAS=1${pwaReadbackParam}`,
+      `${base}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}&xdriveLargeTransferRealCAS=1${pwaReadbackParam}${highEntropyQuery}`,
     )
     if (scenario === 'upload') {
       await waitForSelector(win, '[data-xdrive-large-transfer-upload-file]')
@@ -168,6 +204,7 @@ app.whenReady().then(async () => {
           ? null
           : measured.workingSetPeakKB - measured.workingSetStartKB,
       backend: 'genuine PostgreSQL17/Gin/Local CAS; production Web XDriveApi + OPFS',
+      highEntropyIncompressible: highEntropy,
     }
 
     const statsResp = await fetch(base + '/__perf/web-transfer-stats', { cache: 'no-store' })
@@ -180,13 +217,20 @@ app.whenReady().then(async () => {
     if (scenario === 'upload') {
       if (stats.put_count !== sizeBytes / chunkSize || stats.declared_upload_bytes !== sizeBytes ||
           stats.uploaded_node_id !== combined.uploadedNodeID ||
-          stats.file_sha256 !== combined.uploadedSHA256) {
-        throw new Error('real signed chunk upload/metadata integrity failed: ' + JSON.stringify(stats))
+          stats.file_sha256 !== combined.uploadedSHA256 ||
+          (highEntropy && (physicalSeedSHA256 !== combined.uploadedSHA256 ||
+            sourceAllocatedBytes < sizeBytes * 0.98))) {
+        throw new Error('real signed high-entropy chunk upload and SHA-256 integrity failed: ' + JSON.stringify(stats))
+      }
+      if (highEntropy) {
+        combined.uploadSourcePhysicallyAllocatedBytes = sourceAllocatedBytes
+        combined.uploadSeedSHA256 = physicalSeedSHA256
       }
     } else if (stats.download_get_count !== 1 ||
         combined.downloadSpotCheckedBytes !== 3 * 1024 * 1024 ||
+        (highEntropy && combined.downloadDeterministicVerifiedBytes !== sizeBytes) ||
         (process.env.XD_PWA_FULL_OPFS_READBACK === '1' && combined.downloadFullVerifiedBytes !== sizeBytes)) {
-      throw new Error('real authenticated Gin GET / browser OPFS readback integrity failed: ' + JSON.stringify(stats))
+      throw new Error('real authenticated Gin GET / full deterministic OPFS readback failed: ' + JSON.stringify(stats))
     }
 
     fs.writeFileSync(metricsPath, JSON.stringify(combined, null, 2) + '\n')

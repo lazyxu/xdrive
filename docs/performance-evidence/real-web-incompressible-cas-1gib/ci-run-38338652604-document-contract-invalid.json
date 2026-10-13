@@ -1,0 +1,18 @@
+{
+  "workload": "P042",
+  "category": "Invalid harness / document-contract CI, unrelated to performance stopwatch",
+  "source_sha": "b18fa1e43b187e26d231cad6c3cbf9833a5af7dc",
+  "CI_run_id": 38338652604,
+  "CI_url": "https://github.com/lazyxu/xdrive/actions/runs/38338652604",
+  "failed_job_id": 115104580489,
+  "job_name": "desktop-tests",
+  "failing_test": "platform matrix explicitly separates native desktop, wide/mobile browser, installed PWA and physical devices",
+  "assertion": "assert(matrix.includes('独立设备'))",
+  "cause": "P042 cross-platform matrix intro was reworded and lost the literal 独立设备 clarity contract; no runtime code regression.",
+  "impact": "Dedicated native performance CI #38338652389 passed real n3 1GiB high-entropy upload/download and full OPFS byte verification. This unrelated source-string contract failure does not invalidate the originally measured CURRENT n3, but exact-head full PR CI is required after matrix wording restoration.",
+  "fix": "Restore a semantically accurate explicit statement requiring independent physical Android/iOS devices for installed PWA acceptance, without labeling 390px Chromium as a phone.",
+  "valid_performance_samples_from_this_job": 0,
+  "before": null,
+  "after": null,
+  "classification": "Invalid harness / documentation acceptance check, not performance RED."
+}

@@ -21,6 +21,9 @@ assert([1,4].includes(sizeGiB), 'real CAS browser workload supports only 1 or 4 
 const sizes = { gib: sizeGiB, bytes: sizeGiB * 2 ** 30, putCount: sizeGiB * 128 }
 const maxDirectionMs = sizeGiB === 4 ? 360000 : 240000
 const fullPwaReadback = process.env.XD_PWA_FULL_OPFS_READBACK === '1'
+const highEntropyIncompressible = process.env.XD_REAL_CAS_INCOMPRESSIBLE_PERF === '1'
+assert(!(fullPwaReadback && highEntropyIncompressible),
+  'PWA sparse-zero release check and incompressible physical throughput are separate workloads')
 const trials = fullPwaReadback ? 1 : 3
 const modes = ['upload', 'download']
 const median = values => [...values].sort((a,b)=>a-b)[Math.floor(values.length / 2)]
@@ -122,7 +125,7 @@ async function chromium(sample,mode,base) {
     XD_REAL_WEB_CAS_RESULTS:out,
   },'chromium-'+sample+'-'+mode,desktop)
   try {
-    const ended=await withDeadline(proc.exited,maxDirectionMs+30000,{code:'timeout'})
+    const ended=await withDeadline(proc.exited,maxDirectionMs+(highEntropyIncompressible?150000:30000),{code:'timeout'})
     assert.equal(ended?.code,0, 'real Web Chromium '+mode+' did not complete: '+JSON.stringify(ended))
     assert.equal(proc.results.length,1,'genuine Chromium metrics missing for '+sample+' '+mode)
     return proc.results[0]
@@ -161,8 +164,21 @@ async function sampleTrial(index,tmp) {
       if(mode==='upload'){
         assert(Number.isSafeInteger(result.uploadedNodeID)&&result.uploadedNodeID>0)
         assert(/^[a-f0-9]{64}$/i.test(result.uploadedSHA256))
+        if(highEntropyIncompressible){
+          assert.equal(result.highEntropyIncompressible,true)
+          assert.equal(result.uploadSeedSHA256,result.uploadedSHA256,
+            'physical source SHA-256 differs from actual Server CAS File SHA')
+          assert(result.uploadSourcePhysicallyAllocatedBytes>=sizes.bytes*.98,
+            'physical CSPRNG source was sparse or compressed')
+        }
       }else{
         assert.equal(result.downloadSpotCheckedBytes,3*1024*1024)
+        if(highEntropyIncompressible){
+          assert.equal(result.highEntropyIncompressible,true)
+          assert.equal(result.downloadDeterministicVerifiedBytes,sizes.bytes,
+            'full OPFS downloaded high-entropy file does not match original source byte for byte')
+          assert(result.downloadVerificationElapsedMs>0)
+        }
         if (fullPwaReadback) assert.equal(result.downloadFullVerifiedBytes,sizes.bytes,
           'PWA release check must read every OPFS byte, not just three 1MiB spot samples')
       }
@@ -177,6 +193,12 @@ async function sampleTrial(index,tmp) {
     assert.equal(final.cas_valid,true)
     assert.equal(final.uploaded_node_id,rows[0].uploadedNodeID)
     assert.equal(final.file_sha256,rows[0].uploadedSHA256)
+    if(highEntropyIncompressible){
+      assert.equal(final.file_sha256,rows[0].uploadSeedSHA256,
+        'real PostgreSQL SHA/CAS identity differs from actual high-entropy physical source')
+      assert.equal(rows[1].downloadDeterministicVerifiedBytes,sizes.bytes,
+        'full downloaded OPFS bytes were not independently verified')
+    }
     assert.equal(final.upload_name,'upload-'+label+'.bin')
     const cpuEndTicks=cpuTicks(f.proc.child.pid)
     const serverCpuMs=(cpuEndTicks-cpuStartTicks)*1000/clockTicksPerSecond
@@ -224,7 +246,8 @@ async function main() {
       console.log('REAL_WEB_CAS_SAMPLE '+JSON.stringify(sample))
     }
     const result={
-      name:`real-web-xdriveapi-postgres17-local-cas-${sizeGiB}gib-upload-download`,
+      name:`real-web-xdriveapi-postgres17-local-cas-${sizeGiB}gib-${highEntropyIncompressible?'aes256ctr-high-entropy':'sparse-zero'}-upload-download`,
+      highEntropyIncompressible,
       ...(fullPwaReadback ? { pwaFullOPFSReadback: true, downloadFullVerifiedBytes: sizes.bytes } : {}),
       status:'CURRENT/BEFORE only - no production optimization',
       n:rows.length,
@@ -247,9 +270,11 @@ async function main() {
         ...(fullPwaReadback ? {fullOPFSReadbackBytes:sizes.bytes} : {})
       },
       passed:true,
-      boundary:fullPwaReadback
-        ? `PWA release gate: authentic Chromium->Gin/PostgreSQL17/Local CAS->OPFS; every one of ${sizes.bytes} downloaded sparse-zero fixture bytes reread and compared with expected zero after timed transfer. Not a browser computed SHA256, physical iOS/Android, arbitrary-media integrity, WAN or native download. No durable Task Center abort.`
-        : `Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
+      boundary:highEntropyIncompressible
+        ? `Authentic Chromium Web XDriveApi upload/download + OPFS + Gin/PG17/physical CAS; ${sizeGiB}GiB actually allocated AES-256-CTR high-entropy input, SHA-256 physical seed equals uploaded CAS node and full returned OPFS bytes independently checked chunk-by-chunk after timed download. Local Linux loopback; not WAN, installed PWA, Android/iOS physical phone, Desktop Agent, pause/resume, durable Task Center cancel or 100k-file sync/delete.`
+        : fullPwaReadback
+          ? `PWA release gate: authentic Chromium->Gin/PostgreSQL17/Local CAS->OPFS; every one of ${sizes.bytes} downloaded sparse-zero fixture bytes reread and compared with expected zero after timed transfer. Not a browser computed SHA256, physical iOS/Android, arbitrary-media integrity, WAN or native download. No durable Task Center abort.`
+          : `Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
     }
     fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
     console.log('REAL_WEB_CAS_SUMMARY '+JSON.stringify(result))

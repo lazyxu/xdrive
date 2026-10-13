@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import type { Node } from '../../ui/shared/src'
 import { XDriveApi } from './api'
 import { xDriveVerifySparseZeroOPFSFile } from './pwaFullReadback'
+import { xDriveVerifyDeterministicHighEntropyOPFS } from './realCasIncompressibleReadback'
 
 export type XDriveLargeTransferPerformanceScenario = 'upload' | 'download' | 'download-discard'
 
@@ -45,6 +46,9 @@ type LargeTransferPerfResult = {
   downloadSpotCheckedBytes?: number
   // Only populated by explicit PWA release fixture; full-byte equality with known zero file.
   downloadFullVerifiedBytes?: number
+  // P042 benchmark-only: full high-entropy file verified via bounded AES-CTR stream.
+  downloadDeterministicVerifiedBytes?: number
+  downloadVerificationElapsedMs?: number
   prehashMs?: number | null
   uploadSessionMs?: number | null
   uploadChunksMs?: number | null
@@ -72,6 +76,7 @@ type FetchMarkers = {
 const mib = 1024 * 1024
 const realServerCAS = new URLSearchParams(window.location.search).get('xdriveLargeTransferRealCAS') === '1'
 const pwaFullReadback = new URLSearchParams(window.location.search).get('xdrivePwaFullReadback') === '1'
+const highEntropyIncompressible = new URLSearchParams(window.location.search).get('xdriveCasIncompressible') === '1'
 type RealCASFixture = {
   token: string
   root_id: number
@@ -289,15 +294,24 @@ export function XDriveLargeTransferPerformanceHarness({
               throw new Error(`downloaded size=${downloaded.size} want=${sizeBytes}`)
             }
             if (realConfig) {
-              // Inspect three independent 1MiB OPFS ranges without materializing 1GiB in JS heap.
+              // The original sparse-zero acceptance remains unchanged. P042
+              // uses deterministic high-entropy AES-CTR parity over three
+              // independent physical OPFS ranges during download timing.
               const sampleLength = mib
-              for (const offset of [0, Math.floor(sizeBytes / 2), sizeBytes - sampleLength]) {
-                const part = new Uint8Array(await downloaded.slice(offset, offset + sampleLength).arrayBuffer())
-                if (part.byteLength !== sampleLength || part.some(value => value !== 0)) {
-                  throw new Error(`real CAS OPFS readback disagrees with sparse zero upload at ${offset}`)
+              const ranges = [0, Math.floor(sizeBytes / 2), sizeBytes - sampleLength]
+                .map(offset => ({offset, length: sampleLength}))
+              if (highEntropyIncompressible) {
+                spotCheckedBytes = await xDriveVerifyDeterministicHighEntropyOPFS(
+                  downloaded, sizeBytes, sample, ranges)
+              } else {
+                for (const {offset} of ranges) {
+                  const part = new Uint8Array(await downloaded.slice(offset, offset + sampleLength).arrayBuffer())
+                  if (part.byteLength !== sampleLength || part.some(value => value !== 0)) {
+                    throw new Error(`real CAS OPFS readback disagrees with sparse zero upload at ${offset}`)
+                  }
                 }
+                spotCheckedBytes = 3 * sampleLength
               }
-              spotCheckedBytes = 3 * sampleLength
             }
           }
         }
@@ -310,7 +324,16 @@ export function XDriveLargeTransferPerformanceHarness({
         // Separate PWA release integrity verification from the established
         // performance timer. Never allocate the 1-4 GiB OPFS file in JS.
         let fullVerifiedBytes: number | undefined
-        if (pwaFullReadback && scenario === 'download') {
+        let deterministicVerifiedBytes: number | undefined
+        let deterministicVerificationElapsedMs: number | undefined
+        if (highEntropyIncompressible && scenario === 'download') {
+          if (!realConfig) throw new Error('deterministic OPFS check requires physical Gin/CAS')
+          const completeFile = await (await root.getFileHandle(downloadName)).getFile()
+          const verifyingAt = performance.now()
+          deterministicVerifiedBytes = await xDriveVerifyDeterministicHighEntropyOPFS(
+            completeFile, sizeBytes, sample)
+          deterministicVerificationElapsedMs = performance.now() - verifyingAt
+        } else if (pwaFullReadback && scenario === 'download') {
           if (!realConfig) throw new Error('full OPFS readback requires actual Gin/PostgreSQL/CAS')
           const completeFile = await (await root.getFileHandle(downloadName)).getFile()
           fullVerifiedBytes = await xDriveVerifySparseZeroOPFSFile(completeFile, sizeBytes)
@@ -330,6 +353,9 @@ export function XDriveLargeTransferPerformanceHarness({
           ...(uploadedSHA256 ? { uploadedSHA256 } : {}),
           ...(spotCheckedBytes ? { downloadSpotCheckedBytes: spotCheckedBytes } : {}),
           ...(fullVerifiedBytes !== undefined ? { downloadFullVerifiedBytes: fullVerifiedBytes } : {}),
+          ...(deterministicVerifiedBytes !== undefined ?
+            { downloadDeterministicVerifiedBytes: deterministicVerifiedBytes,
+              downloadVerificationElapsedMs: deterministicVerificationElapsedMs } : {}),
         }
 
         if (scenario === 'upload') {
