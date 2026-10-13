@@ -1,0 +1,126 @@
+name: 100k Distinct Physical Original CAS Finalize Performance P046
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  physical-original-cas-finalize-100k:
+    if: github.head_ref == 'perf/original-cas-finalize-100k-p046-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 95
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PHYSICAL_CAS_ORIGINAL_FINALIZE_100K_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify P046 real original-CAS bytes and immutable production-only measurement contract
+        run: |
+          set -euo pipefail
+          gofmt -d internal/api/physical_cas_original_finalize_100k_performance_test.go
+          test -z "$(gofmt -l internal/api/physical_cas_original_finalize_100k_performance_test.go)"
+          node --test desktop/tests/physical-cas-original-finalize-100k-source.cjs
+      - name: Compile native Go Server original physical CAS finalize benchmark
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/physical-original-cas-finalize-100k-bin
+          go test -mod=readonly -c -o desktop/physical-original-cas-finalize-100k-bin/api.test ./internal/api
+      - name: Measure three independent true 100k original CAS sources with 95k physical deletions and 5k protected metadata references
+        run: |
+          set -euo pipefail
+          result_dir=desktop/physical-original-cas-finalize-100k-results
+          mkdir -p "$result_dir"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$result_dir/source.txt"
+          for i in 1 2 3; do
+            export XD_PHYSICAL_CAS_ORIGINAL_FINALIZE_100K_SAMPLE="sample-$i"
+            /usr/bin/time -f 'whole_process_max_rss_kib=%M\nwhole_process_user_cpu_sec=%U\nwhole_process_system_cpu_sec=%S' -o "$result_dir/sample-$i.time" \
+              desktop/physical-original-cas-finalize-100k-bin/api.test \
+              -test.run '^TestPhysicalCASOriginalFinalize100K$' -test.count=1 -test.timeout=24m -test.v \
+              | tee "$result_dir/sample-$i.log"
+          done
+          python3 - "$result_dir" <<'PY'
+          import json, pathlib, re, statistics, sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          for i in (1,2,3):
+              log=(root/f'sample-{i}.log').read_text()
+              hits=re.findall(r'CAS_PHYSICAL_FINALIZE_100K (\{[^\n]+\})',log)
+              assert len(hits)==1,(i,'missing native machine row',len(hits))
+              row=json.loads(hits[0])
+              for name, expected in {
+                  'physical_originals':100000,'distinct_SHA256':100000,
+                  'actual_original_bytes':102400000,
+                  'protected_references':5000,'deleting_originals':95000,
+                  'before_physical_count':100000,'after_physical_count':5000,
+                  'before_physical_bytes':102400000,'after_physical_bytes':5120000,
+                  'physically_deleted_objects':95000,'physically_deleted_bytes':97280000,
+                  'remaining_CAS_DB_rows':5000,'remaining_deleting_CAS':0,
+                  'protected_File_DB_rows':5000,
+                  'frozen_finalize_budget_ms':900000,
+                  'frozen_RSS_growth_budget_B':268435456,
+              }.items():
+                  assert row[name]==expected,(i,name,row[name],expected)
+              assert row['exact_protected_SHA_set_verified'] is True
+              assert row['protected_originals_complete_verified']==5000
+              assert row['allocated_disk_blocks_before_B']>row['allocated_disk_blocks_after_B']>0
+              assert row['allocated_disk_blocks_reclaimed_B']==row['allocated_disk_blocks_before_B']-row['allocated_disk_blocks_after_B']
+              assert row['physical_audit_ms_excluded']>0
+              assert row['physical_audit_error']=='<nil>'
+              assert row['protected_original_bytes_verified'] is True
+              assert row['reclaimed_original_samples_absent'] is True
+              assert row['passed'] is True
+              assert 0 < row['measured_finalize_ms'] <= 900000
+              assert 0 <= row['Go_RSS_peak_growth_B'] <= 268435456
+              assert row['Go_cpu_ticks_measured'] >= 0
+              assert row['finalization_error']=='<nil>'
+              assert row['sample']==f'sample-{i}'
+              row['whole_process_resources']=(root/f'sample-{i}.time').read_text()
+              rows.append(row)
+          summary={
+              'workload_id':'P046','n':3,'state':'CURRENT/BEFORE only; production unchanged',
+              'physical_source_count':100000,'original_bytes_per_sample':102400000,
+              'physically_removed_count':95000,'protected_count':5000,
+              'frozen_finalize_each_max_ms':900000,
+              'frozen_go_rss_growth_each_max_B':268435456,
+              'median_finalize_ms':statistics.median(r['measured_finalize_ms'] for r in rows),
+              'max_RSS_growth_B':max(r['Go_RSS_peak_growth_B'] for r in rows),
+              'samples':rows,
+              'boundary':'Real original CAS post-reference-release finalization and Local.Delete; not full HTTP permanent trash, no user upload or physical 100k media decode, not PWA or WAN'
+          }
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('CAS_PHYSICAL_FINALIZE_100K_N3 '+json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: physical-original-cas-finalize-100k-real-n3
+          path: desktop/physical-original-cas-finalize-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
