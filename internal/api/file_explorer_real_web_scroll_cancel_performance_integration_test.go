@@ -290,7 +290,10 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	service := httptest.NewServer(handler)
 	defer service.Close()
 	ready := map[string]any{
-		"url": service.URL, "folder_id": folder.ID, "logical_count": logicalCount,
+		// Exact test-only native Go PID for P040 cancellation-window RSS/CPU sampling.
+		// Never exposed in a production handler or user API.
+		"server_pid": os.Getpid(),
+		"url":        service.URL, "folder_id": folder.ID, "logical_count": logicalCount,
 		"physical_images": distinctPhysicalImages, "seed_ms": seedMS,
 		"physical_mode": physicalMode, "physical_source_bytes": physicalSourceBytes,
 		"first_image_nodes": firstIDs,
