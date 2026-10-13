@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   pwa-s4b2-real-resume:
-    if: github.head_ref == 'test/pwa-gin-chrome-upload-resume-s4b2-20261013'
+    if: github.head_ref == 'test/pwa-upload-wrong-file-reject-s4b2b1-20261013'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -120,7 +120,7 @@ jobs:
             FIXTURE_PID=""
             rm -f "$READY"
             READY=""
-            node -e "const r=require(process.cwd()+'/desktop/pwa-s4b2-results/summary-$MODE.json');if(!r.passed||!r.realGin||!r.realPostgreSQL||!r.realLocalCAS||!r.simulatedNetworkDrop||!r.failedAttemptPersisted||!r.reselectOfferedAfterReload||!r.targetFolderReady||!r.finalizedInTargetFolder||!r.completed||!r.verifiedOriginalSha256||!r.onlyPublicOfflineCache||r.physicalDevice||r.systemInstalled)process.exit(1)"
+            node -e "const r=require(process.cwd()+'/desktop/pwa-s4b2-results/summary-$MODE.json');if(!r.passed||!r.realGin||!r.realPostgreSQL||!r.realLocalCAS||!r.simulatedNetworkDrop||!r.failedAttemptPersisted||!r.reselectOfferedAfterReload||!r.targetFolderReady||!r.finalizedInTargetFolder||!r.wrongNameRejected||!r.alteredContentRejected||!r.rejectedRequestsNeverReachedServer||!r.originalRetryPreserved||!r.completed||!r.verifiedOriginalSha256||!r.onlyPublicOfflineCache||r.physicalDevice||r.systemInstalled)process.exit(1)"
           done
           test "$(find "$OUT" -maxdepth 1 -name 'summary-*.json' -type f | wc -l)" -eq 2
       - uses: actions/upload-artifact@v4

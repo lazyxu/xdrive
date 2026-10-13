@@ -345,3 +345,15 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **S4B2-A Go 目录归属失败的进一步复现与修正（2026-10-13）：** [Chrome/Gin 专项 #38336273069](https://github.com/lazyxu/xdrive/actions/runs/38336273069) 完整执行桌面 Chrome，脱敏摘要的 `session_posts=2`、`chunk0_puts=1`、`chunk1_puts=8`、`tcp_drops=7`、`chunk2_puts=1` 与浏览器 `passed=true` 一致；但 Go 严格在预期子目录按 Owner/parent/name 查询结果时报告 `S4B2 final original file missing`。源码核对揭示旧测试只等待 `GET /api/v1/nodes/<target>` 返回 200 和 `[data-xdrive-file-explorer]` 挂载，**没有等待 Files 实际导航目标目录完成**，之后就点击“上传文件”；因此文件可能被发到临时根目录。这是**待验证的测试点击时序假设**，不是已经被证实的产品上传目录 bug，更不能放宽 Go 目录归属或物理 SHA 校验。
 
 同一单工作提交内修正浏览器验收的前置条件：桌面必须出现最后一段 `[data-xdrive-file-explorer-crumb][aria-current=page]` 绑定目标 folderID（DOM ID 带 `number:` 前缀）；窄屏 Mobile Web 应等待 `[data-xdrive-mobile-files]` 与准确目标目录标题就绪，采用实际“文件操作菜单 → 上传文件”菜单项，而非错误地寻找桌面按钮。硬刷新后仍必须再次确认目录就绪，最终 `final.result.parent_id` 必须与目标目录相同才认可成功，且两平台均记录脱敏布尔值 `targetFolderReady` 和 `finalizedInTargetFolder`。本次仍使用真实 Chrome 及真实 Gin/PostgreSQL/CAS；严格保留第一次会话 chunk1 连续真实 TCP 中断、首块仅上传一次、Go 全量读取物理 CAS SHA-256、隐私摘要与 S5 真机 not-run。必须以新准确 HEAD 的专项 Chrome 与完整 CI/Final Gate 验证，旧失败不可复用作绿灯。
+
+
+## PWA-S4B2-B1 · 浏览器上传误选文件的真实拒绝验收（2026-10-13）
+
+**续接与冻结基线：** S4B2-A [#1613](https://github.com/lazyxu/xdrive/pull/1613) 已在准确工作提交 `321fd1f095dd900485e30db1fd429661a78d05cb` 通过 [完整 CI #38337193327](https://github.com/lazyxu/xdrive/actions/runs/38337193327) 与 [真实 Chrome/Gin/PostgreSQL/CAS #38337193126](https://github.com/lazyxu/xdrive/actions/runs/38337193126)，线性合并 `8d918a58`，相关分支已清理。B1 固定 GitHub `master@d48f522b136579eb9d1ab526312bf92cf08f78a6`，独立单工作提交与 Draft PR，只有准确 HEAD 全 CI/Final Gate + 专项原生 Chrome 双绿才允许合并。
+
+**B1 单次真实浏览器工作负载：** 继续使用现有隔离 Gin JWT/PostgreSQL17/Local CAS 的 17 MiB 非零原文件、8 MiB 首块与真实 TCP 中断、硬刷新、原文件重选、目标父目录归属和全字节物理 SHA-256，绝不重造生产 API。Desktop Chrome 1280px 与 Android UA/Touch 390px *模拟* 各先做两次错误重选：（1）字节、大小、时间相同而名字不同；（2）**名字、大小和修改时间相同但首字节不同**。每一次都必须通过真实文件选择器触发既有前端拒绝提示，观察浏览器**零个新 POST /api/v1/uploads** 与 Gin 请求计数始终只保留首次会话（`session_posts=1`），原失败任务的 manifest/重选入口仍保留。随后再次选择真正原文件并要求既有 B2-A 所有断点续传、父目录、CAS、隐私和缓存断言全部通过（最终应仍为 2 个 session）。
+
+**边界和后续：** 本轮仅扩大真实 Chrome 的负向安全覆盖，不优化/重写产品代码；绝不持久缓存 File、Blob、媒体、Token 或私有字节。两个摘要仅含布尔/计数/运行阶段，拒绝归档原始网络日志、文件或凭证。Chrome Android UA + Touch **不是 Android 系统安装真机**；iOS 27 Safari/Home Screen、Android Installed、Desktop 系统图标、1/4 GiB 的*中断后*恢复、文件夹分组、锁屏/进程回收、原生下载落盘 SHA、公网 HTTPS/CA、S5 真实发布回滚仍为 **not-run**。1 GiB 不间断上传与真实中断后的重新选择是两个不同负载，不混为已完成。
+
+
+**B1 第一轮真实 Chrome 失败记录（2026-10-13）：** 首个 HEAD \`d29fc33ff0a82f93ff31cf164e4c20abbcde0765\` 的 [专项真实 Chrome #38340988519](https://github.com/lazyxu/xdrive/actions/runs/38340988519) 在 Desktop 模式的 \`reject-content-before-server\` 阶段红灯，\`PWA_S4B2_FAILED category=Error\`。脱敏 summary 证明 \`wrongNameRejected=true\`、旧失败任务仍为 \`retryable=true,hasManifest=true\`，另外产生一个 \`retryable=false,hasManifest=false\` 的失败记录，\`session_posts=1\`，首次请求计数保持不变。**这是浏览器断言未通过，不是已证明产品向服务器上传了错误文件。** 原断言 \`page.getByText(message)\` 可能在 Snackbar 和失败任务行存在相同错误文案时触发 Playwright strict locator 错误（日志仅给 Error 类别，不能作更强断言）；改为等待当前可见 document body 包含精确错误消息，并继续保留浏览器 POST=0、Gin session=1、旧任务不消失及原文件最终物理 CAS SHA 校验。修订进固定基线的同一唯一工作提交后，**旧 HEAD 的所有 CI 不得作为新的验收依据**；当前准确 HEAD 的完整 CI、Final Gate 与 Chrome 双环境专项需重新通过。
