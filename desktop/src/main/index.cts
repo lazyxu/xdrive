@@ -261,6 +261,8 @@ type DesktopResult<T> =
 let mainWindow: BrowserWindow | null = null
 let desktopWindowIcon: NativeImage | null = null
 let desktopPreferences = defaultDesktopPreferences()
+// All native preference saves target one userData JSON file; preserve call order.
+let desktopPreferencesWriteQueue: Promise<void> = Promise.resolve()
 let loginHistory: LoginHistory = emptyLoginHistory()
 let lastAutoLoginError = ''
 let windowStateSaveTimer: NodeJS.Timeout | null = null
@@ -431,13 +433,20 @@ async function loadDesktopPreferences(): Promise<DesktopPreferences> {
 
 async function saveDesktopPreferences(preferences: DesktopPreferences) {
   desktopPreferences = normalizeDesktopPreferences(preferences)
-  const dir = app.getPath('userData')
-  await mkdir(dir, { recursive: true })
-  await writeFile(
-    path.join(dir, desktopPreferencesName),
-    JSON.stringify(desktopPreferences, null, 2) + '\n',
-    { encoding: 'utf8', mode: 0o600 },
-  )
+  // Freeze each request's accepted snapshot before any asynchronous I/O.
+  const snapshot = JSON.stringify(desktopPreferences, null, 2) + '\n'
+  const pendingWrite = desktopPreferencesWriteQueue.then(async () => {
+    const dir = app.getPath('userData')
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      path.join(dir, desktopPreferencesName),
+      snapshot,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+  })
+  // Report errors to this caller without poisoning subsequent queued saves.
+  desktopPreferencesWriteQueue = pendingWrite.catch(() => {})
+  await pendingWrite
 }
 
 function publicDesktopPreferences() {
