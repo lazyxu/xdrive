@@ -1,8 +1,27 @@
 # FileExplorer performance roadmap
 
+## P0 — P039 / M002-c · 390px Mobile Web shared FileExplorer 100k distinct physical JPEG (2026-10-13)
+
+**Status: Accepted measured CURRENT, evidence-head exact-source CI pending; production unchanged (AFTER=N/A / speedup=N/A).** New platform coverage only: actual production shared Web FileExplorer Grid/Details in 390px Linux Electron Chromium, *documentElement.clientWidth 375px*. This is not the complete Mobile Web 52px App Frame, not real Android/iOS hardware, and not an installed PWA. Original baseline source `9f8acfe6d500f50fa680f09a2bfb3e96721dc23d`: [opt-in native workflow #38275879504](https://github.com/lazyxu/xdrive/actions/runs/38275879504) **success**; [full PR CI #38275880243](https://github.com/lazyxu/xdrive/actions/runs/38275880243) **success**. [Authentic 13-file original artifact #11759192861](https://github.com/lazyxu/xdrive/actions/runs/38275879504/artifacts/11759192861) and [persisted source-identical n3 machine metrics](performance-evidence/file-explorer-mobile-physical-jpeg-100k/ci-run-38275879504.json) are the evidence, not a projected result.
+
+**Frozen workload / boundaries:** `XD_FILEEXPLORER_MOBILE_PHYSICAL_100K_PERF=1` and existing 100k SHA-distinct 80×64 JPEG original physical-CAS + authenticated PostgreSQL17/Gin fixture. Three independent databases/CAS roots, **100,000 distinct physically persisted JPEG originals / 70,893,376B in each**, two genuine rendered shared Files view modes, scroll at 0/25/50/75/95%, five viewports×2 modes×n3 = **30 measured native Chromium viewports**, each ≥4 *new* real decoded original JPEG tile IDs. Seeding cost is excluded from user viewport rendering; no claimed 100k simultaneous decode. Grid/Details in the same independent fixture may share warmed CAS/cache (do not use cross-mode comparison as A/B). Mode is narrow via real production breakpoint, not actual phone screen.
+
+| Fresh CAS/PG fixture | Grid median of 5 viewports (ms) | Details median of 5 viewports (ms) | Go CPU delta over both view sessions (ms) | Go RSS growth (B) |
+| --- | ---: | ---: | ---: | ---: |
+| #1 | 256.685 | 204.138 | 270 | 286,720 |
+| #2 | 254.993 | 218.306 | 280 | 212,992 |
+| #3 | 257.426 | 209.005 | 280 | 208,896 |
+| **cross-run median** | **256.685** | **209.005** | **280** | **212,992** |
+
+**Resource and correctness acceptance:** longest of all 30 viewports **296.193ms vs frozen ≤20,000ms**; 30/30 have ≥4 new valid JPEG identities and real decoded dimensions; mounted DOM max **33** vs <1,000, authenticated real thumbnail requests **298 / 210,014 response bytes** across 6 view sessions, max active **6** vs ≤6, HTTP failures **0**. Renderer working-set growth max **58,810,368B**, Go RSS peak growth **286,720B**, vs each ≤268,435,456B. Source file byte identity and CAS materialization were verified in the fixture, per-seed Go CPU **270/280/280ms**; browser/main CPU measurements preserved in raw JSON. CI original full test and native 100k jobs are green. **BEFORE = unchanged CURRENT**, AFTER=N/A: no optimizations attempted or retained because every declared metric already meets budget, and the Wide Web P006 numbers cannot serve as matched A/B.
+
+**Untested (not inferred):** full Mobile App Frame and Touch device, iOS Safari / Android Chrome physical SoCs, installed standalone PWA Service Worker, independent codec H264 video/Live motion/RAW/HEVC/LIVP Grid+Details, slow/WAN transport, persistent transfers/sync/delete, and viewport→HTTP→Go `Request.Context().Done` cancellation. The available test has `expectedAbandonedViewportRequestCancels=0`, so it provides **no cancellation-latency measurement**; P015/P037 are distinct Web/Desktop workloads. Do not rerun unchanged P039 exploration on a new branch. Final evidence-head native and full CI must pass before Ready and merge, and this exact-head confirmation is a separate gate from the valid original measurements.
+
 ## P0 — P038 / M002-b1 genuine Desktop FileExplorer 100k mixed physical CAS media (2026-10-12)
 
-### P038 first complete valid real Desktop physical mixed n3 — accepted CURRENT, final evidence-head gate pending (2026-10-12)
+### P038 first complete valid real Desktop physical mixed n3 — accepted CURRENT; #1577 merged after final source-exact CI (2026-10-12)
+
+**Closeout:** #1577 final source-exact specialized n3 [#38274018275](https://github.com/lazyxu/xdrive/actions/runs/38274018275) and full CI [#38274018731](https://github.com/lazyxu/xdrive/actions/runs/38274018731) succeeded; PR merged with short-lived branch cleanup. Earlier prose below describes the historical gating state at the time of the original sample, not an outstanding gate today.
 
 **Native original measured source** `b4222918b6c0ba44509e2d52246c637302befaa7`: [authentic native CI #38271556910](https://github.com/lazyxu/xdrive/actions/runs/38271556910) **success**, [full PR CI #38271557305](https://github.com/lazyxu/xdrive/actions/runs/38271557305) **success**. The runner builds real Electron Desktop, Agent, authenticated Gin/PostgreSQL17/Local CAS, and **three fresh 115k SHA-distinct physical original stores** of 149,285,128 bytes each, with exactly 100k logical Gallery assets and 15k paired Live Photo source identities. Six actual Electron sessions, **30/30 true virtual viewport type-specific decoded images/posters**, pass. Source-original complete JSON and every unrounded session/viewport: [ci-run-38271556910-current.json](performance-evidence/file-explorer-desktop-mixed-physical-100k/ci-run-38271556910-current.json), with [raw runner artifact #11758480302](https://github.com/lazyxu/xdrive/actions/runs/38271556910/artifacts/11758480302).
 

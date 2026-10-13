@@ -9,9 +9,11 @@ const {app,BrowserWindow} = require('electron')
 
 const root = path.resolve(__dirname,'../..')
 const desktop = path.join(root,'desktop')
+const mobileMode = process.env.XD_FILEEXPLORER_MOBILE_PHYSICAL_100K_PERF === '1'
+const requiredDecoded = mobileMode ? 4 : 6
 const dist = path.join(root,'web/dist')
 const output = path.resolve(process.env.XD_FILEEXPLORER_PHYSICAL_RESULTS ||
-  path.join(desktop,'file-explorer-physical-jpeg-100k-results'))
+  path.join(desktop,mobileMode ? 'file-explorer-mobile-physical-jpeg-100k-results' : 'file-explorer-physical-jpeg-100k-results'))
 const apiBinary = path.resolve(process.env.XD_FILEEXPLORER_PHYSICAL_TEST_BINARY || '')
 const views = ['grid','details']
 const fractions = [0,0.25,0.50,0.75,0.95]
@@ -112,6 +114,8 @@ const snapshotScript=`(()=>{
   return {
     scrollTop:host?.scrollTop??null,extent:host?host.scrollHeight-host.clientHeight:0,
     mounted:tiles.length,decoded:decoded.length,
+    viewportWidth:document.documentElement.clientWidth,
+    narrow:matchMedia('(max-width: 899px)').matches,
     ids:decoded.map(tile=>tile.getAttribute('data-xdrive-file-explorer-item-id')),
     error:window.__xdriveFileExplorerRealScrollError||null
   }
@@ -131,8 +135,8 @@ function scrollScript(fraction) {
   return {top:host.scrollTop,extent}
 }
 async function viewSample(sample,view,fixture) {
-  const win=new BrowserWindow({show:true,width:1440,height:900,
-    webPreferences:{partition:'physical-100k-'+sample+'-'+view,sandbox:false,
+  const win=new BrowserWindow({show:true,width:mobileMode ? 390 : 1440,height:mobileMode ? 844 : 900,
+    webPreferences:{partition:(mobileMode ? 'mobile-physical-100k-' : 'physical-100k-')+sample+'-'+view,sandbox:false,
       nodeIntegration:false,contextIsolation:true,webSecurity:true,backgroundThrottling:false}})
   const failures=[]
   win.webContents.on('render-process-gone',(_e,value)=>failures.push('renderer: '+JSON.stringify(value)))
@@ -161,22 +165,25 @@ async function viewSample(sample,view,fixture) {
         const state=await DOM(win)
         if(state.mounted<1||state.mounted>=1000)return null
         const ids=[...new Set(state.ids)].filter(Boolean)
-        if(ids.length<6)return null
+        if(ids.length<requiredDecoded)return null
         const fresh=ids.filter(id=>!previous.has(id))
         // The virtual list intentionally retains old overscan thumbnails
         // briefly while the new range resolves. Wait for SIX decoded new
         // IDs, not merely one new ID followed by a premature assertion.
-        if(fraction>0&&fresh.length<6)return null
+        if(fraction>0&&fresh.length<requiredDecoded)return null
         return {...state,ids}
-      },40000,'six actual decoded JPEG tiles at FileExplorer '+view+' viewport '+fraction)
+      },40000,'required actual decoded JPEG tiles at FileExplorer '+view+' viewport '+fraction)
       const loadedMs=performance.now()-startedAt
       const ids=actual.ids
       const uniqueNew=ids.filter(id=>!previous.has(id)).length
-      assert(fraction===0||uniqueNew>=6,'virtual FileExplorer thumbnail window recycled stale source')
+      assert(fraction===0||uniqueNew>=requiredDecoded,'virtual FileExplorer thumbnail window recycled stale source')
       previous=new Set(ids)
       peak=Math.max(peak,rendererWS())
       const requestState=await stats(fixture.info.url)
-      measurements.push({fraction,firstSixDecodedMs:loadedMs,decoded:ids.length,
+      if(mobileMode) assert(actual.narrow&&actual.viewportWidth>=375&&actual.viewportWidth<=390,
+        'real 390px mobile FileExplorer was not mounted: '+JSON.stringify(actual))
+      measurements.push({fraction,firstSixDecodedMs:loadedMs,firstRequiredDecodedMs:loadedMs,
+        requiredDecoded,viewportWidth:actual.viewportWidth,narrow:actual.narrow,decoded:ids.length,
         newIDs:uniqueNew,mounted:actual.mounted,scrollTop:actual.scrollTop,
         realGoThumbnailRequestsSoFar:requestState.started,realGoThumbnailBytesSoFar:requestState.response_bytes,
         canceledAbandonedRequestsSoFar:requestState.canceled,actualThumbnailErrorsSoFar:requestState.failed})
@@ -189,6 +196,7 @@ async function viewSample(sample,view,fixture) {
     assert(end.max_active<=6,'production FileExplorer exceeded six thumbnail requests in flight')
     const growth=Math.max(0,peak-memoryBefore)
     const row={sample,view,itemCount:100000,physicalDistinctJpegOriginals:100000,
+      mobileMode,cssViewportWidth:mobileMode?390:1440,minRequiredDecodedPerViewport:requiredDecoded,
       bitmapDimensions:'80x64 JPEG',renderedViewportPositions:fractions.length,
       metrics:measurements,totalRequestsForSample:end.started-firstCounter.started,
       totalRealHTTPBytesForSample:end.response_bytes-firstCounter.response_bytes,
@@ -198,9 +206,10 @@ async function viewSample(sample,view,fixture) {
       rendererWorkingSetGrowthBytes:growth,
       electronMainCPUUserMs:cpu.user/1000,electronMainCPUSystemMs:cpu.system/1000,
       firstSixP50Ms:median(measurements.map(x=>x.firstSixDecodedMs)),
+      firstRequiredP50Ms:median(measurements.map(x=>x.firstRequiredDecodedMs)),
       worstFirstSixMs:Math.max(...measurements.map(x=>x.firstSixDecodedMs))}
     row.passed=measurements.length===5&&measurements.every(m=>
-      m.decoded>=6&&m.mounted>0&&m.mounted<1000&&m.firstSixDecodedMs<=maxFirstSixMs)&&
+      m.decoded>=requiredDecoded&&(!mobileMode||m.narrow)&&m.mounted>0&&m.mounted<1000&&m.firstSixDecodedMs<=maxFirstSixMs)&&
       growth<=memoryBudgetBytes&&end.max_active<=6
     console.log('FILEEXPLORER_REAL_PHYSICAL_100K_VIEW '+JSON.stringify(row))
     assert(row.passed,'authentic 100k physical JPEG FileExplorer budget exceeded')
@@ -250,17 +259,20 @@ async function main() {
       }
     }
     const result={status:'measured-CURRENT/BEFORE-only-production-unchanged',
-      name:'real-web-shared-fileexplorer-100k-distinct-physical-jpeg-viewports',
+      name:mobileMode?'390px-real-Mobile-Web-shared-fileexplorer-100k-distinct-JPEG':'real-web-shared-fileexplorer-100k-distinct-physical-jpeg-viewports',
+      mobileMode,cssViewportWidth:mobileMode?390:1440,
       independentPostgreSQLCASFixtures:3,itemsPerFixture:100000,distinctPhysicalJpegsPerFixture:100000,
       views,viewportFractions:fractions,viewSamples:rows.length,
-      minDecodedPerViewport:6,maxViewportDecodeMs:maxFirstSixMs,
+      minDecodedPerViewport:requiredDecoded,maxViewportDecodeMs:maxFirstSixMs,
       maxMountedItems:999,maxConcurrentThumbnailHTTP:6,maxRendererAndGoRssGrowthBytes:memoryBudgetBytes,
       p50GridFirstSixMs:median(rows.filter(x=>x.view==='grid').map(x=>x.firstSixP50Ms)),
+      p50GridFirstRequiredMs:median(rows.filter(x=>x.view==='grid').map(x=>x.firstRequiredP50Ms)),
       p50DetailsFirstSixMs:median(rows.filter(x=>x.view==='details').map(x=>x.firstSixP50Ms)),
+      p50DetailsFirstRequiredMs:median(rows.filter(x=>x.view==='details').map(x=>x.firstRequiredP50Ms)),
       maxRendererGrowthBytes:Math.max(...rows.map(x=>x.rendererWorkingSetGrowthBytes)),
       samples:rows,
       passed:rows.length===6&&rows.every(x=>x.passed),
-      limitations:'Each of 100k physical JPEG originals is real and unique; browser decodes only a bounded viewport sample at 0/25/50/75/95%, NOT all 100k concurrently. Real Web shared FileExplorer Grid/Details, not Desktop Agent, H264/HEVC/RAW/LIVP physical decode, WAN, or durable Task Center cancellation.'}
+      limitations:mobileMode?'390px real shared Web FileExplorer in Electron Chromium, NOT full Mobile Web App Frame or actual iOS Safari/Android Chrome hardware. Only four freshly decoded JPEG per viewport; no H264/Live/RAW/HEVC/LIVP, WAN, OS-installed PWA, Desktop Agent or durable Task Center cancel.':'Each of 100k physical JPEG originals is real and unique; browser decodes only a bounded viewport sample at 0/25/50/75/95%, NOT all 100k concurrently. Real Web shared FileExplorer Grid/Details, not Desktop Agent, H264/HEVC/RAW/LIVP physical decode, WAN, or durable Task Center cancellation.'}
     fs.writeFileSync(path.join(output,'summary.json'),JSON.stringify(result,null,2)+'\n')
     console.log('FILEEXPLORER_REAL_PHYSICAL_100K_SUMMARY '+JSON.stringify(result))
     assert(result.passed,'100k physical JPEG native FileExplorer performance gate failed')
