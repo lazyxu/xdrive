@@ -1742,3 +1742,13 @@ perform idempotent canonical identity/alias transitions within the same
 guarded transaction. Metadata-only rename must not add CAS references.
 Require exact-head Linux/Windows, PostgreSQL integration, Desktop/Web,
 full final-gate CI; GitLab and real 100k/4GiB tests remain separate.
+
+## L03-E1b1b1b3 · Cloud target ancestry and sibling-collision precommit (PR verification)
+
+Prerequisites #1600 and #1605 merged after separate 76-job exact-head GitHub CI. Their private current relative path and quarantine/CAS transaction guards do NOT by themselves prove that the existing cloud Node still occupies its original SourceItem path under this Source target. A stale/moved cloud Node must never obtain a newly trusted local identity.
+
+The next bounded PRIVATE READ-ONLY Server guard, checkLocalQuarantinedSameDirectoryTargetTx, composes the existing owning-device, Root, Source revision, quarantine, SourceItem/alias and canonical File/FileVersion/READY CAS checks inside the same caller-owned PostgreSQL transaction. It locks the authoritative Source target and at most 256 active ancestor Nodes with shared row locks, demands the live cloud Node relative path exactly match the saved SourceItem.Path and permits precommit inspection only for a SAME-DIRECTORY file basename change. The destination leaf must follow the existing Windows-compatible name contract and have no currently visible case-insensitive active sibling conflict.
+
+Missing/moved ancestors, deleted/replaced target, stale SourceItem/Node paths, path cycles, cross-directory moves, name collisions, revoked/other-device credentials, stale revisions and CAS metadata mismatch all fail closed. The sibling-absence read is NOT a durable reservation or future write token. A future authoritative writer MUST separately exclude concurrent creations/moves through parent/name locks, independently verify live native and physical CAS bytes, resolve Node/FileVersion revision and CAS refcount accounting, then update Node, SourceItem and aliases in one crash-idempotent transaction. A metadata-only rename must not increment CAS references.
+
+This stage adds NO new HTTP/Agent IPC/Renderer/Web operation, no actual rename/alias promotion, no CAS/Node/SourceItem/Run write, no upload, scheduler, Mirror deletion, or NAS Push. PostgreSQL integration must verify valid same-parent, stale cloud rename, moved-outside-target, case-insensitive sibling collision, cross-directory proposal, forged/revoked device, and unchanged authoritative references. Exact-head Go Linux/Windows, PostgreSQL API race, Web/Desktop and final-gate CI required before merge. GitLab and physical Windows/Linux 100k / >=4GiB acceptance are independent.
