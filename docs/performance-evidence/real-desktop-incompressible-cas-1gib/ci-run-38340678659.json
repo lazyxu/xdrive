@@ -1,0 +1,287 @@
+{
+  "workload_id": "P043",
+  "phase": "M004-b",
+  "state": "Accepted original CURRENT, production unchanged; evidence-head exact-source native and full CI pending",
+  "provenance": {
+    "repository": "lazyxu/xdrive",
+    "measured_exact_sha": "a8c7c76a97cc935f1511471e8a8d2eaba1c84889",
+    "run_id": 38340678659,
+    "job_id": 115110727861,
+    "source_url": "https://github.com/lazyxu/xdrive/actions/runs/38340678659",
+    "artifact_id": 11786946078,
+    "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38340678659/artifacts/11786946078",
+    "original_CI_other_run_id": 38340678794
+  },
+  "dataset": {
+    "platform": "Linux Xvfb authentic production Electron Renderer→Preload→Main→Go Agent IPC→Gin/PostgreSQL17/Local CAS",
+    "bytes_per_direction": 1073741824,
+    "physical_original_generator": "AES-256-CTR SHA-256 seeded distinct source with 8MiB bounded buffer, fsync, blocks*512 ≥98% of file size",
+    "n": 3,
+    "actual_physical_source_bytes": [
+      1073745920,
+      1073745920,
+      1073745920
+    ],
+    "source_sha256": [
+      "e581dd550b10d2191dc2f4114d66c00a8679cf170f56d19d1d842c9c8ae0044d",
+      "598f718d5b91ea80cdb9ae64f9c253f97a73be28da2dbb354c8dae2cecdf0858",
+      "9307a88db0d54c18ad77feef6aa8ec0f184fe0c88179f2ac98a4d2cc80d21220"
+    ],
+    "real_puts_each": 128,
+    "real_get_each": 1,
+    "full_local_file_sha256_checked": true,
+    "not_in_scope": [
+      "4GiB incompressible",
+      "WAN/slow network",
+      "Windows physical device",
+      "installed PWA",
+      "user task explicit cancel",
+      "Web OPFS"
+    ]
+  },
+  "frozen": {
+    "max_each_upload_ms": 240000,
+    "max_each_download_ms": 240000,
+    "renderer_growth_max_kib": 262144,
+    "agent_rss_growth_max_bytes": 268435456,
+    "server_rss_growth_max_bytes": 268435456,
+    "required_true_puts": 128,
+    "required_true_gets": 1,
+    "required_CAS_and_source_and_download_sha256_equality": true,
+    "required_physical_allocated_bytes_floor": 1052266987.52
+  },
+  "original_current": {
+    "upload_p50_ms": 18375.837605,
+    "download_p50_ms": 6039.79826,
+    "upload_p50_MiBps": 55.725350975096404,
+    "download_p50_MiBps": 169.54208665903354,
+    "agent_rss_peak_growth_bytes": 20529152,
+    "go_server_rss_peak_growth_bytes": 2560000,
+    "renderer_working_set_max_growth_KiB": 57232,
+    "per_sample_upload_ms": [
+      18420.393963000002,
+      18255.957226,
+      18375.837605
+    ],
+    "per_sample_download_ms": [
+      6039.79826,
+      6058.41883,
+      6033.14444
+    ],
+    "per_sample_agent_cpu_ticks": [
+      376,
+      371,
+      377
+    ],
+    "per_sample_server_cpu_ticks": [
+      584,
+      574,
+      582
+    ],
+    "passed": true
+  },
+  "raw_native_summary": {
+    "name": "desktop-renderer-preload-main-agent-postgres17-physical-cas-1gib-high-entropy",
+    "highEntropyDesktop": true,
+    "status": "CURRENT-BEFORE only / no production code optimization",
+    "n": 3,
+    "uploadMedianMs": 18375.837605,
+    "downloadMedianMs": 6039.79826,
+    "uploadMedianMiBps": 55.725350975096404,
+    "downloadMedianMiBps": 169.54208665903354,
+    "maxAgentRSSGrowthBytes": 20529152,
+    "maxServerRSSGrowthBytes": 2560000,
+    "maxRendererWorkingSetGrowthKiB": 57232,
+    "budgets": {
+      "perDirectionBytes": 1073741824,
+      "uploadMsEachMax": 240000,
+      "downloadMsEachMax": 240000,
+      "agentRssPeakGrowthMaxMiB": 256,
+      "serverRssPeakGrowthMaxMiB": 256,
+      "rendererWSGrowthMaxMiB": 256,
+      "expectedPUTsEach": 128,
+      "expectedGETsEach": 1
+    },
+    "actualRealUIBoundary": "P043 authenticated actual Desktop Renderer/Preload/Main/Go Agent IPC -> Gin/PostgreSQL17/physically allocated high-entropy 1GiB original CAS; source file SHA256 equals complete downloaded Desktop File SHA256 and actual Server CAS SHA. Linux loopback, NOT actual Windows desktop, WAN, 4GiB high-entropy, PWA, permanent task cancellation or FileExplorer button clicks; no production changes.",
+    "samples": [
+      {
+        "sample": "sample-1",
+        "uploadedBytes": 1073741824,
+        "downloadedBytes": 1073741824,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "e581dd550b10d2191dc2f4114d66c00a8679cf170f56d19d1d842c9c8ae0044d",
+          "allocatedBytes": 1073745920,
+          "sourceBytes": 1073741824
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 18420.393963000002,
+          "throughputMiBps": 55.59055914096357,
+          "rendererWorkingSetStartKiB": 148984,
+          "rendererWorkingSetPeakKiB": 204644,
+          "rendererWorkingSetGrowthKiB": 55660,
+          "electronMainCPUUserMs": 1206.303,
+          "electronMainCPUSystemMs": 315.328
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 6039.79826,
+          "throughputMiBps": 169.54208665903354,
+          "rendererWorkingSetStartKiB": 142724,
+          "rendererWorkingSetPeakKiB": 154696,
+          "rendererWorkingSetGrowthKiB": 11972,
+          "electronMainCPUUserMs": 151.812,
+          "electronMainCPUSystemMs": 71.669,
+          "destination": "/tmp/xdrive-desktop-real-cas-qRFrm0/download-sample-1.bin"
+        },
+        "server": {
+          "cas_bytes": 1073741824,
+          "cas_valid": true,
+          "declared_upload_bytes": 1073741824,
+          "download_get_count": 1,
+          "file_bytes": 1073741824,
+          "file_sha256": "e581dd550b10d2191dc2f4114d66c00a8679cf170f56d19d1d842c9c8ae0044d",
+          "node_revision": 1,
+          "put_count": 128,
+          "root_id": 1,
+          "sample": "sample-1",
+          "size_bytes": 1073741824,
+          "upload_name": "upload-sample-1.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "e581dd550b10d2191dc2f4114d66c00a8679cf170f56d19d1d842c9c8ae0044d",
+        "agentRssGrowthBytes": 18497536,
+        "serverRssGrowthBytes": 2551808,
+        "agentCpuDeltaTicks": 376,
+        "serverCpuDeltaTicks": 584
+      },
+      {
+        "sample": "sample-2",
+        "uploadedBytes": 1073741824,
+        "downloadedBytes": 1073741824,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "598f718d5b91ea80cdb9ae64f9c253f97a73be28da2dbb354c8dae2cecdf0858",
+          "allocatedBytes": 1073745920,
+          "sourceBytes": 1073741824
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 18255.957226,
+          "throughputMiBps": 56.09127953814587,
+          "rendererWorkingSetStartKiB": 148648,
+          "rendererWorkingSetPeakKiB": 205628,
+          "rendererWorkingSetGrowthKiB": 56980,
+          "electronMainCPUUserMs": 1165.11,
+          "electronMainCPUSystemMs": 292.264
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 6058.41883,
+          "throughputMiBps": 169.02099850366403,
+          "rendererWorkingSetStartKiB": 139308,
+          "rendererWorkingSetPeakKiB": 155872,
+          "rendererWorkingSetGrowthKiB": 16564,
+          "electronMainCPUUserMs": 131.287,
+          "electronMainCPUSystemMs": 82.345,
+          "destination": "/tmp/xdrive-desktop-real-cas-qRFrm0/download-sample-2.bin"
+        },
+        "server": {
+          "cas_bytes": 1073741824,
+          "cas_valid": true,
+          "declared_upload_bytes": 1073741824,
+          "download_get_count": 1,
+          "file_bytes": 1073741824,
+          "file_sha256": "598f718d5b91ea80cdb9ae64f9c253f97a73be28da2dbb354c8dae2cecdf0858",
+          "node_revision": 1,
+          "put_count": 128,
+          "root_id": 1,
+          "sample": "sample-2",
+          "size_bytes": 1073741824,
+          "upload_name": "upload-sample-2.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "598f718d5b91ea80cdb9ae64f9c253f97a73be28da2dbb354c8dae2cecdf0858",
+        "agentRssGrowthBytes": 18530304,
+        "serverRssGrowthBytes": 2531328,
+        "agentCpuDeltaTicks": 371,
+        "serverCpuDeltaTicks": 574
+      },
+      {
+        "sample": "sample-3",
+        "uploadedBytes": 1073741824,
+        "downloadedBytes": 1073741824,
+        "highEntropyDesktop": true,
+        "physicalSource": {
+          "sourceSHA256": "9307a88db0d54c18ad77feef6aa8ec0f184fe0c88179f2ac98a4d2cc80d21220",
+          "allocatedBytes": 1073745920,
+          "sourceBytes": 1073741824
+        },
+        "upload": {
+          "scenario": "upload",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 18375.837605,
+          "throughputMiBps": 55.725350975096404,
+          "rendererWorkingSetStartKiB": 148548,
+          "rendererWorkingSetPeakKiB": 205780,
+          "rendererWorkingSetGrowthKiB": 57232,
+          "electronMainCPUUserMs": 1243.289,
+          "electronMainCPUSystemMs": 300.519
+        },
+        "download": {
+          "scenario": "download",
+          "scope": "authentic Electron Renderer -> Preload -> Main -> Go Agent IPC -> genuine Gin/PG17/CAS",
+          "nodeID": 2,
+          "bytes": 1073741824,
+          "elapsedMs": 6033.14444,
+          "throughputMiBps": 169.72907083258892,
+          "rendererWorkingSetStartKiB": 137804,
+          "rendererWorkingSetPeakKiB": 153588,
+          "rendererWorkingSetGrowthKiB": 15784,
+          "electronMainCPUUserMs": 157.456,
+          "electronMainCPUSystemMs": 58.295,
+          "destination": "/tmp/xdrive-desktop-real-cas-qRFrm0/download-sample-3.bin"
+        },
+        "server": {
+          "cas_bytes": 1073741824,
+          "cas_valid": true,
+          "declared_upload_bytes": 1073741824,
+          "download_get_count": 1,
+          "file_bytes": 1073741824,
+          "file_sha256": "9307a88db0d54c18ad77feef6aa8ec0f184fe0c88179f2ac98a4d2cc80d21220",
+          "node_revision": 1,
+          "put_count": 128,
+          "root_id": 1,
+          "sample": "sample-3",
+          "size_bytes": 1073741824,
+          "upload_name": "upload-sample-3.bin",
+          "uploaded_node_id": 2
+        },
+        "downloadSHA256": "9307a88db0d54c18ad77feef6aa8ec0f184fe0c88179f2ac98a4d2cc80d21220",
+        "agentRssGrowthBytes": 20529152,
+        "serverRssGrowthBytes": 2560000,
+        "agentCpuDeltaTicks": 377,
+        "serverCpuDeltaTicks": 582
+      }
+    ],
+    "passed": true
+  },
+  "after": null,
+  "speedup_pct": null,
+  "decision": "Accepted current: no production performance code change; no speedup. Sparse-zero Desktop P013/P011 and Web high-entropy P042 cannot be used for paired A/B."
+}

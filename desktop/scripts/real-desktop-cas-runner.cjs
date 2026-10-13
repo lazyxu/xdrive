@@ -17,6 +17,8 @@ const sizeGiB=Number(process.env.XD_REAL_CAS_SIZE_GIB||'1')
 assert([1,4].includes(sizeGiB),'real Desktop CAS benchmark size must be 1 or 4 GiB')
 const transferBytes=sizeGiB*2**30
 const putCount=sizeGiB*128
+// P043 high-entropy physical original content is a new workload; default P011 stays unchanged.
+const highEntropyDesktop=process.env.XD_REAL_DESKTOP_INCOMPRESSIBLE_PERF==='1'
 const maxDirectionMs=sizeGiB===4?360000:240000
 const delay=ms=>new Promise(r=>setTimeout(r,ms))
 // Clear losing timers after Promise.race, otherwise a completed 1GiB native
@@ -104,6 +106,35 @@ async function getState(base,token){
   assert.equal(r.status,200)
   return r.json()
 }
+// AES-256-CTR deterministic CSPRNG test data, never user files or production traffic.
+function seedHighEntropyPhysicalOriginal(file,bytes,sample){
+  const key=crypto.createHash('sha256')
+    .update('xdrive-p043-desktop-aes256ctr:'+sample).digest()
+  const cipher=crypto.createCipheriv('aes-256-ctr',key,Buffer.alloc(16))
+  const sha=crypto.createHash('sha256'),zeros=Buffer.alloc(8*1024*1024)
+  const fd=fs.openSync(file,'wx',0o600)
+  let allocatedBytes=0
+  try{
+    for(let done=0;done<bytes;){
+      const count=Math.min(zeros.length,bytes-done)
+      const block=cipher.update(zeros.subarray(0,count))
+      let written=0
+      while(written<block.length){
+        const n=fs.writeSync(fd,block,written,block.length-written)
+        if(n<=0)throw Error('short actual physical CSPRNG fixture write')
+        written+=n
+      }
+      sha.update(block)
+      done+=count
+    }
+    assert.equal(cipher.final().length,0)
+    fs.fsyncSync(fd)
+    allocatedBytes=fs.fstatSync(fd).blocks*512
+  }finally{fs.closeSync(fd)}
+  assert(allocatedBytes>=bytes*.98,
+    'P043 high-entropy source is sparse or filesystem-compressed: '+allocatedBytes)
+  return {sourceSHA256:sha.digest('hex'),allocatedBytes,sourceBytes:bytes}
+}
 async function hashFile(file){
   const sum=crypto.createHash('sha256')
   for await(const chunk of fs.createReadStream(file,{highWaterMark:1024*1024})){
@@ -173,8 +204,13 @@ async function runOne(index,tmp){
       if(s?.rss>0)serverRssMax=Math.max(serverRssMax,s.rss)
     },25)
     const source=path.join(tmp,'upload-'+sample+'.bin')
-    const handle=fs.openSync(source,'w',0o600)
-    try{fs.ftruncateSync(handle,transferBytes)}finally{fs.closeSync(handle)}
+    let physicalSeed=null
+    if(highEntropyDesktop){
+      physicalSeed=seedHighEntropyPhysicalOriginal(source,transferBytes,sample)
+    }else{
+      const handle=fs.openSync(source,'w',0o600)
+      try{fs.ftruncateSync(handle,transferBytes)}finally{fs.closeSync(handle)}
+    }
     const download=path.join(tmp,'download-'+sample+'.bin')
     const common={
       ...env,
@@ -190,6 +226,12 @@ async function runOne(index,tmp){
     assert.equal(afterUpload.declared_upload_bytes,transferBytes)
     assert.equal(afterUpload.uploaded_node_id,upload.nodeID)
     assert.equal(afterUpload.cas_valid,true)
+    if(highEntropyDesktop){
+      assert.equal(afterUpload.file_sha256,physicalSeed.sourceSHA256,
+        'real Desktop upstream physical seed SHA differs from native server CAS')
+      assert(physicalSeed.allocatedBytes>=transferBytes*.98,
+        'high-entropy fixture not physically allocated')
+    }
     const downloaded=await launchElectron(sample,'download',{
       ...common,XD_DESKTOP_CAS_NODE_ID:String(upload.nodeID)
     })
@@ -201,6 +243,10 @@ async function runOne(index,tmp){
     const checksum=await hashFile(download)
     const final=await getState(f.info.url,false)
     assert.equal(checksum,final.file_sha256)
+    if(highEntropyDesktop){
+      assert.equal(checksum,physicalSeed.sourceSHA256,
+        'entire real Desktop native output differs from high-entropy physical source')
+    }
     assert.equal(final.cas_valid,true)
     assert.equal(final.cas_bytes,transferBytes)
     assert.equal(final.download_get_count,1)
@@ -225,6 +271,8 @@ async function runOne(index,tmp){
     succeeded=true
     return {
       sample,uploadedBytes:transferBytes,downloadedBytes:disk.size,
+      highEntropyDesktop,
+      ...(physicalSeed?{physicalSource:physicalSeed}:{}),
       upload,download:downloaded,server:final,downloadSHA256:checksum,
       agentRssGrowthBytes:agentRssGrowth,
       serverRssGrowthBytes:serverRssGrowth,
@@ -279,10 +327,15 @@ async function main(){
         row.uploadedBytes===transferBytes&&row.downloadedBytes===transferBytes&&
         row.server?.cas_valid===true&&row.server?.put_count===putCount&&
         row.server?.download_get_count===1&&
-        row.server?.file_sha256===row.downloadSHA256
+        row.server?.file_sha256===row.downloadSHA256&&
+        (!highEntropyDesktop||(
+          row.highEntropyDesktop&&row.physicalSource?.allocatedBytes>=transferBytes*.98&&
+          row.physicalSource?.sourceSHA256===row.downloadSHA256&&
+          row.physicalSource?.sourceSHA256===row.server.file_sha256))
     }), 'n3 Desktop real CAS result summary missing genuine numeric upload/download and SHA metrics')
     const result={
-      name:`desktop-renderer-preload-main-agent-postgres17-physical-cas-${sizeGiB}gib`,
+      name:`desktop-renderer-preload-main-agent-postgres17-physical-cas-${sizeGiB}gib-${highEntropyDesktop?'high-entropy':'sparse-zero'}`,
+      highEntropyDesktop,
       status:'CURRENT-BEFORE only / no production code optimization',
       n:rows.length,
       uploadMedianMs:median(rows.map(r=>r.upload.elapsedMs)),
@@ -299,7 +352,9 @@ async function main(){
         rendererWSGrowthMaxMiB:256,
         expectedPUTsEach:putCount,expectedGETsEach:1,
       },
-      actualRealUIBoundary:'Electron Renderer uses actual Preload.cloudUploadDroppedFiles(file) with CDP-inserted File, actual Main upload-paths, real Go Agent IPC and genuine Gin/PostgreSQL/CAS; real Download uses production native Main file-save IPC with ONLY test OS-dialog selection override. NOT actual FileExplorer button clicks, not WAN, not durable cancellation.',
+      actualRealUIBoundary:highEntropyDesktop?
+        'P043 authenticated actual Desktop Renderer/Preload/Main/Go Agent IPC -> Gin/PostgreSQL17/physically allocated high-entropy 1GiB original CAS; source file SHA256 equals complete downloaded Desktop File SHA256 and actual Server CAS SHA. Linux loopback, NOT actual Windows desktop, WAN, 4GiB high-entropy, PWA, permanent task cancellation or FileExplorer button clicks; no production changes.'
+        :'Electron Renderer uses actual Preload.cloudUploadDroppedFiles(file) with CDP-inserted File, actual Main upload-paths, real Go Agent IPC and genuine Gin/PostgreSQL/CAS; real Download uses production native Main file-save IPC with ONLY test OS-dialog selection override. NOT actual FileExplorer button clicks, not WAN, not durable cancellation.',
       samples:rows,
       passed:rows.length===3
     }
