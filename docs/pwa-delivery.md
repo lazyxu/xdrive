@@ -16,7 +16,7 @@
 | --- | --- | --- |
 | P0-01 | 安全 SW/公开离线页；跨冷启动断网提示、同 hash 重试；不可缓存私有字节。 | S1 已合入、完整 CI 通过，物理设备待验 |
 | P0-02 | CacheStorage 全来源隔离：API、媒体、原件、分享、票据、令牌 Network-only；跨账号、退出、撤销和清缓存不可泄漏。 | S1 限定范围；完整测试待做 |
-| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A、S3D1 已合并；S3D2A 为本窗口只读活动诊断，跨窗口安全激活仍未实现，不允许强制 reload |
+| P0-03 | 发布新版本等待提示、同源多标签页协调、用户确认后更新；传输/编辑/Viewer 中不自动强制 reload。 | S3A/S3D1/S3D2A 已合并；S3D2B 只增加跨窗口匿名忙态提示，没有可信激活许可，不允许强制 reload |
 | P0-04 | Chrome/Android 可用时用户主动安装，iOS 使用 Safari/系统分享菜单引导；已安装/取消/不支持有分支。 | S2A #1516、S2B1 #1557、S2B2 #1560 完整 CI 通过并合并；Chrome 安装资源/离线/登录后 Files 恢复已验，iOS 27/Android 系统安装仍 not-run |
 | P0-05 | 真正可信 HTTPS/DNS/证书；SW/Manifest/离线页 MIME、HTTP 状态、缓存头、图标、不错误回退 index.html。 | S2B1 #1557 与 S2B4 #1570 完整 CI / 真实 Chrome 已通过；S2B4 合并 98ffb1f9，验证本机 HTTP 警告与五项公开资源无凭据 HEAD；公网 DNS/CA 与生产 Caddy 仍 not-run |
 | P0-06 | 安装图标→登录→恢复 Files/Gallery/Viewer deep link；公开分享、外链与浏览器/系统返回栈区分。 | S2B1/S2B2 Chrome Files 深链接已验；S2B3 #1566 真实 Gin/Postgres/JWT 双账号已通过并合并；S2B5 补登录后 Gallery 冷刷新/后退/前进（待 CI），Viewer/分享、安装图标冷启动仍 not-run |
@@ -283,3 +283,16 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **安全边界：** 已知项全为 false 也绝不是跨窗口安全激活证明；未覆盖其他编辑器草稿、浏览器已接管的原生下载、同时打开的同源标签页/窗口、后台系统任务。没有 `skipWaiting`、`clients.claim`、自动 reload、一键激活或上传/下载/Viewer Cancel；仍要求用户完成正在运行的工作，关闭全部同源窗口，再重新打开。Server Durable Task 不属于浏览器传输；PWA 锁屏/杀进程后不保证传输。后续 S3D2B 须先补各编辑器真实脏状态与可信跨窗口 fail-closed 协调，再讨论是否需要任何一键更新。
 
 **独立验收：** 新 Node TS 运行测试覆盖默认 unknown、四个阻塞项、相同状态不重复通知、注销/重挂旧 owner 清理隔离、下载与上传区别、真实 App/UI 连接及无隐私持久化断言；隔离环境 pure TS 首四项已通过，完整 Web/Windows/Desktop/Go CI 及真机 iOS27/Android Installed 均待该阶段准确证据。此只读 UX 改动不能替代 S5 真机/HTTPS/4GiB SHA 验收。
+
+
+## PWA-S3D2A · 合并验收结果（2026-10-13）
+
+[PR #1597](https://github.com/lazyxu/xdrive/pull/1597) 唯一工作提交 407aea7a 通过准确 HEAD 的 [完整 CI #38328655966](https://github.com/lazyxu/xdrive/actions/runs/38328655966)：Web/桌面/Go/Windows 源码、打包与安装升级回滚作业及 Final Gate 均成功。以 rebase merge 线性合并为 8bf627afa25f07b4d4f557b128bce2bd989a9812；已核实前一 PWA 工作分支被清理。不能把 Chrome/Node 测试当作物理 iOS/Android 系统安装验收。
+
+## PWA-S3D2B · 跨窗口匿名忙态提示与过期保护（2026-10-13）
+
+**范围：** 在普通 Web/Mobile Web 入口为支持该能力的安全浏览器创建独立 BroadcastChannel，并订阅 S3D2A 当前窗口的前台浏览器上传、下载、Viewer 与系统依赖未保存草稿观察值。仅发送一次性随机窗口 ID、递增序号、observed 和 busy 布尔值；无 Token/Cookie、用户名/账号、Node ID、绝对路径、私有字节、请求体，也不写入持久化存储、Service Worker 缓存或任何后端 API。收到 hello 回复当前状态，局部状态变更及页面返回及时发送匿名提示；每 15 秒心跳，45 秒后淘汰过时记录。对端记录限制为 32，额外对端或不支持 BroadcastChannel / randomUUID / 安全上下文时维持不确定状态。忽略乱序、伪造结构或语义非法消息；pagehide 报 unknown，绝不发送自动激活许可。
+
+**不可放松的约束：** 同源浏览器窗口可能被 iOS 27 的主屏 Web App 隔离、锁屏、冻结或操作系统杀死；消息丢失和已过期都不能意味着其他窗口已关闭。账号切换、其他编辑器未保存草稿、浏览器原生下载与 Server 持久任务并不在此协议可信验证范围；其他窗口未报告忙态也绝对不代表所有 xDrive 工作已完成。只在已有 Service Worker waiting 更新提示内展示报告；没有 skipWaiting、clients.claim、location.reload、自动 Cancel、强制登出、跨窗口任务命令或一键激活。保持 52px 全屏 App Frame、Web/Mobile 相同 Files/Gallery 后端与虚拟列表，以及公有 offline.html 之外不缓存任何用户数据的原有策略。
+
+**测试与门槛：** Node TypeScript 执行器验证不支持/不安全回退、两窗口匿名状态、任务消退、TTL/页面冻结、重复过期序号/无效消息、真实入口/UI/文档接线；本地隔离环境的 strict tsc 与前四个协议行为测试已通过，第五个接线测试需要完整仓库执行，不得以局部 stub 结果代替。必须准确 HEAD 完整 GitHub PR CI + Final Gate 全绿才能由 Draft 转 Ready、rebase merge；真实多窗口 Chrome 和 iOS 27 Safari/Home Screen、Android OS Installed、桌面 Edge、真 HTTPS/CA、4GiB 原生下载落盘 SHA/签名/锁屏进程恢复均未完成。后续 S3D2C 优先覆盖图库编辑器、创意生成等未保存草稿和真实活动；未覆盖所有编辑面之前不得开发一键强制更新。

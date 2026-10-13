@@ -10,6 +10,7 @@ import App from './App'
 import { registerXDrivePwa } from './pwaRuntime'
 import { startXDrivePwaInstallObservation } from './pwaInstall'
 import { startXDrivePwaUpdateObservation } from './pwaUpdates'
+import { startXDrivePwaPeerActivityObservation } from './pwaPeerActivity'
 import './styles.css'
 
 const APPEARANCE_KEY = 'xdrive.appearance'
@@ -138,6 +139,7 @@ if (realGalleryFoldPerf) {
 } else {
   startXDrivePwaInstallObservation()
   startXDrivePwaUpdateObservation()
+  startXDrivePwaPeerActivityObservation()
   root.render(
     <React.StrictMode>
       <Root />
