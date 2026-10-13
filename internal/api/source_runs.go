@@ -143,6 +143,31 @@ func sourceRunSummaryUpdates(summary sourcepkg.Summary) map[string]any {
 	}
 }
 
+// sourceRunSummaryRetainPersistedCumulative preserves successful in-flight
+// progress when a previously prepared terminal summary arrives afterward.
+// The caller locks the SyncRun row in its existing transaction. Only cumulative
+// counters are monotonic; missing counts are recomputed on finalization and
+// active per-file transfer details may reset between files.
+func sourceRunSummaryRetainPersistedCumulative(summary sourcepkg.Summary, run meta.SyncRun) sourcepkg.Summary {
+	summary.ScannedItems = max(summary.ScannedItems, run.ScannedItems)
+	summary.ScannedBytes = max(summary.ScannedBytes, run.ScannedBytes)
+	summary.ScannedFileItems = max(summary.ScannedFileItems, run.ScannedFileItems)
+	summary.ScannedDirectoryItems = max(summary.ScannedDirectoryItems, run.ScannedDirectoryItems)
+	summary.IgnoredItems = max(summary.IgnoredItems, run.IgnoredItems)
+	summary.IgnoredBytes = max(summary.IgnoredBytes, run.IgnoredBytes)
+	summary.NewItems = max(summary.NewItems, run.NewItems)
+	summary.NewBytes = max(summary.NewBytes, run.NewBytes)
+	summary.ChangedItems = max(summary.ChangedItems, run.ChangedItems)
+	summary.ChangedBytes = max(summary.ChangedBytes, run.ChangedBytes)
+	summary.MovedItems = max(summary.MovedItems, run.MovedItems)
+	summary.UnchangedItems = max(summary.UnchangedItems, run.UnchangedItems)
+	summary.UnchangedBytes = max(summary.UnchangedBytes, run.UnchangedBytes)
+	summary.PlannedTransferItems = max(summary.PlannedTransferItems, run.PlannedTransferItems)
+	summary.PlannedTransferBytes = max(summary.PlannedTransferBytes, run.PlannedTransferBytes)
+	summary.FailedItems = max(summary.FailedItems, run.FailedItems)
+	return summary
+}
+
 func (s *Server) beginSourceRun(c *gin.Context) {
 	sourceID, ok := parseID(c.Param("id"))
 	if !ok {
@@ -1090,7 +1115,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		if run.CancelRequestedAt != nil {
 			status = meta.SyncRunStatusCancelled
 		}
-		summary := req.Summary
+		summary := sourceRunSummaryRetainPersistedCumulative(req.Summary, run)
 		summary.MissingItems = 0
 		summary.MissingBytes = 0
 		inventoryComplete := req.CompleteInventory &&
