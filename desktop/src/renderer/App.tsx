@@ -1063,6 +1063,9 @@ export default function App({
 
   useEffect(() => {
     let active = true
+    // A newer state IPC push owns this Renderer session. An older bootstrap
+    // getState() response may arrive afterward, but may not restore old auth.
+    let hasAgentStateEvent = false
     void window.xdriveDesktop.getInfo().then((value) => {
       if (active) setInfo(value)
     })
@@ -1085,10 +1088,12 @@ export default function App({
       if (active) setWindowMaximized(value.maximized)
     })
     void window.xdriveDesktop.agent.getState().then((value) => {
-      if (active) setAgent(value)
+      if (active && !hasAgentStateEvent) setAgent(value)
     })
     const unsubscribe = window.xdriveDesktop.agent.onState((value) => {
-      if (active) setAgent(value)
+      if (!active) return
+      hasAgentStateEvent = true
+      setAgent(value)
     })
     const unsubscribeLoginHistory = window.xdriveDesktop.onLoginHistory((value) => {
       if (active) setLoginHistory(value)
