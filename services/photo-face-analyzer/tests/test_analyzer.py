@@ -610,6 +610,68 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(smart_result["ocr_language"], "zh-en")
                 connection.close()
 
+                # Smart classifier, OCR detector and CRNN must all execute
+                # on model-local synthetic pixels. No raw OCR text, labels,
+                # media or model output tensors leave the canary.
+                for target, protocol, request_body, expected in (
+                    ("/v1/smart-model-canary", "0", None, 400),
+                    ("/v1/smart-model-canary?preview_url=private", "1", None, 404),
+                    ("/v1/smart-model-canary", "1", b"{}", 400),
+                ):
+                    rejection = analyzer.UnixHTTPConnection(socket_path)
+                    rejection.request(
+                        "GET", target, body=request_body,
+                        headers={
+                            "Authorization": "Bearer secret",
+                            "X-XDrive-Smart-Protocol": protocol,
+                        },
+                    )
+                    response = rejection.getresponse()
+                    response.read()
+                    self.assertEqual(response.status, expected)
+                    rejection.close()
+
+                unauth_smart = analyzer.UnixHTTPConnection(socket_path)
+                unauth_smart.request(
+                    "GET", "/v1/smart-model-canary",
+                    headers={"X-XDrive-Smart-Protocol": "1"},
+                )
+                response = unauth_smart.getresponse()
+                response.read()
+                self.assertEqual(response.status, 401)
+                unauth_smart.close()
+
+                model_canary = analyzer.UnixHTTPConnection(socket_path)
+                model_canary.request(
+                    "GET", "/v1/smart-model-canary",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Smart-Protocol": "1",
+                    },
+                )
+                response = model_canary.getresponse()
+                smart_canary = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(set(smart_canary), {
+                    "classifier_executed", "ocr_detector_executed",
+                    "ocr_recognizer_executed", "label_count",
+                    "ocr_region_count", "ocr_char_count",
+                })
+                for name in (
+                    "classifier_executed", "ocr_detector_executed",
+                    "ocr_recognizer_executed",
+                ):
+                    self.assertIs(smart_canary[name], True)
+                for name, maximum in (
+                    ("label_count", analyzer.SMART_VISUAL_TOP_K),
+                    ("ocr_region_count", 200),
+                    ("ocr_char_count", analyzer.SMART_OCR_MAX_TEXT_CHARS),
+                ):
+                    self.assertIs(type(smart_canary[name]), int)
+                    self.assertGreaterEqual(smart_canary[name], 0)
+                    self.assertLessEqual(smart_canary[name], maximum)
+                model_canary.close()
+
                 connection = analyzer.UnixHTTPConnection(socket_path)
                 connection.request(
                     "GET",

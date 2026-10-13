@@ -966,6 +966,40 @@ class SmartRuntime:
                 "ocr_language": SMART_OCR_LANGUAGE,
             }
 
+    def probe_synthetic_visual_ocr(self) -> dict[str, Any]:
+        # Only fixed artificial pixels created inside the trusted model
+        # process. This checks THREE real networks independently, even when
+        # PP-OCR finds no text boxes or CRNN decodes an empty string.
+        image = np.full((240, 320, 3), 255, dtype=np.uint8)
+        cv.putText(
+            image, "XDRIVE", (22, 137), cv.FONT_HERSHEY_SIMPLEX,
+            1.5, (0, 0, 0), 4, cv.LINE_AA,
+        )
+        patch = np.full((32, 100, 3), 255, dtype=np.uint8)
+        cv.putText(
+            patch, "XD", (10, 26), cv.FONT_HERSHEY_SIMPLEX,
+            0.9, (0, 0, 0), 2, cv.LINE_AA,
+        )
+        with self.lock:
+            labels = self._classify(image)
+            scaled = cv.resize(
+                image, SMART_OCR_INPUT_SIZE, interpolation=cv.INTER_AREA,
+            )
+            regions, _scores = self.text_detector.detect(scaled)
+            recognized = self._recognize_text(
+                patch, self._ocr_target_vertices,
+            )
+        if not isinstance(recognized, str):
+            raise RuntimeError("CRNN synthetic inference returned invalid text")
+        return {
+            "classifier_executed": True,
+            "ocr_detector_executed": True,
+            "ocr_recognizer_executed": True,
+            "label_count": len(labels),
+            "ocr_region_count": 0 if regions is None else len(regions),
+            "ocr_char_count": len(recognized),
+        }
+
 
 class SemanticRuntime:
     def __init__(
@@ -1340,6 +1374,25 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "smart",
                 )
                 self._write_json(200, self.server.state.info_with_session(self.server.state.smart_runtime.info()))
+                return
+            if method == "GET" and target == "/v1/smart-model-canary":
+                # No browser-defined text, image, URL or task body. Only the
+                # authenticated fixed Unix Smart model is authorized.
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-smart-protocol",
+                    SMART_PROTOCOL_VERSION,
+                    "smart",
+                )
+                if not self.server.state.token:
+                    raise RequestError(503, "Smart model canary requires auth")
+                if headers.get("transfer-encoding") or headers.get(
+                    "content-length", "0"
+                ) != "0":
+                    raise RequestError(400, "Smart model canary rejects a body")
+                self._write_json(
+                    200, self.server.state.smart_runtime.probe_synthetic_visual_ocr(),
+                )
                 return
             if method == "GET" and target == "/v1/semantic-info":
                 self._require_protocol(

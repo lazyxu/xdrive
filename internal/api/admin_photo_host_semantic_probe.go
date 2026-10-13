@@ -14,12 +14,13 @@ const photoHostSemanticProbeTimeout = 6 * time.Second
 const photoHostSemanticProbeCooldown = 60 * time.Second
 
 // Rate-limit bounded synthetic inference per process. Semantic text/image
-// and YuNet detection share one mutex; no user input or URL is accepted.
+// YuNet and Smart visual/OCR share one mutex; no user input or URL is accepted.
 var photoHostSemanticProbeGate = struct {
 	sync.Mutex
 	lastAttempt      time.Time
 	lastImageAttempt time.Time
 	lastFaceAttempt  time.Time
+	lastSmartAttempt time.Time
 }{}
 
 // Shared real synthetic-inference validator: require exact host ACK before

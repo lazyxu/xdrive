@@ -78,6 +78,40 @@ func (a *UnixSmartAnalyzer) Info(
 	return out, nil
 }
 
+// SmartModelCanary is private, fixed-input execution evidence for MobileNetV2,
+// PP-OCR detector and CRNN recognizer, not a claim of classification/OCR
+// accuracy on real media. A zero region or text count is valid.
+type SmartModelCanary struct {
+	ClassifierExecuted    bool `json:"classifier_executed"`
+	OCRDetectorExecuted   bool `json:"ocr_detector_executed"`
+	OCRRecognizerExecuted bool `json:"ocr_recognizer_executed"`
+	LabelCount            int  `json:"label_count"`
+	OCRRegionCount        int  `json:"ocr_region_count"`
+	OCRCharCount          int  `json:"ocr_char_count"`
+}
+
+// ProbeSyntheticVisualOCR never carries caller image data, text or preview
+// URL: the analyzer generates the pixels and fixed recognizer patch itself.
+func (a *UnixSmartAnalyzer) ProbeSyntheticVisualOCR(
+	ctx context.Context,
+) (SmartModelCanary, error) {
+	var out SmartModelCanary
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		"http://xdrive-photo-smart/v1/smart-model-canary",
+		nil,
+	)
+	if err != nil {
+		return out, err
+	}
+	a.addHeaders(req)
+	if err := a.doJSON(req, &out); err != nil {
+		return SmartModelCanary{}, err
+	}
+	return out, nil
+}
+
 func (a *UnixSmartAnalyzer) Analyze(
 	ctx context.Context,
 	task SmartAnalysisTask,

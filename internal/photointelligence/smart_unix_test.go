@@ -34,6 +34,16 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 			switch r.URL.Path {
 			case "/v1/smart-info":
 				_ = json.NewEncoder(w).Encode(info)
+			case "/v1/smart-model-canary":
+				if r.Method != http.MethodGet || r.URL.RawQuery != "" ||
+					r.ContentLength > 0 {
+					t.Fatal("Smart canary must be a fixed, body-free Unix GET")
+				}
+				_ = json.NewEncoder(w).Encode(SmartModelCanary{
+					ClassifierExecuted:    true,
+					OCRDetectorExecuted:   true,
+					OCRRecognizerExecuted: true,
+				})
 			case "/v1/smart-analyze":
 				var task SmartAnalysisTask
 				if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
@@ -68,6 +78,11 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 	}
 	if gotInfo.Name != info.Name {
 		t.Fatalf("info=%+v", gotInfo)
+	}
+	canary, err := analyzer.ProbeSyntheticVisualOCR(context.Background())
+	if err != nil || !canary.ClassifierExecuted ||
+		!canary.OCRDetectorExecuted || !canary.OCRRecognizerExecuted {
+		t.Fatalf("Smart model canary failed: %+v %v", canary, err)
 	}
 	result, err := analyzer.Analyze(
 		context.Background(),
