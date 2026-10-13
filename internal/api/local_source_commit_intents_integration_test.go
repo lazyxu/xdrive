@@ -362,6 +362,47 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 		retained.RefCount != 1 || retained.State != meta.ContentBlobStateReady {
 		t.Fatalf("read-only retention guard modified canonical reference: %+v %v", retained, err)
 	}
+	// L03-E1b1b1b0: prove the canonical hash advisory lock is retained
+	// by the CALLER'S SQL transaction, not merely acquired and released
+	// inside the read-only helper. The peer has its own DB transaction and
+	// uses the same nonblocking PostgreSQL hash lock as reference release/GC.
+	// This exercises two actual PostgreSQL connections without timing races.
+	tryCASHashLock := func() (bool, error) {
+		var acquired bool
+		err := db.Transaction(func(peer *gorm.DB) error {
+			return peer.Raw(
+				"SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))", sha,
+			).Scan(&acquired).Error
+		})
+		return acquired, err
+	}
+	intentionalRollback := errors.New("release owning CAS retention locks")
+	err = db.Transaction(func(tx *gorm.DB) error {
+		if _, guardErr := server.checkLocalQuarantinedCASRetentionTx(
+			tx, guardContext, source.ID, source.Revision, owningProof, contentInput,
+		); guardErr != nil {
+			return guardErr
+		}
+		acquired, lockErr := tryCASHashLock()
+		if lockErr != nil {
+			return lockErr
+		}
+		if acquired {
+			return fmt.Errorf("peer transaction acquired pinned CAS hash during owning guard")
+		}
+		return intentionalRollback
+	})
+	if !errors.Is(err, intentionalRollback) {
+		t.Fatalf("CAS retention transaction did not roll back as expected: %v", err)
+	}
+	if acquired, lockErr := tryCASHashLock(); lockErr != nil || !acquired {
+		t.Fatalf("CAS hash lock survived owning transaction rollback: acquired=%t err=%v", acquired, lockErr)
+	}
+	var afterRollback meta.ContentBlob
+	if err := db.Where("sha256 = ?", sha).Take(&afterRollback).Error; err != nil ||
+		afterRollback.RefCount != 1 || afterRollback.State != meta.ContentBlobStateReady {
+		t.Fatalf("CAS probe or rollback altered canonical reference: %+v %v", afterRollback, err)
+	}
 	guardContext.Set(localSourceExecutorContextKey, localSourceExecutorProof{
 		DeviceID: deviceB.ID, RootID: rootID, SourceRevision: source.Revision,
 	})

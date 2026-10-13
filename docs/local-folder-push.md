@@ -1580,3 +1580,23 @@ promotion* in that same transaction and independently recheck physical
 remote CAS and owning-device native bytes immediately before commit.
 L03-F/G, L05/L06, L07 native 1k/10k/100k and >=4GiB acceptance,
 and GitLab delivery remain future work.
+
+## L03-E1b1b1b0 · Two-transaction CAS retention lock regression (PR verification)
+
+Before implementing the L03-E1b1b1b authoritative identity writer, a real
+PostgreSQL integration regression exercises the *already-merged*
+`checkLocalQuarantinedCASRetentionTx` with two independent transactions.
+While an authenticated owning-Agent guard holds its caller-owned transaction,
+a competing transaction's `pg_try_advisory_xact_lock(hashtextextended(sha256,0))`
+must return false. After the owning transaction is deliberately rolled back,
+a new peer transaction must acquire that same lock. Both attempts are
+nonblocking; no sleeps, polling, or timer-dependent interleavings are used.
+
+This is a **test-only** strengthening of the GC/reference lock ordering
+contract. It does not increment any `ContentBlob.ref_count`, create aliases,
+promote quarantined intents, authorize a write, perform CAS/native-file I/O,
+activate local Push, add Desktop/Web controls, or enable scheduled work. The
+separate L03-E1b1b1b writer still needs a physically verified, atomic and
+idempotent identity + reference-accounting transaction. GitHub exact-head
+CI (including real PostgreSQL integration) is the acceptance gate; GitLab,
+native Windows/Linux devices and 100k/4GiB benchmarks are not claimed.
