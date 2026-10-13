@@ -31,7 +31,7 @@
 
 | ID | 项目与交付验收 | 当前状态 |
 | --- | --- | --- |
-| P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B PR #1535 已通过完整 CI 并合并；真实 Go/Chrome 断点复用最终 SHA 和 iOS/Android 真机验收仍待完成 |
+| P1-01 | M38 8MiB 分块上传恢复：刷新/回收后用户重新选同文件，校验账号、大小/指纹/目标与冲突。 | S4B #1535 代码已合并；S4B2-A 正补真实 Chrome/Gin/PostgreSQL/CAS 单文件断点续传测试，PR 全 CI 与专项真实测试待验证；真机/分组文件夹仍未验收 |
 | P1-02 | M39 目录上传：空目录、嵌套、Unicode、相对路径、选择器能力与多文件/ZIP 回退。 | 部分基础有，待验 |
 | P1-03 | M41/M42 原生下载、版本与 ZIP：1/4GiB、落盘哈希、Range、票据撤销/过期、取消和重试。 | S4C1 #1538 与 S4C2 #1545 已完整 CI 通过并合并；真实 Chromium/Gin/PG17/CAS→OPFS 1GiB 全字节回读通过（#38239794346）；4GiB、原生下载落盘 SHA 与真机待验 |
 | P1-04 | 视频、Live/RAW、图库 Viewer 后台、恢复、seek、播放拒绝、旧播放器停用和 100k 列表滚动。 | 部分已有，真机待验 |
@@ -311,3 +311,37 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **平台约束：** iOS Safari/主屏 PWA 和 Android 在锁屏、系统杀进程、后台回收时可能不触发 `beforeunload`，不能据此保证数据恢复或 Desktop 等价。Browser-owned native downloads、另外浏览器容器和所有已运行的 Server Durable Tasks 不受这一事件控制。所有窗口消息只能提示可能忙，绝不能证明跨窗口安全激活，因此依旧仅让用户完成工作、手动关闭所有 xDrive 窗口并重新打开。
 
 **精确测试与交付门槛：** 新 Node/TS 动态测试执行真实当前窗口活动 store，验证媒体编辑标志、其他阻塞持续保留、清理、UI/Viewer/React 接线、最佳努力退出监听、不含强制 Service Worker 操作；既有 S3D2A/B 和 S4A 及 Web/Windows/Desktop/Go 全 CI 仍需成功。源码级约束与浏览器模拟不等于真实 iOS/Android Installed 或跨进程行为；本阶段不新增强制一键更新。PWA S4 待完成 4GiB 落盘 SHA/真实移动端恢复，S5 仍待公网 HTTPS/证书、真实 iOS 27、Android Installed、桌面 Chrome/Edge 安装、锁屏/回收、发布回滚和截图/证据矩阵验收。
+
+
+## PWA-S3D2C 交付结果（2026-10-13）
+
+[PR #1606](https://github.com/lazyxu/xdrive/pull/1606) 的原始唯一工作提交 `299a992450d9c389cbbafde2daa2cd98382f34a9` 通过准确 HEAD [完整 CI #38331960544](https://github.com/lazyxu/xdrive/actions/runs/38331960544)（含 Final Gate），线性 rebase merge 为 `6b4a08a4315c488955cd7b28cf6bc42097f94883`。Web/Mobile 共同媒体 Viewer 的图片编辑/创意对话框活动与未保存系统依赖配置被纳入浏览器最佳努力退出提醒；不构成后台上传或自动强制更新保证。S3 这项 UI 安全基础已合并，真实 iOS/Android Installed 仍未验收。
+
+## PWA-S4B2-A · 真实单文件上传：首块提交 → TCP 中断 → 浏览器刷新 → 重选原文件 → 物理 CAS 完整 SHA-256（2026-10-13）
+
+**本轮首次执行的独立工作负载（候选，必须由精确 HEAD 专项 CI 证实）：** 从原来 S2B3 已验证的真实 Gin JWT、隔离 PostgreSQL17 与物理 Local CAS 测试服务增设一个**显式启用、仅测试环境可用**的 17 MiB（8 MiB + 8 MiB + 1 MiB）非零确定性上传案例；两套独立私有数据库/CAS 测试各使用真正系统 Chrome Desktop 1280px 或 Android UA+Touch 390px **模拟视口**。Chrome 通过真实登录表单、Files 文件选择器调用生产 `XDriveApi.uploadWithConflictPolicy`，Gin 接受 chunk0 后对**第一个上传会话内的所有 chunk1 PUT** 使用 `http.Hijacker` 真实断开 TCP，直到用户重选触发第二个 POST 会话才恢复服务（不是伪造/拦截返回的成功 API），浏览器传输 Store 必须记录可恢复的失败任务与有序块摘要。浏览器执行真实 hard reload，检测同账户历史仍可恢复，再由用户选择器**重新选择同一个原文件**；浏览器按原始 manifest 重新计算所有块 SHA-256，Server 的 `received_chunks` 复用 chunk0。最后检查真实浏览器 finalize 响应的原文件 SHA、文件大小；原失败历史的重试入口必须被消费。Go 再独立完整读取 Local CAS 实际存储字节与已提交 `ContentBlob/File` SHA，用同一公开确定性数据公式独立计算完整 17 MiB 的 SHA-256 并核对（非全零/非抽样、不是浏览器 JS 对缓存的比对）。
+
+**必须通过的故障/重传断言：** 初次+恢复各仅创建一轮会话（总计 2 个 POST）、chunk0 仅上传 1 次，chunk1 在第一个会话中连续发生真实 TCP 丢失（允许 Chrome 网络栈透明重试），在第二个会话最终成功 1 次，chunk2 成功 1 次；完整 Local CAS 大小 17 MiB、Ready RefCount 与最终文件 SHA 精确一致。HTTP/Go 层签收和浏览器最终可见结果必须同时为真。失败时原任务不可谎报完成，页面重启丢失 File 的情况下必须明确要求用户再次选择；只有最终成功才清空旧续传 manifest。隐私：私有 Gin 日志、测试用 JWT、密码、浏览器 Profile、文件字节及临时 ready 文件**不上传**，CI 只归档不含敏感信息的两个布尔/字节数摘要。
+
+**范围与未完成：** 仅单文件 Files 上传、已登录拥有者的 `fail` 非破坏性策略，并保留既有 8 MiB 分块/24h Server TTL；不声称文件夹/分组上传和已删除的本地 File 自动恢复。真正 iOS 27 主屏 App、Android 系统安装、后台锁屏/强杀/多窗口隔离、4 GiB 浏览器 native 下载 SHA、运营 HTTPS 证书及 Caddy 生产端配置仍分别 `not-run`；Chrome Android UA 390 是模拟，不是 Android 真机。更大 1/4 GiB 实际“中断后续传”另列 S4B2-B，不可复用已完成的正常不中断 1 GiB 性能测试充当证明。
+
+**实施与交付门槛：** 新增 branch-scoped `.github/workflows/pwa-s4b2-real-resume.yml`，准确 HEAD 生产 Web 构建、Node/Chrome 脚本语法、Go test binary、独立 PostgreSQL17，desktop/mobile 模拟两次真实浏览器重复验证；5 个专门源码/安全合约 Node 测试必须与常规 Desktop 全测试共同通过。工作分支始终唯一一条 work commit；完整 GitHub PR CI（含 Final Gate）**及**这条专项真实 Chrome workflow 在相同 HEAD 均全绿之后才可 Ready、线性合并并检查自动清理。Go 真实传输红灯必须先排除 fixture/脚本/测试本身缺陷，不能将假测试失败称为生产 BUG；否则修复折叠回原唯一工作提交重新验证。用户没有授权在真实个人文件/生产部署中注入 TCP 故障；本用例严格限于隔离 CI 实例。
+
+  
+**S4B2-A 首轮真实 CI 诊断（2026-10-13）：** 当前旧 HEAD `6da955d3` 的 [专项真实 Chrome/Gin #38334623915](https://github.com/lazyxu/xdrive/actions/runs/38334623915) 已成功构建实际 Web、编译 Go/PostgreSQL fixture、运行新增 5/5 Node 合同测试；Desktop Chrome 在首次上传后等待“failed + retryable + manifest”的 45 秒门槛超时，脱敏 summary 显示还没有进入重新选择文件阶段。**这是测试用例未通过，不可据此声称已发现生产上传 bug，也不能宣称续传已经通过。** 当前代码未提供足以区分浏览器上传前校验、服务端是否收到首个分块、错误记录缺失的真实诊断数据，因此本次只在隔离测试 fixture 中增加无凭据、无文件名或内容的请求计数 `/__test/pwa-s4b2/stats`；Chrome 失败摘要补充固定阶段枚举、传输 state/retryable/manifest 布尔位和已发送 chunk 数量。禁止归档 Gin 原始日志、JWT、上传私有字节。要求新准确 HEAD 的专项实测后再判断 fixture 和产品路径；旧红灯不能授权合并。
+
+**独立完整 CI 首轮基础设施故障：** [#38334624054](https://github.com/lazyxu/xdrive/actions/runs/38334624054) 的 `media-worker-image` 在不属于本 PWA PR 的 FFmpeg Docker 打包阶段因 Alpine 官方 APKINDEX 请求 `Permission denied` 而失败，后续 FFmpeg 依赖报缺失；非当前上传源码问题。尝试在整个 workflow 尚执行时重跑该 job，GitHub 403 拒绝（run already running）。待第一次完整 CI 结束后只重试此失败 job，并确认同准确 HEAD Final Gate；不为规避依赖下载失败而跳过镜像或放松测试。
+
+  
+**S4B2-A 第二轮 CI 格式门槛（2026-10-13）：** 增补诊断用的准确 HEAD `d386ad34` 在 [完整 CI #38335279563](https://github.com/lazyxu/xdrive/actions/runs/38335279563) 的 `go-linux/Check formatting` 作业显示 `gofmt -l internal/api/pwa_s2b3_real_gin_auth_integration_test.go` 非空，原因只是新增 4 个 `map[string]int64` 字段对齐不符；对应 [真实 Chrome #38335279361](https://github.com/lazyxu/xdrive/actions/runs/38335279361) 因 build 中显式 `gofmt` 门槛而在浏览器启动前失败。**这是本轮引入的 Go 测试夹具格式错误**，不是产品问题；不属于第一轮 Timeout 的复测结果。按 CI 逐行 diff 修复格式，继续仅一个工作提交，前两轮的旧 SHA 成功/失败均不能作为最终合并验收。
+
+
+**S4B2-A 第三轮真实浏览器 First-red 及原因（2026-10-13）：** `8f87cb92` 的 [专用 Chrome #38335429885](https://github.com/lazyxu/xdrive/actions/runs/38335429885) 成功通过真实 Web 生产构建、Go 编译、5 项合同测试，并进入实际桌面 Chrome 上传。测试日志在 `await-first-failed-record` 阶段超时，脱敏浏览器摘要证明首次 17 MiB 已意外**完整成功**：`transfer.state=completed`、Server 会话 POST=1、chunk0 PUT=1、chunk1 PUT=2、chunk2 PUT=1、TCP drop=1。这表明浏览器/网络栈对幂等 PUT 在第一次 TCP 断开后自动重发成功；这是**现有系统的自动恢复表现，不是产品 bug**。原测试假定一次 socket drop 必定留下失败历史，属于不合理 harness 假设。改为第一个会话的**每一个** chunk1 PUT 都在到达业务 Handler 前强制断开真实 TCP，直至用户从浏览器恢复 UI 再发第二次 POST；第二会话中断解除并复用 chunk0。HTTP 计数允许不同 Chrome 版本的首会话透明重试次数，但强制首块恰好一次、两次 Server Session、chunk2 一次、drop=chunk1 PUT 总量-1，核对完整物理 CAS SHA 不变。仅限隔离 opt-in Gin test fixture；没有削弱 Chrome/XHR/Product 的自动重试、用户数据或运行时产品代码。必须新准确 HEAD 的浏览器专项成功才可声明 **人工重选** 的 S4B2 证据通过。
+
+
+**S4B2-A 第四轮真实浏览器通过、Go 后置审查仍失败（2026-10-13）：** 在 `edb6cf98` 的 [真实专用工作流 #38335881276](https://github.com/lazyxu/xdrive/actions/runs/38335881276) 中，**Desktop Chrome 已完整执行并标记自身通过**：第一次持续 TCP 断线后产生失败+manifest，硬刷新保留重选入口，再次用户选取同一个 17MiB 非零文件后 finalize SHA 与长度匹配，旧重选 manifest 消费，SW CacheStorage 仅有公开 offline.html（summary-desktop.json 确认）。但 Go fixture 完成信号后由独立 DB/物理 CAS/HTTP 计数校验返回非零，整个工作流为 failure，**Go 后置验证尚未通过，不可宣布整项成功**。原工作流故意不归档 Go/Gin 原始日志，导致不能断言具体错误来自请求计数还是物理 CAS。下一轮在 Chrome 自身测试完成后、Go fixture 校验前，从仅限本地隔离测试服务的匿名只读 `/__test/pwa-s4b2/stats` 回填五个**纯数字**请求计数到脱敏 summary 并要求本次预期计数；Go 后置非零时工作流只过滤显示固定白名单 `S4B2` 失败类别，不输出 raw Gin 日志、JWT、文件正文或路径。没有为了通过降低或删除完整 Go 物理 SHA 校验，也没有更改任何生产上传逻辑。
+
+
+**S4B2-A Go 目录归属失败的进一步复现与修正（2026-10-13）：** [Chrome/Gin 专项 #38336273069](https://github.com/lazyxu/xdrive/actions/runs/38336273069) 完整执行桌面 Chrome，脱敏摘要的 `session_posts=2`、`chunk0_puts=1`、`chunk1_puts=8`、`tcp_drops=7`、`chunk2_puts=1` 与浏览器 `passed=true` 一致；但 Go 严格在预期子目录按 Owner/parent/name 查询结果时报告 `S4B2 final original file missing`。源码核对揭示旧测试只等待 `GET /api/v1/nodes/<target>` 返回 200 和 `[data-xdrive-file-explorer]` 挂载，**没有等待 Files 实际导航目标目录完成**，之后就点击“上传文件”；因此文件可能被发到临时根目录。这是**待验证的测试点击时序假设**，不是已经被证实的产品上传目录 bug，更不能放宽 Go 目录归属或物理 SHA 校验。
+
+同一单工作提交内修正浏览器验收的前置条件：桌面必须出现最后一段 `[data-xdrive-file-explorer-crumb][aria-current=page]` 绑定目标 folderID（DOM ID 带 `number:` 前缀）；窄屏 Mobile Web 应等待 `[data-xdrive-mobile-files]` 与准确目标目录标题就绪，采用实际“文件操作菜单 → 上传文件”菜单项，而非错误地寻找桌面按钮。硬刷新后仍必须再次确认目录就绪，最终 `final.result.parent_id` 必须与目标目录相同才认可成功，且两平台均记录脱敏布尔值 `targetFolderReady` 和 `finalizedInTargetFolder`。本次仍使用真实 Chrome 及真实 Gin/PostgreSQL/CAS；严格保留第一次会话 chunk1 连续真实 TCP 中断、首块仅上传一次、Go 全量读取物理 CAS SHA-256、隐私摘要与 S5 真机 not-run。必须以新准确 HEAD 的专项 Chrome 与完整 CI/Final Gate 验证，旧失败不可复用作绿灯。
