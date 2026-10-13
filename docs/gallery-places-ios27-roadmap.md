@@ -156,3 +156,8 @@ GitHub result. Do not mark A2–C1 complete or JSAPI released based on this plan
 ### A3a · 2026-10-13 最新授权更正
 
 先前的 Server AK-only / #1607 不得交付的临时决议已由用户撤回；按实际服务分别使用 Server AK (Static v2) 和 Browser AK (JSAPI 4.0) 并强制 Server 代理。#1607 可恢复为配置前置，但不自动解除 JSAPI 代理、许可、跨客户端安全及 C1 真机门禁。
+
+
+## A3b2a · 本地 HAR 安全审计辅助工具（2026-10-13）
+
+#1618 的百度 Static Map 分步平移已通过单提交 full CI/Final Gate 并线性合入；A3a #1599 与 A3b1 #1607 亦已合入。独立的 A3b2a 仅添加 `scripts/ci/baidu-jsapi4-browser-har-audit.cjs` 与合成测试，详见 [JSAPI 代理评审的 A3b2a 门禁](gallery-places-jsapi4-proxy-review.md)。它**不是动态 JSAPI 代理运行时**，也不能替代正式授权、百度完整上游资源白名单、真密钥泄漏证明和真机验收。A3b2/B3 仍 blocked，A4/B1–C1 后续按路线图顺序实现。前端两 AK 均不可见，共用架构和 App Frame 保持不变。
