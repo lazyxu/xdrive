@@ -966,6 +966,12 @@ class SmartRuntime:
                 "ocr_language": SMART_OCR_LANGUAGE,
             }
 
+    @staticmethod
+    def _fixed_ocr_fixture_matches(text: str) -> bool:
+        # Compare decoded text inside the trusted model process only.
+        # Executing CRNN and recognizing the known fixture are distinct.
+        return isinstance(text, str) and text == "XD"
+
     def probe_synthetic_visual_ocr(self) -> dict[str, Any]:
         # Only fixed artificial pixels created inside the trusted model
         # process. This checks THREE real networks independently, even when
@@ -998,6 +1004,7 @@ class SmartRuntime:
             "label_count": len(labels),
             "ocr_region_count": 0 if regions is None else len(regions),
             "ocr_char_count": len(recognized),
+            "ocr_fixture_matched": self._fixed_ocr_fixture_matches(recognized),
         }
 
 

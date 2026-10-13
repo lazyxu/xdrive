@@ -35,6 +35,7 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 			case "/v1/smart-info":
 				_ = json.NewEncoder(w).Encode(info)
 			case "/v1/smart-model-canary":
+				matched := true
 				if r.Method != http.MethodGet || r.URL.RawQuery != "" ||
 					r.ContentLength > 0 {
 					t.Fatal("Smart canary must be a fixed, body-free Unix GET")
@@ -43,6 +44,7 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 					ClassifierExecuted:    true,
 					OCRDetectorExecuted:   true,
 					OCRRecognizerExecuted: true,
+					OCRFixtureMatched:     &matched,
 				})
 			case "/v1/smart-analyze":
 				var task SmartAnalysisTask
@@ -81,7 +83,8 @@ func TestUnixSmartAnalyzerContract(t *testing.T) {
 	}
 	canary, err := analyzer.ProbeSyntheticVisualOCR(context.Background())
 	if err != nil || !canary.ClassifierExecuted ||
-		!canary.OCRDetectorExecuted || !canary.OCRRecognizerExecuted {
+		!canary.OCRDetectorExecuted || !canary.OCRRecognizerExecuted ||
+		canary.OCRFixtureMatched == nil || !*canary.OCRFixtureMatched {
 		t.Fatalf("Smart model canary failed: %+v %v", canary, err)
 	}
 	result, err := analyzer.Analyze(
@@ -110,5 +113,18 @@ func TestNewUnixSmartAnalyzerRejectsRelativeSocket(t *testing.T) {
 		time.Second,
 	); err == nil {
 		t.Fatal("relative Unix socket path was accepted")
+	}
+}
+
+func TestSmartModelCanaryFixtureBooleanIsStrictAndOptional(t *testing.T) {
+	var old SmartModelCanary
+	if err := json.Unmarshal([]byte(`{"classifier_executed":true}`), &old); err != nil || old.OCRFixtureMatched != nil {
+		t.Fatalf("old model must not claim fixture proof: %+v %v", old, err)
+	}
+	for _, raw := range []string{`{"ocr_fixture_matched":"true"}`, `{"ocr_fixture_matched":1}`, `{"ocr_fixture_matched":[]}`} {
+		var item SmartModelCanary
+		if err := json.Unmarshal([]byte(raw), &item); err == nil {
+			t.Fatalf("invalid OCR match flag accepted: %s", raw)
+		}
 	}
 }

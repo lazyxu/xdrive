@@ -364,6 +364,18 @@ export function XDrivePhotoHostDesiredPanel({
                               ? '检测频率受限或已有检测执行中；本次未验证'
                               : '未执行、宿主 ACK 不完整或旧版 Server/Agent/模型不支持'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.smart_ocr_fixture_state === 'verified' ? 'success.main'
+                          : preflight.smart_ocr_fixture_state === 'mismatch' ? 'warning.main' : 'text.secondary'}
+                        data-xdrive-photo-smart-ocr-fixture-state>
+                        CRNN 固定字符识别：{preflight.smart_ocr_fixture_state === 'verified'
+                          ? '已精确匹配模型内部固定字形（仅该样本，不代表真实图库 OCR 准确率）'
+                          : preflight.smart_ocr_fixture_state === 'mismatch'
+                            ? '真实推理执行成功，但固定字符不匹配；不能判定 OCR 识别正确'
+                            : preflight.smart_ocr_fixture_state === 'throttled'
+                              ? '检测频率受限或其他检测正在执行；本次未验证'
+                              : '未验证、可信宿主前置条件不足或旧版模型／Server／Agent 不支持'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-request-generation-correlated>
                         已审计启用请求与当前模型代际：{preflight.request_generation_correlated
                           ? '宿主启用回执时的模型代际仍一致（仅本宿主的时点交叉核验）'
