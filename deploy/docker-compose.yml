@@ -169,6 +169,8 @@ services:
     environment:
       XD_FACE_SOCKET: /run/xdrive-photo-face/photo-face.sock
       XD_FACE_ANALYZER_TOKEN: ${XD_PHOTO_FACE_ANALYZER_TOKEN:-}
+      # Operator-only model-side receipt capability, not given to Server.
+      XD_PHOTO_HOST_APPLY_TOKEN: ${XD_PHOTO_HOST_APPLY_TOKEN:-}
       XD_FACE_PREVIEW_ORIGIN: ${XD_PHOTO_FACE_PREVIEW_BASE_URL:-http://server:8080}
     volumes:
       - "${XD_PHOTO_FACE_RUNTIME_DIR:-../state/photo-face}:/run/xdrive-photo-face"

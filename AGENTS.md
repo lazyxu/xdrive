@@ -78,6 +78,12 @@ Provider delivery rules:
 
 
 
+## P1-PH1b2c2b2b2a — Model-side host-only apply receipt capability (2026-10-13)
+
+- The optional photo-face process may accept only the fixed protocol-1 POST /v1/host-apply-ack via the existing private Unix Socket; a separate operator-provisioned XD_PHOTO_HOST_APPLY_TOKEN of exactly 64 lowercase hex characters is mandatory. Never pass this secret to Server, Go Client, Agent IPC, Web/Desktop/Mobile Web, UI, audit or log. Missing secret disables the route; invalid nonempty secret refuses startup; the ordinary analyzer bearer cannot authorize this action.
+- Strict fixed JSON: bounded request ID, positive revision (< 2^60) and matching SHA256 of the current process-generation ID. Reject malformed/oversized, unauthorized, wrong-generation, lower-revision or competing same-revision receipts; idempotent identical tuple allowed. Store only in memory under a lock and show the revision/ID on four existing authenticated Info routes; clear on process restart. No file writes, new network listeners, Docker commands, model tasks or durable job cancellation.
+- This is only an unconnected model-side prerequisite. The Host Manager does not yet dispatch/verify this receipt and Server does not yet promote it to proof. Keep effect-proof=unknown and four activation_state=deployment-only; no new enable/disable/restart UI. Next P1-PH1b2c2b2b2b binds trusted Host Manager action and audit to the model receipt; P1-PH1b2c2c measures real model task effect; P1-PH1b3 gates safe multi-replica stop/drain. See docs/service-dependencies.md#p1-ph1b2c2b2b2a-2026-10-13-model-process-host-only-receipt-capability.
+
 ## P1-PH1b2c2b2b1 — One-time host enable receipt / model generation correlation (2026-10-12)
 
 - The trusted Host Manager, **only at successful completion of the existing fixed, audited, enable-only `photo-face` action**, may read the same fixed-container validated Docker healthcheck SHA256 generation digest after checking the main Docker PID owns the fixed Unix listener. Seal the digest in the **private** fixed `photo-host-control-status.json` alongside the already authorized request ID and exact saved revision. Missing/denied Rootless proc access, stale Docker health record, or old optional model remains **absent**, never an authority to restart or a fake applied state. A successful safe host enable need not imply the optional seal exists.

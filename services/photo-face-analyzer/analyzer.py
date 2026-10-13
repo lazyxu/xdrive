@@ -1138,6 +1138,7 @@ class AnalyzerState:
         creative_runtime: CreativeRuntime,
         preview_origin: str,
         token: str,
+        host_apply_token: str = "",
     ) -> None:
         self.runtime = runtime
         self.smart_runtime = smart_runtime
@@ -1148,9 +1149,63 @@ class AnalyzerState:
         # One process-boot session, shared by four independently checked model APIs.
         # It is self-reported, not Docker/Host Manager attestation or a secret.
         self.runtime_instance_id = secrets.token_hex(16)
+        # Host-only capability is separate from the Server analyzer token.
+        # An absent token makes the protocol unavailable (old deployments).
+        self.host_apply_token = host_apply_token
+        if self.host_apply_token and not re.fullmatch(
+            r"[0-9a-f]{64}", self.host_apply_token
+        ):
+            raise ValueError("invalid host apply token configuration")
+        self._host_apply_lock = threading.Lock()
+        self._host_apply_receipt: tuple[int, str] | None = None
 
     def info_with_session(self, info: dict[str, Any]) -> dict[str, Any]:
-        return {**info, "runtime_instance_id": self.runtime_instance_id}
+        response = {**info, "runtime_instance_id": self.runtime_instance_id}
+        with self._host_apply_lock:
+            if self._host_apply_receipt is not None:
+                revision, request_id = self._host_apply_receipt
+                response["host_apply_receipt"] = {
+                    "revision": revision,
+                    "request_id": request_id,
+                }
+        return response
+
+    def acknowledge_host_apply(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Model-side receipt only: no actual model work or host operation.
+        if set(payload) != {"request_id", "revision", "runtime_instance_sha256"}:
+            raise RequestError(400, "invalid host apply receipt shape")
+        revision = payload["revision"]
+        request_id = payload["request_id"]
+        digest = payload["runtime_instance_sha256"]
+        if type(revision) is not int or not (0 < revision < 1 << 60):
+            raise RequestError(400, "invalid host apply revision")
+        if not isinstance(request_id, str) or not re.fullmatch(
+            r"[0-9a-f]{24}", request_id
+        ):
+            raise RequestError(400, "invalid host apply request")
+        if not isinstance(digest, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", digest
+        ):
+            raise RequestError(400, "invalid host apply generation")
+        current_digest = hashlib.sha256(
+            self.runtime_instance_id.encode("ascii")
+        ).hexdigest()
+        if not hmac.compare_digest(digest, current_digest):
+            raise RequestError(409, "host apply process generation changed")
+        with self._host_apply_lock:
+            if self._host_apply_receipt is not None:
+                old_revision, old_request_id = self._host_apply_receipt
+                if revision < old_revision or (
+                    revision == old_revision and request_id != old_request_id
+                ):
+                    raise RequestError(409, "stale or conflicting host apply receipt")
+            self._host_apply_receipt = revision, request_id
+        return {
+            "acknowledged": True,
+            "revision": revision,
+            "request_id": request_id,
+            "runtime_instance_sha256": current_digest,
+        }
 
 
 class ThreadingUnixHTTPServer(
@@ -1205,6 +1260,48 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 key, value = decoded.split(":", 1)
                 headers[key.strip().lower()] = value.strip()
 
+            if method == "POST" and target == "/v1/host-apply-ack":
+                # Ordinary analyzer auth must never authorize host apply.
+                self._authorize_host_apply(headers)
+                self._require_protocol(
+                    headers, "x-xdrive-host-apply-protocol", 1, "host apply"
+                )
+                if headers.get("transfer-encoding"):
+                    raise RequestError(400, "host apply request cannot stream")
+                if headers.get("content-type", "").strip().lower() != "application/json":
+                    raise RequestError(415, "host apply requires JSON")
+                raw_length = headers.get("content-length")
+                if raw_length is None:
+                    raise RequestError(411, "host apply content length is required")
+                try:
+                    length = int(raw_length)
+                except ValueError as exc:
+                    raise RequestError(400, "invalid host apply content length") from exc
+                if length <= 0 or length > 256:
+                    raise RequestError(413, "host apply request is too large")
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise RequestError(400, "incomplete host apply request")
+                # Do not accept ambiguous duplicate fields in a privileged
+                # host acknowledgment even if a generic decoder would use
+                # its last value.
+                def unique_host_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+                    value: dict[str, Any] = {}
+                    for key, item in pairs:
+                        if key in value:
+                            raise RequestError(400, "duplicate host apply field")
+                        value[key] = item
+                    return value
+                try:
+                    payload = json.loads(body, object_pairs_hook=unique_host_fields)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise RequestError(400, "invalid host apply JSON") from exc
+                if not isinstance(payload, dict):
+                    raise RequestError(400, "invalid host apply payload")
+                self._write_json(
+                    200, self.server.state.acknowledge_host_apply(payload)
+                )
+                return
             self._authorize(headers)
             if method == "GET" and target == "/v1/info":
                 self._require_protocol(
@@ -1424,6 +1521,15 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 400,
                 f"{label} analyzer protocol version mismatch",
             )
+
+    def _authorize_host_apply(self, headers: dict[str, str]) -> None:
+        expected = self.server.state.host_apply_token
+        if not expected:
+            raise RequestError(404, "host apply acknowledgment unavailable")
+        value = headers.get("authorization", "")
+        supplied = value[len("Bearer ") :] if value.startswith("Bearer ") else ""
+        if not supplied or not hmac.compare_digest(supplied, expected):
+            raise RequestError(401, "invalid host apply credential")
 
     def _authorize(self, headers: dict[str, str]) -> None:
         expected = self.server.state.token
@@ -1780,6 +1886,7 @@ def serve(args: argparse.Namespace) -> None:
         creative_runtime=CreativeRuntime(),
         preview_origin=preview_origin,
         token=args.token,
+        host_apply_token=os.environ.get("XD_PHOTO_HOST_APPLY_TOKEN", ""),
     )
 
     path = Path(socket_path)
