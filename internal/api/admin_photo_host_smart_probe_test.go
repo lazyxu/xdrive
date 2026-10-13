@@ -53,7 +53,7 @@ func TestPhotoHostSmartModelThreePathsRequireAttestedGeneration(t *testing.T) {
 		inferCalls != 1 || infoCalls != 1 {
 		t.Fatalf("Smart models were not executed/rechecked: calls=%d info=%d", inferCalls, infoCalls)
 	}
-	raw, err := json.Marshal(adminPhotoHostPreflightDTO{SmartModelTaskState: "verified"})
+	raw, err := json.Marshal(adminPhotoHostPreflightDTO{SmartModelTaskState: "verified", SmartOCRFixtureState: "verified"})
 	if err != nil || strings.Contains(string(raw), info.RuntimeInstanceID) ||
 		strings.Contains(string(raw), gate.RequestID) ||
 		strings.Contains(string(raw), "ocr_text") || strings.Contains(string(raw), "region_count") {
@@ -118,5 +118,89 @@ func TestPhotoHostSmartModelThreePathsRequireAttestedGeneration(t *testing.T) {
 		func(context.Context) (photointelligence.SmartModelCanary, error) { called = true; return valid, nil }, read,
 	) || called {
 		t.Fatal("canceled request executed the Smart model")
+	}
+}
+
+func TestPhotoHostSmartOCRFixtureBoundToTheOriginalProcess(t *testing.T) {
+	info := fixedSmartInfoForHostProbe()
+	gate := meta.AdminPhotoHostApply{
+		State: "host-verified", Revision: 7, RequestID: info.HostApplyReceipt.RequestID,
+	}
+	check := photoHostModelInfoCheck{
+		ID: "photo-smart", State: "ready", runtimeInstanceID: info.RuntimeInstanceID,
+		hostReceipt: info.HostApplyReceipt,
+	}
+	positive, negative := true, false
+	for _, tc := range []struct {
+		name     string
+		evidence *bool
+	}{
+		{"positive", &positive}, {"genuine mismatch", &negative}, {"older model", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			valid, match := runPhotoHostFixedSmartInferenceWithOCR(
+				context.Background(), check, gate,
+				func(context.Context) (photointelligence.SmartModelCanary, error) {
+					calls++
+					return photointelligence.SmartModelCanary{
+						ClassifierExecuted: true, OCRDetectorExecuted: true,
+						OCRRecognizerExecuted: true, OCRFixtureMatched: tc.evidence,
+					}, nil
+				},
+				func(context.Context) (photointelligence.SmartAnalyzerInfo, error) { return info, nil },
+			)
+			if !valid || calls != 1 || match != tc.evidence {
+				t.Fatalf("unexpected fixture evidence: valid=%v, calls=%d, match=%v", valid, calls, match)
+			}
+		})
+	}
+	probe := func(context.Context) (photointelligence.SmartModelCanary, error) {
+		return photointelligence.SmartModelCanary{
+			ClassifierExecuted: true, OCRDetectorExecuted: true,
+			OCRRecognizerExecuted: true, OCRFixtureMatched: &positive,
+		}, nil
+	}
+	read := func(context.Context) (photointelligence.SmartAnalyzerInfo, error) { return info, nil }
+	check.hostReceipt = nil
+	ok, match := runPhotoHostFixedSmartInferenceWithOCR(context.Background(), check, gate, probe, read)
+	if ok || match != nil {
+		t.Fatal("fixture proof accepted without original Host Manager ACK")
+	}
+	check.hostReceipt = info.HostApplyReceipt
+	changed := info
+	changed.RuntimeInstanceID = strings.Repeat("f", 32)
+	ok, match = runPhotoHostFixedSmartInferenceWithOCR(
+		context.Background(), check, gate, probe,
+		func(context.Context) (photointelligence.SmartAnalyzerInfo, error) { return changed, nil },
+	)
+	if ok || match != nil {
+		t.Fatal("positive OCR result survived a model process restart")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	ok, match = runPhotoHostFixedSmartInferenceWithOCR(ctx, check, gate,
+		func(context.Context) (photointelligence.SmartModelCanary, error) {
+			called = true
+			return photointelligence.SmartModelCanary{OCRFixtureMatched: &positive}, nil
+		}, read,
+	)
+	if ok || match != nil || called {
+		t.Fatal("canceled detection exposed a positive OCR result")
+	}
+}
+
+func TestPhotoHostSmartOCRFixtureStateIsNotExecutionState(t *testing.T) {
+	yes, no := true, false
+	for _, test := range []struct {
+		value    *bool
+		expected string
+	}{
+		{nil, "unverified"}, {&yes, "verified"}, {&no, "mismatch"},
+	} {
+		if got := photoHostSmartOCRFixtureState(test.value); got != test.expected {
+			t.Fatalf("OCR fixture evidence was reclassified: got=%s want=%s", got, test.expected)
+		}
 	}
 }

@@ -293,6 +293,9 @@ export type XDrivePhotoHostPreflight = {
   // Synthetic classifier, PP-OCR detector and CRNN calls executed; no
   // classification or OCR accuracy / real media / fleet claim.
   smart_model_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  // An optional known-text CRNN match from the SAME verified synthetic probe.
+  // Absence is explicitly unverified for an older model or Server.
+  smart_ocr_fixture_state?: 'verified' | 'mismatch' | 'throttled' | 'unverified'
   checks: Array<{
     id: 'desired' | 'direction' | 'host-manager' | 'runtime' | 'work-queue' | 'admin-dispatch' | 'effect-proof'
     state: 'pass' | 'missing' | 'blocked' | 'unknown'

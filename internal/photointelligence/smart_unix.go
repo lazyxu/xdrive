@@ -88,6 +88,8 @@ type SmartModelCanary struct {
 	LabelCount            int  `json:"label_count"`
 	OCRRegionCount        int  `json:"ocr_region_count"`
 	OCRCharCount          int  `json:"ocr_char_count"`
+	// Nil is explicitly unverified for a legacy model.
+	OCRFixtureMatched *bool `json:"ocr_fixture_matched,omitempty"`
 }
 
 // ProbeSyntheticVisualOCR never carries caller image data, text or preview

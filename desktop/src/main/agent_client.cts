@@ -964,6 +964,7 @@ export type AgentAdminPhotoHostPreflight = {
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   smart_model_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  smart_ocr_fixture_state?: 'verified' | 'mismatch' | 'throttled' | 'unverified'
   checked_at: string
   action: 'unset' | 'enable' | 'disable'
   desired_revision: number

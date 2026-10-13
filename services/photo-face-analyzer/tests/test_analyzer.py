@@ -443,6 +443,13 @@ class AnalyzerTests(unittest.TestCase):
         finally:
             PreviewHandler.redirect = False
 
+    def test_fixed_smart_ocr_fixture_matching_is_strict(self) -> None:
+        match = analyzer.SmartRuntime._fixed_ocr_fixture_matches
+        self.assertTrue(match("XD"))
+        for near_miss in ("", "X", "X D", "XD ", "xd", "XDRIVE", "XD\\n", None):
+            self.assertFalse(match(near_miss))
+        self.assertFalse(match(True))
+
     def test_unix_socket_protocol_end_to_end(self) -> None:
         fingerprint = "media-analysis-test-v1-1280"
         PreviewHandler.fingerprint = fingerprint
@@ -656,7 +663,12 @@ class AnalyzerTests(unittest.TestCase):
                     "classifier_executed", "ocr_detector_executed",
                     "ocr_recognizer_executed", "label_count",
                     "ocr_region_count", "ocr_char_count",
+                    "ocr_fixture_matched",
                 })
+                # Real CRNN can fail this exact fixture. Do not hard-code
+                # positive accuracy or expose the actual decoded text.
+                self.assertIs(type(smart_canary["ocr_fixture_matched"]), bool)
+                self.assertNotIn("ocr_text", smart_canary)
                 for name in (
                     "classifier_executed", "ocr_detector_executed",
                     "ocr_recognizer_executed",
