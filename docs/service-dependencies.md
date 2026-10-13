@@ -591,6 +591,14 @@ The screenshot-facing 11-service contract had drifted from the already delivered
 - Do not confuse the trusted fixed Docker container state, exact host request/revision, four independently observed model Info results, model-process correlation or actual photo task effect. Last remains **unverified**; all four global `activation_state=deployment-only`. There is still no stop, restart, hot-swap, multi-replica drain or representative media task assertion.
 - No API/Agent/IPC schema, endpoint, Server security boundary or persistent storage change. Go contract tests and shared Desktop/Web/Mobile Web source contract tests cover capability owner, hints, host route and manual verify route. Full exact-head GitHub CI and final-gate remain required; physical Rootless/iOS/Android activation is not claimed.
 
+### UI-D7d (2026-10-13): Mobile Web fixed-inventory selector parity
+
+The compact Mobile Web service selector previously iterated only `systemServices` rows actually returned by Server/Agent, while the overview cards and Desktop local navigation already projected all eleven immutable IDs. A missing, duplicated, or invalid-group service could be seen in the overview but not directly selected on mobile. The old selected missing-row workaround was also disabled, making responsive navigation inconsistent.
+
+The shared MUI selector now uses the **same `xDriveSystemDependenciesOverviewEntries` projection** as the overview and Desktop list. It always renders exactly the fixed eleven IDs plus the separate `photo-auto` policy entry, grouped identically, retaining trusted response labels for reported entries and fixed local fallback labels plus **（未报告）** for omitted entries. Missing items remain navigable **only** to the existing read-only missing-service explanation and retry/back controls, never to imaginary configuration, health, effect proof or host actions. Invalid groups, duplicates and user-owned Sync Folder/Source records remain excluded. Web/Mobile Web/Desktop use one component, with unchanged auth, deep-link, unsaved-form guards, 52px App Frame and lazy per-service requests.
+
+Regression coverage checks the exact mobile selector rendering contract against sparse/invalid/duplicate inventory plus the existing fail-closed eleven-entry projection. No new Server/Agent API or privileged operation is introduced. Real-device iOS/Android visual, accessibility and touch acceptance remain unverified by source tests; exact-head full PR CI and `final-gate` remain mandatory.
+
 ### P1-PH1b2c1 (2026-10-12): fixed four-model Info observation
 
 **Scope:** an administrator-triggered, bounded, *read-only* enrichment of the existing shared Photo Host **检测** preflight. Earlier P1-PH1b2b already fences enable-only requests against a saved revision, audit and fresh fixed Host Manager request-token receipt. That is host evidence only; model Info remains independent.

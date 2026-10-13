@@ -1330,13 +1330,12 @@ export function XDriveServiceDependenciesPage({
               value={selectedPage}
               onChange={(event) => choosePage(event.target.value)}>
               <MenuItem value="overview">总览</MenuItem>
-              {selectedServiceMissing && (
-                <MenuItem value={selectedPage} disabled>未报告服务：{selectedPage}</MenuItem>
-              )}
               {groups.map((group) => [
                 <MenuItem key={group.id + '-heading'} value={group.id} disabled>{group.label}</MenuItem>,
-                ...systemServices.filter((item) => item.group === group.id).map((item) => (
-                  <MenuItem key={item.id} value={item.id}>{item.label}</MenuItem>
+                ...overviewEntries.filter((item) => item.group === group.id).map((item) => (
+                  <MenuItem key={item.id} value={item.id}>
+                    {item.service?.label ?? item.label}{item.service ? '' : '（未报告）'}
+                  </MenuItem>
                 )),
                 ...(group.id === 'intelligence'
                   ? [<MenuItem key="photo-auto" value="photo-auto">全局分析策略</MenuItem>] : []),
