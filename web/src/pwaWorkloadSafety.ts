@@ -8,6 +8,7 @@ export type XDrivePwaWindowActivity = Readonly<{
   browserUpload: boolean
   browserDownload: boolean
   viewerOpen: boolean
+  mediaEditorOpen: boolean
   unsavedSystemDependencies: boolean
 }>
 
@@ -17,6 +18,7 @@ const unobserved: XDrivePwaWindowActivity = Object.freeze({
   browserUpload: false,
   browserDownload: false,
   viewerOpen: false,
+  mediaEditorOpen: false,
   unsavedSystemDependencies: false,
 })
 let current: XDrivePwaWindowActivity = unobserved
@@ -54,6 +56,7 @@ export function xDrivePwaKnownWindowBlockers(activity: XDrivePwaWindowActivity):
   if (activity.browserUpload) reasons.push('浏览器前台上传')
   if (activity.browserDownload) reasons.push('浏览器前台下载')
   if (activity.viewerOpen) reasons.push('正在打开的 Viewer')
+  if (activity.mediaEditorOpen) reasons.push('正在打开的媒体编辑或创意对话框')
   if (activity.unsavedSystemDependencies) reasons.push('未保存的系统依赖配置')
   return reasons
 }
