@@ -331,7 +331,12 @@ func (s *Server) checkLocalEvidenceCloudMetadataTx(
 			"b.size AS blob_size, b.sha256 AS blob_sha256, b.storage_key AS blob_key, "+
 			"b.state AS blob_state, b.ref_count AS blob_ref_count").
 		Joins("JOIN xd_files AS f ON f.node_id = n.id").
-		Joins("JOIN xd_file_versions AS v ON v.node_id = n.id AND v.revision = n.revision").
+		// A Node-only rename bumps metadata revision but does not create a
+		// new FileVersion or CAS reference. Select the last actual content
+		// revision, never a future version or an untracked legacy key.
+		Joins("JOIN LATERAL (SELECT revision, size, sha256, storage_key "+
+			"FROM xd_file_versions WHERE node_id = n.id AND revision <= n.revision "+
+			"ORDER BY revision DESC LIMIT 1 FOR SHARE) AS v ON TRUE").
 		Joins("JOIN xd_content_blobs AS b ON b.sha256 = f.sha256").
 		Where("n.id IN ? AND n.owner_id = ? AND n.type = ? AND n.deleted_at IS NULL",
 			nodeIDs, source.OwnerID, meta.NodeTypeFile).
