@@ -24,6 +24,10 @@ const (
 	MaxSourceConcurrency  = 8
 )
 
+// A queued Source may have been deleted, paused or revised after RunAll took
+// its database snapshot but before the Scheduler grants its network slot.
+var errSourceQueuedSnapshotObsolete = errors.New("queued Source snapshot is no longer dispatchable")
+
 type SourceHandler interface {
 	RunPullSource(context.Context, meta.Source) (client.SyncRun, error)
 }
@@ -332,6 +336,24 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		}
 
 		task.Run = func(taskCtx context.Context) error {
+			// The Scheduler can hold a Source after an owner has deleted,
+			// paused or revised it. Recheck the persistent identity *at*
+			// dispatch, not only when RunAll originally loaded the queue.
+			// Durable workers still enforce their own Run/Source revision
+			// boundaries; this fence stops already-invalid queued dispatches.
+			if r.DB != nil {
+				var matches int64
+				if err := r.DB.WithContext(taskCtx).Model(&meta.Source{}).
+					Where("id = ? AND owner_id = ? AND revision = ? AND direction = ? AND kind = ? AND status = ? AND sync_mode = ?",
+						job.source.ID, job.source.OwnerID, job.source.Revision,
+						meta.SourceDirectionPull, job.source.Kind, meta.SourceStatusActive, meta.SourceSyncModeBackup).
+					Count(&matches).Error; err != nil {
+					return fmt.Errorf("verify queued Source before dispatch: %w", err)
+				}
+				if matches != 1 {
+					return errSourceQueuedSnapshotObsolete
+				}
+			}
 			run, err := job.handler.RunPullSource(taskCtx, job.source)
 			scheduled[jobIndex].run = run
 			return err
@@ -405,6 +427,12 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 		result := ordered[index]
 		source := job.source
 		if result.err != nil {
+			if errors.Is(result.err, errSourceQueuedSnapshotObsolete) {
+				report.Skipped++
+				r.logger().Info("pull_source_skipped_obsolete_queued_snapshot",
+					"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind)
+				continue
+			}
 			if IsActiveRun(result.err) {
 				report.Skipped++
 				r.logger().Info("pull_source_skipped_active_run",
