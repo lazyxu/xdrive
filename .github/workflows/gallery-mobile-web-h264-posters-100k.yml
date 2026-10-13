@@ -1,0 +1,77 @@
+name: Gallery Mobile Web 100k Physical H264 Posters P041
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-mobile-web-h264-poster-100k:
+    if: github.head_ref == 'perf/gallery-mobile-web-h264-posters-100k-p041-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_GALLERY_MOBILE_H264_POSTERS_100K_PERF: '1'
+      XD_GALLERY_H264_POSTERS_GO_BINARY: ${{ github.workspace }}/desktop/gallery-h264-web-go/api.test
+      XD_GALLERY_H264_POSTERS_RESULTS: ${{ github.workspace }}/desktop/gallery-mobile-web-h264-posters-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify source-exact real narrow Gallery video posters and P033 regression contract
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/gallery_real_web_cold_performance_integration_test.go)"
+          node --check desktop/scripts/gallery-web-real-h264-posters-100k.cjs
+          node --test desktop/tests/gallery-web-real-h264-posters-100k-source.cjs desktop/tests/gallery-mobile-web-h264-posters-100k-source.cjs
+      - name: Build production shared Web Gallery, Electron Chromium and Go PostgreSQL17 CAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_GALLERY_REAL_COLD_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/gallery-h264-web-go
+          go test -c -o desktop/gallery-h264-web-go/api.test ./internal/api
+      - name: Qualify real 390px Gallery H264 signed cold poster capture CAS PUT warm cache n3 five virtual windows
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_GALLERY_H264_POSTERS_RESULTS"
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_GALLERY_H264_POSTERS_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/gallery-web-real-h264-posters-100k.cjs
+          test "$(find "$XD_GALLERY_H264_POSTERS_RESULTS" -maxdepth 1 -name 'sample-*.json' | wc -l)" -eq 3
+          node -e "const s=require(process.env.XD_GALLERY_H264_POSTERS_RESULTS+'/summary.json');if(!s.accepted||!s.mobileVideoMode||s.cssWindowWidth!==390||s.requiredNewVideoPostersPerViewport!==1||s.n!==3||s.nRealViewports!==15||!s.samples.every(x=>x.mobileVideoMode&&x.verifiedSelectedPosterIDs>=5&&x.viewports.length===5&&x.viewports.every(v=>v.mobileBreakpoint&&v.viewportWidth>=360&&v.viewportWidth<=390&&v.selectedNodeIDs.length===1)))process.exit(1);console.log(JSON.stringify({accepted:s.accepted,medianMs:s.medianOfFixtureP50Ms,worstMs:s.worstMs}))"
+          cat "$XD_GALLERY_H264_POSTERS_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gallery-mobile-web-h264-posters-115k-cas-n3
+          path: desktop/gallery-mobile-web-h264-posters-100k-results/
+          if-no-files-found: warn
+          retention-days: 14
