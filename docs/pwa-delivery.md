@@ -429,3 +429,11 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **安全与门槛：** 真正 4 GiB 原生测试必须有合理可用磁盘（Runner preflight ≥12 GiB），不足空间直接失败，不降级 sparse fixture 或缩小负载。两种真实浏览器模式串行，测试实例独立；签名 URL/JWT、物理文件字节、Gin 私有日志和 Profile 不归档，只允许脱敏 JSON 的阶段、真值与总大小。新增分支必须在准确 **一个**工作提交之上，**专用原生测试及完整 CI Final Gate 双绿**才可 Ready→线性合并→工作分支自动清理，不借旧 B1 CI 证据代替新 HEAD 验收。
 
 **未完成不冒充：** 这不是 iOS 27 Safari/Home Screen、Android 真机 `OS Installed` 或真实下载管理器落盘/锁屏/进程回收验收。此时原生网络传输取消后是否真正停止 Go 请求、用户手动中断后的 HTTP Range 自动恢复、浏览器原生下载系统文件权限，以及票据过期/账户撤销仍须 S4C3-B2b/B2c 独立验证。之后 S4D 前后台/任务状态，S5 iOS/Android Installed、HTTPS/CA、性能/安全和发布回滚。
+
+## PWA-S4C3-B2b · Go ctx.cancel 与 4 GiB 真实 HTTP 下载中断（2026-10-13）
+
+**依赖与范围：** 从 B2a 唯一提交 `7232423bc05d382d5947275e3b8c44fc5f0516f2` 的测试树堆叠单独一个测试提交，仅增加真实 TCP/HTTP 下载取消回归（及本记录），不修改生产下载、Service Worker、鉴权或图库 UI。B2a 的 4 GiB 非稀疏原生 Chrome 浏览器专项需要单独准确 HEAD 全绿和线性合并；本测试不能借它的 SHA 证明取消行为。
+
+**独立模拟的真实边界（非浏览器模拟）：** 现有已签发且受 Owner/SessionVersion 保护的 `4 GiB + 17 B` **稀疏仅用于 Range** 本地文件，启动 `httptest.NewServer` 真 HTTP/1 TCP，`http.Client.Do(Request.WithContext)` 带 `Range: bytes=0-4294967312`，严格核对 206 和 64 位 Content-Range，并实际从 socket 流读取 32 KiB 后调用 Go `context.CancelFunc` 关闭客户端连接。要求已有生产 `trackDownloadProgress` / Request.Context 观察在 12s 上限内归类 `cancelled`，`active_requests=0` 且 `0 < bytes_sent < 4 GiB + 17 B`。真实取消之后，使用同一尚有效 ticket 单独请求尾部小 Range，要求原 CAS 字节仍正确；随后已有 SessionVersion 撤销测试继续确保 401。不能用 ResponseRecorder、虚假计数或伪造成功状态替代真实 TCP 断连证据。
+
+**证据与下一项：** 该测试进入既有 PostgreSQL17/Gin `go-linux-api` 完整 CI/race 工作流；必须保持一条新增工作提交、准确 HEAD 完整 CI 含 Final Gate 全绿才可合入。不宣称 Playwright `Download.cancel()`、Android/iOS Installed OS 下载管理器、磁盘临时文件擦除、续传 206 自动合并、锁屏或强杀已经被测试。下一阶段 S4C3-B2c 专门执行真实 Chrome Native Download 用户取消和重新下载/票据过期与撤销；随后 S4D 和 S5。
