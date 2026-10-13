@@ -1,0 +1,20 @@
+{
+  "workload_id": "P042",
+  "stage": "Invalid harness - prebenchmark TypeScript compile failure",
+  "source_sha": "94a4e3e60d4e9e8cf8b16cd629fac187ed5fa7bf",
+  "native_run": 38338157368,
+  "native_url": "https://github.com/lazyxu/xdrive/actions/runs/38338157368",
+  "native_job_id": 115102874133,
+  "caught_stage": "Build production Web XDriveApi OPFS and native Go Gin PostgreSQL17 physical Local CAS fixture",
+  "compiler_error": "src/realCasIncompressibleReadback.ts(54,26): error TS2322: Type 'Uint8Array<ArrayBufferLike>' is not assignable to type 'BufferSource'.",
+  "data_seeded_bytes": 0,
+  "physical_high_entropy_file_created": false,
+  "Gin_started": false,
+  "uploader_launched": false,
+  "OPFS_verification_executed": false,
+  "valid_n3_sample_count": 0,
+  "before": null,
+  "after": null,
+  "speedup_pct": null,
+  "decision": "Invalid harness; fix benchmark-only AES-CTR counter to Uint8Array<ArrayBuffer> backed by new ArrayBuffer(16), rerun exact source. Do not alter production upload/download/CAS or relax original frozen budgets."
+}
