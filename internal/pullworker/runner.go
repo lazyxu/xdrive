@@ -450,6 +450,24 @@ func (r *Runner) runSources(ctx context.Context, sources []meta.Source, now time
 				continue
 			}
 			err := result.err
+			if result.run.ID == "" && r.DB != nil &&
+				!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+				// The owner can delete a Source after its Handler starts but before
+				// a durable SyncRun exists. A late preflight error no longer belongs
+				// to a Source and must not count as a failed scheduled pull.
+				var remaining int64
+				checkErr := r.DB.WithContext(ctx).Model(&meta.Source{}).
+					Where("id = ? AND owner_id = ?", source.ID, source.OwnerID).
+					Count(&remaining).Error
+				if checkErr != nil {
+					err = errors.Join(err, fmt.Errorf("verify Source after preflight: %w", checkErr))
+				} else if remaining == 0 {
+					report.Skipped++
+					r.logger().Info("pull_source_skipped_deleted_inflight_preflight",
+						"source_id", source.ID, "source_name", source.Name, "source_kind", source.Kind)
+					continue
+				}
+			}
 			if result.run.ID == "" && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				// No SyncRun owns this preflight. Publish its error AND retry
 				// outcome in the same Source-snapshot-fenced SQL write so a
