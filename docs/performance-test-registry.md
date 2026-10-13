@@ -12,6 +12,8 @@
 
 **完整规范**：[AGENTS.md](../AGENTS.md)；**子系统详细协议与历史实验**：[图库](gallery-performance.md) · [FileExplorer/传输/删除](file-explorer-performance.md) · [同步与取消](sync-performance.md)。补充历史本地/原生观测存于 [`docs/performance/`](performance/)；原始输出位于 [`docs/performance-evidence/`](performance-evidence/)。
 
+**跨平台验收总表（新增强制入口）：** [docs/performance-platform-coverage.md](performance-platform-coverage.md)。必须分别验收 native Desktop、宽屏 Web、Mobile Web、桌面已安装 PWA、Android 已安装 PWA、iOS 已安装 PWA；**数据量相同而运行形态不同不能互相替代**。无设备证据标 Not measured，真实 Chrome/Electron CSS 手机仿真不能冒充 Android/iOS 实机；新工作负载仅在确认历史登记簿中没有等价测试后分配 ID。
+
 ## 已执行场景与决策（可检索 ID）
 
 下列时间、速度、P50 等**属于各自原始独立 CI 样本**，不是横向可相减的 A/B，也不自动代表截至今天的用户生产环境性能。粗略“100k”尤其要核对“元数据 100k / 真实CAS 100k / 抽样可见缩略图 6/12/56”的边界。
