@@ -1,0 +1,30 @@
+{
+  "workload_id": "P044",
+  "phase": "M004-c",
+  "status": "Invalid harness / source contract test mismatch / no current performance measurement",
+  "repository": "lazyxu/xdrive",
+  "source_exact_sha": "00732ecb0033efec68530372ef474f745e1769d7",
+  "original_baseline_master_sha": "c6d36d173b4d3134d5633fb4cfc3a7fdd32e090d",
+  "workflow_run_id": 38342586136,
+  "workflow_job_id": 115116683407,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38342586136",
+  "stage": "Preflight Node source contract before building Web/Gin and before generating any 4GiB physical data",
+  "facts": {
+    "node_test_total": 5,
+    "node_test_pass": 4,
+    "node_test_fail": 1,
+    "first_four_passing": true,
+    "failing_test": "P044 original authentic 4GiB high entropy n3 contract requires every-byte verified OPFS and 512 real PUTs",
+    "failure": "P044 production native run contract missing: assert.equal(final.file_sha256,rows[0].uploadSeedSHA256)",
+    "actual_production": "Existing runner asserts the same SHA operands with a third optional diagnostic message argument; the test-only exact substring mistakenly required the closing parenthesis immediately after the second operand.",
+    "production_changed": false,
+    "real_physical_4gib_sources_created": 0,
+    "real_4gib_uploads": 0,
+    "real_4gib_downloads": 0,
+    "before": null,
+    "after": null,
+    "speedup_percent": null
+  },
+  "decision": "Invalid harness / not a product performance RED; update only the test string to match real existing final.file_sha256 comparison, retain frozen n3 4GiB/512PUT/360s/256MiB/full OPFS budget, preserve this evidence and rerun exact one-work-commit SHA.",
+  "fix": "Change test-only static substring to assert.equal(final.file_sha256,rows[0].uploadSeedSHA256,; unchanged production runner continues authentic CAS SHA integrity check."
+}

@@ -1,0 +1,109 @@
+name: Web Real PostgreSQL CAS Incompressible 4 GiB Upload Download P044
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  web-physical-incompressible-4gib:
+    if: github.head_ref == 'perf/real-web-incompressible-cas-4gib-p044-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_REAL_CAS_INCOMPRESSIBLE_PERF: '1'
+      XD_REAL_CAS_SIZE_GIB: '4'
+      XD_REAL_WEB_CAS_RESULTS: ${{ github.workspace }}/desktop/real-web-incompressible-cas-4gib-results
+      XD_REAL_WEB_CAS_TEST_BINARY: ${{ github.workspace }}/desktop/real-web-cas-bin/api.test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prove physical high-entropy source and bounded deterministic WebCrypto SHA/CAS/OPFS contract
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/real_web_cas_transfer_fixture_performance_integration_test.go)"
+          node --check desktop/scripts/large-transfer-real-web-cas-main.cjs
+          node --check desktop/scripts/real-web-cas-transfer-runner.cjs
+          node --test desktop/tests/real-web-incompressible-cas-4gib-source.cjs
+          df -h .
+      - name: Build production Web XDriveApi OPFS and native Go Gin PostgreSQL17 physical Local CAS
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_LARGE_TRANSFER_PERF=1 npm --prefix web run build -- --config vite.config.ts
+          mkdir -p desktop/real-web-cas-bin
+          go test -c -o desktop/real-web-cas-bin/api.test ./internal/api
+      - name: Measure three independent real 4GiB non-sparse high-entropy browser PUT and full-byte OPFS GET
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_REAL_WEB_CAS_RESULTS"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_REAL_WEB_CAS_RESULTS/source.txt"
+          xvfb-run -a --server-args='-screen 0 1920x1200x24' node desktop/scripts/real-web-cas-transfer-runner.cjs
+          test "$(find "$XD_REAL_WEB_CAS_RESULTS" -maxdepth 1 -type f -name 'sample-*.json' | wc -l)" -eq 3
+          node - <<'NODE'
+          const assert = require('node:assert/strict')
+          const fs = require('node:fs')
+          const s = JSON.parse(fs.readFileSync(process.env.XD_REAL_WEB_CAS_RESULTS+'/summary.json','utf8'))
+          assert(s.passed===true && s.highEntropyIncompressible===true && s.n===3)
+          assert(s.bytesPerDirection===4294967296)
+          const sourceHashes=new Set()
+          for(const x of s.each){
+            assert(x.valid===true)
+            assert(x.upload.uploadSeedSHA256===x.upload.uploadedSHA256)
+            assert(x.upload.uploadSourcePhysicallyAllocatedBytes>=4294967296*.98)
+            assert(/^[a-f0-9]{64}$/.test(x.upload.uploadSeedSHA256))
+            assert(x.nativeServer.cas_valid===true)
+            assert(x.nativeServer.put_count===512)
+            assert(x.nativeServer.declared_upload_bytes===4294967296)
+            assert(x.nativeServer.download_get_count===1)
+            assert(x.nativeServer.file_bytes===4294967296 && x.nativeServer.cas_bytes===4294967296)
+            assert(x.nativeServer.file_sha256===x.upload.uploadSeedSHA256)
+            assert(x.download.downloadDeterministicVerifiedBytes===4294967296)
+            assert(x.download.downloadSpotCheckedBytes===3145728)
+            assert(x.upload.elapsedMs>0 && x.upload.elapsedMs<=360000)
+            assert(x.download.elapsedMs>0 && x.download.elapsedMs<=360000)
+            assert(x.serverRssPeakDeltaBytes<=268435456)
+            assert(x.serverCpuMs>=0)
+            sourceHashes.add(x.upload.uploadSeedSHA256)
+          }
+          assert(sourceHashes.size===3)
+          assert(s.maxRendererWorkingSetDeltaKB<=262144)
+          console.log(JSON.stringify({passed:true,uploadP50Ms:s.uploadElapsedP50Ms,downloadP50Ms:s.downloadElapsedP50Ms,n:s.n}))
+          NODE
+          cat "$XD_REAL_WEB_CAS_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: web-real-high-entropy-4gib-cas-opfs-n3
+          path: desktop/real-web-incompressible-cas-4gib-results/
+          if-no-files-found: warn
+          retention-days: 14
