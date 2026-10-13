@@ -166,3 +166,10 @@ GitHub result. Do not mark A2–C1 complete or JSAPI released based on this plan
 ## A3b2b · 固定百度 Loader 请求/响应门禁（2026-10-13）
 
 A3b2a 浏览器 HAR 安全审计 #1624 在 exact-head 完整 CI/Final Gate 通过后已线性合入 \`dadcbd42886e83f9ff6a85ed849a33d3736b7b1f\`；其工作分支已由 cleanup 清理。本阶段 A3b2b 单独新增 \`internal/baidumapjsapi\` 无路由的 Go 请求/响应安全构件，详情见 [JSAPI 安全评审的 A3b2b 部分](gallery-places-jsapi4-proxy-review.md)。其一律默认拒绝未观察到的子资源；保存 Browser AK 不自动启用 JSAPI；不能代替实际许可、完整流量清单、跨副本配额与 iOS/Android/Desktop 实机证明。只有这些门禁具备后才能接入 Server Session/HTTP Proxy 与同一共享 Gallery MUI 地图，随后实现 A3b3 动态平移、Marker/聚合，再按顺序进入 A4/B1–C1。保留 iOS 27 1:1 产品基准和 52px App Frame。
+
+
+## A3b2c1 · 短期地图专用会话安全合同（2026-10-13）
+
+在 A3b2b 固定百度 Loader 上游组件完成 exact-head CI/Final Gate 并合入后，增加 `internal/baidumapjsapi/session.go` **不挂载任何 HTTP 路由**的加密短期会话原语：随机 AES-GCM nonce、仅地图路径的 HttpOnly/Secure/SameSite Cookie、2 分钟有效期，验证当前用户会话版本、JSAPI Browser AK 配置修订、持久撤销 epoch，并检查同源 HTTP 前置条件。旧 Cookie 在用户禁用、版本变更、AK 轮换、撤销 epoch 更新或 Map Runtime 未获批时自动拒绝。代码要求这些实时 Server 事实，**但本阶段未实现数据库撤销版本或登录/登出联动**，因此真实签发和代理仍不开放。
+
+下一步 A3b2c2：持久化单调递增的撤销 epoch，Owner Bearer 授权签发与资源逐请求 DB 检查，处理退出登录/禁用/轮换，完成多副本配额与 Caddy/Electron 隔离。取得百度实际合法授权、完整子资源白名单和泄漏验收后方可交付 A3b2d 运行时，随后 A3b3 共享 Web/Mobile Web/Desktop 连续地图、Marker/聚合，最后 A4、B1–B3、C1 真机验收。继续保持 iOS 27「照片」1:1 基准、52px 全屏 App Frame、唯一百度 Provider。
