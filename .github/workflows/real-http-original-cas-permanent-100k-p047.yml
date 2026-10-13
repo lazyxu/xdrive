@@ -1,0 +1,111 @@
+name: Real signed HTTP 100k original physical CAS permanent delete P047
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  real-http-original-cas-100k:
+    if: github.head_ref == 'perf/real-http-permanent-original-cas-100k-p047-20261013'
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_P047_REAL_HTTP_ORIGINAL_CAS_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify production-only HTTP path, physical 100k original contents and frozen budgets
+        run: |
+          set -euo pipefail
+          gofmt -d internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go
+          test -z "$(gofmt -l internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go)"
+          node --test desktop/tests/real-http-original-cas-permanent-100k-p047-source.cjs
+      - name: Build genuine Go Gin API route + PostgreSQL17 and Local physical CAS
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/real-http-original-cas-permanent-100k-p047-bin
+          go test -mod=readonly -c -o desktop/real-http-original-cas-permanent-100k-p047-bin/api.test ./internal/api
+      - name: Three independent exact 100k CAS real signed HTTP DELETE and full physical-byte correctness probes
+        run: |
+          set -euo pipefail
+          result_dir=desktop/real-http-original-cas-permanent-100k-p047-results
+          mkdir -p "$result_dir"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$result_dir/source.txt"
+          for i in 1 2 3; do
+            export XD_P047_SAMPLE="sample-$i"
+            /usr/bin/time -f 'whole_process_max_rss_kib=%M\nwhole_process_user_cpu_sec=%U\nwhole_process_system_cpu_sec=%S' -o "$result_dir/sample-$i.time" \
+              desktop/real-http-original-cas-permanent-100k-p047-bin/api.test \
+              -test.run '^TestTrashPermanentPhysicalCAS100K$' -test.count=1 -test.timeout=35m -test.v \
+              | tee "$result_dir/sample-$i.log"
+          done
+          python3 - "$result_dir" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          for i in (1,2,3):
+              log=(root/f'sample-{i}.log').read_text()
+              hits=re.findall(r'P047_REAL_HTTP_PERMANENT_CAS_100K (\{[^\n]+\})',log)
+              assert len(hits)==1,(i,'missing exact real HTTP machine row')
+              row=json.loads(hits[0])
+              for key,want in {
+                  'original_CAS_SHA_unique_count':100000,'original_physical_CAS_count':100001,
+                  'original_payload_bytes':102400000,'physical_CAS_unlinked_count':100000,
+                  'unlinked_CAS_logical_bytes':102400000,'remaining_CAS_originals':1,
+                  'remaining_CAS_bytes':1024,'selected_nodes_remaining':0,
+                  'File_rows_after':1,'FileVersion_rows_after':0,'ContentBlob_rows_after':1,
+                  'deleted_share_rows_remaining':0,'protected_share_rows_remaining':1,
+                  'auth_audit_rows':1,'foreign_owner_HTTP':404,'stale_revision_HTTP':409,
+                  'owner_delete_HTTP':204,'HTTP_response_bytes':0,
+                  'HTTP_budget_ms':1200000,'RSS_growth_budget_B':536870912,
+              }.items():
+                  assert row[key]==want,(i,key,row.get(key),want)
+              assert row['passed'] is True and row['protected_outside_file_complete_bytes'] is True
+              assert row['outside_sibling_unchanged'] is True
+              assert 0<row['HTTP_delete_ms']<=1200000
+              assert row['Go_CPU_ticks']>=0 and 0<=row['Go_RSS_growth_B']<=536870912
+              assert row['HTTP_error']=='<nil>'
+              row['whole_process_resources']=(root/f'sample-{i}.time').read_text()
+              rows.append(row)
+          summary={'workload_id':'P047','n':3,'status':'original CURRENT/BEFORE; no product optimization',
+              'median_HTTP_ms':statistics.median(row['HTTP_delete_ms'] for row in rows),
+              'max_RSS_growth_B':max(row['Go_RSS_growth_B'] for row in rows),
+              'physical_cas_origins':100000,'original_HTTP_budget_ms':1200000,
+              'source_exact_CAS_unlink_and_authorization':True,'samples':rows,
+              'boundary':'Go Server full owner-authenticated 100k HTTP permanent CAS deletion; not a UI/PWA/mobile/Web/Desktop native or WAN measurement.'}
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('P047_REAL_HTTP_PERMANENT_CAS_100K_N3 '+json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: P047-real-HTTP-original-CAS-100k-n3
+          path: desktop/real-http-original-cas-permanent-100k-p047-results/
+          if-no-files-found: warn
+          retention-days: 14

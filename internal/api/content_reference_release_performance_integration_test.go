@@ -106,8 +106,8 @@ func TestReleaseContentReferencesUsesBatchedSQL(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if statementCount != 3 {
-		t.Fatalf("content reference release used %d SQL statements; want exactly 3 for %d unique blobs", statementCount, uniqueBlobs)
+	if statementCount != 2 {
+		t.Fatalf("content reference release used %d SQL statements; want exactly 2 for %d unique blobs", statementCount, uniqueBlobs)
 	}
 	if len(legacy) != 0 {
 		t.Fatalf("legacy keys=%v want none", legacy)
