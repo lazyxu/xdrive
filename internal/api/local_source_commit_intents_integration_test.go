@@ -403,6 +403,52 @@ func TestQuarantineLocalSourceCommitIntentsOwningAgentOnlyAndNoCanonicalWrites(t
 		afterRollback.RefCount != 1 || afterRollback.State != meta.ContentBlobStateReady {
 		t.Fatalf("CAS probe or rollback altered canonical reference: %+v %v", afterRollback, err)
 	}
+	// L03-E1b1b1b2: CURRENT relative paths must match the exact persisted
+	// quarantine AND current CAS metadata in one native-device fenced transaction.
+	currentPaths := []localQuarantinedCurrentPathClaim{
+		{EvidenceID: evidence.ID, CurrentRelativePath: "new/one.jpg"},
+	}
+	assertCurrentPath := func(paths []localQuarantinedCurrentPathClaim, expectedErr error) {
+		t.Helper()
+		err := db.Transaction(func(tx *gorm.DB) error {
+			snapshot, guardErr := server.checkLocalQuarantinedCurrentPathsTx(
+				tx, guardContext, source.ID, source.Revision, owningProof, contentInput, paths)
+			if guardErr != nil {
+				return guardErr
+			}
+			if snapshot.revision != source.Revision || len(snapshot.objects) != 1 ||
+				snapshot.objects[0].SHA256 != sha {
+				return fmt.Errorf("CURRENT path guard fabricated inconsistent CAS metadata")
+			}
+			return nil
+		})
+		if expectedErr == nil && err != nil {
+			t.Fatalf("verified owning-device CURRENT path rejected: %v", err)
+		}
+		if expectedErr != nil && !errors.Is(err, expectedErr) {
+			t.Fatalf("unsafe CURRENT path accepted: %v expected %v", err, expectedErr)
+		}
+	}
+	assertCurrentPath(currentPaths, nil)
+	assertCurrentPath([]localQuarantinedCurrentPathClaim{
+		{EvidenceID: evidence.ID, CurrentRelativePath: "new/other.jpg"},
+	}, errLocalEvidenceConflict)
+	assertCurrentPath([]localQuarantinedCurrentPathClaim{
+		{EvidenceID: evidence.ID, CurrentRelativePath: "old/one.jpg"},
+	}, errLocalEvidenceConflict)
+	assertCurrentPath([]localQuarantinedCurrentPathClaim{
+		{EvidenceID: evidence.ID, CurrentRelativePath: "../private.jpg"},
+	}, errLocalEvidenceConflict)
+	var afterPathItem meta.SourceItem
+	if err := db.Where("id = ?", item.ID).Take(&afterPathItem).Error; err != nil ||
+		afterPathItem.Path != item.Path || afterPathItem.ExternalID != item.ExternalID {
+		t.Fatalf("read-only path guard changed canonical SourceItem: %+v %v", afterPathItem, err)
+	}
+	var afterPathBlob meta.ContentBlob
+	if err := db.Where("sha256 = ?", sha).Take(&afterPathBlob).Error; err != nil ||
+		afterPathBlob.RefCount != 1 {
+		t.Fatalf("read-only path guard changed canonical CAS references: %+v %v", afterPathBlob, err)
+	}
 	guardContext.Set(localSourceExecutorContextKey, localSourceExecutorProof{
 		DeviceID: deviceB.ID, RootID: rootID, SourceRevision: source.Revision,
 	})
