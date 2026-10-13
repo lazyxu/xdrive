@@ -26,6 +26,14 @@ func TestLocalQuarantinedSameDirectoryDestinationRequiresLiveCloudLayout(t *test
 	); err != nil {
 		t.Fatal(err)
 	}
+	// Mirror the real Server partial unique index in this isolated
+	// PostgreSQL schema: the database, not a prior SELECT, decides whether
+	// a concurrent destination basename may be adopted.
+	if err := db.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_xd_nodes_parent_name " +
+		"ON xd_nodes(owner_id, parent_id, lower(name)) " +
+		"WHERE parent_id IS NOT NULL AND deleted_at IS NULL").Error; err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	secret := "local-same-dir-owning-agent-test-long-secret"
 	device := meta.ClientDevice{
@@ -160,6 +168,30 @@ func TestLocalQuarantinedSameDirectoryDestinationRequiresLiveCloudLayout(t *test
 	if err := inspect(current); err != nil {
 		t.Fatalf("same-directory owning Agent cloud layout rejected: %v", err)
 	}
+	// The private metadata-transaction writer is NOT a live execution
+	// endpoint. This deliberately synthetic witness exists in tests only;
+	// production must independently attest live native and physical CAS
+	// bytes before enabling any caller.
+	witness := localPrivateIdentityContentWitness{
+		sourceID: source.ID, revision: source.Revision, sha256: casSHA,
+		nativeVerified: true, casVerified: true,
+	}
+	apply := func(w localPrivateIdentityContentWitness) (localPrivateIdentityRenameResult, error) {
+		var result localPrivateIdentityRenameResult
+		err := db.Transaction(func(tx *gorm.DB) error {
+			var applyErr error
+			result, applyErr = server.applyLocalQuarantinedSameParentRenameTx(
+				tx, c, source.ID, source.Revision, proof, metadata, current, w)
+			return applyErr
+		})
+		return result, err
+	}
+	invalidWitness := witness
+	invalidWitness.casVerified = false
+	if _, err := apply(invalidWitness); !errors.Is(err, errLocalEvidenceConflict) {
+		t.Fatalf("unverified physical CAS witness admitted: %v", err)
+	}
+
 	// An occupied name cannot be silently overwritten, even when case differs.
 	sibling := meta.Node{
 		OwnerID: owner.ID, ParentID: &directory.ID, Name: "TWO.jpg",
@@ -170,6 +202,9 @@ func TestLocalQuarantinedSameDirectoryDestinationRequiresLiveCloudLayout(t *test
 	}
 	if err := inspect(current); !errors.Is(err, errLocalEvidenceConflict) {
 		t.Fatalf("destination sibling collision admitted: %v", err)
+	}
+	if _, err := apply(witness); !errors.Is(err, errLocalEvidenceConflict) {
+		t.Fatalf("collision gained canonical identity authority: %v", err)
 	}
 	if err := db.Delete(&sibling).Error; err != nil {
 		t.Fatal(err)
@@ -262,5 +297,67 @@ func TestLocalQuarantinedSameDirectoryDestinationRequiresLiveCloudLayout(t *test
 			Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("precommit wrote aliases or source runs: count=%d err=%v", count, err)
 		}
+	}
+	// Restore only this isolated test's revoked device so the following
+	// SQL-only prototype can commit. This is NOT remote revocation reversal.
+	if err := db.Model(&meta.ClientDevice{}).Where("id = ?", device.ID).
+		Update("revoked_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	first, err := apply(witness)
+	if err != nil || first.Replayed || first.SourceItemID != item.ID ||
+		first.NodeID != node.ID || first.NodeRevision != node.Revision+1 {
+		t.Fatalf("private SQL-only atomic identity rename failed: %+v %v", first, err)
+	}
+	var after meta.Node
+	if err := db.First(&after, node.ID).Error; err != nil ||
+		after.Name != "two.jpg" || after.Revision != node.Revision+1 {
+		t.Fatalf("renamed Node revision not durable: %+v %v", after, err)
+	}
+	var boundItem meta.SourceItem
+	if err := db.First(&boundItem, item.ID).Error; err != nil ||
+		boundItem.ExternalID != evidence.CurrentPathKey ||
+		boundItem.Path != "photos/two.jpg" ||
+		boundItem.NodeRevision != after.Revision || *boundItem.NodeID != node.ID {
+		t.Fatalf("Node and canonical SourceItem diverged: %+v %v", boundItem, err)
+	}
+	var alias meta.SourceItemAlias
+	if err := db.Where("source_id = ? AND source_item_id = ? AND alias_external_id = ?",
+		source.ID, item.ID, evidence.PreviousPathKey).Take(&alias).Error; err != nil {
+		t.Fatalf("original identity was not preserved as alias: %v", err)
+	}
+	var applied meta.LocalSourceCommitIntent
+	if err := db.Where("id = ?", intent.ID).Take(&applied).Error; err != nil ||
+		applied.State != meta.LocalSourceCommitIntentStateApplied {
+		t.Fatalf("private commit journal lacks applied state: %+v %v", applied, err)
+	}
+	var existingVersions []meta.FileVersion
+	if err := db.Where("node_id = ?", node.ID).Find(&existingVersions).Error; err != nil ||
+		len(existingVersions) != 1 || existingVersions[0].Revision != node.Revision ||
+		existingVersions[0].SHA256 != casSHA {
+		t.Fatalf("metadata-only rename duplicated or altered content versions: %+v %v", existingVersions, err)
+	}
+	if err := db.Where("sha256 = ?", casSHA).Take(&blob).Error; err != nil ||
+		blob.RefCount != 1 || blob.State != meta.ContentBlobStateReady {
+		t.Fatalf("metadata-only rename changed CAS reference accounting: %+v %v", blob, err)
+	}
+	// A timeout replay starts a fresh PostgreSQL transaction. It must not
+	// increment Node revision, create an extra alias or retain more CAS refs.
+	replayed, err := apply(witness)
+	if err != nil || !replayed.Replayed || replayed.NodeRevision != after.Revision {
+		t.Fatalf("uncertain SQL commit was not idempotently recovered: %+v %v", replayed, err)
+	}
+	var aliasCount int64
+	if err := db.Model(&meta.SourceItemAlias{}).Where("source_id = ?", source.ID).
+		Count(&aliasCount).Error; err != nil || aliasCount != 1 {
+		t.Fatalf("uncertain replay created duplicate identity aliases: %d %v", aliasCount, err)
+	}
+	if err := db.First(&after, node.ID).Error; err != nil || after.Revision != node.Revision+1 {
+		t.Fatalf("uncertain replay incremented Node revision twice: %+v %v", after, err)
+	}
+	// Authentication remains mandatory even for a readback of applied data.
+	c.Request.Header.Set("X-XDrive-Device-Token", "revoked-or-forged")
+	if _, err := apply(witness); !errors.Is(err, errLocalSourceExecutorTransactionUnauthorized) {
+		t.Fatalf("foreign device replay gained authority: %v", err)
 	}
 }

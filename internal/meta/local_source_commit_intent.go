@@ -2,7 +2,12 @@ package meta
 
 import "time"
 
-const LocalSourceCommitIntentStateQuarantined = "quarantined"
+const (
+	LocalSourceCommitIntentStateQuarantined = "quarantined"
+	// Applied is an INTERNAL database-only prototype state. No runtime
+	// endpoint or Agent executor may consume it as an upload success token.
+	LocalSourceCommitIntentStateApplied = "applied"
+)
 
 // LocalSourceCommitIntent records a revision- and device-fenced PRIVATE
 // reconciliation proposal. It is deliberately NOT an identity commit:
