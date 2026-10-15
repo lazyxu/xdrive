@@ -966,6 +966,8 @@ export type AgentAdminPhotoHostPreflight = {
   runtime_work_blocker_state?: 'blocked' | 'unverified'
   // A recently observed missing Server heartbeat vetoes stop, never approves it.
   replica_membership_blocker_state?: 'blocked' | 'unverified'
+  // Optional older Agent/Server; never a positive global stop permit.
+  private_ingress_auth_blocker_state?: 'blocked' | 'unverified'
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'

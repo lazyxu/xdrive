@@ -332,6 +332,13 @@ export function XDrivePhotoHostDesiredPanel({
                           ? '近期登记过的 Server 实例心跳已过期；实例可能失联或正常下线，禁止认定已安全排空。'
                           : '成员覆盖尚未核验：即使已有心跳全部新鲜，也不能证明没有遗漏实例、未来任务已冻结或可以停用。'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.private_ingress_auth_blocker_state === 'blocked' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-private-ingress-auth-blocker-state>
+                        模型私有入口认证阻止信号：{preflight.private_ingress_auth_blocker_state === 'blocked'
+                          ? '本机 Server 未配置模型 Bearer，或模型侧 Info 明确报告未启用；当前不具备安全停用条件。'
+                          : '认证覆盖仍未核验：旧版实例、其它私有调用方及跨实例任务准入尚无充分证据；Bearer 已配置也不意味着可安全停用。'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified
                           ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'

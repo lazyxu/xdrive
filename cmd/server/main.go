@@ -280,6 +280,7 @@ func main() {
 		MediaIndexWakeups:           mediaIndexListener.Events,
 		FileOperationWakeups:        fileOperationListener.Wakeups,
 	}
+	srv.PhotoModelBearerConfigured = strings.TrimSpace(cfg.PhotoFaceAnalyzerToken) != ""
 	srv.StartPostgresPoolReconciliation(serverCtx)
 	srv.StartPostgresPoolReplicaPresence(serverCtx)
 	srv.SetGeoNamesStartupDataset(geoNamesEffectiveFingerprint)

@@ -114,6 +114,22 @@ class PrivateModelIngressTests(unittest.TestCase):
                 server.server_close()
                 thread.join(timeout=3)
 
+    def test_model_info_private_bearer_reports_negative_without_secret(self) -> None:
+        for token, enabled in (("", False), ("dummy-model-private-token", True)):
+            with self.subTest(enabled=enabled):
+                state = analyzer.AnalyzerState(
+                    None, None, None, None, "http://server:8080", token,
+                )
+                info = state.info_with_session({"protocol_version": 1})
+                self.assertIs(info["private_bearer_auth_required"], enabled)
+                self.assertEqual(
+                    set(info), {
+                        "protocol_version", "runtime_instance_id",
+                        "private_bearer_auth_required",
+                    },
+                )
+                self.assertNotIn("dummy-model-private-token", str(info))
+
     def test_missing_host_apply_token_never_grants_host_control(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             socket_path = str(Path(tmp) / "host-ack-unavailable.sock")

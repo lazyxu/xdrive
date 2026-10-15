@@ -18,11 +18,13 @@ type photoHostModelInfoCheck struct {
 	Detail            string                              `json:"detail"`
 	runtimeInstanceID string                              // private process-boot marker: never serialized to admin UI
 	hostReceipt       *photointelligence.HostApplyReceipt // never serialized to admin UI
+	auth              *bool                               // private negative-only Bearer evidence
 }
 
 type photoHostModelInfoEvidence struct {
 	instanceID string
 	receipt    *photointelligence.HostApplyReceipt
+	auth       *bool
 }
 
 type photoHostModelInfoTask struct {
@@ -58,6 +60,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 		index      int
 		instanceID string
 		receipt    *photointelligence.HostApplyReceipt
+		auth       *bool
 		err        error
 	}
 	finished := make(chan outcome, len(tasks))
@@ -77,16 +80,17 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			attested func(context.Context) (photoHostModelInfoEvidence, error)) {
 			var instanceID string
 			var receipt *photointelligence.HostApplyReceipt
+			var auth *bool
 			var err error
 			if attested != nil {
 				var evidence photoHostModelInfoEvidence
 				evidence, err = attested(ctx)
-				instanceID, receipt = evidence.instanceID, evidence.receipt
+				instanceID, receipt, auth = evidence.instanceID, evidence.receipt, evidence.auth
 			} else {
 				instanceID, err = legacy(ctx)
 			}
 			select {
-			case finished <- outcome{index: index, instanceID: instanceID, receipt: receipt, err: err}:
+			case finished <- outcome{index: index, instanceID: instanceID, receipt: receipt, auth: auth, err: err}:
 			case <-ctx.Done():
 			}
 		}(i, task.Probe, task.ReceiptProbe)
@@ -104,6 +108,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 				results[next.index].State = "ready"
 				results[next.index].runtimeInstanceID = next.instanceID
 				results[next.index].hostReceipt = next.receipt
+				results[next.index].auth = next.auth
 				results[next.index].Detail = "本实例分析器 Info 协议与模型元数据验证通过"
 			} else {
 				results[next.index].State = "failed"
@@ -219,7 +224,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateFaceAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
 		}
 	}
 	if s.PhotoSmartAnalyzer != nil {
@@ -231,7 +236,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateSmartAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
 		}
 	}
 	if s.PhotoSemanticAnalyzer != nil {
@@ -243,7 +248,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateSemanticAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
 		}
 	}
 	if s.PhotoCreativeAnalyzer != nil {
@@ -255,7 +260,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateCreativeAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
 		}
 	}
 	return runPhotoHostModelInfoChecks(ctx, tasks)

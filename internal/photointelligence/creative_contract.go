@@ -58,6 +58,7 @@ type CreativeAnalyzerInfo struct {
 	Runtime           *FaceAnalyzerRuntimeInfo `json:"runtime,omitempty"`
 	RuntimeInstanceID string                   `json:"runtime_instance_id,omitempty"`
 	HostApplyReceipt  *HostApplyReceipt        `json:"host_apply_receipt,omitempty"`
+	PrivateBearer     *bool                    `json:"private_bearer_auth_required,omitempty"`
 }
 
 type CreativePoint struct {

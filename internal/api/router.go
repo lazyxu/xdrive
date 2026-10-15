@@ -58,6 +58,7 @@ type Server struct {
 	PhotoSmartAnalyzer             photointelligence.SmartAnalyzer
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
 	PhotoCreativeAnalyzer          photointelligence.CreativeAnalyzer
+	PhotoModelBearerConfigured     bool
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string
