@@ -2027,3 +2027,66 @@ The initial-new-CAS upload path is also unimplemented. Future F2d6+
 must design the **actual single writer transaction**, OS/SQL lock order,
 device/Root/revision fencing, durable quota/refcount and crash-idempotent
 recovery rather than treating this ephemeral check as a bearer ticket.
+
+
+## L03-F2d6 · First physical canonical CAS materialization from private Stage (PR verification)
+
+Following merged F2d5 #1705, the only newly added primitive is
+`(*storage.Local).MaterializeLocalPushStageCAS(ctx, stageKey, casKey, expectedSize)`.
+This is a **storage-only**, currently **unconnected** prerequisite for the
+missing **new-content** branch; it does NOT create a valid backup. It requires
+an exact Server-owned lowercase canonical UUID private stage key, an exact
+lowercase canonical SHA256 CAS key and a bounded 0–64 MiB original size.
+It derives the CAS digest from the canonical key, never from an arbitrary
+pathname or a browser/renderer-supplied body. The original Stage always
+remains in place and no Source/Run model is touched.
+
+The Local Store acquires **nonblocking** locks in existing global order:
+canonical CAS shard **exclusive** first, shared managed-temp lifecycle
+second (to fence administrative cleanup of in-progress atomic temp files),
+and private Stage shard **shared** third. Contention at ANY stage returns
+`(created=false, admitted=false, err=nil)`, with all earlier locks released
+before return; a canceled or invalid request returns an error. This function
+does not acquire SQL locks and MUST NOT be invoked inside an SQL hash or
+Source transaction. Under the Stage pin, it validates the exact regular
+inode/path/mtime and streams no more than expectedSize+1 bytes with bounded
+128-KiB buffering into a private same-directory CAS temporary file while
+computing SHA256. Short, long, corrupt, canceled or replaced input fails;
+temporary bytes are removed and neither existing CAS nor the Stage changes.
+The temp bytes are fsynced and closed prior to any publication.
+
+Existing canonical content is independently rehashed under the exclusive
+CAS lock; if valid and matching, it is reused without replacement. If
+absent, a **create-only hard link** from the verified same-directory temp
+atomically publishes the physical canonical inode, without rename-overwrite;
+unsupported hard links fail closed. Pre-existing corrupt, nonregular or
+symlinked targets are NEVER repaired or overwritten, and CAS directory
+ancestors are checked as real directories. A bounded post-publication inode
+check and cancellation handling fail closed. A valid result distinguishes
+`(new=true, admitted=true)` vs `(new=false, admitted=true)`: these indicate
+ONLY physical materialization/reuse. On crash, published bytes can remain
+**orphaned and unreferenced**, and a filesystem sync alone does not promise
+cross-platform durable directory-entry or SQL atomicity.
+
+Linux/Windows cross-Local Store tests verify new exact physical content,
+stage retention, repeat reuse preserving the same inode, corrupted stage
+rejection, corrupt existing CAS refusal, CAS / stage / cleanup lock busy
+fail-fast and release, invalid keys/size/cancel, symlink refusal, no leftover
+working temp files, and zero-byte inputs. Previous PostgreSQL17 OS/SQL
+lock-order tests stay authoritative separately. Require one GitHub work
+commit, full exact-head Go Linux/Windows, PostgreSQL, Web/Desktop, artifacts,
+Rootless and final-gate CI; real physical 100k/4GiB and GitLab remain
+separate unverified gates.
+
+**NOT a backup commit or a new capability:** no owning-Agent credential,
+Root/Source revision or persisted Stage status is verified by this storage
+primitive. It creates NO ContentBlob/SourceItem/File/FileVersion/Node/SyncRun
+row, quota charge, CAS refcount, upload finalization, Agent transport,
+authenticated Server route, Web/Mobile Web/Desktop button, scheduler, NAS
+Push or Mirror deletion. The existing `local_folder` activation hard denial
+remains in force. F2d7+ must bind a live owning-device/Root/stage proof,
+safe temporary-CAS physical materialization, refcount and quota admission
+and **one crash-idempotent authoritative SQL writer** before any real
+device-local Push may execute. Existing unreferenced CAS cleanup and
+out-of-band filesystem changes require independent fencing; this primitive
+does NOT hand out a durable commit/witness token.
