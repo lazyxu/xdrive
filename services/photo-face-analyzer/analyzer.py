@@ -1475,6 +1475,25 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 )
                 self._write_json(200, self.server.state.info_with_session(self.server.state.creative_runtime.info()))
                 return
+            if method == "GET" and target == "/v1/creative-cutout-canary":
+                # Private model-local EfficientSAM execution only. No preview
+                # ticket, arbitrary payload, browser route, or image disclosure.
+                self._require_protocol(
+                    headers,
+                    "x-xdrive-creative-protocol",
+                    CREATIVE_PROTOCOL_VERSION,
+                    "creative",
+                )
+                if not self.server.state.token:
+                    raise RequestError(503, "synthetic Creative canary requires auth")
+                if headers.get("transfer-encoding") or headers.get(
+                    "content-length", "0"
+                ) != "0":
+                    raise RequestError(400, "synthetic Creative canary rejects a body")
+                self._write_json(
+                    200, self.server.state.creative_runtime.probe_synthetic_cutout()
+                )
+                return
             if method == "POST" and target in (
                 "/v1/analyze",
                 "/v1/smart-analyze",

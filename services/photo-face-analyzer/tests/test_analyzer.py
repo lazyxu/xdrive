@@ -65,6 +65,37 @@ class PreviewHandler(BaseHTTPRequestHandler):
         del format, args
 
 
+def rejected_private_get_body_status(
+    socket_path: str, target: str, protocol_header: str, body: bytes
+) -> int:
+    """Send header AND forbidden body in one Unix write before reading status.
+
+    http.client sends headers/body separately; the hardened handler is
+    allowed to reject Content-Length and close before the second write,
+    producing a client-side BrokenPipeError instead of a readable 400.
+    Keep a real body on the wire and assert the server's rejection.
+    """
+    request = (
+        f"GET {target} HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Authorization: Bearer secret\r\n"
+        f"{protocol_header}: 1\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode("ascii") + body
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
+        stream.settimeout(5.0)
+        stream.connect(socket_path)
+        stream.sendall(request)
+        with stream.makefile("rb") as response:
+            status_line = response.readline(256)
+    parts = status_line.split(b" ", 2)
+    if len(parts) != 3 or parts[0] != b"HTTP/1.1":
+        raise AssertionError(f"malformed private Unix HTTP rejection: {status_line!r}")
+    return int(parts[1])
+
+
 class AnalyzerTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -559,9 +590,17 @@ class AnalyzerTests(unittest.TestCase):
                     ("/v1/face-detector-canary?preview_url=private", "1", None, 404),
                     ("/v1/face-detector-canary", "1", b"{}", 400),
                 ):
+                    if body is not None:
+                        self.assertEqual(
+                            rejected_private_get_body_status(
+                                socket_path, path, "X-XDrive-Face-Protocol", body
+                            ),
+                            expected,
+                        )
+                        continue
                     check = analyzer.UnixHTTPConnection(socket_path)
                     check.request(
-                        "GET", path, body=body,
+                        "GET", path,
                         headers={
                             "Authorization": "Bearer secret",
                             "X-XDrive-Face-Protocol": protocol,
@@ -653,9 +692,18 @@ class AnalyzerTests(unittest.TestCase):
                     ("/v1/smart-model-canary?preview_url=private", "1", None, 404),
                     ("/v1/smart-model-canary", "1", b"{}", 400),
                 ):
+                    if request_body is not None:
+                        self.assertEqual(
+                            rejected_private_get_body_status(
+                                socket_path, target, "X-XDrive-Smart-Protocol",
+                                request_body,
+                            ),
+                            expected,
+                        )
+                        continue
                     rejection = analyzer.UnixHTTPConnection(socket_path)
                     rejection.request(
-                        "GET", target, body=request_body,
+                        "GET", target,
                         headers={
                             "Authorization": "Bearer secret",
                             "X-XDrive-Smart-Protocol": protocol,
@@ -1009,6 +1057,23 @@ class AnalyzerTests(unittest.TestCase):
             self.assertTrue(collage.startswith(b"\xff\xd8\xff"))
 
 
+    def test_creative_model_local_cutout_probe(self) -> None:
+        # Genuine EfficientSAM forward + PNG validation, no preview fetch.
+        from unittest.mock import patch
+
+        with patch.object(
+            analyzer, "fetch_creative_preview",
+            side_effect=AssertionError("private cutout fetched a preview"),
+        ):
+            result = self.creative_runtime.probe_synthetic_cutout()
+        self.assertEqual(result, {"cutout_executed": True})
+        with patch.object(
+            self.creative_runtime, "generate",
+            return_value=(b"not a PNG", "image/png", 128, 128),
+        ):
+            with self.assertRaises(RuntimeError):
+                self.creative_runtime.probe_synthetic_cutout()
+
     def test_creative_unix_socket_protocol_end_to_end(self) -> None:
         fingerprint = "creative-test-v1-2048"
         PreviewHandler.fingerprint = fingerprint
@@ -1057,6 +1122,59 @@ class AnalyzerTests(unittest.TestCase):
                     ],
                 )
                 connection.close()
+
+                # A model-local Creative probe has no preview URL, caller
+                # image, filesystem path, mask or arbitrary render options.
+                for target, protocol, body, expected in (
+                    ("/v1/creative-cutout-canary", "0", None, 400),
+                    ("/v1/creative-cutout-canary?preview_url=private", "1", None, 404),
+                    ("/v1/creative-cutout-canary", "1", b"{}", 400),
+                ):
+                    if body is not None:
+                        self.assertEqual(
+                            rejected_private_get_body_status(
+                                socket_path, target, "X-XDrive-Creative-Protocol",
+                                body,
+                            ),
+                            expected,
+                        )
+                        continue
+                    rejected = analyzer.UnixHTTPConnection(socket_path)
+                    rejected.request(
+                        "GET", target,
+                        headers={
+                            "Authorization": "Bearer secret",
+                            "X-XDrive-Creative-Protocol": protocol,
+                        },
+                    )
+                    response = rejected.getresponse()
+                    response.read()
+                    self.assertEqual(response.status, expected)
+                    rejected.close()
+
+                unauthorized = analyzer.UnixHTTPConnection(socket_path)
+                unauthorized.request(
+                    "GET", "/v1/creative-cutout-canary",
+                    headers={"X-XDrive-Creative-Protocol": "1"},
+                )
+                response = unauthorized.getresponse()
+                response.read()
+                self.assertEqual(response.status, 401)
+                unauthorized.close()
+
+                fixed = analyzer.UnixHTTPConnection(socket_path)
+                fixed.request(
+                    "GET", "/v1/creative-cutout-canary",
+                    headers={
+                        "Authorization": "Bearer secret",
+                        "X-XDrive-Creative-Protocol": "1",
+                    },
+                )
+                response = fixed.getresponse()
+                canary = json.loads(response.read())
+                self.assertEqual(response.status, 200)
+                self.assertEqual(canary, {"cutout_executed": True})
+                fixed.close()
 
                 task = {
                     "kind": "cutout",

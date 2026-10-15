@@ -135,6 +135,42 @@ class CreativeRuntime:
             },
         }
 
+
+    def probe_synthetic_cutout(self) -> dict[str, bool]:
+        # Fixed NON-person pixels and a fixed foreground point live exclusively
+        # in this model process. Exercise the production EfficientSAM cutout
+        # path, but do not return the image, alpha mask or segmentation result.
+        image = np.zeros((128, 128, 3), dtype=np.uint8)
+        cv.rectangle(image, (36, 20), (92, 108), (255, 255, 255), -1)
+        data, mime, width, height = self.generate(
+            image,
+            {
+                "kind": "cutout",
+                "cutout_mode": "object",
+                "cutout_expand": 0.0,
+                "cutout_feather": 0.0,
+                "points": [{"x": 0.5, "y": 0.5, "foreground": True}],
+            },
+        )
+        if (
+            mime != CREATIVE_OUTPUT_MIME
+            or width != 128
+            or height != 128
+            or not (0 < len(data) <= 1 << 20)
+            or not data.startswith(b"\x89PNG\r\n\x1a\n")
+        ):
+            raise RuntimeError("synthetic Creative cutout output invalid")
+        decoded = cv.imdecode(
+            np.frombuffer(data, dtype=np.uint8), cv.IMREAD_UNCHANGED
+        )
+        if (
+            decoded is None
+            or decoded.shape != (128, 128, 4)
+            or decoded.dtype != np.uint8
+        ):
+            raise RuntimeError("synthetic Creative cutout PNG invalid")
+        return {"cutout_executed": True}
+
     @staticmethod
     def validate_points(points: Any) -> list[dict[str, Any]]:
         if not isinstance(points, list):
