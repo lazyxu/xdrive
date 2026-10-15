@@ -1,0 +1,11 @@
+{
+  "status": "measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation",
+  "mobileCancelMode": true,
+  "cssWindowWidth": 390,
+  "sampleCount": 3,
+  "budgetMs": 160,
+  "worstGoContextP50Ms": 27.449,
+  "worstGoContextMaxMs": 32.757,
+  "passed": true,
+  "limits": "100k logical PhotoAssets and 115k metadata nodes, only first viewport 4-6 real physical JPEG streams; 390px Chromium shared Mobile Gallery; n3 independent real Gin/PG17/CAS, exact Go Handler Context.Done; Go/Renderer CPU RSS. Not iOS/Android native, installed PWA, all 100k real media, video/Live playback, slow WAN, durable task cancellation."
+}

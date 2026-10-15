@@ -1,0 +1,18 @@
+{
+  "id": "P048",
+  "status": "Invalid harness",
+  "valid_samples": 0,
+  "run_id": 38716968108,
+  "url": "https://github.com/lazyxu/xdrive/actions/runs/38716968108",
+  "source_sha": "489d7e3017c23d86d988fcbe07e7176493139855",
+  "platform": "390px Chromium shared Mobile Web Gallery + Go Gin PG17",
+  "fixture": "100k logical PhotoAssets, 115k metadata Nodes, first visible 4-6 slow physical JPEG HTTP streams",
+  "actual_phase": "Validated native source contract and production Web build; original Go fixture launched and became ready, failed before collecting first complete valid cancellation sample",
+  "failure": "AssertionError [ERR_ASSERTION]: one actual running compiled Go api.test server child required: []",
+  "classification": "Driver CPU/RSS process attribution invalid, not application performance RED",
+  "before_ms": null,
+  "after_ms": null,
+  "speedup": null,
+  "correction": "Compile real ./internal/api test binary via go test -c then spawn the compiled api.test directly for native CPU/RSS and HTTP handler observations. No production changes or budget changes.",
+  "frozen_budgets": "3 PG17/CAS samples, 100k logical/115k metadata, 4-6 real JPEG streams, 256B first chunks, actual Go Request.Context.Done + Handler cancel 100%, worst <=160ms, +160ms active and wasted bytes 0, Go and Renderer peak RSS growth <=128MiB each."
+}

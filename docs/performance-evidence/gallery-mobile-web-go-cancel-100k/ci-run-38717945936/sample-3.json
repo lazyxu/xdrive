@@ -1,0 +1,73 @@
+{
+  "sample": 3,
+  "viewport": {
+    "width": 375,
+    "height": 817,
+    "narrow": true
+  },
+  "streamCount": 4,
+  "resources": {
+    "go": {
+      "initial": {
+        "pid": 8221,
+        "rssBytes": 48488448,
+        "cpuMs": 2430
+      },
+      "final": {
+        "pid": 8221,
+        "rssBytes": 48488448,
+        "cpuMs": 2430
+      },
+      "peakGrowthBytes": 0,
+      "cpuDeltaMs": 0
+    },
+    "renderer": {
+      "initial": {
+        "pid": 8348,
+        "rssBytes": 186810368,
+        "cpuMs": 460
+      },
+      "final": {
+        "pid": 8348,
+        "rssBytes": 190402560,
+        "cpuMs": 500
+      },
+      "peakGrowthBytes": 3592192,
+      "cpuDeltaMs": 40
+    }
+  },
+  "logicalAssets": 100000,
+  "physicalNodes": 115000,
+  "firstImageNodes": 47,
+  "seedMsExcluded": 24831.439,
+  "scroll": {
+    "oldScrollTop": 0,
+    "newScrollTop": 4737375,
+    "extent": 9474751,
+    "initialMountedTiles": 8,
+    "ancestorCandidates": [
+      {
+        "tag": "DIV",
+        "overflow": "auto",
+        "extent": 9474751,
+        "viewport": 817
+      }
+    ]
+  },
+  "healthy": {
+    "status": 200,
+    "count": 100000,
+    "returned": 100
+  },
+  "go": {
+    "started": 4,
+    "canceled": 4,
+    "contextDone": 4,
+    "stillActiveAt160ms": 0,
+    "wastedBytesAfterScroll": 0,
+    "beforeScrollActualBytes": 1024,
+    "worstContextNotificationMs": 21.64,
+    "totalRequestBytesAfterCancel": 1024
+  },
+  "scope": "Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation."
+}

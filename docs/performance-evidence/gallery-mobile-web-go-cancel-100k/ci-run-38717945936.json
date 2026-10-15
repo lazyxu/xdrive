@@ -1,0 +1,269 @@
+{
+  "workload_id": "P048",
+  "status": "Accepted native CURRENT n3; draft/not merged; no product change; AFTER N/A",
+  "repository": "lazyxu/xdrive",
+  "provenance": {
+    "source_commit": "eea3d5b3c308423f3d828872b54a9fbce24870ac",
+    "original_master_base": "475f2a8d3d16c072ff3d6f60454fc57490b221ad",
+    "native_run": 38717945936,
+    "native_job": 116365120372,
+    "native_artifact_id": 11964455710,
+    "full_ci_run": 38717945466,
+    "full_ci_status": "failed/unrelated photo-face-image BrokenPipeError; not final gate success"
+  },
+  "scope": "390px Electron-hosted Chromium actually mounted Mobile Web Gallery VirtualGrid; 100k logical PhotoAssets/115k metadata Nodes; only 4 real slow JPEG streams per fixture; real native Gin/PG17/CAS Context.Done; not physical phone nor installed PWA nor 100k physical original files",
+  "frozen": {
+    "n": 3,
+    "logicalPhotoAssets": 100000,
+    "physicalMetadataNodes": 115000,
+    "firstVisibleActualJPEGStreamCountPerSample": 4,
+    "firstChunkBytesPerRequest": 256,
+    "goContextCancelMaxMs": 160,
+    "oldHandlerAt160msMax": 0,
+    "wastedBytesAfterScrollMax": 0,
+    "goAndRendererRssGrowthMaxBytesEach": 134217728
+  },
+  "before": "CURRENT",
+  "after": null,
+  "speedup": null,
+  "summary": {
+    "status": "measured-CURRENT-390px-Mobile-Web-Gallery-Go-cancellation",
+    "mobileCancelMode": true,
+    "cssWindowWidth": 390,
+    "sampleCount": 3,
+    "budgetMs": 160,
+    "worstGoContextP50Ms": 27.449,
+    "worstGoContextMaxMs": 32.757,
+    "passed": true,
+    "limits": "100k logical PhotoAssets and 115k metadata nodes, only first viewport 4-6 real physical JPEG streams; 390px Chromium shared Mobile Gallery; n3 independent real Gin/PG17/CAS, exact Go Handler Context.Done; Go/Renderer CPU RSS. Not iOS/Android native, installed PWA, all 100k real media, video/Live playback, slow WAN, durable task cancellation."
+  },
+  "samples": [
+    {
+      "sample": 1,
+      "viewport": {
+        "width": 375,
+        "height": 817,
+        "narrow": true
+      },
+      "streamCount": 4,
+      "resources": {
+        "go": {
+          "initial": {
+            "pid": 7818,
+            "rssBytes": 48082944,
+            "cpuMs": 2360
+          },
+          "final": {
+            "pid": 7818,
+            "rssBytes": 48082944,
+            "cpuMs": 2370
+          },
+          "peakGrowthBytes": 0,
+          "cpuDeltaMs": 10
+        },
+        "renderer": {
+          "initial": {
+            "pid": 7980,
+            "rssBytes": 187215872,
+            "cpuMs": 480
+          },
+          "final": {
+            "pid": 7980,
+            "rssBytes": 190570496,
+            "cpuMs": 500
+          },
+          "peakGrowthBytes": 3354624,
+          "cpuDeltaMs": 20
+        }
+      },
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 27823.243,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 4737375,
+        "extent": 9474751,
+        "initialMountedTiles": 8,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 9474751,
+            "viewport": 817
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 4,
+        "canceled": 4,
+        "contextDone": 4,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1024,
+        "worstContextNotificationMs": 27.449,
+        "totalRequestBytesAfterCancel": 1024
+      },
+      "scope": "Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation."
+    },
+    {
+      "sample": 2,
+      "viewport": {
+        "width": 375,
+        "height": 817,
+        "narrow": true
+      },
+      "streamCount": 4,
+      "resources": {
+        "go": {
+          "initial": {
+            "pid": 8035,
+            "rssBytes": 48250880,
+            "cpuMs": 2170
+          },
+          "final": {
+            "pid": 8035,
+            "rssBytes": 48250880,
+            "cpuMs": 2170
+          },
+          "peakGrowthBytes": 0,
+          "cpuDeltaMs": 0
+        },
+        "renderer": {
+          "initial": {
+            "pid": 8163,
+            "rssBytes": 186298368,
+            "cpuMs": 410
+          },
+          "final": {
+            "pid": 8163,
+            "rssBytes": 188710912,
+            "cpuMs": 440
+          },
+          "peakGrowthBytes": 2412544,
+          "cpuDeltaMs": 30
+        }
+      },
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 26700.005,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 4737375,
+        "extent": 9474751,
+        "initialMountedTiles": 8,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 9474751,
+            "viewport": 817
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 4,
+        "canceled": 4,
+        "contextDone": 4,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1024,
+        "worstContextNotificationMs": 32.757,
+        "totalRequestBytesAfterCancel": 1024
+      },
+      "scope": "Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation."
+    },
+    {
+      "sample": 3,
+      "viewport": {
+        "width": 375,
+        "height": 817,
+        "narrow": true
+      },
+      "streamCount": 4,
+      "resources": {
+        "go": {
+          "initial": {
+            "pid": 8221,
+            "rssBytes": 48488448,
+            "cpuMs": 2430
+          },
+          "final": {
+            "pid": 8221,
+            "rssBytes": 48488448,
+            "cpuMs": 2430
+          },
+          "peakGrowthBytes": 0,
+          "cpuDeltaMs": 0
+        },
+        "renderer": {
+          "initial": {
+            "pid": 8348,
+            "rssBytes": 186810368,
+            "cpuMs": 460
+          },
+          "final": {
+            "pid": 8348,
+            "rssBytes": 190402560,
+            "cpuMs": 500
+          },
+          "peakGrowthBytes": 3592192,
+          "cpuDeltaMs": 40
+        }
+      },
+      "logicalAssets": 100000,
+      "physicalNodes": 115000,
+      "firstImageNodes": 47,
+      "seedMsExcluded": 24831.439,
+      "scroll": {
+        "oldScrollTop": 0,
+        "newScrollTop": 4737375,
+        "extent": 9474751,
+        "initialMountedTiles": 8,
+        "ancestorCandidates": [
+          {
+            "tag": "DIV",
+            "overflow": "auto",
+            "extent": 9474751,
+            "viewport": 817
+          }
+        ]
+      },
+      "healthy": {
+        "status": 200,
+        "count": 100000,
+        "returned": 100
+      },
+      "go": {
+        "started": 4,
+        "canceled": 4,
+        "contextDone": 4,
+        "stillActiveAt160ms": 0,
+        "wastedBytesAfterScroll": 0,
+        "beforeScrollActualBytes": 1024,
+        "worstContextNotificationMs": 21.64,
+        "totalRequestBytesAfterCancel": 1024
+      },
+      "scope": "Actual mounted 390px Mobile Web shared Gallery VirtualGrid; Chromium scrollTop -> Gin/PG17/CAS Go Request.Context().Done; 100k logical assets/115k metadata Nodes; only first 4-6 slow JPEG physical streams; NOT real iOS/Android/PWA, independent 100k original files, Agent IPC, H264 or Live playback, WAN, or durable task cancellation."
+    }
+  ],
+  "original_file_manifest": [
+    "sample-1.json",
+    "sample-2.json",
+    "sample-3.json",
+    "summary.json",
+    "source.txt"
+  ],
+  "invalid_harness": "ci-run-38716968108-invalid.json"
+}

@@ -129,3 +129,16 @@
 - 本表目前索引 **79 个**已出现的原始证据目录。P001–P042全部已有Accepted/RED/Rejected/Invalid/Blocked不同状态的测量；P043新增真实Desktop原生1GiB高熵源及完整下载SHA基准：源码准确原生CI #38340678659三组独立PG17/CAS全部通过，上传P50 18,375.838ms、下载P50 6,039.798ms，源/CAS/下载SHA一致，CPU/RSS预算均内，生产不改。原始机器JSON与不可替代的平台边界已写入专项；**P043准确源码复测CI #38341363095、完整CI #38341363491和final-gate全部成功，#1625已合入，产品不改**。4GiB真实高熵WAN、Windows物理设备、OS安装PWA/Android/iOS、100k物理源同步删除与任务级用户取消仍Not measured。 新P044在现有第80个证据目录中同时保存首轮 #38342586136 Invalid harness 与源准确CI #38342769834 原版有效n3原始机器JSON；P50上传48.509s/下载18.417s、完整SHA/CAS/OPFS与资源门槛通过，生产不改；证据修订头CI和final-gate复验后方可合入。
 - `#1439` 100k混合物理媒体基准已合入，性能未超预算，记录为复用/不改生产代码；`#1185` 的 Desktop IPC 完整字节进度末次验收失败，仍为 Draft，不属于通过的取消/吞吐案例。
 - P046 源准确原始CI #38356105800完成3次真实100k不同原始CAS的95k物理unlink CURRENT：P50=120493.622ms（预算内）、原始机器JSON新增独立证据目录，现有历史无效夹具仍保留；完整幸存集合/blocks专项准确证据HEAD复验后才能标Merged。以后每个性能 PR 更新同一登记簿，不为每次聊天创建平行索引；完整的失败样本、被拒绝实验和准确头CI仍保留在子系统文档与原始证据目录。
+
+
+## P048 · Mobile Web 图库真实 Go 取消独立平台维度（2026-10-15）
+
+| ID | 实测边界 | 冻结门槛与 n3 CURRENT 实测 | 判定与证据 |
+| --- | --- | --- | --- |
+| **P048 / M005-h** | 原版共享390px Mobile Web Gallery VirtualGrid（实际document宽375px），3组独立Gin/PG17/CAS+Chromium；每组100,000个逻辑PhotoAsset、115,000个**元数据**Node，首屏每轮仅**4条真实JPEG慢速物理HTTP流**（合计12，不是100k不同物理JPEG）；每条先发256B；真实DOM滚动到约50%，触发Go `Request.Context().Done`，随后校验有身份的offset50000/100条/总量100,000 Range。 | **有效原版 CURRENT n=3：12/12真实Go Context.Done及12/12 Handler取消**；每轮最慢通知 **27.449 / 32.757 / 21.640 ms**，最慢 **32.757 ms**、三轮最慢值P50 **27.449 ms**（预算≤160ms）；+160ms旧Handler **0**、过期流浪费字节 **0 B**；取消前实传 **3×1,024 = 3,072 B**；首屏挂载8个Tile，合法签名Range 3/3 HTTP200且完整数量准确。窗口采样Go RSS最大增长 **0 B**，Renderer最大 **3,592,192 B**（各≤128MiB）；Go CPU delta **10/0/0ms**，Renderer CPU delta **20/30/40ms**，0ms受时钟刻度分辨率限制。 | **Accepted native measured CURRENT / #1672 仍 Draft 未交付**：专项[CI #38717945936](https://github.com/lazyxu/xdrive/actions/runs/38717945936)原始基准代码头`eea3d5b3c308423f3d828872b54a9fbce24870ac`成功；[完整机器n3 JSON](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936.json)、[三轮真实sample与summary](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/summary.json)、[原始工件](https://github.com/lazyxu/xdrive/actions/runs/38717945936/artifacts/11964455710)。原版达标，不改生产，**BEFORE=CURRENT，AFTER=N/A，速度提升=N/A**。准确文档头待复验；同头完整CI #38717945466 的photo-face-image无关BrokenPipeError失败，禁止误称full green或已合入。 |
+
+**维度限制：** P048仅可见首屏4个真实物理JPEG请求，不代表10万张原片解码、Live Motion、H264/RAW/HEVC/LIVP、慢WAN、Android/iOS真机或任意平台已安装PWA；窗口请求取消不等于持久任务取消。宽屏Web P016、Desktop P017与Mobile Files P040均是不同负载，不得互为BEFORE/AFTER。
+
+**失败样本继续保留：** 首轮[CI #38716968108](https://github.com/lazyxu/xdrive/actions/runs/38716968108)在真实100k夹具之后的Go PID采样前置检查失败，**Invalid harness、有效n=0**，而非产品RED；[原始记录](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38716968108-invalid.json)。当前版本采用独立编译、直接运行真实 `api.test` PID，不放宽预设160ms、128MiB、真实请求与取消的门槛。
+
+**关联PR处理：** P047修复 #1652 已合入；归档 #1666 文档-only PR仍Draft，因无关photo-face-image BrokenPipeError阻塞完整CI；Desktop 100k IPC进度 #1185 最终头缺实际完整累计进度回调，保持Draft/Blocked。本P048不碰Race或上传/下载/同步/删除持久任务所有权。

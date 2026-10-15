@@ -47,3 +47,17 @@
 ## 发布门槛
 
 每一个标成跨端完成的性能场景必须有上述六种模式各自来源准确的实测或明确的、经批准的实际平台豁免及证据；不能把 PWA Safari/Chrome 显示模式模拟、Service Worker注册或Web UI共享当作移动安装态性能成功。CI代码合并、真实Linux Xvfb测量、真实Windows/macOS设备、Android Chrome PWA与iOS Safari PWA真机性能应分开报告。每个新的失败夹具与被否决试验保留到原始证据索引，防止重复调查与误报成功。
+
+
+## P048 · 100k Gallery滚动取消六平台性能横向列表（2026-10-15）
+
+| 指标 | Desktop Electron | Wide Web | Mobile Web 390px | Desktop Installed PWA | Android Installed PWA | iOS Installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| **100k图库虚拟列表滚动→Go Context.Done** | P017：54/54；最慢61.792ms；真实Desktop Agent滚动/切App/关窗，已验收 | P016：18/18；160ms后旧Handler0、浪费0B，已验收 | **P048原版实测 n3：12/12**，27.449/32.757/21.640ms；P50 **27.449ms**，最大**32.757ms**（≤160ms），已通过专项，PR未合入 | **Not measured**，需要系统真实安装Chrome/Edge | **Not measured**，需要Android真机已安装 | **Not measured**，需要iOS真机主屏幕安装 |
+| +160ms遗留Handler / 无效字节 | P017：0 / 0B | P016：0 / 0B | P048：**0 / 0B**（每组4条物理JPEG，每条首块256B，三组共3072B） | Not measured | Not measured | Not measured |
+| 取消窗口资源（原样本） | 参见P017独立原始证据 | 参见P016独立原始证据 | P048：Go RSS峰值增长 **0B**；Chromium Renderer **3,592,192B**；CPU Go 10/0/0ms、Renderer20/30/40ms，冻结各128MiB预算通过 | Not measured | Not measured | Not measured |
+| 100k总量、真实可见数据范围 | P017：100k逻辑、独立Agent | P016：100k逻辑、首视口真实流 | P048：100,000逻辑PhotoAsset/115,000元数据Node，**仅4条/轮真实JPEG**；3次offset 50000签名Range各100条HTTP200 | Not measured | Not measured | Not measured |
+
+**判定：** P048 原有生产CURRENT通过冻结门槛，不需要优化；BEFORE=CURRENT，AFTER=N/A，提速=N/A。该记录来自准确运行头 `eea3d5b3c308423f3d828872b54a9fbce24870ac` 的 [原生CI #38717945936](https://github.com/lazyxu/xdrive/actions/runs/38717945936) 和 [持久n3机器JSON](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936.json)。当前PR仅基准及文档，最终文档提交后的专项/完整CI仍是独立合入门槛；当前full CI #38717945466 无关photo-face-image失败，不能标完成交付。
+
+P048的100k是**逻辑项/元数据**，不等于100k不同物理CAS、全量缩略图解码或Live Motion播放；P016/P017/P040请求路径不同，不能横向计算性能提升。390px Chromium模拟并非Android/iOS真机，桌面PWA、Android PWA、iOS PWA 均保持 **Not measured**。首轮 [#38716968108](https://github.com/lazyxu/xdrive/actions/runs/38716968108) 是 Go PID采样 **Invalid harness**，并非性能产品RED；原始文件已保留。

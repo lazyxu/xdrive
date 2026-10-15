@@ -3018,3 +3018,23 @@ Status: candidate under CI validation, not yet accepted on physical devices. The
 
 Exact workload/units: 100,000 **logical rows**, square tiles, 4px gap; synthetic vertical canvas height is calculated as `rows * tileWidth + (rows - 1) * 4`. This is **not** physical browser scroll height, FPS, memory, thumbnail decode or elapsed HTTP/IPC time. New `desktop/tests/mobile-gallery-kfs-columns.cjs` checks the KFS reference calculation, 10k/100k bounded Grid/Timeline windows across 320–899px, unchanged wide Web mode and pinch-to-column math. No added index/API or full-array materialization. **Acceptance pending:** current-head GitHub full CI, physical iOS27/Android 899/900 breakpoint, actual 100k viewport scroll/anchor, request cancellation, viewer-tap suppression, first-frame and memory traces. Do not claim performance improvement from shorter theoretical grid height.
 
+
+## P048/M005-h · 390px Mobile Web Gallery 100k 真实 Go 取消（2026-10-15）
+
+**状态：原版 CURRENT 原生有效 n=3（专项CI通过）；生产性能优化无必要，原版未改，AFTER=N/A，speedup=N/A。#1672 仍 Draft，最终文档头专项与full CI/final-gate尚未全部通过。** P048区别于历史通过的P016（宽屏Web）、P017（Desktop Renderer→Agent）和P040（Mobile Files），只检验新的390px共享Gallery滚动取消边界，不涉及Race/持久任务所有权。
+
+**预先冻结的实际数据边界：** 每组100,000逻辑PhotoAssets和115,000**元数据**Nodes，只有首屏**4条/组**原始慢速JPEG物理HTTP流（每条先发256B）；真实390×844 Chromium窗口宽度、document clientWidth 375、生产共享 Gallery 虚拟Grid、挂载首屏8个Tile，实际滚动到scrollTop4,737,375/extent9,474,751（约50%）。Go原生gin Handler实际收到 `Request.Context().Done`，然后另外校验owner授权的offset50000请求返回100项且总量为100,000。不是100k物理JPEG、视频、实况动图或真机/安装PWA。
+
+**冻结门槛（测量前已确定）：** PostgreSQL17/Gin/CAS+Chromium独立会话 n=3；每轮4–6个真的Go HTTP Handler已启动并全部 Context.Done +退出；从视口滚动到取消通知的最慢≤160ms，160ms后旧活跃数=0、旧响应浪费字节=0；首个实际发送字节数=256×启动数；Go与Renderer的取消窗口RSS峰值增长各≤128MiB，保留实际/proc CPU、DOM、Range和请求数量。只有生产CURRENT复现真实RED才能设计对照n≥3 BEFORE/AFTER；不是跑完所有100k JPEG字节的指标。
+
+| 独立轮次 | Go Context.Done通知最慢 | 启动/取消/Handler退出 | 160ms后活跃 / 浪费字节 | Go RSS增长 / CPU | Renderer RSS增长 / CPU |
+| --- | ---: | --- | --- | --- | --- |
+| 1 | **27.449ms** | 4/4/4 | 0 / 0B | 0B / 10ms | 3,354,624B / 20ms |
+| 2 | **32.757ms** | 4/4/4 | 0 / 0B | 0B / 0ms | 2,412,544B / 30ms |
+| 3 | **21.640ms** | 4/4/4 | 0 / 0B | 0B / 0ms | 3,592,192B / 40ms |
+
+**最终结果（本次原始运行）：** 12/12 Context.Done、12/12 Go Handler真正退出，最慢32.757ms与P50 27.449ms；160ms后活跃0、滚动后废弃字节0B，滚动前真实字节12×256=3,072B；三次签名offset50000分页各HTTP200、100条、总数100k，Go RSS增长0、Renderer最大3,592,192B。0ms CPU表示/proc时钟采样粒度，不是零成本。全部满足冻结预算，决定**保留原有产品代码，不做性能猜测式优化**。
+
+**原始、可重现证据：** 精确执行基准源码commit `eea3d5b3c308423f3d828872b54a9fbce24870ac`、[原生专项CI #38717945936](https://github.com/lazyxu/xdrive/actions/runs/38717945936)（success，job 116365120372）、[三样本+summary+source完整机器JSON](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936.json) 和 [CI artifact](https://github.com/lazyxu/xdrive/actions/runs/38717945936/artifacts/11964455710)。独立原始文件见 [sample-1](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/sample-1.json)、[sample-2](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/sample-2.json)、[sample-3](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/sample-3.json)、[summary](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/summary.json)、[source](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38717945936/source.txt)。归档改动后的新commit须重新执行源准确专项和正常完整CI；full CI #38717945466仅photo-face-image因其它子系统Unix Socket BrokenPipeError未通过，本PR不得据此Ready或Merge。
+
+**无效运行保留：** [CI #38716968108](https://github.com/lazyxu/xdrive/actions/runs/38716968108)在第一组有效Go样本前由于错误假设/proc children存在而失败，属[Invalid harness，n=0](performance-evidence/gallery-mobile-web-go-cancel-100k/ci-run-38716968108-invalid.json)；本次仅用 `go test -c` 直接启动真实 `api.test` 修正采样器，未放宽工作负载和预算，产品逻辑不变。关联归档#1666/IPC进度#1185均仍是相互独立Draft，不能清理或伪称合入。
