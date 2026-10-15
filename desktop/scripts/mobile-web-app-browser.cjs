@@ -106,6 +106,12 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/me': return plain({ id: role === 'admin' ? 10 : 11, username: `qa-${role}`, role, must_change_password: false });
     case 'GET /api/v1/me/quota': return plain({ quota_bytes: 10737418240, physical_used_bytes: 1048576, reserved_bytes: 0, available_bytes: 10736369664, logical_file_bytes: 1048576, trash_bytes: 0, history_bytes: 0, over_quota: false });
     case 'GET /api/v1/nodes/root': return plain(rootNode);
+    case 'GET /api/v1/device-backups':
+      // An ordinary Web owner may READ the intentionally redacted B-scope
+      // overview, never the owning Desktop's local Root or write actions.
+      // Strict/no-query, only used in real P6 cross-App Chromium acceptance.
+      assert(filesIos27ChromeScenario, 'device backup read fixture belongs to P6 Files cross-App QA only');
+      return plain({ devices: [], has_more: false, has_more_folders: false });
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
     case 'GET /api/v1/media/selection-jobs':
       // Real global Task Center reads this bounded owner-scoped list when
@@ -2963,6 +2969,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesDeferredDeepLinkAcceptance(origin);
   await filesGoToPathBrowserStabilityAcceptance(origin);
   await filesCrossAppFrameStabilityAcceptance(origin);
+  await filesSecondaryAppsFrameStabilityAcceptance(origin);
 }
 
 
@@ -3327,6 +3334,72 @@ async function filesCrossAppFrameStabilityAcceptance(origin) {
       samples.at(-1).filesHostCount === 1 && samples.at(-1).hash.startsWith('#/app/files'),
       samples.at(-1));
     result.samples[activeStage]={viewport,samples,realChromium:true,physicalDevice:false};
+    await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+  }
+}
+
+async function filesSecondaryAppsFrameStabilityAcceptance(origin) {
+  // P6 is an additional full-UI route geometry probe, never a separate
+  // Mobile API or production app path. Real Chromium with bounded fixtures.
+  const measure = () => page.evaluate(() => {
+    const rect = selector => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const r = element.getBoundingClientRect();
+      return { x:r.x, y:r.y, width:r.width, height:r.height };
+    };
+    const main = document.querySelector('main');
+    return {
+      hash:location.hash,
+      header:rect('[data-xdrive-mobile-app-header]'),
+      appFrame:rect('[data-xdrive-mobile-app-frame]'),
+      main:rect('main'),
+      mainTop:main?.scrollTop ?? null,
+      appHeading:document.querySelector('[data-xdrive-mobile-app-header] h1')?.textContent ?? null,
+      filesHostCount:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      overflow:{x:document.documentElement.scrollWidth-innerWidth,
+        y:document.documentElement.scrollHeight-innerHeight},
+    };
+  });
+  const same = (x,y) => x && y &&
+    Math.abs(x.x-y.x)<=1 && Math.abs(x.y-y.y)<=1 &&
+    Math.abs(x.width-y.width)<=1 && Math.abs(x.height-y.height)<=1;
+  for (const viewport of [
+    {width:375,height:812}, {width:390,height:844}, {width:899,height:700},
+  ]) {
+    activeStage='user-mobile-secondary-app-frame-stability-'+viewport.width;
+    await page.setViewportSize(viewport);
+    await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+    await page.reload({waitUntil:'domcontentloaded'});
+    await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+    await settle();
+    const base=await measure();
+    check(activeStage+': initial Files frame is a single stable viewport',
+      base.header && base.header.height>=52 && base.filesHostCount===1 &&
+      base.appFrame && base.main && base.overflow.x<=1 && base.overflow.y<=1,base);
+    const resultRows=[{destination:'files-start',...base}];
+    for (const next of [
+      {label:'设备备份',app:'device-backup'},
+      {label:'远程拉取',app:'remote-pull'},
+      {label:'本地存储',app:'local-storage'},
+      {label:'文件',app:'files'},
+    ]) {
+      await navigateWorkspace(next.label,next.app);
+      if(next.app==='files') await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+      await settle();
+      const sample=await measure();
+      resultRows.push({destination:next.app,...sample});
+      check(activeStage+': '+next.app+' preserves App frame without foreign scroll',
+        sample.hash.startsWith('#/app/'+next.app) &&
+        sample.header && sample.header.height>=52 &&
+        same(base.header,sample.header) &&
+        same(base.appFrame,sample.appFrame) &&
+        same(base.main,sample.main) &&
+        sample.mainTop===0 && sample.overflow.x<=1 && sample.overflow.y<=1 &&
+        sample.filesHostCount===(next.app==='files'?1:0),sample);
+    }
+    result.samples[activeStage]={viewport,rows:resultRows,realChromium:true,
+      physicalDevice:false,liveGoServer:false};
     await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
   }
 }
