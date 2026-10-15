@@ -61,18 +61,23 @@ func verifyLocalPushPhysicalStaging(
 	if err != nil {
 		return errLocalPushStageConflict
 	}
+	// Pin the exact temporary stage across hashing. Cooperating Local
+	// Put/Delete/Promote/Janitor can no longer swap or remove its inode
+	// mid-read; this lease is released BEFORE the later SQL scope recheck
+	// and NEVER upgrades this ephemeral observation into commit authority.
+	handle, err := local.OpenPinnedLocalPushStage(ctx, key)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return errLocalPushStageConflict
+	}
+	defer handle.Close()
 	full := filepath.Join(local.FilesystemRoot(), filepath.FromSlash(key))
-	// Lstat before opening and after reading is required: Local.Open follows
-	// symlinks and must not be trusted to validate a physical staging type.
 	before, err := os.Lstat(full)
 	if err != nil || !before.Mode().IsRegular() || before.Size() != stage.TotalSize {
 		return errLocalPushStageConflict
 	}
-	handle, err := local.Open(ctx, key)
-	if err != nil {
-		return errLocalPushStageConflict
-	}
-	defer handle.Close()
 	opened, err := handle.Stat()
 	if err != nil || !opened.Mode().IsRegular() ||
 		!os.SameFile(before, opened) || opened.Size() != stage.TotalSize {
