@@ -1871,3 +1871,35 @@ Go Linux/Windows native plus PostgreSQL17 exact-head CI/final-gate are required;
 real physical devices, 100k inventory, >=4GiB, long-lived recheck and GitLab
 remain unverified. F2c2+ must design immutable CAS/SQL lock ordering and
 atomic idempotent authoritative writes before any real Push execution.
+
+
+## L03-F2c2 · Exact already-staged temporary recovery (PR verification)
+
+After #1674's real native-to-Gin test was merged, an ambiguous HTTP
+acknowledgment may leave a completed Server temporary stage despite the
+owning Agent not receiving confirmation. Agent-private
+StageVerifiedNativeOriginalBytes now distinguishes newly reserved records
+(which still stream bytes normally) from an EXACT existing staged record.
+For a staged replay, the Agent reopens and rehashes the current native
+original under its persisted Root/CURRENT journal a second time without
+sending another PUT. Both cases repeat CURRENT generation, persisted Root
+grant, owning-device authenticated status and a separate physical
+Server SHA256 preflight before returning only a JSON-redacted,
+NONCANONICAL Agent-private temporary receipt.
+
+Server exact reservation scope binds Source/revision, device/Root, CURRENT
+generation, relative path key, content hash and size. Stale, missing,
+writing, failed, canceled or expired stages fail closed. A previously
+valid stage corrupted before replay must be rejected and best-effort
+canceled, without an additional PUT or canonical file mutation. The real
+Gin/PostgreSQL/native integration tests exercise exact replay reuse,
+single-PUT accounting, corruption rejection and physical file cleanup.
+
+This does NOT provide partial chunk resume, 4GiB transfer, durable
+SourceRun accounting, permanent CAS/File/Node/SourceItem mutation, or
+local-folder activation. No new Desktop/Web IPC or remote control,
+schedule, NAS Push, Mirror deletion or per-file read DTO is added.
+Canonical CAS/SQL lifetime locking, quotas and crash-idempotent writes
+remain future F2d+ milestones. Full exact-head GitHub Go Linux/Windows,
+PostgreSQL, Desktop/Web and final-gate CI is required; real physical
+devices, 100k originals, >=4GiB and GitLab remain unverified.

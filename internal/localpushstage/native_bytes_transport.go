@@ -32,7 +32,8 @@ type LocalOriginalServerStage struct {
 //
 // The native file is independently hashed before reservation and then streamed
 // from a SECOND securely opened and verified OS handle through a bounded
-// io.Pipe into the dedicated owning-device /local-staging endpoint. Neither
+// io.Pipe into the dedicated owning-device /local-staging endpoint. Exact
+// completed stage replay rehashes the native file without a second PUT. Neither
 // caller-supplied relative paths nor expected SHA256 are upload authorization;
 // the Server still independently checks credentials, Root and Source revision.
 // Any failure best-effort cancels the temporary stage. All physical bytes are
@@ -119,46 +120,61 @@ func StageVerifiedNativeOriginalBytes(
 			cleanupCtx, grant.SourceID, sourceRevision, proof, reserved.StageID,
 		)
 	}()
-	if reserved.Status != "reserved" {
-		return empty, errors.New("temporary stage is already in use or previously transmitted")
-	}
-	readCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	reader, writer := io.Pipe()
-	defer reader.Close()
-	type nativeResult struct {
-		proof localpush.LocalStagedOriginal
-		err   error
-	}
-	native := make(chan nativeResult, 1)
-	go func() {
-		got, readErr := localpush.StreamCurrentInventoryFileToStaging(
-			readCtx, configDir, grant, current.SnapshotSHA256,
-			relativePath, expectedSHA256, writer, nil,
+	switch reserved.Status {
+	case "reserved":
+		readCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		reader, writer := io.Pipe()
+		defer reader.Close()
+		type nativeResult struct {
+			proof localpush.LocalStagedOriginal
+			err   error
+		}
+		native := make(chan nativeResult, 1)
+		go func() {
+			got, readErr := localpush.StreamCurrentInventoryFileToStaging(
+				readCtx, configDir, grant, current.SnapshotSHA256,
+				relativePath, expectedSHA256, writer, nil,
+			)
+			_ = writer.CloseWithError(readErr)
+			native <- nativeResult{proof: got, err: readErr}
+		}()
+		received, sendErr := c.PutLocalPushStagingBytes(
+			readCtx, grant.SourceID, sourceRevision, proof,
+			reserved.StageID, before.Size, reader,
 		)
-		_ = writer.CloseWithError(readErr)
-		native <- nativeResult{proof: got, err: readErr}
-	}()
-	received, sendErr := c.PutLocalPushStagingBytes(
-		readCtx, grant.SourceID, sourceRevision, proof,
-		reserved.StageID, before.Size, reader,
-	)
-	if sendErr != nil {
-		cancel()
-		_ = reader.CloseWithError(sendErr)
-	}
-	did := <-native // buffered channel prevents a producer goroutine leak
-	if sendErr != nil {
-		return empty, sendErr
-	}
-	if did.err != nil {
-		return empty, did.err
-	}
-	if did.proof.Size != before.Size ||
-		did.proof.SHA256 != before.SHA256 ||
-		did.proof.SnapshotSHA256 != current.SnapshotSHA256 ||
-		received.StageID != reserved.StageID || received.Status != "staged" {
-		return empty, errors.New("Agent and temporary Server bytes differ")
+		if sendErr != nil {
+			cancel()
+			_ = reader.CloseWithError(sendErr)
+		}
+		did := <-native // buffered channel prevents a producer goroutine leak
+		if sendErr != nil {
+			return empty, sendErr
+		}
+		if did.err != nil {
+			return empty, did.err
+		}
+		if did.proof.Size != before.Size ||
+			did.proof.SHA256 != before.SHA256 ||
+			did.proof.SnapshotSHA256 != current.SnapshotSHA256 ||
+			received.StageID != reserved.StageID || received.Status != "staged" {
+			return empty, errors.New("Agent and temporary Server bytes differ")
+		}
+	case "staged":
+		// Recover an EXACT finished stage after an ambiguous acknowledgment.
+		// Rehash the live native original with a second verified file handle,
+		// but never issue a second PUT or authorize canonical File/CAS writes.
+		rechecked, recheckErr := localpush.StreamCurrentInventoryFileToStaging(
+			ctx, configDir, grant, current.SnapshotSHA256,
+			relativePath, expectedSHA256, io.Discard, nil,
+		)
+		if recheckErr != nil || rechecked.Size != before.Size ||
+			rechecked.SHA256 != before.SHA256 ||
+			rechecked.SnapshotSHA256 != current.SnapshotSHA256 {
+			return empty, errors.New("native original or CURRENT generation changed on staged replay")
+		}
+	default:
+		return empty, errors.New("temporary stage cannot be reused in this state")
 	}
 	// Revisit the physical native generation/Root AFTER the authenticated
 	// Server accepted bytes, and repeat Server authorization via status GET.

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -95,7 +96,11 @@ func TestLocalPushNativeToGinPhysicalStageAndCancellation(t *testing.T) {
 			}
 
 			router := app.Router()
+			var stagePUTs atomic.Int32
 			httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/content") {
+					stagePUTs.Add(1)
+				}
 				if tc.tamper && r.Method == http.MethodGet &&
 					strings.HasSuffix(r.URL.Path, "/content-preflight") {
 					// Simulate an out-of-band same-size overwrite AFTER the
@@ -214,6 +219,42 @@ func TestLocalPushNativeToGinPhysicalStageAndCancellation(t *testing.T) {
 				serialized, err := json.Marshal(receipt)
 				if err != nil || string(serialized) != "{}" {
 					t.Fatalf("temporary private Agent receipt leaked to JSON: %q err=%v", serialized, err)
+				}
+				// A lost HTTP reply to a completed stage must not require a
+				// duplicate PUT. Fresh native and physical proof is mandatory.
+				replayed, replayErr := localpushstage.StageVerifiedNativeOriginalBytes(
+					client.New(httpServer.URL, jwt), ctx, privateConfig,
+					grant, source.Revision, proof, "photo.bin", digest,
+				)
+				if replayErr != nil || replayed != receipt || stagePUTs.Load() != 1 {
+					t.Fatalf("exact replay duplicated native bytes or lost proof: initial=%+v replay=%+v err=%v PUTs=%d",
+						receipt, replayed, replayErr, stagePUTs.Load())
+				}
+				// Server stage content is still noncanonical and mutable:
+				// same-size tampering must refuse any later exact replay.
+				corrupted := bytes.Repeat([]byte{0xd3}, len(body))
+				if _, err := store.Put(context.Background(), key, bytes.NewReader(corrupted)); err != nil {
+					t.Fatal(err)
+				}
+				denied, deniedErr := localpushstage.StageVerifiedNativeOriginalBytes(
+					client.New(httpServer.URL, jwt), ctx, privateConfig,
+					grant, source.Revision, proof, "photo.bin", digest,
+				)
+				var canceledStage meta.LocalPushStaging
+				if err := db.Where("source_id = ?", source.ID).Take(&canceledStage).Error; err != nil {
+					t.Fatal(err)
+				}
+				if deniedErr == nil || denied.StageID != "" ||
+					canceledStage.Status != localPushStageCanceled ||
+					canceledStage.StageID != stage.StageID || stagePUTs.Load() != 1 {
+					t.Fatalf("corrupted stage replay granted receipt: result=%+v err=%v status=%s PUTs=%d",
+						denied, deniedErr, canceledStage.Status, stagePUTs.Load())
+				}
+				if h, openErr := store.Open(context.Background(), key); !os.IsNotExist(openErr) {
+					if openErr == nil {
+						_ = h.Close()
+					}
+					t.Fatalf("failed replay retained temporary bytes: %v", openErr)
 				}
 			}
 
