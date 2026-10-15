@@ -866,6 +866,20 @@ export interface MediaPlacesPage {
   has_more: boolean
 }
 
+/** Source coordinates are WGS84. West > East means antimeridian wrap. */
+export interface MediaPlacesViewportBounds {
+  west: number
+  south: number
+  east: number
+  north: number
+}
+
+/** Cell-count and PhotoAsset-count are exact for the indexed Owner viewport;
+ * only the bounded items window is returned. A cell center is not photo GPS. */
+export interface MediaPlacesViewportPage extends MediaPlacesPage {
+  total_photo_count: number
+}
+
 export interface MediaMemory {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string

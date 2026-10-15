@@ -57,6 +57,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlacesViewportBounds,
+  MediaPlacesViewportPage,
   XDriveBaiduMapProviderInfo,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
@@ -552,6 +554,9 @@ declare global {
         ) => Promise<DesktopResult<AgentMediaAlbum>>
         getMediaPlaces: (limit?: number) => Promise<DesktopResult<MediaPlaceFacet[]>>
         getMediaPlacesPage: (limit?: number, offset?: number) => Promise<DesktopResult<MediaPlacesPage>>
+        getMediaPlacesViewport: (
+          bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, requestID?: string,
+        ) => Promise<DesktopResult<MediaPlacesViewportPage>>
         getMediaMemories: (
           anchorDate?: string,
           limit?: number,

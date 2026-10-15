@@ -183,6 +183,8 @@ import {
   type AgentMediaAlbumFolder,
   type AgentMediaPlaceFacet,
   type AgentMediaPlacesPage,
+  type AgentMediaPlacesViewportBounds,
+  type AgentMediaPlacesViewportPage,
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
   type AgentMediaBurstReviewList,
@@ -2948,6 +2950,39 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().mediaPlacesPage(limit, offset)
     }, false))
+
+  ipcMain.handle('agent:get-media-places-viewport', (
+    event, bounds: unknown, limit: unknown = 64, offset: unknown = 0,
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentMediaPlacesViewportPage>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (bounds === null || typeof bounds !== 'object' || Array.isArray(bounds)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid media viewport bounds.')
+      }
+      const obj = bounds as Record<string, unknown>
+      const names = ['west', 'south', 'east', 'north']
+      if (Object.keys(obj).length !== 4 || Object.keys(obj).some(k => !names.includes(k))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid media viewport fields.')
+      }
+      const valid = (name: string, minimum: number, maximum: number) => {
+        const value = obj[name]
+        return typeof value === 'number' && Number.isFinite(value) &&
+          value >= minimum && value <= maximum
+      }
+      if (!valid('west', -180, 180) || !valid('east', -180, 180) ||
+          !valid('south', -90, 90) || !valid('north', -90, 90) ||
+          (obj.south as number) >= (obj.north as number) ||
+          obj.west === obj.east || (obj.west === 180 && obj.east === -180) ||
+          typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000) {
+        throw new AgentIPCError('invalid_input', 0, 'Media viewport geometry or window is invalid.')
+      }
+      return requireAgentClient().mediaPlacesViewport(
+        obj as unknown as AgentMediaPlacesViewportBounds, limit, offset, signal,
+      )
+    }), false))
 
   ipcMain.handle(
     'agent:get-media-memories',

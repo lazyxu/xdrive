@@ -2765,6 +2765,16 @@ func (c *agentController) CloudMediaPlacesPage(ctx context.Context, limit, offse
 	return cli.MediaPlacesPage(ctx, limit, offset)
 }
 
+func (c *agentController) CloudMediaPlacesViewport(
+	ctx context.Context, bounds client.MediaPlacesViewportBounds, limit, offset int,
+) (client.MediaPlacesViewportPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaPlacesViewportPage{}, err
+	}
+	return cli.MediaPlacesViewport(ctx, bounds, limit, offset)
+}
+
 func (c *agentController) CloudMediaPlaces(ctx context.Context, limit int) ([]client.MediaPlaceFacet, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

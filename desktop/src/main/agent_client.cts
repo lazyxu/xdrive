@@ -1715,6 +1715,17 @@ export type AgentMediaPlacesPage = {
   has_more: boolean
 }
 
+export type AgentMediaPlacesViewportBounds = {
+  west: number
+  south: number
+  east: number
+  north: number
+}
+
+export type AgentMediaPlacesViewportPage = AgentMediaPlacesPage & {
+  total_photo_count: number
+}
+
 export type AgentMediaMemory = {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string
@@ -2518,6 +2529,19 @@ export class AgentIPCClient {
   mediaPlacesPage(limit = 48, offset = 0) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<AgentMediaPlacesPage>('GET', `/v1/media/places/page?${query.toString()}`)
+  }
+
+  mediaPlacesViewport(
+    bounds: AgentMediaPlacesViewportBounds, limit = 64, offset = 0, signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      limit: String(limit), offset: String(offset),
+    })
+    return this.request<AgentMediaPlacesViewportPage>(
+      'GET', `/v1/media/places/viewport?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   mediaPlaces(limit = 24) {

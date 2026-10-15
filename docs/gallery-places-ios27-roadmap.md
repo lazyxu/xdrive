@@ -301,3 +301,11 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 新接口始终走原登录 Owner 授权与 A1 一致的 GPS 谓词，查询由请求 Context 控制并有 3 秒上限，响应 `no-store`；不返回图像字节、Browser AK、Server AK、私有原图或具体路径。原有 Gallery Range/虚拟列表/Viewer 继续负责进入照片，三端同一个 API 契约。Go Client 类型接口作为后续 Desktop Agent bridge 前置；本阶段不改任何 Renderer 或 JSAPI Runtime。
 
 **仍未完成**：A3b3a2 共用 MUI 数据源与 Desktop Agent IPC、A3b3 实际连续平移/缩放/标记/聚合，以及真正的百度自托管/PWA/Electron 授权、许可子资源白名单、签名发布、密钥泄漏与真机证明。动态 `runtime_enabled=false` 不变，严格拒绝非百度 Provider。完成 A3 才按用户指定顺序推进 A4、B1、B2、B3、C1。
+
+## A3b3a2a · Web/Mobile Web/Desktop 单一视窗请求与取消链路（2026-10-15）
+
+在 A3b3a1 #1706 准确 HEAD 完整 CI/Final Gate 成功并线性合入后，本阶段通过已有共享 `MediaGalleryDataSource` / `XDriveMediaGalleryPort` 添加可选 `listPlacesViewport`。Web 和 Mobile Web 使用同一 `web/src/mediaGalleryAdapter.ts` 与认证 REST；Desktop 复用经过 `media-gallery` 能力校验的 Electron Preload/Main、按 WebContents 绑定的短视窗请求取消、受认证本机 Agent API、Go Client，最终到达原 Server Owner 视窗查询，不新增照片模型或第二套 Viewer/虚拟列表。
+
+取消仅作用于临时地图请求，立即传到 Go `r.Context()`，不影响上传、下载、同步等持久任务。旧 Agent/Server 能力缺失时明确显示未支持，不允许退化为前 24 个地点或从浏览器读取 100k GPS 全集。保留原本经纬度 WGS84、跨日期变更线、准确总格数/PhotoAsset 数及每页最多 100 格。
+
+**本阶段只交付跨平台数据契约，尚未由实际 MUI 地图组件触发调用，也未启用 JSAPI4：** `runtime_enabled=false`，百度仍为唯一 Provider，Server AK/Browser AK 始终 Server 内加密隔离；依赖真实百度许可、完整人工批准子资源、客户端不泄漏 AK 的原始流量核查、生产发布签名、CSP/Electron/移动端真机验收仍不得绕过。下一步 A3b3a2b 实施 Viewer/视窗状态共享控制、取消与真实图库数据衔接，再完成有许可支持的 JSAPI4 动态交互，之后 A4、B1～B3、C1。保留 iOS 27「照片」1:1 与 52px App Frame。
