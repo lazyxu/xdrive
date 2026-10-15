@@ -49,6 +49,9 @@ test('Web hash and Back/Forward accept valid deep links without changing admin-s
     { service: 'caddy', tab: 'config' },
     { service: 'geonames', tab: 'verify' },
     { service: 'background-worker', tab: 'history' },
+    { service: 'photo-smart', tab: 'verify' },
+    { service: 'photo-semantic', tab: 'verify' },
+    { service: 'photo-creative', tab: 'verify' },
     { policy: 'photo-auto', tab: 'config' },
     { policy: 'photo-auto', tab: 'history' },
   ]
@@ -255,7 +258,13 @@ test('shared Web and Desktop service rows expose true configuration ownership, n
   // cannot regress to claiming that absolutely no in-app host operation exists.
   assert.ok(page.includes('共享宿主仅支持审计后的安全启用'))
   assert.ok(page.includes('管理共享 Photo Intelligence 宿主（仅支持安全启用）'))
-  assert.ok(page.includes('检测共享宿主与四类模型 Info（手动、只读）'))
+  assert.ok(page.includes('data-xdrive-direct-shared-photo-verify'))
+  assert.ok(page.includes("['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) &&"))
+  assert.ok(page.includes("currentTab === 'verify')) &&"))
+  assert.equal((page.match(/<XDrivePhotoHostDesiredPanel source=/g) || []).length, 1,
+    'per-model verification must reuse one lazy shared panel')
+  assert.equal(page.includes('检测共享宿主与四类模型 Info（手动、只读）'), false,
+    'do not require an extra redirect to the shared host for model diagnostics')
   assert.equal(page.includes('尚无受限容器启停接口'), false)
   assert.ok(page.includes('data-xdrive-service-config-mode'))
   assert.ok(page.includes("configModeLabels[service.config_mode ?? 'unknown']"))
@@ -351,4 +360,27 @@ test('Runtime verification tabs load exact service-specific status without eager
   }
   assert.ok(page.includes("'database', 'media-worker', 'background-worker']"))
   assert.equal(page.includes('docker.sock'), false)
+})
+
+test('Photo model details expose shared manual verification but only the host owns mutable configuration', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const hostPanel = read('ui/shared/src/mui/PhotoHostDesiredPanel.tsx')
+  const start = page.indexOf('function dependencyTabsFor(')
+  const end = page.indexOf('const statusLabels:', start)
+  assert.ok(start >= 0 && end > start, 'dependency tab allowlist must remain explicit')
+  const tabs = page.slice(start, end)
+  assert.ok(tabs.includes("case 'photo-face': return ['status', 'config', 'verify', 'history']"))
+  assert.ok(tabs.includes("case 'photo-creative': return ['status', 'verify']"))
+  assert.ok(tabs.includes("case 'photo-smart':"))
+  assert.ok(tabs.includes("case 'photo-semantic':"))
+  assert.equal(tabs.includes("case 'photo-smart': return ['status', 'config'"), false)
+  assert.equal(tabs.includes("case 'photo-semantic': return ['status', 'config'"), false)
+  assert.equal(tabs.includes("case 'photo-creative': return ['status', 'config'"), false)
+  assert.equal((page.match(/<XDrivePhotoHostDesiredPanel source=/g) || []).length, 1,
+    'all model diagnostics must use the one shared existing host panel')
+  assert.ok(page.includes("currentTab === 'verify')) &&"),
+    'submodel verification must not mount a mutable host section')
+  assert.ok(hostPanel.includes("if (section !== 'verify' || !source.loadPhotoHostPreflight"),
+    'private model inference must remain behind an explicit administrator click')
+  assert.ok(hostPanel.includes('source.loadPhotoHostPreflight()'))
 })
