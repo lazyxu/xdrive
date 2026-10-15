@@ -1,0 +1,83 @@
+{
+  "workloadId": "P051/M004-e",
+  "type": "derived compact view of permanently archived raw original n3",
+  "sourceHead": "9f2b6b56b497e19e4fb6526e728d8823b9cecb9f",
+  "originalNativeRunId": 38758949429,
+  "originalArtifactId": 11985756369,
+  "originalNativeConclusion": "success",
+  "platform": "Linux Xvfb Electron-hosted responsive Web renderer (not native Android/iOS or installed PWA)",
+  "outerWindowCssPx": [
+    390,
+    844
+  ],
+  "realInnerWidthCssPx": 390,
+  "realDocumentClientWidthCssPx": 375,
+  "mobileBreakpoint": true,
+  "logicalSizeBytesPerDirection": 4294967296,
+  "physicallyAllocatedSourceBytesPerFixture": 4294971392,
+  "sourceDistinctSHA256": 3,
+  "uploadHttpSignedPutCountPerFixture": 512,
+  "downloadHttpGetCountPerFixture": 1,
+  "opfsFullVerifiedBytesPerFixture": 4294967296,
+  "n": 3,
+  "uploadP50Ms": 47803.5,
+  "downloadP50Ms": 17587.399999999994,
+  "uploadThroughputP50MiBps": 85.68410262846862,
+  "downloadThroughputP50MiBps": 232.89400366171242,
+  "peakRendererWorkingSetDeltaKiB": 92832,
+  "peakGoServerRssDeltaBytes": 5144576,
+  "goServerCpuP50Ms": 26110,
+  "frozenThresholds": {
+    "eachUploadMs": 360000,
+    "eachDownloadMs": 360000,
+    "rendererRssGrowthBytes": 268435456,
+    "serverRssGrowthBytes": 268435456
+  },
+  "passed": true,
+  "before": "CURRENT n3 valid",
+  "after": null,
+  "optimization": "not attempted, original already within frozen budgets",
+  "samples": [
+    {
+      "sample": "sample-1",
+      "sourceSha256": "ed34490dfa2a754bbaaa2b78ae0a3c7af52b1aa4099689ccf9a46837b11432c7",
+      "uploadMs": 47803.5,
+      "downloadMs": 17587.4,
+      "postDownloadFullOPFSVerificationMs": 23289.5,
+      "goCpuMs": 26060,
+      "goRssDeltaBytes": 3358720,
+      "rendererMaxDeltaKiB": 85820
+    },
+    {
+      "sample": "sample-2",
+      "sourceSha256": "59b12a2a28e9e69339f991aff08aa81dfeca6a74c6681be3c4e4fa877edabede",
+      "uploadMs": 47960.8,
+      "downloadMs": 17572,
+      "postDownloadFullOPFSVerificationMs": 23033.2,
+      "goCpuMs": 26130,
+      "goRssDeltaBytes": 5144576,
+      "rendererMaxDeltaKiB": 92832
+    },
+    {
+      "sample": "sample-3",
+      "sourceSha256": "16732fd7a31f86f9fff9a60a9325445d7b8f981d29b390ccfd746884033a3c6d",
+      "uploadMs": 47323.9,
+      "downloadMs": 17588.8,
+      "postDownloadFullOPFSVerificationMs": 22827.8,
+      "goCpuMs": 26110,
+      "goRssDeltaBytes": 2932736,
+      "rendererMaxDeltaKiB": 85320
+    }
+  ],
+  "rawArchive": "raw-n3.tar.gz",
+  "rawArchiveSHA256": "7c469635a52ef3df4b4858930add8e5dc18006e0b6c47fbbdd4639d64236a367",
+  "originalArtifactURL": "https://github.com/lazyxu/xdrive/actions/runs/38758949429/artifacts/11985756369",
+  "limitations": [
+    "No OS-installed PWA",
+    "No physical Android/iOS device",
+    "No WAN or lossy network",
+    "No durable Task Center cancellation",
+    "No 100k actual file sync/delete",
+    "Not the full Mobile App Frame"
+  ]
+}

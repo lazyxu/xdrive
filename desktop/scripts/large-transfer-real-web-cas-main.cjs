@@ -16,6 +16,10 @@ const sizeGiB = Number(process.env.XD_REAL_CAS_SIZE_GIB || '1')
 if (![1,4].includes(sizeGiB)) throw Error('real Web CAS benchmark size must be 1 or 4 GiB')
 const sizeBytes = sizeGiB * 2 ** 30
 const highEntropy = process.env.XD_REAL_CAS_INCOMPRESSIBLE_PERF === '1'
+const mobileWebViewport = process.env.XD_REAL_WEB_CAS_MOBILE_VIEWPORT === '1'
+if (mobileWebViewport && (!highEntropy || sizeGiB !== 4 || process.env.XD_PWA_FULL_OPFS_READBACK === '1')) {
+  throw Error('P051 mobile Web requires actual 4GiB high-entropy CAS with complete OPFS verification')
+}
 const highEntropyQuery = highEntropy ? '&xdriveCasIncompressible=1' : ''
 let physicalSeedSHA256 = null
 let sourceAllocatedBytes = null
@@ -149,8 +153,8 @@ app.whenReady().then(async () => {
     }
 
     win = new BrowserWindow({
-      width: 1280,
-      height: 800,
+      width: mobileWebViewport ? 390 : 1280,
+      height: mobileWebViewport ? 844 : 800,
       show: true,
       webPreferences: {
         contextIsolation: true,
@@ -174,6 +178,24 @@ app.whenReady().then(async () => {
     await win.loadURL(
       `${base}/?xdriveLargeTransferPerf=${scenario}&xdriveLargeTransferSample=${sample}&xdriveLargeTransferSizeGiB=${sizeGiB}&xdriveLargeTransferRealCAS=1${pwaReadbackParam}${highEntropyQuery}`,
     )
+    // P051: observe actual Chromium document/client width, not just BrowserWindow outer dimensions.
+    // 390px Linux Chromium is NOT a native phone or an OS-installed PWA.
+    let mobileViewportEvidence = null
+    if (mobileWebViewport) {
+      mobileViewportEvidence = await win.webContents.executeJavaScript(
+        `({innerWidth: window.innerWidth, documentWidth: document.documentElement.clientWidth,
+          innerHeight: window.innerHeight, mobileBreakpoint: matchMedia('(max-width: 899.95px)').matches,
+          userAgent: navigator.userAgent})`,
+        true,
+      )
+      if (!mobileViewportEvidence.mobileBreakpoint ||
+          !Number.isFinite(mobileViewportEvidence.innerWidth) ||
+          !Number.isFinite(mobileViewportEvidence.documentWidth) ||
+          mobileViewportEvidence.innerWidth < 360 || mobileViewportEvidence.innerWidth > 390 ||
+          mobileViewportEvidence.documentWidth < 360 || mobileViewportEvidence.documentWidth > 390) {
+        throw Error('P051 no actual 360..390 CSS px narrow renderer: ' + JSON.stringify(mobileViewportEvidence))
+      }
+    }
     if (scenario === 'upload') {
       await waitForSelector(win, '[data-xdrive-large-transfer-upload-file]')
       win.webContents.debugger.attach('1.3')
@@ -195,7 +217,8 @@ app.whenReady().then(async () => {
     const measured = await waitForResult(win)
     const combined = {
       ...measured.result,
-      surface: 'web',
+      surface: mobileWebViewport ? 'mobile-web-chromium-390px' : 'web',
+      mobileViewportEvidence,
       runtimeVersions: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node },
       rendererWorkingSetStartKB: measured.workingSetStartKB,
       rendererWorkingSetPeakKB: measured.workingSetPeakKB,
