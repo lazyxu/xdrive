@@ -327,3 +327,12 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 相机快照仅在前端 JS 运行内按用户/服务 scope 保留最多 8 份、10 分钟，输入必须通过坐标/分页/标识符校验；不写 LocalStorage/IndexedDB/URL/Cookie/Service Worker，也不包含 AK、照片原始字节或 EXIF。新地点选择优先新照片坐标，视窗改变取消旧的短请求并重置其分页；恢复后的旧 place anchor 仅在相应 Server 页面返回后滚动定位，避免不存在的 DOM 节点或 100k 全量扫描。根地点列表分页也恢复最近 offset。
 
 **仍为有限百度 Static Server API 体验**：JSAPI4 runtime_enabled=false。只有取得百度自托管/PWA/Electron 的适用许可、真实官方完整 JS/WASM/字体/瓦片子资源人工审查、原始响应与浏览器 HAR 防 AK 泄漏、受信签名发布门禁、Server 用户授权/限额、Caddy/CSP/Electron 安全隔离和真实 iOS27/Android/Desktop 操作及视觉比对后，才能进一步完成动态平移/缩放、Marker/Cluster。随后依次 A4、B1、B2、B3、C1，保留 52px 全屏 App Frame 与 iOS27「照片」1:1 标准。
+
+
+## A3b3a3a · Native ClusterLayer 的真实 GPS 输入合同（2026-10-16）
+
+在 A3b3a2c #1727 合入后，本次只新增三端共用的静态类型和纯函数层（并非启用地图脚本）：接收已有 Server /media/places/viewport 认证分页输出。仅当该视窗 offset=0、返回全部真实网格、total_count 与 items 长度相等、has_more=false 且单次 <=100 格时，构建可供未来 JSAPI4 层使用的 WGS84 Marker 输入；任何 100k 截断、重复 ID、缺失真实 sample 坐标、实际计数不符、无效/超范围 GPS 和取消均不能被当成成功聚合。0/0 合法，90 度极点仍是合法 GPS，但当前地图无法显示时单独声明不支持；绝不以旧 0.01 度网格中心冒充真实照片点。
+
+百度 JSAPI 4.0 官方 2026/09/30 更新已内置 ClusterLayer（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fchangelog）；官方坐标系章节（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord）说明 JSAPI 默认 BD-09，源 GPS WGS84 必须由官方 BMap.Convertor.translate(points,1,5,callback) 转换，不能自行编造偏移。转换仅通过未来许可运行环境注入，不引入百度 JS、Loader、AK 或 URL；批次 <=10、视窗 <=100、每批最多等待 3 秒，取消/回调错误/缺点/NaN 均整体 fail closed。GeoJSON FeatureCollection 只允许转换成功后的 BD-09 点进入未来 native ClusterLayer.setData。内置 ClusterLayer 的聚合气泡计的是地理网格点位数量，不应谎称为实际照片张数；每个单点另外保留 Server 真实 photo_count。
+
+仍为 NO-GO：尚未取得百度账号真实自托管/PWA/Electron/商用许可证据及完整官方资源授权清单；Server 生产路由、Owner 授权/撤销、可信签名、跨副本配额、原始上游及浏览器 HAR AK 无泄漏证据、Caddy CSP、Electron 隔离和 iOS27/Android/Desktop 真机验收均不能由合成测试替代。JSAPI4 runtime_enabled=false；唯一百度 Provider、分离加密 Server Static AK 和 Browser JSAPI AK、52px 全屏 App Frame、共用 Server Range/VirtualCollection/Viewer 保持不变。下一步在合法放行后挂接动态 Marker/ClusterLayer；然后 A4 Nearby、B1/B2/B3、C1。
