@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   real-native-download:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-native-disk-s4c3b1-20261013' || github.head_ref == 'test/pwa-native-4gib-s4c3b2a-20261013'
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-native-disk-s4c3b1-20261013' || github.head_ref == 'test/pwa-native-4gib-s4c3b2a-20261013' || github.head_ref == 'test/pwa-native-cancel-retry-s4c3b2c1-20261015'
     runs-on: ubuntu-latest
     timeout-minutes: 80
     services:
@@ -36,6 +36,7 @@ jobs:
           --health-retries 20
     env:
       XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_PWA_S4C3_CANCEL: ${{ github.head_ref == 'test/pwa-native-cancel-retry-s4c3b2c1-20261015' && '1' || '0' }}
       XD_PWA_S4C3_SIZE_GIB: ${{ github.event_name == 'workflow_dispatch' && inputs.size_gib || (github.head_ref == 'test/pwa-native-4gib-s4c3b2a-20261013' && '4') || '1' }}
     steps:
       - uses: actions/checkout@v4
@@ -54,8 +55,9 @@ jobs:
         run: |
           set -euo pipefail
           test -z "$(gofmt -l internal/api/pwa_s2b3_real_gin_auth_integration_test.go internal/api/pwa_s4c3_native_download_fixture_test.go)"
+          test -z "$(gofmt -l internal/api/pwa_s4c3_native_cancel_fixture_test.go)"
           node --check desktop/scripts/pwa-s4c3-native-download-browser.cjs
-          node --test desktop/tests/pwa-s4c3-native-download-contract.cjs desktop/tests/pwa-s4c3-native-4gib-contract.cjs
+          node --test desktop/tests/pwa-s4c3-native-download-contract.cjs desktop/tests/pwa-s4c3-native-4gib-contract.cjs desktop/tests/pwa-s4c3-native-cancel-contract.cjs
           npm --prefix web ci --no-audit --no-fund
           npm --prefix web run build
           go test -c -o "$RUNNER_TEMP/pwa-s4c3-api.test" ./internal/api
@@ -100,6 +102,7 @@ jobs:
             READY="$RUNNER_TEMP/pwa-s4c3-${MODE}-ready.json"
             XD_PWA_S2B3_REAL_GIN=1 \
             XD_PWA_S4C3_NATIVE_DOWNLOAD=1 \
+            XD_PWA_S4C3_CANCEL="$XD_PWA_S4C3_CANCEL" \
             XD_PWA_S2B3_READY_FILE="$READY" \
             XD_PWA_S2B3_DIST="$GITHUB_WORKSPACE/web/dist" \
               "$RUNNER_TEMP/pwa-s4c3-api.test" \
@@ -120,7 +123,7 @@ jobs:
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/pwa-s4c3-driver/node_modules/playwright-core" \
             XD_PR_HEAD="$XD_PR_HEAD" \
               node desktop/scripts/pwa-s4c3-native-download-browser.cjs \
-                --ready="$READY" --output-dir="$OUT" --mode="$MODE"
+                --ready="$READY" --output-dir="$OUT" --mode="$MODE" --cancel-first="$XD_PWA_S4C3_CANCEL"
             if ! wait "$FIXTURE_PID"; then
               # Never print raw Go logs containing private download state.
               echo "S4C3 independent Go CAS postflight failure ($MODE)" >&2
@@ -137,6 +140,10 @@ jobs:
             'sourcePhysicallyAllocated','uiFileExplorer','actualNativeDownload',
             'actualDiskFile','nativeSHA256Verified','range206','range416',
             'ticketRequired','onlyPublicOfflineCache']
+          if (process.env.XD_PWA_S4C3_CANCEL === '1') {
+            props.splice(props.indexOf('range206'), 1)
+            props.push('nativeDownloadCancelled', 'freshTicketAfterCancel')
+          }
           if (props.some(k => s[k] !== true) || s.physicalDevice || s.systemInstalled ||
               s.fixtureBytes !== Number(process.env.XD_PWA_S4C3_SIZE_GIB)*2**30) process.exit(1)
           NODE

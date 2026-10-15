@@ -48,11 +48,15 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	nativeDownloadMode := os.Getenv("XD_PWA_S4C3_NATIVE_DOWNLOAD") == "1"
+	nativeCancelMode := os.Getenv("XD_PWA_S4C3_CANCEL") == "1"
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
 	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
 	folderResumeMode := os.Getenv("XD_PWA_S4B3_REAL_FOLDER") == "1"
 	if nativeDownloadMode && (resumeMode || largeResumeMode || folderResumeMode) {
 		t.Fatal("S4C3 native-download fixture cannot alter S4B2 upload fault mode")
+	}
+	if nativeCancelMode && !nativeDownloadMode {
+		t.Fatal("S4C3 cancellation requires native download mode")
 	}
 	if folderResumeMode && (!resumeMode || largeResumeMode) {
 		t.Fatal("B3B folder fault requires standalone isolated 17 MiB resume mode")
@@ -253,6 +257,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	var lastChunkRequests atomic.Int64
 	var totalChunkRequests atomic.Int64
 	var injectedNetworkDrops atomic.Int64
+	var nativeFirstDownloadPaced atomic.Bool
 	done := make(chan struct{})
 	var once sync.Once
 	fileServer := http.FileServer(http.Dir(dist))
@@ -283,6 +288,13 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			once.Do(func() { close(done) })
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasPrefix(request.URL.Path, "/api/"):
+			// Test-only pacing on the FIRST genuine signed HTTP response.
+			if nativeCancelMode && request.Method == http.MethodGet &&
+				request.URL.Path == fmt.Sprintf("/api/v1/file-download/%d", nativeSeed.nodeID) &&
+				request.URL.Query().Has("ticket") && nativeFirstDownloadPaced.CompareAndSwap(false, true) {
+				router.ServeHTTP(&pwaS4C3PacedWriter{ResponseWriter: w}, request)
+				return
+			}
 			if resumeMode {
 				if request.Method == http.MethodPost && request.URL.Path == "/api/v1/uploads" {
 					uploadSessions.Add(1)
@@ -348,6 +360,7 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	}
 	if nativeDownloadMode {
 		ready["pwa_s4c3_native_download"] = true
+		ready["pwa_s4c3_cancel"] = nativeCancelMode
 		ready["native_download_node_id"] = nativeSeed.nodeID
 		ready["native_download_name"] = nativeSeed.name
 		ready["native_download_size_bytes"] = nativeSeed.size
@@ -390,6 +403,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		t.Logf("PWA_S2B3_REAL_GIN_VERIFIED root=%d target=%d authentic_login=true foreign_404=true", root.ID, folder.ID)
 		if nativeDownloadMode {
 			pwaS4C3VerifyPhysicalCAS(t, db, local, nativeSeed)
+			if nativeCancelMode {
+				pwaS4C3VerifyNativeCancelRetry(t, db, owner.ID, nativeSeed.size)
+			}
 		}
 		if resumeMode {
 			// The first 8 MiB must remain in the original Server session. The

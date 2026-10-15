@@ -10,13 +10,16 @@ const crypto = require('node:crypto')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const args = Object.fromEntries(process.argv.slice(2).map(arg => {
-  const match = /^--(ready|output-dir|mode)=(.+)$/.exec(arg)
-  assert(match, 'only --ready, --output-dir and --mode are supported')
+  const match = /^--(ready|output-dir|mode|cancel-first)=(.+)$/.exec(arg)
+  assert(match, 'only --ready, --output-dir, --mode and --cancel-first are supported')
   return [match[1], match[2]]
 }))
 assert(args.ready && args['output-dir'] && ['desktop', 'mobile'].includes(args.mode))
+assert(!args['cancel-first'] || ['0', '1'].includes(args['cancel-first']))
+const cancelFirst = args['cancel-first'] === '1'
 const ready = JSON.parse(fs.readFileSync(args.ready, 'utf8'))
 assert.equal(ready.pwa_s4c3_native_download, true)
+assert.equal(ready.pwa_s4c3_cancel, cancelFirst)
 assert.equal(ready.real_gin, true)
 assert.equal(ready.postgresql, true)
 assert.equal(ready.local_cas, true)
@@ -38,12 +41,13 @@ const out = path.resolve(args['output-dir'])
 fs.mkdirSync(out, {recursive: true})
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'pwa-s4c3-native-'))
 const summary = {
-  phase: 'PWA-S4C3-B1', commit: process.env.XD_PR_HEAD || '',
+  phase: cancelFirst ? 'PWA-S4C3-B2c1' : 'PWA-S4C3-B1', commit: process.env.XD_PR_HEAD || '',
   mode: args.mode === 'mobile' ? 'Chrome Android UA/touch 390px emulation' : 'Chrome desktop 1280px',
   physicalDevice: false, systemInstalled: false, noApiMocks: true,
   realGin: true, realPostgreSQL: true, realLocalCAS: true,
   fixtureBytes: ready.native_download_size_bytes,
   sourcePhysicallyAllocated: true, uiFileExplorer: false,
+  nativeDownloadCancelled: false, freshTicketAfterCancel: false,
   actualNativeDownload: false, actualDiskFile: false, nativeSHA256Verified: false,
   range206: false, range416: false, ticketRequired: false,
   onlyPublicOfflineCache: false, browserVersion: '', stage: 'setup',
@@ -118,6 +122,23 @@ async function run() {
       : page.locator('[data-xdrive-file-explorer-item-id="number:' +
         ready.native_download_node_id + '"]')
     await row.waitFor({state: 'visible'})
+    let cancelledDownloadURL = ''
+    if (cancelFirst) {
+      summary.stage = 'cancel-native-user-download'
+      const firstDownloadEvent = page.waitForEvent('download', {timeout: 120000})
+      await row.click({button: 'right'})
+      await page.getByRole('menuitem', {name: '下载', exact: true}).click()
+      const interrupted = await firstDownloadEvent
+      assert.equal(interrupted.suggestedFilename(), ready.native_download_name)
+      cancelledDownloadURL = interrupted.url()
+      assert.equal(new URL(cancelledDownloadURL).pathname,
+        '/api/v1/file-download/' + ready.native_download_node_id)
+      await page.waitForTimeout(850)
+      await interrupted.cancel()
+      assert.equal(await interrupted.failure(), 'canceled')
+      assert(ticketRequests >= 1, 'first native download requires a real signed ticket')
+      summary.nativeDownloadCancelled = true
+    }
     summary.stage = 'native-user-download'
     const nativeDownload = page.waitForEvent('download', {
       timeout: ready.native_download_size_bytes > 2 ** 30 ? 480000 : 240000,
@@ -130,7 +151,12 @@ async function run() {
     assert.equal(downloadURL.origin, new URL(ready.url).origin)
     assert.equal(downloadURL.pathname, '/api/v1/file-download/' + ready.native_download_node_id)
     assert(downloadURL.searchParams.has('ticket'), 'real short-lived signed ticket required')
-    assert(ticketRequests >= 1, 'production XDriveApi must request signed native download ticket')
+    assert(ticketRequests >= (cancelFirst ? 2 : 1),
+      'each user-initiated native download must issue a signed ticket')
+    if (cancelFirst) {
+      assert.notEqual(download.url(), cancelledDownloadURL, 'retry must use a fresh signed ticket')
+      summary.freshTicketAfterCancel = true
+    }
     summary.actualNativeDownload = true
 
     summary.stage = 'save-and-full-disk-sha'
@@ -150,7 +176,8 @@ async function run() {
     // in a log or artifact. No bearer token is sent to the Range stream.
     summary.stage = 'real-ticket-range'
     const length = 32
-    for (const offset of [0, ready.native_download_size_bytes - length]) {
+    if (!cancelFirst) {
+      for (const offset of [0, ready.native_download_size_bytes - length]) {
       const response = await context.request.get(download.url(), {
         headers: {'Range': 'bytes=' + offset + '-' + (offset + length - 1)},
         timeout: 120000,
@@ -162,7 +189,9 @@ async function run() {
       assert(response.headers()['cache-control']?.includes('no-store'))
       assert.equal((await response.body()).length, length)
     }
-    summary.range206 = true
+      summary.range206 = true
+    }
+    // Successful extra Ranges would reset the same ticket's full-byte DB observation.
     const beyond = await context.request.get(download.url(), {
       headers: {'Range': 'bytes=' + ready.native_download_size_bytes + '-'},
     })
