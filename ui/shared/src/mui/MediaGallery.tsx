@@ -2584,6 +2584,7 @@ export function XDriveMediaGalleryPage({
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
         places={places}
+        listPlacesViewport={source.listPlacesViewport}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
@@ -3000,6 +3001,7 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  listPlacesViewport?: MediaGalleryDataSource['listPlacesViewport']
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
@@ -4607,6 +4609,7 @@ export function XDriveMediaGallery({
   syncFoldersLoading = false,
   syncFoldersError = '',
   places = [],
+  listPlacesViewport,
   focusPlaceID,
   getBaiduMapProvider,
   loadBaiduStaticMap,
@@ -6707,6 +6710,7 @@ export function XDriveMediaGallery({
           <XDriveMediaGalleryPlacesMap
             places={places}
             totalCount={placesTotalCount}
+            listPlacesViewport={listPlacesViewport}
             getBaiduMapProvider={getBaiduMapProvider}
             loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}

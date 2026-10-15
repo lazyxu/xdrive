@@ -1,17 +1,25 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Autocomplete, Box, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material'
 import type {
   MediaPlaceFacet,
+  MediaPlacesViewportBounds,
+  MediaPlacesViewportPage,
   XDriveBaiduMapProviderInfo,
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+
+function sameViewport(a: MediaPlacesViewportBounds | null, b: MediaPlacesViewportBounds) {
+  return Boolean(a && a.west === b.west && a.south === b.south &&
+    a.east === b.east && a.north === b.north)
+}
 
 /** Only the Baidu Server API image is rendered here. The local GPS SVG map,
  * its map projection, and all offline fallback UI have been retired. */
 export function XDriveMediaGalleryPlacesMap({
   places,
   totalCount,
+  listPlacesViewport,
   getBaiduMapProvider,
   loadBaiduStaticMap,
   activePlaceID,
@@ -20,6 +28,8 @@ export function XDriveMediaGalleryPlacesMap({
 }: {
   places: MediaPlaceFacet[]
   totalCount?: number | null
+  listPlacesViewport?: (bounds: MediaPlacesViewportBounds, limit?: number, offset?: number,
+    signal?: AbortSignal) => Promise<MediaPlacesViewportPage>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   activePlaceID?: string
@@ -33,6 +43,70 @@ export function XDriveMediaGalleryPlacesMap({
     places.find((item) => item.id === activePlaceID) ??
     places[0]
   )
+
+  const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
+  const [viewportOffset, setViewportOffset] = useState(0)
+  const [viewportResult, setViewportResult] = useState<{
+    bounds: MediaPlacesViewportBounds
+    page: MediaPlacesViewportPage
+  } | null>(null)
+  const [viewportLoading, setViewportLoading] = useState(false)
+  const [viewportError, setViewportError] = useState('')
+  const boundsRef = useRef<MediaPlacesViewportBounds | null>(null)
+  const activeRequest = useRef<AbortController | null>(null)
+  const requestGeneration = useRef(0)
+
+  const onCameraViewport = useCallback((bounds: MediaPlacesViewportBounds) => {
+    if (sameViewport(boundsRef.current, bounds)) return
+    boundsRef.current = bounds
+    activeRequest.current?.abort()
+    setViewportBounds(bounds)
+    setViewportOffset(0)
+  }, [])
+
+  useEffect(() => {
+    if (!listPlacesViewport || !viewportBounds) return
+    const controller = new AbortController()
+    const generation = ++requestGeneration.current
+    activeRequest.current = controller
+    setViewportLoading(true)
+    setViewportError('')
+    void listPlacesViewport(viewportBounds, 24, viewportOffset, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted || generation !== requestGeneration.current) return
+        if (page.offset !== viewportOffset || !Array.isArray(page.items) ||
+            page.items.length > 24 || !Number.isSafeInteger(page.total_count) ||
+            page.total_count < 0 || !Number.isSafeInteger(page.total_photo_count) ||
+            page.total_photo_count < 0 || typeof page.has_more !== 'boolean') {
+          throw new Error('invalid_viewport_response')
+        }
+        setViewportResult({ bounds: viewportBounds, page })
+      })
+      .catch(() => {
+        if (!controller.signal.aborted && generation === requestGeneration.current) {
+          setViewportError('视窗地点暂不可用；请检查连接或更新 Server/Agent。')
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted && generation === requestGeneration.current) {
+          setViewportLoading(false)
+        }
+      })
+    return () => {
+      controller.abort()
+      if (activeRequest.current === controller) activeRequest.current = null
+    }
+  }, [listPlacesViewport, viewportBounds, viewportOffset])
+
+  const changeViewportPage = (nextOffset: number) => {
+    if (!Number.isSafeInteger(nextOffset) || nextOffset < 0 ||
+        nextOffset > 10_000_000 || nextOffset === viewportOffset) return
+    activeRequest.current?.abort()
+    setViewportOffset(nextOffset)
+  }
+  const currentViewportResult = viewportResult &&
+    viewportBounds && sameViewport(viewportResult.bounds, viewportBounds) &&
+    viewportResult.page.offset === viewportOffset
 
   return (
     <Paper
@@ -86,7 +160,85 @@ export function XDriveMediaGalleryPlacesMap({
         place={selectedPlace}
         getProvider={getBaiduMapProvider}
         loadStaticMap={loadBaiduStaticMap}
+        onViewportChange={onCameraViewport}
       />
+      <Box component="section" data-xdrive-gallery-places-viewport sx={{ px: 1.5, pb: 1.5 }}>
+        <Typography variant="subtitle2" fontWeight={700}>当前地图视窗内的地点</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          由百度静态地图相机估算 WGS84 范围，Server 按照片真实 GPS 查询；
+          不是 JSAPI 4.0 动态标记或精确瓦片叠加。
+        </Typography>
+        {!listPlacesViewport ? (
+          <Typography role="status" variant="body2" color="text.secondary">
+            此版本暂不支持视窗地点查询，请更新 Server/Agent。
+          </Typography>
+        ) : !viewportBounds ? (
+          <Typography role="status" variant="body2" color="text.secondary">
+            百度静态地图可用后显示相机视窗地点；原始地点列表仍可使用。
+          </Typography>
+        ) : (
+          <Stack spacing={1}>
+            {viewportLoading ? (
+              <Typography role="status" variant="caption" color="text.secondary">
+                正在更新视窗地点…
+              </Typography>
+            ) : null}
+            {viewportError ? (
+              <Typography role="alert" variant="caption" color="error">
+                {viewportError}
+              </Typography>
+            ) : null}
+            {viewportResult && !currentViewportResult ? (
+              <Typography variant="caption" color="text.secondary">
+                保留上一视窗结果，当前视窗尚未确认。
+              </Typography>
+            ) : null}
+            {viewportResult && currentViewportResult ? (
+              <>
+                <Typography variant="caption" color="text.secondary"
+                  data-xdrive-places-viewport-counts>
+                  当前范围共 {viewportResult.page.total_count.toLocaleString('zh-CN')} 个地点网格、
+                  {viewportResult.page.total_photo_count.toLocaleString('zh-CN')} 张照片；
+                  本页 {viewportResult.page.items.length} 个地点
+                </Typography>
+                <Box data-xdrive-places-viewport-results sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                  gap: 0.75,
+                }}>
+                  {viewportResult.page.items.map((place) => (
+                    <Button key={place.id} size="small" variant="outlined"
+                      disabled={!onOpenPlace} onClick={() => onOpenPlace?.(place)}
+                      sx={{ minHeight: 44, justifyContent: 'flex-start', textTransform: 'none' }}>
+                      <Typography variant="body2" noWrap>{place.name}</Typography>
+                    </Button>
+                  ))}
+                </Box>
+                {viewportResult.page.items.length === 0 ? (
+                  <Typography variant="caption" color="text.secondary">
+                    此范围没有已索引的 GPS 地点，可移动地图查看其他范围。
+                  </Typography>
+                ) : null}
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Button size="small" variant="outlined" sx={{ minHeight: 44 }}
+                    disabled={viewportLoading || viewportOffset === 0}
+                    onClick={() => changeViewportPage(Math.max(0, viewportOffset - 24))}>
+                    上一页
+                  </Button>
+                  <Button size="small" variant="outlined" sx={{ minHeight: 44 }}
+                    disabled={viewportLoading || !viewportResult.page.has_more ||
+                      viewportResult.page.items.length === 0 ||
+                      viewportOffset + viewportResult.page.items.length > 10_000_000}
+                    onClick={() => changeViewportPage(
+                      viewportOffset + viewportResult.page.items.length)}>
+                    下一页
+                  </Button>
+                </Stack>
+              </>
+            ) : null}
+          </Stack>
+        )}
+      </Box>
     </Paper>
   )
 }
