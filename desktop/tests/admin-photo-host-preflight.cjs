@@ -252,3 +252,14 @@ test('five administrator model-local canaries hold shared SQL admission during i
   assert.ok(!guard.includes('http.ListenAndServe'))
   assert.ok(!guard.includes('docker run'))
 })
+
+test('foreground gallery semantic EmbedText executes only under shared Photo Host admission', () => {
+  const adapter = read('internal/api/media_semantic_search_admission.go')
+  const search = read('internal/api/media_semantic_search.go')
+  assert.match(search, /photoHostAdmissionFencedSemanticAnalyzer\s*\{/)
+  assert.match(adapter, /photoHostRunAdmittedSyntheticInference\(inferenceCtx/)
+  assert.match(adapter, /context\.WithTimeout\(ctx, photoHostForegroundSemanticTimeout\)/)
+  assert.match(adapter, /a\.SemanticAnalyzer\.EmbedText\(leasedCtx, text\)/)
+  assert.match(search, /raw, err := analyzer\.EmbedText\(ctx, text\)/)
+  assert.doesNotMatch(adapter, /http\.ListenAndServe|docker run|stopHost|restartHost/)
+})

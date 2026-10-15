@@ -357,7 +357,10 @@ func (s *Server) semanticRankedMediaNodeIDs(
 	ranked, handled, err := engine.Rank(
 		ctx,
 		s.DB,
-		s.PhotoSemanticAnalyzer,
+		photoHostAdmissionFencedSemanticAnalyzer{
+			SemanticAnalyzer: s.PhotoSemanticAnalyzer,
+			server:           s,
+		},
 		uid,
 		base,
 		options.Search,
