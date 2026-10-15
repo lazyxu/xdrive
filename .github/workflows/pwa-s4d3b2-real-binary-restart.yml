@@ -1,0 +1,60 @@
+name: PWA S4D3B2 Real Production Server Crash Recovery
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s4d3b2-actual-server:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s4d3b2-real-server-binary-restart-20261015'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact HEAD, gofmt, and product-only scope
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          test -z "$(gofmt -l cmd/server/pwa_s4d3b2_actual_server_restart_integration_test.go)"
+          node --test desktop/tests/pwa-s4d3b2-actual-server-binary-contract.cjs
+      - name: Real compiled Server binary PostgreSQL transactional SIGKILL recovery
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/pwa-s4d3b2-production-server" ./cmd/server
+          go test -c -o "$RUNNER_TEMP/pwa-s4d3b2-server.test" ./cmd/server
+          XD_PWA_S4D3B2_REAL_BINARY=1 \
+          XD_PWA_S4D3B2_BINARY_PATH="$RUNNER_TEMP/pwa-s4d3b2-production-server" \
+            "$RUNNER_TEMP/pwa-s4d3b2-server.test" \
+              -test.run='^TestPWAS4D3B2ActualServerRestartDuringDelete$' \
+              -test.count=1 -test.v -test.timeout=5m
