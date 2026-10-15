@@ -285,3 +285,11 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 - **仍为 NO-GO**：需要实际百度自托管/PWA/Electron/商用授权、真实 Loader/瓦片/JS/WASM/字体全量清单和原始响应泄漏证明；Server Owner 会话逐请求授权、生产签名信任根、受审查的固定上游资源规则、Caddy/CSP/Electron 安全隔离，以及 iOS27/Android/Desktop 真机验收。三端继续共用 Gallery Server API、Range、VirtualCollection、Viewer，保留 iOS 27「照片」1:1 基准、52px 全屏 App Frame、百度唯一 Provider 和 Static Server AK / JSAPI Browser AK 的独立配置。
 
 **下一项 A3b2d2b3b2b**：在获得真实被授权的私有网络捕获及许可证明后，对每条 Host/Path/Query/MIME/大小限制执行人工审核和代码审查；缺证据时不开放真实 JSAPI Runtime。之后才实施 A3b3、A4、B1～B3 和 C1。
+
+## A3b2d2b3b2b · 子资源候选规则离线形态校验（2026-10-15）
+
+在 A3b2d2b3b2a #1697 已合入之后，此阶段新增 `internal/baidumapjsapi/child_candidate.go`：只验证人工复核的**候选**子资源规则是否为单一明确的百度 Host、`/_BMapService/` 精确路径、GET、有限 MIME/响应上限、显式固定值或严格界定的非负整数 query，拒绝多值、额外、编码绕过、AK、Token、Callback、遍历及外域。单测中的 `/_BMapService/tiles/0.png` 纯属合成样例，**不是百度实际受许可的子资源路径**。
+
+这里没有加入任何真正子资源到生产 allowlist；`reviewedJSAPI4ChildResourceCount=0`、`runtime_enabled=false` 和生产发布闸门拒绝行为保持不变。代码通过仅代表规则语法可判定，不代表已取得百度合法许可、设备运行实证、Browser AK 不泄露、完整资源清单或真实连续动态地图。
+
+**下一步仍需外部证据才能正式完成 A3**：经真实许可的完整官方资源和账户服务边界；人工逐项复核后把 Host/Path/Query/MIME/字节/超时写入不可由浏览器或设置修改的源码；本地原始上游+浏览器 HAR 私有审计；已钉扎的受信发布根、Owner 持久撤销与配额、Caddy/Electron/PWA 隔离及 iOS 27/Android/Desktop 验收。之后实施共享 Gallery A3b3 动态地图和 A4、B1–B3、C1。百度唯一 Provider，Server Static AK 与 Browser JSAPI AK 分离，保持 52px App Frame 与三端共用图库 API/虚拟化/Viewer。
