@@ -442,7 +442,7 @@ func (s *Server) submitPhotoIntelligenceOwnerTask(
 		InitiatorID: initiatorID,
 		Priority:    priority,
 		Resource:    resource,
-		Lease: s.backgroundOwnerLeaseProvider(
+		Lease: s.photoHostOwnerAdmissionLeaseProvider(
 			kindName,
 			cancelEpoch,
 		),

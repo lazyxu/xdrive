@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,9 +32,11 @@ func photoHostAdmissionLockID() int64 {
 }
 
 type photoHostAdmissionLease struct {
-	mu   sync.Mutex
-	conn *sql.Conn
-	key  int64
+	mu         sync.Mutex
+	conn       *sql.Conn
+	key        int64
+	taskKey    int64
+	taskLocked bool
 }
 
 // tryAcquirePhotoHostAdmission uses ONE dedicated DB connection for both the
@@ -90,6 +94,53 @@ func tryAcquirePhotoHostAdmission(
 	}
 }
 
+// TryAcquireTask holds a preexisting sourceaccount-compatible exclusive task key
+// ON THE SAME session as the shared global admission key. Competing tasks
+// defer without starting; a future global exclusive writer can never pass a
+// running model task. Not valid for a model job that does not own this lease.
+func (l *photoHostAdmissionLease) TryAcquireTask(ctx context.Context, taskKey string) (bool, error) {
+	if l == nil || ctx == nil || strings.TrimSpace(taskKey) == "" {
+		return false, errors.New("photo host task lock unavailable")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.conn == nil || l.taskLocked {
+		return false, errors.New("photo host task lock unavailable")
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(taskKey)))
+	key := int64(binary.BigEndian.Uint64(sum[:8]))
+	var acquired bool
+	if err := l.conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1)", key).Scan(&acquired); err != nil {
+		return false, err
+	}
+	if acquired {
+		l.taskKey = key
+		l.taskLocked = true
+	}
+	return acquired, nil
+}
+
+// OwnerCancelEpoch uses the held task session instead of trying to borrow a
+// second connection for post-acquisition and heartbeat cancellation checks.
+func (l *photoHostAdmissionLease) OwnerCancelEpoch(ctx context.Context, kind string, ownerID uint64) (uint64, error) {
+	if l == nil || ctx == nil || !l.taskLocked || ownerID == 0 || kind == "" {
+		return 0, errors.New("photo host task cancellation unavailable")
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.conn == nil {
+		return 0, errors.New("photo host task lease is closed")
+	}
+	var epoch uint64
+	err := l.conn.QueryRowContext(ctx,
+		"SELECT requested_epoch FROM xd_background_owner_cancellations WHERE owner_id = $1 AND kind = $2 LIMIT 1",
+		ownerID, kind).Scan(&epoch)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return epoch, err
+}
+
 func (l *photoHostAdmissionLease) Heartbeat(ctx context.Context) error {
 	if l == nil || ctx == nil {
 		return errors.New("photo host admission lease unavailable")
@@ -124,7 +175,20 @@ func (l *photoHostAdmissionLease) Close() {
 	l.conn = nil
 	ctx, cancel := context.WithTimeout(context.Background(), photoHostAdmissionHeartbeat)
 	defer cancel()
-	var unlocked bool
-	_ = conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock_shared($1)", l.key).Scan(&unlocked)
+	bad := false
+	if l.taskLocked {
+		var taskUnlocked bool
+		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", l.taskKey).Scan(&taskUnlocked); err != nil || !taskUnlocked {
+			bad = true
+		}
+	}
+	var sharedUnlocked bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock_shared($1)", l.key).Scan(&sharedUnlocked); err != nil || !sharedUnlocked {
+		bad = true
+	}
+	if bad {
+		// Never return a possibly lock-holding PostgreSQL session to the pool.
+		_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	}
 	_ = conn.Close()
 }

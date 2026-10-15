@@ -922,7 +922,7 @@ func (s *Server) submitMediaCreativeGeneration(
 			Initial:     2 * time.Second,
 			Max:         10 * time.Second,
 		},
-		Lease:             s.mediaDerivativeLeaseProvider(taskKey),
+		Lease:             s.photoHostCreativeAdmissionLeaseProvider(taskKey),
 		HeartbeatInterval: mediaDerivativeLeaseHeartbeatInterval,
 		RunTimeout:        mediaCreativeRunTimeoutFor(generation.Kind),
 		Run: func(taskCtx context.Context) error {
