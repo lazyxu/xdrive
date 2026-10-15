@@ -447,3 +447,15 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **不削弱旧测试：** 正常 1/4 GiB 的原始 B1/B2a Mode、Range 206/416/无票据 401、缓存隐私断言保持；取消专项不再对完成后的*同一个* retry ticket 发成功的额外 Range GET，以免重新开启该票据 DB 下载进度并覆盖完整文件证据。原有 206 和真实 4 GiB 全盘 SHA 仍由之前已合并专项证明。隔离 CI 仅归档 boolean/bytes 的 `summary-*.json`，JWT、signed URL、Gin 原始日志、磁盘文件和用户路径绝不归档。
 
 **合并门槛：** 本阶段必须保持相对于固定基线恰好一个工作提交，新 Draft PR 准确 HEAD 的完整 PR CI（含 Go/PostgreSQL、Web、Desktop、Final Gate）与新增分支触发的真实 Chrome 专项均成功，再 Ready→rebase merge 并查分支清理。代码审查/合约检查不等于真实测试通过。iOS 27 Safari/Home Screen、Android OS Installed、系统下载管理器临时文件清理、网络自动 Range 恢复、票据过期和账户 SessionVersion 撤销、生产公网 HTTPS/CA、锁屏/杀进程及发布/回滚依然未验证；下一个 B2c2 做过期/撤销，之后 S4D/S5。
+
+## PWA-S4C3-B2c2 · 签名票据过期、撤销和显式 Range 重新授权（2026-10-15）
+
+**固定基线与依赖：** GitHub `lazyxu/xdrive` `master@8bc87cd7a63906c6f5b390f2cdc6615f05d3cd3e`；上游 S4C3-B2c1 [PR #1669](https://github.com/lazyxu/xdrive/pull/1669) 准确 HEAD `593a5337` 在[真实 Chrome/Gin/PG/CAS 专项 #38715777596](https://github.com/lazyxu/xdrive/actions/runs/38715777596) 和[完整 CI #38715777419](https://github.com/lazyxu/xdrive/actions/runs/38715777419)（25 successes、Final Gate）成功后线性合并至 `0e1b0466`；前序 PWA 临时分支清理已核实。当前无相关未合并 PR/分支。本阶段仅增加真实 HTTP/PostgreSQL 回归、专用 GitHub Actions 和本台账，不改生产 JWT、文件字节、Service Worker、52px App Frame、Files/Gallery REST 或上传取消策略。
+
+**本次可验证路径（准确 HEAD CI 通过前不称已验收）：** 复用既有独立 PostgreSQL17/Local CAS `newNativeDownloadProgressFixture`，以 `httptest.NewServer` 驱动真实 Gin 签发与 HTTP TCP Range，独立 Go HTTP Client 实际读取网络响应字节。首次真实用户 POST 签名票据后 GET Range 0–4，核对 206、Content-Range、Content-Length、源字节和 no-store，Server 权威进度 completed/5。调用**现有生产 JWT 签发器**生成一个仅测试使用的 1 秒 file 票据，等待真实到期时刻后请求 Range 5–9 必须 401，不返回私有字节/Range 元数据、不激活排队进度、不改首次记录。再次经真实 owner bearer 签发新票据补取尾 Range，重组真实原 CAS 10 字节后验证完整 SHA-256；旧票据仍拒绝。合法签名借用其它文件 ID 401，其他用户无法签发文件。
+
+**撤销边界：** 修改实际 PostgreSQL `xd_users.session_version` 后，先前签名 URL 的后续 Range 和旧 bearer 的新签发须全部 401，旧进度不因拒绝调用增字节；新会话不可查询旧版本下载进度（404），必须重新完成身份授权签发，新的票据正确读回 Range 且 CAS 字节不变。由原 `go-linux-api` PostgreSQL race CI 和专属 `PWA S4C3-B2c2 Real Signed Ticket Expiry and Revocation` 作业共同验收，专属 CI 仅报告固定非敏感状态，不归档 Gin 原始日志、JWT、签名 URL、用户资料、文件、原件或部分字节。
+
+**严格未验收：** 本测试为真实 Go HTTP+PostgreSQL，但不是浏览器 OS Download Manager 的自动续传、iOS 27 Safari 主屏、Android Installed、Desktop OS Installed、真实公网 HTTPS CA/DNS、弱网／锁屏／进程回收、Safari Files App 落盘或 S5 发布回滚。仅能宣称“重新授权后显式请求 Range”；不得声称 OS 自动拼接剩余字节。严格一个工作提交、Draft PR、准确 HEAD Go 专项与完整 CI/Final Gate 全绿才 Ready→rebase merge→核查分支删除；下一阶段 S4D 前后台与 Server 任务恢复，之后 S5 真机验收。保持 Service Worker 不缓存任何私人数据、不自动更新中断上传或 Viewer。
+
+**首次 CI 的已诊断格式问题（2026-10-15）：** 原唯一提交 `8339e73c` 的[专门真实 HTTP/PG 工作流 #38721204009](https://github.com/lazyxu/xdrive/actions/runs/38721204009) 在 `Verify exact PR HEAD and Go formatting` 阶段停止；[完整 CI #38721204765](https://github.com/lazyxu/xdrive/actions/runs/38721204765) 的 `go-linux/Check formatting` 给出唯一差异：`strings.HasPrefix(ticket.URL,` 的下一行 `fmt.Sprintf` 多一个 Tab。此时真实 HTTP/PG 测试**未执行**，不代表生产下载逻辑失败。只按准确 `gofmt -d` 删除该额外缩进，并在固定基线上重建唯一工作提交；旧 SHA 的所有 CI 证据不作为修复后验收，新 HEAD 必须重新通过专项 Go/PostgreSQL 和完整 Final Gate。

@@ -1,0 +1,54 @@
+name: PWA S4C3-B2c2 Real Signed Ticket Expiry and Revocation
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  signed-ticket-lifecycle:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-ticket-expiry-revocation-s4c3b2c2-20261015'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify exact PR HEAD and Go formatting
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          test -z "$(gofmt -l internal/api/pwa_s4c3_signed_ticket_lifecycle_integration_test.go)"
+      - name: Execute real TCP/Gin/PostgreSQL signed expiry, revocation and Range recovery
+        run: |
+          set -euo pipefail
+          if ! go test -count=1 -timeout=8m -run '^TestPWAS4C3SignedTicketExpiryRevocationRangeRecoveryRealHTTP$' ./internal/api > "$RUNNER_TEMP/pwa-ticket-private.log" 2>&1; then
+            echo "S4C3-B2c2 isolated signed HTTP/PostgreSQL regression failed" >&2
+            exit 1
+          fi
+          echo "S4C3-B2c2 real HTTP/PostgreSQL signed lifecycle passed"
