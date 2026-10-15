@@ -1,5 +1,38 @@
 # FileExplorer performance roadmap
 
+## P0 — P050 / M002-e · 宽屏 Wide Web FileExplorer 100k逻辑／115k真实混合JPEG H264 Live原片（2026-10-15）
+
+**Status: Accepted original CURRENT n3 (30/30 1440px真实宽屏可见解码视口达到全部冻结预算)；生产代码原版未修改，BEFORE=CURRENT，AFTER=N/A，speedup=N/A；准确证据HEAD专用原生与完整CI/Final Gate为合入前独立验收。** 冻结单工作提交基线 GitHub `master@a765457042f48c46852e581e34d458468188fdda`；原版产品代码不修改，首测 n3数据尚未取得。上一轮P049是390px共享Web Files混合媒体，准确HEAD专项CI #38737142631、完整CI #38737143285含final-gate双绿后随#1694线性合入，分支已经删除；P038真实Desktop Agent是不同客户端。当前仍开放的Desktop 100k图像IPC进度 #1185 在其最终源版本只收到初始0B，没有最终字节回调，为独立Blocked Draft，不能降低断言/抢占Race范围。P050由此承担**未测宽屏Web Files**的真实100k逻辑／115k原片新维度，不能与P049的390px或Desktop P038算成before/after百分比。
+
+**真实数据/客户端边界：** 每个样本启动独立Go `TestGalleryRealWebColdFixture100K`，经过真实PostgreSQL17/Gin和Local CAS持久生成**100,000逻辑PhotoAsset、115,000不同SHA物理原片**（70k独立JPEG、15k H264 MP4和15k成对Live still JPEG及motion MOV），独立验12原片CAS读回，物理原始字节要求大于100,000,000 B，实际种子耗时一律排除视口计时。H264 MP4/MOV容器复用一条96×64编码流，不能冒充15k独立视频编码或真正Live Motion动态播放。实际 Web共享`XDriveFileExplorer`在真实1440×900 Linux Chromium窗口（由Electron Xvfb承载，仅当作宽屏**Web组件**，不经过Desktop Go Agent/IPC）使用生产共享VirtualCollection和签名所有者的115k `children`分页。合法冷视频海报404通过原P049真实测试适配器**受权File preview-ticket → 原始H264 bytes → Chromium frame decode → JPEG canvas → 生产revision-fenced video-poster PUT204 → CAS GET readback**，后续Details可复用同Server当前身份下热缓存。仅检查JPEG图片/海报的实际可见解码，不代表所有115k同时完成媒体解码，也不是安装态PWA或任何手机真机。
+
+**首测前冻结的CURRENT预算：** 3组独立物理CAS fixture × Grid/Details × 0/25/50/75/95%虚拟滚动 = 30实际位置。每个位置必须在20,000ms内至少解码位于`getBoundingClientRect`裁剪范围内、且按下一窗口是真新Node ID的可见像素：起点Live motion JPEG poster≥2张，25% Live still JPEG≥6张，50%和75% JPG≥6张，95% H264 poster≥2张；每项需 `img.complete` 与`naturalWidth>0`，不能只数占位/overscan。真实document宽1400–1440px、不使用Mobile断点；DOM当前挂载1–999，真实Go同时thumb Handler≤6，非取消HTTP 5xx=0，Go和Chromium Renderer从CAS种子完成后RSS增长各≤268,435,456B (256MiB)；记录每次真实请求、传送JPEG/MP4字节、冷404/海报PUT/GET、CPU/RSS、原始物理CAS数和先后顺序，权限与revision不可绕过。三次后取每组五位置P50，再取三组中位，另记最慢单位置，严禁跨runner/端进行A/B假提速。
+
+**决策与取消边界：** 先在生产原版测出真正有来源的 n3 CURRENT。若所有预算均内，**保留原版、AFTER=N/A、speedup=N/A**。仅真实产品RED（且不是测试脚本/夹具、历史缓存、HTTP 404冷海报契约、CI环境或浏览器视频codec失效）才设计最小性能优化并同环境 n≥3 alternating BEFORE/AFTER，显著快且资源/字节/正确性不回退才保留，否则Rejected。此次不变更前端请求取消或durable uploads/sync/delete任务所有权：已接受的滚动`AbortSignal→Go Request.Context().Done`另列P015/P016/P037/P040/P048，不能用新性能视口加载把Go取消验收算完成。真实WAN、PWA桌面安装态、Android/iOS真机、独立编码的H264/HEVC、RAW/LIVP完整解码、Live运动播放以及100k物理Push/Pull/Undo仍`Not measured`。
+
+**完整测试与归档约束：** [仅P050分支专用工作流](../.github/workflows/file-explorer-wide-mixed-p050.yml)、[真实1440px Chromium/PG/CAS driver](../desktop/scripts/file-explorer-wide-mixed-100k-main.cjs)、[静态真实性契约](../desktop/tests/file-explorer-wide-mixed-p050-source.cjs)，重用[生产共享Web测试适配器](../web/src/FileExplorerRealScrollPerformanceHarness.tsx)而**不修改**生产FileExplorer、Agent、Server或原P049 driver。原生成功后必须按每轮实际记录将`sample-1/2/3-grid/details.json`、真实Go/Renderer CPU/RSS及请求字节、`summary.json`、`source.txt`、source准确SHA和CI链接永久归档`docs/performance-evidence/file-explorer-wide-mixed-p050/`；保留Invalid harness/RED历史证据；补齐去重登记簿与六平台矩阵，仍在**同一个工作提交**重建，重新执行精确证据头原生n3和仓库完整CI/final-gate均成功后才可Ready→线性合入并清理分支。真实设备安装态不会在Linux CI中凭空获得证据。
+
+
+### P050 原版CURRENT首轮完整物理n3 — Authentic wide shared Web FileExplorer
+
+**Source exact:** `5687ff0c1c665b5b0b5a13c5b2e58cf31dc07a3f`，独立[原始native CI #38745263789](https://github.com/lazyxu/xdrive/actions/runs/38745263789) **success**、[原始 ZIP artifact #11978427625](https://github.com/lazyxu/xdrive/actions/runs/38745263789/artifacts/11978427625)。三次独立PG17/Gin/Local CAS种子，每次严格写入**100,000逻辑PhotoAsset、115,000 SHA不同原始CAS文件、149,285,128B物理源**、15,000 LiveStill/Motion可信配对；H264 MP4/MOV是不同SHA不同原始容器，但复用同一个96×64已编码流；这不代表独立编码类型或真实Live Motion连续播放。每次Width1440px、Web共享真实FileExplorer虚拟列表（非Desktop Agent IPC，非安装PWA），Grid及Details均走相同受权`children`分页与真实`media/items/:id/thumbnail`生产接口，冷视频合法404后真实源签名ticket+Chromium解码首帧+JPEG CAS海报PUT204/GET。
+
+| 真实PG17/CAS独立样本 | Grid 5可见位置P50 | Grid最慢 | Details 5可见位置P50 | Details最慢 | Go postseed RSS增长 | Go CPU |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | **664.090ms** | 669.063ms | **485.783ms** | 498.907ms | 180,224 B | 810ms |
+| 2 | **663.716ms** | 692.665ms | **492.495ms** | 551.812ms | 479,232 B | 870ms |
+| 3 | **634.013ms** | 727.933ms | **433.242ms** | 507.563ms | 393,216 B | 810ms |
+| **n3中位/P050峰值** | **663.716ms** | **727.933ms** | **485.783ms** | **551.812ms** | **479,232 B** | — |
+
+**预算判定:** 30/30真实virtual viewport`passed=true`（每组Grid及Details五位置0/25/50/75/95%）；最慢727.933ms/冻结20,000ms；Linux真实可见DOM最大**121**（门槛<1000），源Go并发峰值**6**（冻结≤6），非取消HTTP5xx=**0**，三组/双布局共**576次**真实缩略图请求、**472,389B**响应负载；Renderer RSS增长最大**122,597,376 B =116.92 MiB**、Go postseed最大**479,232B**，两者原256MiB预算内。三组实际PG/CAS媒体种子耗时**135,478.224 / 127,315.761 / 132,191.734 ms**记录为构造成本，绝不混入真实可见视口毫秒。真正签名MP4读取、H264帧解码、JPEG海报真实CAS写入、热Details缓存读回有机器记录；没有测量真实视频播放、跨应用窗口取消或已安装PWA。
+
+**结论:** Accepted `CURRENT` 原版，**无需优化**；`BEFORE=CURRENT`、`AFTER=N/A`、`speedup=N/A`。P049 Mobile 390px的P50 Grid466.461ms/Details310.520ms与本测试不是匹配A/B；不能推算Mobile→Wide性能退化或产品优化比例。历史Desktop P038亦是不同Agent链路。内存/HTTP/CPU等指标全部保留可重复实际来源。
+
+**原始可再审查证据:** [完整原始summary.json](performance-evidence/file-explorer-wide-mixed-p050/ci-run-38745263789/summary.json)（六个真实视图含逐位置绝对毫秒与POSTER计数）、[per-fixture Go RSS/CPU/seed及物理源SHA边界](performance-evidence/file-explorer-wide-mixed-p050/ci-run-38745263789/provenance.json)、`sample-1/2/3.json`、每组`sample-N-grid/details.json`、`source.txt`，以及[原始 ZIP artifact](https://github.com/lazyxu/xdrive/actions/runs/38745263789/artifacts/11978427625)。测试原始`summary.passed=true`且P050分支专项CI success。归档在同一固定基线的**一个工作提交**后必须重跑准确HEAD专项原生n3及完整CI+final-gate；通过前不可声称已合入。用户主动持久上传/下载/同步/删除的任务取消不受浏览器虚拟列表影响；真OS安装Desktop/Android/iOS PWA、真实WAN、真实iOS/Android手机、HEVC/RAW/LIVP/独立H264位流仍为Not measured。
+
+
+---
+
 ## P0 — P049 / M002-d · 390px Mobile Web FileExplorer 100k mixed physical JPEG H264 Live (2026-10-15)
 
 **Status: Measured original CURRENT n3=30/30 real mixed viewports within frozen budgets; exact evidence-amended native + complete CI/final-gate pending, not yet merged. Production unchanged, BEFORE=CURRENT, AFTER=N/A, speedup=N/A.** Fixed GitHub baseline `master@5f2fde05bb9327bb1188760b56fe3c396534a12d`; pre-existing #1185 Desktop binary progress callback remains independent Blocked/Draft. P038 authentic Desktop Agent measured mixed JPEG/H264/Live, while P039 measured Mobile Web shared FileExplorer **only** distinct JPEG originals. P049 is the previously uncovered *Mobile Web Files + mixed real original CAS* workload, not an equivalent rerun. AGENTS.md already mandates initial CURRENT, retaining only material matched gains and direct links to this canonical document, the single registry and six-platform matrix; no redundant rule change.

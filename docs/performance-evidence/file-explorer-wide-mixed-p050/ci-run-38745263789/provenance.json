@@ -1,0 +1,65 @@
+{
+  "id": "P050 / M002-e",
+  "CI_source_head": "5687ff0c1c665b5b0b5a13c5b2e58cf31dc07a3f",
+  "native_run": 38745263789,
+  "native_job": 116457127159,
+  "artifact_id": 11978427625,
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38745263789/artifacts/11978427625",
+  "body": "The original native CURRENT sample CI passed fully. 3 independent genuine PG17+115k distinct physical CAS sources, Grid/Details × 5 visible decoded thumbnails/posters. Seed/warm fixture duration excluded. Per-view raw values parsed without changing values from original job logs; per-fixture Go/seed scalars taken from same CI downloadable artifact sample-1/2/3.json.",
+  "n": 3,
+  "viewportsPassed": 30,
+  "original_production_unchanged": true,
+  "limits": {
+    "max_viewport_ms": 20000,
+    "max_Go_concurrent": 6,
+    "max_render_Go_rss_growth_each": 268435456,
+    "noncanceled_5xx": 0
+  },
+  "maxGoPostseedRSSGrowthBytes": 479232,
+  "maxRendererRSSGrowthBytes": 122597376,
+  "worstViewportMs": 727.9334880000097,
+  "totalRealThumbnailHTTPRequestCount": 576,
+  "totalActualThumbnailHTTPBytes": 472389,
+  "sources": [
+    {
+      "sample": 1,
+      "logicalNodes": 115000,
+      "logicalPhotoAssets": 100000,
+      "distinctPhysicalJpegOriginals": 0,
+      "distinctMixedOriginalCAS": 115000,
+      "physicalSourceBytes": 149285128,
+      "seedMsExcluded": 135478.224,
+      "goRssStartBytes": 77537280,
+      "goRssPeakGrowthBytes": 180224,
+      "goCPUDeltaMs": 810
+    },
+    {
+      "sample": 2,
+      "logicalNodes": 115000,
+      "logicalPhotoAssets": 100000,
+      "distinctPhysicalJpegOriginals": 0,
+      "distinctMixedOriginalCAS": 115000,
+      "physicalSourceBytes": 149285128,
+      "seedMsExcluded": 127315.761,
+      "goRssStartBytes": 74883072,
+      "goRssPeakGrowthBytes": 479232,
+      "goCPUDeltaMs": 870
+    },
+    {
+      "sample": 3,
+      "logicalNodes": 115000,
+      "logicalPhotoAssets": 100000,
+      "distinctPhysicalJpegOriginals": 0,
+      "distinctMixedOriginalCAS": 115000,
+      "physicalSourceBytes": 149285128,
+      "seedMsExcluded": 132191.734,
+      "goRssStartBytes": 75198464,
+      "goRssPeakGrowthBytes": 393216,
+      "goCPUDeltaMs": 810
+    }
+  ],
+  "before": "CURRENT",
+  "after": null,
+  "speedup": null,
+  "limitation": "1440px Linux Electron-hosted Chromium shared Web benchmark, not Desktop Agent, device-installed PWA, real Android/iOS, independent bitstreams or dynamic Live Motion playback"
+}
