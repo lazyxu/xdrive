@@ -2971,6 +2971,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesCrossAppFrameStabilityAcceptance(origin);
   await filesSecondaryAppsFrameStabilityAcceptance(origin);
   await filesTransientAppFrameStabilityAcceptance(origin);
+  await filesOrientationPendingFolderStabilityAcceptance(origin);
 }
 
 
@@ -3505,6 +3506,120 @@ async function filesTransientAppFrameStabilityAcceptance(origin) {
     };
     await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
   }
+}
+
+async function filesOrientationPendingFolderStabilityAcceptance(origin) {
+  // P8: real built Web+React+shared REST. Change orientation *while* a new
+  // folder's counted first page is blocked. Not physical Safari/Android/PWA.
+  activeStage = 'user-files-rotate-while-folder-pending-390-844';
+  await page.setViewportSize({width:390,height:844});
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil:'domcontentloaded' });
+  await page.reload({ waitUntil:'domcontentloaded' });
+  await page.locator('[data-mobile-files-folder-id="2"]').first().waitFor();
+  await settle();
+  const observe = () => page.evaluate(() => {
+    const rect = selector => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const r = element.getBoundingClientRect();
+      return { x:r.x, y:r.y, width:r.width, height:r.height };
+    };
+    const host = document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const storedKey = Object.keys(localStorage).find(k => k.startsWith('xdrive.mobile.files.v1:'));
+    const state = storedKey ? JSON.parse(localStorage.getItem(storedKey)) : null;
+    return {
+      hash: location.hash, viewport: { width:innerWidth, height:innerHeight },
+      header:rect('[data-xdrive-mobile-app-header]'),
+      frame:rect('[data-xdrive-mobile-app-frame]'),
+      main:rect('main'), scrollHost:rect('[data-xdrive-mobile-files-scroll]'),
+      sameHost:host === window.__orientationFolderHost,
+      hostCount:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      scrollTop:host?.scrollTop ?? null, savedFolderID:state?.folderID ?? null,
+      folderTitle:document.querySelector('[data-mobile-files-compact-title]')?.textContent ?? null,
+      outerOverflow:{
+        x:document.documentElement.scrollWidth - innerWidth,
+        y:document.documentElement.scrollHeight - innerHeight,
+      },
+    };
+  });
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host => {
+    window.__orientationFolderHost = host;
+    host.scrollTop = 450;
+  });
+  await page.waitForFunction(() =>
+    document.querySelector('[data-xdrive-mobile-files-scroll]')?.scrollTop >= 420);
+  const original = await observe();
+  check(activeStage+': original root is scrolled with one mounted owner',
+    original.scrollTop >= 420 && original.savedFolderID === 1 &&
+    original.sameHost && original.hostCount === 1 &&
+    original.header?.height >= 52 && original.frame && original.main,
+    original);
+
+  let notify, release;
+  const reached = new Promise(resolve => { notify = resolve; });
+  const wait = new Promise(resolve => { release = resolve; });
+  directoryGate = {hits:0,notify,wait};
+  let pending, landscape, portrait;
+  try {
+    await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
+    await Promise.race([reached, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('P8 destination first counted range was never requested')),10000))]);
+    await settle();
+    pending = await observe();
+    check(activeStage+': blocked destination keeps the old scrolled folder',
+      directoryGate.hits >= 1 && pending.hash === '#/app/files?dir=2' &&
+      pending.scrollTop >= 420 && pending.savedFolderID === 1 &&
+      pending.sameHost && pending.hostCount === 1 &&
+      pending.folderTitle === original.folderTitle, pending);
+
+    await page.setViewportSize({width:844,height:390});
+    await settle();
+    landscape = await observe();
+    check(activeStage+': landscape resize keeps a stable 52px frame and old directory',
+      landscape.viewport.width === 844 && landscape.viewport.height === 390 &&
+      landscape.frame?.width >= 843 && landscape.main?.width >= 843 &&
+      landscape.header?.height >= 52 &&
+      landscape.main.y >= 52 &&
+      landscape.sameHost && landscape.hostCount === 1 &&
+      landscape.savedFolderID === 1 && landscape.folderTitle === original.folderTitle &&
+      landscape.scrollTop >= 420 &&
+      landscape.outerOverflow.x <= 1 && landscape.outerOverflow.y <= 1,
+      landscape);
+
+    await page.setViewportSize({width:390,height:844});
+    await settle();
+    portrait = await observe();
+    const close = (a,b) => a && b &&
+      Math.abs(a.x-b.x)<=1 && Math.abs(a.y-b.y)<=1 &&
+      Math.abs(a.width-b.width)<=1 && Math.abs(a.height-b.height)<=1;
+    check(activeStage+': returning portrait preserves old folder geometry and scroll',
+      portrait.viewport.width === 390 && portrait.viewport.height === 844 &&
+      portrait.sameHost && portrait.hostCount === 1 &&
+      portrait.savedFolderID === 1 && portrait.folderTitle === original.folderTitle &&
+      portrait.scrollTop >= 420 &&
+      close(portrait.header,original.header) &&
+      close(portrait.frame,original.frame) &&
+      close(portrait.main,original.main) &&
+      portrait.outerOverflow.x <= 1 && portrait.outerOverflow.y <= 1,
+      {original,portrait});
+  } finally {
+    directoryGate = null;
+    release();
+  }
+  await page.locator('[data-mobile-files-item]').filter({hasText:'nested-001.txt'}).first().waitFor();
+  await settle();
+  const committed = await observe();
+  check(activeStage+': only the accepted first range resets new folder to top',
+    committed.hash === '#/app/files?dir=2' && committed.savedFolderID === 2 &&
+    committed.scrollTop === 0 && committed.sameHost && committed.hostCount === 1 &&
+    committed.folderTitle !== original.folderTitle,
+    committed);
+  result.samples[activeStage]={
+    original,pending,landscape,portrait,committed,
+    sourceExactBuiltChromium:true,firstRangeHeldAcrossOrientation:true,
+    physicalIOSDevice:false,physicalAndroidDevice:false,installedPwa:false,liveWan:false,
+  };
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
 async function galleryIos27ViewerAcceptance(pointer) {
