@@ -1739,3 +1739,23 @@ After L03-F1b #1656 passed full exact-head CI and merged, the next **noncanonica
 This independent Server-side read uses only the configured concrete Local Store and a Server-derived random UUID key under the noncanonical temp namespace. It requires a non-symlink regular file, matches inode identity, size and mtime on the path and the open handle, hashes ALL exact bytes (capped at 64MiB + 1 byte via <=256KiB reusable buffer) and compares to the recorded SHA256. Missing/truncated/oversized, same-size overwritten, symlinked, expired, canceled, revoked or replaced stages fail closed. Full physical I/O is outside the database transactions, with the same bound-credential + stage-row checks repeated afterward. A server admin's test-only direct overwrite is expected to cause HTTP 409 even when the DB still says `staged`. Go Client strictly validates the exact stage/source/revision/size, no-store/ETag, `physical_staging_matched=true`, and **explicit false** content_verified, commit_supported, authoritative and missing_inference_safe fields. No general Source/UploadSession or public UI uses it.
 
 **Crucial limitation:** the read is an EPHEMERAL observation, not a durable CAS lease. Temporary stages do not have canonical shard pin protection. Server/Agent original provenance, CAS promotion under a deadlock-safe OS/SQL lock order, account quota, File/FileVersion/Node/SourceItem mutation, SourceRun execution and idempotent crash recovery are still absent. The eventual authoritative writer must recheck physical content with its own lifetime fencing and all Source/Root/Device locks in the same commit protocol; it must not reuse this positive preflight as a bearer token. It does not permit Mirror missing inference or remote delete. CI Linux, Windows, PostgreSQL, Desktop/Web and final-gate are required; 100k and >=4GiB native acceptance/GitLab are unverified.
+
+
+## L03-F2b · Agent-private post-staging physical-byte confirmation (PR verification)
+
+After merged #1662 (F2a), the existing private native StageVerifiedNativeOriginalBytes path
+must not return its temporary noncanonical receipt merely because PUT succeeded and
+a staged-status readback matched. Following its own native Root/CURRENT rechecks,
+the owning Agent now also invokes the authenticated F2a physical Server stage preflight
+using the same exact Source, revision, Root/device proof, stage UUID and byte size.
+The Go Client rejects mismatched identities, absent/false physical match, cacheable
+responses, or any true canonical-authority flag. On denial, mismatch or cancellation
+the native method returns an empty receipt and attempts bounded private stage cancel
+using an independent cleanup context; Server expiry/janitor remains fallback.
+
+A passing physical preflight is a point-in-time temporary-file SHA256 observation,
+not a held CAS lease or original-file attestation at commit time. The return type
+remains JSON-redacted, no new Desktop/Renderer/Web/IPC/SourceRun entrypoint exists,
+and local_folder activation, permanent File/Node/SourceItem/ContentBlob mutation,
+upload finalize, Mirror deletion, scheduler and remote control remain forbidden.
+Real Windows/Linux devices, 100k and >=4GiB acceptance and GitLab remain unverified.
