@@ -86,7 +86,7 @@ func TestMediaCreativeAuthenticatedGoPostgresCASUnixWorker(t *testing.T) {
 		&meta.MediaDerivedResource{}, &meta.MediaGroup{}, &meta.MediaGroupItem{},
 		&meta.PhotoAsset{}, &meta.PhotoEditRecipe{}, &meta.PhotoResource{},
 		&meta.PhotoMetadata{}, &meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
-		&meta.PhotoCreativeGeneration{},
+		&meta.PhotoCreativeGeneration{}, &meta.PhotoHostAdmissionGate{},
 	); err != nil {
 		t.Fatal(err)
 	}

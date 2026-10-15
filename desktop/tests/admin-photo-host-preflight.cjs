@@ -217,3 +217,19 @@ test('Photo Host shared/exclusive admission lock is only a backend prerequisite,
   assert.equal(page.includes('安全停止共享宿主'), false)
   assert.equal(page.includes('停止 Photo Intelligence'), false)
 })
+
+// Photo Host work admission is a Server-side scheduler lease, not a browser
+// mutation or new administrative lifecycle permission.
+test('Photo Host production Scheduler and Creative workloads use the same session-fenced admission', () => {
+  const core = read('internal/api/photo_host_admission_fence.go')
+  const leases = read('internal/api/photo_host_admission_workloads.go')
+  const photo = read('internal/api/photo_intelligence_scheduler.go')
+  const creative = read('internal/api/media_creative.go')
+  assert.match(core, /pg_try_advisory_lock_shared/)
+  assert.match(core, /pg_try_advisory_lock\(\$1\)/)
+  assert.match(leases, /photoHostOwnerAdmissionLeaseProvider/)
+  assert.match(leases, /photoHostCreativeAdmissionLeaseProvider/)
+  assert.match(photo, /Lease:\s+s\.photoHostOwnerAdmissionLeaseProvider\(/)
+  assert.match(creative, /Lease:\s+s\.photoHostCreativeAdmissionLeaseProvider\(taskKey\)/)
+  assert.doesNotMatch(leases, /http\.|gin\.|Docker|Host Manager|stopHost|restartHost/)
+})
