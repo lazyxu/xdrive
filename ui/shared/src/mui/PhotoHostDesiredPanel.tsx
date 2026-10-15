@@ -325,6 +325,13 @@ export function XDrivePhotoHostDesiredPanel({
                           ? '发现尚未过期的照片后台任务运行／排队／取消中状态；禁止停用共享宿主。'
                           : '尚无跨实例排空证明：未找到运行记录、上报过期、检测失败或旧版 Server/Agent 均不能证明实例齐备及禁止新任务入队。'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.replica_membership_blocker_state === 'blocked' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-replica-membership-blocker-state>
+                        Server 成员心跳阻止信号：{preflight.replica_membership_blocker_state === 'blocked'
+                          ? '近期登记过的 Server 实例心跳已过期；实例可能失联或正常下线，禁止认定已安全排空。'
+                          : '成员覆盖尚未核验：即使已有心跳全部新鲜，也不能证明没有遗漏实例、未来任务已冻结或可以停用。'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified
                           ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'

@@ -671,6 +671,7 @@ type AdminPhotoHostPreflight struct {
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 	DurableWorkBlockerState     string                         `json:"durable_work_blocker_state"`
 	RuntimeWorkBlockerState     string                         `json:"runtime_work_blocker_state"`
+	ReplicaMembershipState      string                         `json:"replica_membership_blocker_state"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
