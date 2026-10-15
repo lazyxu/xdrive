@@ -1,0 +1,58 @@
+name: PWA S4D3B Real Server Process Restart Recovery
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s4d3b-postgres-process-recovery:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s4d3b-server-process-restart-20261015'
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact HEAD, formatting and source contract
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          test -z "$(gofmt -l internal/api/pwa_s4d3b_process_restart_integration_test.go)"
+          node --test desktop/tests/pwa-s4d3b-server-process-restart-contract.cjs
+      - name: Genuine fresh Server processes recover PostgreSQL work
+        run: |
+          set -euo pipefail
+          go test -c -o "$RUNNER_TEMP/pwa-s4d3b-api.test" ./internal/api
+          XD_PWA_S4D3B_REAL_RESTART=1 \
+            "$RUNNER_TEMP/pwa-s4d3b-api.test" \
+              -test.run='^TestPWAS4D3BServerRestartProcess$' \
+              -test.count=1 -test.v -test.timeout=2m
