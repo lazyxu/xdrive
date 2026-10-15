@@ -3314,6 +3314,7 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-transient-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-orientation-inflight-folder-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-breakpoint-pending-folder-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
@@ -3399,6 +3400,7 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-transient-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-orientation-inflight-folder-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-breakpoint-pending-folder-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         shell: bash
@@ -3436,6 +3438,7 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-secondary-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-transient-app-frame-stability-') ||
            startsWith(github.head_ref, 'test/mobile-orientation-inflight-folder-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-breakpoint-pending-folder-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         with:

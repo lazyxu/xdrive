@@ -2972,6 +2972,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesSecondaryAppsFrameStabilityAcceptance(origin);
   await filesTransientAppFrameStabilityAcceptance(origin);
   await filesOrientationPendingFolderStabilityAcceptance(origin);
+  await filesBreakpointPendingFolderStabilityAcceptance(origin);
 }
 
 
@@ -3618,6 +3619,104 @@ async function filesOrientationPendingFolderStabilityAcceptance(origin) {
     original,pending,landscape,portrait,committed,
     sourceExactBuiltChromium:true,firstRangeHeldAcrossOrientation:true,
     physicalIOSDevice:false,physicalAndroidDevice:false,installedPwa:false,liveWan:false,
+  };
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+async function filesBreakpointPendingFolderStabilityAcceptance(origin) {
+  // P9: while a pending dir=2 first page is blocked, crossing 899px ↔ 900px
+  // unmounts and remounts MobileFiles. Only authoritative crumbs, not a URL
+  // intent, may replace the scrolled old directory at the new presentation.
+  activeStage = 'user-files-breakpoint-inflight-navigation-899-900';
+  await page.setViewportSize({width:899,height:700});
+  await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('[data-mobile-files-folder-id="2"]').first().waitFor();
+  await settle();
+  const snapshot = () => page.evaluate(() => {
+    const host = document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const k = Object.keys(localStorage).find(key=>key.startsWith('xdrive.mobile.files.v1:'));
+    const persisted = k ? JSON.parse(localStorage.getItem(k)) : null;
+    const frame = document.querySelector('[data-xdrive-mobile-app-frame]')?.getBoundingClientRect();
+    return {
+      hash:location.hash,width:innerWidth,height:innerHeight,
+      hostCount:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      mobileHostPresent:!!host,
+      mobileHostSame:host===window.__p9OriginalMobileHost,
+      scrollTop:host?.scrollTop??null,
+      savedFolderID:persisted?.folderID??null,
+      savedScrollTop:persisted?.scrollTop??null,
+      visibleFolder:document.querySelector('[data-mobile-files-compact-title]')?.textContent??null,
+      frameWidth:frame?.width??null,
+      overflowX:document.documentElement.scrollWidth-innerWidth,
+      overflowY:document.documentElement.scrollHeight-innerHeight,
+    };
+  });
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host=>{
+    window.__p9OriginalMobileHost=host;
+    host.scrollTop=450;
+  });
+  await page.waitForFunction(() => {
+    const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const key=Object.keys(localStorage).find(k=>k.startsWith('xdrive.mobile.files.v1:'));
+    const saved=key?JSON.parse(localStorage.getItem(key)):null;
+    return host?.scrollTop>=420 && saved?.folderID===1 && saved?.scrollTop>=420;
+  },null,{timeout:10000});
+  const before=await snapshot();
+  check(activeStage+': original scroll is durably attached to committed root',
+    before.scrollTop>=420 && before.savedScrollTop>=420 && before.savedFolderID===1 &&
+    before.mobileHostSame && before.hostCount===1, before);
+  let notify,release;
+  const started=new Promise(resolve=>{notify=resolve;});
+  const waiting=new Promise(resolve=>{release=resolve;});
+  directoryGate={hits:0,notify,wait:waiting};
+  let pending,wide,returned;
+  try {
+    await page.evaluate(()=>{location.hash='#/app/files?dir=2';});
+    await Promise.race([started,new Promise((_,reject)=>
+      setTimeout(()=>reject(new Error('P9 held first directory page was not dispatched')),10000))]);
+    await settle();
+    pending=await snapshot();
+    check(activeStage+': pending URL retains committed old root before breakpoint',
+      directoryGate.hits>=1 && pending.scrollTop>=420 && pending.savedFolderID===1 &&
+      pending.visibleFolder===before.visibleFolder && pending.mobileHostSame,
+      pending);
+
+    await page.setViewportSize({width:900,height:700});
+    await page.waitForFunction(()=>!document.querySelector('[data-xdrive-mobile-files-scroll]'));
+    await settle();
+    wide=await snapshot();
+    check(activeStage+': wide view keeps current route without unauthorized folder persistence',
+      wide.width===900 && !wide.mobileHostPresent && wide.hash==='#/app/files?dir=2' &&
+      wide.savedFolderID===1 && wide.overflowX<=1 && wide.overflowY<=1,
+      wide);
+
+    await page.setViewportSize({width:899,height:700});
+    await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+    await settle();
+    returned=await snapshot();
+    check(activeStage+': compact remount restores old committed root while new folder is pending',
+      returned.width===899 && returned.hash==='#/app/files?dir=2' &&
+      returned.mobileHostPresent && returned.hostCount===1 &&
+      !returned.mobileHostSame && returned.visibleFolder===before.visibleFolder &&
+      returned.savedFolderID===1 && returned.scrollTop>=420 &&
+      returned.overflowX<=1 && returned.overflowY<=1,
+      {before,pending,wide,returned});
+  } finally {
+    directoryGate=null;
+    release();
+  }
+  await page.locator('[data-mobile-files-item]').filter({hasText:'nested-001.txt'}).first().waitFor();
+  await settle();
+  const committed=await snapshot();
+  check(activeStage+': new child commits after the held range without ghost scroll',
+    committed.hash==='#/app/files?dir=2' &&
+    committed.savedFolderID===2 && committed.scrollTop===0 &&
+    committed.hostCount===1 && committed.mobileHostPresent,
+    committed);
+  result.samples[activeStage]={
+    before,pending,wide,returned,committed,firstRangeHeldAcrossResponsiveRemount:true,
+    realChromium:true,physicalIOSDevice:false,physicalAndroidDevice:false,installedPWA:false
   };
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }

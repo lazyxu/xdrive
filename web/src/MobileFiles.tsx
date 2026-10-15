@@ -303,15 +303,19 @@ function isNativeTouchContext(event: MouseEvent | undefined) {
 
 export default function MobileFiles(props: Props) {
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
+  // The URL describes a pending intent. In a responsive remount, use it for
+  // initial scroll only after the shared controller commits its real crumbs.
+  // Until then the last verified folder and scroll position still own the UI.
+  const committedFolderID = Number(props.crumbs.at(-1)?.id ?? 0) || null
   const initial = useMemo(() => {
     if (typeof window === 'undefined') return mobileFilesDecodeState(null)
     try {
       const previous = mobileFilesDecodeState(window.localStorage.getItem(storageKey))
-      return props.requestedDirectoryID
+      return props.requestedDirectoryID && props.requestedDirectoryID === committedFolderID
         ? { ...previous, section: 'browse' as const, folderID: props.requestedDirectoryID, scrollTop: 0 }
         : previous
     } catch { return mobileFilesDecodeState(null) }
-  }, [storageKey, props.requestedDirectoryID])
+  }, [storageKey, props.requestedDirectoryID, committedFolderID])
   // A new Files launch resumes the last Browse location, not a different
   // Recent/Favorites rail tab that happened to be visible before exit.
   const [section, setSection] = useState<MobileFilesSection>('browse')
