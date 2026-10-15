@@ -190,6 +190,26 @@ func StageVerifiedNativeOriginalBytes(
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
+	// Server staging receipt alone is NOT a real physical-byte observation.
+	// Require an independent owning-device preflight of the actual temporary
+	// Server file before returning even this NONCANONICAL private receipt.
+	// The preflight remains ephemeral, never a CAS or SourceItem commit proof.
+	physical, err := c.PreflightLocalPushStagingPhysical(
+		ctx, grant.SourceID, sourceRevision, proof, reserved.StageID, before.Size,
+	)
+	if err != nil {
+		return empty, fmt.Errorf("independent temporary physical-byte recheck failed: %w", err)
+	}
+	if physical.SourceID != grant.SourceID ||
+		physical.Revision != sourceRevision || physical.StageID != reserved.StageID ||
+		physical.Size != before.Size || !physical.PhysicalStagingMatched ||
+		physical.ContentVerified || physical.CommitSupported ||
+		physical.Authoritative || physical.MissingInferenceSafe {
+		return empty, errors.New("temporary physical-byte result cannot grant canonical authority")
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
 	stageAccepted = true
 	return LocalOriginalServerStage{
 		SourceID: grant.SourceID, Revision: sourceRevision,
