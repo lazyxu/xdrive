@@ -50,14 +50,18 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 	nativeDownloadMode := os.Getenv("XD_PWA_S4C3_NATIVE_DOWNLOAD") == "1"
 	nativeCancelMode := os.Getenv("XD_PWA_S4C3_CANCEL") == "1"
 	wakeMode := os.Getenv("XD_PWA_S4D2_WAKE") == "1"
+	durableMode := os.Getenv("XD_PWA_S4D3_DURABLE") == "1"
 	resumeMode := os.Getenv("XD_PWA_S4B2_REAL_RESUME") == "1"
 	largeResumeMode := os.Getenv("XD_PWA_S4B2_LARGE_RESUME") == "1"
 	folderResumeMode := os.Getenv("XD_PWA_S4B3_REAL_FOLDER") == "1"
 	if nativeDownloadMode && (resumeMode || largeResumeMode || folderResumeMode) {
 		t.Fatal("S4C3 native-download fixture cannot alter S4B2 upload fault mode")
 	}
-	if wakeMode && (nativeDownloadMode || resumeMode || largeResumeMode || folderResumeMode) {
-		t.Fatal("S4D2 wake fixture must remain independent from native downloads or upload fault injections")
+	if wakeMode && (nativeDownloadMode || resumeMode || largeResumeMode || folderResumeMode || durableMode) {
+		t.Fatal("S4D2 wake fixture must remain independent from native downloads, durable worker and uploads")
+	}
+	if durableMode && (nativeDownloadMode || resumeMode || largeResumeMode || folderResumeMode) {
+		t.Fatal("S4D3 durable worker fixture must not change native transfers or upload fault modes")
 	}
 	if nativeCancelMode && !nativeDownloadMode {
 		t.Fatal("S4C3 cancellation requires native download mode")
@@ -156,12 +160,20 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wakeFixture *pwaS4D2WakeFixture
-	if wakeMode {
+	var durableFixture *pwaS4D3DurableFixture
+	if wakeMode || durableMode {
 		var foreign meta.User
 		if err := db.Where("username = ?", foreignName).First(&foreign).Error; err != nil {
 			t.Fatal(err)
 		}
-		wakeFixture = pwaS4D2Prepare(t, db, owner.ID, foreign.ID)
+		if wakeMode {
+			wakeFixture = pwaS4D2Prepare(t, db, owner.ID, foreign.ID)
+		}
+		if durableMode {
+			durableFixture = pwaS4D3Prepare(
+				t, srv, db, router, ownerToken, foreignToken, owner.ID, foreign.ID, folder.ID,
+			)
+		}
 	}
 	picture := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	picture.Set(0, 0, color.RGBA{R: 20, G: 90, B: 170, A: 255})
@@ -295,6 +307,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		case wakeMode && request.URL.Path == "/__test/pwa-s4d2/advance":
 			wakeFixture.advance(w, request, db)
 			return
+		case durableMode && request.URL.Path == "/__test/pwa-s4d3/start-worker":
+			durableFixture.startWorker(w, request, srv)
+			return
 		case request.URL.Path == "/__test/pwa-s2b3/finish":
 			if request.Method != http.MethodPost {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -303,10 +318,16 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 			once.Do(func() { close(done) })
 			w.WriteHeader(http.StatusNoContent)
 		case strings.HasPrefix(request.URL.Path, "/api/"):
-			if wakeMode && request.Method != http.MethodGet && request.Method != http.MethodHead &&
+			if request.Method != http.MethodGet && request.Method != http.MethodHead &&
 				(strings.Contains(request.URL.Path, "/background-tasks/control") ||
-					strings.HasPrefix(request.URL.Path, "/api/v1/uploads")) {
-				wakeFixture.mutations.Add(1)
+					strings.HasPrefix(request.URL.Path, "/api/v1/uploads") ||
+					strings.HasPrefix(request.URL.Path, "/api/v1/file-operations")) {
+				if wakeMode {
+					wakeFixture.mutations.Add(1)
+				}
+				if durableMode {
+					durableFixture.mutations.Add(1)
+				}
 			}
 			// Test-only pacing on the FIRST genuine signed HTTP response.
 			if nativeCancelMode && request.Method == http.MethodGet &&
@@ -382,6 +403,10 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		ready["pwa_s4d2_wake"] = true
 		ready["wake_task_id"] = "sync-run:" + wakeFixture.ownerRunID
 	}
+	if durableMode {
+		ready["pwa_s4d3_durable"] = true
+		ready["durable_task_id"] = "file-operation:" + durableFixture.operationID
+	}
 	if nativeDownloadMode {
 		ready["pwa_s4c3_native_download"] = true
 		ready["pwa_s4c3_cancel"] = nativeCancelMode
@@ -427,6 +452,9 @@ func TestPWAS2B3RealGinAuthFixture(t *testing.T) {
 		t.Logf("PWA_S2B3_REAL_GIN_VERIFIED root=%d target=%d authentic_login=true foreign_404=true", root.ID, folder.ID)
 		if wakeMode {
 			wakeFixture.verify(t, db, router, ownerToken, foreignToken)
+		}
+		if durableMode {
+			durableFixture.verify(t, srv, db, router, ownerToken, foreignToken)
 		}
 		if nativeDownloadMode {
 			pwaS4C3VerifyPhysicalCAS(t, db, local, nativeSeed)
