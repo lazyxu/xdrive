@@ -1814,3 +1814,38 @@ Canonical CAS/SQL lifetime locking, quotas and crash-idempotent writes
 remain future F2d+ milestones. Full exact-head GitHub Go Linux/Windows,
 PostgreSQL, Desktop/Web and final-gate CI is required; real physical
 devices, 100k originals, >=4GiB and GitLab remain unverified.
+
+
+## L03-F2d1 · Cooperative temporary stage physical lifetime fence (PR verification)
+
+Following exact-stage Agent recovery (F2c2), the physical temporary stage
+read now holds a dedicated, bounded persistent OS-shard shared lease from
+the concrete Local Store. The private stage key is an exact Server-owned
+UUID under the fixed localpush temporary namespace; alternate path spellings,
+unsafe/nonregular/symlinked records and canceled pins fail closed. The
+same stage-shard exclusive counterpart fences Local.Put, Local.Delete,
+Local.DeleteStaging (including global temp-cleanup janitor), and
+Local.Promote before any physical rename/delete, across separate Local
+instances sharing the same filesystem. Per-shard lock files are persistent
+storage control state, NEVER reclaimable temporary data. Existing canonical
+CAS locks remain separate; global temporary janitor lease precedes Put's
+stage lease, and Promote takes target CAS before source-stage lease.
+
+The owning-Agent physical preflight still performs its original bounded
+SHA256/size/inode/mtime checks, with the stage reader held across hashing.
+It releases the shared stage lease before its second device/Root/Source
+PostgreSQL proof transaction. Real Linux/Windows cross-instance tests demand
+timeout failures for competing Put/Delete/DeleteStaging/Promote while the
+stage is pinned, successful promotion after Close, cancellation and symlink
+rejection. Outside-process actors bypassing xDrive storage locks are not
+blocked, so the digest and inode checks remain mandatory.
+
+This lock protects ONLY cooperative temporary-byte observation. It is
+NOT canonical CAS refcount retention, immutable cloud content, a distributed
+SQL+OS commit protocol, native-file attestation at commit time, SourceRun,
+permanent File/Node/SourceItem write, 4GiB resume, Mirror deletion or an
+Agent/Desktop/Web runnable action. F2d2+ must independently prove durable
+CAS bytes, exact owning device and Root/revision at commit and idempotent
+database mutation. Require full exact-head GitHub Linux/Windows/PostgreSQL,
+Web/Desktop, artifacts and final-gate; real 100k/4GiB/physical device
+and GitLab evidence are separate.

@@ -118,6 +118,13 @@ func (l *Local) Put(ctx context.Context, key string, r io.Reader) (int64, error)
 		return 0, fmt.Errorf("storage write temporary lease was not acquired")
 	}
 	defer release()
+	// After the global temporary-write lease, acquire the private stage
+	// shard so janitor's global-exclusive -> stage lock order cannot invert.
+	releaseStage, err := l.localPushStageWriteLeases(ctx, key)
+	if err != nil {
+		return 0, err
+	}
+	defer releaseStage()
 	if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 		return 0, err
 	}
@@ -280,6 +287,11 @@ func (l *Local) Delete(ctx context.Context, key string) error {
 		return err
 	}
 	defer releaseCAS()
+	releaseStage, err := l.localPushStageWriteLeases(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer releaseStage()
 	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -343,6 +355,13 @@ func (l *Local) DeleteStaging(ctx context.Context, key string) error {
 	if err != nil {
 		return err
 	}
+	// The janitor may already own the global temp-exclusive lease. Its
+	// stage-exclusive counterpart prevents reclaim of an active pinned read.
+	releaseStage, err := l.localPushStageWriteLeases(ctx, key)
+	if err != nil {
+		return err
+	}
+	defer releaseStage()
 	if err := os.Remove(full); err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -368,6 +387,13 @@ func (l *Local) Promote(ctx context.Context, sourceKey, targetKey string, expect
 		return err
 	}
 	defer releaseCAS()
+	// CAS target shard precedes private stage shard; never acquire SQL locks
+	// from inside this storage-level promotion helper.
+	releaseStage, err := l.localPushStageWriteLeases(ctx, sourceKey, targetKey)
+	if err != nil {
+		return err
+	}
+	defer releaseStage()
 	source, err := l.resolve(sourceKey)
 	if err != nil {
 		return err
