@@ -233,6 +233,15 @@ func queryMediaPlaces(
 }
 
 func queryMediaPlacesWindow(ctx context.Context, db *gorm.DB, ownerID uint64, limit, offset int) ([]mediaPlaceDTO, error) {
+	return queryMediaPlacesWindowScoped(ctx, db, ownerID, limit, offset, nil)
+}
+
+// Share A1's ordered, provenance-correct cell materialization between
+// ordinary Places paging and an A3 bounded Owner viewport.
+func queryMediaPlacesWindowScoped(
+	ctx context.Context, db *gorm.DB, ownerID uint64, limit, offset int,
+	bounds *mediaPlaceViewportBounds,
+) ([]mediaPlaceDTO, error) {
 	if db == nil || ownerID == 0 {
 		return nil, fmt.Errorf("media place query is not configured")
 	}
@@ -261,21 +270,24 @@ func queryMediaPlacesWindow(ctx context.Context, db *gorm.DB, ownerID uint64, li
 		Resolver        string
 	}
 	var rows []row
-	if err := mediaPlacesBaseQuery(ctx, db, ownerID).
-		Select(
-			latExpr+" AS latitude_cell, "+
-				lonExpr+" AS longitude_cell, "+
-				// A single real source Node determines both coordinates: never
-				// combine MIN(lat) and MIN(lng) from different photos.
-				"(ARRAY_AGG(xd_media_metadata.latitude ORDER BY pa.primary_node_id))[1] AS sample_latitude, "+
-				"(ARRAY_AGG(xd_media_metadata.longitude ORDER BY pa.primary_node_id))[1] AS sample_longitude, "+
-				"COUNT(DISTINCT pa.id) AS item_count, "+
-				"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
-				"MAX(COALESCE(xd_media_metadata.captured_at, n.created_at)) AS updated_at, "+
-				"MIN(NULLIF(ppl.formatted, '')) AS resolved_name, "+
-				"MIN(NULLIF(ppl.resolver, '')) AS resolver",
-			thumbnailMIMEs,
-		).
+	query := mediaPlacesBaseQuery(ctx, db, ownerID)
+	if bounds != nil {
+		query = mediaPlacesWithinViewport(query, *bounds)
+	}
+	if err := query.Select(
+		latExpr+" AS latitude_cell, "+
+			lonExpr+" AS longitude_cell, "+
+			// A single real source Node determines both coordinates: never
+			// combine MIN(lat) and MIN(lng) from different photos.
+			"(ARRAY_AGG(xd_media_metadata.latitude ORDER BY pa.primary_node_id))[1] AS sample_latitude, "+
+			"(ARRAY_AGG(xd_media_metadata.longitude ORDER BY pa.primary_node_id))[1] AS sample_longitude, "+
+			"COUNT(DISTINCT pa.id) AS item_count, "+
+			"MIN(CASE WHEN lower(xd_media_metadata.mime_type) IN ? THEN pa.primary_node_id ELSE NULL END) AS cover_node_id, "+
+			"MAX(COALESCE(xd_media_metadata.captured_at, n.created_at)) AS updated_at, "+
+			"MIN(NULLIF(ppl.formatted, '')) AS resolved_name, "+
+			"MIN(NULLIF(ppl.resolver, '')) AS resolver",
+		thumbnailMIMEs,
+	).
 		Joins(
 			"LEFT JOIN xd_photo_place_labels AS ppl ON ppl.asset_id = pa.id " +
 				"AND ppl.latitude = xd_media_metadata.latitude " +

@@ -293,3 +293,11 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 这里没有加入任何真正子资源到生产 allowlist；`reviewedJSAPI4ChildResourceCount=0`、`runtime_enabled=false` 和生产发布闸门拒绝行为保持不变。代码通过仅代表规则语法可判定，不代表已取得百度合法许可、设备运行实证、Browser AK 不泄露、完整资源清单或真实连续动态地图。
 
 **下一步仍需外部证据才能正式完成 A3**：经真实许可的完整官方资源和账户服务边界；人工逐项复核后把 Host/Path/Query/MIME/字节/超时写入不可由浏览器或设置修改的源码；本地原始上游+浏览器 HAR 私有审计；已钉扎的受信发布根、Owner 持久撤销与配额、Caddy/Electron/PWA 隔离及 iOS 27/Android/Desktop 验收。之后实施共享 Gallery A3b3 动态地图和 A4、B1–B3、C1。百度唯一 Provider，Server Static AK 与 Browser JSAPI AK 分离，保持 52px App Frame 与三端共用图库 API/虚拟化/Viewer。
+
+## A3b3a1 · 真实视窗的 Server Owner 数据底座（2026-10-15）
+
+在 A3b2d2b3b2b #1703 已通过准确 HEAD Final Gate、线性合入并确认相关分支删除后，增加**独立于百度 JSAPI 是否上线**的 `GET /api/v1/media/places/viewport`。四个必选 WGS84 边界分别为 west/south/east/north，支持跨 ±180°、合法两极、(0,0)；limit 默认 64、最大 100、offset 有上限。无客户端自定 SQL/聚合倍数；返回原 A1 的 `place:` 0.01° 单元格 ID、格网中心、**同一真实照片的 GPS 样本对**、每格成员数、视窗精确总格数和不同 PhotoAsset 总数，以及分页/has_more。大范围视窗若截断由客户端提示放大/进一步细分，不假称返回全部 Marker。
+
+新接口始终走原登录 Owner 授权与 A1 一致的 GPS 谓词，查询由请求 Context 控制并有 3 秒上限，响应 `no-store`；不返回图像字节、Browser AK、Server AK、私有原图或具体路径。原有 Gallery Range/虚拟列表/Viewer 继续负责进入照片，三端同一个 API 契约。Go Client 类型接口作为后续 Desktop Agent bridge 前置；本阶段不改任何 Renderer 或 JSAPI Runtime。
+
+**仍未完成**：A3b3a2 共用 MUI 数据源与 Desktop Agent IPC、A3b3 实际连续平移/缩放/标记/聚合，以及真正的百度自托管/PWA/Electron 授权、许可子资源白名单、签名发布、密钥泄漏与真机证明。动态 `runtime_enabled=false` 不变，严格拒绝非百度 Provider。完成 A3 才按用户指定顺序推进 A4、B1、B2、B3、C1。
