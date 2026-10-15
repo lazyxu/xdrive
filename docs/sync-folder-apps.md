@@ -1977,3 +1977,45 @@ and canonical content at the actual commit boundary, apply account quotas,
 and preserve crash-idempotent CAS/SQL reference accounting. Full exact-head
 Go Linux/Windows/PostgreSQL, Web/Desktop, artifacts and final-gate CI
 are mandatory; real 100k/4GiB, physical devices and GitLab are not claimed.
+
+
+## L03-F2d3 · Paired temporary-stage and canonical-CAS nonblocking pins (PR validation)
+
+The preceding F2d1/F2d2 and E1b2 stages separately fenced cooperative
+staging and canonical CAS lifetimes. F2d3 combines those *existing* Local
+Store read paths in one internal, **non-authoritative** admission:
+`TryOpenPinnedLocalPushStageAndCAS(ctx,stageKey,casKey)` accepts only a
+Server-owned canonical private UUID stage key and a canonical SHA256 CAS key.
+The canonical CAS shard is tried first, then the temporary stage shard,
+matching the order of existing `Local.Promote`. BOTH acquisitions are
+nonblocking, including when the caller already holds a PostgreSQL CAS
+hash advisory lock. A busy OS lock returns (nil,false,nil), so a future
+transaction MUST roll back and retry outside that transaction; a missing,
+malformed, canceled, nonregular or symlinked file fails closed.
+
+On second-stage contention/failure, the first acquired CAS handle is closed
+before returning. A successful pair holds BOTH cooperative reader leases
+until an idempotent pair Close, releasing stage before CAS. The narrow
+StageReader/CASReader and regular inode Stat accessors are internal only:
+they cannot become a Server token or a UI capability. Cross-Local
+Linux/Windows tests exercise simultaneous Put/Delete protection, both
+contention directions, partial pin cleanup, path rejection, cancellation
+and symlinked canonical CAS. A PostgreSQL17 test uses independent SQL
+connections and the real advisory hash lock to prove CAS-busy and
+stage-busy cases each roll back, do not wait for either OS lock and release
+both SQL/OS leases before subsequent operations; the free path inspects
+ONLY inode metadata. Without XD_TEST_DATABASE_URL the DB test skips.
+
+This is **not** a durable pinned verification or an authorized commit:
+it performs NO Source/device/Root/revision recheck, stage-to-CAS promotion,
+full SHA256 comparison at COMMIT, quota charge, File/FileVersion/Node/
+SourceItem/ContentBlob or SyncRun mutation, uploader, scheduler, Desktop
+button, Web operation, NAS Push or Mirror deletion. Existing
+`local_folder` activation denial stays active. A canonical CAS object
+must already exist for this paired read; absent canonical content is
+NOT created. Outside-process filesystem actors are not fenced, so the
+actual final writer needs independent physical hashes, atomic retention
+and idempotent recovery under precise credential and transaction locks.
+GitHub exact-head full Go Linux/Windows/PostgreSQL/Web/Desktop/artifact
+and final-gate CI are required; GitLab, real physical 100k and >=4GiB
+backup acceptance remain unverified.
