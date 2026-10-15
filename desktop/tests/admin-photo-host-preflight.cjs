@@ -35,6 +35,17 @@ test('Photo Intelligence local preflight has one lazy shared UI path across Web/
   const web = read('web/src/App.tsx')
   const webAPI = read('web/src/api.ts')
   assert.ok(page.includes("section === 'verify'"))
+  const workspace = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  // The three deployment-owned model cards now mount the ONE shared manual
+  // read-only verification pane directly, without a second REST/IPC path or
+  // a duplicate independently editable per-model host.
+  assert.ok(workspace.includes("['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) &&"))
+  assert.ok(workspace.includes("currentTab === 'verify')) &&"))
+  assert.ok(workspace.includes('data-xdrive-direct-shared-photo-verify'))
+  assert.equal((workspace.match(/<XDrivePhotoHostDesiredPanel source=/g) || []).length, 1)
+  assert.equal(workspace.includes("onClick={() => navigateTo({ service: 'photo-face', tab: 'verify' })}"), false)
+  assert.ok(workspace.includes("selectedPage === 'photo-face' && currentTab !== 'status'"))
+  assert.ok(page.includes("if (section !== 'verify' || !source.loadPhotoHostPreflight"))
   assert.ok(page.includes('source.loadPhotoHostPreflight()'))
   assert.ok(page.includes('data-xdrive-photo-host-preflight'))
   assert.ok(page.includes('检测宿主与模型（只读）'))

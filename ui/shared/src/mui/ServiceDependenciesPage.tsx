@@ -1502,10 +1502,11 @@ export function XDriveServiceDependenciesPage({
                       </Typography>
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                       {['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && (
-                        <Button variant="text" size="small" sx={{ alignSelf: 'flex-start' }}
-                          onClick={() => navigateTo({ service: 'photo-face', tab: 'verify' })}>
-                          检测共享宿主与四类模型 Info（手动、只读）
-                        </Button>
+                        <Typography variant="body2" color="text.secondary"
+                          data-xdrive-direct-shared-photo-verify>
+                          此服务由共享 Photo Intelligence 宿主提供。下方可直接手动检测四类模型的真实固定输入执行状态；
+                          不包含单独的模型启停操作，也不代表真实图库任务或其他 Server 实例生效。
+                        </Typography>
                       )}
                       <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
                         onClick={() => setRefreshID((value) => value + 1)}
@@ -1513,7 +1514,9 @@ export function XDriveServiceDependenciesPage({
                     </Stack>
                   )}
                   
-              {selectedPage === 'photo-face' && currentTab !== 'status' &&
+              {((selectedPage === 'photo-face' && currentTab !== 'status') ||
+                (['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) &&
+                  currentTab === 'verify')) &&
                 <XDrivePhotoHostDesiredPanel source={source}
                   section={currentTab === 'history' ? 'history' : currentTab === 'verify' ? 'verify' : 'config'}
                   onDirtyChange={setChildDirty} />}
