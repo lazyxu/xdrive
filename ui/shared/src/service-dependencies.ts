@@ -284,6 +284,9 @@ export type XDrivePhotoHostPreflight = {
   // Running persisted photo analyses, clustering or queued/running Creative
   // can block stop; no rows/old Server/DB errors NEVER prove fleet idle.
   durable_work_blocker_state?: 'blocked' | 'unverified'
+  // Fresh cross-Server background-runtime presence can veto stop; missing or
+  // expired reports never certify all Server replicas are drained.
+  runtime_work_blocker_state?: 'blocked' | 'unverified'
   // Only ONE fixed synthetic semantic text inference; not a media/image,
   // Face, OCR, Creative, fleet activation or safe-stop proof.
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'

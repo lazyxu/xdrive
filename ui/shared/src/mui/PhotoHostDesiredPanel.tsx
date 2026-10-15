@@ -318,6 +318,13 @@ export function XDrivePhotoHostDesiredPanel({
                           ? '数据库发现仍在运行的照片分析／人物聚类任务或已排队／运行的照片创作任务；禁止停用。'
                           : '尚未证明可以停用：未发现记录、检测不可用或旧版 Server/Agent 均不能证明其他 Server 和未持久化任务已经排空。'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.runtime_work_blocker_state === 'blocked' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-runtime-work-blocker-state>
+                        多 Server 运行任务阻止信号：{preflight.runtime_work_blocker_state === 'blocked'
+                          ? '发现尚未过期的照片后台任务运行／排队／取消中状态；禁止停用共享宿主。'
+                          : '尚无跨实例排空证明：未找到运行记录、上报过期、检测失败或旧版 Server/Agent 均不能证明实例齐备及禁止新任务入队。'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified
                           ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'

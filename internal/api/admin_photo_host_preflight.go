@@ -37,6 +37,7 @@ type adminPhotoHostPreflightDTO struct {
 	RequestGenerationCorrelated bool                           `json:"request_generation_correlated"`
 	ModelRequestAckVerified     bool                           `json:"model_request_ack_verified"`
 	DurableWorkBlockerState     string                         `json:"durable_work_blocker_state"`
+	RuntimeWorkBlockerState     string                         `json:"runtime_work_blocker_state"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
@@ -134,6 +135,8 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
 	// Only a negative persisted-work signal; never proof of fleet drain or stop authorization.
 	report.DurableWorkBlockerState = s.photoHostDurableWorkBlocker(c.Request.Context())
+	// Fresh scheduler presence provides another NEGATIVE signal, never stop permission.
+	report.RuntimeWorkBlockerState = s.photoHostRuntimeWorkBlocker(c.Request.Context())
 	// Only the administrator's explicit no-store preflight may trigger the
 	// four Info checks and (after proven ACK) bounded fixed synthetic tasks. Missing
 	// trustworthy host revision evidence means that Info is never invoked.
