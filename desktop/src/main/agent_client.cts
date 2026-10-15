@@ -962,6 +962,8 @@ export type AgentAdminPhotoHostPreflight = {
   model_request_ack_verified?: boolean
   // Negative-only persisted work observation, never a stop-ready state.
   durable_work_blocker_state?: 'blocked' | 'unverified'
+  // Optional negative-only current/fresh scheduler presence, not a fleet lease.
+  runtime_work_blocker_state?: 'blocked' | 'unverified'
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
