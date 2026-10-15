@@ -182,6 +182,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:move-media-album-to-folder', albumID, revision, folderID),
   getMediaPlaces: (limit = 24) => ipcRenderer.invoke('agent:get-media-places', limit),
   getMediaPlacesPage: (limit = 48, offset = 0) => ipcRenderer.invoke('agent:get-media-places-page', limit, offset),
+  getMediaPlacesViewport: (
+    bounds: { west: number; south: number; east: number; north: number },
+    limit = 64, offset = 0, requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-places-viewport', bounds, limit, offset, requestID),
   getMediaMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
     ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit, timeZone),
   getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0, timeZone = 'UTC') =>

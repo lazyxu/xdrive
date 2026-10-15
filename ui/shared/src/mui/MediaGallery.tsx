@@ -82,6 +82,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlacesViewportBounds,
+  MediaPlacesViewportPage,
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
   MediaTimelineGroupSets,
@@ -249,6 +251,11 @@ export interface MediaGalleryDataSource {
   moveAlbumToFolder?: (albumID: string, revision: number, folderID: number) => Promise<MediaAlbum>
   listPlaces?: (limit?: number) => Promise<MediaPlaceFacet[]>
   listPlacesPage?: (limit?: number, offset?: number) => Promise<MediaPlacesPage>
+  /** One shared, cancelable, Owner-authorized view for Web/Mobile Web/Desktop.
+   * The component does not invoke it until A3 UI/authorization gates are met. */
+  listPlacesViewport?: (
+    bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
+  ) => Promise<MediaPlacesViewportPage>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>

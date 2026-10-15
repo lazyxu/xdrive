@@ -53,6 +53,8 @@ import type {
   MediaPersonSplit,
   MediaPlaceFacet,
   MediaPlacesPage,
+  MediaPlacesViewportBounds,
+  MediaPlacesViewportPage,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -1405,6 +1407,22 @@ export class XDriveApi {
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<MediaPlacesPage>(`/api/v1/media/places/page?${query.toString()}`)
+  }
+
+  // All viewport consumers, including compact Mobile Web and PWA, use the
+  // same Owner-authenticated REST query and abortable transport. No map AK.
+  mediaPlacesViewport(
+    bounds: MediaPlacesViewportBounds, limit = 64, offset = 0, signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      limit: String(limit), offset: String(offset),
+    })
+    return this.request<MediaPlacesViewportPage>(
+      `/api/v1/media/places/viewport?${query.toString()}`,
+      { signal, cache: 'no-store' },
+    )
   }
 
   mediaPlaces(limit = 24) {
