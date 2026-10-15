@@ -1658,6 +1658,8 @@ async function attemptAutomaticLogin() {
   if (!profile || !profile.encrypted_password || !securePasswordStorageAvailable()) return
   if (!agentState.connected || agentState.status?.configured) return
 
+  // Keep the history identity of this attempt; newer user saves replace it.
+  const attemptedLoginHistory = loginHistory
   lastAutoLoginError = ''
   try {
     const password = decryptLoginPassword(profile.encrypted_password)
@@ -1668,6 +1670,8 @@ async function attemptAutomaticLogin() {
       ...(profile.mount_path ? { mount_path: profile.mount_path } : {}),
     }))
     if (!result.ok) {
+      // An obsolete failure must not disable a more recently accepted login.
+      if (loginHistory !== attemptedLoginHistory) return
       lastAutoLoginError = result.error.message || '自动登录失败，请手动登录。'
       loginHistory = disableAutomaticLogin(loginHistory)
       await persistLoginHistoryBestEffort()
@@ -1676,6 +1680,7 @@ async function attemptAutomaticLogin() {
     }
     lastAutoLoginError = ''
   } catch (error) {
+    if (loginHistory !== attemptedLoginHistory) return
     lastAutoLoginError = formatLifecycleError(error)
     loginHistory = disableAutomaticLogin(loginHistory)
     await persistLoginHistoryBestEffort()
