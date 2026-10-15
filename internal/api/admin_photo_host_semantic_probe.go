@@ -17,10 +17,11 @@ const photoHostSemanticProbeCooldown = 60 * time.Second
 // YuNet and Smart visual/OCR share one mutex; no user input or URL is accepted.
 var photoHostSemanticProbeGate = struct {
 	sync.Mutex
-	lastAttempt      time.Time
-	lastImageAttempt time.Time
-	lastFaceAttempt  time.Time
-	lastSmartAttempt time.Time
+	lastAttempt         time.Time
+	lastImageAttempt    time.Time
+	lastFaceAttempt     time.Time
+	lastSmartAttempt    time.Time
+	lastCreativeAttempt time.Time
 }{}
 
 // Shared real synthetic-inference validator: require exact host ACK before

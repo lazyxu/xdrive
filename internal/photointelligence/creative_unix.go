@@ -16,6 +16,63 @@ import (
 
 const creativeAnalyzerMaxResponseBytes = (CreativeMaxResultBytes*4)/3 + (2 << 20)
 
+var ErrCreativeCutoutCanaryUnavailable = errors.New("creative cutout canary unavailable")
+
+// ProbeSyntheticCutout calls only the fixed private Unix route. Never reuse
+// Generate's media-task body, caller URL, preview tickets or large byte buffer.
+// A 404 denotes an older model: it is unverified, not a successful task.
+func (a *UnixCreativeAnalyzer) ProbeSyntheticCutout(ctx context.Context) (bool, error) {
+	if a == nil || a.client == nil || a.token == "" || ctx == nil {
+		return false, errors.New("creative fixed canary requires authenticated analyzer")
+	}
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet, "http://xdrive-photo-creative/v1/creative-cutout-canary", nil,
+	)
+	if err != nil {
+		return false, err
+	}
+	a.addHeaders(req)
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return false, ErrCreativeCutoutCanaryUnavailable
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("creative fixed canary returned HTTP %d", resp.StatusCode)
+	}
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, 129))
+	if err != nil || len(payload) > 128 {
+		return false, errors.New("creative fixed canary response is invalid or too large")
+	}
+	// Parse exactly one JSON Boolean field. Reject duplicate, absent, extra,
+	// non-Boolean or trailing data rather than accepting ambiguous model output.
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	open, err := decoder.Token()
+	if err != nil || open != json.Delim('{') {
+		return false, errors.New("creative fixed canary object is invalid")
+	}
+	field, err := decoder.Token()
+	if err != nil || field != "cutout_executed" {
+		return false, errors.New("creative fixed canary field is invalid")
+	}
+	value, err := decoder.Token()
+	executed, valid := value.(bool)
+	if err != nil || !valid {
+		return false, errors.New("creative fixed canary execution type is invalid")
+	}
+	closeToken, err := decoder.Token()
+	if err != nil || closeToken != json.Delim('}') {
+		return false, errors.New("creative fixed canary object has extra fields")
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return false, errors.New("creative fixed canary contains trailing data")
+	}
+	return executed, nil
+}
+
 type UnixCreativeAnalyzer struct {
 	socketPath string
 	token      string

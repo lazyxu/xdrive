@@ -285,15 +285,15 @@ export function XDrivePhotoHostDesiredPanel({
             <Typography variant="caption" color="text.secondary">{config.requirement}</Typography>
             {section === 'verify' && (
               <Stack spacing={1} data-xdrive-photo-host-preflight>
-                <Typography variant="subtitle2">宿主安全启用条件（只读）</Typography>
+                <Typography variant="subtitle2">宿主与模型执行检测（只读）</Typography>
                 <Typography variant="caption" color="text.secondary">
                   手动检查固定宿主前置条件；只有已保存的启用修订取得可信宿主回执时，才对四类模型执行独立 Info 探针。
-                  不授权启停；可信 ACK 后可执行固定语义文本／图片、YuNet 及视觉分类／OCR 三模型烟测，均不读取用户照片，也不代表其他 Server 实例。
+                  不授权启停；可信 ACK 后可执行固定语义、YuNet/SFace、视觉／OCR 及 Creative 抠图模型烟测，均只使用内部固定合成输入；不代表真实图库或其他 Server 实例生效。
                 </Typography>
                 <Box>
                   <Button size="small" variant="outlined" onClick={() => { void verifyLocalReadiness() }}
                     disabled={!source.loadPhotoHostPreflight || preflightBusy || loading}>
-                    {preflightBusy ? '正在检查…' : '检查安全启用前置条件'}
+                    {preflightBusy ? '正在检测…' : '检测宿主与模型（只读）'}
                   </Button>
                 </Box>
                 {preflightError && <XDriveStatusAlert tone="warning">{preflightError}</XDriveStatusAlert>}
@@ -362,6 +362,18 @@ export function XDrivePhotoHostDesiredPanel({
                             ? 'SFace 执行或特征校验失败；YuNet 结果仍独立有效'
                             : preflight.sface_task_state === 'throttled'
                               ? '检测频率受限或已有检测运行中；本次未验证'
+                              : '未运行、可信宿主条件不足或旧版模型／Server／Agent 不支持'}
+                      </Typography>
+                      <Typography variant="body2"
+                        color={preflight.creative_cutout_task_state === 'verified' ? 'success.main'
+                          : preflight.creative_cutout_task_state === 'failed' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-creative-cutout-task-state>
+                        创作模型固定抠图：{preflight.creative_cutout_task_state === 'verified'
+                          ? '真实 EfficientSAM 已执行固定合成图抠图并校验 PNG（不代表真实照片抠图质量、擦除、影片或拼图任务成功）'
+                          : preflight.creative_cutout_task_state === 'failed'
+                            ? '固定模型抠图或输出校验失败；不能报告创作生效'
+                            : preflight.creative_cutout_task_state === 'throttled'
+                              ? '检测冷却中或其他检测正在运行；本次未验证'
                               : '未运行、可信宿主条件不足或旧版模型／Server／Agent 不支持'}
                       </Typography>
                       <Typography variant="body2"
