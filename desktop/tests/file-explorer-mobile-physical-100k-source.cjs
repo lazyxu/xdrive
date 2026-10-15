@@ -8,11 +8,14 @@ const wf=read('.github/workflows/file-explorer-mobile-physical-jpeg-100k.yml')
 test('P039 uses real 390px shared Mobile Web FileExplorer with the already accepted 100k physical JPEG CAS fixture',()=>{
  for(const token of ['XD_FILEEXPLORER_MOBILE_PHYSICAL_100K_PERF','mobileMode ? 390 : 1440',
  'document.documentElement.clientWidth',"matchMedia('(max-width: 899px)')",
- 'requiredDecoded = mobileMode ? 4 : 6','fresh.length<requiredDecoded',
+ 'requiredDecoded = mobileMode ? 4 : 6','if(fraction>0&&fresh.length<minimumDecoded)return null',
+ 'const minimumDecoded=mixedMobileMode&&','?2:requiredDecoded',
  'firstRequiredDecodedMs','minRequiredDecodedPerViewport:requiredDecoded',
  'p50GridFirstRequiredMs','p50DetailsFirstRequiredMs',
  "const views = ['grid','details']", '0,0.25,0.50,0.75,0.95'])
   assert(script.includes(token), token)
+ assert(script.includes("const mobileMode = process.env.XD_FILEEXPLORER_MOBILE_PHYSICAL_100K_PERF === '1' || mixedMobileMode"))
+ assert(script.includes("const requiredDecoded = mobileMode ? 4 : 6"))
  assert(go.includes('seedFileExplorerDistinctPhysicalJPEG100K'))
  assert(jpeg.includes('jpeg.Decode(bytes.NewReader(decoded))'))
 })

@@ -1,0 +1,48 @@
+{
+  "workload_id": "P049 / M002-d",
+  "frozen_branch_source_sha": "97edbc955835eb552f24a004977da53d9cf6b86a",
+  "github_run": 38733843520,
+  "github_job": 116418016657,
+  "github_artifact_id": 11974340572,
+  "github_artifact_uri": "https://github.com/lazyxu/xdrive/actions/runs/38733843520/artifacts/11974340572",
+  "status": "Measured ORIGINAL CURRENT full n3 30/30 physically valid, postprocess summary envelope missing mixedMobileMode and workflow false-RED; evidence-head validation pending",
+  "expected_stage": "Linux Xvfb Chromium 390px, real shared FileExplorer Grid+Details each 5 viewports, 3 independent PG17/CAS seeded fixtures",
+  "original_summary_flag_missing": true,
+  "production_code_unchanged": true,
+  "goResourceByFixture": [
+    {
+      "sample": 1,
+      "seedMsExcluded": 233912.786,
+      "goRssStartBytes": 69730304,
+      "goRssPeakGrowthBytes": 81920,
+      "goCPUDeltaMs": 370
+    },
+    {
+      "sample": 2,
+      "seedMsExcluded": 242059.45,
+      "goRssStartBytes": 74674176,
+      "goRssPeakGrowthBytes": 401408,
+      "goCPUDeltaMs": 330
+    },
+    {
+      "sample": 3,
+      "seedMsExcluded": 203283.331,
+      "goRssStartBytes": 75436032,
+      "goRssPeakGrowthBytes": 110592,
+      "goCPUDeltaMs": 350
+    }
+  ],
+  "maxSingleViewportMs": 764.8670080000302,
+  "peakRendererRSSGrowthBytes": 74514432,
+  "maxGoRSSGrowthBytes": 401408,
+  "totalActualHTTPRequests": 376,
+  "totalActualThumbnailResponseBytes": 357194,
+  "maxGoThumbnailInFlight": 6,
+  "nonCanceled5xx": 0,
+  "validWindowCount": 30,
+  "expectedWindowCount": 30,
+  "before": "CURRENT",
+  "after": null,
+  "speedup": null,
+  "limitations": "No independent encoded H264 streams, no true video/live motion playback, Android/iOS hardware, OS-installed PWA, WAN, 100k simultaneous decoding or durable task cancellation"
+}

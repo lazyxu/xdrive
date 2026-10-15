@@ -1,0 +1,29 @@
+{
+  "workload_id": "P049",
+  "result": "Invalid harness",
+  "valid_samples": 0,
+  "platform": "Linux Electron Chromium 390px Mobile Web FileExplorer",
+  "git_commit": "d88e0d21ef1154958244dd1dcc6ae81994c34839",
+  "github_run": 38728914893,
+  "github_job": 116401544210,
+  "failure_stage": "node --check desktop/scripts/file-explorer-real-physical-100k-main.cjs",
+  "exact_error": "SyntaxError: Invalid or unexpected token",
+  "reason": "Branch-only benchmark source generated an incomplete test.run string when JavaScript String.replace interpreted $' as substitution of original suffix; test-only runner syntax error.",
+  "attempted_workload": "100k logical PhotoAssets /115k physical JPEG-H264-Live CAS; no genuine fixture seeded",
+  "actual_physical_media_generated": 0,
+  "before": null,
+  "after": null,
+  "speedup": null,
+  "product_performance_red": false,
+  "production_changes": false,
+  "frozen_budgets_unchanged": {
+    "n": 3,
+    "views_per_n": 2,
+    "scroll_positions_per_view": 5,
+    "viewport_ms_max": 20000,
+    "rss_growth_bytes_max_each": 268435456,
+    "go_inflight_max": 6,
+    "noncanceled_http_5xx_max": 0
+  },
+  "next_action": "Fix ONLY benchmark driver string quoting; rerun native same exact n3 without relaxing budget, then archive valid or additional invalid evidence."
+}
