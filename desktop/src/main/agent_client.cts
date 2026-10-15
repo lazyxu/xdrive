@@ -960,6 +960,8 @@ export type AgentAdminPhotoHostPreflight = {
   // Optional on old Server/Agent. Only means all four model Info responses
   // confirm the exact audited host action; never actual media task success.
   model_request_ack_verified?: boolean
+  // Negative-only persisted work observation, never a stop-ready state.
+  durable_work_blocker_state?: 'blocked' | 'unverified'
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
