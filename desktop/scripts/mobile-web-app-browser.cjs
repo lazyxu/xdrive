@@ -689,6 +689,7 @@ const result = {
 let activeStage = 'startup';
 let page;
 let metadataGate;
+let directoryGate;
 const expectedConsoleURLs = new Set();
 function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
@@ -2936,6 +2937,7 @@ async function filesIos27ChromeAcceptance(origin) {
   };
   await filesIos27CollectionMenusAcceptance(origin);
   await filesNavigationStabilityAcceptance(origin);
+  await filesDeferredDeepLinkAcceptance(origin);
 }
 
 
@@ -3032,6 +3034,94 @@ async function filesNavigationStabilityAcceptance(origin) {
     result.samples[activeStage]={original,moved,child,parent,realChromium:true,physicalDevice:false};
     await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
   }
+}
+
+
+async function filesDeferredDeepLinkAcceptance(origin) {
+  // Actual built Web + React + REST router: hold only the destination
+  // directory's first counted range. A URL may change before the data does.
+  // This scenario verifies that old content/scroll/persisted folder do not.
+  activeStage = 'user-files-mobile-deferred-route-stability-390';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  // Earlier real-UI rename acceptance has already renamed document-001.txt.
+  // Use an unchanged fixture item to establish the original root is visible.
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-002.txt' }).first().waitFor();
+  const observed = () => page.evaluate(() => {
+    const host = document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const hostRect = host?.getBoundingClientRect();
+    const persistedKey = Object.keys(localStorage).find(key =>
+      key.startsWith('xdrive.mobile.files.v1:'));
+    const saved = persistedKey ? JSON.parse(localStorage.getItem(persistedKey)) : null;
+    return {
+      hash: location.hash,
+      hostTop: host?.scrollTop ?? null,
+      hostFrame: hostRect ? { x: hostRect.x, y: hostRect.y,
+        width: hostRect.width, height: hostRect.height } : null,
+      hostIdentity: host === window.__deepLinkScrollHost,
+      hostCount: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      savedFolderID: saved?.folderID ?? null,
+      currentFolder: document.querySelector('[data-mobile-files-compact-title]')?.textContent,
+      firstRow: host?.querySelector('[data-mobile-files-item]')?.getAttribute('aria-label') ?? null,
+    };
+  });
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host => {
+    window.__deepLinkScrollHost = host;
+    host.scrollTop = 450;
+  });
+  await page.waitForFunction(() =>
+    document.querySelector('[data-xdrive-mobile-files-scroll]')?.scrollTop >= 420);
+  const initial = await observed();
+  check(activeStage + ': initial root has an actual nonzero virtual scroll position',
+    initial.hostTop >= 420 && initial.hostCount === 1 && initial.savedFolderID === 1,
+    initial);
+  let release;
+  let notify;
+  const started = new Promise(resolve => { notify = resolve; });
+  const wait = new Promise(resolve => { release = resolve; });
+  directoryGate = { hits: 0, notify, wait };
+  let pending;
+  try {
+    await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
+    await Promise.race([started, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('deep-link first range was never requested')), 10000))]);
+    await settle();
+    pending = await observed();
+    // The *first mounted DOM row* can change when a 100k virtual window's
+    // overscan reconciles even while the visual anchor and scroll are fixed.
+    // Check real scroll host geometry and the committed folder identity.
+    check(activeStage + ': URL intent cannot scroll or persist an unverified destination',
+      directoryGate.hits >= 1 &&
+      pending.hash === '#/app/files?dir=2' &&
+      pending.hostTop >= 420 &&
+      pending.hostIdentity && pending.hostCount === 1 &&
+      pending.savedFolderID === 1 &&
+      pending.currentFolder === initial.currentFolder &&
+      pending.hostFrame && initial.hostFrame &&
+      Math.abs(pending.hostFrame.y - initial.hostFrame.y) <= 1 &&
+      Math.abs(pending.hostFrame.height - initial.hostFrame.height) <= 1 &&
+      Math.abs(pending.hostFrame.width - initial.hostFrame.width) <= 1,
+      { initial, pending, gateHits: directoryGate.hits });
+  } finally {
+    directoryGate = null;
+    release();
+  }
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'nested-001.txt' }).first().waitFor();
+  await settle();
+  const committed = await observed();
+  check(activeStage + ': first successful range atomically commits new folder at top',
+    committed.hash === '#/app/files?dir=2' &&
+    committed.hostTop === 0 &&
+    committed.hostIdentity && committed.hostCount === 1 &&
+    committed.savedFolderID === 2 &&
+    committed.firstRow?.includes('nested-001.txt'),
+    committed);
+  result.samples[activeStage] = {
+    initial, pending, committed, realChromium: true, physicalIOSDevice: false,
+    stalledFirstCountedServerRange: true,
+  };
+  await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
 }
 
 async function galleryIos27ViewerAcceptance(pointer) {
@@ -3555,6 +3645,14 @@ async function main() {
         result.requests[key] = (result.requests[key] || 0) + 1;
         try {
           assert.equal(url.origin, origin, 'App attempted an external network request');
+          if (directoryGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/nodes/2/children' &&
+              url.searchParams.get('offset') === '0') {
+            const gate = directoryGate;
+            gate.hits += 1;
+            gate.notify();
+            await gate.wait;
+          }
           if (metadataGate && request.method() === 'GET' && metadataGate.paths.includes(url.pathname)) {
             const gate = metadataGate;
             queryOnly(url, []);

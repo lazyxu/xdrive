@@ -567,9 +567,20 @@ export default function MobileFiles(props: Props) {
   }, [storageKey, initial.folderID, props.requestedDirectoryID, persist])
 
   useLayoutEffect(() => {
-    if (!props.requestedDirectoryID || props.requestedDirectoryID === lastRequestedDirectoryRef.current) return
-    lastRequestedDirectoryRef.current = props.requestedDirectoryID
+    const requestedID = props.requestedDirectoryID
+    if (!requestedID || requestedID === lastRequestedDirectoryRef.current) return
+    lastRequestedDirectoryRef.current = requestedID
     navigationIntentRef.current += 1
+    // The URL is an intent, NOT an authorized directory commit. While the
+    // shared Web workspace awaits its first counted range, keep the old
+    // folder's visible rows, scrollTop and saved Browse location unchanged.
+    if (directoryID !== requestedID) return
+    // Re-opening an already committed folder from Browse Home/Recent is the
+    // only same-directory case that does not have a new crumb commit.
+    if (section === 'browse' && !browseHome && ready && scrollTop === 0) return
+    if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+    scrollSaveRef.current = null
+    pendingScrollRef.current = null
     restoredScrollRef.current = true
     browseScrollRef.current = 0
     pendingSectionScrollRef.current = 0
@@ -577,21 +588,31 @@ export default function MobileFiles(props: Props) {
     setBrowseHome(false)
     setReady(true)
     setScrollTop(0)
-    scrollHostRef.current?.scrollTo({ top: 0 })
-    persist({ section: 'browse', folderID: props.requestedDirectoryID, scrollTop: 0 })
-  }, [props.requestedDirectoryID, persist])
+    if (scrollHostRef.current) scrollHostRef.current.scrollTop = 0
+    persist({ section: 'browse', folderID: requestedID, scrollTop: 0 })
+  }, [props.requestedDirectoryID, directoryID, section, browseHome, ready, scrollTop, persist])
 
   useLayoutEffect(() => {
     if (lastCommittedDirectoryRef.current === directoryID) return
     lastCommittedDirectoryRef.current = directoryID
-    // Browse Home, Recent/Favorites, Search, Trash and first-time saved scroll
-    // restoration have distinct navigation owners. Do not overwrite them.
-    if (!ready || section !== 'browse' || browseHome ||
+    const routedCommit = Boolean(props.requestedDirectoryID &&
+      directoryID === props.requestedDirectoryID)
+    // A deep link opened from Browse Home/Recent/Favorites must enter Browse
+    // only AFTER its authorized directory is genuinely visible. This state
+    // update is pre-paint, so no intermediate wrong-folder frame is exposed.
+    if (routedCommit) {
+      setSection('browse')
+      setBrowseHome(false)
+      setReady(true)
+    }
+    if ((!ready && !routedCommit) ||
+        ((section !== 'browse' || browseHome) && !routedCommit) ||
         props.trashActive || props.searchActive) return
-    // An initial restored Browse directory keeps its saved intra-directory
-    // scroll anchor. Only a subsequent user navigation starts at row zero.
+    // On normal last-folder restoration, keep its saved intra-row anchor.
+    // An explicit fresh deep link to that same ID is a new top-of-folder
+    // navigation, not a restoration of the previous 688px scroll position.
     if (!restoredScrollRef.current && initial.folderID !== null &&
-        directoryID === initial.folderID) return
+        directoryID === initial.folderID && !routedCommit) return
     if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
     scrollSaveRef.current = null
     pendingScrollRef.current = null
@@ -603,7 +624,7 @@ export default function MobileFiles(props: Props) {
     setScrollTop(0)
     if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
   }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
-    initial.folderID, persist])
+    props.requestedDirectoryID, initial.folderID, persist])
 
   useLayoutEffect(() => {
     // An identical ResizeObserver delivery must not re-render the 100k

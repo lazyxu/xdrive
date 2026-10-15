@@ -2680,3 +2680,74 @@ test('saved Mobile Browse resume must preserve the old 688px anchor instead of n
     },
   })
 })
+
+
+test('P2: pending URL folder deep link keeps the old Browse rows and persisted folder until first range commits', async () => {
+  await withView(async h => {
+    const stored = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(stored().folderID, 1)
+    const previousFolderMarkers = count(h.view, 'data-mobile-files-folder-id')
+    assert.ok(previousFolderMarkers > 0, 'the original folder still has visible entries')
+    await h.update({ requestedDirectoryID: 42, loading: true })
+    assert.equal(stored().folderID, 1,
+      'a URL ticket cannot pre-persist an unverified directory ID')
+    assert.equal(stored().scrollTop, 0,
+      'a pending different-folder request cannot reset Browse position')
+    assert.equal(count(h.view, 'data-mobile-files-folder-id'), previousFolderMarkers,
+      'pending navigation must retain all originally mounted folder markers')
+    await h.update({ loading: false })
+    assert.equal(stored().folderID, 1,
+      'failed/aborted deep link must not poison the last accessible folder')
+    await h.update({
+      loading: false,
+      items: [{ id: 95, name: '完成.txt', kind: 'file', revision: 1 }],
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已授权目标文件夹' }],
+    })
+    assert.equal(stored().folderID, 42,
+      'the authoritative committed range/crumbs may then publish the new folder')
+    assert.equal(stored().scrollTop, 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }],
+  } })
+})
+
+test('P2: deep link from Recent waits for folder commit before switching rail presentation', async () => {
+  await withView(async h => {
+    const stored = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await h.update({ requestedDirectoryID: 42, loading: true })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'old rail must not turn into a half-loaded folder before authorization')
+    assert.equal(stored().folderID, 1)
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已授权目标文件夹' }],
+      items: [{ id: 95, name: '完成.txt', kind: 'file', revision: 1 }],
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-mobile-files-group'), 1)
+    assert.equal(stored().folderID, 42)
+    assert.equal(stored().section, 'browse')
+  }, { props: {
+    requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }],
+  } })
+})
+
+test('P2: same-directory explicit URL can reveal Browse Home without a second Server lookup', async () => {
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    await h.update({ requestedDirectoryID: 1 })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    const persisted = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(persisted.folderID, 1)
+    assert.equal(persisted.section, 'browse')
+  }, { props: { crumbs: [{ id: 1, name: '我的文件' }] } })
+})
