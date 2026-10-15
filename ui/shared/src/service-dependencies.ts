@@ -293,6 +293,9 @@ export type XDrivePhotoHostPreflight = {
   // Fixed non-person SFace feature vector validation, not genuine face
   // recognition correctness or identification of any person.
   sface_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  // Model-local real EfficientSAM cutout/PNG geometry check only; no media
+  // quality, other Creative tasks, fleet activation or host stop authority.
+  creative_cutout_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   // Synthetic classifier, PP-OCR detector and CRNN calls executed; no
   // classification or OCR accuracy / real media / fleet claim.
   smart_model_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
