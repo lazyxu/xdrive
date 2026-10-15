@@ -8,7 +8,8 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { xDriveBaiduStaticStepCenter } from '../media-gallery-baidu-camera'
+import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds } from '../media-gallery-baidu-camera'
+import type { XDriveBaiduMapViewportBounds } from '../media-gallery-baidu-camera'
 import type {
   MediaPlaceFacet,
   XDriveBaiduMapProviderInfo,
@@ -27,12 +28,14 @@ export function XDriveMediaGalleryBaiduStaticMap({
   location,
   getProvider,
   loadStaticMap,
+  onViewportChange,
 }: {
   place?: MediaPlaceFacet
   /** Exact photo GPS supplied by Viewer, never a synthesized grid center. */
   location?: { latitude: number; longitude: number; name?: string }
   getProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  onViewportChange?: (bounds: XDriveBaiduMapViewportBounds) => void
 }) {
   const [provider, setProvider] = useState<ProviderResult>({ kind: 'checking' })
   const [imageURL, setImageURL] = useState('')
@@ -73,6 +76,15 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const validCenter = centerLatitude !== undefined && centerLongitude !== undefined &&
     Number.isFinite(centerLatitude) && Math.abs(centerLatitude) <= 85 &&
     Number.isFinite(centerLongitude) && Math.abs(centerLongitude) <= 180
+
+  // Committed static-camera movement only; never a JSAPI4/BD-09 pixel overlay.
+  useEffect(() => {
+    if (!enabled || !loadStaticMap || !validCenter ||
+        centerLatitude === undefined || centerLongitude === undefined) return
+    const bounds = xDriveBaiduStaticViewportBounds(
+      { latitude: centerLatitude, longitude: centerLongitude }, zoom)
+    if (bounds) onViewportChange?.(bounds)
+  }, [enabled, loadStaticMap, validCenter, centerLatitude, centerLongitude, zoom, onViewportChange])
 
   const pan = (eastPixels: number, southPixels: number) => {
     if (!enabled || !loadStaticMap || !validCenter ||

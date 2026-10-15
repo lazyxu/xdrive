@@ -309,3 +309,12 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 取消仅作用于临时地图请求，立即传到 Go `r.Context()`，不影响上传、下载、同步等持久任务。旧 Agent/Server 能力缺失时明确显示未支持，不允许退化为前 24 个地点或从浏览器读取 100k GPS 全集。保留原本经纬度 WGS84、跨日期变更线、准确总格数/PhotoAsset 数及每页最多 100 格。
 
 **本阶段只交付跨平台数据契约，尚未由实际 MUI 地图组件触发调用，也未启用 JSAPI4：** `runtime_enabled=false`，百度仍为唯一 Provider，Server AK/Browser AK 始终 Server 内加密隔离；依赖真实百度许可、完整人工批准子资源、客户端不泄漏 AK 的原始流量核查、生产发布签名、CSP/Electron/移动端真机验收仍不得绕过。下一步 A3b3a2b 实施 Viewer/视窗状态共享控制、取消与真实图库数据衔接，再完成有许可支持的 JSAPI4 动态交互，之后 A4、B1～B3、C1。保留 iOS 27「照片」1:1 与 52px App Frame。
+
+
+## A3b3a2b · 三端共享静态相机视窗数据生命周期（2026-10-15）
+
+承接已合入 #1710：在同一个 Web/Mobile Web/Desktop PlacesMap 中，通过现有经过 Owner 授权的 listPlacesViewport 请求，利用百度 Static Map 的手动相机变化近似估算 WGS84 视窗范围，分页查询每页最多 24 个真实地点网格和真实不同 PhotoAsset 总数。跨日期变更线使用 west>east；该矩形是近似静态相机范围，不是精确 BD-09 图片叠加，更不是 JSAPI4 动态标记。点击结果使用既有照片 Range/VirtualCollection/Viewer。
+
+前端在相机/页码变更或组件销毁时立即取消旧短请求，Web REST 和 Desktop Electron/Main/Agent/Go Context 接收同一 AbortSignal；generation、视窗、offset 校验阻止旧响应覆盖当前结果。上次已提交结果需要明确标记过期。地图不可用时原有 Places 列表保留，绝不取消上传下载同步任务。
+
+依然不能开启 JSAPI4 runtime：需真实百度账户自托管/PWA/Electron 使用许可、完整许可子资源不可变规则、真实 AK 原始响应和 HAR 无泄漏证明、固定生产签名信任根、Caddy CSP、Electron 隔离及物理 iOS 27/Android/Desktop 真机验收。先补完整跨 Viewer 返回锚点，再完成安全合规的交互地图/标记/聚合，之后依序完成 A4、B1–B3、C1。必须保留 iOS 27「照片」1:1、52px App Frame 和百度唯一 Provider。
