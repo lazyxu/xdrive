@@ -1,5 +1,7 @@
 import type { XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../models'
 import { xDriveMediaGallerySelectionScopeKey } from '../media-gallery-selection-scope'
+import { xDriveReadPlacesCamera, xDriveRememberPlacesCamera, xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
+import type { XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent, ReactNode } from 'react'
 import {
@@ -585,6 +587,25 @@ export function XDriveMediaGalleryPage({
   const [currentFolderView, setCurrentFolderView] = useState<MediaFolderView | null>(null)
   const [albums, setAlbums] = useState<MediaAlbum[]>([])
   const [places, setPlaces] = useState<MediaPlaceFacet[]>([])
+  // Exactly one tiny in-memory camera/anchor snapshot across Viewer routes.
+  const [placesCameraSnapshot, setPlacesCameraSnapshot] = useState<XDrivePlacesCameraSnapshot | undefined>(
+    () => xDriveReadPlacesCamera(preferenceScope),
+  )
+  const placesCameraRef = useRef(placesCameraSnapshot)
+  const persistPlacesCamera = useCallback((next: XDrivePlacesCameraSnapshot) => {
+    if (!xDriveValidPlacesCameraSnapshot(next)) return
+    placesCameraRef.current = next
+    xDriveRememberPlacesCamera(preferenceScope, next)
+    setPlacesCameraSnapshot(next)
+  }, [preferenceScope])
+  const rememberPlacesCamera = useCallback((camera: XDrivePlacesViewportCamera) => {
+    const prior = placesCameraRef.current
+    persistPlacesCamera({
+      ...camera,
+      placesPageOffset: prior?.placesPageOffset ?? 0,
+      ...(prior?.focusPlaceID ? { focusPlaceID: prior.focusPlaceID } : {}),
+    })
+  }, [persistPlacesCamera])
   const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [placesTotalCount, setPlacesTotalCount] = useState<number | null>(null)
   const [placesPageOffset, setPlacesPageOffset] = useState(0)
@@ -596,12 +617,17 @@ export function XDriveMediaGalleryPage({
     offset: number
     totalCount: number
   } | null>(null)
-  const [lastOpenedPlaceID, setLastOpenedPlaceID] = useState<string | null>(null)
+  const [lastOpenedPlaceID, setLastOpenedPlaceID] = useState<string | null>(
+    () => placesCameraSnapshot?.focusPlaceID ?? null,
+  )
   const placeOpenedFromCollectionsRef = useRef(false)
   useEffect(() => {
     placeOpenedFromCollectionsRef.current = false
     placesReturnPageRef.current = null
-    setLastOpenedPlaceID(null)
+    const restored = xDriveReadPlacesCamera(preferenceScope)
+    placesCameraRef.current = restored
+    setPlacesCameraSnapshot(restored)
+    setLastOpenedPlaceID(restored?.focusPlaceID ?? null)
   }, [preferenceScope])
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [burstReviews, setBurstReviews] =
@@ -951,8 +977,9 @@ export function XDriveMediaGalleryPage({
           retainedPlacePage ? Promise.resolve({
             items: retainedPlacePage.items,
             total_count: retainedPlacePage.totalCount,
+            offset: retainedPlacePage.offset,
           }) : placesExpandedRef.current && source.listPlacesPage
-            ? source.listPlacesPage(48, 0)
+            ? source.listPlacesPage(48, placesCameraRef.current?.placesPageOffset ?? 0)
             : source.listPlaces
               ? source.listPlaces(placesExpandedRef.current ? 1000 : 24)
               : source.listPlacesPage
@@ -1016,7 +1043,7 @@ export function XDriveMediaGalleryPage({
           setAlbums(nextAlbums)
           setPlaces(Array.isArray(nextPlaces) ? nextPlaces : nextPlaces.items)
           setPlacesTotalCount(Array.isArray(nextPlaces) ? null : nextPlaces.total_count)
-          setPlacesPageOffset(retainedPlacePage?.offset ?? 0)
+          setPlacesPageOffset(retainedPlacePage?.offset ?? (Array.isArray(nextPlaces) ? 0 : nextPlaces.offset))
           setPlacesStatus('ready')
           setPets(nextPets)
           setSuggestedPeople(
@@ -1385,7 +1412,7 @@ export function XDriveMediaGalleryPage({
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     placesReturnPageRef.current = null
     placeOpenedFromCollectionsRef.current = false
-    setLastOpenedPlaceID(null)
+    setLastOpenedPlaceID(nextSection === 'places' ? placesCameraRef.current?.focusPlaceID ?? null : null)
     placePageRequestID.current += 1
     setPlacesPagePending(false)
     setPlacesPageError('')
@@ -1449,6 +1476,9 @@ export function XDriveMediaGalleryPage({
       setPlaces(page.items)
       setPlacesPageOffset(nextOffset)
       setPlacesTotalCount(page.total_count)
+      if (placesCameraRef.current) {
+        persistPlacesCamera({ ...placesCameraRef.current, placesPageOffset: nextOffset })
+      }
     } catch (loadError) {
       if (generation !== placePageRequestID.current ||
           rangeGeneration !== requestID.current) return
@@ -1456,7 +1486,7 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (generation === placePageRequestID.current) setPlacesPagePending(false)
     }
-  }, [placesPagePending, placesStatus, placesTotalCount, section, source])
+  }, [persistPlacesCamera, placesPagePending, placesStatus, placesTotalCount, section, source])
 
   const requestIndexStatus = useCallback(async () => {
     if (!source.getIndexStatus) return
@@ -1754,6 +1784,9 @@ export function XDriveMediaGalleryPage({
       placesReturnPageRef.current = { items: [...places], offset: placesPageOffset, totalCount: placesTotalCount }
     }
     setLastOpenedPlaceID(place.id)
+    if (placesCameraRef.current) {
+      persistPlacesCamera({ ...placesCameraRef.current, focusPlaceID: place.id, placesPageOffset })
+    }
     placesExpandedRef.current = true
     setSection('places')
     setActiveMediaType('')
@@ -1766,7 +1799,7 @@ export function XDriveMediaGalleryPage({
     setDraftFilters(nextDraft)
     setQuery(nextQuery)
     void loadFirstPage(null, nextQuery)
-  }, [draftFilters, loadFirstPage, places, placesPageOffset, placesTotalCount, query.place, section])
+  }, [draftFilters, loadFirstPage, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
   const openPet = useCallback((pet: MediaPetFacet) => {
     setCurrentPet(pet)
@@ -2585,6 +2618,8 @@ export function XDriveMediaGalleryPage({
         syncFoldersError={syncFoldersError}
         places={places}
         listPlacesViewport={source.listPlacesViewport}
+        placesCameraSnapshot={placesCameraSnapshot}
+        onPlacesCameraChange={rememberPlacesCamera}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
@@ -3001,6 +3036,8 @@ export interface XDriveMediaGalleryProps {
   syncFoldersLoading?: boolean
   syncFoldersError?: string
   places?: MediaPlaceFacet[]
+  placesCameraSnapshot?: XDrivePlacesCameraSnapshot
+  onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   listPlacesViewport?: MediaGalleryDataSource['listPlacesViewport']
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
@@ -4610,6 +4647,8 @@ export function XDriveMediaGallery({
   syncFoldersError = '',
   places = [],
   listPlacesViewport,
+  placesCameraSnapshot,
+  onPlacesCameraChange,
   focusPlaceID,
   getBaiduMapProvider,
   loadBaiduStaticMap,
@@ -6711,6 +6750,8 @@ export function XDriveMediaGallery({
             places={places}
             totalCount={placesTotalCount}
             listPlacesViewport={listPlacesViewport}
+            initialCamera={placesCameraSnapshot}
+            onCameraChange={onPlacesCameraChange}
             getBaiduMapProvider={getBaiduMapProvider}
             loadBaiduStaticMap={loadBaiduStaticMap}
             activePlaceID={activePlaceID}

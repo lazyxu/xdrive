@@ -8,6 +8,8 @@ import type {
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
+import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
 
 function sameViewport(a: MediaPlacesViewportBounds | null, b: MediaPlacesViewportBounds) {
   return Boolean(a && a.west === b.west && a.south === b.south &&
@@ -20,6 +22,8 @@ export function XDriveMediaGalleryPlacesMap({
   places,
   totalCount,
   listPlacesViewport,
+  initialCamera,
+  onCameraChange,
   getBaiduMapProvider,
   loadBaiduStaticMap,
   activePlaceID,
@@ -30,6 +34,8 @@ export function XDriveMediaGalleryPlacesMap({
   totalCount?: number | null
   listPlacesViewport?: (bounds: MediaPlacesViewportBounds, limit?: number, offset?: number,
     signal?: AbortSignal) => Promise<MediaPlacesViewportPage>
+  initialCamera?: XDrivePlacesCameraSnapshot
+  onCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   activePlaceID?: string
@@ -45,7 +51,11 @@ export function XDriveMediaGalleryPlacesMap({
   )
 
   const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
-  const [viewportOffset, setViewportOffset] = useState(0)
+  const [viewportOffset, setViewportOffset] = useState(
+    () => xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.viewportOffset : 0,
+  )
+  const viewportOffsetRef = useRef(viewportOffset)
+  const cameraRef = useRef<XDrivePlacesCameraPosition | null>(null)
   const [viewportResult, setViewportResult] = useState<{
     bounds: MediaPlacesViewportBounds
     page: MediaPlacesViewportPage
@@ -58,11 +68,21 @@ export function XDriveMediaGalleryPlacesMap({
 
   const onCameraViewport = useCallback((bounds: MediaPlacesViewportBounds) => {
     if (sameViewport(boundsRef.current, bounds)) return
+    const initialView = boundsRef.current === null
     boundsRef.current = bounds
     activeRequest.current?.abort()
     setViewportBounds(bounds)
-    setViewportOffset(0)
+    // Restore the previously committed viewport page only on first map mount.
+    if (!initialView) {
+      viewportOffsetRef.current = 0
+      setViewportOffset(0)
+    }
   }, [])
+
+  const onStaticCameraChange = useCallback((position: XDrivePlacesCameraPosition) => {
+    cameraRef.current = position
+    onCameraChange?.({ ...position, viewportOffset: viewportOffsetRef.current })
+  }, [onCameraChange])
 
   useEffect(() => {
     if (!listPlacesViewport || !viewportBounds) return
@@ -102,11 +122,22 @@ export function XDriveMediaGalleryPlacesMap({
     if (!Number.isSafeInteger(nextOffset) || nextOffset < 0 ||
         nextOffset > 10_000_000 || nextOffset === viewportOffset) return
     activeRequest.current?.abort()
+    viewportOffsetRef.current = nextOffset
     setViewportOffset(nextOffset)
+    if (cameraRef.current) onCameraChange?.({ ...cameraRef.current, viewportOffset: nextOffset })
   }
   const currentViewportResult = viewportResult &&
     viewportBounds && sameViewport(viewportResult.bounds, viewportBounds) &&
     viewportResult.page.offset === viewportOffset
+  const viewportReturnRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    if (!currentViewportResult || !focusPlaceID || !viewportReturnRef.current) return
+    const target = viewportReturnRef.current
+    const frame = window.requestAnimationFrame(() => {
+      if (target.isConnected) target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusPlaceID, viewportResult, viewportBounds, viewportOffset])
 
   return (
     <Paper
@@ -161,6 +192,8 @@ export function XDriveMediaGalleryPlacesMap({
         getProvider={getBaiduMapProvider}
         loadStaticMap={loadBaiduStaticMap}
         onViewportChange={onCameraViewport}
+        initialCamera={initialCamera}
+        onCameraChange={onStaticCameraChange}
       />
       <Box component="section" data-xdrive-gallery-places-viewport sx={{ px: 1.5, pb: 1.5 }}>
         <Typography variant="subtitle2" fontWeight={700}>当前地图视窗内的地点</Typography>
@@ -208,6 +241,8 @@ export function XDriveMediaGalleryPlacesMap({
                 }}>
                   {viewportResult.page.items.map((place) => (
                     <Button key={place.id} size="small" variant="outlined"
+                      ref={place.id === focusPlaceID ? viewportReturnRef : undefined}
+                      data-xdrive-places-viewport-return-anchor={place.id === focusPlaceID ? 'true' : undefined}
                       disabled={!onOpenPlace} onClick={() => onOpenPlace?.(place)}
                       sx={{ minHeight: 44, justifyContent: 'flex-start', textTransform: 'none' }}>
                       <Typography variant="body2" noWrap>{place.name}</Typography>

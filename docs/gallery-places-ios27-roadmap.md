@@ -318,3 +318,12 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 前端在相机/页码变更或组件销毁时立即取消旧短请求，Web REST 和 Desktop Electron/Main/Agent/Go Context 接收同一 AbortSignal；generation、视窗、offset 校验阻止旧响应覆盖当前结果。上次已提交结果需要明确标记过期。地图不可用时原有 Places 列表保留，绝不取消上传下载同步任务。
 
 依然不能开启 JSAPI4 runtime：需真实百度账户自托管/PWA/Electron 使用许可、完整许可子资源不可变规则、真实 AK 原始响应和 HAR 无泄漏证明、固定生产签名信任根、Caddy CSP、Electron 隔离及物理 iOS 27/Android/Desktop 真机验收。先补完整跨 Viewer 返回锚点，再完成安全合规的交互地图/标记/聚合，之后依序完成 A4、B1–B3、C1。必须保留 iOS 27「照片」1:1、52px App Frame 和百度唯一 Provider。
+
+
+## A3b3a2c · Static 地图、地点分页和 Viewer 返回位置（2026-10-16）
+
+依赖 A3b3a2b #1719 合入后，本阶段由同一 Web/Mobile Web/Desktop MUI PlacesMap 保存短期地图相机 WGS84 中心/zoom、viewport offset、原 Places 根页 offset 和最后打开的 place ID。Viewer 返回或 Desktop/移动端界面切换时仅恢复一个小型 UI 会话锚点，然后重新发起 Owner 认证的有界 Server bbox 查询；数据结果仍来自原 Gallery Range、VirtualCollection 和 Viewer，不在客户端缓存媒体全集，也不宣称地图截图里有精确 BD-09 Marker。
+
+相机快照仅在前端 JS 运行内按用户/服务 scope 保留最多 8 份、10 分钟，输入必须通过坐标/分页/标识符校验；不写 LocalStorage/IndexedDB/URL/Cookie/Service Worker，也不包含 AK、照片原始字节或 EXIF。新地点选择优先新照片坐标，视窗改变取消旧的短请求并重置其分页；恢复后的旧 place anchor 仅在相应 Server 页面返回后滚动定位，避免不存在的 DOM 节点或 100k 全量扫描。根地点列表分页也恢复最近 offset。
+
+**仍为有限百度 Static Server API 体验**：JSAPI4 runtime_enabled=false。只有取得百度自托管/PWA/Electron 的适用许可、真实官方完整 JS/WASM/字体/瓦片子资源人工审查、原始响应与浏览器 HAR 防 AK 泄漏、受信签名发布门禁、Server 用户授权/限额、Caddy/CSP/Electron 安全隔离和真实 iOS27/Android/Desktop 操作及视觉比对后，才能进一步完成动态平移/缩放、Marker/Cluster。随后依次 A4、B1、B2、B3、C1，保留 52px 全屏 App Frame 与 iOS27「照片」1:1 标准。
