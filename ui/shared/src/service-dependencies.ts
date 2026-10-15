@@ -287,6 +287,9 @@ export type XDrivePhotoHostPreflight = {
   // Fresh cross-Server background-runtime presence can veto stop; missing or
   // expired reports never certify all Server replicas are drained.
   runtime_work_blocker_state?: 'blocked' | 'unverified'
+  // Stale previously registered Server -> blocked; even fresh/empty members
+  // cannot certify cluster membership or a global admission fence.
+  replica_membership_blocker_state?: 'blocked' | 'unverified'
   // Only ONE fixed synthetic semantic text inference; not a media/image,
   // Face, OCR, Creative, fleet activation or safe-stop proof.
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
