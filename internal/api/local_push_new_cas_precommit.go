@@ -41,6 +41,41 @@ func (s *Server) prepareBoundLocalPushNewCASWithMaterializer(
 	stageID string,
 	materialize func(context.Context, string, string, int64) (bool, bool, error),
 ) (bool, error) {
+	return s.prepareBoundLocalPushNewCASWithMaterializerScoped(
+		c, sourceID, revision, proof, stageID, materialize, false,
+	)
+}
+
+// prepareQuarantinedBoundLocalPushNewCAS is the ONLY internal physical
+// preparation entry point that also requires the durable F2d8a quarantine
+// to match on BOTH sides of materialization. It still produces no canonical
+// database reference, quota charge, SourceRun, or upload authority.
+func (s *Server) prepareQuarantinedBoundLocalPushNewCAS(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID string,
+) (bool, error) {
+	if s == nil || s.Store == nil {
+		return false, errLocalPushStageConflict
+	}
+	local, ok := s.Store.(*storage.Local)
+	if !ok || local == nil {
+		return false, errLocalPushStageConflict
+	}
+	return s.prepareBoundLocalPushNewCASWithMaterializerScoped(
+		c, sourceID, revision, proof, stageID, local.MaterializeLocalPushStageCAS, true,
+	)
+}
+
+// Quarantine verification is transaction-local and happens under the same
+// device -> Source -> Root -> Stage -> CAS hash ordering as F2d8a. No SQL
+// transaction/lock is held during the bounded physical Local Store phase.
+// A positive return is never a durable commit witness.
+func (s *Server) prepareBoundLocalPushNewCASWithMaterializerScoped(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID string,
+	materialize func(context.Context, string, string, int64) (bool, bool, error),
+	requireQuarantinedIntent bool,
+) (bool, error) {
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
 		sourceID == 0 || revision == 0 || stageID == "" || materialize == nil {
 		return false, errLocalPushStageConflict
@@ -51,6 +86,7 @@ func (s *Server) prepareBoundLocalPushNewCASWithMaterializer(
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), localEvidencePhysicalCASDeadline)
 	defer cancel()
+	var initialIntent meta.LocalPushCASPrepareIntent
 
 	// The absence of authoritative ContentBlob metadata is tested twice.
 	// A populated (even failed or unready) row belongs to another lifecycle
@@ -78,6 +114,25 @@ func (s *Server) prepareBoundLocalPushNewCASWithMaterializer(
 			err = tx.Clauses(clause.Locking{Strength: "SHARE"}).
 				Where("sha256 = ?", stage.ContentSHA256).Take(&blob).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
+				if requireQuarantinedIntent {
+					var intent meta.LocalPushCASPrepareIntent
+					if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+						Where("stage_id = ?", stage.StageID).Take(&intent).Error; err != nil {
+						return err
+					}
+					if !sameLocalPushCASPrepareIntent(intent, stage) {
+						return errLocalPushStageConflict
+					}
+					// Detect ordinary delete/recreate or edit/restore of the
+					// exact quarantine while physical work runs. This remains
+					// only an ephemeral check, not an authoritative witness.
+					if initialIntent.StageID == "" {
+						initialIntent = intent
+					} else if !initialIntent.CreatedAt.Equal(intent.CreatedAt) ||
+						!initialIntent.UpdatedAt.Equal(intent.UpdatedAt) {
+						return errLocalPushStageConflict
+					}
+				}
 				return ctx.Err()
 			}
 			if err != nil {
