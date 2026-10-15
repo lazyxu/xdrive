@@ -2970,6 +2970,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesGoToPathBrowserStabilityAcceptance(origin);
   await filesCrossAppFrameStabilityAcceptance(origin);
   await filesSecondaryAppsFrameStabilityAcceptance(origin);
+  await filesTransientAppFrameStabilityAcceptance(origin);
 }
 
 
@@ -3401,6 +3402,108 @@ async function filesSecondaryAppsFrameStabilityAcceptance(origin) {
     result.samples[activeStage]={viewport,rows:resultRows,realChromium:true,
       physicalDevice:false,liveGoServer:false};
     await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+  }
+}
+
+async function filesTransientAppFrameStabilityAcceptance(origin) {
+  // P7 inspects intermediate animation frames, not only final layout. Built
+  // Chromium+React, original shared Web navigation/API, fixture-backed.
+  const same = (a, b) => !!a && !!b &&
+    Math.abs(a.x - b.x) <= 1 && Math.abs(a.y - b.y) <= 1 &&
+    Math.abs(a.width - b.width) <= 1 && Math.abs(a.height - b.height) <= 1;
+  for (const viewport of [{ width: 390, height: 844 }, { width: 899, height: 700 }]) {
+    activeStage = 'user-mobile-transient-frame-stability-' + viewport.width;
+    await page.setViewportSize(viewport);
+    await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+    await settle();
+    const initial = await page.evaluate(() => {
+      const rect = selector => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const r = element.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return {
+        header: rect('[data-xdrive-mobile-app-header]'),
+        frame: rect('[data-xdrive-mobile-app-frame]'),
+        main: rect('main'),
+      };
+    });
+    const recorded = await page.evaluate(() => {
+      const probe = { running: true, frames: [] };
+      window.__xdriveTransientFrameProbe = probe;
+      const rect = selector => {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const r = element.getBoundingClientRect();
+        return { x:r.x, y:r.y, width:r.width, height:r.height };
+      };
+      const tick = () => {
+        if (!probe.running) return;
+        if (probe.frames.length < 5000) probe.frames.push({
+          hash: location.hash,
+          header: rect('[data-xdrive-mobile-app-header]'),
+          frame: rect('[data-xdrive-mobile-app-frame]'),
+          main: rect('main'),
+          overflow: { x: document.documentElement.scrollWidth - innerWidth,
+            y: document.documentElement.scrollHeight - innerHeight },
+        });
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      return !!probe.running;
+    });
+    check(activeStage + ': frame observer attached to real app', recorded &&
+      initial.header && initial.frame && initial.main && initial.header.height >= 52, initial);
+    const steps = [
+      { label: '图库', app: 'gallery', selector: '[data-xdrive-media-tile]' },
+      { label: '任务', app: 'transfers' },
+      { label: '设备备份', app: 'device-backup' },
+      { label: '远程拉取', app: 'remote-pull' },
+      { label: '本地存储', app: 'local-storage' },
+      { label: '云端存储', app: 'cloud-storage' },
+      { label: '主页', app: 'overview' },
+      { label: '文件', app: 'files', selector: '[data-xdrive-mobile-files-scroll]' },
+    ];
+    for (const next of steps) {
+      await navigateWorkspace(next.label, next.app);
+      if (next.selector) await page.locator(next.selector).first().waitFor();
+      await settle();
+    }
+    const frames = await page.evaluate(() => {
+      const probe = window.__xdriveTransientFrameProbe;
+      probe.running = false;
+      return probe.frames;
+    });
+    const violations = frames.filter(frame =>
+      !same(frame.header, initial.header) ||
+      !same(frame.frame, initial.frame) ||
+      !same(frame.main, initial.main) ||
+      frame.overflow.x > 1 || frame.overflow.y > 1);
+    const returned = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      return {
+        hash: location.hash,
+        mainTop: main?.scrollTop ?? null,
+        fileHosts: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      };
+    });
+    check(activeStage + ': no transient App Header/frame/main geometry bounce during eight App switches',
+      frames.length >= 5 && violations.length === 0, {
+        frameCount: frames.length, violationCount: violations.length,
+        firstViolations: violations.slice(0, 8), reference: initial,
+      });
+    check(activeStage + ': Files return retains one current scroll owner and fresh app scroll',
+      returned.hash.startsWith('#/app/files') && returned.mainTop === 0 &&
+      returned.fileHosts === 1, returned);
+    result.samples[activeStage] = {
+      viewports: viewport, framesMeasured: frames.length, failures: violations.length,
+      violatingFrames: violations.slice(0, 8), returned,
+      realChromium: true, physicalDevice: false, liveGoServer: false,
+    };
+    await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
   }
 }
 
