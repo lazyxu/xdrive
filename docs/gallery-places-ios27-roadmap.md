@@ -209,3 +209,17 @@ A3b2c2a / #1639 的每用户 PostgreSQL `epoch`、原子递增和 Access Token �
 前序 #1649、#1655 均通过 exact-head 完整 CI/Final Gate 并线性合入，相关分支已清理。当前只补充 `meta.BaiduJSAPIQuotaBucket` 和纯 Server 侧、无公开 Router 的原子 PostgreSQL 准入构件；数据库单调分钟桶由 `clock_timestamp()` 确定，按 **fleet → trusted Owner** 固定顺序在同一事务中预留。生产固定 12 次 Loader GET/Owner/分钟、全局 240 次/分钟；每次按 Loader 已有最大响应 2MiB 保守扣除预算，拒绝后不额外扣全局计数。两独立连接、并发、Owner 互不借用、回滚、分钟翻转、坏表、迁移均应有独立 PostgreSQL 回归。
 
 **状态仍为 NO-GO：** quota 是构件，不是合法商业授权或完整 JSAPI4 子资源 allowlist。没有公开 Map Cookie 签发/资源代理、没有 Browser AK 发送或动态地图组件，也没有实际字节/并发在途额度、真实 Server upstream/HAR 密钥验收、Electron/PWA/Caddy 和 iOS 27/Android/Desktop 真机体验证。`runtime_enabled=false` 保持不变。下一步 A3b2d2 必须将法律证据/全量子资源白名单/跨副本资源配额/可信发布门禁连成真实只允许合法范围的 Server 链路，通过后再实现 A3b3 共享连续地图交互与照片聚合，然后 A4、B1–B3、C1。保持唯一百度 Provider、iOS 27「照片」1:1 基准、52px 全屏 App Frame 和三端共用 Gallery 核心。
+
+
+## A3b2d2a · Cross-replica Loader in-flight capacity (2026-10-15)
+
+This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurrency leases for the future Baidu JSAPI4 Loader only. It does not enable the JSAPI4 runtime.
+
+- Persistent table: xd_baidu_jsapi_loader_flights, with only an opaque SHA-256 lease digest, trusted owner ID, database-clock creation and expiry. No AK, bearer JWT, cookie, GPS, full URL, or response bytes.
+- Fixed maximum: 2 in-flight Loader requests per owner and 16 fleet-wide. One immutable PostgreSQL transaction-level advisory lock serializes expired-row cleanup, global/owner counts and insertion across separate Server connections. Missing DB/table, invalid Owner, bad context or exhausted caps fail closed.
+- A 32-byte cryptographically random nonce produces the opaque lease; releasing requires the same digest and owner, is idempotent, and cannot release another owner's lease. A process crash leaves an expiring lease; later admission prunes expiry using DB time.
+- **Future proxy contract:** acquire only AFTER revalidating the owner map-only session and runtime release evidence; retain until bounded upstream fetch AND full downstream response finish, use a separate bounded cleanup context after request cancellation, and enforce a total request lifetime STRICTLY BELOW the 15-second lease TTL. A TTL is not a cancellation signal and an expired lease is not proof the old network request stopped. Preserve Go Context cancellation and never cancel durable background media tasks.
+- The already-merged A3b2d1 minute/byte reservation remains independent; this phase does not meter actual outbound bytes, does not approve tile/JS/WASM/font paths, and does not expose POST Session, /_BMapService, browser AK or an active JSAPI client. Static Baidu Server-AK map remains unchanged. Web, Mobile Web and Desktop still share one Gallery/VirtualCollection/Viewer.
+- Tests: input rejection, migrations, two independent PostgreSQL connections, owner/fleet limits, 24 concurrent lease attempts, idempotent/stale/wrong-owner release, DB expiry cleanup and missing-table denial. No claim of physical iOS/Android/Electron acceptance.
+
+**Still NO-GO:** obtain actual licence and accepted self-hosted/PWA/Electron scope, complete observed upstream child-resource allowlist, trusted signed runtime release evidence, raw upstream + private browser HAR AK-leak proof, real per-resource bytes and total-life fencing, Caddy HTTPS/CSP/Electron isolation, and native iOS27/Android/Desktop evidence. Do not infer any of these from fixtures or a green CI. Next A3b2d2b must close the real legal/inventory/leak and release-authorization gates; then A3b3 shared pan/zoom/Marker/Cluster, A4, B1-B3 and C1 in order.
