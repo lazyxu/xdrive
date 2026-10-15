@@ -10,6 +10,8 @@ import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
 import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds } from '../media-gallery-baidu-camera'
 import type { XDriveBaiduMapViewportBounds } from '../media-gallery-baidu-camera'
+import { xDriveValidPlacesCameraPosition } from '../media-gallery-places-camera-session'
+import type { XDrivePlacesCameraPosition } from '../media-gallery-places-camera-session'
 import type {
   MediaPlaceFacet,
   XDriveBaiduMapProviderInfo,
@@ -29,6 +31,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
   getProvider,
   loadStaticMap,
   onViewportChange,
+  initialCamera,
+  onCameraChange,
 }: {
   place?: MediaPlaceFacet
   /** Exact photo GPS supplied by Viewer, never a synthesized grid center. */
@@ -36,14 +40,28 @@ export function XDriveMediaGalleryBaiduStaticMap({
   getProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   onViewportChange?: (bounds: XDriveBaiduMapViewportBounds) => void
+  initialCamera?: XDrivePlacesCameraPosition
+  onCameraChange?: (camera: XDrivePlacesCameraPosition) => void
 }) {
+  const latitude = location?.latitude ?? (place?.sample_latitude ?? place?.latitude)
+  const longitude = location?.longitude ?? (place?.sample_longitude ?? place?.longitude)
+  const hasLocation = Boolean(location || place)
+  const mapName = location?.name ?? place?.name ?? ''
+  const originKey = location
+    ? `photo:${location.name ?? ''}:${latitude}:${longitude}`
+    : `place:${place?.id ?? ''}`
+  const restoredCamera = xDriveValidPlacesCameraPosition(initialCamera) ? initialCamera : undefined
   const [provider, setProvider] = useState<ProviderResult>({ kind: 'checking' })
   const [imageURL, setImageURL] = useState('')
-  const [zoom, setZoom] = useState(12)
+  const [zoom, setZoom] = useState(() => restoredCamera?.zoom ?? 12)
   const [requestID, setRequestID] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [camera, setCamera] = useState<{ key: string; latitude: number; longitude: number } | null>(null)
+  const [camera, setCamera] = useState<{ key: string; latitude: number; longitude: number } | null>(
+    () => restoredCamera ? {
+      key: originKey, latitude: restoredCamera.latitude, longitude: restoredCamera.longitude,
+    } : null,
+  )
   const dragStart = useRef<{ pointer: number; x: number; y: number } | null>(null)
 
   useEffect(() => {
@@ -64,13 +82,6 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const enabled = provider.kind === 'available' && provider.info.enabled
   // The existing latitude/longitude fields describe a GPS grid CENTER,
   // not a real photo. A1 adds an exact representative Node coordinate.
-  const latitude = location?.latitude ?? (place?.sample_latitude ?? place?.latitude)
-  const longitude = location?.longitude ?? (place?.sample_longitude ?? place?.longitude)
-  const hasLocation = Boolean(location || place)
-  const mapName = location?.name ?? place?.name ?? ''
-  const originKey = location
-    ? `photo:${location.name ?? ''}:${latitude}:${longitude}`
-    : `place:${place?.id ?? ''}`
   const centerLatitude = camera?.key === originKey ? camera.latitude : latitude
   const centerLongitude = camera?.key === originKey ? camera.longitude : longitude
   const validCenter = centerLatitude !== undefined && centerLongitude !== undefined &&
@@ -83,8 +94,11 @@ export function XDriveMediaGalleryBaiduStaticMap({
         centerLatitude === undefined || centerLongitude === undefined) return
     const bounds = xDriveBaiduStaticViewportBounds(
       { latitude: centerLatitude, longitude: centerLongitude }, zoom)
-    if (bounds) onViewportChange?.(bounds)
-  }, [enabled, loadStaticMap, validCenter, centerLatitude, centerLongitude, zoom, onViewportChange])
+    if (bounds) {
+      onViewportChange?.(bounds)
+      onCameraChange?.({ latitude: centerLatitude, longitude: centerLongitude, zoom })
+    }
+  }, [enabled, loadStaticMap, validCenter, centerLatitude, centerLongitude, zoom, onViewportChange, onCameraChange])
 
   const pan = (eastPixels: number, southPixels: number) => {
     if (!enabled || !loadStaticMap || !validCenter ||

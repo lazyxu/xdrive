@@ -103,7 +103,7 @@ test('P0-Places-A1 existing Web/Mobile shared DataSource and Desktop Agent trans
   assert.match(ports,/resolveXDriveTransport\(port.listPlacesPage!\(limit, offset\)\)/)
   assert.match(gallery,/useXDriveVirtualCollection<MediaItem>/)
   assert.match(gallery,/placesExpandedRef.current && source.listPlacesPage/)
-  assert.match(gallery,/source.listPlacesPage\(48, 0\)/)
+  assert.match(gallery,/source.listPlacesPage\(48, placesCameraRef.current\?\.placesPageOffset \?\? 0\)/)
   assert.match(gallery,/data-xdrive-places-pagination/)
   assert.doesNotMatch(gallery,/places.slice\(0, 24\)/)
   assert.match(gallery,/setPlaces\(page.items\)/)
