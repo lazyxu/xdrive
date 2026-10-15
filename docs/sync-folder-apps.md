@@ -1938,3 +1938,42 @@ CAS bytes, exact owning device and Root/revision at commit and idempotent
 database mutation. Require full exact-head GitHub Linux/Windows/PostgreSQL,
 Web/Desktop, artifacts and final-gate; real 100k/4GiB/physical device
 and GitLab evidence are separate.
+
+
+## L03-F2d2 · Nonblocking stage pin admission under SQL CAS hash locks (PR verification)
+
+After the owning-Agent F2d1 physical stage lifetime fence, a future
+authoritative writer must not wait for the TEMPORARY stage's OS shard while
+holding a PostgreSQL CAS hash advisory lock. A competing stage Store writer
+may already hold that OS lock and subsequently need SQL, so blocking
+SQL→OS acquisition could invert the lock order. The private Local Store
+now exposes TryOpenPinnedLocalPushStage: it accepts only an exact private
+UUID stage path and attempts the identical shared OS stage lock once.
+Contention is (nil,false,nil), requiring a future caller to abandon its
+SQL transaction and retry separately; canceled, missing, nonregular,
+symlinked or noncanonical paths fail closed. The successful handle owns
+the stage lock until Close, and the shared inode admission checks are
+identical to ordinary OpenPinnedLocalPushStage.
+
+Native Linux/Windows tests verify a busy exclusive stage lock returns
+promptly without blocking or disclosing a handle; after release the shared
+pin blocks stage cleanup until Close. A PostgreSQL17 integration regression
+models real CAS hash xact advisory locks on two database connections:
+under one held transaction, an OS-busy stage read must be nonblocking and
+the whole transaction rolled back; the independent connection must then
+reacquire the SQL hash lock. When stage OS contention is removed, a fresh
+transaction can try-pin and inspect ONLY regular-file metadata, close, and
+complete without leaked DB/OS locks. No sleeps or timing-based interleaving
+is used for SQL ordering. An environment without XD_TEST_DATABASE_URL
+explicitly skips only the SQL integration regression.
+
+Neither a try-pin nor this test provides durable bytes, a CAS reference,
+canonical File/Node/SourceItem, an authenticated executable SourceRun or an
+Agent-origin integrity proof at COMMIT time. There is no new REST, Go Client,
+Desktop IPC, Web, scheduler, NAS Push or Mirror delete. The local_folder
+activation/Run hard gate stays in place. A future transactional writer
+must repeat owning-device/Root/revision proof, hash the pinned temporary
+and canonical content at the actual commit boundary, apply account quotas,
+and preserve crash-idempotent CAS/SQL reference accounting. Full exact-head
+Go Linux/Windows/PostgreSQL, Web/Desktop, artifacts and final-gate CI
+are mandatory; real 100k/4GiB, physical devices and GitLab are not claimed.

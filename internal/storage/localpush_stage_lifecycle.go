@@ -49,29 +49,42 @@ func localPushStageShard(key string) (string, bool, error) {
 }
 
 func (l *Local) localPushStageShardLease(ctx context.Context, shard string, exclusive bool) (func(), error) {
-	if l == nil || l.root == "" || ctx == nil || len(shard) != len("00.lock") {
-		return nil, fmt.Errorf("private stage lifecycle scope unavailable")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	dir := filepath.Join(l.root, LocalPushStageLifecycleLockDir)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return nil, err
-	}
-	file, err := os.OpenFile(filepath.Join(dir, shard), os.O_CREATE|os.O_RDWR, 0o600)
+	release, acquired, err := l.localPushStageShardLeaseMode(ctx, shard, exclusive, false)
 	if err != nil {
 		return nil, err
 	}
-	acquired, err := lockTempLifecycleFile(ctx, file, exclusive, false)
-	if err != nil || !acquired {
-		_ = file.Close()
-		if err != nil {
-			return nil, err
-		}
+	if !acquired {
 		return nil, fmt.Errorf("private stage lifecycle lease not acquired")
 	}
-	return func() { _ = unlockTempLifecycleFile(file); _ = file.Close() }, nil
+	return release, nil
+}
+
+// Under a future SQL hash/Source transaction an OS lock must never wait on
+// another writer which might itself require that SQL lock. A nonblocking
+// shared attempt returns (nil, false, nil) when the shard is busy.
+func (l *Local) localPushStageShardLeaseMode(
+	ctx context.Context, shard string, exclusive, try bool,
+) (func(), bool, error) {
+	if l == nil || l.root == "" || ctx == nil || len(shard) != len("00.lock") {
+		return nil, false, fmt.Errorf("private stage lifecycle scope unavailable")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	dir := filepath.Join(l.root, LocalPushStageLifecycleLockDir)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return nil, false, err
+	}
+	file, err := os.OpenFile(filepath.Join(dir, shard), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, false, err
+	}
+	acquired, err := lockTempLifecycleFile(ctx, file, exclusive, try)
+	if err != nil || !acquired {
+		_ = file.Close()
+		return nil, false, err
+	}
+	return func() { _ = unlockTempLifecycleFile(file); _ = file.Close() }, true, nil
 }
 
 // localPushStageWriteLeases always locks distinct stage shards in sorted order.
@@ -127,6 +140,38 @@ func (l *Local) OpenPinnedLocalPushStage(ctx context.Context, key string) (Pinne
 	if err != nil {
 		return nil, err
 	}
+	return l.openPinnedLocalPushStageWithLease(ctx, key, release)
+}
+
+// TryOpenPinnedLocalPushStage attempts the identical shared stage lease once,
+// without waiting. A cooperating writer's exclusive lease returns
+// (nil, false, nil); malformed/cancelled/missing/symlinked stages fail closed.
+// It does not prove content bytes, native Root authority or a CAS/SQL commit.
+// In particular, do not block on a stage OS lease while SQL locks are held.
+func (l *Local) TryOpenPinnedLocalPushStage(
+	ctx context.Context, key string,
+) (PinnedCASFile, bool, error) {
+	shard, managed, err := localPushStageShard(key)
+	if err != nil || !managed {
+		return nil, false, fmt.Errorf("canonical private stage key required")
+	}
+	release, acquired, err := l.localPushStageShardLeaseMode(ctx, shard, false, true)
+	if err != nil || !acquired {
+		return nil, false, err
+	}
+	pinned, err := l.openPinnedLocalPushStageWithLease(ctx, key, release)
+	if err != nil {
+		return nil, false, err
+	}
+	return pinned, true, nil
+}
+
+// One security admission path for blocking and try pins: check exact regular
+// inode before & after Open while the acquired shared stage lease is held.
+// This helper takes ownership of release even on ALL error/cancel paths.
+func (l *Local) openPinnedLocalPushStageWithLease(
+	ctx context.Context, key string, release func(),
+) (PinnedCASFile, error) {
 	full, err := l.resolve(key)
 	if err != nil {
 		release()
