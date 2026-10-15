@@ -41,6 +41,9 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
+	if !db.Migrator().HasTable(&meta.BaiduJSAPILoaderFlight{}) {
+		t.Fatal("JSAPI flight table missing")
+	}
 	if !db.Migrator().HasTable(&meta.BaiduJSAPIQuotaBucket{}) {
 		t.Fatal("JSAPI quota table missing")
 	}
