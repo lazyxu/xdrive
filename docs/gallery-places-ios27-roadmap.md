@@ -271,3 +271,17 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 - 验证通过仅表示**在测试信任根下对该固定字节内容的密码学签名有效**；并非真实百度许可、完整子资源清单、真实设备隔离或原始响应无 AK 泄漏的证据。源代码里未配置受批准的生产验证公钥，生产包装器始终返回 `ErrGateClosed`，即使测试中真实 Ed25519 签名通过也不授权启用。
 - 独立 Go 1.23 / race / vet 的 4 组测试验证正确签名、版本/策略/Origin/配置/撤销版本变化、缺失信任根、异域签名、未来/过期/超长有效期、平台覆盖不全等。需要 GitHub Go 1.25/PostgreSQL/Web/Desktop/Windows 完整 CI 和 Final Gate 才能合入。
 - 下一阶段 A3b2d2b3b2 必须在实际取得百度自托管/PWA/Electron/商用许可及真实 Loader/瓦片等全量资源清单后，分别验证独立的原始上游和浏览器 HAR、防泄漏、不可伪造审计证据、受审查的固定资源策略和生产签名根。仍须每次地图请求重新校验 Owner、Session、撤销版本、额度和 CSP/Electron 隔离；未完成不能设置 `runtime_enabled=true`。之后才继续 A3b3 共享动态地图、A4 附近照片、B1～B3 和 C1 iOS27 逐项真机验收。
+
+
+## A3b2d2b3b2a · JSAPI4 九场景私有 HAR 证据矩阵（2026-10-15）
+
+**进度：离线、只读证据覆盖工具；并非许可证审核、真实上游资源白名单或生产授权。** 在 #1693 Ed25519 发布证明经过完整 CI/Final Gate、线性合入并清理后，新建 `scripts/ci/baidu-jsapi4-evidence-matrix.cjs`，由现有 Browser HAR、Server→Baidu Upstream HAR 和 Cross-HAR 三层审计组合运行。任何审计通过都不能设置 JSAPI 的 `runtime_enabled`。
+
+- **九场景输入**：`web`、`mobile-web`、`desktop` 每个平台必须分别采集 `load`、`pan`、`zoom`；每个场景各有一份浏览器 HAR、一份 Server 上游 HAR，总计 9 对、18 份私有记录。平台名称只是操作者输入的标签，**不能证明实际物理设备、iOS 27 或安装态 PWA**。
+- 操作者在私有目录创建 `manifest.json`，其格式是 `{"version":1,"captures":[{"client":"web","scenario":"load","browser":"web-load-browser.har","upstream":"web-load-upstream.har"}, ...]}`，必须严格有全部九个唯一的 client/scenario 组合。捕获文件必须与 manifest 位于同一目录，采用安全 basename、不可为软链接；拒绝路径穿越、缺文件、空文件、超大文件、文件名复用、同内容重复捕获和未通过的单对审计。浏览器 HAR 最大 20 MiB，上游最大 32 MiB，manifest 最大 32 KiB；只读取本地文件，无网络请求或自动上传。
+- 在可控离线环境中通过密码管理器仅向进程环境注入 `XD_BAIDU_JSAPI_AK_CANARY`，执行 `node scripts/ci/baidu-jsapi4-evidence-matrix.cjs /private/manifest.json https://your-trusted-origin.example`。**不得**把真实 AK、JWT、Cookie、完整 URL、GPS、原始 HAR、目录内容或私有 manifest 提交到代码库、CI 制品或聊天记录。
+- 只输出固定错误码、要求的对数、已检查/拒绝对数；`release_authorized=false` 为不变常量。输入的 `capture_valid=true` 仅说明**这些文件通过有限规则**；没有全程网络完整性证明、实机证明、账号许可证明或签名可信来源。不要根据样本、匿名摘要或 HAR 自动扩展百度资源 allowlist。
+- 合成测试覆盖九格齐全性、缺格/重复、跨格文件复用/重复原始字节、路径穿越、软链接、超限、错误代理结果、错误 Origin/密钥及输出脱敏；完整仓库 CI 额外使用先前三个真正的审计模块运行合成九对端到端测试。
+- **仍为 NO-GO**：需要实际百度自托管/PWA/Electron/商用授权、真实 Loader/瓦片/JS/WASM/字体全量清单和原始响应泄漏证明；Server Owner 会话逐请求授权、生产签名信任根、受审查的固定上游资源规则、Caddy/CSP/Electron 安全隔离，以及 iOS27/Android/Desktop 真机验收。三端继续共用 Gallery Server API、Range、VirtualCollection、Viewer，保留 iOS 27「照片」1:1 基准、52px 全屏 App Frame、百度唯一 Provider 和 Static Server AK / JSAPI Browser AK 的独立配置。
+
+**下一项 A3b2d2b3b2b**：在获得真实被授权的私有网络捕获及许可证明后，对每条 Host/Path/Query/MIME/大小限制执行人工审核和代码审查；缺证据时不开放真实 JSAPI Runtime。之后才实施 A3b3、A4、B1～B3 和 C1。
