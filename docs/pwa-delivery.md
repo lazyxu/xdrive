@@ -437,3 +437,13 @@ PR #1560 已通过完整 CI #38253266903（含 Final Gate）及真实 Chrome 专
 **独立模拟的真实边界（非浏览器模拟）：** 现有已签发且受 Owner/SessionVersion 保护的 `4 GiB + 17 B` **稀疏仅用于 Range** 本地文件，启动 `httptest.NewServer` 真 HTTP/1 TCP，`http.Client.Do(Request.WithContext)` 带 `Range: bytes=0-4294967312`，严格核对 206 和 64 位 Content-Range，并实际从 socket 流读取 32 KiB 后调用 Go `context.CancelFunc` 关闭客户端连接。要求已有生产 `trackDownloadProgress` / Request.Context 观察在 12s 上限内归类 `cancelled`，`active_requests=0` 且 `0 < bytes_sent < 4 GiB + 17 B`。真实取消之后，使用同一尚有效 ticket 单独请求尾部小 Range，要求原 CAS 字节仍正确；随后已有 SessionVersion 撤销测试继续确保 401。不能用 ResponseRecorder、虚假计数或伪造成功状态替代真实 TCP 断连证据。
 
 **证据与下一项：** 该测试进入既有 PostgreSQL17/Gin `go-linux-api` 完整 CI/race 工作流；必须保持一条新增工作提交、准确 HEAD 完整 CI 含 Final Gate 全绿才可合入。不宣称 Playwright `Download.cancel()`、Android/iOS Installed OS 下载管理器、磁盘临时文件擦除、续传 206 自动合并、锁屏或强杀已经被测试。下一阶段 S4C3-B2c 专门执行真实 Chrome Native Download 用户取消和重新下载/票据过期与撤销；随后 S4D 和 S5。
+
+## PWA-S4C3-B2c1 · 真实 Chrome Native 下载取消及重新下载（2026-10-15）
+
+**基线：** 上游 B2b PR #1667 准确 HEAD `3dfdd3ba` 通过完整 CI #38369204432、Final Gate，线性合并至 `master@0463cb95c460a34e28184fe8f749f3184e64b122`，相关工作分支已自动清理。固定此 master，仅处理 PWA S4C3-B2c1。B1/B2a 的 1/4 GiB 全字节真 Chrome 原生落盘 SHA、B2b 的 Go TCP ctx.cancel 仍为独立已合入证据，不混作系统安装真机。
+
+**本轮实现，待准确 CI 验证：** 在原有生产 Web 构建、真实 Gin/JWT/PostgreSQL17/1 GiB 物理非稀疏 CAS 和 Chrome Playwright Desktop/Android UA 390px 模拟专项内，增加仅 `XD_PWA_S4C3_CANCEL=1` 的第一次签名 HTTP 响应节流（真实 ServeContent 写入，非 fake Range/响应，不进入生产）。用户从真实 Files 菜单触发第一次原生下载，浏览器 `Download.cancel()` 应报告 `canceled`；再次点击同一 UI 应获得不同的 signed ticket，真正将全部 1 GiB 写入 OS 文件后流式重读 SHA-256，且 Go 独立核验原 CAS 全字节未变。Go 从真实 PostgreSQL 验证**恰好两条不同票据**的进度：取消第一次 `state=cancelled`、`failure_state=cancelled`、`active_requests=0`、`0<bytes_sent<1 GiB`；第二次 `state=completed`、`active_requests=0`、`bytes_sent=1 GiB`。如果浏览器其实没有真正取消服务端流，不得以 UI cancelled 冒充成功。
+
+**不削弱旧测试：** 正常 1/4 GiB 的原始 B1/B2a Mode、Range 206/416/无票据 401、缓存隐私断言保持；取消专项不再对完成后的*同一个* retry ticket 发成功的额外 Range GET，以免重新开启该票据 DB 下载进度并覆盖完整文件证据。原有 206 和真实 4 GiB 全盘 SHA 仍由之前已合并专项证明。隔离 CI 仅归档 boolean/bytes 的 `summary-*.json`，JWT、signed URL、Gin 原始日志、磁盘文件和用户路径绝不归档。
+
+**合并门槛：** 本阶段必须保持相对于固定基线恰好一个工作提交，新 Draft PR 准确 HEAD 的完整 PR CI（含 Go/PostgreSQL、Web、Desktop、Final Gate）与新增分支触发的真实 Chrome 专项均成功，再 Ready→rebase merge 并查分支清理。代码审查/合约检查不等于真实测试通过。iOS 27 Safari/Home Screen、Android OS Installed、系统下载管理器临时文件清理、网络自动 Range 恢复、票据过期和账户 SessionVersion 撤销、生产公网 HTTPS/CA、锁屏/杀进程及发布/回滚依然未验证；下一个 B2c2 做过期/撤销，之后 S4D/S5。
