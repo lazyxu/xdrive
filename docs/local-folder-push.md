@@ -1759,3 +1759,26 @@ remains JSON-redacted, no new Desktop/Renderer/Web/IPC/SourceRun entrypoint exis
 and local_folder activation, permanent File/Node/SourceItem/ContentBlob mutation,
 upload finalize, Mirror deletion, scheduler and remote control remain forbidden.
 Real Windows/Linux devices, 100k and >=4GiB acceptance and GitLab remain unverified.
+
+
+## L03-F2c1 · Real native Agent → authenticated Gin → physical stage integration (stacked PR validation)
+
+After L03-F2b, an additional Linux/Windows native PostgreSQL integration
+test runs the previously separate F1b native producer and F2a Server physical
+preflight as one actual HTTP chain. A freshly persisted native Root grant,
+complete CURRENT journal and real original file produce an Agent-only temporary
+stream received by Gin with JWT plus bound device token/Root/revision. Server
+writes real temporary bytes and independently rehashes them; the Agent requires
+the strict noncanonical physical reply before returning its JSON-redacted
+temporary receipt. An out-of-band same-length overwrite just before F2a must
+fail, trigger best-effort owning-Agent cancellation and remove the temporary
+file. Both cases verify no SourceItem, SyncRun, FileVersion, ContentBlob,
+generic UploadSession or local-folder activation was created.
+
+This is a test-only prerequisite, not a CAS promotion, permanent storage
+transaction, owner JWT upload grant, Desktop IPC operation, scheduler or
+remote execution feature. Production APIs and security flags remain unchanged.
+Go Linux/Windows native plus PostgreSQL17 exact-head CI/final-gate are required;
+real physical devices, 100k inventory, >=4GiB, long-lived recheck and GitLab
+remain unverified. F2c2+ must design immutable CAS/SQL lock ordering and
+atomic idempotent authoritative writes before any real Push execution.
