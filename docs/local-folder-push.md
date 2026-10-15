@@ -1930,3 +1930,44 @@ and idempotent recovery under precise credential and transaction locks.
 GitHub exact-head full Go Linux/Windows/PostgreSQL/Web/Desktop/artifact
 and final-gate CI are required; GitLab, real physical 100k and >=4GiB
 backup acceptance remain unverified.
+
+
+## L03-F2d4 · Independent bounded physical SHA256 observation for paired Stage/CAS (PR verification)
+
+After merged F2d3 #1696, the existing internal Local Store paired nonblocking
+CAS-first → private-Stage-second read lease can now be used by
+`ObserveMatchingLocalPushStageAndCAS(ctx,stageKey,casKey,expectedSize)` for
+**one ephemeral, non-authoritative physical observation**. The caller supplies
+ONLY an exact canonical private staging UUID key, an exact canonical SHA256 CAS
+key and a 0–64MiB expected size. An already present canonical CAS object is
+required; the observer cannot create/promote one. Both opened files are
+independently hashed to the canonical CAS SHA256 using the existing bounded
+context-aware copier with a maximum of expectedSize+1 bytes per handle,
+rejecting short/extra bytes and same-length corruption of EITHER file. Before
+and after both hashes, the observer checks regular-file inode identity, opened
+handle vs canonical filesystem path, size and mtime. Changes, missing paths,
+symlink/nonregular targets, bad digests or cancellation fail closed. It closes
+BOTH OS leases on success and failure, and a close error cannot return
+success. Busy OS pin admission stays (false,nil), never blocking while a
+future SQL advisory-lock transaction may be held.
+
+Tests exercise a valid byte-for-byte Stage/CAS pair, independent same-size
+out-of-band modifications of either file, incorrect/missing keys, expected
+size bounds, extra/short reads, mid-copy cancellation, mtime drift and
+released cross-process writer locks after all outcomes. Go Linux/Windows,
+PostgreSQL17-backed regression (F2d3), Web/Desktop, artifacts and final-gate
+CI must pass for this exact single-work-commit PR. Physical-device
+100k/≥4GiB and GitLab remain separate.
+
+**This is not an authorized backup commit.** The returned Boolean proves
+only that two handles matched a digest during one bounded observation; it
+is NOT a durable CAS reference, device credential, Root/Source revision
+proof, SQL transaction fence, account quota charge, File/FileVersion/Node/
+SourceItem update, SourceRun, resume ticket, Mirror deletion or authority
+to activate local_folder. It deliberately creates NO REST/Go Client/Agent
+IPC/Renderer/Web control or scheduler. Cooperative OS pins cannot prevent
+malicious out-of-band writes after their release, nor prove an immutable
+distributed snapshot. The future authoritative writer must independently
+revalidate exact owning Agent/Root/Source/revision, perform the appropriate
+physical hash and SQL/OS lock protocol at commit time, atomically charge
+quota/retain CAS references and recover interrupted commits idempotently.
