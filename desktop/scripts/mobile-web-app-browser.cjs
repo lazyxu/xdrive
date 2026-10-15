@@ -2938,6 +2938,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesIos27CollectionMenusAcceptance(origin);
   await filesNavigationStabilityAcceptance(origin);
   await filesDeferredDeepLinkAcceptance(origin);
+  await filesGoToPathBrowserStabilityAcceptance(origin);
 }
 
 
@@ -3120,6 +3121,108 @@ async function filesDeferredDeepLinkAcceptance(origin) {
   result.samples[activeStage] = {
     initial, pending, committed, realChromium: true, physicalIOSDevice: false,
     stalledFirstCountedServerRange: true,
+  };
+  await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
+}
+
+async function filesGoToPathBrowserStabilityAcceptance(origin) {
+  // P4 checks the ACTUAL compiled Web/MobileFiles path dialog and the
+  // existing shared Web REST adapter. This is a 390px Chromium emulation,
+  // not native Safari/Android/PWA or a live remote Gin/CAS WAN benchmark.
+  activeStage = 'user-mobile-files-path-navigation-stability-390';
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-002.txt' }).first().waitFor();
+  const observe = () => page.evaluate(() => {
+    const host = document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const frame = host?.getBoundingClientRect();
+    const header = document.querySelector('[data-xdrive-mobile-app-header]')?.getBoundingClientRect();
+    const compactTitle = document.querySelector('[data-mobile-files-compact-title]');
+    const storedKey = Object.keys(localStorage).find(k => k.startsWith('xdrive.mobile.files.v1:'));
+    const state = storedKey ? JSON.parse(localStorage.getItem(storedKey)) : null;
+    return {
+      hash: location.hash, top: host?.scrollTop ?? null,
+      sameHost: host === window.__goToPathOriginalHost,
+      owners: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      savedFolderID: state?.folderID ?? null,
+      savedSection: state?.section ?? null,
+      title: compactTitle?.textContent ?? null,
+      frame: frame ? { y: frame.y, height: frame.height, width: frame.width } : null,
+      header: header ? { y: header.y, height: header.height, width: header.width } : null,
+    };
+  });
+  const stableRect = (left, right) => left && right &&
+    Math.abs(left.y - right.y) <= 1 &&
+    Math.abs(left.height - right.height) <= 1 &&
+    Math.abs(left.width - right.width) <= 1;
+  const original = await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host => {
+    window.__goToPathOriginalHost = host;
+    host.scrollTop = 450;
+    return host.scrollTop;
+  });
+  await page.waitForFunction(() =>
+    document.querySelector('[data-xdrive-mobile-files-scroll]')?.scrollTop >= 420);
+  const before = await observe();
+  check(activeStage + ': old root has a measured scrolled viewport', original >= 420 &&
+    before.top >= 420 && before.savedFolderID === 1 && before.owners === 1, before);
+
+  async function submitPath(value) {
+    await page.getByRole('button', { name: '文件操作菜单' }).click();
+    await page.getByRole('menuitem', { name: '前往文件夹路径…' }).click();
+    const dialog = page.locator('[data-mobile-files-go-to-path]');
+    await dialog.getByRole('textbox', { name: '文件夹路径' }).fill(value);
+    await dialog.getByRole('button', { name: '前往', exact: true }).click();
+  }
+
+  // A nonexistent target must not destroy the previously visible root scroll.
+  const lookup = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/nodes/1/children' &&
+    new URL(response.url()).searchParams.has('name'), { timeout: 10000 });
+  await submitPath('我的文件/不存在的目录');
+  await lookup;
+  await settle();
+  const failed = await observe();
+  check(activeStage + ': invalid path leaves old folder and viewport intact',
+    failed.sameHost && failed.top >= 420 && failed.savedFolderID === 1 &&
+    failed.owners === 1 && failed.title === before.title &&
+    stableRect(failed.frame, before.frame) && stableRect(failed.header, before.header),
+    { before, failed });
+
+  // Success is held AFTER path resolution, before the shared counted first
+  // page is committed. The old folder must stay mounted until that page arrives.
+  let notify, release;
+  const reached = new Promise(resolve => { notify = resolve; });
+  const wait = new Promise(resolve => { release = resolve; });
+  directoryGate = { hits: 0, notify, wait };
+  let pending;
+  try {
+    await submitPath('我的文件/验收目录');
+    await Promise.race([reached, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('typed path did not request the destination first page')), 10000))]);
+    await settle();
+    pending = await observe();
+    check(activeStage + ': held first page cannot reset prior folder or layout',
+      directoryGate.hits >= 1 && pending.sameHost && pending.top >= 420 &&
+      pending.savedFolderID === 1 && pending.owners === 1 &&
+      pending.title === before.title &&
+      stableRect(pending.frame, before.frame) && stableRect(pending.header, before.header),
+      { before, pending, heldHits: directoryGate.hits });
+  } finally {
+    directoryGate = null;
+    release();
+  }
+  await page.locator('[data-mobile-files-item]').filter({ hasText: 'nested-001.txt' }).first().waitFor();
+  await settle();
+  const committed = await observe();
+  check(activeStage + ': successful path commits one destination and resets only its scroller',
+    committed.sameHost && committed.top === 0 &&
+    committed.savedFolderID === 2 && committed.owners === 1 &&
+    stableRect(committed.frame, before.frame) && stableRect(committed.header, before.header),
+    committed);
+  result.samples[activeStage] = {
+    before, failed, pending, committed, realChromium: true,
+    firstRangeDeliberatelyHeld: true, liveGoServer: false, physicalDevice: false,
   };
   await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
 }
