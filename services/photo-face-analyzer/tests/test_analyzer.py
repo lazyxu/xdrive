@@ -450,6 +450,27 @@ class AnalyzerTests(unittest.TestCase):
             self.assertFalse(match(near_miss))
         self.assertFalse(match(True))
 
+    def test_sface_synthetic_failure_does_not_turn_yunet_green_into_sface_green(self) -> None:
+        # The model consumes only internal synthetic pixels. An independent
+        # SFace failure must be visible without leaking exception details.
+        original_embedding = self.runtime._embedding
+        original_analyze = self.runtime.analyze
+        try:
+            self.runtime.analyze = lambda _image: []
+            self.runtime._embedding = lambda *_args: (_ for _ in ()).throw(
+                RuntimeError("secret embedding path")
+            )
+            result = self.runtime.probe_synthetic_face_and_embedding()
+        finally:
+            self.runtime._embedding = original_embedding
+            self.runtime.analyze = original_analyze
+        self.assertIs(result["detector_executed"], True)
+        self.assertIs(result["sface_embedding_valid"], False)
+        self.assertEqual(
+            set(result),
+            {"detector_executed", "face_count", "sface_embedding_valid"},
+        )
+
     def test_unix_socket_protocol_end_to_end(self) -> None:
         fingerprint = "media-analysis-test-v1-1280"
         PreviewHandler.fingerprint = fingerprint
@@ -577,8 +598,15 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertGreaterEqual(canary["face_count"], 0)
                 self.assertLessEqual(canary["face_count"], analyzer.MAX_FACES)
                 self.assertEqual(
-                    set(canary), {"detector_executed", "face_count"}
+                    set(canary), {
+                        "detector_executed", "face_count", "sface_embedding_valid",
+                    },
                 )
+                self.assertIs(type(canary["sface_embedding_valid"]), bool)
+                # This exercises the actual SFace network with the fixed
+                # self-test landmarks, not an identity/real-face accuracy test.
+                self.assertIs(canary["sface_embedding_valid"], True)
+                self.assertNotIn("embedding", canary)
                 fixed_face.close()
 
                 connection = analyzer.UnixHTTPConnection(socket_path)

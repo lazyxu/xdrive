@@ -735,6 +735,41 @@ class FaceRuntime:
                 )
             return output
 
+    def probe_synthetic_face_and_embedding(self) -> dict[str, Any]:
+        # Fixed model-local NON-person pixels. YuNet may correctly see no
+        # face; SFace uses the same synthetic landmarks as boot self_test.
+        # No detected face, identity, embedding or pixels leave this process.
+        image = synthetic_image()
+        faces = self.analyze(image)
+        fixed_landmarks = np.array(
+            [
+                55.0, 35.0, 180.0, 190.0,
+                100.0, 95.0, 190.0, 95.0,
+                145.0, 135.0, 105.0, 180.0,
+                185.0, 180.0,
+            ],
+            dtype=np.float32,
+        )
+        try:
+            with self.lock:
+                vector = self._embedding(image, fixed_landmarks)
+            norm = float(np.linalg.norm(vector))
+            embedding_valid = bool(
+                vector.size == EMBEDDING_DIMENSIONS
+                and np.isfinite(vector).all()
+                and math.isfinite(norm)
+                and abs(norm - 1.0) <= 1e-4
+            )
+        except (cv.error, RuntimeError, ValueError):
+            # The detector's successful execution must not be hidden by a
+            # separate SFace model failure. Expose only bounded false.
+            embedding_valid = False
+        return {
+            "detector_executed": True,
+            "face_count": len(faces),
+            "sface_embedding_valid": embedding_valid,
+        }
+
 
 class SmartRuntime:
     def __init__(
@@ -1368,9 +1403,8 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "content-length", "0"
                 ) != "0":
                     raise RequestError(400, "face detector canary rejects a body")
-                faces = self.server.state.runtime.analyze(synthetic_image())
                 self._write_json(
-                    200, {"detector_executed": True, "face_count": len(faces)}
+                    200, self.server.state.runtime.probe_synthetic_face_and_embedding(),
                 )
                 return
             if method == "GET" and target == "/v1/smart-info":

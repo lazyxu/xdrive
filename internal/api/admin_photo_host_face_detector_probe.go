@@ -17,6 +17,7 @@ type photoHostFixedFaceDetectorProber interface {
 // A zero-face response is valid for deterministic NON-person pixels. It proves
 // that YuNet was executed and a bounded result returned, NOT positive face
 // recognition, SFace embedding or the accuracy of any real photo.
+// Preserve YuNet execution semantics independently of SFace feature validity.
 func runPhotoHostFixedFaceDetectorInference(
 	ctx context.Context,
 	check photoHostModelInfoCheck,
@@ -24,6 +25,17 @@ func runPhotoHostFixedFaceDetectorInference(
 	probe func(context.Context) (photointelligence.FaceDetectorCanary, error),
 	readInfo func(context.Context) (photointelligence.FaceAnalyzerInfo, error),
 ) bool {
+	ok, _ := runPhotoHostFixedFaceDetectorInferenceWithSFace(ctx, check, gate, probe, readInfo)
+	return ok
+}
+
+func runPhotoHostFixedFaceDetectorInferenceWithSFace(
+	ctx context.Context,
+	check photoHostModelInfoCheck,
+	gate meta.AdminPhotoHostApply,
+	probe func(context.Context) (photointelligence.FaceDetectorCanary, error),
+	readInfo func(context.Context) (photointelligence.FaceAnalyzerInfo, error),
+) (bool, *bool) {
 	if ctx == nil || probe == nil || readInfo == nil ||
 		check.ID != "photo-face" || check.State != "ready" ||
 		!photointelligence.ValidAnalyzerRuntimeInstanceID(check.runtimeInstanceID) ||
@@ -32,12 +44,12 @@ func runPhotoHostFixedFaceDetectorInference(
 		check.hostReceipt == nil ||
 		check.hostReceipt.Revision != gate.Revision ||
 		check.hostReceipt.RequestID != gate.RequestID || ctx.Err() != nil {
-		return false
+		return false, nil
 	}
 	result, err := probe(ctx)
 	if err != nil || ctx.Err() != nil || !result.DetectorExecuted ||
 		result.FaceCount < 0 || result.FaceCount > photointelligence.MaxFacesPerImage {
-		return false
+		return false, nil
 	}
 	// Prevent a successful response from an old/restarted or unrelated model
 	// from being published as this audited host generation's detector effect.
@@ -48,9 +60,12 @@ func runPhotoHostFixedFaceDetectorInference(
 		info.HostApplyReceipt == nil ||
 		info.HostApplyReceipt.Revision != gate.Revision ||
 		info.HostApplyReceipt.RequestID != gate.RequestID {
-		return false
+		return false, nil
 	}
-	return ctx.Err() == nil
+	if ctx.Err() != nil {
+		return false, nil
+	}
+	return true, result.SFaceEmbeddingValid
 }
 
 // One explicit administrator click only. The existing four Info ACKs and
@@ -61,38 +76,51 @@ func (s *Server) photoHostFaceDetectorProbe(
 	desired photoHostDesired,
 	gate meta.AdminPhotoHostApply,
 	checks []photoHostModelInfoCheck,
-) string {
+) (string, string) {
 	if s == nil || s.PhotoFaceAnalyzer == nil ||
 		!photoHostModelInstanceCoherent(checks) ||
 		!s.photoHostSemanticEvidenceCurrent(parent, desired, gate, checks) {
-		return "unverified"
+		return "unverified", "unverified"
 	}
 	prober, ok := s.PhotoFaceAnalyzer.(photoHostFixedFaceDetectorProber)
 	if !ok {
-		return "unverified"
+		return "unverified", "unverified"
 	}
 	if !photoHostSemanticProbeGate.TryLock() {
-		return "throttled"
+		return "throttled", "throttled"
 	}
 	defer photoHostSemanticProbeGate.Unlock()
 	if !photoHostSemanticProbeGate.lastFaceAttempt.IsZero() &&
 		time.Since(photoHostSemanticProbeGate.lastFaceAttempt) < photoHostSemanticProbeCooldown {
-		return "throttled"
+		return "throttled", "throttled"
 	}
 	photoHostSemanticProbeGate.lastFaceAttempt = time.Now()
 	ctx, cancel := context.WithTimeout(parent, photoHostSemanticProbeTimeout)
 	defer cancel()
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
-		return "unverified"
+		return "unverified", "unverified"
 	}
-	if !runPhotoHostFixedFaceDetectorInference(
+	executed, embeddingValid := runPhotoHostFixedFaceDetectorInferenceWithSFace(
 		ctx, checks[0], gate,
 		prober.ProbeSyntheticFaceDetection, s.PhotoFaceAnalyzer.Info,
-	) {
-		return "failed"
+	)
+	if !executed {
+		return "failed", "unverified"
 	}
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
+		return "unverified", "unverified"
+	}
+	return "verified", photoHostSFaceSyntheticState(embeddingValid)
+}
+
+// A valid fixed-landmark synthetic embedding is not a positive face identity
+// test. A legacy absent Boolean is never treated as model-ready.
+func photoHostSFaceSyntheticState(value *bool) string {
+	if value == nil {
 		return "unverified"
 	}
-	return "verified"
+	if *value {
+		return "verified"
+	}
+	return "failed"
 }

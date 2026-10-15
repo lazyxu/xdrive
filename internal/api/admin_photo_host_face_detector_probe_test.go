@@ -56,7 +56,9 @@ func TestPhotoHostFixedFaceDetectorExecutesAndPreservesZeroFaceBoundary(t *testi
 		t.Fatalf("model detector was not run or same-generation Info was skipped: calls=%d Info=%d", calls, reads)
 	}
 	// The operator never receives result counts, model credentials or nonces.
-	raw, err := json.Marshal(adminPhotoHostPreflightDTO{FaceDetectorTaskState: "verified"})
+	raw, err := json.Marshal(adminPhotoHostPreflightDTO{
+		FaceDetectorTaskState: "verified", SFaceTaskState: "verified",
+	})
 	if err != nil || strings.Contains(string(raw), gate.RequestID) ||
 		strings.Contains(string(raw), info.RuntimeInstanceID) ||
 		strings.Contains(string(raw), "face_count") {
@@ -123,5 +125,77 @@ func TestPhotoHostFixedFaceDetectorExecutesAndPreservesZeroFaceBoundary(t *testi
 		read,
 	) || called {
 		t.Fatal("canceled preflight started face detection")
+	}
+}
+
+func TestPhotoHostSFaceSyntheticProofRequiresOriginalGeneration(t *testing.T) {
+	info := fixedFaceInfoForHostProbe()
+	gate := meta.AdminPhotoHostApply{
+		State: "host-verified", Revision: 7, RequestID: info.HostApplyReceipt.RequestID,
+	}
+	check := photoHostModelInfoCheck{
+		ID: "photo-face", State: "ready", runtimeInstanceID: info.RuntimeInstanceID,
+		hostReceipt: info.HostApplyReceipt,
+	}
+	yes, no := true, false
+	read := func(context.Context) (photointelligence.FaceAnalyzerInfo, error) { return info, nil }
+	for _, scenario := range []struct {
+		name    string
+		value   *bool
+		outcome string
+	}{
+		{"genuine feature", &yes, "verified"},
+		{"failed feature", &no, "failed"},
+		{"legacy model", nil, "unverified"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			calls := 0
+			executed, feature := runPhotoHostFixedFaceDetectorInferenceWithSFace(
+				context.Background(), check, gate,
+				func(context.Context) (photointelligence.FaceDetectorCanary, error) {
+					calls++
+					return photointelligence.FaceDetectorCanary{
+						DetectorExecuted: true, FaceCount: 0, SFaceEmbeddingValid: scenario.value,
+					}, nil
+				}, read,
+			)
+			if !executed || calls != 1 || feature != scenario.value ||
+				photoHostSFaceSyntheticState(feature) != scenario.outcome {
+				t.Fatalf("SFace status was not independently validated: valid=%v calls=%d result=%s",
+					executed, calls, photoHostSFaceSyntheticState(feature))
+			}
+		})
+	}
+	probe := func(context.Context) (photointelligence.FaceDetectorCanary, error) {
+		return photointelligence.FaceDetectorCanary{
+			DetectorExecuted: true, FaceCount: 0, SFaceEmbeddingValid: &yes,
+		}, nil
+	}
+	check.hostReceipt = nil
+	if executed, feature := runPhotoHostFixedFaceDetectorInferenceWithSFace(
+		context.Background(), check, gate, probe, read,
+	); executed || feature != nil {
+		t.Fatal("SFace success was accepted without audited Host Apply receipt")
+	}
+	check.hostReceipt = info.HostApplyReceipt
+	restarted := info
+	restarted.RuntimeInstanceID = strings.Repeat("f", 32)
+	if executed, feature := runPhotoHostFixedFaceDetectorInferenceWithSFace(
+		context.Background(), check, gate, probe,
+		func(context.Context) (photointelligence.FaceAnalyzerInfo, error) { return restarted, nil },
+	); executed || feature != nil {
+		t.Fatal("SFace success survived a restarted model generation")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	called := false
+	if executed, feature := runPhotoHostFixedFaceDetectorInferenceWithSFace(
+		ctx, check, gate,
+		func(context.Context) (photointelligence.FaceDetectorCanary, error) {
+			called = true
+			return photointelligence.FaceDetectorCanary{SFaceEmbeddingValid: &yes}, nil
+		}, read,
+	); executed || feature != nil || called {
+		t.Fatal("a canceled SFace canary was marked verified")
 	}
 }

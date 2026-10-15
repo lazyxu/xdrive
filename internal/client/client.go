@@ -672,6 +672,7 @@ type AdminPhotoHostPreflight struct {
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
+	SFaceTaskState              string                         `json:"sface_task_state"`
 	SmartModelTaskState         string                         `json:"smart_model_task_state"`
 	SmartOCRFixtureState        string                         `json:"smart_ocr_fixture_state"`
 }

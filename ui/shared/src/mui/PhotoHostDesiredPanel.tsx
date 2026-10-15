@@ -353,6 +353,18 @@ export function XDrivePhotoHostDesiredPanel({
                               : '未运行、宿主 ACK 不完整或旧版 Server/Agent/模型不支持'}
                       </Typography>
                       <Typography variant="body2"
+                        color={preflight.sface_task_state === 'verified' ? 'success.main'
+                          : preflight.sface_task_state === 'failed' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-sface-task-state>
+                        SFace 固定合成向量：{preflight.sface_task_state === 'verified'
+                          ? '已执行真实 SFace，128 维归一化特征有效（非人物样本，不代表真实人脸或身份识别正确）'
+                          : preflight.sface_task_state === 'failed'
+                            ? 'SFace 执行或特征校验失败；YuNet 结果仍独立有效'
+                            : preflight.sface_task_state === 'throttled'
+                              ? '检测频率受限或已有检测运行中；本次未验证'
+                              : '未运行、可信宿主条件不足或旧版模型／Server／Agent 不支持'}
+                      </Typography>
+                      <Typography variant="body2"
                         color={preflight.smart_model_task_state === 'verified' ? 'success.main'
                           : preflight.smart_model_task_state === 'failed' ? 'error.main' : 'text.secondary'}
                         data-xdrive-photo-smart-model-task-state>
