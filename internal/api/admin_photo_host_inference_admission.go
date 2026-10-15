@@ -8,8 +8,9 @@ import (
 
 const photoHostManualInferenceHeartbeatInterval = 2 * time.Second
 
-// Only the administrator's fixed, model-local canaries use this bounded
-// admission; callers never choose inputs, paths or model commands. Sharing the
+// The administrator's fixed model-local canaries and bounded foreground
+// semantic text model calls share this guarded session lease. Foreground text
+// is authenticated user query input; no new model/Host commands are enabled. Sharing the
 // queued Photo/Creative admission lock does NOT grant host stop/drain authority.
 func (s *Server) photoHostRunAdmittedSyntheticInference(
 	parent context.Context,

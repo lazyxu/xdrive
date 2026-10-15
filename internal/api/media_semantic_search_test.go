@@ -105,6 +105,7 @@ func TestGallerySemanticSearchRanksLexicalThenSemantic(t *testing.T) {
 		&meta.PhotoAnalysisState{}, &meta.PhotoSemanticEmbedding{},
 		&meta.PhotoVisualLabel{}, &meta.PhotoOCRText{}, &meta.PhotoPlaceLabel{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{},
+		&meta.PhotoHostAdmissionGate{},
 	); err != nil {
 		t.Fatal(err)
 	}
