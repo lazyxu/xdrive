@@ -1971,3 +1971,59 @@ distributed snapshot. The future authoritative writer must independently
 revalidate exact owning Agent/Root/Source/revision, perform the appropriate
 physical hash and SQL/OS lock protocol at commit time, atomically charge
 quota/retain CAS references and recover interrupted commits idempotently.
+
+
+## L03-F2d5 · Owning-device-scoped existing-CAS physical reuse precommit (PR validation)
+
+After #1701 (F2d4), the Server now has a strictly **internal, read-only**
+`observeBoundLocalPushExistingCAS` prerequisite for the **already-existing
+canonical CAS deduplication** case. It is deliberately **not an HTTP route,
+Go Client transport, Agent IPC, Renderer/Web button or runnable upload**.
+A caller must already have the authenticated owning-Agent proof in the
+trusted Gin context; an owner JWT, second Desktop on the SAME account,
+forged device credential, missing Root binding or outdated Source revision
+is insufficient. Only a paused `local_folder` Push Source and a live,
+exactly scoped `staged` record may be observed. The canonical key comes
+ONLY from the currently persisted stage SHA256; no caller-provided key/path,
+arbitrary Stage, Source target or media input is accepted.
+
+A FIRST short PostgreSQL transaction verifies the unrevoked owner device,
+Root binding/fingerprint, Source revision/cloud target and exact Stage row.
+It obtains the canonical SHA256's transaction-scoped advisory hash lock
+BEFORE reading its ContentBlob metadata under a row SHARE lock. The
+ContentBlob MUST be an existing `ready` object with positive RefCount,
+exact canonical storage key and size equal to the persisted Stage. Both
+SQL locks are **released** at the end of the transaction. Outside SQL,
+the F2d4 Local-Store-only `ObserveMatchingLocalPushStageAndCAS` independently
+hashes both actual files under cooperative nonblocking CAS-first/Stage-second
+OS shared pins (0–64 MiB, context bounded). Busy OS lock returns
+`(false,nil)`, never a positive observation or a blocking wait with SQL
+locks held. Any absent/corrupt physical bytes fail closed. A SECOND short
+transaction repeats the entire owning-device/Stage/CAS metadata scope.
+A revoked or swapped device, modified Source revision, canceled/replaced
+Stage, changed CAS ready/refcount/size/key or expired request MUST NOT
+produce a positive result. No observation result is persisted or exported.
+
+Real PostgreSQL17 plus native Local Store regression cases include a
+valid paired read without canonical SourceItem/Run mutation, independent
+same-size Stage and CAS corruption, same-account foreign device, forged
+token, reserved/failed/canceled/expired Stage, non-ready/unreferenced
+ContentBlob, midflight revocation, Source-revision drift, canceled Stage,
+refcount drift and context/lock contention. Require one GitHub work commit,
+the exact-head full Go Linux/Windows, Web/Desktop, Rootless, artifact and
+final-gate CI before merge. Missing local PostgreSQL/native/GitLab/physical
+device acceptance must not be represented as complete.
+
+**Crucial limit:** these are TWO independent, momentary database snapshots
+around physical I/O, not one durable atomic commit. The CAS hash advisory
+lock is **not held** while disk hashing runs, and local filesystem OS pins
+are released before the second SQL check. Another actor can change state
+immediately afterward, and this helper does not establish native original
+provenance or a persistent refcount lease. In particular, it does **not**
+create/promote CAS bytes, increment/retain CAS references, charge quota,
+create File/FileVersion/Node/SourceItem, accept a rename, start SourceRun,
+schedule backups, delete Mirror files or enable `local_folder` execution.
+The initial-new-CAS upload path is also unimplemented. Future F2d6+
+must design the **actual single writer transaction**, OS/SQL lock order,
+device/Root/revision fencing, durable quota/refcount and crash-idempotent
+recovery rather than treating this ephemeral check as a bearer ticket.
