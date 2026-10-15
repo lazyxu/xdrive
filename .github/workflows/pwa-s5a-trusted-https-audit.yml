@@ -1,0 +1,55 @@
+name: PWA S5A Trusted HTTPS Origin Audit Contract
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s5a-https-audit:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s5a-trusted-https-release-gate-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert exact HEAD, syntax and no production changes
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          node --check desktop/scripts/pwa-s5a-live-https-audit.cjs
+          node --check desktop/tests/pwa-s5a-live-https-audit.cjs
+          test -f docs/pwa-s5-acceptance.md
+          test -f docs/pwa-delivery.md
+      - name: Real TLS socket and isolated release-gate negatives
+        run: |
+          set -euo pipefail
+          openssl version
+          node --test desktop/tests/pwa-s5a-live-https-audit.cjs
+      - name: Verify release gates never claim installed mobile devices
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('node:fs')
+          const script = fs.readFileSync('desktop/scripts/pwa-s5a-live-https-audit.cjs', 'utf8')
+          const doc = fs.readFileSync('docs/pwa-s5-acceptance.md', 'utf8')
+          const ledger = fs.readFileSync('docs/pwa-delivery.md', 'utf8')
+          for (const s of ['NO_GO_PHYSICAL_INSTALL_NOT_RUN', 'NODE_TLS_REJECT_UNAUTHORIZED',
+            'physical_platforms', "redirect: 'manual'"]) {
+            if (!script.includes(s)) throw new Error('Missing S5 safety gate')
+          }
+          for (const name of ['iOS 27 Safari', 'iOS 27 Home Screen', 'Android Chrome',
+            'Android Installed', 'Desktop Chrome', 'Desktop Edge']) {
+            if (!doc.includes(name)) throw new Error('Missing required native platform')
+          }
+          if (!ledger.includes('PWA-S5-A1')) throw new Error('PWA delivery ledger not linked')
+          NODE

@@ -131,7 +131,7 @@ Read [docs/mobile-navigation-stability.md](docs/mobile-navigation-stability.md) 
 
 ## PWA safe-delivery policy (2026-10-12)
 
-The dedicated PWA audit and release gates are in [docs/pwa-delivery.md](docs/pwa-delivery.md). Preserve the 52px full-screen App Frame, the shared Web/Mobile Web Files/Gallery REST/controllers/ranges and existing durable Server tasks. Register only in a secure production Web context; never persist auth, API, thumbnails, original file bytes, downloads, Range or private Share responses in the public PWA Service Worker cache. Never auto-reload a running transfer/Viewer or claim iOS lock-screen background work. Treat installed-mode native-device acceptance separately from Manifest/source/Chromium tests. Keep PWA changes off unrelated performance/race/gallery branches.
+The dedicated PWA audit and release gates are in [docs/pwa-delivery.md](docs/pwa-delivery.md); platform-specific S5 real-device go/no-go records are in [docs/pwa-s5-acceptance.md](docs/pwa-s5-acceptance.md). A Linux HTTPS fixture or mobile UA simulation is never evidence of physical iOS 27/Android/Desktop Installed acceptance. Preserve the 52px full-screen App Frame, the shared Web/Mobile Web Files/Gallery REST/controllers/ranges and existing durable Server tasks. Register only in a secure production Web context; never persist auth, API, thumbnails, original file bytes, downloads, Range or private Share responses in the public PWA Service Worker cache. Never auto-reload a running transfer/Viewer or claim iOS lock-screen background work. Treat installed-mode native-device acceptance separately from Manifest/source/Chromium tests. Keep PWA changes off unrelated performance/race/gallery branches.
 
 ## Push/Pull apps and device-local backup ownership (2026-10-10)
 

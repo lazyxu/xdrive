@@ -554,3 +554,18 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 
 
 **B2 第七轮仅 Node 契约夹具重复残留（2026-10-16）：** 原唯一提交 `eebf4e42d40ffa940a1a38cf2add217514dc6219` 的 [专用 CI #38758909347](https://github.com/lazyxu/xdrive/actions/runs/38758909347) 在 Node 解析阶段失败，`SyntaxError: Unexpected token ')'`。详细审查已提交源文件发现第 67 行两个合法的 Node 测试结束后，错误地附加了一段旧的重复测试/断言片段（第 68–93 行），造成单独右括号并导致解析错误；本阶段的实际 Server/PG 恢复测试没有执行。这是测试文件拼接残留，不涉及产品代码。直接恢复**完整的、仅两项严格断言测试的规范文件**，移除末尾重复片段，并在提交前核实完整内容恰好两项测试、正确收尾、保留生产 Server/Node 触发器/锁因果/SIGKILL/回滚/Owner 断言。固定父提交不变，准确 HEAD 的专用 CI 与完整 CI/Final Gate 重新运行；旧 Head 红绿均不得混作本轮通过。
+
+
+## PWA-S4D3-B2 · 真实 cmd/server 中途事务 SIGKILL 恢复已合并（2026-10-16）
+
+[PR #1712](https://github.com/lazyxu/xdrive/pull/1712) 在准确工作 HEAD `22e65ce2e4deb2c9d6318805934198f928b31bcb` 的 [真实 Server binary/PostgreSQL17 专项 #38759388845](https://github.com/lazyxu/xdrive/actions/runs/38759388845) 成功后，经 [完整 GitHub PR CI #38759389440](https://github.com/lazyxu/xdrive/actions/runs/38759389440) 包括 Go race、Web、Desktop、Caddy、Windows/Linux 安装升级回滚和 Final Gate 全绿，rebase 合并到 `master@a4fcd497b0c9b56bb5198abf3c44177bf6878678`，唯一 PWA 临时分支已核实删除。隔离真实 PostgreSQL 测试在第 2 个合成目录的更新 AFTER 触发器中阻塞生产 Server SQL，实际 SIGKILL 整个产品 Server 进程，核验第一目录未提交事务回滚、新进程正常 main() 启动后两条原任务和 3 个节点最终正确仅一次完成，Owner 200/Foreign 404。该证据不等于真实 1–4GiB 文件字节进程中断、跨 Server 集群或 iOS 27/Android 安装模式。
+
+## PWA-S5-A1 · 实际可信 HTTPS Origin 预检及物理平台发布 NO-GO 门槛（2026-10-16）
+
+**本轮开始的固定基线：** GitHub `lazyxu/xdrive master@f8809ec7b2d42f2a4692b70032f4d3b2e1b0b6eb`，在 #1712 完整收尾/分支清理后选择，当前无待合并 PWA 分支。S5 必须严格按 [docs/pwa-s5-acceptance.md](docs/pwa-s5-acceptance.md) 平台对照表执行：Desktop Chrome Browser/Installed、Desktop Edge Installed、iOS 27 Safari/Home Screen、Android Chrome/Installed；**实际系统安装与手机锁屏**均保持 `NOT RUN`，不可用 Android UA 390px、PWA Manifest 或 `display-mode` 一项冒充。保留共同 52px App Frame、Web/Mobile Web 共用 REST/虚拟列表和 Server Durable Task 边界。
+
+**本阶段可执行交付：** 新增无第三方 npm 依赖的 `desktop/scripts/pwa-s5a-live-https-audit.cjs` CLI、真实 Linux HTTPS OpenSSL 临时证书/Node fetch/权限响应测试、独立精确 HEAD CI workflow、规范化 7 平台 S5 验收矩阵和本台账/AGENTS 入口。脚本只接受无凭据、无 query/hash/path 的可信 `https://` FQDN，拒绝 `NODE_TLS_REJECT_UNAUTHORIZED=0`，禁止 HTTP、域名伪装回环地址和自动重定向。依赖平台默认 TLS 主机名/证书链验证，不声明完成手机 OS 的根证书验证。匿名 HEAD 五项公开安装资源检查 MIME/nosniff/安全缓存头，受限大小真实 GET Manifest 校验 `id/start_url/scope/display/icons`，检查 HSTS、同源只读 readiness 和匿名两条私人 API 拒绝访问且不可缓存，不读取任何私人 API 正文。只输出固定状态码和 Origin SHA-256/测试时间，不存 JWT/Cookie/文件/证书，`--output` 生成 0600 独占脱敏 JSON。返回 `actual_https_preflight=pass/fail`；**所有情况下的 release_gate 都为 NO-GO**，直到独立手机及桌面实机证据完成。
+
+**证据与门槛：** 专用 CI 在真实 TLS socket 上安装仅测试的 OpenSSL 证书，用 `NODE_EXTRA_CA_CERTS` 让 Node 独立确认证书链和 IP SAN；若未信任证书、使用 HTTP、URI 中有密码或 Ticket、强行跳过 TLS、将 200 HTML 当 JS、公共资源被重定向、静态缓存策略错误、HSTS 缺失、匿名私人文件返回 200/可缓存，都必须出错且不得报告发布 GO。测试用 `XD_PWA_S5_FIXTURE=1 --fixture-loopback` 明确区分局部 fixture，**CI 的测试证书不是实际公网 HTTPS 部署记录**。不触碰生产 SW/Caddy/Auth/文件协议/UI/设备 Push 或无关 PR。固定基线**恰一工作提交**，测试与完整 CI Final Gate 在准确 HEAD 全绿后才能从 Draft 转 Ready、rebase merge 并清理分支；GitLab 未推送时不称已交付。
+
+**下一步 S5-A2：** 拿到用户真实部署实例的合法域名/信任的实际运行环境，运行该 CLI 的真实 Origin 模式，再分别在真实 iOS 27 Safari/Home Screen、Android Chrome/Installed 和 Desktop Chrome/Edge Installed 完成启动图标、首次登录/深链接、系统证书信任的取证。再推进 S5 网络、下载、上传、100k、锁屏、无障碍、版本/回滚。没有这些设备和 Origin 访问时不应人为填 PASS 或冒充测试执行。
