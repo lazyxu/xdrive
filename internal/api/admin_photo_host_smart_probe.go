@@ -101,10 +101,16 @@ func (s *Server) photoHostSmartProbe(
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
 		return "unverified", "unverified"
 	}
-	executed, fixtureMatched := runPhotoHostFixedSmartInferenceWithOCR(
-		ctx, checks[1], gate,
-		prober.ProbeSyntheticVisualOCR, s.PhotoSmartAnalyzer.Info,
-	)
+	var executed bool
+	var fixtureMatched *bool
+	if !s.photoHostRunAdmittedSyntheticInference(ctx, func(inferenceCtx context.Context) {
+		executed, fixtureMatched = runPhotoHostFixedSmartInferenceWithOCR(
+			inferenceCtx, checks[1], gate,
+			prober.ProbeSyntheticVisualOCR, s.PhotoSmartAnalyzer.Info,
+		)
+	}) {
+		return "unverified", "unverified"
+	}
 	if !executed {
 		return "failed", "unverified"
 	}

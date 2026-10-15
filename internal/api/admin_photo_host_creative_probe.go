@@ -86,10 +86,16 @@ func (s *Server) photoHostCreativeCutoutProbe(
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
 		return "unverified"
 	}
-	executed, err := runPhotoHostFixedCreativeInference(
-		ctx, checks[3], gate,
-		prober.ProbeSyntheticCutout, s.PhotoCreativeAnalyzer.Info,
-	)
+	var executed bool
+	var err error
+	if !s.photoHostRunAdmittedSyntheticInference(ctx, func(inferenceCtx context.Context) {
+		executed, err = runPhotoHostFixedCreativeInference(
+			inferenceCtx, checks[3], gate,
+			prober.ProbeSyntheticCutout, s.PhotoCreativeAnalyzer.Info,
+		)
+	}) {
+		return "unverified"
+	}
 	if errors.Is(err, photointelligence.ErrCreativeCutoutCanaryUnavailable) {
 		return "unverified"
 	}

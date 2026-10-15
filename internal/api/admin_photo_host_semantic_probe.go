@@ -130,10 +130,16 @@ func (s *Server) photoHostSemanticTextProbe(
 	photoHostSemanticProbeGate.lastAttempt = time.Now()
 	ctx, cancel := context.WithTimeout(parent, photoHostSemanticProbeTimeout)
 	defer cancel()
-	if !runPhotoHostSemanticTextInference(
-		ctx, checks[2], gate,
-		s.PhotoSemanticAnalyzer.EmbedText, s.PhotoSemanticAnalyzer.Info,
-	) {
+	var executed bool
+	if !s.photoHostRunAdmittedSyntheticInference(ctx, func(inferenceCtx context.Context) {
+		executed = runPhotoHostSemanticTextInference(
+			inferenceCtx, checks[2], gate,
+			s.PhotoSemanticAnalyzer.EmbedText, s.PhotoSemanticAnalyzer.Info,
+		)
+	}) {
+		return "unverified"
+	}
+	if !executed {
 		return "failed"
 	}
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {

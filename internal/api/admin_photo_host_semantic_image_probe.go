@@ -59,9 +59,15 @@ func (s *Server) photoHostSemanticImageProbe(
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
 		return "unverified"
 	}
-	if !runPhotoHostSemanticImageInference(
-		ctx, checks[2], gate, prober.ProbeSyntheticImage, s.PhotoSemanticAnalyzer.Info,
-	) {
+	var executed bool
+	if !s.photoHostRunAdmittedSyntheticInference(ctx, func(inferenceCtx context.Context) {
+		executed = runPhotoHostSemanticImageInference(
+			inferenceCtx, checks[2], gate, prober.ProbeSyntheticImage, s.PhotoSemanticAnalyzer.Info,
+		)
+	}) {
+		return "unverified"
+	}
+	if !executed {
 		return "failed"
 	}
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
