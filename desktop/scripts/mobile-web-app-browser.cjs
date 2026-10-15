@@ -2935,6 +2935,103 @@ async function filesIos27ChromeAcceptance(origin) {
       .map(key => key.slice(key.indexOf(' /api/'))).filter(Boolean))].sort(),
   };
   await filesIos27CollectionMenusAcceptance(origin);
+  await filesNavigationStabilityAcceptance(origin);
+}
+
+
+async function filesNavigationStabilityAcceptance(origin) {
+  // Built React/Chromium DOM and original shared REST adapter with controlled
+  // fixture responses. This is not iOS/Android or installed-PWA verification.
+  const box = element => element ? (() => {
+    const r = element.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  })() : null;
+  const stable = (a, b) => a && b &&
+    Math.abs(a.y-b.y)<=1 && Math.abs(a.height-b.height)<=1 &&
+    Math.abs(a.width-b.width)<=1;
+  for (const size of [{width:375,height:812},{width:390,height:844},{width:899,height:700}]) {
+    activeStage = 'user-files-navigation-stability-' + size.width;
+    await page.setViewportSize(size);
+    await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const folder = page.locator('[data-mobile-files-folder-id="2"]').first();
+    await folder.waitFor();
+    await settle();
+    const observe = () => page.evaluate(() => {
+      const rect = selector => {
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        const r=el.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+      };
+      const scroll = document.querySelector('[data-xdrive-mobile-files-scroll]');
+      const search = document.querySelector('[data-mobile-files-search-region]');
+      const loading = document.querySelector('[data-mobile-files-arrangement-status]');
+      return {
+        header:rect('[data-xdrive-mobile-app-header]'),
+        chrome:rect('[data-mobile-files-navigation-bar]'),
+        scroll:rect('[data-xdrive-mobile-files-scroll]'),
+        search:rect('[data-mobile-files-search-region]'),
+        scrollTop:scroll?.scrollTop ?? null,
+        searchPosition:search ? getComputedStyle(search).position : null,
+        searchTransition:search ? getComputedStyle(search).transitionDuration : null,
+        loadingPosition:loading ? getComputedStyle(loading).position : null,
+        scrollAnchor:scroll ? getComputedStyle(scroll).overflowAnchor : null,
+        owners:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      };
+    });
+    const original=await observe();
+    await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(el=>{el.scrollTop=65});
+    await page.waitForFunction(()=>document.querySelector('[data-xdrive-mobile-files-scroll]')?.scrollTop>=60);
+    await settle();
+    const moved=await observe();
+    check(activeStage+': fixed chrome and naturally scrolling search',
+      original.searchPosition==='relative' && original.searchTransition==='0s' &&
+      moved.search && original.search && moved.search.y<original.search.y-40 &&
+      moved.loadingPosition==='absolute' && moved.scrollAnchor==='none' &&
+      stable(original.header,moved.header) && stable(original.chrome,moved.chrome) &&
+      stable(original.scroll,moved.scroll), {original,moved});
+    await folder.click();
+    await page.waitForURL(/\/files\?dir=2$/);
+    await page.locator('[data-mobile-files-item]').filter({hasText:'nested-001.txt'}).first().waitFor();
+    await settle();
+    const child=await observe();
+    check(activeStage+': folder commit resets only the virtual anchor without frame jitter',
+      child.scrollTop===0 && child.owners===1 &&
+      stable(original.header,child.header) && stable(original.chrome,child.chrome) &&
+      stable(original.scroll,child.scroll), {original,child});
+    await page.getByRole('button',{name:'返回',exact:true}).click();
+    await page.waitForURL(/\/files\?dir=1$/);
+    await folder.waitFor();
+    await settle();
+    const parent=await observe();
+    check(activeStage+': parent back preserves fixed viewport and title',
+      parent.scrollTop===0 && parent.owners===1 &&
+      stable(original.header,parent.header) && stable(original.chrome,parent.chrome) &&
+      stable(original.scroll,parent.scroll), {original,parent});
+    if(size.width===390){
+      for(const section of ['recent','favorites','browse']){
+        await page.locator('[data-mobile-files-section="'+section+'"]').click();
+        await settle();
+        const next=await observe();
+        check(activeStage+': '+section+' in-app navigation keeps chrome fixed',
+          stable(original.header,next.header) && stable(original.chrome,next.chrome) &&
+          stable(original.scroll,next.scroll),next);
+      }
+      await navigateWorkspace('主页','overview');
+      const previousScroll=await page.locator('main').evaluate(el=>{
+        el.scrollTop=160;return el.scrollTop;
+      });
+      await navigateWorkspace('文件','files');
+      await page.locator('[data-xdrive-mobile-files]').waitFor();
+      await settle();
+      const nextMain=await page.locator('main').evaluate(el=>el.scrollTop);
+      check(activeStage+': app change does not reuse previous main scrollTop',
+        nextMain===0,{previousScroll,nextMain});
+    }
+    result.samples[activeStage]={original,moved,child,parent,realChromium:true,physicalDevice:false};
+    await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+  }
 }
 
 async function galleryIos27ViewerAcceptance(pointer) {

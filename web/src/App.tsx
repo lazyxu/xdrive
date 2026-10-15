@@ -545,6 +545,16 @@ function FileManager({
     () => (workspaceRouteKey as AppView | undefined) ?? 'overview',
   )
   const appView = (workspaceRouteKey as AppView | undefined) ?? lastWorkspaceView
+  // <main> survives app switches. A previous page's scrollTop must not shift
+  // the first frame of a different app. The Viewer is a sibling overlay and
+  // keeps the same appView, so its dedicated Gallery anchor remains intact.
+  const previousContentAppRef = useRef(appView)
+  useLayoutEffect(() => {
+    if (previousContentAppRef.current === appView) return
+    previousContentAppRef.current = appView
+    const main = document.querySelector<HTMLElement>('[data-xdrive-workspace-background] main')
+    if (main) main.scrollTop = 0
+  }, [appView])
   const viewerActive = Boolean(xDriveWebAppViewer(route.app))
   // A conservative PWA update/unload blocker: an open media editor might
   // contain unsaved edits even when its exact draft state is not observable.
