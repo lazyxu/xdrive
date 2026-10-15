@@ -1237,6 +1237,8 @@ class AnalyzerState:
 
     def info_with_session(self, info: dict[str, Any]) -> dict[str, Any]:
         response = {**info, "runtime_instance_id": self.runtime_instance_id}
+        # A local negative authentication observation, not a fleet admission fence.
+        response["private_bearer_auth_required"] = bool(self.token)
         with self._host_apply_lock:
             if self._host_apply_receipt is not None:
                 revision, request_id = self._host_apply_receipt

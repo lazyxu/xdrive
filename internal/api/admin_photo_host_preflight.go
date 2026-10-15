@@ -39,6 +39,7 @@ type adminPhotoHostPreflightDTO struct {
 	DurableWorkBlockerState     string                         `json:"durable_work_blocker_state"`
 	RuntimeWorkBlockerState     string                         `json:"runtime_work_blocker_state"`
 	ReplicaMembershipState      string                         `json:"replica_membership_blocker_state"`
+	PrivateIngressAuthState     string                         `json:"private_ingress_auth_blocker_state"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
@@ -225,6 +226,14 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 			report.SmartOCRFixtureState = "unverified"
 		}
 	}
+	// Negative-only: Bearer presence never proves all Unix callers or Server
+	// replicas hold the revision-fenced PostgreSQL shared admission lease.
+	report.PrivateIngressAuthState = photoHostPrivateIngressAuthBlockerState(
+		s.PhotoModelBearerConfigured,
+		s.PhotoFaceAnalyzer != nil || s.PhotoSmartAnalyzer != nil ||
+			s.PhotoSemanticAnalyzer != nil || s.PhotoCreativeAnalyzer != nil,
+		report.ModelInfoChecks,
+	)
 	if report.ModelRequestAckVerified {
 		report.Checks[6].Detail = "四类模型已确认同一次宿主请求；合成语义文本／图片、YuNet、SFace 固定向量、Smart 三模型、Creative 固定抠图执行状态分别显示；固定字形 OCR 匹配独立呈现，真实 OCR/SFace/创作效果、图库任务及全集群仍未验证"
 	} else if report.HostRevisionVerified {
