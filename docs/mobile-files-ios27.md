@@ -800,3 +800,16 @@ new Recent/Favorites **36px** fallback and normal List **36px** fallback
 without changing byte loading or the existing 68px virtual row.
 Amend the same single work commit on its frozen base and require new
 exact-head full CI, including the original test and genuine Chromium.
+
+
+## 2026-10-15 · Mobile Files folder and App navigation visual stability
+
+**Implementation phase: submitted for source-exact CI validation, not yet merged or verified on physical devices.** One shared Server/API/navigation/virtualization controller remains authoritative. This work removes a render-loop source in the responsive *presentation*, not a race/transfer/performance backend redesign. Follow the dedicated [navigation stability audit](mobile-navigation-stability.md).
+
+**Root cause evidence (source inspection):** the sticky Mobile Files search region used \`scrollTop > 48\` to animate \`max-height\`, opacity and padding in normal list flow. Shrinking that header changed the scroll geometry that computed \`scrollTop\`, creating an oscillation across the 48px threshold. When navigating to a folder, old parent/ancestor handlers immediately reset the old scroller to zero; after shared Server range + crumbs committed, folder Open's asynchronous completion reset it a second time. The conditional loading status also inserted a full row above the virtual list; repeated same-size ResizeObserver callbacks caused unnecessary viewport updates.
+
+**Corrective contract:** the search region has stable intrinsic height and naturally scrolls away; no scroll-driven height animation. Folder scroll resets only before paint upon the committed shared crumbs/range, preserving the visible parent while a new range is pending. Do not clobber Browse Home, Search, Trash, previously restored positions or the existing 688px last-folder anchor. Status during loading is an out-of-flow overlay; browser scroll anchoring is disabled on the controlled virtual-list element. ResizeObserver deduplicates dimensions. The shared App Frame resets old \`main.scrollTop\` only when the active *App changes*, not when the Gallery's Viewer opens/closes within the same App.
+
+**Verification:** original source-compiled mounted React regression cases in \`desktop/tests/mobile-files-ios-runtime.cjs\`; built production Web + real Chromium \`desktop/scripts/mobile-web-app-browser.cjs --scenario=files-ios27-chrome\` at 375/390/899, folder enter/Back, compact title/viewport geometry, natural search scroll, Browse/Recent/Favorites switching and cross-App scroll ownership. Existing wide 900px and controller tests must remain valid. A static contract alone is not full acceptance: physical iOS Safari/Android Chrome, keyboard/safe-area changes, installed PWA, real network slow/range failure, all admin/gallery/task surfaces and screen recordings remain separate Not measured requirements.
+
+**CI rule:** exact submitted work SHA must pass Web typecheck/build, desktop mounted tests, existing genuine Chromium Files acceptance and complete full PR final-gate. Only then Ready/linear merge/branch cleanup. Do not call a source-identified cause a statistically measured performance improvement without controlled BEFORE/AFTER traces.

@@ -189,7 +189,12 @@ test('F-iOS27-10D: compact location uses the title menu, not a separate recursiv
 
 test('iOS presentation keeps global Search semantics and does not change desktop view state', () => {
   assert.match(mobileSource, /搜索范围：全部文件（不限定当前文件夹）/)
-  assert.match(mobileSource, /maxHeight: scrollTop > 48/)
+  // The old scrollTop>48 shrinking sticky Search was a feedback loop: its
+  // animated height changed scrollTop while the virtual list was moving.
+  assert.match(mobileSource, /data-mobile-files-search-region/)
+  assert.match(mobileSource, /overflowAnchor: 'none'/)
+  assert.doesNotMatch(mobileSource, /maxHeight: scrollTop > 48|transition: 'max-height/,
+    'Search scrolls away without changing in-flow virtual list geometry')
   assert.match(mobileSource, /BLUE_FOLDER = '#4caddb'/)
   assert.match(mobileSource, /data-xdrive-mobile-folder-icon/)
   assert.match(mobileSource, /data-xdrive-mobile-document-icon/)

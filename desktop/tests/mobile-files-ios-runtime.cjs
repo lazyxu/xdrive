@@ -2578,3 +2578,105 @@ test('F-iOS27-10D: folder title opens ancestors without a second heading or path
     onCrumbClick: index => jumps.push(index),
   } })
 })
+
+
+test('Mobile Files search geometry remains stable while scrolling and loading ranges', async () => {
+  await withView(async h => {
+    const search = find(h.view, 'data-mobile-files-search-region', true)
+    assert.equal(search.props.sx.position, 'relative',
+      'a scrollTop-driven sticky max-height change caused old/native viewport bounce')
+    for (const animated of ['maxHeight', 'opacity', 'transition']) {
+      assert.equal(search.props.sx[animated], undefined,
+        'normal-flow search must never animate row geometry: ' + animated)
+    }
+    const host = find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+    assert.equal(host.props.sx.overflowAnchor, 'none',
+      'virtual collection, not UA scroll anchoring, must own the visible range')
+    await h.update({ loading: true })
+    const status = find(h.view, 'data-mobile-files-arrangement-status', true)
+    assert.equal(status.props.sx.position, 'absolute',
+      'range loading status may not push any of the virtual rows downward')
+    assert.equal(status.props.sx.display, 'block')
+    await h.update({ loading: false })
+    assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+  } })
+})
+
+test('Mobile Files does not reset the old directory before asynchronous child navigation commits', async () => {
+  let resolveNavigate
+  const navigation = new Promise(resolve => { resolveNavigate = resolve })
+  await withView(async h => {
+    const folder = find(h.view, 'data-mobile-files-folder-id', '2')
+    await act(async () => { folder.props.onClick() })
+    await h.update({ loading: true })
+    let saved = state.mobileFilesDecodeState(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 1,
+      'a pending folder request must not reassign the visible folder or its scroll')
+    await act(async () => { resolveNavigate(true); await navigation })
+    saved = state.mobileFilesDecodeState(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 1,
+      'an async folder Promise callback must not reset an old virtual viewport')
+    await h.update({
+      loading: false,
+      items: [{ id: 4, name: '子目录.txt', kind: 'file', revision: 1 }],
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    })
+    saved = state.mobileFilesDecodeState(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 2, 'new authoritative crumbs publish the committed navigation')
+    assert.equal(saved.scrollTop, 0, 'committed child directory owns a fresh top scroll')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }],
+    onOpenItem: () => navigation,
+  } })
+})
+
+test('Mobile parent and ancestor navigation preserve the old folder until shared contents commit', async () => {
+  let up = 0
+  const ancestors = []
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved().folderID, 2)
+    await act(async () => { find(h.view, 'aria-label', '返回').props.onClick() })
+    assert.equal(up, 1)
+    assert.equal(saved().folderID, 2, 'Back pending: do not persist the unconfirmed parent')
+    await h.update({ crumbs: [{ id: 1, name: '我的文件' }] })
+    assert.equal(saved().folderID, 1, 'Back committed: reset only once after the shared range')
+    await h.update({ crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }] })
+    await act(async () => {
+      find(h.view, 'data-mobile-files-location-trigger', true).props.onClick({ currentTarget: {} })
+    })
+    await act(async () => { find(h.view, 'data-mobile-files-crumb-id', '1').props.onClick() })
+    assert.deepEqual(ancestors, [0])
+    assert.equal(saved().folderID, 2, 'ancestor pending: retain the old folder')
+    await h.update({ crumbs: [{ id: 1, name: '我的文件' }] })
+    assert.equal(saved().folderID, 1, 'ancestor commits through the existing controller')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 2,
+    crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    onGoUp: () => { up += 1 },
+    onCrumbClick: index => ancestors.push(index),
+  } })
+})
+
+test('saved Mobile Browse resume must preserve the old 688px anchor instead of new-navigation zero', async () => {
+  await withView(async h => {
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 42)
+    assert.equal(saved.scrollTop, 688)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '旧位置' }],
+      onRestoreFolder: async () => {},
+    },
+  })
+})

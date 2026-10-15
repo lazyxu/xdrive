@@ -416,6 +416,9 @@ export default function MobileFiles(props: Props) {
   )
   const selection = [...selected.values()]
   const directoryID = Number(props.crumbs.at(-1)?.id ?? 0) || null
+  // The shared controller commits new crumbs and the first range together.
+  // Only that commit should reset a mounted directory's virtual viewport.
+  const lastCommittedDirectoryRef = useRef(directoryID)
   const selectionScopeKey = [
     props.lifecycleKey, directoryID ?? 0, section,
     props.trashActive, props.searchActive,
@@ -563,7 +566,7 @@ export default function MobileFiles(props: Props) {
     return () => { live = false }
   }, [storageKey, initial.folderID, props.requestedDirectoryID, persist])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!props.requestedDirectoryID || props.requestedDirectoryID === lastRequestedDirectoryRef.current) return
     lastRequestedDirectoryRef.current = props.requestedDirectoryID
     navigationIntentRef.current += 1
@@ -578,10 +581,42 @@ export default function MobileFiles(props: Props) {
     persist({ section: 'browse', folderID: props.requestedDirectoryID, scrollTop: 0 })
   }, [props.requestedDirectoryID, persist])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (lastCommittedDirectoryRef.current === directoryID) return
+    lastCommittedDirectoryRef.current = directoryID
+    // Browse Home, Recent/Favorites, Search, Trash and first-time saved scroll
+    // restoration have distinct navigation owners. Do not overwrite them.
+    if (!ready || section !== 'browse' || browseHome ||
+        props.trashActive || props.searchActive) return
+    // An initial restored Browse directory keeps its saved intra-directory
+    // scroll anchor. Only a subsequent user navigation starts at row zero.
+    if (!restoredScrollRef.current && initial.folderID !== null &&
+        directoryID === initial.folderID) return
+    if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+    scrollSaveRef.current = null
+    pendingScrollRef.current = null
+    pendingSectionScrollRef.current = null
+    browseScrollRef.current = 0
+    restoredScrollRef.current = true
+    const host = scrollHostRef.current
+    if (host) host.scrollTop = 0
+    setScrollTop(0)
+    if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
+  }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
+    initial.folderID, persist])
+
+  useLayoutEffect(() => {
+    // An identical ResizeObserver delivery must not re-render the 100k
+    // virtual collection or recalculate a newly mounted row window.
     const host = scrollHostRef.current
     if (!host) return
-    const resize = () => setViewport({ width: host.clientWidth, height: host.clientHeight })
+    const resize = () => {
+      const width = host.clientWidth
+      const height = host.clientHeight
+      if (width <= 0 || height <= 0) return
+      setViewport(previous => previous.width === width && previous.height === height
+        ? previous : { width, height })
+    }
     resize()
     if (typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(resize)
@@ -879,7 +914,10 @@ export default function MobileFiles(props: Props) {
     }
     const intent = ++navigationIntentRef.current
     void Promise.resolve(props.onOpenItem(item, ownerID)).then(accepted => {
-      if (accepted !== false && intent === navigationIntentRef.current && item.kind === 'dir') {
+      if (accepted !== false && intent === navigationIntentRef.current && item.kind === 'dir' &&
+          (section !== 'browse' || browseHome)) {
+        // An ordinary folder→folder transition was already reset pre-paint
+        // by the committed-crumb effect; do not reset a second time here.
         beginBrowse(Number(item.id))
       }
     }).catch(props.onOpenError)
@@ -925,11 +963,9 @@ export default function MobileFiles(props: Props) {
     // The cloud root and Browse home are distinct destinations.
     // A direct child goes up to the cloud root first, not straight Home.
     if (props.crumbs.length <= 1) { beginBrowse(null); return }
+    // The parent can fail or be superseded. Keep the current folder stable
+    // until shared navigation actually commits its authorized range/crumbs.
     props.onGoUp()
-    persist({ folderID: Number(props.crumbs[props.crumbs.length - 2].id), scrollTop: 0 })
-    browseScrollRef.current = 0
-    setScrollTop(0)
-    pendingSectionScrollRef.current = 0
   }
   const refresh = () => {
     if (section === 'recent') props.onRefreshRecent()
@@ -1628,6 +1664,7 @@ export default function MobileFiles(props: Props) {
       <Box ref={ownerRef} data-xdrive-mobile-files onKeyDown={handleFilesKeyboard} sx={{
         minHeight: 0, minWidth: 0, height: '100%', flex: 1,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        position: 'relative',
         bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
         fontFamily: IOS_FILES_MOBILE_FONT,
         '& .MuiTypography-root, & .MuiButton-root': { fontFamily: IOS_FILES_MOBILE_FONT },
@@ -1707,19 +1744,20 @@ export default function MobileFiles(props: Props) {
               }
             }
           }}
-          sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehaviorY: 'contain' }}>
+          sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehaviorY: 'contain',
+            overflowAnchor: 'none' }}>
           {!selectionActive && !editTitle && !showDirectory ? (
             <Box data-mobile-files-large-title sx={{ px: 2, pt: 1.75, pb: 0.5 }}>
               <Typography component="h2" sx={{ fontSize: 34, fontWeight: 730,
                 lineHeight: 1.22, letterSpacing: '-0.5px' }}>{heading}</Typography>
             </Box>
           ) : null}
-          <Box sx={{ position: 'sticky', top: 0, zIndex: 1,
-            bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff', px: 2,
-            py: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
-            maxHeight: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 198,
-            opacity: scrollTop > 48 && !props.searchValue && !props.searchActive ? 0 : 1,
-            overflow: 'hidden', transition: 'max-height .16s ease, opacity .16s ease, padding .16s ease' }}>
+          <Box data-mobile-files-search-region sx={{ position: 'relative', zIndex: 1,
+            bgcolor: theme => theme.palette.mode === 'dark' ? '#000000' : '#ffffff',
+            px: 2, py: 1 }}>
+            {/* Search scrolls away naturally. Shrinking a sticky header's
+                max-height at scrollTop=48 used to modify scrollTop itself,
+                producing a visible bounce and repeat-triggering the collapse. */}
             <Stack direction="row" spacing={0.5} alignItems="center">
             <TextField inputRef={searchInputRef} size="small" fullWidth value={props.searchValue}
               placeholder="搜索全部文件"
@@ -1837,8 +1875,13 @@ export default function MobileFiles(props: Props) {
                   搜索范围：全部文件（不限定当前文件夹）
                 </Typography>
               ) : null}
-              <Typography data-mobile-files-arrangement-status variant="caption" color="text.secondary" sx={{ px: 2, display: props.loading ? 'block' : 'none', pb: 1 }}>
-                {props.loading ? '正在加载…' : `${totalCount} 个项目`} · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
+              <Typography data-mobile-files-arrangement-status variant="caption"
+                color="text.secondary" role="status" aria-live="polite"
+                sx={{ position: 'absolute', top: 117, right: 12, zIndex: 2,
+                  pointerEvents: 'none', borderRadius: '999px',
+                  bgcolor: 'background.paper', boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
+                  px: 1.25, py: 0.5, display: props.loading ? 'block' : 'none' }}>
+                正在加载… · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {props.loading && totalCount === 0 ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress size={24}/></Box> : null}
               {totalCount === 0 && !props.loading ? <Typography sx={{ p: 4 }} color="text.secondary">这里还没有文件</Typography> : null}
@@ -1994,10 +2037,9 @@ export default function MobileFiles(props: Props) {
               onClick={() => {
                 setLocationMenuAnchor(null)
                 if (index === props.crumbs.length - 1) return
+                // Do not scroll the still-visible child while an ancestor
+                // navigation is awaiting its Server-authoritative commit.
                 props.onCrumbClick(index)
-                browseScrollRef.current = 0
-                setScrollTop(0)
-                scrollHostRef.current?.scrollTo({ top: 0 })
               }}>
               <ListItemIcon><FolderRoundedIcon sx={{ color: IOS_FILES_MOBILE_BLUE }}/></ListItemIcon>
               <Typography noWrap>{crumb.name || '根目录'}</Typography>
