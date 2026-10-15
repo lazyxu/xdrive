@@ -83,6 +83,10 @@ func (a *UnixFaceAnalyzer) Info(
 type FaceDetectorCanary struct {
 	DetectorExecuted bool `json:"detector_executed"`
 	FaceCount        int  `json:"face_count"`
+
+	// Nil means an old model has supplied no SFace inference evidence.
+	// No face embedding or landmarks are returned from this canary.
+	SFaceEmbeddingValid *bool `json:"sface_embedding_valid,omitempty"`
 }
 
 // ProbeSyntheticFaceDetection uses only a fixed authenticated Unix GET.

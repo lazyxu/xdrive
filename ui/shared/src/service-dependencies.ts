@@ -290,6 +290,9 @@ export type XDrivePhotoHostPreflight = {
   // YuNet executed on fixed NON-person pixels; zero faces is acceptable.
   // Not a SFace identification, real-photo or model accuracy proof.
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
+  // Fixed non-person SFace feature vector validation, not genuine face
+  // recognition correctness or identification of any person.
+  sface_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   // Synthetic classifier, PP-OCR detector and CRNN calls executed; no
   // classification or OCR accuracy / real media / fleet claim.
   smart_model_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'

@@ -37,13 +37,15 @@ func TestUnixFaceAnalyzerContract(t *testing.T) {
 			case "/v1/info":
 				_ = json.NewEncoder(w).Encode(info)
 			case "/v1/face-detector-canary":
+				validEmbedding := true
 				if r.Method != http.MethodGet || r.URL.RawQuery != "" ||
 					r.ContentLength > 0 {
 					t.Fatal("fixed detector canary must be a body-free GET")
 				}
 				_ = json.NewEncoder(w).Encode(FaceDetectorCanary{
-					DetectorExecuted: true,
-					FaceCount:        0,
+					DetectorExecuted:    true,
+					FaceCount:           0,
+					SFaceEmbeddingValid: &validEmbedding,
 				})
 			case "/v1/analyze":
 				if r.Method != http.MethodPost {
@@ -110,7 +112,8 @@ func TestUnixFaceAnalyzerContract(t *testing.T) {
 		t.Fatalf("info=%+v", gotInfo)
 	}
 	canary, err := analyzer.ProbeSyntheticFaceDetection(context.Background())
-	if err != nil || !canary.DetectorExecuted || canary.FaceCount != 0 {
+	if err != nil || !canary.DetectorExecuted || canary.FaceCount != 0 ||
+		canary.SFaceEmbeddingValid == nil || !*canary.SFaceEmbeddingValid {
 		t.Fatalf("fixed detector canary result=%+v, err=%v", canary, err)
 	}
 	faces, err := analyzer.Analyze(
@@ -171,5 +174,24 @@ func TestUnixFaceAnalyzerRejectsOversizedResponse(t *testing.T) {
 	}
 	if _, err := analyzer.Info(context.Background()); err == nil {
 		t.Fatal("oversized analyzer response was accepted")
+	}
+}
+
+func TestUnixFaceCanarySFaceEvidenceIsStrictAndOptional(t *testing.T) {
+	var legacy FaceDetectorCanary
+	if err := json.Unmarshal([]byte(`{"detector_executed":true,"face_count":0}`), &legacy); err != nil ||
+		legacy.SFaceEmbeddingValid != nil {
+		t.Fatalf("legacy Face model must stay unknown: %+v %v", legacy, err)
+	}
+	for _, raw := range []string{
+		`{"sface_embedding_valid":"true"}`,
+		`{"sface_embedding_valid":1}`,
+		`{"sface_embedding_valid":[]}`,
+		`{"sface_embedding_valid":{}}`,
+	} {
+		var value FaceDetectorCanary
+		if err := json.Unmarshal([]byte(raw), &value); err == nil {
+			t.Fatalf("malformed SFace response accepted: %s", raw)
+		}
 	}
 }

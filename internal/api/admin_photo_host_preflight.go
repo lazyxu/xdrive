@@ -39,6 +39,7 @@ type adminPhotoHostPreflightDTO struct {
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
+	SFaceTaskState              string                         `json:"sface_task_state"`
 	SmartModelTaskState         string                         `json:"smart_model_task_state"`
 	SmartOCRFixtureState        string                         `json:"smart_ocr_fixture_state"`
 }
@@ -136,6 +137,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	report.SemanticTextTaskState = "unverified"
 	report.SemanticImageTaskState = "unverified"
 	report.FaceDetectorTaskState = "unverified"
+	report.SFaceTaskState = "unverified"
 	report.SmartModelTaskState = "unverified"
 	report.SmartOCRFixtureState = "unverified"
 	if hasGate && photoHostModelInfoAllowed(desired, gate, hasGate, s.photoHostApplyReceipt(gate)) {
@@ -185,7 +187,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		report.SemanticImageTaskState = s.photoHostSemanticImageProbe(
 			c.Request.Context(), desired, gate, report.ModelInfoChecks,
 		)
-		report.FaceDetectorTaskState = s.photoHostFaceDetectorProbe(
+		report.FaceDetectorTaskState, report.SFaceTaskState = s.photoHostFaceDetectorProbe(
 			c.Request.Context(), desired, gate, report.ModelInfoChecks,
 		)
 		report.SmartModelTaskState, report.SmartOCRFixtureState = s.photoHostSmartProbe(
@@ -203,12 +205,13 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 			report.SemanticTextTaskState = "unverified"
 			report.SemanticImageTaskState = "unverified"
 			report.FaceDetectorTaskState = "unverified"
+			report.SFaceTaskState = "unverified"
 			report.SmartModelTaskState = "unverified"
 			report.SmartOCRFixtureState = "unverified"
 		}
 	}
 	if report.ModelRequestAckVerified {
-		report.Checks[6].Detail = "四类模型已确认同一次宿主请求；合成语义文本／图片、YuNet、Smart 三模型执行状态分别显示；固定字形 OCR 匹配状态独立呈现，真实 OCR 准确率、SFace、创作、真实图库及全集群仍未验证"
+		report.Checks[6].Detail = "四类模型已确认同一次宿主请求；合成语义文本／图片、YuNet、SFace 固定向量、Smart 三模型执行状态分别显示；固定字形 OCR 匹配状态独立呈现，真实 OCR 准确率、SFace、创作、真实图库及全集群仍未验证"
 	} else if report.HostRevisionVerified {
 		report.Checks[6].Detail = "宿主请求令牌与目标修订已核验；模型请求回执尚未完成独立核验，不能证明同源请求确认或真实媒体任务成功"
 	}
