@@ -1,5 +1,7 @@
 # Gallery performance
 
+> **2026-10-15 交付校正（原始基准未重复执行）：** Mobile Web 390px Gallery P048 100k逻辑滚动→Go Context.Done原版有效n3 12/12，最大32.757ms，160ms后遗留Handler0、废弃字节0B，原版无需优化（AFTER=N/A）。准确归档HEAD [专项 #38724105938](https://github.com/lazyxu/xdrive/actions/runs/38724105938) 与[完整 #38724106044](https://github.com/lazyxu/xdrive/actions/runs/38724106044)（含final-gate）成功，PR [#1672](https://github.com/lazyxu/xdrive/pull/1672) 已线性合入且旧分支清理。下文旧“Draft/待复验”属于实验当时阶段；iOS/Android真机、安装态PWA与Live Motion连续播放仍Not measured。[六平台矩阵](performance-platform-coverage.md)。
+
 ## P0 · P041 / M001-d 390px Mobile Web Gallery real H264 cold/warm video poster baseline (2026-10-13)
 
 **Status: Accepted measured original CURRENT n3 (native #38335130028 / full CI #38335130399 both success), final evidence-head CI pending; BEFORE = original CURRENT, AFTER=N/A / speedup=N/A; no production optimization.** P033 Wide Web real H264 thumbnail generation already passed and P036 Mobile Web real 100k JPEG/Live still already passed; this **new platform+media path** combines actual 390px narrow shared Gallery VirtualGrid with real H264 video-to-poster capture. It cannot be called PWA installed on Android/iOS, real phone, full 52px Mobile App Frame, actual paired Live Motion playback, HEVC/RAW/LIVP decoder, nor 30k separately encoded H264 video scenes.
