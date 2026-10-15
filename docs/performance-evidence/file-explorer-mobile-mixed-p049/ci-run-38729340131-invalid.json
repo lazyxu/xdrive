@@ -1,0 +1,52 @@
+{
+  "workload_id": "P049 / M002-d",
+  "classification": "Invalid harness; valid viewport samples=0; not a production performance RED",
+  "run_id": 38729340131,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38729340131",
+  "full_ci_run_id": 38729340392,
+  "job_id": 116402961454,
+  "test_source_head": "3ac8059750d5afe457608420f42c2b809f86b12b",
+  "platform": "390px Chromium hosted in Linux Electron; NOT actual installed Android/iOS PWA",
+  "test_only_native_fixture_completed": true,
+  "verified_seed": {
+    "logicalPhotoAssets": 100000,
+    "distinctPhysicalOriginals": 115000,
+    "casOriginalBytes": 149285128,
+    "pairedLiveGroups": 15000,
+    "physicalSampleReadbacks": 12,
+    "fullSeedMsExcludedFromViewportTimer": 122498.147
+  },
+  "observed_failure": {
+    "viewport": "grid 0%",
+    "error": "timeout waiting for required actual decoded JPEG tiles at FileExplorer grid viewport 0",
+    "validViewportCount": 0,
+    "observedNativeHTTP": "10 signed /api/v1/media/items/:id/thumbnail HTTP404 for cold uncached video poster",
+    "reason": "Test-only shared Web FileExplorer adapter did not capture H264 video preview frames and cache JPEG posters before requiring decoded visible Live-motion tile; HTTP404 is the expected production video cold-cache behavior.",
+    "code": "No production source modified, no valid timing baseline established."
+  },
+  "full_ci_regression": {
+    "failing_job": "desktop-tests",
+    "failed_case": "P039 uses real 390px shared Mobile Web FileExplorer with the already accepted 100k physical JPEG CAS fixture",
+    "failure": "static contract expects literal fresh.length<requiredDecoded, newly introduced mixed driver uses semantically equivalent minimumDecoded for default legacy P039 path",
+    "status": "test-only source contract mismatch; not production performance RED"
+  },
+  "budget_frozen": {
+    "n": 3,
+    "viewsPerFixture": 2,
+    "viewportFractions": [
+      0,
+      0.25,
+      0.5,
+      0.75,
+      0.95
+    ],
+    "maxDecodedViewportMs": 20000,
+    "maxGoInFlight": 6,
+    "maxRssGrowthBytesEach": 268435456,
+    "maxNonCanceled5xx": 0
+  },
+  "before": null,
+  "after": null,
+  "speedup": null,
+  "next_action": "Use authenticated actual video preview tickets and source bytes to decode H264 frames in Chromium and persist the actual JPEG via production video-poster PUT, verify readback; preserve P039 legacy 4-JPEG budget; rerun original n3 with valid result and archive all raw JSON."
+}

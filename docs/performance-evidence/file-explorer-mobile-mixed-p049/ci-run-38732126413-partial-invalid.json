@@ -1,0 +1,95 @@
+{
+  "workload": "P049",
+  "source_sha": "64b2fd5f77c55d77cb814588e16e4fbc5820a7ad",
+  "run_id": 38732126413,
+  "status": "Invalid harness, valid full n3=0; 15 recorded successful viewports, second Details warm cache redundant POST assertion",
+  "n3_fixtures_complete": 1,
+  "rows": [
+    {
+      "sample": 1,
+      "view": "grid",
+      "viewportMs": [
+        360.2201300000015,
+        306.8035550000059,
+        263.6247169999988,
+        305.9270919999981,
+        305.4056430000055
+      ],
+      "visibleKinds": [
+        "liveMotion",
+        "liveStill",
+        "photo",
+        "photo",
+        "video"
+      ],
+      "goMax": 6,
+      "serverNonCanceled5xx": 0,
+      "rendererGrowthBytes": 68452352,
+      "realH264Frames": 13,
+      "actualPosterPuts": 13,
+      "actualPosterReadbacks": 13,
+      "actualSignedVideoBytes": 59400
+    },
+    {
+      "sample": 1,
+      "view": "details",
+      "viewportMs": [
+        320.2984290000022,
+        257.10899400000926,
+        256.8606679999939,
+        307.31218799999624,
+        262.87252900001477
+      ],
+      "visibleKinds": [
+        "liveMotion",
+        "liveStill",
+        "photo",
+        "photo",
+        "video"
+      ],
+      "goMax": 6,
+      "serverNonCanceled5xx": 0,
+      "rendererGrowthBytes": 73461760,
+      "realH264Frames": 8,
+      "actualPosterPuts": 6,
+      "actualPosterReadbacks": 6,
+      "actualSignedVideoBytes": 32670
+    },
+    {
+      "sample": 2,
+      "view": "grid",
+      "viewportMs": [
+        369.9687219999614,
+        308.2199869999895,
+        255.31399299995974,
+        306.9164570000139,
+        307.6265860000276
+      ],
+      "visibleKinds": [
+        "liveMotion",
+        "liveStill",
+        "photo",
+        "photo",
+        "video"
+      ],
+      "goMax": 6,
+      "serverNonCanceled5xx": 0,
+      "rendererGrowthBytes": 69611520,
+      "realH264Frames": 13,
+      "actualPosterPuts": 13,
+      "actualPosterReadbacks": 13,
+      "actualSignedVideoBytes": 53460
+    }
+  ],
+  "actual_raw_artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38732126413/artifacts/11970612923",
+  "budget": {
+    "n": 3,
+    "positions_per_fixture": 10,
+    "max_ms": 20000,
+    "max_go_http": 6,
+    "max_rss_growth_bytes": 268435456
+  },
+  "before": null,
+  "after": null,
+  "speedup": null
+}

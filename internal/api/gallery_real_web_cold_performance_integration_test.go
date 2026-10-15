@@ -187,6 +187,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 			w.Header().Set("Cache-Control", "no-store")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"token":              token,
+				"folder_id":          folder.ID,
 				"logical_assets":     mediaGalleryFirstOpenLogicalCount,
 				"physical_nodes":     mediaGalleryFirstOpenPhysical,
 				"live_photo_groups":  mediaGalleryFirstOpenLivePhotos,
@@ -255,6 +256,7 @@ func TestGalleryRealWebColdFixture100K(t *testing.T) {
 	defer httpServer.Close()
 	ready := map[string]any{
 		"url":                httpServer.URL,
+		"folder_id":          folder.ID,
 		"live_photo_groups":  mediaGalleryFirstOpenLivePhotos,
 		"physical_mode":      physicalViewportMode,
 		"physical_sources":   physicalReport.PhysicalSources,
