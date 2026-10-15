@@ -466,13 +466,23 @@ async function loadLoginHistory(): Promise<LoginHistory> {
 }
 
 async function saveLoginHistory() {
-  const dir = app.getPath('userData')
-  await mkdir(dir, { recursive: true })
-  await writeFile(
-    path.join(dir, loginHistoryName),
-    JSON.stringify(loginHistory, null, 2) + '\n',
-    { encoding: 'utf8', mode: 0o600 },
-  )
+  // Freeze each accepted login-history snapshot before an asynchronous write.
+  // Use a queue owned by this function so overlapping saves cannot finish out
+  // of order and resurrect a credential after a newer clear-password action.
+  const snapshot = JSON.stringify(loginHistory, null, 2) + '\n'
+  const writer = saveLoginHistory as typeof saveLoginHistory & { pending?: Promise<void> }
+  const pending = (writer.pending ?? Promise.resolve()).then(async () => {
+    const dir = app.getPath('userData')
+    await mkdir(dir, { recursive: true })
+    await writeFile(
+      path.join(dir, loginHistoryName),
+      snapshot,
+      { encoding: 'utf8', mode: 0o600 },
+    )
+  })
+  // Do not lose this caller's error or poison future independent saves.
+  writer.pending = pending.catch(() => {})
+  await pending
 }
 
 function securePasswordStorageAvailable() {
