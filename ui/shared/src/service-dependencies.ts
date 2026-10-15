@@ -281,6 +281,9 @@ export type XDrivePhotoHostPreflight = {
   // All four Info endpoints echo the same audited model-side host request.
   // This is request acknowledgment, NOT a successful model/media task.
   model_request_ack_verified?: boolean
+  // Running persisted photo analyses, clustering or queued/running Creative
+  // can block stop; no rows/old Server/DB errors NEVER prove fleet idle.
+  durable_work_blocker_state?: 'blocked' | 'unverified'
   // Only ONE fixed synthetic semantic text inference; not a media/image,
   // Face, OCR, Creative, fleet activation or safe-stop proof.
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
