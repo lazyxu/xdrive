@@ -3309,6 +3309,7 @@ jobs:
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-selection-') ||
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
+           startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
@@ -3389,6 +3390,7 @@ jobs:
           github.event_name == 'pull_request' &&
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
+           startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         shell: bash
@@ -3421,6 +3423,7 @@ jobs:
           always() && github.event_name == 'pull_request' &&
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
+           startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         with:
