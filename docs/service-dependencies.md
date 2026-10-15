@@ -832,3 +832,24 @@ Following the #1713 manual-canary admission merge (exact-head full GitHub CI/fin
 Evidence is intentionally limited to the **foreground Rank text inference**. Already-cached vectors perform no new inference; the existing early model `Info` is not a positive host effect/drain check. Private/direct Face/Smart/Semantic/Creative call sites and older Server versions have NOT yet been exhaustively fenced, and no immutable expected-member epoch, administrator-authorized freeze writer or positive all-instance drain ACK exists. The four model activation states remain `deployment-only`, global effect proof remains `unknown`, Host Manager stays **enable-only**, and no host disable/restart/apply API or new service UI is added. Next P1-PH1b3a2b2b2c inventories remaining direct model-dependent ingress and fences it; operator membership and auditable CAS freeze/ACK are separate P1-PH1b3a2b2c prerequisites before any P1-PH1b3b reversible stop.
 
 Acceptance is exact one-commit full GitHub CI/Final Gate, isolated PostgreSQL tests for live shared-vs-exclusive lock, frozen/unfrozen/missing migration, aborted request and one-connection no-leak, plus actual Gallery semantic integration and shared Desktop source contract. Physical multi-Server Rootless drain, iOS/Android and GitLab validation are still separate.
+
+## P1-PH1b3a2b2b2c1 (2026-10-16): Go model inference ingress registry
+
+After merged #1716 (exact-head full 76-job GitHub CI + final-gate), the existing `photo-host:admission:v1` gate protects the three enumerated **runtime** categories listed below, but does not constitute a complete host stop/drain barrier. The new mandatory Desktop `admin-photo-host-ingress-inventory.cjs` source contract enumerates exactly ten direct Go analyzer selectors/method values in `internal/api`, `internal/photointelligence` and `cmd/server`; unknown additions fail the review/CI contract rather than silently enlarging trusted inference ingress.
+
+| Selector / source file | Actual known ingress | Existing bounded admission owner |
+| --- | --- | --- |
+| `r.Analyzer.Analyze` — `face_runner.go` | Photo face owner batch | `photoHostOwnerAdmissionLeaseProvider` in `photo_intelligence_scheduler.go` |
+| `r.Analyzer.Analyze` — `smart_runner.go` | Smart/OCR owner batch | Same scheduler shared session admission + per-owner task lease |
+| `r.Analyzer.EmbedImage` — `semantic_runner.go` | Semantic image owner batch | Same scheduler shared session admission + per-owner task lease |
+| `s.PhotoCreativeAnalyzer.Generate` — `media_creative.go` | Four queued Creative generations | `photoHostCreativeAdmissionLeaseProvider` around the complete scheduled run |
+| `a.SemanticAnalyzer.EmbedText` — `media_semantic_search_admission.go` | Authenticated foreground Gallery text cache miss | `photoHostRunAdmittedSyntheticInference` six-second child context, original SQL shared session + heartbeat |
+| `s.PhotoSemanticAnalyzer.EmbedText` — `admin_photo_host_semantic_probe.go` | Fixed administrator semantic text canary | Existing explicit-click shared model-local canary gate |
+| `prober.ProbeSyntheticImage` — `admin_photo_host_semantic_image_probe.go` | Fixed semantic image canary | Same model-local canary gate |
+| `prober.ProbeSyntheticFaceDetection` — `admin_photo_host_face_detector_probe.go` | Fixed YuNet/SFace canary | Same model-local canary gate |
+| `prober.ProbeSyntheticVisualOCR` — `admin_photo_host_smart_probe.go` | Fixed Smart/OCR canary | Same model-local canary gate |
+| `prober.ProbeSyntheticCutout` — `admin_photo_host_creative_probe.go` | Fixed Creative cutout canary | Same model-local canary gate |
+
+**Important limitations:** this is a syntactic regression inventory, not a complete dynamic call graph. It intentionally does not prove model invocation through unknown aliased receivers, dynamic interface dispatch or new packages, private Python photo-face-analyzer HTTP ingress, older unfenced Server replicas, all task admission points, deployment membership epochs, or positive all-member drain ACK. The checks do not add a new public REST/IPC endpoint or touch Docker, Model Host or user Sources. They cannot authorize `stop`, `restart`, `disable` or `freeze`, and global `effect-proof=unknown`, four `activation_state=deployment-only` and Host Manager **enable-only** remain in force. A future P1-PH1b3a2b2b2c2 must audit private model service routes and dynamically reachable callers; P1-PH1b3a2b2c requires the authenticated revision-CAS freeze writer, immutable expected-replica membership epoch and positive drain ACK before P1-PH1b3b may consider reversible stop.
+
+Acceptance: exact ten observed selector entries, explicit guard/lease association, no new stop routes, Node Desktop regression running in full CI, and exact-head `single-commit` + `final-gate` before merge. Native iOS/Android, multi-Server Rootless and GitLab execution are independent later gates.
