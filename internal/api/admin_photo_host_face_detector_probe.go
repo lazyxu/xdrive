@@ -100,10 +100,16 @@ func (s *Server) photoHostFaceDetectorProbe(
 	if !s.photoHostSemanticEvidenceCurrent(ctx, desired, gate, checks) {
 		return "unverified", "unverified"
 	}
-	executed, embeddingValid := runPhotoHostFixedFaceDetectorInferenceWithSFace(
-		ctx, checks[0], gate,
-		prober.ProbeSyntheticFaceDetection, s.PhotoFaceAnalyzer.Info,
-	)
+	var executed bool
+	var embeddingValid *bool
+	if !s.photoHostRunAdmittedSyntheticInference(ctx, func(inferenceCtx context.Context) {
+		executed, embeddingValid = runPhotoHostFixedFaceDetectorInferenceWithSFace(
+			inferenceCtx, checks[0], gate,
+			prober.ProbeSyntheticFaceDetection, s.PhotoFaceAnalyzer.Info,
+		)
+	}) {
+		return "unverified", "unverified"
+	}
 	if !executed {
 		return "failed", "unverified"
 	}

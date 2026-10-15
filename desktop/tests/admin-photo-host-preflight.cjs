@@ -233,3 +233,22 @@ test('Photo Host production Scheduler and Creative workloads use the same sessio
   assert.match(creative, /Lease:\s+s\.photoHostCreativeAdmissionLeaseProvider\(taskKey\)/)
   assert.doesNotMatch(leases, /http\.|gin\.|Docker|Host Manager|stopHost|restartHost/)
 })
+
+test('five administrator model-local canaries hold shared SQL admission during inference', () => {
+  const guard = read('internal/api/admin_photo_host_inference_admission.go')
+  const stages = [
+    'internal/api/admin_photo_host_semantic_probe.go',
+    'internal/api/admin_photo_host_semantic_image_probe.go',
+    'internal/api/admin_photo_host_face_detector_probe.go',
+    'internal/api/admin_photo_host_smart_probe.go',
+    'internal/api/admin_photo_host_creative_probe.go',
+  ]
+  assert.ok(guard.includes('tryAcquirePhotoHostAdmission(parent, s.DB)'))
+  assert.ok(guard.includes('lease.Heartbeat(parent)'))
+  assert.ok(guard.includes('lease.Close()'))
+  for (const path of stages) {
+    assert.ok(read(path).includes('s.photoHostRunAdmittedSyntheticInference('), path)
+  }
+  assert.ok(!guard.includes('http.ListenAndServe'))
+  assert.ok(!guard.includes('docker run'))
+})
