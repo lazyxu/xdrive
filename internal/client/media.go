@@ -1011,6 +1011,40 @@ func (c *Client) MediaPlacesPage(ctx context.Context, limit, offset int) (MediaP
 	return out, err
 }
 
+type MediaPlacesViewportBounds struct {
+	West  float64
+	South float64
+	East  float64
+	North float64
+}
+
+type MediaPlacesViewportPage struct {
+	Items           []MediaPlaceFacet `json:"items"`
+	TotalCount      int64             `json:"total_count"`
+	TotalPhotoCount int64             `json:"total_photo_count"`
+	Offset          int               `json:"offset"`
+	Limit           int               `json:"limit"`
+	HasMore         bool              `json:"has_more"`
+}
+
+// A3b3a1 common authenticated transport. Desktop will expose it only
+// through its existing Agent IPC boundary; never embed a Browser AK.
+func (c *Client) MediaPlacesViewport(
+	ctx context.Context, bounds MediaPlacesViewportBounds, limit, offset int,
+) (MediaPlacesViewportPage, error) {
+	values := url.Values{}
+	values.Set("west", strconv.FormatFloat(bounds.West, 'f', -1, 64))
+	values.Set("south", strconv.FormatFloat(bounds.South, 'f', -1, 64))
+	values.Set("east", strconv.FormatFloat(bounds.East, 'f', -1, 64))
+	values.Set("north", strconv.FormatFloat(bounds.North, 'f', -1, 64))
+	values.Set("limit", strconv.Itoa(limit))
+	values.Set("offset", strconv.Itoa(offset))
+	var out MediaPlacesViewportPage
+	err := c.json(ctx, http.MethodGet,
+		"/api/v1/media/places/viewport?"+values.Encode(), nil, &out)
+	return out, err
+}
+
 func (c *Client) MediaPlaces(ctx context.Context, limit int) ([]MediaPlaceFacet, error) {
 	values := url.Values{}
 	if limit > 0 {

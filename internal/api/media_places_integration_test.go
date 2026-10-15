@@ -289,6 +289,39 @@ func TestMediaPlacesFacetAndFilterShareOneGridContract(t *testing.T) {
 	otherLat, otherLon := 45.013, -73.456
 	addGPSAsset("other-owner.jpg", &otherLat, &otherLon, other.ID, otherRoot.ID)
 
+	// A3b3a1: the same Owner-filtered 0.01-degree cell grouping is now
+	// selectable by map viewport without ever materializing every photo.
+	fullViewport := mediaPlaceViewportBounds{West: -180, South: -90, East: 180, North: 90}
+	visible, err := queryMediaPlacesViewport(context.Background(), db, owner.ID, fullViewport, 5, 0)
+	if err != nil || visible.TotalCount != 31 || visible.TotalPhotoCount != 32 ||
+		len(visible.Items) != 5 || !visible.HasMore {
+		t.Fatalf("full viewport=%+v error=%v", visible, err)
+	}
+	empty, err := queryMediaPlacesViewport(context.Background(), db, owner.ID,
+		mediaPlaceViewportBounds{West: -74, South: 44, East: -72, North: 46}, 64, 0)
+	if err != nil || empty.TotalCount != 0 || empty.TotalPhotoCount != 0 ||
+		len(empty.Items) != 0 || empty.HasMore {
+		t.Fatalf("foreign-owner viewport=%+v error=%v", empty, err)
+	}
+	foreign, err := queryMediaPlacesViewport(context.Background(), db, other.ID,
+		mediaPlaceViewportBounds{West: -74, South: 44, East: -72, North: 46}, 64, 0)
+	if err != nil || foreign.TotalCount != 1 || foreign.TotalPhotoCount != 1 {
+		t.Fatalf("second owner viewport=%+v error=%v", foreign, err)
+	}
+	zeroViewport, err := queryMediaPlacesViewport(context.Background(), db, owner.ID,
+		mediaPlaceViewportBounds{West: -1, South: -1, East: 1, North: 1}, 64, 0)
+	if err != nil || zeroViewport.TotalCount != 1 || zeroViewport.TotalPhotoCount != 1 ||
+		len(zeroViewport.Items) != 1 || zeroViewport.Items[0].ID != "place:0:0" {
+		t.Fatalf("zero-location viewport=%+v error=%v", zeroViewport, err)
+	}
+	wrapped, err := queryMediaPlacesViewport(context.Background(), db, owner.ID,
+		mediaPlaceViewportBounds{West: 170, South: 89, East: -170, North: 90}, 64, 0)
+	if err != nil || wrapped.TotalCount != 1 || wrapped.TotalPhotoCount != 1 ||
+		len(wrapped.Items) != 1 || wrapped.Items[0].ID != "place:9000:18000" ||
+		wrapped.Items[0].SampleLatitude != 90 || wrapped.Items[0].SampleLongitude != 180 {
+		t.Fatalf("wrapped dateline viewport=%+v error=%v", wrapped, err)
+	}
+
 	const expectedCells = 31 // 2 existing, 27 extra, zero and 90/180
 	gotCells := make(map[string]bool)
 	for offset := 0; offset < expectedCells; offset += 24 {
