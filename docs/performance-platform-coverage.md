@@ -93,3 +93,13 @@ P048的100k是**逻辑项/元数据**，不等于100k不同物理CAS、全量缩
 
 **P050 Wide Web 真实完整n3结果（2026-10-15）：** 三组PG17/Gin/Local CAS各115k SHA不同物理JPEG/H264/Live原片，每组六个独立Grid/Details可见视频海报和JPEG滚动位置共30/30达标，Grid五位置跨轮P50**663.716ms**、Details **485.783ms**，最慢单视口**727.933ms**；Go同时HTTP thumbnail最多6、非取消5xx为0、最大挂载DOM121、Renderer RSS增长峰值122,597,376B、Go RSS增长峰值479,232B。真实网络thumbnail GET共576次、472,389B，冷H264原片受权读取/帧解码/海报CAS PUT与热Details的缓存GET均通过。[原始n3记录](performance-evidence/file-explorer-wide-mixed-p050/ci-run-38745263789/summary.json)、[原始CI](https://github.com/lazyxu/xdrive/actions/runs/38745263789)。**Accepted原版CURRENT，AFTER=N/A**；准确HEAD专项 #38748158459 与完整 #38748158841 双绿，#1709已合入。P038 Desktop、P049 Mobile Web是不同客户端，即使布局共享也不可跨端计算提速。真实 OS安装 Desktop/Android/iOS PWA保持`Not measured`；所有平台“已测”标签仅代表该行精确定义的样本真实性与链路层。
 
+
+## P051 / M004-e · 4GiB高熵CAS六平台验收状态（2026-10-16）
+
+| 场景 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 真实非稀疏4GiB高熵文件上传/下载、源CAS SHA、完整字节校验 | P045 #1637 Merged；历史P50 **55.087/21.969s** | P044 #1631 Merged；历史P50 **48.509/18.417s** | **P051原版 CURRENT有效n3（交付待准确证据HEAD CI）**：390px真实窄屏Chromium（外框390、文档360–390CSSpx）、n3×512 PUT×4GiB源与完整OPFS校验已冻结，源码`9f2b6b56`原始native #38758949429真实3/3成功：上传/下载P50 **47.804/17.587s**、全OPFS 4GiB逐字节一致、innerWidth390/documentWidth375，Go/Renderer RSS增长达标 | **Not measured** | **Not measured**（需Android真机安装） | **Not measured**（需iOS Safari主屏幕安装） |
+
+**准确边界：** P051 Chrome/Electron承载真实窄视口，而非Android/iOS实体机、OS安装PWA或完整Mobile Files App Frame。不可把P044/P045数字当P051新跑分或速度提升。冻结每方向≤360秒、Go/Renderer内存增长各≤256MiB、源分配≥98%、每组PUT512/GET1、3组SHA不同、全4GiB OPFS真实比对。慢网中断、Task Center取消及100k真实物理文件同步/GUI删除仍为 Not measured。来源：[登记簿](performance-test-registry.md)和[FileExplorer专项](file-explorer-performance.md)。
+
+**P051更新结果：** 已归档原始[3组机器JSON与source压缩包](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/raw-n3.tar.gz)及[可读指标](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/metrics.json)，原始[专项CI #38758949429](https://github.com/lazyxu/xdrive/actions/runs/38758949429) success。`P051 Mobile Web 390px`已取得原版Linux Chromium性能，不得与P044 1280px宽屏Web、P045 Desktop Agent的历史结果横向算提速。Desktop installed PWA、Android installed PWA、iOS installed PWA仍全部**Not measured**；当前工作提交仅性能测量及归档、未改真实上传下载业务逻辑，AFTER=N/A。准确证据HEAD专项及完整CI/final-gate成功前PR仍保持Draft。

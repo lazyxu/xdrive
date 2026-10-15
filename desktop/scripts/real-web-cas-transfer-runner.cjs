@@ -22,6 +22,9 @@ const sizes = { gib: sizeGiB, bytes: sizeGiB * 2 ** 30, putCount: sizeGiB * 128 
 const maxDirectionMs = sizeGiB === 4 ? 360000 : 240000
 const fullPwaReadback = process.env.XD_PWA_FULL_OPFS_READBACK === '1'
 const highEntropyIncompressible = process.env.XD_REAL_CAS_INCOMPRESSIBLE_PERF === '1'
+const mobileWebViewport = process.env.XD_REAL_WEB_CAS_MOBILE_VIEWPORT === '1'
+assert(!mobileWebViewport || (highEntropyIncompressible && sizeGiB === 4 && !fullPwaReadback),
+  'P051 Mobile Web must preserve real 4GiB high-entropy CAS and full OPFS parity')
 assert(!(fullPwaReadback && highEntropyIncompressible),
   'PWA sparse-zero release check and incompressible physical throughput are separate workloads')
 const trials = fullPwaReadback ? 1 : 3
@@ -157,6 +160,14 @@ async function sampleTrial(index,tmp) {
       assert.equal(result.sizeBytes,sizes.bytes)
       assert.equal(result.realServerCAS,true)
       assert.equal(result.scenario,mode)
+      if(mobileWebViewport){
+        const viewport=result.mobileViewportEvidence
+        assert.equal(result.surface,'mobile-web-chromium-390px')
+        assert(viewport && viewport.mobileBreakpoint===true, 'real narrow Chromium breakpoint absent')
+        assert(viewport.innerWidth>=360 && viewport.innerWidth<=390 &&
+          viewport.documentWidth>=360 && viewport.documentWidth<=390,
+          'actual document/client CSS viewport outside 360..390px')
+      }
       assert(result.elapsedMs>0&&Number.isFinite(result.elapsedMs))
       assert(result.rendererWorkingSetDeltaKB >= 0,'Chromium renderer RSS growth unavailable')
       assert(result.rendererWorkingSetDeltaKB <= 256*1024,
@@ -246,7 +257,9 @@ async function main() {
       console.log('REAL_WEB_CAS_SAMPLE '+JSON.stringify(sample))
     }
     const result={
-      name:`real-web-xdriveapi-postgres17-local-cas-${sizeGiB}gib-${highEntropyIncompressible?'aes256ctr-high-entropy':'sparse-zero'}-upload-download`,
+      name:`${mobileWebViewport?'real-mobile-web-390px':'real-web'}-xdriveapi-postgres17-local-cas-${sizeGiB}gib-${highEntropyIncompressible?'aes256ctr-high-entropy':'sparse-zero'}-upload-download`,
+      mobileWebViewport,
+      platformMode:mobileWebViewport?'mobile-web-chromium-390px':'wide-web-chromium',
       highEntropyIncompressible,
       ...(fullPwaReadback ? { pwaFullOPFSReadback: true, downloadFullVerifiedBytes: sizes.bytes } : {}),
       status:'CURRENT/BEFORE only - no production optimization',
@@ -267,11 +280,12 @@ async function main() {
         browserWorkingSetDeltaMaxMiB:256,serverRSSPeakGrowthMaxMiB:256,
         uploadHTTPPutCount:sizes.putCount,downloadHTTPGetCount:1,
         spotCheckThreeDistinctMiB:true,
+        ...(mobileWebViewport ? {actualDocumentWidthMin:360,actualDocumentWidthMax:390,mobileBreakpointRequired:true} : {}),
         ...(fullPwaReadback ? {fullOPFSReadbackBytes:sizes.bytes} : {})
       },
       passed:true,
       boundary:highEntropyIncompressible
-        ? `Authentic Chromium Web XDriveApi upload/download + OPFS + Gin/PG17/physical CAS; ${sizeGiB}GiB actually allocated AES-256-CTR high-entropy input, SHA-256 physical seed equals uploaded CAS node and full returned OPFS bytes independently checked chunk-by-chunk after timed download. Local Linux loopback; not WAN, installed PWA, Android/iOS physical phone, Desktop Agent, pause/resume, durable Task Center cancel or 100k-file sync/delete.`
+        ? `Authentic ${mobileWebViewport?'390px narrow Mobile Web Chromium (Electron-hosted renderer; NOT phone or installed PWA)':'Chromium Web'} XDriveApi upload/download + OPFS + Gin/PG17/physical CAS; ${sizeGiB}GiB actually allocated AES-256-CTR high-entropy input, SHA-256 physical seed equals uploaded CAS node and full returned OPFS bytes independently checked chunk-by-chunk after timed download. Local Linux loopback; not WAN, installed PWA, Android/iOS physical phone, Desktop Agent, pause/resume, durable Task Center cancel or 100k-file sync/delete.`
         : fullPwaReadback
           ? `PWA release gate: authentic Chromium->Gin/PostgreSQL17/Local CAS->OPFS; every one of ${sizes.bytes} downloaded sparse-zero fixture bytes reread and compared with expected zero after timed transfer. Not a browser computed SHA256, physical iOS/Android, arbitrary-media integrity, WAN or native download. No durable Task Center abort.`
           : `Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
