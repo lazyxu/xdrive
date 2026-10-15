@@ -107,6 +107,12 @@ function fixtureFor(request, role) {
     case 'GET /api/v1/me/quota': return plain({ quota_bytes: 10737418240, physical_used_bytes: 1048576, reserved_bytes: 0, available_bytes: 10736369664, logical_file_bytes: 1048576, trash_bytes: 0, history_bytes: 0, over_quota: false });
     case 'GET /api/v1/nodes/root': return plain(rootNode);
     case 'GET /api/v1/background-tasks/active-summary': return plain({ active_total: 0, file_operation: 0, sync_run: 0, archive_prepare: 0, scheduler: 0 });
+    case 'GET /api/v1/media/selection-jobs':
+      // Real global Task Center reads this bounded owner-scoped list when
+      // switching from Files. No mutation, polling mock or fake result.
+      assert(filesIos27ChromeScenario,
+        'media selection-job fixture is only for the mixed Files cross-app UI');
+      return plain([]);
     case 'GET /api/v1/file-operations':
       queryOnly(url, ['limit']); integerQuery(url, 'limit', 100, 200); return galleryIos27ViewerScenario ? galleryViewerDeleteFixture.operations : filesIos27ChromeScenario ? filesIos27Fixture.operations : filesOperationsScenario || filesTouchDragScenario ? operationFixture.operations : [];
     case 'POST /api/v1/file-operations': {
@@ -355,14 +361,16 @@ function fixtureFor(request, role) {
       assert.equal(role, 'admin');
       return plain({ supported: true, state: 'idle', source: 'github', channel: 'master', backup_file_data: false });
     case 'GET /api/v1/media/items': {
+      // Cross-App P5 enters the real Mobile Gallery from Files in the same
+      // browser: accept its existing strictly validated Library range query.
       queryOnly(url, [
         'range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone',
         ...(mobilePanelsScenario ? ['tag'] : []),
-        ...((galleryIos27Fixture || gallerySelectionScenario) ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
+        ...((galleryIos27Fixture || gallerySelectionScenario || filesIos27ChromeScenario) ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
       ]);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
       assert.equal(url.searchParams.get('sort_by') || 'captured', 'captured');
-      if ((galleryIos27Fixture || gallerySelectionScenario)) {
+      if ((galleryIos27Fixture || gallerySelectionScenario || filesIos27ChromeScenario)) {
         // Current Mobile Library defaults to ascending captured time with the
         // newest range initially at the bottom; this is not legacy desktop desc.
         const direction = url.searchParams.get('sort_dir') || 'asc';
@@ -379,9 +387,9 @@ function fixtureFor(request, role) {
       }
       assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
       const limit = integerQuery(url, 'limit', 200, 500);
-      const latest = (galleryIos27Fixture || gallerySelectionScenario) && url.searchParams.has('initial_position');
+      const latest = (galleryIos27Fixture || gallerySelectionScenario || filesIos27ChromeScenario) && url.searchParams.has('initial_position');
       if (latest) assert.equal(url.searchParams.get('initial_position'), 'latest');
-      const anchorRaw = (galleryIos27Fixture || gallerySelectionScenario) ? url.searchParams.get('anchor_node_id') : null;
+      const anchorRaw = (galleryIos27Fixture || gallerySelectionScenario || filesIos27ChromeScenario) ? url.searchParams.get('anchor_node_id') : null;
       let anchorIndex = null;
       if (anchorRaw !== null) {
         assert.match(anchorRaw, /^[1-9]\d*$/, 'explicit anchor must be a positive canonical Node ID');
@@ -659,7 +667,10 @@ function fixtureFor(request, role) {
     // The current single Web Gallery always carries a canonical revision in
     // iOS27 Mobile/Viewer and the real built-Web selection flow alike.
     // Keep unknown-param rejection and exact Node revision/MIME validation.
-    queryOnly(url, (galleryIos27Fixture || gallerySelectionScenario) ? ['v', 'revision'] : ['v']);
+    // Preserve the legacy explicit selection/IOS27 source contract while
+    // allowing this controlled Files-to-Gallery QA branch its real revision.
+    queryOnly(url, (galleryIos27Fixture || gallerySelectionScenario)
+      ? ['v', 'revision'] : filesIos27ChromeScenario ? ['v', 'revision'] : ['v']);
     // The real Go Server selects transparent-capable PNG v4 cache keys,
     // while ordinary JPEG retains v3. Do not resurrect a stale global v3
     // fixture or waive unknown-request auditing to make Chrome appear green.
@@ -1837,14 +1848,26 @@ async function mobilePanelsAcceptance() {
 
 async function navigateWorkspace(label, app) {
   await settle();
-  let button = page.getByRole('button', { name: label, exact: true });
+  // Transfer count badges are part of the accessible name (e.g. "任务 4").
+  // Use the same real app action, not an exact-label-only synthetic shortcut.
+  const buttonName = app === 'transfers' ? /^任务(?:\s+\d+)?$/ : label;
+  const nameOptions = typeof buttonName === 'string'
+    ? { name: buttonName, exact: true } : { name: buttonName };
+  let button = page.getByRole('button', nameOptions);
   if (!await button.isVisible()) {
     const floating = page.getByRole('button', { name: '打开应用导航', exact: true });
     await (await floating.isVisible() ? floating : page.getByRole('button', { name: '更多', exact: true })).click();
-    button = page.getByRole('dialog').getByRole('button', { name: label, exact: true });
+    button = page.getByRole('dialog').getByRole('button', nameOptions);
   }
   await button.click();
-  await page.waitForURL((url) => url.hash === `#/app/${app}` || url.hash.startsWith(`#/app/${app}?`));
+  // A hash-routed SPA can have long-running thumbnail/task requests; waiting
+  // for a full page 'load' event may time out after the route already changed.
+  // The UI workspace key 'transfers' has canonical public route 'tasks'.
+  // Compare canonical App URLs, never a private Sidebar destination key.
+  const routeApp = app === 'transfers' ? 'tasks' : app;
+  await page.waitForFunction((expectedApp) =>
+    location.hash === `#/app/${expectedApp}` ||
+    location.hash.startsWith(`#/app/${expectedApp}?`), routeApp);
   // Wait for the real Drawer exit transition before measuring/clicking the
   // destination. A still visible backdrop makes Playwright scroll/retry taps.
   await page.locator('.MuiDrawer-root').waitFor({ state: 'hidden' });
@@ -2939,6 +2962,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesNavigationStabilityAcceptance(origin);
   await filesDeferredDeepLinkAcceptance(origin);
   await filesGoToPathBrowserStabilityAcceptance(origin);
+  await filesCrossAppFrameStabilityAcceptance(origin);
 }
 
 
@@ -3225,6 +3249,86 @@ async function filesGoToPathBrowserStabilityAcceptance(origin) {
     firstRangeDeliberatelyHeld: true, liveGoServer: false, physicalDevice: false,
   };
   await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
+}
+
+async function filesCrossAppFrameStabilityAcceptance(origin) {
+  // Actual built Chromium at two compact breakpoints. This is a visual
+  // navigation probe, not physical iOS/Android/PWA or frame-time benchmark.
+  const bounds = () => page.evaluate(() => {
+    const rect = selector => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const r = node.getBoundingClientRect();
+      return { x:r.x, y:r.y, width:r.width, height:r.height };
+    };
+    const main = document.querySelector('main');
+    return {
+      hash: location.hash,
+      appFrame: rect('[data-xdrive-mobile-app-frame]'),
+      appHeader: rect('[data-xdrive-mobile-app-header]'),
+      main: rect('main'),
+      mainTop: main?.scrollTop ?? null,
+      mainMaxTop: main ? Math.max(0, main.scrollHeight - main.clientHeight) : null,
+      galleryTiles: document.querySelectorAll('[data-xdrive-media-tile]').length,
+      documentOverflow: {
+        width: document.documentElement.scrollWidth - innerWidth,
+        height: document.documentElement.scrollHeight - innerHeight,
+      },
+      filesHostCount: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+    };
+  });
+  const stable = (a,b) => a && b &&
+    Math.abs(a.x-b.x)<=1 && Math.abs(a.y-b.y)<=1 &&
+    Math.abs(a.width-b.width)<=1 && Math.abs(a.height-b.height)<=1;
+  for (const viewport of [{width:390,height:844},{width:899,height:700}]) {
+    activeStage = 'user-mobile-cross-app-frame-stability-' + viewport.width;
+    await page.setViewportSize(viewport);
+    await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+    await settle();
+    const first = await bounds();
+    check(activeStage + ': file app begins with a fixed compact frame',
+      first.appHeader && first.appFrame && first.main &&
+      first.appHeader.height >= 52 && first.filesHostCount === 1,
+      first);
+    const transitions = [
+      {label:'图库',app:'gallery',selector:'[data-xdrive-media-tile]'},
+      {label:'任务',app:'transfers'},
+      {label:'云端存储',app:'cloud-storage'},
+      {label:'主页',app:'overview'},
+      {label:'文件',app:'files',selector:'[data-xdrive-mobile-files-scroll]'},
+    ];
+    const samples=[{destination:'files-initial',...first}];
+    for (const transition of transitions) {
+      await navigateWorkspace(transition.label,transition.app);
+      if (transition.selector) await page.locator(transition.selector).first().waitFor();
+      await settle();
+      const sample=await bounds();
+      samples.push({destination:transition.app,...sample});
+      const routeApp = transition.app === 'transfers' ? 'tasks' : transition.app;
+      check(activeStage + ': ' + transition.app + ' keeps App Header and scroll frame stable',
+        sample.hash.startsWith('#/app/' + routeApp) &&
+        stable(first.appHeader,sample.appHeader) &&
+        stable(first.appFrame,sample.appFrame) &&
+        stable(first.main,sample.main) &&
+        // Gallery's own authorized latest-photo anchor starts near the bottom
+        // (e.g. 9914px); app-level zeroing it would break iOS Photos parity.
+        // All other apps must start at main=0 after a real app switch.
+        (transition.app === 'gallery'
+          ? sample.galleryTiles > 0 && sample.mainTop >= 0 &&
+            sample.mainMaxTop !== null && sample.mainTop <= sample.mainMaxTop + 1
+          : sample.mainTop === 0) &&
+        sample.documentOverflow.width <= 1 &&
+        sample.documentOverflow.height <= 1,
+        sample);
+    }
+    check(activeStage + ': returning Files creates one authoritative virtual scroll owner',
+      samples.at(-1).filesHostCount === 1 && samples.at(-1).hash.startsWith('#/app/files'),
+      samples.at(-1));
+    result.samples[activeStage]={viewport,samples,realChromium:true,physicalDevice:false};
+    await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+  }
 }
 
 async function galleryIos27ViewerAcceptance(pointer) {

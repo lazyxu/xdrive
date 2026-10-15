@@ -3310,6 +3310,7 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
@@ -3391,6 +3392,7 @@ jobs:
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         shell: bash
@@ -3424,6 +3426,7 @@ jobs:
           (startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-compact-folder-list-') ||
            startsWith(github.head_ref, 'test/mobile-files-path-real-chromium-stability-') ||
+           startsWith(github.head_ref, 'test/mobile-cross-app-frame-stability-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-'))
         with:
