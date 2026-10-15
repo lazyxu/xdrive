@@ -396,6 +396,9 @@ export default function MobileFiles(props: Props) {
   const browseScrollRef = useRef(initial.scrollTop)
   const pendingSectionScrollRef = useRef<number | null>(null)
   const navigationIntentRef = useRef(0)
+  // A typed path is only a navigation intent until shared authorized crumbs
+  // and its counted first range commit. Retain old section/scroll meanwhile.
+  const pendingPathOriginRef = useRef<{ directoryID: number | null } | null>(null)
   const searchReturnHomeRef = useRef(initial.folderID === null)
   const restoreFolderRef = useRef(props.onRestoreFolder)
   restoreFolderRef.current = props.onRestoreFolder
@@ -597,22 +600,26 @@ export default function MobileFiles(props: Props) {
     lastCommittedDirectoryRef.current = directoryID
     const routedCommit = Boolean(props.requestedDirectoryID &&
       directoryID === props.requestedDirectoryID)
+    const pathCommit = pendingPathOriginRef.current !== null &&
+      pendingPathOriginRef.current.directoryID !== directoryID
+    if (pathCommit) pendingPathOriginRef.current = null
+    const authorizedCommit = routedCommit || pathCommit
     // A deep link opened from Browse Home/Recent/Favorites must enter Browse
     // only AFTER its authorized directory is genuinely visible. This state
     // update is pre-paint, so no intermediate wrong-folder frame is exposed.
-    if (routedCommit) {
+    if (authorizedCommit) {
       setSection('browse')
       setBrowseHome(false)
       setReady(true)
     }
-    if ((!ready && !routedCommit) ||
-        ((section !== 'browse' || browseHome) && !routedCommit) ||
+    if ((!ready && !authorizedCommit) ||
+        ((section !== 'browse' || browseHome) && !authorizedCommit) ||
         props.trashActive || props.searchActive) return
     // On normal last-folder restoration, keep its saved intra-row anchor.
     // An explicit fresh deep link to that same ID is a new top-of-folder
     // navigation, not a restoration of the previous 688px scroll position.
     if (!restoredScrollRef.current && initial.folderID !== null &&
-        directoryID === initial.folderID && !routedCommit) return
+        directoryID === initial.folderID && !authorizedCommit) return
     if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
     scrollSaveRef.current = null
     pendingScrollRef.current = null
@@ -886,6 +893,7 @@ export default function MobileFiles(props: Props) {
     }
   }
   const beginBrowse = (id: number | null = null) => {
+    pendingPathOriginRef.current = null
     flushBrowseScroll()
     navigationIntentRef.current += 1
     setEditBrowseHome(false)
@@ -908,10 +916,18 @@ export default function MobileFiles(props: Props) {
     const target = goToPathDraft.trim()
     if (!target || !props.onPathSubmit || props.trashActive) return
     setGoToPathOpen(false)
-    // This is navigation, not Search and not an internal FileExplorer tab.
-    // Show the existing Browse context; the shared workspace resolves the
-    // canonical path, authorizes it and owns errors and navigation history.
-    beginBrowse(directoryID)
+    // A path lookup may fail, be canceled, or take time to reach the Server.
+    // Do not reset the current virtual scroll or reveal Browse on intent.
+    // The committed-crumb layout effect performs that once the shared
+    // controller has accepted the authorized destination.
+    if (section === 'browse' && browseHome && directoryID !== null) {
+      // Existing Browse Home has no visible directory scroll to preserve.
+      // Keep its original explicit-path entry into the current Browse root.
+      beginBrowse(directoryID)
+    } else {
+      navigationIntentRef.current += 1
+      pendingPathOriginRef.current = { directoryID }
+    }
     props.onPathSubmit(target)
   }
   const onOpenEntry = (item: XDriveFileExplorerItem, ownerID?: number) => {
@@ -944,6 +960,7 @@ export default function MobileFiles(props: Props) {
     }).catch(props.onOpenError)
   }
   const changeSection = (next: MobileFilesSection) => {
+    pendingPathOriginRef.current = null
     flushBrowseScroll()
     navigationIntentRef.current += 1
     if (props.trashActive) {

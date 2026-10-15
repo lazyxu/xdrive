@@ -2751,3 +2751,87 @@ test('P2: same-directory explicit URL can reveal Browse Home without a second Se
     assert.equal(persisted.section, 'browse')
   }, { props: { crumbs: [{ id: 1, name: '我的文件' }] } })
 })
+
+
+test('P3: Go-to-Path pending or failed lookup must retain the visible folder and saved scroll', async () => {
+  const requested = []
+  const initial = { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' }
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved().folderID, 42)
+    assert.equal(saved().scrollTop, 688)
+    await act(async () => {
+      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
+    })
+    const entry = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    assert.ok(entry)
+    await act(async () => { entry.props.onClick() })
+    const input = find(h.view, 'aria-label', '文件夹路径')
+    await act(async () => {
+      input.props.onChange({ target: { value: '我的文件/不存在的目录' } })
+    })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    assert.ok(form)
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.deepEqual(requested, ['我的文件/不存在的目录'])
+    assert.equal(saved().folderID, 42, 'pending path cannot overwrite the original folder')
+    assert.equal(saved().scrollTop, 688, 'pending path cannot snap the original folder to top')
+    await h.update({ loading: true })
+    assert.equal(saved().scrollTop, 688)
+    await h.update({ loading: false })
+    assert.equal(saved().scrollTop, 688, 'failed lookup preserves the saved anchor')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: initial,
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '当前文件夹' }],
+      onRestoreFolder: async () => {},
+      onPathSubmit: path => { requested.push(path) },
+    },
+  })
+})
+
+test('P3: Go-to-Path from Recent keeps the old rail until destination directory commits', async () => {
+  const requested = []
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await act(async () => {
+      find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} })
+    })
+    const entry = h.view.root.findAll(node => node.type === 'MenuItem' &&
+      node.props?.children === '前往文件夹路径…')[0]
+    await act(async () => { entry.props.onClick() })
+    await act(async () => {
+      find(h.view, 'aria-label', '文件夹路径').props.onChange({
+        target: { value: '我的文件/子目录' },
+      })
+    })
+    const form = h.view.root.findAll(node => node.type === 'Box' &&
+      node.props?.component === 'form' && node.props?.onSubmit)[0]
+    await act(async () => { form.props.onSubmit({ preventDefault() {} }) })
+    assert.deepEqual(requested, ['我的文件/子目录'])
+    assert.equal(saved().section, 'recent', 'unverified path must not reveal the Browse rail')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 77, name: '已授权子目录' }],
+      items: [{ id: 99, name: '完成.txt', kind: 'file', revision: 1 }],
+    })
+    assert.equal(saved().section, 'browse', 'successful committed directory reveals Browse')
+    assert.equal(saved().folderID, 77)
+    assert.equal(saved().scrollTop, 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    props: {
+      requestedDirectoryID: 1,
+      crumbs: [{ id: 1, name: '我的文件' }],
+      onPathSubmit: path => { requested.push(path) },
+    },
+  })
+})
