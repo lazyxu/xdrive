@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, Ref } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded'
@@ -78,6 +78,14 @@ export function XDriveMobileGalleryChrome({
   const [sortAnchor, setSortAnchor] = useState<HTMLElement | null>(null)
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const [jumpDay, setJumpDay] = useState('')
+  // FreeSolo Autocomplete owns typed drafts. The parent timeZone prop is the
+  // last authorized/committed zone, not an optimistic owner Range intent.
+  const [timeZoneInput, setTimeZoneInput] = useState(timeZone)
+  useLayoutEffect(() => {
+    // Update the visible input before paint when an authorized first Range
+    // commits a new zone; a failed/superseded request leaves it unchanged.
+    setTimeZoneInput(timeZone)
+  }, [timeZone])
   const searchHost = useRef<HTMLDivElement>(null)
   const onFilterOpenRef = useRef(onFilterOpen)
   const panelViewport = useXDriveMobilePanelViewport(searchOpen || moreOpen)
@@ -413,8 +421,17 @@ export function XDriveMobileGalleryChrome({
             {!collectionsOverview && onTimeZoneChange ? (
               <Autocomplete freeSolo size="small"
                 options={xDriveMediaTimeZoneChoices()} value={timeZone}
+                inputValue={timeZoneInput}
+                onInputChange={(_event, input, reason) => {
+                  if (reason === 'input') setTimeZoneInput(input)
+                }}
                 onChange={(_event, value) => {
-                  if (typeof value === 'string') onTimeZoneChange(value)
+                  if (typeof value === 'string') {
+                    // Selecting a draft starts the authenticated new owner
+                    // Range but must not advertise that zone as effective.
+                    setTimeZoneInput(timeZone)
+                    onTimeZoneChange(value)
+                  }
                 }}
                 renderInput={(params) => (
                   <TextField {...params} label="日期时区" aria-label="移动图库日期时区" />

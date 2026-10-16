@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav', 'gallery-ios27-media-type-nav', 'gallery-ios27-person-index-nav', 'gallery-ios27-place-index-nav', 'gallery-ios27-refresh-nav', 'gallery-ios27-filter-nav', 'gallery-ios27-album-library-nav', 'gallery-ios27-fold-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav, or gallery-ios27-media-type-nav, or gallery-ios27-person-index-nav, or gallery-ios27-place-index-nav, or gallery-ios27-refresh-nav, or gallery-ios27-filter-nav, or gallery-ios27-album-library-nav, or gallery-ios27-fold-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav', 'gallery-ios27-media-type-nav', 'gallery-ios27-person-index-nav', 'gallery-ios27-place-index-nav', 'gallery-ios27-refresh-nav', 'gallery-ios27-filter-nav', 'gallery-ios27-album-library-nav', 'gallery-ios27-fold-nav', 'gallery-ios27-time-zone-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav, or gallery-ios27-media-type-nav, or gallery-ios27-person-index-nav, or gallery-ios27-place-index-nav, or gallery-ios27-refresh-nav, or gallery-ios27-filter-nav, or gallery-ios27-album-library-nav, or gallery-ios27-fold-nav, or gallery-ios27-time-zone-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -51,6 +51,7 @@ const gallerySortNavigationScenario = options.scenario === 'gallery-ios27-sort-n
 const galleryRefreshNavigationScenario = options.scenario === 'gallery-ios27-refresh-nav';
 const galleryFilterNavigationScenario = options.scenario === 'gallery-ios27-filter-nav';
 const galleryFoldNavigationScenario = options.scenario === 'gallery-ios27-fold-nav';
+const galleryTimeZoneNavigationScenario = options.scenario === 'gallery-ios27-time-zone-nav';
 const galleryMediaTypeNavigationScenario = options.scenario === 'gallery-ios27-media-type-nav';
 const galleryPersonNavigationScenario = options.scenario === 'gallery-ios27-person-nav';
 const galleryPersonIndexNavigationScenario = options.scenario === 'gallery-ios27-person-index-nav';
@@ -65,7 +66,7 @@ const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
-const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryAlbumLibraryNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryFilterNavigationScenario || galleryFoldNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
+const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryAlbumLibraryNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryFilterNavigationScenario || galleryFoldNavigationScenario || galleryTimeZoneNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
@@ -448,7 +449,11 @@ function fixtureFor(request, role) {
       } else {
         assert.equal(url.searchParams.get('sort_dir') || 'desc', 'desc');
       }
-      assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
+      const requestedZone = url.searchParams.get('time_zone') || 'UTC';
+      assert(
+        requestedZone === 'UTC' || (galleryTimeZoneNavigationScenario && requestedZone === 'Asia/Tokyo'),
+        'Gallery owner range must use UTC except exact P38 requested Asia/Tokyo'
+      );
       const limit = integerQuery(url, 'limit', 200, 500);
       if (galleryFilterNavigationScenario && url.searchParams.get('q') === 'P35-filter-qa') {
         assert.equal(role, 'user', 'P35 filtered Range must be owner-authenticated');
@@ -986,6 +991,7 @@ let galleryMemoryGate;
 let galleryPetGate;
 let galleryRefreshGate;
 let galleryFoldGate;
+let galleryTimeZoneGate;
 let galleryFilterGate;
 let gallerySortGate;
 let galleryMediaTypeGate;
@@ -2660,6 +2666,116 @@ async function galleryFoldFirstRangeAcceptance() {
     committed.overflow<=1,{before,pending,committed,hits,ownerOk});
   result.samples[activeStage]={before,pending,committed,gateHits:hits,
     ownerOk,compiledProductionWeb:true,physicalIOS:false,physicalAndroid:false,
+    installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+
+async function galleryTimeZoneFirstRangeAcceptance() {
+  // P38 original mounted production Gallery. A new IANA date time-zone is
+  // intent until the authenticated first photo Range is committed; no
+  // transient empty wall, changed time-zone label or persisted preference.
+  activeStage='user-gallery-p38-time-zone-first-range-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('main').evaluate(el=>{
+    el.scrollTop=Math.min(900,Math.max(0,el.scrollHeight-el.clientHeight));
+  });
+  await settle();
+  await page.locator('[data-xdrive-mobile-gallery-more]').tap();
+  const drawer=page.locator('[data-xdrive-mobile-gallery-more-panel]');
+  await drawer.waitFor();
+  const timezoneInput=drawer.locator('input[role="combobox"]');
+  await timezoneInput.waitFor();
+  await page.evaluate(()=>{
+    window.__p38Main=document.querySelector('main');
+    window.__p38Gallery=document.querySelector('#xdrive-mobile-gallery-main');
+    window.__p38Wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+  });
+  const observe=()=>page.evaluate(()=>{
+    const main=document.querySelector('main');
+    const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    const rect=e=>e?.getBoundingClientRect().toJSON()||null;
+    const first=wall?.querySelector('[data-xdrive-media-tile]');
+    return {
+      sameMain:main===window.__p38Main,
+      sameGallery:document.querySelector('#xdrive-mobile-gallery-main')===window.__p38Gallery,
+      sameWall:wall===window.__p38Wall,
+      mainRect:rect(main),
+      headerRect:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      scrollTop:main?.scrollTop??null,
+      rows:wall?.querySelectorAll('[data-xdrive-media-tile]').length??0,
+      firstName:first?.querySelector('.media-name')?.textContent?.trim()||'',
+      loading:!!wall?.textContent?.includes('正在加载图库'),
+      timeZone:document.querySelector('[data-xdrive-mobile-gallery-more-panel] input[role="combobox"]')?.value??null,
+      savedTimeZone:window.localStorage.getItem('xdrive.gallery.time-zone.v1'),
+      overflow:Math.max(0,document.documentElement.scrollHeight-innerHeight),
+    };
+  });
+  const before=await observe();
+  const stable=x=>x.sameMain&&x.sameGallery&&x.sameWall&&
+    before.scrollTop>=200&&x.scrollTop!==null&&
+    x.rows===before.rows&&x.rows>0&&
+    !!before.firstName&&x.firstName===before.firstName&&!x.loading&&
+    x.timeZone==='UTC'&&x.savedTimeZone===before.savedTimeZone&&
+    Math.abs(x.scrollTop-before.scrollTop)<=2&&
+    x.mainRect&&before.mainRect&&
+    Math.abs(x.mainRect.y-before.mainRect.y)<=1&&
+    Math.abs(x.mainRect.height-before.mainRect.height)<=1&&
+    x.headerRect&&before.headerRect&&x.headerRect.height===52&&
+    Math.abs(x.headerRect.y-before.headerRect.y)<=1&&
+    Math.abs(x.headerRect.height-before.headerRect.height)<=1&&
+    x.overflow<=1;
+  check('P38 accepted UTC Library wall, saved preference, scroll and 52px App header',
+    before.timeZone==='UTC'&&stable(before),before);
+  let release,notify;
+  const entered=new Promise(resolve=>{notify=resolve});
+  const wait=new Promise(resolve=>{release=resolve});
+  galleryTimeZoneGate={hits:0,notify,wait};
+  // Attach both outcomes before interacting with the production MUI combobox.
+  const firstResponse=page.waitForResponse(resp=>{
+    const u=new URL(resp.url());
+    return u.pathname==='/api/v1/media/items'&&
+      u.searchParams.get('range')==='true'&&
+      u.searchParams.get('offset')==='0'&&
+      u.searchParams.get('time_zone')==='Asia/Tokyo';
+  }).then(async response=>({status:response.status(),payload:await response.json()}),
+    error=>({error:String(error)}));
+  let pending,hits=0;
+  try {
+    await timezoneInput.fill('Asia/Tokyo');
+    await page.getByRole('option',{name:'Asia/Tokyo',exact:true}).click();
+    await Promise.race([entered,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P38 authenticated Asia/Tokyo first Range not requested')),10000))]);
+    await settle();
+    pending=await observe();hits=galleryTimeZoneGate.hits;
+    check('P38 pending time-zone owner Range retains accepted UTC tiles, scroll and preference',
+      hits>=1&&stable(pending),{before,pending,hits});
+  }finally {
+    galleryTimeZoneGate=null;release();
+  }
+  const response=await firstResponse;
+  if(response.error)throw new Error('P38 owner first Range response '+response.error);
+  await page.waitForFunction(()=>{
+    const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    const zone=document.querySelector('[data-xdrive-mobile-gallery-more-panel] input[role="combobox"]')?.value;
+    return zone==='Asia/Tokyo'&&
+      (wall?.querySelectorAll('[data-xdrive-media-tile]').length??0)>0&&
+      !wall?.textContent?.includes('正在加载图库');
+  });
+  await settle();
+  const committed=await observe();
+  const ownerOk=response.status===200&&response.payload?.total_count===240&&
+    response.payload?.items?.length>0;
+  check('P38 only accepted Asia/Tokyo owner Range commits time-zone and sparse wall',
+    hits>=1&&ownerOk&&committed.sameMain&&committed.sameGallery&&
+    committed.sameWall&&committed.rows>0&&!committed.loading&&
+    committed.timeZone==='Asia/Tokyo'&&committed.savedTimeZone==='Asia/Tokyo'&&
+    committed.overflow<=1,
+    {before,pending,committed,hits,ownerOk});
+  result.samples[activeStage]={before,pending,committed,gateHits:hits,ownerOk,
+    compiledProductionWeb:true,physicalIOS:false,physicalAndroid:false,
     installedPWA:false};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
@@ -7292,7 +7408,7 @@ async function main() {
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
-      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryAlbumLibraryNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryFilterNavigationScenario || galleryFoldNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
+      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryAlbumLibraryNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryFilterNavigationScenario || galleryFoldNavigationScenario || galleryTimeZoneNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -7416,6 +7532,14 @@ async function main() {
               url.searchParams.get('range') === 'true' &&
               url.searchParams.get('offset') === '0') {
             const gate=galleryFilterGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
+          if (galleryTimeZoneGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('time_zone') === 'Asia/Tokyo' &&
+              url.searchParams.get('range') === 'true' &&
+              url.searchParams.get('offset') === '0') {
+            const gate=galleryTimeZoneGate;
             gate.hits+=1;gate.notify();await gate.wait;
           }
           if (galleryFoldGate && request.method() === 'GET' &&
@@ -7543,6 +7667,7 @@ async function main() {
        else if (gallerySortNavigationScenario) await gallerySortFirstRangeAcceptance();
        else if (galleryRefreshNavigationScenario) await galleryRefreshFirstRangeAcceptance();
        else if (galleryFoldNavigationScenario) await galleryFoldFirstRangeAcceptance();
+       else if (galleryTimeZoneNavigationScenario) await galleryTimeZoneFirstRangeAcceptance();
        else if (galleryFilterNavigationScenario) await galleryFilterFirstRangeAcceptance();
         else if (galleryMediaTypeNavigationScenario) await galleryMediaTypeNavigationAcceptance();
        else if (galleryAlbumNavigationScenario) await galleryAlbumNavigationAcceptance();
