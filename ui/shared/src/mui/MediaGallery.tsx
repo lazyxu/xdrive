@@ -2043,14 +2043,26 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage])
 
   const openMediaType = useCallback((assetKind: string) => {
-    setSection('media-types')
-    setActiveMediaType(assetKind)
     const nextDraft = mediaGallerySectionDraft('media-types', assetKind)
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
-    setDraftFilters(nextDraft)
-    setQuery(nextQuery)
+    const commitMediaType = () => {
+      setSection('media-types')
+      setActiveMediaType(assetKind)
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+    }
+    // The already accepted compact Media Types index is the visible owner
+    // until the authenticated first filtered photo Range succeeds. A tap is
+    // navigation intent, not permission to show an empty interim photo wall.
+    // Direct wide Web/Desktop and already-open collection changes stay as-is.
+    if (mobileGalleryViewport && section === 'media-types' && !activeMediaType) {
+      void loadFirstPage(null, nextQuery, null, null, 'default',
+        null, null, null, commitMediaType)
+      return
+    }
+    commitMediaType()
     void loadFirstPage(null, nextQuery)
-  }, [loadFirstPage])
+  }, [activeMediaType, loadFirstPage, mobileGalleryViewport, section])
 
   const leaveCollection = useCallback(() => {
     if (currentFolderView) {
