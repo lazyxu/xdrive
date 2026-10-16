@@ -2926,6 +2926,8 @@ export function XDriveMediaGalleryPage({
         onVisibleAnchorNode={rememberMobileGalleryAnchor}
         items={items}
         virtualCollection={galleryVirtualCollection}
+        hasRequestedPhotoRange={collectionTarget !== null}
+        loadingEpoch={requestID.current}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
         albums={albums}
@@ -3380,6 +3382,10 @@ export interface XDriveMediaGalleryProps {
   preferenceScope?: string
   items: MediaItem[]
   virtualCollection?: XDriveMediaGalleryVirtualCollection
+  /** False only before the first authenticated photo Range has even been requested. */
+  hasRequestedPhotoRange?: boolean
+  /** Monotonic request intent, independent of the stable virtual collection key. */
+  loadingEpoch?: number
   collectionKey?: string
   /** Stable logical selection scope, distinct from a sort/range request generation. */
   selectionScopeKey?: string
@@ -5076,6 +5082,8 @@ export function XDriveMediaGallery({
   preferenceScope = '',
   items,
   virtualCollection,
+  hasRequestedPhotoRange = true,
+  loadingEpoch = 0,
   collectionKey = '',
   selectionScopeKey = collectionKey,
   albums = [],
@@ -6131,6 +6139,30 @@ export function XDriveMediaGallery({
     section === 'favorites' ||
     isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
+  // Do not present the first unrequested owner Range as an EMPTY collection.
+  // The previous accepted empty result is real content, and remains mounted
+  // if a later same-scope request is still pending. No tile/thumbnail loading
+  // behavior is changed by this view-only 300ms feedback gate.
+  const acceptedEmptyCollectionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!hasRequestedPhotoRange || logicalItemCount > 0) {
+      acceptedEmptyCollectionRef.current = null
+    } else if (!loading && !collectionError && logicalItemCount === 0) {
+      acceptedEmptyCollectionRef.current = collectionKey
+    }
+  }, [collectionKey, collectionError, hasRequestedPhotoRange, loading, logicalItemCount])
+  const keepAcceptedEmpty = hasRequestedPhotoRange &&
+    acceptedEmptyCollectionRef.current === collectionKey &&
+    logicalItemCount === 0
+  const coldPhotoLoadKey = `${collectionKey}:${loadingEpoch}`
+  const [visibleColdPhotoLoadKey, setVisibleColdPhotoLoadKey] = useState<string | null>(null)
+  useEffect(() => {
+    if (!loading || logicalItemCount > 0 || keepAcceptedEmpty || !showPhotoCollection) return
+    const timer = window.setTimeout(() => setVisibleColdPhotoLoadKey(coldPhotoLoadKey), 300)
+    return () => window.clearTimeout(timer)
+  }, [coldPhotoLoadKey, keepAcceptedEmpty, loading, logicalItemCount, showPhotoCollection])
+  const showDelayedColdPhotoLoad = loading && logicalItemCount === 0 &&
+    !keepAcceptedEmpty && visibleColdPhotoLoadKey === coldPhotoLoadKey
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
   const showCollectionFilters =
     showPhotoCollection &&
@@ -6303,8 +6335,8 @@ export function XDriveMediaGallery({
                       : '按媒体资产类型快速进入照片集合'
                     : collectionError && logicalItemCount === 0
                       ? '图库数据暂时不可用'
-                      : loading && logicalItemCount === 0
-                        ? '正在加载照片和视频'
+                      : (loading || !hasRequestedPhotoRange) && logicalItemCount === 0
+                        ? '照片与视频'
                         : `${logicalItemCount.toLocaleString('zh-CN')} 个项目 · 所有 xDrive 图片和视频，包括普通上传和同步文件夹文件`
   const canBack = Boolean(
     currentFolderView ||
@@ -7794,14 +7826,17 @@ export function XDriveMediaGallery({
               ) : null}
             </Stack>
           </Paper>
-        ) : loading && logicalItemCount === 0 ? (
-          <Box sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
-            <Stack alignItems="center" spacing={1}>
-              <CircularProgress size={28} />
-              <Typography variant="body2" color="text.secondary">
-                正在加载图库…
-              </Typography>
-            </Stack>
+        ) : (loading && logicalItemCount === 0 && !keepAcceptedEmpty) ||
+            (!hasRequestedPhotoRange && logicalItemCount === 0) ? (
+          <Box data-xdrive-gallery-cold-pending sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
+            {showDelayedColdPhotoLoad ? (
+              <Stack alignItems="center" spacing={1} role="status">
+                <CircularProgress size={28} />
+                <Typography variant="body2" color="text.secondary">
+                  正在加载图库…
+                </Typography>
+              </Stack>
+            ) : null}
           </Box>
         ) : logicalItemCount === 0 ? (
           <Paper
