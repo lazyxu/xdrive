@@ -296,7 +296,7 @@ export type XDrivePhotoHostPreflight = {
   // No positive stop or cross-Server inference-admission state exists.
   private_ingress_policy_observation?: 'strict-local' | 'legacy-local' | 'inconsistent' | 'unverified'
   // Deployment-supplied public file/hash integrity only, never runtime or fleet trust.
-  trust_material_observation?: 'material-only' | 'blocked' | 'unverified'
+  trust_material_observation?: 'material-only' | 'root-pin-match-local' | 'blocked' | 'unverified'
   // Only ONE fixed synthetic semantic text inference; not a media/image,
   // Face, OCR, Creative, fleet activation or safe-stop proof.
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'

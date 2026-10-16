@@ -61,6 +61,7 @@ type Server struct {
 	PhotoModelBearerConfigured     bool
 	PhotoHostTrustAnchorPath       string
 	PhotoHostTrustAnchorSHA256     string
+	PhotoHostTrustRootSHA256       string
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string

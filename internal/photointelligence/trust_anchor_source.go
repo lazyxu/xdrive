@@ -135,3 +135,28 @@ func parsePhotoHostTrustAnchorV1(raw []byte) (PhotoHostTrustAnchorV1, error) {
 		OperatorKey: ed25519.PublicKey(operator), MemberKeys: members,
 	}, nil
 }
+
+// ReadOperatorPinnedPhotoHostTrustAnchorV1 strengthens a successful, bounded
+// public-bundle file check with a SEPARATELY configured operator public-key
+// fingerprint. Both pins are deployment input, not cryptographically trusted
+// attestations of a running Server/model or an authorization to stop a Host.
+// Invalid or mismatching pins fail closed without exposing key material.
+func ReadOperatorPinnedPhotoHostTrustAnchorV1(path, bundleSHA256, operatorKeySHA256 string) (PhotoHostTrustAnchorV1, error) {
+	zero := PhotoHostTrustAnchorV1{}
+	if !photoHostTrustLowerHex(operatorKeySHA256, 64) {
+		return zero, ErrPhotoHostTrustAnchorUnverified
+	}
+	bundle, err := ReadPinnedPhotoHostTrustAnchorV1(path, bundleSHA256)
+	if err != nil {
+		return zero, ErrPhotoHostTrustAnchorUnverified
+	}
+	expected, err := hex.DecodeString(operatorKeySHA256)
+	if err != nil {
+		return zero, ErrPhotoHostTrustAnchorUnverified
+	}
+	actual := sha256.Sum256(bundle.OperatorKey)
+	if subtle.ConstantTimeCompare(actual[:], expected) != 1 {
+		return zero, ErrPhotoHostTrustAnchorUnverified
+	}
+	return bundle, nil
+}

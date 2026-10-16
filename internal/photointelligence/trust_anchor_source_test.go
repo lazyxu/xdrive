@@ -107,3 +107,37 @@ func TestPhotoHostTrustFileChangeRequiresPinnedRevision(t *testing.T) {
 		t.Fatal("updated file accepted with old pin")
 	}
 }
+
+func TestPhotoHostSeparateOperatorPublicKeyPinIsLocalOnly(t *testing.T) {
+	path, filePIN := testPhotoHostTrustFile(t, testPhotoHostTrustBundle())
+	operatorBytes, err := hex.DecodeString(strings.Repeat("b", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := sha256.Sum256(operatorBytes)
+	operatorPIN := hex.EncodeToString(h[:])
+	material, err := ReadOperatorPinnedPhotoHostTrustAnchorV1(path, filePIN, operatorPIN)
+	if err != nil || material.Revision != 7 || len(material.MemberKeys) != 2 {
+		t.Fatalf("valid operator public key pin rejected: %+v %v", material, err)
+	}
+	for name, pins := range map[string][2]string{
+		"missing root pin": {filePIN, ""},
+		"bad root pin":     {filePIN, "invalid"},
+		"wrong root pin":   {filePIN, strings.Repeat("f", 64)},
+		"uppercase root":   {filePIN, strings.ToUpper(operatorPIN)},
+		"incorrect bundle": {strings.Repeat("e", 64), operatorPIN},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ReadOperatorPinnedPhotoHostTrustAnchorV1(path, pins[0], pins[1]); err == nil {
+				t.Fatal("invalid root or bundle pin accepted")
+			}
+		})
+	}
+	// A different operator public key with its OWN correct bundle hash must
+	// still be rejected under the separately pinned old operator identity.
+	changed := strings.Replace(testPhotoHostTrustBundle(), strings.Repeat("b", 64), strings.Repeat("e", 64), 1)
+	newPath, changedBundlePIN := testPhotoHostTrustFile(t, changed)
+	if _, err := ReadOperatorPinnedPhotoHostTrustAnchorV1(newPath, changedBundlePIN, operatorPIN); err == nil {
+		t.Fatal("substituted bundle must not silently rotate operator root")
+	}
+}
