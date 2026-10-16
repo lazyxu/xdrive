@@ -409,3 +409,17 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 
 
 **CAS-A06 证据归档Invalid harness纠正（2026-10-17）：** 证据提交初次专项 #38934142527 SHA256 check失败（新有效物理样本n0），诊断 #38936913161 证明Git压缩blob CRC损坏；不将它计入CAS读延迟RED。已经按原始 CI #38932992440/ZIP digest `1c414e57...` 逐原始11件重建压缩包，修正仓库Git Blob `cb7686e0d5bcc2eae53c2ccfdfbc63b355a4d63c` 和原本正确SHA256 `4207d853...`，准确新HEAD双CI/final-gate必须成功，产品没有性能修改或新增线上收益。
+
+
+## CAS-A07 / 小、中型文件混合分布的Pack阈值负载（2026-10-17）
+
+| 稳定ID及与已有实验差别 | 同源真实数据 + 预算 | BEFORE/候选/状态及证据 | 六平台边界 |
+| --- | --- | --- | --- |
+| **CAS-A07**：生产`storage.Local.Put/Open/Delete` vs独立离线Pack+48B/原片二进制索引，`95k×1KiB +4k×16KiB +900×128KiB +100×1MiB`的真正不同SHA物理文件。CAS-A05/A06只测100k×1KiB大小分布，不能推导16KiB–1MiB的Pack拐点、不同tier真实随机读取或GC放大。 | 每组100,000原片、真实SHA / 385,638,400B源逻辑内容、Linux原版初始st_blocks≥677,478,400B；n3同源一轮原版和候选、奇偶顺序交替。每臂2,000个真正`ReadAt` +全SHA（各tier 1700/100/100/100）、释放95k保留5k逐一SHA/真实后置物理0B、候选测试故意损坏拒绝/完整HEAD与Pack2 compact且记录新旧并存峰值。Pack初始和GC后物理各≤原版75%；单阶段≤900s、Go RSS≤512MiB。 | **原版真实CURRENT n3完成、生产AFTER=N/A**。原版/离线候选初始实物677,478,400/390,447,104B（Pack-42.3676%），GC后33,873,920/19,529,728B（-42.3458%），分层2k SHA+256B Range 242.708/289.994ms（Pack**慢19.48%**），峰RSS61,548KiB，Pack GC共存峰409,972,736B。容量研究Accepted，但统一Pack在线默认策略**Rejected（读退化）**；原始11机器文件永久归档，准确HEAD双CI待验收。[专项规范](cas-mixed-pack-performance.md)、[测试源码](../internal/storage/cas_a07_mixed_100k_pack_crossover_linux_test.go)、[分支CI](../.github/workflows/cas-a07-mixed-physical-pack-crossover.yml)。首个有效n3后本工作提交永久存11份原始机读证据并重跑准确新HEAD专项和全仓FinalGate，不能把旧CAS-A05数据冒充本项或预测Pack线上收益。 | 仅Linux storage物理层，与6端App媒体/真实客户端上传下载不同：Native Desktop / Wide Web / Mobile Web / Desktop installed PWA / Android installed PWA / iOS installed PWA **全部Not measured**。无真实FileVersion/Owner/跨账户quota和在线GC，Production Pack格式未更改。 |
+
+
+### CAS-A07 混合大小同Runner真实n3原版/Pack回归登记（2026-10-17）
+
+新增**首轮时钟方法修正后的权威数据** [专项CI #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589) 三独立源：95k×1KiB/4k×16KiB/900×128KiB/100×1MiB，100k真实SHA不同原片，共385,638,400B逻辑。生产`Local.Put`原版实际初始实体677,478,400B，离线Pack+Index 390,447,104B（-42.3676%）；95k物理回收后33,873,920/19,529,728B（-42.3458%）；真实2,000次分层完整SHA和独立`ReadAt 256B`原版P50 **242.708ms**，候选 **289.994ms（+19.48%退化）**；初始写入48,606.482/1,567.547ms，释放阶段10,439.591/103.597ms但文件持久协议不同，**不可宣称用户上传/删除加速**。Pack压缩期间两代同时存在最高409,972,736B；Go MaxRSS61,548KiB，CPU/write_bytes/各独立样本永久[11原始文件](performance-evidence/cas-a07-mixed-100k-pack/README.md)，`tar.gz`SHA256 0037302a6abfcd29a3e5198cbc13cb3d165b910831d20e1d47fee4d94b808812。原版全部性能预算正确通过无产品更改，**Offline space Accepted / universal-size Pack online proposal Rejected for 2k read degradation / production AFTER=N/A**。
+
+**保留方法失效旧样本：** [首次CI #38941430856](https://github.com/lazyxu/xdrive/actions/runs/38941430856)物理字节合法但`Local.Open/Delete`额外计入重复SHA原片生成，不是有效公平读取/CPU A/B；[机器说明](performance-evidence/cas-a07-mixed-100k-pack/ci-run-38941430856-superseded.json)保留原CI、时间失效原因，不判生产RED、不擦旧记录。真实原始n3数据规范化源SHA与新提交相同，原始包严格固定；本新证据HEAD仍必须专用/完整CI含final-gate成功才Ready/merge。Linux本地storage层，不是任何六端客户端。

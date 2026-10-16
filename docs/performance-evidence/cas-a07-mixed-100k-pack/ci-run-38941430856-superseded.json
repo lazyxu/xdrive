@@ -1,0 +1,15 @@
+{
+  "workload": "CAS-A07-100k-mixed-physical-immutable-CAS-vs-offline-pack",
+  "state": "Superseded benchmark timer boundary / NOT product regression",
+  "run_id": 38941430856,
+  "url": "https://github.com/lazyxu/xdrive/actions/runs/38941430856",
+  "source_head": "3b4b2973d247387ea42cbe23176eb407b9cd0f6f",
+  "valid_physical_samples": 3,
+  "valid_physical_bytes": {
+    "original": 677478400,
+    "offline": 390443008
+  },
+  "invalid_cross_arm_timing_reason": "Original Local.Open/Delete timed duplicate AES-CTR payload hashing to derive ContentAddressedKey; offline indexed ReadAt did not. Timing/CPU comparison is not fair. Precomputed keys moved to fixture setup before timed critical stages in source af277114. No production changes or baseline budget relaxation.",
+  "authoritative_corrected_source_head": "af27711466ab47dc796cc5604ced6f47d06d58e2",
+  "authoritative_ci": 38941750589
+}
