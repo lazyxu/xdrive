@@ -2399,6 +2399,21 @@ function registerIPCHandlers() {
     requireAgentCapability(hello, 'device-backup-read')
     return requireAgentClient().deviceBackups()
   }, false))
+  // Safe owner-scoped device list pagination, no local Root or mutation.
+  ipcMain.handle('agent:get-device-backups-page', (_event, limit: unknown, afterDeviceID: unknown) => runAgentAction<AgentDeviceBackupOverview>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-read')
+    const requestedLimit = limit === undefined ? 100 : limit
+    if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 100) {
+      throw new AgentIPCError('invalid_input', 0, 'Backup device page limit must be between 1 and 100.')
+    }
+    const requestedCursor = afterDeviceID === undefined ? '' : afterDeviceID
+    if (typeof requestedCursor !== 'string' ||
+      (requestedCursor !== '' && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(requestedCursor))) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid backup device page cursor.')
+    }
+    return requireAgentClient().deviceBackupsPage(requestedLimit, requestedCursor)
+  }, false))
   ipcMain.handle('agent:get-device-backup-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentDeviceBackupRunPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()
     requireAgentCapability(hello, 'device-backup-read')

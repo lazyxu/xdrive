@@ -327,6 +327,7 @@ export interface AgentDeviceBackupOverview {
   devices: AgentDeviceBackupDevice[]
   has_more: boolean
   has_more_folders: boolean
+  next_after_device_id?: string
 }
 export interface AgentDeviceBackupRunPage {
   items: AgentDeviceBackupRun[]
@@ -3089,6 +3090,13 @@ export class AgentIPCClient {
 
   deviceBackups() {
     return this.request<AgentDeviceBackupOverview>('GET', '/v1/device-backups')
+  }
+
+  // The authenticated Go Agent alone verifies this owner-scoped read cursor.
+  deviceBackupsPage(limit = 100, afterDeviceID = '') {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (afterDeviceID) query.set('after_device_id', afterDeviceID)
+    return this.request<AgentDeviceBackupOverview>('GET', `/v1/device-backups?${query.toString()}`)
   }
 
   verifiedLocalDevice() {

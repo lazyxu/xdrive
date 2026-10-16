@@ -752,6 +752,7 @@ function FileManager({
   const sourceManagerAdapter = useMemo(() => createXDriveSourceManagerAdapter(api), [api])
   const deviceBackupSource = useMemo(() => ({
     list: () => api.deviceBackups(),
+    listPage: (limit: number, afterDeviceID: string) => api.deviceBackupsPage(limit, afterDeviceID),
     runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
   }), [api])
 
