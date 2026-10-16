@@ -1,0 +1,101 @@
+name: CAS-A03 Actual 4GiB High-Entropy Local CAS Small Edit Version Cost
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a03-four-gib-local-version:
+    if: github.head_ref == 'perf/cas-a03-4gib-small-edit-version-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify isolated source, full SHA, and read-back proof
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/storage/cas_a03_real_4gib_version_performance_linux_test.go)"
+          echo '4b9306d2de3f281108092117dfcf578f8a10e93bb29ea88818ffc81db4eb1322  docs/performance-evidence/cas-a03-real-4gib-local-versions/ci-run-38870252470.tar.gz' | sha256sum -c -
+          python3 - <<'PY'
+          import json, tarfile
+          path='docs/performance-evidence/cas-a03-real-4gib-local-versions/ci-run-38870252470.tar.gz'
+          with tarfile.open(path, 'r:gz') as ar:
+              names=[m.name for m in ar.getmembers() if m.isfile()]
+              assert len(names)==11 and sum(n.endswith('.json') for n in names)==4
+              assert set(['summary.json','source.txt']).issubset(names)
+              s=json.load(ar.extractfile('summary.json'))
+              assert s['passed'] and s['n']==3
+              source=ar.extractfile('source.txt').read().decode('utf-8')
+              assert 'EXACT_SOURCE_HEAD=114fd414fd104b4952cd9b7d1e23c3c9d1827bb8' in source and 'RUN=38870252470' in source
+              for i in (1,2,3):
+                  row=json.load(ar.extractfile(f'sample-{i}.json'))
+                  assert row['sample']==i and row['passed'] and row['actual_diff_bytes']==1048576
+          PY
+          go test -mod=readonly ./internal/storage -run '^TestCanonicalCASPutImmutableAcrossStoreInstances$' -count=1
+          df -h .
+      - name: Compile production Local.Put unchanged and opt-in real physical test
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/cas-a03-real-4gib-local-cas-bin
+          go test -mod=readonly -c -o desktop/cas-a03-real-4gib-local-cas-bin/storage.test ./internal/storage
+      - name: Measure n3 independent new SHA A and interior 1MiB edited B, each true 4GiB
+        run: |
+          set -euo pipefail
+          out=desktop/cas-a03-real-4gib-local-cas-results
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$out/source.txt"
+          sha256sum internal/storage/cas_a03_real_4gib_version_performance_linux_test.go internal/storage/local.go internal/storage/cas_immutable.go >> "$out/source.txt"
+          for sample in 1 2 3; do
+            export XD_CAS_A03_SAMPLE="$sample"
+            export XD_CAS_A03_REAL_VERSION_PERF=1
+            /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              desktop/cas-a03-real-4gib-local-cas-bin/storage.test \
+              -test.run '^TestCASA03Real4GiBLocalFullBlobVersion$' -test.count=1 -test.timeout=35m -test.v \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1]);rows=[]
+          for i in (1,2,3):
+              content=(root/f'sample-{i}.log').read_text()
+              matches=re.findall(r'CAS_A03_LOCAL_REAL_4GIB (\{[^\n]+\})',content)
+              assert len(matches)==1,(i,'one actual machine line required')
+              r=json.loads(matches[0]);(root/f'sample-{i}.json').write_text(json.dumps(r,indent=2)+'\n')
+              assert r['passed'] and r['sample']==i
+              assert r['original_bytes']==4294967296 and r['patch_bytes']==1048576
+              assert r['actual_diff_bytes']==1048576
+              assert r['hash_original']!=r['hash_changed']
+              assert r['physical_cas_original_bytes']>=4294967296 and r['physical_cas_changed_bytes']>=4294967296
+              assert r['eight_mib_blocks_each']==512 and r['eight_mib_shared_blocks']==511
+              assert r['ideal_eight_mib_chunk_additional_bytes']==8388608
+              assert 0<r['local_put_original_ms']<=360000 and 0<r['local_put_changed_ms']<=360000
+              assert 0<r['process_max_rss_kib']<=262144
+              assert r['kernel_write_bytes']>=8589934592
+              rows.append(r)
+          assert len({r['hash_original'] for r in rows})==3
+          assert len({r['hash_changed'] for r in rows})==3
+          median=lambda key:statistics.median(r[key] for r in rows)
+          summary={'workload_id':'CAS-A03/LINUX-LOCAL/4GiB-interior-1MiB-edit','n':3,
+                   'current_full_file_cas_extra_bytes':4294967296,
+                   'ideal_8MiB_fixed_chunk_extra_bytes_hypothesis_only':8388608,
+                   'changed_put_wall_p50_ms':median('local_put_changed_ms'),
+                   'original_put_wall_p50_ms':median('local_put_original_ms'),
+                   'max_rss_kib':max(r['process_max_rss_kib'] for r in rows),
+                   'passed':True,'after':None,
+                   'scope':'Real production storage.Local.Put only; no signed Gin/PG upload, FileVersion SQL, CDC, Web/Desktop/installed PWA'}
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('CAS_A03_REAL_4GIB_LOCAL_N3',json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a03-four-gib-true-physical-two-version-local-n3
+          path: desktop/cas-a03-real-4gib-local-cas-results/
+          if-no-files-found: warn
+          retention-days: 14

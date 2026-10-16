@@ -126,3 +126,17 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 
 
 **CAS-A04a归档头质量门槛（2026-10-16）：** 首次有效物理n3测试不等于归档修订HEAD最终通过；后续[CI #38864841379](https://github.com/lazyxu/xdrive/actions/runs/38864841379)的真实tar/恢复仍成功但最后证据文件放在源目录内部导致GNU tar报`file changed as we read it`，失败仅在测试工具。原始[逐字节不变13文件归档](performance-evidence/cas-a04-two-generation-tar/README.md)纠正为SHA256 `366bea2816b245255cc0ff6495b8ff1b479000fc18f56922595e9dcee676dab8`，追加分支CI对永久原始证据的强校验及生成输出临时目录隔离。要求新提交的专用+完整CI/FinalGate全绿后才允许合入，不能从runner变化声称增量性能优化。
+
+
+## CAS-A03 / S001-d1：4GiB局部编辑版本原版实测启动（2026-10-16）
+
+[专项计划](cas-version-performance.md) 冻结真正的生产`storage.Local.Put`双CAS路径：每个独立样本持久化2个4GiB、SHA不同的高熵原片，B只在中间XOR修改连续1MiB；全量8GiB读取验证两代SHA与精确变更，独立对比固定8MiB块的**理论**511/512复用潜力。第一次完整本地层真实n3还没有有效 GitHub CI；当前 **Benchmarking / BEFORE=Not measured / AFTER=N/A**，不应根据理论1块变化声称xDrive已经节省4GiB或已经上线CDC。
+
+原版必保留全文件不可变SHA、FS持久化、跨账户权限/引用的生产现状。若要实做分块/CDC，先在离线备份PoC同源n3检测写IO、Hash成本、随机Range/视频Seek、CfAPI/FUSE、版本恢复和GC；真实移动端和installed PWA测试与此基准分列，且视口取消不得杀死持久上传/同步/删除。
+
+
+### CAS-A03/S001-d1 已测原版存储层版本放大（2026-10-16）
+
+[源准确专项 CI #38870252470](https://github.com/lazyxu/xdrive/actions/runs/38870252470) 实际执行三组生产 Local.Put 两个4GiB高熵 SHA-distinct原片、B中间准确修改1MiB、全量8GiB恢复SHA+512个8MiB块SHA，**3/3真实CURRENT通过**。每个样本两份CAS实体分配8,589,942,784B，新增版本分配4,294,971,392B，两次真实内核写入8,589,934,592B；新增B的 `Local.Put` P50 22,594.151ms / 进程Go RSS上限32,736KiB。固定8MiB块中仅1块变化/511块不变，仅意味着离线理想复用版本可能新增8MiB而不是现生产4GiB；**并未实现CDC，不能把512倍理论空间机会写为实际生产节省、吞吐提速或优化AFTER**。
+
+完整SHA、原本跨账户隔离、不变CAS语义已通过本负载，但完整Server SQL FileVersion、跨账户秒传防泄露、视频Range/CfAPI/FUSE、多版本GC与6端还缺相互独立的安全/性能证据。原始完整[11个机器文件](performance-evidence/cas-a03-real-4gib-local-versions/README.md)永久归档；后续A03-d2离线分块PoC需要匹配同一内容的实际 block store bytes/read IO/CPU/RSS/Range及恢复n3，再考虑是否替代任何在线路径，符合先做备份离线PoC的低风险顺序。

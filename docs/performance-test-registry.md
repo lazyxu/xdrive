@@ -112,7 +112,7 @@
 - 覆盖 Web/Desktop/Mobile Web 时标明是否实际挂载共享虚拟列表，是否按 API 返回分页、DOM节点、图像解码、video poster/Live Motion 和 Go ctx.Done 实测；断言 stale result 被忽略不算服务器请求真的取消。
 - **有效最新头 CI** 和合入清理是独立状态；若 CI 中存在测试夹具错误、Postgres磁盘/内存限制或编译失败，记录为 `Invalid harness` 后仅修正夹具并复测，不对生产性能下结论。
 
-## 历史原始证据目录完整索引（80 个；含P041/P042无效测试及P043有效原版）
+## 历史原始证据目录完整索引（81 个；含P041/P042无效测试及P043有效原版）
 
 下面是现存全部原始记录目录，仅表示**曾有证据/实验产物**。其中包含 **Accepted、Rejected、Invalid harness、Mock、诊断样本及仍需复验项**。不在上方“已执行场景”表中给出明确状态的，必须打开其原始报告及对应子系统文档判定，**不可默认为通过**。新增任一目录时要同步修改本索引；随附的轻量测试会检查有没有漏记目录。
 
@@ -132,9 +132,9 @@
 
 [`real-desktop-cas-1gib`](performance-evidence/real-desktop-cas-1gib/) · [`real-server-cas-1gib`](performance-evidence/real-server-cas-1gib/) · [`real-web-cas-1gib`](performance-evidence/real-web-cas-1gib/) · [`real-web-desktop-cas-4gib`](performance-evidence/real-web-desktop-cas-4gib/) · [`web-large-transfer`](performance-evidence/web-large-transfer/) · [`real-web-incompressible-cas-1gib`](performance-evidence/real-web-incompressible-cas-1gib/) · [`real-desktop-incompressible-cas-1gib`](performance-evidence/real-desktop-incompressible-cas-1gib/)
 
-### Server 备份 / CAS 去重空间（1）
+### Server 备份 / CAS 去重空间（2）
 
-[`cas-a04-two-generation-tar`](performance-evidence/cas-a04-two-generation-tar/)
+[`cas-a04-two-generation-tar`](performance-evidence/cas-a04-two-generation-tar/) · [`cas-a03-real-4gib-local-versions`](performance-evidence/cas-a03-real-4gib-local-versions/)
 
 ### 同步变更流 / 取消（4）
 
@@ -145,7 +145,7 @@
 [`media-thumbnail-gc-physical-100k`](performance-evidence/media-thumbnail-gc-physical-100k/) · [`media-shared-progress`](performance-evidence/media-shared-progress/) · [`photoasset-owner-alloc-profile-100k`](performance-evidence/photoasset-owner-alloc-profile-100k/) · [`photoasset-owner-node-preload-100k`](performance-evidence/photoasset-owner-node-preload-100k/) · [`photoasset-owner-reconcile-100k`](performance-evidence/photoasset-owner-reconcile-100k/) · [`photoasset-owner-stale-prune-100k`](performance-evidence/photoasset-owner-stale-prune-100k/) · [`photoasset-owner-write-100k`](performance-evidence/photoasset-owner-write-100k/) · [`preview-image-thumbnail-abort`](performance-evidence/preview-image-thumbnail-abort/)
 ## 版本与维护
 
-- 本表目前索引 **79 个**已出现的原始证据目录。P001–P042全部已有Accepted/RED/Rejected/Invalid/Blocked不同状态的测量；P043新增真实Desktop原生1GiB高熵源及完整下载SHA基准：源码准确原生CI #38340678659三组独立PG17/CAS全部通过，上传P50 18,375.838ms、下载P50 6,039.798ms，源/CAS/下载SHA一致，CPU/RSS预算均内，生产不改。原始机器JSON与不可替代的平台边界已写入专项；**P043准确源码复测CI #38341363095、完整CI #38341363491和final-gate全部成功，#1625已合入，产品不改**。4GiB真实高熵WAN、Windows物理设备、OS安装PWA/Android/iOS、100k物理源同步删除与任务级用户取消仍Not measured。 新P044在现有第80个证据目录中同时保存首轮 #38342586136 Invalid harness 与源准确CI #38342769834 原版有效n3原始机器JSON；P50上传48.509s/下载18.417s、完整SHA/CAS/OPFS与资源门槛通过，生产不改；证据修订头CI和final-gate复验后方可合入。
+- 早期历史阶段曾索引 **79 个**原始证据目录（保留该历史样本说明；当下完整目录总数以上方索引标题为准）。P001–P042全部已有Accepted/RED/Rejected/Invalid/Blocked不同状态的测量；P043新增真实Desktop原生1GiB高熵源及完整下载SHA基准：源码准确原生CI #38340678659三组独立PG17/CAS全部通过，上传P50 18,375.838ms、下载P50 6,039.798ms，源/CAS/下载SHA一致，CPU/RSS预算均内，生产不改。原始机器JSON与不可替代的平台边界已写入专项；**P043准确源码复测CI #38341363095、完整CI #38341363491和final-gate全部成功，#1625已合入，产品不改**。4GiB真实高熵WAN、Windows物理设备、OS安装PWA/Android/iOS、100k物理源同步删除与任务级用户取消仍Not measured。 新P044在现有第80个证据目录中同时保存首轮 #38342586136 Invalid harness 与源准确CI #38342769834 原版有效n3原始机器JSON；P50上传48.509s/下载18.417s、完整SHA/CAS/OPFS与资源门槛通过，生产不改；证据修订头CI和final-gate复验后方可合入。
 - `#1439` 100k混合物理媒体基准已合入，性能未超预算，记录为复用/不改生产代码；`#1185` 的 Desktop IPC 完整字节进度末次验收失败，仍为 Draft，不属于通过的取消/吞吐案例。
 - P046 源准确原始CI #38356105800完成3次真实100k不同原始CAS的95k物理unlink CURRENT：P50=120493.622ms（预算内）、原始机器JSON新增独立证据目录，现有历史无效夹具仍保留；完整幸存集合/blocks专项准确证据HEAD复验后才能标Merged。以后每个性能 PR 更新同一登记簿，不为每次聊天创建平行索引；完整的失败样本、被拒绝实验和准确头CI仍保留在子系统文档与原始证据目录。
 
@@ -305,3 +305,20 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 
 
 **CAS-A04a后续仅证据打包命令修订（2026-10-16）：** 准确HEAD `2e7c08a6d9a54b0d1e399ace0ed83b4ad14dcdf0` [专项CI #38865799481](https://github.com/lazyxu/xdrive/actions/runs/38865799481) 再次真实执行9组原版物理tar与全SHA恢复通过；末尾shell `grep -c` 的源码引号不完整导致脚本 `unexpected EOF while looking for matching '\''`，虽然已经打印归档 SHA，整个作业仍是 **Invalid evidence harness / no green CI**，不是业务性能失败。取消易出错的引号内grep，改为Python tarfile严格校验13个文件/10份JSON；仍必须提交精确HEAD专项与全CI/final-gate双绿才能合并。原先有效数据、Rejected/Invalid均保留。
+
+
+## CAS-A03 / S001-d1 — 真实4GiB原片中部仅改1MiB，Linux Local CAS 版本成本（2026-10-16）
+
+| 稳定负载 ID | 原版 CURRENT/BEFORE，数据真实性及防重测 | 本轮进展/决策 | 下一未测边界 |
+| --- | --- | --- | --- |
+| **CAS-A03/S001-d1** | **独立新负载，绝不重复 P044/P045/P051 或 CAS-A02 的真实4GiB首次上传**。Linux生产 `storage.Local.Put` 两份真正独立不可压缩4GiB AES-CTR SHA-256原片 A/B：仅中间连续1MiB逐字节 XOR0xA5，旧版本保留；每组独立源码/Root/Fs；A与B均真实写入、fsync、原子发布及全量8GiB读回SHA+精确变更验证。对512个8MiB离线块验证仅1块变化（511块相同），**并未实现CDC或增量上传**。n=3、源不同、记录预hash/两次Local.Put/全SHA恢复wall、/proc/self/io物理写入、stat.blocks和CPU/RSS。冻结单次Put≤360s、RSS≤256MiB，2个物理CAS各≥4GiB、写入至少8GiB，原始数据正确性不能放宽。 | **Accepted original CURRENT n3：B新版本CAS物理新增4,294,971,392B；Local.Put B P50 22,594.151ms、源A P50 22,924.494ms、两版本kernel write 8,589,934,592B；3组全量SHA/1MiB精确差异/预算通过；BEFORE=CURRENT，AFTER=N/A、产品不改；证据HEAD双CI待复验**。仅分支专项 [Linux CI](../.github/workflows/cas-a03-physical-4gib-local-version.yml)，首次n3成功后保存原始JSON、计时、资源、源码SHA，更新本条及规范并重跑准确HEAD全仓final-gate。已验收CAS-A02首次上传/空间2×和CAS-A01 100k引用GC不会因为重启专项而复测。 | [CAS-A03专项规范](cas-version-performance.md) · [Blob审查](blob-cas-dedup-architecture-audit.md)。本轮仅共享Server本地存储层，没有真的FileVersion SQL、Gin/HTTP上传、同步、跨Owner权限、完整备份、恢复时间窗或任何六端GUI。Desktop、Wide Web、Mobile Web、Desktop installed PWA、Android installed PWA、iOS installed PWA均 **Not measured**。 |
+
+
+### CAS-A03 / S001-d1 首次真实4GiB原片双版本 Linux Local CAS n3（2026-10-16）
+
+源准确首轮提交 `114fd414fd104b4952cd9b7d1e23c3c9d1827bb8` 的[专用CI #38870252470](https://github.com/lazyxu/xdrive/actions/runs/38870252470) **SUCCESS**，3组独立实际生产 `storage.Local.Put` 每组写入并验证两个SHA不同、完全实际分配的4GiB AES-CTR原片，第二版本仅中部**1,048,576B**异或变更；对完整8GiB读回进行两个全文件 SHA 验证及逐字节差异计数。**CURRENT原版 n=3/3 合格**：每组两版本物理 `st_blocks` 合计 **8,589,942,784B**，Go `/proc/self/io write_bytes` **8,589,934,592B**，新版本物理增加 **4,294,971,392B**，Original `Local.Put` P50 **22,924.494ms**，Changed `Local.Put` P50 **22,594.151ms**，全量两版恢复hash/diff P50 **10,281.371ms**，Go峰值RSS **32,736KiB**。源随机性为3个独立AES密钥；离线512个8MiB块中511相同，只作理论分块前景，不是已实施CDC；`read_bytes=0`来自Linux page-cache路径，并不表示没有读取8GiB逻辑字节。冻结 <=360s/每次Put、<=256MiB、物理8GiB、实际SHA/1MiB条件均通过；生产无更改，**BEFORE=CURRENT，AFTER=N/A，提升百分比=N/A**。
+
+原始[11个不可变机器样本/CPU/RSS/日志/source](performance-evidence/cas-a03-real-4gib-local-versions/README.md)与[GitHub Artifact #12033511367](https://github.com/lazyxu/xdrive/actions/runs/38870252470/artifacts/12033511367)精确一致；永久 `tar.gz` SHA256 `4b9306d2de3f281108092117dfcf578f8a10e93bb29ea88818ffc81db4eb1322` Git Blob `1e9e9162e248c1f467bea8da3faebd1b9fa06716`。**首轮源码 CI 成功不代表归档后最终证据提交验收**；仍须归档准确最终HEAD专用n3+全仓final-gate通过后才可合并。独立CAS-A03原版Local storage测试不得冒充生产 FileVersion SQL、Web/Desktop/Mobile upload 或三类installed PWA。
+
+
+**CAS-A03首次归档HEAD Invalid harness（2026-10-16）：** 首个原始n3专项 #38870252470 已有效通过，本次归档修订生成的旧HEAD `64e071097da87699125664ae57d48d3c834b1582` 由于文档自动化的字符串替换把workflow末尾重复插入，造成 `cas-a03-physical-4gib-local-version.yml` 结构不合法；无新准确HEAD物理样本，**不是生产存储/性能RED**。现从首次成功的原工作流逐字节恢复，使用非解释型替换仅增加原始归档SHA与11条成员核验，再跑新的精准HEAD CI。原始n3结果、数据规模、预算和生产路径不变。
