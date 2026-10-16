@@ -885,3 +885,134 @@ test('late Cloud Files account-A initial range cannot overwrite account B after 
   )
   assert.equal(controller.quota?.used_bytes, 20)
 })
+
+function deferredFirstPage() {
+  let resolve
+  let reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+
+function u01Range(id, name, offset = 0, limit = 200) {
+  return {
+    items: [{ id, name }],
+    total_count: 1, total_count_included: true, offset, limit,
+    groups: [],
+  }
+}
+
+test('U01 denied or timed-out folder first page retains committed rows, breadcrumb and loading lifecycle', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const failures = []
+  let blocked = null
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getRange: async (parentID, offset, limit) => {
+      if (parentID === 1) return u01Range(10, '旧目录文件.txt', offset, limit)
+      if (parentID === 2 && blocked) return blocked.promise
+      throw new Error('unexpected parent ' + parentID)
+    },
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, defaultSort: sort,
+    quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => failures.push(String(error.message)),
+  }))
+  render()
+  await flushAsync()
+  let controller = render()
+  assert.equal(controller.current?.id, 1)
+  assert.equal(controller.items[0]?.name, '旧目录文件.txt')
+
+  for (const reason of ['403 forbidden', 'request timeout']) {
+    blocked = deferredFirstPage()
+    const navigation = controller.loadDirectory(2, [
+      { id: 1, name: '我的文件' }, { id: 2, name: '受限目录' },
+    ], sort)
+    controller = render()
+    assert.equal(controller.loading, true, 'pending first page may show progress, not an empty folder')
+    assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1])
+    assert.equal(controller.items[0]?.name, '旧目录文件.txt')
+
+    blocked.reject(new Error(reason))
+    assert.equal(await navigation, false)
+    controller = render()
+    assert.equal(controller.loading, false, 'latest error must settle progress')
+    assert.equal(controller.current?.id, 1, 'error never commits unverified destination')
+    assert.equal(controller.items[0]?.name, '旧目录文件.txt', 'retain old authorized rows')
+    assert.equal(failures.at(-1), reason)
+  }
+  assert.deepEqual(failures, ['403 forbidden', 'request timeout'])
+})
+
+test('U01 late superseded 403/success cannot erase a newer authorized folder commit', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const oldPending = []
+  const failures = []
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getRange: async (parentID, offset, limit) => {
+      if (parentID === 1) return u01Range(10, '根目录.txt', offset, limit)
+      if (parentID === 2) {
+        const item = deferredFirstPage()
+        oldPending.push(item)
+        return item.promise
+      }
+      if (parentID === 3) return u01Range(30, '已验证的C目录.txt', offset, limit)
+      throw new Error('unexpected parent ' + parentID)
+    },
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, defaultSort: sort,
+    quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => failures.push(String(error.message)),
+  }))
+  render()
+  await flushAsync()
+  let controller = render()
+  assert.equal(controller.items[0]?.name, '根目录.txt')
+
+  const a = controller.loadDirectory(2, [
+    { id: 1, name: '我的文件' }, { id: 2, name: '延迟B' },
+  ], sort)
+  controller = render()
+  assert.equal(controller.loading, true)
+  assert.equal(controller.current?.id, 1)
+  const committed = await controller.loadDirectory(3, [
+    { id: 1, name: '我的文件' }, { id: 3, name: 'C' },
+  ], sort)
+  assert.equal(committed, true)
+  controller = render()
+  assert.equal(controller.loading, false)
+  assert.equal(controller.current?.id, 3)
+  assert.equal(controller.items[0]?.name, '已验证的C目录.txt')
+
+  oldPending[0].reject(new Error('stale forbidden'))
+  assert.equal(await a, false)
+  controller = render()
+  assert.equal(controller.current?.id, 3)
+  assert.equal(controller.loading, false)
+  assert.equal(controller.items[0]?.name, '已验证的C目录.txt')
+  assert.deepEqual(failures, [], 'a stale 403 must not display an error in the new folder')
+
+  const staleSuccess = controller.loadDirectory(2, [
+    { id: 1, name: '我的文件' }, { id: 2, name: '延迟B' },
+  ], sort)
+  const latest = controller.loadDirectory(3, [
+    { id: 1, name: '我的文件' }, { id: 3, name: 'C' },
+  ], sort)
+  assert.equal(await latest, true)
+  oldPending[1].resolve(u01Range(20, '过时B目录.txt'))
+  assert.equal(await staleSuccess, false)
+  controller = render()
+  assert.equal(controller.current?.id, 3)
+  assert.equal(controller.items[0]?.name, '已验证的C目录.txt')
+  assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1, 3])
+  assert.deepEqual(failures, [])
+})
