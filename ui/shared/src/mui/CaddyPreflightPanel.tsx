@@ -167,6 +167,16 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               此结果仅约束本轮多次只读观测的容器代次，不证明 Caddy 配置从未热加载、
               管理员期望修订已应用、公网访问可达或可以安全启停网关。
             </Typography>
+            <Typography variant="body2" color="text.secondary"
+              data-xdrive-caddy-alidns-module-state>
+              可选 AliDNS DNS-01 插件：{result.host_alidns_module_state === 'present-local'
+                ? '当前健康的 Caddy 容器二进制中已检测到插件'
+                : result.host_alidns_module_state === 'absent-local'
+                  ? '当前健康的 Caddy 容器二进制未包含插件；如需 AliDNS 证书，请检查部署镜像'
+                  : '未核验：旧版 Host Manager、网关不可用或模块检测失败。'}
+              此插件并非 xDrive 文件服务必需依赖，也不证明 DNS 写入权限、证书签发、
+              管理员保存配置已实际应用，或公网 HTTPS 可达。
+            </Typography>
             <Typography variant="caption" color="text.secondary"
               data-xdrive-caddy-preflight-revision-snapshot>
               本次只读预检修订一致性：{result.revision_snapshot_consistent === true

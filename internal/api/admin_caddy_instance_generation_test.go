@@ -26,6 +26,7 @@ func TestCaddyInstanceGenerationFailsClosed(t *testing.T) {
 		RuntimeTLSAlignment:     "matched-local",
 		LiveConfigSHA256:        strings.Repeat("b", 64),
 		InstanceGenerationState: "same-instance-local",
+		AliDNSModuleState:       "present-local",
 	}
 	cases := []struct {
 		name     string
@@ -34,6 +35,18 @@ func TestCaddyInstanceGenerationFailsClosed(t *testing.T) {
 		want     string
 	}{
 		{"same fixed generation", func(*caddyHostStatus) {}, true, "same-instance-local"},
+		{"optional module absent on healthy host", func(s *caddyHostStatus) {
+			s.AliDNSModuleState = "absent-local"
+		}, true, "same-instance-local"},
+		{"optional module unknown is neutral", func(s *caddyHostStatus) {
+			s.AliDNSModuleState = "unverified"
+		}, true, "same-instance-local"},
+		{"old Host Manager missing module result", func(s *caddyHostStatus) {
+			s.AliDNSModuleState = ""
+		}, true, "same-instance-local"},
+		{"forged module apply result", func(s *caddyHostStatus) {
+			s.AliDNSModuleState = "applied"
+		}, false, "unverified"},
 		{"old Host Manager omits field", func(s *caddyHostStatus) {
 			s.InstanceGenerationState = ""
 		}, true, "unverified"},
@@ -84,6 +97,10 @@ func TestCaddyInstanceGenerationFailsClosed(t *testing.T) {
 			got, observed := server.readCaddyHostStatus()
 			if observed != tc.accepted {
 				t.Fatalf("accepted = %v, expected %v", observed, tc.accepted)
+			}
+			if observed && got.AliDNSModuleState == "present-local" &&
+				caddyObservedAliDNSModuleState(got, observed) != "present-local" {
+				t.Fatal("valid module result missing")
 			}
 			if state := caddyObservedInstanceGeneration(got, observed); state != tc.want {
 				t.Fatalf("generation state = %q, want %q", state, tc.want)
