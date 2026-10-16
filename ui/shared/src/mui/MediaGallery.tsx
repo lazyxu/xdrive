@@ -3948,6 +3948,19 @@ function mediaGalleryScrollParent(element: HTMLElement) {
   return null
 }
 
+type MediaGalleryReturnViewport = {
+  scrollTop: number
+  visibleTop: number
+  viewportHeight: number
+  width: number
+  windowWidth: number
+  scope: string
+  collectionKey: string
+  timeScale: MediaGalleryTimeScale
+}
+
+// This is a bounded pixel/window snapshot of ONE visible virtual collection,
+// not a retained photo array. It is consumed only across Mobile Collections.
 function MediaVirtualTileGrid({
   collection,
   minTileWidth,
@@ -3970,6 +3983,7 @@ function MediaVirtualTileGrid({
   restoreAnchorIndex,
   restoreAnchorRevision = 0,
   restoreAnchorViewportOffset,
+  returnViewport,
   onVisibleAnchorChange,
 }: {
   collection: XDriveMediaGalleryVirtualCollection
@@ -3993,22 +4007,47 @@ function MediaVirtualTileGrid({
   restoreAnchorIndex?: number
   restoreAnchorRevision?: number
   restoreAnchorViewportOffset?: number
+  returnViewport?: MediaGalleryReturnViewport
   onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
-  const [layout, setLayout] = useState(() => ({
-    metrics: xDriveMediaGalleryGridMetrics({
-      width: 0,
+  const [layout, setLayout] = useState(() => {
+    // The old zero-width/empty-window initializer exposed a blank Gallery
+    // frame while requestAnimationFrame measured the remounted grid.
+    // The previously committed viewport already provides bounded geometry:
+    // create its real virtual rows BEFORE the first browser paint.
+    const metrics = xDriveMediaGalleryGridMetrics({
+      width: returnViewport?.width ?? 0,
       itemCount: collection.itemCount,
       minColumnWidth: minTileWidth,
-        minColumns,
-        referenceColumnWidth,
-        baselineColumns,
-    }),
-    window: { start: 0, end: 0, startRow: 0, endRow: 0 },
-    visibleWindow: { start: 0, end: 0, startRow: 0, endRow: 0 },
-  }))
+      minColumns,
+      referenceColumnWidth,
+      baselineColumns,
+    })
+    const visibleTop = returnViewport?.visibleTop ?? 0
+    const visibleBottom = visibleTop + (returnViewport?.viewportHeight ?? 0)
+    const empty = { start: 0, end: 0, startRow: 0, endRow: 0 }
+    const visibleWindow = returnViewport
+      ? xDriveMediaGalleryGridWindow({
+          itemCount: collection.itemCount, columns: metrics.columns, rowStep: metrics.rowStep,
+          visibleTop, visibleBottom, overscanRows: 0,
+        }) : empty
+    const window = returnViewport
+      ? xDriveMediaGalleryGridWindow({
+          itemCount: collection.itemCount, columns: metrics.columns, rowStep: metrics.rowStep,
+          visibleTop, visibleBottom,
+        }) : empty
+    return { metrics, window, visibleWindow }
+  })
+
+  useLayoutEffect(() => {
+    // With the full-height virtual host already mounted, restoring the exact
+    // scroll position is synchronous and cannot flash the short overview.
+    if (!returnViewport || !hostRef.current) return
+    const owner = mediaGalleryScrollParent(hostRef.current)
+    if (owner) owner.scrollTop = returnViewport.scrollTop
+  }, [returnViewport])
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -4097,7 +4136,7 @@ function MediaVirtualTileGrid({
   }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
-    if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    if (returnViewport || restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
     const host = hostRef.current
     if (!host || collection.itemCount <= 0) return
     const metrics = xDriveMediaGalleryGridMetrics({
@@ -4140,6 +4179,7 @@ function MediaVirtualTileGrid({
     restoreAnchorIndex,
     restoreAnchorRevision,
     restoreAnchorViewportOffset,
+    returnViewport,
   ])
 
   useEffect(() => {
@@ -4276,6 +4316,7 @@ function MediaVirtualTimeline({
   restoreAnchorIndex,
   restoreAnchorRevision = 0,
   restoreAnchorViewportOffset,
+  returnViewport,
   onVisibleAnchorChange,
 }: {
   groups: MediaTimelineGroupIndex[]
@@ -4299,26 +4340,35 @@ function MediaVirtualTimeline({
   restoreAnchorIndex?: number
   restoreAnchorRevision?: number
   restoreAnchorViewportOffset?: number
+  returnViewport?: MediaGalleryReturnViewport
   onVisibleAnchorChange?: (index: number) => void
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const frameRef = useRef<number | null>(null)
   const [state, setState] = useState(() => {
+    // Use the same pre-paint scroll snapshot for Year/Month/Day as for All.
     const layout = xDriveMediaGalleryTimelineLayout({
-      width: 0,
+      width: returnViewport?.width ?? 0,
       groups,
       minColumnWidth: minTileWidth,
-        minColumns,
-        referenceColumnWidth,
-        baselineColumns,
+      minColumns,
+      referenceColumnWidth,
+      baselineColumns,
     })
-    const window = xDriveMediaGalleryTimelineWindow({
-      layout,
-      visibleTop: 0,
-      visibleBottom: 0,
-    })
-    return { layout, window, visibleWindow: window }
+    const visibleTop = returnViewport?.visibleTop ?? 0
+    const visibleBottom = visibleTop + (returnViewport?.viewportHeight ?? 0)
+    const window = xDriveMediaGalleryTimelineWindow({ layout, visibleTop, visibleBottom })
+    const visibleWindow = returnViewport
+      ? xDriveMediaGalleryTimelineWindow({ layout, visibleTop, visibleBottom, overscanRows: 0 })
+      : window
+    return { layout, window, visibleWindow }
   })
+
+  useLayoutEffect(() => {
+    if (!returnViewport || !hostRef.current) return
+    const owner = mediaGalleryScrollParent(hostRef.current)
+    if (owner) owner.scrollTop = returnViewport.scrollTop
+  }, [returnViewport])
 
   useLayoutEffect(() => {
     const host = hostRef.current
@@ -4406,7 +4456,7 @@ function MediaVirtualTimeline({
   }, [collection.onRangeChange, groups, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
   useLayoutEffect(() => {
-    if (restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    if (returnViewport || restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
     const host = hostRef.current
     if (!host) return
     const layout = xDriveMediaGalleryTimelineLayout({
@@ -4446,6 +4496,7 @@ function MediaVirtualTimeline({
     restoreAnchorIndex,
     restoreAnchorRevision,
     restoreAnchorViewportOffset,
+    returnViewport,
   ])
 
   useEffect(() => {
@@ -4789,17 +4840,24 @@ export function XDriveMediaGallery({
     revision: number
     viewportTop: number
   } | null>(null)
+  const mobileLibraryReturnRef = useRef<MediaGalleryReturnViewport | null>(null)
   const overviewTransitionRef = useRef({ showing: mobileCollectionsOverview, section })
   useEffect(() => {
     const previous = overviewTransitionRef.current
     if (previous.showing && !mobileCollectionsOverview &&
       previous.section === 'library' && section === 'library') {
-      // The virtual grid was unmounted for the Collections overview; reuse
-      // its last visible index, not the top of the 100k media collection.
-      setViewAnchorRevision((revision) => revision + 1)
+      const saved = mobileLibraryReturnRef.current
+      // Exact same-viewport return restores pixels in a pre-paint layout
+      // effect. Only unmatched/older routes use the legacy logical-row jump.
+      if (!saved || saved.scope !== preferenceScope ||
+        saved.collectionKey !== collectionKey ||
+        saved.timeScale !== effectiveTimeScale ||
+        saved.windowWidth !== window.innerWidth) {
+        setViewAnchorRevision((revision) => revision + 1)
+      }
     }
     overviewTransitionRef.current = { showing: mobileCollectionsOverview, section }
-  }, [mobileCollectionsOverview, section])
+  }, [mobileCollectionsOverview, section, preferenceScope, collectionKey])
   const viewAnchorIndexRef = useRef(0)
   const [currentTimelineGroupKey, setCurrentTimelineGroupKey] = useState<string | null>(null)
   const [timelineReturnAnchor, setTimelineReturnAnchor] = useState<number | null>(null)
@@ -4809,6 +4867,18 @@ export function XDriveMediaGallery({
   const timeScale = viewPreferences.timeScale
   const effectiveTimeScale: MediaGalleryTimeScale =
     searchActive || currentCleanupReview ? 'all' : timeScale
+  const returnViewport = compactGallery && !mobileCollectionsOverview &&
+    section === 'library' && typeof window !== 'undefined' &&
+    mobileLibraryReturnRef.current?.scope === preferenceScope &&
+    mobileLibraryReturnRef.current?.collectionKey === collectionKey &&
+    mobileLibraryReturnRef.current?.timeScale === effectiveTimeScale &&
+    mobileLibraryReturnRef.current?.windowWidth === window.innerWidth
+      ? mobileLibraryReturnRef.current : undefined
+  useEffect(() => {
+    const saved = mobileLibraryReturnRef.current
+    if (saved && (section !== 'library' || saved.scope !== preferenceScope ||
+      saved.collectionKey !== collectionKey)) mobileLibraryReturnRef.current = null
+  }, [section, preferenceScope, collectionKey])
   const minTileWidth = viewPreferences.densityByScale[effectiveTimeScale]
   const mobileColumns = mobileColumnsByScale[effectiveTimeScale]
   const mobileBaselineColumns = XDRIVE_MEDIA_GALLERY_MOBILE_COLUMNS_DEFAULT[effectiveTimeScale]
@@ -6073,7 +6143,34 @@ export function XDriveMediaGallery({
       {compactGallery ? (
         <XDriveMobileGalleryChrome
           primaryTab={mobileCollectionsOverview || section !== 'library' ? 'collections' : 'library'}
-          onPrimaryTabChange={(tab) => onMobilePrimaryTabChange?.(tab)}
+          onPrimaryTabChange={(tab) => {
+            // Capture before replacing the Library with the much shorter
+            // Collections overview; otherwise the App main scroll clamps and
+            // only an approximate media-row index survives the navigation.
+            if (tab === 'collections' && !mobileCollectionsOverview &&
+              section === 'library' && typeof window !== 'undefined') {
+              const host = galleryRootRef.current?.querySelector<HTMLElement>(
+                '[data-xdrive-media-gallery-virtual-grid], [data-xdrive-media-gallery-virtual-timeline]',
+              )
+              const owner = host ? mediaGalleryScrollParent(host) : null
+              if (host && owner && host.clientWidth > 0 && owner.clientHeight > 0) {
+                mobileLibraryReturnRef.current = {
+                  scrollTop: owner.scrollTop,
+                  visibleTop: Math.max(0,
+                    owner.getBoundingClientRect().top - host.getBoundingClientRect().top),
+                  viewportHeight: owner.clientHeight,
+                  width: host.clientWidth,
+                  windowWidth: window.innerWidth,
+                  scope: preferenceScope,
+                  collectionKey,
+                  timeScale: effectiveTimeScale,
+                }
+              } else {
+                mobileLibraryReturnRef.current = null
+              }
+            }
+            onMobilePrimaryTabChange?.(tab)
+          }}
           collectionTitle={galleryTitle}
           canGoBack={!mobileCollectionsOverview && (canBack || section !== 'library')}
           onGoBack={canBack ? onBack : () => onMobileCollectionsOverviewChange?.(true)}
@@ -7368,6 +7465,7 @@ export function XDriveMediaGallery({
               onToggleFavorite={toggleMediaFavorite}
               restoreAnchorIndex={viewAnchorIndexRef.current}
               restoreAnchorRevision={viewAnchorRevision}
+              returnViewport={returnViewport ?? undefined}
               restoreAnchorViewportOffset={
                 pinchViewportRestore?.revision === viewAnchorRevision
                   ? pinchViewportRestore.viewportTop : undefined
@@ -7445,6 +7543,7 @@ export function XDriveMediaGallery({
             recommendedNodeID={cleanupRecommendedNodeID}
             restoreAnchorIndex={viewAnchorIndexRef.current}
             restoreAnchorRevision={viewAnchorRevision}
+            returnViewport={returnViewport ?? undefined}
             restoreAnchorViewportOffset={
               pinchViewportRestore?.revision === viewAnchorRevision
                 ? pinchViewportRestore.viewportTop : undefined
