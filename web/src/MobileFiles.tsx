@@ -57,6 +57,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
+import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
   mobileFilesRowTextInset, mobileFilesNativeMetadata, MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
@@ -1166,19 +1167,31 @@ export default function MobileFiles(props: Props) {
     props.getItemMenuItems(item).filter(action => action.id !== 'open-new-tab')
   // The shared menu adapter already supplies genuine action icons and danger/
   // separator metadata. Preserve that semantic structure in Mobile Files.
-  const mobileContextAction = (action: XDriveFileExplorerMenuItem) => (
-    <MenuItem key={action.id} data-mobile-files-context-action={action.id}
-      disabled={action.disabled}
-      sx={{ color: action.danger ? 'error.main' : undefined, minHeight: MIN_TOUCH }}
-      onClick={() => { setItemMenu(null); action.onSelect() }}>
-      {action.icon ? (
-        <ListItemIcon sx={{ minWidth: 34, color: action.danger ? 'error.main' : 'inherit' }}>
-          {action.icon}
-        </ListItemIcon>
-      ) : null}
-      {action.id === 'share' ? '分享链接' : action.label}
-    </MenuItem>
-  )
+  const mobileContextAction = (action: XDriveFileExplorerMenuItem) => {
+    const reason = xDriveFileExplorerMenuDisabledReason(action)
+    return (
+      <MenuItem key={action.id} data-mobile-files-context-action={action.id}
+        disabled={action.disabled}
+        title={reason ?? undefined}
+        aria-label={reason ? action.label + '：' + reason : action.label}
+        sx={{ color: action.danger ? 'error.main' : undefined, minHeight: MIN_TOUCH }}
+        onClick={() => { setItemMenu(null); action.onSelect() }}>
+        {action.icon ? (
+          <ListItemIcon sx={{ minWidth: 34, color: action.danger ? 'error.main' : 'inherit' }}>
+            {action.icon}
+          </ListItemIcon>
+        ) : null}
+        <Box sx={{ minWidth: 0 }}>
+          <Typography variant="body2">{action.id === 'share' ? '分享链接' : action.label}</Typography>
+          {xDriveFileExplorerMenuReasonLabel(action) ? (
+            <Typography variant="caption" sx={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+              {xDriveFileExplorerMenuReasonLabel(action)}
+            </Typography>
+          ) : null}
+        </Box>
+      </MenuItem>
+    )
+  }
   const openProperties = (item: XDriveFileExplorerItem) => {
     setItemMenu(null)
     setPropertiesItems([item])
@@ -2303,7 +2316,7 @@ export default function MobileFiles(props: Props) {
         <Menu open={Boolean(itemMenu)} onClose={() => setItemMenu(null)}
           anchorReference="anchorPosition"
           anchorPosition={itemMenu ? { top: itemMenu.y, left: itemMenu.x } : undefined}
-          slotProps={{ paper: { sx: { borderRadius: '14px', minWidth: 218,
+          slotProps={{ list: { disabledItemsFocusable: true }, paper: { sx: { borderRadius: '14px', minWidth: 218,
             maxWidth: 'calc(100vw - 24px)', maxHeight: 'min(70dvh, 560px)',
             ...MOBILE_FILES_MENU_TOUCH_SX,
           } } }}>
@@ -2327,8 +2340,16 @@ export default function MobileFiles(props: Props) {
           ) : null}
           {itemMenu && !props.trashActive ? <MenuItem data-mobile-files-item-rename
             disabled={Boolean(props.renameDisabled)}
+            title={props.renameDisabled ? '当前不可重命名此文件' : undefined}
+            aria-label={props.renameDisabled ? '重命名：当前不可重命名此文件' : '重命名'}
             onClick={() => beginRename(itemMenu.item)}
-            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>重命名</MenuItem> : null}
+            sx={{ minHeight: MIN_TOUCH }}><ListItemIcon><EditRoundedIcon fontSize="small"/></ListItemIcon>
+            <Box><Typography variant="body2">重命名</Typography>
+              {props.renameDisabled ? <Typography variant="caption" color="text.secondary">
+                不可用：当前不可重命名此文件
+              </Typography> : null}
+            </Box>
+          </MenuItem> : null}
           {itemMenu && !props.trashActive ? ([
             { action: 'cut', label: '剪切', icon: <ContentCutRoundedIcon fontSize="small"/> },
             { action: 'copy', label: '复制', icon: <ContentCopyOutlinedIcon fontSize="small"/> },
@@ -2346,7 +2367,14 @@ export default function MobileFiles(props: Props) {
                   aria-label={reason ? `${option.label}：${reason}` : option.label}
                   onClick={() => contextItemAction(option.action, item)}
                   sx={{ minHeight: MIN_TOUCH }}>
-                  <ListItemIcon>{option.icon}</ListItemIcon>{option.label}
+                  <ListItemIcon>{option.icon}</ListItemIcon>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="body2">{option.label}</Typography>
+                    {reason ? <Typography variant="caption" color="text.secondary"
+                      sx={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                      {'不可用：' + reason}
+                    </Typography> : null}
+                  </Box>
                 </MenuItem>
               )
             }) : null}
