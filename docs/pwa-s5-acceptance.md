@@ -62,3 +62,29 @@ node desktop/scripts/pwa-s5a-live-https-audit.cjs --origin https://drive.your-do
 JSON `schema=xdrive-pwa-s5a2-browser-observation-v1` 中的 `platform_hint_only` **只是文案级提示，不是操作系统证明**；`display_mode_observed` 也不能证明安装；`origin_sha256` 仅为跨端对比不泄露实例地址。恒定 `installation_from_os_icon_verified=NOT_VERIFIED`、`trusted_os_certificate_verified=NOT_VERIFIED`、`physical_device_acceptance=NOT_RUN`、`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN`，需要另行人工复核才可将相应原始矩阵格子从 `NOT RUN` 更新为 `PASS/FAIL`。
 
 **自动化限制：** Node 纯逻辑、Web 类型检查与真正 Chromium Desktop 及 Android UA/touch 双模式的共享 MUI 点击测试只能证明记录结构、DOM、匿名边界和不触发额外 API；不是 iOS 27 Safari、Android 系统 Installed 或桌面 Edge 的真机安装验收。缺少真实设备及部署域名时，所有矩阵格子保持 `NOT RUN`，保持发布 `NO-GO`。详见 [docs/pwa-delivery.md](pwa-delivery.md#pwa-s5-a2a-用户主动采集设备浏览器验收记录2026-10-16)。
+
+
+## S5-A2b1 · 七平台物理设备材料接收与离线发布 NO-GO 守门（2026-10-16）
+
+此阶段**不是**实际执行 iOS 27 或 Android 真机测试。它只建立严格的本地材料输入与审查清单；任何人仅凭 JSON/截图/Chrome 模拟均不能解锁正式发布。
+
+1. 从 [docs/validation/pwa-s5-platforms.template.json](validation/pwa-s5-platforms.template.json) 复制一份本地材料清单（**不要把真实照片、个人路径、浏览器 Profile、登录凭证提交到公开 GitHub 仓库**）；初始七个平台为 `NOT_RUN`，`build_commit=null`、`origin_sha256=null`，真实材料收齐才填写。
+2. 在真实设备上通过安装对话框手动触发 **S5-A2a 脱敏浏览器观察记录**；该记录必须仍带 `installation_from_os_icon_verified=NOT_VERIFIED` 和 `release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN`，不可人为改成 PASS。将完整 JSON 按原样作为对应平台的 `browser_observation`。
+3. 测试人员**独立**实际从操作系统图标打开 PWA，并人工核验设备 OS HTTPS 信任、首次登录和 Files/Gallery/Viewer 深链接。对每个平台填 `status=SUBMITTED` 和固定六字段 `manual_checks`：`os_family`（iOS/Android/Windows/Linux/macOS）、`os_version`（只填版本号，不写设备姓名）、`browser`（Safari/Chrome/Edge）、`launch_source`（安装模式 `os_icon`，普通网页 `browser_tab`）、`trusted_https_in_device_os` 与 `login_and_deeplinks_verified` 布尔值。失败/缺失留为 false，绝不猜测通过。
+4. 在本地私有目录放一张经**脱敏**的真实 OS 图标/窗口截图（png/jpg/jpeg/webp，最大 20 MB）；`proof.filename` 仅允许简单文件名，`proof.sha256` 必须是其真实文件的 SHA-256。核验器会打开这个本地文件、校验非符号链接、格式头和全字节 SHA-256，**不会复制、上传或输出截图内容/文件路径**。不要把凭证、用户文件正文、账号信息、GPS 或服务器真实域名写入截图。
+5. 同时使用 S5-A1 CLI 对**真实部署 HTTPS FQDN** 生成独立 `s5a-redacted-evidence.json`；其 `evidence_environment` 必须是 `node-trusted-https-origin`，不得为 `test-fixture-https`。把其 `origin_sha256` 与全部 S5-A2a 记录对齐，并填写准确 40 位 `build_commit`。
+6. 在真实测试人员自己的机器上、无需额外 npm 依赖或登录凭证，运行下列只读核验（材料/证书报告均不上传 GitHub Actions）：
+
+```bash
+node desktop/scripts/pwa-s5b-physical-evidence-review.cjs \
+  --input /local/private/pwa-s5-physical-evidence.json \
+  --https-report /local/private/s5a-redacted-evidence.json \
+  --artifacts-dir /local/private/redacted-screenshots \
+  --output /local/private/s5b-review-no-go.json
+```
+
+脚本的 `--output` 仅创建权限 0600 的**脱敏**报告且不覆盖已有文件。输入有额外凭证字段、重复/未知平台、`PASS` 状态、跨域 Origin、不可信测试 HTTPS 报告、伪造浏览器/安装模式、路径穿越、缺失/哈希不匹配截图、不同 OS/浏览器声明时一律拒绝或标记不完整。每条最多显示 `NOT_RUN` / `INCOMPLETE_OR_UNVERIFIED` / `SUBMITTED_REQUIRES_INDEPENDENT_REVIEW`；不输出设备名、原始 Origin、User-Agent、截图文件名或媒体字节。
+
+**严格的发布权限边界：** CLI 有完整七平台材料也**始终返回退出码 1**、`release_gate=NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED` 和 `independent_device_review_completed=false`；它只核验文件存在、摘要及输入契约，绝对**不**证明截图拍摄地点或 OS 原生安装真实性，更不能签发发布许可。未来需要独立人工评审/发布批准（S5-A2b2）和 S5-04~S5-11 完整验收才能谈 Release GO。GitHub CI 只能执行合成材料的**拒绝误通过测试**，不收集真实用户硬件、真实凭据或私人截图。
+
+对应平台及功能矩阵仍以本文首表全部 `NOT RUN` 为准，直到独立实体设备证据得到实审。Desktop Browser/Installed、iOS Safari/Home Screen、Android Browser/Installed 的 OS 行为不能由 Android UA/Touch 或 `standalone` 一项来推断。正式版本发布流程本阶段不自动消费未经授权的本地材料，也不改动其他应用的发布和更新链路。

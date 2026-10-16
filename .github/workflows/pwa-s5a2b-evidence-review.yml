@@ -1,0 +1,57 @@
+name: PWA S5A2b Physical Evidence Offline NO-GO Contract
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s5a2b-offline-evidence:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s5a2b-physical-evidence-intake-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact HEAD, syntax, privacy and cross-platform files
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          node --check desktop/scripts/pwa-s5b-physical-evidence-review.cjs
+          node --check desktop/tests/pwa-s5b-physical-evidence-review.cjs
+          test -f docs/pwa-s5-acceptance.md
+          test -f docs/validation/pwa-s5-platforms.template.json
+          test -f docs/pwa-delivery.md
+      - name: Actual filesystem screenshot hash and fail-closed synthetic reviews
+        run: |
+          set -euo pipefail
+          node --test desktop/tests/pwa-s5b-physical-evidence-review.cjs
+      - name: Empty real-device matrix must BLOCK an ordinary release
+        run: |
+          set -euo pipefail
+          result="$RUNNER_TEMP/s5b-no-go.json"
+          status=0
+          node desktop/scripts/pwa-s5b-physical-evidence-review.cjs \
+            --input docs/validation/pwa-s5-platforms.template.json \
+            --output "$result" || status=$?
+          test "$status" -eq 1
+          node - "$result" <<'NODE'
+          const fs = require('node:fs')
+          const assert = require('node:assert/strict')
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+          assert.equal(report.not_run, 7)
+          assert.equal(report.submitted_pending_review, 0)
+          assert.equal(report.independent_device_review_completed, false)
+          assert.equal(report.release_gate, 'NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED')
+          assert.deepEqual(report.platform_rows.map(row => row.evidence_state), Array(7).fill('NOT_RUN'))
+          console.log('PWA_S5A2B_FAIL_CLOSED_VERIFIED platforms=7 physical_evidence=0 release_go=false')
+          NODE

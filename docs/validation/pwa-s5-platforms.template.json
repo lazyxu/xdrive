@@ -1,0 +1,56 @@
+{
+  "schema": "xdrive-pwa-s5a2b1-platform-submissions-v1",
+  "build_commit": null,
+  "origin_sha256": null,
+  "cases": [
+    {
+      "platform_id": "desktop_chrome_browser",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "desktop_chrome_installed",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "desktop_edge_installed",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "ios27_safari",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "ios27_home_screen",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "android_chrome",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    },
+    {
+      "platform_id": "android_installed",
+      "status": "NOT_RUN",
+      "browser_observation": null,
+      "manual_checks": null,
+      "proof": null
+    }
+  ]
+}
