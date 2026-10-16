@@ -2337,6 +2337,88 @@ async function galleryIos27ChromeAcceptance() {
     {url:searchResponse.url(), count:facetResponses()});
   await page.getByRole('button', {name:'完成', exact:true}).tap();
   await page.locator('[data-xdrive-mobile-gallery-filter-panel]').waitFor({state:'hidden'});
+  // P11 test-only: the Library->Collections->Library transition must not paint
+  // unrelated top-of-library rows while its saved logical anchor is restored.
+  // Record actual built-Web Chromium frames; do not weaken this test after
+  // observing a genuine browser failure.
+  activeStage = 'user-gallery-p11-library-collections-return';
+  await page.locator('[data-xdrive-mobile-gallery-tab="library"]').tap();
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('main').evaluate(main => { main.scrollTop = 1800; });
+  await settle();
+  const p11Initial = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    const box = main.getBoundingClientRect();
+    const first = [...document.querySelectorAll('[data-xdrive-media-tile]')]
+      .filter(tile => {
+        const rect = tile.getBoundingClientRect();
+        return rect.bottom > box.top + 2 && rect.top < box.bottom - 2;
+      })
+      .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    return { scrollTop: main.scrollTop, firstIndex: first
+      ? Number(first.getAttribute('data-xdrive-media-index')) : null };
+  });
+  check('P11 setup: Library has a stable nonzero virtual tile anchor',
+    p11Initial.scrollTop >= 1200 && p11Initial.firstIndex >= 12, p11Initial);
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  await page.locator('[data-xdrive-mobile-gallery-collections]').waitFor();
+  await settle();
+  await page.evaluate(() => {
+    const state = { frames: [], ticks: 0, finished: false };
+    window.__galleryP11 = state;
+    const tick = () => {
+      const tab = document.querySelector(
+        '[data-xdrive-mobile-gallery-tab="library"][aria-selected="true"]');
+      const main = document.querySelector('main');
+      if (tab && main) {
+        const bounds = main.getBoundingClientRect();
+        const visible = [...document.querySelectorAll('[data-xdrive-media-tile]')]
+          .filter(tile => {
+            const r = tile.getBoundingClientRect();
+            return r.bottom > bounds.top + 2 && r.top < bounds.bottom - 2;
+          })
+          .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+        state.frames.push({ scrollTop: main.scrollTop,
+          firstIndex: visible.length ? Number(visible[0].getAttribute('data-xdrive-media-index')) : null });
+      }
+      state.ticks++;
+      if (state.frames.length < 12 && state.ticks < 120) requestAnimationFrame(tick);
+      else state.finished = true;
+    };
+    requestAnimationFrame(tick);
+  });
+  await page.locator('[data-xdrive-mobile-gallery-tab="library"]').tap();
+  await page.waitForFunction(() => window.__galleryP11?.finished);
+  await settle();
+  const p11Return = await page.evaluate(() => {
+    const main = document.querySelector('main');
+    const rect = main.getBoundingClientRect();
+    const first = [...document.querySelectorAll('[data-xdrive-media-tile]')]
+      .filter(tile => {
+        const r = tile.getBoundingClientRect();
+        return r.bottom > rect.top + 2 && r.top < rect.bottom - 2;
+      })
+      .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+    return { scrollTop: main.scrollTop,
+      firstIndex: first ? Number(first.getAttribute('data-xdrive-media-index')) : null,
+      frames: window.__galleryP11.frames,
+      sameMobileGallery: !!document.querySelector('#xdrive-mobile-gallery-main'),
+      sameAppMain: main === window.__iosGalleryMain };
+  });
+  const p11BadFrames = p11Return.frames.filter(frame => frame.firstIndex !== null
+    && frame.firstIndex < p11Initial.firstIndex - 6);
+  result.samples[activeStage] = { original: p11Initial, returned: p11Return,
+    wrongAnchorFrames: p11BadFrames };
+  check('P11: Library return recovers the same logical scroll anchor',
+    p11Return.sameMobileGallery && p11Return.sameAppMain
+    && p11Return.scrollTop >= 1200
+    && p11Return.firstIndex !== null
+    && Math.abs(p11Return.firstIndex - p11Initial.firstIndex) <= 6,
+    result.samples[activeStage]);
+  check('P11: no visible wrong-first-row frame before Library anchor restoration',
+    p11BadFrames.length === 0 && p11Return.frames.some(frame => frame.firstIndex !== null),
+    result.samples[activeStage]);
+  await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
 }
 
 
