@@ -40,3 +40,38 @@ CAS-A04b 针对 [restic](https://github.com/restic/restic)、[Kopia](https://kop
 ### 2026-10-16 · 首轮归档头 Invalid harness 与校验恢复（非生产性能红项）
 
 [#1795](https://github.com/lazyxu/xdrive/pull/1795) 证据首轮归档头 `469651023e6a64b2f54adcf0c56631b23dcd0c0b` 的[专项 CI #38864841379](https://github.com/lazyxu/xdrive/actions/runs/38864841379) 在第二套物理n3原片 tar/restore 全部成功之后，由于把 `ci-evidence.tar.gz` 输出写在正在 `tar` 的目录内，报 `tar: .: file changed as we read it` 并失败；不是生产tar性能退化，不能作为交付绿CI。第二套实际测量也不能作为生产AFTER，因为根本没有产品优化。现将输出改为 `$RUNNER_TEMP` 后再复制，验证已永久保存首次Artifact原始13文件的完整SHA和源准确HEAD；首次有效原版数值和失败历史保留。准确修正HEAD的分支专项和完整final-gate仍是强制交付门槛。
+
+
+## CAS-A04b/S001-c2 — 两代全量 tar 对比离线 Blob Manifest 增量备份（2026-10-16）
+
+**CAS-A04b原版和离线候选真实同源n3×3已测；候选空间/写盘符合门槛，但完整恢复显著变慢，生产AFTER=N/A；最终永久全样本证据归档和新HEAD CI未完成。** 冻结GitHub master@f463d45a8445c9941f39bbc488ca4dbbe65d600b，在同一工作提交上增加离线benchmark与源准确分支CI（绝不改动生产 Server backup/restore、Blob/ContentBlob、PG或Race）。上游CAS-A04a #1795已验收历史单独原版n3，0/1/100新CAS两代tar物理占用分别是839,065,600 / 843,253,760 / 1,258,567,680B；CAS-A03-d2 #1816真实离线4GiB Chunk复用已合入。本次测试**新增真实同一机器同源A/B**，不可直接把历史A04a不同Runner数字当BEFORE。
+
+- **负载身份**：初始100个独立SHA-256原片，每个真fsync、实体分配4MiB，共400MiB；第二代新增0/1/100个相同大小的不同SHA原片；每场景三独立数据源n3，总9组。A/B均取自完全相同的物理源；原版调用既有`scripts/bench-cas-a04-backup-generations.py`的`snapshot`、`restore_and_verify`（真实 GNU tar文件数据阶段）；候选创建**全独立拷贝**不可变hash对象+两个持久Manifest（非源硬链接、不依赖源设备），同源按样本顺序交替。
+- **验证**：记录每阶段真实`st_blocks×512`、`/proc/self/io write_bytes`、wall、CPU、Go无关Python RSS；创建完备份后**删除全部源数据**，两代原始tar与候选均逐原片SHA独立恢复；拒绝缺失对象或哈希污染，不发布坏的第3代；删除第2代仅回收其新增对象，第一代可完整恢复；最后删除第一代、对象归零。
+- **冻结预算**：相同Runner候选二代实体空间/内核写字节两项各≤原版两份tar的55%（0/1%变化）；100%变化各≤80%；单个新建备份阶段wall≤180秒，进程RSS≤512MiB，2×全量恢复SHA/缺失与损坏拒绝/代际GC无一错误；超过预算先判断夹具Invalid还是性能RED，只有同源真实改进且安全恢复无回归才能接受候选。此阶段不改变产品，所以生产BEFORE=CURRENT、AFTER=N/A，不宣称线上提速。
+- **执行**：`python3 scripts/bench-cas-a04b-offline-incremental-ab.py --results-dir /tmp/cas-a04b-results --samples 3 --source-count 100 --object-bytes 4194304 --stage-budget-seconds 180`，[分支专属CI](../.github/workflows/cas-a04b-offline-two-generation-ab.yml)。初轮n3后将9份JSON、summary、资源、source SHA与stdout永久存入`docs/performance-evidence/cas-a04b-offline-two-generation-ab/`，在**同一个唯一工作提交**更新登记簿、六平台矩阵、此文档和Blob架构审查，随后新HEAD专项+完整CI final-gate才可Ready/Rebase合并。
+- **开源设计参考**：[restic](https://github.com/restic/restic/blob/master/doc/design.rst)备份先写数据/索引后发布快照以及内容定义块；[Kopia](https://kopia.io/docs/advanced/architecture/)Blob/CABS/CAOS/Manifest分层；[Borg](https://borgbackup.readthedocs.io/en/stable/internals.html)跨代chunk复用。但本测试是**自建只读离线实验**，没有直接运行这些项目CLI，也没有Pack/CDC/加密或跨用户备份。不能据此迁移现行`blobs.tar`格式，仍须独立证明PostgreSQL+CAS同一维护时点的一致性、正式安全恢复、迁移回滚及多代GC。六端GUI Desktop/Web/Mobile Web/Desktop installed PWA/Android installed PWA/iOS installed PWA此负载全部Not measured；视口Go ctx取消和耐久任务所有权原样保留。
+
+
+### CAS-A04b · 首轮真实9样本源准确数据（2026-10-16）
+[专项 CI #38899731578](https://github.com/lazyxu/xdrive/actions/runs/38899731578) SUCCESS，原始源码SHA `af6605037ee58b32d2048454c30c4bae6cfa0309`；完整[Artifact #12045612018](https://github.com/lazyxu/xdrive/actions/runs/38899731578/artifacts/12045612018) ZIP SHA256 `d9cabfa1fd440e69c954dde4a05528d44089beaaf6b570164988277f058992df`。机器Summary与9个原始stdout数据行、完整Native CI日志和源文件哈希见[本仓库性能证据目录](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)。每场景100个实体fsync、不同SHA的4MiB原片，第二代增加0/1/100个真实新对象，n3×3全部通过，源物理删除后两代全量SHA成功，缺失/腐坏拒绝及剪枝GC保留旧代正确。资源`/usr/bin/time -v` Linux整组RSS峰值28,780KiB，用户CPU49.63s/内核CPU39.69s。
+
+| 第二代新原片 | tar两代实体P50 B | 离线仓库两代实体P50 B | Candidate/Original 实体与write_bytes | tar第二代创建P50 ms | 候选第二代创建P50 ms | tar完整第二代恢复P50 ms | 候选完整第二代恢复P50 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 | 839065600 | 419463168 | 0.499917 | 2825.242 | 667.743 | 571.735 | 2495.642 |
+| +1 | 843264000 | 423657472 | 0.502402 | 2871.743 | 691.506 | 575.683 | 2526.463 |
+| +100 | 1258573824 | 838909952 | 0.666556 | 5657.082 | 3187.011 | 1134.933 | 5034.011 |
+
+**决策：实验离线空间节省50.0083%/49.7598%/33.3444%，实写IO同数量级显著下降，但候选完整恢复约4.4倍较慢；因此可保留为离线容量设计证据，**生产上线NO-GO**，不改原tar/restore协议。不可将备份文件子阶段实验推广为真实PG一致性/Restic-Kopia-Borg二进制、在线CDC或六端客户端。首轮完整9份源JSON仍在原Artifact中：后续新HEAD将向日志输出源字节证据再永久归档；按AGENTS.md准确最后HEAD双CI/final-gate成功前PR须保留Draft。
+
+### CAS-A04b 第二次源准确真实n3完整JSON已归档（2026-10-16）
+
+继第一次[专项CI #38899731578](https://github.com/lazyxu/xdrive/actions/runs/38899731578)后，同一生产原版/离线候选代码在上一证据工作HEAD `fa217484641d679cfe8e8de8da67b8f9e9d87d29` 再做三独立源×3变化率，准确[专项CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)成功。**已将9个原始sample JSON、summary、source、实际进程资源日志按CI原文件输出永久写入[证据目录](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)**；`source.txt`记录来源工作SHA及被测脚本SHA256。两代原版/离线持久字节与候选write_bytes P50比例：0变更 `839065600/419463168B, 0.499917`；+1对象 `843264000/423657472B, 0.502402`；+100对象 `1258582016/838909952B, 0.666552`。CPU/RSS和每阶段wall见逐样本原JSON。
+
+| Gen2变化 | tar创建P50 ms | 候选创建P50 ms | tar恢复P50 ms | 候选恢复P50 ms |
+| --- | ---: | ---: | ---: | ---: |
+| +0 | 1337.463 | 592.920 | 651.307 | 1056.847 |
+| +1 | 1364.959 | 603.113 | 658.059 | 1088.042 |
+| +100 | 2962.507 | 1504.934 | 1294.193 | 2394.714 |
+
+**两轮不同GitHub runner的wall差异不能当优化；** 固定空间结论可复现，候选恢复仍比tar慢约1.6–1.9倍（第一次runner约4.4倍），不应把离线容量节省当生产端到端加速。原版恢复正确、源删后两代全SHA、corrupt/missing拒绝/GC均pass，**只接受为离线可行性证据，生产备份格式/协议不变**。此归档的新提交还需再次验证准确HEAD专项CI+完整CI/final-gate才可Ready/Rebase合入；客户端六平台此次均Not measured。

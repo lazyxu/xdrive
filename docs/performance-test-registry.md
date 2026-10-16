@@ -333,3 +333,18 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 ### CAS-A03/S001-d2 · 源准确实物 n3 A/B 归档登记（2026-10-16）
 
 来源：[原始11文件逐字节归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)，源码 `f3086920d226f7cb600650b7fee33770b6ad0f44`，[专项 #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)与[完整CI #38875620937](https://github.com/lazyxu/xdrive/actions/runs/38875620937)成功；三独立4GiB SHA身份（每个B仅1MiB差异）与旧d1匹配；原始Artifact #12035880698和SHA256 `f948c1ff03de5ac9693c07f0a86d5fdccf261e76c0651d990047cbcdb8bb4fc1`，仓库长期归档 `tar.gz` SHA256 `9a55362cd66ea725cd49ce79de1dcc3f81b1f654210bac3b0e28c68fd1cc4772`。冻结 A/B 预算及逐项真实样本详见[CAS版本性能专项](cas-version-performance.md)。原版/离线候选新增B实体4,294,971,392/8,425,472B；合计2版持久8,589,942,784/4,303,429,632B；kernel write 8,589,934,592/4,303,429,632B；B Put P50 22,404.654/3,394.406ms；新原片Put P50 22,256.039/22,594.785ms；40x64KiB Range总P50 2.335/2.174ms；候选B额外物化+SHA P50 26,370.862ms；进程RSS最大38,812KiB。3/3真实物理512+1块、SHA/Range、B删除A幸存、最终0B通过。**实验结论=Accepted Offline Candidate（仅持久空间），生产BEFORE=CURRENT / AFTER=N/A / speedup=N/A**。六端客户端、PG/Owner、增量传输、CDC/中间插入、备份一致性均未测；此追加登记是首轮结果归档，**必须再通过新HEAD专项与完整FinalGate**，不是历史CI对新HEAD背书。
+
+
+## CAS-A04b/S001-c2 — 同源两代备份去重候选，登记（2026-10-16）
+
+| ID | 负载及唯一性 | BEFORE / 候选与资源预算 | 状态/证据 | 六平台边界 |
+| --- | --- | --- | --- | --- |
+| CAS-A04b | 原版GNU tar文件数据阶段两次快照 vs 独立SHA Blob+Manifest离线仓库；100个实际fsynced、SHA不同4MiB物理源+0/1/100新增对象，三场景×三独立来源；从原片删除后两代SHA复原与有界GC。与CAS-A04a历史独立tar测量、CAS-A03-d2局部Chunk实验数据形状不同。 | 同源原版CURRENT与Offline Candidate已实际测量 n=3×3，生产AFTER=N/A，生产AFTER=N/A。冻结实体/写盘比≤55%(0/1%)、≤80%(100%)，写入stage≤180s、RSS≤512MiB，损坏/缺失快照拒绝、两代SHA与剪枝正确。记录wall/CPU/RSS/proc io，不预测提速。 | Benchmarking；[脚本](../scripts/bench-cas-a04b-offline-incremental-ab.py)、[专用CI](../.github/workflows/cas-a04b-offline-two-generation-ab.yml)、[规范](backup-performance.md)，首轮真实n3后存档11+份机读数据到docs/performance-evidence，再准确HEAD双CI/FinalGate。 | Native Desktop、Wide Web、Mobile Web、桌面Installed PWA、Android Installed PWA、iOS Installed PWA全为Not measured；只有共享Server本地tar子阶段离线PoC，非真正完整PG Server备份、正式restic/Kopia/Borg或在线Chunk。 |
+
+### CAS-A04b首次9组真实n3原版/离线候选实测（2026-10-16）
+
+同源容量与write_bytes两代比例0/1/100份新物理原片为0.499917/0.502402/0.666556；原版→离线两代实体字节839065600→419463168、843264000→423657472、1258573824→838909952B，恢复P50原版571.735/575.683/1134.933ms vs离线2495.642/2526.463/5034.011ms，候选恢复显著慢，**不保留为生产优化**。历史本次确切源[专项CI #38899731578](https://github.com/lazyxu/xdrive/actions/runs/38899731578)成功，机器[归档目录](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)，正式完整9份原JSON仍待新HEAD stdout复现后永久归档；生产AFTER=N/A，六客户端Not measured。
+
+### CAS-A04b永久机器9 JSON归档 / 第二轮源准确实测
+
+源码`fa217484641d679cfe8e8de8da67b8f9e9d87d29`准确[CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)已经输出真正完整9份400MiB实物n3×3的逐阶段CPU/RSS/IO/备份恢复时间，[逐JSON及source](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)。原版两代tar物理P50 839065600/843264000/1258582016B vs 离线419463168/423657472/838909952B；候选write bytes比例约0.499917/0.502402/0.666554，仍符合冻结预算。第二轮对应原版tar完整恢复P50 651.307/658.059/1294.193ms，候选1056.847/1088.042/2394.714ms；虽较第一次跑分差距变小，**仍恢复更慢**，无生产代码改动/AFTER=N/A。原始完整9样本归档后仍须新HEAD专项/full FinalGate重验才准合入。

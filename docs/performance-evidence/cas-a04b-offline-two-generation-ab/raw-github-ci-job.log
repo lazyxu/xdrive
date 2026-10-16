@@ -1,0 +1,236 @@
+﻿2026-10-16T12:19:48.9002057Z Current runner version: '2.337.0'
+2026-10-16T12:19:48.9050779Z ##[group]Runner Image Provisioner
+2026-10-16T12:19:48.9051705Z Hosted Compute Agent
+2026-10-16T12:19:48.9052337Z Version: 20261012.601
+2026-10-16T12:19:48.9053077Z Commit: f3dc54e1fb89da6852db922499a0233137369e1d
+2026-10-16T12:19:48.9053855Z Build Date: 2026-10-12T17:48:21Z
+2026-10-16T12:19:48.9054485Z Worker ID: {3d277955-2275-40a6-8b00-71a82f6cf2f3}
+2026-10-16T12:19:48.9055201Z Region: centralus
+2026-10-16T12:19:48.9055753Z Cloud: Azure
+2026-10-16T12:19:48.9056276Z ##[endgroup]
+2026-10-16T12:19:48.9057567Z ##[group]Operating System
+2026-10-16T12:19:48.9058153Z Ubuntu
+2026-10-16T12:19:48.9058641Z 24.04.5
+2026-10-16T12:19:48.9059404Z LTS
+2026-10-16T12:19:48.9060144Z ##[endgroup]
+2026-10-16T12:19:48.9060893Z ##[group]Runner Image
+2026-10-16T12:19:48.9061677Z Image: ubuntu-24.04
+2026-10-16T12:19:48.9062425Z Version: 20261012.334.1
+2026-10-16T12:19:48.9064527Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261012.334/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-16T12:19:48.9066915Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261012.334
+2026-10-16T12:19:48.9068451Z ##[endgroup]
+2026-10-16T12:19:48.9070317Z ##[group]GITHUB_TOKEN Permissions
+2026-10-16T12:19:48.9073965Z Contents: read
+2026-10-16T12:19:48.9074768Z Metadata: read
+2026-10-16T12:19:48.9075666Z ##[endgroup]
+2026-10-16T12:19:48.9078361Z Secret source: Actions
+2026-10-16T12:19:48.9079935Z Cache mode: write
+2026-10-16T12:19:48.9081092Z Prepare workflow directory
+2026-10-16T12:19:48.9418361Z Prepare all required actions
+2026-10-16T12:19:48.9470929Z Getting action download info
+2026-10-16T12:19:49.1980645Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-10-16T12:19:49.2902628Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-10-16T12:19:49.5214773Z Complete job name: cas-a04b-real-offline-ab
+2026-10-16T12:19:49.5898924Z ##[group]Run actions/checkout@v4
+2026-10-16T12:19:49.5899839Z with:
+2026-10-16T12:19:49.5900474Z   ref: af6605037ee58b32d2048454c30c4bae6cfa0309
+2026-10-16T12:19:49.5901206Z   repository: lazyxu/xdrive
+2026-10-16T12:19:49.5905464Z   token: ***
+2026-10-16T12:19:49.5906040Z   ssh-strict: true
+2026-10-16T12:19:49.5906556Z   ssh-user: git
+2026-10-16T12:19:49.5907114Z   persist-credentials: true
+2026-10-16T12:19:49.5907691Z   clean: true
+2026-10-16T12:19:49.5908245Z   sparse-checkout-cone-mode: true
+2026-10-16T12:19:49.5908878Z   fetch-depth: 1
+2026-10-16T12:19:49.5909389Z   fetch-tags: false
+2026-10-16T12:19:49.5909940Z   show-progress: true
+2026-10-16T12:19:49.5910483Z   lfs: false
+2026-10-16T12:19:49.5910985Z   submodules: false
+2026-10-16T12:19:49.5911511Z   set-safe-directory: true
+2026-10-16T12:19:49.5912068Z   allow-unsafe-pr-checkout: false
+2026-10-16T12:19:49.5912918Z ##[endgroup]
+2026-10-16T12:19:49.6901393Z Syncing repository: lazyxu/xdrive
+2026-10-16T12:19:49.6904720Z ##[group]Getting Git version info
+2026-10-16T12:19:49.6905641Z Working directory is '/home/runner/work/xdrive/xdrive'
+2026-10-16T12:19:49.6906694Z [command]/usr/bin/git version
+2026-10-16T12:19:49.6992667Z git version 2.55.0
+2026-10-16T12:19:49.7015377Z ##[endgroup]
+2026-10-16T12:19:49.7029512Z Temporarily overriding HOME='/home/runner/work/_temp/126ad217-d713-4a06-8c73-77d607aba52d' before making global git config changes
+2026-10-16T12:19:49.7031446Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-16T12:19:49.7034322Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-16T12:19:49.7089402Z Deleting the contents of '/home/runner/work/xdrive/xdrive'
+2026-10-16T12:19:49.7094373Z ##[group]Initializing the repository
+2026-10-16T12:19:49.7097385Z [command]/usr/bin/git init /home/runner/work/xdrive/xdrive
+2026-10-16T12:19:49.7203738Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-16T12:19:49.7206961Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-16T12:19:49.7208865Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-16T12:19:49.7210008Z hint: call:
+2026-10-16T12:19:49.7210622Z hint:
+2026-10-16T12:19:49.7211487Z hint: 	git config --global init.defaultBranch <name>
+2026-10-16T12:19:49.7212431Z hint:
+2026-10-16T12:19:49.7213511Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-16T12:19:49.7214953Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-16T12:19:49.7216001Z hint:
+2026-10-16T12:19:49.7216685Z hint: 	git branch -m <name>
+2026-10-16T12:19:49.7217414Z hint:
+2026-10-16T12:19:49.7218466Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-16T12:19:49.7219971Z Initialized empty Git repository in /home/runner/work/xdrive/xdrive/.git/
+2026-10-16T12:19:49.7224844Z [command]/usr/bin/git remote add origin https://github.com/lazyxu/xdrive
+2026-10-16T12:19:49.7273917Z ##[endgroup]
+2026-10-16T12:19:49.7275107Z ##[group]Disabling automatic garbage collection
+2026-10-16T12:19:49.7276858Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-16T12:19:49.7306463Z ##[endgroup]
+2026-10-16T12:19:49.7307650Z ##[group]Setting up auth
+2026-10-16T12:19:49.7311902Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-16T12:19:49.7341969Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-16T12:19:49.7704674Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-16T12:19:49.7737039Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-16T12:19:49.7930954Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-16T12:19:49.7959670Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-16T12:19:49.8141141Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-16T12:19:49.8178889Z ##[endgroup]
+2026-10-16T12:19:49.8179894Z ##[group]Fetching the repository
+2026-10-16T12:19:49.8187959Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin af6605037ee58b32d2048454c30c4bae6cfa0309
+2026-10-16T12:19:51.4501160Z From https://github.com/lazyxu/xdrive
+2026-10-16T12:19:51.4503839Z  * branch            af6605037ee58b32d2048454c30c4bae6cfa0309 -> FETCH_HEAD
+2026-10-16T12:19:51.4509075Z ##[endgroup]
+2026-10-16T12:19:51.4510676Z ##[group]Determining the checkout info
+2026-10-16T12:19:51.4512233Z ##[endgroup]
+2026-10-16T12:19:51.4515750Z [command]/usr/bin/git sparse-checkout disable
+2026-10-16T12:19:51.4578812Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-16T12:19:51.4611646Z ##[group]Checking out the ref
+2026-10-16T12:19:51.4613811Z [command]/usr/bin/git checkout --progress --force af6605037ee58b32d2048454c30c4bae6cfa0309
+2026-10-16T12:19:51.6648574Z Note: switching to 'af6605037ee58b32d2048454c30c4bae6cfa0309'.
+2026-10-16T12:19:51.6650168Z 
+2026-10-16T12:19:51.6651251Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-16T12:19:51.6654195Z changes and commit them, and you can discard any commits you make in this
+2026-10-16T12:19:51.6656522Z state without impacting any branches by switching back to a branch.
+2026-10-16T12:19:51.6657523Z 
+2026-10-16T12:19:51.6658469Z If you want to create a new branch to retain commits you create, you may
+2026-10-16T12:19:51.6660367Z do so (now or later) by using -c with the switch command. Example:
+2026-10-16T12:19:51.6661365Z 
+2026-10-16T12:19:51.6661876Z   git switch -c <new-branch-name>
+2026-10-16T12:19:51.6662950Z 
+2026-10-16T12:19:51.6663569Z Or undo this operation with:
+2026-10-16T12:19:51.6664462Z 
+2026-10-16T12:19:51.6664850Z   git switch -
+2026-10-16T12:19:51.6665406Z 
+2026-10-16T12:19:51.6666234Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-16T12:19:51.6667352Z 
+2026-10-16T12:19:51.6668484Z HEAD is now at af66050 test(perf): benchmark two-generation tar against offline immutable Blob snapshots
+2026-10-16T12:19:51.6673250Z ##[endgroup]
+2026-10-16T12:19:51.6701998Z [command]/usr/bin/git log -1 --format=%H
+2026-10-16T12:19:51.6725993Z af6605037ee58b32d2048454c30c4bae6cfa0309
+2026-10-16T12:19:51.7057244Z ##[group]Run set -euo pipefail
+2026-10-16T12:19:51.7058817Z [36;1mset -euo pipefail[0m
+2026-10-16T12:19:51.7061245Z [36;1mpython3 -m py_compile scripts/bench-cas-a04-backup-generations.py scripts/bench-cas-a04b-offline-incremental-ab.py[0m
+2026-10-16T12:19:51.7064498Z [36;1mtest "$(git rev-parse HEAD)" = 'af6605037ee58b32d2048454c30c4bae6cfa0309'[0m
+2026-10-16T12:19:51.7066357Z [36;1mcommand -v tar[0m
+2026-10-16T12:19:51.7067538Z [36;1mdf -h .[0m
+2026-10-16T12:19:51.7069026Z [36;1mpython3 scripts/bench-cas-a04b-offline-incremental-ab.py \[0m
+2026-10-16T12:19:51.7071017Z [36;1m  --results-dir "$RUNNER_TEMP/cas-a04b-small-smoke" \[0m
+2026-10-16T12:19:51.7072764Z [36;1m  --samples 1 --source-count 10 --object-bytes 65536[0m
+2026-10-16T12:19:51.7286419Z shell: /usr/bin/bash -e {0}
+2026-10-16T12:19:51.7287928Z ##[endgroup]
+2026-10-16T12:19:51.7775556Z /usr/bin/tar
+2026-10-16T12:19:51.7794045Z Filesystem      Size  Used Avail Use% Mounted on
+2026-10-16T12:19:51.7795912Z /dev/root       145G   59G   86G  41% /
+2026-10-16T12:19:51.9144220Z CAS_A04B_N3_SAMPLE {"scenario": "unchanged", "sample": 1, "tar_bytes": 1351680, "offline_bytes": 663552}
+2026-10-16T12:19:51.9981147Z CAS_A04B_N3_SAMPLE {"scenario": "one-percent-new-versions", "sample": 1, "tar_bytes": 1413120, "offline_bytes": 729088}
+2026-10-16T12:19:52.1148277Z CAS_A04B_N3_SAMPLE {"scenario": "all-new-versions", "sample": 1, "tar_bytes": 2019328, "offline_bytes": 1318912}
+2026-10-16T12:19:52.1157065Z CAS_A04B_N3_SUMMARY {"workload_id": "CAS-A04b/real-400MiB-same-source-two-generation-offline-blob-snapshot-vs-full-tar", "n_per_scenario": 1, "source_count": 10, "object_bytes": 65536, "stage_budget_seconds": 180, "metrics": {"unchanged": {"n": 1, "tar_disk_bytes_p50": 1351680, "offline_disk_bytes_p50": 663552, "tar_kernel_write_bytes_p50": 1351680, "offline_kernel_write_bytes_p50": 663552, "offline_to_tar_disk_ratio": 0.490909, "offline_to_tar_write_ratio": 0.490909, "gen2_tar_ms_p50": 4.059, "gen2_offline_ms_p50": 2.642, "gen2_tar_restore_ms_p50": 3.502, "gen2_offline_restore_ms_p50": 7.931}, "one-percent-new-versions": {"n": 1, "tar_disk_bytes_p50": 1413120, "offline_disk_bytes_p50": 729088, "tar_kernel_write_bytes_p50": 1413120, "offline_kernel_write_bytes_p50": 729088, "offline_to_tar_disk_ratio": 0.515942, "offline_to_tar_write_ratio": 0.515942, "gen2_tar_ms_p50": 3.772, "gen2_offline_ms_p50": 3.611, "gen2_tar_restore_ms_p50": 3.716, "gen2_offline_restore_ms_p50": 8.883}, "all-new-versions": {"n": 1, "tar_disk_bytes_p50": 2019328, "offline_disk_bytes_p50": 1318912, "tar_kernel_write_bytes_p50": 2019328, "offline_kernel_write_bytes_p50": 1318912, "offline_to_tar_disk_ratio": 0.653144, "offline_to_tar_write_ratio": 0.653144, "gen2_tar_ms_p50": 5.479, "gen2_offline_ms_p50": 13.183, "gen2_tar_restore_ms_p50": 5.473, "gen2_offline_restore_ms_p50": 17.202}}, "passed": true, "production_changed": false, "scope": "True fsynced physical CAS, authentic old full tar file-data stage vs INDEPENDENT offline immutable hash-object manifest backup; NOT actual restic/Kopia/Borg binary, DB-consistent Server backup, online CDC, OS-installed PWA or GUI"}
+2026-10-16T12:19:52.1284247Z ##[group]Run set -euo pipefail
+2026-10-16T12:19:52.1285308Z [36;1mset -euo pipefail[0m
+2026-10-16T12:19:52.1286298Z [36;1mout="$RUNNER_TEMP/cas-a04b-real-n3"[0m
+2026-10-16T12:19:52.1287264Z [36;1mmkdir -p "$out"[0m
+2026-10-16T12:19:52.1288211Z [36;1m{[0m
+2026-10-16T12:19:52.1289198Z [36;1m  printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"[0m
+2026-10-16T12:19:52.1290497Z [36;1m  sha256sum scripts/bench-cas-a04-backup-generations.py \[0m
+2026-10-16T12:19:52.1291638Z [36;1m    scripts/bench-cas-a04b-offline-incremental-ab.py \[0m
+2026-10-16T12:19:52.1292749Z [36;1m    scripts/server-backup.sh scripts/server-restore.sh[0m
+2026-10-16T12:19:52.1293901Z [36;1m} > "$out/source.txt"[0m
+2026-10-16T12:19:52.1294838Z [36;1m/usr/bin/time -v -o "$out/all.resources.txt" \[0m
+2026-10-16T12:19:52.1295947Z [36;1m  python3 scripts/bench-cas-a04b-offline-incremental-ab.py \[0m
+2026-10-16T12:19:52.1297172Z [36;1m  --results-dir "$out" --samples 3 --source-count 100 \[0m
+2026-10-16T12:19:52.1298257Z [36;1m  --object-bytes 4194304 --stage-budget-seconds 180 \[0m
+2026-10-16T12:19:52.1299230Z [36;1m  | tee "$out/stdout.log"[0m
+2026-10-16T12:19:52.1300162Z [36;1mpython3 - "$out" <<'PY'[0m
+2026-10-16T12:19:52.1301075Z [36;1mimport json, pathlib, sys[0m
+2026-10-16T12:19:52.1301972Z [36;1mroot=pathlib.Path(sys.argv[1])[0m
+2026-10-16T12:19:52.1303177Z [36;1msummary=json.loads((root/"summary.json").read_text())[0m
+2026-10-16T12:19:52.1304319Z [36;1massert summary["passed"] and not summary["production_changed"][0m
+2026-10-16T12:19:52.1305503Z [36;1massert summary["source_count"]==100 and summary["object_bytes"]==4194304[0m
+2026-10-16T12:19:52.1306727Z [36;1massert summary["n_per_scenario"]==3 and len(summary["metrics"])==3[0m
+2026-10-16T12:19:52.1308023Z [36;1mfor scenario,delta in (("unchanged",0),("one-percent-new-versions",1),("all-new-versions",100)):[0m
+2026-10-16T12:19:52.1309244Z [36;1m    metric=summary["metrics"][scenario][0m
+2026-10-16T12:19:52.1310219Z [36;1m    assert metric["n"]==3[0m
+2026-10-16T12:19:52.1311197Z [36;1m    limit=.80 if delta==100 else .55[0m
+2026-10-16T12:19:52.1312385Z [36;1m    assert metric["offline_to_tar_disk_ratio"]<=limit[0m
+2026-10-16T12:19:52.1313769Z [36;1m    assert metric["offline_to_tar_write_ratio"]<=limit[0m
+2026-10-16T12:19:52.1314844Z [36;1m    for sample in (1,2,3):[0m
+2026-10-16T12:19:52.1315906Z [36;1m        row=json.loads((root/f"{scenario}-{sample}.json").read_text())[0m
+2026-10-16T12:19:52.1317030Z [36;1m        assert row["passed"] and row["sample"]==sample[0m
+2026-10-16T12:19:52.1318240Z [36;1m        assert row["original_physical_cas"]==100 and row["original_bytes"]==419430400[0m
+2026-10-16T12:19:52.1319385Z [36;1m        assert row["new_physical_cas"]==delta[0m
+2026-10-16T12:19:52.1320545Z [36;1m        assert row["pruned_new_objects"]==delta and row["pruned_original_objects"]==100[0m
+2026-10-16T12:19:52.1321739Z [36;1m        assert row["process_max_rss_kib"]<=524288[0m
+2026-10-16T12:19:52.1322991Z [36;1m        for stage in ("tar1","tar2","candidate1","candidate2","tar_restore_1",[0m
+2026-10-16T12:19:52.1324879Z [36;1m                      "candidate_restore_1","tar_restore_2","candidate_restore_2","restore_after_prune"):[0m
+2026-10-16T12:19:52.1326109Z [36;1m            assert row["phases"][stage]["wall_ms"]>0[0m
+2026-10-16T12:19:52.1327218Z [36;1m            assert row["phases"][stage]["kernel_write_bytes"]>=0[0m
+2026-10-16T12:19:52.1328227Z [36;1mprint("CAS_A04B_REAL_N3_VALIDATED 9")[0m
+2026-10-16T12:19:52.1329119Z [36;1mPY[0m
+2026-10-16T12:19:52.1370355Z shell: /usr/bin/bash -e {0}
+2026-10-16T12:19:52.1371450Z ##[endgroup]
+2026-10-16T12:20:13.3079560Z CAS_A04B_N3_SAMPLE {"scenario": "unchanged", "sample": 1, "tar_bytes": 839065600, "offline_bytes": 419463168}
+2026-10-16T12:20:34.3730557Z CAS_A04B_N3_SAMPLE {"scenario": "unchanged", "sample": 2, "tar_bytes": 839065600, "offline_bytes": 419463168}
+2026-10-16T12:20:55.2014793Z CAS_A04B_N3_SAMPLE {"scenario": "unchanged", "sample": 3, "tar_bytes": 839065600, "offline_bytes": 419463168}
+2026-10-16T12:21:16.3150239Z CAS_A04B_N3_SAMPLE {"scenario": "one-percent-new-versions", "sample": 1, "tar_bytes": 843264000, "offline_bytes": 423657472}
+2026-10-16T12:21:37.3983441Z CAS_A04B_N3_SAMPLE {"scenario": "one-percent-new-versions", "sample": 2, "tar_bytes": 843255808, "offline_bytes": 423657472}
+2026-10-16T12:21:58.3629355Z CAS_A04B_N3_SAMPLE {"scenario": "one-percent-new-versions", "sample": 3, "tar_bytes": 843264000, "offline_bytes": 423657472}
+2026-10-16T12:22:30.6528371Z CAS_A04B_N3_SAMPLE {"scenario": "all-new-versions", "sample": 1, "tar_bytes": 1258573824, "offline_bytes": 838909952}
+2026-10-16T12:23:03.6516113Z CAS_A04B_N3_SAMPLE {"scenario": "all-new-versions", "sample": 2, "tar_bytes": 1258582016, "offline_bytes": 838909952}
+2026-10-16T12:23:36.7715312Z CAS_A04B_N3_SAMPLE {"scenario": "all-new-versions", "sample": 3, "tar_bytes": 1258573824, "offline_bytes": 838909952}
+2026-10-16T12:23:36.7723591Z CAS_A04B_N3_SUMMARY {"workload_id": "CAS-A04b/real-400MiB-same-source-two-generation-offline-blob-snapshot-vs-full-tar", "n_per_scenario": 3, "source_count": 100, "object_bytes": 4194304, "stage_budget_seconds": 180, "metrics": {"unchanged": {"n": 3, "tar_disk_bytes_p50": 839065600, "offline_disk_bytes_p50": 419463168, "tar_kernel_write_bytes_p50": 839065600, "offline_kernel_write_bytes_p50": 419463168, "offline_to_tar_disk_ratio": 0.499917, "offline_to_tar_write_ratio": 0.499917, "gen2_tar_ms_p50": 2825.242, "gen2_offline_ms_p50": 667.743, "gen2_tar_restore_ms_p50": 571.735, "gen2_offline_restore_ms_p50": 2495.642}, "one-percent-new-versions": {"n": 3, "tar_disk_bytes_p50": 843264000, "offline_disk_bytes_p50": 423657472, "tar_kernel_write_bytes_p50": 843264000, "offline_kernel_write_bytes_p50": 423657472, "offline_to_tar_disk_ratio": 0.502402, "offline_to_tar_write_ratio": 0.502402, "gen2_tar_ms_p50": 2871.743, "gen2_offline_ms_p50": 691.506, "gen2_tar_restore_ms_p50": 575.683, "gen2_offline_restore_ms_p50": 2526.463}, "all-new-versions": {"n": 3, "tar_disk_bytes_p50": 1258573824, "offline_disk_bytes_p50": 838909952, "tar_kernel_write_bytes_p50": 1258569728, "offline_kernel_write_bytes_p50": 838909952, "offline_to_tar_disk_ratio": 0.666556, "offline_to_tar_write_ratio": 0.666558, "gen2_tar_ms_p50": 5657.082, "gen2_offline_ms_p50": 3187.011, "gen2_tar_restore_ms_p50": 1134.933, "gen2_offline_restore_ms_p50": 5034.011}}, "passed": true, "production_changed": false, "scope": "True fsynced physical CAS, authentic old full tar file-data stage vs INDEPENDENT offline immutable hash-object manifest backup; NOT actual restic/Kopia/Borg binary, DB-consistent Server backup, online CDC, OS-installed PWA or GUI"}
+2026-10-16T12:23:36.8012743Z CAS_A04B_REAL_N3_VALIDATED 9
+2026-10-16T12:23:36.8137824Z ##[group]Run actions/upload-artifact@v4
+2026-10-16T12:23:36.8138451Z with:
+2026-10-16T12:23:36.8139008Z   name: cas-a04b-real-two-generation-offline-blob-snapshots-n3
+2026-10-16T12:23:36.8139605Z   path: /home/runner/work/_temp/cas-a04b-real-n3/
+
+2026-10-16T12:23:36.8140078Z   retention-days: 14
+2026-10-16T12:23:36.8140495Z   if-no-files-found: warn
+2026-10-16T12:23:36.8140946Z   compression-level: 6
+2026-10-16T12:23:36.8141294Z   overwrite: false
+2026-10-16T12:23:36.8141689Z   include-hidden-files: false
+2026-10-16T12:23:36.8142143Z ##[endgroup]
+2026-10-16T12:23:36.9693960Z (node:2470) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-16T12:23:36.9695299Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-16T12:23:36.9772547Z With the provided path, there will be 13 files uploaded
+2026-10-16T12:23:36.9776920Z Artifact name is valid!
+2026-10-16T12:23:36.9778466Z Root directory input is valid!
+2026-10-16T12:23:37.2562297Z Beginning upload of artifact content to blob storage
+2026-10-16T12:23:37.2908928Z (node:2470) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-16T12:23:37.4486524Z Uploaded bytes 12363
+2026-10-16T12:23:37.4920727Z Finished uploading artifact content to blob storage!
+2026-10-16T12:23:37.4921896Z SHA256 digest of uploaded artifact zip is d9cabfa1fd440e69c954dde4a05528d44089beaaf6b570164988277f058992df
+2026-10-16T12:23:37.4934564Z Finalizing artifact upload
+2026-10-16T12:23:37.7256403Z Artifact cas-a04b-real-two-generation-offline-blob-snapshots-n3.zip successfully finalized. Artifact ID 12045612018
+2026-10-16T12:23:37.7257937Z Artifact cas-a04b-real-two-generation-offline-blob-snapshots-n3 has been successfully uploaded! Final size is 12363 bytes. Artifact ID is 12045612018
+2026-10-16T12:23:37.7263564Z Artifact download URL: https://github.com/lazyxu/xdrive/actions/runs/38899731578/artifacts/12045612018
+2026-10-16T12:23:37.7462363Z Post job cleanup.
+2026-10-16T12:23:37.8249884Z [command]/usr/bin/git version
+2026-10-16T12:23:37.8286790Z git version 2.55.0
+2026-10-16T12:23:37.8320946Z Temporarily overriding HOME='/home/runner/work/_temp/fe92aa8a-b88a-4269-a8b2-0fc6ebb9d08d' before making global git config changes
+2026-10-16T12:23:37.8322400Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-16T12:23:37.8327192Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/xdrive/xdrive
+2026-10-16T12:23:37.8362622Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-16T12:23:37.8393294Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-16T12:23:37.8603217Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-16T12:23:37.8625902Z http.https://github.com/.extraheader
+2026-10-16T12:23:37.8634663Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-10-16T12:23:37.8667823Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-16T12:23:37.8884153Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-16T12:23:37.8905311Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-16T12:23:37.9256428Z Cleaning up orphan processes
+2026-10-16T12:23:37.9524674Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

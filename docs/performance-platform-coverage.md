@@ -205,3 +205,16 @@ Linux原生Go `storage.Local.Put` 仅为**共享Server存储层基准**，不是
 ## 2026-10-16 · CAS-A03-d2服务器离线分块A/B（六端结果不冒充）
 
 真实[专项CI #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)同Runner三独立高熵4GiB+1MiB变更A/B，原生产完整CAS vs离线固定8MiB块，B额外物理4,294,971,392B vs8,425,472B；两版本持久占用8,589,942,784B vs4,303,429,632B，内核写盘8,589,934,592B vs4,303,429,632B；B Put P50 22,404.654 vs3,394.406ms、额外完整B物化26,370.862ms。真实原始11机读文件、SHA/GC/Range/CPU/RSS详见[CAS-d2归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)和[中央台账](performance-test-registry.md)。只算Server Linux Local storage/离线单账号PoC，**native Desktop / wide Web / Mobile Web / desktop installed PWA / Android installed PWA / iOS installed PWA 六列继续全部 Not measured**。先验收准确归档新HEAD CI再提交合入；生产AFTER=N/A。
+
+
+## 2026-10-16 · CAS-A04b 两代离线Blob备份A/B六平台状态
+
+预计在同一Linux runner真正测量100×4MiB物理不同SHA CAS +0/1/100份新增的原版两次完整tar与独立hash仓库两代Manifest。各n3；`st_blocks`、内核写盘、备份/恢复wall、CPU/RSS、源删除后的双代完整SHA、损坏拒绝/独立GC必须由[CAS-A04b规范](backup-performance.md)及[性能去重登记](performance-test-registry.md)驱动。现阶段 **仅共享Server子阶段同源A/B已测，六平台客户端均Not measured**，单层Server不提供客户端性能数据：Desktop Electron=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop Installed PWA=Not measured；Android Installed PWA=Not measured；iOS Installed PWA=Not measured。生产AFTER=N/A。
+
+### CAS-A04b真实Server局部子阶段n3已测（2026-10-16）
+
+[真实CI #38899731578](https://github.com/lazyxu/xdrive/actions/runs/38899731578)同时对照两代完整tar及纯离线Blob仓库，9/9实体400MiB源/同一Runner达到存储空间与Write预算，但恢复P50慢约4.4倍，生产不改。详见[备份专项](backup-performance.md)。仅Server本地子阶段有数字；native Desktop、wide Web、Mobile Web、desktop installed PWA、Android installed PWA、iOS installed PWA该负载**均Not measured**。
+
+### CAS-A04b永久第二轮N3证据（2026-10-16）
+
+[新一轮真Linux同源CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)三形状九组原始CPU/RSS/磁盘IO及两代恢复[原始9样本归档](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)。容量减少再复现，恢复仍低于tar性能，**生产变化=无**。该实验是共享Server *单纯文件数据*子阶段；Native Desktop、Wide Web、Mobile Web、desktop installed PWA、Android installed PWA、iOS installed PWA该场景严格**Not measured**，不补填无设备来源数字。

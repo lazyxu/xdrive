@@ -1,0 +1,51 @@
+{
+  "workload_id": "CAS-A04b/real-400MiB-same-source-two-generation-offline-blob-snapshot-vs-full-tar",
+  "n_per_scenario": 3,
+  "source_count": 100,
+  "object_bytes": 4194304,
+  "stage_budget_seconds": 180,
+  "metrics": {
+    "unchanged": {
+      "n": 3,
+      "tar_disk_bytes_p50": 839065600,
+      "offline_disk_bytes_p50": 419463168,
+      "tar_kernel_write_bytes_p50": 839065600,
+      "offline_kernel_write_bytes_p50": 419463168,
+      "offline_to_tar_disk_ratio": 0.499917,
+      "offline_to_tar_write_ratio": 0.499917,
+      "gen2_tar_ms_p50": 1337.463,
+      "gen2_offline_ms_p50": 592.92,
+      "gen2_tar_restore_ms_p50": 651.307,
+      "gen2_offline_restore_ms_p50": 1056.847
+    },
+    "one-percent-new-versions": {
+      "n": 3,
+      "tar_disk_bytes_p50": 843264000,
+      "offline_disk_bytes_p50": 423657472,
+      "tar_kernel_write_bytes_p50": 843264000,
+      "offline_kernel_write_bytes_p50": 423657472,
+      "offline_to_tar_disk_ratio": 0.502402,
+      "offline_to_tar_write_ratio": 0.502402,
+      "gen2_tar_ms_p50": 1364.959,
+      "gen2_offline_ms_p50": 603.113,
+      "gen2_tar_restore_ms_p50": 658.059,
+      "gen2_offline_restore_ms_p50": 1088.042
+    },
+    "all-new-versions": {
+      "n": 3,
+      "tar_disk_bytes_p50": 1258582016,
+      "offline_disk_bytes_p50": 838909952,
+      "tar_kernel_write_bytes_p50": 1258577920,
+      "offline_kernel_write_bytes_p50": 838909952,
+      "offline_to_tar_disk_ratio": 0.666552,
+      "offline_to_tar_write_ratio": 0.666554,
+      "gen2_tar_ms_p50": 2962.507,
+      "gen2_offline_ms_p50": 1504.934,
+      "gen2_tar_restore_ms_p50": 1294.193,
+      "gen2_offline_restore_ms_p50": 2394.714
+    }
+  },
+  "passed": true,
+  "production_changed": false,
+  "scope": "True fsynced physical CAS, authentic old full tar file-data stage vs INDEPENDENT offline immutable hash-object manifest backup; NOT actual restic/Kopia/Borg binary, DB-consistent Server backup, online CDC, OS-installed PWA or GUI"
+}
