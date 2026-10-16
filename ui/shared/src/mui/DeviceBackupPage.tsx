@@ -40,6 +40,7 @@ import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
+import { xDriveDeviceBackupVisibleFolders, xDriveDeviceBackupContainsVisibleSource } from '../device-backup-visible-folders'
 import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
@@ -74,6 +75,7 @@ type VerifiedLocalIdentityState = {
   deviceID: string | null
 }
 const emptyHistory: Record<number, HistoryPage> = {}
+const emptyFolderPages: Record<string, DeviceFolderRead> = {}
 const pageSize = 20
 function timeLabel(value?: string) {
   if (!value) return '未知'
@@ -191,12 +193,10 @@ export function XDriveDeviceBackupPage({
   const [historyState, setHistoryState] = useState<HistoryState>({ pages: {} })
   const histories = historyState.source === source ? historyState.pages : emptyHistory
   const [folderReadState, setFolderReadState] = useState<FolderReadState>({ scope: -1, devices: {} })
-  const folderPages = folderReadState.scope === folderScopeRef.current.epoch ? folderReadState.devices : {}
+  const folderPages = folderReadState.scope === folderScopeRef.current.epoch ? folderReadState.devices : emptyFolderPages
   const folderRequestIDs = useRef<Record<string, number>>({})
-  const visibleFolders = (device: XDriveDeviceBackupDevice): XDriveDeviceBackupFolder[] => {
-    const page = folderPages[device.id]
-    return page && (page.items.length !== 0 || page.complete) ? page.items : device.folders
-  }
+  const visibleFolders = (device: XDriveDeviceBackupDevice): XDriveDeviceBackupFolder[] =>
+    xDriveDeviceBackupVisibleFolders(device, folderPages[device.id])
   const [historyError, setHistoryError] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const requests = useRef<Record<number, number>>({})
   const [localIdentity, setLocalIdentity] = useState<VerifiedLocalIdentityState>({ deviceID: null })
@@ -398,10 +398,12 @@ export function XDriveDeviceBackupPage({
 
   useEffect(() => {
     if (!initialSourceID || !overview) return
-    if (!overview.devices.some((device) => device.folders.some((folder) => folder.source_id === initialSourceID))) return
+    // A bookmarked Source may be omitted by the capped overview, but become
+    // visible once its owner-redacted per-device keyset page is fetched.
+    if (!xDriveDeviceBackupContainsVisibleSource(overview.devices, folderPages, initialSourceID)) return
     setExpanded({ source, id: initialSourceID })
     if (!histories[initialSourceID]) void loadHistory(initialSourceID, 1)
-  }, [initialSourceID, overview, histories, loadHistory])
+  }, [initialSourceID, overview, folderPages, histories, loadHistory, source])
 
   return (
     <XDriveWorkspaceSurface
