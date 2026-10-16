@@ -52,9 +52,14 @@ export function XDriveMediaGalleryBaiduStaticMap({
   initialCamera?: XDrivePlacesCameraPosition
   onCameraChange?: (camera: XDrivePlacesCameraPosition) => void
 }) {
-  const latitude = location?.latitude ?? (place?.sample_latitude ?? place?.latitude)
-  const longitude = location?.longitude ?? (place?.sample_longitude ?? place?.longitude)
+  // The legacy latitude/longitude pair is only a grid-cell CENTER. A missing
+  // sample pair must not silently become a fake real photo GPS or combine a
+  // photo latitude with a grid longitude on older Server/Agent versions.
+  const latitude = location?.latitude ?? place?.sample_latitude
+  const longitude = location?.longitude ?? place?.sample_longitude
   const hasLocation = Boolean(location || place)
+  const hasRealPhotoGPS = Boolean(location) ||
+    (place?.sample_latitude != null && place?.sample_longitude != null)
   const mapName = location?.name ?? place?.name ?? ''
   const originKey = location
     ? `photo:${location.name ?? ''}:${latitude}:${longitude}`
@@ -95,7 +100,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
   // not a real photo. A1 adds an exact representative Node coordinate.
   const centerLatitude = camera?.key === originKey ? camera.latitude : latitude
   const centerLongitude = camera?.key === originKey ? camera.longitude : longitude
-  const validCenter = centerLatitude !== undefined && centerLongitude !== undefined &&
+  const validCenter = hasRealPhotoGPS && centerLatitude !== undefined && centerLongitude !== undefined &&
     Number.isFinite(centerLatitude) && Math.abs(centerLatitude) <= 85 &&
     Number.isFinite(centerLongitude) && Math.abs(centerLongitude) <= 180
 
@@ -289,7 +294,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
     let active = true
     setError('')
     setBusy(false)
-    if (!enabled || !loadStaticMap ||
+    if (!enabled || !loadStaticMap || !hasRealPhotoGPS ||
         centerLatitude === undefined || centerLongitude === undefined) {
       return () => { active = false; controller.abort() }
     }
@@ -325,7 +330,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
       if (active && !controller.signal.aborted) setBusy(false)
     })
     return () => { active = false; controller.abort() }
-  }, [enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID, originKey])
+  }, [enabled, hasRealPhotoGPS, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID, originKey])
 
   const displayFrame = enabled && loadStaticMap && hasLocation && validCenter &&
     imageFrame?.originKey === originKey && !error ? imageFrame : null
@@ -340,6 +345,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
       : !provider.info.enabled ? '百度地图未启用，请管理员在 Server 配置有效的百度地图 AK。'
       : !loadStaticMap ? '当前客户端不支持百度地图图片传输，请更新客户端。'
       : !hasLocation ? '没有可显示的地点。'
+      : !hasRealPhotoGPS ? '此地点缺少代表照片的真实 GPS 坐标，请更新 Server/Agent。'
       : error || (busy ? '正在加载百度地图…' : '百度地图暂无可显示的图片。')
 
   return (
@@ -397,13 +403,14 @@ export function XDriveMediaGalleryBaiduStaticMap({
           </Tooltip>
         ))}
       </Stack>
-      <Box role="group" tabIndex={enabled && validCenter ? 0 : -1}
+      <Box role="group" tabIndex={enabled && validCenter && loadStaticMap ? 0 : -1}
         aria-label="百度地图：方向键移动，按加号或减号缩放，单指拖动及双指移动或缩放后松开更新"
         onKeyDown={onMapKeyDown} onPointerDown={onMapPointerDown}
         onPointerMove={onMapPointerMove} onPointerUp={onMapPointerUp}
         onPointerCancel={onMapPointerCancel}
         sx={{
-        touchAction: enabled ? 'none' : 'auto', cursor: enabled ? 'grab' : 'default',
+        touchAction: enabled && validCenter && loadStaticMap ? 'none' : 'auto',
+        cursor: enabled && validCenter && loadStaticMap ? 'grab' : 'default',
         bgcolor: 'action.hover',
         borderRadius: 1,
         mt: 1,

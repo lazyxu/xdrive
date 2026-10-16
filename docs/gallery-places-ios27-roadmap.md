@@ -432,3 +432,12 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 加固 Web/Mobile Web/Desktop 共用的 Server 百度静态 PNG HTTP 客户端。过去 Go 默认 Transport 可能继承 `HTTPS_PROXY` 等环境变量，将带 Static Server AK 和用户原始 GPS 的百度 HTTPS 请求转交给未审查的代理。改为复用一个严格 TLS 校验的连接池，明确 `Proxy=nil`、禁用自动响应压缩、限定最多三个上游连接和短期空闲回收；保持 5 秒超时、禁止重定向、原始百度固定 Host、Owner 限额、可取消 Go Context、3MiB PNG 校验、静态 Server AK 不返回客户端。Go 测试通过恶意环境变量和注入的离线 HTTP Transport 验证。
 
 **与真正 JSAPI4 动态地图分开验收**：这属于现有运行中的静态底图 AK 泄漏面修复，不能凭此认为百度已经授予自托管/PWA/Electron 商业许可，也不建立任何 JSAPI 资源代理或持久 BD09 衍生数据库。JSAPI4 继续 `runtime_enabled=false`、无审核通过的完整子资源清单/生产受信签名根；真实 9 组 Browser/Server HAR 证据及 AK 无泄漏、逐请求 Owner 认证和跨副本配额、Caddy/Electron 隔离、iOS27/Android/Desktop 真机仍是 A3 硬条件。保留百度唯一 Provider、Server/Browser AK 独立服务端加密、52px 全屏 App Frame、三端共享图库 Range/VirtualCollection/Viewer；A3 实际完成后再实施 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d2f · 三端 Static 地图严格使用真实照片 GPS 样本（2026-10-16）
+
+在已合入的 #1794 请求参数严格校验、#1800 Static Server AK 直连安全修复及 #1799 Mobile Collections→Place 首批照片授权提交之后，继续解决共享 MUI 静态地图的剩余坐标真实性问题：旧 Server/Agent 的地点 DTO 只有 `latitude/longitude`（0.01° 网格中心），没有 `sample_latitude/sample_longitude`（同一张真实照片的 GPS）。旧共享组件在缺少样本坐标或只有半对样本时回退到网格中心，会将虚构的经纬度拼接后发给百度，违反 A1。
+
+新共享 `MediaGalleryBaiduStaticMap` **只**接受完整的真实代表照片 GPS 样本对，或者 Viewer 已持有的真实照片 `location`。样本缺失时静态底图保持原区域和明确的 Server/Agent 版本提示，但**绝不发送原网格中心、不得经其他 Provider 兜底**；已开始的视窗请求随样本失效而取消，避免复用旧相机。保留合法真实 GPS (0,0)；失效地图不得吞掉 Mobile Web 页面滚动或提供无效的键盘焦点。增加共享组件真实 React mount/regression，覆盖旧 DTO、半对样本、(0,0)、取消和 Viewer 坐标，不改变真实图库 Range、100k 虚拟化、Desktop Agent 通道或 52px App Frame。
+
+这是**真实运行的 Static Server API 的正确性修复**，不等于 JSAPI4 资源许可、原生平移/聚合或 iOS 27「照片」1:1 交付。生产 JSAPI4 继续 runtime_enabled=false、零实际审核子资源、无可用 Loader/Proxy/Map Cookie；Browser AK 与 Server AK 分别加密仅 Server，必须先取得百度 self-host/PWA/Electron 适用账户许可、完整真实九场景隐私 HAR、不可变子资源白名单、信任根和 Owner 配额/CSP/Electron/真机证据。A3 真正验收通过后再按原序 A4→B1→B2→B3→C1。
