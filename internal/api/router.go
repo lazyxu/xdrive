@@ -22,6 +22,7 @@ import (
 
 type Server struct {
 	DB                             *gorm.DB
+	localPushCIOnlyFirstLeaf       bool
 	postgresPoolSaveMu             sync.Mutex
 	mediaWorkerConfigSaveMu        sync.Mutex
 	caddyHTTPSSaveMu               sync.Mutex
@@ -362,6 +363,12 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/sources/:id/local-staging/:stageID/content-preflight", s.requireLocalSourceExecutor(), s.preflightLocalPushStagePhysical)
 	// Owning Agent only: historical physically pinned CAS + SQL receipt; read-only, never a SourceRun or native provenance.
 	authed.POST("/sources/:id/local-staging/:stageID/physical-receipt", s.requireLocalSourceExecutor(), s.readLocalPushFirstLeafCommittedPhysicalReceipt)
+	// This test-only route is OMITTED from all production Routers. No config,
+	// environment or user setting can turn on this internal first-file writer.
+	if s.localPushCIOnlyFirstLeaf {
+		authed.POST("/sources/:id/local-staging/:stageID/ci-first-leaf-commit",
+			s.requireLocalSourceExecutor(), s.ciOnlyCommitLocalPushFirstLeaf)
+	}
 	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
 	authed.PATCH("/sources/:id", s.requireLocalSourceExecutor(), s.updateSource)
