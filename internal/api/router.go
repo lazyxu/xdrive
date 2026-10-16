@@ -236,6 +236,10 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/media/batch/tags", s.addMediaTagsBatch)
 	authed.PATCH("/media/items/:id/people", s.setMediaPeople)
 	authed.PATCH("/media/items/:id/description", s.setMediaDescription)
+	// A3d2l2b: explicit Owner-scoped source-bound map consent, not JSAPI runtime.
+	authed.GET("/media/items/:id/baidu-map-consent", s.getMediaBaiduConsent)
+	authed.PUT("/media/items/:id/baidu-map-consent", s.putMediaBaiduConsent)
+	authed.DELETE("/media/items/:id/baidu-map-consent", s.deleteMediaBaiduConsent)
 	authed.GET("/media/items/:id/edit", s.getMediaEditRecipe)
 	authed.PUT("/media/items/:id/edit", s.putMediaEditRecipe)
 	authed.DELETE("/media/items/:id/edit", s.deleteMediaEditRecipe)
