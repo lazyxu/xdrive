@@ -23,6 +23,7 @@ type caddyHostStatus struct {
 	TLSVerifiedDomainSHA256 string `json:"tls_verified_domain_sha256,omitempty"`
 	RuntimeTLSAlignment     string `json:"runtime_tls_alignment,omitempty"`
 	LiveConfigSHA256        string `json:"live_config_sha256,omitempty"`
+	InstanceGenerationState string `json:"instance_generation_state,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -95,6 +96,19 @@ func caddyObservedLiveConfigState(host caddyHostStatus, observed bool) string {
 	return "observed-local"
 }
 
+// "same-instance-local" binds multiple Host Manager reads to the same
+// Docker container and process start generation. It is NOT an authorized
+// applied-revision receipt or proof that the Caddy admin config was immutable.
+func caddyObservedInstanceGeneration(host caddyHostStatus, observed bool) string {
+	if !observed || host.InstanceGenerationState != "same-instance-local" ||
+		host.State != "healthy" || !host.HTTPSConfigured ||
+		!host.TLSCheckSupported || host.TLSState != "verified" ||
+		!validCaddyTLSVerifiedDomainDigest(host.TLSVerifiedDomainSHA256) {
+		return "unverified"
+	}
+	return "same-instance-local"
+}
+
 func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 	var status caddyHostStatus
 	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
@@ -131,7 +145,19 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 				status.LiveConfigSHA256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ||
 				status.State != "healthy" || !status.HTTPSConfigured ||
 				!status.TLSCheckSupported || status.TLSState != "verified" ||
-				!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) {
+				!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) ||
+		(status.InstanceGenerationState != "" &&
+			status.InstanceGenerationState != "same-instance-local" &&
+			status.InstanceGenerationState != "unverified") ||
+		(status.InstanceGenerationState == "same-instance-local" &&
+			(status.State != "healthy" || !status.HTTPSConfigured ||
+				!status.TLSCheckSupported || status.TLSState != "verified" ||
+				!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) ||
+		(status.InstanceGenerationState == "unverified" &&
+			(status.TLSState == "verified" || status.LiveConfigSHA256 != "" ||
+				status.TLSVerifiedDomainSHA256 != "" ||
+				status.RuntimeTLSAlignment == "matched-local" ||
+				status.RuntimeTLSAlignment == "mismatch-local")) {
 		return caddyHostStatus{}, false
 	}
 	return status, true

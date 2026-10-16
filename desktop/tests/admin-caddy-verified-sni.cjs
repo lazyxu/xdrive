@@ -160,6 +160,66 @@ test('live fixed Caddy active configuration is read-only and never a saved-revis
   assert.match(preflight, /ApplySupported:\s+false/)
 })
 
+test('fixed Caddy generation fences multiple read-only probes without claiming apply', () => {
+  const positive = good()
+  positive.host_instance_generation = 'same-instance-local'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(positive).host_instance_generation, 'same-instance-local')
+  const older = good()
+  delete older.host_instance_generation
+  assert.equal(validatorExports.verifyCaddyPreflightContract(older).host_instance_generation, undefined)
+  const neutral = good()
+  neutral.host_instance_generation = 'unverified'
+  neutral.desired_domain_local_match = 'unverified'
+  neutral.host_runtime_tls_alignment = 'unverified'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(neutral).host_instance_generation, 'unverified')
+  for (const change of [
+    x => { x.host_instance_generation = 'applied' },
+    x => { x.host_instance_generation = null },
+    x => { x.host_instance_generation = true },
+    x => { x.host_instance_generation = 'same-instance-local'; x.host_observed = false },
+    x => { x.host_instance_generation = 'same-instance-local'; x.host_ingress_ready = false },
+    x => { x.host_instance_generation = 'same-instance-local'; x.host_local_tls_verified = false },
+    x => {
+      x.host_instance_generation = 'unverified'
+      x.desired_domain_local_match = 'unverified'
+      x.host_runtime_tls_alignment = 'unverified'
+      x.host_live_config_state = 'observed-local'
+    },
+    x => { x.host_instance_generation = 'unverified'; x.host_runtime_tls_alignment = 'matched-local' },
+    x => { x.host_instance_generation = 'unverified'; x.desired_domain_local_match = 'mismatch-local' },
+  ]) {
+    const forged = good()
+    change(forged)
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(forged))
+  }
+  const runner = read('scripts/server-control.sh')
+  const fixture = read('scripts/test-caddy-host-status.sh')
+  const status = read('internal/api/admin_caddy_host_status.go')
+  const preflight = read('internal/api/admin_caddy_preflight.go')
+  const client = read('internal/client/admin_caddy_preflight.go')
+  const agent = read('desktop/src/main/agent_client.cts')
+  const shared = read('ui/shared/src/service-dependencies.ts')
+  const panel = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(runner, /caddy_container_generation_sample/)
+  assert.match(runner, /\{\{\.State\.StartedAt\}\}/)
+  assert.match(runner, /\{\{\.State\.Pid\}\}/)
+  assert.match(runner, /generation_before/)
+  assert.match(runner, /generation_after/)
+  assert.match(runner, /same-instance-local/)
+  assert.match(runner, /tls_domain_sha256=""/)
+  assert.match(runner, /live_config_sha256=""/)
+  assert.match(fixture, /XD_CADDY_GENERATION_NEXT_FIXTURE/)
+  assert.match(status, /InstanceGenerationState/)
+  assert.match(status, /caddyObservedInstanceGeneration/)
+  assert.match(preflight, /HostInstanceGeneration:\s+caddyObservedInstanceGeneration/)
+  assert.match(preflight, /ApplySupported:\s+false/)
+  assert.match(client, /HostInstanceGeneration/)
+  assert.match(agent, /host_instance_generation\?:/)
+  assert.match(shared, /host_instance_generation\?:/)
+  assert.match(panel, /data-xdrive-caddy-instance-generation/)
+  assert.match(panel, /不证明 Caddy 配置从未热加载/)
+})
+
 test('Caddy read-only ingress-continuity advisory is bounded and old Agent compatible', () => {
 
 

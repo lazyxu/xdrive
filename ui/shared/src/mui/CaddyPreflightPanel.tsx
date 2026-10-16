@@ -159,6 +159,14 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                 : '未核验：旧版 Host Manager、内部管理 API 不可用，或缺少本机 TLS 可信证据。'}
               此结果不证明管理员期望修订已经应用、备用管理入口存在或公网 HTTPS 生效。
             </Typography>
+            <Typography variant="body2" color="text.secondary"
+              data-xdrive-caddy-instance-generation>
+              本轮 Caddy 检测的容器运行代次：{result.host_instance_generation === 'same-instance-local'
+                ? '检查前后固定容器身份、进程 PID、启动时间和健康状态一致'
+                : '未核验：缺少可信容器代次，或检查过程中发生重建或重启。'}
+              此结果仅约束本轮多次只读观测的容器代次，不证明 Caddy 配置从未热加载、
+              管理员期望修订已应用、公网访问可达或可以安全启停网关。
+            </Typography>
             <Typography variant="caption" color="text.secondary"
               data-xdrive-caddy-preflight-revision-snapshot>
               本次只读预检修订一致性：{result.revision_snapshot_consistent === true

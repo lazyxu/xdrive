@@ -119,7 +119,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if blank.Action != "unset" || blank.ConfigurationComplete || blank.HostObserved ||
 		blank.DesiredRevision != 0 || blank.CredentialRevision != 0 ||
 		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" ||
-		blank.HostRuntimeTLSAlignment != "unverified" || blank.HostLiveConfigState != "unverified" {
+		blank.HostRuntimeTLSAlignment != "unverified" || blank.HostLiveConfigState != "unverified" ||
+		blank.HostInstanceGeneration != "unverified" {
 		t.Fatalf("no staged configuration should fail closed: %+v", blank)
 	}
 	if out := call(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); out.Code != 404 {
@@ -150,7 +151,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		cfg.DesiredRevision != 1 || cfg.CredentialRevision != 1 ||
 		cfg.HostIngressReady || cfg.HostLocalTLSVerified || cfg.ApplySupported ||
 		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
-		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" {
+		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" ||
+		cfg.HostInstanceGeneration != "unverified" {
 		t.Fatalf("local config was not recorded, or fake host effect published: %+v", cfg)
 	}
 	if cfg.Checks[2].ID != "alidns" || cfg.Checks[2].State != "pass" ||
@@ -175,7 +177,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if !cfg.HostObserved || !cfg.HostIngressReady || !cfg.HostLocalTLSVerified ||
 		!cfg.ConfigurationComplete || cfg.ApplySupported || cfg.Checks[5].State != "blocked" ||
 		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
-		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" {
+		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" ||
+		cfg.HostInstanceGeneration != "unverified" {
 		t.Fatalf("trusted host TLS observation must not acknowledge new desired HTTPS: %+v", cfg)
 	}
 	// Explicitly compare the desired FQDN with the host's TLS-verified
@@ -188,6 +191,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 			TLSCheckSupported: true, TLSState: "verified",
 			TLSVerifiedDomainSHA256: fmt.Sprintf("%x", sum),
 			RuntimeTLSAlignment:     alignment,
+			InstanceGenerationState: "same-instance-local",
 		})
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
@@ -205,7 +209,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "matched-local" || cfg.ApplySupported ||
 		cfg.Checks[5].State != "blocked" || !cfg.HostLocalTLSVerified ||
-		cfg.IngressChangeRisk != "unverified" || cfg.HostRuntimeTLSAlignment != "matched-local" {
+		cfg.IngressChangeRisk != "unverified" || cfg.HostRuntimeTLSAlignment != "matched-local" ||
+		cfg.HostInstanceGeneration != "same-instance-local" {
 		t.Fatalf("matching local SNI must not authorize Caddy apply: %+v", cfg)
 	}
 	// The startup Env and staged admin desired FQDN are distinct facts.
@@ -213,7 +218,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	writeVerifiedHostSNI("photos.example.com", "mismatch-local")
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "matched-local" ||
-		cfg.HostRuntimeTLSAlignment != "mismatch-local" || cfg.ApplySupported {
+		cfg.HostRuntimeTLSAlignment != "mismatch-local" ||
+		cfg.HostInstanceGeneration != "same-instance-local" || cfg.ApplySupported {
 		t.Fatalf("runtime startup drift must not imply desired revision applied: %+v", cfg)
 	}
 	// Conversely, the fixed running container can match its verified SNI
@@ -222,7 +228,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "mismatch-local" || cfg.ApplySupported ||
 		cfg.Checks[5].State != "blocked" || cfg.IngressChangeRisk != "local-domain-switch" ||
-		cfg.HostRuntimeTLSAlignment != "matched-local" {
+		cfg.HostRuntimeTLSAlignment != "matched-local" ||
+		cfg.HostInstanceGeneration != "same-instance-local" {
 		t.Fatalf("mismatched desired and observed TLS SNI was not detected: %+v", cfg)
 	}
 	// A second, independently hashed in-container Caddy admin GET /config/
@@ -236,6 +243,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		TLSVerifiedDomainSHA256: strings.Repeat("a", 64),
 		RuntimeTLSAlignment:     "matched-local",
 		LiveConfigSHA256:        strings.Repeat("b", 64),
+		InstanceGenerationState: "same-instance-local",
 	}
 	liveBytes, err := json.Marshal(liveProof)
 	if err != nil {
@@ -251,7 +259,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		t.Fatalf("Caddy live-config observation leaked sensitive or fingerprint data: %d", liveResponse.Code)
 	}
 	cfg = read()
-	if cfg.HostLiveConfigState != "observed-local" || cfg.ApplySupported ||
+	if cfg.HostLiveConfigState != "observed-local" ||
+		cfg.HostInstanceGeneration != "same-instance-local" || cfg.ApplySupported ||
 		cfg.Checks[5].State != "blocked" || cfg.Checks[6].State != "unknown" {
 		t.Fatalf("readable active Caddy config is not permission to apply: %+v", cfg)
 	}

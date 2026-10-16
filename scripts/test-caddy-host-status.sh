@@ -7,6 +7,9 @@ export XD_CONFIG_DIR="$scratch"
 export XD_CADDY_TEST_FIXTURE="$scratch/caddy-health"
 export XD_CADDY_RUNTIME_DOMAIN_FIXTURE="$scratch/caddy-runtime-domain"
 export XD_CADDY_LIVE_SHA_FIXTURE="$scratch/caddy-live-sha"
+export XD_CADDY_GENERATION_FIXTURE="$scratch/caddy-generation"
+export XD_CADDY_GENERATION_NEXT_FIXTURE="$scratch/caddy-generation-next"
+export XD_CADDY_GENERATION_COUNT_FIXTURE="$scratch/caddy-generation-count"
 mkdir -p "$scratch/config" "$scratch/logs" "$scratch/fakebin"
 printf 'XD_DOMAIN=example.invalid\n' > "$scratch/config/.env"
 printf 'services:\n  caddy:\n    image: fixture\n' > "$scratch/config/docker-compose.yml"
@@ -23,6 +26,22 @@ elif [[ "$#" == 4 && "$1" == inspect && "$2" == --format &&
         "$4" == xdrive-caddy ]]; then
   [[ -f "$XD_CADDY_RUNTIME_DOMAIN_FIXTURE" ]] || exit 1
   cat "$XD_CADDY_RUNTIME_DOMAIN_FIXTURE"
+elif [[ "$#" == 4 && "$1" == inspect && "$2" == --format &&
+        "$3" == '{{.Id}}|{{.State.StartedAt}}|{{.State.Pid}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' &&
+        "$4" == xdrive-caddy ]]; then
+  [[ -f "$XD_CADDY_GENERATION_FIXTURE" ]] || exit 1
+  if [[ -f "$XD_CADDY_GENERATION_NEXT_FIXTURE" ]]; then
+    count="$(cat "$XD_CADDY_GENERATION_COUNT_FIXTURE" 2>/dev/null || printf '0')"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$XD_CADDY_GENERATION_COUNT_FIXTURE"
+    if (( count % 2 == 0 )); then
+      cat "$XD_CADDY_GENERATION_NEXT_FIXTURE"
+    else
+      cat "$XD_CADDY_GENERATION_FIXTURE"
+    fi
+  else
+    cat "$XD_CADDY_GENERATION_FIXTURE"
+  fi
 elif [[ "$#" == 5 && "$1" == exec && "$2" == xdrive-caddy &&
         "$3" == /bin/sh && "$4" == -ec &&
         "$5" == 'set -o pipefail; wget -q -T 2 -O - http://127.0.0.1:2019/config/ | sha256sum' ]]; then
@@ -51,6 +70,8 @@ chmod +x "$scratch/fakebin/openssl"
 printf 'XD_DOMAIN=example.invalid\n' > "$XD_CADDY_RUNTIME_DOMAIN_FIXTURE"
 expected_live_sha="$(printf 'a%.0s' {1..64})"
 printf '%s  -\n' "$expected_live_sha" > "$XD_CADDY_LIVE_SHA_FIXTURE"
+fixed_caddy_id="$(printf 'c%.0s' {1..64})"
+printf '%s|%s|%s|true|healthy\n' "$fixed_caddy_id" '2026-10-16T09:23:45.123456789Z' '2478' > "$XD_CADDY_GENERATION_FIXTURE"
 export PATH="$scratch/fakebin:$PATH"
 export XD_HOST_CONTROL_SOURCE_ONLY=1
 source "$ROOT/scripts/server-control.sh"
@@ -70,7 +91,39 @@ expected_tls_sni_sha="$(printf '%s' example.invalid | sha256sum | awk '{print $1
 test "$(json_value "$status" tls_verified_domain_sha256)" = "$expected_tls_sni_sha"
 test "$(json_value "$status" runtime_tls_alignment)" = matched-local
 test "$(json_value "$status" live_config_sha256)" = "$expected_live_sha"
+test "$(json_value "$status" instance_generation_state)" = same-instance-local
 ! grep -q 'example.invalid' "$status"
+! grep -q "$fixed_caddy_id" "$status"
+! grep -q '|2478|' "$status"
+! grep -q '2026-10-16T09:23' "$status"
+# A replaced container/process during successive local checks must revoke
+# the TLS SNI digest, startup alignment, live config hash and positive status.
+printf '%s|%s|%s|true|healthy\n' "$fixed_caddy_id" '2026-10-16T09:24:00.000000001Z' '2479' > "$XD_CADDY_GENERATION_NEXT_FIXTURE"
+printf '0\n' > "$XD_CADDY_GENERATION_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" instance_generation_state)" = unverified
+test "$(json_value "$status" tls_state)" = unavailable
+test "$(json_value "$status" tls_verified_domain_sha256)" = ""
+test "$(json_value "$status" runtime_tls_alignment)" = unverified
+test "$(json_value "$status" live_config_sha256)" = ""
+! grep -q "$fixed_caddy_id" "$status"
+rm -f "$XD_CADDY_GENERATION_NEXT_FIXTURE" "$XD_CADDY_GENERATION_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" instance_generation_state)" = same-instance-local
+test "$(json_value "$status" tls_state)" = verified
+# A missing or malformed generation is a neutral result, never proof.
+printf 'do-not-serialize-generation-secret\n' > "$XD_CADDY_GENERATION_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" instance_generation_state)" = unverified
+test "$(json_value "$status" tls_state)" = unavailable
+! grep -q 'do-not-serialize-generation-secret' "$status"
+rm -f "$XD_CADDY_GENERATION_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" instance_generation_state)" = unverified
+test "$(json_value "$status" live_config_sha256)" = ""
+printf '%s|%s|%s|true|healthy\n' "$fixed_caddy_id" '2026-10-16T09:23:45.123456789Z' '2478' > "$XD_CADDY_GENERATION_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" instance_generation_state)" = same-instance-local
 # Digest crosses the host boundary, but raw admin JSON, private AliDNS values,
 # and all Docker Env entries must never appear in the host status file.
 for bad in 'malformed' 'ALIYUN_ACCESS_KEY_SECRET=do-not-leak' \
@@ -117,6 +170,7 @@ test "$(json_value "$status" tls_state)" = failed
 test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 test "$(json_value "$status" runtime_tls_alignment)" = unverified
 test "$(json_value "$status" live_config_sha256)" = ""
+test "$(json_value "$status" instance_generation_state)" = unverified
 export XD_TEST_CADDY_TLS_RESULT=failed
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = failed
@@ -148,6 +202,7 @@ test "$(json_value "$status" tls_state)" = disabled
 test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 test "$(json_value "$status" runtime_tls_alignment)" = unverified
 test "$(json_value "$status" live_config_sha256)" = ""
+test "$(json_value "$status" instance_generation_state)" = unverified
 
 # A non-loopback-only bind cannot be concluded TLS-broken from localhost.
 printf 'XD_DOMAIN=example.invalid\nXD_HTTPS_BIND=192.0.2.23\n' > "$scratch/config/.env"
@@ -173,4 +228,4 @@ test "$(json_value "$status" tls_state)" = verified
 rm -f "$XD_CADDY_TEST_FIXTURE"
 caddy_host_refresh
 test "$(json_value "$status" state)" = unknown
-echo "Caddy fixed runtime health, local TLS, startup-domain and in-container live config hashing, fail-closed privacy: OK"
+echo "Caddy fixed runtime health, process-generation fence, TLS, startup Env and in-container live config hashing, fail-closed privacy: OK"

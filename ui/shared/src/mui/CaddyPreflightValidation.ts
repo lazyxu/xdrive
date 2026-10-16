@@ -90,6 +90,22 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
         (!value.host_observed || !value.host_ingress_ready ||
          !value.host_local_tls_verified)))) invalidPreflight()
 
+  // A new Host Manager may fence local observations to one fixed Docker
+  // container/start generation. Old Server/Agent omits this optional enum.
+  // It is not evidence of a revision-bound config apply or rescue ingress.
+  if (value.host_instance_generation !== undefined &&
+      (typeof value.host_instance_generation !== 'string' ||
+       !['same-instance-local', 'unverified'].includes(value.host_instance_generation) ||
+       (value.host_instance_generation === 'same-instance-local' &&
+        (!value.host_observed || !value.host_ingress_ready ||
+         !value.host_local_tls_verified)) ||
+       (value.host_instance_generation === 'unverified' &&
+        (value.host_live_config_state === 'observed-local' ||
+         value.host_runtime_tls_alignment === 'matched-local' ||
+         value.host_runtime_tls_alignment === 'mismatch-local' ||
+         value.desired_domain_local_match === 'matched-local' ||
+         value.desired_domain_local_match === 'mismatch-local')))) invalidPreflight()
+
   // Old Server/Agent can omit this advisory. Positive warnings require
   // actual verified local HTTPS. Never accept an arbitrary claim as a
   // deployment or rollback authorization.
