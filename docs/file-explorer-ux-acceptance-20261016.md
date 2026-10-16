@@ -572,3 +572,33 @@ Exact old HEAD `1a6af6c33735ac464f37605d9007f122f59f6594` [CI #38944891764](http
 **Audited failure mechanism:** `web/src/App.tsx` mirrors a successful Files-internal folder change to `?dir=<NodeID>` by `launchWebApp(...,{replace:true})`. `WebFileExplorer.tsx` deep-link resolver currently treats *any* changed `initialDirectoryID` as a fresh external navigation and calls `navigateTo(chain,true,...)`, appending a redundant history entry after the internal `navigateTo` already committed the same folder. A single Files Back can therefore land in the duplicated folder instead of the Search-state history entry, although U01's separate **browser** history still passes. This is a **production UI navigation correctness** defect, not merely a text-locator test error.
 
 **Scoped correction and required revalidation:** Only `WebFileExplorer.tsx` is changed in production, tracking the account-scoped directory ID emitted through `onDirectoryChange` *after an authorized internal load*, and acknowledging the next matching App `?dir=` update without a second `navigateTo`. External deep links, account changes and pending/cancelled navigation still use original validation/authorization. Keep the previously failing original browser runner **byte-identical**; its two exact U06 results and unchanged U01/U05/Copy/Move/Delete counts are the red-to-green proof. The CI YAML retains only the `test/files-u06-` opt-in. Rebuild one work commit on the now-merged U06 Server baseline `master@467d0c12608d7395f80577659bcf55cef3ad35aa` with the original #1894 integration and its ledger intact. Run a *new* complete exact-head 76-job CI and final gate; do not reuse either old red. True iOS 27/Android Installed/Windows physical S5 validation remains `NOT RUN` / NO-GO.
+
+
+## F02-M · Mobile Web/PWA virtual button position descriptions (2026-10-17)
+
+After #1901 passed exact-head 76-job CI #38955345527 (25 success, 51 conditional
+skips, final-gate green) and rebase-merged at `master@3d9c228ca4524f6dabe1a5691f0b28a377e76cd2`,
+review of the dedicated Mobile Files renderer identified a distinct F02
+gap: its virtual List/Grid file controls are interactive `role=button`,
+not the shared wide-Web/Desktop Details `role=table`. Do **not** put
+`aria-rowindex` or `aria-posinset` on the button, reparent the controls,
+change 68px row geometry, replace the iOS27 layout or fabricate a Server total.
+
+For **each mounted** directory/Search/Trash file button, provide a
+presentation-only `aria-description` with its **flattened logical index**
+and complete `displayedCount`, including grouped and expanded inline entries.
+The callback's separate source index remains unchanged. Recent and Favorites
+virtual controls receive their actual collection index and entire
+`sectionItems.length`; Browse Home shortcuts receive no fabricated position.
+The existing accessible **name** (file name and selection), role, focus,
+keyboard/touch/long-press, scrolling, REST, Server and virtualization are
+unchanged. The pure helper rejects invalid positions. This is accessible
+position **description**, **not** native table/list structural ARIA; wide F02
+rowcount and rowindex remain as before.
+
+One bounded work commit updates this ledger, `mobileFilesState.ts`, the
+original Mobile presenter and its actual Node regression source/test.
+Its exact-head full CI/final-gate must pass before Ready/Rebase Merge.
+A Node test and compiled Web can verify the projected values and wiring, but
+actual NVDA/VoiceOver/TalkBack announcement order and iOS27/Android Installed
+behavior remain **NOT RUN**, as does the PWA S5 physical release gate.

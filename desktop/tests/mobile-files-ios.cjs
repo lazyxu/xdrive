@@ -27,7 +27,8 @@ new Function('module', 'exports', 'require', transpiled)(pkg, pkg.exports, modul
   return virtualPkg.exports
 })
 const { mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesWindow, mobileFilesIsMoved,
-  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesNativeSizeLabel } = pkg.exports
+  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesNativeSizeLabel,
+  mobileFilesLogicalPositionDescription } = pkg.exports
 
 test('Mobile Files centralizes Apple-reference blue and document palette across views', () => {
   const start = mobileSource.indexOf('const IOS_FILES_ICON_COLORS =')
@@ -760,4 +761,28 @@ test('F-iOS27-08C: Mobile and wide Web share the exact FileNameDialog rename val
   assert.match(adapter, /await api\.rename\(node\.id, node\.revision, name\)/)
   assert.match(adapter, /onError\(error\)\s+throw error/)
   assert.doesNotMatch(mobileSource, /api\.rename\(|fetch\(['"]\/api/)
+})
+
+
+test('F02-M: Mobile sparse file and collection buttons announce full logical positions', () => {
+  assert.equal(mobileFilesLogicalPositionDescription(0, 100_000), '第 1 项，共 100000 项')
+  assert.equal(mobileFilesLogicalPositionDescription(42, 100_000), '第 43 项，共 100000 项')
+  assert.equal(mobileFilesLogicalPositionDescription(99_999, 100_000), '第 100000 项，共 100000 项')
+  assert.equal(mobileFilesLogicalPositionDescription(5, 10), '第 6 项，共 10 项')
+  for (const [index, count] of [[-1, 100_000], [100_000, 100_000],
+    [0, 0], [NaN, 20], [0, Infinity], [0, Number.MAX_SAFE_INTEGER + 1]]) {
+    assert.equal(mobileFilesLogicalPositionDescription(index, count), undefined)
+  }
+  for (const token of [
+    'aria-description={mobileFilesLogicalPositionDescription(logicalPosition, displayedCount)}',
+    'aria-description={mobileFilesLogicalPositionDescription(logicalPosition, sectionItems.length)}',
+    'inline?.sourceIndex ?? index, index)',
+    'sectionWindow.start + offset)',
+    'role="button"',
+    'aria-pressed={selectionMode ? chosen : undefined}',
+  ]) assert.ok(mobileSource.includes(token), token)
+  // Grouping/expanded branches may shift a virtual flat index; sourceIndex
+  // remains the existing callback owner index, never the accessible ordinal.
+  assert.ok(mobileSource.includes('inline?.sourceIndex ?? index, index)'))
+  assert.ok(!mobileSource.includes('aria-posinset={'), 'posinset on a role=button is invalid')
 })

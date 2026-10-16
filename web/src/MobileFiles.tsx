@@ -62,6 +62,7 @@ import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
   mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesViewportAnchor, mobileFilesViewportTop,
+  mobileFilesLogicalPositionDescription,
   MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
@@ -1588,7 +1589,7 @@ export default function MobileFiles(props: Props) {
   }
   const renderEntry = (
     item: XDriveFileExplorerItem, key: string, depth = 0,
-    ownerID = directoryID ?? 0, sourceIndex = -1,
+    ownerID = directoryID ?? 0, sourceIndex = -1, logicalPosition = -1,
   ) => {
     const chosen = selected.has(mobileItemKey(item))
     const inlineBranch = props.inlineBranches?.find(branch => branch.ownerID === Number(item.id))
@@ -1602,6 +1603,7 @@ export default function MobileFiles(props: Props) {
         role="button"
         tabIndex={0}
         aria-label={selectionMode ? `${chosen ? '已选' : '未选'}，${item.name}` : item.name}
+        aria-description={mobileFilesLogicalPositionDescription(logicalPosition, displayedCount)}
         aria-pressed={selectionMode ? chosen : undefined}
         onClick={() => { if (!cancelClickRef.current) onOpenEntry(item, ownerID); else cancelClickRef.current = false }}
         onDragOver={item.kind === 'dir' ? event => externalDragOver(event, { kind: 'folder', item }) : undefined}
@@ -1726,9 +1728,11 @@ export default function MobileFiles(props: Props) {
     entry: SectionEntry, action: () => void, isFolder = false,
     owner?: 'recent' | 'favorites',
     locationKind?: 'cloud' | 'trash' | 'smart' | 'tag',
+    logicalPosition = -1,
   ) => (
     <Box key={`${locationKind ?? owner ?? 'home'}:${String(entry.id)}`} role="button" tabIndex={0}
       data-mobile-files-collection-row={owner}
+      aria-description={mobileFilesLogicalPositionDescription(logicalPosition, sectionItems.length)}
       aria-keyshortcuts={owner ? 'Shift+F10' : undefined}
       onClick={() => {
         if (cancelClickRef.current) { cancelClickRef.current = false; return }
@@ -1859,7 +1863,7 @@ export default function MobileFiles(props: Props) {
     const inline = inlineLayout ? xDriveFileExplorerInlineCellAt(inlineLayout, index) : undefined
     const item = inlineLayout ? inline?.item : props.virtualCollection?.itemAt(index) ?? props.items[index]
     return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`,
-      inline?.depth ?? 0, inline?.ownerID ?? directoryID ?? 0, inline?.sourceIndex ?? index) : (
+      inline?.depth ?? 0, inline?.ownerID ?? directoryID ?? 0, inline?.sourceIndex ?? index, index) : (
       <Box key={index} data-mobile-files-placeholder aria-label="正在加载文件"
         sx={{ minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
           p: 2, color: 'text.disabled' }}>
@@ -2221,7 +2225,7 @@ export default function MobileFiles(props: Props) {
               <Box data-mobile-files-group="collection" sx={{ mx: 2, mt: 1.5,
                 borderRadius: '13px', overflow: 'hidden', bgcolor: 'background.paper' }}>
                 <Box sx={{ height: sectionWindow.before }}/>
-                {sectionItems.slice(sectionWindow.start, sectionWindow.end).map(entry => mobileRow(entry, () => {
+                {sectionItems.slice(sectionWindow.start, sectionWindow.end).map((entry, offset) => mobileRow(entry, () => {
                   const intent = ++navigationIntentRef.current
                   const open = section === 'recent'
                     ? props.onOpenRecent(entry.id)
@@ -2229,7 +2233,7 @@ export default function MobileFiles(props: Props) {
                   void open.then(accepted => {
                     if (accepted && intent === navigationIntentRef.current && entry.kind === 'dir') beginBrowse(entry.id)
                   }).catch(props.onOpenError)
-                }, false, section === 'recent' ? 'recent' : 'favorites'))}
+                }, false, section === 'recent' ? 'recent' : 'favorites', undefined, sectionWindow.start + offset))}
                 <Box sx={{ height: sectionWindow.after }}/>
               </Box>
             </Box>
