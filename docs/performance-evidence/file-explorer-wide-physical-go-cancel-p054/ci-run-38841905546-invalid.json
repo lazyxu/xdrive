@@ -1,0 +1,31 @@
+{
+  "workloadId": "P054/M005-k",
+  "classification": "Invalid harness; valid current n=0",
+  "sourceHead": "1c7cd878ed66ff15bd00d6c1b378a41f98bf5317",
+  "nativeRunId": 38841905546,
+  "nativeJobId": 116783686233,
+  "artifactId": 12020699670,
+  "ciRunURL": "https://github.com/lazyxu/xdrive/actions/runs/38841905546",
+  "ciArtifactURL": "https://github.com/lazyxu/xdrive/actions/runs/38841905546/artifacts/12020699670",
+  "sourceLog": "native-grid-sample-1.log",
+  "observed": "Go fixture passed authentication/root creation; /api/v1/me/quota returned HTTP500 due PostgreSQL error relation xd_local_push_quota_holds does not exist SQLSTATE 42P01, before 100k physical CAS seeding",
+  "cause": "isolated test schema lacks meta.LocalPushQuotaHold recent production quota dependency",
+  "physicalCASFixtureCount": 0,
+  "validGoCancellationObservations": 0,
+  "fix": "add meta.LocalPushQuotaHold only to test-only fixture AutoMigrate before /me/quota; preserve original 160ms, 36/36, 0B, 128MiB budgets",
+  "productPerformanceRegression": false,
+  "productionChanged": false,
+  "after": null,
+  "speedup": null,
+  "frozenBudgets": {
+    "sampleCount": 6,
+    "uniquePhysicalJPEGEach": 100000,
+    "sourceBytesAtLeast": 50000000,
+    "goCancelCtxAndHandler": 36,
+    "maxNotificationMs": 160,
+    "staleHandlerAfter160ms": 0,
+    "staleBytesAfter160ms": 0,
+    "goRSSGrowthBytesAtMost": 134217728,
+    "rendererRSSGrowthBytesAtMost": 134217728
+  }
+}

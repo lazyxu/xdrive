@@ -1,0 +1,74 @@
+name: Wide Web FileExplorer 100k DISTINCT Physical CAS Go Cancel P054
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  wide-fileexplorer-physical-100k-go-cancel-p054:
+    if: github.head_ref == 'perf/file-explorer-wide-physical-jpeg-100k-go-cancel-p054-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FILEEXPLORER_WIDE_PHYSICAL_GO_CANCEL_100K_PERF: '1'
+      XD_FILEEXPLORER_REAL_SCROLL_RESULTS: ${{ github.workspace }}/desktop/file-explorer-wide-physical-go-cancel-100k-p054-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source-exact P054 1440px 100k distinct CAS and genuine upstream Go cancellation
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go)"
+          node --check desktop/scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+          node --test desktop/tests/file-explorer-wide-physical-100k-cancel-p054-source.cjs desktop/tests/file-explorer-mobile-physical-100k-cancel-p052-source.cjs desktop/tests/file-explorer-mobile-go-cancel-100k-source.cjs desktop/tests/file-explorer-desktop-physical-cancel-p053-source.cjs
+      - name: Build actual shared Web Files and Electron with native Go PostgreSQL17 Gin CAS fixture
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          (cd web && npm install --no-audit --no-fund)
+          (cd desktop && npm install --no-audit --no-fund)
+          VITE_XDRIVE_FILE_EXPLORER_REAL_SCROLL_PERF=1 npm --prefix web run build -- --config vite.config.ts
+      - name: 'P054 original CURRENT: 1440px wide Web real 100k distinct CAS Grid Details n3 Go Context Done'
+        run: |
+          set -euo pipefail
+          mkdir -p "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS"
+          printf 'HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS/source.txt"
+          xvfb-run -a --server-args="-screen 0 1920x1200x24" ./desktop/node_modules/.bin/electron --no-sandbox desktop/scripts/file-explorer-real-web-scroll-cancel-100k-main.cjs
+          test "$(find "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS" -maxdepth 1 -name '*-sample-*.json' | wc -l)" -eq 6
+          node -e "const s=require(process.env.XD_FILEEXPLORER_REAL_SCROLL_RESULTS+'/summary.json');if(!s.passed||s.mobileCancelMode||!s.widePhysicalCancelMode||s.cssWindowWidth!==1440||s.observedDocumentWidth<1360||s.observedDocumentWidth>1440||s.sampleCount!==6||s.worstGoContextMs>160||!s.physicalCancelMode||s.physicalOriginalsPerFixture!==100000||s.eachModeSamples!==3||s.totalActualGoContexts!==36||s.totalActualCanceledHandlers!==36||s.totalStaleBodyBytes!==0||s.maxGoRssGrowthBytes>134217728||s.maxRendererRssGrowthBytes>134217728)process.exit(1);console.log(JSON.stringify({passed:s.passed,samples:s.sampleCount,worstGoContextMs:s.worstGoContextMs}))"
+          cat "$XD_FILEEXPLORER_REAL_SCROLL_RESULTS/summary.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-explorer-wide-web-100k-distinct-physical-JPEG-Go-cancel-P054-n3
+          path: desktop/file-explorer-wide-physical-go-cancel-100k-p054-results/
+          if-no-files-found: warn
+          retention-days: 14
