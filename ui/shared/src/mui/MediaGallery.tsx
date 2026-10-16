@@ -883,8 +883,12 @@ export function XDriveMediaGalleryPage({
     memory: MediaMemory | null = null,
     cleanupReview: MediaCleanupReviewTarget | null = null,
     pet: MediaPetFacet | null = null,
+    onCommitted?: () => void,
   ) => {
     const request = ++requestID.current
+    // A selected Mobile Album is only an intent until its first authorized
+    // counted Server range succeeds; keep the previous committed page visible.
+    const stagedNavigation = Boolean(onCommitted)
     const viewerReturn = mobileGalleryViewport && preferenceScope
       ? mobileGalleryViewerReturns.get(preferenceScope)
       : undefined
@@ -917,7 +921,6 @@ export function XDriveMediaGalleryPage({
       (matchingBrowsePosition ? browsePosition?.nodeID ?? 0 : 0)
     pendingSortAnchorRef.current = 0
     if (returningHere && preferenceScope) mobileGalleryViewerReturns.delete(preferenceScope)
-    setSortAnchorRestoration(null)
     const target: MediaGalleryCollectionTarget = targetKind === 'trash'
       ? { kind: 'trash', query: {}, requestID: request }
       : cleanupReview
@@ -940,11 +943,16 @@ export function XDriveMediaGalleryPage({
           suggestedPerson,
           person,
         )
-    collectionTargetRef.current = target
-    setCollectionTarget(target)
-    setTimelineGroupSets(emptyMediaTimelineGroupSets())
-    setSearchOrder('')
-    virtualCollection.reset(mediaGalleryCollectionKey(target))
+    const commitTarget = () => {
+      collectionTargetRef.current = target
+      setCollectionTarget(target)
+      setTimelineGroupSets(emptyMediaTimelineGroupSets())
+      setSearchOrder('')
+      setSortAnchorRestoration(null)
+      virtualCollection.reset(mediaGalleryCollectionKey(target))
+    }
+    // Never drop the old 100k-safe sparse page for a pending Mobile Album.
+    if (!stagedNavigation) commitTarget()
     setLoading(true)
     setError('')
     setCollectionError('')
@@ -998,8 +1006,9 @@ export function XDriveMediaGalleryPage({
         const range = await rangePromise
         if (
           request !== requestID.current ||
-          collectionTargetRef.current?.requestID !== request
+          (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
         ) return
+        if (stagedNavigation) commitTarget()
         setCurrentAlbum(null)
         setCurrentSuggestedPerson(null)
         setCurrentPerson(null)
@@ -1021,11 +1030,12 @@ export function XDriveMediaGalleryPage({
           offset: range.offset,
           limit: range.limit,
         })
+        onCommitted?.()
 
         void facetsPromise.then((result) => {
           if (
             request !== requestID.current ||
-            collectionTargetRef.current?.requestID !== request
+            (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
           ) return
           if (result.error) {
             setPlacesStatus('error')
@@ -1057,8 +1067,9 @@ export function XDriveMediaGalleryPage({
       const range = await rangePromise
       if (
         request !== requestID.current ||
-        collectionTargetRef.current?.requestID !== request
+        (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
+      if (stagedNavigation) commitTarget()
       setCurrentAlbum(target.kind === 'album' ? album : null)
       setCurrentSuggestedPerson(
         target.kind === 'suggested-person' ? suggestedPerson : null,
@@ -1086,10 +1097,11 @@ export function XDriveMediaGalleryPage({
         offset: range.offset,
         limit: range.limit,
       })
+      onCommitted?.()
     } catch (loadError) {
       if (
         request !== requestID.current ||
-        collectionTargetRef.current?.requestID !== request
+        (!stagedNavigation && collectionTargetRef.current?.requestID !== request)
       ) return
       const message = xDriveMediaGalleryErrorMessage(loadError)
       if (target.kind === 'all' && !target.query.folder_id) setPlacesStatus('error')
@@ -1760,22 +1772,31 @@ export function XDriveMediaGalleryPage({
 
   const openAlbum = useCallback((album: MediaAlbum, fromCollections = false) => {
     syncFolderRequestID.current += 1
-    setCurrentFolderView(null)
-    setSection('albums')
-    setActiveMediaType('')
-    if (album.kind === 'smart') {
-      setDraftFilters(mediaGalleryDraftFromQuery(album.query))
+    // The Collections overview and its scroll belong to the last accepted
+    // location until this album's first Server page actually succeeds.
+    const commitFromCollections = fromCollections ? () => {
+      setCurrentFolderView(null)
+      setSection('albums')
+      setActiveMediaType('')
+      setDraftFilters(album.kind === 'smart'
+        ? mediaGalleryDraftFromQuery(album.query)
+        : emptyMediaGalleryFilterDraft)
       setQuery({})
-      void loadFirstPage(album, {})
-      return
+      setMobileCollectionsOverview(false)
+    } : undefined
+    if (!fromCollections) {
+      // Wide Web/Desktop and already-open album navigation retain the
+      // established immediate route behavior.
+      setCurrentFolderView(null)
+      setSection('albums')
+      setActiveMediaType('')
+      if (album.kind === 'smart') {
+        setDraftFilters(mediaGalleryDraftFromQuery(album.query))
+        setQuery({})
+      }
     }
-    if (fromCollections) {
-      // Gallery Collections are navigation, not an implicit filter on the
-      // previously visited Favorites / folder / Search result.
-      setDraftFilters(emptyMediaGalleryFilterDraft)
-      setQuery({})
-    }
-    void loadFirstPage(album, fromCollections ? {} : query)
+    void loadFirstPage(album, fromCollections || album.kind === 'smart' ? {} : query,
+      null, null, 'default', null, null, null, commitFromCollections)
   }, [loadFirstPage, query])
 
   const openPlace = useCallback((place: MediaPlaceFacet, fromCollections = false) => {
@@ -2801,7 +2822,7 @@ export function XDriveMediaGalleryPage({
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
         onSectionChange={(next) => { setMobileCollectionsOverview(false); selectSection(next) }}
         onOpenMediaType={openMediaType}
-        onOpenAlbum={(album) => { openAlbum(album, mobileCollectionsOverview); setMobileCollectionsOverview(false) }}
+        onOpenAlbum={(album) => openAlbum(album, mobileCollectionsOverview)}
         onOpenSyncFolder={source.getSyncFolder
           ? (folder) => {
               setMobileCollectionsOverview(false)
@@ -6248,10 +6269,7 @@ export function XDriveMediaGallery({
             onMobileCollectionsOverviewChange?.(false)
             onSectionChange?.(next)
           }}
-          onOpenAlbum={onOpenAlbum ? (album) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenAlbum(album)
-          } : undefined}
+          onOpenAlbum={onOpenAlbum}
           onOpenMemory={onOpenMemory ? (memory) => {
             onMobileCollectionsOverviewChange?.(false)
             onOpenMemory(memory)
