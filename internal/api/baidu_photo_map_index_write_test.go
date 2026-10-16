@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	auditpkg "github.com/lazyxu/xdrive/internal/audit"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -110,7 +111,8 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	pool.SetMaxIdleConns(0)
 	defer pool.Close()
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
+		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{},
+		&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}
 	alice := meta.User{Username: "map-writer-alice", PasswordHash: "test", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -180,13 +182,37 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 		t.Fatal("test callback bypassed missing durable grant")
 	}
 	assertVisible(0, 0)
-	consent := meta.BaiduPhotoMapConsent{
-		OwnerID: alice.ID, AssetID: asset.ID, Revision: 1,
-		AllowIndex: true, AllowBaiduConversion: true,
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	// Synthetic explicit Owner decision, test-only. In production the future
+	// authenticated route must re-verify the actor inside this same TX.
+	grant := baiduPhotoMapGrantCandidate{
+		OwnerID: alice.ID, AssetID: asset.ID, PrimaryNodeID: node.ID,
+		NodeRevision: node.Revision, MediaUpdatedAt: media.UpdatedAt,
+		SourceLatitude: lat, SourceLongitude: lng,
+		ExpectedConsentRevision: 0, ExpiresAt: time.Now().UTC().Add(time.Hour),
 	}
-	if err := db.Create(&consent).Error; err != nil {
-		t.Fatal(err)
+	decision := func(ctx context.Context, tx *gorm.DB, ownerID, assetID uint64) (auditpkg.Event, error) {
+		if ctx.Err() != nil || tx == nil || ownerID != alice.ID || assetID != asset.ID {
+			return auditpkg.Event{}, errors.New("unverified consent actor")
+		}
+		return auditpkg.Event{ActorUserID: &alice.ID}, nil
+	}
+	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, nil); err == nil {
+		t.Fatal("missing explicit owner decision granted location sharing")
+	}
+	invalidActor := func(context.Context, *gorm.DB, uint64, uint64) (auditpkg.Event, error) {
+		return auditpkg.Event{ActorUserID: &bob.ID}, nil
+	}
+	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, invalidActor); err == nil {
+		t.Fatal("another owner's decision granted location sharing")
+	}
+	longGrant := grant
+	longGrant.ExpiresAt = time.Now().UTC().Add(31 * 24 * time.Hour)
+	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, longGrant, decision); err == nil {
+		t.Fatal("overlong location consent retention accepted")
+	}
+	consent, err := grantBaiduPhotoMapConsent(context.Background(), db, grant, decision)
+	if err != nil || consent.Revision != 1 || !consent.AllowIndex || !consent.AllowBaiduConversion {
+		t.Fatalf("valid private grant did not atomically persist: %+v %v", consent, err)
 	}
 
 	reject := func(context.Context, *gorm.DB, uint64, uint64) error {
@@ -305,4 +331,52 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 		consent.RevokedAt == nil {
 		t.Fatalf("revocation failed to persist: %+v %v", consent, err)
 	}
+
+	// Renewing consent requires an independently confirmed Owner decision,
+	// current source GPS and exact post-revocation revision.
+	if err := db.Model(&meta.User{}).Where("id = ?", alice.ID).
+		Update("disabled_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	reGrant := grant
+	reGrant.MediaUpdatedAt = fresh.MediaUpdatedAt
+	reGrant.SourceLatitude = fresh.SourceLatitude
+	reGrant.SourceLongitude = fresh.SourceLongitude
+	reGrant.ExpectedConsentRevision = 1
+	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision); err == nil {
+		t.Fatal("stale pre-revocation consent revision allowed regrant")
+	}
+	reGrant.ExpectedConsentRevision = 2
+	consent, err = grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision)
+	if err != nil || consent.Revision != 3 || consent.RevokedAt != nil ||
+		!consent.AllowIndex || !consent.AllowBaiduConversion {
+		t.Fatalf("fresh opted-in regrant unavailable: %+v %v", consent, err)
+	}
+	assertVisible(0, 0)
+	var audits []meta.AuditEvent
+	if err := db.Where("action = ?", "media.photo_map.consent.grant").
+		Order("id ASC").Find(&audits).Error; err != nil || len(audits) != 2 ||
+		strings.Contains(audits[0].Metadata, "31.2304") ||
+		strings.Contains(audits[1].Metadata, "31.5001") {
+		t.Fatalf("location consent audit missing or leaked source GPS: %+v %v", audits, err)
+	}
+
+	// A missing audit sink MUST roll back the next policy revision AND any
+	// premature deletion of the current derived position in that transaction.
+	if err := upsertBaiduPhotoMapPosition(context.Background(), db, fresh, approved); err != nil {
+		t.Fatal(err)
+	}
+	assertVisible(1, fresh.DerivedLongitude)
+	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	reGrant.ExpectedConsentRevision = 3
+	if _, err := grantBaiduPhotoMapConsent(context.Background(), db, reGrant, decision); err == nil {
+		t.Fatal("audit-write failure committed a location consent")
+	}
+	if err := db.Where("asset_id = ?", asset.ID).Take(&consent).Error; err != nil ||
+		consent.Revision != 3 {
+		t.Fatalf("audit failure changed live consent: %+v %v", consent, err)
+	}
+	assertVisible(1, fresh.DerivedLongitude)
 }
