@@ -264,3 +264,13 @@ CAS-A05已测100k真实不同1KiB SHA LocalCAS vs离线pack初始空间/热缓�
 ### CAS-A06 已测Linux Server存储子层cold/warm，六端UI仍未测（2026-10-17）
 
 [原始Go源码真实n3 CI #38932992440](https://github.com/lazyxu/xdrive/actions/runs/38932992440)：100,000 SHA不同1KiB实际实体原片、同源Local CAS vs测试专用Pack，FADV_DONTNEED 2000次cold读原版315.122ms/Pack247.882ms、P95 193/149μs、kernel`read_bytes`P50两者皆8,192,000B，warm总wall61.187/17.015ms，最大RSS38,060KiB。**只算Linux Server本机物理读取，三次成功。** 对照: Native Desktop Electron应用=Not measured、Wide Web应用=Not measured、Mobile Web应用=Not measured、Desktop installed PWA=Not measured、Android installed PWA=Not measured、iOS installed PWA=Not measured。不能将POSIX advisory cold测量冒称真实手机硬件冷读或在线播放/上传取消。完整机读样本存于[CAS-A06证据](performance-evidence/cas-a06-physical-cold-pack/README.md)，准确修订HEAD双CI待验收，生产AFTER=N/A。
+
+
+## CAS-A07 · 100k真实混合大小小Blob/离线Pack物理阈值试验（2026-10-17）
+
+本工作负载唯一差异为大小分布：95k×1KiB、4k×16KiB、900×128KiB、100×1MiB，总计100k独立SHA/385,638,400B真实普通原片，双方同一物理来源、同Run n3。对比生产Local CAS（真实SHA/fdatasync/atomic put/open/delete）和隔离离线Pack/48B索引，2000次实际SHA与256B独立Range、95k GC /5k幸存全SHA、旧Pack/新Pack并存瞬时空间、Linux`st_blocks`、CPU/RSS、write_bytes，详见[CAS-A07规范](cas-mixed-pack-performance.md)及[总台账](performance-test-registry.md)。**原版CURRENT matched n3已验收**；离线Pack容量节省42.3676%、混合分层2k读取退化19.48%；**生产AFTER=N/A、统一Pack在线策略Rejected**，证据HEAD双CI待验收。所有实际应用客户端状态：Native Desktop Electron=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop installed PWA=Not measured；Android installed PWA=Not measured；iOS installed PWA=Not measured；不能以Linux小原片pack代替已验收的媒体缩略图、视频播放、4GiB上传或真实Owner Source Push。
+
+
+### CAS-A07 三独立真实100k混合大小CAS/Pack实测对照（2026-10-17）
+
+[修正公平计时原始CI #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589) 每组100,000个不同SHA真实物理1KiB/16KiB/128KiB/1MiB原始对象，Local CAS原版实际Linux存储677.4784MB，离线Pack/索引390.4471MB；混合分层2000个SHA+256B独立Range P50 242.708 vs289.994ms（离线Pack慢19.48%），95k GC后33.8739MB vs19.5297MB，混合试验对统一Pack在线部署判Rejected。所有原始机器CPU/RSS/写盘/GC并存峰值 [长期归档](performance-evidence/cas-a07-mixed-100k-pack/README.md)。**这不是应用层负载**，六列 Native Desktop Electron=Not measured、Wide Web=Not measured、Mobile Web=Not measured、Desktop installed PWA=Not measured、Android installed PWA=Not measured、iOS installed PWA=Not measured；历史100k JPEG/Video/Live和4GiB客户端真实测量不能拿来构造本次跨平台加速。

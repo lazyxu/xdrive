@@ -204,3 +204,13 @@ CAS-A05已同源证明1KiB/100k不同SHA对象Pack实体空间降低73.826%，�
 ### CAS-A06 100k物理Blob「提示冷缓存」随机读取证据（2026-10-17）
 
 在已验收CAS-A05 100k不同小文件Pack空间实验后，[CAS-A06原始物理n3](cas-small-pack-cold-performance.md) 同一个source真实生产Local.Open与离线Pack/Index执行2000不同原片FADV_DONTNEED advisory cold，结果原版Local/Pack P50总wall315.122/247.882ms、单访问P95 193/149μs、P99 268/209μs，**两侧内核`read_bytes`都是8,192,000B**；随后同源热读61.187/17.015ms，样本峰RSS38,060KiB。说明测试Runner上Pack不见冷读尾延迟劣势，却**无法证明节省真实读取字节，无法保证券外OS存储是冷缓存**；实际部署需线上Owner、ContentBlob引用、并发Pack重写、索引坏块恢复、FUSE/CfAPI随机Seek/云后端认证以及真实6端设备证据。冻结原版`Local`及业务同步不改，[全部11份原始机器资源](performance-evidence/cas-a06-physical-cold-pack/README.md)。
+
+
+## CAS-A07 混合文件大小的CAS小对象Pack拐点研究（2026-10-17）
+
+在 [CAS-A05 100k不同1KiB/95k GC Pack容量实验](cas-small-pack-performance.md)已获得离线节省73.826%、[CAS-A06 advisory cold/warm 2k真实读取](cas-small-pack-cold-performance.md)P95 Pack149μs但kernel读字节中位与原版相同后，下一新证据为[CAS-A07混合大小分布](cas-mixed-pack-performance.md)：100k不同原片的95k×1KiB/4k×16KiB/900×128KiB/100×1MiB真实Local CAS vs独立离线Pack/索引，明确初始/95k GC后真实物理块和2k按大小分层随机SHA/Range、Pack compact新旧并存峰值及坏块拒绝。本工作负载已取得三独立同源真实n3，结果不能从上一1KiB数据外推；如新负载出现Pack读尾延迟/CPU空间下限，不能为了既定设计容许生产Blob语义回归。生产`ContentBlob`完整SHA索引、Owner引用、FileVersion、并发GC/外部对象Store及FUSE/CfAPI不受测试影响，真实用户6平台继续独立登记。
+
+
+### CAS-A07 新混合大小分布的Pack收益边界/实际读时退化（2026-10-17）
+
+不是再次运行CAS-A05纯1KiB：本次[真实CAS-A07同源物理n3 #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589)新分布95k×1KiB、4k×16KiB、900×128KiB、100×1MiB全为不同SHA原始，生产Local CAS真实100k文件实体677,478,400B，离线Pack+48B/对象Index真实390,447,104B，约节省42.37%（并非纯1KiB的73.83%）；GC后33,873,920 vs19,529,728B，5k幸存全部SHA正确，候选新旧Pack同存在峰409,972,736B。**公平计时的分层2000原片完整SHA+独立256B Range原版 P50 242.708ms，而离线Pack 289.994ms（慢19.48%）**，无证据表明全尺寸Pack对Reader最优或适合默认线上存储。因此生产Local CAS、完整ContentBlob/Owner/RefCount/FileVersion/GC及各平台读取接口都不修改，统一Pack在线提案`Rejected for read regression`；留下独立小对象阈值、坏Pack索引恢复、跨进程安全GC和云端读的未测项目。[完整原始机器数据](performance-evidence/cas-a07-mixed-100k-pack/README.md)永久保存，早期带多余SHA key计算的Old head另行标Superseded。**生产 AFTER=N/A**。
