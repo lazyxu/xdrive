@@ -166,6 +166,8 @@ type Props = {
   onCopyPaths?: (items: XDriveFileExplorerItem[]) => void
   renameDisabled?: boolean
   onRename: (item: XDriveFileExplorerItem, name: string) => Promise<void>
+  /** Optional common Web owner for draft persistence through a 900px remount. */
+  onOpenRenameDialog?: (item: XDriveFileExplorerItem) => void
   onCopy: (items: XDriveFileExplorerItem[]) => void
   onCut: (items: XDriveFileExplorerItem[]) => void
   onMove: (items: XDriveFileExplorerItem[]) => void
@@ -1315,7 +1317,8 @@ export default function MobileFiles(props: Props) {
     // operations; a disabled MUI MenuItem must not be invokable directly.
     if (props.trashActive || props.renameDisabled) return
     setItemMenu(null)
-    setRenaming(item)
+    if (props.onOpenRenameDialog) props.onOpenRenameDialog(item)
+    else setRenaming(item)
   }
   // A held file/folder's context commands operate on that precise Node,
   // even if an unrelated multi-selection is retained elsewhere. Wide Web
