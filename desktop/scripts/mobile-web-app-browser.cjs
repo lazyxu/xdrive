@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav', 'gallery-ios27-media-type-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav, or gallery-ios27-media-type-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -47,6 +47,7 @@ const galleryMemoryIndexNavigationScenario = options.scenario === 'gallery-ios27
 const galleryPetNavigationScenario = options.scenario === 'gallery-ios27-pet-nav';
 const galleryPetIndexNavigationScenario = options.scenario === 'gallery-ios27-pet-index-nav';
 const gallerySortNavigationScenario = options.scenario === 'gallery-ios27-sort-nav';
+const galleryMediaTypeNavigationScenario = options.scenario === 'gallery-ios27-media-type-nav';
 const galleryPersonNavigationScenario = options.scenario === 'gallery-ios27-person-nav';
 const galleryPlaceNavigationScenario = options.scenario === 'gallery-ios27-place-nav';
 const galleryTrashNavigationScenario = options.scenario === 'gallery-ios27-trash-nav';
@@ -58,7 +59,7 @@ const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
-const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
+const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
@@ -419,6 +420,7 @@ function fixtureFor(request, role) {
         'range', 'limit', 'offset', 'sort_by', 'sort_dir', 'time_zone',
         ...(mobilePanelsScenario ? ['tag'] : []),
         ...(gallerySyncFolderNavigationScenario ? ['folder_id'] : []),
+        ...(galleryMediaTypeNavigationScenario ? ['asset_kind'] : []),
         ...((galleryIos27Fixture || gallerySelectionScenario || filesIos27ChromeScenario) ? ['initial_position', 'unknown_first', 'anchor_node_id'] : []),
       ]);
       if (mobilePanelsScenario && url.searchParams.has('tag')) assert.equal(url.searchParams.get('tag'), '面板验收');
@@ -954,6 +956,7 @@ let galleryAlbumGate;
 let galleryMemoryGate;
 let galleryPetGate;
 let gallerySortGate;
+let galleryMediaTypeGate;
 let galleryPersonGate;
 let galleryPlaceGate;
 let galleryTrashGate;
@@ -2415,6 +2418,90 @@ async function fullscreenAcceptance(role) {
   await galleryOverlayAcceptance(role);
 }
 
+
+
+async function galleryMediaTypeNavigationAcceptance() {
+  // P31: a mounted accepted Media Types index must retain its real card,
+  // scroll anchor and 52px App Frame while its owner's first photo Range is held.
+  activeStage='user-gallery-p31-media-type-first-authorized-range-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  const shortcut=page.locator('[data-xdrive-mobile-gallery-collection-card="media-types"]');
+  await shortcut.waitFor();await shortcut.scrollIntoViewIfNeeded();await shortcut.tap();
+  const card=page.locator('main [role="button"]').filter({hasText:'普通照片与静态图像'}).first();
+  await card.waitFor();await card.scrollIntoViewIfNeeded();
+  await settle();
+  await page.evaluate(()=>{
+    window.__p31Main=document.querySelector('main');
+    window.__p31Gallery=document.querySelector('#xdrive-mobile-gallery-main');
+  });
+  const observe=()=>page.evaluate(()=>{
+    const main=document.querySelector('main');
+    const rect=el=>el?.getBoundingClientRect().toJSON()||null;
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    return {
+      sameMain:main===window.__p31Main,
+      sameGallery:document.querySelector('#xdrive-mobile-gallery-main')===window.__p31Gallery,
+      mainRect:rect(main),
+      headerRect:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      scrollTop:main?.scrollTop??null,
+      index:[...document.querySelectorAll('main [role="button"]')]
+        .some(el=>el.textContent?.includes('普通照片与静态图像')),
+      imageTitle:title.includes('图片'),
+      rows:document.querySelectorAll('[data-xdrive-media-tile]').length,
+      overflow:Math.max(0,document.documentElement.scrollHeight-innerHeight),
+    };
+  });
+  const before=await observe();
+  const stable=v=>v.sameMain&&v.sameGallery&&v.index&&!v.imageTitle&&
+    v.rows===0&&v.scrollTop!==null&&Math.abs(v.scrollTop-before.scrollTop)<=2&&
+    v.mainRect&&before.mainRect&&
+    Math.abs(v.mainRect.y-before.mainRect.y)<=1&&
+    Math.abs(v.mainRect.width-before.mainRect.width)<=1&&
+    Math.abs(v.mainRect.height-before.mainRect.height)<=1&&
+    v.headerRect&&before.headerRect&&v.headerRect.height===52&&
+    Math.abs(v.headerRect.y-before.headerRect.y)<=1&&
+    Math.abs(v.headerRect.height-before.headerRect.height)<=1&&v.overflow<=1;
+  check('P31 accepted Media Types index/Image card with fixed global 52px header',
+    stable(before),before);
+  let release,notify;
+  const entered=new Promise(resolve=>{notify=resolve});
+  const waiting=new Promise(resolve=>{release=resolve});
+  galleryMediaTypeGate={hits:0,notify,wait:waiting};
+  let pending,hits=0;
+  try {
+    await card.tap();
+    await Promise.race([entered,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P31 genuine image-filtered first owner Range was not sent')),10000))]);
+    await settle();pending=await observe();hits=galleryMediaTypeGate.hits;
+    check('P31 pending owner Image Range retains Media Types card/title/scroll',
+      hits>=1&&stable(pending),{before,pending,hits});
+  } finally {galleryMediaTypeGate=null;release();}
+  await page.waitForFunction(()=>{
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    const oldIndex=[...document.querySelectorAll('main [role="button"]')]
+      .some(el=>el.textContent?.includes('普通照片与静态图像'));
+    return title.includes('图片')&&!oldIndex&&
+      document.querySelectorAll('[data-xdrive-media-tile]').length>0;
+  });
+  await settle();
+  const committed=await observe();
+  const ownerGET=Object.entries(result.requests).some(([key,count])=>{
+    if(!key.includes(' GET /api/v1/media/items?')||count<1)return false;
+    const q=new URLSearchParams(key.split('?')[1]||'');
+    return q.get('asset_kind')==='image'&&q.get('range')==='true'&&
+      q.get('offset')==='0';
+  });
+  check('P31 winning image-filtered owner first Range directly commits virtual photo wall',
+    hits>=1&&ownerGET&&committed.sameMain&&committed.sameGallery&&
+    committed.imageTitle&&!committed.index&&committed.rows>0&&
+    committed.overflow<=1,{before,pending,committed,ownerGET});
+  result.samples[activeStage]={before,pending,committed,gateHits:hits,ownerGET,
+    builtReactChromium:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
 
 async function gallerySortFirstRangeAcceptance() {
   // P30: an already visible Library's photo wall must not disappear on
@@ -6455,7 +6542,7 @@ async function main() {
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
-      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
+      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -6565,6 +6652,14 @@ async function main() {
             gate.notify();
             await gate.wait;
           }
+          if (galleryMediaTypeGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('asset_kind') === 'image' &&
+              url.searchParams.get('range') === 'true' &&
+              url.searchParams.get('offset') === '0') {
+            const gate=galleryMediaTypeGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
           if (gallerySortGate && request.method() === 'GET' &&
               url.pathname === '/api/v1/media/items' &&
               url.searchParams.get('sort_by') === 'captured' &&
@@ -6657,6 +6752,7 @@ async function main() {
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
        else if (gallerySortNavigationScenario) await gallerySortFirstRangeAcceptance();
+        else if (galleryMediaTypeNavigationScenario) await galleryMediaTypeNavigationAcceptance();
        else if (galleryAlbumNavigationScenario) await galleryAlbumNavigationAcceptance();
        else if (galleryMemoryNavigationScenario) await galleryMemoryNavigationAcceptance();
        else if (galleryMemoryIndexNavigationScenario) await galleryMemoryIndexNavigationAcceptance();
