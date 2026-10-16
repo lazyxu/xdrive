@@ -59,6 +59,17 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
       (value.host_ingress_ready && !value.host_observed) ||
       (value.host_local_tls_verified && !value.host_observed)) invalidPreflight()
 
+  // Old Server/Agent can omit this optional signal. A "matched" or
+  // "mismatched" LOCAL hostname requires a real successful observed TLS
+  // handshake and valid enable-intent domain, but never proves apply.
+  if (value.desired_domain_local_match !== undefined &&
+      (typeof value.desired_domain_local_match !== 'string' ||
+       !['matched-local', 'mismatch-local', 'unverified'].includes(value.desired_domain_local_match) ||
+       (value.desired_domain_local_match !== 'unverified' &&
+        (value.action !== 'enable' || !value.host_observed ||
+         !value.host_ingress_ready || !value.host_local_tls_verified ||
+         byID.get('domain') !== 'pass')))) invalidPreflight()
+
   if (value.action === 'unset') {
     if (value.desired_revision !== 0 || value.configuration_complete ||
         byID.get('desired') !== 'missing') invalidPreflight()

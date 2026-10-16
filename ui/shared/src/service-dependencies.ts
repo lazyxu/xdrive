@@ -129,6 +129,9 @@ export type XDriveCaddyHTTPSPreflight = {
   host_observed: boolean
   host_ingress_ready: boolean
   host_local_tls_verified: boolean
+  // Only host-configured SNI matched a successful local TLS handshake.
+  // Not a desired revision receipt, public DNS/HTTPS or safe Caddy apply.
+  desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   apply_supported: boolean
   checks: XDriveCaddyPreflightCheck[]
 }

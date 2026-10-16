@@ -726,7 +726,7 @@ caddy_local_tls_state() {
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled
+  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256=""
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -748,11 +748,18 @@ caddy_host_refresh() {
   esac
   if [[ "$https_configured" == true && "$state" == healthy ]]; then
     tls_state="$(caddy_local_tls_state "$domain")"
+    # The fixed host-configured SNI just passed a real loopback TLS handshake;
+    # its lowercase hash is local comparison material, NOT applied revision
+    # evidence or public TLS reachability. No raw hostname goes to admin JSON.
+    if [[ "$tls_state" == verified ]] && command -v sha256sum >/dev/null 2>&1; then
+      tls_domain_sha256="$(printf '%s' "$domain" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sha256sum | awk '{print $1}')" || tls_domain_sha256=""
+      [[ "$tls_domain_sha256" =~ ^[0-9a-f]{64}$ ]] || tls_domain_sha256=""
+    fi
   fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
