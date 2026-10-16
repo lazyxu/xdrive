@@ -884,6 +884,7 @@ export function XDriveMediaGalleryPage({
     cleanupReview: MediaCleanupReviewTarget | null = null,
     pet: MediaPetFacet | null = null,
     onCommitted?: () => void,
+    sortOverride?: XDriveGallerySortChoice,
   ) => {
     const request = ++requestID.current
     // A selected Mobile Album is only an intent until its first authorized
@@ -896,15 +897,18 @@ export function XDriveMediaGalleryPage({
       viewerReturn.section === section &&
       viewerReturn.kind === (album ? 'album' : 'all') &&
       viewerReturn.id === (album?.id ?? ''))
+    // An uncommitted Mobile sort is only a request parameter. Do not change
+    // the accepted visible sort or old sparse collection before owner Range 0.
+    const effectiveSort = sortOverride ?? gallerySortRef.current
     const scopedQuery: MediaGalleryQuery = {
       ...nextQuery,
       fold_duplicates: foldDuplicatesRef.current && !nextQuery.fold_member_ids?.length,
       time_zone: mediaTimeZoneRef.current,
-      sort_by: gallerySortRef.current.by,
-      sort_dir: gallerySortRef.current.dir,
+      sort_by: effectiveSort.by,
+      sort_dir: effectiveSort.dir,
       unknown_first: mobileGalleryViewport &&
-        gallerySortRef.current.by === 'captured' &&
-        gallerySortRef.current.dir === 'asc' || undefined,
+        effectiveSort.by === 'captured' &&
+        effectiveSort.dir === 'asc' || undefined,
       anchor_node_id: undefined,
       initial_position: undefined,
     }
@@ -1695,10 +1699,23 @@ export function XDriveMediaGalleryPage({
     pendingSortAnchorRef.current = Number.isSafeInteger(anchorNodeID) && (anchorNodeID ?? 0) > 0
       ? anchorNodeID!
       : 0
+    if (mobileGalleryViewport && collectionTargetRef.current !== null) {
+      // Sorting an accepted sparse photo wall is a navigation intent. Prime
+      // the new owner Range before committing either its selected sort or its
+      // collection generation, so old thumbnails/scroll are never hidden by
+      // a transient zero-item loading frame. Failed/superseded owner requests
+      // leave the previous sort and existing tiles untouched.
+      void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson,
+        'default', null, null, null, () => {
+          gallerySortRef.current = next
+          setMobileGallerySort(next)
+        }, next)
+      return
+    }
     gallerySortRef.current = next
     if (mobileGalleryViewport) setMobileGallerySort(next)
     else setDesktopGallerySort(next)
-    // A new server range order owns a new sparse-collection generation.
+    // Direct wide-Web/Desktop and cold-start sorting preserve their route.
     void loadFirstPage(currentAlbum, query, currentSuggestedPerson, currentPerson)
   }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, query])
 

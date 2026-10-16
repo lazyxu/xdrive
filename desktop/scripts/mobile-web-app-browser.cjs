@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -46,6 +46,7 @@ const galleryMemoryNavigationScenario = options.scenario === 'gallery-ios27-memo
 const galleryMemoryIndexNavigationScenario = options.scenario === 'gallery-ios27-memory-index-nav';
 const galleryPetNavigationScenario = options.scenario === 'gallery-ios27-pet-nav';
 const galleryPetIndexNavigationScenario = options.scenario === 'gallery-ios27-pet-index-nav';
+const gallerySortNavigationScenario = options.scenario === 'gallery-ios27-sort-nav';
 const galleryPersonNavigationScenario = options.scenario === 'gallery-ios27-person-nav';
 const galleryPlaceNavigationScenario = options.scenario === 'gallery-ios27-place-nav';
 const galleryTrashNavigationScenario = options.scenario === 'gallery-ios27-trash-nav';
@@ -57,7 +58,7 @@ const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
-const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
+const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
@@ -439,6 +440,24 @@ function fixtureFor(request, role) {
       }
       assert.equal(url.searchParams.get('time_zone') || 'UTC', 'UTC');
       const limit = integerQuery(url, 'limit', 200, 500);
+      if (gallerySortNavigationScenario && url.searchParams.get('sort_dir') === 'desc') {
+        assert.equal(role, 'user', 'P30 sorted first Range must be owner-authenticated');
+        assert.equal(url.searchParams.get('sort_by'), 'captured');
+        assert.equal(url.searchParams.get('range'), 'true');
+        assert.equal(url.searchParams.has('initial_position'), false,
+          'descending first sorted range is not a latest-at-bottom query');
+        const ordered=[...mediaItems].reverse();
+        const offset=integerQuery(url,'offset',0,ordered.length);
+        const anchorRaw=url.searchParams.get('anchor_node_id');
+        const anchorIndex=anchorRaw === null ? null
+          : ordered.findIndex(item=>item.node.id===Number(anchorRaw));
+        if (anchorRaw!==null) assert(anchorIndex>=0,'sort anchor must belong to owner range');
+        const group=key=>[{key,item_count:ordered.length,start_index:0}];
+        return {items:ordered.slice(offset,offset+limit),total_count:ordered.length,
+          offset,limit,...(anchorIndex===null?{}:{anchor_index:anchorIndex}),
+          timeline_group_sets:{year:group('2026'),month:group('2026-10'),
+            day:group('2026-10-08')}};
+      }
       if (gallerySyncFolderNavigationScenario && url.searchParams.has('folder_id')) {
         assert.equal(role, 'user', 'sync-folder photo range must be owner-scoped');
         const folderID = url.searchParams.get('folder_id');
@@ -934,6 +953,7 @@ let competingFolderGate;
 let galleryAlbumGate;
 let galleryMemoryGate;
 let galleryPetGate;
+let gallerySortGate;
 let galleryPersonGate;
 let galleryPlaceGate;
 let galleryTrashGate;
@@ -2393,6 +2413,124 @@ async function fullscreenAcceptance(role) {
   await navigateWorkspace('图库', 'gallery');
   await page.locator('[data-xdrive-media-tile]').first().waitFor();
   await galleryOverlayAcceptance(role);
+}
+
+
+async function gallerySortFirstRangeAcceptance() {
+  // P30: an already visible Library's photo wall must not disappear on
+  // a sorting click before the real first owner Range succeeds.
+  activeStage='user-gallery-p30-sort-first-range-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  const first=page.locator('[data-xdrive-media-tile]').first();
+  await first.waitFor();
+  await settle();
+  await page.evaluate(()=>{
+    window.__p30Main=document.querySelector('main');
+    window.__p30Gallery=document.querySelector('#xdrive-mobile-gallery-main');
+    window.__p30Wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+  });
+  const observe=()=>page.evaluate(()=>{
+    const main=document.querySelector('main');
+    const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    const rect=e=>e?.getBoundingClientRect().toJSON()||null;
+    const tile=wall?.querySelector('[data-xdrive-media-tile]');
+    return {
+      sameMain:main===window.__p30Main,
+      sameGallery:document.querySelector('#xdrive-mobile-gallery-main')===window.__p30Gallery,
+      sameWall:wall===window.__p30Wall,
+      scrollTop:main?.scrollTop??null,
+      mainRect:rect(main),
+      headerRect:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      tileCount:wall?.querySelectorAll('[data-xdrive-media-tile]').length??0,
+      firstAlt:tile?.querySelector('img')?.getAttribute('alt')||'',
+      // This node name is stable without requiring its network thumbnail to
+      // decode. A previously empty img.alt may legitimately become nonempty
+      // while the photo wall's logical items and scroll remain unchanged.
+      firstName:tile?.querySelector('.media-name')?.textContent?.trim()||'',
+      loading:wall?.textContent?.includes('正在加载图库')||false,
+      overflow:Math.max(0,document.documentElement.scrollHeight-innerHeight),
+    };
+  });
+  const before=await observe();
+  const stable=v=>v.sameMain&&v.sameGallery&&v.sameWall&&
+    v.tileCount>0&&!!before.firstName&&v.firstName===before.firstName&&
+    !v.loading&&
+    v.tileCount===before.tileCount&&v.scrollTop!==null&&
+    Math.abs(v.scrollTop-before.scrollTop)<=2&&
+    v.mainRect&&before.mainRect&&
+    Math.abs(v.mainRect.y-before.mainRect.y)<=1&&
+    Math.abs(v.mainRect.height-before.mainRect.height)<=1&&
+    v.headerRect&&before.headerRect&&v.headerRect.height===52&&
+    Math.abs(v.headerRect.y-before.headerRect.y)<=1&&
+    Math.abs(v.headerRect.height-before.headerRect.height)<=1&&v.overflow<=1;
+  check('P30 accepted Library is visible in same mounted scroll/photo wall',stable(before),before);
+  let release,notify;
+  const entered=new Promise(resolve=>{notify=resolve});
+  const wait=new Promise(resolve=>{release=resolve});
+  gallerySortGate={hits:0,notify,wait};
+  // Observe the real authorized sorted response, not first-tile thumbnail
+  // readiness. A sparse grid may legitimately have an unloaded first tile.
+  const sortedFirstResponse=page.waitForResponse(response=>{
+    const url=new URL(response.url());
+    return url.pathname==='/api/v1/media/items'&&
+      url.searchParams.get('sort_by')==='captured'&&
+      url.searchParams.get('sort_dir')==='desc'&&
+      url.searchParams.get('offset')==='0'&&
+      url.searchParams.get('range')==='true';
+  });
+  let pending,hits=0;
+  try {
+    await page.locator('[data-xdrive-mobile-gallery-sort-filter]').tap();
+    await page.getByRole('menuitem',{name:'拍摄时间 · 最新在前',exact:true}).tap();
+    await Promise.race([entered,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P30 new descending first owner sorted Range not requested')),10000))]);
+    await settle();pending=await observe();hits=gallerySortGate.hits;
+    check('P30 pending authorized sort keeps previous photo wall/scroll and no intermediate spinner',
+      hits>=1&&stable(pending),{before,pending,hits});
+  } finally {
+    gallerySortGate=null;release();
+  }
+  const sortedReply=await sortedFirstResponse;
+  const sortedPayload=await sortedReply.json();
+  await page.waitForFunction(()=>{
+    const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    const tiles=wall?.querySelectorAll('[data-xdrive-media-tile]')||[];
+    return tiles.length>0 && !wall?.textContent?.includes('正在加载图库');
+  });
+  await settle();
+  const committed=await observe();
+  await page.locator('[data-xdrive-mobile-gallery-sort-filter]').tap();
+  const selectedSort=page.getByRole('menuitem',{name:'拍摄时间 · 最新在前',exact:true});
+  await selectedSort.waitFor();
+  await page.waitForFunction(()=>{
+    const selected=[...document.querySelectorAll('[role="menuitem"]')]
+      .find(e=>e.textContent?.includes('拍摄时间 · 最新在前'));
+    return selected?.classList.contains('Mui-selected');
+  });
+  const chosen=await selectedSort.evaluate(e=>e.classList.contains('Mui-selected'));
+  await page.keyboard.press('Escape');
+  const sorted=Object.entries(result.requests).filter(([url])=>{
+    if (!url.includes(' GET /api/v1/media/items?')) return false;
+    const params=new URLSearchParams(url.split('?')[1]||'');
+    return params.get('sort_by')==='captured'&&
+      params.get('sort_dir')==='desc'&&params.get('range')==='true'&&
+      params.get('offset')==='0';
+  }).reduce((count,[,hits])=>count+hits,0);
+  const ownerReply=sortedReply.status()===200&&
+    sortedPayload.total_count===240&&
+    sortedPayload.items?.[0]?.node?.name==='photo-240.png'&&
+    sortedPayload.items?.[1]?.node?.name==='photo-239.png';
+  // The tile itself can still be waiting for a real network thumbnail:
+  // assert accepted Server range and virtual rows, not first img availability.
+  check('P30 winning descending owner Range commits its sparse virtual photo wall',
+    sorted>=1&&ownerReply&&chosen&&committed.sameMain&&
+    committed.sameGallery&&committed.sameWall&&
+    committed.tileCount>0&&!committed.loading&&committed.overflow<=1,
+    {before,pending,committed,sorted,ownerReply,chosen});
+  result.samples[activeStage]={before,pending,committed,gateHits:hits,
+    compiledProductionWeb:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
 async function galleryIos27ChromeAcceptance() {
@@ -6317,7 +6455,7 @@ async function main() {
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
-      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
+      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryPersonNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -6427,6 +6565,15 @@ async function main() {
             gate.notify();
             await gate.wait;
           }
+          if (gallerySortGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('sort_by') === 'captured' &&
+              url.searchParams.get('sort_dir') === 'desc' &&
+              url.searchParams.get('offset') === '0' &&
+              url.searchParams.get('range') === 'true') {
+            const gate=gallerySortGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
           if (galleryPetGate && request.method() === 'GET' &&
               url.pathname === '/api/v1/media/pets/dog/items' &&
               url.searchParams.get('offset') === '0') {
@@ -6509,6 +6656,7 @@ async function main() {
       else if (mobilePanelsScenario) await mobilePanelsAcceptance();
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
+       else if (gallerySortNavigationScenario) await gallerySortFirstRangeAcceptance();
        else if (galleryAlbumNavigationScenario) await galleryAlbumNavigationAcceptance();
        else if (galleryMemoryNavigationScenario) await galleryMemoryNavigationAcceptance();
        else if (galleryMemoryIndexNavigationScenario) await galleryMemoryIndexNavigationAcceptance();
