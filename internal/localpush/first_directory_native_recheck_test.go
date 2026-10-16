@@ -189,3 +189,29 @@ func TestLocalFirstDirectoryPinnedHandleRejectsCurrentPathReplacement(t *testing
 		t.Fatal("replaced native directory retained the previous native identity")
 	}
 }
+
+func TestLocalFirstDirectoryHeldHandleNativeIdentityMatchesInventory(t *testing.T) {
+	grant, _, _, request := firstDirectoryNativeFixture(t)
+	handle, err := openPinnedCurrentFirstDirectory(grant, request.RelativeDirectory)
+	if err != nil {
+		t.Fatalf("pin current native directory: %v", err)
+	}
+	held, err := readPinnedDirectoryNativeIdentity(grant.RootID, handle)
+	if err != nil || held == nil || held.Key != request.ExpectedNativeIdentityKey ||
+		!held.Strong || !held.RenameCandidate || held.LinkCount == 0 {
+		t.Fatalf("held fd disagrees with sealed inventory native key: %+v %v", held, err)
+	}
+	path, err := readCurrentNativeFirstDirectory(grant, request.RelativeDirectory)
+	if err != nil || held.Key != path.Key || held.LinkCount != path.LinkCount {
+		t.Fatalf("held and current-path identities disagree: fd=%+v path=%+v err=%v", held, path, err)
+	}
+	if got, err := readPinnedDirectoryNativeIdentity("foreign-root", handle); err == nil || got != nil {
+		t.Fatal("unscoped pinned identity accepted")
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := readPinnedDirectoryNativeIdentity(grant.RootID, handle); err == nil || got != nil {
+		t.Fatal("closed native handle was accepted")
+	}
+}
