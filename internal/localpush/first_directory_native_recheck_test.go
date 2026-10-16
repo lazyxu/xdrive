@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -145,5 +146,46 @@ func TestLocalFirstDirectoryNativeRecheckRejectsReplacementSymlinkAndRotatedGene
 	}
 	if got, err := RecheckLocalFirstDirectoryNative(context.Background(), config, grant, req); err == nil || got.NativeObserved {
 		t.Fatalf("replaced Root accepted: %+v %v", got, err)
+	}
+}
+
+func TestLocalFirstDirectoryPinnedHandleRejectsCurrentPathReplacement(t *testing.T) {
+	grant, _, root, request := firstDirectoryNativeFixture(t)
+	pinned, err := openPinnedCurrentFirstDirectory(grant, request.RelativeDirectory)
+	if err != nil {
+		t.Fatalf("could not pin physical first directory: %v", err)
+	}
+	defer pinned.Close()
+	if !currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
+		t.Fatal("newly pinned directory did not match its CURRENT path")
+	}
+	current := filepath.Join(root, request.RelativeDirectory)
+	moved := filepath.Join(root, "old-first-directory")
+	if err := os.Rename(current, moved); err != nil {
+		// Windows commonly prevents renaming an open directory. Refusal is
+		// a valid platform-specific lifetime fence, not a test failure.
+		if runtime.GOOS == "windows" {
+			if !currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
+				t.Fatal("failed replacement invalidated unchanged pinned directory")
+			}
+			return
+		}
+		t.Fatalf("rename pinned directory: %v", err)
+	}
+	if err := os.Mkdir(current, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
+		t.Fatal("same-name replacement incorrectly matched pinned native handle")
+	}
+	replacement, err := openPinnedCurrentFirstDirectory(grant, request.RelativeDirectory)
+	if err != nil {
+		t.Fatalf("replacement was not independently observable: %v", err)
+	}
+	defer replacement.Close()
+	before, beforeErr := pinned.Stat()
+	after, afterErr := replacement.Stat()
+	if beforeErr != nil || afterErr != nil || os.SameFile(before, after) {
+		t.Fatal("replaced native directory retained the previous native identity")
 	}
 }

@@ -15,6 +15,9 @@ test('owning native directory seal stays private, never an executable backup por
   assert.match(agent, /SealLocalFirstDirectoryAdvisoryObservation\(/)
   assert.match(agent, /localFolderGrantMu\.TryLock\(\)/)
   assert.match(native, /RecheckLocalFirstDirectoryNative\(/)
+  assert.match(native, /openPinnedCurrentFirstDirectory\(/)
+  assert.match(native, /currentPinnedFirstDirectoryMatches\(/)
+  assert.match(native, /defer pinned\.Close\(\)/)
   assert.match(challenge, /consumeBoundLocalPushFirstDirectoryChallenge\(/)
 
   for (const file of [
