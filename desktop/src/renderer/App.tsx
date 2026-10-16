@@ -404,6 +404,11 @@ export default function App({
         if (!result.ok) throw new Error(result.error.message)
         return result.data
       },
+      listPage: async (limit, afterDeviceID) => {
+        const result = await window.xdriveDesktop.agent.getDeviceBackupsPage(limit, afterDeviceID)
+        if (!result.ok) throw new Error(result.error.message)
+        return result.data
+      },
       runs: async (sourceID, limit, offset) => {
         const result = await window.xdriveDesktop.agent.getDeviceBackupRuns(sourceID, limit, offset)
         if (!result.ok) throw new Error(result.error.message)

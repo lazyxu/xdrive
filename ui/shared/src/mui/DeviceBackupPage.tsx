@@ -51,6 +51,8 @@ type OverviewState = {
   overview: XDriveDeviceBackupOverview | null
   loading: boolean
   failed: boolean
+  pageLoading?: boolean
+  pageFailed?: boolean
 }
 type HistoryState = {
   source?: XDriveDeviceBackupDataSource
@@ -163,6 +165,8 @@ export function XDriveDeviceBackupPage({
   const overview = current ? snapshot.overview : null
   const loading = current ? snapshot.loading : Boolean(source)
   const failed = current && snapshot.failed
+  const pageLoading = current && Boolean(snapshot.pageLoading)
+  const pageFailed = current && Boolean(snapshot.pageFailed)
   const [expanded, setExpanded] = useState<{ source?: XDriveDeviceBackupDataSource; id: number | null }>({
     id: initialSourceID ?? null,
   })
@@ -206,6 +210,49 @@ export function XDriveDeviceBackupPage({
     })
     return () => { active = false }
   }, [source, refreshID])
+
+  // Device list pages are owner-redacted and optional for older Agents.
+  // Requiring the exact captured overview identity fences stale results after
+  // account/Server switch, refresh and concurrently superseding page loads.
+  const loadMoreDevices = useCallback(async () => {
+    if (!source?.listPage || !overview?.has_more || !overview.next_after_device_id ||
+      loading || pageLoading) return
+    const requestedOverview = overview
+    const cursor = requestedOverview.next_after_device_id
+    // Narrow the optional cursor as a local immutable value for the async call.
+    if (!cursor) return
+    setSnapshot((prev) => prev.source === source && prev.overview === requestedOverview
+      ? { ...prev, pageLoading: true, pageFailed: false } : prev)
+    try {
+      const page = await source.listPage(100, cursor)
+      setSnapshot((prev) => {
+        if (prev.source !== source || prev.overview !== requestedOverview) return prev
+        const devices = [...requestedOverview.devices]
+        const seen = new Set(devices.map((device) => device.id))
+        for (const device of page.devices) {
+          if (seen.has(device.id)) continue
+          seen.add(device.id)
+          devices.push(device)
+        }
+        if (page.has_more && (!page.next_after_device_id ||
+          page.next_after_device_id === cursor || devices.length === requestedOverview.devices.length)) {
+          return { ...prev, pageLoading: false, pageFailed: true }
+        }
+        return {
+          ...prev, pageLoading: false, pageFailed: false,
+          overview: {
+            ...requestedOverview, devices,
+            has_more: page.has_more,
+            has_more_folders: requestedOverview.has_more_folders || page.has_more_folders,
+            next_after_device_id: page.has_more ? page.next_after_device_id : undefined,
+          },
+        }
+      })
+    } catch {
+      setSnapshot((prev) => prev.source === source && prev.overview === requestedOverview
+        ? { ...prev, pageLoading: false, pageFailed: true } : prev)
+    }
+  }, [source, overview, loading, pageLoading])
 
   const loadHistory = useCallback(async (id: number, page: number) => {
     if (!source) return
@@ -469,8 +516,26 @@ export function XDriveDeviceBackupPage({
               ))}
             </Stack>
           ))}
-          {overview.has_more || overview.has_more_folders ? (
-            <XDriveStatusAlert tone="neutral">设备或文件夹超过当前返回范围，后续将提供连续分页。</XDriveStatusAlert>
+          {overview.has_more ? (
+            <Stack spacing={1} alignItems="flex-start">
+              <Typography variant="caption" color="text.secondary">
+                当前显示 {overview.devices.length.toLocaleString('zh-CN')} 台设备，另有未加载设备。
+              </Typography>
+              {source?.listPage && overview.next_after_device_id ? (
+                <Button size="small" variant="outlined" disabled={pageLoading}
+                  onClick={() => void loadMoreDevices()}>
+                  {pageLoading ? '正在加载更多设备…' : '加载更多设备'}
+                </Button>
+              ) : (
+                <XDriveStatusAlert tone="neutral">当前 Server 或 Agent 不支持后续设备分页，请升级后查看完整设备列表。</XDriveStatusAlert>
+              )}
+              {pageFailed ? (
+                <XDriveStatusAlert tone="neutral">后续设备读取失败；已加载设备保持不变，可重试。</XDriveStatusAlert>
+              ) : null}
+            </Stack>
+          ) : null}
+          {overview.has_more_folders ? (
+            <XDriveStatusAlert tone="neutral">部分设备的同步文件夹仍未全部返回；文件夹独立分页尚待实现。</XDriveStatusAlert>
           ) : null}
         </Stack>
       )}

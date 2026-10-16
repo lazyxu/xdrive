@@ -721,6 +721,7 @@ declare global {
         ) => Promise<DesktopResult<{ released: boolean }>>
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getDeviceBackups: () => Promise<DesktopResult<XDriveDeviceBackupOverview>>
+        getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
         getDeviceBackupLocalDrafts: (limit?: number, afterID?: number) => Promise<DesktopResult<XDriveLocalSourceDraftPage>>
         getDeviceBackupLocalSource: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>
