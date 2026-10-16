@@ -511,3 +511,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 承接 #1877 已合入的 `BaiduPhotoMapIndexIntent`，增加 **Server 内部、显式调用、单张照片** 的 `executeBaiduPhotoMapIndexIntent`。执行前后多次核验当前 Owner/Session/PhotoAsset、主 Node、Ready Media、原始 WGS84 GPS 和未过期未撤销的精确授权修订，并校验真实跨副本 DB 租约；向受信转换器传递最长 8 秒的 Go Context。另一个 Server 取消任务、撤销位置许可、修改源或轮换会话后，250ms 有界轮询使正在等待的转换器收到 `ctx.Done()`；即使伪造的无视取消回调返回成功，最后的 PostgreSQL 事务也必须同时完成真实 BD-09 派生点写入与任务 `completed` CAS，失败时均回滚。过期、取消、来源错误或不合法 BD09 不得生成位置；旧取消不会倒退已经完成的任务。真实 PostgreSQL 双连接池测试仅用合成转换结果，(0,0) 仍是合法原始 GPS。
 
 **本阶段不是已经上线的百度地图索引服务。** 无生产许可放行器、无真正百度上游请求、无 Server AK 注入、无启动时任务扫描、无对外任务 REST、无 JSAPI Loader/Proxy/Cookie，既有静态百度 PNG 无影响。下一步 A3d2m1b2b 需真实百度账户服务条款/额度核验、固定 HTTPS 上游、跨副本配额、认证 Owner 显式入队与取消、完成/失败重试观测和实际可取消 Worker 集成；JSAPI4 自身仍需 9 对私有上游与 Browser HAR、受审查固定子资源白名单及签名、CSP/Electron/PWA 和 iOS27/Android/Desktop 逐项 1:1 真机验收。继续百度唯一 Provider、独立加密 Server/Browser AK、52px 全屏 App Frame、三端统一 Range/VirtualCollection/Viewer，不冒充正式发布。后续严格 A3→A4→B1→B2→B3→C1。
+
+
+## A3d2m1b2b1 · Owner 显式索引任务 REST 传输，不触发百度出站（2026-10-17）
+
+承接已合入 #1882 的 Server 单任务可取消执行器，本阶段在现有 Gallery 主 Node 身份上新增经 Bearer 登录的 `GET/POST/DELETE /api/v1/media/items/:id/baidu-map-index-job`。POST 必须具备**独立的确认**、当前照片有效期内两个位置授权、真实源 Node/Media/PhotoAsset 与精确授权修订；任何浏览器主动提供 GPS、AK、Owner/Asset ID、未知 JSON 字段或伪 Origin/跨站 Fetch-Metadata 均不接受。任务仅持久化 Owner 和既有受信来源修订标识；GET 只返回状态、授权修订、尝试次数和常量 `dispatch_enabled=false`。DELETE 采用 `If-Match` 撤销指定代任务并使现有租约失效；提交和取消的审计失败都在同一 PostgreSQL 事务里回滚，不允许成功误报。匿名、越权、过期旧 GPS、会话变化、取消/重复入队均有真实 PostgreSQL/Gin HTTP 测试；对包含 WGS84 筛选谓词的 POST/DELETE 事务关闭 GORM 原始 SQL 日志并由测试捕获器验证，防止失效授权把 GPS 记录到诊断日志。实际百度配额和衍生坐标保持零。
+
+**A3 仍为 NO-GO**：这一段只增加经鉴权的持久任务 API，不启动 Server Worker、不读取百度 AK、不触发真实 Geoconv、不安装 JSAPI Loader/Proxy/Cookie、不向外发 GPS。Web、Mobile Web/PWA、Desktop 的图库页面尚未挂接该新任务入口，因此三端现有 Range/VirtualCollection/Viewer、52px 全屏 App Frame 和当前静态地图维持一致；下阶段 A3d2m1b2b2 才将共享类型/Adapter/Agent IPC 与真实用户操作、受许可的后台 Worker 接通，并完成当前账户费率、有效许可、九组私有原始 HAR、不可变签名子资源、CSP/Electron 安全评估后方可启用真正的 JSAPI4 动态地图。保持百度唯一 Provider、Server AK / Browser AK 独立服务端加密、iOS27 Photos 明确 1:1 视觉和手势基准，后续顺序 A3→A4→B1→B2→B3→C1。
