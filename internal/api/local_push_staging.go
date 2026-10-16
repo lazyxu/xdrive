@@ -28,6 +28,9 @@ const (
 	localPushStageReady    = "staged"
 	localPushStageFailed   = "failed"
 	localPushStageCanceled = "canceled"
+	// Committed records only an INTERNAL single-file canonical SQL prototype,
+	// not a successful device backup or SourceRun.
+	localPushStageCommitted = "committed"
 )
 
 var errLocalPushStageConflict = errors.New("local push staging state changed")
@@ -484,7 +487,7 @@ func (s *Server) cancelLocalPushStage(c *gin.Context) {
 		if err != nil {
 			return err
 		}
-		if stage.Status == localPushStageWriting {
+		if stage.Status == localPushStageWriting || stage.Status == localPushStageCommitted {
 			return errLocalPushStageConflict
 		}
 		// A live or historical quota reservation is private to this EXACT

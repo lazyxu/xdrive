@@ -20,6 +20,8 @@ type LocalPushQuotaHold struct {
 	Bytes           int64      `gorm:"not null"`
 	ExpiresAt       time.Time  `gorm:"not null;index:idx_xd_local_push_quota_hold_owner_expiry,priority:2"`
 	ReleasedAt      *time.Time `gorm:"index"`
+	CommittedNodeID *uint64    `gorm:"index"`
+	CommittedAt     *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
