@@ -1872,13 +1872,26 @@ export function XDriveMediaGalleryPage({
 
   const openBurstReview = useCallback((group: MediaBurstReview) => {
     const review: MediaCleanupReviewTarget = { kind: 'burst', group }
-    setCurrentCleanupReview(review)
-    setSection('cleanup')
-    setActiveMediaType('')
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    setQuery({})
+    const commitReview = () => {
+      setCurrentCleanupReview(review)
+      setSection('cleanup')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+    }
+    // Compact Cleanup is already a committed owner index. A click is only
+    // an intent until the authenticated first Burst photo Range succeeds.
+    // Do not render an empty review/title or reset its virtual scroll host
+    // during a short intermediary state. Thumbnails keep their own network
+    // loading lifecycle after the matching sparse Range has committed.
+    if (mobileGalleryViewport && section === 'cleanup' && !currentCleanupReview) {
+      void loadFirstPage(null, {}, null, null, 'default', null, review, null, commitReview)
+      return
+    }
+    // Keep established wide Web / Desktop and existing detail entry behavior.
+    commitReview()
     void loadFirstPage(null, {}, null, null, 'default', null, review)
-  }, [loadFirstPage])
+  }, [currentCleanupReview, loadFirstPage, mobileGalleryViewport, section])
 
   const openAlbum = useCallback((album: MediaAlbum, fromCollections = false) => {
     syncFolderRequestID.current += 1
