@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   pwa-s5a2b-offline-evidence:
-    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s5a2b-physical-evidence-intake-20261016'
+    if: github.event_name == 'workflow_dispatch' || (github.head_ref == 'test/pwa-s5a2b-physical-evidence-intake-20261016' || github.head_ref == 'fix/pwa-s5a2b-verified-checks-20261016')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:

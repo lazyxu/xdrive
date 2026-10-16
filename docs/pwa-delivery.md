@@ -610,3 +610,7 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 **严格工具合同：** 只接受固定 7 平台、严格无额外字段的本地 JSON，`NOT_RUN` 行不能携带伪造材料，`SUBMITTED` 行必须有有效构建 SHA 和同源的 S5-A1/S5-A2a 记录、对应 OS 浏览器/浏览器或系统图标打开方式和人工观察，以及本地去敏图片文件名+原图全字节 SHA256。文件从本地读取，拒绝符号链接/相对路径穿越/原始私人字段，不网络请求、不保存或复制图片。对于真正带有物理材料的行，检查器也最多报告 `SUBMITTED_REQUIRES_INDEPENDENT_REVIEW`，从不 `PASS`。错误信息只使用枚举代码而不输出个人数据。即使合成七平台表完全有效，`release_gate` 必为 `NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED`、`independent_device_review_completed=false` 且进程退出码 1；绝不能将旧 `test-fixture-https` 当作公网部署。代码只支持准备物理验收、材料摘要审查，不代表真实 OS 证明或 release approval。
 
 **单提交与双 CI 门槛：** 固定本轮 master，严格一条工作提交，新 Draft PR 中分别运行专用 Node 合成截图哈希、无私密外泄、假 PASS 拒绝与 7 平台 NO-GO 断言，和完整 GitHub PR CI（Go race、Web/Desktop/Windows/Linux/Caddy/Final Gate）；仅在**准确同一 HEAD** 两组成功后 Ready→rebase merge 并核查关联分支清理。不可复用旧 HEAD 成功、不可因文档无代码就跳过 CI、不可宣称 GitLab push 或 iOS/Android Installed 实测。下一步 S5-A2b2 必须由真实设备操作者、独立审查者和受信任 Origin 实际进行物理安装及登录深链接复核，并按 S5-04~S5-11 完成压力/安全/回滚门槛。正式发布 GO 不在本次测试器权限范围。
+
+## PWA-S5-A2b1a · 本地七平台材料校验的伪造检查拒绝（2026-10-16）
+
+在已合并 #1745 的离线核验器中发现：原校验仅判断 S5-A1 HTTPS 报告含十条状态 `pass`，但没有验证十个**规定且不同的**安全检查 ID；同时 Installed display-mode 可接受未定义字符串，iOS 版本和 Desktop OS 家族交叉检查不足。该问题不会直接使发布 `GO`（旧工具也始终 NO-GO），但会把不充分的虚假材料错误归为 `SUBMITTED_REQUIRES_INDEPENDENT_REVIEW`。本阶段只收紧 S5-A1 十项检查 ID/顺序/字段/未执行设备状态、S5-A2a 安装模式与视口/SW、iOS 27/Desktop OS 规则，增加真实 Node 进程的伪造输入回归和本分支 CI 入口。原先的合成七平台完整材料仍仅是待独立审查的自述；不新增 OS 安装真实性判定、不中断 PWA/文件上传/Viewer、不改变公共 SW 离线范围、不上传证据，也不解除 `NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED`。**当前物理平台记录仍全部 NOT RUN；S5-A2b2 需要真实可信 HTTPS 实例、设备操作员和独立审核人员。**
