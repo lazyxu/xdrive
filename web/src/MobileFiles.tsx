@@ -1276,6 +1276,31 @@ export default function MobileFiles(props: Props) {
   )
   const selectedMutationReason = selection.length ? selectionDisabledReason('copy') : null
   const selectedDownloadReason = selection.length ? selectionDisabledReason('download') : null
+  // The selected-items More menu must be readable even when every bulk
+  // action is disabled (200/500/1000-item limits or an incomplete selection).
+  // Only the existing Server-backed selection eligibility callback decides.
+  const selectionMoreReason = (action: XDriveFileExplorerSelectionAction): string | null => (
+    selectionLoad ? '正在读取所选项目，请稍后重试' : selectionDisabledReason(action)
+  )
+  const selectionMoreCommonReason: string | null = selectionLoad
+    ? '正在读取所选项目，请稍后重试'
+    : (!selection.length ? '请先选择项目' : null)
+  const selectionMoreReasons = {
+    cut: selectionMoreReason('cut'),
+    copyTo: selectionMoreReason('copy-to'),
+    download: selectionMoreReason('download'),
+    manageTags: selectionMoreReason('manage-tags'),
+    common: selectionMoreCommonReason,
+  }
+  const selectionMoreLabel = (label: string, reason: string | null) => (
+    <Box sx={{ minWidth: 0 }}>
+      <Typography variant="body2">{label}</Typography>
+      {reason ? <Typography variant="caption" color="text.secondary"
+        sx={{ display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+        {xDriveFileExplorerMenuReasonLabel({ disabled: true, disabledReason: reason })}
+      </Typography> : null}
+    </Box>
+  )
   const selectedAction = (kind: 'copy' | 'cut' | 'move' | 'copy-to' | 'download' | 'delete') => {
     const action: XDriveFileExplorerSelectionAction = kind === 'move' ? 'move-to' : kind
     if (selectionLoad || selectionDisabledReason(action)) return
@@ -2117,29 +2142,61 @@ export default function MobileFiles(props: Props) {
         </Menu>
         <Menu data-mobile-files-selection-menu anchorEl={selectionMoreAnchor} open={Boolean(selectionMoreAnchor)}
           onClose={() => setSelectionMoreAnchor(null)}
-          slotProps={{ paper: { sx: MOBILE_FILES_MENU_TOUCH_SX } }}>
-          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('cut'))}
-            onClick={() => { setSelectionMoreAnchor(null); selectedAction('cut') }}>剪切所选</MenuItem>
-          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('copy-to'))}
-            onClick={() => { setSelectionMoreAnchor(null); selectedAction('copy-to') }}>复制到…</MenuItem>
-          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('download'))}
-            onClick={() => { setSelectionMoreAnchor(null); selectedAction('download') }}>下载所选</MenuItem>
-          {props.onCopyPaths ? <MenuItem disabled={!selection.length || Boolean(selectionLoad)} onClick={() => {
-            setSelectionMoreAnchor(null); props.onCopyPaths?.(selection)
-          }}>复制所选路径</MenuItem> : null}
-          <MenuItem disabled={Boolean(selectionLoad || selectionDisabledReason('manage-tags'))}
+          slotProps={{ list: { disabledItemsFocusable: true }, paper: { sx: {
+            ...MOBILE_FILES_MENU_TOUCH_SX, maxWidth: 'calc(100vw - 24px)',
+            maxHeight: 'min(70dvh, 560px)', overflowY: 'auto',
+          } } }}>
+          <MenuItem data-mobile-files-selection-action="cut"
+            disabled={Boolean(selectionMoreReasons.cut)}
+            title={selectionMoreReasons.cut ?? undefined}
+            aria-label={selectionMoreReasons.cut ? `剪切所选：${selectionMoreReasons.cut}` : '剪切所选'}
             onClick={() => {
-              if (selectionDisabledReason('manage-tags')) return
+              if (selectionMoreReasons.cut) return
+              setSelectionMoreAnchor(null); selectedAction('cut')
+            }}>{selectionMoreLabel('剪切所选', selectionMoreReasons.cut)}</MenuItem>
+          <MenuItem data-mobile-files-selection-action="copy-to"
+            disabled={Boolean(selectionMoreReasons.copyTo)}
+            title={selectionMoreReasons.copyTo ?? undefined}
+            aria-label={selectionMoreReasons.copyTo ? `复制到：${selectionMoreReasons.copyTo}` : '复制到…'}
+            onClick={() => {
+              if (selectionMoreReasons.copyTo) return
+              setSelectionMoreAnchor(null); selectedAction('copy-to')
+            }}>{selectionMoreLabel('复制到…', selectionMoreReasons.copyTo)}</MenuItem>
+          <MenuItem data-mobile-files-selection-action="download"
+            disabled={Boolean(selectionMoreReasons.download)}
+            title={selectionMoreReasons.download ?? undefined}
+            aria-label={selectionMoreReasons.download ? `下载所选：${selectionMoreReasons.download}` : '下载所选'}
+            onClick={() => {
+              if (selectionMoreReasons.download) return
+              setSelectionMoreAnchor(null); selectedAction('download')
+            }}>{selectionMoreLabel('下载所选', selectionMoreReasons.download)}</MenuItem>
+          {props.onCopyPaths ? <MenuItem data-mobile-files-selection-action="copy-paths"
+            disabled={Boolean(selectionMoreReasons.common)}
+            title={selectionMoreReasons.common ?? undefined}
+            aria-label={selectionMoreReasons.common ? `复制所选路径：${selectionMoreReasons.common}` : '复制所选路径'}
+            onClick={() => {
+              if (selectionMoreReasons.common) return
+              setSelectionMoreAnchor(null); props.onCopyPaths?.(selection)
+            }}>{selectionMoreLabel('复制所选路径', selectionMoreReasons.common)}</MenuItem> : null}
+          <MenuItem data-mobile-files-selection-action="manage-tags"
+            disabled={Boolean(selectionMoreReasons.manageTags)}
+            title={selectionMoreReasons.manageTags ?? undefined}
+            aria-label={selectionMoreReasons.manageTags ? `添加/管理标签：${selectionMoreReasons.manageTags}` : '添加/管理标签'}
+            onClick={() => {
+              if (selectionMoreReasons.manageTags) return
               setSelectionMoreAnchor(null)
               props.onManageTags(selection)
-            }}>添加/管理标签</MenuItem>
+            }}>{selectionMoreLabel('添加/管理标签', selectionMoreReasons.manageTags)}</MenuItem>
           <MenuItem data-mobile-files-batch-properties
-            disabled={!selection.length || Boolean(selectionLoad)}
+            data-mobile-files-selection-action="properties"
+            disabled={Boolean(selectionMoreReasons.common)}
+            title={selectionMoreReasons.common ?? undefined}
+            aria-label={selectionMoreReasons.common ? `所选项目属性：${selectionMoreReasons.common}` : '所选项目属性'}
             onClick={() => {
-              if (!selection.length || selectionLoad) return
+              if (selectionMoreReasons.common) return
               setSelectionMoreAnchor(null)
               setPropertiesItems([...selection])
-            }}>所选项目属性</MenuItem>
+            }}>{selectionMoreLabel('所选项目属性', selectionMoreReasons.common)}</MenuItem>
         </Menu>
         <Menu data-mobile-files-more-menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
           slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 520px)' } } }}>
