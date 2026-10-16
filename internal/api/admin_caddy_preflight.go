@@ -29,6 +29,7 @@ type adminCaddyPreflightDTO struct {
 	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment"`
 	HostLiveConfigState     string                     `json:"host_live_config_state"`
 	HostInstanceGeneration  string                     `json:"host_instance_generation"`
+	HostAliDNSModuleState   string                     `json:"host_alidns_module_state"`
 	SnapshotStable          bool                       `json:"revision_snapshot_consistent"`
 	IngressChangeRisk       string                     `json:"ingress_change_risk"`
 	ApplySupported          bool                       `json:"apply_supported"`
@@ -136,6 +137,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		HostRuntimeTLSAlignment: caddyObservedRuntimeTLSAlignment(host, observed),
 		HostLiveConfigState:     caddyObservedLiveConfigState(host, observed),
 		HostInstanceGeneration:  caddyObservedInstanceGeneration(host, observed),
+		HostAliDNSModuleState:   caddyObservedAliDNSModuleState(host, observed),
 		IngressChangeRisk:       caddyIngressChangeRisk(desired, host, observed),
 		SnapshotStable:          true,
 		ApplySupported:          false, Checks: checks,

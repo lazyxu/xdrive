@@ -775,6 +775,19 @@ caddy_live_active_config_sha256() {
   fi
 }
 
+# Fixed read-only inventory of the optional AliDNS DNS-01 module in the
+# RUNNING Caddy binary. Keep every module name inside the container and
+# return only a small enum; errors NEVER mean the plugin is absent.
+caddy_local_alidns_module_state() {
+  local result
+  result="$(timeout 4s docker exec xdrive-caddy /bin/sh -ec \
+      'modules="$(caddy list-modules --skip-standard 2>/dev/null)" || exit 2; if printf "%s\n" "$modules" | grep -Fxq dns.providers.alidns; then printf "present-local\n"; else code="$?"; [ "$code" -eq 1 ] || exit 2; printf "absent-local\n"; fi' 2>/dev/null)" || { printf 'unverified\n'; return; }
+  case "$result" in
+    present-local|absent-local) printf '%s\n' "$result" ;;
+    *) printf 'unverified\n' ;;
+  esac
+}
+
 # Fence TLS, Docker startup Env and in-memory Caddy JSON to one fixed,
 # healthy container process generation. Compare only immutable Docker ID,
 # StartedAt and PID plus healthy/running bits, NEVER full inspect/Env output.
@@ -792,7 +805,7 @@ caddy_container_generation_sample() {
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain generation_before="" generation_after="" live_config_before="" live_config_after="" instance_generation_state=unverified state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
+  local dir tmp observed domain generation_before="" generation_after="" live_config_before="" live_config_after="" instance_generation_state=unverified alidns_module_state=unverified module_generation_before="" module_generation_after="" state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -862,10 +875,34 @@ caddy_host_refresh() {
       tls_state=unavailable
     fi
   fi
+  # AliDNS is optional: observe the binary even if this Caddy serves only
+  # HTTP. Fence the fixed read with healthy container generation samples.
+  if [[ "$state" == healthy ]]; then
+    module_generation_before="$(caddy_container_generation_sample)" || module_generation_before=""
+    if [[ -n "$module_generation_before" ]]; then
+      alidns_module_state="$(caddy_local_alidns_module_state)"
+      module_generation_after="$(caddy_container_generation_sample)" || module_generation_after=""
+      if [[ -z "$module_generation_after" || "$module_generation_before" != "$module_generation_after" ]]; then
+        alidns_module_state=unverified
+      fi
+    fi
+    # If different container generations are positively observed across the
+    # TLS and module probes, revoke the mixed positive evidence.
+    if [[ "$instance_generation_state" == same-instance-local &&
+          ( ( -n "$module_generation_before" && "$module_generation_before" != "$generation_after" ) ||
+            ( -n "$module_generation_after" && "$module_generation_after" != "$module_generation_before" ) ) ]]; then
+      tls_state=unavailable
+      tls_domain_sha256=""
+      runtime_tls_alignment=unverified
+      live_config_sha256=""
+      instance_generation_state=unverified
+      alidns_module_state=unverified
+    fi
+  fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s","alidns_module_state":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" "$alidns_module_state" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }

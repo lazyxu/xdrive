@@ -828,6 +828,8 @@ export type AgentAdminCaddyHTTPSPreflight = {
   // Fixed Caddy ID + PID + StartedAt were stable across this local probe only.
   // NOT current Caddyfile revision, administrative apply or WAN TLS evidence.
   host_instance_generation?: 'same-instance-local' | 'unverified'
+  // Optional running Caddy binary capability; never HTTPS/DNS apply proof.
+  host_alidns_module_state?: 'present-local' | 'absent-local' | 'unverified'
   // Advisory only; no HTTPS change or rollback is authorized by this field.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
   // Two revisioned settings remained stable during this one readonly preflight.

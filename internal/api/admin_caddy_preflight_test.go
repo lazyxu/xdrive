@@ -120,7 +120,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		blank.DesiredRevision != 0 || blank.CredentialRevision != 0 ||
 		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" ||
 		blank.HostRuntimeTLSAlignment != "unverified" || blank.HostLiveConfigState != "unverified" ||
-		blank.HostInstanceGeneration != "unverified" {
+		blank.HostInstanceGeneration != "unverified" || blank.HostAliDNSModuleState != "unverified" {
 		t.Fatalf("no staged configuration should fail closed: %+v", blank)
 	}
 	if out := call(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); out.Code != 404 {
@@ -244,6 +244,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		RuntimeTLSAlignment:     "matched-local",
 		LiveConfigSHA256:        strings.Repeat("b", 64),
 		InstanceGenerationState: "same-instance-local",
+		AliDNSModuleState:       "present-local",
 	}
 	liveBytes, err := json.Marshal(liveProof)
 	if err != nil {
@@ -260,9 +261,23 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	}
 	cfg = read()
 	if cfg.HostLiveConfigState != "observed-local" ||
-		cfg.HostInstanceGeneration != "same-instance-local" || cfg.ApplySupported ||
+		cfg.HostInstanceGeneration != "same-instance-local" || cfg.HostAliDNSModuleState != "present-local" || cfg.ApplySupported ||
 		cfg.Checks[5].State != "blocked" || cfg.Checks[6].State != "unknown" {
 		t.Fatalf("readable active Caddy config is not permission to apply: %+v", cfg)
+	}
+	// Module absence is a local optional-binary capability, never credential,
+	// HTTPS apply or DNS TXT authorization. Nothing sensitive is serialized.
+	liveProof.AliDNSModuleState = "absent-local"
+	liveBytes, err = json.Marshal(liveProof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, caddyHostStatusName), liveBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if absent := read(); absent.HostAliDNSModuleState != "absent-local" ||
+		absent.ApplySupported || absent.Checks[5].State != "blocked" {
+		t.Fatalf("absent AliDNS module must not permit Caddy apply: %+v", absent)
 	}
 	// Remove fingerprint to simulate an old or disabled Caddy admin endpoint.
 	liveProof.LiveConfigSHA256 = ""

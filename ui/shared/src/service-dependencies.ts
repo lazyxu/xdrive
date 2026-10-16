@@ -141,6 +141,8 @@ export type XDriveCaddyHTTPSPreflight = {
   // Observations shared one fixed container/process generation during the
   // Host Manager probe; not proof a saved revision has been applied.
   host_instance_generation?: 'same-instance-local' | 'unverified'
+  // Optional fixed Caddy binary module inventory; not DNS credential or HTTPS effect.
+  host_alidns_module_state?: 'present-local' | 'absent-local' | 'unverified'
   // Advisory only; a missing or unverified value is never a safe-ingress proof.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
   // Only an admin preflight read-window check; NOT actual HTTPS configuration effect.

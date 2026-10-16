@@ -106,6 +106,14 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
          value.desired_domain_local_match === 'matched-local' ||
          value.desired_domain_local_match === 'mismatch-local')))) invalidPreflight()
 
+  // Only an optional running Caddy binary module observation, not a
+  // revision-bound apply, AliDNS write authorization or certificate.
+  if (value.host_alidns_module_state !== undefined &&
+      (typeof value.host_alidns_module_state !== 'string' ||
+       !['present-local', 'absent-local', 'unverified'].includes(value.host_alidns_module_state) ||
+       (value.host_alidns_module_state !== 'unverified' &&
+        (!value.host_observed || !value.host_ingress_ready)))) invalidPreflight()
+
   // Old Server/Agent can omit this advisory. Positive warnings require
   // actual verified local HTTPS. Never accept an arbitrary claim as a
   // deployment or rollback authorization.

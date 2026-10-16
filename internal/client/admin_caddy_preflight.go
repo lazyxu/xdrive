@@ -27,6 +27,7 @@ type AdminCaddyPreflight struct {
 	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment,omitempty"`
 	HostLiveConfigState     string                     `json:"host_live_config_state,omitempty"`
 	HostInstanceGeneration  string                     `json:"host_instance_generation,omitempty"`
+	HostAliDNSModuleState   string                     `json:"host_alidns_module_state,omitempty"`
 	SnapshotStable          *bool                      `json:"revision_snapshot_consistent,omitempty"`
 	IngressChangeRisk       string                     `json:"ingress_change_risk,omitempty"`
 	ApplySupported          bool                       `json:"apply_supported"`

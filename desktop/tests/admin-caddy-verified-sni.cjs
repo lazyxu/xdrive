@@ -225,6 +225,57 @@ test('fixed Caddy generation fences multiple read-only probes without claiming a
   assert.match(panel, /不证明 Caddy 配置从未热加载/)
 })
 
+test('optional AliDNS runtime module detection stays read-only and backward compatible', () => {
+  for (const state of ['present-local', 'absent-local', 'unverified']) {
+    const value = good()
+    value.host_alidns_module_state = state
+    assert.equal(validatorExports.verifyCaddyPreflightContract(value).host_alidns_module_state, state)
+  }
+  const legacy = good()
+  delete legacy.host_alidns_module_state
+  assert.equal(validatorExports.verifyCaddyPreflightContract(legacy).host_alidns_module_state, undefined)
+  const httpOnly = good()
+  httpOnly.action = 'disable'
+  httpOnly.desired_domain_local_match = 'unverified'
+  httpOnly.host_runtime_tls_alignment = 'unverified'
+  httpOnly.host_local_tls_verified = false
+  httpOnly.checks[1].state = 'not-required'
+  httpOnly.checks[2].state = 'not-required'
+  httpOnly.host_alidns_module_state = 'present-local'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(httpOnly).host_alidns_module_state, 'present-local')
+  for (const mutate of [
+    x => { x.host_alidns_module_state = 'applied' },
+    x => { x.host_alidns_module_state = null },
+    x => { x.host_alidns_module_state = true },
+    x => { x.host_alidns_module_state = 'present-local'; x.host_observed = false },
+    x => { x.host_alidns_module_state = 'absent-local'; x.host_ingress_ready = false },
+  ]) {
+    const forged = good()
+    mutate(forged)
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(forged))
+  }
+  const shell = read('scripts/server-control.sh')
+  const fixture = read('scripts/test-caddy-host-status.sh')
+  const host = read('internal/api/admin_caddy_host_status.go')
+  const preflight = read('internal/api/admin_caddy_preflight.go')
+  const client = read('internal/client/admin_caddy_preflight.go')
+  const agent = read('desktop/src/main/agent_client.cts')
+  const shared = read('ui/shared/src/service-dependencies.ts')
+  const panel = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(shell, /caddy list-modules --skip-standard/)
+  assert.match(shell, /grep -Fxq dns.providers.alidns/)
+  assert.match(shell, /module_generation_before/)
+  assert.match(shell, /module_generation_after/)
+  assert.match(fixture, /XD_CADDY_MODULE_FIXTURE/)
+  assert.match(host, /caddyObservedAliDNSModuleState/)
+  assert.match(preflight, /HostAliDNSModuleState:\s+caddyObservedAliDNSModuleState/)
+  assert.match(preflight, /ApplySupported:\s+false/)
+  assert.match(client, /HostAliDNSModuleState/)
+  assert.match(agent, /host_alidns_module_state\?:/)
+  assert.match(shared, /host_alidns_module_state\?:/)
+  assert.match(panel, /data-xdrive-caddy-alidns-module-state/)
+})
+
 test('Caddy read-only ingress-continuity advisory is bounded and old Agent compatible', () => {
 
 

@@ -24,6 +24,7 @@ type caddyHostStatus struct {
 	RuntimeTLSAlignment     string `json:"runtime_tls_alignment,omitempty"`
 	LiveConfigSHA256        string `json:"live_config_sha256,omitempty"`
 	InstanceGenerationState string `json:"instance_generation_state,omitempty"`
+	AliDNSModuleState       string `json:"alidns_module_state,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -109,6 +110,18 @@ func caddyObservedInstanceGeneration(host caddyHostStatus, observed bool) string
 	return "same-instance-local"
 }
 
+// A read-only module inventory. Plugin presence is not credential, certificate,
+// deployed desired revision, public HTTPS or permission to change Caddy.
+func caddyObservedAliDNSModuleState(host caddyHostStatus, observed bool) string {
+	if !observed || host.State != "healthy" {
+		return "unverified"
+	}
+	if host.AliDNSModuleState == "present-local" || host.AliDNSModuleState == "absent-local" {
+		return host.AliDNSModuleState
+	}
+	return "unverified"
+}
+
 func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 	var status caddyHostStatus
 	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
@@ -146,6 +159,12 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 				status.State != "healthy" || !status.HTTPSConfigured ||
 				!status.TLSCheckSupported || status.TLSState != "verified" ||
 				!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) ||
+		(status.AliDNSModuleState != "" &&
+			status.AliDNSModuleState != "present-local" &&
+			status.AliDNSModuleState != "absent-local" &&
+			status.AliDNSModuleState != "unverified") ||
+		((status.AliDNSModuleState == "present-local" || status.AliDNSModuleState == "absent-local") &&
+			status.State != "healthy") ||
 		(status.InstanceGenerationState != "" &&
 			status.InstanceGenerationState != "same-instance-local" &&
 			status.InstanceGenerationState != "unverified") ||

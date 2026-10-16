@@ -7,6 +7,7 @@ export XD_CONFIG_DIR="$scratch"
 export XD_CADDY_TEST_FIXTURE="$scratch/caddy-health"
 export XD_CADDY_RUNTIME_DOMAIN_FIXTURE="$scratch/caddy-runtime-domain"
 export XD_CADDY_LIVE_SHA_FIXTURE="$scratch/caddy-live-sha"
+export XD_CADDY_MODULE_FIXTURE="$scratch/caddy-module"
 export XD_CADDY_LIVE_SHA_NEXT_FIXTURE="$scratch/caddy-live-sha-next"
 export XD_CADDY_LIVE_SHA_COUNT_FIXTURE="$scratch/caddy-live-sha-count"
 export XD_CADDY_GENERATION_FIXTURE="$scratch/caddy-generation"
@@ -60,6 +61,11 @@ elif [[ "$#" == 5 && "$1" == exec && "$2" == xdrive-caddy &&
   else
     cat "$XD_CADDY_LIVE_SHA_FIXTURE"
   fi
+elif [[ "$#" == 5 && "$1" == exec && "$2" == xdrive-caddy &&
+        "$3" == /bin/sh && "$4" == -ec &&
+        "$5" == 'modules="$(caddy list-modules --skip-standard 2>/dev/null)" || exit 2; if printf "%s\n" "$modules" | grep -Fxq dns.providers.alidns; then printf "present-local\n"; else code="$?"; [ "$code" -eq 1 ] || exit 2; printf "absent-local\n"; fi' ]]; then
+  [[ -f "$XD_CADDY_MODULE_FIXTURE" ]] || exit 1
+  cat "$XD_CADDY_MODULE_FIXTURE"
 else
   exit 2
 fi
@@ -83,6 +89,7 @@ chmod +x "$scratch/fakebin/openssl"
 printf 'XD_DOMAIN=example.invalid\n' > "$XD_CADDY_RUNTIME_DOMAIN_FIXTURE"
 expected_live_sha="$(printf 'a%.0s' {1..64})"
 printf '%s  -\n' "$expected_live_sha" > "$XD_CADDY_LIVE_SHA_FIXTURE"
+printf 'present-local\n' > "$XD_CADDY_MODULE_FIXTURE"
 fixed_caddy_id="$(printf 'c%.0s' {1..64})"
 printf '%s|%s|%s|true|healthy\n' "$fixed_caddy_id" '2026-10-16T09:23:45.123456789Z' '2478' > "$XD_CADDY_GENERATION_FIXTURE"
 export PATH="$scratch/fakebin:$PATH"
@@ -105,10 +112,26 @@ test "$(json_value "$status" tls_verified_domain_sha256)" = "$expected_tls_sni_s
 test "$(json_value "$status" runtime_tls_alignment)" = matched-local
 test "$(json_value "$status" live_config_sha256)" = "$expected_live_sha"
 test "$(json_value "$status" instance_generation_state)" = same-instance-local
+test "$(json_value "$status" alidns_module_state)" = present-local
 ! grep -q 'example.invalid' "$status"
 ! grep -q "$fixed_caddy_id" "$status"
 ! grep -q '|2478|' "$status"
 ! grep -q '2026-10-16T09:23' "$status"
+# The optional AliDNS module is independent of a successful HTTPS handshake.
+printf 'absent-local\n' > "$XD_CADDY_MODULE_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" alidns_module_state)" = absent-local
+test "$(json_value "$status" tls_state)" = verified
+printf 'ALIYUN_ACCESS_KEY_SECRET=do-not-serialize\n' > "$XD_CADDY_MODULE_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" alidns_module_state)" = unverified
+! grep -q 'do-not-serialize' "$status"
+rm -f "$XD_CADDY_MODULE_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" alidns_module_state)" = unverified
+printf 'present-local\n' > "$XD_CADDY_MODULE_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" alidns_module_state)" = present-local
 # Caddy can hot-reload without a new container/PID. Distinct valid in-memory
 # JSON samples in one fixed-generation window revoke stale positive TLS/SNI,
 # startup alignment and active config signals. Never expose either digest.
@@ -230,6 +253,7 @@ test "$(json_value "$status" state)" = running-unverified
 printf 'false|unhealthy\n' > "$XD_CADDY_TEST_FIXTURE"
 caddy_host_refresh
 test "$(json_value "$status" state)" = stopped
+test "$(json_value "$status" alidns_module_state)" = unverified
 
 printf 'XD_DOMAIN=\n' > "$scratch/config/.env"
 printf 'true|healthy\n' > "$XD_CADDY_TEST_FIXTURE"
@@ -237,6 +261,7 @@ caddy_host_refresh
 test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" https_configured)" = false
 test "$(json_value "$status" tls_state)" = disabled
+test "$(json_value "$status" alidns_module_state)" = present-local
 test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 test "$(json_value "$status" runtime_tls_alignment)" = unverified
 test "$(json_value "$status" live_config_sha256)" = ""
