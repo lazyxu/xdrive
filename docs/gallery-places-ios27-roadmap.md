@@ -336,3 +336,14 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 百度 JSAPI 4.0 官方 2026/09/30 更新已内置 ClusterLayer（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fchangelog）；官方坐标系章节（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord）说明 JSAPI 默认 BD-09，源 GPS WGS84 必须由官方 BMap.Convertor.translate(points,1,5,callback) 转换，不能自行编造偏移。转换仅通过未来许可运行环境注入，不引入百度 JS、Loader、AK 或 URL；批次 <=10、视窗 <=100、每批最多等待 3 秒，取消/回调错误/缺点/NaN 均整体 fail closed。GeoJSON FeatureCollection 只允许转换成功后的 BD-09 点进入未来 native ClusterLayer.setData。内置 ClusterLayer 的聚合气泡计的是地理网格点位数量，不应谎称为实际照片张数；每个单点另外保留 Server 真实 photo_count。
 
 仍为 NO-GO：尚未取得百度账号真实自托管/PWA/Electron/商用许可证据及完整官方资源授权清单；Server 生产路由、Owner 授权/撤销、可信签名、跨副本配额、原始上游及浏览器 HAR AK 无泄漏证据、Caddy CSP、Electron 隔离和 iOS27/Android/Desktop 真机验收均不能由合成测试替代。JSAPI4 runtime_enabled=false；唯一百度 Provider、分离加密 Server Static AK 和 Browser JSAPI AK、52px 全屏 App Frame、共用 Server Range/VirtualCollection/Viewer 保持不变。下一步在合法放行后挂接动态 Marker/ClusterLayer；然后 A4 Nearby、B1/B2/B3、C1。
+
+
+## A3b3a3b · 三端共用百度 JSAPI4 原生图层生命周期适配器（2026-10-16）
+
+在 #1732 完整通过并合入后，本项增加纯共享 TS 的 **未激活 ClusterLayer 控制器**，供后续合法授权的动态底图接入使用。它仅接受已由 Server Owner 鉴权获取的完整 ≤100 地点网格视窗和经官方 BMap.Convertor.translate(1,5) 校验过的 BD-09 FeatureCollection；不读取 AK、不签发 Cookie、不引入 Loader、不开动态地图、不添加新媒体接口。Web/Mobile Web/Desktop 继续使用一个图库 DataSource、Range、VirtualCollection、Viewer 和 52px App Frame。
+
+官方 JSAPI4 ClusterLayer 使用 setData、addEventListener('click') / removeEventListener('click') 和 fitViewOnClick；点的 isCluster、pointCount 与 properties 必须分别判断。聚合点只请求继续缩放，不能把点数当作照片总数；单点只允许根据当前提交的服务端网格 id+photo_count 查回原 MediaPlaceFacet，再交给原图库打开照片墙，禁止相信前端点击事件自报的对象。
+
+从 movestart/zoomstart 即刻取消旧短请求、清空旧图层；moveend/zoomend 合并一次通知未来可信 WGS84 区域查询，任何 BD-09 getBounds 值不得直接传给要求 WGS84 的 Server。视窗变化、缺数据、转码错误、取消、切换 Viewer 或卸载均阻止旧状态覆盖，释放官方图层监听和 Map layer。不构造第二套照片列表，也不触碰正在运行的上传、下载、同步和持久任务。
+
+**仍未上线 JSAPI4：** 原生 adapter 测试只用 Mock Map/ClusterLayer/Convertor，不是实际百度地图运行或 iOS 27 1:1 UI 验收。当前生产 `runtime_enabled=false`、审核的子资源数 0，尚无实际自托管/PWA/Electron 使用许可、完整真实资源、AK 原始响应与 Browser HAR 防泄漏、Server 签名发布、公有/移动入口跨副本配额、Caddy/CSP/Electron 隔离与 iOS27/Android/Desktop 真机截图证据。未来先以可信 Server 批准的 JSAPI map-session+代理和安全容器接线，再完成真实移动/缩放/聚合，之后 A4、B1、B2、B3、C1。
