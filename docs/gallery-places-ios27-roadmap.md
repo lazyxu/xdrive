@@ -527,3 +527,12 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 图库原来的 `MediaGalleryViewerLocationDialog` 是**三端唯一**地图隐私与索引任务操作面。两项授权不等于入队；用户必须额外明确勾选，才允许单张照片加入队列。对未启用调度的环境明确说明「已排队不等于转换成功」，允许取消及手动刷新，不进行后台轮询。仅打开照片位置时读取，不影响 VirtualCollection、Range 或 Thumbnail 网络加载；关闭或切换照片通过 generation 拦截异步旧响应。保留 xDrive 全屏 App Frame、52px 应用标题栏、Web/Desktop 后端 API 以及 iOS 27「照片」1:1 视觉和手势对照目标。
 
 **安全边界与剩余工作：** 本阶段仍不接入真正的百度坐标转换 Worker、真实账户许可和配额验证、不发送原始 GPS、不提供 Browser AK、不打开 JSAPI4 Loader/Proxy/Cookie、不加载任何未经审计的动态资源。生产 `runtime_enabled=false` 与原静态 PNG 地图保持不变。后续 A3d2m1b2b2b 必须独立取得正式许可、账号/配额证据、Server-only HTTPS Geoconv 可取消调度与失败重试，再对 JSAPI4 进行九组私有浏览器/上游 HAR 配对、完整不可变签名子资源白名单及 Caddy/Electron/PWA/iOS/Android 真机 1:1 验收。A3 仍未完成，之后顺序 A4→B1→B2→B3→C1。
+
+
+## A3d2m1b2b2b1 · 独立许可检查 + 跨副本 Geoconv 配额的私有一次性执行边界（2026-10-17）
+
+#1908 的三端显式照片任务 GET/POST/DELETE 和统一 Viewer 已通过准确 HEAD 76-job CI/final-gate、Rebase 合并并独立确认相关旧分支消失。承接既有 Server `executeBaiduPhotoMapIndexIntent` 与 PostgreSQL 的 `reserveBaiduGeoconvQuota`，本阶段只增加**内部可测试组合边界** `executeBaiduPhotoMapIndexQuotaAdmitted`，而不是产品态 Worker：无当前 Baidu 账户许可证明的请求不能领取已排队任务；已获信任的账号许可在真实任务领取后、配额预约前再次检查。配额仅从当前受信 Owner 扣除每张照片 1 次请求／1 个原始点，按 fleet→Owner 锁顺序、PostgreSQL 数据库分钟窗口保守预约；拒绝不超卖，取消和网络失败不返还已消费额度。转换调用沿用源 PhotoAsset/Node/Media/GPS/授权修订和数据库租约强制再检查、8 秒 Context 截止及跨 Server 取消轮询；导出任何坐标前始终要有当前有效授权。失败时不泄露 WGS84 查询日志。真实 PostgreSQL 双数据库池回归只允许合成转换结果；(0,0) 合法、授权拒绝或撤销、达到 Owner 配额、旧 GPS 与越权均须拒绝且不得额外写入派生索引。
+
+**绝不视为生产放行：** 许可回调只有可信 Go 测试/未来内部代码能够构造，目前没有实际百度账号许可验证器、实际 AK 解密或官方 Geoconv 网络调用，更不会因用户在 Web/Desktop 排队或后台运行而自动消费。当前百度静态 PNG 仍是用户可见地图，JSAPI4 `runtime_enabled=false`、已受审 JSAPI 子资源数 0、没有实际地图 Loader/Cookie/Proxy。独立的下一阶段 A3d2m1b2b2b2 要证明真实 Server AK 账号和合法额度、专有不可伪造的生产发布准入、固定官方 HTTPS、跨 Server 并发限制、真正 Context Cancel、失败/重试/回收、隐私撤销和生命周期，然后按九组私有浏览器/上游 HAR 的 AK 字节审核和完整签名子资源安全门禁接入 JSAPI4。不得提交 AK/HAR/GPS 日志到 GitHub 或聊天。
+
+保持百度唯一 Provider、苹果 iOS 27「照片」1:1 页面和交互验收、xDrive 全屏 App Frame + 52px 全局应用标题栏，以及 Web/Mobile Web/PWA/Desktop 同一照片位置授权/任务状态/Range/VirtualCollection/Viewer。A3 完成后才依序 A4→B1→B2→B3→C1。
