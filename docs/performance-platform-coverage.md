@@ -218,3 +218,10 @@ Linux原生Go `storage.Local.Put` 仅为**共享Server存储层基准**，不是
 ### CAS-A04b永久第二轮N3证据（2026-10-16）
 
 [新一轮真Linux同源CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)三形状九组原始CPU/RSS/磁盘IO及两代恢复[原始9样本归档](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)。容量减少再复现，恢复仍低于tar性能，**生产变化=无**。该实验是共享Server *单纯文件数据*子阶段；Native Desktop、Wide Web、Mobile Web、desktop installed PWA、Android installed PWA、iOS installed PWA该场景严格**Not measured**，不补填无设备来源数字。
+
+
+
+## CAS-A02b / S001-e：首次4GiB分片→整CAS vs 离线直接分块（2026-10-16）
+
+Linux同源真实4GiB高熵stage文件512×8MiB，当前整文件拼装物理模型对比离线对象原子rename+Manifest，另测回放完整4GiB文件额外成本；[规范](cas-upload-staging-performance.md)、[登记簿](performance-test-registry.md)。新负载 valid n=0，matched BEFORE=Not measured，Offline Candidate=Not measured，生产AFTER=N/A。六端实际用户传输：Desktop Native=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop installed PWA=Not measured；Android installed PWA=Not measured；iOS installed PWA=Not measured。已有三平台真实4GiB通过记录保留，不重复纳入离线方案加速。
+\n\n## CAS-A02b首轮实测归档补记 · 2026-10-16\n\n[专项CI #38905016820](https://github.com/lazyxu/xdrive/actions/runs/38905016820) 在原HEAD 84fc5684a556b4a895deddbb91c758f42c509a3e 成功：3×真实4GiB SHAKE-256源、512个8MiB不同物理stage分片，原版布局模型st_blocks峰值8,589,938,688B vs候选4,295,004,160B；kernel stage+final写入8,589,934,592B vs4,295,004,160B，P50 finalize16,305.935ms vs8,229.359ms，平面兼容物化另外写4GiB、P50 15,422.271ms；原版和候选的全SHA/40次64KiB随机Range验证全通过，最大RSS37,796KiB。**Accepted only OFFLINE experiment；生产 AFTER=N/A，真实6客户端未测。** 仓库内[原始数字+source exact+原JSON SHA](performance-evidence/cas-a02b-first-upload-staging/README.md)为永久可查证索引；完整11文件原GitHub Artifact #12047453131只有有限保留期，不能冒称已经永久归档其全部字节。归档修订新HEAD源码及全仓FinalGate仍需执行。

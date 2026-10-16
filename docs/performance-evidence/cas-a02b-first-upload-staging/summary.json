@@ -1,0 +1,15 @@
+{
+  "workload_id": "CAS-A02b-first-upload-4GiB-physical-stage-vs-offline-direct-hash-chunks",
+  "n": 3,
+  "source_bytes": 4294967296,
+  "original_peak_physical_ratio_p50": 2.000000954,
+  "offline_candidate_peak_physical_ratio_p50": 1.000008583,
+  "offline_to_original_kernel_write_ratio_p50": 0.500004292,
+  "original_finalize_ms_p50": 16305.935,
+  "offline_candidate_finalize_ms_p50": 8229.359,
+  "offline_flat_materialization_ms_p50": 15422.271,
+  "max_rss_kib": 37796,
+  "passed": true,
+  "production_changed": false,
+  "scope": "Offline true 512x8MiB fsynced staging, representative full-file assembly vs direct hash-chunk promote. No production Gin/PG/Local.Put, no client uploads"
+}

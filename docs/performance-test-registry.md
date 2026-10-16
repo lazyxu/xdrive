@@ -348,3 +348,12 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 ### CAS-A04b永久机器9 JSON归档 / 第二轮源准确实测
 
 源码`fa217484641d679cfe8e8de8da67b8f9e9d87d29`准确[CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)已经输出真正完整9份400MiB实物n3×3的逐阶段CPU/RSS/IO/备份恢复时间，[逐JSON及source](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)。原版两代tar物理P50 839065600/843264000/1258582016B vs 离线419463168/423657472/838909952B；候选write bytes比例约0.499917/0.502402/0.666554，仍符合冻结预算。第二轮对应原版tar完整恢复P50 651.307/658.059/1294.193ms，候选1056.847/1088.042/2394.714ms；虽较第一次跑分差距变小，**仍恢复更慢**，无生产代码改动/AFTER=N/A。原始完整9样本归档后仍须新HEAD专项/full FinalGate重验才准合入。
+
+
+
+## CAS-A02b / S001-e · 首次4GiB分片真实空间与离线直接chunk commit（2026-10-16）
+
+| 负载 | BEFORE原版 | Candidate/预算 | 状态/链接 | 六端边界 |
+| --- | --- | --- | --- | --- |
+| CAS-A02b，三组不同完整4GiB SHAKE-256源、每组512份8MiB真fsync Stage，原版整文件再写4GiB临时布局 vs 独立离线chunk SHA rename+Manifest。相同字节、奇偶交替；40次Range、SHA、额外4GiB平面物化、全部回收。区别于真实生产Web/Gin CAS-A02a及版本CAS-A03-d2。 | **本负载matched n=0/Not measured**。原CAS-A02a真实4GiB Gin上传峰值8,589,938,688B=2.00×、真实Go kernel write_bytes8,589,934,592B=2×已验收，但不是本次同Runner原版。 | 离线Candidate Not measured；冻结实体峰值≤1.01×4GiB、总kernel write≤原版60%、RSS≤512MiB、真实恢复/Range/SHA/GC门槛；生产AFTER=N/A。 | Benchmarking。 [规范](cas-upload-staging-performance.md) · [脚本](../scripts/bench-cas-a02b-offline-first-upload-chunks.py) · [专项CI](../.github/workflows/cas-a02b-first-upload-staging-offline.yml)。有效 n3 后永久归档并准确 HEAD 双CI/FinalGate。 | 单Linux离线文件系统基准；Native Desktop、Wide Web、Mobile Web、Desktop/Android/iOS installed PWA这六客户端场景均Not measured，不能冒充P044/P045/P051线上测试。 |
+\n\n## CAS-A02b首轮实测归档补记 · 2026-10-16\n\n[专项CI #38905016820](https://github.com/lazyxu/xdrive/actions/runs/38905016820) 在原HEAD 84fc5684a556b4a895deddbb91c758f42c509a3e 成功：3×真实4GiB SHAKE-256源、512个8MiB不同物理stage分片，原版布局模型st_blocks峰值8,589,938,688B vs候选4,295,004,160B；kernel stage+final写入8,589,934,592B vs4,295,004,160B，P50 finalize16,305.935ms vs8,229.359ms，平面兼容物化另外写4GiB、P50 15,422.271ms；原版和候选的全SHA/40次64KiB随机Range验证全通过，最大RSS37,796KiB。**Accepted only OFFLINE experiment；生产 AFTER=N/A，真实6客户端未测。** 仓库内[原始数字+source exact+原JSON SHA](performance-evidence/cas-a02b-first-upload-staging/README.md)为永久可查证索引；完整11文件原GitHub Artifact #12047453131只有有限保留期，不能冒称已经永久归档其全部字节。归档修订新HEAD源码及全仓FinalGate仍需执行。

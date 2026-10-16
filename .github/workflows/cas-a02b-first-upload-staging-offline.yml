@@ -1,0 +1,122 @@
+name: CAS-A02b Physical 4GiB First Upload Staging vs Offline Direct Chunk Promotion
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a02b-real-4gib-staging-ab:
+    if: github.head_ref == 'perf/cas-a02b-offline-first-upload-staging-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check archived actual n3 numeric fields, raw JSON digests and unchanged source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, statistics
+          p=pathlib.Path("docs/performance-evidence/cas-a02b-first-upload-staging")
+          observed=json.loads((p/"observed-samples.json").read_text())
+          summary=json.loads((p/"summary.json").read_text())
+          source=(p/"source.txt").read_text()
+          assert observed["source_first_run_head"]=="84fc5684a556b4a895deddbb91c758f42c509a3e"
+          assert observed["original_ci"]==38905016820
+          assert observed["source_code_sha256"]==hashlib.sha256(
+              pathlib.Path("scripts/bench-cas-a02b-offline-first-upload-chunks.py").read_bytes()).hexdigest()
+          for key in ("scripts/bench-cas-a02b-offline-first-upload-chunks.py",
+                      "internal/api/uploads.go","internal/storage/local.go"):
+              digest=hashlib.sha256(pathlib.Path(key).read_bytes()).hexdigest()
+              assert digest+"  "+key in source,("source changed",key)
+          rows=observed["samples"]
+          assert len(rows)==3 and summary["passed"] and not summary["production_changed"] and summary["n"]==3
+          assert len({r["source_sha256"] for r in rows})==3
+          for sample,row in enumerate(rows,1):
+              assert row["sample"]==sample and row["original_peak_bytes"]==8589938688
+              assert row["offline_peak_bytes"]==4295004160 and row["source_sha256"]
+              assert len(row["raw_original_json_sha256"])==64
+              assert row["baseline_stage_kernel_write_bytes"]+row["baseline_finalize_kernel_write_bytes"]==8589934592
+              assert row["candidate_stage_kernel_write_bytes"]+row["candidate_finalize_kernel_write_bytes"]==4295004160
+              assert row["restore_flat_write_bytes"]==4294967296
+          p50=lambda key:statistics.median(row[key] for row in rows)
+          assert p50("finalize_ms_original")==summary["original_finalize_ms_p50"]
+          assert p50("finalize_ms_candidate")==summary["offline_candidate_finalize_ms_p50"]
+          assert p50("restore_flat_ms")==summary["offline_flat_materialization_ms_p50"]
+          assert max(row["peak_rss_kib"] for row in rows)==summary["max_rss_kib"]
+          print("CAS_A02B_FIRST_RUN_COMPACT_SOURCE_EXACT_N3_VERIFIED",len(rows))
+          PY
+      - name: Compile exact Python source and smoke test with 64MiB of real bytes
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          python3 -m py_compile scripts/bench-cas-a02b-offline-first-upload-chunks.py
+          df -B1 .
+          python3 scripts/bench-cas-a02b-offline-first-upload-chunks.py \
+            --results-dir "$RUNNER_TEMP/cas-a02b-smoke" --payload-mib 64 --chunk-mib 8 --sample 1
+      - name: Measure n3 independent exact 4GiB physical staged originals and offline candidate
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a02b-physical-n3"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum scripts/bench-cas-a02b-offline-first-upload-chunks.py \
+              internal/api/uploads.go internal/storage/local.go
+          } > "$out/source.txt"
+          for sample in 1 2 3; do
+            /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              python3 scripts/bench-cas-a02b-offline-first-upload-chunks.py \
+              --results-dir "$out" --payload-mib 4096 --chunk-mib 8 --sample "$sample" \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json, pathlib, statistics, sys
+          p=pathlib.Path(sys.argv[1])
+          rows=[json.loads((p/f"sample-{i}.json").read_text()) for i in (1,2,3)]
+          assert len({r["source_sha256"] for r in rows})==3
+          for sample,r in enumerate(rows,1):
+              assert r["passed"] and not r["production_changed"]
+              assert r["sample"]==sample and r["source_bytes"]==4294967296
+              assert r["chunks"]==512 and r["chunk_bytes"]==8388608
+              a,b=r["baseline_flat_assembly"],r["candidate_offline_direct_chunks"]
+              assert a["sha256"]==b["sha256"]==r["source_sha256"]
+              assert a["stage"]["details"]["physical_parts"]==512
+              assert b["stage"]["details"]["physical_parts"]==512
+              assert a["finalize"]["details"]["range_queries"]==40
+              assert b["finalize"]["details"]["range_queries"]==40
+              assert b["finalize"]["details"]["physical_objects"]==512
+              assert a["peak_physical_bytes"]>=8589934592
+              assert b["peak_physical_bytes"]<=int(4294967296*1.01)
+              assert a["total_kernel_write_bytes"]>=8589934592
+              assert b["total_kernel_write_bytes"]<=a["total_kernel_write_bytes"]*.60
+              assert b["flat_materialize"]["details"]["extra_temporary_flat_allocated_bytes"]>=4294967296
+              assert b["flat_materialize"]["kernel_write_bytes"]>=4294967296
+              assert a["after_clear_bytes"]==b["after_clear_bytes"]==0
+              assert r["process_peak_rss_kib"]<=524288
+              assert a["finalize"]["wall_ms"]<=180000 and b["finalize"]["wall_ms"]<=180000
+              assert a["stage"]["wall_ms"]<=240000 and b["stage"]["wall_ms"]<=240000
+              assert b["flat_materialize"]["wall_ms"]<=180000
+          mid=lambda f:statistics.median(f(r) for r in rows)
+          summary={"workload_id":"CAS-A02b-first-upload-4GiB-physical-stage-vs-offline-direct-hash-chunks",
+              "n":3,"source_bytes":4294967296,
+              "original_peak_physical_ratio_p50":mid(lambda r:r["peak_physical_ratio_original"]),
+              "offline_candidate_peak_physical_ratio_p50":mid(lambda r:r["peak_physical_ratio_candidate"]),
+              "offline_to_original_kernel_write_ratio_p50":mid(lambda r:r["candidate_to_baseline_total_kernel_write_ratio"]),
+              "original_finalize_ms_p50":mid(lambda r:r["baseline_flat_assembly"]["finalize"]["wall_ms"]),
+              "offline_candidate_finalize_ms_p50":mid(lambda r:r["candidate_offline_direct_chunks"]["finalize"]["wall_ms"]),
+              "offline_flat_materialization_ms_p50":mid(lambda r:r["candidate_offline_direct_chunks"]["flat_materialize"]["wall_ms"]),
+              "max_rss_kib":max(r["process_peak_rss_kib"] for r in rows),
+              "passed":True,"production_changed":False,
+              "scope":"Offline true 512x8MiB fsynced staging, representative full-file assembly vs direct hash-chunk promote. No production Gin/PG/Local.Put, no client uploads"}
+          (p/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("CAS_A02B_TRUE_4GIB_N3_SUMMARY",json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a02b-offline-first-upload-4gib-physical-stage-n3
+          path: ${{ runner.temp }}/cas-a02b-physical-n3/
+          retention-days: 14
+          if-no-files-found: warn
