@@ -26,6 +26,7 @@ type adminCaddyPreflightDTO struct {
 	HostIngressReady        bool                       `json:"host_ingress_ready"`
 	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
+	IngressChangeRisk       string                     `json:"ingress_change_risk"`
 	ApplySupported          bool                       `json:"apply_supported"`
 	Checks                  []adminCaddyPreflightCheck `json:"checks"`
 }
@@ -119,6 +120,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		HostObserved:          observed, HostIngressReady: ingressReady,
 		HostLocalTLSVerified:    observed && host.HTTPSConfigured && host.TLSCheckSupported && host.TLSState == "verified",
 		DesiredDomainLocalMatch: caddyDesiredDomainLocalMatch(desired, host, observed),
+		IngressChangeRisk:       caddyIngressChangeRisk(desired, host, observed),
 		ApplySupported:          false, Checks: checks,
 	})
 }

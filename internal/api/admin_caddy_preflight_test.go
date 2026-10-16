@@ -116,7 +116,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	blank := read()
 	if blank.Action != "unset" || blank.ConfigurationComplete || blank.HostObserved ||
 		blank.DesiredRevision != 0 || blank.CredentialRevision != 0 ||
-		blank.DesiredDomainLocalMatch != "unverified" {
+		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" {
 		t.Fatalf("no staged configuration should fail closed: %+v", blank)
 	}
 	if out := call(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); out.Code != 404 {
@@ -146,7 +146,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if cfg.Action != "enable" || !cfg.ConfigurationComplete || cfg.HostObserved ||
 		cfg.DesiredRevision != 1 || cfg.CredentialRevision != 1 ||
 		cfg.HostIngressReady || cfg.HostLocalTLSVerified || cfg.ApplySupported ||
-		cfg.DesiredDomainLocalMatch != "unverified" {
+		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" {
 		t.Fatalf("local config was not recorded, or fake host effect published: %+v", cfg)
 	}
 	if cfg.Checks[2].ID != "alidns" || cfg.Checks[2].State != "pass" ||
@@ -170,7 +170,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if !cfg.HostObserved || !cfg.HostIngressReady || !cfg.HostLocalTLSVerified ||
 		!cfg.ConfigurationComplete || cfg.ApplySupported || cfg.Checks[5].State != "blocked" ||
-		cfg.DesiredDomainLocalMatch != "unverified" {
+		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" {
 		t.Fatalf("trusted host TLS observation must not acknowledge new desired HTTPS: %+v", cfg)
 	}
 	// Explicitly compare the desired FQDN with the host's TLS-verified
@@ -198,13 +198,14 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	}
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "matched-local" || cfg.ApplySupported ||
-		cfg.Checks[5].State != "blocked" || !cfg.HostLocalTLSVerified {
+		cfg.Checks[5].State != "blocked" || !cfg.HostLocalTLSVerified ||
+		cfg.IngressChangeRisk != "unverified" {
 		t.Fatalf("matching local SNI must not authorize Caddy apply: %+v", cfg)
 	}
 	writeVerifiedHostSNI("old.example.com")
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "mismatch-local" || cfg.ApplySupported ||
-		cfg.Checks[5].State != "blocked" {
+		cfg.Checks[5].State != "blocked" || cfg.IngressChangeRisk != "local-domain-switch" {
 		t.Fatalf("mismatched desired and observed TLS SNI was not detected: %+v", cfg)
 	}
 	// A decryption failure is a *blocked credential prerequisite*, not an
@@ -232,7 +233,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if cfg.Action != "disable" || !cfg.ConfigurationComplete ||
 		cfg.Checks[2].State != "not-required" || cfg.ApplySupported ||
-		cfg.DesiredDomainLocalMatch != "unverified" {
+		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "local-https-removal" {
 		t.Fatalf("HTTPS disable preflight must not require AliDNS or be applied: %+v", cfg)
 	}
 	var auditAfter int64

@@ -65,6 +65,41 @@ test('Caddy validator rejects forged local SNI status without a verified current
   }
 })
 
+test('Caddy read-only ingress-continuity advisory is bounded and old Agent compatible', () => {
+  const matched = good()
+  matched.ingress_change_risk = 'unverified'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(matched).ingress_change_risk, 'unverified')
+  const oldServer = good()
+  delete oldServer.ingress_change_risk
+  assert.equal(validatorExports.verifyCaddyPreflightContract(oldServer).ingress_change_risk, undefined)
+  const switchIntent = good()
+  switchIntent.desired_domain_local_match = 'mismatch-local'
+  switchIntent.ingress_change_risk = 'local-domain-switch'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(switchIntent).ingress_change_risk, 'local-domain-switch')
+  const disableIntent = good()
+  disableIntent.action = 'disable'
+  disableIntent.desired_domain_local_match = 'unverified'
+  disableIntent.checks[1].state = 'not-required'
+  disableIntent.checks[2].state = 'not-required'
+  disableIntent.ingress_change_risk = 'local-https-removal'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(disableIntent).ingress_change_risk, 'local-https-removal')
+
+  for (const mutate of [
+    x => { x.ingress_change_risk = 'safe-to-apply' },
+    x => { x.ingress_change_risk = null },
+    x => { x.ingress_change_risk = 'local-domain-switch' },
+    x => { x.ingress_change_risk = 'local-https-removal' },
+    x => { x.ingress_change_risk = 'local-domain-switch'; x.desired_domain_local_match = 'mismatch-local'; x.host_local_tls_verified = false },
+    x => { x.ingress_change_risk = 'local-domain-switch'; x.desired_domain_local_match = 'mismatch-local'; x.host_observed = false },
+    x => { x.ingress_change_risk = 'local-domain-switch'; x.desired_domain_local_match = 'mismatch-local'; x.host_ingress_ready = false },
+    x => { x.ingress_change_risk = 'local-domain-switch'; x.desired_domain_local_match = 'mismatch-local'; x.desired_revision = 0 },
+  ]) {
+    const forged = good()
+    mutate(forged)
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(forged))
+  }
+})
+
 test('the expected domain is compared only to real host-local verified TLS, with no new control action', () => {
   const host = read('scripts/server-control.sh')
   const goHost = read('internal/api/admin_caddy_host_status.go')
@@ -86,6 +121,14 @@ test('the expected domain is compared only to real host-local verified TLS, with
   assert.match(compare, /caddyDesiredDomainLocalMatch\(/)
   assert.match(compare, /subtle.ConstantTimeCompare/)
   assert.match(api, /DesiredDomainLocalMatch:\s+caddyDesiredDomainLocalMatch/)
+  assert.match(api, /IngressChangeRisk:\s+caddyIngressChangeRisk/)
+  assert.match(read('internal/api/admin_caddy_ingress_change_risk.go'), /local-https-removal/)
+  assert.match(read('internal/api/admin_caddy_ingress_change_risk.go'), /local-domain-switch/)
+  assert.match(client, /IngressChangeRisk/)
+  assert.match(desktop, /ingress_change_risk\?:/)
+  assert.match(shared, /ingress_change_risk\?:/)
+  assert.match(panel, /data-xdrive-caddy-ingress-change-risk/)
+  assert.match(panel, /不是应用许可或公网 HTTPS 生效证明/)
   assert.match(client, /DesiredDomainLocalMatch/)
   assert.match(desktop, /desired_domain_local_match\?:/)
   assert.match(shared, /desired_domain_local_match\?:/)

@@ -31,6 +31,16 @@
 5. Old Agent/Server returns an explicit unsupported/error message and does not silently show fictitious health.
 6. Go unit tests, Web lint/typecheck, Desktop main/renderer typecheck, and scoped CI pass before merge.
 
+## P1-SD-V1-C03a (2026-10-16): read-only Caddy HTTPS ingress-change continuity advisory
+
+The existing administrator-clicked, no-store Caddy HTTPS preflight adds one sanitized, optional-for-old-client **ingress_change_risk** enum. With a fresh trusted fixed Caddy healthy observation and genuinely verified localhost HTTPS/TLS, a saved **disable** intent reports **local-https-removal** (may remove the existing HTTPS entry). A saved **enable** intent with an SNI SHA-256 differing from the saved desired domain reports **local-domain-switch** (may disrupt the existing access name). Older Server/Agent/Host Manager, missing heartbeat, missing or malformed digest, unverifiable TLS and unset intent report **unverified**. Matching SNI also reports **unverified** for switching safety, NEVER "safe to apply".
+
+This is only a warning about potential risk, not a revision-bound deployment receipt, protected operator session, authenticated fallback ingress, public DNS/WAN reachability, certificate issuance, AliDNS write permission, exact desired revision effect or proven rollback. It adds no endpoint, no automatic probe, no credential or hostname disclosure, no Docker control, no Host Manager command, no config write and no enable/disable/apply button. All seven prior checks stay fixed; restricted-apply remains blocked, public-https remains unknown, and **apply_supported=false**. Web, Mobile Web and Desktop share one typed MUI warning; old clients may omit the field.
+
+Go helper/unit and genuine PostgreSQL admin preflight tests cover removed TLS / changed hostname / matched SNI / absent host / old Host Manager / forged digest / unset and full hostname+credential redaction. Desktop TS runtime contract rejects malformed or inconsistent positive warnings and checks that no unsafe route is exposed. Require a single frozen-parent work commit and exact-head complete GitHub CI/final-gate before merge.
+
+**Not delivered (C03b+):** independently trusted desired revision ↔ host-applied revision receipt, operator authenticated restricted maintenance, positive protection of a live administrator access route, independent fallback/rescue ingress, time-bounded rollback with actual verified restored TLS and session continuity, public DNS/TLS validation. No Caddy Apply, Stop or Restart may be exposed before those prerequisites.
+
 ## Configuration and activation contract (phase P1-A)
 
 **Strict scope:** This administrator page lists only instance-wide runtime infrastructure and global service providers. Yike, Synology Photos, DSM FileStation, user credentials, per-user source schedules and all **同步文件夹** belong exclusively to each user's existing Sync Folder settings/API; the admin dependency inventory, editor and navigation must not surface them. The shared masked credential/reveal UI does **not** merge secret stores or permission domains.

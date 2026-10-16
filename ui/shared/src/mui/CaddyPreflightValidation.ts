@@ -70,6 +70,21 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
          !value.host_ingress_ready || !value.host_local_tls_verified ||
          byID.get('domain') !== 'pass')))) invalidPreflight()
 
+  // Old Server/Agent can omit this advisory. Positive warnings require
+  // actual verified local HTTPS. Never accept an arbitrary claim as a
+  // deployment or rollback authorization.
+  if (value.ingress_change_risk !== undefined &&
+      (typeof value.ingress_change_risk !== 'string' ||
+       !['unverified', 'local-https-removal', 'local-domain-switch'].includes(value.ingress_change_risk) ||
+       (value.ingress_change_risk !== 'unverified' &&
+        (!value.host_observed || !value.host_ingress_ready ||
+         !value.host_local_tls_verified || value.desired_revision === 0)) ||
+       (value.ingress_change_risk === 'local-https-removal' &&
+        value.action !== 'disable') ||
+       (value.ingress_change_risk === 'local-domain-switch' &&
+        (value.action !== 'enable' || value.desired_domain_local_match !== 'mismatch-local' ||
+         byID.get('domain') !== 'pass')))) invalidPreflight()
+
   if (value.action === 'unset') {
     if (value.desired_revision !== 0 || value.configuration_complete ||
         byID.get('desired') !== 'missing') invalidPreflight()
