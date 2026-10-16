@@ -23,6 +23,15 @@ type ProviderResult =
   | { kind: 'available'; info: XDriveBaiduMapProviderInfo }
   | { kind: 'unavailable' }
 
+type StaticMapFrame = {
+  objectURL: string
+  originKey: string
+  latitude: number
+  longitude: number
+  zoom: number
+  requestID: number
+}
+
 /** Baidu is the only map renderer; there is deliberately no offline renderer
  * or emergency fallback. Neither the AK nor the upstream URL reaches clients. */
 export function XDriveMediaGalleryBaiduStaticMap({
@@ -52,7 +61,9 @@ export function XDriveMediaGalleryBaiduStaticMap({
     : `place:${place?.id ?? ''}`
   const restoredCamera = xDriveValidPlacesCameraPosition(initialCamera) ? initialCamera : undefined
   const [provider, setProvider] = useState<ProviderResult>({ kind: 'checking' })
-  const [imageURL, setImageURL] = useState('')
+  const [imageFrame, setImageFrame] = useState<StaticMapFrame | null>(null)
+  const imageFrameRef = useRef<StaticMapFrame | null>(null)
+  const retiredURLs = useRef<string[]>([])
   const [zoom, setZoom] = useState(() => restoredCamera?.zoom ?? 12)
   const [requestID, setRequestID] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -87,6 +98,26 @@ export function XDriveMediaGalleryBaiduStaticMap({
   const validCenter = centerLatitude !== undefined && centerLongitude !== undefined &&
     Number.isFinite(centerLatitude) && Math.abs(centerLatitude) <= 85 &&
     Number.isFinite(centerLongitude) && Math.abs(centerLongitude) <= 180
+
+  // Revoke only AFTER the new frame has committed to DOM, never while an
+  // <img> still uses the previous object URL. Each displayed frame owns ONE.
+  useEffect(() => {
+    for (const url of retiredURLs.current.splice(0)) URL.revokeObjectURL(url)
+  }, [imageFrame])
+  useEffect(() => () => {
+    if (imageFrameRef.current) URL.revokeObjectURL(imageFrameRef.current.objectURL)
+    imageFrameRef.current = null
+    for (const url of retiredURLs.current.splice(0)) URL.revokeObjectURL(url)
+  }, [])
+  useEffect(() => {
+    const previous = imageFrameRef.current
+    // A prior place's map must never appear under another place or after
+    // permissions/provider availability change, even for a single frame.
+    if (!previous || (previous.originKey === originKey && enabled && loadStaticMap)) return
+    imageFrameRef.current = null
+    setImageFrame(null)
+    URL.revokeObjectURL(previous.objectURL)
+  }, [originKey, enabled, loadStaticMap])
 
   // Committed static-camera movement only; never a JSAPI4/BD-09 pixel overlay.
   useEffect(() => {
@@ -204,12 +235,9 @@ export function XDriveMediaGalleryBaiduStaticMap({
 
   useEffect(() => {
     const controller = new AbortController()
-    let imageObjectURL = ''
     let active = true
-    setImageURL('')
     setError('')
     setBusy(false)
-
     if (!enabled || !loadStaticMap ||
         centerLatitude === undefined || centerLongitude === undefined) {
       return () => { active = false; controller.abort() }
@@ -229,8 +257,15 @@ export function XDriveMediaGalleryBaiduStaticMap({
       height: 280,
     }, controller.signal).then((png) => {
       if (!active || controller.signal.aborted) return
-      imageObjectURL = URL.createObjectURL(png)
-      setImageURL(imageObjectURL)
+      const objectURL = URL.createObjectURL(png)
+      const old = imageFrameRef.current
+      const next: StaticMapFrame = {
+        objectURL, originKey, latitude: centerLatitude,
+        longitude: centerLongitude, zoom, requestID,
+      }
+      imageFrameRef.current = next
+      setImageFrame(next)
+      if (old) retiredURLs.current.push(old.objectURL)
     }).catch(() => {
       if (active && !controller.signal.aborted) {
         setError('百度地图加载失败，请检查网络、Server AK 和配额后重试。')
@@ -238,12 +273,15 @@ export function XDriveMediaGalleryBaiduStaticMap({
     }).finally(() => {
       if (active && !controller.signal.aborted) setBusy(false)
     })
-    return () => {
-      active = false
-      controller.abort()
-      if (imageObjectURL) URL.revokeObjectURL(imageObjectURL)
-    }
-  }, [enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID])
+    return () => { active = false; controller.abort() }
+  }, [enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID, originKey])
+
+  const displayFrame = enabled && loadStaticMap && hasLocation && validCenter &&
+    imageFrame?.originKey === originKey && !error ? imageFrame : null
+  const previousViewport = Boolean(displayFrame && (
+    displayFrame.latitude !== centerLatitude || displayFrame.longitude !== centerLongitude ||
+    displayFrame.zoom !== zoom || displayFrame.requestID !== requestID
+  ))
 
   const message =
     provider.kind === 'checking' ? '正在检查百度地图服务…'
@@ -325,11 +363,32 @@ export function XDriveMediaGalleryBaiduStaticMap({
         display: 'grid',
         placeItems: 'center',
         overflow: 'hidden',
+        position: 'relative',
       }}>
-        {imageURL && !error ? (
-          <Box component="img" src={imageURL} alt={`百度地图：${mapName}`}
-            onError={() => setError('百度地图返回的图片无法显示，请重试。')}
-            sx={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        {displayFrame ? (
+          <>
+            <Box component="img" src={displayFrame.objectURL}
+              alt={previousViewport
+                ? `百度地图：${mapName}（上一视窗，正在更新）`
+                : `百度地图：${mapName}`}
+              onError={() => {
+                if (imageFrameRef.current?.objectURL === displayFrame.objectURL &&
+                    !previousViewport) {
+                  setError('百度地图返回的图片无法显示，请重试。')
+                }
+              }}
+              sx={{ width: '100%', height: '100%', objectFit: 'contain',
+                opacity: previousViewport ? 0.55 : 1 }} />
+            {previousViewport && busy ? (
+              <Box sx={{ position: 'absolute', inset: 0, display: 'grid',
+                placeItems: 'center', pointerEvents: 'none' }}>
+                <Typography role="status" variant="caption"
+                  sx={{ bgcolor: 'background.paper', px: 1, py: 0.5, borderRadius: 1 }}>
+                  上一视窗 · 正在更新
+                </Typography>
+              </Box>
+            ) : null}
+          </>
         ) : (
           <Typography role="status" variant="body2" color="text.secondary" sx={{ px: 2, textAlign: 'center' }}>
             {message}
