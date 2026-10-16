@@ -240,7 +240,10 @@ func sourceFailure(externalID string, err error) client.SourceFailure {
 	if err != nil && strings.TrimSpace(err.Error()) != "" {
 		message = strings.TrimSpace(err.Error())
 	}
-	return client.SourceFailure{ExternalID: externalID, Error: trimUTF8Bytes(message, 4<<10)}
+	return client.SourceFailure{
+		ExternalID: externalID, Error: trimUTF8Bytes(message, 4<<10),
+		Category: client.ClassifySourceFailure(err),
+	}
 }
 
 func appendError(errorsOut *[]string, externalID, itemPath string, err error) {

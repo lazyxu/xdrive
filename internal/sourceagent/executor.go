@@ -74,7 +74,7 @@ func (e *Executor) Execute(
 		return commit, nil
 
 	case meta.SourceItemKindFile:
-		node, hash, transferredBytes, err := e.executeFile(ctx, plan, item, localPath, action)
+		node, hash, transferredBytes, casBytes, resumeBytes, err := e.executeFile(ctx, plan, item, localPath, action)
 		if err != nil {
 			return client.SourceCommit{}, err
 		}
@@ -83,6 +83,8 @@ func (e *Executor) Execute(
 		commit.SHA256 = hash
 		commit.TransferredBytes = transferredBytes
 		commit.Transferred = transferredBytes > 0
+		commit.CASReusedBytes = casBytes
+		commit.ResumeReusedBytes = resumeBytes
 		return commit, nil
 
 	default:
@@ -133,67 +135,67 @@ func (e *Executor) executeFile(
 	item sourcepkg.DiscoveredItem,
 	localPath string,
 	action sourcepkg.PlanAction,
-) (client.Node, string, int64, error) {
+) (client.Node, string, int64, int64, int64, error) {
 	switch action {
 	case sourcepkg.ActionCreate:
 		parent, name, existing, err := e.destination(ctx, item.Path, 0)
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
 		if existing != nil {
-			return client.Node{}, "", 0, fmt.Errorf("destination file %q already exists", item.Path)
+			return client.Node{}, "", 0, 0, 0, fmt.Errorf("destination file %q already exists", item.Path)
 		}
 		result, err := e.API.UploadFileResumableResult(ctx, parent.ID, localPath, name, e.progress(ctx, item.Path))
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
 		if err := verifyLocalSnapshot(localPath, item); err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
-		return result.Node, result.SHA256, result.TransferredBytes, nil
+		return result.Node, result.SHA256, result.TransferredBytes, result.CASReusedBytes, result.ResumeReusedBytes, nil
 
 	case sourcepkg.ActionUpdate:
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
-			return client.Node{}, "", 0, fmt.Errorf("file update is missing node identity")
+			return client.Node{}, "", 0, 0, 0, fmt.Errorf("file update is missing node identity")
 		}
 		result, err := e.API.OverwriteFileResumableResult(ctx, *plan.NodeID, plan.NodeRevision, localPath, e.progress(ctx, item.Path))
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
 		if err := verifyLocalSnapshot(localPath, item); err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
-		return result.Node, result.SHA256, result.TransferredBytes, nil
+		return result.Node, result.SHA256, result.TransferredBytes, result.CASReusedBytes, result.ResumeReusedBytes, nil
 
 	case sourcepkg.ActionMove:
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
-			return client.Node{}, "", 0, fmt.Errorf("file move is missing node identity")
+			return client.Node{}, "", 0, 0, 0, fmt.Errorf("file move is missing node identity")
 		}
 		node, err := e.moveNodeToPath(ctx, *plan.NodeID, plan.NodeRevision, item.Path, meta.NodeTypeFile)
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
-		return node, item.SHA256, 0, nil
+		return node, item.SHA256, 0, 0, 0, nil
 
 	case sourcepkg.ActionMoveUpdate:
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
-			return client.Node{}, "", 0, fmt.Errorf("file move/update is missing node identity")
+			return client.Node{}, "", 0, 0, 0, fmt.Errorf("file move/update is missing node identity")
 		}
 		node, err := e.moveNodeToPath(ctx, *plan.NodeID, plan.NodeRevision, item.Path, meta.NodeTypeFile)
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
 		result, err := e.API.OverwriteFileResumableResult(ctx, node.ID, node.Revision, localPath, e.progress(ctx, item.Path))
 		if err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
 		if err := verifyLocalSnapshot(localPath, item); err != nil {
-			return client.Node{}, "", 0, err
+			return client.Node{}, "", 0, 0, 0, err
 		}
-		return result.Node, result.SHA256, result.TransferredBytes, nil
+		return result.Node, result.SHA256, result.TransferredBytes, result.CASReusedBytes, result.ResumeReusedBytes, nil
 
 	default:
-		return client.Node{}, "", 0, fmt.Errorf("unsupported file action %q", action)
+		return client.Node{}, "", 0, 0, 0, fmt.Errorf("unsupported file action %q", action)
 	}
 }
 

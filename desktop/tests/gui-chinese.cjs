@@ -427,7 +427,7 @@ test('shared SourceManager owns run history, progress, pagination and cancellati
   assert.ok(sharedSourceManager.includes('detail={runDetail}'), 'SourceManager must bind run summaries to the shared detail view')
   assert.ok(sharedSourceManager.includes('<XDriveSourceRunProgress'), 'SourceManager must render shared run progress')
   assert.ok(sharedSourceManager.includes('progress={runDetail.progress}'), 'SourceManager must bind live run progress')
-  assert.equal((sharedSourceManager.match(/<XDrivePaginationControls\b/g) || []).length, 3, 'Source history/failure/collection pagination must stay shared')
+  assert.equal((sharedSourceManager.match(/<XDrivePaginationControls\b/g) || []).length, 4, 'Source history/failure/skip/collection pagination must stay shared')
   assert.ok(sharedSourceManager.includes('SOURCE_HISTORY_PAGE_SIZE = 20'), 'Source history page-size contract is missing')
   assert.ok(sharedSourceManager.includes('SOURCE_RUN_FAILURE_PAGE_SIZE = 20'), 'Source failure page-size contract is missing')
   assert.ok(sharedSourceManager.includes('SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50'), 'Source collection page-size contract is missing')

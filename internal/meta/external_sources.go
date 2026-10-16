@@ -121,6 +121,7 @@ type SyncRun struct {
 	ID                     string     `gorm:"size:36;primaryKey"`
 	SourceID               uint64     `gorm:"not null;index;index:idx_xd_sync_runs_source_started"`
 	RunNumber              int64      `gorm:"not null;default:0"`
+	StatsVersion           int64      `gorm:"not null;default:0"` // zero = pre-accounting-release run, no verified reuse provenance
 	SourceRevision         uint64     `gorm:"not null;default:1"`
 	SyncMode               string     `gorm:"size:16;not null;default:backup"`
 	TargetNodeID           *uint64    `gorm:"index"`
@@ -158,6 +159,12 @@ type SyncRun struct {
 	DeletedItems           int64      `gorm:"not null;default:0"`
 	TransferredItems       int64      `gorm:"not null;default:0"`
 	TransferredBytes       int64      `gorm:"not null;default:0"`
+	ConfirmedMovedItems    int64      `gorm:"not null;default:0"`
+	CASReusedItems         int64      `gorm:"not null;default:0"`
+	CASReusedBytes         int64      `gorm:"not null;default:0"`
+	ResumeReusedItems      int64      `gorm:"not null;default:0"`
+	ResumeReusedBytes      int64      `gorm:"not null;default:0"`
+	UnprocessedItems       *int64     `gorm:"default:null"` // observed pending items at cancelled terminal boundary, not unscanned inventory
 	FailedItems            int64      `gorm:"not null;default:0"`
 	ActiveTransferPath     string     `gorm:"size:2048"`
 	ActiveTransferBytes    int64      `gorm:"not null;default:0"`
@@ -187,6 +194,7 @@ type SourceRunFailure struct {
 	Path         string    `gorm:"size:2048"`
 	Size         int64     `gorm:"not null;default:0"`
 	Error        string    `gorm:"type:text;not null"`
+	Category     string    `gorm:"size:24;not null;default:other;index"`
 	FailedAt     time.Time `gorm:"not null;index"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -197,6 +205,25 @@ type SourceRunFailure struct {
 }
 
 func (SourceRunFailure) TableName() string { return "xd_source_run_failures" }
+
+// SourceRunSkip stores immutable, owner-scoped observed decisions for a historical
+// run. Ignored remote entries need not exist in SourceItem, so external_id is the
+// stable per-run key instead of a nullable SourceItem foreign key.
+type SourceRunSkip struct {
+	ID         uint64    `gorm:"primaryKey"`
+	RunID      string    `gorm:"size:36;not null;index;uniqueIndex:idx_xd_source_run_skips_run_external"`
+	SourceID   uint64    `gorm:"not null;index"`
+	ExternalID string    `gorm:"size:512;not null;uniqueIndex:idx_xd_source_run_skips_run_external"`
+	Kind       string    `gorm:"size:16;not null"`
+	Path       string    `gorm:"size:2048;not null"`
+	Size       int64     `gorm:"not null;default:0"`
+	Reason     string    `gorm:"size:24;not null"`
+	SkippedAt  time.Time `gorm:"not null;index"`
+	Run        SyncRun   `gorm:"foreignKey:RunID;references:ID;constraint:OnDelete:CASCADE;"`
+	Source     Source    `gorm:"foreignKey:SourceID;references:ID;constraint:OnDelete:CASCADE;"`
+}
+
+func (SourceRunSkip) TableName() string { return "xd_source_run_skips" }
 
 func ValidSourceName(name string) bool {
 	if name == "" || name != strings.TrimSpace(name) || len([]byte(name)) > 128 || !utf8.ValidString(name) {

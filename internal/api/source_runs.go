@@ -55,18 +55,20 @@ type observeSourceRunResponse struct {
 }
 
 type sourceCommitDTO struct {
-	ExternalID       string     `json:"external_id"`
-	Action           string     `json:"action"`
-	NodeID           uint64     `json:"node_id"`
-	NodeRevision     uint64     `json:"node_revision"`
-	Kind             string     `json:"kind"`
-	Path             string     `json:"path"`
-	Size             int64      `json:"size"`
-	ModifiedAt       *time.Time `json:"modified_at,omitempty"`
-	SHA256           string     `json:"sha256,omitempty"`
-	RemoteRevision   string     `json:"remote_revision,omitempty"`
-	Transferred      bool       `json:"transferred,omitempty"`
-	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+	ExternalID        string     `json:"external_id"`
+	Action            string     `json:"action"`
+	NodeID            uint64     `json:"node_id"`
+	NodeRevision      uint64     `json:"node_revision"`
+	Kind              string     `json:"kind"`
+	Path              string     `json:"path"`
+	Size              int64      `json:"size"`
+	ModifiedAt        *time.Time `json:"modified_at,omitempty"`
+	SHA256            string     `json:"sha256,omitempty"`
+	RemoteRevision    string     `json:"remote_revision,omitempty"`
+	Transferred       bool       `json:"transferred,omitempty"`
+	TransferredBytes  int64      `json:"transferred_bytes,omitempty"`
+	CASReusedBytes    int64      `json:"cas_reused_bytes,omitempty"`
+	ResumeReusedBytes int64      `json:"resume_reused_bytes,omitempty"`
 }
 
 type commitSourceRunRequest struct {
@@ -76,6 +78,7 @@ type commitSourceRunRequest struct {
 type sourceFailureDTO struct {
 	ExternalID string `json:"external_id"`
 	Error      string `json:"error"`
+	Category   string `json:"category,omitempty"`
 }
 
 type failSourceRunRequest struct {
@@ -281,7 +284,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 		}
 		targetID := target.ID
 		out = meta.SyncRun{
-			ID: runID, SourceID: source.ID, RunNumber: maxRunNumber + 1, SourceRevision: source.Revision,
+			ID: runID, SourceID: source.ID, RunNumber: maxRunNumber + 1, StatsVersion: 1, SourceRevision: source.Revision,
 			SyncMode: source.SyncMode, TargetNodeID: &targetID, IgnoreRules: source.IgnoreRules,
 			Mode: source.RunMode, Trigger: req.Trigger, Status: meta.SyncRunStatusRunning,
 			CheckpointBefore: source.Checkpoint, StartedAt: now,
@@ -401,6 +404,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 		}
 
 		plans = make([]sourcePlanDTO, 0, len(observations))
+		skips := make([]meta.SourceRunSkip, 0, len(observations))
 		resolvedItemIDs := make(map[uint64]string)
 		for _, observation := range observations {
 			item := observation.item
@@ -452,6 +456,17 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 					}
 				}
 			}
+
+			if plan.Action == sourcepkg.ActionIgnore || plan.Action == sourcepkg.ActionUnchanged {
+				reason := "unchanged"
+				if plan.Action == sourcepkg.ActionIgnore {
+					reason = "ignore_rule"
+				}
+				skips = append(skips, meta.SourceRunSkip{
+					RunID: runID, SourceID: sourceID, ExternalID: item.ExternalID,
+					Kind: item.Kind, Path: item.Path, Size: item.Size, Reason: reason, SkippedAt: now,
+				})
+			}
 			if err := persistObservedSourceItem(tx, sourceID, runID, now, current, exists, plan, nodeRevision); err != nil {
 				return err
 			}
@@ -470,6 +485,14 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 				}
 			}
 			plans = append(plans, dto)
+		}
+		if len(skips) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "run_id"}, {Name: "external_id"}},
+				DoNothing: true,
+			}).CreateInBatches(&skips, sourceObservationBatchLimit).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
 	})
@@ -514,7 +537,10 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			return
 		}
 		if raw.NodeID == 0 || raw.NodeRevision == 0 || raw.TransferredBytes < 0 ||
-			(!raw.Transferred && raw.TransferredBytes != 0) {
+			raw.CASReusedBytes < 0 || raw.ResumeReusedBytes < 0 ||
+			(!raw.Transferred && raw.TransferredBytes != 0) ||
+			raw.CASReusedBytes > itemSizeBound(raw.Size) ||
+			raw.ResumeReusedBytes > itemSizeBound(raw.Size)-raw.CASReusedBytes {
 			fail(c, http.StatusBadRequest, "invalid source execution result")
 			return
 		}
@@ -526,7 +552,16 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if item.Kind == meta.SourceItemKindDirectory && raw.Transferred {
+		if item.Kind == meta.SourceItemKindFile && raw.TransferredBytes > item.Size-raw.CASReusedBytes-raw.ResumeReusedBytes {
+			fail(c, http.StatusBadRequest, "confirmed transferred and reused bytes exceed file size")
+			return
+		}
+		if sourcepkg.PlanAction(raw.Action) == sourcepkg.ActionMove &&
+			(raw.Transferred || raw.CASReusedBytes != 0 || raw.ResumeReusedBytes != 0) {
+			fail(c, http.StatusBadRequest, "move-only commit cannot claim content transfer or reuse")
+			return
+		}
+		if item.Kind == meta.SourceItemKindDirectory && (raw.Transferred || raw.CASReusedBytes != 0 || raw.ResumeReusedBytes != 0) {
 			fail(c, http.StatusBadRequest, "directories cannot report transferred bytes")
 			return
 		}
@@ -578,6 +613,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		}
 
 		var created, updated, processedTransferItems, processedTransferBytes, transferredItems, transferredBytes int64
+		var confirmedMovedItems, casReusedItems, casReusedBytes, resumeReusedItems, resumeReusedBytes int64
 		var syncedFileItems, syncedDirectoryItems, syncedBytes int64
 		for _, commit := range commits {
 			item := commit.item
@@ -667,6 +703,17 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 				return err
 			}
 
+			if action == sourcepkg.ActionMove || action == sourcepkg.ActionMoveUpdate {
+				confirmedMovedItems++
+			}
+			if raw.CASReusedBytes > 0 {
+				casReusedItems++
+				casReusedBytes += raw.CASReusedBytes
+			}
+			if raw.ResumeReusedBytes > 0 {
+				resumeReusedItems++
+				resumeReusedBytes += raw.ResumeReusedBytes
+			}
 			if action == sourcepkg.ActionCreate {
 				created++
 			} else {
@@ -699,6 +746,11 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			"synced_bytes":             gorm.Expr("synced_bytes + ?", syncedBytes),
 			"transferred_items":        gorm.Expr("transferred_items + ?", transferredItems),
 			"transferred_bytes":        gorm.Expr("transferred_bytes + ?", transferredBytes),
+			"confirmed_moved_items":    gorm.Expr("confirmed_moved_items + ?", confirmedMovedItems),
+			"cas_reused_items":         gorm.Expr("cas_reused_items + ?", casReusedItems),
+			"cas_reused_bytes":         gorm.Expr("cas_reused_bytes + ?", casReusedBytes),
+			"resume_reused_items":      gorm.Expr("resume_reused_items + ?", resumeReusedItems),
+			"resume_reused_bytes":      gorm.Expr("resume_reused_bytes + ?", resumeReusedBytes),
 			"active_transfer_path":     "",
 			"active_transfer_bytes":    0,
 			"active_transfer_total":    0,
@@ -738,6 +790,11 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 	for _, raw := range req.Items {
 		raw.ExternalID = strings.TrimSpace(raw.ExternalID)
 		raw.Error = strings.TrimSpace(raw.Error)
+		raw.Category = strings.TrimSpace(raw.Category)
+		if raw.Category != "" && !validSourceFailureCategory(raw.Category) {
+			fail(c, http.StatusBadRequest, "invalid source failure category")
+			return
+		}
 		if raw.ExternalID == "" || len([]byte(raw.ExternalID)) > 512 {
 			fail(c, http.StatusBadRequest, "external_id is required and must be at most 512 bytes")
 			return
@@ -793,7 +850,7 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			history := meta.SourceRunFailure{
 				RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
 				ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
-				Error: failure.Error, FailedAt: now,
+				Error: failure.Error, Category: sourceFailureCategoryOrClassify(failure.Category, failure.Error), FailedAt: now,
 			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
@@ -1177,7 +1234,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 				history := meta.SourceRunFailure{
 					RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
 					ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
-					Error: errorText, FailedAt: now,
+					Error: errorText, Category: classifySourceFailureMessage(errorText), FailedAt: now,
 				}
 				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
@@ -1218,6 +1275,18 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 			}
 		}
 
+		// Cancelled runs have no complete inventory. A narrow pending count
+		// is exact only for items already observed in this run; unknown remote
+		// inventory must never be inferred from scanned/planned totals.
+		if status == meta.SyncRunStatusCancelled && run.Mode == meta.SourceRunModeSync {
+			var pending int64
+			if err := tx.Model(&meta.SourceItem{}).
+				Where("source_id = ? AND last_seen_run_id = ? AND state = ?", sourceID, runID, meta.SourceItemStatePending).
+				Count(&pending).Error; err != nil {
+				return err
+			}
+			run.UnprocessedItems = &pending
+		}
 		summary.ApplyToSyncRun(&run)
 		run.DeletedItems = deletedItems
 		finished := now
@@ -1393,6 +1462,13 @@ func sourceNodePathWithinTarget(tx *gorm.DB, ownerID, nodeID, targetID uint64) (
 		current = *node.ParentID
 	}
 	return "", false, fmt.Errorf("source target ancestry exceeds limit")
+}
+
+func itemSizeBound(size int64) int64 {
+	if size < 0 {
+		return 0
+	}
+	return size
 }
 
 func validateSourceSummary(summary sourcepkg.Summary) error {

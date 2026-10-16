@@ -93,7 +93,7 @@ func TestSupersededDurableSourceRunCannotRearmRetryAfterNewerSuccess(t *testing.
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{},
-		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

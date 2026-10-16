@@ -1,5 +1,5 @@
 import { Box, Chip, Stack, Typography } from '@mui/material'
-import { formatExternalSourceTime } from '../external-sources'
+import { externalSourceFailureCategoryLabel, formatExternalSourceTime } from '../external-sources'
 import { XDriveStatusAlert } from './StatusAlert'
 
 export function XDriveSourceFailureItem({
@@ -8,6 +8,7 @@ export function XDriveSourceFailureItem({
   sizeLabel,
   failedAt,
   error,
+  category,
   compact = false,
 }: {
   title: string
@@ -15,6 +16,7 @@ export function XDriveSourceFailureItem({
   sizeLabel: string
   failedAt?: string
   error?: string
+  category?: string
   compact?: boolean
 }) {
   return (
@@ -28,7 +30,10 @@ export function XDriveSourceFailureItem({
         <Typography variant="body2" sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>
           {title}
         </Typography>
-        <Chip size="small" label={sizeLabel} />
+        <Stack direction="row" spacing={0.5} alignItems="center">
+          {category ? <Chip size="small" color="warning" variant="outlined" label={externalSourceFailureCategoryLabel(category)} /> : null}
+          <Chip size="small" label={sizeLabel} />
+        </Stack>
       </Stack>
       <Typography
         variant="caption"

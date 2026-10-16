@@ -13,6 +13,7 @@ import type {
   ExternalSourceOverview,
   ExternalSourceRun,
   ExternalSourceRunFailure,
+  ExternalSourceRunSkip,
   UpdateExternalSourceInput,
 } from '../external-sources'
 import {
@@ -55,6 +56,12 @@ export interface XDriveSourceManagerPort {
     limit?: number,
     offset?: number,
   ) => Promise<XDriveSourceManagerTransportResult<ExternalSourceRunFailure[]>>
+  sourceRunSkips: (
+    sourceID: number,
+    runID: string,
+    limit?: number,
+    offset?: number,
+  ) => Promise<XDriveSourceManagerTransportResult<ExternalSourceRunSkip[]>>
   cancelSourceRun: (
     sourceID: number,
     runID: string,
@@ -169,6 +176,9 @@ export function createXDriveSourceManagerAdapter(
     ),
     sourceRunFailures: (sourceID, runID, limit, offset) => resolveXDriveSourceManagerTransport(
       port.sourceRunFailures(sourceID, runID, limit, offset),
+    ),
+    sourceRunSkips: (sourceID, runID, limit, offset) => resolveXDriveSourceManagerTransport(
+      port.sourceRunSkips(sourceID, runID, limit, offset),
     ),
     cancelSourceRun: (sourceID, runID) => resolveXDriveSourceManagerTransport(
       port.cancelSourceRun(sourceID, runID),

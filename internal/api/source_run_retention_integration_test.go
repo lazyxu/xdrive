@@ -45,7 +45,7 @@ func TestSourceRunFailureRetentionKeepsRunSummaries(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{},
-		&meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -107,6 +107,13 @@ func TestSourceRunFailureRetentionKeepsRunSummaries(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if err := db.Create(&[]meta.SourceRunSkip{
+		{RunID: oldRun.ID, SourceID: source.ID, ExternalID: "old", Kind: meta.SourceItemKindFile, Path: "old.jpg", Size: 1, Reason: "unchanged", SkippedAt: now.Add(-72 * time.Hour)},
+		{RunID: recentRun.ID, SourceID: source.ID, ExternalID: "recent", Kind: meta.SourceItemKindFile, Path: "recent.jpg", Size: 1, Reason: "ignore_rule", SkippedAt: now.Add(-time.Hour)},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
 	server := &Server{DB: db, SourceRunFailureRetention: 24 * time.Hour}
 	if err := server.cleanupSourceRunFailureHistory(context.Background()); err != nil {
 		t.Fatal(err)
@@ -125,6 +132,13 @@ func TestSourceRunFailureRetentionKeepsRunSummaries(t *testing.T) {
 	}
 	if retained.RunID != recentRun.ID {
 		t.Fatalf("retained run=%s want=%s", retained.RunID, recentRun.ID)
+	}
+	var skips []meta.SourceRunSkip
+	if err := db.Find(&skips).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(skips) != 1 || skips[0].RunID != recentRun.ID {
+		t.Fatalf("skip retention kept expired or removed recent snapshot: %+v", skips)
 	}
 	var runs int64
 	if err := db.Model(&meta.SyncRun{}).Count(&runs).Error; err != nil {

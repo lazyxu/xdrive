@@ -22,10 +22,12 @@ type UploadProgress func(done, total int64)
 type UploadStreamOpen func(context.Context, int64) (io.ReadCloser, error)
 
 type UploadResult struct {
-	Node             Node
-	SHA256           string
-	TransferredBytes int64
-	Skipped          bool
+	Node              Node
+	SHA256            string
+	TransferredBytes  int64
+	CASReusedBytes    int64 // server-verified staged chunks obtained from existing CAS
+	ResumeReusedBytes int64 // accepted chunks from an earlier incomplete upload
+	Skipped           bool
 }
 
 type UploadConflictPolicy string
@@ -85,6 +87,7 @@ type UploadSession struct {
 	ResumeKey        string               `json:"resume_key,omitempty"`
 	ExpectedRevision uint64               `json:"expected_revision,omitempty"`
 	Status           string               `json:"status"`
+	InstantCAS       bool                 `json:"instant_cas_reused,omitempty"`
 	ExpiresAt        time.Time            `json:"expires_at"`
 	Received         []UploadPart         `json:"received_chunks"`
 	Result           *Node                `json:"result,omitempty"`
@@ -302,6 +305,9 @@ func (c *Client) uploadStreamResult(
 	if session.Status == "finalized" && session.Result != nil {
 		result.Node = *session.Result
 		result.SHA256 = session.Result.SHA256
+		if session.InstantCAS {
+			result.CASReusedBytes = session.Size
+		}
 		if progress != nil {
 			progress(init.Size, init.Size)
 		}
@@ -324,6 +330,8 @@ func (c *Client) uploadStreamResult(
 		received[part.Index] = part
 		done += part.Size
 	}
+
+	casReusedBytes, resumeReusedBytes := confirmedUploadReuseBytes(received)
 	if progress != nil {
 		progress(done, init.Size)
 	}
@@ -393,6 +401,8 @@ func (c *Client) uploadStreamResult(
 	result.Node = *final.Result
 	result.SHA256 = final.Result.SHA256
 	result.TransferredBytes = transferredBytes
+	result.CASReusedBytes = casReusedBytes
+	result.ResumeReusedBytes = resumeReusedBytes
 	if progress != nil {
 		progress(init.Size, init.Size)
 	}
@@ -450,6 +460,9 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 			progress(init.Size, init.Size)
 		}
 		result.Node = *session.Result
+		if session.InstantCAS {
+			result.CASReusedBytes = session.Size
+		}
 		return result, nil
 	}
 	if session.Status == "skipped" && session.Result != nil {
@@ -472,6 +485,7 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 		received[part.Index] = part
 		done += part.Size
 	}
+	casReusedBytes, resumeReusedBytes := confirmedUploadReuseBytes(received)
 	if progress != nil {
 		progress(done, init.Size)
 	}
@@ -531,7 +545,22 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 	}
 	result.Node = *final.Result
 	result.TransferredBytes = transferredBytes
+	result.CASReusedBytes = casReusedBytes
+	result.ResumeReusedBytes = resumeReusedBytes
 	return result, nil
+}
+
+// Only accepted and finalized upload parts count as reuse. A finalized session
+// returned immediately without part evidence is not guessed to be a CAS hit.
+func confirmedUploadReuseBytes(received map[int]UploadPart) (cas, resumed int64) {
+	for _, part := range received {
+		if part.Reused {
+			cas += part.Size
+		} else {
+			resumed += part.Size
+		}
+	}
+	return cas, resumed
 }
 
 func uploadConflictResumeKey(

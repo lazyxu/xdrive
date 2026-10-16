@@ -98,7 +98,7 @@ func TestRunnerSyncsArbitraryFilesAndPreservesEmptyDirectories(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceItemMetadata{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceItemMetadata{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}, &meta.SourceCredential{},
 		&meta.SourceConnectorConfig{},
 	); err != nil {
 		t.Fatal(err)

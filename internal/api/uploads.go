@@ -95,6 +95,7 @@ type uploadSessionDTO struct {
 	ResumeKey          string          `json:"resume_key,omitempty"`
 	ExpectedRevision   uint64          `json:"expected_revision,omitempty"`
 	Status             string          `json:"status"`
+	InstantCAS         bool            `json:"instant_cas_reused,omitempty"`
 	QuotaReservedBytes int64           `json:"quota_reserved_bytes"`
 	ExpiresAt          time.Time       `json:"expires_at"`
 	Received           []uploadPartDTO `json:"received_chunks"`
@@ -1133,7 +1134,8 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 		Size: session.TotalSize, ChunkSize: session.ChunkSize, ChunkCount: session.ChunkCount,
 		SHA256: session.SHA256, MD5: session.ExpectedMD5,
 		ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
-		Status: session.Status, QuotaReservedBytes: session.QuotaReservedBytes, ExpiresAt: session.ExpiresAt,
+		Status: session.Status, InstantCAS: session.InstantCAS,
+		QuotaReservedBytes: session.QuotaReservedBytes, ExpiresAt: session.ExpiresAt,
 		Received: make([]uploadPartDTO, 0, len(parts)),
 	}
 	for _, part := range parts {
