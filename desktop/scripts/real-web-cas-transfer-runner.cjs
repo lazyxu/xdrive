@@ -23,6 +23,9 @@ const maxDirectionMs = sizeGiB === 4 ? 360000 : 240000
 const fullPwaReadback = process.env.XD_PWA_FULL_OPFS_READBACK === '1'
 const highEntropyIncompressible = process.env.XD_REAL_CAS_INCOMPRESSIBLE_PERF === '1'
 const mobileWebViewport = process.env.XD_REAL_WEB_CAS_MOBILE_VIEWPORT === '1'
+const casA02 = process.env.XD_CAS_A02_UPLOAD_IO_PERF === '1'
+if(casA02) assert(highEntropyIncompressible && sizeGiB===4 && !mobileWebViewport && !fullPwaReadback,
+  'CAS-A02 requires original real 4GiB high entropy Wide Web transfer, not PWA or sparse-zero')
 assert(!mobileWebViewport || (highEntropyIncompressible && sizeGiB === 4 && !fullPwaReadback),
   'P051 Mobile Web must preserve real 4GiB high-entropy CAS and full OPFS parity')
 assert(!(fullPwaReadback && highEntropyIncompressible),
@@ -108,6 +111,10 @@ async function fixture(sample, dir) {
     },240000,'fresh PostgreSQL17 and physical local CAS fixture')
     assert(/^http:\/\/127\.0\.0\.1:\d+$/.test(ready.url))
     assert.equal(ready.size_bytes,sizes.bytes)
+    if(casA02) {
+      assert(path.isAbsolute(ready.cas_root)&&fs.existsSync(ready.cas_root),'CAS-A02 private fixture CAS root missing')
+      assert(Number.isSafeInteger(ready.server_pid)&&ready.server_pid===proc.child.pid,'actual Go Server PID must match')
+    }
     return {proc, ready}
   } catch(error) {
     await stop(proc,1000)
@@ -136,6 +143,92 @@ async function chromium(sample,mode,base) {
     await stop(proc)
   }
 }
+
+// CAS-A02 test-only physical bytes and Linux Go process IO; no runtime API.
+function casA02GoIO(pid) {
+  const lines=fs.readFileSync('/proc/'+pid+'/io','utf8').trim().split('\n')
+  const values=Object.fromEntries(lines.map(s=>{
+    const i=s.indexOf(':')
+    return [s.slice(0,i),Number(s.slice(i+1).trim())]
+  }))
+  assert(Number.isSafeInteger(values.write_bytes) && Number.isSafeInteger(values.read_bytes),
+    'Linux /proc/PID/io for actual Go Server missing')
+  return {writeBytes:values.write_bytes, readBytes:values.read_bytes,
+    writeChars:values.wchar, readChars:values.rchar}
+}
+function casA02PhysicalDisk(root) {
+  assert(path.isAbsolute(root), 'real private CAS root expected')
+  const data={physicalBytes:0,stageBytes:0,assembledBytes:0,canonicalBytes:0,
+    casTemporaryBytes:0,regularFileCount:0,stageFileCount:0,canonicalFileCount:0}
+  const stack=[{dir:root,rel:''}]
+  while(stack.length) {
+    const {dir,rel}=stack.pop()
+    let entries
+    try {entries=fs.readdirSync(dir,{withFileTypes:true})}
+    catch(e) {if(e.code==='ENOENT')continue;throw e}
+    for(const ent of entries){
+      if(ent.isSymbolicLink())throw Error('CAS-A02 fixture storage contains symlink')
+      const full=path.join(dir,ent.name)
+      const key=rel ? rel+'/'+ent.name : ent.name
+      if(ent.isDirectory()){stack.push({dir:full,rel:key});continue}
+      let stat
+      try {stat=fs.lstatSync(full)}
+      catch(e) {if(e.code==='ENOENT')continue;throw e}
+      if(!stat.isFile()||key.startsWith('.xdrive-cas-lifecycle-locks/')||
+        key==='.xdrive-temp-lifecycle.lock')continue
+      assert(Number.isSafeInteger(stat.blocks),'physical st_blocks required')
+      const bytes=stat.blocks*512
+      data.regularFileCount++
+      data.physicalBytes+=bytes
+      if(key.startsWith('.xdrive-uploads/')){
+        data.stageBytes+=bytes
+        data.stageFileCount++
+      }else if(key.startsWith('.xdrive-blobs/sha256/') &&
+        ent.name.startsWith('.xdrive-upload-')){
+        data.casTemporaryBytes+=bytes
+      }else if(key.startsWith('.xdrive-blobs/sha256/')){
+        data.canonicalBytes+=bytes
+        data.canonicalFileCount++
+      }else{
+        data.assembledBytes+=bytes
+      }
+    }
+  }
+  return data
+}
+function casA02Observe(root,pid) {
+  const before=casA02GoIO(pid)
+  const start=casA02PhysicalDisk(root)
+  let peak=start,last=start,n=0,error=null,done=false,result
+  const take=()=>{
+    try {
+      last=casA02PhysicalDisk(root)
+      n++
+      if(last.physicalBytes>peak.physicalBytes)peak=last
+    }catch(e){error=e}
+  }
+  const timer=setInterval(take,250)
+  return {stop(){
+    if(done)return result
+    done=true
+    clearInterval(timer)
+    take()
+    if(error)throw error
+    const after=casA02GoIO(pid)
+    const writeBytes=after.writeBytes-before.writeBytes
+    const readBytes=after.readBytes-before.readBytes
+    assert(writeBytes>=0 && readBytes>=0,'CAS-A02 process IO cannot decrease')
+    result={sourceBytes:sizes.bytes,samples:n,sampleEveryMs:250,
+      originalDisk:start,peakDisk:peak,afterUploadDisk:last,
+      goIOBefore:before,goIOAfter:after,goServerWriteBytes:writeBytes,
+      goServerReadBytes:readBytes,stageBytesAfterFinalize:last.stageBytes,
+      peakDiskAmplification:peak.physicalBytes/sizes.bytes,
+      kernelWriteAmplification:writeBytes/sizes.bytes,
+      scope:'new physical upload only, excluding Go test boot, PostgreSQL, browser seed, download/OPFS'}
+    return result
+  }}
+}
+
 async function sampleTrial(index,tmp) {
   const label='sample-'+index
   const f=await fixture(label,tmp)
@@ -151,12 +244,15 @@ async function sampleTrial(index,tmp) {
   const rows=[]
   let final=null
   let failed=false
+  let a02Probe=null,a02IO=null
   try {
     const before=await stats(f.ready.url)
     assert.equal(before.put_count,0)
     assert.equal(before.download_get_count,0)
     for(const mode of modes){
+      if(casA02 && mode==='upload')a02Probe=casA02Observe(f.ready.cas_root,f.proc.child.pid)
       const result=await chromium(label,mode,f.ready.url)
+      if(casA02 && mode==='upload')a02IO=a02Probe.stop()
       assert.equal(result.sizeBytes,sizes.bytes)
       assert.equal(result.realServerCAS,true)
       assert.equal(result.scenario,mode)
@@ -226,12 +322,14 @@ async function sampleTrial(index,tmp) {
       serverRssPeakBytes:peakRss, serverRssPeakDeltaBytes:growth,
       serverCpuMs,
       fixtureSizeBytes:sizes.bytes,
+      ...(casA02?{casA02IO:a02IO}:{}),
     }
   } catch(error) {
     failed=true
     throw error
   }finally{
     clearInterval(poll)
+    if(a02Probe)a02Probe.stop()
     await fetch(f.ready.url + '/__perf/stop',{method:'POST'}).catch(()=>{})
     const exit=await stop(f.proc,30000)
     if(!failed) assert.equal(exit?.code,0,'native real Server fixture Go test did not validate exit')
@@ -259,6 +357,7 @@ async function main() {
     const result={
       name:`${mobileWebViewport?'real-mobile-web-390px':'real-web'}-xdriveapi-postgres17-local-cas-${sizeGiB}gib-${highEntropyIncompressible?'aes256ctr-high-entropy':'sparse-zero'}-upload-download`,
       mobileWebViewport,
+      casA02PhysicalIO:casA02,
       platformMode:mobileWebViewport?'mobile-web-chromium-390px':'wide-web-chromium',
       highEntropyIncompressible,
       ...(fullPwaReadback ? { pwaFullOPFSReadback: true, downloadFullVerifiedBytes: sizes.bytes } : {}),
@@ -274,6 +373,24 @@ async function main() {
       ])),
       maxNativeGoServerRssPeakDeltaBytes:Math.max(...rows.map(x=>x.serverRssPeakDeltaBytes)),
       nativeGoServerCpuMsP50:median(rows.map(x=>x.serverCpuMs)),
+      ...(casA02?{casA02Summary:{
+        n:rows.length,
+        sourceBytesEach:sizes.bytes,
+        peakPhysicalAllocatedP50Bytes:median(rows.map(x=>x.casA02IO.peakDisk.physicalBytes)),
+        peakPhysicalAmplificationP50:median(rows.map(x=>x.casA02IO.peakDiskAmplification)),
+        kernelGoWriteAmplificationP50:median(rows.map(x=>x.casA02IO.kernelWriteAmplification)),
+        minObservedSamples:Math.min(...rows.map(x=>x.casA02IO.samples)),
+        budgets:{peakAllocatedAmplificationMax:2.35,kernelWriteAmplificationMax:2.5,
+          stagingBytesAfterFinalize:0,eachFinalCASMinAllocationRatio:0.98},
+        passed:rows.length===3 && rows.every(x=>{
+          const a=x.casA02IO
+          return a&&a.samples>=2&&a.peakDisk.physicalBytes>=sizes.bytes&&
+            a.peakDiskAmplification<=2.35&&a.kernelWriteAmplification<=2.5&&
+            a.afterUploadDisk.canonicalBytes>=sizes.bytes*.98&&
+            a.stageBytesAfterFinalize===0&&
+            x.upload.uploadSeedSHA256===x.nativeServer.file_sha256
+        })
+      }}:{}),
       each:rows,
       frozenBudgets:{
         individualUploadMs:maxDirectionMs,individualDownloadMs:maxDirectionMs,
@@ -291,7 +408,9 @@ async function main() {
           : `Real Chromium Web XDriveApi upload/download + OPFS, production authenticated Gin/PG17/physical Local CAS; ${sizeGiB}GiB sparse zeros on Linux localhost, NOT real Desktop Agent IPC/WAN/incompressible media, no durable Task Center abort; OPFS uses three 1MiB readbacks not full JS download SHA.`,
     }
     fs.writeFileSync(path.join(out,'summary.json'),JSON.stringify(result,null,2)+'\n')
+    if(casA02)console.log('CAS_A02_ORIGINAL_4GIB_SPACE_IO_SUMMARY '+JSON.stringify(result.casA02Summary))
     console.log('REAL_WEB_CAS_SUMMARY '+JSON.stringify(result))
+    if(casA02)assert(result.casA02Summary.passed,'CAS-A02 exceeded frozen original CURRENT physical storage/write budgets (raw n3 preserved)')
   }finally{fs.rmSync(tmp,{recursive:true,force:true})}
 }
 main().catch(e=>{console.error('REAL_WEB_CAS_ERROR '+(e?.stack||String(e)));process.exitCode=1})
