@@ -1488,6 +1488,32 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [loadCleanup, loadFirstPage, loadMemories, loadSyncFolders, onSectionRouteChange])
 
+  // Only this compact Collections -> Trash card must wait for its owner
+  // first counted page before switching the visible app section. Direct
+  // section navigation (including wide Web/Desktop) retains its behavior.
+  const openTrashFromCollections = useCallback(() => {
+    void loadFirstPage(null, {}, null, null, 'trash', null, null, null, () => {
+      placesReturnPageRef.current = null
+      placeOpenedFromCollectionsRef.current = false
+      setLastOpenedPlaceID(null)
+      placePageRequestID.current += 1
+      setPlacesPagePending(false)
+      setPlacesPageError('')
+      syncFolderRequestID.current += 1
+      setCurrentFolderView(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      placesExpandedRef.current = false
+      setSection('trash')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+      onSectionRouteChange?.('trash')
+    })
+  }, [loadFirstPage, onSectionRouteChange])
+
   // Page replacement (not append) bounds the number of live location cards.
   // The photo-wall remains on the existing shared sparse VirtualCollection.
   const changePlacesPage = useCallback(async (nextOffset: number) => {
@@ -2887,7 +2913,14 @@ export function XDriveMediaGalleryPage({
         onSetAlbumCover={source.setAlbumCover ? setAlbumCover : undefined}
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
-        onSectionChange={(next) => { setMobileCollectionsOverview(false); selectSection(next) }}
+        onSectionChange={(next) => {
+          if (next === 'trash' && mobileGalleryViewport && mobileCollectionsOverview) {
+            openTrashFromCollections()
+            return
+          }
+          setMobileCollectionsOverview(false)
+          selectSection(next)
+        }}
         onOpenMediaType={openMediaType}
         onOpenAlbum={(album) => openAlbum(album, mobileCollectionsOverview)}
         onOpenSyncFolder={source.getSyncFolder
@@ -6362,7 +6395,9 @@ export function XDriveMediaGallery({
           pets={pets} places={places} syncFolders={syncFolders}
           loadThumbnail={loadThumbnail}
           onOpenSection={(next) => {
-            onMobileCollectionsOverviewChange?.(false)
+            // Trash is staged by the page controller until its first owner
+            // range is authorized. The child must not hide Collections early.
+            if (next !== 'trash') onMobileCollectionsOverviewChange?.(false)
             onSectionChange?.(next)
           }}
           onOpenAlbum={onOpenAlbum}
