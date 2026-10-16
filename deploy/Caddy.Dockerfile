@@ -30,5 +30,6 @@ LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
+COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
 COPY deploy/Caddyfile.common /etc/caddy/Caddyfile.common
 COPY web/dist/ /srv/

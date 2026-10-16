@@ -233,6 +233,51 @@ services:
     cpus: ${XD_CADDY_CPU_LIMIT:-0.50}
     pids_limit: ${XD_CADDY_PIDS_LIMIT:-128}
 
+  # Explicit operator-only recovery candidate. Disabled unless the operator
+  # enables the caddy-rescue profile; NEVER counts as verified safe ingress
+  # merely because this Compose definition exists.
+  # 127.0.0.1 on the host only; remote operators must use an SSH tunnel.
+  # Separate process, no AliDNS env, no main Caddy volumes and no Docker API.
+  caddy-rescue:
+    profiles: ["caddy-rescue"]
+    container_name: xdrive-caddy-rescue
+    # May be pinned to a separately known-good immutable image digest.
+    image: ${XD_CADDY_RESCUE_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
+    user: "${XD_SERVER_UID:-65532}:${XD_SERVER_GID:-65532}"
+    command:
+      - caddy
+      - run
+      - --config
+      - /etc/caddy/Caddyfile.rescue
+      - --adapter
+      - caddyfile
+    environment:
+      XDG_CONFIG_HOME: /tmp/caddy-rescue-config
+      XDG_DATA_HOME: /tmp/caddy-rescue-data
+    ports:
+      - "127.0.0.1:${XD_CADDY_RESCUE_PORT:-3080}:8080/tcp"
+    depends_on:
+      server:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/api/v1/readyz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${XD_CADDY_RESCUE_MEMORY_LIMIT:-128m}
+    cpus: ${XD_CADDY_RESCUE_CPU_LIMIT:-0.25}
+    pids_limit: ${XD_CADDY_RESCUE_PIDS_LIMIT:-64}
+
 networks:
   default:
   photo-intelligence:
