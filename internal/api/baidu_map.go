@@ -87,25 +87,46 @@ func (s *Server) mediaMapProviderStatus(c *gin.Context) {
 	})
 }
 
-func parseBaiduMapCenter(q url.Values) (lat, lng float64, zoom, width, height int, valid bool) {
-	var err error
-	lat, err = strconv.ParseFloat(strings.TrimSpace(q.Get("lat")), 64)
+// Only an exact five-parameter camera reaches the actual Server->Baidu API.
+// URL.Query().Get() silently picks a duplicated coordinate field and silently
+// ignores malformed escapes, so inspect raw pairs before any upstream/quotas.
+func parseBaiduMapCenter(rawQuery string) (lat, lng float64, zoom, width, height int, valid bool) {
+	if rawQuery == "" || len(rawQuery) > 256 {
+		return
+	}
+	q, err := url.ParseQuery(rawQuery)
+	if err != nil || len(q) != 5 {
+		return
+	}
+	for _, pair := range strings.Split(rawQuery, "&") {
+		key, rawValue, hasValue := strings.Cut(pair, "=")
+		if !hasValue || rawValue == "" || len(q[key]) != 1 ||
+			q[key][0] != rawValue {
+			return
+		}
+		switch key {
+		case "lat", "lng", "zoom", "width", "height":
+		default:
+			return
+		}
+	}
+	lat, err = strconv.ParseFloat(q.Get("lat"), 64)
 	if err != nil || math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -85 || lat > 85 {
 		return
 	}
-	lng, err = strconv.ParseFloat(strings.TrimSpace(q.Get("lng")), 64)
+	lng, err = strconv.ParseFloat(q.Get("lng"), 64)
 	if err != nil || math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
 		return
 	}
-	zoom, err = strconv.Atoi(strings.TrimSpace(q.Get("zoom")))
+	zoom, err = strconv.Atoi(q.Get("zoom"))
 	if err != nil || zoom < 3 || zoom > 18 {
 		return
 	}
-	width, err = strconv.Atoi(strings.TrimSpace(q.Get("width")))
+	width, err = strconv.Atoi(q.Get("width"))
 	if err != nil || width < 128 || width > 512 {
 		return
 	}
-	height, err = strconv.Atoi(strings.TrimSpace(q.Get("height")))
+	height, err = strconv.Atoi(q.Get("height"))
 	if err != nil || height < 128 || height > 512 {
 		return
 	}
@@ -126,7 +147,13 @@ func (s *Server) mediaBaiduStaticMap(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "baidu map is not configured")
 		return
 	}
-	lat, lng, zoom, width, height, valid := parseBaiduMapCenter(c.Request.URL.Query())
+	if c.Request.URL == nil || c.Request.URL.RawPath != "" ||
+		c.Request.URL.ForceQuery || c.Request.URL.Fragment != "" ||
+		c.Request.URL.RawFragment != "" {
+		fail(c, http.StatusBadRequest, "invalid map coordinates or size")
+		return
+	}
+	lat, lng, zoom, width, height, valid := parseBaiduMapCenter(c.Request.URL.RawQuery)
 	if !valid {
 		fail(c, http.StatusBadRequest, "invalid map coordinates or size")
 		return
