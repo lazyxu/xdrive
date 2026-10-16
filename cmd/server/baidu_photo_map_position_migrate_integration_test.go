@@ -60,11 +60,23 @@ func TestMigrateCreatesEmptyOwnerScopedBaiduPhotoMapIndex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if !db.Migrator().HasTable(&meta.BaiduPhotoMapConsent{}) {
+		t.Fatal("missing private per-asset Baidu map consent table")
+	}
+	for _, field := range []string{"AssetID", "OwnerID", "Revision", "AllowIndex", "AllowBaiduConversion", "ExpiresAt", "RevokedAt"} {
+		if !db.Migrator().HasColumn(&meta.BaiduPhotoMapConsent{}, field) {
+			t.Fatalf("missing privacy grant field %s", field)
+		}
+	}
+	var grants int64
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Count(&grants).Error; err != nil || grants != 0 {
+		t.Fatalf("migration cannot opt-in user photos: rows=%d err=%v", grants, err)
+	}
 	if !db.Migrator().HasTable(&meta.BaiduPhotoMapPosition{}) {
 		t.Fatal("missing official derived-coordinate table")
 	}
 	for _, name := range []string{"AssetID", "OwnerID", "PrimaryNodeID", "NodeRevision",
-		"MediaUpdatedAt", "SourceLatitude", "SourceLongitude",
+		"MediaUpdatedAt", "ConsentRevision", "SourceLatitude", "SourceLongitude",
 		"CoordinateSpace", "ProjectionVersion", "Latitude", "Longitude"} {
 		if !db.Migrator().HasColumn(&meta.BaiduPhotoMapPosition{}, name) {
 			t.Fatalf("missing source/version/privacy fence column %s", name)

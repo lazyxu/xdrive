@@ -96,7 +96,7 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	dbSQL.SetMaxOpenConns(2)
 	dbSQL.SetMaxIdleConns(0)
 	defer dbSQL.Close()
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.BaiduPhotoMapPosition{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{}, &meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
 		t.Fatal(err)
 	}
 	alice := meta.User{Username: "bd09-alice", PasswordHash: "unused", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -129,13 +129,21 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		if err := db.Create(&asset).Error; err != nil {
 			t.Fatal(err)
 		}
+		grant := meta.BaiduPhotoMapConsent{
+			AssetID: asset.ID, OwnerID: owner, Revision: 1,
+			AllowIndex: true, AllowBaiduConversion: true,
+			ExpiresAt: time.Now().UTC().Add(time.Hour),
+		}
+		if err := db.Create(&grant).Error; err != nil {
+			t.Fatal(err)
+		}
 		version, ok := meta.BaiduPhotoMapProjectionForSpace(space)
 		if !ok {
 			t.Fatal("unsupported fixture space")
 		}
 		position := meta.BaiduPhotoMapPosition{
 			AssetID: asset.ID, OwnerID: owner, PrimaryNodeID: node.ID,
-			NodeRevision: node.Revision, MediaUpdatedAt: metadata.UpdatedAt,
+			NodeRevision: node.Revision, MediaUpdatedAt: metadata.UpdatedAt, ConsentRevision: 1,
 			SourceLatitude: sourceLat, SourceLongitude: sourceLng,
 			Latitude: mapLat, Longitude: mapLng,
 			CoordinateSpace: space, ProjectionVersion: version,
@@ -185,6 +193,45 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	}
 	if err := db.Model(&meta.Node{}).Where("id = ?", bobNode.ID).Update("deleted_at", nil).Error; err != nil {
 		t.Fatal(err)
+	}
+
+	// Consent expiry invalidates existing coordinates even without an index
+	// cleanup; extending expiry allows only the SAME revision to return.
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", bobAsset.ID).
+		Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
+	if err != nil || peer.TotalCount != 0 {
+		t.Fatalf("expired grant remained visible: %+v %v", peer, err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", bobAsset.ID).
+		Updates(map[string]any{"expires_at": time.Now().UTC().Add(time.Hour), "revision": uint64(2)}).Error; err != nil {
+		t.Fatal(err)
+	}
+	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
+	if err != nil || peer.TotalCount != 0 {
+		t.Fatalf("stale position reappeared after grant revision: %+v %v", peer, err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", bobAsset.ID).
+		Update("consent_revision", 2).Error; err != nil {
+		t.Fatal(err)
+	}
+	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
+	if err != nil || peer.TotalCount != 1 {
+		t.Fatalf("current grant revision did not permit synthetic row: %+v %v", peer, err)
+	}
+	if err := revokeBaiduPhotoMapConsent(context.Background(), db, bob.ID, bobAsset.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	peer, err = queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
+	if err != nil || peer.TotalCount != 0 {
+		t.Fatalf("revoked position remained visible: %+v %v", peer, err)
+	}
+	var deletedPositions int64
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", bobAsset.ID).
+		Count(&deletedPositions).Error; err != nil || deletedPositions != 0 {
+		t.Fatalf("revocation did not purge derived GPS: %d %v", deletedPositions, err)
 	}
 
 	// Editing only the ORIGINAL GPS makes derived points invisible immediately.
