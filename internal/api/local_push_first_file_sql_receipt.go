@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"github.com/lazyxu/xdrive/internal/storage"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -34,9 +33,54 @@ type localPushFirstLeafSQLReceipt struct {
 // SQL receipt MUST NOT be presented as a complete or physically restorable
 // backup: actual canonical CAS bytes and native-file provenance are NOT
 // checked by this path.
+// readBoundLocalPushFirstLeafSQLReceipt retains the SQL-only historical
+// diagnostic contract. The optional CAS observer below is never used by
+// ordinary SQL receipt callers or the existing Web/Desktop/API routes.
 func (s *Server) readBoundLocalPushFirstLeafSQLReceipt(
 	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
 	stageID, relativeLeaf string,
+) (localPushFirstLeafSQLReceipt, error) {
+	return s.readBoundLocalPushFirstLeafReceiptWithCASInspector(
+		c, sourceID, revision, proof, stageID, relativeLeaf, nil,
+	)
+}
+
+const localPushFirstLeafPhysicalReceiptState = "sql_committed_cas_observed_native_unverified"
+
+// readBoundLocalPushFirstLeafPhysicalReceipt is a Server-only recovery
+// diagnostic that verifies current physical CAS bytes even after Stage
+// replacement. It does NOT certify native-source provenance, durable backup
+// success, restoration or SourceRun completion; it has NO public route.
+func (s *Server) readBoundLocalPushFirstLeafPhysicalReceipt(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID, relativeLeaf string,
+) (localPushFirstLeafSQLReceipt, error) {
+	if s == nil || s.Store == nil {
+		return localPushFirstLeafSQLReceipt{}, errLocalPushStageConflict
+	}
+	local, ok := s.Store.(*storage.Local)
+	if !ok || local == nil {
+		return localPushFirstLeafSQLReceipt{}, errLocalPushStageConflict
+	}
+	receipt, err := s.readBoundLocalPushFirstLeafReceiptWithCASInspector(
+		c, sourceID, revision, proof, stageID, relativeLeaf,
+		local.InspectPinnedLocalPushHistoricalCAS,
+	)
+	if err != nil {
+		return localPushFirstLeafSQLReceipt{}, err
+	}
+	receipt.State = localPushFirstLeafPhysicalReceiptState
+	return receipt, nil
+}
+
+// Inspectors are internal and test-injectable; only the production Local
+// Store can establish a physical CAS observation. A synthetic inspector
+// can never grant an upload action because this function is unexported,
+// read-only, and has no network/IPC/Renderer caller.
+func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID, relativeLeaf string,
+	inspect func(context.Context, string, int64, func(context.Context) error) (bool, error),
 ) (localPushFirstLeafSQLReceipt, error) {
 	var empty localPushFirstLeafSQLReceipt
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
@@ -54,11 +98,27 @@ func (s *Server) readBoundLocalPushFirstLeafSQLReceipt(
 	if err != nil {
 		return empty, err
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	deadline := 10 * time.Second
+	if inspect != nil {
+		deadline = localEvidencePhysicalCASDeadline
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), deadline)
 	defer cancel()
 
+	tx := s.DB.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return empty, tx.Error
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback().Error
+		}
+	}()
 	var result localPushFirstLeafSQLReceipt
-	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	var physicalCASKey string
+	var physicalCASSize int64
+	err = func() error {
 		// Preserve quota-writer ordering: User before owning Device/Source/
 		// Root, then canonical CAS hash, Blob, quarantine and receipt.
 		var owner meta.User
@@ -136,13 +196,14 @@ func (s *Server) readBoundLocalPushFirstLeafSQLReceipt(
 			return errLocalPushStageConflict
 		}
 		var file meta.File
-		if err := tx.Where("node_id = ? AND storage_key = ? AND sha256 = ? AND size = ?",
-			node.ID, casKey, intent.ContentSHA256, intent.TotalSize).
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+			Where("node_id = ? AND storage_key = ? AND sha256 = ? AND size = ?",
+				node.ID, casKey, intent.ContentSHA256, intent.TotalSize).
 			Take(&file).Error; err != nil {
 			return errLocalPushStageConflict
 		}
 		var item meta.SourceItem
-		if err := tx.Where(
+		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).Where(
 			"id = ? AND source_id = ? AND external_id = ? AND node_id = ? AND node_revision = ? AND path = ? AND size = ? AND sha256 = ? AND kind = ? AND state = ? AND last_synced_at IS NULL AND last_synced_run_id = ?",
 			*hold.CommittedSourceItemID, sourceID, pathKey, node.ID, node.Revision,
 			relativeLeaf, intent.TotalSize, intent.ContentSHA256,
@@ -154,10 +215,44 @@ func (s *Server) readBoundLocalPushFirstLeafSQLReceipt(
 			NodeID: node.ID, SourceItemID: item.ID,
 			State: localPushFirstLeafSQLReceiptState,
 		}
+		physicalCASKey = casKey
+		physicalCASSize = intent.TotalSize
 		return ctx.Err()
-	})
+	}()
 	if err != nil {
 		return empty, err
+	}
+	if inspect == nil {
+		if err := tx.Commit().Error; err != nil {
+			return empty, err
+		}
+		committed = true
+		return result, nil
+	}
+
+	// The SQL-only receipt has already been fully checked with the
+	// owning-device and CAS hash locks held. Only now admit the CAS OS
+	// shared shard with a try-lock. COMMIT the read-only SQL transaction
+	// while its actual inode is pinned; the observer hashes bytes a second
+	// time before returning success, and closes the pin on every path.
+	callbackRan := false
+	matched, err := inspect(ctx, physicalCASKey, physicalCASSize,
+		func(heldCtx context.Context) error {
+			if err := heldCtx.Err(); err != nil {
+				return err
+			}
+			callbackRan = true
+			if err := tx.Commit().Error; err != nil {
+				return err
+			}
+			committed = true
+			return nil
+		})
+	if err != nil {
+		return empty, err
+	}
+	if !matched || !callbackRan || !committed || ctx.Err() != nil {
+		return empty, errLocalPushStageConflict
 	}
 	return result, nil
 }
