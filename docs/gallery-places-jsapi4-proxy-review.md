@@ -221,3 +221,10 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 正向验证只得到 RuntimeAuthorized=false 的内部 MapSessionState，不能 IssueMapSession；真实 Router 的 Session POST 和 JSAPI Loader GET 仍为 404 且不泄密。隔离 PostgreSQL 回归覆盖配置旋转/关闭、JWT/Owner 隔离、禁用账户、会话撤销，以及绝对或编码别名路径、跨站 Origin、异常 Authorization/请求体和取消。此阶段依旧没有真实百度许可证据、全量经许可资源路径、私有浏览器与 upstream HAR、固定生产发布签名、并发字节配额或 iOS27/Android/Desktop 实机验收；reviewed child count=0，runtime_enabled=false 且 production resource gate 始终关闭。
 
 百度官方支持基于 serviceHost / Server-side BMAP_PROXY_URL 的同源 JSAPI4 代理（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcepts%2Fproxy），但不允许把官方开放式 Nginx 通配示例复制为 xDrive 的多用户授权代理。用户批准工程实施不等于百度为自托管、PWA、Electron 或商业场景授予许可。保留 iOS27 Photos 1:1、xDrive 52px App Frame、百度唯一 Provider 和同一 Web/Mobile Web/Desktop Gallery Range/VirtualCollection/Viewer。
+
+
+## A3b3a3d2a · 同源 Session 与 JSAPI 资源的请求歧义拒绝（2026-10-16）
+
+在既有非路由 `SessionBootstrapSameOrigin`、`SessionResourceRequest` 之前增加严格单 Header 字段判定：不得让 `Header.Get` 把同名重复行、混合大小写别名或空值静默转换为表面安全的 Origin、Fetch Metadata 或不含凭证请求；Proxy-Authorization 同样不能进入地图代理候选。资源 Query 使用 `url.ParseQuery` 显式检查错误；路径编码别名、强制空问号和 fragment 均拒绝。单元回归涵盖这些歧义，并保留正常旧浏览器无 Fetch Metadata 时的原本兼容语义。
+
+**明确 NO-GO**：以上只是传输预检，不是百度账号许可证据、实际 Browser AK 响应防泄漏、真实九组 HAR、完整许可子资源清单、运营者钉扎 Ed25519 信任根或实际 Browser/Server/Electron 地图授权。生产 `runtime_enabled=false`、零资源子规则、未配置生产签名根、无 Cookie mint/JSAPI Loader/代理路由不变。百度唯一 Provider、Server AK/Browser AK 分离只留 Server，Web/Mobile Web/Desktop 共享 Gallery Range/VirtualCollection/Viewer，52px 全屏 App Frame 和 iOS27「照片」1:1 验收不变。完成 A3b3a3d2 的真实合法外部证据及受控上线后，才进入 A4、B1、B2、B3、C1。

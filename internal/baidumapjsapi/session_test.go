@@ -164,3 +164,72 @@ func TestResourcePrecheckRejectsBearerExternalAndAK(t *testing.T) {
 		t.Fatal("accepted unrelated resource")
 	}
 }
+
+func TestMapBootstrapRejectsAmbiguousHeaders(t *testing.T) {
+	const origin = "https://gallery.example.invalid"
+	newRequest := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/api/v1/media/places/baidu-jsapi/session", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		return r
+	}
+	if !SessionBootstrapSameOrigin(newRequest(), origin) {
+		t.Fatal("valid same-origin bootstrap rejected")
+	}
+	for name, mutate := range map[string]func(*http.Request){
+		"duplicate origin":        func(r *http.Request) { r.Header.Add("Origin", origin) },
+		"mixed-case origin alias": func(r *http.Request) { r.Header["origin"] = []string{origin} },
+		"empty origin field":      func(r *http.Request) { r.Header["Origin"] = []string{""} },
+		"duplicate site":          func(r *http.Request) { r.Header.Add("Sec-Fetch-Site", "same-origin") },
+		"mixed-case site alias":   func(r *http.Request) { r.Header["sec-fetch-site"] = []string{"same-origin"} },
+		"empty site field":        func(r *http.Request) { r.Header["Sec-Fetch-Site"] = []string{""} },
+		"duplicate referer":       func(r *http.Request) { r.Header["Referer"] = []string{origin + "/", origin + "/"} },
+		"null referer":            func(r *http.Request) { r.Header.Set("Referer", "null") },
+		"empty referer":           func(r *http.Request) { r.Header.Set("Referer", "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRequest()
+			mutate(r)
+			if SessionBootstrapSameOrigin(r, origin) {
+				t.Fatal("ambiguous map bootstrap header was accepted")
+			}
+		})
+	}
+}
+
+func TestMapResourceRejectsAmbiguousHeadersAndMalformedQuery(t *testing.T) {
+	const origin = "https://gallery.example.invalid"
+	newRequest := func() *http.Request {
+		r := httptest.NewRequest(http.MethodGet, "/_BMapService/api?v=4.0", nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		return r
+	}
+	if !SessionResourceRequest(newRequest(), origin) {
+		t.Fatal("valid same-origin loader preflight rejected")
+	}
+	for name, mutate := range map[string]func(*http.Request){
+		"duplicate origin":               func(r *http.Request) { r.Header.Add("Origin", origin) },
+		"mixed-case origin alias":        func(r *http.Request) { r.Header["origin"] = []string{origin} },
+		"empty origin field":             func(r *http.Request) { r.Header.Set("Origin", "") },
+		"duplicate fetch site":           func(r *http.Request) { r.Header.Add("Sec-Fetch-Site", "same-origin") },
+		"mixed-case site alias":          func(r *http.Request) { r.Header["sec-fetch-site"] = []string{"same-origin"} },
+		"empty authorization":            func(r *http.Request) { r.Header.Set("Authorization", "") },
+		"mixed-case authorization alias": func(r *http.Request) { r.Header["authorization"] = []string{"Bearer private"} },
+		"proxy authorization":            func(r *http.Request) { r.Header.Set("Proxy-Authorization", "Basic sensitive") },
+		"empty proxy authorization":      func(r *http.Request) { r.Header.Set("Proxy-Authorization", "") },
+		"invalid query escape":           func(r *http.Request) { r.URL.RawQuery = "v=4.0&ak=%GG" },
+		"forbidden uppercase ak":         func(r *http.Request) { r.URL.RawQuery = "v=4.0&AK=private" },
+		"encoded path alias":             func(r *http.Request) { r.URL.RawPath = "/_BMapService/%61pi" },
+		"empty force query":              func(r *http.Request) { r.URL.ForceQuery = true },
+		"fragment":                       func(r *http.Request) { r.URL.Fragment = "private" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newRequest()
+			mutate(r)
+			if SessionResourceRequest(r, origin) {
+				t.Fatal("unsafe JSAPI map resource transport accepted")
+			}
+		})
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -165,9 +166,31 @@ func MapSessionRevocationCookie() *http.Cookie {
 	}
 }
 
-// SessionBootstrapSameOrigin guards the REST Bearer-authenticated mint request
-// against cross-site confusion. It compares Origin to a trusted configured
-// HTTPS origin; never resolve origin from forwarded/untrusted Host headers.
+// strictMapTransportHeader rejects duplicate or mixed-case alias fields.
+// Header.Get silently selects one field, which is insufficient for a future
+// security-sensitive map Cookie mint or per-resource authorization check.
+// Missing fields are distinguished from malformed/empty present fields.
+func strictMapTransportHeader(req *http.Request, name string) (value string, present bool, ok bool) {
+	if req == nil {
+		return "", false, false
+	}
+	for field, values := range req.Header {
+		if !strings.EqualFold(field, name) {
+			continue
+		}
+		if present || len(values) != 1 || values[0] == "" ||
+			strings.ContainsAny(values[0], "\r\n") {
+			return "", false, false
+		}
+		present, value = true, values[0]
+	}
+	return value, present, true
+}
+
+// SessionBootstrapSameOrigin guards the REST Bearer-authenticated mint request.
+// Origin MUST be unique and match trusted configured HTTPS Server state; missing
+// Sec-Fetch-Site is tolerated for older clients, but ambiguous values are not.
+// This is a transport precheck only; the runtime is still strictly disabled.
 func SessionBootstrapSameOrigin(req *http.Request, trustedOrigin string) bool {
 	if req == nil || req.Method != http.MethodPost || req.URL == nil ||
 		req.URL.Path != "/api/v1/media/places/baidu-jsapi/session" {
@@ -176,39 +199,46 @@ func SessionBootstrapSameOrigin(req *http.Request, trustedOrigin string) bool {
 	if _, err := TrustedProxyBase(trustedOrigin); err != nil {
 		return false
 	}
-	if req.Header.Get("Origin") != trustedOrigin {
-		return false
-	}
-	if strings.Contains(req.Header.Get("Origin"), ",") {
-		return false
-	}
-	if site := req.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
-		return false
-	}
-	if req.URL.RawQuery != "" || req.Header.Get("Referer") == "null" {
+	origin, hasOrigin, validOrigin := strictMapTransportHeader(req, "Origin")
+	site, hasSite, validSite := strictMapTransportHeader(req, "Sec-Fetch-Site")
+	referer, hasReferer, validReferer := strictMapTransportHeader(req, "Referer")
+	if !validOrigin || !hasOrigin || origin != trustedOrigin ||
+		!validSite || (hasSite && site != "same-origin") ||
+		!validReferer || (hasReferer && referer == "null") ||
+		req.URL.RawQuery != "" {
 		return false
 	}
 	return true
 }
 
-// SessionResourceRequest only prechecks browser request transport. It does
-// NOT replace a strict per-path upstream allowlist or VerifyMapSession.
+// SessionResourceRequest only prechecks browser transport, NOT map Cookie
+// authenticity, live Owner/session/epoch, quotas, or the source-owned resource
+// allowlist. It rejects ambiguous headers and malformed queries before a
+// future authorized handler can consider loading a JSAPI resource.
 func SessionResourceRequest(req *http.Request, trustedOrigin string) bool {
 	if req == nil || req.Method != http.MethodGet || req.URL == nil ||
 		!strings.HasPrefix(req.URL.Path, MapCookiePath) ||
-		req.Header.Get("Authorization") != "" {
+		req.URL.RawPath != "" || req.URL.ForceQuery ||
+		req.URL.Fragment != "" || req.URL.RawFragment != "" {
 		return false
 	}
 	if _, err := TrustedProxyBase(trustedOrigin); err != nil {
 		return false
 	}
-	if origin := req.Header.Get("Origin"); origin != "" && origin != trustedOrigin {
+	_, hasAuth, validAuth := strictMapTransportHeader(req, "Authorization")
+	_, hasProxyAuth, validProxyAuth := strictMapTransportHeader(req, "Proxy-Authorization")
+	origin, hasOrigin, validOrigin := strictMapTransportHeader(req, "Origin")
+	site, hasSite, validSite := strictMapTransportHeader(req, "Sec-Fetch-Site")
+	if !validAuth || hasAuth || !validProxyAuth || hasProxyAuth ||
+		!validOrigin || (hasOrigin && origin != trustedOrigin) ||
+		!validSite || (hasSite && site != "same-origin") {
 		return false
 	}
-	if site := req.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" {
+	query, err := url.ParseQuery(req.URL.RawQuery)
+	if err != nil {
 		return false
 	}
-	for key := range req.URL.Query() {
+	for key := range query {
 		if strings.EqualFold(key, "ak") || strings.EqualFold(key, "browser_ak") ||
 			strings.EqualFold(key, "token") || strings.EqualFold(key, "url") {
 			return false

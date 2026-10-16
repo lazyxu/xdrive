@@ -367,3 +367,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 **该候选结果绝不是生产授权。** RuntimeAuthorized 永久为 false，IssueMapSession 必须拒绝；Gin 未开放 POST /api/v1/media/places/baidu-jsapi/session、/_BMapService/ 或任何 JSAPI 资源代理。缺百度适用许可证据、正式全量子资源清单、真实浏览器+Server 上游 HAR AK 无泄漏证据、可信固定签名发布根、跨副本可撤销会话/请求字节配额、Caddy/CSP/Electron 沙盒和 iOS27/Android/Desktop 真机覆盖，因此 JSAPI4 runtime_enabled=false、百度唯一 Provider、Server Static AK 与加密 Browser AK 分离均不变。
 
 下一项 A3b3a3d2 在**实际拿到百度授权证据**后，审核脚本/瓦片/字体/WASM/接口的固定 Host/Path/Query/MIME/超时/响应大小，构建强授权生产 map Cookie/Proxy 和可信签名发布，再进行 Web/Mobile Web/Desktop 原生 JSAPI4 平移、缩放、Marker、ClusterLayer 与既有 Gallery Range/Viewer 连接；最后按用户原序 A4、B1、B2、B3、C1 iOS 27 真机 1:1 验收。xDrive 52px App Frame 和共用后端/虚拟化不改变。
+
+
+## A3b3a3d2a · JSAPI4 请求头歧义及恶意编码预检（2026-10-16）
+
+承接已合并 #1747，修复未来地图专用会话 POST、子资源 GET 的预检边界：使用逐字段无歧义检查而非 `Header.Get()` 静默取第一个值，拒绝重复/大小写别名/空值的 Origin、Sec-Fetch-Site 等安全相关头及资源凭证头；严格拒绝非法 Query escape、编码路径别名、空强制 Query 和 fragment。Go 测试覆盖正常同源请求与攻击样例，Web/Mobile Web/Desktop 仍共用一个 Gallery 数据源、真实 Owner Range、VirtualCollection 和 Viewer。
+
+**不代表百度动态地图已经开启。** 没有启用任何 JSAPI 路由、Browser AK、Cookie、Loader；`runtime_enabled=false`、零许可子资源和签名发布硬拒绝保持不变。真实百度适用于自托管/PWA/Electron 的授权、九场景私有原始 HAR、完整 Loader/瓦片/脚本/字体/WASM 依赖、钉扎发布公钥、每请求 Owner/撤销/跨副本配额、Caddy CSP/Electron 隔离和 iOS27/Android/Desktop 真机比对仍阻塞 A3b3a3d2。全屏 52px App Frame、百度唯一 Provider、分离的 Server/Browser AK 和 iOS 27「照片」1:1 目标不变，后续按 A3→A4→B1→B2→B3→C1。
