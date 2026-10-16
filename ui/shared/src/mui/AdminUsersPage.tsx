@@ -1,8 +1,9 @@
 import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import {
+  Box,
   Dialog,
   FormControlLabel,
   InputAdornment,
@@ -122,9 +123,20 @@ export default function AdminUsersPanel({
   focusUserID?: number
   onChanged: () => void
 }) {
-  const [users, setUsers] = useState<AdminUser[]>([])
+  // Only the current authenticated API may paint its last accepted list.
+  const [usersSnapshot, setUsersSnapshot] = useState<{
+    source: XDriveAdminUsersPort; items: AdminUser[]
+  } | null>(null)
+  const users = usersSnapshot?.source === api ? usersSnapshot.items : []
+  const [completedSource, setCompletedSource] = useState<XDriveAdminUsersPort | null>(null)
+  const readComplete = completedSource === api
   const ownerID = currentUserID ?? users.find((item) => item.username === currentUsername)?.id ?? -1
   const [loading, setLoading] = useState(false)
+  const [pendingReadSource, setPendingReadSource] = useState<XDriveAdminUsersPort | null>(null)
+  const [readEpoch, setReadEpoch] = useState(0)
+  const [visibleReadEpoch, setVisibleReadEpoch] = useState<number | null>(null)
+  const readEpochRef = useRef(0)
+  const showNetworkFeedback = loading && pendingReadSource === api && visibleReadEpoch === readEpoch
   const [loadError, setLoadError] = useState('')
   const [feedback, setFeedback] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -145,22 +157,40 @@ export default function AdminUsersPanel({
   const [actionError, setActionError] = useState<AdminActionError | null>(null)
 
   const load = async () => {
+    const epoch = ++readEpochRef.current
+    setReadEpoch(epoch)
+    setPendingReadSource(api)
     setLoading(true)
     setLoadError('')
     try {
-      setUsers(await api.adminUsers())
+      const nextUsers = await api.adminUsers()
+      if (readEpochRef.current === epoch) setUsersSnapshot({ source: api, items: nextUsers })
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '加载用户失败')
+      if (readEpochRef.current === epoch) {
+        setLoadError(err instanceof Error ? err.message : '加载用户失败')
+      }
     } finally {
-      setLoading(false)
+      if (readEpochRef.current === epoch) {
+        setCompletedSource(api)
+        setLoading(false)
+      }
     }
   }
 
   useEffect(() => {
     void load()
+    return () => { readEpochRef.current += 1 }
     // api is stable for one authenticated session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api])
+
+  // Begin authenticated requests immediately, but delay only decorative
+  // feedback. A superseding read/account cannot inherit an older spinner.
+  useEffect(() => {
+    if (!loading || pendingReadSource !== api) return
+    const timer = window.setTimeout(() => setVisibleReadEpoch(readEpoch), 300)
+    return () => window.clearTimeout(timer)
+  }, [api, loading, pendingReadSource, readEpoch])
 
   useEffect(() => {
     if (!focusUserID || users.length === 0) return
@@ -302,8 +332,7 @@ export default function AdminUsersPanel({
           <>
             <XDriveActionButton
               startIcon={<RefreshRoundedIcon />}
-              loading={loading}
-              loadingLabel="正在刷新…"
+              disabled={loading}
               onClick={() => void load()}
             >
               刷新
@@ -316,14 +345,23 @@ export default function AdminUsersPanel({
       >
         <Stack spacing={2}>
             {loadError && <XDriveStatusAlert tone="bad">{loadError}</XDriveStatusAlert>}
-            {loading && users.length > 0 ? <LinearProgress /> : null}
-
-            {loading && users.length === 0 ? (
-              <XDriveStatePanel variant="plain" loading message="正在加载用户…" />
-            ) : users.length === 0 ? (
-              <XDriveStatePanel variant="plain" message="暂无用户" />
-            ) : (
-              <XDriveTableSurface>
+            <Box data-xdrive-admin-users-content sx={{
+              position: 'relative', minWidth: 0, minHeight: users.length === 0 ? 180 : undefined,
+            }}>
+              {!readComplete ? (
+                <Box data-xdrive-admin-users-first-read sx={{
+                  minHeight: 180, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {showNetworkFeedback ? (
+                    <XDriveStatePanel variant="plain" loading message="正在加载用户…" />
+                  ) : null}
+                </Box>
+              ) : users.length === 0 ? (
+                <XDriveStatePanel variant="plain" message={
+                  loadError ? '用户列表读取失败，请刷新重试。' : '暂无用户'
+                } />
+              ) : (
+                <XDriveTableSurface>
                 <Table
                   size="small"
                   aria-label="用户管理"
@@ -525,8 +563,15 @@ export default function AdminUsersPanel({
                     ))}
                   </TableBody>
                 </Table>
-              </XDriveTableSurface>
-            )}
+                </XDriveTableSurface>
+              )}
+              {readComplete && showNetworkFeedback ? (
+                <LinearProgress aria-label="正在刷新用户" sx={{
+                  position: 'absolute', top: 0, left: 0, right: 0,
+                  pointerEvents: 'none',
+                }} />
+              ) : null}
+            </Box>
         </Stack>
       </XDriveWorkspaceSurface>
 
