@@ -56,6 +56,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduMapConsent,
+  MediaBaiduMapConsentInput,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -1366,6 +1368,30 @@ export class XDriveApi {
         method: 'PATCH',
         headers: { 'If-Match': `"${revision}"` },
         body: JSON.stringify({ folder_id: folderID }),
+      },
+    )
+  }
+
+  // One Owner-scoped Server contract for wide Web, Mobile Web, and PWA.
+  // This endpoint only manages consent; it never activates JSAPI4 or exports GPS.
+  mediaBaiduMapConsent(nodeID: number) {
+    return this.request<MediaBaiduMapConsent>(
+      `/api/v1/media/items/${nodeID}/baidu-map-consent`, { cache: 'no-store' },
+    )
+  }
+
+  saveMediaBaiduMapConsent(nodeID: number, input: MediaBaiduMapConsentInput) {
+    return this.request<MediaBaiduMapConsent>(
+      `/api/v1/media/items/${nodeID}/baidu-map-consent`, {
+        method: 'PUT', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
+  revokeMediaBaiduMapConsent(nodeID: number, revision: number) {
+    return this.request<MediaBaiduMapConsent>(
+      `/api/v1/media/items/${nodeID}/baidu-map-consent`, {
+        method: 'DELETE', headers: { 'If-Match': `"${revision}"` }, cache: 'no-store',
       },
     )
   }

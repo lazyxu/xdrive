@@ -483,3 +483,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 在 #1851 精确 GPS 来源绑定通过准确 HEAD CI 合入后，新增 GET/PUT/DELETE /api/v1/media/items/:id/baidu-map-consent。只接受经过 Bearer 登录与最新 SessionVersion 检查的 Owner 主 Node/PhotoAsset，PUT 必须显式确认「允许将此照片原始坐标发送至百度用于地图坐标转换」与「允许建立派生地图索引」，同时要求授权修订号及 10 分钟到 30 天的有效期。不接收任何前端 GPS/AssetID/OwnerID，更不会将存储的原始坐标/密钥返回给浏览器。原始定位改动后，旧许可失效；授权新版本由当前 Server PostgreSQL 同事务锁核对。DELETE 使用 If-Match CAS、审计事务和索引清理，审计失败整个事务回滚；同一用户的软删除文件仍允许撤销。CORS Origin 和 Fetch Metadata 单独严格校验，Desktop Native Agent 可用自己的 Bearer 客户端认证。
 
 这一阶段仅为 Go Server 用户授权协议及真实 PostgreSQL 测试；尚未连上 Go Client、Desktop Agent IPC 或 Web/Mobile Web/Desktop 的同一 MUI 位置授权 Dialog，亦无任何实际百度 Geoconv/JSAPI Loader/子资源代理/GPS 发送。位置授权开启不等于地图加载或获得用户已实际使用地图的许可。后续先完成共同 TS 数据模型/Agent 运输/共享 Viewer 控件，再做有界可取消 Geoconv 工作队列与百度 JSAPI4 生产资源白名单、签名发布及 9 组私有双端 HAR。保持百度唯一 Provider、Server AK/Browser AK 仅在 Server、iOS 27「照片」1:1 交互验收及 52px 全屏 App Frame，顺序 A3→A4→B1→B2→B3→C1。
+
+
+## A3d2l2b2 · Web/Mobile Web/Desktop 共用定位授权与 Viewer 控件（2026-10-16）
+
+#1857 的真实 Server 授权 GET/PUT/DELETE 以准确 HEAD CI 合入之后，本阶段使用 `ui/shared` 唯一的 `MediaBaiduMapConsent` 和 `MediaGalleryDataSource`，经 Web/Mobile Web/PWA 同一 Web API + Adapter 与 Desktop Go Client→受信 Agent→独立 IPC→Electron 预加载接入。Viewer「照片位置」共用 MUI 对话框，新定位授权默认不勾选、必须明确同意向百度发送原始 GPS 转换及 xDrive 地图派生索引两项，手动授权一小时，修订号 CAS 撤销；切换照片时不会将旧异步响应带到新照片。
+
+**用户授权不等于百度 JSAPI 4.0 动态地图可用**，当前仍只有原有 Static PNG 底图和惯有位置导航；不新增实际 Geoconv/JSAPI4 Loader/Cookie/Proxy/未审核第三方资源。iOS 27「照片」逐页 1:1 视觉、手势、暗色、横屏、无障碍和 iOS27/Android/Desktop 真机，以及 100k/网络取消仍需独立通过，不能用静态假数据冒充。百度是唯一 Provider、AK 全部 Server-only、52px 全屏 App Frame 不改。下一项：正式可取消源修订绑定 Geoconv 索引队列与跨副本配额、安全代理和 9 组双端私有 HAR/发布签名审查，之后 A4→B1→B2→B3→C1。

@@ -842,6 +842,23 @@ export type XDriveBaiduStaticMapRequest = {
   height: number
 }
 
+// Privacy-only state: authorized DOES NOT imply JSAPI4 is enabled. Never
+// serialize original WGS84, SourceNode fingerprint, AK or provider URLs.
+export type MediaBaiduMapConsent = {
+  status: 'not_granted' | 'authorized' | 'revoked' | 'expired' | 'source_changed'
+  revision: number
+  authorized: boolean
+  source_current: boolean
+  expires_at?: string
+}
+
+export type MediaBaiduMapConsentInput = {
+  expected_revision: number
+  expires_in_seconds: number
+  consent_to_baidu_conversion: true
+  consent_to_derived_index: true
+}
+
 export interface MediaPlaceFacet {
   id: string
   /** Exact GPS of ONE representative photo, distinct from the historical cell center. */

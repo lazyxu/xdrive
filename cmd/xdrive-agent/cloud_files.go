@@ -2761,6 +2761,31 @@ func (c *agentController) CloudMoveMediaAlbumToFolder(
 	return cli.MoveMediaAlbumToFolder(ctx, albumID, revision, folderID)
 }
 
+// Current account credentials live only in the Agent/Server, never renderer.
+func (c *agentController) CloudMediaBaiduConsent(ctx context.Context, nodeID uint64) (client.MediaBaiduMapConsent, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapConsent{}, err
+	}
+	return cli.MediaBaiduConsent(ctx, nodeID)
+}
+
+func (c *agentController) CloudSaveMediaBaiduConsent(ctx context.Context, nodeID uint64, input client.MediaBaiduMapConsentInput) (client.MediaBaiduMapConsent, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapConsent{}, err
+	}
+	return cli.SaveMediaBaiduConsent(ctx, nodeID, input)
+}
+
+func (c *agentController) CloudRevokeMediaBaiduConsent(ctx context.Context, nodeID, revision uint64) (client.MediaBaiduMapConsent, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapConsent{}, err
+	}
+	return cli.RevokeMediaBaiduConsent(ctx, nodeID, revision)
+}
+
 func (c *agentController) CloudBaiduMapProvider(ctx context.Context) (client.BaiduMapProvider, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

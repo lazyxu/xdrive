@@ -183,6 +183,8 @@ import {
   type AgentMediaAlbumFolder,
   type AgentMediaPlaceFacet,
   type AgentMediaPlacesPage,
+  type AgentMediaBaiduMapConsent,
+  type AgentMediaBaiduMapConsentInput,
   type AgentMediaPlacesViewportBounds,
   type AgentMediaPlacesViewportPage,
   type AgentMediaMemory,
@@ -4053,6 +4055,59 @@ function registerIPCHandlers() {
     runAgentAction(async () => {
       viewportRequests.cancel(event.sender, requestID)
       return { cancelled: true }
+    }, false),
+  )
+
+  // Renderer passes only one primary Node ID + explicit consent; no raw GPS.
+  const validConsentNode = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+  const validConsentRevision = (value: unknown, allowZero = false): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) &&
+    (allowZero ? value >= 0 : value > 0)
+  ipcMain.handle('agent:get-media-baidu-consent', (_event, nodeID: unknown) =>
+    runAgentAction<AgentMediaBaiduMapConsent>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!validConsentNode(nodeID)) {
+        throw new AgentIPCError('invalid_input', 0, 'A valid photo Node ID is required.')
+      }
+      return requireAgentClient().mediaBaiduConsent(nodeID)
+    }, false),
+  )
+  ipcMain.handle('agent:save-media-baidu-consent', (_event, nodeID: unknown, value: unknown) =>
+    runAgentAction<AgentMediaBaiduMapConsent>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      const input = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Partial<AgentMediaBaiduMapConsentInput> : null
+      if (!validConsentNode(nodeID) || !input ||
+          !validConsentRevision(input.expected_revision, true) ||
+          typeof input.expires_in_seconds !== 'number' ||
+          !Number.isSafeInteger(input.expires_in_seconds) ||
+          input.expires_in_seconds < 600 || input.expires_in_seconds > 30 * 24 * 60 * 60 ||
+          input.consent_to_baidu_conversion !== true ||
+          input.consent_to_derived_index !== true ||
+          Object.keys(input).some((key) =>
+            !['expected_revision', 'expires_in_seconds',
+              'consent_to_baidu_conversion', 'consent_to_derived_index'].includes(key))) {
+        throw new AgentIPCError('invalid_input', 0, 'Current revision and two explicit photo location consents are required.')
+      }
+      return requireAgentClient().saveMediaBaiduConsent(nodeID, {
+        expected_revision: input.expected_revision,
+        expires_in_seconds: input.expires_in_seconds,
+        consent_to_baidu_conversion: true,
+        consent_to_derived_index: true,
+      })
+    }, false),
+  )
+  ipcMain.handle('agent:revoke-media-baidu-consent', (_event, nodeID: unknown, revision: unknown) =>
+    runAgentAction<AgentMediaBaiduMapConsent>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!validConsentNode(nodeID) || !validConsentRevision(revision)) {
+        throw new AgentIPCError('invalid_input', 0, 'Current photo location consent revision is required.')
+      }
+      return requireAgentClient().revokeMediaBaiduConsent(nodeID, revision)
     }, false),
   )
 

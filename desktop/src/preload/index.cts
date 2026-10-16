@@ -458,6 +458,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-creative', generationID),
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
+  getMediaBaiduConsent: (nodeID: number) =>
+    ipcRenderer.invoke('agent:get-media-baidu-consent', nodeID),
+  saveMediaBaiduConsent: (nodeID: number, input: unknown) =>
+    ipcRenderer.invoke('agent:save-media-baidu-consent', nodeID, input),
+  revokeMediaBaiduConsent: (nodeID: number, revision: number) =>
+    ipcRenderer.invoke('agent:revoke-media-baidu-consent', nodeID, revision),
   getBaiduMapProvider: () => ipcRenderer.invoke('agent:get-baidu-map-provider'),
   getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) =>
     ipcRenderer.invoke('agent:get-baidu-static-map', lat, lng, zoom, width, height, requestID),

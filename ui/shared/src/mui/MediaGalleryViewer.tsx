@@ -19,6 +19,8 @@ import type {
   MediaItem,
   XDriveBaiduMapProviderInfo,
   XDriveBaiduStaticMapRequest,
+  MediaBaiduMapConsent,
+  MediaBaiduMapConsentInput,
 } from '../models'
 import {
   xDriveMediaItemSupportsBasicEditing,
@@ -55,6 +57,9 @@ export function XDriveMediaGalleryViewer({
   loadPreviewURL,
   getBaiduMapProvider,
   loadBaiduStaticMap,
+  getBaiduMapConsent,
+  saveBaiduMapConsent,
+  revokeBaiduMapConsent,
   onPrevious,
   onNext,
   onFilmstripSelect,
@@ -83,6 +88,9 @@ export function XDriveMediaGalleryViewer({
   loadPreviewURL?: MediaPreviewURLLoader
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
+  saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
+  revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
@@ -351,6 +359,9 @@ export function XDriveMediaGalleryViewer({
         item={item}
         getBaiduMapProvider={getBaiduMapProvider}
         loadBaiduStaticMap={loadBaiduStaticMap}
+        getBaiduMapConsent={getBaiduMapConsent}
+        saveBaiduMapConsent={saveBaiduMapConsent}
+        revokeBaiduMapConsent={revokeBaiduMapConsent}
         onClose={() => setLocationOpen(false)}
       />
 

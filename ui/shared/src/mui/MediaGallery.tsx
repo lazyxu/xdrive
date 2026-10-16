@@ -86,6 +86,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduMapConsent,
+  MediaBaiduMapConsentInput,
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
   MediaTimelineGroupSets,
@@ -260,6 +262,9 @@ export interface MediaGalleryDataSource {
   ) => Promise<MediaPlacesViewportPage>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
+  saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
+  revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
     memoryID: string,
@@ -2843,6 +2848,9 @@ export function XDriveMediaGalleryPage({
         focusPlaceID={lastOpenedPlaceID ?? undefined}
         getBaiduMapProvider={source.getBaiduMapProvider}
         loadBaiduStaticMap={source.loadBaiduStaticMap}
+        getBaiduMapConsent={source.getBaiduMapConsent}
+        saveBaiduMapConsent={source.saveBaiduMapConsent}
+        revokeBaiduMapConsent={source.revokeBaiduMapConsent}
         placesStatus={placesStatus}
         placesTotalCount={placesTotalCount}
         placesPageOffset={placesPageOffset}
@@ -3276,6 +3284,9 @@ export interface XDriveMediaGalleryProps {
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']
+  saveBaiduMapConsent?: MediaGalleryDataSource['saveBaiduMapConsent']
+  revokeBaiduMapConsent?: MediaGalleryDataSource['revokeBaiduMapConsent']
   placesStatus?: 'loading' | 'ready' | 'error'
   placesTotalCount?: number | null
   placesPageOffset?: number
@@ -4965,6 +4976,9 @@ export function XDriveMediaGallery({
   focusPlaceID,
   getBaiduMapProvider,
   loadBaiduStaticMap,
+  getBaiduMapConsent,
+  saveBaiduMapConsent,
+  revokeBaiduMapConsent,
   placesStatus = 'ready',
   placesTotalCount = null,
   placesPageOffset = 0,
@@ -7945,6 +7959,9 @@ export function XDriveMediaGallery({
         loadPreviewURL={loadPreviewURL}
         getBaiduMapProvider={getBaiduMapProvider}
         loadBaiduStaticMap={loadBaiduStaticMap}
+        getBaiduMapConsent={getBaiduMapConsent}
+        saveBaiduMapConsent={saveBaiduMapConsent}
+        revokeBaiduMapConsent={revokeBaiduMapConsent}
         onPrevious={() => requestPreviewIndex(previewIndex - 1)}
         onNext={() => requestPreviewIndex(previewIndex + 1)}
         onFilmstripSelect={requestPreviewIndex}

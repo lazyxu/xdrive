@@ -1755,6 +1755,20 @@ export type AgentMediaPlaceFacet = {
   attribution_url?: string
 }
 
+export type AgentMediaBaiduMapConsent = {
+  status: 'not_granted' | 'authorized' | 'revoked' | 'expired' | 'source_changed'
+  revision: number
+  authorized: boolean
+  source_current: boolean
+  expires_at?: string
+}
+export type AgentMediaBaiduMapConsentInput = {
+  expected_revision: number
+  expires_in_seconds: number
+  consent_to_baidu_conversion: true
+  consent_to_derived_index: true
+}
+
 export type AgentMediaPlacesPage = {
   items: AgentMediaPlaceFacet[]
   total_count: number
@@ -2560,6 +2574,21 @@ export class AgentIPCClient {
     return this.request<AgentMediaAlbum>('PATCH', '/v1/media/album/folder', {
       album_id: albumID, revision, folder_id: folderID,
     })
+  }
+
+  mediaBaiduConsent(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaBaiduMapConsent>('GET', `/v1/media/baidu-consent?${query.toString()}`)
+  }
+
+  saveMediaBaiduConsent(nodeID: number, input: AgentMediaBaiduMapConsentInput) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaBaiduMapConsent>('PUT', `/v1/media/baidu-consent?${query.toString()}`, input)
+  }
+
+  revokeMediaBaiduConsent(nodeID: number, revision: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID), revision: String(revision) })
+    return this.request<AgentMediaBaiduMapConsent>('DELETE', `/v1/media/baidu-consent?${query.toString()}`)
   }
 
   mediaBaiduMapProvider() {
