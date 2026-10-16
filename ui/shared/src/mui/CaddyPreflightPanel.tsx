@@ -232,6 +232,13 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               )}
               {probeError && <XDriveStatusAlert tone="bad">{probeError}</XDriveStatusAlert>}
             </Stack>
+            <Typography variant="caption" color="text.secondary"
+              data-xdrive-caddy-rescue-ingress-advisory>
+              运维救援入口：可选独立 caddy-rescue Compose profile 默认关闭，仅允许操作员
+              通过宿主机本机地址或 SSH 隧道访问，并重新通过 Server 认证。
+              是否已启动、能否访问和管理员登录成功仍未获得运行验证；
+              不能据此启用 Caddy 配置应用、停用或回滚。
+            </Typography>
             <Typography variant="caption" color="warning.main">
               {result.apply_supported
                 ? '预检绝不执行应用；必须由后续受限 Host Manager 协议执行并证明生效。'

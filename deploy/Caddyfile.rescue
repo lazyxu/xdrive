@@ -1,0 +1,12 @@
+{
+	admin off
+	auto_https off
+}
+
+# This is a separate operator-opt-in loopback-only recovery ingress.
+# Compose alone enforces 127.0.0.1 host binding; do not publish publicly.
+import /etc/caddy/Caddyfile.common
+
+:8080 {
+	import xdrive_app
+}
