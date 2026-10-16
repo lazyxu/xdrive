@@ -185,3 +185,71 @@ func TestBaiduStaticMapRequiresAuthenticatedRoute(t *testing.T) {
 		t.Fatalf("unauthenticated static map response %d", rec.Code)
 	}
 }
+
+func TestBaiduStaticMapRejectsAmbiguousEncodedAndInjectedQuery(t *testing.T) {
+	called := 0
+	server := &Server{
+		BaiduMapEnabled: true,
+		BaiduMapAK:      "server-only-map-key",
+		BaiduMapHTTPClient: &http.Client{Transport: baiduMapRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			called++
+			return nil, context.Canceled
+		})},
+	}
+	const good = "lat=0&lng=0&zoom=12&width=480&height=280"
+	for _, raw := range []string{
+		good + "&lat=0",
+		good + "&lng=2",
+		good + "&ak=browser-injection",
+		good + "&token=unsafe",
+		good + "&url=attacker",
+		good + "&",
+		"lat=0&lat=1&lng=0&zoom=12&width=480",
+		"lat=0&lng=%GG&zoom=12&width=480&height=280",
+		"lat=0&lng=0&zoom=12&width=480&height=%GG",
+		"la%74=0&lng=0&zoom=12&width=480&height=280",
+		"Lat=0&lng=0&zoom=12&width=480&height=280",
+		"lat=0&lng=0&zoom=12&width=480&height=280&foo=1",
+		"lat=+1&lng=0&zoom=12&width=480&height=280",
+		"lat=%30&lng=0&zoom=12&width=480&height=280",
+		"lat=0&lng=0&zoom=12&width=480&height=280&height=280",
+	} {
+		t.Run(raw, func(t *testing.T) {
+			c, response := baiduMapTestContext("/api/v1/media/places/baidu-static")
+			// A real parser can receive an already-decoded Request with a
+			// malformed raw percent escape; httptest.NewRequest itself panics
+			// on such URL strings, so assign RawQuery after construction.
+			c.Request.URL.RawQuery = raw
+			server.mediaBaiduStaticMap(c)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("ambiguous source map query returned HTTP %d", response.Code)
+			}
+			if strings.Contains(response.Body.String(), server.BaiduMapAK) {
+				t.Fatal("Server AK appeared in malformed map response")
+			}
+		})
+	}
+	_, _, _, _, _, valid := parseBaiduMapCenter(good)
+	if !valid {
+		t.Fatal("normal existing canonical client request rejected")
+	}
+	_, _, _, _, _, valid = parseBaiduMapCenter("lat=1e-9&lng=0&zoom=12&width=480&height=280")
+	if !valid {
+		t.Fatal("legitimate tiny original GPS rejected")
+	}
+	for _, mutation := range []func(*http.Request){
+		func(req *http.Request) { req.URL.RawPath = "/api/v1/media/places/%62aidu-static" },
+		func(req *http.Request) { req.URL.ForceQuery = true },
+		func(req *http.Request) { req.URL.Fragment = "unsafe" },
+	} {
+		c, response := baiduMapTestContext("/api/v1/media/places/baidu-static?" + good)
+		mutation(c.Request)
+		server.mediaBaiduStaticMap(c)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("unsafe map path/query envelope got HTTP %d", response.Code)
+		}
+	}
+	if called != 0 {
+		t.Fatalf("%d invalid static-map requests reached Baidu upstream", called)
+	}
+}

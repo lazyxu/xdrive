@@ -418,3 +418,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 本阶段针对既有 **尚未接入生产** 的共享 JSAPI4 Owner 视窗桥接器增加显式且严格的坐标标记：输入必须为 coordinate_space='photo-wgs84' 且 bounds 只有 west/south/east/north，拒绝原始 BD-09、GCJ02、无标记、额外字段和非法范围，拒绝时不请求 Server、不创建照片 Marker。该标记只是**接口契约防误用**，不构成许可、安全来源或 WGS84 真实性证明。后续真正动态地图推荐在获得百度账户许可且确认衍生坐标保留合法后，以原始 WGS84 照片位置经过官方 WGS84→BD-09 正向转换建立有版本、Owner、隐私、删除/撤销同步的 **BD-09 查询索引**；地图视窗基于 BD-09 查索引，Viewer/Range 仍使用原有 PhotoAsset 身份与原始 GPS，绝不执行 BD-09→GPS。授权未确认前不创建或填充该索引。
 
 A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 运行/资源代理/地图 Cookie 不启用。Web、Mobile Web 和 Desktop 共享 Server 请求、虚拟列表、图库 Viewer，52px 全屏 App Frame 不变；iOS 27「照片」1:1 仍需逐页真机截图、手势、暗/亮主题、横屏和性能验收。真实百度自托管/PWA/Electron 许可、完整 Loader/tiles/JS/WASM/fonts 经审查清单、真实九组 browser/upstream HAR 无 AK 泄漏、签名放行、Owner 撤销/配额、Caddy CSP/Electron 隔离均未完成。A3 真正完成后再依次 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d2e · 已运行的百度静态底图请求参数严格校验（2026-10-16）
+
+这次修复生产中由 Web、Mobile Web、Desktop 共用的 Server `/media/places/baidu-static` 请求，而不是新增无调用方的 JSAPI4 Mock。之前 Go `URL.Query().Get()` 会在用户传入重复经纬度参数时选择首值，也会静默舍弃坏百分号 escape。改为原始 Query 强校验：五个固定参数 lat/lng/zoom/width/height 各一次，无扩展 AK/token/url、无大小写或百分号编码别名、无非法/空段、无异常 RawPath/Fragment；保留真实 0/0 GPS 和正常极小坐标科学计数法。所有无效输入 400 返回，不占百度上游配额也不触发网络；增加伪 HTTP transport 实测验证。原有配额、超时、取消、Server-only AK、PNG 响应和三端单一接口保持不变。
+
+这项是**真实 Static Map 请求安全性**，不是百度 JSAPI4 动态地图发布。正式 JSAPI4 仍要依法完成 self-host/PWA/Electron 许可，完整子资源清单、九组私有 Browser/Upstream HAR 无 AK 泄漏、受信签名、Owner/撤销/跨副本额度和 Caddy/Electron 沙盒及 iOS 27「照片」1:1 真机验收。运行硬门禁未解除；地图仅百度，Web/Mobile Web/Desktop 共享 Gallery Range、VirtualCollection、Viewer，保留 52px 全屏 App Frame。待 A3 真正完成后，再依次实施 A4、B1、B2、B3、C1。
