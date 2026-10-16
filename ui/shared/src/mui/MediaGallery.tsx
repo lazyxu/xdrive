@@ -88,6 +88,8 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob,
+  MediaBaiduMapIndexJobInput,
   MediaSuggestedPerson,
   MediaTimelineGroupIndex,
   MediaTimelineGroupSets,
@@ -265,6 +267,9 @@ export interface MediaGalleryDataSource {
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
+  getBaiduMapIndexJob?: (nodeID: number) => Promise<MediaBaiduMapIndexJob>
+  enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<MediaBaiduMapIndexJob>
+  cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
   listMemories?: (anchorDate?: string, limit?: number, timeZone?: string) => Promise<MediaMemory[]>
   listMemoryItemRange?: (
     memoryID: string,
@@ -2934,6 +2939,9 @@ export function XDriveMediaGalleryPage({
         getBaiduMapConsent={source.getBaiduMapConsent}
         saveBaiduMapConsent={source.saveBaiduMapConsent}
         revokeBaiduMapConsent={source.revokeBaiduMapConsent}
+        getBaiduMapIndexJob={source.getBaiduMapIndexJob}
+        enqueueBaiduMapIndexJob={source.enqueueBaiduMapIndexJob}
+        cancelBaiduMapIndexJob={source.cancelBaiduMapIndexJob}
         placesStatus={placesStatus}
         placesTotalCount={placesTotalCount}
         placesPageOffset={placesPageOffset}
@@ -3370,6 +3378,9 @@ export interface XDriveMediaGalleryProps {
   getBaiduMapConsent?: MediaGalleryDataSource['getBaiduMapConsent']
   saveBaiduMapConsent?: MediaGalleryDataSource['saveBaiduMapConsent']
   revokeBaiduMapConsent?: MediaGalleryDataSource['revokeBaiduMapConsent']
+  getBaiduMapIndexJob?: MediaGalleryDataSource['getBaiduMapIndexJob']
+  enqueueBaiduMapIndexJob?: MediaGalleryDataSource['enqueueBaiduMapIndexJob']
+  cancelBaiduMapIndexJob?: MediaGalleryDataSource['cancelBaiduMapIndexJob']
   placesStatus?: 'loading' | 'ready' | 'error'
   placesTotalCount?: number | null
   placesPageOffset?: number
@@ -5062,6 +5073,9 @@ export function XDriveMediaGallery({
   getBaiduMapConsent,
   saveBaiduMapConsent,
   revokeBaiduMapConsent,
+  getBaiduMapIndexJob,
+  enqueueBaiduMapIndexJob,
+  cancelBaiduMapIndexJob,
   placesStatus = 'ready',
   placesTotalCount = null,
   placesPageOffset = 0,
@@ -8045,6 +8059,9 @@ export function XDriveMediaGallery({
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}
         revokeBaiduMapConsent={revokeBaiduMapConsent}
+        getBaiduMapIndexJob={getBaiduMapIndexJob}
+        enqueueBaiduMapIndexJob={enqueueBaiduMapIndexJob}
+        cancelBaiduMapIndexJob={cancelBaiduMapIndexJob}
         onPrevious={() => requestPreviewIndex(previewIndex - 1)}
         onNext={() => requestPreviewIndex(previewIndex + 1)}
         onFilmstripSelect={requestPreviewIndex}

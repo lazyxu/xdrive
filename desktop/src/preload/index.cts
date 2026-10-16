@@ -458,6 +458,12 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:get-media-creative', generationID),
   cancelMediaCreativeGeneration: (generationID: string) =>
     ipcRenderer.invoke('agent:cancel-media-creative', generationID),
+  getMediaBaiduIndexJob: (nodeID: number) =>
+    ipcRenderer.invoke('agent:get-media-baidu-index-job', nodeID),
+  enqueueMediaBaiduIndexJob: (nodeID: number, input: unknown) =>
+    ipcRenderer.invoke('agent:enqueue-media-baidu-index-job', nodeID, input),
+  cancelMediaBaiduIndexJob: (nodeID: number, revision: number) =>
+    ipcRenderer.invoke('agent:cancel-media-baidu-index-job', nodeID, revision),
   getMediaBaiduConsent: (nodeID: number) =>
     ipcRenderer.invoke('agent:get-media-baidu-consent', nodeID),
   saveMediaBaiduConsent: (nodeID: number, input: unknown) =>

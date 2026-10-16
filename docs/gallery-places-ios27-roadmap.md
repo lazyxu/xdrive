@@ -518,3 +518,12 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 承接已合入 #1882 的 Server 单任务可取消执行器，本阶段在现有 Gallery 主 Node 身份上新增经 Bearer 登录的 `GET/POST/DELETE /api/v1/media/items/:id/baidu-map-index-job`。POST 必须具备**独立的确认**、当前照片有效期内两个位置授权、真实源 Node/Media/PhotoAsset 与精确授权修订；任何浏览器主动提供 GPS、AK、Owner/Asset ID、未知 JSON 字段或伪 Origin/跨站 Fetch-Metadata 均不接受。任务仅持久化 Owner 和既有受信来源修订标识；GET 只返回状态、授权修订、尝试次数和常量 `dispatch_enabled=false`。DELETE 采用 `If-Match` 撤销指定代任务并使现有租约失效；提交和取消的审计失败都在同一 PostgreSQL 事务里回滚，不允许成功误报。匿名、越权、过期旧 GPS、会话变化、取消/重复入队均有真实 PostgreSQL/Gin HTTP 测试；对包含 WGS84 筛选谓词的 POST/DELETE 事务关闭 GORM 原始 SQL 日志并由测试捕获器验证，防止失效授权把 GPS 记录到诊断日志。实际百度配额和衍生坐标保持零。
 
 **A3 仍为 NO-GO**：这一段只增加经鉴权的持久任务 API，不启动 Server Worker、不读取百度 AK、不触发真实 Geoconv、不安装 JSAPI Loader/Proxy/Cookie、不向外发 GPS。Web、Mobile Web/PWA、Desktop 的图库页面尚未挂接该新任务入口，因此三端现有 Range/VirtualCollection/Viewer、52px 全屏 App Frame 和当前静态地图维持一致；下阶段 A3d2m1b2b2 才将共享类型/Adapter/Agent IPC 与真实用户操作、受许可的后台 Worker 接通，并完成当前账户费率、有效许可、九组私有原始 HAR、不可变签名子资源、CSP/Electron 安全评估后方可启用真正的 JSAPI4 动态地图。保持百度唯一 Provider、Server AK / Browser AK 独立服务端加密、iOS27 Photos 明确 1:1 视觉和手势基准，后续顺序 A3→A4→B1→B2→B3→C1。
+
+
+## A3d2m1b2b2a · 共享定位索引任务前端与桌面受信传输（2026-10-17）
+
+承接 #1888 的 Owner 授权、修订号约束与审计 REST，新增统一 `MediaBaiduMapIndexJob` 状态 DTO 和显式 `expected_revision + confirm:true` 入队请求。Web/Mobile Web/PWA 使用同一 `web/src/api.ts` 和 shared `MediaGalleryAdapter`，Desktop 通过 `internal/client` → authenticated Go Agent loopback → Electron Main 输入校验 → preload → Renderer Adapter，调用同一 Server Owner PhotoAsset 的主 Node GET/POST/DELETE 路由。取消任务使用任务本身的 `consent_revision`，终态不会被旧取消错误回退。可见状态仅含 `not_queued/queued/leased/completed/cancelled`、尝试次数、修订号、`dispatch_enabled=false` 和 `blocked_pending_licence_and_provider_review`，不包含原始 GPS、AK、派生 BD09 或租约凭据。
+
+图库原来的 `MediaGalleryViewerLocationDialog` 是**三端唯一**地图隐私与索引任务操作面。两项授权不等于入队；用户必须额外明确勾选，才允许单张照片加入队列。对未启用调度的环境明确说明「已排队不等于转换成功」，允许取消及手动刷新，不进行后台轮询。仅打开照片位置时读取，不影响 VirtualCollection、Range 或 Thumbnail 网络加载；关闭或切换照片通过 generation 拦截异步旧响应。保留 xDrive 全屏 App Frame、52px 应用标题栏、Web/Desktop 后端 API 以及 iOS 27「照片」1:1 视觉和手势对照目标。
+
+**安全边界与剩余工作：** 本阶段仍不接入真正的百度坐标转换 Worker、真实账户许可和配额验证、不发送原始 GPS、不提供 Browser AK、不打开 JSAPI4 Loader/Proxy/Cookie、不加载任何未经审计的动态资源。生产 `runtime_enabled=false` 与原静态 PNG 地图保持不变。后续 A3d2m1b2b2b 必须独立取得正式许可、账号/配额证据、Server-only HTTPS Geoconv 可取消调度与失败重试，再对 JSAPI4 进行九组私有浏览器/上游 HAR 配对、完整不可变签名子资源白名单及 Caddy/Electron/PWA/iOS/Android 真机 1:1 验收。A3 仍未完成，之后顺序 A4→B1→B2→B3→C1。

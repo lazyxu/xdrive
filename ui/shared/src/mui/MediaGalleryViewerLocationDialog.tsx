@@ -4,11 +4,20 @@ import {
   FormControlLabel, Stack, Typography,
 } from '@mui/material'
 import type {
-  MediaBaiduMapConsent, MediaBaiduMapConsentInput, MediaItem,
+  MediaBaiduMapConsent, MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob, MediaBaiduMapIndexJobInput, MediaItem,
   XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveDialogTitle } from './DialogTitle'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+
+const indexJobStatusText: Record<MediaBaiduMapIndexJob['status'], string> = {
+  not_queued: '尚未加入索引队列',
+  queued: '已入队，等待服务器启用调度',
+  leased: '任务已被领取',
+  completed: '派生位置索引已生成',
+  cancelled: '任务已取消',
+}
 
 const consentStatusText: Record<MediaBaiduMapConsent['status'], string> = {
   not_granted: '尚未授权向百度转换此照片位置',
@@ -25,7 +34,8 @@ const consentStatusText: Record<MediaBaiduMapConsent['status'], string> = {
  */
 export function XDriveMediaGalleryViewerLocationDialog({
   open, item, getBaiduMapProvider, loadBaiduStaticMap,
-  getBaiduMapConsent, saveBaiduMapConsent, revokeBaiduMapConsent, onClose,
+  getBaiduMapConsent, saveBaiduMapConsent, revokeBaiduMapConsent,
+  getBaiduMapIndexJob, enqueueBaiduMapIndexJob, cancelBaiduMapIndexJob, onClose,
 }: {
   open: boolean
   item: MediaItem | null
@@ -34,6 +44,9 @@ export function XDriveMediaGalleryViewerLocationDialog({
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
+  getBaiduMapIndexJob?: (nodeID: number) => Promise<MediaBaiduMapIndexJob>
+  enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<MediaBaiduMapIndexJob>
+  cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
   onClose: () => void
 }) {
   const latitude = item?.metadata.latitude
@@ -49,6 +62,13 @@ export function XDriveMediaGalleryViewerLocationDialog({
   const [error, setError] = useState('')
   const [agreeConversion, setAgreeConversion] = useState(false)
   const [agreeIndex, setAgreeIndex] = useState(false)
+  const [job, setJob] = useState<MediaBaiduMapIndexJob | null>(null)
+  const [jobLoading, setJobLoading] = useState(false)
+  const [jobError, setJobError] = useState('')
+  const [confirmJob, setConfirmJob] = useState(false)
+  // A cancelled intent needs a NEW user-consent generation before retry.
+  const canQueueJob = Boolean(job && (job.status === 'not_queued' ||
+    (job.status === 'cancelled' && consent && consent.revision > job.consent_revision)))
 
   useEffect(() => {
     const request = ++generation.current
@@ -58,6 +78,17 @@ export function XDriveMediaGalleryViewerLocationDialog({
     setError('')
     setAgreeConversion(false)
     setAgreeIndex(false)
+    setJob(null)
+    setJobError('')
+    setConfirmJob(false)
+    setJobLoading(false)
+    if (open && nodeID && getBaiduMapIndexJob) {
+      setJobLoading(true)
+      void getBaiduMapIndexJob(nodeID)
+        .then((value) => { if (generation.current === request) setJob(value) })
+        .catch(() => { if (generation.current === request) setJobError('索引任务状态读取失败，可手动刷新。') })
+        .finally(() => { if (generation.current === request) setJobLoading(false) })
+    }
     if (!open || !nodeID || !getBaiduMapConsent) return
     setLoading(true)
     void getBaiduMapConsent(nodeID)
@@ -73,8 +104,22 @@ export function XDriveMediaGalleryViewerLocationDialog({
         if (generation.current === request) setLoading(false)
       })
     return () => { generation.current++ }
-  }, [open, nodeID, getBaiduMapConsent])
+  }, [open, nodeID, getBaiduMapConsent, getBaiduMapIndexJob])
 
+  const refreshJob = async () => {
+    if (!nodeID || !getBaiduMapIndexJob || jobLoading) return
+    const request = generation.current
+    setJobLoading(true)
+    setJobError('')
+    try {
+      const next = await getBaiduMapIndexJob(nodeID)
+      if (request === generation.current) setJob(next)
+    } catch {
+      if (request === generation.current) setJobError('索引任务状态读取失败，请重试。')
+    } finally {
+      if (request === generation.current) setJobLoading(false)
+    }
+  }
   const issueConsent = async () => {
     if (!nodeID || !consent || !saveBaiduMapConsent || !agreeConversion || !agreeIndex ||
         busy || !Number.isSafeInteger(consent.revision)) return
@@ -92,6 +137,8 @@ export function XDriveMediaGalleryViewerLocationDialog({
         setConsent(next)
         setAgreeConversion(false)
         setAgreeIndex(false)
+        setConfirmJob(false)
+        void refreshJob()
       }
     } catch {
       if (request === generation.current) setError('授权保存失败，请重新读取最新状态。')
@@ -107,9 +154,55 @@ export function XDriveMediaGalleryViewerLocationDialog({
     setError('')
     try {
       const next = await revokeBaiduMapConsent(nodeID, consent.revision)
-      if (request === generation.current) setConsent(next)
+      if (request === generation.current) {
+        setConsent(next)
+        setConfirmJob(false)
+        void refreshJob()
+      }
     } catch {
       if (request === generation.current) setError('授权撤销失败，请重新读取最新状态。')
+    } finally {
+      if (request === generation.current) setBusy(false)
+    }
+  }
+
+  const enqueueJob = async () => {
+    if (!nodeID || !consent?.authorized || !consent.source_current ||
+        !Number.isSafeInteger(consent.revision) || consent.revision <= 0 ||
+        !job || !confirmJob || !enqueueBaiduMapIndexJob || busy || jobLoading ||
+        !canQueueJob) return
+    const request = generation.current
+    setBusy(true)
+    setJobError('')
+    try {
+      const next = await enqueueBaiduMapIndexJob(nodeID, {
+        expected_revision: consent.revision, confirm: true,
+      })
+      if (request === generation.current) {
+        setJob(next)
+        setConfirmJob(false)
+      }
+    } catch {
+      if (request === generation.current) setJobError('提交失败，授权或照片可能已更改；请刷新状态。')
+    } finally {
+      if (request === generation.current) setBusy(false)
+    }
+  }
+  const cancelJob = async () => {
+    if (!nodeID || !job || !cancelBaiduMapIndexJob || busy || jobLoading ||
+        !['queued', 'leased'].includes(job.status) ||
+        !Number.isSafeInteger(job.consent_revision) || job.consent_revision <= 0) return
+    const request = generation.current
+    setBusy(true)
+    setJobError('')
+    try {
+      const next = await cancelBaiduMapIndexJob(nodeID, job.consent_revision)
+      if (request === generation.current) {
+        setJob(next)
+        setConfirmJob(false)
+      }
+    } catch {
+      if (request === generation.current) setJobError('取消失败，任务状态可能已变化；请刷新。')
     } finally {
       if (request === generation.current) setBusy(false)
     }
@@ -176,6 +269,50 @@ export function XDriveMediaGalleryViewerLocationDialog({
               </Button>
             </Stack>
             {error ? <Alert severity="error" role="alert">{error}</Alert> : null}
+            {getBaiduMapIndexJob && enqueueBaiduMapIndexJob && cancelBaiduMapIndexJob ? (
+              <Stack spacing={1.25} sx={{ pt: 1 }} data-xdrive-gallery-baidu-index-job>
+                <Typography variant="subtitle2">照片地图索引任务</Typography>
+                <Typography role="status" variant="body2">
+                  {jobLoading ? '正在读取任务状态…' : job
+                    ? indexJobStatusText[job.status] : '尚未取得任务状态'}
+                </Typography>
+                {job?.status === 'cancelled' && consent &&
+                  consent.revision <= job.consent_revision ? (
+                    <Typography variant="caption" color="text.secondary">
+                      已取消的任务不能使用旧授权再次提交；需要先更新位置授权。
+                    </Typography>
+                  ) : null}
+                {job && !job.dispatch_enabled ? (
+                  <Alert severity="info">
+                    服务器尚未放行百度坐标转换及调度。加入等待队列不会立即发送照片位置，也不代表地图已经生成。
+                  </Alert>
+                ) : null}
+                <FormControlLabel
+                  control={<Checkbox checked={confirmJob} disabled={busy || jobLoading ||
+                    consent?.status !== 'authorized' || !consent.source_current ||
+                    !job || !canQueueJob}
+                    onChange={(_, checked) => setConfirmJob(checked)} />}
+                  label="我确认单独提交此照片的定位索引任务（可能在未来服务启用后执行）"
+                />
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  <Button size="small" variant="contained" sx={{ minHeight: 44 }}
+                    disabled={busy || jobLoading || !confirmJob || !consent?.authorized ||
+                      !consent.source_current || !job ||
+                      !canQueueJob}
+                    onClick={() => { void enqueueJob() }}>
+                    加入索引等待队列
+                  </Button>
+                  <Button size="small" color="error" variant="outlined" sx={{ minHeight: 44 }}
+                    disabled={busy || jobLoading || !job || !['queued', 'leased'].includes(job.status)}
+                    onClick={() => { void cancelJob() }}>
+                    取消索引任务
+                  </Button>
+                  <Button size="small" disabled={busy || jobLoading}
+                    onClick={() => { void refreshJob() }}>刷新状态</Button>
+                </Stack>
+                {jobError ? <Alert severity="error" role="alert">{jobError}</Alert> : null}
+              </Stack>
+            ) : null}
           </Stack>
         ) : null}
       </DialogContent>

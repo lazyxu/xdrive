@@ -62,6 +62,9 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
     getBaiduMapConsent: (nodeID) => api.mediaBaiduMapConsent(nodeID),
     saveBaiduMapConsent: (nodeID, input) => api.saveMediaBaiduMapConsent(nodeID, input),
     revokeBaiduMapConsent: (nodeID, revision) => api.revokeMediaBaiduMapConsent(nodeID, revision),
+    getBaiduMapIndexJob: (nodeID) => api.mediaBaiduMapIndexJob(nodeID),
+    enqueueBaiduMapIndexJob: (nodeID, input) => api.enqueueMediaBaiduMapIndexJob(nodeID, input),
+    cancelBaiduMapIndexJob: (nodeID, revision) => api.cancelMediaBaiduMapIndexJob(nodeID, revision),
     listMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
       api.mediaMemories(anchorDate, limit, timeZone),
     listMemoryItemRange: (memoryID, limit, offset, timeZone = 'UTC') =>

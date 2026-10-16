@@ -35,6 +35,8 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob,
+  MediaBaiduMapIndexJobInput,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
 } from '../models'
@@ -151,6 +153,9 @@ export interface XDriveMediaGalleryPort {
   getBaiduMapConsent?: (nodeID: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
+  getBaiduMapIndexJob?: (nodeID: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapIndexJob>>
+  enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapIndexJob>>
+  cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapIndexJob>>
   listMemories?: (
     anchorDate?: string,
     limit?: number,
@@ -555,6 +560,15 @@ export function createXDriveMediaGalleryDataSource(
       : undefined,
     revokeBaiduMapConsent: port.revokeBaiduMapConsent
       ? (nodeID, revision) => resolveXDriveTransport(port.revokeBaiduMapConsent!(nodeID, revision))
+      : undefined,
+    getBaiduMapIndexJob: port.getBaiduMapIndexJob
+      ? (nodeID) => resolveXDriveTransport(port.getBaiduMapIndexJob!(nodeID))
+      : undefined,
+    enqueueBaiduMapIndexJob: port.enqueueBaiduMapIndexJob
+      ? (nodeID, input) => resolveXDriveTransport(port.enqueueBaiduMapIndexJob!(nodeID, input))
+      : undefined,
+    cancelBaiduMapIndexJob: port.cancelBaiduMapIndexJob
+      ? (nodeID, revision) => resolveXDriveTransport(port.cancelBaiduMapIndexJob!(nodeID, revision))
       : undefined,
     listMemories: port.listMemories
       ? (anchorDate, limit, timeZone) => resolveXDriveTransport(

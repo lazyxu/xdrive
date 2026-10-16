@@ -21,6 +21,8 @@ import type {
   XDriveBaiduStaticMapRequest,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob,
+  MediaBaiduMapIndexJobInput,
 } from '../models'
 import {
   xDriveMediaItemSupportsBasicEditing,
@@ -60,6 +62,9 @@ export function XDriveMediaGalleryViewer({
   getBaiduMapConsent,
   saveBaiduMapConsent,
   revokeBaiduMapConsent,
+  getBaiduMapIndexJob,
+  enqueueBaiduMapIndexJob,
+  cancelBaiduMapIndexJob,
   onPrevious,
   onNext,
   onFilmstripSelect,
@@ -91,6 +96,9 @@ export function XDriveMediaGalleryViewer({
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
   saveBaiduMapConsent?: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<MediaBaiduMapConsent>
   revokeBaiduMapConsent?: (nodeID: number, revision: number) => Promise<MediaBaiduMapConsent>
+  getBaiduMapIndexJob?: (nodeID: number) => Promise<MediaBaiduMapIndexJob>
+  enqueueBaiduMapIndexJob?: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<MediaBaiduMapIndexJob>
+  cancelBaiduMapIndexJob?: (nodeID: number, revision: number) => Promise<MediaBaiduMapIndexJob>
   onPrevious: () => void
   onNext: () => void
   onFilmstripSelect: (index: number) => void
@@ -362,6 +370,9 @@ export function XDriveMediaGalleryViewer({
         getBaiduMapConsent={getBaiduMapConsent}
         saveBaiduMapConsent={saveBaiduMapConsent}
         revokeBaiduMapConsent={revokeBaiduMapConsent}
+        getBaiduMapIndexJob={getBaiduMapIndexJob}
+        enqueueBaiduMapIndexJob={enqueueBaiduMapIndexJob}
+        cancelBaiduMapIndexJob={cancelBaiduMapIndexJob}
         onClose={() => setLocationOpen(false)}
       />
 

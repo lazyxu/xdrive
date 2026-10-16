@@ -184,6 +184,8 @@ import {
   type AgentMediaPlaceFacet,
   type AgentMediaPlacesPage,
   type AgentMediaBaiduMapConsent,
+  type AgentMediaBaiduMapIndexJob,
+  type AgentMediaBaiduMapIndexJobInput,
   type AgentMediaBaiduMapConsentInput,
   type AgentMediaPlacesViewportBounds,
   type AgentMediaPlacesViewportPage,
@@ -4108,6 +4110,45 @@ function registerIPCHandlers() {
         throw new AgentIPCError('invalid_input', 0, 'Current photo location consent revision is required.')
       }
       return requireAgentClient().revokeMediaBaiduConsent(nodeID, revision)
+    }, false),
+  )
+
+  // One shared per-photo index job contract; the Agent is the only Server
+  // client. Untrusted renderer never supplies GPS, Owner ID, AK or URLs.
+  ipcMain.handle('agent:get-media-baidu-index-job', (_event, nodeID: unknown) =>
+    runAgentAction<AgentMediaBaiduMapIndexJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!validConsentNode(nodeID)) {
+        throw new AgentIPCError('invalid_input', 0, 'A valid photo Node ID is required.')
+      }
+      return requireAgentClient().mediaBaiduIndexJob(nodeID)
+    }, false),
+  )
+  ipcMain.handle('agent:enqueue-media-baidu-index-job', (_event, nodeID: unknown, value: unknown) =>
+    runAgentAction<AgentMediaBaiduMapIndexJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      const input = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Partial<AgentMediaBaiduMapIndexJobInput> : null
+      if (!validConsentNode(nodeID) || !input ||
+          !validConsentRevision(input.expected_revision) || input.confirm !== true ||
+          Object.keys(input).some(key => !['expected_revision', 'confirm'].includes(key))) {
+        throw new AgentIPCError('invalid_input', 0, 'Current consent revision and separate explicit confirmation required.')
+      }
+      return requireAgentClient().enqueueMediaBaiduIndexJob(nodeID, {
+        expected_revision: input.expected_revision, confirm: true,
+      })
+    }, false),
+  )
+  ipcMain.handle('agent:cancel-media-baidu-index-job', (_event, nodeID: unknown, revision: unknown) =>
+    runAgentAction<AgentMediaBaiduMapIndexJob>(async () => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!validConsentNode(nodeID) || !validConsentRevision(revision)) {
+        throw new AgentIPCError('invalid_input', 0, 'Current photo map index job revision required.')
+      }
+      return requireAgentClient().cancelMediaBaiduIndexJob(nodeID, revision)
     }, false),
   )
 

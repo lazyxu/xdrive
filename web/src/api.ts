@@ -58,6 +58,8 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob,
+  MediaBaiduMapIndexJobInput,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
   Node,
@@ -1391,6 +1393,30 @@ export class XDriveApi {
   revokeMediaBaiduMapConsent(nodeID: number, revision: number) {
     return this.request<MediaBaiduMapConsent>(
       `/api/v1/media/items/${nodeID}/baidu-map-consent`, {
+        method: 'DELETE', headers: { 'If-Match': `"${revision}"` }, cache: 'no-store',
+      },
+    )
+  }
+
+  // Explicit Owner request only: GET is passive; POST queues with confirm=true,
+  // DELETE cancels the matching consent generation. No JSAPI4 activation.
+  mediaBaiduMapIndexJob(nodeID: number) {
+    return this.request<MediaBaiduMapIndexJob>(
+      `/api/v1/media/items/${nodeID}/baidu-map-index-job`, { cache: 'no-store' },
+    )
+  }
+
+  enqueueMediaBaiduMapIndexJob(nodeID: number, input: MediaBaiduMapIndexJobInput) {
+    return this.request<MediaBaiduMapIndexJob>(
+      `/api/v1/media/items/${nodeID}/baidu-map-index-job`, {
+        method: 'POST', body: JSON.stringify(input), cache: 'no-store',
+      },
+    )
+  }
+
+  cancelMediaBaiduMapIndexJob(nodeID: number, revision: number) {
+    return this.request<MediaBaiduMapIndexJob>(
+      `/api/v1/media/items/${nodeID}/baidu-map-index-job`, {
         method: 'DELETE', headers: { 'If-Match': `"${revision}"` }, cache: 'no-store',
       },
     )
