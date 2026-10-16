@@ -423,3 +423,28 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 新增**首轮时钟方法修正后的权威数据** [专项CI #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589) 三独立源：95k×1KiB/4k×16KiB/900×128KiB/100×1MiB，100k真实SHA不同原片，共385,638,400B逻辑。生产`Local.Put`原版实际初始实体677,478,400B，离线Pack+Index 390,447,104B（-42.3676%）；95k物理回收后33,873,920/19,529,728B（-42.3458%）；真实2,000次分层完整SHA和独立`ReadAt 256B`原版P50 **242.708ms**，候选 **289.994ms（+19.48%退化）**；初始写入48,606.482/1,567.547ms，释放阶段10,439.591/103.597ms但文件持久协议不同，**不可宣称用户上传/删除加速**。Pack压缩期间两代同时存在最高409,972,736B；Go MaxRSS61,548KiB，CPU/write_bytes/各独立样本永久[11原始文件](performance-evidence/cas-a07-mixed-100k-pack/README.md)，`tar.gz`SHA256 0037302a6abfcd29a3e5198cbc13cb3d165b910831d20e1d47fee4d94b808812。原版全部性能预算正确通过无产品更改，**Offline space Accepted / universal-size Pack online proposal Rejected for 2k read degradation / production AFTER=N/A**。
 
 **保留方法失效旧样本：** [首次CI #38941430856](https://github.com/lazyxu/xdrive/actions/runs/38941430856)物理字节合法但`Local.Open/Delete`额外计入重复SHA原片生成，不是有效公平读取/CPU A/B；[机器说明](performance-evidence/cas-a07-mixed-100k-pack/ci-run-38941430856-superseded.json)保留原CI、时间失效原因，不判生产RED、不擦旧记录。真实原始n3数据规范化源SHA与新提交相同，原始包严格固定；本新证据HEAD仍必须专用/完整CI含final-gate成功才Ready/merge。Linux本地storage层，不是任何六端客户端。
+
+
+## CAS-A03-d3 / S001-d3：真实4GiB局部修改HTTP FileVersion与物理GC（2026-10-17）
+
+**Benchmarking / new exact workload / CURRENT=Not measured，AFTER=N/A**。既有 A03-d1（原生产 Local.Put 4GiB整版）/d2（离线 fixed chunk）只测Storage层，P044/P045/P051是新文件全量首次上传；不能代表**生产 HTTP 修改既有Node**。计划测3个独立PG17/Gin/Local CAS，真实 A 512×8MiB PUT后只在中部单块内变更1MiB的B，携带512 SHA，按生产接口验证511个旧CAS分片 Reused、仅1个真实8MiB PUT、旧4GiB CAS读取重哈希耗时、全4GiB新CAS finalize/Go IO及两个历史/当前FileVersion引用与最后Owner HTTP GC，读回两版全4GiB SHA；64MiB smoke不计入n3。真实数据和预算、原始证据、[专属CI](../.github/workflows/cas-a03-d3-real-http-4gib-version.yml)详见[CAS-A03规范](cas-version-performance.md)。未运行有效新CI前 n3=0、speedup=N/A、六端客户端本项均Not measured；绝不重新将旧4GiB本地Storage或跨平台单次上传跑分当成AFTER。
+
+
+### CAS-A03-d3 首轮证据门槛诊断（2026-10-17）
+
+**两次初始准确源码预检失败（Invalid harness）：** 首轮 CI #38949708358 在代码格式门槛失败，第二轮 CI #38949952695 专门打印实际 gofmt -d，定位到拼接表达式及 JSON map 对齐等测试源码格式问题；在进入真实64MiB PG17 smoke / 4GiB n3之前终止，真实性能有效n=0，不得当产品性能RED。现按差异在同一固定父提交上修复并重跑准确HEAD CI。
+
+**CAS-A03-d3 CI Invalid harness #38950237635（2026-10-17）**：在准确 `ee4b0eabca51e5430e436dc1e496f63338f379dd` HEAD 上源格式预检已通过，但预检无 `XD_CAS_A03_D3_SAMPLE` 时仍携带整个作业的 opt-in 性能开关，`go test` 于样本合法性检查退出。真实64MiB smoke与4GiB n3均未启动、有效n=0；不是Server性能RED。只更正preflight使用 `env -u XD_CAS_A03_D3_REAL_HTTP` 实际编译测试，保留smoke/n3显式开启；仍在原冻结父上保留唯一工作提交，重新要求准确HEAD专项与全仓CI。
+
+**CAS-A03-d3 Invalid workflow evidence #38951369083（2026-10-17）**：对先前 HEAD 的工作流字符串替换误展开 `$'` 语义，令 YAML 片段重复/截断，GitHub 在 push 时立即报告无Job的工作流解析 failure（不是Go代码、PG或物理性能RED）。从先前合法 Git blob 完全恢复 YAML，按单次字面预检行的安全回调替换，校验只有一个64MiB smoke、一个4GiB n3、一个artifact上传，全部性能样本仍n=0；新HEAD必须重新通过真实smoke/n3和全CI。
+
+
+## CAS-A03-d3 首次有效n3物理上传版本成本（2026-10-17）
+
+**Accepted CURRENT 原生产实现，n=3/3，产品未优化（AFTER=N/A）**。独立准确源码 `877054f3bcb60b2247ac7ae3092fc8570c4a6f61` [真实Gin/PG17/CAS 4GiB专项 #38951921025](https://github.com/lazyxu/xdrive/actions/runs/38951921025)及[完整CI #38951920350](https://github.com/lazyxu/xdrive/actions/runs/38951920350)均Success：每样本初始512×8MiB真实PUT，B只改中部1MiB，511源分片复用、1×8MiB新PUT，2份SHA不同的4GiB原片/旧历史+新Current双SHA及真实FileVersion/ContentBlob ref，最后Owner HTTP GC实体0。三独立高熵源码不同Sha；原版P50 初始A 50,157.046ms、B旧4GiB分片重哈希Init 2,310.343ms、B唯一PUT 46.204ms、Finalize新整4GiB 25,075.655ms、GC 408.452ms；**B新增内核写4,303,355,904B**，**A+B持久物理8,589,942,784B**。原版资源RSS两端快照增量0B **不是RSS峰值**，后续增强25ms峰值采样；原版全SHA与权限/GC预算成功。原始8件数值+系统资源 `docs/performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38951921025-numeric.tar.gz` GitBlob `68015cf60d7eab3b6126a6dc32f0e721d8ad3f48`、SHA256 `c032c767cbf5b452f14d45b3de551c2032a35b4e13ee5cb57316a8d6d5ad2337`；完整11件短期Artifact `d2f3988d46aa81a16bfb6c1f82d27a9dd5566d3420c0bab1b335c1134f59c7e2` / https://github.com/lazyxu/xdrive/actions/runs/38951921025/artifacts/12067754796，大Go日志只保留Artifact。Next：准确新增仪表HEAD再次真实三轮和完整CI，之后才可Ready合入。六客户端该**版本更新**场景全部Not measured；并不重复P044/P045/P051初传或CAS-A03 d1/d2离线。用8MiB网络节省值预测上线块版本空间收益是禁止的。
+
+## CAS-A03-d3 源准确验收：实际单分片HTTP PUT、RSS峰值和物理存储（2026-10-17）
+
+**CURRENT n=3真实 4GiB / 原版保留，生产 AFTER=N/A。** 已有准确有效[第一次源码CI #38951921025](https://github.com/lazyxu/xdrive/actions/runs/38951921025)（P50初始化2,310.343ms/Finalize25,075.655ms，两版物理8,589,942,784B），再补测[真实 n3 专项 CI #38953556661](https://github.com/lazyxu/xdrive/actions/runs/38953556661)：原生 PG17/Gin，A 512 次真实8MiB PUT；B仅1MiB变化、真实511个复用part，HTTP入口**确实只收到1次PUT 8,388,608B**；B重新生产完整4GiB CAS，内核多写4,303,355,904B，总两版物理8,589,942,784B，历史/current两个Blob和全SHA读回+最终GC全部正确。有效第二套n3 P50 B Init **3,117.744ms** / PUT **28.165ms** / Finalize **16,756.892ms** / GC **429.078ms**；25ms采样B RSS增长P50 **126,976B**，三轮最大**573,440B**；CPU P50 **1,666 ticks**，均预算内。前后两套均**原生产代码不改**，独立Runner时延差异不算优化。
+
+[永久sample JSON/资源数字档案](performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38953556661-verified-numeric.tar.gz) Git Blob `4ee066f1bbf2501da7c225e788a46cb4e7c9c375` SHA256 `401e75c553a3f33ab1bda37ff13795d1a40fdae910a9fd99e6f88dcd2b4f0305`，[11个原始文件短期Artifact](https://github.com/lazyxu/xdrive/actions/runs/38953556661/artifacts/12069796643) SHA256 `87826d6b5e6ac20e54157adea8154f992e72289abfd01264d04980a24303e813` 和文件哈希清单在[README](performance-evidence/cas-a03-d3-real-http-4gib-version/README.md)。该 **Linux Server Gin/PG/Local CAS层测试**不是六平台真实客户端版本上传；仍全部Not measured，不重复P044/P045/P051初传/已测100k浏览或取消。下一次产品储存候选必须先验ContentBlob/FileVersion/Owner/任意 Range、二代备份一致性与真正GC；无生产改动则 AFTER=N/A。归档新HEAD仍需专用与完整准确CI后才能合入。

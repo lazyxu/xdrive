@@ -1,0 +1,161 @@
+name: CAS-A03-d3 Real HTTP 4GiB Partial-Edit FileVersion Baseline
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a03-d3-real-http:
+    if: github.head_ref == 'perf/cas-a03-d3-real-http-4gib-reused-chunks-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_CAS_A03_D3_REAL_HTTP: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/cas-a03-d3-real-http-4gib-reused-chunks-20261017
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Check original source-head and opt-in test contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          test -z "$(gofmt -l internal/api/cas_a03_d3_real_http_4gib_version_performance_linux_test.go)"
+          git rev-parse HEAD
+          df -h .
+          # Preflight compiles the opted-out test; smoke and real n3 enable it explicitly.
+          env -u XD_CAS_A03_D3_REAL_HTTP go test -mod=readonly ./internal/api -run '^TestCASA03D3RealHTTP4GiBSmallEditVersion$' -count=1 -timeout=30s
+      - name: Verify immutable first-valid original machine numeric evidence before new runs
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38951921025-numeric.tar.gz
+          printf '%s  %s\n' 'c032c767cbf5b452f14d45b3de551c2032a35b4e13ee5cb57316a8d6d5ad2337' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,sys,tarfile
+          wanted={"source.txt","summary.json","README.txt"}
+          wanted.update(f"sample-{i}.{ext}" for i in (1,2,3) for ext in ["json"])
+          wanted.update(f"sample-{i}-resources.txt" for i in (1,2,3))
+          with tarfile.open(sys.argv[1],"r:gz") as t:
+            files={x.name:t.extractfile(x).read() for x in t.getmembers()}
+          assert set(files)==wanted, set(files)^wanted
+          assert "EXACT_SOURCE_HEAD=877054f3bcb60b2247ac7ae3092fc8570c4a6f61" in files["source.txt"].decode()
+          summary=json.loads(files["summary.json"])
+          assert summary["passed"] and summary["samples"]==3
+          for i in (1,2,3):
+            row=json.loads(files[f"sample-{i}.json"])
+            assert row["passed"] and row["source_bytes_per_version"]==4294967296
+            assert row["B_reused_parts"]==511 and row["two_versions_allocated_bytes"]==8589942784
+          PY
+      - name: Verify permanent source-exact full n3 sample numeric archive and all original-file digests
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38953556661-verified-numeric.tar.gz
+          printf '%s  %s\n' '401e75c553a3f33ab1bda37ff13795d1a40fdae910a9fd99e6f88dcd2b4f0305' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,sys,tarfile
+          wanted={"source.txt","summary.json","README.txt","MANIFEST.json"}
+          wanted|={f"sample-{i}.{ext}" for i in (1,2,3) for ext in ("json",)}
+          wanted|={f"sample-{i}-resources.txt" for i in (1,2,3)}
+          with tarfile.open(sys.argv[1],"r:gz") as tar:
+              members=tar.getmembers()
+              assert len(members)==10 and {m.name for m in members}==wanted
+              assert all(m.isfile() for m in members)
+              data={m.name:tar.extractfile(m).read() for m in members}
+          manifest=json.loads(data["MANIFEST.json"])
+          assert manifest["observed_original_zip_sha256"]=="87826d6b5e6ac20e54157adea8154f992e72289abfd01264d04980a24303e813"
+          assert len(manifest["raw_all_11_members_sha256"])==11
+          assert len(manifest["all_11_lengths"])==11
+          assert "EXACT_SOURCE_HEAD=2b57dfc029a794ab20db1b7effebe7765cbd7453" in data["source.txt"].decode()
+          assert "RUN_ID=38953556661" in data["source.txt"].decode()
+          for name,original in data.items():
+              if name in manifest["raw_all_11_members_sha256"]:
+                  assert hashlib.sha256(original).hexdigest()==manifest["raw_all_11_members_sha256"][name]
+                  assert len(original)==manifest["all_11_lengths"][name]
+          summary=json.loads(data["summary.json"])
+          assert summary["passed"] and summary["samples"]==3
+          for sample in (1,2,3):
+              r=json.loads(data[f"sample-{sample}.json"])
+              assert r["passed"] and not r["smoke_only"] and r["source_bytes_per_version"]==4294967296
+              assert r["changed_bytes"]==1048576 and r["chunk_count"]==512
+              assert r["first_upload_real_http_puts"]==512 and r["first_upload_body_bytes"]==4294967296
+              assert r["B_reused_parts"]==511 and r["B_real_http_puts"]==1
+              assert r["B_real_http_put_body_bytes"]==8388608
+              assert r["two_versions_allocated_bytes"]==8589942784
+              assert r["B_init_through_final_kernel_write_bytes"]==4303355904
+              assert 0<=r["B_postseed_rss_growth_bytes"]<=536870912
+              assert r["final_physical_cas_count"]==0 and r["final_physical_cas_bytes"]==0
+          PY
+      - name: Physical PG17 smoke 64MiB (not a valid 4GiB result)
+        env:
+          XD_CAS_A03_D3_SAMPLE: sample-1
+          XD_CAS_A03_D3_SMOKE: '1'
+        run: |
+          set -euo pipefail
+          go test -mod=readonly ./internal/api -run '^TestCASA03D3RealHTTP4GiBSmallEditVersion$' -count=1 -timeout=8m -v
+      - name: Genuine n3 4GiB immutable A and changed B, FileVersion and last-owner GC
+        run: |
+          set -euo pipefail
+          mkdir -p cas-a03-d3-evidence
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > cas-a03-d3-evidence/source.txt
+          for sample in 1 2 3; do
+            export XD_CAS_A03_D3_SAMPLE="sample-$sample"
+            unset XD_CAS_A03_D3_SMOKE || true
+            /usr/bin/time -v -o "cas-a03-d3-evidence/sample-$sample-resources.txt" \
+              go test -mod=readonly ./internal/api -run '^TestCASA03D3RealHTTP4GiBSmallEditVersion$' \
+                -count=1 -timeout=25m -v 2>&1 | tee "cas-a03-d3-evidence/sample-$sample.log"
+            python3 - "$sample" <<'PY'
+          import json,pathlib,re,sys
+          i=sys.argv[1]
+          log=pathlib.Path(f"cas-a03-d3-evidence/sample-{i}.log").read_text()
+          rows=re.findall(r'CAS_A03_D3_REAL_HTTP (\{[^\r\n]+\})',log)
+          assert len(rows)==1, "one authentic machine JSON per physical source"
+          row=json.loads(rows[0])
+          assert row["passed"] and not row["smoke_only"] and row["sample"]==f"sample-{i}"
+          assert row["source_bytes_per_version"]==4294967296 and row["changed_bytes"]==1048576
+          assert row["B_reused_parts"]==511 and row["B_real_http_puts"]==1
+          assert row["B_real_http_put_body_bytes"]==8388608
+          assert row["two_versions_allocated_bytes"]>=8589934592
+          assert row["final_physical_cas_count"]==0
+          pathlib.Path(f"cas-a03-d3-evidence/sample-{i}.json").write_text(json.dumps(row,indent=2)+"\n")
+          PY
+          done
+          python3 - <<'PY'
+          import json,pathlib,statistics
+          root=pathlib.Path("cas-a03-d3-evidence")
+          rows=[json.loads((root/f"sample-{i}.json").read_text()) for i in (1,2,3)]
+          keys=["B_init_old_blob_scan_ms","B_changed_part_put_ms","B_full_cas_finalize_ms",
+                "B_init_through_final_kernel_write_bytes","B_postseed_rss_growth_bytes",
+                "two_versions_allocated_bytes","http_permanent_delete_gc_ms"]
+          result={"samples":3,"passed":all(x["passed"] for x in rows),
+                  "p50":{k:statistics.median(x[k] for x in rows) for k in keys},
+                  "source":(root/"source.txt").read_text()}
+          (root/"summary.json").write_text(json.dumps(result,indent=2)+"\n")
+          assert result["passed"]
+          print(json.dumps(result))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a03-d3-real-http-4gib-version-n3
+          path: cas-a03-d3-evidence/
+          if-no-files-found: warn
+          retention-days: 14
