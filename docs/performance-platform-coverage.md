@@ -180,3 +180,15 @@ CAS-A01 真实Server基准与已验收P047 **100k个物理不同SHA CAS永久unl
 
 
 **CAS-A04a 真实专项CI状态（2026-10-16）：** 共享Server文件数据tar n3 [CI #38863629669](https://github.com/lazyxu/xdrive/actions/runs/38863629669) SUCCESS，已真实压测400MiB物理CAS双代0/1/100%新增原片的9个隔离后端tar/restore场景并逐SHA确认，原始样本[归档](performance-evidence/cas-a04-two-generation-tar/README.md)。六端GUI仍全 **Not measured**，不能把Linux原版tar P50当任一设备4GiB上传或100k滚动成绩；证据归档精确最终HEAD CI/final-gate另行验收。
+
+
+## CAS-A03 / S001-d1 · 4GiB原片中部1MiB差异，仅Server存储层（2026-10-16）
+
+| 新负载与阶段 | Native Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A03 / 两个真实4GiB AES-CTR Local CAS，仅中部1MiB差异，完整SHA/512块验证 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+Linux原生Go `storage.Local.Put` 仅为**共享Server存储层基准**，不是任一客户端4GiB传输或版本体验，不能与P044/P045/P051的不同环境吞吐做BEFORE/AFTER。 [基准规格](cas-version-performance.md) 的原始 n≥3、磁盘写入和恢复验证达标后才更改状态；已安装 PWA 和物理Android/iOS设备仍需独立真实验收。
+
+
+**CAS-A03共享Server存储层真实 n3 基线（2026-10-16）：** [专项CI #38870252470](https://github.com/lazyxu/xdrive/actions/runs/38870252470) 首次源准确SUCCESS，3组物理各2×4GiB SHA原片、只改中间1MiB，新版本实体增加4,294,971,392B、第二版Put P50 22.594151s、KernelWrite(两版本) 8,589,934,592B、RestoreSHA全8GiB通过，资源预算通过。永久原始数据[CAS-A03证据](performance-evidence/cas-a03-real-4gib-local-versions/README.md)。这是**后端 Local CAS 单层结果**，上表的 Native Desktop/Wide Web/Mobile Web/Desktop installed PWA/Android installed PWA/iOS installed PWA 仍分别 **Not measured**，不以本原版Go值填六端客户端版本同步或传输。须独立测试身份/上传/范围读/后台与任务取消。
