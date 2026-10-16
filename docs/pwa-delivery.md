@@ -595,3 +595,18 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 
 
 **S5-A2a 双 CI 工作区依赖布局修正（2026-10-16）：** 旧准确 HEAD `b4dadf5c86cb1ca5842d020e2fc8450e2c1a1d46` 的 [真实 Chrome 专项 #38831219423](https://github.com/lazyxu/xdrive/actions/runs/38831219423) 在新增 Node 契约阶段因 `Cannot find module 'typescript'` 失败：该专用 workflow 只在 `web/` 执行 `npm ci`；而上一轮出错的 `desktop-tests` 只在 `desktop/` 安装 Node 模块。两个工作区各自 `devDependencies` 都声明 TypeScript，但测试仅使用 CJS 模块本地解析路径，不能覆盖两种 CI。仅在测试夹具用 `createRequire` 从明确的 `desktop/package.json` 优先解析已安装 TypeScript，若 `MODULE_NOT_FOUND` 再从 `web/package.json` 解析；不修改任何 lockfile/package.json、业务 UI、Server 或 SW、不额外安装整个 Electron 到 Chrome CI。新增测试验证两个工作区的声明和入口存在。旧提交的专用/完整 CI 不能作为新 SHA 合并证据。固定基线单提交规则维持，须在新准确 HEAD 的专用 Chrome+Node 与完整 Desktop/Web/Go/Final Gate 双绿才可线性合并。
+
+
+## PWA-S5-A2a · 共用安装对话框脱敏观察记录已完整合并（2026-10-16）
+
+[PR #1737](https://github.com/lazyxu/xdrive/pull/1737) 在准确 HEAD `06c07fc76b843925b1fe0fae18601fb871197afd` 通过 [真实 Chrome Desktop + Android UA/Touch 390px 专项 #38831611612](https://github.com/lazyxu/xdrive/actions/runs/38831611612) 和 [完整 GitHub CI #38831611655](https://github.com/lazyxu/xdrive/actions/runs/38831611655)（含 Desktop 全量测试、Go race、Caddy、Server、Windows/Linux 安装升级回滚和 Final Gate），rebase 线性合并至 `master@3c2cca2d53665cfcb5a42adf75e9c230f1676532`，相关临时 PWA 分支已核实删除。该阶段只提供用户主动点击、只在当前浏览器内显示的匿名观察 JSON，不能证明 iOS 27/Android/桌面已经由真实 OS 安装或受信任证书连接。
+
+## PWA-S5-A2b1 · 七平台独立实测证据材料校验、绝不自动批准发布（2026-10-16）
+
+**本阶段固定基线：** GitHub `lazyxu/xdrive master@2a5bce12d7f1d213fa64f1f2339a40da71b1b455`。相关 PWA 分支和未合并 PR 已核实均为空；不得动无关图库、性能、Race、设备 Push/Source 或系统依赖分支。本阶段只新增 `desktop/scripts/pwa-s5b-physical-evidence-review.cjs` 本地离线验收材料检查器、`desktop/tests/pwa-s5b-physical-evidence-review.cjs` Node 实际本地附件/安全拒绝测试、`docs/validation/pwa-s5-platforms.template.json` 初始 7 平台 NOT_RUN 模板、专用 GitHub Actions 工作流，以及本台账与 `docs/pwa-s5-acceptance.md` 使用说明。不修改任何生产 Server/Agent、浏览器安装/上传/下载/Viewer、SW/Caddy、52px App Frame 或发布工作流。
+
+**当前真实 S5 缺口：** 仍无受信任的用户部署实例、真实 iOS 27 Safari/Home Screen、Android Chrome Installed、Desktop Chrome/Edge 安装模式的亲自测试或录屏；所有平台的 S5-01 至 S5-11 真机证据维持 NOT RUN，不可因提交本验收器标记 PASS 或已发布。
+
+**严格工具合同：** 只接受固定 7 平台、严格无额外字段的本地 JSON，`NOT_RUN` 行不能携带伪造材料，`SUBMITTED` 行必须有有效构建 SHA 和同源的 S5-A1/S5-A2a 记录、对应 OS 浏览器/浏览器或系统图标打开方式和人工观察，以及本地去敏图片文件名+原图全字节 SHA256。文件从本地读取，拒绝符号链接/相对路径穿越/原始私人字段，不网络请求、不保存或复制图片。对于真正带有物理材料的行，检查器也最多报告 `SUBMITTED_REQUIRES_INDEPENDENT_REVIEW`，从不 `PASS`。错误信息只使用枚举代码而不输出个人数据。即使合成七平台表完全有效，`release_gate` 必为 `NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED`、`independent_device_review_completed=false` 且进程退出码 1；绝不能将旧 `test-fixture-https` 当作公网部署。代码只支持准备物理验收、材料摘要审查，不代表真实 OS 证明或 release approval。
+
+**单提交与双 CI 门槛：** 固定本轮 master，严格一条工作提交，新 Draft PR 中分别运行专用 Node 合成截图哈希、无私密外泄、假 PASS 拒绝与 7 平台 NO-GO 断言，和完整 GitHub PR CI（Go race、Web/Desktop/Windows/Linux/Caddy/Final Gate）；仅在**准确同一 HEAD** 两组成功后 Ready→rebase merge 并核查关联分支清理。不可复用旧 HEAD 成功、不可因文档无代码就跳过 CI、不可宣称 GitLab push 或 iOS/Android Installed 实测。下一步 S5-A2b2 必须由真实设备操作者、独立审查者和受信任 Origin 实际进行物理安装及登录深链接复核，并按 S5-04~S5-11 完成压力/安全/回滚门槛。正式发布 GO 不在本次测试器权限范围。
