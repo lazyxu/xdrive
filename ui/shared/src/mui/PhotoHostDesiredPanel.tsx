@@ -339,6 +339,17 @@ export function XDrivePhotoHostDesiredPanel({
                           ? '本机 Server 未配置模型 Bearer，或模型侧 Info 明确报告未启用；当前不具备安全停用条件。'
                           : '认证覆盖仍未核验：旧版实例、其它私有调用方及跨实例任务准入尚无充分证据；Bearer 已配置也不意味着可安全停用。'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.private_ingress_policy_observation === 'inconsistent' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-private-policy-observation>
+                        模型私有入口策略（仅当前进程）：{preflight.private_ingress_policy_observation === 'strict-local'
+                          ? '四类模型 Info 自报 require-bearer-v1 且与已审计宿主启用请求一致；仅证明本进程策略自报，不代表请求级准入生效或安全停用。'
+                          : preflight.private_ingress_policy_observation === 'legacy-local'
+                            ? '四类模型 Info 自报 legacy；仍使用既有私有入口访问方式，不代表已启用动态推理许可。'
+                            : preflight.private_ingress_policy_observation === 'inconsistent'
+                              ? '四类模型自报的认证策略不一致，或严格模式未启用 Bearer；不能认定策略实际生效。'
+                              : '未核验：旧版模型／Server、宿主请求回执不匹配、Info 不完整或检测失败均不能确认运行策略。'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified
                           ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'

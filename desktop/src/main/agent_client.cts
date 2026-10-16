@@ -968,6 +968,8 @@ export type AgentAdminPhotoHostPreflight = {
   replica_membership_blocker_state?: 'blocked' | 'unverified'
   // Optional older Agent/Server; never a positive global stop permit.
   private_ingress_auth_blocker_state?: 'blocked' | 'unverified'
+  // The current single model process self-report, NEVER a fleet stop proof.
+  private_ingress_policy_observation?: 'strict-local' | 'legacy-local' | 'inconsistent' | 'unverified'
   semantic_text_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   semantic_image_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'
   face_detector_task_state?: 'verified' | 'failed' | 'throttled' | 'unverified'

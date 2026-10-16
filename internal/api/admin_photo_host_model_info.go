@@ -19,12 +19,14 @@ type photoHostModelInfoCheck struct {
 	runtimeInstanceID string                              // private process-boot marker: never serialized to admin UI
 	hostReceipt       *photointelligence.HostApplyReceipt // never serialized to admin UI
 	auth              *bool                               // private negative-only Bearer evidence
+	policy            *string                             // private per-process policy, not in admin JSON
 }
 
 type photoHostModelInfoEvidence struct {
 	instanceID string
 	receipt    *photointelligence.HostApplyReceipt
 	auth       *bool
+	policy     *string
 }
 
 type photoHostModelInfoTask struct {
@@ -61,6 +63,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 		instanceID string
 		receipt    *photointelligence.HostApplyReceipt
 		auth       *bool
+		policy     *string
 		err        error
 	}
 	finished := make(chan outcome, len(tasks))
@@ -81,16 +84,17 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 			var instanceID string
 			var receipt *photointelligence.HostApplyReceipt
 			var auth *bool
+			var policy *string
 			var err error
 			if attested != nil {
 				var evidence photoHostModelInfoEvidence
 				evidence, err = attested(ctx)
-				instanceID, receipt, auth = evidence.instanceID, evidence.receipt, evidence.auth
+				instanceID, receipt, auth, policy = evidence.instanceID, evidence.receipt, evidence.auth, evidence.policy
 			} else {
 				instanceID, err = legacy(ctx)
 			}
 			select {
-			case finished <- outcome{index: index, instanceID: instanceID, receipt: receipt, auth: auth, err: err}:
+			case finished <- outcome{index: index, instanceID: instanceID, receipt: receipt, auth: auth, policy: policy, err: err}:
 			case <-ctx.Done():
 			}
 		}(i, task.Probe, task.ReceiptProbe)
@@ -109,6 +113,7 @@ func runPhotoHostModelInfoChecks(parent context.Context, tasks []photoHostModelI
 				results[next.index].runtimeInstanceID = next.instanceID
 				results[next.index].hostReceipt = next.receipt
 				results[next.index].auth = next.auth
+				results[next.index].policy = next.policy
 				results[next.index].Detail = "本实例分析器 Info 协议与模型元数据验证通过"
 			} else {
 				results[next.index].State = "failed"
@@ -224,7 +229,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateFaceAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer, policy: info.PrivatePolicy}, nil
 		}
 	}
 	if s.PhotoSmartAnalyzer != nil {
@@ -236,7 +241,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateSmartAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer, policy: info.PrivatePolicy}, nil
 		}
 	}
 	if s.PhotoSemanticAnalyzer != nil {
@@ -248,7 +253,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateSemanticAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer, policy: info.PrivatePolicy}, nil
 		}
 	}
 	if s.PhotoCreativeAnalyzer != nil {
@@ -260,7 +265,7 @@ func (s *Server) probePhotoHostModelInfo(ctx context.Context) []photoHostModelIn
 			if err := photointelligence.ValidateCreativeAnalyzerInfo(info); err != nil {
 				return photoHostModelInfoEvidence{}, err
 			}
-			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer}, nil
+			return photoHostModelInfoEvidence{instanceID: info.RuntimeInstanceID, receipt: info.HostApplyReceipt, auth: info.PrivateBearer, policy: info.PrivatePolicy}, nil
 		}
 	}
 	return runPhotoHostModelInfoChecks(ctx, tasks)
