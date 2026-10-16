@@ -306,3 +306,24 @@ CAS-A05已测100k真实不同1KiB SHA LocalCAS vs离线pack初始空间/热缓�
 | CAS-A03-d3 / 4GiB A→改1MiB 的客户端上传/版本回看及GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
 
 [本负载新证据](performance-test-registry.md) | [新机器样本](performance-evidence/cas-a03-d3-real-http-4gib-version/README.md)。既有P044/P045/P051 4GiB首次上传数据不重跑，不将不同CI运行看作代码提速。
+
+
+## P055 · 100k真实物理 CAS Owner HTTP Trash恢复（2026-10-17）
+
+**共享 Linux Server Gin/PG17/Local CAS：Benchmarking，n3有效原版结果尚未产生，CLIENT模式均Not measured。** 每组真实100k SHA不同1KiB原片、File/FileVersion/ContentBlob双引用、1个额外受保护原片，认证回收站恢复而非永久删除。冻结 HTTP200 / 404跨Owner / 409旧Revision、全100k原片SHA与物理allocated不变、Go CPU/RSS/I/O/延迟。既有P047 100k真永久删除、P026 100k模拟键恢复、P038/P049/P050 100k原始媒体列表都不是本负载；不重复。
+
+| 运行场景 | Native Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| P055 · 100k不同SHA真实CAS的客户端GUI Trash恢复/原片全量核验 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+[原始规范](file-explorer-performance.md) · [中央测试登记簿](performance-test-registry.md) · [专用CI](../.github/workflows/p055-real-physical-cas-100k-http-restore.yml)。实际手机/OS安装态PWA不得用窄屏Chromium和Electron等价替代；这是Server HTTP新层，不包括完整客户端恢复/同步/上传/取消。
+
+### P055 三独立 Linux真实物理100k CAS Trash RESTORE n3（2026-10-17）
+
+真实共享Server层原版 `3ce3b7d2e322d9a932b81b67126b5aa3a7fd9e71` [专用CI #38963047837](https://github.com/lazyxu/xdrive/actions/runs/38963047837) 成功，真正100k不同SHA×1KiB CAS+File/FileVersion双引用、额外保护原片，经认证Gin/PG17 Trash恢复HTTP P50 **1,087.935ms**、物理CAS分配**409,604,096B→409,604,096B**、所有100k逐字节SHA正确，Go PID真实写盘0B/25ms采样RSS峰增≤40,960B；单次≤8s/P50≤5s预算通过，保留生产代码。**这是Server HTTP负载，并不代表任何以下客户端已经实际测试该精确100k物理恢复工作负载**：
+
+| P055 100k真实物理CAS GUI恢复 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 客户端真正已安装且经过认证的批量Trash恢复/完整原片核验 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+[永久 P055 来源](performance-evidence/p055-real-100k-physical-restore/README.md) / [中央注册表](performance-test-registry.md)。窄屏Linux Chromium不冒充Android/iOS，绝不从PG17本地Server P50推导浏览器UI P50或WAN性能。
