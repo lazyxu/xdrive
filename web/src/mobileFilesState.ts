@@ -18,6 +18,19 @@ export const MOBILE_FILES_MOVE_PX = 10
 export const MOBILE_FILES_ROW_HEIGHT = 68
 export const MOBILE_FILES_GRID_ROW_HEIGHT = 150
 
+/** F02-M: read out a mounted Mobile button's position within the complete
+ * logical list, not just the retained virtual window. Buttons are kept for
+ * their Open/Quick Look/selection keyboard contract; aria-posinset on a button
+ * would be an invalid ARIA role/property combination.
+ */
+export function mobileFilesLogicalPositionDescription(
+  index: number, itemCount: number,
+): string | undefined {
+  if (!Number.isSafeInteger(itemCount) || itemCount <= 0 ||
+      !Number.isSafeInteger(index) || index < 0 || index >= itemCount) return undefined
+  return `第 ${index + 1} 项，共 ${itemCount} 项`
+}
+
 // Actual leading edge of file text in List/Recent/Favorites. iOS 27 List
 // uses a 28px outer gutter + 44px thumbnail slot + 12px gap; selection
 // inserts a 24px circle and another 12px gap. Inline disclosure adds 16px
