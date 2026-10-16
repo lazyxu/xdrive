@@ -563,6 +563,19 @@ function fixtureFor(request, role) {
       ? { items: filtered.slice(offset, offset + limit), total_count: filtered.length, total_count_included: true, offset, limit, sort, order }
       : { items: filtered.slice(0, limit), has_more: false, sort, order };
   }
+  if (filesIos27ChromeScenario && filesIos27Fixture.competingChildren &&
+      key === 'GET /api/v1/nodes/3/children') {
+    assert.equal(role, 'user', 'competing folder range must be owner-scoped');
+    queryOnly(url, ['limit','offset','sort','order','include_count','name','name_ci']);
+    const sort=url.searchParams.get('sort') || 'name';
+    const order=url.searchParams.get('order') || 'asc';
+    assert.equal(sort,'name'); assert.equal(order,'asc');
+    const rows=filesIos27Fixture.competingChildren;
+    const limit=integerQuery(url,'limit',200,500);
+    const offset=integerQuery(url,'offset',0,500);
+    return { items:rows.slice(offset,offset+limit),
+      total_count:rows.length,total_count_included:true,offset,limit,sort,order };
+  }
   if (filesIos27ChromeScenario && key === 'PATCH /api/v1/nodes/100') {
     queryOnly(url, []);
     const node = allNodes.get(100);
@@ -783,6 +796,7 @@ let activeStage = 'startup';
 let page;
 let metadataGate;
 let directoryGate;
+let competingFolderGate;
 let galleryAlbumGate;
 let galleryMemoryGate;
 let galleryPetGate;
@@ -3491,12 +3505,18 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesCommittedFolderBreakpointResumeAcceptance(origin);
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p17-') ||
       process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
+      process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p19-') ||
       process.env.XDRIVE_MOBILE_FILES_P17 === '1') {
     await filesNavigationFirstPaintFramesAcceptance(origin);
   }
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
+      process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p19-') ||
       process.env.XDRIVE_MOBILE_FILES_P18 === '1') {
     await filesTouchFolderFirstPaintFramesAcceptance(origin);
+  }
+  if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p19-') ||
+      process.env.XDRIVE_MOBILE_FILES_P19 === '1') {
+    await filesCompetingFolderFirstPageAcceptance(origin);
   }
 }
 
@@ -3857,6 +3877,151 @@ async function filesTouchFolderFirstPaintFramesAcceptance(origin) {
     actualTouchActivation:true,
     trueWAN:false,realIOSDevice:false,realAndroidDevice:false,installedPWA:false,
     framesMeasured:true,fpsOrCLSNotMeasured:true};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+
+async function filesCompetingFolderFirstPageAcceptance(origin) {
+  // P19: a genuinely later folder B navigation must win over the delayed
+  // first authorized page of A, including persisted Mobile Browse position.
+  activeStage='user-files-p19-competing-mobile-folders-390';
+  const sibling=makeNode(3,'验收竞速目录',1,'dir');
+  const children=Array.from({length:48},(_,index)=>
+    makeNode(500+index,'race-b-'+String(index+1).padStart(3,'0')+'.txt',3));
+  rootChildren.splice(1,0,sibling);
+  allNodes.set(sibling.id,sibling);
+  for(const node of children)allNodes.set(node.id,node);
+  filesIos27Fixture.competingChildren=children;
+
+  await page.setViewportSize({width:390,height:844});
+  await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});
+  const a=page.locator('[data-mobile-files-folder-id="2"]').first();
+  const b=page.locator('[data-mobile-files-folder-id="3"]').first();
+  await a.waitFor(); await b.waitFor(); await settle();
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host=>{host.scrollTop=0;});
+  const observe=()=>page.evaluate(()=>{
+    const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const key=Object.keys(localStorage).find(x=>x.startsWith('xdrive.mobile.files.v1:'));
+    const stored=key?JSON.parse(localStorage.getItem(key)):null;
+    const labels=[...document.querySelectorAll('[data-mobile-files-item]')]
+      .map(x=>x.getAttribute('aria-label')||x.textContent||'');
+    const rect=el=>{
+      if(!el)return null;
+      const r=el.getBoundingClientRect();
+      return {x:r.x,y:r.y,width:r.width,height:r.height};
+    };
+    return {
+      hash:location.hash,
+      sameHost:host===window.__p19Host,
+      count:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      top:host?.scrollTop??null,
+      savedFolderID:stored?.folderID??null,
+      title:document.querySelector('[data-mobile-files-compact-title]')?.textContent??'',
+      aRows:labels.filter(x=>x.includes('nested-')).length,
+      bRows:labels.filter(x=>x.includes('race-b-')).length,
+      rootRows:labels.filter(x=>x.includes('document-')).length,
+      header:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      hostRect:rect(host),
+      outerOverflow:document.documentElement.scrollHeight-innerHeight,
+    };
+  });
+  await page.evaluate(()=>{
+    window.__p19Host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    window.__p19Frames=[];
+    window.__p19Stop=false;
+    const read=()=>{
+      const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+      const key=Object.keys(localStorage).find(x=>x.startsWith('xdrive.mobile.files.v1:'));
+      const stored=key?JSON.parse(localStorage.getItem(key)):null;
+      const labels=[...document.querySelectorAll('[data-mobile-files-item]')]
+        .map(x=>x.getAttribute('aria-label')||x.textContent||'');
+      return {
+        top:host?.scrollTop??null,sameHost:host===window.__p19Host,
+        count:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+        savedFolderID:stored?.folderID??null,
+        rootRows:labels.filter(x=>x.includes('document-')).length,
+        aRows:labels.filter(x=>x.includes('nested-')).length,
+        bRows:labels.filter(x=>x.includes('race-b-')).length,
+        title:document.querySelector('[data-mobile-files-compact-title]')?.textContent??'',
+        headerHeight:document.querySelector('[data-xdrive-mobile-app-header]')?.getBoundingClientRect().height??0,
+        docOverflow:document.documentElement.scrollHeight-innerHeight,
+      };
+    };
+    const tick=()=>{
+      if(window.__p19Stop)return;
+      if(window.__p19Frames.length<180)window.__p19Frames.push(read());
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  const before=await observe();
+  check('P19 initial: two truthful Owner folders visible in one root virtual list',
+    before.sameHost&&before.count===1&&before.top===0&&before.savedFolderID===1&&
+    before.rootRows>0&&before.aRows===0&&before.bRows===0&&
+    before.header?.height===52&&before.outerOverflow<=1,before);
+
+  let notify,release;
+  const reached=new Promise(resolve=>{notify=resolve;});
+  const wait=new Promise(resolve=>{release=resolve;});
+  competingFolderGate={hits:0,notify,wait};
+  let held,winning,after,frames;
+  try {
+    await a.tap();
+    await Promise.race([reached,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P19 first actual A range never started')),10000))]);
+    await page.waitForTimeout(120);
+    held=await observe();
+    check('P19 pending A: last authenticated root remains committed and tappable',
+      competingFolderGate.hits>=1&&held.sameHost&&held.count===1&&
+      held.savedFolderID===1&&held.rootRows>0&&held.aRows===0&&held.bRows===0&&
+      held.top===0&&held.title===before.title&&held.outerOverflow<=1,held);
+
+    await b.tap();
+    await page.locator('[data-mobile-files-item]').filter({hasText:'race-b-001.txt'}).first().waitFor();
+    await page.waitForURL(/\/files\?dir=3$/);
+    await settle();
+    winning=await observe();
+    check('P19 competing B: newer authorized sibling commits while A remains held',
+      winning.sameHost&&winning.count===1&&winning.hash==='#/app/files?dir=3'&&
+      winning.savedFolderID===3&&winning.bRows>0&&winning.rootRows===0&&
+      winning.aRows===0&&winning.top===0&&
+      winning.title==='验收竞速目录'&&winning.outerOverflow<=1&&
+      winning.header&&before.header&&
+      Math.abs(winning.header.height-before.header.height)<=1&&
+      Math.abs(winning.hostRect.y-before.hostRect.y)<=1&&
+      Math.abs(winning.hostRect.height-before.hostRect.height)<=1,
+      {before,held,winning,gateHits:competingFolderGate.hits});
+  } finally {
+    competingFolderGate=null;
+    release();
+  }
+  // The old Server response really arrives *after* the new B commit. It may
+  // not replace B, re-persist A, show A rows or navigate history.
+  await page.waitForTimeout(380);
+  after=await observe();
+  frames=await page.evaluate(()=>{
+    window.__p19Stop=true;
+    return window.__p19Frames.slice();
+  });
+  const allValid=frames.map((f,index)=>({index,f})).filter(({f})=>{
+    const old=f.savedFolderID===1&&f.rootRows>0&&f.aRows===0&&f.bRows===0;
+    const next=f.savedFolderID===3&&f.bRows>0&&f.rootRows===0&&f.aRows===0;
+    return !(old||next)&&f.count!==0 || (!old&&!next) ||
+      f.count!==1 || !f.sameHost || f.top!==0 ||
+      f.headerHeight!==52 || f.docOverflow>1;
+  });
+  check('P19 late A cannot roll back winning B or paint stale/blank virtual rows',
+    after.sameHost&&after.count===1&&after.hash==='#/app/files?dir=3'&&
+    after.savedFolderID===3&&after.bRows>0&&after.aRows===0&&
+    after.rootRows===0&&after.title==='验收竞速目录'&&after.top===0&&
+    frames.length>=16&&frames.some(f=>f.savedFolderID===3&&f.bRows>0)&&
+    allValid.length===0,
+    {before,held,winning,after,frameCount:frames.length,
+      violations:allValid.slice(0,12),aGateHits:held?1:0});
+  result.samples[activeStage]={before,held,winning,after,frameCount:frames.length,
+    violations:allValid,realTouch:true,genuineOwnerRange:true,oldResponseReleasedLast:true,
+    realCompiledReact:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
@@ -5120,6 +5285,14 @@ async function main() {
               url.pathname === '/api/v1/media/albums/qa-nav-b/items' &&
               url.searchParams.get('offset') === '0') {
             const gate = galleryAlbumGate;
+            gate.hits += 1;
+            gate.notify();
+            await gate.wait;
+          }
+          if (competingFolderGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/nodes/2/children' &&
+              url.searchParams.get('offset') === '0') {
+            const gate=competingFolderGate;
             gate.hits += 1;
             gate.notify();
             await gate.wait;
