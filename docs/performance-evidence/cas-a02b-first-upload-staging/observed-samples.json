@@ -1,0 +1,94 @@
+{
+  "kind": "source-exact-compact-measurements",
+  "source_first_run_head": "84fc5684a556b4a895deddbb91c758f42c509a3e",
+  "original_ci": 38905016820,
+  "artifact_id": 12047453131,
+  "artifact_zip_digest": "sha256:e6eb4ea2e6dc302d51a06d21450a9fbad9b1a756f783257b31fdb82a41998238",
+  "full_original_raw_files": "11 originals retained in GitHub Actions Artifact; sample original complete raw SHA256 pointers below",
+  "archive_tar_xz_sha256": "66b63ec5e0533f2544b0f33d457951de0af2183fe2493b268dc03fff6400b98b",
+  "source_code_sha256": "e49f7539c56977f094d69c4f7fb16a62f08ac9772487b5c2f51badadca3e42da",
+  "metric_source": "Exact original JSON numeric fields copied losslessly, chunk hash arrays intentionally omitted from COMPACT copy; see Artifact for complete raw",
+  "samples": [
+    {
+      "sample": 1,
+      "source_sha256": "0ca1023f3cde7c8c180f5a0c50c9ade7dc6cce672f8e02b4dbfbbbc0249648d6",
+      "raw_original_json_sha256": "9ab05f5637522174741e8d7937741fa2e055e311d78cce3ae0f49e0b4fe04a62",
+      "order": [
+        "original",
+        "candidate"
+      ],
+      "original_peak_bytes": 8589938688,
+      "offline_peak_bytes": 4295004160,
+      "baseline_stage_kernel_write_bytes": 4294967296,
+      "baseline_finalize_kernel_write_bytes": 4294967296,
+      "candidate_stage_kernel_write_bytes": 4294967296,
+      "candidate_finalize_kernel_write_bytes": 36864,
+      "stage_ms_original": 21718.423,
+      "stage_ms_candidate": 20265.835,
+      "finalize_ms_original": 16387.151,
+      "finalize_ms_candidate": 8340.51,
+      "restore_flat_ms": 15390.191,
+      "restore_flat_write_bytes": 4294967296,
+      "peak_rss_kib": 37440
+    },
+    {
+      "sample": 2,
+      "source_sha256": "710cdcb28cf7204071abc1453368ca14c8b5e1f37173c61cd0e948933efaf798",
+      "raw_original_json_sha256": "0d630924e5440daf052b2e162024910e46d0bcc60a6cfe22557454ce37b94007",
+      "order": [
+        "candidate",
+        "original"
+      ],
+      "original_peak_bytes": 8589938688,
+      "offline_peak_bytes": 4295004160,
+      "baseline_stage_kernel_write_bytes": 4294967296,
+      "baseline_finalize_kernel_write_bytes": 4294967296,
+      "candidate_stage_kernel_write_bytes": 4294967296,
+      "candidate_finalize_kernel_write_bytes": 36864,
+      "stage_ms_original": 20305.823,
+      "stage_ms_candidate": 20022.721,
+      "finalize_ms_original": 16305.935,
+      "finalize_ms_candidate": 8183.816,
+      "restore_flat_ms": 15468.166,
+      "restore_flat_write_bytes": 4294967296,
+      "peak_rss_kib": 37796
+    },
+    {
+      "sample": 3,
+      "source_sha256": "f952c4047c313272a01a2fcd33a91a6db2a51ea38cd3d459f04dac24aed8790d",
+      "raw_original_json_sha256": "8e684e57ba10df8d69d4e1c8d215239452746c8763a8e31cf2f684b22b0679e9",
+      "order": [
+        "original",
+        "candidate"
+      ],
+      "original_peak_bytes": 8589938688,
+      "offline_peak_bytes": 4295004160,
+      "baseline_stage_kernel_write_bytes": 4294967296,
+      "baseline_finalize_kernel_write_bytes": 4294967296,
+      "candidate_stage_kernel_write_bytes": 4294967296,
+      "candidate_finalize_kernel_write_bytes": 36864,
+      "stage_ms_original": 20192.431,
+      "stage_ms_candidate": 19840.689,
+      "finalize_ms_original": 16161.945,
+      "finalize_ms_candidate": 8229.359,
+      "restore_flat_ms": 15422.271,
+      "restore_flat_write_bytes": 4294967296,
+      "peak_rss_kib": 37604
+    }
+  ],
+  "summary": {
+    "workload_id": "CAS-A02b-first-upload-4GiB-physical-stage-vs-offline-direct-hash-chunks",
+    "n": 3,
+    "source_bytes": 4294967296,
+    "original_peak_physical_ratio_p50": 2.000000954,
+    "offline_candidate_peak_physical_ratio_p50": 1.000008583,
+    "offline_to_original_kernel_write_ratio_p50": 0.500004292,
+    "original_finalize_ms_p50": 16305.935,
+    "offline_candidate_finalize_ms_p50": 8229.359,
+    "offline_flat_materialization_ms_p50": 15422.271,
+    "max_rss_kib": 37796,
+    "passed": true,
+    "production_changed": false,
+    "scope": "Offline true 512x8MiB fsynced staging, representative full-file assembly vs direct hash-chunk promote. No production Gin/PG/Local.Put, no client uploads"
+  }
+}
