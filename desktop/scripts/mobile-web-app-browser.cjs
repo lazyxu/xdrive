@@ -990,6 +990,7 @@ let galleryAlbumLibraryGate;
 let galleryMemoryGate;
 let galleryPetGate;
 let galleryRefreshGate;
+let galleryColdFirstRangeGate;
 let galleryFoldGate;
 let galleryTimeZoneGate;
 let galleryFilterGate;
@@ -3081,6 +3082,81 @@ async function gallerySortFirstRangeAcceptance() {
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
+async function galleryColdFirstRangeAcceptance() {
+  activeStage='user-gallery-p39-cold-first-range-390';
+  await page.setViewportSize({width:390,height:844});
+  let notify,release;
+  const reached=new Promise(resolve=>{notify=resolve});
+  const wait=new Promise(resolve=>{release=resolve});
+  galleryColdFirstRangeGate={hits:0,notify,wait};
+  const origin=new URL(page.url()).origin;
+  // Record every actual painted Gallery-wall frame on the fresh document.
+  await page.addInitScript(()=>{
+    window.__p39Frames=[];window.__p39Stop=false;
+    window.__p39Read=()=>{
+      const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+      const main=document.querySelector('main');
+      const header=document.querySelector('[data-xdrive-mobile-app-header]');
+      return {
+        mounted:!!wall,
+        empty:!!wall?.querySelector('[data-xdrive-gallery-empty]'),
+        pending:!!wall?.querySelector('[data-xdrive-gallery-cold-pending]'),
+        progress:!!wall?.querySelector('[data-xdrive-gallery-cold-pending] [role="status"]'),
+        rows:wall?.querySelectorAll('[data-xdrive-media-tile]').length||0,
+        top:main?.getBoundingClientRect().top??null,
+        height:main?.getBoundingClientRect().height??null,
+        header:header?.getBoundingClientRect().height??null,
+      };
+    };
+    const tick=()=>{
+      if(window.__p39Stop)return;
+      const frame=window.__p39Read();
+      if(frame.mounted&&window.__p39Frames.length<250)window.__p39Frames.push(frame);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  try {
+    // page.goto() to the SAME SPA hash may be a same-document navigation.
+    // Force a fresh document so this actually tests cold authorized Range0.
+    await page.goto(origin+'/#/app/gallery',{waitUntil:'domcontentloaded'});
+    await page.reload({waitUntil:'domcontentloaded'});
+    await Promise.race([reached,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P39 real first Gallery Range0 did not start')),10000))]);
+    await page.locator('[data-xdrive-gallery-cold-pending]').waitFor();
+    await page.waitForTimeout(120);
+    const early=await page.evaluate(()=>({
+      frames:window.__p39Frames.slice(),current:window.__p39Read(),
+    }));
+    const silent=f=>f.mounted&&f.pending&&!f.empty&&!f.progress&&
+      f.rows===0&&f.header===52&&f.top>=52&&f.height>0;
+    check('P39 every first real Gallery Range frame avoids false empty and fast spinner',
+      early.frames.length>=2&&early.frames.every(silent)&&silent(early.current)&&
+      galleryColdFirstRangeGate.hits>=1,
+      {count:early.frames.length,first:early.frames[0],current:early.current});
+    await page.waitForTimeout(300);
+    const slow=await page.evaluate(()=>window.__p39Read());
+    check('P39 sustained network wait shows delayed progress without shifting App Frame',
+      slow.pending&&slow.progress&&!slow.empty&&slow.rows===0&&
+      slow.header===52&&Math.abs(slow.top-early.current.top)<=1&&
+      Math.abs(slow.height-early.current.height)<=1,
+      {early:early.current,slow});
+    result.samples[activeStage]={earlyFrameCount:early.frames.length,
+      firstFrame:early.frames[0],pending:early.current,slow,
+      realCompiledWeb:true,heldOwnerRange0:galleryColdFirstRangeGate.hits,
+      physicalIOS:false,physicalAndroid:false,installedPWA:false};
+  } finally {
+    galleryColdFirstRangeGate=null;release();
+  }
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  const settled=await page.evaluate(()=>{window.__p39Stop=true;return window.__p39Read()});
+  check('P39 authenticated first Range commits real virtual photo rows without cold spinner',
+    settled.rows>0&&!settled.empty&&!settled.pending&&!settled.progress&&
+    settled.header===52,settled);
+  result.samples[activeStage].settled=settled;
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
 async function galleryIos27ChromeAcceptance() {
   activeStage = 'user-gallery-ios27-chrome';
   await navigateWorkspace('图库', 'gallery');
@@ -3359,6 +3435,7 @@ async function galleryIos27ChromeAcceptance() {
       Math.abs(frame.scrollTop - p11Initial.scrollTop) <= 2 &&
       frame.firstIndex === p11Initial.firstIndex), exactAnchor);
   await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
+  if (process.env.XDRIVE_GALLERY_COLD_P39 === '1') await galleryColdFirstRangeAcceptance();
 }
 
 
@@ -7548,6 +7625,15 @@ async function main() {
               url.searchParams.get('range') === 'true' &&
               url.searchParams.get('offset') === '0') {
             const gate=galleryFoldGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
+          if (galleryColdFirstRangeGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('range') === 'true' &&
+              url.searchParams.get('offset') === '0' &&
+              !url.searchParams.has('q') && !url.searchParams.has('folder_id') &&
+              !url.searchParams.has('place') && !url.searchParams.has('asset_kind')) {
+            const gate=galleryColdFirstRangeGate;
             gate.hits+=1;gate.notify();await gate.wait;
           }
           if (galleryRefreshGate && request.method() === 'GET' &&
