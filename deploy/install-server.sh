@@ -1718,6 +1718,11 @@ if [[ "$UPGRADE_EXISTING" == "1" ]]; then
       verifier_compat_reason="derived media cache"
     elif grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-ready-[^"]*"' "$backup_error"; then
       verifier_compat_reason="storage readiness probe"
+    elif grep -Eq '"storage_key"[[:space:]]*:[[:space:]]*"[.]xdrive-cas-lifecycle-locks/[0-9a-f]{2}[.]lock"' "$backup_error"; then
+      # Legacy Verify can classify permanent CAS OS lease files as orphan
+      # content. Only the published target verifier may accept the snapshot;
+      # genuine missing/hash/size/orphan errors must still fail closed.
+      verifier_compat_reason="CAS lifecycle shard locks"
     fi
     if [[ -n "$verifier_compat_reason" ]]; then
       echo "[xDrive] current deployment verifier rejected $verifier_compat_reason; retrying the pre-upgrade backup with target verifier $target_server_image ..." >&2
