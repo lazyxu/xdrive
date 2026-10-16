@@ -218,3 +218,47 @@ test('storage receives real bounded read-only Ready verification, not a fake app
   assert.doesNotMatch(caps, /activationTarget: \{ service: 'storage'/)
   assert.doesNotMatch(page, /docker\.sock|adminStopHost|adminRestartHost/)
 })
+
+
+test('PostgreSQL and Pull Worker live verification requires a current authorized service snapshot', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const db = { id: 'database', config_mode: 'in-app', apply_mode: 'immediate', status: 'ready' }
+  const worker = { id: 'background-worker', config_mode: 'in-app',
+    apply_mode: 'task-boundary', status: 'unknown' }
+  const loadSnapshot = () => Promise.resolve()
+  const readPostgres = () => Promise.resolve()
+  const readWorker = () => Promise.resolve()
+  const postgres = { load: loadSnapshot, loadPostgresPoolConfig: readPostgres }
+  const pull = { load: loadSnapshot, loadSourceWorkerConfig: readWorker }
+  assert.deepEqual(resolve('database', [db], postgres), {
+    configTarget: undefined,
+    verifyTarget: { service: 'database', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('background-worker', [worker], pull), {
+    configTarget: undefined,
+    verifyTarget: { service: 'background-worker', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('database', [db], { loadPostgresPoolConfig: readPostgres }), {})
+  assert.deepEqual(resolve('background-worker', [worker], { loadSourceWorkerConfig: readWorker }), {})
+  assert.deepEqual(resolve('database', [db, db], postgres), {})
+  assert.deepEqual(resolve('background-worker', [{ ...worker, status: 'planned' }], pull), {})
+  assert.deepEqual(resolve('database', [db], { load: loadSnapshot }), {})
+})
+
+test('shared PostgreSQL and Pull Worker verification shows actual current-instance probes without host controls', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const caps = read('ui/shared/src/system-dependencies-capabilities.ts')
+  const api = read('internal/api/admin_service_dependencies.go')
+  assert.match(page, /data-xdrive-postgres-liveness-scope/)
+  assert.match(page, /data-xdrive-pull-worker-liveness-scope/)
+  assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
+  assert.match(caps, /database: \['load', 'loadPostgresPoolConfig'\]/)
+  assert.match(caps, /'background-worker': \['load', 'loadSourceWorkerConfig'\]/)
+  assert.match(api, /sqlDB.PingContext\(ctx\)/)
+  assert.match(api, /sourceWorkerServiceStatus\(ctx, time.Now\(\).UTC\(\)\)/)
+  assert.match(api, /context.WithTimeout\(c.Request.Context\(\), 2\*time.Second\)/)
+  for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
+    assert.equal(page.includes(forbidden), false)
+  }
+})
