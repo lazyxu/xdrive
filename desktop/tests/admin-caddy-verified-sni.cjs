@@ -113,7 +113,55 @@ test('fixed Caddy container startup domain differs from desired domain and never
   assert.match(preflight, /ApplySupported:\s+false/)
 })
 
+test('live fixed Caddy active configuration is read-only and never a saved-revision apply receipt', () => {
+  const goodLive = good()
+  goodLive.host_live_config_state = 'observed-local'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(goodLive).host_live_config_state, 'observed-local')
+  const oldRunner = good()
+  delete oldRunner.host_live_config_state
+  assert.equal(validatorExports.verifyCaddyPreflightContract(oldRunner).host_live_config_state, undefined)
+  const unknown = good()
+  unknown.host_live_config_state = 'unverified'
+  assert.equal(validatorExports.verifyCaddyPreflightContract(unknown).host_live_config_state, 'unverified')
+  for (const mutate of [
+    x => { x.host_live_config_state = 'applied' },
+    x => { x.host_live_config_state = null },
+    x => { x.host_live_config_state = false },
+    x => { x.host_live_config_state = 'observed-local'; x.host_observed = false },
+    x => { x.host_live_config_state = 'observed-local'; x.host_ingress_ready = false },
+    x => { x.host_live_config_state = 'observed-local'; x.host_local_tls_verified = false },
+  ]) {
+    const x = good()
+    mutate(x)
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(x))
+  }
+  const runner = read('scripts/server-control.sh')
+  const shellTest = read('scripts/test-caddy-host-status.sh')
+  const host = read('internal/api/admin_caddy_host_status.go')
+  const preflight = read('internal/api/admin_caddy_preflight.go')
+  const client = read('internal/client/admin_caddy_preflight.go')
+  const desktop = read('desktop/src/main/agent_client.cts')
+  const shared = read('ui/shared/src/service-dependencies.ts')
+  const panel = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(runner, /docker exec xdrive-caddy \/bin\/sh -ec/)
+  assert.match(runner, /http:\/\/127\.0\.0\.1:2019\/config\//)
+  assert.match(runner, /set -o pipefail; wget -q -T 2 -O -/)
+  assert.match(runner, /\| sha256sum/)
+  assert.doesNotMatch(runner, /docker exec xdrive-caddy .*\/config\/.* > \//)
+  assert.match(shellTest, /XD_CADDY_LIVE_SHA_FIXTURE/)
+  assert.match(host, /LiveConfigSHA256/)
+  assert.match(host, /caddyObservedLiveConfigState/)
+  assert.match(preflight, /HostLiveConfigState:\s+caddyObservedLiveConfigState/)
+  assert.match(client, /HostLiveConfigState/)
+  assert.match(desktop, /host_live_config_state\?:/)
+  assert.match(shared, /host_live_config_state\?:/)
+  assert.match(panel, /data-xdrive-caddy-host-live-config-state/)
+  assert.match(panel, /不证明管理员期望修订已经应用/)
+  assert.match(preflight, /ApplySupported:\s+false/)
+})
+
 test('Caddy read-only ingress-continuity advisory is bounded and old Agent compatible', () => {
+
 
   const matched = good()
   matched.ingress_change_risk = 'unverified'

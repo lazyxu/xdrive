@@ -119,7 +119,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if blank.Action != "unset" || blank.ConfigurationComplete || blank.HostObserved ||
 		blank.DesiredRevision != 0 || blank.CredentialRevision != 0 ||
 		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" ||
-		blank.HostRuntimeTLSAlignment != "unverified" {
+		blank.HostRuntimeTLSAlignment != "unverified" || blank.HostLiveConfigState != "unverified" {
 		t.Fatalf("no staged configuration should fail closed: %+v", blank)
 	}
 	if out := call(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); out.Code != 404 {
@@ -150,7 +150,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		cfg.DesiredRevision != 1 || cfg.CredentialRevision != 1 ||
 		cfg.HostIngressReady || cfg.HostLocalTLSVerified || cfg.ApplySupported ||
 		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
-		cfg.HostRuntimeTLSAlignment != "unverified" {
+		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" {
 		t.Fatalf("local config was not recorded, or fake host effect published: %+v", cfg)
 	}
 	if cfg.Checks[2].ID != "alidns" || cfg.Checks[2].State != "pass" ||
@@ -175,7 +175,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if !cfg.HostObserved || !cfg.HostIngressReady || !cfg.HostLocalTLSVerified ||
 		!cfg.ConfigurationComplete || cfg.ApplySupported || cfg.Checks[5].State != "blocked" ||
 		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
-		cfg.HostRuntimeTLSAlignment != "unverified" {
+		cfg.HostRuntimeTLSAlignment != "unverified" || cfg.HostLiveConfigState != "unverified" {
 		t.Fatalf("trusted host TLS observation must not acknowledge new desired HTTPS: %+v", cfg)
 	}
 	// Explicitly compare the desired FQDN with the host's TLS-verified
@@ -224,6 +224,48 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		cfg.Checks[5].State != "blocked" || cfg.IngressChangeRisk != "local-domain-switch" ||
 		cfg.HostRuntimeTLSAlignment != "matched-local" {
 		t.Fatalf("mismatched desired and observed TLS SNI was not detected: %+v", cfg)
+	}
+	// A second, independently hashed in-container Caddy admin GET /config/
+	// proves only that active JSON was read on the fixed local container.
+	// No digest, raw config, secret, or desired-revision effect is exposed.
+	liveProof := caddyHostStatus{
+		State:                   "healthy",
+		HTTPSConfigured:         true,
+		TLSCheckSupported:       true,
+		TLSState:                "verified",
+		TLSVerifiedDomainSHA256: strings.Repeat("a", 64),
+		RuntimeTLSAlignment:     "matched-local",
+		LiveConfigSHA256:        strings.Repeat("b", 64),
+	}
+	liveBytes, err := json.Marshal(liveProof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, caddyHostStatusName), liveBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	liveResponse := call(http.MethodGet, path, adminToken, "")
+	if liveResponse.Code != 200 || bytes.Contains(liveResponse.Body.Bytes(), []byte(strings.Repeat("b", 64))) ||
+		bytes.Contains(liveResponse.Body.Bytes(), []byte(keyID)) ||
+		bytes.Contains(liveResponse.Body.Bytes(), []byte(keySecret)) {
+		t.Fatalf("Caddy live-config observation leaked sensitive or fingerprint data: %d", liveResponse.Code)
+	}
+	cfg = read()
+	if cfg.HostLiveConfigState != "observed-local" || cfg.ApplySupported ||
+		cfg.Checks[5].State != "blocked" || cfg.Checks[6].State != "unknown" {
+		t.Fatalf("readable active Caddy config is not permission to apply: %+v", cfg)
+	}
+	// Remove fingerprint to simulate an old or disabled Caddy admin endpoint.
+	liveProof.LiveConfigSHA256 = ""
+	liveBytes, err = json.Marshal(liveProof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(s.HostControlDir, caddyHostStatusName), liveBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg = read(); cfg.HostLiveConfigState != "unverified" {
+		t.Fatalf("old Caddy must not report active config proof: %+v", cfg)
 	}
 	// A decryption failure is a *blocked credential prerequisite*, not an
 	// invented healthy AliDNS permission or a plaintext-bearing response.

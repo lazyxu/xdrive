@@ -22,6 +22,7 @@ type caddyHostStatus struct {
 	TLSState                string `json:"tls_state"`
 	TLSVerifiedDomainSHA256 string `json:"tls_verified_domain_sha256,omitempty"`
 	RuntimeTLSAlignment     string `json:"runtime_tls_alignment,omitempty"`
+	LiveConfigSHA256        string `json:"live_config_sha256,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -81,6 +82,19 @@ func caddyObservedRuntimeTLSAlignment(host caddyHostStatus, observed bool) strin
 	return host.RuntimeTLSAlignment
 }
 
+// GET /config/ inside the fixed Caddy container is evidence that the local
+// admin API returned nonempty data, never an applied desired revision or a
+// rescue ingress receipt. The raw credential-bearing JSON stays in-container.
+func caddyObservedLiveConfigState(host caddyHostStatus, observed bool) string {
+	if !observed || host.State != "healthy" || !host.HTTPSConfigured ||
+		!host.TLSCheckSupported || host.TLSState != "verified" ||
+		!validCaddyTLSVerifiedDomainDigest(host.TLSVerifiedDomainSHA256) ||
+		!validCaddyTLSVerifiedDomainDigest(host.LiveConfigSHA256) {
+		return "unverified"
+	}
+	return "observed-local"
+}
+
 func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 	var status caddyHostStatus
 	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
@@ -111,7 +125,13 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 				(status.RuntimeTLSAlignment != "unverified" &&
 					(status.State != "healthy" || !status.HTTPSConfigured ||
 						!status.TLSCheckSupported || status.TLSState != "verified" ||
-						!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))))) {
+						!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))))) ||
+		(status.LiveConfigSHA256 != "" &&
+			(!validCaddyTLSVerifiedDomainDigest(status.LiveConfigSHA256) ||
+				status.LiveConfigSHA256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ||
+				status.State != "healthy" || !status.HTTPSConfigured ||
+				!status.TLSCheckSupported || status.TLSState != "verified" ||
+				!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) {
 		return caddyHostStatus{}, false
 	}
 	return status, true

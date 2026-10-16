@@ -80,6 +80,16 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
         (!value.host_observed || !value.host_ingress_ready ||
          !value.host_local_tls_verified)))) invalidPreflight()
 
+  // Old Server/Agent may omit the live Caddy admin API observation. A
+  // positive state requires the same fresh locally TLS-verified fixed host,
+  // but does not mean the administrator's desired revision was deployed.
+  if (value.host_live_config_state !== undefined &&
+      (typeof value.host_live_config_state !== 'string' ||
+       !['observed-local', 'unverified'].includes(value.host_live_config_state) ||
+       (value.host_live_config_state === 'observed-local' &&
+        (!value.host_observed || !value.host_ingress_ready ||
+         !value.host_local_tls_verified)))) invalidPreflight()
+
   // Old Server/Agent can omit this advisory. Positive warnings require
   // actual verified local HTTPS. Never accept an arbitrary claim as a
   // deployment or rollback authorization.

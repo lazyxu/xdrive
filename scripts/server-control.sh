@@ -754,10 +754,31 @@ caddy_container_runtime_tls_alignment() {
   fi
 }
 
+# Locally observe the *in-memory* configuration returned by the fixed Caddy
+# admin API. wget's raw JSON (which can include DNS provider credentials)
+# stays INSIDE xdrive-caddy and streams directly into sha256sum there. Only a
+# digest ever crosses the Docker exec/Host Manager boundary. Never expose the
+# Caddy admin API on the host/public interface or treat this as applied revision.
+# Missing/disabled admin API, unreadable JSON, empty response and errors yield
+# no digest. Both the Docker target and in-container URL are literal constants.
+caddy_live_active_config_sha256() {
+  local raw digest
+  if ! raw="$(timeout 4s docker exec xdrive-caddy /bin/sh -ec \
+      'set -o pipefail; wget -q -T 2 -O - http://127.0.0.1:2019/config/ | sha256sum' \
+      2>/dev/null)"; then
+    return
+  fi
+  if [[ "$raw" =~ ^([0-9a-f]{64})[[:space:]]+-$ ]]; then
+    digest="${BASH_REMATCH[1]}"
+    # sha256(empty) is not a JSON config and must never be a positive probe.
+    [[ "$digest" == e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 ]] || printf '%s\n' "$digest"
+  fi
+}
+
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified
+  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -789,13 +810,16 @@ caddy_host_refresh() {
       # local TLS. This does not prove an active config or applied revision.
       if [[ -n "$tls_domain_sha256" ]]; then
         runtime_tls_alignment="$(caddy_container_runtime_tls_alignment "$domain")"
+        # Separate read-only probe for the currently loaded in-memory Caddy
+        # JSON; all raw JSON and AliDNS secrets remain inside the container.
+        live_config_sha256="$(caddy_live_active_config_sha256)"
       fi
     fi
   fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
