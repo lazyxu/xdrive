@@ -1,0 +1,83 @@
+name: CAS-A04a Real Two-Generation CAS File-Data Tar Baseline
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a04a-real-tar-original:
+    if: github.head_ref == 'perf/cas-a04-two-generation-tar-baseline-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify production tar commands and short self-check
+        run: |
+          set -euo pipefail
+          grep -Fq 'cd /data && tar -cf - .' scripts/server-backup.sh
+          grep -Fq 'tar -xf - -C /data' scripts/server-restore.sh
+          python3 -m py_compile scripts/bench-cas-a04-backup-generations.py
+          # Fail before benchmarking if permanent first-source evidence is not lossless.
+          echo '366bea2816b245255cc0ff6495b8ff1b479000fc18f56922595e9dcee676dab8  docs/performance-evidence/cas-a04-two-generation-tar/ci-run-38863629669.tar.gz' | sha256sum -c -
+          python3 - <<'PY'
+          import json, tarfile
+          archive='docs/performance-evidence/cas-a04-two-generation-tar/ci-run-38863629669.tar.gz'
+          with tarfile.open(archive, 'r:gz') as f:
+              names=[i.name for i in f.getmembers() if i.isfile()]
+              assert len(names)==13 and sum(x.endswith('.json') for x in names)==10
+              d=json.load(f.extractfile('summary.json'))
+              assert d['passed'] and d['total_runs']==9 and d['object_bytes']==4194304
+              src=f.extractfile('source.txt').read().decode('utf-8')
+              assert 'EXACT_SOURCE_HEAD=16bd2bd417a42ab291fe001702828619f6189b5d' in src
+          PY
+          python3 scripts/bench-cas-a04-backup-generations.py --results-dir "$RUNNER_TEMP/cas-a04-smoke" --object-bytes 4096 --samples 1
+      - name: Benchmark 9 independent physical cases at 400MiB real originals
+        run: |
+          set -euo pipefail
+          out=desktop/cas-a04a-real-tar-results
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$out/source.txt"
+          sha256sum scripts/bench-cas-a04-backup-generations.py scripts/server-backup.sh scripts/server-restore.sh >> "$out/source.txt"
+          df -h "$RUNNER_TEMP"
+          /usr/bin/time -v -o "$out/process-resource.txt" python3 scripts/bench-cas-a04-backup-generations.py \
+            --results-dir "$out" --object-bytes 4194304 --samples 3 --tar-budget-seconds 180 | tee "$out/stdout.log"
+          python3 - "$out/summary.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          assert d['passed'] and d['total_runs']==9 and d['n_per_scenario']==3
+          assert d['source_count']==100 and d['object_bytes']==4194304
+          for name, extra in (('unchanged',0),('one-percent-new-versions',1),('all-new-versions',100)):
+              row=d['metrics'][name]
+              assert row['n']==3 and row['second_tar_p50_ms']>0
+              assert row['two_archives_bytes_p50'] >= (200+extra)*4194304
+              assert row['final_cas_allocated_bytes_p50'] >= (100+extra)*4194304
+          print('CAS_A04A_NATIVE_N3_OK', d['metrics'])
+          PY
+      - name: Publish lossless raw evidence bytes for permanent Git provenance
+        run: |
+          set -euo pipefail
+          out=desktop/cas-a04a-real-tar-results
+          # Never write a tarball inside the directory being archived: GNU tar
+          # rightly fails with "file changed as we read it".
+          tmp_archive="$RUNNER_TEMP/cas-a04a-evidence-$GITHUB_RUN_ID.tar.gz"
+          tar -czf "$tmp_archive" -C "$out" .
+          sha256sum "$tmp_archive" | cut -d' ' -f1 > "$out/ci-evidence.sha256"
+          cp "$tmp_archive" "$out/ci-evidence.tar.gz"
+          echo "CAS_A04A_EVIDENCE_SHA256 $(sha256sum "$tmp_archive")"
+          echo "CAS_A04A_EVIDENCE_GIT_BLOB_SHA $(git hash-object "$tmp_archive")"
+          tar -tzf "$tmp_archive" > /dev/null
+          python3 - "$tmp_archive" <<'PY'
+          import sys,tarfile
+          with tarfile.open(sys.argv[1], "r:gz") as tf:
+              names=[m.name for m in tf if m.isfile()]
+              assert len(names)==13 and sum(n.endswith(".json") for n in names)==10
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a04a-real-tar-stage-source-exact-n3
+          path: desktop/cas-a04a-real-tar-results/
+          if-no-files-found: warn
+          retention-days: 14

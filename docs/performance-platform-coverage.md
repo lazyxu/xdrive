@@ -168,3 +168,15 @@ CAS-A01 真实Server基准与已验收P047 **100k个物理不同SHA CAS永久unl
 **CAS-A01 首轮 Invalid harness（2026-10-16）**：冻结初始工作头 `09b50501abb106a4fa1827f31386887ebdb9dd0a` 的 [原生专项 CI #38853465577](https://github.com/lazyxu/xdrive/actions/runs/38853465577) 与完整CI #38853465503 的 `go-linux` 因源测试const组两行未按 `gofmt` 列对齐，在真实Go编译/PG17/100k真实SQL及Local.Put**之前**失败（精确 diff：`casA01NodeCount   =` → `casA01NodeCount     =`、`casA01BlobSize   =` → `casA01BlobSize      =`）。**valid n=0、未产生100k物理/共享引用性能样本，不是产品性能 RED。** 只修改测试文件格式及其精确源码字符串断言，永久存档[Invalid harness 原始成因](performance-evidence/cas-a01-shared-blob-100k-ref-gc/ci-run-38853465577-invalid.json)。原冻结真实单CAS/200002引用、三独立n3、所有Owner隔离、1200s/120s和512MiB预算完全不变；仍先测原版 CURRENT。
 
 **CAS-A01 首轮真实有效原版CURRENT n3（2026-10-16）**：初始格式 Invalid harness #38853465577 已单独存档，改正测试常量列对齐后固定工作头 `fa97a9d48105a0c7c95c6eb51af1ff6430f573c9` [真实专项CI #38854311221](https://github.com/lazyxu/xdrive/actions/runs/38854311221) **SUCCESS**。三组独立PostgreSQL17/Gin/Local CAS真实单个1KiB SHA-256原片、100,000独立Node+File及100,000条历史FileVersion，加两个不同账户外部keeper，初始**200,002条真实DB引用只对应1个物理CAS文件**。两Owner配额均为**1,024B**，真实跨Owner非法404与过期Revision 409正确；通过认证Owner DELETE /trash/:id 均HTTP204，选中200k引用释放后Blob.RefCount=2、物理CAS始终为1、保护原片/其他账户没有被误删；最后仅在第二个Keeper被删除时实际物理CAS=0且Blob元数据=0。100k真实共享引用永久删除耗时三轮**5.585206/5.725223/5.711080秒、P50 5.711080秒**；两个Keeper最后GC **32.263/43.372/28.115ms，P50 32.263ms**；Go RSS增量峰值**94650368B**，源种入独立计时，真实Go CPU ticks每组76/79/78，Owner配额扫描P50为495.800ms，符合原版冻结≤1,200,000ms HTTP、≤120,000ms末次GC、≤512MiB RSS与所有物理/权限/计费门槛。**接受生产原版，BEFORE=CURRENT，AFTER=N/A，speedup=N/A**，既有P047 100k不同物理CAS HTTP204/P50 155.241s是完全不同负载、不得计算对比优化收益。原始Git blob SHA逐字节校验无改写的[3组机器JSON、summary、source及进程资源证据](performance-evidence/cas-a01-shared-blob-100k-ref-gc/ci-run-38854311221/README.md)与原始[完整GitHub Actions Artifact #12027180215](https://github.com/lazyxu/xdrive/actions/runs/38854311221/artifacts/12027180215) ZIP SHA256 `c2d22037dd2ba80cac3edae4b836f73c6e8f3680cc518e08ce9ea66edb99ad1e` 一一对应。归档后新HEAD必须重新执行准确专项n3与完整CI含Final Gate后才可Ready/合并。真实Web/Desktop/Mobile Web/OS-installed PWA六平台的GUI删除未在本专题执行，CAS-A04多代备份与CAS-A03 4GiB局部变更仍 **Not measured**。
+
+
+## CAS-A04a — Server共享文件数据tar阶段不计六端真实性能（2026-10-16）
+
+| 子阶段 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A04a双代真实400MiB物理CAS，0/1/100%新增历史版本，全量tar SHA+restore | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+隔离 Linux 的两代物理 tar 是 [Server备份规范](backup-performance.md) 的共享后端单阶段诊断，非客户端/真机/PWA、真实Postgres一致性或用户TaskCenter体验；不得填写任何六端400MiB/4GiB传输、100k虚拟列表或取消性能。准确 HEAD CI 证据另行登记。
+
+
+**CAS-A04a 真实专项CI状态（2026-10-16）：** 共享Server文件数据tar n3 [CI #38863629669](https://github.com/lazyxu/xdrive/actions/runs/38863629669) SUCCESS，已真实压测400MiB物理CAS双代0/1/100%新增原片的9个隔离后端tar/restore场景并逐SHA确认，原始样本[归档](performance-evidence/cas-a04-two-generation-tar/README.md)。六端GUI仍全 **Not measured**，不能把Linux原版tar P50当任一设备4GiB上传或100k滚动成绩；证据归档精确最终HEAD CI/final-gate另行验收。
