@@ -347,3 +347,14 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 从 movestart/zoomstart 即刻取消旧短请求、清空旧图层；moveend/zoomend 合并一次通知未来可信 WGS84 区域查询，任何 BD-09 getBounds 值不得直接传给要求 WGS84 的 Server。视窗变化、缺数据、转码错误、取消、切换 Viewer 或卸载均阻止旧状态覆盖，释放官方图层监听和 Map layer。不构造第二套照片列表，也不触碰正在运行的上传、下载、同步和持久任务。
 
 **仍未上线 JSAPI4：** 原生 adapter 测试只用 Mock Map/ClusterLayer/Convertor，不是实际百度地图运行或 iOS 27 1:1 UI 验收。当前生产 `runtime_enabled=false`、审核的子资源数 0，尚无实际自托管/PWA/Electron 使用许可、完整真实资源、AK 原始响应与 Browser HAR 防泄漏、Server 签名发布、公有/移动入口跨副本配额、Caddy/CSP/Electron 隔离与 iOS27/Android/Desktop 真机截图证据。未来先以可信 Server 批准的 JSAPI map-session+代理和安全容器接线，再完成真实移动/缩放/聚合，之后 A4、B1、B2、B3、C1。
+
+
+## A3b3a3c · Server Owner 视窗和 Baidu 原生聚合共享协调器（2026-10-16）
+
+承接 #1734 合入后本阶段仅为 Web/Mobile Web/Desktop 的同一 Gallery 数据源提供一个**未激活**视窗桥接器：真实百度 JSAPI Map/ClusterLayer 仅能由未来许可证和发布门禁认可的独立调用方注入；此阶段不安装 JSAPI、不读取 Browser/Server AK、不新增 HTTP/IPC 或源模型。原有图库 Range/VirtualCollection/Viewer 仍负责地点点开照片墙。
+
+在 JSAPI Map `movestart`/`zoomstart` 即同步 AbortController 取消该地图的短期 Server GET 和已开始的官方 WGS84→BD-09 转码；在 `moveend`/`zoomend` 合并重查，只从已有 Owner 授权的 `listPlacesViewport(bounds,100,0,signal)` 查询**一页**并以精确总地点/PhotoAsset 数区分完整和截断，最多 100 个地点点位。超过阈值要求进一步缩放，不启动全量 100k GPS 拉取，也不假称照片总数为官方 ClusterLayer 的点位聚合数。provider 忽略 AbortSignal 时本地协调器仍立即结算已取消的 Promise。
+
+百度默认地图边界采用 BD-09；新桥接器仅接收显式受审查的未来 WGS84 范围回调，并严格校验四个数值/反日期变更线/0/极地，拒绝把 BMap.getBounds 直接送给 Server WGS84 查询。真实 WGS84 样本经 A3b3a3a 官方转换后的 FeatureCollection 才能交给 A3b3a3b native 层；转换失败、过期、取消、卸载、权限变化都清空地图而非保留过时照片标记。
+
+上述为 Node 模拟层和共享源契约测试，不代表线上真实百度 JSAPI4 已经可用：生产 `runtime_enabled=false`，百度唯一 Provider、Static Server AK 与独立加密 Browser AK 仍仅在 Server。实际自托管/PWA/Electron 商用许可、官方完整子资源 Host/Path/Query/MIME/bytes、上游和浏览器 HAR AK 无泄漏、Server Owner/session/epoch/签名发布/跨副本限额、Caddy CSP、Electron 沙盒与 iOS27/Android/Desktop 物理真机及 1:1 像素/手势检查仍是下一步 A3b3a3d 的独立发布门禁。合格上线后才严格按序 A4 Nearby、B1 地理语义、B2 旅程、B3 位置编辑/隐私、C1 视觉和性能验收。
