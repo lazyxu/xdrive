@@ -1641,7 +1641,7 @@ export function XDriveServiceDependenciesPage({
                     </Typography>
                   )}
                   {currentTab === 'verify' &&
-                    !['caddy', 'baidu-map', 'geonames', 'media-worker']
+                    !['caddy', 'baidu-map', 'geonames']
                       .includes(selectedPage) && (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
                       {selectedPage === 'storage' ? (
@@ -1663,6 +1663,15 @@ export function XDriveServiceDependenciesPage({
                           「可用」仅代表本次观察到新鲜心跳，不证明单个同步任务成功、
                           全部 Worker 都已应用目标修订或容器已安全启停。
                           下方调度修订需单独核对；不会启动、停止或重启 Worker。
+                        </Typography>
+                      ) : selectedPage === 'media-worker' ? (
+                        <Typography variant="body2" color="text.secondary" data-xdrive-media-worker-liveness-scope>
+                          此处重新请求当前 Server 的 Media Worker 服务清单状态（共享两秒超时、只读）。
+                          受管启用状态只有在宿主目标修订、内存／CPU／PID 实际限制及 FFmpeg/FFprobe 探针
+                          都通过核验后才会显示「可用」；受管安全停用会显示「未启用」。
+                          未受管的旧模式「可用」仅说明独立 FFmpeg/FFprobe 探针通过，并非宿主配额生效。
+                          下方「验证实际生效」单独读取 Host Manager 的目标／应用修订和配额；
+                          两次读取不是原子快照，也不证明媒体作业成功，不会在本页执行容器启停。
                         </Typography>
                       ) : (
                       <Typography variant="body2" color="text.secondary">

@@ -159,6 +159,7 @@ test('only three current safe enable panels have optional navigation, never Cadd
   const row = (id, apply_mode = 'controlled-restart') =>
     ({ id, config_mode: 'in-app', apply_mode, status: 'disabled' })
   const methods = [
+    'load', // Media Worker live verification must read the current service inventory.
     'loadBaiduMapConfig', 'saveBaiduMapConfig',
     'loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker',
     'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight', 'applyPhotoHost',
@@ -258,6 +259,59 @@ test('shared PostgreSQL and Pull Worker verification shows actual current-instan
   assert.match(api, /sqlDB.PingContext\(ctx\)/)
   assert.match(api, /sourceWorkerServiceStatus\(ctx, time.Now\(\).UTC\(\)\)/)
   assert.match(api, /context.WithTimeout\(c.Request.Context\(\), 2\*time.Second\)/)
+  for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
+    assert.equal(page.includes(forbidden), false)
+  }
+})
+
+
+test('Media Worker explicit live check needs the real current inventory, not just desired Host config', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const service = { id: 'media-worker', config_mode: 'in-app',
+    apply_mode: 'controlled-restart', status: 'unavailable' }
+  const fn = () => Promise.resolve()
+  const all = { load: fn, loadMediaWorkerConfig: fn,
+    saveMediaWorkerConfig: fn, applyMediaWorker: fn }
+  const configure = { service: 'media-worker', tab: 'config' }
+  const verify = { service: 'media-worker', tab: 'verify' }
+  assert.deepEqual(resolve('media-worker', [service], all), {
+    configTarget: configure, verifyTarget: verify, activationTarget: configure,
+  })
+  // Missing fresh health inventory must remove the VERIFY quick link even when
+  // the old safe configuration and Host Manager entry remain available.
+  assert.deepEqual(resolve('media-worker', [service], { ...all, load: undefined }), {
+    configTarget: configure, verifyTarget: undefined, activationTarget: configure,
+  })
+  assert.deepEqual(resolve('media-worker', [service], { load: fn }), {})
+  assert.deepEqual(resolve('media-worker', [service, service], all), {})
+  assert.deepEqual(resolve('media-worker', [{ ...service, status: 'planned' }], all), {})
+  assert.deepEqual(resolve('media-worker', [{ ...service, apply_mode: 'planned' }], all), {})
+  assert.deepEqual(resolve('media-worker', [{ ...service, config_mode: 'deployment' }], all), {
+    configTarget: undefined, verifyTarget: verify,
+  })
+})
+
+test('shared Media Worker verify explicitly separates real health from applied Host revision', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const caps = read('ui/shared/src/system-dependencies-capabilities.ts')
+  const panel = read('ui/shared/src/mui/MediaWorkerConfigPanel.tsx')
+  const server = read('internal/api/admin_service_dependencies.go')
+  assert.match(page, /data-xdrive-media-worker-liveness-scope/)
+  assert.match(page, /selectedPage === 'media-worker' \? \(/)
+  assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
+  assert.match(caps, /'media-worker': \['load', 'loadMediaWorkerConfig'\]/)
+  assert.match(server, /mediaWorkerApplied\(desired, host, s\.mediaWorkerRuntimeReady\(ctx\)\)/)
+  assert.match(server, /s\.MediaWorkerProbe\.Info\(ctx\)/)
+  assert.match(server, /context.WithTimeout\(c.Request.Context\(\), 2\*time.Second\)/)
+  assert.match(panel, /config\.host\.memory_verified/)
+  assert.match(panel, /config\.host\.cpu_verified/)
+  assert.match(panel, /config\.host\.pids_verified/)
+  assert.match(panel, /config\.host\.applied_revision/)
+  assert.match(panel, /\{section === 'config' && \(<>/)
+  assert.match(panel, /\{section === 'history' && source\.loadMediaWorkerRevisions/)
+  // Readonly snapshot refresh deliberately must not remount editor or submit apply.
+  assert.match(page, /<XDriveMediaWorkerConfigPanel source=\{source\} refreshID=\{0\}/)
   for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
     assert.equal(page.includes(forbidden), false)
   }
