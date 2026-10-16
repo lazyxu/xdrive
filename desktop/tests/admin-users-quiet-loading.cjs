@@ -1,0 +1,42 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const repo = path.join(__dirname, '..', '..')
+const view = fs.readFileSync(path.join(repo, 'ui/shared/src/mui/AdminUsersPage.tsx'), 'utf8')
+const web = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
+const desktop = fs.readFileSync(path.join(repo, 'desktop/src/renderer/App.tsx'), 'utf8')
+
+test('admin users stays quiet until authoritative first read, never advertises false empty', () => {
+  assert.ok(view.includes('const readComplete = completedSource === api'))
+  assert.ok(view.includes('!readComplete ? ('))
+  assert.ok(view.includes('data-xdrive-admin-users-first-read'))
+  assert.ok(view.includes('minHeight: 180'))
+  assert.ok(view.includes('showNetworkFeedback ? ('))
+  assert.ok(view.includes('loadError ? \'用户列表读取失败，请刷新重试。\' : \'暂无用户\''))
+  assert.ok(view.includes('setCompletedSource(api)'))
+  assert.equal(view.includes('{loading && users.length === 0 ? ('), false)
+})
+
+test('real reads start without visual delay; stale account and request results cannot paint', () => {
+  assert.ok(view.includes('const epoch = ++readEpochRef.current'))
+  assert.ok(view.includes('const nextUsers = await api.adminUsers()'))
+  assert.ok(view.includes('if (readEpochRef.current === epoch) setUsersSnapshot({ source: api, items: nextUsers })'))
+  assert.ok(view.includes('const users = usersSnapshot?.source === api ? usersSnapshot.items : []'))
+  assert.ok(view.includes('return () => { readEpochRef.current += 1 }'))
+  assert.ok(view.includes('window.setTimeout(() => setVisibleReadEpoch(readEpoch), 300)'))
+  assert.ok(view.includes('window.clearTimeout(timer)'))
+  assert.ok(view.includes('pendingReadSource === api && visibleReadEpoch === readEpoch'))
+})
+
+test('refresh retains accepted rows and does not insert a progressing layout row', () => {
+  assert.equal(view.includes('setUsers([])'), false)
+  assert.equal(view.includes('{loading && users.length > 0 ? <LinearProgress /> : null}'), false)
+  assert.ok(view.includes('disabled={loading}'))
+  assert.ok(view.includes("position: 'absolute', top: 0, left: 0, right: 0"))
+  assert.ok(view.includes('readComplete && showNetworkFeedback'))
+  assert.ok(view.includes('data-xdrive-admin-users-responsive'))
+  assert.ok(web.includes('<AdminUsersPanel'))
+  assert.ok(desktop.includes('<XDriveAdminUsersPage'))
+})

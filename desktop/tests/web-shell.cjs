@@ -107,7 +107,13 @@ test('Web admin workspaces are first-class pages while action dialogs stay local
   }
 
   assert.ok(adminUsers.includes('pageActions={'), 'User Management primary actions should live in the shared page header')
-  assert.ok(adminUsers.includes('正在刷新…'), 'User Management should expose an explicit refresh action')
+  // The refresh action is still functional; its label is intentionally stable.
+  // A spinner/“正在刷新…” in the header would shift the mobile page geometry.
+  assert.ok(adminUsers.includes('startIcon={<RefreshRoundedIcon />}'), 'User Management refresh icon stays visible')
+  assert.ok(adminUsers.includes('disabled={loading}'), 'User Management refresh disables during real requests')
+  assert.ok(adminUsers.includes('onClick={() => void load()}'), 'User Management must retain the real refresh request')
+  assert.ok(adminUsers.includes('>\n              刷新\n'), 'refresh label must remain stable')
+  assert.equal(adminUsers.includes('loadingLabel="正在刷新…"'), false, 'fast intermediate refresh feedback must not resize the header')
   assert.ok(adminUsers.includes('open={createOpen}'), 'Create User should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!quotaUser}'), 'Quota editing should remain a local action dialog')
   assert.ok(adminUsers.includes('open={!!resetUser}'), 'Password reset should remain a local action dialog')
