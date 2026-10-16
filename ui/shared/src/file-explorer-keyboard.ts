@@ -35,6 +35,15 @@ export type XDriveFileExplorerKeyboardEventLike = {
   metaKey?: boolean
   altKey?: boolean
   shiftKey?: boolean
+  isComposing?: boolean
+  keyCode?: number
+  nativeEvent?: { isComposing?: boolean; keyCode?: number }
+}
+
+/** Ignore IME composition and legacy keyCode=229 before file shortcuts. */
+export function xDriveFileExplorerIsComposingKey(event: XDriveFileExplorerKeyboardEventLike): boolean {
+  return event.isComposing === true || event.nativeEvent?.isComposing === true ||
+    event.keyCode === 229 || event.nativeEvent?.keyCode === 229
 }
 
 export function xDriveFileExplorerKeyboardProfileFromPlatform(
@@ -131,6 +140,7 @@ export function xDriveFileExplorerKeyboardTabIndex(
   event: XDriveFileExplorerKeyboardEventLike,
   profile: XDriveFileExplorerKeyboardProfile,
 ): number | null {
+  if (xDriveFileExplorerIsComposingKey(event)) return null
   if (
     profile !== 'windows' ||
     !event.ctrlKey ||
@@ -148,6 +158,7 @@ export function xDriveFileExplorerKeyboardCommand(
   event: XDriveFileExplorerKeyboardEventLike,
   profile: XDriveFileExplorerKeyboardProfile,
 ): XDriveFileExplorerKeyboardCommand | null {
+  if (xDriveFileExplorerIsComposingKey(event)) return null
   const key = event.key.toLocaleLowerCase()
   const primary = xDriveFileExplorerPrimaryModifierActive(event, profile)
 

@@ -35,7 +35,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | U11 P2 | `FilePropertiesDialog` plus media inspector adapter | Screen-reader ordering and hierarchy across ordinary/media files |
 | U12 P2 | Shared `FileExplorerDestinationDialog` and destination-action tests | Short/landscape window, deep path and permission denial |
 | U13 P2 | Shared feedback + task-view callback and dismiss-independent tests | Server retry, undo capability and durable-task continuity |
-| U14 P2 | Shared keyboard module and Desktop native-open tests | Actual Cmd/Ctrl/IME, F2/Delete/Space, right-click and mixed input |
+| U14 P2 | Shared keyboard resolver and real Web/Desktop/Mobile row handlers now fence composing key events and legacy 229; direct Node tests cover three profiles and pane keys | Actual Chinese/Japanese IME, Cmd/Ctrl, keyboard right-click and mixed external input on physical hardware |
 | M01 P1 | iOS27 Mobile Files dedicated presentation/document contract | Side-by-side real iOS27 Files light/dark screenshots and gestures; not run |
 | M02 P1 | `useMobilePanelViewport` and Mobile ResizeObserver exist | Safari/Chrome URL bar, software keyboard, focus and post-keyboard anchor |
 | M03 P1 | Shared mobile gesture and pointer-drag code, touch-drag tests | Multi-pointer, OS swipe-back, long-hold then scroll, actual touch hardware |
@@ -194,3 +194,24 @@ old state compatibility and bounded invalid offsets. No Server API,
 selector limit or 900px breakpoint changes. Per-section selected-item
 and Search states remain separate, unaccepted M07 subcases; real installed
 PWA/iOS27/Android physical navigation remains NOT RUN.
+
+## U14 · Shared FileExplorer IME composition keyboard isolation (2026-10-16)
+
+Original-source inspection found the shared shortcut resolver still mapped
+composing Enter/Space/F2/Backspace to File Open/Quick Look/Rename/Back.
+Direct wide Web/Desktop and Mobile item rows, inline Rename, path editor and
+focusable splitters did not consistently guard composing keys; type-to-select
+and Mobile root native-isComposing checks were insufficient.
+
+This bounded fix adds ONE exported shared typed composition guard for
+native/synthetic isComposing and legacy keyCode=229; the original shared
+shortcut/numbered-tab and MUI row/root/inline/path/splitter and compact
+Mobile Files row/root handlers invoke it before file actions. Non-composing
+shortcuts, native Desktop system double-click, Space Quick Look, existing
+permissions, 900px responsive boundary, 52px App Frame and 100k virtual
+collection are unchanged. Existing Desktop tests inspect actual handlers,
+transpile the real keyboard helper and exercise Windows/macOS/Web profiles.
+
+**Exact-HEAD CI: NOT YET RUN at PR creation.** Physical Chinese/Japanese IME,
+actual assistive technology, iOS27/Android installed PWA and external keyboard
+validation remain NOT RUN until independent authentic device evidence.
