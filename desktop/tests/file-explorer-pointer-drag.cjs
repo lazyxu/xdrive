@@ -174,6 +174,36 @@ for (const reason of ['escape', 'button', 'second-pointer', 'scope', 'disabled',
   })
 }
 
+test('M03: a second touch cancels an owned gesture without blocking native multi-touch', async () => {
+  for (const dragging of [false, true]) {
+    const h = await mount()
+    try {
+      const { source } = await h.begin(undefined, { pointerId: 11 })
+      if (dragging) await h.emit('pointermove', { pointerId: 11, clientX: 120 })
+      assert.equal(h.active, dragging)
+
+      const second = await h.emit('pointerdown', {
+        pointerId: 12, isPrimary: false, clientX: 130, clientY: 105,
+      })
+      assert.equal(second.defaultPrevented, false, 'native pinch/OS gesture retains browser default')
+      assert.equal(second.cancelBubble, false, 'second contact remains available to native handlers')
+      assert.deepEqual(h.cancellations, [source], 'cancel only the active xDrive gesture')
+      assert.equal(h.active, false)
+      assert.equal(h.capture.size, 0)
+      assert.equal(h.frames.size, 0)
+
+      await h.emit('pointerup', { pointerId: 11, clientX: 120 })
+      assert.equal(h.drops.length, 0, 'cancelled contact cannot submit a file drop')
+      assert.equal((await h.emit('click', { pointerId: 11 })).defaultPrevented, true,
+        'cancelled original contact cannot activate a file')
+      assert.equal((await h.emit('click', { pointerId: 12 })).defaultPrevented, false,
+        'second contact is not treated as the cancelled file click')
+      assert.equal(h.document.count, 0)
+      assert.equal(h.view.count, 0)
+    } finally { await h.dispose() }
+  }
+})
+
 test('pointercancel and unmount remove gesture listeners and scheduled work', async () => {
   const h = await mount()
   await h.begin(); await h.emit('pointermove', { clientY: 198 }); await h.emit('pointercancel')

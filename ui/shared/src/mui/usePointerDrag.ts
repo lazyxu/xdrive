@@ -209,9 +209,9 @@ export function useXDrivePointerDrag<Source>(options: Options<Source>) {
     }
     const secondPointer = (next: PointerEvent) => {
       if (next.pointerId === session.pointerID) return
+      // A second contact cancels our drag, but it still belongs to the browser:
+      // do not swallow native multi-touch, zoom or OS navigation gestures.
       cancel()
-      next.preventDefault()
-      next.stopPropagation()
     }
     const key = (next: KeyboardEvent) => {
       if (next.key !== 'Escape') return

@@ -304,3 +304,24 @@ virtualization. This does NOT prove real Safari/Android, physical IME, actual
 
 - Initial sixth candidate `6ac900dc591d90d1b041a343505842f69e009414`, CI #38888864204, remained **pending with 0 allocated jobs** during review, so it had no browser result and was **not** an accepted test. Review identified that native `selectionchange` on input elements need not bubble to `document`; `document.addEventListener('selectionchange', handler)` (default bubbling mode) may never see the input's selection event.
 - Correct only this listener to capture phase (`addEventListener('selectionchange', handler, true)` and matching cleanup). The listener still executes at DOCUMENT root rather than attaching to the React-controlled input, and it only reads `document.activeElement` and the caret range. No new React props, no DOM mutation or extra Search requests. Recreate the ONE frozen-parent work commit, cancel/replace the unstarted CI through GitHub's existing concurrency policy, and require the new accurate-head unchanged genuine Chrome RED→GREEN plus complete final-gate before merge. Previous failures and true native device gaps remain documented.
+
+## M03 · second-pointer native gesture ownership (2026-10-16)
+
+- Source audit found `useXDrivePointerDrag` already cancels its own pending/active
+  file drag on an additional pointer but also called `preventDefault()` and
+  `stopPropagation()` on that *second contact's* `pointerdown`. This could
+  block the browser's native multi-touch gesture before it handles the contact.
+- The narrow shared-hook change retains xDrive cancellation, original-contact
+  click suppression and no-drop behavior but leaves the second contact's
+  browser event/default action untouched. No Web/Desktop business API, File
+  selection, Server mutation, gesture threshold, navigation, 52px header or
+  900px breakpoint changes.
+- `desktop/tests/file-explorer-pointer-drag.cjs` adds mounted hook assertions
+  for *both pending and dragging* contacts: second contact not prevented or
+  propagation-stopped, exactly one own-session cancellation, no drop, original
+  compatibility click suppressed, second pointer click unblocked and listeners
+  cleaned. The assertions would fail on the original source's second contact.
+- **Delivery level:** code+regression candidate; exact-work-HEAD GitHub full
+  CI/Final Gate and merge are required before calling it delivered. Native
+  iOS 27/Android, system back swipe, pinch, mixed input and real long-hold
+  gesture acceptance are **NOT RUN** and remain on M03's release checklist.
