@@ -105,3 +105,90 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
     verifyTarget: { service: 'geonames', tab: 'verify' },
   },
 }
+
+
+// Quick links are not promises that a saved revision has taken effect.
+// An old Server/Agent may report a service while its current bridge lacks the
+// corresponding API. For a shared Photo Host target, BOTH the source service
+// and the editable host service must be uniquely reported.
+type XDriveSystemDependencyRuntimeMethod =
+  | 'loadPostgresPoolConfig' | 'savePostgresPoolConfig'
+  | 'loadSourceWorkerConfig' | 'saveSourceWorkerConfig'
+  | 'loadCaddyHTTPSConfig' | 'saveCaddyHTTPSConfig' | 'loadCaddyHTTPSPreflight'
+  | 'loadMediaWorkerConfig' | 'saveMediaWorkerConfig'
+  | 'loadPhotoHostConfig' | 'savePhotoHostConfig' | 'loadPhotoHostPreflight'
+  | 'loadBaiduMapConfig' | 'saveBaiduMapConfig' | 'verifyBaiduMap'
+  | 'loadGeoNamesConfig' | 'saveGeoNamesConfig'
+export type XDriveSystemDependencyRuntimePort =
+  Partial<Record<XDriveSystemDependencyRuntimeMethod, unknown>>
+export type XDriveSystemDependencyRuntimeRow = {
+  id: string
+  config_mode?: string
+  apply_mode?: string
+  status?: string
+}
+
+const configPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSystemDependencyRuntimeMethod[]> = {
+  database: ['loadPostgresPoolConfig', 'savePostgresPoolConfig'],
+  storage: [],
+  'background-worker': ['loadSourceWorkerConfig', 'saveSourceWorkerConfig'],
+  caddy: ['loadCaddyHTTPSConfig', 'saveCaddyHTTPSConfig'],
+  'media-worker': ['loadMediaWorkerConfig', 'saveMediaWorkerConfig'],
+  'photo-face': ['loadPhotoHostConfig', 'savePhotoHostConfig'],
+  'photo-smart': ['loadPhotoHostConfig', 'savePhotoHostConfig'],
+  'photo-semantic': ['loadPhotoHostConfig', 'savePhotoHostConfig'],
+  'photo-creative': ['loadPhotoHostConfig', 'savePhotoHostConfig'],
+  'baidu-map': ['loadBaiduMapConfig', 'saveBaiduMapConfig'],
+  geonames: ['loadGeoNamesConfig', 'saveGeoNamesConfig'],
+}
+const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSystemDependencyRuntimeMethod[]> = {
+  database: ['loadPostgresPoolConfig'],
+  storage: [], // The observed status row is the only storage probe.
+  'background-worker': ['loadSourceWorkerConfig'],
+  caddy: ['loadCaddyHTTPSPreflight'],
+  'media-worker': ['loadMediaWorkerConfig'],
+  'photo-face': ['loadPhotoHostPreflight'],
+  'photo-smart': ['loadPhotoHostPreflight'],
+  'photo-semantic': ['loadPhotoHostPreflight'],
+  'photo-creative': ['loadPhotoHostPreflight'],
+  'baidu-map': ['verifyBaiduMap'],
+  geonames: ['loadGeoNamesConfig'],
+}
+const reportedConfigModes = new Set(['in-app', 'deployment'])
+const reportedApplyModes = new Set([
+  'immediate', 'task-boundary', 'manual-reload', 'controlled-restart', 'not-available',
+])
+
+/**
+ * Resolve optional navigation actions from *current* allowlisted inventory
+ * and the current Web/Desktop bridge, never the static capability table alone.
+ * This does not assert the Server will accept an action or that it took effect.
+ */
+export function xDriveSystemDependencyAvailableTargets(
+  id: XDriveSystemDependencyID,
+  services: readonly XDriveSystemDependencyRuntimeRow[],
+  port: XDriveSystemDependencyRuntimePort,
+): { configTarget?: XDriveSystemDependenciesLocation; verifyTarget?: XDriveSystemDependenciesLocation } {
+  const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[id]
+  const reported = (target: string) => {
+    const matching = services.filter((service) => service.id === target)
+    if (matching.length !== 1) return null
+    const service = matching[0]
+    return service && reportedConfigModes.has(service.config_mode ?? '') &&
+      reportedApplyModes.has(service.apply_mode ?? '') && service.status !== 'planned'
+      ? service : null
+  }
+  // The selected service itself must be reported unambiguously and support a
+  // known lifecycle contract, even when its config lives in the shared host.
+  if (!reported(id)) return {}
+  const hasMethods = (methods: readonly XDriveSystemDependencyRuntimeMethod[]) =>
+    methods.every((method) => typeof port[method] === 'function')
+  const configOwner = capability.configTarget ? reported(capability.configTarget.service ?? '') : null
+  const configTarget = configOwner?.config_mode === 'in-app' &&
+    hasMethods(configPortRequirements[id]) ? capability.configTarget : undefined
+  const verifyOwner = capability.verifyTarget ? reported(capability.verifyTarget.service ?? '') : null
+  const verifyTarget = verifyOwner && hasMethods(verifyPortRequirements[id])
+    ? capability.verifyTarget : undefined
+  if (!configTarget && !verifyTarget) return {}
+  return { configTarget, verifyTarget }
+}

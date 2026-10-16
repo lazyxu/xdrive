@@ -19,7 +19,7 @@ import { alpha } from '@mui/material/styles'
 import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
 import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals, xDriveDashboardAssessment, xDriveDashboardCounts, xDriveDashboardMatches } from '../system-dependencies-overview'
 import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
-import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES } from '../system-dependencies-capabilities'
+import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -1410,8 +1410,9 @@ export function XDriveServiceDependenciesPage({
                     }} data-xdrive-system-dependencies-capability-rows>
                       {overviewEntries.map((item) => {
                         const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[item.id]
-                        const configTarget = capability.configTarget
-                        const verifyTarget = capability.verifyTarget
+                        const { configTarget, verifyTarget } = xDriveSystemDependencyAvailableTargets(
+                          item.id, systemServices, source,
+                        )
                         // Older Agent/Server response without both scope/mode
                         // has no defensible configuration or verification link.
                         const recognized = !!(item.service && item.service.config_mode && item.service.apply_mode)
@@ -1442,7 +1443,7 @@ export function XDriveServiceDependenciesPage({
                                 </Typography>
                               </Stack>
                             ))}
-                            {recognized && (
+                            {recognized && (configTarget || verifyTarget) && (
                               <Stack direction="row" gap={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
                                 {configTarget && (
                                   <Button size="small" variant="outlined"
@@ -1457,6 +1458,15 @@ export function XDriveServiceDependenciesPage({
                                   </Button>
                                 )}
                               </Stack>
+                            )}
+                            {recognized && (
+                              (capability.configTarget && !configTarget) ||
+                              (capability.verifyTarget && !verifyTarget)
+                            ) && (
+                              <Typography variant="caption" color="text.secondary"
+                                data-xdrive-dependency-missing-action-port>
+                                当前连接未确认对应的配置或检测接口；不显示无效快捷操作。
+                              </Typography>
                             )}
                           </Box>
                         )
@@ -1552,6 +1562,9 @@ export function XDriveServiceDependenciesPage({
                   </Typography>
                   {selectedItem && selectedItem.config_mode && selectedItem.apply_mode && (() => {
                     const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[selectedItem.id as XDriveSystemDependencyID]
+                    const { configTarget, verifyTarget } = xDriveSystemDependencyAvailableTargets(
+                      selectedItem.id as XDriveSystemDependencyID, systemServices, source,
+                    )
                     return (
                       <Paper variant="outlined" data-xdrive-system-dependency-actions
                         sx={{ p: 1.5, mb: 2, borderRadius: 2 }}>
@@ -1565,17 +1578,23 @@ export function XDriveServiceDependenciesPage({
                             </Typography>
                           </Box>
                           <Stack direction="row" gap={1} useFlexGap flexWrap="wrap">
-                            {capability.configTarget && (
+                            {configTarget && (
                               <Button size="small" variant="outlined"
-                                onClick={() => navigateTo(capability.configTarget!)}>
+                                onClick={() => navigateTo(configTarget)}>
                                 配置与修改
                               </Button>
                             )}
-                            {capability.verifyTarget && (
+                            {verifyTarget && (
                               <Button size="small" variant="outlined"
-                                onClick={() => navigateTo(capability.verifyTarget!)}>
-                                {capability.verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
+                                onClick={() => navigateTo(verifyTarget)}>
+                                {verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
                               </Button>
+                            )}
+                            {((capability.configTarget && !configTarget) ||
+                              (capability.verifyTarget && !verifyTarget)) && (
+                              <Typography variant="caption" color="text.secondary">
+                                当前连接未确认对应的管理接口，请核对 Server/Agent 版本。
+                              </Typography>
                             )}
                           </Stack>
                         </Stack>
