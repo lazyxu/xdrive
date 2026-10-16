@@ -2450,6 +2450,15 @@ func (c *agentController) CloudDeviceBackupOverview(ctx context.Context) (client
 	return cli.DeviceBackupOverview(ctx)
 }
 
+// Optional read-only page transport; never expose source credentials/Root.
+func (c *agentController) CloudDeviceBackupOverviewPage(ctx context.Context, limit int, afterDeviceID string) (client.DeviceBackupOverview, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.DeviceBackupOverview{}, err
+	}
+	return cli.DeviceBackupOverviewPage(ctx, limit, afterDeviceID)
+}
+
 func (c *agentController) CloudDeviceBackupRuns(ctx context.Context, sourceID uint64, limit, offset int) (client.DeviceBackupRunPage, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

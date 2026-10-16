@@ -56,9 +56,10 @@ type DeviceBackupDevice struct {
 }
 
 type DeviceBackupOverview struct {
-	Devices        []DeviceBackupDevice `json:"devices"`
-	HasMore        bool                 `json:"has_more"`
-	HasMoreFolders bool                 `json:"has_more_folders"`
+	Devices           []DeviceBackupDevice `json:"devices"`
+	HasMore           bool                 `json:"has_more"`
+	HasMoreFolders    bool                 `json:"has_more_folders"`
+	NextAfterDeviceID string               `json:"next_after_device_id,omitempty"`
 }
 
 type DeviceBackupRunPage struct {
@@ -71,6 +72,18 @@ type DeviceBackupRunPage struct {
 func (c *Client) DeviceBackupOverview(ctx context.Context) (DeviceBackupOverview, error) {
 	var out DeviceBackupOverview
 	err := c.json(ctx, http.MethodGet, "/api/v1/device-backups", nil, &out)
+	return out, err
+}
+
+// DeviceBackupOverviewPage is an owner-scoped, bounded keyset read.
+// The legacy DeviceBackupOverview() call stays unchanged for old Agents.
+func (c *Client) DeviceBackupOverviewPage(ctx context.Context, limit int, afterDeviceID string) (DeviceBackupOverview, error) {
+	var out DeviceBackupOverview
+	query := url.Values{"limit": {strconv.Itoa(limit)}}
+	if afterDeviceID != "" {
+		query.Set("after_device_id", afterDeviceID)
+	}
+	err := c.json(ctx, http.MethodGet, "/api/v1/device-backups?"+query.Encode(), nil, &out)
 	return out, err
 }
 

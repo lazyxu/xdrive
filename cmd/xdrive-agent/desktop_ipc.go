@@ -6226,6 +6226,12 @@ type desktopIPCDeviceBackupReader interface {
 	CloudDeviceBackupRuns(context.Context, uint64, int, int) (client.DeviceBackupRunPage, error)
 }
 
+// This optional extension lets newer Desktop clients read beyond the first
+// 100 owner-scoped devices without changing the legacy Agent read contract.
+type desktopIPCDeviceBackupPager interface {
+	CloudDeviceBackupOverviewPage(context.Context, int, string) (client.DeviceBackupOverview, error)
+}
+
 // Local identity is queried without any caller-supplied ID or Root path.
 // An Agent that lacks a verified OS credential must fail closed.
 type desktopIPCDeviceBackupLocalVerifier interface {
@@ -6250,6 +6256,46 @@ func (h *desktopIPCHandler) deviceBackups(w http.ResponseWriter, r *http.Request
 	reader, ok := h.ctrl.(desktopIPCDeviceBackupReader)
 	if !ok {
 		writeDesktopIPCError(w, http.StatusNotImplemented, "device_backups_unavailable", "read-only device backups are unavailable")
+		return
+	}
+	if r.URL.Query().Has("limit") || r.URL.Query().Has("after_device_id") {
+		pager, available := h.ctrl.(desktopIPCDeviceBackupPager)
+		if !available {
+			writeDesktopIPCError(w, http.StatusNotImplemented, "device_backup_pages_unavailable", "read-only device pages are unavailable")
+			return
+		}
+		limit := 100
+		if raw, found := r.URL.Query()["limit"]; found {
+			if len(raw) != 1 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 100")
+				return
+			}
+			parsed, err := strconv.Atoi(strings.TrimSpace(raw[0]))
+			if err != nil || parsed < 1 || parsed > 100 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 100")
+				return
+			}
+			limit = parsed
+		}
+		afterDeviceID := ""
+		if raw, found := r.URL.Query()["after_device_id"]; found {
+			if len(raw) != 1 {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cursor", "invalid device backup cursor")
+				return
+			}
+			afterDeviceID = raw[0]
+			parsed, err := uuid.Parse(afterDeviceID)
+			if err != nil || parsed.String() != afterDeviceID {
+				writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cursor", "invalid device backup cursor")
+				return
+			}
+		}
+		items, err := pager.CloudDeviceBackupOverviewPage(r.Context(), limit, afterDeviceID)
+		if err != nil {
+			writeDesktopIPCControllerError(w, err)
+			return
+		}
+		writeDesktopIPCJSON(w, http.StatusOK, items)
 		return
 	}
 	items, err := reader.CloudDeviceBackupOverview(r.Context())
