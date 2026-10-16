@@ -30,14 +30,14 @@ func TestAuditLogCoversSecurityAndDestructiveActions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{},
+		&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.UploadSession{},
 		&meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.BaiduJSAPIMapEpoch{}, &meta.User{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
-		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.BaiduJSAPIMapEpoch{}, &meta.AuditEvent{},
+		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.BaiduJSAPIMapEpoch{}, &meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
 	}

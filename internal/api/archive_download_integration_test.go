@@ -56,7 +56,7 @@ func TestDownloadArchiveFolderMixedSelectionAndIsolation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.DownloadProgress{},
-		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.AuditEvent{},
+		&meta.ContentBlob{}, &meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
 		&meta.ArchivePrepareRun{},
 	); err != nil {
 		t.Fatal(err)

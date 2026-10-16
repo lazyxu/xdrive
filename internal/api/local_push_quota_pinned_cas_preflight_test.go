@@ -14,7 +14,7 @@ import (
 func makeLocalPushQuotaPinnedFixture(t *testing.T) localPushExistingCASTestFixture {
 	t.Helper()
 	f := makeLocalPushPinnedSQLFixture(t)
-	if err := f.server.DB.AutoMigrate(&meta.FileVersion{}, &meta.UploadSession{}); err != nil {
+	if err := f.server.DB.AutoMigrate(&meta.FileVersion{}, &meta.UploadSession{}, &meta.LocalPushQuotaHold{}); err != nil {
 		t.Fatal(err)
 	}
 	return f

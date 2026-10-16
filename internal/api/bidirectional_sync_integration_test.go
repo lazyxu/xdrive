@@ -73,7 +73,7 @@ func newBidirectionalSyncFixture(t *testing.T) bidirectionalSyncFixture {
 		&meta.ContentBlob{},
 		&meta.Share{},
 		&meta.UploadSession{},
-		&meta.UploadPart{},
+		&meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)

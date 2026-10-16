@@ -146,20 +146,27 @@ reserved_usage AS (
   FROM xd_upload_sessions
   WHERE owner_id IN ? AND status = ? AND expires_at > NOW() AND quota_reserved_bytes > 0
   GROUP BY owner_id
+),
+local_push_reserved_usage AS (
+  SELECT owner_id, COALESCE(SUM(bytes), 0) AS reserved_bytes
+  FROM xd_local_push_quota_holds
+  WHERE owner_id IN ? AND expires_at > NOW() AND released_at IS NULL AND bytes > 0
+  GROUP BY owner_id
 )
 SELECT u.id AS owner_id,
   COALESCE(c.logical_file_bytes, 0) AS logical_file_bytes,
   COALESCE(c.trash_bytes, 0) AS trash_bytes,
   COALESCE(h.history_bytes, 0) AS history_bytes,
   COALESCE(p.physical_used_bytes, 0) AS physical_used_bytes,
-  COALESCE(r.reserved_bytes, 0) AS reserved_bytes
+  COALESCE(r.reserved_bytes, 0) + COALESCE(lpr.reserved_bytes, 0) AS reserved_bytes
 FROM xd_users u
 LEFT JOIN current_usage c ON c.owner_id = u.id
 LEFT JOIN history_usage h ON h.owner_id = u.id
 LEFT JOIN physical_usage p ON p.owner_id = u.id
 LEFT JOIN reserved_usage r ON r.owner_id = u.id
+LEFT JOIN local_push_reserved_usage lpr ON lpr.owner_id = u.id
 WHERE u.id IN ?`,
-		ids, ids, ids, ids, ids, meta.UploadStatusActive, ids,
+		ids, ids, ids, ids, ids, meta.UploadStatusActive, ids, ids,
 	).Scan(&rows).Error
 	if err != nil {
 		return nil, err
