@@ -71,3 +71,75 @@ test('Web and Desktop share one optional capability table, never a fake online t
     assert.equal(page.includes(forbidden), false)
   }
 })
+
+
+test('quick actions fail closed for unknown ports, incomplete or duplicate lifecycle reports', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const row = (id, mode = 'in-app') => ({
+    id, config_mode: mode, apply_mode: 'immediate', status: 'ready',
+  })
+  const allPorts = Object.fromEntries([
+    'loadPostgresPoolConfig', 'savePostgresPoolConfig',
+    'loadSourceWorkerConfig', 'saveSourceWorkerConfig',
+    'loadCaddyHTTPSConfig', 'saveCaddyHTTPSConfig', 'loadCaddyHTTPSPreflight',
+    'loadMediaWorkerConfig', 'saveMediaWorkerConfig',
+    'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight',
+    'loadBaiduMapConfig', 'saveBaiduMapConfig', 'verifyBaiduMap',
+    'loadGeoNamesConfig', 'saveGeoNamesConfig',
+  ].map((key) => [key, () => Promise.resolve()]))
+  assert.deepEqual(resolve('caddy', [row('caddy')], {}), {})
+  assert.deepEqual(resolve('caddy', [row('caddy')], allPorts), {
+    configTarget: { service: 'caddy', tab: 'config' },
+    verifyTarget: { service: 'caddy', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('caddy', [row('caddy'), row('caddy')], allPorts), {})
+  assert.deepEqual(resolve('caddy', [
+    { id: 'caddy', config_mode: 'in-app', status: 'ready' },
+  ], allPorts), {})
+  assert.deepEqual(resolve('caddy', [row('caddy', 'planned')], allPorts), {})
+  assert.deepEqual(resolve('caddy', [{
+    ...row('caddy'), status: 'planned',
+  }], allPorts), {})
+  assert.deepEqual(resolve('caddy', [row('caddy')], {
+    loadCaddyHTTPSConfig: allPorts.loadCaddyHTTPSConfig,
+    saveCaddyHTTPSConfig: allPorts.saveCaddyHTTPSConfig,
+  }), { configTarget: { service: 'caddy', tab: 'config' }, verifyTarget: undefined })
+  assert.deepEqual(resolve('caddy', [row('caddy')], {
+    loadCaddyHTTPSPreflight: allPorts.loadCaddyHTTPSPreflight,
+  }), { configTarget: undefined, verifyTarget: { service: 'caddy', tab: 'verify' } })
+  assert.deepEqual(resolve('storage', [row('storage', 'deployment')], {}), {
+    configTarget: undefined, verifyTarget: { service: 'storage', tab: 'status' },
+  })
+  assert.deepEqual(resolve('photo-smart', [row('photo-smart', 'deployment')], allPorts), {
+    configTarget: undefined,
+    verifyTarget: { service: 'photo-smart', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('photo-smart', [
+    row('photo-smart', 'deployment'), row('photo-face'),
+  ], allPorts), {
+    configTarget: { service: 'photo-face', tab: 'config' },
+    verifyTarget: { service: 'photo-smart', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('photo-smart', [
+    row('photo-smart', 'deployment'), row('photo-face', 'deployment'),
+  ], allPorts), {
+    configTarget: undefined, verifyTarget: { service: 'photo-smart', tab: 'verify' },
+  })
+  assert.deepEqual(resolve('baidu-map', [row('baidu-map')], allPorts), {
+    configTarget: { service: 'baidu-map', tab: 'config' },
+    verifyTarget: { service: 'baidu-map', tab: 'verify' },
+  })
+})
+
+test('one shared Web/Desktop capability UI gates quick links, never creates host controls', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const cap = read('ui/shared/src/system-dependencies-capabilities.ts')
+  assert.match(page, /xDriveSystemDependencyAvailableTargets/)
+  assert.match(page, /data-xdrive-dependency-missing-action-port/)
+  assert.match(page, /navigateTo\(configTarget\)/)
+  assert.match(page, /navigateTo\(verifyTarget\)/)
+  assert.match(cap, /reportedApplyModes\.has/)
+  assert.match(cap, /typeof port\[method\] === 'function'/)
+  assert.doesNotMatch(cap, /docker\.sock|StopHost|RestartHost|admin\.services\/.+apply/)
+})
