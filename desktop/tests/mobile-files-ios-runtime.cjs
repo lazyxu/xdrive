@@ -2610,7 +2610,59 @@ test('F-iOS27-10D: folder title opens ancestors without a second heading or path
 
 
 
-test('P26: skip sub-160ms Mobile Files transient arrangement status, retain sustained loading', async () => {
+
+test('P29 ordinary directory navigation never shows the redundant loading chip, even after 230ms', async () => {
+  await withView(async h => {
+    const status = () => find(h.view, 'data-mobile-files-arrangement-status', true)
+    const originalRows=count(h.view,'data-mobile-files-item')
+    assert.ok(originalRows>0,'original accepted directory has real file rows')
+    await h.update({loading:true, requestedDirectoryID:42})
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
+    assert.equal(status().props.sx.display,'none',
+      'a normal folder transition should not display unrelated loading text')
+    assert.equal(count(h.view,'data-mobile-files-item'),originalRows)
+    assert.equal(count(h.view,'data-xdrive-file-explorer-scroll-host'),1)
+    assert.equal(state.mobileFilesDecodeState(h.window.values.get(
+      'xdrive.mobile.files.v1:ios-files-userA')).folderID,1)
+    await h.update({loading:false})
+    assert.equal(status().props.sx.display,'none')
+  },{props:{requestedDirectoryID:1,crumbs:[{id:1,name:'我的文件'}]}})
+})
+
+test('P29 pending navigation from settled empty folder keeps its truthful empty state', async()=>{
+  await withView(async h=>{
+    const panel=()=>{
+      const nodes=h.view.root.findAll(n=>n.type==='state-panel')
+      assert.equal(nodes.length,1)
+      return nodes[0]
+    }
+    assert.equal(panel().props.loading,false)
+    assert.equal(panel().props.message,'此文件夹为空')
+    await h.update({requestedDirectoryID:42,loading:true})
+    assert.equal(panel().props.loading,false,
+      'an accepted empty folder may not flash a new cold-loading spinner')
+    assert.equal(panel().props.message,'此文件夹为空')
+  },{saved:{section:'browse',folderID:1,scrollTop:0,view:'details'},
+    props:{items:[],loading:false,requestedDirectoryID:1,
+      crumbs:[{id:1,name:'我的文件'}]}})
+})
+
+test('P29 sustained Search still reports real network progress',async()=>{
+  await withView(async h=>{
+    const status=()=>find(h.view,'data-mobile-files-arrangement-status',true)
+    await h.update({loading:true})
+    assert.equal(status().props.sx.display,'none')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
+    assert.equal(status().props.sx.display,'block',
+      'a genuine Search response remains user-visible after brief delay')
+    await h.update({loading:false})
+    assert.equal(status().props.sx.display,'none')
+  },{props:{searchActive:true,requestedDirectoryID:1,
+    searchSummary:{query:'photo',resultCount:2,loading:false},
+    crumbs:[{id:1,name:'我的文件'}]}})
+})
+
+test('P26/P29: ordinary folder status never flashes while Search keeps delayed network feedback', async () => {
   // The mounted actual MobileFiles component has an accepted nonempty folder.
   // A fast navigator may set loading=true then false before any user-relevant
   // change. That must not paint or announce a transient arrangement badge.
@@ -2626,8 +2678,8 @@ test('P26: skip sub-160ms Mobile Files transient arrangement status, retain sust
       'a completed short navigation must not show a stale timer badge')
     await h.update({ loading: true })
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 210)) })
-    assert.equal(badge().props.sx.display, 'block',
-      'a genuinely pending network range remains visible after the short grace period')
+    assert.equal(badge().props.sx.display, 'none',
+      'even a long ordinary folder navigation retains the accepted rows without a badge')
     assert.equal(badge().props.sx.position, 'absolute',
       'delayed status must never alter the indexed file-row geometry')
     await h.update({ loading: false })
