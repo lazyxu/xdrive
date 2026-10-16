@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2]
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for evidence.')
-if (options.case && !['all', 'surface', 'return', 'recovery', 'window'].includes(options.case)) throw new Error('Use --case=all|surface|return|recovery|window.')
+if (options.case && !['all', 'surface', 'return', 'recovery', 'window', 'u09'].includes(options.case)) throw new Error('Use --case=all|surface|return|recovery|window|u09.')
 const sourceRoot = path.resolve(options['source-root'] || repoRoot)
 const outputDir = path.resolve(options['output-dir'])
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright')
@@ -74,15 +74,15 @@ async function main() {
       await page.getByRole('menu').evaluate((menu) => Promise.all(menu.closest('.MuiPaper-root').getAnimations().map((animation) => animation.finished.catch(() => undefined))))
     }
     const searchSummaryText = async (page) => (await page.locator('[data-xdrive-file-explorer-search-summary]').allTextContents()).join(' ')
-    const quietSearch = (page) => page.waitForFunction(() => window.searchReturnHarness?.state.searchActive && !window.searchReturnHarness.state.searchLoading && window.searchReturnHarness.state.count === 4096)
+    const quietSearch = (page) => page.waitForFunction(() => window.searchReturnHarness?.state.searchActive && !window.searchReturnHarness.state.searchLoading && window.searchReturnHarness.state.count === (new URL(location.href).searchParams.get('u09') === '100k' ? 100000 : 4096))
     let activeCasePage
-    const pageFor = async (mode = 'details', width = 390, touch = true) => {
+    const pageFor = async (mode = 'details', width = 390, touch = true, large = false) => {
       const context = await browser.newContext({ viewport: { width, height: 780 }, isMobile: touch, hasTouch: touch, deviceScaleFactor: 1 })
       const page = await context.newPage(); page.setDefaultTimeout(4500)
       activeCasePage = page
       page.on('pageerror', (error) => results.errors.push(error.message))
       page.on('console', (message) => { if (message.type() === 'error') results.errors.push(message.text()) })
-      await page.goto(`${baseURL}?mode=${mode}`)
+      await page.goto(`${baseURL}?mode=${mode}${large ? '&u09=100k' : ''}`)
       await quietSearch(page); await settle(page)
       return page
     }
@@ -459,6 +459,67 @@ async function main() {
       check('position retry clears the range failure', (await state(page)).searchError, null)
       await capture(page, 'failed-return-window-retry')
     })
+    // U09-B: authentic 900px compiled React/MUI + shared Search workspace.
+    // A branch-limited first-red keeps original production completely untouched.
+    const u09Enabled = options.case === 'u09' || (
+      options.case === 'all' &&
+      process.env.GITHUB_HEAD_REF?.startsWith('test/files-search-return-chromium-u06-u09-wide-')
+    )
+    if (u09Enabled) await attempt('U09-B original wide 100k grouped List→Grid→List retains logical Node', async () => {
+      const page = await pageFor('details', 900, false, true)
+      const host = page.locator('[data-xdrive-file-explorer-scroll-host]')
+      await host.evaluate(element => {
+        window.u09ScrollOwner = element
+        element.scrollTop = Math.floor(element.scrollHeight * 0.56)
+      })
+      await page.waitForFunction(() => window.searchReturnHarness.state.loadedIndexes.some(i => i > 50_000))
+      await settle(page)
+      const selectedRow = await visibleItem(page, 'file')
+      await selectedRow.click()
+      await settle(page)
+      const selectedID = (await state(page)).selectedIDs[0]
+      // MUI's nested [title] may belong to a status/tooltip rather than the
+      // actual item name. Read the authentic visible row's own rendered text.
+      const selectedText = await selectedRow.textContent() ?? ''
+      const selectedName = selectedText.match(/结果-\d{6}\.txt/)?.[0] ?? ''
+      results.samples['u09-initial-deep-file'] = {
+        selectedID, selectedName, rowText: selectedText.slice(0, 160),
+      }
+      assert.ok(Number.isSafeInteger(selectedID) && selectedID > 10_000 && selectedName,
+        'first-red precondition must identify a real visible deep grouped File, not a MUI tooltip')
+      const initial = await snapshot(page)
+      check('U09-B first-red: 100k original deeply scrolled Details', initial.scrollTop > 500000)
+      check('U09-B first-red: selected identity was actually in the visible window',
+        initial.visible.some(item => item.text.includes(selectedName)))
+      await page.evaluate(() => window.searchReturnHarness.resetEvents())
+      await page.getByRole('button', { name: /^视图/ }).click()
+      await page.getByRole('menuitem', { name: '中图标', exact: true }).click()
+      await page.waitForFunction(() => window.searchReturnHarness.state.preferredView === 'grid')
+      await settle(page)
+      const afterGrid = await snapshot(page)
+      check('U09-B: deep grouped Grid keeps selected stable Node ID', afterGrid.selectedIDs, [selectedID])
+      check('U09-B: deep grouped Grid retains logical visible Node instead of zero',
+        afterGrid.scrollTop > 10000 &&
+        afterGrid.visible.some(item => item.text.includes(selectedName)))
+      check('U09-B: original grid virtual window never prefetches the collection prefix',
+        (await state(page)).requests.filter(x => x.type === 'search').every(x => x.offset > 10000))
+      check('U09-B: one genuine shared scroll host is retained',
+        await host.evaluate(el => el === window.u09ScrollOwner))
+      await page.getByRole('button', { name: /^视图/ }).click()
+      await page.getByRole('menuitem', { name: '详细信息', exact: true }).click()
+      await page.waitForFunction(() => window.searchReturnHarness.state.preferredView === 'details')
+      await settle(page)
+      const afterDetails = await snapshot(page)
+      check('U09-B: switching back to Details retains same logical visible Node',
+        afterDetails.scrollTop > 10000 &&
+        afterDetails.visible.some(item => item.text.includes(selectedName)))
+      check('U09-B: selection identity and one scroll owner persist after roundtrip',
+        afterDetails.selectedIDs.length === 1 && afterDetails.selectedIDs[0] === selectedID &&
+        await host.evaluate(el => el === window.u09ScrollOwner))
+      await capture(page, 'u09-wide-100k-list-grid-list')
+      await page.close()
+    })
+
     check('no unexpected browser/page/request errors', results.errors, [])
   } finally {
     if (browser) await browser.close()

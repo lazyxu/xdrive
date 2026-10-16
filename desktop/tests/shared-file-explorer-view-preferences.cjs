@@ -96,3 +96,16 @@ test('shared view preferences persist resizable navigation and inspector panes',
     assert.ok(explorer.includes(token), 'resizable pane contract missing: ' + token)
   }
 })
+
+test('U09-B wide shared Details/Grid retains an authoritative logical anchor without resetting on viewMode', () => {
+  assert.match(explorer, /const pendingViewModeAnchorRef = useRef/)
+  assert.match(explorer, /const setViewMode = \(mode: XDriveFileExplorerViewMode\)/)
+  assert.match(explorer, /pendingViewModeAnchorRef\.current = \{/)
+  assert.match(explorer, /xDriveFileExplorerVisibleGroupSegments\(grouped, contentTop, 1, 0\)/)
+  assert.match(explorer, /useLayoutEffect\(\(\) => \{\s*const pending = pendingViewModeAnchorRef\.current/)
+  assert.match(explorer, /host\.scrollTop = target/)
+  assert.match(explorer, /if \(pendingViewModeAnchorRef\.current\?\.scope === interactionScopeKey/)
+  assert.match(explorer, /\[derivedPath, groupingSignature, sort\.key, sort\.direction\]\)/)
+  assert.doesNotMatch(explorer, /\[derivedPath, groupingSignature, sort\.key, sort\.direction, viewMode\]\)/)
+  assert.match(explorer, /if \(focusedTop >= host\.scrollTop && focusedTop \+ rowHeight <= host\.scrollTop \+ host\.clientHeight\)/)
+})

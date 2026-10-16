@@ -11,8 +11,8 @@ import * as searchModel from '__SEARCH_MODEL__'
 // Navigation, Search, sparse VirtualCollection and the React/MUI renderer are real.
 const root = { id: 1, name: '我的文件' }
 const stamp = '2026-10-09T00:00:00Z'
-const total = 4096
 const params = new URLSearchParams(location.search)
+const total = params.get('u09') === '100k' ? 100_000 : 4096
 const initialMode = params.get('mode') === 'grid' ? 'grid' : params.get('mode') === 'columns' ? 'columns' : 'details'
 const sources = [{ id: 7, name: '项目同步' }]
 const tags = [{ id: 9, name: '研究' }]

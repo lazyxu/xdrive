@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent as ReactDragEvent, KeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, ReactNode, UIEvent, WheelEvent as ReactWheelEvent } from 'react'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
@@ -1155,6 +1155,16 @@ export function XDriveFileExplorer({
     key: string
     snapshot: XDriveFileExplorerReturnSnapshot
     running: boolean
+  } | null>(null)
+  // U09-B: one local List/Grid presentation change owns the logical scroll
+  // handoff. History-return restoration is a separate, authoritative owner.
+  const pendingViewModeAnchorRef = useRef<{
+    scope: string
+    returnKey: string | null
+    mode: 'details' | 'grid'
+    index: number
+    offsetWithinItem: number
+    targetTop: number | null
   } | null>(null)
   const [viewRestoreVersion, setViewRestoreVersion] = useState(0)
   const [viewRestoreFeedback, setViewRestoreFeedback] = useState('')
@@ -3090,6 +3100,55 @@ export function XDriveFileExplorer({
   }
 
   const setViewMode = (mode: XDriveFileExplorerViewMode) => {
+    const host = scrollHostRef.current
+    if (host && viewMode !== mode && viewMode !== 'columns' && mode !== 'columns' &&
+        logicalItemCount > 0) {
+      const grouped = viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout
+      const contentTop = viewMode === 'details'
+        ? Math.max(0, host.scrollTop - detailsHeaderHeight) : host.scrollTop
+      const firstSegment = grouped
+        ? xDriveFileExplorerVisibleGroupSegments(grouped, contentTop, 1, 0)[0]
+        : undefined
+      const firstIndex = firstSegment?.startIndex ?? (viewMode === 'details'
+        ? Math.floor(contentTop / detailsRowHeight)
+        : Math.floor(Math.max(0, contentTop - gridPaddingPx) / gridRowStep) * gridColumns)
+      let index = Math.min(logicalItemCount - 1, Math.max(0, firstIndex))
+      const sourceItemTop = (target: number) => viewMode === 'details'
+        ? detailsHeaderHeight + (groupedDetailsLayout
+            ? xDriveFileExplorerGroupedItemTop(groupedDetailsLayout, target) ?? 0
+            : target * detailsRowHeight)
+        : groupedGridLayout
+          ? xDriveFileExplorerGroupedItemTop(groupedGridLayout, target) ?? gridPaddingPx
+          : gridPaddingPx + Math.floor(target / gridColumns) * gridRowStep
+      // Prefer a genuinely visible focused item, but never jump to a selection
+      // retained outside the viewport in a sparse 100k logical collection.
+      if (activeLogicalIndex !== null && activeLogicalIndex >= 0 &&
+          activeLogicalIndex < logicalItemCount) {
+        const focusedTop = sourceItemTop(activeLogicalIndex)
+        const rowHeight = viewMode === 'details' ? detailsRowHeight : gridMetrics.estimatedRowHeight
+        if (focusedTop >= host.scrollTop && focusedTop + rowHeight <= host.scrollTop + host.clientHeight) {
+          index = activeLogicalIndex
+        }
+      }
+      pendingViewModeAnchorRef.current = {
+        scope: interactionScopeKey,
+        returnKey: returnStateKey,
+        mode,
+        index,
+        offsetWithinItem: Math.max(-host.clientHeight, Math.min(
+          viewMode === 'details' ? detailsRowHeight : gridRowStep,
+          host.scrollTop - sourceItemTop(index),
+        )),
+        targetTop: null,
+      }
+    } else if (viewMode !== mode) {
+      pendingViewModeAnchorRef.current = null
+      // Columns uses its own directory panes. Preserve the historical
+      // top-of-pane handoff instead of treating Columns as a virtual grid.
+      pendingScrollTopRef.current = 0
+      setScrollTop(0)
+      if (host) host.scrollTop = 0
+    }
     if (controlledViewMode === undefined) setInternalViewMode(mode)
     onViewModeChange?.(mode)
   }
@@ -4849,6 +4908,9 @@ export function XDriveFileExplorer({
   useEffect(() => {
     const onRangeChange = virtualCollection?.onRangeChange
     if (viewMode === 'columns' || !onRangeChange || logicalItemCount <= 0) return
+    // The outgoing row geometry is not a valid Server range for the new view.
+    if (pendingViewModeAnchorRef.current?.scope === interactionScopeKey &&
+        pendingViewModeAnchorRef.current.mode === viewMode) return
     if (pendingViewRestoreRef.current?.key === returnStateKey) return
     const selecting = selectionLoadRef.current
     if (selecting?.scope === interactionScopeKey && selecting.intent === selectionIntentRef.current) return
@@ -4901,13 +4963,43 @@ export function XDriveFileExplorer({
     itemTop: itemScrollTop,
   }
 
+  useLayoutEffect(() => {
+    const pending = pendingViewModeAnchorRef.current
+    if (!pending) return
+    if (pending.scope !== interactionScopeKey || pending.returnKey !== returnStateKey) {
+      pendingViewModeAnchorRef.current = null
+      return
+    }
+    if (pending.mode !== viewMode) return
+    const host = scrollHostRef.current
+    if (!host) return
+    if (pending.targetTop !== null && scrollTop === pending.targetTop) {
+      pendingViewModeAnchorRef.current = null
+      return
+    }
+    // Commit on the *new* Details/Grid DOM before paint. Old pixels may
+    // exceed the new layout's scroll height; never reuse or clamp them first.
+    const target = Math.max(0, itemScrollTop(pending.index) + pending.offsetWithinItem)
+    host.scrollTop = target
+    pendingScrollTopRef.current = host.scrollTop
+    if (host.scrollTop === scrollTop) pendingViewModeAnchorRef.current = null
+    else {
+      pending.targetTop = host.scrollTop
+      setScrollTop(host.scrollTop)
+    }
+  }, [
+    viewMode, scrollTop, interactionScopeKey, returnStateKey, groupedDetailsLayout,
+    groupedGridLayout, gridColumns, gridRowStep, gridPaddingPx, detailsRowHeight,
+  ])
+
+
   const captureViewSnapshot = () => {
     const host = scrollHostRef.current
     if (
       !host || !viewState?.ready || !returnStateKey ||
       viewStateKeyRef.current !== returnStateKey ||
       captureStateKeyRef.current !== returnStateKey ||
-      pendingViewRestoreRef.current || viewMode === 'columns'
+      pendingViewRestoreRef.current || pendingViewModeAnchorRef.current || viewMode === 'columns'
     ) return
     const layout = viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout
     const contentTop = viewMode === 'details'
@@ -5041,9 +5133,14 @@ export function XDriveFileExplorer({
     host.scrollTop = 0
     pendingScrollTopRef.current = 0
     setScrollTop(0)
-  }, [derivedPath, groupingSignature, sort.key, sort.direction, viewMode])
+  // A view-only geometry change uses U09's logical anchor, not folder
+  // navigation's top reset. Sort, grouping and directory changes keep their
+  // established Server-authoritative reset semantics.
+  }, [derivedPath, groupingSignature, sort.key, sort.direction])
 
   const handleScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (pendingViewModeAnchorRef.current?.scope === interactionScopeKey &&
+        pendingViewModeAnchorRef.current.mode === viewMode) return
     const host = event.currentTarget
     captureViewSnapshotRef.current()
     xDriveFileExplorerMarkThumbnailScrollActivity(host)
