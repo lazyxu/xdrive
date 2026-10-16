@@ -65,6 +65,7 @@ func PreflightStagedNativeOriginalForCommit(
 		staged.Size < 0 || staged.Size > localOriginalServerStageMaxBytes ||
 		!localPrecommitDigest(staged.SHA256) ||
 		!localPrecommitDigest(staged.SnapshotSHA256) ||
+		!localPrecommitDigest(staged.CurrentPathKey) ||
 		proof.DeviceID == "" || proof.DeviceToken == "" ||
 		proof.DeviceID != grant.DeviceID || proof.RootID != grant.RootID ||
 		proof.RootFingerprint != grant.Fingerprint {
@@ -76,6 +77,14 @@ func PreflightStagedNativeOriginalForCommit(
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
+	}
+	// Content digests alone do NOT establish which file was staged: two
+	// distinct CURRENT entries may have identical bytes. Bind this observation
+	// to the exact Root-scoped file path key sealed during reservation,
+	// BEFORE any native file read or owning-Server request.
+	pathKey, err := localpush.LocalInventoryPathKey(grant, "file", relativePath)
+	if err != nil || pathKey != staged.CurrentPathKey {
+		return empty, errors.New("native file path identity differs from Stage")
 	}
 	if !localPrecommitRootCurrent(configDir, grant) {
 		return empty, errors.New("owning native Root grant not current")

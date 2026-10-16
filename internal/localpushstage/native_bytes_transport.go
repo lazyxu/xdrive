@@ -24,6 +24,7 @@ type LocalOriginalServerStage struct {
 	Size           int64  `json:"-"`
 	SHA256         string `json:"-"`
 	SnapshotSHA256 string `json:"-"`
+	CurrentPathKey string `json:"-"`
 }
 
 // StageVerifiedNativeOriginalBytes uses native CURRENT journal membership,
@@ -232,5 +233,6 @@ func StageVerifiedNativeOriginalBytes(
 		SourceID: grant.SourceID, Revision: sourceRevision,
 		StageID: reserved.StageID, Size: before.Size, SHA256: before.SHA256,
 		SnapshotSHA256: current.SnapshotSHA256,
+		CurrentPathKey: key,
 	}, nil
 }

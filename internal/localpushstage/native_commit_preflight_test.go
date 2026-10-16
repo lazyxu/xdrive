@@ -119,11 +119,31 @@ func precommitTestReceipt(
 	t.Cleanup(server.Close)
 	config, root, sha, content, bound := nativeByteStageFixture(t, server.URL)
 	grant, original, proof = root, content, bound
+	// A second distinct inode with IDENTICAL SHA256 and length must be
+	// present in the same sealed CURRENT generation, not only on disk.
+	if err := os.WriteFile(filepath.Join(grant.Path, "photo-copy.bin"), original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	journal, err := localpush.BeginInventoryJournal(config, grant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journal.Abort()
+	stats, err := (localpush.InventoryScanner{
+		IncludeNativeIdentity: true, BatchSize: localpush.DefaultInventoryBatchSize,
+	}).ScanInventory(context.Background(), grant, journal.Append)
+	if err != nil || !stats.Complete {
+		t.Fatalf("two native paths not sealed in CURRENT: %+v err=%v", stats, err)
+	}
+	if _, err := journal.Commit(stats); err != nil {
+		t.Fatal(err)
+	}
 	cli := client.New(server.URL, "owner")
 	staged, err := StageVerifiedNativeOriginalBytes(
 		cli, context.Background(), config, grant, 7, proof, "photo.bin", sha,
 	)
-	if err != nil || staged.StageID != stageID || staged.SnapshotSHA256 == "" {
+	if err != nil || staged.StageID != stageID || staged.SnapshotSHA256 == "" ||
+		staged.CurrentPathKey == "" {
 		t.Fatalf("native staging before precommit failed: %+v err=%v", staged, err)
 	}
 	return cli, config, grant, proof, staged, state
@@ -157,10 +177,12 @@ func TestPrivateNativeStagePrecommitFailsClosed(t *testing.T) {
 		"wrong-device", "revoked-root", "cancelled",
 		"expired-stage", "bad-physical", "forged-authority",
 		"mutated-during-network", "bad-stage-id",
+		"wrong-path-key", "missing-path-key", "equal-bytes-wrong-path",
 	} {
 		t.Run(kind, func(t *testing.T) {
 			cli, config, grant, proof, staged, state := precommitTestReceipt(t)
 			ctx := context.Background()
+			relativePath := "photo.bin"
 			switch kind {
 			case "wrong-original":
 				err := os.WriteFile(filepath.Join(grant.Path, "photo.bin"),
@@ -200,14 +222,54 @@ func TestPrivateNativeStagePrecommitFailsClosed(t *testing.T) {
 				state.mu.Unlock()
 			case "bad-stage-id":
 				staged.StageID = "../../arbitrary"
+			case "wrong-path-key":
+				staged.CurrentPathKey = strings.Repeat("e", 64)
+			case "missing-path-key":
+				staged.CurrentPathKey = ""
+			case "equal-bytes-wrong-path":
+				relativePath = "photo-copy.bin"
 			}
 			got, err := PreflightStagedNativeOriginalForCommit(
-				cli, ctx, config, grant, 7, proof, staged, "photo.bin",
+				cli, ctx, config, grant, 7, proof, staged, relativePath,
 			)
 			if err == nil || got.NativeMatched || got.PhysicalStageMatched ||
 				got.CommitSupported || got.Authoritative {
 				t.Fatalf("%s accepted unsafe native precommit %+v err=%v", kind, got, err)
 			}
 		})
+	}
+}
+
+func TestPrivateNativeStagePrecommitRejectsDifferentEqualContentSourceBeforeNetwork(t *testing.T) {
+	cli, config, grant, proof, staged, state := precommitTestReceipt(t)
+	copyKey, err := localpush.LocalInventoryPathKey(grant, "file", "photo-copy.bin")
+	if err != nil || copyKey == staged.CurrentPathKey {
+		t.Fatalf("different native file paths do not have separate identity keys: %v", err)
+	}
+	// Prove the substituted path is in the *same* authorized CURRENT and
+	// actually hashes to the *same* physical size/digest. Merely testing a
+	// missing path or changed content would not detect this regression.
+	copy, err := localpush.StreamCurrentInventoryFileToStaging(
+		context.Background(), config, grant, staged.SnapshotSHA256,
+		"photo-copy.bin", staged.SHA256, io.Discard, nil,
+	)
+	if err != nil || copy.SHA256 != staged.SHA256 ||
+		copy.Size != staged.Size || copy.SnapshotSHA256 != staged.SnapshotSHA256 {
+		t.Fatalf("same-byte alternate native file not independently verified: %+v %v", copy, err)
+	}
+	state.mu.Lock()
+	beforeStage, beforePhysical := state.stageReads, state.physicalReads
+	state.mu.Unlock()
+	got, err := PreflightStagedNativeOriginalForCommit(
+		cli, context.Background(), config, grant, 7, proof, staged, "photo-copy.bin",
+	)
+	if err == nil || got.NativeMatched || got.PhysicalStageMatched {
+		t.Fatalf("different path with identical SHA256 was accepted: %+v %v", got, err)
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if state.stageReads != beforeStage || state.physicalReads != beforePhysical {
+		t.Fatalf("wrong-source path contacted Server: Stage=%d/%d physical=%d/%d",
+			state.stageReads, beforeStage, state.physicalReads, beforePhysical)
 	}
 }

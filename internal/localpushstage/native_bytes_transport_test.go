@@ -179,6 +179,7 @@ func TestStageVerifiedNativeOriginalBytesRealAgentToServerProtocol(t *testing.T)
 		receipt.SourceID != 42 || receipt.Revision != 7 ||
 		receipt.Size != int64(len(body)) || receipt.SHA256 != sha ||
 		receipt.SnapshotSHA256 != generationSHA ||
+		receipt.CurrentPathKey != originalKey ||
 		posted != 1 || uploaded != 1 || queried != 1 || physicallyChecked != 1 || cancelled != 0 ||
 		!bytes.Equal(upload, body) {
 		t.Fatalf("native Agent transport not staged: receipt=%+v err=%v calls=%d/%d/%d/%d/%d",
