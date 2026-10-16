@@ -39,6 +39,44 @@ export type XDriveCloudFilesRange<TNode extends { id: number }> = {
   groups?: XDriveFileExplorerGroupIndex[]
 }
 
+/** One authenticated, zero-based position under the current directory Range ordering.
+ * It is not a Search result ordinal or permission to reanchor unverified UI state.
+ */
+export type XDriveCloudFilesPosition = {
+  node_id: number
+  revision: number
+  index: number
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+  group: XDriveFileExplorerGrouping['groupBy']
+  folders_first: boolean
+}
+
+export type XDriveCloudFilesPositionRequest = {
+  nodeID: number
+  sort: XDriveCloudFilesSortKey
+  order: XDriveCloudFilesSortDirection
+  grouping: XDriveFileExplorerGrouping
+}
+
+/** Reject stale/mismatched reply before requesting the bounded destination Range.
+ * Caller must additionally fence navigation generation and verify the fetched Node.
+ */
+export function xDriveCloudFilesPositionMatchesRequest(
+  value: unknown, request: XDriveCloudFilesPositionRequest,
+): value is XDriveCloudFilesPosition {
+  if (!value || typeof value !== 'object') return false
+  const p = value as Partial<XDriveCloudFilesPosition>
+  return Number.isSafeInteger(request.nodeID) && request.nodeID > 0 &&
+    typeof p.node_id === 'number' && Number.isSafeInteger(p.node_id) &&
+    p.node_id === request.nodeID &&
+    typeof p.revision === 'number' && Number.isSafeInteger(p.revision) && p.revision > 0 &&
+    typeof p.index === 'number' && Number.isSafeInteger(p.index) && p.index >= 0 &&
+    p.sort === request.sort && p.order === request.order &&
+    p.group === request.grouping.groupBy &&
+    p.folders_first === request.grouping.foldersFirst
+}
+
 export type XDriveCloudFilesCrumb = {
   id: number
   name: string

@@ -241,6 +241,22 @@ func (r ChildrenRange) HasTotalCount() bool {
 	return r.TotalCountIncluded == nil || *r.TotalCountIncluded
 }
 
+type ChildrenPositionOptions struct {
+	Sort     string
+	Order    string
+	Grouping FileExplorerGroupingOptions
+}
+
+type ChildrenPosition struct {
+	NodeID       uint64 `json:"node_id"`
+	Revision     uint64 `json:"revision"`
+	Index        int64  `json:"index"`
+	Sort         string `json:"sort"`
+	Order        string `json:"order"`
+	Group        string `json:"group"`
+	FoldersFirst bool   `json:"folders_first"`
+}
+
 type BatchNodeRef struct {
 	ID       uint64 `json:"id"`
 	Revision uint64 `json:"revision"`
@@ -1394,6 +1410,66 @@ func (c *Client) ListRange(ctx context.Context, parentID uint64, options Childre
 	var out ChildrenRange
 	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?%s", parentID, values.Encode()), nil, &out)
 	return out, err
+}
+
+// LocateChildPosition requests one Owner-authorized directory ordinal.
+// It is context-cancelable and does not automatically reanchor UI state.
+func (c *Client) LocateChildPosition(
+	ctx context.Context, parentID, nodeID uint64, options ChildrenPositionOptions,
+) (ChildrenPosition, error) {
+	if parentID == 0 || nodeID == 0 || parentID > uint64(1<<63-1) || nodeID > uint64(1<<63-1) {
+		return ChildrenPosition{}, fmt.Errorf("invalid directory or node ID")
+	}
+	sortKey := strings.ToLower(strings.TrimSpace(options.Sort))
+	if sortKey == "" {
+		sortKey = "name"
+	}
+	if sortKey == "updated_at" {
+		sortKey = "updated"
+	}
+	switch sortKey {
+	case "name", "updated", "size", "type":
+	default:
+		return ChildrenPosition{}, fmt.Errorf("invalid children position sort")
+	}
+	order := strings.ToLower(strings.TrimSpace(options.Order))
+	if order == "" {
+		order = "asc"
+	}
+	if order != "asc" && order != "desc" {
+		return ChildrenPosition{}, fmt.Errorf("invalid children position order")
+	}
+	group := strings.ToLower(strings.TrimSpace(options.Grouping.Group))
+	if group == "" {
+		group = "none"
+	}
+	switch group {
+	case "none", "type", "modified", "size":
+	default:
+		return ChildrenPosition{}, fmt.Errorf("invalid children position group")
+	}
+	foldersFirst := true
+	if options.Grouping.FoldersFirst != nil {
+		foldersFirst = *options.Grouping.FoldersFirst
+	}
+	values := url.Values{}
+	values.Set("node_id", strconv.FormatUint(nodeID, 10))
+	values.Set("sort", sortKey)
+	values.Set("order", order)
+	values.Set("group", group)
+	values.Set("folders_first", strconv.FormatBool(foldersFirst))
+	var out ChildrenPosition
+	if err := c.json(ctx, http.MethodGet,
+		fmt.Sprintf("/api/v1/nodes/%d/children/position?%s", parentID, values.Encode()),
+		nil, &out); err != nil {
+		return ChildrenPosition{}, err
+	}
+	if out.NodeID != nodeID || out.Revision == 0 || out.Index < 0 ||
+		out.Sort != sortKey || out.Order != order || out.Group != group ||
+		out.FoldersFirst != foldersFirst {
+		return ChildrenPosition{}, fmt.Errorf("children position response does not match requested identity or ordering")
+	}
+	return out, nil
 }
 
 func appendSearchFilters(values url.Values, filters SearchFilters) {

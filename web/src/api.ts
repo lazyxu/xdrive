@@ -96,6 +96,7 @@ import type {
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
+  XDriveCloudFilesPosition,
   XDriveCloudFilesChangePage,
   XDriveCloudFilesSearchRange,
   XDriveFileOperationType,
@@ -109,6 +110,7 @@ import type {
   XDriveUploadConflictPolicy,
   XDriveUploadConflictPreflight,
 } from '../../ui/shared/src'
+import { xDriveCloudFilesPositionMatchesRequest } from '../../ui/shared/src/cloud-files'
 import { webTransferStore } from './transfers'
 import { xDriveMediaResponseBlob } from './mediaBinaryProgress'
 import { XDRIVE_NATIVE_SHARE_MAX_BYTES, xDriveReadBoundedNativeShareBlob } from './nativeFileShare'
@@ -2387,6 +2389,32 @@ export class XDriveApi {
       `/api/v1/nodes/${parentID}/children?${query.toString()}`,
       { signal },
     )
+  }
+
+  /** Abortable shared Web/Mobile transport; does not directly mutate viewport. */
+  childPosition(
+    parentID: number, nodeID: number,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    grouping: XDriveFileExplorerGrouping = { groupBy: 'none', foldersFirst: true },
+    signal?: AbortSignal,
+  ): Promise<XDriveCloudFilesPosition> {
+    signal?.throwIfAborted()
+    if (!Number.isSafeInteger(parentID) || parentID <= 0 ||
+        !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+      return Promise.reject(new Error('无效的文件夹或文件 ID'))
+    }
+    const query = new URLSearchParams({ node_id: String(nodeID), sort, order })
+    appendFileExplorerGrouping(query, grouping)
+    return this.request<XDriveCloudFilesPosition>(
+      `/api/v1/nodes/${parentID}/children/position?${query.toString()}`,
+      { signal },
+    ).then((position) => {
+      if (!xDriveCloudFilesPositionMatchesRequest(position, {
+        nodeID, sort, order, grouping,
+      })) throw new Error('文件位置结果已过期或不匹配')
+      return position
+    })
   }
 
   nodeChanges(after = 0, limit = 200) {
