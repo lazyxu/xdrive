@@ -85,6 +85,12 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
         (value.action !== 'enable' || value.desired_domain_local_match !== 'mismatch-local' ||
          byID.get('domain') !== 'pass')))) invalidPreflight()
 
+  // Old Agent/Server may omit the new read-window evidence. A new Server
+  // returns it only after both settings were read in a repeatable-read
+  // snapshot and exactly rechecked. Neither true nor missing authorizes apply.
+  if (value.revision_snapshot_consistent !== undefined &&
+      value.revision_snapshot_consistent !== true) invalidPreflight()
+
   if (value.action === 'unset') {
     if (value.desired_revision !== 0 || value.configuration_complete ||
         byID.get('desired') !== 'missing') invalidPreflight()

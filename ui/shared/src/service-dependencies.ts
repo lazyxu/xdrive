@@ -134,6 +134,8 @@ export type XDriveCaddyHTTPSPreflight = {
   desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Advisory only; a missing or unverified value is never a safe-ingress proof.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
+  // Only an admin preflight read-window check; NOT actual HTTPS configuration effect.
+  revision_snapshot_consistent?: boolean
   apply_supported: boolean
   checks: XDriveCaddyPreflightCheck[]
 }

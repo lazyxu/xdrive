@@ -61,11 +61,15 @@ type adminCaddyAliDNSConfigDTO struct {
 }
 
 func (s *Server) readCaddyAliDNSSetting(c *gin.Context) (meta.AdminServiceSecret, bool, error) {
-	var row meta.AdminServiceSecret
 	if s == nil || s.DB == nil {
-		return row, false, errors.New("Caddy AliDNS settings database unavailable")
+		return meta.AdminServiceSecret{}, false, errors.New("Caddy AliDNS settings database unavailable")
 	}
-	err := s.DB.WithContext(c.Request.Context()).Where("name = ?", caddyAliDNSSecretName).Take(&row).Error
+	return readCaddyAliDNSSettingDB(s.DB.WithContext(c.Request.Context()))
+}
+
+func readCaddyAliDNSSettingDB(db *gorm.DB) (meta.AdminServiceSecret, bool, error) {
+	var row meta.AdminServiceSecret
+	err := db.Where("name = ?", caddyAliDNSSecretName).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return row, false, nil
 	}

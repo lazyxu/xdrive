@@ -47,12 +47,16 @@ type adminCaddyHTTPSConfigDTO struct {
 const caddyHTTPSApplyRequirement = "已保存的 HTTPS 期望配置尚未应用。修改实际域名、DNS 凭据或启停 Caddy 需要具备防管理入口失联、预检、回滚及审计能力的受限 Host Manager；当前阶段不允许从 Server 或浏览器执行容器操作。"
 
 func (s *Server) readCaddyHTTPSDesired(ctx context.Context) (adminCaddyHTTPSDesired, error) {
-	defaults := adminCaddyHTTPSDesired{Source: "default"}
 	if s == nil || s.DB == nil {
-		return defaults, errors.New("Caddy desired configuration database unavailable")
+		return adminCaddyHTTPSDesired{Source: "default"}, errors.New("Caddy desired configuration database unavailable")
 	}
+	return readCaddyHTTPSDesiredDB(s.DB.WithContext(ctx))
+}
+
+func readCaddyHTTPSDesiredDB(db *gorm.DB) (adminCaddyHTTPSDesired, error) {
+	defaults := adminCaddyHTTPSDesired{Source: "default"}
 	var row meta.AdminCaddyHTTPSSetting
-	err := s.DB.WithContext(ctx).Where("name = ?", caddyHTTPSSettingName).Take(&row).Error
+	err := db.Where("name = ?", caddyHTTPSSettingName).Take(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return defaults, nil
 	}

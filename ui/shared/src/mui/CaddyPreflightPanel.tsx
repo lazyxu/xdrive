@@ -142,6 +142,12 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                   ? '不匹配：当前 HTTPS 证书验证使用的部署域名与期望域名不同；不能认定配置已生效。'
                   : '尚未核验：缺少新鲜的 TLS 验证域名指纹、旧版 Host Manager，或当前期望不是启用 HTTPS。'}
             </Typography>
+            <Typography variant="caption" color="text.secondary"
+              data-xdrive-caddy-preflight-revision-snapshot>
+              本次只读预检修订一致性：{result.revision_snapshot_consistent === true
+                ? 'HTTPS 期望配置与 AliDNS 凭据的读取窗口已复核（不代表宿主机已经应用）'
+                : '旧版 Server/Agent 未报告一致性复核；不能推断已应用。'}
+            </Typography>
             <Typography variant="body2"
               data-xdrive-caddy-ingress-change-risk
               color={result.ingress_change_risk && result.ingress_change_risk !== 'unverified'
