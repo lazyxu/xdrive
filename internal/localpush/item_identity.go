@@ -53,3 +53,29 @@ func readInventoryNativeIdentity(rootID, path string, info os.FileInfo) (*Invent
 		RenameCandidate: object.Strong && (info.IsDir() || object.LinkCount == 1),
 	}, nil
 }
+
+// readPinnedDirectoryNativeIdentity uses the SAME opened OS directory handle
+// for its volume/inode/birth identity, rather than opening a pathname again.
+// The digest domain is identical to the inventory journal's native identity.
+// This is an ephemeral local observation, NEVER cloud/SQL commit authority.
+func readPinnedDirectoryNativeIdentity(rootID string, pinned *os.File) (*InventoryNativeIdentity, error) {
+	if pinned == nil {
+		return nil, ErrRootChanged
+	}
+	if _, err := uuid.Parse(rootID); err != nil {
+		return nil, ErrRootChanged
+	}
+	info, err := pinned.Stat()
+	if err != nil || info == nil || !info.IsDir() {
+		return nil, ErrRootChanged
+	}
+	object, err := platformPinnedNativeItemIdentity(pinned, info)
+	if err != nil || object.Token == "" || !object.Strong || object.LinkCount == 0 {
+		return nil, ErrRootChanged
+	}
+	digest := sha256.Sum256([]byte("xdrive-native-item-v1\x00" + rootID + "\x00" + object.Token))
+	return &InventoryNativeIdentity{
+		Key: hex.EncodeToString(digest[:]), Strong: object.Strong,
+		LinkCount: object.LinkCount, RenameCandidate: object.Strong,
+	}, nil
+}

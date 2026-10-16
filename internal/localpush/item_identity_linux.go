@@ -44,3 +44,32 @@ func platformNativeItemIdentity(path string, info os.FileInfo) (nativeItemObject
 	}
 	return identity, nil
 }
+
+// platformPinnedNativeItemIdentity gets the strong identity from the ALREADY
+// OPEN directory fd. An AT_EMPTY_PATH Statx cannot be redirected by a
+// rename-and-replace of its former pathname. Absence of birth time fails
+// closed; unlike inventory scanning, this security witness must be strong.
+func platformPinnedNativeItemIdentity(pinned *os.File, info os.FileInfo) (nativeItemObject, error) {
+	if pinned == nil || info == nil || !info.IsDir() {
+		return nativeItemObject{}, ErrRootChanged
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || st == nil || st.Nlink == 0 {
+		return nativeItemObject{}, ErrRootChanged
+	}
+	var pinnedStat unix.Statx_t
+	if err := unix.Statx(int(pinned.Fd()), "", unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW,
+		unix.STATX_TYPE|unix.STATX_INO|unix.STATX_BTIME, &pinnedStat); err != nil {
+		return nativeItemObject{}, ErrRootChanged
+	}
+	if pinnedStat.Mask&unix.STATX_INO == 0 || pinnedStat.Mask&unix.STATX_TYPE == 0 ||
+		pinnedStat.Mask&unix.STATX_BTIME == 0 || pinnedStat.Ino != uint64(st.Ino) ||
+		pinnedStat.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return nativeItemObject{}, ErrRootChanged
+	}
+	return nativeItemObject{
+		Token: fmt.Sprintf("linux:%d:%d:birth:%d:%d",
+			uint64(st.Dev), uint64(st.Ino), pinnedStat.Btime.Sec, pinnedStat.Btime.Nsec),
+		Strong: true, LinkCount: uint64(st.Nlink),
+	}, nil
+}

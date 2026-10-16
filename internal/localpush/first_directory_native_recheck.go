@@ -160,6 +160,13 @@ func RecheckLocalFirstDirectoryNative(
 		return deny(err)
 	}
 	defer pinned.Close()
+	// Compute actual strong volume/inode/birth identity from the pinned fd,
+	// not from a second, potentially substituted pathname.
+	pinnedNative, err := readPinnedDirectoryNativeIdentity(grant.RootID, pinned)
+	if err != nil || pinnedNative == nil || !pinnedNative.Strong ||
+		pinnedNative.Key != request.ExpectedNativeIdentityKey {
+		return deny(err)
+	}
 	var matches int
 	snapshot, err := StreamVerifiedInventoryJournal(ctx, configDir, grant, DefaultInventoryBatchSize,
 		func(rows []InventoryItem) error {
@@ -187,6 +194,7 @@ func RecheckLocalFirstDirectoryNative(
 	}
 	first, err := readCurrentNativeFirstDirectory(grant, request.RelativeDirectory)
 	if err != nil || first.Key != request.ExpectedNativeIdentityKey ||
+		first.Key != pinnedNative.Key || first.LinkCount != pinnedNative.LinkCount ||
 		!currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
 		return deny(err)
 	}
@@ -200,6 +208,7 @@ func RecheckLocalFirstDirectoryNative(
 	}
 	second, err := readCurrentNativeFirstDirectory(grant, request.RelativeDirectory)
 	if err != nil || second.Key != first.Key || second.LinkCount != first.LinkCount ||
+		second.Key != pinnedNative.Key || second.LinkCount != pinnedNative.LinkCount ||
 		!currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
 		return deny(err)
 	}
@@ -212,6 +221,11 @@ func RecheckLocalFirstDirectoryNative(
 	}
 	if !currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
 		return deny(nil)
+	}
+	finalNative, err := readPinnedDirectoryNativeIdentity(grant.RootID, pinned)
+	if err != nil || finalNative == nil || finalNative.Key != pinnedNative.Key ||
+		finalNative.LinkCount != pinnedNative.LinkCount {
+		return deny(err)
 	}
 	return LocalFirstDirectoryNativeObservation{
 		SourceID: request.SourceID, SourceRevision: request.SourceRevision,
