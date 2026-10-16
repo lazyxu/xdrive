@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -191,6 +192,15 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 			t.Fatalf("source initial range missing node %d: %+v", id, sourceRange.Items)
 		}
 	}
+
+	// U01-A1: exercise a truly authorized first counted page over an actual
+	// HTTP connection while its completed Gin response is delayed, then cancel
+	// that request without changing the last committed directory snapshot.
+	assertRealAuthenticatedPendingNavigationAbort(
+		t, router, token, otherToken, root.ID, source.ID,
+		[]uint64{source.ID, target.ID},
+		[]uint64{empty.ID, hello.ID, moveFile.ID},
+	)
 
 	createdChanges, err := observer.NodeChanges(ctx, cursor, 1000)
 	if err != nil {
@@ -415,6 +425,163 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	}
 	if downloaded.String() != helloBody {
 		t.Fatalf("restored download=%q want=%q", downloaded.String(), helloBody)
+	}
+}
+
+// assertRealAuthenticatedPendingNavigationAbort preserves the original
+// Server Router, SQL authorization and counted-range response. Only a private
+// test HTTP wrapper holds the already-authorized response bytes. This validates
+// real wire cancellation and a concurrent authorized old-directory read; it is
+// not a claim about mounted browser geometry or cancellation of an SQL query.
+func assertRealAuthenticatedPendingNavigationAbort(
+	t *testing.T,
+	router http.Handler,
+	ownerToken, foreignToken string,
+	oldDirectoryID, nextDirectoryID uint64,
+	expectedOldIDs, expectedNextIDs []uint64,
+) {
+	t.Helper()
+	const holdHeader = "X-XDrive-U01-Hold-Authorized-Response"
+	const timeout = 12 * time.Second
+	nextPath := fmt.Sprintf("/api/v1/nodes/%d/children", nextDirectoryID)
+	entered := make(chan int, 1)
+	cancelObserved := make(chan struct{}, 1)
+	release := make(chan struct{})
+
+	gated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(holdHeader) != "1" {
+			router.ServeHTTP(w, r)
+			return
+		}
+		if r.Method != http.MethodGet || r.URL.Path != nextPath || r.URL.Query().Get("offset") != "0" {
+			http.Error(w, "invalid private U01 test request", http.StatusBadRequest)
+			return
+		}
+		// Run the real Gin auth, Owner scoping and PostgreSQL counted range
+		// BEFORE withholding network delivery. Never fabricate HTTP 200.
+		authorized := httptest.NewRecorder()
+		router.ServeHTTP(authorized, r)
+		entered <- authorized.Code
+		if authorized.Code != http.StatusOK {
+			w.WriteHeader(authorized.Code)
+			_, _ = w.Write(authorized.Body.Bytes())
+			return
+		}
+		select {
+		case <-release:
+			for key, values := range authorized.Header() {
+				for _, value := range values {
+					w.Header().Add(key, value)
+				}
+			}
+			w.WriteHeader(authorized.Code)
+			_, _ = w.Write(authorized.Body.Bytes())
+		case <-r.Context().Done():
+			cancelObserved <- struct{}{}
+		}
+	}))
+	defer gated.Close()
+	defer close(release)
+
+	cli := clientpkg.New(gated.URL, ownerToken)
+	oldSnapshot := basicFileExplorerRange(t, cli, oldDirectoryID)
+	if oldSnapshot.TotalCount != int64(len(expectedOldIDs)) {
+		t.Fatalf("authorized prior directory count=%d want=%d", oldSnapshot.TotalCount, len(expectedOldIDs))
+	}
+	for _, id := range expectedOldIDs {
+		if !basicRangeHasNode(oldSnapshot, id) {
+			t.Fatalf("old authorized directory missing node %d", id)
+		}
+	}
+
+	// The other authenticated Owner must get a real Gin 404, not a stale
+	// directory body or a frontend-fabricated empty result.
+	foreign, err := http.NewRequest(http.MethodGet,
+		gated.URL+nextPath+"?offset=0&limit=200", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign.Header.Set("Authorization", "Bearer "+foreignToken)
+	foreignResponse, err := http.DefaultClient.Do(foreign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = foreignResponse.Body.Close()
+	if foreignResponse.StatusCode != http.StatusNotFound {
+		t.Fatalf("foreign Owner first directory range status=%d want=404", foreignResponse.StatusCode)
+	}
+
+	pendingCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pending, err := http.NewRequestWithContext(pendingCtx, http.MethodGet,
+		gated.URL+nextPath+"?offset=0&limit=200&sort=name&order=asc", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending.Header.Set("Authorization", "Bearer "+ownerToken)
+	pending.Header.Set(holdHeader, "1")
+	type pendingOutcome struct {
+		status int
+		err    error
+	}
+	outcome := make(chan pendingOutcome, 1)
+	go func() {
+		response, requestErr := http.DefaultClient.Do(pending)
+		if requestErr != nil {
+			outcome <- pendingOutcome{err: requestErr}
+			return
+		}
+		_ = response.Body.Close()
+		outcome <- pendingOutcome{status: response.StatusCode}
+	}()
+
+	select {
+	case status := <-entered:
+		if status != http.StatusOK {
+			t.Fatalf("delayed original Gin authorization returned=%d want=200", status)
+		}
+	case <-time.After(timeout):
+		t.Fatal("real authenticated counted range did not reach delayed-response barrier")
+	}
+
+	// The old authorized range remains accessible through a concurrent real
+	// HTTP/SQL request; its item IDs are not replaced by a pending destination.
+	stillOld := basicFileExplorerRange(t, cli, oldDirectoryID)
+	if stillOld.TotalCount != oldSnapshot.TotalCount {
+		t.Fatalf("pending navigation replaced old count: before=%d during=%d",
+			oldSnapshot.TotalCount, stillOld.TotalCount)
+	}
+	for _, id := range expectedOldIDs {
+		if !basicRangeHasNode(stillOld, id) {
+			t.Fatalf("pending navigation lost old authorized Node %d", id)
+		}
+	}
+
+	cancel()
+	select {
+	case result := <-outcome:
+		if !errors.Is(result.err, context.Canceled) {
+			t.Fatalf("cancelled HTTP request returned status=%d error=%v", result.status, result.err)
+		}
+	case <-time.After(timeout):
+		t.Fatal("cancelled client HTTP request did not exit")
+	}
+	select {
+	case <-cancelObserved:
+	case <-time.After(timeout):
+		t.Fatal("real HTTP handler did not observe request context cancellation")
+	}
+
+	// A new authenticated request must still return the complete first page.
+	// No held response can overwrite the fresh one after cancellation.
+	fresh := basicFileExplorerRange(t, cli, nextDirectoryID)
+	if fresh.TotalCount != int64(len(expectedNextIDs)) {
+		t.Fatalf("fresh counted destination=%d want=%d", fresh.TotalCount, len(expectedNextIDs))
+	}
+	for _, id := range expectedNextIDs {
+		if !basicRangeHasNode(fresh, id) {
+			t.Fatalf("fresh authorized destination missing Node %d", id)
+		}
 	}
 }
 
