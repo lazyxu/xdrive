@@ -795,6 +795,9 @@ export type AgentAdminCaddyHTTPSPreflight = {
   host_local_tls_verified: boolean
   // Optional for old Server/Agent: matching local TLS SNI is never revision/apply proof.
   desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
+  // Fixed running Caddy startup Env vs verified local TLS SNI only.
+  // Not applied admin revision, credential use or public HTTPS.
+  host_runtime_tls_alignment?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Advisory only; no HTTPS change or rollback is authorized by this field.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
   // Two revisioned settings remained stable during this one readonly preflight.

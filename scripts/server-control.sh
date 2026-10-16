@@ -723,10 +723,41 @@ caddy_local_tls_state() {
   fi
 }
 
+# Compare the fixed running xdrive-caddy container's *startup* XD_DOMAIN
+# with the SNI whose chain and hostname passed the local loopback TLS probe.
+# Docker's server-side template outputs ONLY the XD_DOMAIN entry; it never
+# serializes the full Env array containing AliDNS credentials.
+# Missing, duplicate, malformed or unreadable entries fail closed.
+# This is NOT proof of Caddy's active configuration or admin-applied revision.
+caddy_container_runtime_tls_alignment() {
+  local sni_domain="$1" runtime_entry runtime_domain
+  if ! runtime_entry="$(timeout 3s docker inspect --format \
+      '{{range .Config.Env}}{{if eq (index (split . "=") 0) "XD_DOMAIN"}}{{println .}}{{end}}{{end}}' \
+      xdrive-caddy 2>/dev/null)"; then
+    printf 'unverified\n'
+    return
+  fi
+  [[ "$runtime_entry" == XD_DOMAIN=* ]] || { printf 'unverified\n'; return; }
+  runtime_domain="${runtime_entry#XD_DOMAIN=}"
+  # One plain ASCII FQDN only: reject CR/LF, duplicate XD_DOMAIN entries,
+  # literal equals signs, shell tokens, IP addresses and malformed labels.
+  if (( ${#runtime_domain} > 253 )) ||
+      [[ ! "$runtime_domain" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$ ]] ||
+      [[ ! "$runtime_domain" =~ \.[A-Za-z][A-Za-z0-9-]*$ ]]; then
+    printf 'unverified\n'
+    return
+  fi
+  if [[ "${runtime_domain,,}" == "${sni_domain,,}" ]]; then
+    printf 'matched-local\n'
+  else
+    printf 'mismatch-local\n'
+  fi
+}
+
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256=""
+  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -754,12 +785,17 @@ caddy_host_refresh() {
     if [[ "$tls_state" == verified ]] && command -v sha256sum >/dev/null 2>&1; then
       tls_domain_sha256="$(printf '%s' "$domain" | LC_ALL=C tr '[:upper:]' '[:lower:]' | sha256sum | awk '{print $1}')" || tls_domain_sha256=""
       [[ "$tls_domain_sha256" =~ ^[0-9a-f]{64}$ ]] || tls_domain_sha256=""
+      # Read ONLY the fixed container's startup XD_DOMAIN after verified
+      # local TLS. This does not prove an active config or applied revision.
+      if [[ -n "$tls_domain_sha256" ]]; then
+        runtime_tls_alignment="$(caddy_container_runtime_tls_alignment "$domain")"
+      fi
     fi
   fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
