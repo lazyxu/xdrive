@@ -17,6 +17,7 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
 import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals } from '../system-dependencies-overview'
+import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
@@ -509,6 +510,7 @@ export function XDriveServiceDependenciesPage({
   onUnsavedChange?: (hasUnsavedEdits: boolean) => void
   navigationResetKey?: number
 }) {
+  const [showCapabilityMatrix, setShowCapabilityMatrix] = useState(false)
   const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
     () => xDriveNormalizeSystemDependenciesLocation(location),
   )
@@ -1384,6 +1386,82 @@ export function XDriveServiceDependenciesPage({
                     </Paper>
                   ))}
                 </Box>
+                <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 1.5 }, mb: 2, borderRadius: 2 }}
+                  data-xdrive-system-dependencies-capability-matrix>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}
+                    alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight={700}>配置、启停与生效检测支持度</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        这里只列出已实现的操作范围，不代表服务运行、已应用或全实例生效；实际权限和结果以详情及 Server 为准。
+                      </Typography>
+                    </Box>
+                    <Button size="small" variant="outlined"
+                      onClick={() => setShowCapabilityMatrix((value) => !value)}>
+                      {showCapabilityMatrix ? '隐藏配置能力' : '显示 11 项配置能力'}
+                    </Button>
+                  </Stack>
+                  {showCapabilityMatrix && (
+                    <Box sx={{
+                      display: 'grid', gap: 1, mt: 1.5,
+                      gridTemplateColumns: { xs: 'minmax(0,1fr)', lg: 'repeat(2, minmax(0,1fr))' },
+                    }} data-xdrive-system-dependencies-capability-rows>
+                      {overviewEntries.map((item) => {
+                        const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[item.id]
+                        const configTarget = capability.configTarget
+                        const verifyTarget = capability.verifyTarget
+                        // Older Agent/Server response without both scope/mode
+                        // has no defensible configuration or verification link.
+                        const recognized = !!(item.service && item.service.config_mode && item.service.apply_mode)
+                        return (
+                          <Box key={item.id} sx={{
+                            border: 1, borderColor: 'divider', borderRadius: 1.5,
+                            p: 1.25, minWidth: 0,
+                          }} data-xdrive-system-dependency-capability={item.id}>
+                            <Stack direction="row" justifyContent="space-between" gap={1} sx={{ mb: 0.75 }}>
+                              <Typography variant="subtitle2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                                {item.service?.label ?? item.label}
+                              </Typography>
+                              <Chip size="small" variant="outlined"
+                                label={recognized ? '功能合同' : '服务能力未报告'} />
+                            </Stack>
+                            {([
+                              ['配置与修改', capability.configure],
+                              ['安全启停', capability.enable],
+                              ['生效检测', capability.verify],
+                              ['历史与回滚', capability.history],
+                            ] as const).map(([label, value]) => (
+                              <Stack key={label} direction="row" gap={1} sx={{ py: 0.25, minWidth: 0 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ minWidth: 70 }}>
+                                  {label}
+                                </Typography>
+                                <Typography variant="caption" sx={{ overflowWrap: 'anywhere' }}>
+                                  {recognized ? value : '尚无当前 Server/Agent 能力合同，不能执行'}
+                                </Typography>
+                              </Stack>
+                            ))}
+                            {recognized && (
+                              <Stack direction="row" gap={1} useFlexGap flexWrap="wrap" sx={{ mt: 1 }}>
+                                {configTarget && (
+                                  <Button size="small" variant="outlined"
+                                    onClick={() => navigateTo(configTarget)}>
+                                    查看配置入口
+                                  </Button>
+                                )}
+                                {verifyTarget && (
+                                  <Button size="small" variant="text"
+                                    onClick={() => navigateTo(verifyTarget)}>
+                                    查看检测入口
+                                  </Button>
+                                )}
+                              </Stack>
+                            )}
+                          </Box>
+                        )
+                      })}
+                    </Box>
+                  )}
+                </Paper>
                 {groups.map((group) => {
                   const items = overviewEntries.filter((item) => item.group === group.id)
                   const reported = items.filter((item) => item.service !== null).length
