@@ -761,3 +761,17 @@ The existing wide Web/Desktop shared Details/Grid item names and dedicated Mobil
 The existing FileExplorer thumbnail provider already has viewport scheduling, a shared transfer/decode progress indicator, revision-bound cache and icon fallback. It now consistently differentiates \`waiting-viewport\`, \`loading\`, \`ready\`, \`failed\` and ordinary \`type-icon\` presentation, without changing loading/abort/byte APIs. Only a **visible thumbnail whose authorized, eligible load actually failed** receives a small inert 16px bottom-right failure indicator with a short accessible explanation and hover title; it continues showing the existing type icon. A file type not eligible for a thumbnail is a NORMAL icon fallback, not a failed thumbnail, and does not receive a warning badge. Video/Live Photo icons and the existing media glyph remain independent. CSS stays within the existing thumbnail box: no row-height, virtualizer, request schedule, 512px derivative, new Server API or extra original-byte access.
 
 Pure status tests and MUI source-wiring checks provide bounded logic evidence; actual physical media decoders/iOS27/Android/installed PWA/100k thumbnail visual benchmarks remain NOT RUN. Keep source-exact Web/Desktop/Go full CI/Final Gate and one-commit branch rule before merging. No impact on 52px App Frame, Desktop Agent or PWA private CacheStorage.
+
+## F03/U03 follow-up · Mobile batch-selection More reasons (2026-10-16)
+
+The Mobile Web / installed PWA selected-items `更多` menu now reuses the existing
+`selectionDisabledReason` for its Cut, Copy To, Download and Tag eligibility,
+including 200/1000/500-root limits. Copy Paths and Properties explain unloaded
+or absent selection without fabricating a Server ACL verdict. Disabled items
+remain keyboard-focusable and expose the specific reason as visible supporting
+text, hover title and ARIA name. The handler also refuses programmatic disabled
+invocation. Shared Web/Desktop business callbacks, permission and mutation
+limits, 44px Mobile targets, the 52px global App Frame and PWA caching/transfer
+policies are untouched. The mounted 257/1001-item existing regressions have
+been extended; actual VoiceOver/TalkBack and installed PWA touch validation is
+still not run. See [Files UX audit matrix](file-explorer-ux-acceptance-20261016.md).

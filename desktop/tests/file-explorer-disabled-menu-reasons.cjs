@@ -64,3 +64,19 @@ test('F03 four clients share existing operation API without a new transport', ()
   assert(mobile.includes('props.getItemMenuItems(item)'))
   assert.doesNotMatch(helper, /fetch\s*\(|api\/v1|localStorage|BroadcastChannel|skipWaiting/)
 })
+
+test('F03/U03 Mobile batch More provides real 200/500/1000 reasons, keyboard focus and one callback owner', () => {
+  const source = read('web/src/MobileFiles.tsx')
+  for (const key of ['cut', 'copy-to', 'download', 'manage-tags', 'copy-paths', 'properties']) {
+    assert(source.includes(`data-mobile-files-selection-action="${key}"`), key)
+  }
+  assert(source.includes('selectionMoreReason'))
+  assert(source.includes('selectionMoreReasons'))
+  assert(source.includes('xDriveFileExplorerMenuReasonLabel({ disabled: true, disabledReason: reason })'))
+  assert(source.includes("...MOBILE_FILES_MENU_TOUCH_SX, maxWidth: 'calc(100vw - 24px)'"))
+  assert(source.includes("maxHeight: 'min(70dvh, 560px)', overflowY: 'auto'"))
+  assert(source.includes("if (selectionMoreReasons.manageTags) return"))
+  assert(source.includes("if (selectionMoreReasons.common) return"))
+  assert(!/getSelectionActionDisabledReason\?\.\('manage-tags'.*\) \? 'permission/.test(source),
+    'permission must not be guessed from names or client presentation')
+})

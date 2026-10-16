@@ -1631,12 +1631,23 @@ test('F-PARITY-07F-B: Mobile selected-action disabled states use the same Wide W
     assert.deepEqual(performed, [], 'even an invoked disabled handler cannot bypass shared validation')
 
     await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
-    const menu = (text) => h.view.root.findAll(node => node.props?.children === text)[0]
-    assert.equal(menu('剪切所选').props.disabled, true)
-    assert.equal(menu('复制到…').props.disabled, true)
-    assert.equal(menu('下载所选').props.disabled, false)
-    assert.equal(menu('添加/管理标签').props.disabled, false,
+    const menu = id => find(h.view, 'data-mobile-files-selection-action', id)
+    assert.equal(menu('cut').props.disabled, true)
+    assert.equal(menu('copy-to').props.disabled, true)
+    assert.match(menu('cut').props.title, /200/)
+    assert.match(menu('cut').props['aria-label'], /200/)
+    assert.match(textOf(menu('cut').props.children), /不可用.*200/)
+    assert.match(textOf(menu('copy-to').props.children), /不可用.*200/)
+    await act(async () => { menu('cut').props.onClick() })
+    assert.deepEqual(performed, [], 'disabled direct callbacks must not mutate')
+    assert.equal(menu('download').props.disabled, false)
+    assert.doesNotMatch(textOf(menu('download').props.children), /不可用/)
+    assert.equal(menu('manage-tags').props.disabled, false,
       'tags retain their independent shared 500-item limit')
+    assert.deepEqual(find(h.view, 'data-mobile-files-selection-menu', true).props.slotProps.list,
+      { disabledItemsFocusable: true })
+    assert.equal(find(h.view, 'data-mobile-files-selection-menu', true).props.slotProps.paper.sx.maxHeight,
+      'min(70dvh, 560px)', 'expanded disabled reasons must remain scrollable in short landscape windows')
     assert.ok(calls.some(([action, count]) => action === 'move-to' && count === 257))
   }, { props: {
     requestedDirectoryID: 1, items: [], virtualCollection: source,
@@ -1671,8 +1682,14 @@ test('F-PARITY-07F-B: 1001 selected Nodes disable download and tagging at their 
     assert.match(feedback, /200/)
     assert.match(feedback, /1000/)
     await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
-    const tag = h.view.root.findAll(node => node.props?.children === '添加/管理标签')[0]
+    const tag = find(h.view, 'data-mobile-files-selection-action', 'manage-tags')
+    const download = find(h.view, 'data-mobile-files-selection-action', 'download')
     assert.equal(tag.props.disabled, true)
+    assert.equal(download.props.disabled, true)
+    assert.match(tag.props['aria-label'], /500/)
+    assert.match(download.props['aria-label'], /1000/)
+    assert.match(textOf(tag.props.children), /不可用.*500/)
+    assert.match(textOf(download.props.children), /不可用.*1000/)
   }, { props: {
     requestedDirectoryID: 1, items: [], virtualCollection: source,
     getSelectionActionDisabledReason: (action, _items, count) => {
