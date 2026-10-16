@@ -48,3 +48,41 @@
 
 
 **CAS-A03首次归档HEAD Invalid harness（2026-10-16）：** 首个原始n3专项 #38870252470 已有效通过，本次归档修订生成的旧HEAD `64e071097da87699125664ae57d48d3c834b1582` 由于文档自动化的字符串替换把workflow末尾重复插入，造成 `cas-a03-physical-4gib-local-version.yml` 结构不合法；无新准确HEAD物理样本，**不是生产存储/性能RED**。现从首次成功的原工作流逐字节恢复，使用非解释型替换仅增加原始归档SHA与11条成员核验，再跑新的精准HEAD CI。原始n3结果、数据规模、预算和生产路径不变。
+
+
+## CAS-A03/S001-d2 — 4GiB局部修改离线固定8MiB真实块仓库 A/B（2026-10-16）
+
+**原版CURRENT与离线PoC同源n=3实测通过；生产代码未修改，生产AFTER=N/A、线上加速=N/A；最终归档新HEAD复验仍待完成。** 本项已先[验收原版CAS-A03-d1 PR #1809](https://github.com/lazyxu/xdrive/pull/1809)：精确最终HEAD [专用CI #38871484922](https://github.com/lazyxu/xdrive/actions/runs/38871484922)和[完整CI #38871484899](https://github.com/lazyxu/xdrive/actions/runs/38871484899)（25成功/51跳过、FinalGate成功），Rebase合入 `069f7e836ca20b8ca668e12b3fd3c9019f51a0be`；原分支已自动清理。原版缓存/Runner导致写入P50从22.594s到11.800s，不能称生产提速。生产源码零更改。
+
+新的生产 CURRENT vs 独立离线 PoC 同条件 A/B：
+
+- 每轮分别对**相同的两个实体4GiB内容**执行原版 `storage.Local.Put(A)`+`Local.Put(B)` 与隔离目录的**固定8MiB SHA-256块仓库**，B只有居中1MiB改变。三轮各自新的确定性AES-CTR密钥、独立临时Root与Go进程，按 sample奇偶交替测试次序，复用CAS-A03-d1原始三对full SHA。原版不重复独立首传P044/A02负载；仅新同条件A/B归因局部改版存储形状。
+- 离线 PoC 每个原片512个真实非稀疏物理8MiB对象；预期B应新增**1个块**而非重写511块；真实创建/fsync hash命名实体，两个不可变manifest明确两版本引用。统计文件 `stat.blocks×512`、原版/候选写盘内核 `/proc/self/io write_bytes`，每轮原版/候选 A与B写入wall、CPU User和Go RSS。候选本身不提供远端传输优化，B本次仍流式消费完整4GiB源才计算块哈希。
+- 逐一读取各512块验证块SHA，再验证两个**完整4GiB版本SHA**；对每版20次**64KiB随机Range**（共40次）使用独立AES-CTR随机偏移oracle做内容校验，包含首尾、跨8MiB边界及1MiB修改区；B额外**实体重建4GiB文件并fsync再完整读回SHA**，明确将这个临时写盘与长期版本物理占用分开统计。
+- 删除B引用后离线mark/sweep必须只回收新增的1个实体块，旧版A全量SHA不变；删除A后全局块及manifest实体为0。**这个局部引用表不等于PostgreSQL FileVersion/跨Owner全局CAS refcount或生产GC，不能声称完成GC生产改造。**
+- 冻结正确性：A/B SHA完全和d1一致，512/512数据块有效、511共享、真实物理初始A不少于4GiB、B实体增量必须**多于8MiB且至多10MiB（含manifest）**；候选两版总磁盘和实写IO <= 原版的60%；3组n3源准确、40个Range/组、全量恢复SHA正确、全部引用清除后physical0。单次Put<=360s，候选实体重建及校验<=180s，进程RSS<=512MiB。阈值失败首先核对测试工具、磁盘/runner与数据真实性；真实 RED才调查性能，不能从不同Linux runner计时推断线上提速。
+- 新实验 [Linux opt-in专项CI](../.github/workflows/cas-a03-d2-offline-fixed-block-ab.yml) 对三组测试生成原始JSON、Go日志、`/usr/bin/time -v`与源准确SHA；成功后必须把原始档持久存入 `docs/performance-evidence/cas-a03-d2-offline-block-ab/`，同一工作提交更新登记簿、六平台矩阵、此规范与架构审查并重跑准确HEAD专项及完整CI/FinalGate方可合并。本地缩小版32MiB只用于预检Go编译、SHA/Range/GC夹具，**不是4GiB有效样本**。
+
+**拒绝将离线 PoC 直接当成产品优化**：纯固定块并非CDC（中间插入/删除导致块移动尚未测）；没有网络断点、HTTP Range、视频Seek/CfAPI/FUSE、身份/配额、PG文件引用、跨账户GC、冷缓存/慢盘、iOS/Android或任何OS安装PWA的真实结果。即便空间达标也只能记作 **Candidate / offline accepted evidence**，需要独立最小化可回滚备份版本分块方案及完整生产正确性+同源A/B才考虑变更。
+
+### CAS-A03-d2 · 首轮有效真实4 GiB 同源 n3 A/B（2026-10-16；原版生产未改）
+
+**Accepted offline experiment / NOT production optimization.** 准确源码 `f3086920d226f7cb600650b7fee33770b6ad0f44` 的[独立专项 CI #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)和[完整 CI #38875620937](https://github.com/lazyxu/xdrive/actions/runs/38875620937)均 **SUCCESS**。三组独立Go进程、三个匹配CAS-A03-d1的真实非稀疏高熵4,294,967,296B源，B只修改1,048,576B，交替生产Local.Put与单机**离线固定8MiB块仓库**；每组两版完整 SHA、40次64KiB随机Range oracle、实体B重建及 SHA、移除B保留A和最终全回收全部通过。**BEFORE=同一CI真实生产原版 CURRENT；OFFLINE CANDIDATE=已测；生产 AFTER=N/A，线上 speedup=N/A。**
+
+| 同源真实采样指标 | 原生产 Local.Put P50 | 离线固定8MiB PoC P50 | 正确解释 |
+| --- | ---: | ---: | --- |
+| B新增持久实体字节（含manifest/分配块） | 4,294,971,392 B | 8,425,472 B | 原型B新增空间减少 **99.803829%**，**仅离线** |
+| A+B持久实体空间 | 8,589,942,784 B | 4,303,429,632 B | 原型节省 **49.901533%** |
+| A+B阶段Linux内核write_bytes | 8,589,934,592 B | 4,303,429,632 B | 原型节省 **49.901485%**；**不含另行B实体重建** |
+| B写入 wall | 22,404.654 ms | 3,394.406 ms | 同源P50，但并非在线上传/整文件恢复收益 |
+| A原片写入 wall | 22,256.039 ms | 22,594.785 ms | 新原片没证据显示更快 |
+| 40次真实64KiB随机Range总 wall | 2.335 ms | 2.174 ms | 本地热缓存/Go内oracle，不是远程视频Range |
+| A+B完整读取与SHA验证 | 11,370.374 ms | 11,086.970 ms | 双方SHA均通过 |
+| B额外物理物化+SHA复验 | 无该额外步骤 | 26,370.862 ms | 临时4GiB重建额外IO/延迟，禁止忽略 |
+| 进程最高RSS | — | 38,812 KiB | 三样本整体最大值，预算≤512MiB |
+
+**真实块状态：** 每轮512块A加1块B=513个真实物理8MiB hash块、511个复用；B引用清理后A SHA有效、最终清空实体0B。上述百分比来自**同轮持久数据及写入阶段**；额外materialize写盘和网络传输不在该write_bytes对照里。P50为三样本中位，各源原版与原型执行顺序交替；不要与d1跨Runner的22.594s/11.800s当成优化A/B。
+
+**可审计来源：** [原始11文件逐字节归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md) 内保存第一次专项CI的**原始11文件**（`sample-1/2/3.json`、原Go日志、3份`/usr/bin/time -v`、`summary.json`、`source.txt`），零修改压缩进确定性 `tar.gz`，SHA256 `9a55362cd66ea725cd49ce79de1dcc3f81b1f654210bac3b0e28c68fd1cc4772`；原始GitHub Artifact [#12035880698](https://github.com/lazyxu/xdrive/actions/runs/38875620877/artifacts/12035880698)，原ZIP SHA256 `f948c1ff03de5ac9693c07f0a86d5fdccf261e76c0651d990047cbcdb8bb4fc1`。当前归档修订需在**新HEAD**重跑原生专项n3+全仓CI Final Gate成功方可Ready/Rebase合入；早期GREEN不能替代新HEAD验收。这个压缩归档保留原始机器字节，不把新HEAD复验当生产改善。
+
+**决策：** 仅保留可审计离线PoC，**不改变生产 Local.Put、SHA-256根身份、PostgreSQL FileVersion/ContentBlob、Owner权限配额、在线GC、备份格式、Range、下载或持久任务**。固定边界块对中间**插入/删除、视频重编码、跨块变更**尚不能提供CDC收益；离线本地热cache的Range也未覆盖Source/Pull、真实CfAPI/FUSE、WAN断点恢复、损坏回滚。下一新负载可按CAS-A04b完整恢复/备份一致性先验证在线迁移可行性，另测真设备六平台。

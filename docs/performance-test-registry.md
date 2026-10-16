@@ -322,3 +322,14 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 
 
 **CAS-A03首次归档HEAD Invalid harness（2026-10-16）：** 首个原始n3专项 #38870252470 已有效通过，本次归档修订生成的旧HEAD `64e071097da87699125664ae57d48d3c834b1582` 由于文档自动化的字符串替换把workflow末尾重复插入，造成 `cas-a03-physical-4gib-local-version.yml` 结构不合法；无新准确HEAD物理样本，**不是生产存储/性能RED**。现从首次成功的原工作流逐字节恢复，使用非解释型替换仅增加原始归档SHA与11条成员核验，再跑新的精准HEAD CI。原始n3结果、数据规模、预算和生产路径不变。
+
+
+## CAS-A03/S001-d2 · 局部修改版本真实磁盘A/B：生产完整CAS vs **离线**固定8MiB块（2026-10-16）
+
+| 负载 | 原版CURRENT / 对照 | 冻结预算及状态 | 独立层边界 |
+| --- | --- | --- | --- |
+| **CAS-A03/S001-d2** | 只改1MiB的4GiB A/B，3组独立真实高熵源，以之前[d1真实源SHA](performance-evidence/cas-a03-real-4gib-local-versions/README.md)逐字节固定；在同一Linux Runner每组交替顺序重新执行生产 `storage.Local.Put` 并对照隔离实验的固定8MiB真实hash chunks与2份manifest。非稀疏磁盘 `st_blocks×512`、Go实际kernel write、CPU/MaxRSS和每版PUT wall，恢复两个4GiB SHA、40个64KiB随机Range、B物理materialize/再读回及删B保A/删A全部回收。**不重复已Accepted的CAS-A03-d1单独原版n3或CAS-A02首次上传。** | **原版 CURRENT + Offline Candidate 同源真实 n3=3/3，专项CI #38875620877/完整CI #38875620937成功；原版B额外4,294,971,392B，离线B仅8,425,472B（-99.8038%）；持久写盘原版8,589,934,592B vs 原型4,303,429,632B（-49.9015%），B写入P50 22,404.654ms vs 3,394.406ms，但独立B完整物化额外P50 26,370.862ms。两版SHA、40次Range、离线删除GC均通过。** **Accepted OFFLINE evidence / production AFTER=N/A；归档后的新HEAD CI+final-gate待验收，不能合并前声称交付。** 原版4GiB版B增加4,294,971,392B(d1已Accepted)。离线候选B应只增加1×8MiB块+manifest，真实阈值>8MiB且≤10MiB；候选总占用与总内核写盘≤同次生产原版60%；3个SHA-source n3；所有恢复、Range和离线回收为硬门槛；程序编译和32MiB本地夹具通过但不计有效4GiB样本。 | [CAS-A03规范](cas-version-performance.md)、[独立分支CI](../.github/workflows/cas-a03-d2-offline-fixed-block-ab.yml)、[Blob审查](blob-cas-dedup-architecture-audit.md)、[六端矩阵](performance-platform-coverage.md)。纯Server本机 offline benchmark，**Desktop、Wide Web、Mobile Web、Desktop installed PWA、Android installed PWA、iOS installed PWA六端均Not measured**，也不代表PG/FileVersion、跨Owner配额、在线HTTP Range、真实生产GC或CDC。 |
+
+### CAS-A03/S001-d2 · 源准确实物 n3 A/B 归档登记（2026-10-16）
+
+来源：[原始11文件逐字节归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)，源码 `f3086920d226f7cb600650b7fee33770b6ad0f44`，[专项 #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)与[完整CI #38875620937](https://github.com/lazyxu/xdrive/actions/runs/38875620937)成功；三独立4GiB SHA身份（每个B仅1MiB差异）与旧d1匹配；原始Artifact #12035880698和SHA256 `f948c1ff03de5ac9693c07f0a86d5fdccf261e76c0651d990047cbcdb8bb4fc1`，仓库长期归档 `tar.gz` SHA256 `9a55362cd66ea725cd49ce79de1dcc3f81b1f654210bac3b0e28c68fd1cc4772`。冻结 A/B 预算及逐项真实样本详见[CAS版本性能专项](cas-version-performance.md)。原版/离线候选新增B实体4,294,971,392/8,425,472B；合计2版持久8,589,942,784/4,303,429,632B；kernel write 8,589,934,592/4,303,429,632B；B Put P50 22,404.654/3,394.406ms；新原片Put P50 22,256.039/22,594.785ms；40x64KiB Range总P50 2.335/2.174ms；候选B额外物化+SHA P50 26,370.862ms；进程RSS最大38,812KiB。3/3真实物理512+1块、SHA/Range、B删除A幸存、最终0B通过。**实验结论=Accepted Offline Candidate（仅持久空间），生产BEFORE=CURRENT / AFTER=N/A / speedup=N/A**。六端客户端、PG/Owner、增量传输、CDC/中间插入、备份一致性均未测；此追加登记是首轮结果归档，**必须再通过新HEAD专项与完整FinalGate**，不是历史CI对新HEAD背书。

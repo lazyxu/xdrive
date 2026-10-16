@@ -496,6 +496,7 @@ Provider delivery rules:
 
 ## Performance specialization policy
 
+- **CAS-A03-d2 fixed-block offline benchmark (not production CDC):** continue the existing [CAS-A03 benchmark](docs/cas-version-performance.md) only with a new workload ID, matched 4GiB high-entropy full-file production Local.Put versus *isolated* fixed 8MiB chunk PoC using the same A/B bytes on one runner, alternate A/B order, n>=3, real st_blocks, /proc/self/io, complete SHA + Range, physical restore, reference sweep and persistent raw evidence. An offline candidate never proves online FileVersion/owner/transfer/production GC or six client platforms; do not change product for structural preference.
 - **CAS-A03 4GiB local edit version cost:** for whole-file versus 1MiB interior edit, first read [CAS-A03 Storage Version Benchmark](docs/cas-version-performance.md). This is a server-local physical SHA/CAS test distinct from first-upload 4GiB transfer throughput; do not infer CDC implementation, FileVersion database integrity or six-platform acceptance from fixed-block theoretical sharing. Record valid original n≥3 bytes/CPU/RSS/full-restore evidence before any production chunking change.
 
 - **Server multi-generation backup evidence:** before any backup format, tar or chunking experiment, read [docs/backup-performance.md](docs/backup-performance.md). Distinguish a real physical file-data tar-stage n3 from a full PostgreSQL-consistent Server backup or six-platform end-to-end performance; preserve the current restore contract pending proven same-source A/B and complete recovery safety.

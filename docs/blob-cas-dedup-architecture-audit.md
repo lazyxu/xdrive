@@ -140,3 +140,8 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 [源准确专项 CI #38870252470](https://github.com/lazyxu/xdrive/actions/runs/38870252470) 实际执行三组生产 Local.Put 两个4GiB高熵 SHA-distinct原片、B中间准确修改1MiB、全量8GiB恢复SHA+512个8MiB块SHA，**3/3真实CURRENT通过**。每个样本两份CAS实体分配8,589,942,784B，新增版本分配4,294,971,392B，两次真实内核写入8,589,934,592B；新增B的 `Local.Put` P50 22,594.151ms / 进程Go RSS上限32,736KiB。固定8MiB块中仅1块变化/511块不变，仅意味着离线理想复用版本可能新增8MiB而不是现生产4GiB；**并未实现CDC，不能把512倍理论空间机会写为实际生产节省、吞吐提速或优化AFTER**。
 
 完整SHA、原本跨账户隔离、不变CAS语义已通过本负载，但完整Server SQL FileVersion、跨账户秒传防泄露、视频Range/CfAPI/FUSE、多版本GC与6端还缺相互独立的安全/性能证据。原始完整[11个机器文件](performance-evidence/cas-a03-real-4gib-local-versions/README.md)永久归档；后续A03-d2离线分块PoC需要匹配同一内容的实际 block store bytes/read IO/CPU/RSS/Range及恢复n3，再考虑是否替代任何在线路径，符合先做备份离线PoC的低风险顺序。
+
+
+## CAS-A03/S001-d2 — 实体8MiB固定块作为**备份先行**的离线空间A/B（2026-10-16）
+
+真实[d1](cas-version-performance.md)已证明生产full-file SHA不可变CAS：只修改1MiB仍为整份4GiB新Blob。下一阶段仅新增 `internal/storage/cas_a03_offline_chunk_poc_linux_test.go` 的**opt-in离线单账户测试实现**；候选两份manifest合计指向**513个实际物理块（512旧版+1个新块）**，511个复用索引。与同轮生产 `storage.Local.Put` A/B比较实际分配字节和内核写盘，做完整恢复SHA、64KiB随机Range、实体materialize与参考块独立清理。没有集成到生产内容Blob、备份格式、DB FileVersion或上传/下发协议；真正CDC中部插入/移动边界、局部视频加密和CfAPI/FUSE Range/Seek要另测。[详细冻结规格](cas-version-performance.md)。首轮4GiB同源真实n3已在[专项 #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)成功：离线持久B增量8,425,472B，实际生产Local.Put B为4,294,971,392B；本地40次Range与全SHA、离线引用清理通过。详见[原始11文件可复核归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)和[同条件完整指标](cas-version-performance.md)。**只承认离线候选的-99.8038% B增量空间，不是生产在线性能/CDC收益；完整B物化还需P50 26,370.862ms**。归档新HEAD双CI/FinalGate仍待重验。
