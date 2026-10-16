@@ -274,3 +274,35 @@ CAS-A05已测100k真实不同1KiB SHA LocalCAS vs离线pack初始空间/热缓�
 ### CAS-A07 三独立真实100k混合大小CAS/Pack实测对照（2026-10-17）
 
 [修正公平计时原始CI #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589) 每组100,000个不同SHA真实物理1KiB/16KiB/128KiB/1MiB原始对象，Local CAS原版实际Linux存储677.4784MB，离线Pack/索引390.4471MB；混合分层2000个SHA+256B独立Range P50 242.708 vs289.994ms（离线Pack慢19.48%），95k GC后33.8739MB vs19.5297MB，混合试验对统一Pack在线部署判Rejected。所有原始机器CPU/RSS/写盘/GC并存峰值 [长期归档](performance-evidence/cas-a07-mixed-100k-pack/README.md)。**这不是应用层负载**，六列 Native Desktop Electron=Not measured、Wide Web=Not measured、Mobile Web=Not measured、Desktop installed PWA=Not measured、Android installed PWA=Not measured、iOS installed PWA=Not measured；历史100k JPEG/Video/Live和4GiB客户端真实测量不能拿来构造本次跨平台加速。
+
+
+## CAS-A03-d3 / 4GiB中部1MiB更改真实 Gin/PG版本复用（2026-10-17）
+
+这是**Server共享HTTP层**的新测试，不是六平台运行。源码测试断言 B 重用511/512个8MiB分片、只传8MiB，而最后生产完整CAS仍分别保存A/B两个4GiB原片；以上是待运行的合同，**不是当前测量结果**。继承既有 P044/P045/P051 原始4GiB上传下载平台数据但不重复测；当前专项新CI有效样本n=0、产品AFTER=N/A。
+
+| 负载 | Native Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A03-d3，新4GiB版本A→1MiB改动B，真HTTP网络分片复用/历史/GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+[统一证据登记](performance-test-registry.md) · [版本专项](cas-version-performance.md) · [原生CI](../.github/workflows/cas-a03-d3-real-http-4gib-version.yml)。不能把Linux Chromium手机窄屏仿真当iOS/Android installed PWA，不能在滚动/离开界面时取消用户拥有的持久上传任务。
+
+
+## CAS-A03-d3真实共享Server版本路径（2026-10-17）
+
+原版Gin/PG17/Local CAS真实4GiB A+B（B仅改1MiB）首次有效n3已成功：[专项CI #38951921025](https://github.com/lazyxu/xdrive/actions/runs/38951921025)、完整CI #38951920350。B仅传8MiB（511/512已复用）、服务端仍重写完整4GiB并持久保留A+B两份实际约8GiB；B Init P50 2.310s，Finalize P50 25.076s，单样本两代完整SHA及Owner GC正确。此为**Server层非客户端6端**，本工作六端数据不变：
+
+| 工作负载 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A03-d3，局部修改4GiB真实客户端上传/版本回看/GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+证据源、复验和后续项见[中央登记](performance-test-registry.md)/[子系统规格](cas-version-performance.md)。原 n3的两端点RSS=0不是实际峰值，补充峰值采样后须重新执行准确HEAD。
+
+### CAS-A03-d3 4GiB小修改真实共享HTTP n3复验（2026-10-17）
+
+同源当前实现[真实专项 CI #38953556661](https://github.com/lazyxu/xdrive/actions/runs/38953556661)：每组A 4GiB真实512 PUT，B仅改1MiB，只产生一条8MiB新PUT及511个源复用，新增CAS仍为完整4GiB，旧+新两版实际约8GiB；B finalize P50 16,756.892ms，真实Go 25ms sampled RSS增长P50 126,976B（三样本最高573,440B），全SHA/历史Version/Owner GC均有效。本结果只来自Linux **共享Server HTTP**，下列版本改写负载六个客户端均非本次测试，仍需实机/安装态独立证据：
+
+| 工作负载 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A03-d3 / 4GiB A→改1MiB 的客户端上传/版本回看及GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+[本负载新证据](performance-test-registry.md) | [新机器样本](performance-evidence/cas-a03-d3-real-http-4gib-version/README.md)。既有P044/P045/P051 4GiB首次上传数据不重跑，不将不同CI运行看作代码提速。

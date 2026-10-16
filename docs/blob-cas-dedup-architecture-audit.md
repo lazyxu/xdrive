@@ -214,3 +214,15 @@ CAS-A05已同源证明1KiB/100k不同SHA对象Pack实体空间降低73.826%，�
 ### CAS-A07 新混合大小分布的Pack收益边界/实际读时退化（2026-10-17）
 
 不是再次运行CAS-A05纯1KiB：本次[真实CAS-A07同源物理n3 #38941750589](https://github.com/lazyxu/xdrive/actions/runs/38941750589)新分布95k×1KiB、4k×16KiB、900×128KiB、100×1MiB全为不同SHA原始，生产Local CAS真实100k文件实体677,478,400B，离线Pack+48B/对象Index真实390,447,104B，约节省42.37%（并非纯1KiB的73.83%）；GC后33,873,920 vs19,529,728B，5k幸存全部SHA正确，候选新旧Pack同存在峰409,972,736B。**公平计时的分层2000原片完整SHA+独立256B Range原版 P50 242.708ms，而离线Pack 289.994ms（慢19.48%）**，无证据表明全尺寸Pack对Reader最优或适合默认线上存储。因此生产Local CAS、完整ContentBlob/Owner/RefCount/FileVersion/GC及各平台读取接口都不修改，统一Pack在线提案`Rejected for read regression`；留下独立小对象阈值、坏Pack索引恢复、跨进程安全GC和云端读的未测项目。[完整原始机器数据](performance-evidence/cas-a07-mixed-100k-pack/README.md)永久保存，早期带多余SHA key计算的Old head另行标Superseded。**生产 AFTER=N/A**。
+
+
+## CAS-A03-d3 · 分片上传网络复用与长期版本占用的生产层区别（2026-10-17）
+
+源码 `internal/api/uploads.go` 中 `reusableUploadParts` 在显式提供全部chunk SHA时，会顺序读取并重新哈希已有同Owner File所指向的原始完整CAS；通过SHA的旧片存为 `UploadPart{Reused:true,SourceStorageKey,SourceOffset}`，而非重新发送完整文件。随后 `uploadPartSequence` 串流旧片与新片，`finalizeUploadSession` 创建新版本完整SHA256 ContentBlob，并将原完整Blob保留为历史FileVersion；**分片网络复用≠持久Chunk/Manifest去重**。源码事实不代表当前实测每个阶段的CPU、IO、峰值或任何真机速度。
+
+新增[CAS-A03-d3真实Gin/PG/Local测试规范](cas-version-performance.md)测试 A+B各4GiB（中部1MiB不同）、512 SHA分片、511原片复用、一份8MiB HTTP PUT、真实新CAS写盘、两个Blob ref与Owner GC。基线n=3有效CI/原始样本待出；不改变生产内容寻址、权限、GC、备份恢复协议。需先读 [统一性能登记](performance-test-registry.md) 和 [六平台矩阵](performance-platform-coverage.md)；只有未来同源可重复性能及正确性证明才考虑更改Chunk/Manifest架构。
+
+
+**CAS-A03-d3 真实来源验证（2026-10-17）：** 当前已有的 `reusableUploadParts` 跨版本可复用上传分片，并非永久块去重。真实PG17/Gin/Local CAS 3×4GiB原始高熵文件+中部1MiB修改版本，3/3证实B只新PUT8MiB、旧511个8MiB片段被引用，但 `finalizeUploadSession` 仍重建4GiB新完整SHA CAS；B新增写盘4,303,355,904B（含8MiB新stage），A+B最终物理8,589,942,784B。旧FileVersion、两个ContentBlob RefCount、两版完整SHA、最后Owner GC均真通过。[源准确CI](https://github.com/lazyxu/xdrive/actions/runs/38951921025)及[原始机读数据](performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38951921025-numeric.tar.gz)已保留。**这只是证明当前CPU/IO/空间成本，不是Chunk/Manifest上线批准**；随机Range、CfAPI/FUSE、完整备份一致性、多Owner/云后端、客户端六平台仍未证明。
+
+**CAS-A03-d3 2026-10-17 真正带峰值观测的n3补证：** 再次直接运行xDrive当前Gin/PG17/Local CAS真实4GiB A/B（B单块内修改1MiB），确认旧512 chunk中511通过旧CAS全SHA验证复用、新HTTP仅1个8MiB PUT；但是新ContentBlob仍占4GiB，A+B总实体8,589,942,784B、B总Linux内核写4,303,355,904B。实际B Init P50 3.118s / Finalize 16.757s，25ms进程RSS峰增长最高573,440B。Owner历史版本、两版完整SHA与最终GC归零均过。 [不可变数字档案](performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38953556661-verified-numeric.tar.gz) / [CI #38953556661](https://github.com/lazyxu/xdrive/actions/runs/38953556661)。这是**网络阶段复用成功但长期版本去重未发生**的证据；不授权在任何在线版本、备份、CfAPI/FUSE、Viewer Range路径使用离线chunk/pack候选，生产AFTER=N/A。

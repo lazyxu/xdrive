@@ -86,3 +86,70 @@
 **可审计来源：** [原始11文件逐字节归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md) 内保存第一次专项CI的**原始11文件**（`sample-1/2/3.json`、原Go日志、3份`/usr/bin/time -v`、`summary.json`、`source.txt`），零修改压缩进确定性 `tar.gz`，SHA256 `9a55362cd66ea725cd49ce79de1dcc3f81b1f654210bac3b0e28c68fd1cc4772`；原始GitHub Artifact [#12035880698](https://github.com/lazyxu/xdrive/actions/runs/38875620877/artifacts/12035880698)，原ZIP SHA256 `f948c1ff03de5ac9693c07f0a86d5fdccf261e76c0651d990047cbcdb8bb4fc1`。当前归档修订需在**新HEAD**重跑原生专项n3+全仓CI Final Gate成功方可Ready/Rebase合入；早期GREEN不能替代新HEAD验收。这个压缩归档保留原始机器字节，不把新HEAD复验当生产改善。
 
 **决策：** 仅保留可审计离线PoC，**不改变生产 Local.Put、SHA-256根身份、PostgreSQL FileVersion/ContentBlob、Owner权限配额、在线GC、备份格式、Range、下载或持久任务**。固定边界块对中间**插入/删除、视频重编码、跨块变更**尚不能提供CDC收益；离线本地热cache的Range也未覆盖Source/Pull、真实CfAPI/FUSE、WAN断点恢复、损坏回滚。下一新负载可按CAS-A04b完整恢复/备份一致性先验证在线迁移可行性，另测真设备六平台。
+
+
+## CAS-A03-d3 / S001-d3 · 4GiB 小改动经过真实 HTTP/PG 分片复用与版本 GC（2026-10-17）
+
+**阶段：Benchmarking；新负载原版 CURRENT/BEFORE 尚未实测，AFTER=N/A。** 这是在已有 CAS-A03-d1 原 Local.Put 双4GiB原片和 d2 离线固定8MiB块对照之后，独立验证真实生产 Gin/PG17 版本上传：不是重复 P044/P045/P051 首次4GiB吞吐测试，也不是新分块架构的产品改动。
+
+**真实链路及负载：** 三组独立 PostgreSQL17 schema / 真实本地 CAS 根，各自 4,294,967,296B 真高熵 AES-CTR A 原片（512×8MiB真实 authenticated HTTP PUT）→ Node Rev1；B只修改中部单一8MiB块内部的连续1,048,576B，与原版有不同完整SHA，携带完整512个分片 SHA，要求真实初始化扫描旧CAS并预填 **511/512 Reused UploadPart**，只传 **8MiB单块**。随后仍经过生产 finalize 汇总 SHA/独立持久完整新CAS、历史 FileVersion Revision1 与当前 File Revision2（各1个ContentBlob RefCount），完整读回两份4GiB SHA；经真实Owner HTTP trash删除/永久删除归零 FileVersion/ContentBlob和全部物理CAS。存档 B init旧CAS重哈希毫秒、B PUT毫秒、B finalize毫秒、postseed Go CPU ticks/RSS、/proc/self/io write_bytes、持久物理 st_blocks、GC毫秒与种子/全量恢复分离时间。
+
+**前置冻结预算：** n=3各独立4GiB，两版内容仅1MiB异或，原版512新PUT、B只1 PUT、511实际复用、历史+当前两完整 Blob 各>=4GiB物理实分配、零泄漏与全SHA正确；初次原版上传<=360s、B init<=180s、B 8MiB PUT<=120s、B finalize<=360s、GC<=180s，Go postseed RSS增长<=512MiB且 CPU/write_bytes 非负真实可读。原版若符合预算则保持不变；实测超预算并排除无效工具/环境后，才另做最小生产候选及同环境三轮 BEFORE/AFTER，要求显著且稳定提升而 CPU/RSS/IO/权限/恢复/HTTP Range 不退化。
+
+**准确证据规则：** [独立Linux PostgreSQL17 n3 CI](../.github/workflows/cas-a03-d3-real-http-4gib-version.yml)包含64MiB smoke（仅功能预检）与三个完整4GiB不同源；每份source SHA+Go stdout/time资源、机器 sample-1/2/3.json+summary。先取得真实有效n3，保留任何 Invalid harness/RED，再把原始11文件与完整源码/Run SHA永久归档到 `docs/performance-evidence/cas-a03-d3-real-http-4gib-version/`，在本单工作提交上重建HEAD并跑全CI/final-gate、专用测试双绿，方可Ready/rebase合入。**没有证据时禁止填写任何实测 AFTER/百分比。**
+
+**清晰边界：** 共享Server Gin/PG/Local CAS是真实 HTTP，但本工作没有真实 Desktop Renderer/Main/Agent、Wide Web XDriveApi、Mobile Web、桌面实际 installed PWA、Android installed PWA、iOS installed PWA客户端路径，故**六端此精确工作负载全部 Not measured**，不替代任何已测100k图库/文件浏览器虚拟滚动/缩略图/Go取消；不更改Race或耐久传输的独立任务所有权。后续评估生产分块 Manifest、备份恢复、视频 Range、CfAPI/FUSE 与跨 Owner GC 前可参考 restic/Kopia/Seafile，但不能把离线设计称作已经实现。
+
+
+### CAS-A03-d3 首轮证据门槛诊断（2026-10-17）
+
+**两次初始准确源码预检失败（Invalid harness）：** 首轮 CI #38949708358 在代码格式门槛失败，第二轮 CI #38949952695 专门打印实际 gofmt -d，定位到拼接表达式及 JSON map 对齐等测试源码格式问题；在进入真实64MiB PG17 smoke / 4GiB n3之前终止，真实性能有效n=0，不得当产品性能RED。现按差异在同一固定父提交上修复并重跑准确HEAD CI。
+
+**CAS-A03-d3 CI Invalid harness #38950237635（2026-10-17）**：在准确 `ee4b0eabca51e5430e436dc1e496f63338f379dd` HEAD 上源格式预检已通过，但预检无 `XD_CAS_A03_D3_SAMPLE` 时仍携带整个作业的 opt-in 性能开关，`go test` 于样本合法性检查退出。真实64MiB smoke与4GiB n3均未启动、有效n=0；不是Server性能RED。只更正preflight使用 `env -u XD_CAS_A03_D3_REAL_HTTP` 实际编译测试，保留smoke/n3显式开启；仍在原冻结父上保留唯一工作提交，重新要求准确HEAD专项与全仓CI。
+
+**CAS-A03-d3 Invalid workflow evidence #38951369083（2026-10-17）**：对先前 HEAD 的工作流字符串替换误展开 `$'` 语义，令 YAML 片段重复/截断，GitHub 在 push 时立即报告无Job的工作流解析 failure（不是Go代码、PG或物理性能RED）。从先前合法 Git blob 完全恢复 YAML，按单次字面预检行的安全回调替换，校验只有一个64MiB smoke、一个4GiB n3、一个artifact上传，全部性能样本仍n=0；新HEAD必须重新通过真实smoke/n3和全CI。
+
+
+### CAS-A03-d3 首次有效真实 4GiB PostgreSQL/Gin/CAS n3（2026-10-17）
+
+**状态：Valid original CURRENT n=3/3 / 测试专用改进后的最终 HEAD 还必须复验；生产 BEFORE=CURRENT、AFTER=N/A、产品未更改。** 准确首次源码 `877054f3bcb60b2247ac7ae3092fc8570c4a6f61` 的[专用完整4GiB专项CI #38951921025](https://github.com/lazyxu/xdrive/actions/runs/38951921025) **SUCCESS**（64MiB真实PostgreSQL smoke 与随后三次独立4GiB完全通过）；同 HEAD 的[完整CI #38951920350](https://github.com/lazyxu/xdrive/actions/runs/38951920350) **SUCCESS**。三组每组实际生产 Gin 认证上传原始高熵 A 4,294,967,296B（512×8MiB PUT），B 只改变同块内1,048,576B，服务端读取旧完整 CAS 的512个块并复用511个，只通过一个真实 8MiB PUT；上传Finalize仍写入新的完整4GiB独立ContentBlob。3/3样本的原始A和历史/当前B全量 SHA（每轮8GiB读回）、两代真实物理分配、FileVersion 和 RefCount=1+1、最终Owner HTTP Trash清理到实体0/SQL0全部通过。
+
+| 同一源真实 n3 指标 | 原版生产 CURRENT P50（非优化） |
+| --- | ---: |
+| Source两版预hash（计时独立） | 8,994.060 ms |
+| 初始A全部512分片HTTP上传+提交 | 50,157.046 ms |
+| B初始化 / 旧CAS 512块重哈希 | **2,310.343 ms** |
+| B更改的单个8MiB上传PUT | **46.204 ms** |
+| B按完整4GiB生成新CAS的Finalize | **25,075.655 ms** |
+| B初始化至Finalize实际Go Linux写盘 | **4,303,355,904 B** = 4GiB最终新CAS + 8MiB阶段 |
+| 旧历史A + 当前B总物理st_blocks | **8,589,942,784 B**，各一份完整4GiB |
+| 两版真实完整SHA恢复核验 | 4,472.074 ms |
+| 最后两个Blob Owner HTTP永久删除GC | **408.452 ms** |
+| B的Go进程CPU（原始 /proc/self/stat ticks） | **1,211 ticks** |
+| B测试开始/结束时RSS净增长 | 0 B（**仅两端点快照，绝不冒充峰值**） |
+
+**精确意义：** 在原生8MiB固定分片边界内修改1MiB，B内容体的HTTP请求仅有一个8MiB（相对4GiB完整文件请求体减小99.8047%），但B持久磁盘增加仍约4GiB；**不是产品优化的新 AFTER，也不是已实现在线块级去重**。完整Linux新版本传输/浏览器/Electron/设备性能不从Server单层外推。以上计时为同一有效原版 n3，其值不与 P044/P045 跨环境横向换算代码提速。
+
+**永久真实数值证据：** [首次原样8文件（sample1-3.json、3份资源、summary、source）的确定性原始字节归档](performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38951921025-numeric.tar.gz) 及该原始Artifact完整11文件SHA manifest [README](performance-evidence/cas-a03-d3-real-http-4gib-version/README.md)；Git SHA256 archive `c032c767cbf5b452f14d45b3de551c2032a35b4e13ee5cb57316a8d6d5ad2337`，不可变 Git Blob `68015cf60d7eab3b6126a6dc32f0e721d8ad3f48`。完整原始11文件[GitHub Artifact](https://github.com/lazyxu/xdrive/actions/runs/38951921025/artifacts/12067754796) ZIP SHA256 `d2f3988d46aa81a16bfb6c1f82d27a9dd5566d3420c0bab1b335c1134f59c7e2`，其中3份大Go原日志**未拷入永久数字子集**、不得声称完整11件都永久归档。ZIP短期保留；归档README记录全部11件文件的SHA以利审计。为严格履行资源峰值门槛，下一同父唯一工作提交在B短阶段增加25ms Go峰值RSS采样与Gin入口真实PUT次数/ContentLength观测，再新HEAD真实smoke+n3和全CI/FinalGate双绿；原有效源码数据不因这个测试诊断增强被宣称是生产提速。
+
+### CAS-A03-d3 复验：真实 HTTP PUT 计数与 25ms RSS 峰值（2026-10-17）
+
+**原版 CURRENT 再测 n=3/3 / 原仓库产品代码未修改 / 生产 AFTER=N/A。** 测量源码 HEAD `2b57dfc029a794ab20db1b7effebe7765cbd7453` 的[真实 n3 专项 CI #38953556661](https://github.com/lazyxu/xdrive/actions/runs/38953556661)成功：PostgreSQL17、Gin认证HTTP、真实不可压缩高熵4GiB原片 A（512×8MiB PUT），B仅中部1MiB改变，511分片Server复用，一次8MiB PUT，FileVersion/ContentBlob两份完整SHA原片，全部实际Owner删除及GC归零。与前次HEAD不同的是**只新增测试源观测**，于HTTP Router入口计量`ContentLength`并对B阶段每25ms采样进程RSS峰值，不是产品加速。
+
+| 数据（同源 n3） | 第二套有效测量 P50 |
+| --- | ---: |
+| 初次 A 真 HTTP 上传/提交 | 29,670.283 ms |
+| B 初始化旧整文件块匹配 | 3,117.744 ms |
+| B 新分片真实请求 PUT | 28.165 ms |
+| B 全量 4GiB CAS Finalize | 16,756.892 ms |
+| B 实际 HTTP 请求数/请求体 | 1 次 / 8,388,608 B |
+| B 阶段实际 /proc/self/io write_bytes | 4,303,355,904 B |
+| A+B 真 st_blocks ×512 物理量 | 8,589,942,784 B |
+| 两版完整SHA恢复P50 | 6,185.666 ms |
+| 最终真实HTTP永久删除与GC | 429.078 ms |
+| B 阶段 RSS 峰值增加 P50 / 三组最高 | 126,976 B / 573,440 B |
+| B Go 用户+系统 CPU tick P50 | 1,666 ticks |
+
+**数据解释：** 本次和前次的wall、Go CPU不同，是独立CI跑次与诊断仪表环境波动，**不可**把 25.076s → 16.757s 写成 33% 性能优化。两个真实n3都在事先冻结预算内，仍保持原生产完整SHA-256 CAS；完整CAS B 增量4GiB成本没有消失，离线分块原型虽然更省空间，但在线权限/备份/Range/CfAPI/FUSE/GC没有产品级验收。
+
+**不重复试验的永久证据：** 已将本次原始3份sample JSON +3份资源日志、`summary.json` 和 `source.txt` 逐字节保留，附 `README.txt` 与全部原始11文件的SHA256/长度`MANIFEST.json`，归档至[真实数字证据](performance-evidence/cas-a03-d3-real-http-4gib-version/ci-run-38953556661-verified-numeric.tar.gz)，deterministic tar.gz SHA256 `401e75c553a3f33ab1bda37ff13795d1a40fdae910a9fd99e6f88dcd2b4f0305`，Git Blob `4ee066f1bbf2501da7c225e788a46cb4e7c9c375`。原始11文件完整[GitHub Artifact](https://github.com/lazyxu/xdrive/actions/runs/38953556661/artifacts/12069796643) ZIP SHA256 `87826d6b5e6ac20e54157adea8154f992e72289abfd01264d04980a24303e813`；3份冗长 Go stdout 只在短期Artifact中，**并非永久入库**。该归档HEAD仍需新的完整专项+全仓CI/final-gate验证才可 Ready/Rebase。六端 Web/Desktop/Mobile Web/三个OS已安装PWA的此精确版本上传工作负载均为 Not measured。

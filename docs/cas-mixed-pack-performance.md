@@ -48,3 +48,6 @@
 **结论：** 原生产Local在冻结每阶段≤900s、RSS≤512MiB、完整SHA/Range/GC预算内；不应为了纯容量目标修改生产完整SHA-256 CAS。真实混合尺寸Pack节省42.4%实体磁盘但2000次覆盖各尺寸的分层随机读反而慢19.5%，故**接受离线容量研究、拒绝“所有尺寸统一Pack”为在线默认架构**。可继续独立测试`≤4KiB`与`16KiB`等阈值对CPU、p95/p99、索引维护、过期引用GC和Crash恢复的收益，尚无经验证的最优阈值。CAS-A05纯1KiB数据不能直接推广到大对象。
 
 **原始机器证据：** [11件永久归档](performance-evidence/cas-a07-mixed-100k-pack/README.md)，tar.gz SHA256 `0037302a6abfcd29a3e5198cbc13cb3d165b910831d20e1d47fee4d94b808812`，原ZIP Artifact #12064001424 `65c3890783e4ee1d7d6e79617115148507b40f5634846fa935fec4ae0c97fa3e`；早期[#38941430856](https://github.com/lazyxu/xdrive/actions/runs/38941430856)的物理数可参考但原版读取计时受到SHA生成干扰，标Superseded并[单独登记](performance-evidence/cas-a07-mixed-100k-pack/ci-run-38941430856-superseded.json)。归档新HEAD专用n3和完整CI FinalGate需**再次全部成功**方可合入；**生产 AFTER=N/A**，所有客户端/已安装PWA该精确Storage层负载仍Not measured。
+
+
+**2026-10-17 交付核查（更正旧阶段遗留‘待验收’措辞）：** 准确原版归档HEAD `66728a5fe1bf8fa90ef52921bb84f9e1d0397a75` [CAS-A07专用 #38943388762](https://github.com/lazyxu/xdrive/actions/runs/38943388762) 与[全CI #38943388760](https://github.com/lazyxu/xdrive/actions/runs/38943388760) 76 jobs含single-commit/final-gate全绿，[#1893](https://github.com/lazyxu/xdrive/pull/1893)已Ready/rebase合入 `master@07d2e0b4de3334884f3a26a81e3dda5d4cfb8f6b` 且相关分支已清理。上文‘归档新HEAD待复验’仅是历史实验阶段，现完整交付；生产未改/AFTER=N/A，离线Pack读延迟+19.48%仍拒绝普遍生产上线。
