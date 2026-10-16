@@ -300,3 +300,12 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 只读范围查询必须同时 JOIN 当前 Owner、PhotoAsset、未删除 Node、`MediaMetadata`：用户停用、照片被删除、Node revision 变化、原始 GPS 修改、媒体重新扫描/UpdatedAt 变化、投影转换版本过期或坐标系不符，旧行必须**立即不可见**，不能用于标记、数量或照片导航；Owner 必填、最多 100 条/页、经纬度有界、支持日期变更线、总数不从当前页猜测。代码中不开放外部 HTTP 端点，不提供写入程序或任何 Browser AK/Server AK；只在 PostgreSQL 隔离 schema 的合成测试验证范围数据、真实计数和撤销安全。未来 ingestion/cleanup 需要当前照片 Owner、用户定位隐私策略和有效源修订作为写入许可，调用 #1825 的官方 Server 转换并加跨副本额度；视窗将用显式 BD09 边界匹配派生位置，**绝不逆算 BD09 为源 WGS84，也绝不将旧网格中心当拍摄地点**。
 
 用户关于百度两种 AK、自托管 PWA/Electron、无额外费用和 WGS84 正向派生索引保存权限的确认已在 [#1798](https://github.com/lazyxu/xdrive/issues/1798) 分类记录，不再重复询问。正式动态 JSAPI4 的完整子资源列表、九组真实私有双端 HAR、受信发布签名、Owner/Session/撤销和额度、CSP/Electron/PWA 隔离、iOS27「照片」1:1 与 Android/Desktop 真机依旧未完成；`runtime_enabled=false`、零核准 child 资源、无公共 Loader/Cookie/代理不变。图库 Web/Mobile Web/Desktop 继续共用 Server Range、VirtualCollection、Viewer 和 52px App Frame，A3 真正验收后依次 A4→B1→B2→B3→C1。
+
+
+## P0-Places-A3b3a3d2j · 百度位置派生索引事务写入安全约束（2026-10-16）
+
+承接 #1830 的空表和 Owner/Node/MediaMetadata 修订强校验只读范围，本阶段只新增**不被生产 Router 调用的 Server 内部事务 upsert/purge**。新写入候选必须绑定经 Server 当前授权的 Owner、PhotoAsset、主 Node、Node revision、当前 MediaMetadata 更新时间及同一张照片的一对真实 WGS84 GPS；派生坐标必须为明确 `bd09ll`/境外适用的 `wgs84ll`，采用代码固定的 projection version。WGS84LL 不允许隐藏的坐标位移；所有坐标均为有限且合法范围。拒绝缺失、NaN、Inf、跨 Owner、旧修订、无效照片媒体状态、已删除 Node、禁用账号，禁止从 0.01° 网格中心构造原始 GPS。
+
+写入采用 PostgreSQL 单事务，按稳定顺序锁住 **Owner → PhotoAsset → Node → MediaMetadata** 并重新核验真实原始 GPS 与更新时间，随后要求**受信 Server 回调在同事务内核实并锁定用户的持久位置索引/外传隐私许可状态**。没有回调或隐私拒绝则全事务回滚；调用方不能从浏览器传入一个 `consent=true` 当作证明。只有核验后才按 PhotoAsset 主键原子 upsert；Owner 作用域的 purge 即使账号停用仍可执行，供后续定位删除、撤销和回收。原有 Server 视窗读继续每次验证实时原始 GPS、Source revision 与当前 Owner，避免旧索引复现。离线 PostgreSQL 集成测试使用仅供测试的授权回调，**不构成生产隐私许可**。
+
+仍无任何生产 indexer/定时 job、真实 Baidu Web Geoconv 网络调用、AK 解密、GPS 自动外传、地图 Proxy/Loader/Cookie 或新版 Web/Mobile 专属 Gallery。后续真实 ingestion 必须先有持久 privacy/retention 配置及其事务读取、Owner/全局额度、真实官方 Geoconv 正向转换、更新/删除一致性、安全审计、地区坐标规则与性能验证后才能接入。即使运营者已报告自托管/PWA/Electron/派生坐标许可、双 AK 和零额外费用，技术放行仍须九组真实 Browser/Server HAR、逐路径人工审核 JS/瓦片/字体/WASM 白名单、受信签名、每次请求的 Owner/Session/epoch/配额、Caddy/CSP/Electron 隔离和 iOS 27 照片 1:1 / Android / Desktop 真机。生产 `runtime_enabled=false`、0 个 approved child、无可信签名根不变，百度仍是唯一 Provider，Web/Mobile Web/Desktop 共享图库 Range、虚拟列表、Viewer 与 52px 全屏 App Frame，完成 A3 后才进入 A4→B1→B2→B3→C1。

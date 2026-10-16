@@ -448,3 +448,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 根据 #1825 的 Server-only 官方 Geoconv v2，新增空的 `BaiduPhotoMapPosition` PostgreSQL 派生坐标表及私有只读范围查询。每条记录关联 Owner + PhotoAsset + 原始主 Node/Node revision + MediaMetadata 更新时间 + 精确原始 WGS84 GPS + 显式 BD09/WGS84 地图坐标空间和固定转换版本。读取先校验账户有效、源 Node 未删除、PhotoAsset 仍属于 Owner、原始 GPS 与索引源坐标完整匹配、媒体状态 Ready；任何删除/修订变化都将派生点即时隐藏，后续清理还可物理回收。查询必须 Owner 隔离、真实总数、最多 100 条、严格坐标边界及日期变更线。只有未来独立审核的生产后台才可按照隐私许可生成索引、限流同步和删除；本阶段**没有任何新照片坐标外发，没有 public map API、无新前端、无用户数据 backfill**。
 
 此项不是 A3 动态地图已上线：百度唯一 Provider、Server Static AK 与加密 Browser AK 分离、runtime_enabled=false、真实九组私有浏览器/上游 HAR 和经人工核准的 JSAPI4 child 清单、可信签名/Owner 撤销/跨副本配额/Caddy/Electron 安全和 iOS27/Android/Desktop 真机均需独立验收。绝不将百度原生 BD09 视窗当 WGS84，也不得将虚构网格中心作为实际照片位置。保留全屏 52px App Frame，Web/Mobile Web/Desktop 同一 Gallery Range、虚拟化和 Viewer，A3 完成后才进入 A4→B1→B2→B3→C1。
+
+
+## P0-Places-A3b3a3d2j · 原始 GPS/Owner/隐私同事务写入闸门（2026-10-16）
+
+在 #1830 的严格 Owner/原始 GPS 验证派生空间索引之后，增加仅供未来后端索引器调用的私有事务写入/撤销删除能力。需锁定真实有效 Owner、PhotoAsset、主文件与媒体定位修订，确认当前源 GPS 与候选一对精确一致、投影坐标有限且标注正确，再由受信服务端独立检查当前用户定位分享/索引隐私策略；该核验必须和写入处于同一 PostgreSQL 事务。失败绝不部分更新，Owner 定向删除保留，旧源版本在查询中继续被拒。此阶段只交付内部写入安全合同和合成 PostgreSQL 回归，**没有任何新 API/Viewer/网络发送**，也不会向百度导出用户真实坐标。
+
+后续先完成真正可撤销的 Server 端隐私策略、跨副本 Geoconv 配额及带原照片修订的工作队列，再对接准确 BD-09 Native Map 有界视窗、Marker/ClusterLayer 和已有 Gallery Range/Viewer。仍禁止 BD09→GPS 逆变换、网格中心冒充照片 GPS、100k 全量 DOM 和另一地图源。JSAPI4 runtime_enabled=false、核准子资源 0、真实九组双端 HAR 与受信发布、iOS27/Android/Desktop 真机均未验收；保留 52px 全屏 App Frame 及 Web/Mobile Web/Desktop 同一图库数据源、虚拟化组件和 Viewer。A3 后才推进 A4、B1、B2、B3、C1。
