@@ -1848,9 +1848,13 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, source])
 
   const openMemory = useCallback((memory: MediaMemory, fromCollections = false) => {
-    // As with Mobile Albums, the overview owns its visible scroll/content
-    // until the winning authenticated Memory's first counted range succeeds.
-    const commitFromCollections = fromCollections ? () => {
+    // The previously accepted compact Memories index owns its mounted card,
+    // title and scroll until the new owner's first authenticated photo Range
+    // commits. Collections -> Memory is already staged by P14. Direct wide
+    // Web/Desktop routes retain their original immediate behavior.
+    const fromCommittedMobileIndex = mobileGalleryViewport && !fromCollections &&
+      section === 'memories' && !currentMemory
+    const commitFromCollections = (fromCollections || fromCommittedMobileIndex) ? () => {
       setCurrentFolderView(null)
       setSection('memories')
       setActiveMediaType('')
@@ -1858,8 +1862,8 @@ export function XDriveMediaGalleryPage({
       setQuery({})
       setMobileCollectionsOverview(false)
     } : undefined
-    if (!fromCollections) {
-      // Preserve existing immediate routing outside Mobile Collections.
+    if (!fromCollections && !fromCommittedMobileIndex) {
+      // Preserve existing immediate routing outside compact accepted indexes.
       setCurrentMemory(memory)
       setSection('memories')
       setActiveMediaType('')
@@ -1868,7 +1872,7 @@ export function XDriveMediaGalleryPage({
     }
     void loadFirstPage(null, {}, null, null, 'default', memory,
       null, null, commitFromCollections)
-  }, [loadFirstPage])
+  }, [currentMemory, loadFirstPage, mobileGalleryViewport, section])
 
   const openBurstReview = useCallback((group: MediaBurstReview) => {
     const review: MediaCleanupReviewTarget = { kind: 'burst', group }
