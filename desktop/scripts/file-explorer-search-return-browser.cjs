@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2]
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for evidence.')
-if (options.case && !['all', 'surface', 'return', 'recovery', 'window', 'u09'].includes(options.case)) throw new Error('Use --case=all|surface|return|recovery|window|u09.')
+if (options.case && !['all', 'surface', 'return', 'recovery', 'window', 'u09', 'u09c'].includes(options.case)) throw new Error('Use --case=all|surface|return|recovery|window|u09|u09c.')
 const sourceRoot = path.resolve(options['source-root'] || repoRoot)
 const outputDir = path.resolve(options['output-dir'])
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright')
@@ -517,6 +517,99 @@ async function main() {
         afterDetails.selectedIDs.length === 1 && afterDetails.selectedIDs[0] === selectedID &&
         await host.evaluate(el => el === window.u09ScrollOwner))
       await capture(page, 'u09-wide-100k-list-grid-list')
+      await page.close()
+    })
+
+    // U09-C: sort/group changes can invalidate every old ordinal. No client
+    // may reattach an old selected ID to the new row at its former index.
+    // Keep the Server-authored order/group header contract and a bounded
+    // actual 100k React/MUI virtual viewport. This is an acceptance test,
+    // not a local regrouping implementation.
+    const u09cEnabled = options.case === 'u09c' || (
+      options.case === 'all' &&
+      process.env.GITHUB_HEAD_REF?.startsWith('test/files-search-return-chromium-u06-u09-sort-group-')
+    )
+    if (u09cEnabled) await attempt('U09-C 100k Server reordering cannot attach stale selection to a new logical ordinal', async () => {
+      const page = await pageFor('details', 900, false, true)
+      const host = page.locator('[data-xdrive-file-explorer-scroll-host]')
+      await host.evaluate(element => {
+        window.u09cScrollOwner = element
+        element.scrollTop = Math.floor(element.scrollHeight * 0.57)
+      })
+      await page.waitForFunction(() => window.searchReturnHarness.state.loadedIndexes.some(i => i > 50_000))
+      await settle(page)
+      const deep = await visibleItem(page, 'file')
+      await deep.click(); await settle(page)
+      const original = await state(page)
+      const oldID = original.selectedIDs[0]
+      assert.ok(Number.isSafeInteger(oldID) && oldID > 10_000,
+        'a genuinely deep selected file is required, not an empty fixture')
+      check('U09-C starting at a genuine sparse deep 100k viewport',
+        (await snapshot(page)).scrollTop > 500000 &&
+        original.loadedIndexes.length < 1000 &&
+        original.count === 100_000)
+      await page.evaluate(() => window.searchReturnHarness.resetEvents())
+      await openSort(page)
+      await sortField(page, '名称').click()
+      await page.waitForFunction(() => {
+        const { state, requests } = window.searchReturnHarness
+        return state.sort.key === 'name' && state.searchReady && !state.searchLoading &&
+          requests.some(request => request.type === 'search' && request.sort.key === 'name')
+      })
+      await settle(page)
+      const reordered = await state(page)
+      const afterSort = await snapshot(page)
+      check('U09-C Server sort changes without overwriting original filters or grouping',
+        { sort: reordered.sort, grouping: reordered.grouping, query: reordered.query, filters: reordered.filters },
+        { sort: { key: 'name', direction: 'desc' },
+          grouping: { groupBy: 'modified', foldersFirst: false },
+          query: '项目', filters: { sourceID: 7, tagID: 9 } })
+      check('U09-C reordering begins from the new authoritative first row',
+        afterSort.scrollTop === 0 && afterSort.visible.length > 0)
+      check('U09-C old deep identity cannot remain selected at its obsolete ordinal',
+        reordered.selectedIDs, [])
+      check('U09-C sort re-requests bounded new-ordered ranges, not old 100k pages',
+        reordered.requests.filter(r => r.type === 'search').length > 0 &&
+        reordered.requests.filter(r => r.type === 'search').every(r => r.sort.key === 'name' && r.limit <= 200))
+      check('U09-C sort keeps only a bounded sparse window, never all 100k rows',
+        reordered.loadedIndexes.length < 1000 &&
+        await page.locator('[data-xdrive-file-explorer-item]').count() < 140)
+      check('U09-C sort preserves exactly one shared scroll host',
+        await host.evaluate(el => el === window.u09cScrollOwner))
+      await page.evaluate(() => window.searchReturnHarness.resetEvents())
+      await openSort(page)
+      await page.getByRole('menuitemradio', { name: '类型', exact: true }).last().click()
+      await page.waitForFunction(() => {
+        const { state, requests } = window.searchReturnHarness
+        return state.grouping.groupBy === 'type' && state.searchReady && !state.searchLoading &&
+          requests.some(r => r.type === 'search' && r.grouping.groupBy === 'type')
+      })
+      await settle(page)
+      const afterGroup = await state(page)
+      const groupedSnapshot = await snapshot(page)
+      check('U09-C regrouping uses exact Server grouping and retains sort', {
+        sort: afterGroup.sort, grouping: afterGroup.grouping,
+      }, { sort: { key: 'name', direction: 'desc' },
+        grouping: { groupBy: 'type', foldersFirst: false } })
+      check('U09-C regrouping does not resurrect a stale old selected ID', afterGroup.selectedIDs, [])
+      check('U09-C grouped Details announces all logical table rows, not mounted subset',
+        await page.getByRole('table', { name: '文件列表' }).getAttribute('aria-rowcount'), '100005')
+      check('U09-C regrouped visible nodes remain bounded and real',
+        groupedSnapshot.visible.length > 0 && groupedSnapshot.scrollTop === 0 &&
+        afterGroup.loadedIndexes.length < 1000)
+      check('U09-C Server new-group page requests stay bounded',
+        afterGroup.requests.filter(r => r.type === 'search').length > 0 &&
+        afterGroup.requests.filter(r => r.type === 'search').every(r => (
+          r.grouping.groupBy === 'type' && r.sort.key === 'name' && r.limit <= 200
+        )))
+      const newlyVisible = await visibleItem(page, 'file')
+      await newlyVisible.click(); await settle(page)
+      const freshID = (await state(page)).selectedIDs[0]
+      check('U09-C selection resumes from an actual new-row identity',
+        Number.isSafeInteger(freshID) && freshID !== oldID)
+      check('U09-C regrouping retains one shared scroll host',
+        await host.evaluate(el => el === window.u09cScrollOwner))
+      await capture(page, 'u09c-100k-sort-group-reindex')
       await page.close()
     })
 
