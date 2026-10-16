@@ -75,6 +75,16 @@ assert "ExitOnForwardFailure=yes" in args
 assert "ForwardAgent=no" in args
 assert "-W" in args and "127.0.0.1:3080" in args
 assert not any(part in args for part in ("-R", "-D"))
+hostpaths = [part.split("=", 1)[1] for part in args
+             if part.startswith("UserKnownHostsFile=")]
+assert len(hostpaths) == 1
+with open(hostpaths[0], encoding="utf-8") as trusted:
+    assert "trusted-host ssh-ed25519 AAAATEST_OFFLINE_ONLY_DO_NOT_TRUST" in trusted.read()
+original = os.environ.get("XDRIVE_SSH_FAKE_MUTATE_ORIGINAL")
+if original:
+    assert os.path.realpath(hostpaths[0]) != os.path.realpath(original)
+    with open(original, "w", encoding="utf-8") as changed:
+        changed.write("CHANGED_AFTER_PINNED_SNAPSHOT\n")
 s = socket.create_connection(("127.0.0.1", int(os.environ["XDRIVE_SSH_FAKE_BACKEND"])), timeout=4)
 data = sys.stdin.buffer.read(8192)
 s.sendall(data)
@@ -88,7 +98,8 @@ s.close()
 '''
 
 
-def case(root, expect_ok, overrides=None, target="user@trusted-host", token_input="test-admin\nNEVER_PRINT_THIS_SECRET\n"):
+def case(root, expect_ok, overrides=None, target="user@trusted-host", token_input="test-admin\nNEVER_PRINT_THIS_SECRET\n",
+         known_hosts=None, mutate_original=False):
     Handler.anon_open = False
     Handler.bad_login = False
     Handler.insufficient_role = False
@@ -99,14 +110,17 @@ def case(root, expect_ok, overrides=None, target="user@trusted-host", token_inpu
     env = os.environ.copy()
     env["PATH"] = str(root / "bin") + os.pathsep + env.get("PATH", "")
     env["XDRIVE_SSH_FAKE_ARGUMENTS"] = str(root / "args.jsonl")
+    if mutate_original:
+        env["XDRIVE_SSH_FAKE_MUTATE_ORIGINAL"] = str(root / "pinned_known_hosts")
     result = subprocess.run([
-        sys.executable, str(SCRIPT), target, str(root / "pinned_known_hosts"),
+        sys.executable, str(SCRIPT), target, str(known_hosts or root / "pinned_known_hosts"),
         "3080", "2222",
     ], capture_output=True, text=True, input=token_input,
        env=env, timeout=30, check=False)
     assert (result.returncode == 0) == expect_ok, result.stderr
     if expect_ok:
         assert "rescue-admin-inventory: 11-fixed-services-verified" in result.stdout
+        assert "rescue-ssh-pinned-hosts: isolated-single-snapshot" in result.stdout
         assert "real-primary-caddy-outage-and-restoration: unverified" in result.stdout
         assert "caddy-apply-stop-restart: blocked" in result.stdout
     else:
@@ -135,6 +149,19 @@ def main():
                 "trusted-host ssh-ed25519 AAAATEST_OFFLINE_ONLY_DO_NOT_TRUST\n")
             os.environ["XDRIVE_SSH_FAKE_BACKEND"] = str(server.server_address[1])
             case(root, True)
+            # Changing the original host-key file after the first request must
+            # not alter the private snapshot used for the remaining SSH calls.
+            case(root, True, mutate_original=True)
+            pinned = root / "pinned_known_hosts"
+            assert pinned.read_text() == "CHANGED_AFTER_PINNED_SNAPSHOT\n"
+            pinned.write_text(
+                "trusted-host ssh-ed25519 AAAATEST_OFFLINE_ONLY_DO_NOT_TRUST\n")
+            alias = root / "pinned-known-hosts-symlink"
+            alias.symlink_to(pinned)
+            case(root, False, known_hosts=alias)
+            pinned.chmod(0o664)
+            case(root, False)
+            pinned.chmod(0o600)
             for name, overrides in (
                 ("not-ready", {"healthy": False}),
                 ("anonymous-admin-open", {"anon_open": True}),
