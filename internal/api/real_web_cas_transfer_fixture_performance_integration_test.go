@@ -44,6 +44,7 @@ func TestRealWebLargeTransferCASFixture(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
 		&meta.FileVersion{}, &meta.ContentBlob{}, &meta.Share{},
 		&meta.UploadSession{}, &meta.UploadPart{}, &meta.DownloadProgress{},
+		&meta.LocalPushQuotaHold{}, // recent /me/quota schema contract, fixture only
 		&meta.AuditEvent{},
 	); err != nil {
 		t.Fatal(err)
@@ -185,6 +186,7 @@ func TestRealWebLargeTransferCASFixture(t *testing.T) {
 	defer peer.Close()
 	ready := map[string]any{
 		"url": peer.URL, "size_bytes": size, "sample": sample,
+		"cas_root": local.FilesystemRoot(), "server_pid": os.Getpid(), // private test-only 0600 ready file
 		"physical_cas": true, "postgres17": true,
 	}
 	body, err := json.Marshal(ready)
