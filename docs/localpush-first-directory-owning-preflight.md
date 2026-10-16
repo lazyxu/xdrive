@@ -1,0 +1,11 @@
+# L03-F2d8c3b2m — Own-device native first-directory preflight
+
+**Status:** narrowly scoped Agent-private and non-operational. Parent #1886 passed exact-head full 76-job CI and Ready/Rebase merged as `master@525fc0fb36c5f3856edf85d9c7f5439592005a5f`.
+
+The existing first-directory Server-only writer creates an exact pending cloud Node + SourceItem, but cannot prove native CURRENT provenance. The already accepted `localpush.RecheckLocalFirstDirectoryNative` proves one local, strong native directory in sealed CURRENT/PREVIOUS snapshots, not ownership of a Server transaction.
+
+This phase only adds an on-demand, UNEXPORTED Agent helper. It reads the current bound `local_folder` Source and exact authenticated device secret/Root grant using `localBoundBackupConfig`; validates paused Push, Source revision and live cloud target; checks the actual strong CURRENT first-directory native identity; then **re-fetches** owning Server device/Root/Source and rejects any credential, revision, status, target, mode or schedule drift. Its locally persisted Root and account/session are rechecked. Malformed paths, forged native readbacks, stale two-generation evidence, revoked/foreign devices, account changes and cancellation fail closed. All outcomes use the existing `json:"-"` native observation with `CommitSupported`, `BackupComplete`, `Authoritative` and `MissingInferenceSafe` all false.
+
+There is **no cross-process atomic native-to-SQL provenance or lifetime guarantee**: native directory entries can change immediately after the read. No HTTP route, Agent IPC, Desktop/Web operation, SourceRun, CAS, Node mutation, active `local_folder`, automatic scheduler, Mirror deletion or NAS Push is implemented. This does not mean the selected directory is backed up. Physical 100k and >=4 GiB installed Desktop E2E, interrupted upload recovery, directories below depth one, versions and SourceRun truth remain pending. Stage limit 64 MiB is unchanged.
+
+Delivery: one commit on frozen accepted master, full exact-HEAD GitHub Go/Linux/API/PostgreSQL race/Windows, Web/Desktop, images/artifacts, single-commit and final-gate green before Ready/Rebase merge; separately verify old work branch deletion. No GitLab delivery is claimed.
