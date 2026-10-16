@@ -298,6 +298,12 @@ export interface AgentDeviceBackupRun {
   planned_transfer_bytes: number
   transferred_items: number
   transferred_bytes: number
+  confirmed_moved_items?: number
+  cas_reused_items?: number
+  cas_reused_bytes?: number
+  resume_reused_items?: number
+  resume_reused_bytes?: number
+  unprocessed_items?: number
   failed_items: number
   active_transfer_bytes: number
   active_transfer_total_bytes: number
@@ -532,11 +538,23 @@ export type AgentSourceRunFailure = {
   size: number
   error: string
   failed_at: string
+  category?: string
+}
+
+export type AgentSourceRunSkip = {
+  id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  reason: string
+  skipped_at: string
 }
 
 export type AgentSourceRun = {
   id: string
   source_id: number
+  stats_version?: number
   source_revision: number
   target_node_id?: number
   mode: 'scan' | 'sync'
@@ -3257,6 +3275,14 @@ export class AgentIPCClient {
       offset: String(offset),
     })
     return this.request<AgentSourceRunFailure[]>('GET', `/v1/sources/runs/failures?${query.toString()}`)
+  }
+
+  sourceRunSkips(sourceID: number, runID: string, limit = 20, offset = 0) {
+    const query = new URLSearchParams({
+      source_id: String(sourceID), run_id: runID,
+      limit: String(limit), offset: String(offset),
+    })
+    return this.request<AgentSourceRunSkip[]>('GET', `/v1/sources/runs/skips?${query.toString()}`)
   }
 
   cancelSourceRun(sourceID: number, runID: string) {

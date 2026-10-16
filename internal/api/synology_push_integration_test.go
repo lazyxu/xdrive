@@ -63,7 +63,7 @@ func TestSynologyPushCreateUpdateMoveAndMissing(t *testing.T) {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
 		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceItemMetadata{},
-		&meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

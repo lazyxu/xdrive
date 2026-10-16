@@ -44,6 +44,7 @@ export interface ExternalSourceRun {
   id: string
   source_id: number
   run_number: number
+  stats_version?: number
   source_revision: number
   sync_mode?: ExternalSourceSyncMode
   target_node_id?: number
@@ -70,6 +71,15 @@ export interface ExternalSourceRun {
   created_items: number
   updated_items: number
   skipped_items: number
+  synced_file_items?: number
+  synced_directory_items?: number
+  synced_bytes?: number
+  confirmed_moved_items?: number
+  cas_reused_items?: number
+  cas_reused_bytes?: number
+  resume_reused_items?: number
+  resume_reused_bytes?: number
+  unprocessed_items?: number
   deleted_items?: number
   transferred_items: number
   transferred_bytes: number
@@ -91,7 +101,32 @@ export interface ExternalSourceRunFailure {
   path: string
   size: number
   error: string
+  category?: string
   failed_at: string
+}
+
+export interface ExternalSourceRunSkip {
+  id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  reason: 'ignore_rule' | 'unchanged' | string
+  skipped_at: string
+}
+
+export function externalSourceFailureCategoryLabel(category?: string) {
+  const labels: Record<string, string> = {
+    network: '网络', permission: '权限', rate_limit: '限流',
+    conflict: '冲突', file_changed: '文件变化', other: '其他 / 未分类',
+  }
+  return labels[category ?? 'other'] ?? labels.other
+}
+
+export function externalSourceSkipReasonLabel(reason: string) {
+  return reason === 'ignore_rule' ? '匹配忽略规则'
+    : reason === 'unchanged' ? '远端内容未变化'
+    : '其他跳过原因'
 }
 
 export interface ExternalSourceItemMetadata {
@@ -439,6 +474,12 @@ export interface ExternalSourceDetailView {
 export interface ExternalSourceRunMetric {
   key:
     | 'scanned'
+    | 'synced'
+    | 'confirmed_moved'
+    | 'cas_reused'
+    | 'resume_reused'
+    | 'saved_network'
+    | 'unprocessed'
     | 'ignored'
     | 'new'
     | 'changed'
@@ -453,7 +494,7 @@ export interface ExternalSourceRunMetric {
     | 'transferred'
     | 'failed'
   label: string
-  items: number
+  items?: number
   bytes?: number
 }
 
@@ -472,7 +513,10 @@ export interface ExternalSourceRunDetailView {
   startedAt: string
   finishedAt?: string
   durationLabel: string
-  successItems: number
+  syncedItems?: number
+  unchangedItems: number
+  ignoredItems: number
+  unprocessedItems?: number
   failedItems: number
   error?: string
   progress?: ExternalSourceRunProgressView
@@ -776,6 +820,7 @@ function externalSourceRunTriggerLabel(trigger: string) {
 }
 
 export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
+  const accountingV1 = typeof run.stats_version === 'number' && run.stats_version >= 1
   const activeBytes = Math.max(0, Math.min(run.active_transfer_bytes || 0, run.active_transfer_total_bytes || 0))
   const plannedBytes = Math.max(0, run.planned_transfer_bytes || 0)
   const processedBytes = Math.max(0, run.processed_transfer_bytes || 0) + activeBytes
@@ -808,26 +853,52 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
     startedAt: run.started_at,
     finishedAt: run.finished_at,
     durationLabel: externalSourceRunDurationLabel(run),
-    successItems: Math.max(0, run.scanned_items - run.failed_items),
+    // A scan is an observation, not a successful upload. Do not subtract
+    // failures from scanned count: ignores, unchanged items and cancellation
+    // make that expression incorrect.
+    syncedItems: run.synced_file_items === undefined || run.synced_directory_items === undefined
+      ? undefined
+      : run.synced_file_items + run.synced_directory_items,
+    unchangedItems: run.unchanged_items,
+    ignoredItems: run.ignored_items,
+    unprocessedItems: run.unprocessed_items,
     failedItems: Math.max(0, run.failed_items),
     error: run.error || undefined,
     progress,
     metrics: [
       { key: 'scanned', label: '扫描', items: run.scanned_items, bytes: run.scanned_bytes },
+      { key: 'synced', label: '已同步', items: run.synced_file_items === undefined || run.synced_directory_items === undefined
+        ? undefined : run.synced_file_items + run.synced_directory_items, bytes: run.synced_bytes },
       { key: 'ignored', label: '忽略', items: run.ignored_items, bytes: run.ignored_bytes },
       { key: 'new', label: '新增', items: run.new_items, bytes: run.new_bytes },
       { key: 'changed', label: '变更', items: run.changed_items, bytes: run.changed_bytes },
-      { key: 'moved', label: '移动', items: run.moved_items },
+      { key: 'moved', label: '发现移动', items: run.moved_items },
+      ...(!accountingV1 ? [] : [
+        { key: 'confirmed_moved' as const, label: '确认完成移动', items: run.confirmed_moved_items ?? 0 },
+      ]),
       { key: 'unchanged', label: '未变化', items: run.unchanged_items, bytes: run.unchanged_bytes },
       { key: 'missing', label: '缺失', items: run.missing_items, bytes: run.missing_bytes },
       { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
       { key: 'created', label: '创建', items: run.created_items },
       { key: 'updated', label: '更新', items: run.updated_items },
-      { key: 'skipped', label: '跳过', items: run.skipped_items },
+      { key: 'skipped', label: '跳过（忽略＋未变化）', items: run.skipped_items },
+      ...(!accountingV1 ? [] : [
+        { key: 'cas_reused' as const, label: 'CAS 复用', items: run.cas_reused_items ?? 0, bytes: run.cas_reused_bytes ?? 0 },
+      ]),
+      ...(!accountingV1 ? [] : [
+        { key: 'resume_reused' as const, label: '续传复用', items: run.resume_reused_items ?? 0, bytes: run.resume_reused_bytes ?? 0 },
+      ]),
+      ...(!accountingV1 ? [] : [
+        { key: 'saved_network' as const, label: '已确认节省的网络字节',
+          bytes: (run.cas_reused_bytes ?? 0) + (run.resume_reused_bytes ?? 0) },
+      ]),
+      ...(run.status === 'cancelled' ? [
+        { key: 'unprocessed' as const, label: '已发现但未完成', items: run.unprocessed_items },
+      ] : []),
       ...(run.sync_mode === 'mirror' || (run.deleted_items ?? 0) > 0
         ? [{ key: 'deleted' as const, label: '移入回收站', items: run.deleted_items ?? 0 }]
         : []),
-      { key: 'transferred', label: '实际传输', items: run.transferred_items, bytes: run.transferred_bytes },
+      { key: 'transferred', label: '已确认传输', items: run.transferred_items, bytes: run.transferred_bytes },
       { key: 'failed', label: '失败', items: run.failed_items },
     ],
   }

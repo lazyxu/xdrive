@@ -19,6 +19,7 @@ import type {
   ExternalSourceOverview,
   ExternalSourceRun,
   ExternalSourceRunFailure,
+  ExternalSourceRunSkip,
   FileShare,
   BuildInfo,
   FileVersion,
@@ -2158,6 +2159,13 @@ export class XDriveApi {
       offset: String(Math.max(0, Math.trunc(offset))),
     })
     return this.request<ExternalSourceRun[]>(`/api/v1/sources/${sourceID}/runs?${query.toString()}`)
+  }
+
+  sourceRunSkips(sourceID: number, runID: string, limit = 20, offset = 0) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    return this.request<ExternalSourceRunSkip[]>(
+      `/api/v1/sources/${sourceID}/runs/${encodeURIComponent(runID)}/skips?${query.toString()}`,
+    )
   }
 
   sourceRunFailures(sourceID: number, runID: string, limit = 20, offset = 0) {

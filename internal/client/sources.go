@@ -76,13 +76,25 @@ type SourceRunFailure struct {
 	Path         string    `json:"path"`
 	Size         int64     `json:"size"`
 	Error        string    `json:"error"`
+	Category     string    `json:"category"`
 	FailedAt     time.Time `json:"failed_at"`
+}
+
+type SourceRunSkip struct {
+	ID         uint64    `json:"id"`
+	ExternalID string    `json:"external_id"`
+	Kind       string    `json:"kind"`
+	Path       string    `json:"path"`
+	Size       int64     `json:"size"`
+	Reason     string    `json:"reason"`
+	SkippedAt  time.Time `json:"skipped_at"`
 }
 
 type SyncRun struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
 	RunNumber              int64      `json:"run_number"`
+	StatsVersion           int64      `json:"stats_version"`
 	SourceRevision         uint64     `json:"source_revision"`
 	SyncMode               string     `json:"sync_mode"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
@@ -120,6 +132,12 @@ type SyncRun struct {
 	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
 	TransferredBytes       int64      `json:"transferred_bytes"`
+	ConfirmedMovedItems    int64      `json:"confirmed_moved_items"`
+	CASReusedItems         int64      `json:"cas_reused_items"`
+	CASReusedBytes         int64      `json:"cas_reused_bytes"`
+	ResumeReusedItems      int64      `json:"resume_reused_items"`
+	ResumeReusedBytes      int64      `json:"resume_reused_bytes"`
+	UnprocessedItems       *int64     `json:"unprocessed_items,omitempty"`
 	FailedItems            int64      `json:"failed_items"`
 	ActiveTransferPath     string     `json:"active_transfer_path,omitempty"`
 	ActiveTransferBytes    int64      `json:"active_transfer_bytes"`
@@ -472,6 +490,25 @@ func (c *Client) SourceRunFailures(ctx context.Context, id uint64, runID string,
 	return out, err
 }
 
+// SourceRunSkips reads immutable per-run snapshots; current SourceItem state
+// cannot represent historical decisions after later scans.
+func (c *Client) SourceRunSkips(ctx context.Context, id uint64, runID string, limit, offset int) ([]SourceRunSkip, error) {
+	var out []SourceRunSkip
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	path := fmt.Sprintf("/api/v1/sources/%d/runs/%s/skips", id, url.PathEscape(runID))
+	if query := values.Encode(); query != "" {
+		path += "?" + query
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
+	return out, err
+}
+
 type SourceObservation struct {
 	ExternalID        string     `json:"external_id"`
 	ExternalIDAliases []string   `json:"external_id_aliases,omitempty"`
@@ -502,21 +539,24 @@ type FinishSourceRunInput struct {
 type SourceFailure struct {
 	ExternalID string `json:"external_id"`
 	Error      string `json:"error"`
+	Category   string `json:"category,omitempty"`
 }
 
 type SourceCommit struct {
-	ExternalID       string     `json:"external_id"`
-	Action           string     `json:"action"`
-	NodeID           uint64     `json:"node_id"`
-	NodeRevision     uint64     `json:"node_revision"`
-	Kind             string     `json:"kind"`
-	Path             string     `json:"path"`
-	Size             int64      `json:"size"`
-	ModifiedAt       *time.Time `json:"modified_at,omitempty"`
-	SHA256           string     `json:"sha256,omitempty"`
-	RemoteRevision   string     `json:"remote_revision,omitempty"`
-	Transferred      bool       `json:"transferred,omitempty"`
-	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+	ExternalID        string     `json:"external_id"`
+	Action            string     `json:"action"`
+	NodeID            uint64     `json:"node_id"`
+	NodeRevision      uint64     `json:"node_revision"`
+	Kind              string     `json:"kind"`
+	Path              string     `json:"path"`
+	Size              int64      `json:"size"`
+	ModifiedAt        *time.Time `json:"modified_at,omitempty"`
+	SHA256            string     `json:"sha256,omitempty"`
+	RemoteRevision    string     `json:"remote_revision,omitempty"`
+	Transferred       bool       `json:"transferred,omitempty"`
+	TransferredBytes  int64      `json:"transferred_bytes,omitempty"`
+	CASReusedBytes    int64      `json:"cas_reused_bytes,omitempty"`
+	ResumeReusedBytes int64      `json:"resume_reused_bytes,omitempty"`
 }
 
 func (c *Client) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (SyncRun, error) {

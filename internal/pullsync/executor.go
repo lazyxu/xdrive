@@ -83,10 +83,12 @@ func (e *Executor[Ref]) Execute(
 	}
 
 	var (
-		node        client.Node
-		hash        string
-		transferred int64
-		err         error
+		node              client.Node
+		hash              string
+		transferred       int64
+		casReusedBytes    int64
+		resumeReusedBytes int64
+		err               error
 	)
 	switch action {
 	case sourcepkg.ActionCreate:
@@ -105,6 +107,7 @@ func (e *Executor[Ref]) Execute(
 			return client.SourceCommit{}, uploadErr
 		}
 		node, hash, transferred = result.Node, result.SHA256, result.TransferredBytes
+		casReusedBytes, resumeReusedBytes = result.CASReusedBytes, result.ResumeReusedBytes
 
 	case sourcepkg.ActionUpdate:
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
@@ -118,6 +121,7 @@ func (e *Executor[Ref]) Execute(
 			return client.SourceCommit{}, uploadErr
 		}
 		node, hash, transferred = result.Node, result.SHA256, result.TransferredBytes
+		casReusedBytes, resumeReusedBytes = result.CASReusedBytes, result.ResumeReusedBytes
 
 	case sourcepkg.ActionMove:
 		if plan.NodeID == nil || plan.NodeRevision == 0 {
@@ -145,6 +149,7 @@ func (e *Executor[Ref]) Execute(
 			return client.SourceCommit{}, uploadErr
 		}
 		node, hash, transferred = result.Node, result.SHA256, result.TransferredBytes
+		casReusedBytes, resumeReusedBytes = result.CASReusedBytes, result.ResumeReusedBytes
 
 	default:
 		return client.SourceCommit{}, fmt.Errorf("unsupported pull execution action %q", action)
@@ -157,6 +162,8 @@ func (e *Executor[Ref]) Execute(
 	commit.SHA256 = hash
 	commit.TransferredBytes = transferred
 	commit.Transferred = transferred > 0
+	commit.CASReusedBytes = casReusedBytes
+	commit.ResumeReusedBytes = resumeReusedBytes
 	return commit, nil
 }
 

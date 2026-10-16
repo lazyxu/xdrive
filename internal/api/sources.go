@@ -51,6 +51,7 @@ type syncRunDTO struct {
 	ID                     string     `json:"id"`
 	SourceID               uint64     `json:"source_id"`
 	RunNumber              int64      `json:"run_number"`
+	StatsVersion           int64      `json:"stats_version"`
 	SourceRevision         uint64     `json:"source_revision"`
 	SyncMode               string     `json:"sync_mode"`
 	TargetNodeID           *uint64    `json:"target_node_id,omitempty"`
@@ -88,6 +89,12 @@ type syncRunDTO struct {
 	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
 	TransferredBytes       int64      `json:"transferred_bytes"`
+	ConfirmedMovedItems    int64      `json:"confirmed_moved_items"`
+	CASReusedItems         int64      `json:"cas_reused_items"`
+	CASReusedBytes         int64      `json:"cas_reused_bytes"`
+	ResumeReusedItems      int64      `json:"resume_reused_items"`
+	ResumeReusedBytes      int64      `json:"resume_reused_bytes"`
+	UnprocessedItems       *int64     `json:"unprocessed_items,omitempty"`
 	FailedItems            int64      `json:"failed_items"`
 	ActiveTransferPath     string     `json:"active_transfer_path,omitempty"`
 	ActiveTransferBytes    int64      `json:"active_transfer_bytes"`
@@ -154,7 +161,7 @@ func (s *Server) sourceDTO(source meta.Source) sourceDTO {
 
 func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 	return syncRunDTO{
-		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, SourceRevision: run.SourceRevision,
+		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, StatsVersion: run.StatsVersion, SourceRevision: run.SourceRevision,
 		SyncMode: run.SyncMode, TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
 		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
@@ -170,6 +177,10 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		CreatedItems: run.CreatedItems, UpdatedItems: run.UpdatedItems, SkippedItems: run.SkippedItems,
 		DeletedItems:     run.DeletedItems,
 		TransferredItems: run.TransferredItems, TransferredBytes: run.TransferredBytes,
+		ConfirmedMovedItems: run.ConfirmedMovedItems,
+		CASReusedItems:      run.CASReusedItems, CASReusedBytes: run.CASReusedBytes,
+		ResumeReusedItems: run.ResumeReusedItems, ResumeReusedBytes: run.ResumeReusedBytes,
+		UnprocessedItems:   run.UnprocessedItems,
 		FailedItems:        run.FailedItems,
 		ActiveTransferPath: run.ActiveTransferPath, ActiveTransferBytes: run.ActiveTransferBytes,
 		ActiveTransferTotal: run.ActiveTransferTotal, CancelRequestedAt: run.CancelRequestedAt,

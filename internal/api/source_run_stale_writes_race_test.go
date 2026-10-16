@@ -55,7 +55,7 @@ func TestOldSourceRunMutationEndpointsRejectRevisedActiveSource(t *testing.T) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.Source{},
-		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

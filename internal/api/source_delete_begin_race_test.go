@@ -55,7 +55,7 @@ func TestConcurrentSourceDeleteAndDurableBeginCannotOrphanRun(t *testing.T) {
 	sqlDB.SetMaxOpenConns(6)
 	sqlDB.SetMaxIdleConns(0)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}); err != nil {
 		t.Fatal(err)
 	}
 	owner := meta.User{Username: "source-delete-begin-race-owner", PasswordHash: "not-used", Role: meta.UserRoleUser, SessionVersion: 1}

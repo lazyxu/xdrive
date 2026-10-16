@@ -26,6 +26,7 @@ import type {
   ExternalSourceItem,
   ExternalSourceRun,
   ExternalSourceRunFailure,
+  ExternalSourceRunSkip,
   FileShare,
   FileVersion,
   MediaAlbum,
@@ -331,6 +332,7 @@ declare global {
   type AgentUpdateSourceInput = UpdateExternalSourceInput
   type AgentSourceRun = ExternalSourceRun
   type AgentSourceRunFailure = ExternalSourceRunFailure
+  type AgentSourceRunSkip = ExternalSourceRunSkip
   type AgentSourceItem = ExternalSourceItem
   type AgentSourceCollection = ExternalSourceCollection
   type AgentSourceCollectionItem = ExternalSourceCollectionItem
@@ -754,6 +756,7 @@ declare global {
         getDeviceBackupRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<XDriveDeviceBackupRunPage>>
         getSourceRuns: (sourceID: number, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRun[]>>
         getSourceRunFailures: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunFailure[]>>
+        getSourceRunSkips: (sourceID: number, runID: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceRunSkip[]>>
         cancelSourceRun: (sourceID: number, runID: string) => Promise<DesktopResult<AgentSourceRun>>
         getSourceItems: (sourceID: number, state?: string, limit?: number, offset?: number) => Promise<DesktopResult<AgentSourceItem[]>>
         getSourceCollections: (sourceID: number, state?: string) => Promise<DesktopResult<AgentSourceCollection[]>>

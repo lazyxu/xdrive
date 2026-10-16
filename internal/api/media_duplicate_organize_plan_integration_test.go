@@ -51,7 +51,7 @@ func TestMediaDuplicateOrganizePlanPreservesIndependentUserIntent(t *testing.T) 
 		&meta.PhotoCollection{}, &meta.PhotoCollectionAsset{},
 		&meta.PhotoPerson{}, &meta.PhotoPersonAsset{}, &meta.AuditEvent{},
 		&meta.Share{}, &meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
-		&meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

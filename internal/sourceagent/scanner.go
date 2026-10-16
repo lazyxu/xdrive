@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/client"
@@ -31,6 +32,13 @@ type API interface {
 	UpdateSourceRunTransferProgress(context.Context, uint64, string, string, int64, int64) error
 	HeartbeatSourceRun(context.Context, uint64, string) error
 	FinishSourceRun(context.Context, uint64, string, client.FinishSourceRunInput) (client.SyncRun, error)
+}
+
+// Old source agents need not support explicit failure persistence. When the
+// server-capable transport does, use it to save typed categories and the
+// immutable per-item path before the next scan can change SourceItem.
+type sourceItemFailureReporter interface {
+	FailSourceItems(context.Context, uint64, string, []client.SourceFailure) error
 }
 
 type sourceItemLister interface {
@@ -291,6 +299,9 @@ func (s Scanner) Run(ctx context.Context, trigger string) (client.SyncRun, error
 				}
 				summary.AddFailure()
 				appendSourceRunError(&itemErrors, item.ExternalID, item.Path, err)
+				if recordErr := s.recordSourceItemFailure(runCtx, run.ID, item.ExternalID, err); recordErr != nil {
+					return normalizeRunError(recordErr)
+				}
 				continue
 			}
 			commits = append(commits, commit)
@@ -497,7 +508,37 @@ func (s Scanner) commitExecutionResults(
 			}
 			summary.AddFailure()
 			appendSourceRunError(itemErrors, commit.ExternalID, commit.Path, err)
+			if recordErr := s.recordSourceItemFailure(ctx, runID, commit.ExternalID, err); recordErr != nil {
+				return recordErr
+			}
 		}
+	}
+	return nil
+}
+
+func (s Scanner) recordSourceItemFailure(ctx context.Context, runID, externalID string, cause error) error {
+	reporter, supported := s.API.(sourceItemFailureReporter)
+	if !supported || cause == nil {
+		return nil
+	}
+	message := strings.TrimSpace(cause.Error())
+	if message == "" {
+		message = "source item execution failed"
+	}
+	// The Source Server limits each error to 4 KiB; trim on UTF-8 boundaries.
+	for len(message) > 4<<10 {
+		_, size := utf8.DecodeLastRuneInString(message)
+		if size <= 0 {
+			break
+		}
+		message = message[:len(message)-size]
+	}
+	if err := reporter.FailSourceItems(ctx, s.SourceID, runID, []client.SourceFailure{{
+		ExternalID: externalID,
+		Error:      message,
+		Category:   client.ClassifySourceFailure(cause),
+	}}); err != nil {
+		return fmt.Errorf("record source item failure: %w", err)
 	}
 	return nil
 }

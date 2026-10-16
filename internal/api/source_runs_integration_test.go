@@ -28,7 +28,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceItemAlias{}, &meta.SourceRunSkip{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -36,7 +36,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if err := json.Unmarshal(beginRes.Body.Bytes(), &run); err != nil {
 		t.Fatal(err)
 	}
-	if run.ID != runID || run.RunNumber != 1 || run.Mode != meta.SourceRunModeScan || run.SourceRevision != source.Revision ||
+	if run.ID != runID || run.RunNumber != 1 || run.StatsVersion != 1 || run.Mode != meta.SourceRunModeScan || run.SourceRevision != source.Revision ||
 		run.TargetNodeID == nil || *run.TargetNodeID != target.ID || run.IgnoreRules != "@eaDir/\n" {
 		t.Fatalf("unexpected run snapshot: %+v", run)
 	}
@@ -162,6 +162,24 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 		"new": "create", "ignored-new": "ignore", "same": "unchanged", "changed": "update", "moved": "move",
 	})
 
+	// Retries preserve exactly one historical row per ignored/unchanged observation.
+	skipPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/skips", source.ID, runID)
+	skipRes := request(t, router, http.MethodGet, skipPath+"?limit=20&offset=0", token, nil, http.StatusOK)
+	var skipRows []sourceRunSkipDTO
+	if err := json.Unmarshal(skipRes.Body.Bytes(), &skipRows); err != nil {
+		t.Fatal(err)
+	}
+	if len(skipRows) != 2 {
+		t.Fatalf("skip snapshots=%d, want=2: %+v", len(skipRows), skipRows)
+	}
+	byID := make(map[string]sourceRunSkipDTO)
+	for _, row := range skipRows {
+		byID[row.ExternalID] = row
+	}
+	if byID["ignored-new"].Reason != "ignore_rule" || byID["ignored-new"].Path != "@eaDir/thumb.jpg" ||
+		byID["ignored-new"].Size != 9 || byID["same"].Reason != "unchanged" {
+		t.Fatalf("skip snapshots lost historical metadata: %+v", skipRows)
+	}
 	var ignoredNewCount int64
 	if err := db.Model(&meta.SourceItem{}).Where("source_id = ? AND external_id = ?", source.ID, "ignored-new").
 		Count(&ignoredNewCount).Error; err != nil {
@@ -295,6 +313,9 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if err := json.Unmarshal(finish3Res.Body.Bytes(), &cancelled); err != nil {
 		t.Fatal(err)
 	}
+	if cancelled.UnprocessedItems != nil {
+		t.Fatalf("scan-only cancellation cannot claim exact unfinished count: %+v", cancelled)
+	}
 	if cancelled.Status != meta.SyncRunStatusCancelled || cancelled.FinishedAt == nil ||
 		cancelled.ActiveTransferPath != "" || cancelled.ActiveTransferBytes != 0 || cancelled.ActiveTransferTotal != 0 {
 		t.Fatalf("unexpected cancelled run: %+v", cancelled)
@@ -351,7 +372,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceItemAlias{}, &meta.SourceRunSkip{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -359,7 +380,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +537,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		"modified_at":%q,
 		"sha256":"%s",
 		"transferred":true,
-		"transferred_bytes":10
+		"transferred_bytes":4,
+		"cas_reused_bytes":4,
+		"resume_reused_bytes":2
 	}]}`, photoNode.ID, base.Format(time.RFC3339Nano), sourceHash)
 	request(t, router, http.MethodPost, commitPath, token, strings.NewReader(photoCommit), http.StatusNoContent)
 	conflictFailure := `{"items":[{"external_id":"photo","error":"late failure"}]}`
@@ -536,7 +559,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
 		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
-		run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		run.TransferredItems != 1 || run.TransferredBytes != 4 ||
+		run.ConfirmedMovedItems != 1 || run.CASReusedItems != 1 || run.CASReusedBytes != 4 ||
+		run.ResumeReusedItems != 1 || run.ResumeReusedBytes != 2 {
 		t.Fatalf("unexpected execution counters: %+v", run)
 	}
 
@@ -547,7 +572,9 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
 		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
-		run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		run.TransferredItems != 1 || run.TransferredBytes != 4 ||
+		run.ConfirmedMovedItems != 1 || run.CASReusedItems != 1 || run.CASReusedBytes != 4 ||
+		run.ResumeReusedItems != 1 || run.ResumeReusedBytes != 2 {
 		t.Fatalf("idempotent commit changed counters: %+v", run)
 	}
 
@@ -696,4 +723,25 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	if failedItem.State != meta.SourceItemStatePending || failedItem.LastError != "" {
 		t.Fatalf("failed run changed unattempted pending work: %+v", failedItem)
 	}
+	// A cancelled sync reports only observed pending items, not total unseen scope.
+	cancelRunID := uuid.NewString()
+	beginCancel := fmt.Sprintf(`{"run_id":%q,"trigger":"manual"}`, cancelRunID)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs", source.ID),
+		token, strings.NewReader(beginCancel), http.StatusCreated)
+	observeCancel := fmt.Sprintf("/api/v1/sources/%d/runs/%s/observe", source.ID, cancelRunID)
+	request(t, router, http.MethodPost, observeCancel, token, strings.NewReader(
+		`{"items":[{"external_id":"wait-one","kind":"directory","path":"wait-one","size":0},{"external_id":"wait-two","kind":"directory","path":"wait-two","size":0}]}`), http.StatusOK)
+	request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/cancel", source.ID, cancelRunID),
+		token, strings.NewReader(`{}`), http.StatusAccepted)
+	cancelResult := request(t, router, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", source.ID, cancelRunID),
+		token, strings.NewReader(`{"status":"cancelled","complete_inventory":false,"summary":{"scanned_items":2,"new_items":2}}`), http.StatusOK)
+	var cancellation syncRunDTO
+	if err := json.Unmarshal(cancelResult.Body.Bytes(), &cancellation); err != nil {
+		t.Fatal(err)
+	}
+	if cancellation.Status != meta.SyncRunStatusCancelled || cancellation.UnprocessedItems == nil ||
+		*cancellation.UnprocessedItems != 2 || cancellation.FailedItems != 0 {
+		t.Fatalf("cancelled work miscounted: %+v", cancellation)
+	}
+
 }

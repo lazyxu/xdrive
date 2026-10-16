@@ -52,6 +52,7 @@ func (s *Server) tryInstantUploadSession(
 		ExpectedMD5:      req.MD5,
 		ResumeKey:        req.ResumeKey,
 		Status:           meta.UploadStatusFinalized,
+		InstantCAS:       true,
 		ExpiresAt:        time.Now().Add(uploadSessionTTL),
 	}
 
@@ -76,6 +77,7 @@ func (s *Server) tryInstantUploadSession(
 				switch policy {
 				case meta.UploadConflictPolicySkip:
 					session.Status = meta.UploadStatusSkipped
+					session.InstantCAS = false
 					session.ResultNodeID = &conflict.ID
 					return tx.Create(&session).Error
 				case meta.UploadConflictPolicyKeepBoth:

@@ -249,6 +249,9 @@ test('shared run detail exposes live progress and cancellation state', () => {
     active_transfer_total_bytes: 200,
     started_at: '2026-09-27T10:00:00Z',
   })
+  assert.equal(running.syncedItems, undefined, 'never infer success from scanned minus failures')
+  assert.equal(running.unchangedItems, 110)
+  assert.equal(running.ignoredItems, 0)
   assert.equal(running.progress.percent, 50)
   assert.match(running.progress.label, /已处理 4 \/ 已发现 10 项/)
   assert.equal(running.progress.activePath, 'Library/big.mp4 [9]')
@@ -271,6 +274,36 @@ test('shared run detail exposes live progress and cancellation state', () => {
   assert.equal(cancelling.progress.percent, undefined)
   assert.equal(cancelling.progress.label, '正在取消…')
   assert.equal(cancelling.progress.cancelling, true)
+})
+
+test('run history separates confirmed sync and saved bytes from skipped and canceled items', () => {
+  const run = {
+    id: 'run-4', source_id: 1, source_revision: 1, run_number: 4, stats_version: 1,
+    mode: 'sync', trigger: 'manual', status: 'cancelled',
+    scanned_items: 100, scanned_bytes: 10000, ignored_items: 2, ignored_bytes: 100,
+    new_items: 5, new_bytes: 500, changed_items: 0, changed_bytes: 0,
+    moved_items: 3, unchanged_items: 90, unchanged_bytes: 9000,
+    missing_items: 0, missing_bytes: 0, planned_transfer_items: 5,
+    planned_transfer_bytes: 500, processed_transfer_items: 2, processed_transfer_bytes: 200,
+    synced_file_items: 1, synced_directory_items: 1, synced_bytes: 200,
+    created_items: 2, updated_items: 0, skipped_items: 92,
+    transferred_items: 1, transferred_bytes: 80, failed_items: 1,
+    confirmed_moved_items: 1, cas_reused_items: 1, cas_reused_bytes: 100,
+    resume_reused_items: 1, resume_reused_bytes: 20,
+    unprocessed_items: 2, started_at: '2026-09-27T10:00:00Z', finished_at: '2026-09-27T10:01:00Z',
+  }
+  const view = shared.externalSourceRunDetailView(run)
+  assert.equal(view.syncedItems, 2)
+  assert.equal(view.unprocessedItems, 2)
+  assert.equal(view.metrics.find((v) => v.key === 'confirmed_moved').items, 1)
+  assert.equal(view.metrics.find((v) => v.key === 'saved_network').bytes, 120)
+  assert.equal(view.metrics.find((v) => v.key === 'transferred').bytes, 80)
+  assert.equal(shared.externalSourceFailureCategoryLabel('rate_limit'), '限流')
+  assert.equal(shared.externalSourceSkipReasonLabel('ignore_rule'), '匹配忽略规则')
+  assert.equal(shared.externalSourceRunDetailView({ ...run, unprocessed_items: undefined }).unprocessedItems, undefined)
+  const legacy = shared.externalSourceRunDetailView({ ...run, stats_version: 0 })
+  assert.equal(legacy.metrics.some((metric) => metric.key === 'cas_reused'), false, 'do not backfill legacy confirmed CAS from a zero column')
+  assert.equal(legacy.metrics.some((metric) => metric.key === 'saved_network'), false, 'unknown historical network savings must not be displayed as zero')
 })
 
 test('shared trigger action label promotes retries without hiding pending state', () => {
@@ -448,10 +481,11 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   assert.equal(detail.startedAt, '2026-09-26T18:00:00Z')
   assert.equal(detail.finishedAt, '2026-09-26T18:05:00Z')
   assert.equal(detail.durationLabel, '5 分')
-  assert.equal(detail.successItems, 99)
+  assert.equal(detail.syncedItems, undefined, 'older records cannot infer success from scanned minus failed')
   assert.equal(detail.failedItems, 1)
   assert.deepEqual(detail.metrics.map((metric) => metric.key), [
     'scanned',
+    'synced',
     'ignored',
     'new',
     'changed',
@@ -466,7 +500,7 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
     'failed',
   ])
   assert.deepEqual(detail.metrics[0], { key: 'scanned', label: '扫描', items: 100, bytes: 1000 })
-  assert.deepEqual(detail.metrics[12], { key: 'failed', label: '失败', items: 1 })
+  assert.deepEqual(detail.metrics[13], { key: 'failed', label: '失败', items: 1 })
 })
 
 test('shared Synology DSM guide binds the exact Source and keeps secrets out of scheduled task', () => {

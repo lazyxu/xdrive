@@ -51,7 +51,7 @@ func openMirrorTestDB(t *testing.T) *gorm.DB {
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{},
 		&meta.Share{}, &meta.AuditEvent{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{},
-		&meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

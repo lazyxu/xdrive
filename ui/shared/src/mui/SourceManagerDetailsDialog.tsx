@@ -24,6 +24,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
 import { XDriveSourceCollectionItem, XDriveSourceCollectionSummary } from './SourceCollection'
 import { XDriveSourceFailureItem } from './SourceFailureItem'
+import { XDriveSourceRunSkipItem } from './SourceRunSkipItem'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
 import { XDriveSourceRunProgress } from './SourceRunProgress'
 import { XDriveSourceRunSummary } from './SourceRunSummary'
@@ -45,10 +46,19 @@ import type {
   ExternalSourceRow,
   ExternalSourceRun,
   ExternalSourceRunFailure,
+  ExternalSourceRunSkip,
 } from '../external-sources'
 
 export type XDriveSourceRunFailurePage = {
   items: ExternalSourceRunFailure[]
+  page: number
+  hasNext: boolean
+  loading: boolean
+  loaded: boolean
+}
+
+export type XDriveSourceRunSkipPage = {
+  items: ExternalSourceRunSkip[]
   page: number
   hasNext: boolean
   loading: boolean
@@ -75,6 +85,7 @@ export function XDriveSourceDetailsDialog({
   historyLoading,
   historyPageSize,
   runFailurePages,
+  runSkipPages,
   runFailurePageSize,
   failedItems,
   failedItemsLoading,
@@ -84,6 +95,7 @@ export function XDriveSourceDetailsDialog({
   onLoadCollectionItems,
   onLoadRunHistory,
   onLoadRunFailures,
+  onLoadRunSkips,
   onCancelRun,
   onCopyRunID,
   onOpenFailedItems,
@@ -101,6 +113,7 @@ export function XDriveSourceDetailsDialog({
   historyLoading: boolean
   historyPageSize: number
   runFailurePages: Record<string, XDriveSourceRunFailurePage>
+  runSkipPages: Record<string, XDriveSourceRunSkipPage>
   runFailurePageSize: number
   failedItems: ExternalSourceItem[]
   failedItemsLoading: boolean
@@ -110,6 +123,7 @@ export function XDriveSourceDetailsDialog({
   onLoadCollectionItems: (sourceID: number, collectionID: number, page: number) => void | Promise<void>
   onLoadRunHistory: (sourceID: number, page: number) => void | Promise<void>
   onLoadRunFailures: (sourceID: number, runID: string, page: number) => void | Promise<void>
+  onLoadRunSkips: (sourceID: number, runID: string, page: number) => void | Promise<void>
   onCancelRun: (row: ExternalSourceRow) => void | Promise<void>
   onCopyRunID: (runID: string) => void
   onOpenFailedItems: () => void
@@ -259,6 +273,7 @@ export function XDriveSourceDetailsDialog({
                   const runDetail = externalSourceRunDetailView(run)
                   const canCancel = run.status === 'running' && row.latestRun?.id === run.id
                   const failurePage = runFailurePages[run.id]
+                  const skipPage = runSkipPages[run.id]
                   return (
                     <Accordion
                       key={run.id}
@@ -267,6 +282,9 @@ export function XDriveSourceDetailsDialog({
                       onChange={(_, expanded) => {
                         if (expanded && run.failed_items > 0 && !failurePage?.loaded && !failurePage?.loading) {
                           void onLoadRunFailures(row.source.id, run.id, 1)
+                        }
+                        if (expanded && run.skipped_items > 0 && !skipPage?.loaded && !skipPage?.loading) {
+                          void onLoadRunSkips(row.source.id, run.id, 1)
                         }
                       }}
                       sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important', '&:before': { display: 'none' } }}
@@ -305,18 +323,52 @@ export function XDriveSourceDetailsDialog({
                           <XDriveDescriptionItem label="耗时">{runDetail.durationLabel}</XDriveDescriptionItem>
                           <XDriveDescriptionItem label="开始时间">{formatExternalSourceTime(runDetail.startedAt)}</XDriveDescriptionItem>
                           <XDriveDescriptionItem label="结束时间">{runDetail.finishedAt ? formatExternalSourceTime(runDetail.finishedAt) : '进行中'}</XDriveDescriptionItem>
-                          <XDriveDescriptionItem label="成功项">{runDetail.successItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
-                          <XDriveDescriptionItem label="失败项">{runDetail.failedItems.toLocaleString('zh-CN')} 项</XDriveDescriptionItem>
+                          {run.status === 'cancelled' ? (
+                            <XDriveDescriptionItem label="未扫描范围">未知（取消任务不代表完整扫描）</XDriveDescriptionItem>
+                          ) : null}
                           {runDetail.metrics.map((metric) => (
                             <XDriveDescriptionItem key={metric.key} label={metric.label}>
-                              {metric.items.toLocaleString('zh-CN')} 项
-                              {metric.bytes === undefined ? '' : ' · ' + formatBytes(metric.bytes)}
+                              {metric.items === undefined ? (metric.bytes === undefined ? '未知' : formatBytes(metric.bytes)) : `${metric.items.toLocaleString('zh-CN')} 项`}
+                              {metric.items !== undefined && metric.bytes !== undefined ? ' · ' + formatBytes(metric.bytes) : ''}
                             </XDriveDescriptionItem>
                           ))}
                         </XDriveDescriptionGrid>
                         <XDriveStatusAlert tone={runDetail.error ? 'bad' : 'good'} sx={{ mt: 1.5 }}>
                           运行日志：{runDetail.error || '无错误日志'}
                         </XDriveStatusAlert>
+                        {run.skipped_items > 0 ? (
+                          <MuiBox sx={{ mt: 1.5 }}>
+                            <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
+                              本次跳过项（含当时路径和原因）
+                            </MuiTypography>
+                            {skipPage?.loading && !skipPage.loaded ? (
+                              <CircularProgress size={18} />
+                            ) : skipPage?.loaded && skipPage.items.length > 0 ? (
+                              <Stack spacing={0.75}>
+                                {skipPage.items.map((skip) => (
+                                  <XDriveSourceRunSkipItem key={skip.id} skip={skip} />
+                                ))}
+                                <XDrivePaginationControls
+                                  page={skipPage.page}
+                                  pageSize={runFailurePageSize}
+                                  hasNext={skipPage.hasNext}
+                                  loading={skipPage.loading}
+                                  labelPrefix="跳过项"
+                                  onPrevious={() => void onLoadRunSkips(row.source.id, run.id, skipPage.page - 1)}
+                                  onNext={() => void onLoadRunSkips(row.source.id, run.id, skipPage.page + 1)}
+                                />
+                              </Stack>
+                            ) : skipPage?.loaded ? (
+                              <XDriveStatusAlert tone="warning">
+                                该历史运行没有可读取的逐项跳过快照（可能在统计升级前执行或明细已过保留期）。
+                              </XDriveStatusAlert>
+                            ) : (
+                              <MuiTypography variant="caption" color="text.secondary">
+                                展开后加载本次跳过项明细。
+                              </MuiTypography>
+                            )}
+                          </MuiBox>
+                        ) : null}
                         {runDetail.failedItems > 0 ? (
                           <MuiBox sx={{ mt: 1.5 }}>
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
@@ -335,6 +387,7 @@ export function XDriveSourceDetailsDialog({
                                     sizeLabel={formatBytes(failure.size)}
                                     failedAt={failure.failed_at}
                                     error={failure.error}
+                                    category={failure.category}
                                   />
                                 ))}
                                 <XDrivePaginationControls

@@ -2492,6 +2492,14 @@ func (c *agentController) CloudSourceRunFailures(ctx context.Context, sourceID u
 	return cli.SourceRunFailures(ctx, sourceID, runID, limit, offset)
 }
 
+func (c *agentController) CloudSourceRunSkips(ctx context.Context, sourceID uint64, runID string, limit, offset int) ([]client.SourceRunSkip, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return nil, err
+	}
+	return cli.SourceRunSkips(ctx, sourceID, runID, limit, offset)
+}
+
 func (c *agentController) CloudCancelSourceRun(ctx context.Context, sourceID uint64, runID string) (client.SyncRun, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

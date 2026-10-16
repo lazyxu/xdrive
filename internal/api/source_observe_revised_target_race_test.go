@@ -57,7 +57,7 @@ func TestOldRunObserveCannotCreateItemsAfterActiveSourceTargetRevision(t *testin
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{},
-		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

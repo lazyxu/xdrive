@@ -90,9 +90,20 @@ export function XDriveSourceManagerListPage({
           {rows.map((row) => {
             const card = externalSourceCardView(row)
             const sourceName = externalSourceDisplayName(row.source)
-            const stats = card.scannedItems === undefined || card.scannedBytes === undefined
+            const latest = row.latestRun
+            const stats = !latest
               ? '尚无扫描统计'
-              : `${card.scannedItems.toLocaleString('zh-CN')} 项 · ${formatBytes(card.scannedBytes)}${card.failedItems ? ` · 失败 ${card.failedItems}` : ''}`
+              : [
+                  `扫描 ${latest.scanned_items.toLocaleString('zh-CN')} 项 · ${formatBytes(latest.scanned_bytes)}`,
+                  `已同步 ${latest.synced_file_items === undefined || latest.synced_directory_items === undefined
+                    ? '—' : (latest.synced_file_items + latest.synced_directory_items).toLocaleString('zh-CN')}`,
+                  `未变化 ${latest.unchanged_items.toLocaleString('zh-CN')}`,
+                  `忽略 ${latest.ignored_items.toLocaleString('zh-CN')}`,
+                  `失败 ${latest.failed_items.toLocaleString('zh-CN')}`,
+                  ...(latest.status === 'cancelled'
+                    ? [`已发现未处理 ${latest.unprocessed_items === undefined ? '未知' : latest.unprocessed_items.toLocaleString('zh-CN')}`]
+                    : []),
+                ].join(' · ')
 
             return (
               <XDriveSourceSummaryCard

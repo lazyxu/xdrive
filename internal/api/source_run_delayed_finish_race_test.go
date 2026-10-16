@@ -53,7 +53,7 @@ func TestDelayedSourceRunFinishCannotRewindCommittedCumulativeProgress(t *testin
 	sqlDB.SetMaxOpenConns(4)
 	sqlDB.SetMaxIdleConns(0)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{}); err != nil {
+	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}); err != nil {
 		t.Fatal(err)
 	}
 	owner := meta.User{

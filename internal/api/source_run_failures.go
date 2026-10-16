@@ -19,6 +19,7 @@ type sourceRunFailureDTO struct {
 	Path         string    `json:"path"`
 	Size         int64     `json:"size"`
 	Error        string    `json:"error"`
+	Category     string    `json:"category"`
 	FailedAt     time.Time `json:"failed_at"`
 }
 
@@ -68,7 +69,7 @@ func (s *Server) listSourceRunFailures(c *gin.Context) {
 			ID: failure.ID, SourceItemID: failure.SourceItemID,
 			ExternalID: failure.ExternalID, Kind: failure.Kind,
 			Path: failure.Path, Size: failure.Size,
-			Error: failure.Error, FailedAt: failure.FailedAt,
+			Error: failure.Error, Category: sourceFailureCategoryOrClassify(failure.Category, failure.Error), FailedAt: failure.FailedAt,
 		})
 	}
 	c.JSON(http.StatusOK, out)
@@ -80,6 +81,12 @@ const (
 )
 
 func (s *Server) cleanupSourceRunFailureHistory(ctx context.Context) error {
+	if err := s.cleanupSourceRunFailureHistoryRows(ctx); err != nil {
+		return err
+	}
+	return s.cleanupSourceRunSkipHistory(ctx)
+}
+func (s *Server) cleanupSourceRunFailureHistoryRows(ctx context.Context) error {
 	retention := s.SourceRunFailureRetention
 	if retention <= 0 {
 		retention = defaultSourceRunFailureRetention
