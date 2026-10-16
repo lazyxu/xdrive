@@ -241,6 +241,10 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/items/:id/baidu-map-consent", s.getMediaBaiduConsent)
 	authed.PUT("/media/items/:id/baidu-map-consent", s.putMediaBaiduConsent)
 	authed.DELETE("/media/items/:id/baidu-map-consent", s.deleteMediaBaiduConsent)
+	// A3d2m1b2b1: Owner-only explicit index intent, no provider egress or worker.
+	authed.GET("/media/items/:id/baidu-map-index-job", s.getMediaBaiduMapIndexJob)
+	authed.POST("/media/items/:id/baidu-map-index-job", s.postMediaBaiduMapIndexJob)
+	authed.DELETE("/media/items/:id/baidu-map-index-job", s.deleteMediaBaiduMapIndexJob)
 	authed.GET("/media/items/:id/edit", s.getMediaEditRecipe)
 	authed.PUT("/media/items/:id/edit", s.putMediaEditRecipe)
 	authed.DELETE("/media/items/:id/edit", s.deleteMediaEditRecipe)
