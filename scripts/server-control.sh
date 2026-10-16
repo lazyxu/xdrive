@@ -775,10 +775,24 @@ caddy_live_active_config_sha256() {
   fi
 }
 
+# Fence TLS, Docker startup Env and in-memory Caddy JSON to one fixed,
+# healthy container process generation. Compare only immutable Docker ID,
+# StartedAt and PID plus healthy/running bits, NEVER full inspect/Env output.
+# An unchanged generation is not a Caddy config revision/apply receipt: the
+# Caddy process may still reload its in-memory config without restarting.
+caddy_container_generation_sample() {
+  local sample
+  sample="$(timeout 3s docker inspect --format \
+      '{{.Id}}|{{.State.StartedAt}}|{{.State.Pid}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+      xdrive-caddy 2>/dev/null)" || return 1
+  [[ "$sample" =~ ^[0-9a-f]{64}\|[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.+Z-]{9,40}\|[1-9][0-9]{0,7}\|true\|healthy$ ]] || return 1
+  printf '%s\n' "$sample"
+}
+
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
+  local dir tmp observed domain generation_before="" generation_after="" instance_generation_state=unverified state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -799,6 +813,7 @@ caddy_host_refresh() {
     *) state=unknown ;;
   esac
   if [[ "$https_configured" == true && "$state" == healthy ]]; then
+    generation_before="$(caddy_container_generation_sample)" || generation_before=""
     tls_state="$(caddy_local_tls_state "$domain")"
     # The fixed host-configured SNI just passed a real loopback TLS handshake;
     # its lowercase hash is local comparison material, NOT applied revision
@@ -813,13 +828,30 @@ caddy_host_refresh() {
         # Separate read-only probe for the currently loaded in-memory Caddy
         # JSON; all raw JSON and AliDNS secrets remain inside the container.
         live_config_sha256="$(caddy_live_active_config_sha256)"
+        generation_after="$(caddy_container_generation_sample)" || generation_after=""
+        if [[ -n "$generation_before" && "$generation_before" == "$generation_after" ]]; then
+          instance_generation_state=same-instance-local
+        else
+          # A container/process restart (or inability to prove one generation)
+          # invalidates all prior positive local TLS and active-config signals.
+          tls_state=unavailable
+          tls_domain_sha256=""
+          runtime_tls_alignment=unverified
+          live_config_sha256=""
+        fi
+      else
+        # A local TLS success without a valid SNI fingerprint cannot bind
+        # independent observations to a specific fixed running instance.
+        tls_state=unavailable
       fi
+    elif [[ "$tls_state" == verified ]]; then
+      tls_state=unavailable
     fi
   fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }

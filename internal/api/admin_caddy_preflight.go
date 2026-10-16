@@ -28,6 +28,7 @@ type adminCaddyPreflightDTO struct {
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
 	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment"`
 	HostLiveConfigState     string                     `json:"host_live_config_state"`
+	HostInstanceGeneration  string                     `json:"host_instance_generation"`
 	SnapshotStable          bool                       `json:"revision_snapshot_consistent"`
 	IngressChangeRisk       string                     `json:"ingress_change_risk"`
 	ApplySupported          bool                       `json:"apply_supported"`
@@ -134,6 +135,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		DesiredDomainLocalMatch: caddyDesiredDomainLocalMatch(desired, host, observed),
 		HostRuntimeTLSAlignment: caddyObservedRuntimeTLSAlignment(host, observed),
 		HostLiveConfigState:     caddyObservedLiveConfigState(host, observed),
+		HostInstanceGeneration:  caddyObservedInstanceGeneration(host, observed),
 		IngressChangeRisk:       caddyIngressChangeRisk(desired, host, observed),
 		SnapshotStable:          true,
 		ApplySupported:          false, Checks: checks,

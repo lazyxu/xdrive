@@ -807,6 +807,9 @@ export type AgentAdminCaddyHTTPSPreflight = {
   // Fixed container-local Caddy active config API observation only;
   // never desired revision, applied settings, public TLS or rescue proof.
   host_live_config_state?: 'observed-local' | 'unverified'
+  // Fixed Caddy ID + PID + StartedAt were stable across this local probe only.
+  // NOT current Caddyfile revision, administrative apply or WAN TLS evidence.
+  host_instance_generation?: 'same-instance-local' | 'unverified'
   // Advisory only; no HTTPS change or rollback is authorized by this field.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
   // Two revisioned settings remained stable during this one readonly preflight.

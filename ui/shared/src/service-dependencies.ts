@@ -138,6 +138,9 @@ export type XDriveCaddyHTTPSPreflight = {
   // The in-container Caddy admin GET /config/ responded. Raw active JSON
   // and DNS credentials never leave the container; NOT apply proof.
   host_live_config_state?: 'observed-local' | 'unverified'
+  // Observations shared one fixed container/process generation during the
+  // Host Manager probe; not proof a saved revision has been applied.
+  host_instance_generation?: 'same-instance-local' | 'unverified'
   // Advisory only; a missing or unverified value is never a safe-ingress proof.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
   // Only an admin preflight read-window check; NOT actual HTTPS configuration effect.
