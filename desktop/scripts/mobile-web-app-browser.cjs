@@ -728,10 +728,10 @@ function fixtureFor(request, role) {
     return {items:partition.slice(offset,offset+limit),total_count:partition.length,offset,limit,
       timeline_group_sets:{year:group('2026'),month:group('2026-10'),day:group('2026-10-08')}};
   }
-  let match = /^GET \/api\/v1\/nodes\/(1|2)\/children$/.exec(key);
+  let match = /^GET \/api\/v1\/nodes\/(1|2|5)\/children$/.exec(key);
   if (match) {
     queryOnly(url, ['limit', 'offset', 'sort', 'order', 'include_count', 'name', 'name_ci']);
-    const nodes = match[1] === '1' ? rootChildren : folderChildren;
+    const nodes = match[1] === '1' ? rootChildren : match[1] === '2' ? folderChildren : [];
     const sort = url.searchParams.get('sort') || 'name';
     const order = url.searchParams.get('order') || 'asc';
     assert.equal(sort, 'name'); assert.equal(order, 'asc');
@@ -978,6 +978,7 @@ let activeStage = 'startup';
 let page;
 let metadataGate;
 let directoryGate;
+let quietRangeGate;
 let competingFolderGate;
 let galleryAlbumGate;
 let galleryAlbumLibraryGate;
@@ -5248,8 +5249,140 @@ async function filesIos27ChromeAcceptance(origin) {
       process.env.XDRIVE_MOBILE_FILES_P19 === '1') {
     await filesCompetingFolderFirstPageAcceptance(origin);
   }
+  await filesQuietNavigationAcceptance(origin);
 }
 
+
+async function filesQuietNavigationAcceptance(origin) {
+  // Prior exact-revision rename acceptance deliberately changed Node 100.
+  // Restore only this test fixture after those assertions are complete.
+  Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });
+  // This browser runs the original built MUI/React files workspace and its
+  // existing Server-shaped first Range, not a mobile-only mocked component.
+  activeStage = 'user-files-quiet-wide-900';
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'document-001.txt' }).first().waitFor();
+  let notify, release;
+  let started = new Promise(resolve => { notify = resolve; });
+  let pending = new Promise(resolve => { release = resolve; });
+  quietRangeGate = { directoryID: 2, hits: 0, notify, wait: pending };
+  try {
+    await page.evaluate(() => { location.hash = '#/app/files?dir=2'; });
+    await Promise.race([started, new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('wide first range did not start')), 10000))]);
+    await page.waitForTimeout(110);
+    const fast = await page.locator('[aria-label="正在刷新文件"]').count();
+    await page.waitForTimeout(310);
+    const slow = await page.locator('[aria-label="正在刷新文件"]').count();
+    check(activeStage + ': no fast intermediate stripe, but feedback on sustained network wait',
+      quietRangeGate.hits >= 1 && fast === 0 && slow === 1,
+      { fast, slow, heldRange: true });
+    result.samples[activeStage] = { fast, slow, realChromium: true, actualGo: false };
+  } finally {
+    quietRangeGate = null;
+    release();
+  }
+  await page.locator('[data-xdrive-file-explorer-item]').filter({ hasText: 'nested-001.txt' }).first().waitFor();
+  await page.waitForURL(/\/files\?dir=2$/);
+
+  // A genuine zero-count folder. Introduce it only after existing acceptance
+  // has finished so other scenario payload counts remain canonical.
+  const emptyFolder = makeNode(5, '验收空目录', 1, 'dir');
+  rootChildren.splice(1, 0, emptyFolder);
+  allNodes.set(5, emptyFolder);
+  try {
+    activeStage = 'user-files-quiet-empty-mobile-390';
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    const folder = page.locator('[data-mobile-files-folder-id="5"]').first();
+    await folder.waitFor();
+    await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' }).first().waitFor();
+    await settle();
+    const read = () => page.evaluate(() => {
+      const host = document.querySelector('[data-xdrive-mobile-files-scroll]');
+      const chip = document.querySelector('[data-mobile-files-arrangement-status]');
+      const zero = document.querySelector('[data-mobile-files-zero-state]');
+      const bounds = host?.getBoundingClientRect();
+      return {
+        hostCount: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+        hostY: bounds?.y ?? null, hostHeight: bounds?.height ?? null,
+        title: document.querySelector('[data-mobile-files-compact-title]')?.textContent ?? '',
+        rows: document.querySelectorAll('[data-mobile-files-item]').length,
+        empty: zero?.textContent?.trim() ?? '',
+        spinner: !!zero?.querySelector('[role="progressbar"]'),
+        chip: !!chip && getComputedStyle(chip).display !== 'none',
+        frameHeight: document.querySelector('[data-xdrive-mobile-app-header]')?.getBoundingClientRect().height ?? 0,
+      };
+    });
+    const root = await read();
+    started = new Promise(resolve => { notify = resolve; });
+    pending = new Promise(resolve => { release = resolve; });
+    quietRangeGate = { directoryID: 5, hits: 0, notify, wait: pending };
+    try {
+      await folder.tap();
+      await Promise.race([started, new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('empty folder first range did not start')), 10000))]);
+      await page.waitForTimeout(340);
+      const held = await read();
+      check(activeStage + ': old rows and scroll geometry remain during slow empty-folder request',
+        quietRangeGate.hits >= 1 && held.hostCount === 1 &&
+        held.title === root.title && held.rows === root.rows &&
+        held.hostY === root.hostY && held.hostHeight === root.hostHeight &&
+        !held.spinner && !held.chip && held.frameHeight === 52,
+        { root, held });
+    } finally {
+      quietRangeGate = null;
+      release();
+    }
+    await page.getByText('此文件夹为空', { exact: true }).first().waitFor();
+    await page.waitForURL(/\/files\?dir=5$/);
+    await settle();
+    const accepted = await read();
+    check(activeStage + ': genuine empty folder commits without spinner or scroll-owner remount',
+      accepted.rows === 0 && accepted.empty === '此文件夹为空' &&
+      !accepted.spinner && accepted.hostCount === 1 &&
+      accepted.hostY === root.hostY && accepted.hostHeight === root.hostHeight,
+      { root, accepted });
+
+    // The previous empty state must survive a delayed return to the parent.
+    started = new Promise(resolve => { notify = resolve; });
+    pending = new Promise(resolve => { release = resolve; });
+    quietRangeGate = { directoryID: 1, hits: 0, notify, wait: pending };
+    try {
+      await page.getByRole('button', { name: '返回', exact: true }).click();
+      await Promise.race([started, new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('parent first range did not start')), 10000))]);
+      await page.waitForTimeout(340);
+      const held = await read();
+      check(activeStage + ': accepted empty state remains truthful while parent fetch is pending',
+        quietRangeGate.hits >= 1 && held.empty === '此文件夹为空' &&
+        held.title === accepted.title && held.rows === 0 &&
+        !held.spinner && !held.chip && held.hostCount === 1 &&
+        held.hostY === root.hostY && held.hostHeight === root.hostHeight,
+        { accepted, held });
+    } finally {
+      quietRangeGate = null;
+      release();
+    }
+    await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' }).first().waitFor();
+    await page.waitForURL(/\/files\?dir=1$/);
+    const returned = await read();
+    check(activeStage + ': returning root commits in the same fixed viewport',
+      returned.rows > 0 && returned.empty === '' && returned.hostCount === 1 &&
+      returned.hostY === root.hostY && returned.hostHeight === root.hostHeight,
+      { root, returned });
+    result.samples[activeStage] = { root, accepted, returned, realChromium: true,
+      physicalIOS: false, physicalAndroid: false, installedPWA: false };
+  } finally {
+    quietRangeGate = null;
+    const index = rootChildren.indexOf(emptyFolder);
+    if (index >= 0) rootChildren.splice(index, 1);
+    allNodes.delete(emptyFolder.id);
+  }
+}
 
 async function filesNavigationStabilityAcceptance(origin) {
   // Built React/Chromium DOM and original shared REST adapter with controlled
@@ -7337,6 +7470,14 @@ async function main() {
               url.pathname === '/api/v1/media/albums/qa-nav-b/items' &&
               url.searchParams.get('offset') === '0') {
             const gate = galleryAlbumGate;
+            gate.hits += 1;
+            gate.notify();
+            await gate.wait;
+          }
+          if (quietRangeGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/nodes/' + quietRangeGate.directoryID + '/children' &&
+              url.searchParams.get('offset') === '0') {
+            const gate = quietRangeGate;
             gate.hits += 1;
             gate.notify();
             await gate.wait;

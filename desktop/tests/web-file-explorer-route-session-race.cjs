@@ -65,6 +65,7 @@ async function flushAsync() {
 test('Web route-directory same numeric id must be resolved again after account lifecycle changes', async () => {
   const { filename, callback } = extractRouteDirectoryEffect()
   const routedDirectoryRef = { current: null }
+  const internalDirectoryRouteRef = { current: null }
   let navigationGeneration = 0
   const nodeCalls = []
   const navigations = []
@@ -83,6 +84,7 @@ test('Web route-directory same numeric id must be resolved again after account l
     current: { id: 10 },
     navigationSessionStorageKey: 'files:' + account,
     routedDirectoryRef,
+    internalDirectoryRouteRef,
     api: {
       node: async () => {
         nodeCalls.push(account)

@@ -470,25 +470,8 @@ export default function MobileFiles(props: Props) {
   // than creating a second mobile-only empty/error state component.
   const searchCountPending = Boolean(props.searchActive &&
     props.searchSummary?.resultCount === null && !props.searchSummary?.error)
-  // iOS-like folder navigation never overlays the last committed directory
-  // with a time-triggered "loading" chip. The shared Web controller already
-  // preserves its rows and scroll until the authenticated first page commits.
-  // Keep delayed feedback only for explicit Search and Trash network reads.
-  const showRangeLoading = props.loading && (props.searchActive || props.trashActive)
-  const [showArrangementLoading, setShowArrangementLoading] = useState(false)
-  useEffect(() => {
-    if (!showRangeLoading) {
-      setShowArrangementLoading(false)
-      return
-    }
-    const timer = window.setTimeout(() => setShowArrangementLoading(true), 160)
-    return () => window.clearTimeout(timer)
-  }, [showRangeLoading])
-
-  // An *already accepted* empty folder is content, not an unresolved initial
-  // request. While its next navigation is pending, retain that honest empty
-  // message instead of briefly replacing it with a cold-start spinner.
-  // The account+directory scope prevents a previous folder or login leaking.
+  // An accepted empty directory is real content. Never overwrite its message
+  // or show a new spinner while a later first Range is still pending.
   const acceptedEmptyDirectoryRef = useRef<string | null>(null)
   const emptyDirectoryKey = section === 'browse' && !browseHome &&
     !props.searchActive && !props.trashActive && directoryID !== null
@@ -503,7 +486,38 @@ export default function MobileFiles(props: Props) {
   const keepAcceptedEmptyDirectory = totalCount === 0 &&
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
-  const zeroStateLoading = (props.loading && !keepAcceptedEmptyDirectory) || searchCountPending
+
+  // Normal folder transitions retain committed items, title and viewport and
+  // must not show loading chrome. A cold, not-yet-accepted empty directory
+  // (including a restored root ID), Search and Trash can signal real network
+  // latency after 300ms. Thumbnail/sparse range loading is independent.
+  const coldUnconfirmedBrowse = showDirectory && !props.searchActive &&
+    !props.trashActive && totalCount === 0 && !keepAcceptedEmptyDirectory &&
+    !props.virtualCollection
+  const showRangeLoading = (props.loading || searchCountPending) &&
+    (props.searchActive || props.trashActive || coldUnconfirmedBrowse)
+  const loadFeedbackScope = props.searchActive
+    ? `search:${props.lifecycleKey}:${props.searchSummary?.query ?? ''}:${props.virtualCollection?.interactionKey ?? ''}`
+    : props.trashActive ? `trash:${props.lifecycleKey}`
+      : `cold:${props.lifecycleKey}:${directoryID ?? 0}`
+  const [delayedLoadScope, setDelayedLoadScope] = useState<string | null>(null)
+  useEffect(() => {
+    if (!showRangeLoading) {
+      setDelayedLoadScope(null)
+      return
+    }
+    const timer = window.setTimeout(() => setDelayedLoadScope(loadFeedbackScope), 300)
+    return () => window.clearTimeout(timer)
+  }, [showRangeLoading, loadFeedbackScope])
+  const showArrangementLoading = showRangeLoading && delayedLoadScope === loadFeedbackScope
+
+  const zeroStatePending = (props.loading && !keepAcceptedEmptyDirectory) || searchCountPending
+  const zeroStateLoading = zeroStatePending && showArrangementLoading
+  // Do not insert a padded zero-state loading panel for a request that
+  // finishes before the next meaningful frame. An accepted empty directory
+  // is content and remains visible throughout an uncommitted navigation.
+  const showZeroState = totalCount === 0 &&
+    (!zeroStatePending || keepAcceptedEmptyDirectory || zeroStateLoading)
   const zeroStateMessage = zeroStateLoading
     ? props.searchActive ? '正在查询…' : '正在加载文件…'
     : props.searchActive
@@ -2145,10 +2159,10 @@ export default function MobileFiles(props: Props) {
                 sx={{ position: 'absolute', top: 117, right: 12, zIndex: 2,
                   pointerEvents: 'none', borderRadius: '999px',
                   bgcolor: 'background.paper', boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
-                  px: 1.25, py: 0.5, display: showRangeLoading && showArrangementLoading ? 'block' : 'none' }}>
+                  px: 1.25, py: 0.5, display: showRangeLoading && showArrangementLoading && totalCount > 0 ? 'block' : 'none' }}>
                 正在加载… · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
-              {totalCount === 0 ? (
+              {showZeroState ? (
                 <Box data-mobile-files-zero-state>
                   <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
                 </Box>

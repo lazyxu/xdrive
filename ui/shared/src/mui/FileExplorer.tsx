@@ -1479,6 +1479,26 @@ export function XDriveFileExplorer({
   const logicalItemCount = virtualCollectionEnabled
     ? Math.max(0, Math.trunc(virtualCollection.itemCount) || 0)
     : visibleItems.length
+  // An already-accepted empty folder is content, not a transient loader.
+  // The shared controller keeps its previous count/identity while a new
+  // counted first Range is pending; defer cold/refresh feedback by 300ms.
+  const acceptedEmptyScopeRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (logicalItemCount > 0) acceptedEmptyScopeRef.current = null
+    else if (!loading) acceptedEmptyScopeRef.current = interactionScopeKey
+  }, [interactionScopeKey, loading, logicalItemCount])
+  const keepAcceptedEmpty = logicalItemCount === 0 &&
+    acceptedEmptyScopeRef.current === interactionScopeKey
+  const [delayedLoadingScope, setDelayedLoadingScope] = useState<string | null>(null)
+  useEffect(() => {
+    if (!loading) {
+      setDelayedLoadingScope(null)
+      return
+    }
+    const timer = globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)
+    return () => globalThis.clearTimeout(timer)
+  }, [interactionScopeKey, loading])
+  const showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey
   const groupIndex = virtualCollection?.groups ?? []
   const groupedDetailsLayout = useMemo(
     () => xDriveCreateFileExplorerGroupLayout({
@@ -6356,8 +6376,8 @@ export function XDriveFileExplorer({
             onOpenFile={(item) => (onColumnOpenItem ?? onOpenItem)?.(item)}
             onItemContextMenu={openItemContextMenu}
           />
-        ) : loading && logicalItemCount === 0 ? (
-          <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
+        ) : loading && logicalItemCount === 0 && !keepAcceptedEmpty ? (
+          showDelayedLoading ? <XDriveStatePanel variant="plain" loading message="正在加载文件…" /> : null
         ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
         ) : viewMode === 'details' ? (
@@ -6690,7 +6710,7 @@ export function XDriveFileExplorer({
           />
         ) : null}
 
-        {loading && logicalItemCount > 0 ? (
+        {showDelayedLoading && logicalItemCount > 0 ? (
           <Box
             aria-label="正在刷新文件"
             sx={{
