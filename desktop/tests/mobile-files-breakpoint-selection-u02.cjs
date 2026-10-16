@@ -59,3 +59,25 @@ test('U02 original built-Web Chrome checks unsubmitted rename draft across 899â†
   assert.ok(block.includes('returned.dialogs === 1 && returned.name === draft'), 'compact must restore the same draft')
   assert.ok(!block.includes("route.fulfill({ status: 200"), 'no forged mutation success')
 })
+
+test('U02 real built-Web Chrome captures focused unsent Search draft/caret across 899â†”900', () => {
+  const markers = [
+    'async function filesU02SearchFocusBreakpointAcceptance(origin)',
+    "startsWith('test/mobile-files-ios27-real-chrome-u02-search-focus-')",
+    'await filesU02SearchFocusBreakpointAcceptance(origin)',
+    "input.setSelectionRange(2, 5)",
+    "page.setViewportSize({ width: 900, height: 700 })",
+    "page.setViewportSize({ width: 899, height: 700 })",
+    "wide.draft === draft && wide.focus",
+    "returned.draft === draft && returned.focus",
+    'countSearchRequests() === initialSearchCount',
+  ]
+  for (const token of markers) assert.ok(source.includes(token), 'U02 original browser first-red missing: ' + token)
+  assert.ok(workflow.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')"))
+  const start = source.indexOf('async function filesU02SearchFocusBreakpointAcceptance(origin)')
+  const end = source.indexOf('async function filesCommittedFolderBreakpointResumeAcceptance(origin)', start)
+  assert.ok(end > start)
+  const focused = source.slice(start, end)
+  assert.ok(!focused.includes('route.fulfill('), 'no fake search API or forced success')
+  assert.ok(!focused.includes('page.keyboard.press('), 'do not synthesize unrelated navigation commands')
+})
