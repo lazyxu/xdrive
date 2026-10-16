@@ -28,6 +28,12 @@ LABEL org.opencontainers.image.source="https://github.com/lazyxu/xdrive" \
       org.opencontainers.image.description="xDrive Web + Caddy edge with AliDNS DNS-01 support" \
       org.opencontainers.image.version="$VERSION"
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+# Caddy's upstream final image may retain cap_net_bind_service=+ep on this
+# executable. A capability-dumb file cannot exec with cap_drop=ALL (EPERM),
+# even on rescue's unprivileged :8080. Strip the unnecessary file capability
+# after COPY; the existing root-run primary Caddy binds 80/443 with Docker's
+# normal process capabilities. Do not weaken the nonroot rescue sandbox.
+RUN setcap -r /usr/bin/caddy && test -z "$(getcap /usr/bin/caddy)"
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
 COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
