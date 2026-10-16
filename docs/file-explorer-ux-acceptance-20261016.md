@@ -1,5 +1,65 @@
 # xDrive Files UX acceptance audit · 2026-10-16
 
+## Current verified follow-up snapshot · 2026-10-16 (post U09-C merge)
+
+**Evidence boundary:** This section reconciles the historical first-red/candidate notes below with
+GitHub's actual merged state and exact-work-HEAD CI. The older audit's master and
+"pending" prose are preserved as historical observations, **not** the current status.
+Originally audited `master@ca30918595da86f8616c5afa4e9eb91911b46de3`; rebuilt without unrelated changes on `master@d997552608de7ed406803bc9163e2546c23caa56`. This follow-up
+changes **only this acceptance ledger**, not FileExplorer source, REST, Agent, Server,
+virtualization, PWA cache or workflow gates. The current phase is **U09-C merged /
+remaining real-server, native-device and AT acceptance**; U09-D is not implemented.
+
+| Scope | Verified GitHub merge and exact-work-HEAD CI | Remaining independent acceptance |
+| --- | --- | --- |
+| F02 | [#1766](https://github.com/lazyxu/xdrive/pull/1766) merged; [CI #38844280786](https://github.com/lazyxu/xdrive/actions/runs/38844280786) success | Live NVDA/VoiceOver/TalkBack and true sparse 100k collection |
+| F03/F04 + U03 | [#1769](https://github.com/lazyxu/xdrive/pull/1769) merged; [CI #38846951712](https://github.com/lazyxu/xdrive/actions/runs/38846951712) success; [#1784](https://github.com/lazyxu/xdrive/pull/1784) merged | Real permission/selected-count feedback, keyboard/long press, high DPI |
+| U01 | [#1789](https://github.com/lazyxu/xdrive/pull/1789) merged; [CI #38860447917](https://github.com/lazyxu/xdrive/actions/runs/38860447917) success | Actual 403/timeout/abort-wire/Back/Forward and visible layout |
+| U02-A/B/C | [#1791](https://github.com/lazyxu/xdrive/pull/1791), [#1819](https://github.com/lazyxu/xdrive/pull/1819), [#1827](https://github.com/lazyxu/xdrive/pull/1827) merged; exact-head CI [#38866722027](https://github.com/lazyxu/xdrive/actions/runs/38866722027), [#38878240691](https://github.com/lazyxu/xdrive/actions/runs/38878240691), [#38889121074](https://github.com/lazyxu/xdrive/actions/runs/38889121074) successful | OS keyboard, IME, dialog/focus and anchored scrolling on real 899↔900 devices |
+| U05/U06/U08 | [#1802](https://github.com/lazyxu/xdrive/pull/1802), [#1811](https://github.com/lazyxu/xdrive/pull/1811), [#1803](https://github.com/lazyxu/xdrive/pull/1803) merged; CI [#38867559110](https://github.com/lazyxu/xdrive/actions/runs/38867559110), [#38872176304](https://github.com/lazyxu/xdrive/actions/runs/38872176304), [#38868671774](https://github.com/lazyxu/xdrive/actions/runs/38868671774) successful | Authenticated Server 403/409/revision/timeout and device focus/return |
+| U09-A/B/C | [#1842](https://github.com/lazyxu/xdrive/pull/1842), [#1846](https://github.com/lazyxu/xdrive/pull/1846), [#1852](https://github.com/lazyxu/xdrive/pull/1852) merged; CI [#38896207409](https://github.com/lazyxu/xdrive/actions/runs/38896207409), [#38902503868](https://github.com/lazyxu/xdrive/actions/runs/38902503868), [#38905127667](https://github.com/lazyxu/xdrive/actions/runs/38905127667) successful | Same Node's *new* ordinal after sort needs authoritative identity lookup; real 100k Server, Columns, physical FPS/CLS |
+| U10/M03/M07 | [#1777](https://github.com/lazyxu/xdrive/pull/1777), [#1838](https://github.com/lazyxu/xdrive/pull/1838), [#1808](https://github.com/lazyxu/xdrive/pull/1808) merged; CI [#38851816532](https://github.com/lazyxu/xdrive/actions/runs/38851816532), [#38891421189](https://github.com/lazyxu/xdrive/actions/runs/38891421189), [#38870644944](https://github.com/lazyxu/xdrive/actions/runs/38870644944) successful | RAW/Live media, OS gesture/swipe, physical section restoration |
+
+**Full-suite verification:** U09-C [CI #38905127667](https://github.com/lazyxu/xdrive/actions/runs/38905127667)
+and U02-C [CI #38889121074](https://github.com/lazyxu/xdrive/actions/runs/38889121074)
+each returned 76 jobs (25 success, 51 conditional skips, 0 failures),
+including `single-commit` and `final-gate` success. Skipped conditional workloads
+and simulation cannot be reported as completed real 100k / hardware tests.
+Related previously merged Files PRs were closed at this snapshot; targeted
+branch searches found no matching old F02/F03/F04/U01/U09-C/M03 branches.
+No branch was deleted in this review, and unrelated open PRs were not touched.
+
+**Acceptance classification by supplied ID (do not conflate these levels):**
+
+- **Merged implementation and selected automated tests, not device sign-off:**
+  F02–F04; U01–U03, U05–U10, U14; M03, M07.
+  U07 is covered by the existing Unicode/RTL fix;
+  U14 by shared IME guards. The ledger rows below retain their additional edge cases.
+- **Existing source contract inspected; required live/visual scenario still open:**
+  U04 (durable queue vs terminal Server receipt), U11 (Inspector screen-reader hierarchy),
+  U12 (deep/short-height destination picker), U13 (retry/undo/durable-task behavior),
+  M01–M02, M04–M06, M08–M10 and D01–D07.
+  Do not claim these fail simply because native hardware is unavailable.
+- **P01–P09:** browser/Node/Chromium test infrastructure exists, but actual iOS 27,
+  Android Installed and desktop installed PWA launch, 1–4 GiB *OS-saved* SHA-256,
+  foreground/background upload recovery, private SW storage inspection and update
+  protection remain **NOT RUN** on real installations. Preserve the seven-platform
+  S5 matrix and **NO-GO** in [PWA S5 acceptance](pwa-s5-acceptance.md).
+- **U09-D remaining functional design:** preserve exact original selected Node
+  through a *changed* authoritative Server sort/group requires a stable ID-to-new-index
+  lookup; do not guess the new ordinal from the previous offset, scan the entire
+  100k collection client-side, or rewrite Server ordering. Existing U09-C
+  correctly prevents attaching a selected ID to a replacement ordinal.
+
+**Next bounded work (not yet delivered):** independently exercise real
+authorization/revision and task lifecycle (U01/U04/U05/U06/U12/U13),
+then same-identity reindex with an authoritative Server capability (U09-D),
+then physical 899/900, iOS 27 Files 1:1, NVDA/VoiceOver, Windows CfAPI and
+all seven S5 installed/browser platforms. Preserve the 52px App Frame,
+900px breakpoint, separate Files Back vs browser/Viewer Back,
+Web/Mobile shared REST/controller/ranges and Desktop native default Open.
+Do not replace an unavailable native check with Android user-agent emulation.
+
 ## Evidence level and scope
 
 Provider: GitHub `lazyxu/xdrive`. Fixed audited baseline:
