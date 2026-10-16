@@ -74,6 +74,7 @@ type VerifyReport struct {
 	HashMismatches     []HashMismatch             `json:"hash_mismatches"`
 	IgnoredTemps       int                        `json:"ignored_temporary_files"`
 	IgnoredDerived     int                        `json:"ignored_derived_files"`
+	IgnoredCASLocks    int                        `json:"ignored_internal_lock_files"`
 }
 
 func (r VerifyReport) OK() bool {
@@ -276,6 +277,13 @@ func VerifyWithContext(
 			report.IgnoredTemps++
 			return nil
 		}
+		if isCASLifecycleLockFile(key) && info.Size() == 0 {
+			// These fixed shard files are OS lock inodes, not user content.
+			// Do not unlink them: another Server process may hold a lease.
+			// Ignore only exact, empty 00..ff.lock direct children.
+			report.IgnoredCASLocks++
+			return nil
+		}
 		if isDerivedStorageKey(key) {
 			// .xdrive-media contains generated previews such as thumbnails.
 			// They are disposable caches, not canonical file/version blobs, so
@@ -447,4 +455,24 @@ func cleanStorageKey(key string) (string, error) {
 func isDerivedStorageKey(key string) bool {
 	key = filepath.ToSlash(strings.TrimSpace(key))
 	return key == ".xdrive-media" || strings.HasPrefix(key, ".xdrive-media/")
+}
+
+// isCASLifecycleLockFile recognizes only direct 00..ff.lock children of
+// the fixed CAS lifecycle shard directory; unexpected files remain orphans.
+func isCASLifecycleLockFile(key string) bool {
+	prefix := storage.CASLifecycleLockDir + "/"
+	if !strings.HasPrefix(key, prefix) {
+		return false
+	}
+	name := strings.TrimPrefix(key, prefix)
+	if len(name) != len("ff.lock") || name[2:] != ".lock" {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		c := name[i]
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
 }

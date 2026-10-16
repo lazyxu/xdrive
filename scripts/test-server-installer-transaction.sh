@@ -9,7 +9,7 @@ cleanup() {
   local status=$?
   if [[ "$status" -ne 0 ]]; then
     echo "server transactional upgrade test failed (exit $status)" >&2
-    for file in locked.out locked.err upgrade.out upgrade.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
+    for file in locked.out locked.err upgrade.out upgrade.err cas-lock.out cas-lock.err cas-real-error.out cas-real-error.err stall.out stall.err pull-fail.out pull-fail.err state/docker-calls state/server-ps-count state/backup-args state/backup-images; do
       if [[ -f "$TMP/$file" ]]; then
         echo "===== $file =====" >&2
         cat "$TMP/$file" >&2 || true
@@ -126,6 +126,16 @@ fi
 if [[ "${TEST_BACKUP_LEGACY_READY_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" != "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
   echo "xDrive consistency verification failed; backup aborted." >&2
   echo '"'"'{"orphans":[{"storage_key":".xdrive-ready-2918308328","size":0}],"hash_mismatches":null}'"'"' >&2
+  exit 1
+fi
+if [[ "${TEST_BACKUP_LEGACY_CAS_LOCK_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" != "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
+  echo "xDrive consistency verification failed; backup aborted." >&2
+  printf "%s\n" "{\"orphans\":[{\"storage_key\":\".xdrive-cas-lifecycle-locks/ff.lock\",\"size\":0}],\"ignored_temporary_files\":34,\"ignored_derived_files\":3792,\"hash_mismatches\":null}" >&2
+  exit 1
+fi
+if [[ "${TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL:-0}" == "1" && "${XD_SERVER_IMAGE:-}" == "ghcr.io/lazyxu/xdrive-server:sha-0123456789ab" ]]; then
+  echo "xDrive consistency verification failed; backup aborted." >&2
+  printf "%s\n" "{\"orphans\":[{\"storage_key\":\"unreferenced-user-data.bin\",\"size\":8192}],\"hash_mismatches\":null}" >&2
   exit 1
 fi
 dir="$output/xdrive-backup-test"
@@ -360,6 +370,56 @@ set -e
 grep -q 'current deployment verifier rejected storage readiness probe; retrying the pre-upgrade backup with target verifier' "$TMP/ready.err"
 grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/ready.err"
 grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/ready-state/backup-images"
+
+# Legacy verifier incorrectly reports permanent 00..ff.lock shard files
+# as orphans. The target must independently verify the same snapshot.
+cp -a "$TMP/config" "$TMP/cas-lock-config"
+mkdir -p "$TMP/cas-lock-state"
+set +e
+TEST_STATE="$TMP/cas-lock-state" \
+TEST_BACKUP_LEGACY_CAS_LOCK_FAIL=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/cas-lock-config" \
+XD_SHELL_RC_PATH="$TMP/cas-lock-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" --channel master >"$TMP/cas-lock.out" 2>"$TMP/cas-lock.err"
+cas_lock_status=$?
+set -e
+[[ "$cas_lock_status" -eq 0 ]]
+grep -q 'current deployment verifier rejected CAS lifecycle shard locks; retrying the pre-upgrade backup with target verifier' "$TMP/cas-lock.err"
+grep -q 'target verifier accepted the snapshot; continuing pre-upgrade backup' "$TMP/cas-lock.err"
+grep -q '^ghcr.io/lazyxu/xdrive-server:sha-0123456789ab$' "$TMP/cas-lock-state/backup-images"
+if grep -q -- '--allow-inconsistent' "$TMP/cas-lock-state/backup-args"; then
+  echo "CAS lock compatibility retry must not bypass storage verification" >&2
+  exit 1
+fi
+
+# A real orphan found by the target must still abort and roll back even
+# when the legacy report contained a recognizable CAS shard lock.
+cp -a "$TMP/config" "$TMP/cas-real-error-config"
+mkdir -p "$TMP/cas-real-error-state"
+set +e
+TEST_STATE="$TMP/cas-real-error-state" \
+TEST_BACKUP_LEGACY_CAS_LOCK_FAIL=1 \
+TEST_BACKUP_TARGET_REAL_ORPHAN_FAIL=1 \
+TEST_HEALTH_OK=1 \
+PATH="$TMP/bin:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/cas-real-error-config" \
+XD_SHELL_RC_PATH="$TMP/cas-real-error-config.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+bash "$INSTALLER" --channel master >"$TMP/cas-real-error.out" 2>"$TMP/cas-real-error.err"
+cas_real_error_status=$?
+set -e
+[[ "$cas_real_error_status" -ne 0 ]]
+grep -q 'current deployment verifier rejected CAS lifecycle shard locks' "$TMP/cas-real-error.err"
+grep -q 'xDrive pre-upgrade backup failed; automatic rollback will reopen the previous deployment' "$TMP/cas-real-error.err"
+grep -q 'UPGRADE FAILED -> ROLLBACK SUCCESS' "$TMP/cas-real-error.err"
+if grep -q 'target verifier accepted the snapshot' "$TMP/cas-real-error.err"; then
+  echo "genuine storage orphan bypassed by CAS compatibility check" >&2
+  exit 1
+fi
 
 grep -q 'detailed Docker output is captured' "$TMP/upgrade.out"
 if grep -q '"current":1024' "$TMP/upgrade.out" || grep -q '"current":1024' "$TMP/upgrade.err"; then

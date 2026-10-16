@@ -112,6 +112,16 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// 256 persistent, zero-byte CAS lifecycle lock inodes are internal state.
+	casLockDir := filepath.Join(root, storage.CASLifecycleLockDir)
+	if err := os.MkdirAll(casLockDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for shard := 0; shard < 256; shard++ {
+		if err := os.WriteFile(filepath.Join(casLockDir, fmt.Sprintf("%02x.lock", shard)), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	uploadTemp := filepath.Join(root, ".xdrive-uploads", "session", "000000")
 	if err := os.MkdirAll(filepath.Dir(uploadTemp), 0o750); err != nil {
 		t.Fatal(err)
@@ -128,7 +138,7 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 		t.Fatal("inconsistent storage reported OK")
 	}
 	if report.ReferencedFiles != 4 || report.ReferencedVersions != 1 || report.BlobFiles != 5 ||
-		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 {
+		report.IgnoredTemps != 3 || report.IgnoredDerived != 1 || report.IgnoredCASLocks != 256 {
 		t.Fatalf("unexpected summary: %+v", report)
 	}
 	if len(report.Missing) != 1 || report.Missing[0].NodeID != missingID {
@@ -162,6 +172,53 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, storage.TempLifecycleLockFile), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Strict negative controls: nonzero or noncanonical lock-looking files
+	// must remain real orphans. Never silently bless an entire directory.
+	badCAS := []struct {
+		key  string
+		body []byte
+	}{
+		{storage.CASLifecycleLockDir + "/ff.lock", []byte("unexpected")},
+		{storage.CASLifecycleLockDir + "/gg.lock", nil},
+		{storage.CASLifecycleLockDir + "/00.lock.bak", nil},
+		{storage.CASLifecycleLockDir + "/nested/00.lock", nil},
+	}
+	for _, tc := range badCAS {
+		full := filepath.Join(root, filepath.FromSlash(tc.key))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, tc.body, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unsafeCAS, err := Verify(db, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unsafeCAS.IgnoredCASLocks != 255 {
+		t.Fatalf("nonzero CAS shard lock was incorrectly ignored: %+v", unsafeCAS)
+	}
+	for _, tc := range badCAS {
+		found := false
+		for _, orphan := range unsafeCAS.Orphans {
+			if orphan.StorageKey == tc.key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("unsafe CAS lock %q was not an orphan: %+v", tc.key, unsafeCAS.Orphans)
+		}
+		full := filepath.Join(root, filepath.FromSlash(tc.key))
+		if tc.key == storage.CASLifecycleLockDir+"/ff.lock" {
+			if err := os.WriteFile(full, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		} else if err := os.Remove(full); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if len(report.HashMismatches) != 1 || report.HashMismatches[0].NodeID != hashID {
 		t.Fatalf("hash mismatches=%+v want node=%d", report.HashMismatches, hashID)
 	}
@@ -190,8 +247,8 @@ func TestVerifyDetectsMissingMismatchAndOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !report.OK() {
-		t.Fatalf("repaired storage not OK: %+v; okID=%d", report, okID)
+	if !report.OK() || report.IgnoredCASLocks != 256 {
+		t.Fatalf("repaired storage with 256 valid shard locks not OK: %+v; okID=%d", report, okID)
 	}
 }
 
@@ -317,5 +374,27 @@ func TestHashFileWithContextRejectsCancelledWork(t *testing.T) {
 	_, err := hashFileWithContext(ctx, path)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("hash error=%v want context.Canceled", err)
+	}
+}
+
+func TestIsCASLifecycleLockFileStrictShape(t *testing.T) {
+	for _, tc := range []struct {
+		key string
+		ok  bool
+	}{
+		{storage.CASLifecycleLockDir + "/00.lock", true},
+		{storage.CASLifecycleLockDir + "/af.lock", true},
+		{storage.CASLifecycleLockDir + "/ff.lock", true},
+		{storage.CASLifecycleLockDir + "/FF.lock", false},
+		{storage.CASLifecycleLockDir + "/gg.lock", false},
+		{storage.CASLifecycleLockDir + "/fff.lock", false},
+		{storage.CASLifecycleLockDir + "/ff.lock.bak", false},
+		{storage.CASLifecycleLockDir + "/nested/ff.lock", false},
+		{storage.CASLifecycleLockDir + "-copy/ff.lock", false},
+		{"ff.lock", false},
+	} {
+		if got := isCASLifecycleLockFile(tc.key); got != tc.ok {
+			t.Errorf("isCASLifecycleLockFile(%q)=%t want %t", tc.key, got, tc.ok)
+		}
 	}
 }

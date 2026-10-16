@@ -97,6 +97,8 @@ The canonical categories are:
 | `readiness_temp` | storage readiness-probe temporary files | `.xdrive-ready-*` | only after safety age |
 | `unclassified` | unknown xDrive-reserved file data | file-data root | never automatically |
 
+**Persistent CAS lifecycle lock shards (not user files or disposable cache).** The local store creates up to 256 fixed zero-byte OS lease inodes under `.xdrive-cas-lifecycle-locks/00.lock` through `.xdrive-cas-lifecycle-locks/ff.lock` for cross-process CAS read/write/delete fencing. **Never manually remove these files during an upgrade or cleanup:** unlinking a lock inode still open by another Server permits broken cross-process exclusion. `storage verify` ignores only regular, **zero-byte**, direct children named exactly two lowercase hex digits plus `.lock`; a nonzero lock, unexpected filename, nested file or ordinary orphan must still be reported. The machine-readable report counts accepted shards separately in `ignored_internal_lock_files`, without conflating them with `ignored_temporary_files` or `ignored_derived_files`. During upgrade, a legacy verifier may wrongly report shard locks as orphans. The installer may re-run the **entire pre-upgrade backup with the target Server verifier** when a shard lock path appears in the legacy failure report, but real missing/size/hash/refcount/orphan errors must fail the target check and keep rollback safe. Neither `--allow-inconsistent` nor deleting CAS shard locks is an acceptable workaround.
+
 The sum of these physical entries is `storage_root_bytes`.
 
 This number, not “CAS + legacy + staging”, is the authoritative xDrive physical usage for the file-data filesystem. It therefore includes `.xdrive-media` and any otherwise missed xDrive-owned files.
