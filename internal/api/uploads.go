@@ -569,6 +569,12 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		if err := s.reserveUploadCapacity(c.Request.Context(), tx, "", requiredReservation); err != nil {
 			return err
 		}
+		// Publish reused chunk references under the same canonical CAS hash
+		// lock used by physical GC. Recheck the live Blob AFTER the lock;
+		// precomputed hashes alone cannot protect an old source from GC.
+		if err := lockReusableUploadCASSourceTx(tx, reuseSource, reusable); err != nil {
+			return err
+		}
 		if err := tx.Create(&session).Error; err != nil {
 			return err
 		}
@@ -577,6 +583,10 @@ func (s *Server) createUploadSession(c *gin.Context) {
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errReusedUploadSourceChanged) {
+			fail(c, http.StatusConflict, "reused upload source changed; retry without reuse")
+			return
+		}
 		if writeQuotaError(c, err) {
 			return
 		}
