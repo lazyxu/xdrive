@@ -2459,6 +2459,15 @@ func (c *agentController) CloudDeviceBackupOverviewPage(ctx context.Context, lim
 	return cli.DeviceBackupOverviewPage(ctx, limit, afterDeviceID)
 }
 
+// This narrow optional read never gives a Desktop renderer Source/Root authority.
+func (c *agentController) CloudDeviceBackupFoldersPage(ctx context.Context, deviceID string, limit int, afterSourceID uint64) (client.DeviceBackupFolderPage, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.DeviceBackupFolderPage{}, err
+	}
+	return cli.DeviceBackupFoldersPage(ctx, deviceID, limit, afterSourceID)
+}
+
 func (c *agentController) CloudDeviceBackupRuns(ctx context.Context, sourceID uint64, limit, offset int) (client.DeviceBackupRunPage, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

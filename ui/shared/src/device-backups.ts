@@ -52,6 +52,13 @@ export interface XDriveDeviceBackupRunPage {
   items: XDriveDeviceBackupRun[]
   has_more: boolean
 }
+
+// Additive owner-redacted folder page; never an unrestricted Source DTO.
+export interface XDriveDeviceBackupFolderPage {
+  folders: XDriveDeviceBackupFolder[]
+  has_more: boolean
+  next_after_source_id: number
+}
 export interface XDriveDeviceBackupDataSource {
   // Optional Desktop-only verified installation identity. No Root authority.
   verifiedLocalDevice?(): Promise<string | null>

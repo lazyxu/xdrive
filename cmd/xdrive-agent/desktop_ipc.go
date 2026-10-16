@@ -12,6 +12,7 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -768,6 +769,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("GET /v1/media/live-photo-motion-ticket", h.mediaLivePhotoMotionTicket)
 	mux.HandleFunc("GET /v1/sources", h.sources)
 	mux.HandleFunc("GET /v1/device-backups", h.deviceBackups)
+	mux.HandleFunc("GET /v1/device-backups/folders", h.deviceBackupFolders)
 	mux.HandleFunc("GET /v1/device-backups/local-device", h.deviceBackupLocalDevice)
 	mux.HandleFunc("GET /v1/device-backups/local-drafts", h.deviceBackupLocalDrafts)
 	mux.HandleFunc("GET /v1/device-backups/local-source", h.localBoundBackupSettings)
@@ -6232,6 +6234,11 @@ type desktopIPCDeviceBackupPager interface {
 	CloudDeviceBackupOverviewPage(context.Context, int, string) (client.DeviceBackupOverview, error)
 }
 
+// Optional, strictly redacted read port. Old Agents remain safe/read-only.
+type desktopIPCDeviceBackupFolderPager interface {
+	CloudDeviceBackupFoldersPage(context.Context, string, int, uint64) (client.DeviceBackupFolderPage, error)
+}
+
 // Local identity is queried without any caller-supplied ID or Root path.
 // An Agent that lacks a verified OS credential must fail closed.
 type desktopIPCDeviceBackupLocalVerifier interface {
@@ -6304,6 +6311,57 @@ func (h *desktopIPCHandler) deviceBackups(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeDesktopIPCJSON(w, http.StatusOK, items)
+}
+
+// Electron's authenticated loopback may read one already-enrolled owner's
+// folder page. No Root credential, local path or Source mutation is accepted.
+func (h *desktopIPCHandler) deviceBackupFolders(w http.ResponseWriter, r *http.Request) {
+	pager, ok := h.ctrl.(desktopIPCDeviceBackupFolderPager)
+	if !ok {
+		writeDesktopIPCError(w, http.StatusNotImplemented, "device_backup_folders_unavailable", "read-only backup folder pages are unavailable")
+		return
+	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_query", "invalid backup folder page query")
+		return
+	}
+	for key, values := range query {
+		if (key != "device_id" && key != "limit" && key != "after_source_id") || len(values) != 1 {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_query", "invalid backup folder page query")
+			return
+		}
+	}
+	rawDevice := query.Get("device_id")
+	device, err := uuid.Parse(rawDevice)
+	if len(query["device_id"]) != 1 || err != nil || device.String() != rawDevice {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_device_id", "invalid backup device")
+		return
+	}
+	limit := 100
+	if raw, found := query["limit"]; found {
+		value, parseErr := strconv.Atoi(raw[0])
+		if parseErr != nil || value < 1 || value > 100 || strconv.Itoa(value) != raw[0] {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_limit", "limit must be between 1 and 100")
+			return
+		}
+		limit = value
+	}
+	var afterSourceID uint64
+	if raw, found := query["after_source_id"]; found {
+		value, parseErr := strconv.ParseUint(raw[0], 10, 64)
+		if parseErr != nil || value == 0 || strconv.FormatUint(value, 10) != raw[0] {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cursor", "invalid backup folder cursor")
+			return
+		}
+		afterSourceID = value
+	}
+	page, err := pager.CloudDeviceBackupFoldersPage(r.Context(), device.String(), limit, afterSourceID)
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, page)
 }
 
 func (h *desktopIPCHandler) deviceBackupRuns(w http.ResponseWriter, r *http.Request) {
