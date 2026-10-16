@@ -1836,22 +1836,27 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, nextQuery)
   }, [draftFilters, loadFirstPage, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
-  const openPet = useCallback((pet: MediaPetFacet) => {
-    setCurrentPet(pet)
-    setSection('people')
-    setActiveMediaType('')
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    setQuery({})
-    void loadFirstPage(
-      null,
-      {},
-      null,
-      null,
-      'default',
-      null,
-      null,
-      pet,
-    )
+  const openPet = useCallback((pet: MediaPetFacet, fromCollections = false) => {
+    // Mobile Collections stays committed while the owner's Pet first range
+    // is pending; release the old scroll only after the winning range loads.
+    const commitFromCollections = fromCollections ? () => {
+      setCurrentFolderView(null)
+      setSection('people')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+    } : undefined
+    if (!fromCollections) {
+      // Keep existing immediate People/Pets navigation on wide Web/Desktop.
+      setCurrentPet(pet)
+      setSection('people')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+    }
+    void loadFirstPage(null, {}, null, null, 'default', null, null, pet,
+      commitFromCollections)
   }, [loadFirstPage])
 
   const openSuggestedPerson = useCallback((person: MediaSuggestedPerson) => {
@@ -2858,7 +2863,7 @@ export function XDriveMediaGalleryPage({
         onOpenBurstReview={openBurstReview}
         onLoadMoreBurst={() => void loadMoreCleanupGroups()}
         cleanupMoreLoading={cleanupMoreLoading}
-        onOpenPet={(pet) => { setMobileCollectionsOverview(false); openPet(pet) }}
+        onOpenPet={(pet) => openPet(pet, mobileCollectionsOverview)}
         onOpenSuggestedPerson={openSuggestedPerson}
         onOpenPerson={(person) => { setMobileCollectionsOverview(false); openPerson(person) }}
         onReviewSuggestedPerson={
@@ -6289,10 +6294,7 @@ export function XDriveMediaGallery({
             onMobileCollectionsOverviewChange?.(false)
             onOpenPerson(person)
           } : undefined}
-          onOpenPet={onOpenPet ? (pet) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenPet(pet)
-          } : undefined}
+          onOpenPet={onOpenPet}
           onOpenPlace={onOpenPlace ? (place) => {
             onMobileCollectionsOverviewChange?.(false)
             onOpenPlace(place)
