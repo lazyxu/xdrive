@@ -3419,7 +3419,7 @@ jobs:
           code=$?
           set -e
           cat "$RUNNER_TEMP/xdrive-gallery-ios27/results.json"
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p13-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p14-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p13-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p14-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p13"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3431,7 +3431,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p13/results.json"
             if [[ "$code" -eq 0 ]]; then code="$album_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p14-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p14-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p14"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3443,7 +3443,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p14/results.json"
             if [[ "$code" -eq 0 ]]; then code="$memory_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p15-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p15"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3455,7 +3455,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p15/results.json"
             if [[ "$code" -eq 0 ]]; then code="$pet_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p16-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p16"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3467,7 +3467,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p16/results.json"
             if [[ "$code" -eq 0 ]]; then code="$person_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p20"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3479,7 +3479,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p20/results.json"
             if [[ "$code" -eq 0 ]]; then code="$sync_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-place-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p21-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-place-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p21"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3491,7 +3491,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p21/results.json"
             if [[ "$code" -eq 0 ]]; then code="$child_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-place-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p20-place-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/place"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3503,7 +3503,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/place/results.json"
             if [[ "$code" -eq 0 ]]; then code="$place_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p23-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p23"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3515,7 +3515,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p23/results.json"
             if [[ "$code" -eq 0 ]]; then code="$trash_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p24-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p24"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3527,7 +3527,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p24/results.json"
             if [[ "$code" -eq 0 ]]; then code="$cleanup_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p25-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p25"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3539,7 +3539,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p25/results.json"
             if [[ "$code" -eq 0 ]]; then code="$burst_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p27-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p27"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3551,7 +3551,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p27/results.json"
             if [[ "$code" -eq 0 ]]; then code="$memory_index_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p28-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p28"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3563,7 +3563,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p28/results.json"
             if [[ "$code" -eq 0 ]]; then code="$pet_index_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p30-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p30"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3575,7 +3575,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p30/results.json"
             if [[ "$code" -eq 0 ]]; then code="$sort_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p31-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p31"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3587,7 +3587,7 @@ jobs:
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p31/results.json"
             if [[ "$code" -eq 0 ]]; then code="$media_type_code"; fi
           fi
-          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* ]]; then
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p32-* || "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
             mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p32"
             set +e
             XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
@@ -3598,6 +3598,18 @@ jobs:
             set -e
             cat "$RUNNER_TEMP/xdrive-gallery-ios27/p32/results.json"
             if [[ "$code" -eq 0 ]]; then code="$person_index_code"; fi
+          fi
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p33-* ]]; then
+            mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p33"
+            set +e
+            XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+            XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+            node ../desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-place-index-nav \
+              --output-dir="$RUNNER_TEMP/xdrive-gallery-ios27/p33"
+            place_index_code=$?
+            set -e
+            cat "$RUNNER_TEMP/xdrive-gallery-ios27/p33/results.json"
+            if [[ "$code" -eq 0 ]]; then code="$place_index_code"; fi
           fi
           exit "$code"
       - uses: actions/upload-artifact@v4

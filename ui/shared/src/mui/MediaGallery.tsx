@@ -1969,11 +1969,17 @@ export function XDriveMediaGalleryPage({
       setQuery(nextQuery)
       if (fromCollections) setMobileCollectionsOverview(false)
     }
-    if (fromCollections && mobileGalleryViewport) {
+    // Compact Places has its own already-authorized, paginated index. It
+    // retains the visible Place card, scroll and return camera until the
+    // owner GPS-filtered first counted Range succeeds, just like P20's
+    // Collections entry. No eager empty photo wall for an index card tap.
+    const fromCommittedPlacesIndex = mobileGalleryViewport && !fromCollections &&
+      section === 'places' && !query.place && placesExpandedRef.current
+    if (mobileGalleryViewport && (fromCollections || fromCommittedPlacesIndex)) {
       void loadFirstPage(null, nextQuery, null, null, 'default',
         null, null, null, commitPlace)
     } else {
-      // Wide Web/Desktop and existing non-Collections Places preserve routing.
+      // Existing non-index navigation and wide Web/Desktop are unchanged.
       commitPlace()
       void loadFirstPage(null, nextQuery)
     }
