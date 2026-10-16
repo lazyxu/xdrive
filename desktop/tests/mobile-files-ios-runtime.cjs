@@ -114,6 +114,13 @@ const ui = {
     },
 }
 const dragCalls = []
+const menuReasons = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/mui/FileExplorerMenuReasons.ts'))(
+    mod, mod.exports,
+  )
+  return mod.exports
+})()
 const imports = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -134,6 +141,7 @@ const imports = {
     }),
   },
   './mobileFilesState': state,
+  '../../ui/shared/src/mui/FileExplorerMenuReasons': menuReasons,
 }
 const MobileFiles = (() => {
   const mod = { exports: {} }
