@@ -31,9 +31,9 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
   storage: {
     configure: '存储根目录和挂载由部署管理',
     enable: '不提供在线停用/迁移',
-    verify: '仅检查当前存储就绪',
+    verify: '手动刷新当前 Server 存储 Ready 探针；不证明文件读写或数据完整性',
     history: '暂无存储部署修订记录',
-    verifyTarget: { service: 'storage', tab: 'status' },
+    verifyTarget: { service: 'storage', tab: 'verify' },
   },
   'background-worker': {
     configure: '扫描与并发调度可修改',
@@ -121,6 +121,7 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
 // corresponding API. For a shared Photo Host target, BOTH the source service
 // and the editable host service must be uniquely reported.
 type XDriveSystemDependencyRuntimeMethod =
+  | 'load' // Already authenticated GET /admin/services; bounded Ready probe.
   | 'loadPostgresPoolConfig' | 'savePostgresPoolConfig'
   | 'loadSourceWorkerConfig' | 'saveSourceWorkerConfig'
   | 'loadCaddyHTTPSConfig' | 'saveCaddyHTTPSConfig' | 'loadCaddyHTTPSPreflight'
@@ -152,7 +153,7 @@ const configPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
 }
 const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSystemDependencyRuntimeMethod[]> = {
   database: ['loadPostgresPoolConfig'],
-  storage: [], // The observed status row is the only storage probe.
+  storage: ['load'], // A fresh admin inventory invokes Store.Ready(ctx).
   'background-worker': ['loadSourceWorkerConfig'],
   caddy: ['loadCaddyHTTPSPreflight'],
   'media-worker': ['loadMediaWorkerConfig'],

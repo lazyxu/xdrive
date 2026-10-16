@@ -108,9 +108,15 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
   assert.deepEqual(resolve('caddy', [row('caddy')], {
     loadCaddyHTTPSPreflight: allPorts.loadCaddyHTTPSPreflight,
   }), { configTarget: undefined, verifyTarget: { service: 'caddy', tab: 'verify' } })
-  assert.deepEqual(resolve('storage', [row('storage', 'deployment')], {}), {
-    configTarget: undefined, verifyTarget: { service: 'storage', tab: 'status' },
+  assert.deepEqual(resolve('storage', [row('storage', 'deployment')], {}), {})
+  assert.deepEqual(resolve('storage', [row('storage', 'deployment')], {
+    load: () => Promise.resolve(),
+  }), {
+    configTarget: undefined, verifyTarget: { service: 'storage', tab: 'verify' },
   })
+  assert.deepEqual(resolve('storage', [{
+    ...row('storage', 'deployment'), status: 'planned',
+  }], { load: () => Promise.resolve() }), {})
   assert.deepEqual(resolve('photo-smart', [row('photo-smart', 'deployment')], allPorts), {
     configTarget: undefined,
     verifyTarget: { service: 'photo-smart', tab: 'verify' },
@@ -193,5 +199,22 @@ test('Web/Desktop shared enable entry is navigation with a warning, not a one-cl
   assert.match(page, /保存目标不等于已启用/)
   assert.match(cap, /activationOwner.apply_mode === activationApplyMode\[id\]/)
   assert.match(cap, /'media-worker': \['loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker'\]/)
+  assert.doesNotMatch(page, /docker\.sock|adminStopHost|adminRestartHost/)
+})
+
+
+test('storage receives real bounded read-only Ready verification, not a fake apply or migration action', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const caps = read('ui/shared/src/system-dependencies-capabilities.ts')
+  const server = read('internal/api/admin_service_dependencies.go')
+  assert.match(page, /case 'storage': return \['status', 'verify'\]/)
+  assert.match(page, /data-xdrive-storage-readiness-scope/)
+  assert.match(page, /存储就绪检测/)
+  assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
+  assert.match(caps, /storage: \['load'\]/)
+  assert.match(caps, /verifyTarget: \{ service: 'storage', tab: 'verify' \}/)
+  assert.match(server, /context.WithTimeout\(c.Request.Context\(\), 2\*time.Second\)/)
+  assert.match(server, /checker.Ready\(ctx\)/)
+  assert.doesNotMatch(caps, /activationTarget: \{ service: 'storage'/)
   assert.doesNotMatch(page, /docker\.sock|adminStopHost|adminRestartHost/)
 })
