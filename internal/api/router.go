@@ -23,6 +23,7 @@ import (
 type Server struct {
 	DB                             *gorm.DB
 	localPushCIOnlyFirstLeaf       bool
+	localPushCIOnlyFirstDirectory  bool
 	postgresPoolSaveMu             sync.Mutex
 	mediaWorkerConfigSaveMu        sync.Mutex
 	caddyHTTPSSaveMu               sync.Mutex
@@ -368,6 +369,12 @@ func (s *Server) Router() *gin.Engine {
 	if s.localPushCIOnlyFirstLeaf {
 		authed.POST("/sources/:id/local-staging/:stageID/ci-first-leaf-commit",
 			s.requireLocalSourceExecutor(), s.ciOnlyCommitLocalPushFirstLeaf)
+	}
+	// Test-only first-directory transaction. Intentionally absent from normal
+	// production Routers; this independent bit has no configuration or setter.
+	if s.localPushCIOnlyFirstDirectory {
+		authed.POST("/sources/:id/ci-first-directory-commit",
+			s.requireLocalSourceExecutor(), s.ciOnlyCommitLocalPushFirstDirectory)
 	}
 	authed.PUT("/sources/:id/local-staging/:stageID/content", s.requireLocalSourceExecutor(), s.putLocalPushStageBytes)
 	authed.DELETE("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.cancelLocalPushStage)
