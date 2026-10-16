@@ -2418,6 +2418,24 @@ async function galleryIos27ChromeAcceptance() {
   check('P11: no visible wrong-first-row frame before Library anchor restoration',
     p11BadFrames.length === 0 && p11Return.frames.some(frame => frame.firstIndex !== null),
     result.samples[activeStage]);
+  // P12 exact-anchor audit: a final row just 3 indexes away may still be a
+  // visible 160px jump. The original P11 green test allowed that; require a
+  // stable scroll offset and unchanged logical first tile at a fixed viewport.
+  activeStage = 'user-gallery-p12-exact-return-anchor';
+  const exactAnchor = { expectedTop:p11Initial.scrollTop, finalTop:p11Return.scrollTop,
+    expectedFirst:p11Initial.firstIndex, finalFirst:p11Return.firstIndex,
+    timeline:p11Return.frames };
+  result.samples[activeStage] = exactAnchor;
+  check('P12: same-viewport return retains exact prior Gallery viewport anchor',
+    Math.abs(p11Return.scrollTop - p11Initial.scrollTop) <= 2
+      && p11Return.firstIndex === p11Initial.firstIndex, exactAnchor);
+  // The first painted frames count, not just the settled state: remounting a
+  // zero-height virtual window for a frame is an observable white flash.
+  check('P12: no blank or off-anchor painted frame after selecting Library',
+    p11Return.frames.length >= 12 && p11Return.frames.every(frame =>
+      frame.firstIndex !== null &&
+      Math.abs(frame.scrollTop - p11Initial.scrollTop) <= 2 &&
+      frame.firstIndex === p11Initial.firstIndex), exactAnchor);
   await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
 }
 
