@@ -4245,3 +4245,40 @@ A FileExplorer/Gallery thumbnail leaving the viewport detaches its own progress 
 | 3 | 5711.080ms | 28.115ms | 1024/1024B | 92594176B | 200002 → 2 → 0 |
 
 **CAS-A01 首轮真实有效原版CURRENT n3（2026-10-16）**：初始格式 Invalid harness #38853465577 已单独存档，改正测试常量列对齐后固定工作头 `fa97a9d48105a0c7c95c6eb51af1ff6430f573c9` [真实专项CI #38854311221](https://github.com/lazyxu/xdrive/actions/runs/38854311221) **SUCCESS**。三组独立PostgreSQL17/Gin/Local CAS真实单个1KiB SHA-256原片、100,000独立Node+File及100,000条历史FileVersion，加两个不同账户外部keeper，初始**200,002条真实DB引用只对应1个物理CAS文件**。两Owner配额均为**1,024B**，真实跨Owner非法404与过期Revision 409正确；通过认证Owner DELETE /trash/:id 均HTTP204，选中200k引用释放后Blob.RefCount=2、物理CAS始终为1、保护原片/其他账户没有被误删；最后仅在第二个Keeper被删除时实际物理CAS=0且Blob元数据=0。100k真实共享引用永久删除耗时三轮**5.585206/5.725223/5.711080秒、P50 5.711080秒**；两个Keeper最后GC **32.263/43.372/28.115ms，P50 32.263ms**；Go RSS增量峰值**94650368B**，源种入独立计时，真实Go CPU ticks每组76/79/78，Owner配额扫描P50为495.800ms，符合原版冻结≤1,200,000ms HTTP、≤120,000ms末次GC、≤512MiB RSS与所有物理/权限/计费门槛。**接受生产原版，BEFORE=CURRENT，AFTER=N/A，speedup=N/A**，既有P047 100k不同物理CAS HTTP204/P50 155.241s是完全不同负载、不得计算对比优化收益。原始Git blob SHA逐字节校验无改写的[3组机器JSON、summary、source及进程资源证据](performance-evidence/cas-a01-shared-blob-100k-ref-gc/ci-run-38854311221/README.md)与原始[完整GitHub Actions Artifact #12027180215](https://github.com/lazyxu/xdrive/actions/runs/38854311221/artifacts/12027180215) ZIP SHA256 `c2d22037dd2ba80cac3edae4b836f73c6e8f3680cc518e08ce9ea66edb99ad1e` 一一对应。归档后新HEAD必须重新执行准确专项n3与完整CI含Final Gate后才可Ready/合并。真实Web/Desktop/Mobile Web/OS-installed PWA六平台的GUI删除未在本专题执行，CAS-A04多代备份与CAS-A03 4GiB局部变更仍 **Not measured**。
+
+
+## P055 / M003-restore · 100k 不同真实物理 CAS 的认证 HTTP Trash 恢复（2026-10-17）
+
+**状态：Benchmarking / 新源原版 CURRENT 未实测 n3=0；生产 AFTER=N/A，产品原版不改。** 本项不是 P047 已通过的 100k 实体永久删除：P047 原版 HTTP204 物理 unlink P50 155.241 秒；也不是旧 `TestTrashRestoreRealHTTPPerformance10K100K` 的 100k **仅数据库 Node/File+模拟存储键**恢复。本新场景严格验证 **真正 100,000 份不同 SHA-256、非稀疏1KiB Local CAS 原始物理文件**保持不变时的真实 Trash Restore，并与已验收 P046/47 分离避免重测。参考 [已测全局去重登记簿](performance-test-registry.md)、[六平台矩阵](performance-platform-coverage.md)、[Blob 审计](blob-cas-dedup-architecture-audit.md) 和 `AGENTS.md` 性能规则。
+
+**冻结真实物理负载及链路：** 三个独立 Linux Go + PostgreSQL17 isolated schema/物理 Local CAS 源，每组通过生产 `storage.Local.Put` 实写100,000个SHA不同的原始1024B文件（共102,400,000B真实内容；Linux st_blocks至少409,600,000B），各对应真实 Node+File+FileVersion、`ContentBlob{RefCount:2,State:ready}`，另一个合法Owner目录之外原片作为 protected sentinel（RefCount1）；持久 Blob 对象应为100001，验证真实 regular inode/nlink1 和源身份摘要。把所选目录及其100k子树设为已软删除，先执行跨账户真实HTTP POST恢复404与过期Revision409，随后真正认证 HTTP `POST /api/v1/trash/:id/restore`、原Revision2 → 3（200）。权限、审计、共享Share/未选兄弟节点/SQL RefCount须保持，不得把源内容移动或复制到另一个 CAS；物理 CAS 初末计数、allocated`st_blocks×512`必须相同。请求计时结束后，逐一物理重开并核对**每个100k原片完整1024B内容（与源算法SHA一致）**、旧历史FileVersion和唯一Owner quota引用，源验证时间排除 HTTP P50。只测Production Gin/PG/Local HTTP恢复，不包含 GUI 浏览器、同步任务、Push、Desktop Agent 或WAN。
+
+**事先冻结预算/采样：** 每个3独立来源按原版 `restore_http_ms<=180,000`、真实Postseed 25ms采样Go RSS增长≤512MiB、Go CPU ticks无回退、Owner HTTP200/非Owner404/过期Revision409、完整100k恢复、所有100001真实原片allocated不变、恢复阶段Go进程`/proc/self/io write_bytes<=1MiB`（不表示 PostgreSQL 进程0写入）、0个坏/失联Blob或引用、原版物理种子独立计时，n3源身份SHA必须不同；1k小规模smoke仅是夹具校验不是100k性能数字。Go原版达预算即**保留生产代码不改/AFTER=N/A/速度提升=N/A**；真实超预算/原片错误才先记录产品RED、排除Invalid harness后在同一介质匹配 n≥3 BEFORE/AFTER 对照最小候选，只有明显稳定改善且物理内容、RSS/CPU/SQL/权限不退化才保留；否则撤销/Rejected。不得借此改Race或持久任务取消。
+
+**执行与永久证据：** 源码 `internal/api/p055_real_physical_cas_restore_100k_performance_linux_test.go` 依赖已有 P047/P046真实 inode SHA 夹具；命令 `XD_P055_REAL_PHYSICAL_RESTORE_PERF=1 XD_P055_SAMPLE=sample-1 XD_TEST_DATABASE_URL=postgres://... go test -mod=readonly ./internal/api -run '^TestP055TrashRestore100KPhysicalCASHTTP$' -count=1 -timeout=36m -v`。只在 `perf/p055-real-100k-physical-restore-20261017` 分支运行[专用原生CI](../.github/workflows/p055-real-physical-cas-100k-http-restore.yml)，首轮n3后原样永久归档3份样本JSON、Go stdout、`/usr/bin/time -v`、真实 source SHA、summary至 `docs/performance-evidence/p055-real-100k-physical-restore/`，同时修订本页/登记簿/六平台矩阵/AGENTS/Blob审计，保持同一冻结父提交**恰好一个工作提交**。归档后必须重新跑该**准确新 HEAD** 专项 n3和全仓完整 CI（single-commit/final-gate），全绿且可合并再 Ready/rebase/清理分支。早期 Invalid harness/RED 不可擦除或谎称通过。
+
+**六端诚实状态：** 这个负载在 Server Linux Gin/PG/Local CAS层跑，不等于 Native Desktop Electron、Wide Web、Mobile Web、Desktop installed PWA、Android installed PWA、iOS installed PWA的真实100k GUI回收站恢复；**六端全部 Not measured**。真实安装态OS需要设备证据。虚拟滚动/预览不再消费时只取消短HTTP读取并传到Go Request.Context.Done，不应因为关闭窗口就终止用户主动发起的持久上传/下载/同步/删除；本次完全不改取消机制。
+
+**P055 首轮 Invalid harness（2026-10-17）：** 在冻结源 `f3467c51d6509266baf6d55a9e14010854e86168` 的[专项CI #38962187653](https://github.com/lazyxu/xdrive/actions/runs/38962187653)中，`gofmt -l` 返回未格式化新增测试文件，编译和PG17真实smoke之前止步，有效100k源 n=0；这是测试源码格式问题、不是生产HTTP恢复真实性能RED。保留此证据，按诊断的 `gofmt -d` 精确差异修正同一唯一工作提交并重跑准确HEAD。生产代码及已冻结预算保持不变。
+
+**P055 源码 gofmt 诊断头 Invalid harness（2026-10-17）：** [准确 CI #38962419712](https://github.com/lazyxu/xdrive/actions/runs/38962419712) 原样打印了新增测试代码仅有 `map[string]any` 对齐格式差异，仍在PG17烟测之前终止，有效n=0；只把该 CI 的 `gofmt -d` 精确输出应用于新增测试文件，未修改任何生产源码、测试数据内容或核心验收不变量。**在首次真实100k测量前将恢复操作冻结预算收紧至已有同层P026基线：100k原版认证HTTP单样本 ≤8,000ms、n3 P50≤5,000ms**（已有P026 100k元数据恢复P50 1,077.999ms）；此前草案的180s只是过宽运行上限，不够定位性能退化。继续Go RSS≤512MiB、Go PID write_bytes≤1MiB与100k原片SHA/allocated不变。若超预算保留真实 RED再调查，不因预设宽松而放过回归；重新运行最新准确源码CI。
+
+**P055 原型编译 Invalid harness #38962736090（2026-10-17）：** 该头已过 gofmt，但在测试文件编译时报 `sourceCount` 由旧P047 untyped常量换成本次smoke/runtime变量后，和Go内核物理bytes `int64` 比较的3处类型不匹配；真实PG17 smoke/100k原片n3均未发生，有效n=0，不属于生产恢复性能RED。只把这3个新测试判定转换为显式`int64(...)`；生产源码、冻结 8秒/5秒门槛和所有鉴权/物理字节不变。
+
+### P055 · 首次有效三独立100k物理CAS原版恢复基线（2026-10-17）
+
+**CURRENT n=3/3 Accepted within frozen budget；生产 AFTER=N/A / 产品未优化。** 准确源 `3ce3b7d2e322d9a932b81b67126b5aa3a7fd9e71` 的 [P055 专用CI #38963047837](https://github.com/lazyxu/xdrive/actions/runs/38963047837) 成功完成代码编译、1000真实CAS smoke及3个独立 PostgreSQL17/Gin/Local CAS进程 × 每组100k不同SHA物理原片（并各有独立受保护原片，合计每组100001个）。所测的是认证 Owner `POST /api/v1/trash/:id/restore` 原版恢复**真实不同 SHA 1024B 原片与 100k File+FileVersion/ContentBlob**，不是P026 metadata-only恢复或P047永久删除；不触碰实体 Push、Client UI 或Race。
+
+| 独立物理CAS100k恢复来源 | sample-1 | sample-2 | sample-3 | n3 P50 / max |
+| --- | ---: | ---: | ---: | ---: |
+| 请求恢复HTTP 200 Wall（ms） | **1,087.935** | **1,176.715** | **826.570** | **1,087.935** |
+| 源物理种子（ms，独立不计入HTTP） | 56,224.156 | 52,126.280 | 52,187.294 | 52,187.294 |
+| Go CPU /proc/self/stat ticks | 61 | 68 | 63 | **63** |
+| HTTP期间Go PID /proc/self/io write_bytes（B） | 0 | 0 | 0 | **0** |
+| 25ms采样Go RSS增长（B） | 0 | 0 | 40,960 | P50 **0**，最大**40,960** |
+| 完整100k个真实SHA原片审计（ms，排除） | 2,605.991 | 2,866.952 | 2,743.542 | 2,743.542 |
+| before / after真实 st_blocks ×512（B） | 409,604,096 / 相同 | 409,604,096 / 相同 | 409,604,096 / 相同 | **0B增量** |
+
+三份独立全部通过：各100000个不同真实物理SHA、另一个保护原片、100001个实际 regular inode/nlink1、100k当前File +100k历史FileVersion、`ContentBlob` 双引用及外部RefCount1正确、100000/100000原始1024B逐个读回相等、物理真实分配完全相同。匿名以外另一授权账户HTTP404、旧Revision HTTP409、当前Owner正确返回HTTP200且根Revision2→3；保护之外Share/节点未被误删。**单样本HTTP均低于预先冻结8s，P50 1.088s低于5s；Go RSS峰值增≤512MiB，Go进程实际写盘0B（不等于独立PostgreSQL进程完全不写盘）。因原版预算内，保留当前生产代码不改；没有匹配同Runner产品优化AFTER，速度提升=N/A。**
+
+**不重复测试的来源：** 原本有效 n3 GitHub [机器Artifact #12073128439](https://github.com/lazyxu/xdrive/actions/runs/38963047837/artifacts/12073128439) 原始 ZIP SHA256 `fd650df7d347865672a9a82328aaaa6d951c02c2e68fc2342ad9e23568387ebe`（短期保留）；已在仓库永久保存[按字节原样的8个数值/进程资源/source文件及全部11个原始文件SHA清单](performance-evidence/p055-real-100k-physical-restore/ci-run-38963047837-original-numeric.tar.gz)（包含3个`sample-X.json`、3份`sample-X-resources.txt`、`summary.json`、`source.txt`以及README、MANIFEST）SHA256 `c5c3875c5d7f9df0cb9fb6b8407407286f8802cebd3e825b72a1d271029bf5a2`，Git Blob SHA `01e8ba351214aea911fbc33c65e5845c646738f0`。**原始三份Go verbose日志只存放短期原Artifact，没有冒称完整11件均入Git**。源文件精确SHA和三轮独立Source Identity保存在`source.txt`/机读JSON。见[永久证据索引](performance-evidence/p055-real-100k-physical-restore/README.md)。本证据修订仍需新HEAD专用实体n3+完整 CI/final-gate双绿才可Ready/Rebase合并。

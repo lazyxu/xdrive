@@ -1,0 +1,160 @@
+name: P055 Real 100k Physical CAS Authenticated Trash Restore
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  p055-real-physical-restore:
+    if: github.head_ref == 'perf/p055-real-100k-physical-restore-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_P055_REAL_PHYSICAL_RESTORE_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: perf/p055-real-100k-physical-restore-20261017
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Compile opt-out source exact and inspect disk
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          test -z "$(gofmt -l internal/api/p055_real_physical_cas_restore_100k_performance_linux_test.go)"
+          df -h .
+          env -u XD_P055_REAL_PHYSICAL_RESTORE_PERF go test -mod=readonly ./internal/api -run '^TestP055TrashRestore100KPhysicalCASHTTP$' -count=1 -timeout=45s
+      - name: Verify original immutable 100k physical CAS n3 machine evidence and source hashes
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/p055-real-100k-physical-restore/ci-run-38963047837-original-numeric.tar.gz
+          printf '%s  %s\n' 'c5c3875c5d7f9df0cb9fb6b8407407286f8802cebd3e825b72a1d271029bf5a2' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,sys,tarfile
+          expected={"source.txt","summary.json","MANIFEST.json","README.txt"}
+          expected|={f"sample-{i}.json" for i in (1,2,3)}
+          expected|={f"sample-{i}-resources.txt" for i in (1,2,3)}
+          with tarfile.open(sys.argv[1],"r:gz") as t:
+              members=t.getmembers()
+              assert len(members)==10 and {m.name for m in members}==expected
+              assert all(m.isfile() for m in members)
+              originals={m.name:t.extractfile(m).read() for m in members}
+          manifest=json.loads(originals["MANIFEST.json"])
+          assert manifest["original_zip_sha256"]=="fd650df7d347865672a9a82328aaaa6d951c02c2e68fc2342ad9e23568387ebe"
+          assert len(manifest["original_11_sha256"])==11 and len(manifest["original_11_length"])==11
+          for name,content in originals.items():
+              if name in manifest["original_11_sha256"]:
+                  assert hashlib.sha256(content).hexdigest()==manifest["original_11_sha256"][name]
+                  assert len(content)==manifest["original_11_length"][name]
+          src=originals["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=3ce3b7d2e322d9a932b81b67126b5aa3a7fd9e71" in src
+          assert "RUN_ID=38963047837" in src
+          for path in ("internal/api/p055_real_physical_cas_restore_100k_performance_linux_test.go",
+                       "internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go",
+                       "internal/api/physical_cas_original_finalize_100k_performance_test.go",
+                       "internal/api/trash_restore_real_http_100k_performance_integration_test.go",
+                       "internal/storage/local.go"):
+              sha=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f"{sha}  {path}" in src, ("source_drift",path)
+          summary=json.loads(originals["summary.json"])
+          assert summary["n"]==3 and summary["passed"] and summary["p50"]["restore_http_ms"]<=5000
+          rows=[json.loads(originals[f"sample-{i}.json"]) for i in (1,2,3)]
+          assert len({r["original_source_identity_sha256"] for r in rows})==3
+          for i,r in enumerate(rows,1):
+              assert r["sample"]==f"sample-{i}" and r["passed"] and not r["smoke_only"]
+              assert r["physical_source_count"]==100000 and r["unique_cas_sha_count"]==100000
+              assert r["restored_node_count"]==100000 and r["full_100k_cas_sha_verified"]==100000
+              assert r["physical_original_bytes"]==102400000
+              assert r["physical_cas_objects_before"]==r["physical_cas_objects_after"]==100001
+              assert r["physical_cas_allocated_bytes_before"]==r["physical_cas_allocated_bytes_after"]==409604096
+              assert r["go_process_kernel_write_bytes_during_http"]==0
+              assert r["restore_http_status"]==200 and r["foreign_owner_http_status"]==404
+              assert r["stale_revision_http_status"]==409 and r["incorrect_blob_refcounts"]==0
+          PY
+      - name: Real PostgreSQL and physical CAS 1000-object smoke only
+        env:
+          XD_P055_SAMPLE: sample-1
+          XD_P055_SMOKE: '1'
+        run: |
+          set -euo pipefail
+          go test -mod=readonly ./internal/api -run '^TestP055TrashRestore100KPhysicalCASHTTP$' -count=1 -timeout=8m -v
+      - name: Real n3 independent native 100k physical immutable CAS HTTP Trash RESTORE
+        run: |
+          set -euo pipefail
+          mkdir -p p055-original-n3
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > p055-original-n3/source.txt
+          sha256sum internal/api/p055_real_physical_cas_restore_100k_performance_linux_test.go \
+            internal/api/trash_permanent_physical_cas_100k_performance_integration_test.go \
+            internal/api/physical_cas_original_finalize_100k_performance_test.go \
+            internal/api/trash_restore_real_http_100k_performance_integration_test.go \
+            internal/storage/local.go \
+            >> p055-original-n3/source.txt
+          for sample in 1 2 3; do
+            export XD_P055_SAMPLE="sample-$sample"
+            unset XD_P055_SMOKE || true
+            /usr/bin/time -v -o "p055-original-n3/sample-$sample-resources.txt" \
+              go test -mod=readonly ./internal/api -run '^TestP055TrashRestore100KPhysicalCASHTTP$' \
+              -count=1 -timeout=36m -v 2>&1 | tee "p055-original-n3/sample-$sample.log"
+            python3 - "$sample" <<'PY'
+          import json,pathlib,re,sys
+          i=sys.argv[1]
+          log=pathlib.Path(f"p055-original-n3/sample-{i}.log").read_text()
+          rows=re.findall(r'P055_REAL_HTTP_PHYSICAL_100K_RESTORE (\{[^\r\n]+\})',log)
+          assert len(rows)==1, "one authentic n3 sample JSON from Go"
+          row=json.loads(rows[0])
+          assert row["passed"] and not row["smoke_only"]
+          assert row["sample"]==f"sample-{i}"
+          assert row["physical_source_count"]==100000 and row["unique_cas_sha_count"]==100000
+          assert row["physical_original_bytes"]==102400000
+          assert row["restore_http_status"]==200 and row["foreign_owner_http_status"]==404
+          assert row["stale_revision_http_status"]==409 and row["restored_node_count"]==100000
+          assert row["full_100k_cas_sha_verified"]==100000
+          assert row["physical_cas_objects_before"]==100001 and row["physical_cas_objects_after"]==100001
+          assert row["physical_cas_allocated_bytes_before"]==row["physical_cas_allocated_bytes_after"]
+          assert row["physical_cas_allocated_bytes_before"]>=409604096
+          assert row["historical_version_rows"]==100000 and row["incorrect_blob_refcounts"]==0
+          assert row["go_rss_peak_growth_bytes"]<=536870912
+          pathlib.Path(f"p055-original-n3/sample-{i}.json").write_text(json.dumps(row,indent=2,sort_keys=True)+"\n")
+          PY
+          done
+          python3 - <<'PY'
+          import json,pathlib,statistics
+          p=pathlib.Path("p055-original-n3")
+          rows=[json.loads((p/f"sample-{i}.json").read_text()) for i in (1,2,3)]
+          assert len({r["original_source_identity_sha256"] for r in rows})==3
+          keys=["restore_http_ms","go_rss_peak_growth_bytes","go_process_kernel_write_bytes_during_http",
+                "go_cpu_ticks_during_http","post_timer_physical_sha_audit_ms",
+                "physical_cas_allocated_bytes_after","source_seed_ms_excluded"]
+          result={"n":3,"passed":all(x["passed"] for x in rows),
+                  "p50":{k:statistics.median(x[k] for x in rows) for k in keys},
+                  "max_rss_growth_bytes":max(x["go_rss_peak_growth_bytes"] for x in rows),
+                  "source":(p/"source.txt").read_text()}
+          (p/"summary.json").write_text(json.dumps(result,indent=2,sort_keys=True)+"\n")
+          assert result["passed"] and result["p50"]["restore_http_ms"]<=5000
+          print(json.dumps(result,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p055-authenticated-physical-cas-100k-trash-restore-n3
+          path: p055-original-n3/
+          retention-days: 14
+          if-no-files-found: warn
