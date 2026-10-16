@@ -1648,6 +1648,20 @@ export function XDriveMediaGalleryPage({
     }
   }, [currentAlbum, currentCleanupReview, currentFolderView, currentMemory, currentPet, currentSuggestedPerson, draftFilters, onError, query.include_descendants, source])
 
+  // Compact applied filters are navigation intents. Keep the last authorized
+  // sparse photo wall and chips until the first new owner range is accepted.
+  // Failed, denied or superseded requests must not publish transient empty UI.
+  const reloadFilteredPhotoWall = useCallback((nextQuery: MediaGalleryQuery) => {
+    const acceptedKind = collectionTargetRef.current?.kind
+    if (mobileGalleryViewport && (acceptedKind === 'all' || acceptedKind === 'album')) {
+      void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson,
+        'default', null, null, null, () => setQuery(nextQuery))
+      return
+    }
+    setQuery(nextQuery)
+    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
+  }, [currentAlbum, currentPerson, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport])
+
   const applyFilters = useCallback(() => {
     const nextQuery: MediaGalleryQuery = {
       ...mediaGalleryQueryFromDraft(draftFilters),
@@ -1679,8 +1693,7 @@ export function XDriveMediaGalleryPage({
       })
       return
     }
-    setQuery(nextQuery)
-    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
+    reloadFilteredPhotoWall(nextQuery)
   }, [
     currentAlbum,
     currentFolderView,
@@ -1690,6 +1703,7 @@ export function XDriveMediaGalleryPage({
     loadFirstPage,
     onError,
     replaceAlbum,
+    reloadFilteredPhotoWall,
     query.include_descendants,
     source,
   ])
@@ -1773,8 +1787,7 @@ export function XDriveMediaGalleryPage({
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
-    setQuery(nextQuery)
-    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
+    reloadFilteredPhotoWall(nextQuery)
   }, [
     activeMediaType,
     currentAlbum,
@@ -1782,6 +1795,7 @@ export function XDriveMediaGalleryPage({
     currentPerson,
     currentSuggestedPerson,
     loadFirstPage,
+    reloadFilteredPhotoWall,
     query.include_descendants,
     section,
   ])
@@ -2737,9 +2751,8 @@ export function XDriveMediaGalleryPage({
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
     setDraftFilters(nextDraft)
-    setQuery(nextQuery)
-    void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
-  }, [currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson, loadFirstPage, query])
+    reloadFilteredPhotoWall(nextQuery)
+  }, [currentAlbum, currentFolderView, reloadFilteredPhotoWall, query])
 
   const refreshGallery = () => {
     if (currentFolderView) {
@@ -2846,8 +2859,7 @@ export function XDriveMediaGalleryPage({
             folder_id: currentFolderView.current.id,
             include_descendants: enabled || undefined,
           }
-          setQuery(nextQuery)
-          void loadFirstPage(null, nextQuery)
+          reloadFilteredPhotoWall(nextQuery)
         } : undefined}
         syncFoldersLoading={syncFoldersLoading}
         syncFoldersError={syncFoldersError}
