@@ -1544,7 +1544,9 @@ export default function MobileFiles(props: Props) {
           )}
         </Box>
         <Box sx={{ minWidth: 0, width: effectiveGrid ? '100%' : undefined, flex: effectiveGrid ? undefined : 1 }}>
-          <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap sx={{ fontSize: effectiveGrid ? 14 : 16 }} textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
+          <Typography data-mobile-files-item-title variant="body2" fontWeight={500} noWrap
+            dir="auto" title={item.name} sx={{ fontSize: effectiveGrid ? 14 : 16, unicodeBidi: 'isolate' }}
+            textAlign={effectiveGrid ? 'center' : 'left'}>{item.name}</Typography>
           <Typography data-mobile-files-item-meta variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: effectiveGrid ? 12 : 13.5 }} textAlign={effectiveGrid ? 'center' : 'left'}>
             {inlineBranch?.error ?? (inlineBranch?.itemCount === 0 ? '空文件夹' :
               mobileFilesNativeMetadata(item) || labelOf(item))}
@@ -1644,7 +1646,8 @@ export default function MobileFiles(props: Props) {
                       sx={{ width: 42, height: 42, borderRadius: 0 }}/>}
       </Box>
       <Box minWidth={0} flex={1}>
-        <Typography data-mobile-files-collection-title variant="body2" noWrap>{entry.name}</Typography>
+        <Typography data-mobile-files-collection-title variant="body2" noWrap dir="auto"
+          title={entry.name} sx={{ unicodeBidi: 'isolate' }}>{entry.name}</Typography>
         <Typography data-mobile-files-collection-meta variant="caption" color="text.secondary" noWrap display="block">{entry.subtitle ?? (owner ? mobileFilesNativeMetadata(entry) || (entry.kind === 'dir' ? '文件夹' : '文件')
           : (entry.kind === 'dir' ? '文件夹' : '文件'))}</Typography>
       </Box>
@@ -1751,17 +1754,17 @@ export default function MobileFiles(props: Props) {
               sx={{ flex: 1, minWidth: 0, minHeight: MIN_TOUCH, px: 0, gap: 0.25,
                 color: 'text.primary', textTransform: 'none', justifyContent: 'center' }}>
               <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
-                aria-hidden={false}
-                sx={{ minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center' }}>
+                aria-hidden={false} dir="auto" title={compactTitle}
+                sx={{ minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center', unicodeBidi: 'isolate' }}>
                 {compactTitle}
               </Typography>
               <KeyboardArrowDownRoundedIcon sx={{ fontSize: 18, flexShrink: 0 }}/>
             </Button>
           ) : (
             <Typography data-mobile-files-compact-title component="span" variant="subtitle1" noWrap
-              aria-hidden={!compactTitleVisible}
+              aria-hidden={!compactTitleVisible} dir="auto" title={compactTitle}
               sx={{ flex: 1, minWidth: 0, fontSize: 17, fontWeight: 650, textAlign: 'center',
-                visibility: compactTitleVisible ? 'visible' : 'hidden' }}>
+                unicodeBidi: 'isolate', visibility: compactTitleVisible ? 'visible' : 'hidden' }}>
               {compactTitle}
             </Typography>
           )}
@@ -2104,7 +2107,8 @@ export default function MobileFiles(props: Props) {
                 props.onCrumbClick(index)
               }}>
               <ListItemIcon><FolderRoundedIcon sx={{ color: IOS_FILES_MOBILE_BLUE }}/></ListItemIcon>
-              <Typography noWrap>{crumb.name || '根目录'}</Typography>
+              <Typography noWrap dir="auto" title={crumb.name || '根目录'}
+                sx={{ unicodeBidi: 'isolate' }}>{crumb.name || '根目录'}</Typography>
               {index === props.crumbs.length - 1
                 ? <CheckRoundedIcon sx={{ ml: 'auto', fontSize: 18, color: IOS_FILES_MOBILE_BLUE }}/> : null}
             </MenuItem>
