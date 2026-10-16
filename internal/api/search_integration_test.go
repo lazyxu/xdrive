@@ -51,7 +51,7 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemMetadata{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -452,6 +452,82 @@ func TestServerSideSearchPaginationTypeAndIsolation(t *testing.T) {
 	}
 	if len(detached.Items) != 0 {
 		t.Fatalf("active child below deleted ancestor must stay unreachable: %+v", detached.Items)
+	}
+
+	// U06-A: exercise the complete original Owner-scoped HTTP contract used
+	// by Search -> Show in containing folder -> Back to the exact Search
+	// definition. UI scroll/focus history is separately owned by the shared
+	// browser controller and is not simulated by Server request ordering.
+	const returnSearchURL = "/api/v1/search?q=report&type=file&offset=1&limit=1&sort=name&order=asc&group=size"
+	searchBeforeResponse := request(t, router, http.MethodGet, returnSearchURL, tokenA, nil, http.StatusOK)
+	var searchBefore searchRangeDTO
+	if err := json.Unmarshal(searchBeforeResponse.Body.Bytes(), &searchBefore); err != nil {
+		t.Fatal(err)
+	}
+	if searchBefore.TotalCount != 3 || len(searchBefore.Items) != 1 ||
+		searchBefore.Items[0].Node.ID != beta.ID || searchBefore.Items[0].Node.Name != beta.Name ||
+		// Original Search emits aggregate group indexes only for offset=0.
+		// A counted nonzero-offset slice correctly omits group metadata.
+		searchBefore.Sort != "name" || searchBefore.Order != "asc" ||
+		searchBefore.Offset != 1 || searchBefore.Limit != 1 ||
+		len(searchBefore.Groups) != 0 {
+		t.Fatalf("U06 original counted/grouped Search definition drift: %+v", searchBefore)
+	}
+
+	// The existing Show-in-folder UI must derive the full current path by
+	// immutable Node ID. Search text, old ordinal and connector path are
+	// not authorization to enter a folder.
+	locationPath := fmt.Sprintf("/api/v1/nodes/%d/location", beta.ID)
+	locationResponse := request(t, router, http.MethodGet, locationPath, tokenA, nil, http.StatusOK)
+	var location nodeLocationDTO
+	if err := json.Unmarshal(locationResponse.Body.Bytes(), &location); err != nil {
+		t.Fatal(err)
+	}
+	if location.NodeID != beta.ID || location.Revision != beta.Revision ||
+		location.ParentID == nil || *location.ParentID != reports.ID ||
+		location.ParentPath != "Projects/Reports" ||
+		len(location.Breadcrumbs) != 3 ||
+		location.Breadcrumbs[0].ID != rootA.ID ||
+		location.Breadcrumbs[1].ID != projects.ID ||
+		location.Breadcrumbs[2].ID != reports.ID {
+		t.Fatalf("U06 Show-in-folder did not use authorized Node identity/ancestors: %+v", location)
+	}
+	// Another logged-in Owner cannot retrieve the located Node or its
+	// containing-folder range, even if the private integer IDs are known.
+	request(t, router, http.MethodGet, locationPath, tokenB, nil, http.StatusNotFound)
+	containingRangePath := fmt.Sprintf(
+		"/api/v1/nodes/%d/children?offset=0&limit=200&sort=name&order=asc",
+		*location.ParentID,
+	)
+	request(t, router, http.MethodGet, containingRangePath, tokenB, nil, http.StatusNotFound)
+	containingResponse := request(t, router, http.MethodGet, containingRangePath, tokenA, nil, http.StatusOK)
+	var containing childrenRangeDTO
+	if err := json.Unmarshal(containingResponse.Body.Bytes(), &containing); err != nil {
+		t.Fatal(err)
+	}
+	if containing.TotalCount != 2 || len(containing.Items) != 2 ||
+		containing.Items[0].ID != alpha.ID || containing.Items[1].ID != beta.ID {
+		t.Fatalf("U06 authoritative containing folder range not stable: %+v", containing)
+	}
+
+	// A later Back-to-Search uses the prior exact query/filter/sort/group
+	// parameters and must rediscover the same logical item, not a node
+	// guessed from the newly visited folder's ordinal.
+	searchAfterResponse := request(t, router, http.MethodGet, returnSearchURL, tokenA, nil, http.StatusOK)
+	var searchAfter searchRangeDTO
+	if err := json.Unmarshal(searchAfterResponse.Body.Bytes(), &searchAfter); err != nil {
+		t.Fatal(err)
+	}
+	if searchAfter.TotalCount != searchBefore.TotalCount ||
+		searchAfter.Offset != searchBefore.Offset ||
+		searchAfter.Limit != searchBefore.Limit ||
+		searchAfter.Sort != searchBefore.Sort ||
+		searchAfter.Order != searchBefore.Order ||
+		len(searchAfter.Items) != 1 ||
+		searchAfter.Items[0].Node.ID != beta.ID ||
+		fmt.Sprint(searchAfter.Groups) != fmt.Sprint(searchBefore.Groups) {
+		t.Fatalf("U06 real Server search/folder/search identity or sort/group drift: before=%+v after=%+v",
+			searchBefore, searchAfter)
 	}
 
 	request(t, router, http.MethodGet, "/api/v1/search", tokenA, nil, http.StatusBadRequest)
