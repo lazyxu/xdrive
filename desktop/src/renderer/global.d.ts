@@ -61,6 +61,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduMapConsent,
+  MediaBaiduMapConsentInput,
   XDriveBaiduMapProviderInfo,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
@@ -708,6 +710,9 @@ declare global {
         cancelMediaCreativeGeneration: (
           generationID: string,
         ) => Promise<DesktopResult<MediaCreativeGeneration>>
+        getMediaBaiduConsent: (nodeID: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
+        saveMediaBaiduConsent: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<DesktopResult<MediaBaiduMapConsent>>
+        revokeMediaBaiduConsent: (nodeID: number, revision: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
         getBaiduMapProvider: () => Promise<DesktopResult<XDriveBaiduMapProviderInfo>>
         getBaiduStaticMap: (lat: number, lng: number, zoom: number, width: number, height: number, requestID?: string) => Promise<DesktopResult<AgentMediaThumbnail>>
         getMediaThumbnail: (nodeID: number, requestID?: string, revision?: number, onProgress?: XDriveByteProgressHandler) => Promise<DesktopResult<AgentMediaThumbnail>>

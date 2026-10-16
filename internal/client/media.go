@@ -946,6 +946,56 @@ func (c *Client) MoveMediaAlbumToFolder(
 	return out, err
 }
 
+// MediaBaiduMapConsent is the shared Owner-only consent wire contract.
+// The server never returns original GPS, SourceNode identity or either AK.
+type MediaBaiduMapConsent struct {
+	Status        string     `json:"status"`
+	Revision      uint64     `json:"revision"`
+	Authorized    bool       `json:"authorized"`
+	SourceCurrent bool       `json:"source_current"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+}
+
+type MediaBaiduMapConsentInput struct {
+	ExpectedRevision      uint64 `json:"expected_revision"`
+	ExpiresInSeconds      int64  `json:"expires_in_seconds"`
+	ConsentToBaidu        bool   `json:"consent_to_baidu_conversion"`
+	ConsentToDerivedIndex bool   `json:"consent_to_derived_index"`
+}
+
+func (c *Client) MediaBaiduConsent(ctx context.Context, nodeID uint64) (MediaBaiduMapConsent, error) {
+	if nodeID == 0 {
+		return MediaBaiduMapConsent{}, fmt.Errorf("media node id is required")
+	}
+	var out MediaBaiduMapConsent
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/media/items/%d/baidu-map-consent", nodeID), nil, &out)
+	return out, err
+}
+
+func (c *Client) SaveMediaBaiduConsent(
+	ctx context.Context, nodeID uint64, input MediaBaiduMapConsentInput,
+) (MediaBaiduMapConsent, error) {
+	if nodeID == 0 || input.ExpectedRevision == ^uint64(0) ||
+		input.ExpiresInSeconds < 600 || input.ExpiresInSeconds > 30*24*60*60 ||
+		!input.ConsentToBaidu || !input.ConsentToDerivedIndex {
+		return MediaBaiduMapConsent{}, fmt.Errorf("explicit bounded photo location consent required")
+	}
+	var out MediaBaiduMapConsent
+	err := c.json(ctx, http.MethodPut, fmt.Sprintf("/api/v1/media/items/%d/baidu-map-consent", nodeID), input, &out)
+	return out, err
+}
+
+func (c *Client) RevokeMediaBaiduConsent(
+	ctx context.Context, nodeID, revision uint64,
+) (MediaBaiduMapConsent, error) {
+	if nodeID == 0 || revision == 0 || revision == ^uint64(0) {
+		return MediaBaiduMapConsent{}, fmt.Errorf("current photo consent revision required")
+	}
+	var out MediaBaiduMapConsent
+	err := c.jsonRevision(ctx, http.MethodDelete, fmt.Sprintf("/api/v1/media/items/%d/baidu-map-consent", nodeID), revision, nil, &out)
+	return out, err
+}
+
 type BaiduMapProvider struct {
 	Provider    string `json:"provider"`
 	Enabled     bool   `json:"enabled"`
