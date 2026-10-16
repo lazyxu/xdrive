@@ -5,6 +5,10 @@ export type MobileFilesSavedState = {
   section: MobileFilesSection
   folderID: number | null
   scrollTop: number
+  // Recent/Favorites are separate sparse collections, not the saved Browse folder.
+  // Optional fields keep old account-scoped v1 localStorage records compatible.
+  recentScrollTop?: number
+  favoritesScrollTop?: number
   view: 'details' | 'grid'
 }
 
@@ -98,7 +102,16 @@ export function mobileFilesDecodeState(raw: string | null): MobileFilesSavedStat
       Number.isSafeInteger(value.folderID) && value.folderID > 0 ? value.folderID : null
     const scrollTop = typeof value.scrollTop === 'number' && Number.isFinite(value.scrollTop)
       ? Math.max(0, Math.min(10_000_000, value.scrollTop)) : 0
-    return { section, folderID, scrollTop, view: value.view === 'grid' ? 'grid' : 'details' }
+    const sectionScroll = (offset: unknown): number | undefined =>
+      typeof offset === 'number' && Number.isFinite(offset)
+        ? Math.max(0, Math.min(10_000_000, offset)) : undefined
+    const recentScrollTop = sectionScroll(value.recentScrollTop)
+    const favoritesScrollTop = sectionScroll(value.favoritesScrollTop)
+    return {
+      section, folderID, scrollTop, view: value.view === 'grid' ? 'grid' : 'details',
+      ...(recentScrollTop === undefined ? {} : { recentScrollTop }),
+      ...(favoritesScrollTop === undefined ? {} : { favoritesScrollTop }),
+    }
   } catch { return mobileFilesDefaultState() }
 }
 

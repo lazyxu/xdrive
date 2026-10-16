@@ -353,6 +353,15 @@ export default function MobileFiles(props: Props) {
   const [scrollTop, setScrollTop] = useState(initial.scrollTop)
   const scrollSaveRef = useRef<number | null>(null)
   const pendingScrollRef = useRef<{ folderID: number; scrollTop: number } | null>(null)
+  // Independent Recent/Favorites virtual scroll anchors. Never store a
+  // collection offset in the Browse folder's authoritative saved position.
+  const collectionScrollRef = useRef({
+    recent: initial.recentScrollTop ?? 0,
+    favorites: initial.favoritesScrollTop ?? 0,
+  })
+  const pendingCollectionScrollRef = useRef<{
+    section: 'recent' | 'favorites'; scrollTop: number
+  } | null>(null)
   const [viewport, setViewport] = useState({ width: 375, height: 600 })
   const [moreAnchor, setMoreAnchor] = useState<HTMLElement | null>(null)
   const [locationMenuAnchor, setLocationMenuAnchor] = useState<HTMLElement | null>(null)
@@ -558,13 +567,24 @@ export default function MobileFiles(props: Props) {
   }
 
   const persist = useCallback((next: Partial<{
-    section: MobileFilesSection; folderID: number | null; scrollTop: number; view: 'details' | 'grid'
+    section: MobileFilesSection; folderID: number | null; scrollTop: number
+    recentScrollTop: number; favoritesScrollTop: number; view: 'details' | 'grid'
   }>) => {
     if (typeof window === 'undefined') return
     try {
       const old = mobileFilesDecodeState(window.localStorage.getItem(storageKey))
       window.localStorage.setItem(storageKey, mobileFilesEncodeState({ ...old, ...next }))
     } catch { /* Private browsing must still work without persistent storage. */ }
+  }, [storageKey])
+
+  useEffect(() => {
+    // Storage keys already include the authenticated Files lifecycle/account.
+    // A second account must never inherit the first account's rail position.
+    collectionScrollRef.current = {
+      recent: initial.recentScrollTop ?? 0,
+      favorites: initial.favoritesScrollTop ?? 0,
+    }
+    pendingCollectionScrollRef.current = null
   }, [storageKey])
 
   useEffect(() => {
@@ -711,7 +731,13 @@ export default function MobileFiles(props: Props) {
     collectionHoldRef.current = null
     if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
     if (pendingScrollRef.current) persist(pendingScrollRef.current)
+    if (pendingCollectionScrollRef.current) {
+      const { section: priorSection, scrollTop: pendingTop } = pendingCollectionScrollRef.current
+      persist(priorSection === 'recent'
+        ? { recentScrollTop: pendingTop } : { favoritesScrollTop: pendingTop })
+    }
     pendingScrollRef.current = null
+    pendingCollectionScrollRef.current = null
     scrollSaveRef.current = null
   }, [persist])
 
@@ -925,6 +951,12 @@ export default function MobileFiles(props: Props) {
       persist(pendingScrollRef.current)
       pendingScrollRef.current = null
     }
+    if (pendingCollectionScrollRef.current) {
+      const { section: priorSection, scrollTop: pendingTop } = pendingCollectionScrollRef.current
+      persist(priorSection === 'recent'
+        ? { recentScrollTop: pendingTop } : { favoritesScrollTop: pendingTop })
+      pendingCollectionScrollRef.current = null
+    }
   }
   const beginBrowse = (id: number | null = null) => {
     pendingPathOriginRef.current = null
@@ -996,6 +1028,12 @@ export default function MobileFiles(props: Props) {
   const changeSection = (next: MobileFilesSection) => {
     pendingPathOriginRef.current = null
     flushBrowseScroll()
+    if (section === 'recent' || section === 'favorites') {
+      const departingTop = scrollHostRef.current?.scrollTop ?? scrollTop
+      collectionScrollRef.current[section] = departingTop
+      persist(section === 'recent'
+        ? { recentScrollTop: departingTop } : { favoritesScrollTop: departingTop })
+    }
     navigationIntentRef.current += 1
     if (props.trashActive) {
       props.onCloseTrash()
@@ -1003,7 +1041,9 @@ export default function MobileFiles(props: Props) {
     }
     if (props.searchActive && next !== 'browse') props.onClearSearch()
     setSection(next)
-    const top = next === 'browse' && !browseHome && !props.trashActive ? browseScrollRef.current : 0
+    const top = next === 'browse'
+      ? !browseHome && !props.trashActive ? browseScrollRef.current : 0
+      : collectionScrollRef.current[next]
     setScrollTop(top)
     pendingSectionScrollRef.current = top
     // Commit the next section first; writing scroll on the previous short
@@ -1855,6 +1895,11 @@ export default function MobileFiles(props: Props) {
                 if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
                 scrollSaveRef.current = window.setTimeout(() => flushBrowseScroll(), 200)
               }
+            } else if (section === 'recent' || section === 'favorites') {
+              collectionScrollRef.current[section] = top
+              pendingCollectionScrollRef.current = { section, scrollTop: top }
+              if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+              scrollSaveRef.current = window.setTimeout(() => flushBrowseScroll(), 200)
             }
           }}
           sx={{ flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehaviorY: 'contain',

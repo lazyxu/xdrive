@@ -2995,3 +2995,88 @@ test('U08: reuse the existing StatePanel and keep one virtual-range owner and sh
   assert(!code.includes('api.search('), 'Mobile must continue using shared Web Search transport')
   assert(!code.includes('searchRange('), 'Mobile must not issue separate Server search ranges')
 })
+
+test('M07: Recent and Favorites restore independent virtual scroll anchors across rail switches', async () => {
+  const recentItems = Array.from({ length: 240 }, (_, i) => ({
+    id: 1000 + i, name: 'recent-' + String(i).padStart(3, '0') + '.txt', kind: 'file', revision: 1,
+  }))
+  const favorites = Array.from({ length: 240 }, (_, i) => ({
+    id: 2000 + i, name: 'favorite-' + String(i).padStart(3, '0') + '.txt', kind: 'file', revision: 1,
+  }))
+  const section = (h, name) => find(h.view, 'data-mobile-files-section', name)
+  // Recent/Favorites render collection rows, not directory item rows.
+  // Assert actual mounted virtual titles to avoid empty-array false passes.
+  const rows = h => h.view.root.findAll(n =>
+    Object.hasOwn(n.props ?? {}, 'data-mobile-files-collection-title'))
+    .map(n => n.props.title).filter(Boolean)
+  const navigate = async (h, name) => {
+    await act(async () => { section(h, name).props.onClick() })
+  }
+  const scroll = async (h, top) => {
+    const host = find(h.view, 'data-xdrive-mobile-files-scroll', true)
+    await act(async () => { host.props.onScroll({ currentTarget: { scrollTop: top } }) })
+  }
+  await withView(async h => {
+    await navigate(h, 'recent')
+    const recentInitial = rows(h)
+    await scroll(h, 1700)
+    const recentScrolled = rows(h)
+    assert.notDeepEqual(recentScrolled, recentInitial, 'Recent must be truly virtualized at a different row')
+    await navigate(h, 'favorites')
+    const favoritesInitial = rows(h)
+    await scroll(h, 3000)
+    const favoritesScrolled = rows(h)
+    assert.notDeepEqual(favoritesScrolled, favoritesInitial)
+    await navigate(h, 'recent')
+    assert.deepEqual(rows(h), recentScrolled, 'Recent restores its own logical row after Favorites')
+    await navigate(h, 'favorites')
+    assert.deepEqual(rows(h), favoritesScrolled, 'Favorites restores its own logical row after Recent')
+    await navigate(h, 'browse')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.recentScrollTop, 1700)
+    assert.equal(saved.favoritesScrollTop, 3000)
+    assert.equal(saved.folderID, null, 'rail scrolling must not create or change a Browse folder')
+    assert.equal(saved.scrollTop, 0, 'rail offsets must not replace the Browse directory anchor')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: { recentItems, favorites } })
+})
+
+test('M07: legacy state, cold relaunch and new account keep rail anchors isolated and bounded', async () => {
+  assert.deepEqual(state.mobileFilesDecodeState(
+    state.mobileFilesEncodeState({ section: 'browse', folderID: 42, scrollTop: 688, view: 'details' })),
+  { section: 'browse', folderID: 42, scrollTop: 688, view: 'details' },
+  'old files state must remain compatible')
+  const encoded = state.mobileFilesEncodeState({
+    section: 'browse', folderID: 42, scrollTop: 688,
+    recentScrollTop: 1700, favoritesScrollTop: 3000, view: 'details',
+  })
+  const decoded = state.mobileFilesDecodeState(encoded)
+  assert.equal(decoded.recentScrollTop, 1700)
+  assert.equal(decoded.favoritesScrollTop, 3000)
+  assert.equal(decoded.scrollTop, 688)
+  const invalid = state.mobileFilesDecodeState(JSON.stringify({
+    section: 'browse', folderID: 42, scrollTop: 688,
+    recentScrollTop: Number.POSITIVE_INFINITY, favoritesScrollTop: -500,
+  }))
+  assert.equal(invalid.recentScrollTop, undefined)
+  assert.equal(invalid.favoritesScrollTop, 0)
+  const many = Array.from({ length: 240 }, (_, i) =>
+    ({ id: 3000 + i, name: 'recent-' + i, kind: 'file', revision: 1 }))
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const rootRows = h.view.root.findAll(n =>
+      Object.hasOwn(n.props ?? {}, 'data-mobile-files-collection-title'))
+    assert.ok(rootRows.length > 0 && rootRows.length < 45,
+      'saved position must mount real bounded collection rows, not all 240')
+  }, { saved: { section: 'browse', folderID: null, scrollTop: 0, view: 'details',
+    recentScrollTop: 1700, favoritesScrollTop: 3000 },
+    props: { recentItems: many } })
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.recentScrollTop, undefined, 'new window/account without saved state starts fresh')
+  }, { props: { recentItems: many } })
+})

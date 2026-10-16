@@ -42,7 +42,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | M04 P1 | Safe-area and 44px menu target rules exist | Short landscape and 200% text zoom, no clipped destructive actions |
 | M05 P1 | Shared workspace navigation and explicit Viewer/Files paths | Real browser/PWA/OS Back semantic matrix |
 | M06 P2 | Single folder title and on-demand ancestors; iOS27-10D tests | Deep CJK path and rapid ancestor navigation |
-| M07 P2 | Recent/Favorites/Browse are distinct Mobile sections | Preserve distinct scroll/selection/search per section across cold/soft return |
+| M07 P2 | Recent/Favorites/Browse sections now preserve separate bounded virtual scroll anchors in account-scoped v1 state; existing Browse folder scroll stays independent | Per-section selection/search history, physical iPad/iOS/Android return still need verification |
 | M08 P2 | Directory upload controller and picker support exist | iOS/Android relative path, empty folder, multilevel cancellation limitations |
 | M09 P2 | `nativeFileShare` existing byte-sharing and 16MiB gate | System receiving apps, cancellation, fallback and device memory |
 | M10 P2 | Keyboard/pointer handlers are shared where supported | iPad mouse/keyboard/drag/touch simultaneous input |
@@ -144,3 +144,25 @@ state, REST, Server sort/groups, virtual range, SW CacheStorage or uploads.
 Actual offline/403/network timeout and physical iOS/Android PWA remain
 separate real browser/device gates. Require exact-head CI and Final Gate
 before Ready/merge.
+
+## M07 · Recent/Favorites independent virtual scroll anchors (2026-10-16)
+
+Source inspection established a concrete bug: `changeSection` restored the
+single Browse folder scroll but unconditionally set the next Recent or
+Favorites scroll offset to **zero**. This discards each collection's logical
+virtual row every time the user switches between rail tabs.
+
+Reuse the EXISTING Mobile Files per-account v1 localStorage record, adding
+only optional, bounded `recentScrollTop` and `favoritesScrollTop`
+presentation offsets. Older records keep their exact default decode.
+The single existing 200ms scroll-flush timer also writes rail offsets,
+so no extra listener/interval or 240/100k item materialization appears.
+Changing a section flushes the prior offset before changing the one shared
+scroll host. Browse `folderID/scrollTop` and its authenticated navigation
+remain independent, and the new account's storage key does not restore
+another account's offsets. Mounted source tests cover 240 virtual items,
+Recent→Favorites→Recent→Favorites restoration, Browse state isolation,
+old state compatibility and bounded invalid offsets. No Server API,
+selector limit or 900px breakpoint changes. Per-section selected-item
+and Search states remain separate, unaccepted M07 subcases; real installed
+PWA/iOS27/Android physical navigation remains NOT RUN.
