@@ -25,6 +25,7 @@ import (
 	"github.com/lazyxu/xdrive/internal/storage"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
@@ -426,6 +427,10 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	if downloaded.String() != helloBody {
 		t.Fatalf("restored download=%q want=%q", downloaded.String(), helloBody)
 	}
+
+	// U04-B: actual running Worker and authenticated cancel RPC, not a
+	// simulated terminal status or queued-before-start cancellation.
+	assertBasicFileOperationRunningCancel(t, srv, db, cli, root.ID, restored)
 }
 
 // assertRealAuthenticatedPendingNavigationAbort preserves the original
@@ -582,6 +587,164 @@ func assertRealAuthenticatedPendingNavigationAbort(
 		if !basicRangeHasNode(fresh, id) {
 			t.Fatalf("fresh authorized destination missing Node %d", id)
 		}
+	}
+}
+
+// assertBasicFileOperationRunningCancel owns an isolated genuine PostgreSQL
+// row lock to keep the original worker's transaction in flight after it has
+// claimed the task. The actual client cancel endpoint must cancel the Go
+// Worker context while the row is STILL LOCKED, without waiting for SQL to
+// finish naturally. All source/target effects must roll back.
+func assertBasicFileOperationRunningCancel(
+	t *testing.T,
+	srv *Server,
+	db *gorm.DB,
+	cli *clientpkg.Client,
+	rootID uint64,
+	source clientpkg.Node,
+) {
+	t.Helper()
+	const timeout = 12 * time.Second
+	ctx := context.Background()
+	target, err := cli.CreateDir(ctx, rootID, "running-cancel-target")
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation, err := cli.CreateFileOperation(ctx, meta.FileOperationTypeCopy,
+		[]clientpkg.BatchNodeRef{{ID: source.ID, Revision: source.Revision}}, target.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBasicQueuedFileOperation(t, cli, operation)
+	if before := basicFileExplorerRange(t, cli, target.ID); before.TotalCount != 0 {
+		t.Fatalf("running-cancel target must be empty before worker: %+v", before)
+	}
+
+	// Acquire after enqueue (which itself checks source Revision under a lock).
+	// GORM worker must wait at its real SELECT ... FOR UPDATE for this source.
+	lockTx := db.Begin()
+	if lockTx.Error != nil {
+		t.Fatal(lockTx.Error)
+	}
+	defer func() { _ = lockTx.Rollback().Error }()
+	var locked meta.Node
+	if err := lockTx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ?", source.ID).
+		First(&locked).Error; err != nil {
+		t.Fatal(err)
+	}
+	if locked.ID != source.ID {
+		t.Fatalf("unexpected source row lock identity=%d want=%d", locked.ID, source.ID)
+	}
+
+	type workerResult struct {
+		processed bool
+		err       error
+	}
+	workerDone := make(chan workerResult, 1)
+	go func() {
+		processed, err := srv.processNextFileOperation(context.Background())
+		workerDone <- workerResult{processed: processed, err: err}
+	}()
+
+	// The claim must become genuinely RUNNING and install the real Worker
+	// cancel cause before sending the HTTP request. Poll boundedly; don't
+	// assume a fabricated running state or race ahead of registration.
+	deadline := time.After(timeout)
+	registered := false
+	for !registered {
+		select {
+		case result := <-workerDone:
+			t.Fatalf("worker escaped held source lock before cancellation: %+v", result)
+		case <-deadline:
+			t.Fatal("worker never claimed and registered a cancellable running operation")
+		default:
+		}
+		status, err := cli.GetFileOperation(ctx, operation.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Status != meta.FileOperationStatusQueued &&
+			status.Status != meta.FileOperationStatusRunning {
+			t.Fatalf("unexpected pre-cancel live status: %+v", status)
+		}
+		srv.fileOperationCancelMu.Lock()
+		cancel := srv.fileOperationCancels[operation.ID]
+		srv.fileOperationCancelMu.Unlock()
+		registered = status.Status == meta.FileOperationStatusRunning && cancel != nil
+		if !registered {
+			select {
+			case <-time.After(15 * time.Millisecond):
+			case <-deadline:
+				t.Fatal("running operation did not register its cancellation")
+			}
+		}
+	}
+
+	// Prove the actual Worker reached PostgreSQL's SELECT ... FOR UPDATE
+	// and is waiting on our *separate* source-row transaction, not merely
+	// marked running before a not-yet-started SQL statement. This avoids a
+	// false pass that cancels between claim and execution.
+	blocked := false
+	lockWaitDeadline := time.After(timeout)
+	for !blocked {
+		var waitCount int64
+		if err := db.Raw(`SELECT COUNT(*) FROM pg_stat_activity
+WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock'
+AND state = 'active' AND query ILIKE '%xd_nodes%'
+AND query ILIKE '%FOR UPDATE%'`).Scan(&waitCount).Error; err != nil {
+			t.Fatal(err)
+		}
+		blocked = waitCount > 0
+		if !blocked {
+			select {
+			case result := <-workerDone:
+				t.Fatalf("worker exited before reaching blocked source query: %+v", result)
+			case <-time.After(25 * time.Millisecond):
+			case <-lockWaitDeadline:
+				t.Fatal("running Worker never reached held PostgreSQL source row")
+			}
+		}
+	}
+
+	acceptedCancel, err := cli.CancelFileOperation(ctx, operation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acceptedCancel.ID != operation.ID ||
+		(acceptedCancel.Status != meta.FileOperationStatusCancelRequested &&
+			acceptedCancel.Status != meta.FileOperationStatusCancelled) ||
+		acceptedCancel.CancelRequestedAt == nil ||
+		acceptedCancel.Status == meta.FileOperationStatusCompleted {
+		t.Fatalf("real running cancellation must not report completion: %+v", acceptedCancel)
+	}
+
+	// Critical oracle: Worker must exit BEFORE the source row lock is
+	// released, proving the actual cancel path interrupted pending SQL.
+	select {
+	case result := <-workerDone:
+		if !result.processed || result.err != nil {
+			t.Fatalf("real worker cancel did not settle cleanly: %+v", result)
+		}
+	case <-time.After(timeout):
+		t.Fatal("running worker did not exit while source row remained locked")
+	}
+	if err := lockTx.Rollback().Error; err != nil {
+		t.Fatal(err)
+	}
+
+	terminal, err := cli.GetFileOperation(ctx, operation.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if terminal.Status != meta.FileOperationStatusCancelled ||
+		terminal.ProcessedItems != 0 || terminal.ProcessedBytes != 0 ||
+		terminal.Percent != 0 || terminal.FinishedAt == nil ||
+		terminal.CancelRequestedAt == nil {
+		t.Fatalf("cancelled running worker must have truthful terminal zero progress: %+v", terminal)
+	}
+	if after := basicFileExplorerRange(t, cli, target.ID); after.TotalCount != 0 {
+		t.Fatalf("running cancellation must roll back all target Nodes: %+v", after)
 	}
 }
 
