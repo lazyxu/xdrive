@@ -228,3 +228,10 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 在既有非路由 `SessionBootstrapSameOrigin`、`SessionResourceRequest` 之前增加严格单 Header 字段判定：不得让 `Header.Get` 把同名重复行、混合大小写别名或空值静默转换为表面安全的 Origin、Fetch Metadata 或不含凭证请求；Proxy-Authorization 同样不能进入地图代理候选。资源 Query 使用 `url.ParseQuery` 显式检查错误；路径编码别名、强制空问号和 fragment 均拒绝。单元回归涵盖这些歧义，并保留正常旧浏览器无 Fetch Metadata 时的原本兼容语义。
 
 **明确 NO-GO**：以上只是传输预检，不是百度账号许可证据、实际 Browser AK 响应防泄漏、真实九组 HAR、完整许可子资源清单、运营者钉扎 Ed25519 信任根或实际 Browser/Server/Electron 地图授权。生产 `runtime_enabled=false`、零资源子规则、未配置生产签名根、无 Cookie mint/JSAPI Loader/代理路由不变。百度唯一 Provider、Server AK/Browser AK 分离只留 Server，Web/Mobile Web/Desktop 共享 Gallery Range/VirtualCollection/Viewer，52px 全屏 App Frame 和 iOS27「照片」1:1 验收不变。完成 A3b3a3d2 的真实合法外部证据及受控上线后，才进入 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d1b · 官方 JSAPI4 Map/ClusterLayer 纯构造器对接（2026-10-16）
+
+新增 ui/shared/src/media-gallery-baidu-jsapi4-native.ts，仅把未来合法加载、隔离的 JSAPI4 namespace 和 Map 实例绑定到现有共享 native ClusterLayer。严格限制 ClusterLayer 入参、setData/clearData/click 方法，以及 Convertor/Point 构造器有效性。异常固定化，不返回第三方错误或密钥。百度官方 ClusterLayer 类参考 https://lbs.baidu.com/jsapi/refdoc/v4/classes/BMap.ClusterLayer.html 支持 new ClusterLayer、setData、clearData、addEventListener；官方坐标文档 https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord 列举 WGS84→BD-09 Convertor.translate(1,5)。原生 Map.getBounds 使用 BD-09，必须另行审查 WGS84 查询视窗变换，不得当成已实现。
+
+这是一个非路由、无生产调用方的纯适配，不执行 BMap Loader/网络代理，不读取全局 BMap，不创建地图 Cookie，不返回 Browser AK。既有 Server AK / Browser AK 加密隔离、Owner Session/epoch/配额、零许可资源和 hard NO-GO 保持不变。上线前需真实百度账户许可覆盖 self-host/PWA/Electron，完整私有九组上游与浏览器 HAR 的 AK 防泄漏实证、人工核准的代码白名单、钉扎受信发布根、Caddy/CSP/Electron 沙箱、真实 iOS27/Android/Desktop 验收。不得把 mock 通过或用户工程授权当成百度许可。xDrive 52px 全屏 App Frame、百度唯一 Provider、三端共用 Gallery、iOS27「照片」1:1 目标不变。

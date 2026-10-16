@@ -381,3 +381,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 在共享 `MediaGalleryBaiduStaticMap` 中新增双指距离记录、离散缩放与多指误拖保护，只有手势结束后才提交一次整数 zoom，图片请求仍由现有 AbortController 取消、Server Static PNG 加载，Owner GPS 范围查询/照片集合复用原 DataSource、Range、Viewer。按同一组件覆盖 Web、Mobile Web、Desktop，避免手机双指造成单指平移或连续向服务器发起图片请求。无效距离、取消手势、第三指、尾指抬起不能修改相机；0/0 真实 GPS 不变。
 
 此阶段属于当前静态地图体验修复，**不是** iOS 27「照片」1:1 原生连续 Pinch/百度 JSAPI4 Marker/Cluster 正式交付。只有在百度 self-host/PWA/Electron 实际许可、全量官方资源人工批准、九场景私有网络无 AK 泄漏、受信发布签名/Owner 撤销/配额/CSP/Electron/真机验证后方可启用真实 JSAPI4。保留 52px 全屏 App Frame、唯一百度 Provider、Server AK/Browser AK 各自加密仅 Server、三端共享图库。A3 完成才进入 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d1b · 百度 JSAPI4 官方构造器纯适配（2026-10-16）
+
+承接已合并 #1759，新增三端共享 TypeScript 的未激活 BMap 原生接口适配。未来只能由独立获准的官方 JSAPI4 容器提供 Map、ClusterLayer、Convertor、Point；本阶段校验官方入参和方法，复用原 Owner viewport/ClusterLayer 和 Server Range/VirtualCollection/Viewer。不创建第二套 Mobile Web 或 Desktop 地图后端；测试中的 Mock BMap 既不是许可凭据，也不是运行授权。坐标只能通过官方 Convertor.translate(points,1,5) 处理 WGS84→BD-09，不能把 BD-09 getBounds 直接发给 Server WGS84 API。
+
+此模块没有生产调用方、没有第三方 JS SDK 加载、Cookie、Browser AK 前端注入、百度上游请求或新路由。runtime_enabled=false、0 条已批准 JSAPI 子资源规则、生产签名根未配置，仍 NO-GO。A3b3a3d2 需要真实 self-host/PWA/Electron 商用许可、完整上游脚本/瓦片/WASM/字体白名单、九场景 HAR 原始字节防泄漏审核、受信签名、Owner/跨副本配额/CSP/Electron 隔离及真机实证。保留百度唯一 Provider、Server AK/Browser AK 服务端独立加密、52px 全屏 App Frame、iOS27「照片」1:1 标准。达到实际 A3 动态地图发布门禁后再实施 A4、B1、B2、B3、C1。
