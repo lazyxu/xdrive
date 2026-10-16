@@ -165,3 +165,13 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 
 已验收原CAS-A02a真实Gin / SHA-256不可变CAS 4GiB上传物理峰值2.000000954×、写盘2.000000×。新的[CAS-A02b](cas-upload-staging-performance.md)仅测试同一Linux FS中512真实stage文件，在原版flat assemble（第二份4GiB）与离线hash chunk原子rename+Manifest（候选不额外复制原片）之间的同源A/B。**当前同源候选真实n3尚未运行，不能宣称收益**。强制补充物化完整文件的额外4GiB写盘以及随机Range和SHA；该候选不是已经实现的服务器ContentBlob/FileVersion/Owner/GC/云端/Agent新格式，不能替代实际HTTP分片续传，默认生产保持完整SHA不可变CAS。
 \n\n## CAS-A02b首轮实测归档补记 · 2026-10-16\n\n[专项CI #38905016820](https://github.com/lazyxu/xdrive/actions/runs/38905016820) 在原HEAD 84fc5684a556b4a895deddbb91c758f42c509a3e 成功：3×真实4GiB SHAKE-256源、512个8MiB不同物理stage分片，原版布局模型st_blocks峰值8,589,938,688B vs候选4,295,004,160B；kernel stage+final写入8,589,934,592B vs4,295,004,160B，P50 finalize16,305.935ms vs8,229.359ms，平面兼容物化另外写4GiB、P50 15,422.271ms；原版和候选的全SHA/40次64KiB随机Range验证全通过，最大RSS37,796KiB。**Accepted only OFFLINE experiment；生产 AFTER=N/A，真实6客户端未测。** 仓库内[原始数字+source exact+原JSON SHA](performance-evidence/cas-a02b-first-upload-staging/README.md)为永久可查证索引；完整11文件原GitHub Artifact #12047453131只有有限保留期，不能冒称已经永久归档其全部字节。归档修订新HEAD源码及全仓FinalGate仍需执行。
+
+
+## LP-P001 · 100k真正设备本机文件入口的性能边界（2026-10-16）
+
+新[LP-P001 本机原版性能](localpush-native-physical-performance.md)只在独立Linux Root测试真实100k个独立字节/文件系统inode（不是100k ContentBlob）。现有LocalPush本机扫描/强native身份、原始两代Journal及delta均是只读本机数据与候选，未形成Server内容源上传、全SHA Blob引用或自动删减权限；真实100k物理设备扫描数据形状区别于CAS-A01的100k SQL File/Version只共享一个Blob，也区别于P047的100k CAS实际Server HTTP删除。所有Stage/SourceCommit/跨Owner去重/真实CAS写放大/长传输/PWA六端真实性能仍未由该场景覆盖，不能凭原生扫描改动生产网络/完整Blob格式。仅测原版 CURRENT 并保存实际CPU/RSS/st_blocks及写入，上限符合即不优化。
+
+
+### LP-P001 Linux本机真实100k物理文件原版测量（2026-10-16）
+
+[专用 original n3 #38911723111](https://github.com/lazyxu/xdrive/actions/runs/38911723111) 完成100k独立实际本机普通inode/409600000B已分配块的Root强身份→扫描→2代持久Journal→100k Delta路径，生产原版P50 Scan1=912.402ms、Scan2=928.290ms、Delta=2418.643ms、Go峰RSS≈23.52MiB；真实写Journal每代约26.8MB，两个代际变更准确，缺失候选严格非Delete。由于预算满足，生产`localpush`不改。此工作负载并没有调用上传协议、SourceCommit、`ContentBlob`引用、Owner跨账户PG、真实网络，因而不能据此称100k独立CAS物理去重性能最优、移动PWA上传已经完成或LocalPush安全状态授权改变。原始样本完整资源文件在[永久归档](performance-evidence/localpush-native-physical-100k/README.md)，还需准确证据HEAD专用CI/完整FinalGate验收。
