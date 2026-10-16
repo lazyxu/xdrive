@@ -31,6 +31,16 @@
 5. Old Agent/Server returns an explicit unsupported/error message and does not silently show fictitious health.
 6. Go unit tests, Web lint/typecheck, Desktop main/renderer typecheck, and scoped CI pass before merge.
 
+## P1-SD-V1-C03b2b3c3b2b2b1 (2026-10-17): operator SSH host-key trust snapshot
+
+**Delivery handoff:** C03b2b3c3b2b2a PR #1896 exact HEAD `86178f889f5f227d14b69f2343f5a56f15b59823` passed complete [76-job CI #38944236075](https://github.com/lazyxu/xdrive/actions/runs/38944236075) (25 success, 51 conditional skips, Rootless/Go API/Windows/Web/Desktop/single-commit/final-gate) and Ready/Rebase merged as `master@9f0efd1c588892fd582edd717e1bfebb4470440b`. Its work branch is absent. This follow-on scope is a new frozen-parent one-work-commit PR.
+
+**Observed gap:** The preexisting read-only operator SSH script resolved its known_hosts path and let each of the four OpenSSH -W probes reopen that original file. Symlink input, group-writable trust material or in-flight path replacement could change which SSH host keys were trusted between readiness, anonymous 401, admin login and authenticated 11-dependency inventory.
+
+**Bounded safe correction:** Open known_hosts once with mandatory O_NOFOLLOW, fstat a nonempty regular file no larger than 128 KiB with no group/other write permissions, take an anchored byte snapshot and reject changed/malformed input. Write that snapshot to a mode-0600 file inside a private temporary directory; pass the same isolated UserKnownHostsFile to ALL four strict OpenSSH processes. Delete it after the check. No SSH config/control-master, port forwards/local listener, remote shell, Docker mutations, credentials or host/digest/secrets in logs. CI fake SSH modifies the original file after the first probe; the four probes must still read the isolated snapshot. Symlink and group-writable originals must fail closed; all previously validated HTTP 200/401, admin login, role and 11-ID checks stay intact.
+
+**Limits:** The tool still requires an independently verified original operator pin; isolating it does not prove key provenance, real off-host origin, a production primary-Caddy outage, an entire three-stage incident, published image trust/compatibility, HTTPS/TLS recovery, trusted Host Manager revision application or rollback. Keep seven Caddy preflights, restricted apply blocked, public HTTPS unknown, apply_supported=false and NO Caddy control buttons. An authorized operator must provide the independent physical evidence for C03b2b3c3b2b2b before any Host Manager CAS/timed rollback design or activation.
+
 ## P1-SD-V1-C03b2b3c3b2b2a (2026-10-17): same-window approved Rescue image versus observed runtime
 
 **Previous evidence and freeze:** Directly related #1890 C03b2b3c3b2b1 final scoped HEAD `874bf9d9d957b038387a22781ae1c56c2f45decf` passed complete [76-job CI #38940860324](https://github.com/lazyxu/xdrive/actions/runs/38940860324) (25 pass/51 conditional skipped, Rootless, shared Web/Desktop, Go Linux/API/Windows, actual fake-Docker/real-localhost phase-witness tests, single-commit/final-gate), Ready/Rebase merged as `master@0c02f6aad059bdf12c4044798c15c0ad491527b2`. #1890 is merged/closed and no Admin work branch remains. Freeze current newer master@`3c1ec148187f57cd40b76787a135e0e3a153bd19`, one scope-only C03b2b3c3b2b2a commit; all unrelated ongoing PRs remain untouched.

@@ -15,6 +15,7 @@ import selectors
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -33,6 +34,30 @@ EXPECTED = frozenset((
     "photo-face", "photo-smart", "photo-semantic", "photo-creative",
     "baidu-map", "geonames",
 ))
+
+
+def pinned_known_hosts_bytes(path):
+    """Anchor bounded host-key trust once for all four independent SSH probes.
+
+    This is a trusted operator-supplied PIN snapshot, not an attestation of
+    publisher provenance or an actual off-host Caddy-outage recovery test.
+    """
+    require(hasattr(os, "O_NOFOLLOW"),
+            "Safe pinned SSH host-key snapshot is unavailable")
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW |
+                     getattr(os, "O_CLOEXEC", 0))
+        with os.fdopen(fd, "rb") as source:
+            info = os.fstat(source.fileno())
+            require(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= 131072
+                    and not (info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)),
+                    "Pinned SSH host keys must be a small restricted regular file")
+            raw = source.read(131073)
+    except OSError:
+        raise Blocked("Pinned SSH host keys are unavailable or unsafe") from None
+    require(len(raw) == info.st_size and b"\x00" not in raw,
+            "Pinned SSH host-key snapshot is malformed or changed")
+    return raw
 
 
 def ssh_command(target, hosts, ssh_port, rescue_port):
@@ -204,59 +229,61 @@ def check():
     ssh_arg = sys.argv[4] if len(sys.argv) == 5 else "22"
     require(ssh_arg.isdigit() and 1 <= int(ssh_arg) <= 65535,
             "Invalid SSH port")
-    hosts = Path(hosts_arg).expanduser().resolve()
-    require(hosts.is_file(), "Pinned SSH known_hosts file missing")
-    meta = hosts.stat()
-    require(stat.S_ISREG(meta.st_mode) and meta.st_size > 0
-            and not (meta.st_mode & stat.S_IWOTH),
-            "Pinned SSH known_hosts file is missing or unsafe")
-    command = ssh_command(target, hosts, int(ssh_arg), int(port_arg))
+    hosts = Path(hosts_arg).expanduser().absolute()
+    pinned = pinned_known_hosts_bytes(hosts)
+    with tempfile.TemporaryDirectory(prefix="xdrive-rescue-ssh-trust-") as directory:
+        isolated = Path(directory) / "known_hosts"
+        isolated.write_bytes(pinned)
+        isolated.chmod(0o600)
+        command = ssh_command(target, isolated, int(ssh_arg), int(port_arg))
 
-    ready, _ = exchange(command, "GET", "/api/v1/readyz")
-    require(ready == 200, "Rescue over pinned SSH is not ready")
-    anonymous, _ = exchange(command, "GET", "/api/v1/admin/services")
-    require(anonymous == 401, "Rescue anonymous admin access is not denied")
-    username, password = credentials()
-    login = json.dumps({"username": username, "password": password},
-                       separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    del password
-    code, body = exchange(command, "POST", "/api/v1/auth/login", body=login)
-    require(code == 200, "Rescue operator login failed")
-    try:
-        session = json.loads(body)
-    except ValueError:
-        raise Blocked("Rescue login response invalid") from None
-    require(isinstance(session, dict) and session.get("role") == "admin"
-            and session.get("must_change_password") is not True,
-            "Rescue login is not an active administrator")
-    token = session.get("access_token")
-    require(isinstance(token, str), "Rescue administrator access token unavailable")
-    code, result = exchange(command, "GET", "/api/v1/admin/services", token=token)
-    del token
-    require(code == 200, "Rescue authenticated administrator access denied")
-    try:
-        snapshot = json.loads(result)
-    except ValueError:
-        raise Blocked("Rescue administrator inventory malformed") from None
-    items = snapshot.get("services") if isinstance(snapshot, dict) else None
-    require(isinstance(items, list) and len(items) == len(EXPECTED)
-            and all(isinstance(item, dict) and isinstance(item.get("id"), str)
-                    for item in items)
-            and {item["id"] for item in items} == EXPECTED,
-            "Rescue authenticated dependency inventory is not complete")
-    print("rescue-ssh-host-key: enforced-by-OpenSSH-pinned-known_hosts")
-    print("rescue-independent-ssh-stdio-channel: authenticated-current-session")
-    print("rescue-admin-inventory: 11-fixed-services-verified")
-    print("real-primary-caddy-outage-and-restoration: unverified")
-    print("separately-signed-known-good-rescue-image: unverified")
-    print("caddy-apply-stop-restart: blocked")
+        ready, _ = exchange(command, "GET", "/api/v1/readyz")
+        require(ready == 200, "Rescue over pinned SSH is not ready")
+        anonymous, _ = exchange(command, "GET", "/api/v1/admin/services")
+        require(anonymous == 401, "Rescue anonymous admin access is not denied")
+        username, password = credentials()
+        login = json.dumps({"username": username, "password": password},
+                           separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        del password
+        code, body = exchange(command, "POST", "/api/v1/auth/login", body=login)
+        require(code == 200, "Rescue operator login failed")
+        try:
+            session = json.loads(body)
+        except ValueError:
+            raise Blocked("Rescue login response invalid") from None
+        require(isinstance(session, dict) and session.get("role") == "admin"
+                and session.get("must_change_password") is not True,
+                "Rescue login is not an active administrator")
+        token = session.get("access_token")
+        require(isinstance(token, str), "Rescue administrator access token unavailable")
+        code, result = exchange(command, "GET", "/api/v1/admin/services", token=token)
+        del token
+        require(code == 200, "Rescue authenticated administrator access denied")
+        try:
+            snapshot = json.loads(result)
+        except ValueError:
+            raise Blocked("Rescue administrator inventory malformed") from None
+        items = snapshot.get("services") if isinstance(snapshot, dict) else None
+        require(isinstance(items, list) and len(items) == len(EXPECTED)
+                and all(isinstance(item, dict) and isinstance(item.get("id"), str)
+                        for item in items)
+                and {item["id"] for item in items} == EXPECTED,
+                "Rescue authenticated dependency inventory is not complete")
+        print("rescue-ssh-host-key: enforced-by-OpenSSH-pinned-known_hosts")
+        print("rescue-ssh-pinned-hosts: isolated-single-snapshot")
+        print("rescue-independent-ssh-stdio-channel: authenticated-current-session")
+        print("rescue-admin-inventory: 11-fixed-services-verified")
+        print("real-primary-caddy-outage-and-restoration: unverified")
+        print("separately-signed-known-good-rescue-image: unverified")
+        print("caddy-apply-stop-restart: blocked")
 
 
 if __name__ == "__main__":
     try:
         check()
-    except (Blocked, UnicodeError) as err:
-        print("rescue-ssh-admin-check: blocked (" +
-              (str(err) if isinstance(err, Blocked) else "Invalid credential encoding") +
-              ")", file=sys.stderr)
+    except (Blocked, UnicodeError, OSError) as err:
+        reason = (str(err) if isinstance(err, Blocked)
+                  else "Invalid credential encoding" if isinstance(err, UnicodeError)
+                  else "Private pinned SSH host-key snapshot unavailable")
+        print("rescue-ssh-admin-check: blocked (" + reason + ")", file=sys.stderr)
         sys.exit(1)
