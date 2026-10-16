@@ -3008,6 +3008,15 @@ jobs:
           docker run --rm xdrive/caddy:test test -f /srv/index.html
           docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.http --adapter caddyfile
           docker run --rm xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.rescue --adapter caddyfile
+          # Validate rescue under actual no-capabilities sandbox. Official Caddy's
+          # file-effective NET_BIND_SERVICE bit can cause execve EPERM even on :8080.
+          docker run --rm xdrive/caddy:test /bin/sh -ec 'test -z "$(getcap /usr/bin/caddy)"'
+          docker run --rm --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+            --user 65532:65532 \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777 \
+            -e XDG_CONFIG_HOME=/tmp/caddy-rescue-config \
+            -e XDG_DATA_HOME=/tmp/caddy-rescue-data \
+            xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile.rescue --adapter caddyfile
           docker run --rm -e XD_DOMAIN=drive.example.test -e ALIYUN_ACCESS_KEY_ID=test -e ALIYUN_ACCESS_KEY_SECRET=test xdrive/caddy:test caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
           bash scripts/ci/export-docker-image.sh xdrive/caddy:test dist/caddy-image
       - uses: actions/upload-artifact@v4

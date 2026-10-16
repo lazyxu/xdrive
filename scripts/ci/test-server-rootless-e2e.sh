@@ -336,5 +336,15 @@ if ! /usr/bin/curl -fsS "http://127.0.0.1:$WEB_PORT/api/v1/readyz" >/dev/null; t
   exit 1
 fi
 
+# Run the optional rescue ingress with the ACTUAL CI-built xDrive images,
+# PostgreSQL Server and a synthetic administrator. Stop ONLY the throwaway
+# primary Caddy container to prove independent authenticated admin access.
+# Never run this destructive fault injection against a user deployment.
+bash -n "$ROOT/scripts/ci/test-caddy-rescue-rootless-auth.sh"
+bash "$ROOT/scripts/ci/test-caddy-rescue-rootless-auth.sh" \
+  "$env_path" "$compose_path" "$WEB_PORT" \
+  "$registry/xdrive-caddy:$TAG" \
+  "${XDRIVE_ROOTLESS_RESCUE_PORT:-33081}" "$TMP_ROOT"
+
 echo "[rootless-e2e] host ownership files=$(stat -c '%u:%g' "$XDRIVE_HOME/data/files") postgres=$(stat -c '%u:%g' "$XDRIVE_HOME/data/postgres")"
 echo "real Rootless Docker server install/upgrade/source-preservation E2E passed"
