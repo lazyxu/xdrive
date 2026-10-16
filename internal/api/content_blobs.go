@@ -179,6 +179,13 @@ func (s *Server) cleanupUncommittedContentBlob(ctx context.Context, hash, storag
 	if hash == "" || storageKey == "" {
 		return
 	}
+	// An uncommitted upload may clean up only its exact canonical key.
+	// A stale/malformed caller must never turn this best-effort path into
+	// deletion of a different blob.
+	canonical, err := storage.ContentAddressedKey(hash)
+	if err != nil || canonical != storageKey {
+		return
+	}
 	_ = s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockContentHash(tx, hash); err != nil {
 			return err
@@ -189,6 +196,15 @@ func (s *Server) cleanupUncommittedContentBlob(ctx context.Context, hash, storag
 		}
 		if count != 0 {
 			return nil
+		}
+		referenced, err := contentStorageKeyHasLiveFileReferencesTx(tx, storageKey)
+		if err != nil {
+			return err
+		}
+		if referenced {
+			// Refcount metadata can be missing after a crash or bad recovery.
+			// Do not erase physical bytes still owned by a File/FileVersion.
+			return fmt.Errorf("uncommitted CAS cleanup found surviving File/FileVersion references")
 		}
 		return s.Store.Delete(ctx, storageKey)
 	})
@@ -368,6 +384,22 @@ func (s *Server) releaseContentReferencesTx(
 	return candidates, legacyKeys, nil
 }
 
+// contentStorageKeyHasLiveFileReferencesTx is an independent, indexed
+// physical-deletion safety check. A ref_count=0/deleting ContentBlob (or a
+// missing blob row) is NOT sufficient proof that its bytes are unreferenced.
+// Both File and FileVersion storage_key columns have SQL indexes. Call while
+// the canonical CAS hash lock is held, before Store.Delete; this performs no
+// write and does not grant any local Push SourceRun/restore authority.
+func contentStorageKeyHasLiveFileReferencesTx(tx *gorm.DB, key string) (bool, error) {
+	var referenced bool
+	err := tx.Raw(
+		"SELECT EXISTS (SELECT 1 FROM xd_files WHERE storage_key = ?) "+
+			"OR EXISTS (SELECT 1 FROM xd_file_versions WHERE storage_key = ?)",
+		key, key,
+	).Scan(&referenced).Error
+	return referenced, err
+}
+
 func reusedUploadPartExistsTx(tx *gorm.DB, sourceStorageKey string) (bool, error) {
 	var exists bool
 	err := tx.Raw(`
@@ -401,6 +433,19 @@ func (s *Server) finalizeContentBlobDeletes(ctx context.Context, candidates []co
 			}
 			if blob.StorageKey != candidate.StorageKey {
 				return fmt.Errorf("content blob delete key mismatch for %s", candidate.SHA256)
+			}
+			canonical, err := storage.ContentAddressedKey(blob.SHA256)
+			if err != nil || canonical != blob.StorageKey {
+				return fmt.Errorf("noncanonical content blob delete key for %s", candidate.SHA256)
+			}
+			referenced, err := contentStorageKeyHasLiveFileReferencesTx(tx, blob.StorageKey)
+			if err != nil {
+				return err
+			}
+			if referenced {
+				// A persisted File or FileVersion survives despite a zero
+				// refcount: fail closed. Do not modify Blob or delete bytes.
+				return fmt.Errorf("content blob %s still has File/FileVersion references", candidate.SHA256)
 			}
 			reusedPartExists, err := reusedUploadPartExistsTx(tx, blob.StorageKey)
 			if err != nil {
