@@ -255,3 +255,80 @@ test('A3 shared static map retains old raster only within same place, discards l
     URL.revokeObjectURL = originalRevoke
   }
 })
+
+test('A3 shared Mobile Web/Desktop pinch anchors the finger centroid and pans without zoom', async () => {
+  const requests = []
+  const provider = async () => ({
+    provider: 'baidu-server-static', enabled: true,
+    attribution: '© 百度地图', privacy: 'Server map only',
+  })
+  const source = (input, signal) => {
+    requests.push({ input, signal })
+    return new Promise(() => {})
+  }
+  const surface = {
+    clientWidth: 480, clientHeight: 280, setPointerCapture() {},
+    getBoundingClientRect() {
+      return { left: 20, top: 10, width: 480, height: 280 }
+    },
+  }
+  const pointer = (id, x, y) => ({
+    pointerId: id, pointerType: 'touch', button: 0,
+    clientX: x + 20, clientY: y + 10, currentTarget: surface,
+  })
+  const loc = { latitude: 39.916, longitude: 116.404, name: '有焦点的真实照片' }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(BaiduMap, {
+        location: loc, getProvider: provider, loadStaticMap: source,
+      }))
+    })
+    assert.equal(requests.length, 1)
+    const region = () => renderer.root.find(el =>
+      el.type === 'div' && el.props.role === 'group')
+    await act(async () => {
+      region().props.onPointerDown(pointer(1, 260, 140))
+      region().props.onPointerDown(pointer(2, 380, 140))
+      region().props.onPointerMove(pointer(1, 200, 140))
+      region().props.onPointerMove(pointer(2, 440, 140))
+    })
+    assert.equal(requests.length, 1, 'no per-frame PNG loading during pinch')
+    await act(async () => { region().props.onPointerUp(pointer(2, 440, 140)) })
+    assert.equal(requests.length, 2, 'one bounded Server request at pinch commit')
+    assert.equal(requests[0].signal.aborted, true)
+    assert.equal(requests[1].input.zoom, 13)
+    assert.ok(requests[1].input.longitude > loc.longitude,
+      'east-of-center pinch keeps the geographic anchor in the screen')
+    await act(async () => { region().props.onPointerUp(pointer(1, 200, 140)) })
+    assert.equal(requests.length, 2)
+
+    await act(async () => {
+      region().props.onPointerDown(pointer(3, 260, 140))
+      region().props.onPointerDown(pointer(4, 360, 140))
+      region().props.onPointerMove(pointer(3, 340, 140))
+      region().props.onPointerMove(pointer(4, 440, 140))
+    })
+    assert.equal(requests.length, 2, 'two-finger move still issues no interim requests')
+    await act(async () => { region().props.onPointerUp(pointer(4, 440, 140)) })
+    assert.equal(requests.length, 3, 'one PNG on two-finger translation')
+    assert.equal(requests[2].input.zoom, 13, 'translation keeps zoom unchanged')
+    assert.ok(requests[2].input.longitude < requests[1].input.longitude,
+      'camera moves west as the two-finger centroid moves east')
+    assert.equal(requests[1].signal.aborted, true)
+    await act(async () => { region().props.onPointerUp(pointer(3, 340, 140)) })
+    assert.equal(requests.length, 3)
+    await act(async () => {
+      region().props.onPointerDown(pointer(5, 220, 140))
+      region().props.onPointerDown(pointer(6, 320, 140))
+      region().props.onPointerUp(pointer(6, 320, 140))
+      region().props.onPointerUp(pointer(5, 220, 140))
+    })
+    assert.equal(requests.length, 3, 'stationary pinch does not re-request')
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.equal(requests[2].signal.aborted, true)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})

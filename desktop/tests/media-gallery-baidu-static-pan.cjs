@@ -69,3 +69,41 @@ test('A3 shared static pinch rounds/clamps zoom and fails closed on bad gesture 
   assert.match(mapSource, /onPointerCancel=\{onMapPointerCancel\}/)
   assert.doesNotMatch(mapSource, /new BMap\.|api\.map\.baidu\.com|\?ak=/)
 })
+
+test('A3 static two-finger anchor retains the represented world point across integer zooms', () => {
+  const focus = holder.exports.xDriveBaiduStaticFocusCenter
+  const center = { latitude: 39.916, longitude: 116.404 }
+  const start = { eastPixels: 80, southPixels: -40 }
+  const finish = { ...start }
+  const next = focus(center, 12, 13, start, finish)
+  assert.ok(next.longitude > center.longitude)
+  assert.ok(next.latitude > center.latitude)
+  const oldGeo = step(center, 12, start.eastPixels, start.southPixels)
+  const newGeo = step(next, 13, finish.eastPixels, finish.southPixels)
+  assert.ok(Math.abs(oldGeo.latitude - newGeo.latitude) < 1e-8)
+  assert.ok(Math.abs(oldGeo.longitude - newGeo.longitude) < 1e-8)
+  const roundtrip = focus(next, 13, 12, finish, start)
+  assert.ok(Math.abs(roundtrip.latitude - center.latitude) < 1e-8)
+  assert.ok(Math.abs(roundtrip.longitude - center.longitude) < 1e-8)
+})
+
+test('A3 two-finger translation pans without a zoom change and bounds bad camera deltas', () => {
+  const focus = holder.exports.xDriveBaiduStaticFocusCenter
+  const center = { latitude: 0, longitude: 0 }
+  const shifted = focus(center, 12, 12,
+    { eastPixels: 0, southPixels: 0 }, { eastPixels: 80, southPixels: 30 })
+  assert.ok(shifted.longitude < 0)
+  assert.ok(shifted.latitude > 0)
+  assert.deepEqual(focus(center, 12, 12,
+    { eastPixels: 0, southPixels: 0 }, { eastPixels: 0, southPixels: 0 }), center)
+  assert.deepEqual(focus(center, 12, 13,
+    { eastPixels: Infinity, southPixels: 0 }, { eastPixels: 0, southPixels: 0 }), center)
+  assert.deepEqual(focus(center, 12, 13,
+    { eastPixels: 0, southPixels: 0 }, { eastPixels: 100000, southPixels: 0 }), center)
+  assert.deepEqual(focus(center, 12, 19,
+    { eastPixels: 0, southPixels: 0 }, { eastPixels: 50, southPixels: 0 }), center)
+  const wrap = focus({ latitude: 10, longitude: 179.99 }, 10, 13,
+    { eastPixels: 240, southPixels: 0 }, { eastPixels: -240, southPixels: 0 })
+  assert.ok(wrap.longitude >= -180 && wrap.longitude <= 180)
+  assert.match(mapSource, /xDriveBaiduStaticFocusCenter/)
+})
