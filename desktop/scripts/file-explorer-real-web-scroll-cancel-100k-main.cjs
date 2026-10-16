@@ -11,15 +11,18 @@ const root = path.resolve(__dirname, '..', '..')
 const dist = path.join(root, 'web', 'dist')
 // P040 is a new narrow-viewport measurement, not a re-run of accepted wide-Web P015.
 const mobileCancelMode = process.env.XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF === '1'
-const physicalCancelMode = process.env.XD_FILEEXPLORER_MOBILE_PHYSICAL_GO_CANCEL_100K_PERF === '1'
-if (physicalCancelMode) assert(mobileCancelMode, 'P052 requires actual Mobile Web viewport mode')
+const widePhysicalCancelMode = process.env.XD_FILEEXPLORER_WIDE_PHYSICAL_GO_CANCEL_100K_PERF === '1'
+const physicalCancelMode = process.env.XD_FILEEXPLORER_MOBILE_PHYSICAL_GO_CANCEL_100K_PERF === '1' || widePhysicalCancelMode
+if (physicalCancelMode && !widePhysicalCancelMode) assert(mobileCancelMode, 'P052 requires actual Mobile Web viewport mode')
+if (widePhysicalCancelMode) assert(!mobileCancelMode, 'P054 must run wide native Chromium Web, not the Mobile Web breakpoint')
+const resourceProbeMode = mobileCancelMode || widePhysicalCancelMode
 const out = path.resolve(process.env.XD_FILEEXPLORER_REAL_SCROLL_RESULTS ||
   path.join(__dirname, '..', mobileCancelMode ?
     'file-explorer-mobile-go-cancel-100k-results' : 'file-explorer-real-scroll-results'))
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-const ticksPerSecond = mobileCancelMode ?
+const ticksPerSecond = resourceProbeMode ?
   Number(execFileSync('getconf', ['CLK_TCK'], { encoding: 'utf8' }).trim()) : 0
-if (mobileCancelMode) assert(ticksPerSecond > 0, 'Linux CLK_TCK required for real Go/Renderer CPU')
+if (resourceProbeMode) assert(ticksPerSecond > 0, 'Linux CLK_TCK required for real Go/Renderer CPU')
 function processSnapshot(pid) {
   assert(Number.isSafeInteger(pid) && pid > 0, 'real native process PID required')
   const status = fs.readFileSync('/proc/' + pid + '/status', 'utf8')
@@ -178,11 +181,11 @@ async function sampleOnce(view, sample, readyFile) {
     }, 60000, 'six first-viewport genuine HTTP JPEG streams (' + view + ')')
     // Read resource counters from the actual Go test process and Electron Renderer.
     // Only the 160 ms cancellation interval is compared; cold boot/100k seed excluded.
-    if (mobileCancelMode) assert(Number.isSafeInteger(fixture.config.server_pid) &&
+    if (resourceProbeMode) assert(Number.isSafeInteger(fixture.config.server_pid) &&
       fixture.config.server_pid > 0, 'real Go fixture PID missing')
-    const goBefore = mobileCancelMode ? processSnapshot(fixture.config.server_pid) : null
-    const rendererBefore = mobileCancelMode ? processSnapshot(window.webContents.getOSProcessId()) : null
-    const electronCPUStart = mobileCancelMode ? process.cpuUsage() : null
+    const goBefore = resourceProbeMode ? processSnapshot(fixture.config.server_pid) : null
+    const rendererBefore = resourceProbeMode ? processSnapshot(window.webContents.getOSProcessId()) : null
+    const electronCPUStart = resourceProbeMode ? process.cpuUsage() : null
     const marker = await fetch(fixture.config.url + '/__perf/viewport-cancel-mark', {
       method: 'POST',
     })
@@ -197,6 +200,9 @@ async function sampleOnce(view, sample, readyFile) {
     if (mobileCancelMode) assert(scroll.narrowBreakpoint &&
       scroll.clientWidth >= 375 && scroll.clientWidth <= 390,
       'actual shared Mobile Web 390px breakpoint is not active: ' + JSON.stringify(scroll))
+    if (widePhysicalCancelMode) assert(!scroll.narrowBreakpoint &&
+      scroll.clientWidth >= 1360 && scroll.clientWidth <= 1440,
+      'P054 requires a REAL wide 1440px browser document, not responsive emulation: ' + JSON.stringify(scroll))
     await sleep(160)
     const after = await stats(fixture.config.url)
     const go = {
@@ -210,7 +216,7 @@ async function sampleOnce(view, sample, readyFile) {
     }
     console.log('FILEEXPLORER_REAL_WEB_SCROLL_100K_PRE_RANGE ' +
       JSON.stringify({ view, sample, scroll, go }))
-    const resource = mobileCancelMode ? (() => {
+    const resource = resourceProbeMode ? (() => {
       const goAfter = processSnapshot(fixture.config.server_pid)
       const rendererAfter = processSnapshot(window.webContents.getOSProcessId())
       const cpu = process.cpuUsage(electronCPUStart)
@@ -232,16 +238,17 @@ async function sampleOnce(view, sample, readyFile) {
       physicalJPEGOriginals: physicalCancelMode ? 100000 : 16,
       physicalCASSourceBytes: fixture.config.physical_source_bytes,
       physicalCancelMode,
-      seedMsExcluded: fixture.config.seed_ms, mobileCancelMode,
+      seedMsExcluded: fixture.config.seed_ms, mobileCancelMode, widePhysicalCancelMode,
       mobileCssWindowWidth: mobileCancelMode ? 390 : 1440,
       scroll, go, resource, healthy,
-      scope: physicalCancelMode ?
+      scope: widePhysicalCancelMode ?
+        'P054 real 1440px Wide Web mounted FileExplorer Grid/Details, 100k SHA-distinct 80x64 JPEG physical CAS originals. Six genuine signed thumbnail HTTP streams each emitted 256B, then AbortSignal from true virtual scroll to Gin Request.Context.Done, 160ms Go/Renderer CPU/RSS. Not native Desktop Agent, OS-installed PWA, real mobile hardware, Live motion or user-owned durable Task Center cancellation.' : physicalCancelMode ?
         'P052 mounted narrow Web Files Grid/Details, 100k SHA-distinct true 80x64 JPEG original CAS. Six real slow original-backed HTTP thumbnail responses and 160ms AbortSignal -> Gin Request.Context.Done, Go/Renderer process RSS and CPU. Not real Android/iOS/PWA or Live/H264, and not Task Center cancellation.' :
         'Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN.',
     }
-    if (mobileCancelMode && (resource.goRssGrowthBytes > 134217728 ||
+    if (resourceProbeMode && (resource.goRssGrowthBytes > 134217728 ||
       resource.rendererRssGrowthBytes > 134217728)) {
-      throw Error('P040 real 160ms Go/Renderer RSS growth exceeded 128MiB: ' + JSON.stringify(row))
+      throw Error('real 160ms Go/Renderer RSS growth exceeded 128MiB: ' + JSON.stringify(row))
     }
     if (go.started !== 6 || go.contextDone !== 6 || go.canceled !== 6 ||
       go.stillActiveAt160ms !== 0 || go.staleBytesAfterScroll !== 0 ||
@@ -272,14 +279,20 @@ async function main() {
       }
     }
     const summary = {
-      status: physicalCancelMode ?
+      status: widePhysicalCancelMode ?
+        'measured-P054-Wide-Web-1440px-100k-DISTINCT-physical-CAS-JPEG-scroll-Go-cancellation' : physicalCancelMode ?
         'measured-P052-Mobile-Web-100k-DISTINCT-physical-CAS-JPEG-scroll-Go-cancellation' : mobileCancelMode ?
         'measured-Mobile-Web-390px-FileExplorer-100k-scroll-to-real-Go-cancellation' :
         'measured-real-Web-FileExplorer-Grid-Details-100k-scroll-to-Go-cancellation',
-      mobileCancelMode, physicalCancelMode,
+      mobileCancelMode, physicalCancelMode, widePhysicalCancelMode,
       physicalOriginalsPerFixture: physicalCancelMode ? 100000 : 16,
       cssWindowWidth: mobileCancelMode ? 390 : 1440,
-      observedDocumentWidth: mobileCancelMode ? 375 : null,
+      observedDocumentWidth: mobileCancelMode ? 375 : widePhysicalCancelMode ? rows[0]?.scroll.clientWidth : null,
+      maxGoRssGrowthBytes: resourceProbeMode ? Math.max(...rows.map(row => row.resource.goRssGrowthBytes)) : null,
+      maxRendererRssGrowthBytes: resourceProbeMode ? Math.max(...rows.map(row => row.resource.rendererRssGrowthBytes)) : null,
+      totalActualGoContexts: rows.reduce((n, row) => n + row.go.contextDone, 0),
+      totalActualCanceledHandlers: rows.reduce((n, row) => n + row.go.canceled, 0),
+      totalStaleBodyBytes: rows.reduce((n, row) => n + row.go.staleBytesAfterScroll, 0),
       sampleCount: rows.length, eachModeSamples: 3, budgetMs: 160,
       views: ['grid', 'details'],
       worstGoContextMs: Math.max(...rows.map(row => row.go.worstContextNotificationMs)),
@@ -291,10 +304,16 @@ async function main() {
           row.scroll.clientWidth >= 375 && row.scroll.clientWidth <= 390 &&
           row.resource?.goRssGrowthBytes <= 134217728 &&
           row.resource?.rendererRssGrowthBytes <= 134217728)) &&
+        (!widePhysicalCancelMode || (!row.scroll.narrowBreakpoint &&
+          row.scroll.clientWidth >= 1360 && row.scroll.clientWidth <= 1440 &&
+          row.resource?.goRssGrowthBytes <= 134217728 &&
+          row.resource?.rendererRssGrowthBytes <= 134217728 &&
+          row.widePhysicalCancelMode)) &&
         row.healthy.total === 100000 && row.healthy.returned === 200 &&
         (!physicalCancelMode || (row.physicalJPEGOriginals === 100000 &&
           row.physicalCASSourceBytes >= 50000000 && row.physicalCancelMode))),
-      limits: physicalCancelMode ?
+      limits: widePhysicalCancelMode ?
+        'P054 Wide Web 1440px real physical 100k SHA-distinct CAS JPEG per fresh PG17/Gin fixture; mounted shared Files Grid/Details n3 each; six signed slow GETs with 256B each, actual virtual scroll AbortSignal => native Go Context.Done, <=160ms, old handlers 0, stale bytes 0 B, Go/Renderer 160ms RSS growth <=128MiB; actual OS-installed PWA/mobile hardware/WAN/durable tasks excluded.' : physicalCancelMode ?
         'P052 real 100k SHA-distinct physical JPEG CAS originals per fresh PG/Go fixture; 390px shared Web FileExplorer mounted Grid/Details; 6 genuine first-body JPEG HTTP GETs per view intentionally delayed 1500ms after 256B, n3 each view. At +160ms 0 Go handlers/SQL work, 6/6 Context.Done, zero wasted response bytes, native CPU/RSS <=128MiB; does NOT claim live Android/iOS/PWA or persistent task cancellation.' : mobileCancelMode ?
         '390px shared Web FileExplorer, 100k metadata + only 16 physical JPEG originals, 6 first-chunk slow HTTP requests per Grid/Details view; 3 independent runs each. Actual Electron Chromium 375px document and Linux native Go Context.Done, not full Mobile App Frame, real iOS/Android device, installed PWA, sustained Go/Renderer peak or durable Task Center cancellation.' :
         '100k image Nodes/Files/MediaMetadata but only 16 distinct physical JPEG CAS originals; actual mounted Web Grid/Details and Go HTTP; no Windows or Desktop Main/Agent, native Live/RAW/video codec, full-file network throughput or peak RSS.',

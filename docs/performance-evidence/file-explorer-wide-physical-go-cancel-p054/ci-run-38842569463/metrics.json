@@ -1,0 +1,294 @@
+{
+  "workID": "P054/M005-k",
+  "delivery": "Accepted original CURRENT n3; evidence-amended HEAD must rerun exact native and full CI/Final Gate",
+  "originalSourceSHA": "a1e2e16d7501142f42b360b7f3eb09d693a63aba",
+  "frozenBase": "b5a90f1270424a7dd99c26f2345ca01202661fc4",
+  "originalNativeRun": 38842569463,
+  "originalNativeJob": 116785768856,
+  "originalFullRun": 38842569539,
+  "originalArtifactID": 12022196447,
+  "authenticPlatform": "Wide Web shared production FileExplorer Grid/Details in 1440px Electron-hosted Chromium/Linux Xvfb (not native Desktop Agent nor OS-installed PWA)",
+  "fullPhysicalFixtures": 6,
+  "distinctSHA256JPEGOriginalsEach": 100000,
+  "genuineSourceBytesEach": 70893376,
+  "result": {
+    "status": "measured-P054-Wide-Web-1440px-100k-DISTINCT-physical-CAS-JPEG-scroll-Go-cancellation",
+    "mobileCancelMode": false,
+    "physicalCancelMode": true,
+    "widePhysicalCancelMode": true,
+    "physicalOriginalsPerFixture": 100000,
+    "cssWindowWidth": 1440,
+    "observedDocumentWidth": 1440,
+    "maxGoRssGrowthBytes": 12288,
+    "maxRendererRssGrowthBytes": 5652480,
+    "totalActualGoContexts": 36,
+    "totalActualCanceledHandlers": 36,
+    "totalStaleBodyBytes": 0,
+    "sampleCount": 6,
+    "eachModeSamples": 3,
+    "budgetMs": 160,
+    "views": [
+      "grid",
+      "details"
+    ],
+    "worstGoContextMs": 21.533,
+    "passed": true,
+    "limits": "P054 Wide Web 1440px real physical 100k SHA-distinct CAS JPEG per fresh PG17/Gin fixture; mounted shared Files Grid/Details n3 each; six signed slow GETs with 256B each, actual virtual scroll AbortSignal => native Go Context.Done, <=160ms, old handlers 0, stale bytes 0 B, Go/Renderer 160ms RSS growth <=128MiB; actual OS-installed PWA/mobile hardware/WAN/durable tasks excluded."
+  },
+  "p50WorstContextNotificationByView": {
+    "grid": 18.541,
+    "details": 13.847
+  },
+  "perView": [
+    {
+      "view": "grid",
+      "sample": 1,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 672385,
+      "DOM": 88,
+      "seedMSExcluded": 79744.96,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 16.888
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 65720320,
+        "goRssAfterBytes": 65728512,
+        "goRssGrowthBytes": 8192,
+        "goCpuDeltaMs": 10,
+        "rendererRssBeforeBytes": 197627904,
+        "rendererRssAfterBytes": 203280384,
+        "rendererRssGrowthBytes": 5652480,
+        "rendererCpuDeltaMs": 30,
+        "electronMainCpuDeltaMs": 6.48
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    },
+    {
+      "view": "grid",
+      "sample": 2,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 672385,
+      "DOM": 88,
+      "seedMSExcluded": 113848.732,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 18.541
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 65683456,
+        "goRssAfterBytes": 65695744,
+        "goRssGrowthBytes": 12288,
+        "goCpuDeltaMs": 0,
+        "rendererRssBeforeBytes": 195383296,
+        "rendererRssAfterBytes": 200994816,
+        "rendererRssGrowthBytes": 5611520,
+        "rendererCpuDeltaMs": 50,
+        "electronMainCpuDeltaMs": 6.009
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    },
+    {
+      "view": "grid",
+      "sample": 3,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 672385,
+      "DOM": 88,
+      "seedMSExcluded": 73258.858,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 21.533
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 65544192,
+        "goRssAfterBytes": 65552384,
+        "goRssGrowthBytes": 8192,
+        "goCpuDeltaMs": 10,
+        "rendererRssBeforeBytes": 196198400,
+        "rendererRssAfterBytes": 201773056,
+        "rendererRssGrowthBytes": 5574656,
+        "rendererCpuDeltaMs": 40,
+        "electronMainCpuDeltaMs": 6.304
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    },
+    {
+      "view": "details",
+      "sample": 1,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 1799661,
+      "DOM": 30,
+      "seedMSExcluded": 60692.299,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 15.88
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 67297280,
+        "goRssAfterBytes": 67301376,
+        "goRssGrowthBytes": 4096,
+        "goCpuDeltaMs": 0,
+        "rendererRssBeforeBytes": 188432384,
+        "rendererRssAfterBytes": 192700416,
+        "rendererRssGrowthBytes": 4268032,
+        "rendererCpuDeltaMs": 20,
+        "electronMainCpuDeltaMs": 7.382
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    },
+    {
+      "view": "details",
+      "sample": 2,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 1799661,
+      "DOM": 30,
+      "seedMSExcluded": 64972.917,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 13.105
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 62427136,
+        "goRssAfterBytes": 62427136,
+        "goRssGrowthBytes": 0,
+        "goCpuDeltaMs": 10,
+        "rendererRssBeforeBytes": 187473920,
+        "rendererRssAfterBytes": 191885312,
+        "rendererRssGrowthBytes": 4411392,
+        "rendererCpuDeltaMs": 30,
+        "electronMainCpuDeltaMs": 7.735
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    },
+    {
+      "view": "details",
+      "sample": 3,
+      "sourceBytes": 70893376,
+      "physicalSHAUniqueOriginals": 100000,
+      "cssWidth": 1440,
+      "scrollBefore": 0,
+      "scrollAfter": 1799661,
+      "DOM": 30,
+      "seedMSExcluded": 85625.792,
+      "go": {
+        "started": 6,
+        "contextDone": 6,
+        "canceled": 6,
+        "stillActiveAt160ms": 0,
+        "oldBytesBeforeScroll": 1536,
+        "staleBytesAfterScroll": 0,
+        "worstContextNotificationMs": 13.847
+      },
+      "CPUAndRSS": {
+        "scope": "actual native process CPU/RSS sampled before viewport eviction and after 160ms; not a whole-app peak",
+        "goRssBeforeBytes": 65740800,
+        "goRssAfterBytes": 65740800,
+        "goRssGrowthBytes": 0,
+        "goCpuDeltaMs": 0,
+        "rendererRssBeforeBytes": 188882944,
+        "rendererRssAfterBytes": 193118208,
+        "rendererRssGrowthBytes": 4235264,
+        "rendererCpuDeltaMs": 20,
+        "electronMainCpuDeltaMs": 6.242
+      },
+      "ownerPage": {
+        "status": 200,
+        "total": 100000,
+        "returned": 200
+      }
+    }
+  ],
+  "evidence": {
+    "rawTar": "docs/performance-evidence/file-explorer-wide-physical-go-cancel-p054/ci-run-38842569463/raw-n3.tar.gz",
+    "rawTarSHA256": "dd648858af405aab1e3a7dda2e7a1332360319e70811513e9690dc1604d83613",
+    "rawGitBlobSHA": "8cb5979109ea6fc3eb0b300475c73635961d0e07",
+    "artifactZIP_SHA256": "dd8790ec4f78bafbaa2ef6ce6625db75e7fea1436cbda80fe04c2198077f9a01",
+    "originalArtifactURL": "https://github.com/lazyxu/xdrive/actions/runs/38842569463/artifacts/12022196447",
+    "rawContents": [
+      "source.txt",
+      "summary.json",
+      "grid-sample-1.json",
+      "grid-sample-2.json",
+      "grid-sample-3.json",
+      "details-sample-1.json",
+      "details-sample-2.json",
+      "details-sample-3.json"
+    ],
+    "originalGoFixtureLogs": "available in original full Actions artifact, not in raw tar"
+  },
+  "decision": "All frozen budgets pass; original production unchanged. BEFORE=CURRENT, AFTER=N/A, gain=N/A. No valid latency A/B with other platforms.",
+  "gaps": [
+    "Installed Desktop PWA not measured",
+    "Installed Android PWA and actual Android not measured",
+    "Installed iOS Home Screen PWA and real iOS not measured",
+    "100k physical JPEG Go cancel actual native Windows/macOS not measured",
+    "RAW/HEVC/LIVP/Live Motion video playback Go cancel not measured",
+    "100k physical Push/Pull/GUI delete not measured",
+    "4GiB lossy WAN and durable task own cancel not measured"
+  ]
+}

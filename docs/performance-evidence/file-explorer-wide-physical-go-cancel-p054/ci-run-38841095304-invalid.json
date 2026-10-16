@@ -1,0 +1,38 @@
+{
+  "workload": "P054/M005-k",
+  "status": "Invalid harness",
+  "validBeforeSamples": 0,
+  "validAfterSamples": 0,
+  "sourceHead": "164c2fcf1fb67aec1e1f22a7a22ac2d707ae20e5",
+  "sourceRun": 38841095304,
+  "runURL": "https://github.com/lazyxu/xdrive/actions/runs/38841095304",
+  "failedStage": "GitHub Actions workflow YAML parsing before any job (workflow recorded as path, 0 jobs)",
+  "rootCause": "Unquoted colon inside a YAML step name: '- name: P054 original CURRENT: 1440px ...', invalid YAML plain scalar mapping",
+  "untouched": [
+    "Go handler and cancellation production code",
+    "Shared Web FileExplorer product UI",
+    "P040/P052/P053 accepted test modes",
+    "original physical CAS 100k input and frozen budgets",
+    "Task Center/durable user jobs"
+  ],
+  "resolution": "Quote YAML step name as a single string, extend source-exact static contract, rerun original CURRENT n3; preserve this Invalid harness record separate from product RED",
+  "actualMeasuredPhysicalFixtures": 0,
+  "actualAbortedGoRequests": 0,
+  "performanceConclusion": "Not measured; no valid CURRENT and no claimed AFTER/speedup",
+  "frozenConstraints": {
+    "datasets": 6,
+    "perDatasetPhysicalSHAUniqueJPEG": 100000,
+    "minimumSourceBytes": 50000000,
+    "realWidthPx": [
+      1360,
+      1440
+    ],
+    "requiredContextDone": 36,
+    "requiredHandlers": 36,
+    "maxWorstNotificationMs": 160,
+    "activeOldHandlersAt160ms": 0,
+    "staleBytes": 0,
+    "maxGoRssGrowthBytes": 134217728,
+    "maxRendererRssGrowthBytes": 134217728
+  }
+}

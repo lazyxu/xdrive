@@ -72,6 +72,16 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	if desktopPhysicalCancelMode {
 		physicalCancelMode = true
 	}
+	// P054 is a distinct wide-screen Web workload. It intentionally uses
+	// P052's real physical-JPEG seed and test-only slow Go HTTP writer,
+	// without enabling Mobile Web or the native Desktop Agent mode.
+	widePhysicalCancelMode := os.Getenv("XD_FILEEXPLORER_WIDE_PHYSICAL_GO_CANCEL_100K_PERF") == "1"
+	if widePhysicalCancelMode {
+		if physicalCancelMode || os.Getenv("XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF") == "1" {
+			t.Fatal("P054 wide physical Web test cannot combine with Mobile Web or Desktop modes")
+		}
+		physicalCancelMode = true
+	}
 	// Native Desktop FileExplorer cancellation needs the same real Desktop
 	// read-only schema and Capacity() prerequisites as the accepted P035
 	// physical-JPEG viewport. Keep physicalMode independently controlled so
@@ -79,7 +89,10 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	desktopNeedsBoot := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" ||
 		os.Getenv("XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF") == "1" || physicalCancelMode
 	if desktopNeedsBoot {
-		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.Source{},
+		// P054 independent PG17 test schema must include the same active
+		// owner quota-hold table as production /me/quota. Never mislabel an
+		// absent test-only migration as a 100k cancellation regression.
+		if err := db.AutoMigrate(&meta.LocalPushQuotaHold{}, &meta.FileVersion{}, &meta.Source{},
 			&meta.FileRecentAccess{}, &meta.FileFavorite{}, &meta.FileQuickAccess{},
 			&meta.FileSavedSearch{}, &meta.FileTag{}, &meta.FileNodeTag{},
 			&meta.NodeChange{}, &meta.FileOperation{},
@@ -286,7 +299,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			// In P052/P053 only, the six genuinely distinct first-viewport JPEG CAS
+			// In P052/P053/P054 only, six genuinely distinct first-viewport JPEG CAS
 			// thumbnails must pass the slow-body watcher before the general physical
 			// counter. Preserve P039/P035's accepted unmodified route behavior.
 			if physicalCancelMode && r.Method == http.MethodGet && probe.matches(r.URL.Path) {
