@@ -1835,27 +1835,40 @@ export function XDriveMediaGalleryPage({
   }, [loadFirstPage, query])
 
   const openPlace = useCallback((place: MediaPlaceFacet, fromCollections = false) => {
-    placeOpenedFromCollectionsRef.current = fromCollections
-    if (section === 'places' && !query.place && placesTotalCount !== null && places.length <= 48) {
-      placesReturnPageRef.current = { items: [...places], offset: placesPageOffset, totalCount: placesTotalCount }
-    }
-    setLastOpenedPlaceID(place.id)
-    if (placesCameraRef.current) {
-      persistPlacesCamera({ ...placesCameraRef.current, focusPlaceID: place.id, placesPageOffset })
-    }
-    placesExpandedRef.current = true
-    setSection('places')
-    setActiveMediaType('')
     const nextDraft: MediaGalleryFilterDraft = {
       ...(fromCollections ? emptyMediaGalleryFilterDraft : draftFilters),
       location: 'with',
       place: place.id,
     }
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
-    setDraftFilters(nextDraft)
-    setQuery(nextQuery)
-    void loadFirstPage(null, nextQuery)
-  }, [draftFilters, loadFirstPage, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
+    // Collections still owns its mounted cards and real scroll position while
+    // the owner's first GPS-filtered sparse Range is pending. Publish camera,
+    // title, section and query together ONLY after the matching page wins.
+    const commitPlace = () => {
+      placeOpenedFromCollectionsRef.current = fromCollections
+      if (section === 'places' && !query.place && placesTotalCount !== null && places.length <= 48) {
+        placesReturnPageRef.current = { items: [...places], offset: placesPageOffset, totalCount: placesTotalCount }
+      }
+      setLastOpenedPlaceID(place.id)
+      if (placesCameraRef.current) {
+        persistPlacesCamera({ ...placesCameraRef.current, focusPlaceID: place.id, placesPageOffset })
+      }
+      placesExpandedRef.current = true
+      setSection('places')
+      setActiveMediaType('')
+      setDraftFilters(nextDraft)
+      setQuery(nextQuery)
+      if (fromCollections) setMobileCollectionsOverview(false)
+    }
+    if (fromCollections && mobileGalleryViewport) {
+      void loadFirstPage(null, nextQuery, null, null, 'default',
+        null, null, null, commitPlace)
+    } else {
+      // Wide Web/Desktop and existing non-Collections Places preserve routing.
+      commitPlace()
+      void loadFirstPage(null, nextQuery)
+    }
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
   const openPet = useCallback((pet: MediaPetFacet, fromCollections = false) => {
     // Mobile Collections stays committed while the owner's Pet first range
@@ -2894,7 +2907,7 @@ export function XDriveMediaGalleryPage({
               void openSyncFolderDirectory(currentFolderView.source.source_id, breadcrumb.id)
             }
           : undefined}
-        onOpenPlace={(place) => { openPlace(place, mobileCollectionsOverview); setMobileCollectionsOverview(false) }}
+        onOpenPlace={(place) => openPlace(place, mobileCollectionsOverview)}
         onOpenMemory={(memory) => openMemory(memory, mobileCollectionsOverview)}
         onOpenBurstReview={openBurstReview}
         onLoadMoreBurst={() => void loadMoreCleanupGroups()}
@@ -6356,10 +6369,7 @@ export function XDriveMediaGallery({
           onOpenMemory={onOpenMemory}
           onOpenPerson={onOpenPerson}
           onOpenPet={onOpenPet}
-          onOpenPlace={onOpenPlace ? (place) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenPlace(place)
-          } : undefined}
+          onOpenPlace={onOpenPlace}
           onOpenSyncFolder={onOpenSyncFolder}
         />
       ) : (
