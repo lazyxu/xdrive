@@ -156,7 +156,7 @@ const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   storage: ['load'], // A fresh admin inventory invokes Store.Ready(ctx).
   'background-worker': ['load', 'loadSourceWorkerConfig'],
   caddy: ['loadCaddyHTTPSPreflight'],
-  'media-worker': ['loadMediaWorkerConfig'],
+  'media-worker': ['load', 'loadMediaWorkerConfig'],
   'photo-face': ['loadPhotoHostPreflight'],
   'photo-smart': ['loadPhotoHostPreflight'],
   'photo-semantic': ['loadPhotoHostPreflight'],
