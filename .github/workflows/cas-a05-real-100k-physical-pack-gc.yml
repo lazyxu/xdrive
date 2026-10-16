@@ -1,0 +1,163 @@
+name: CAS-A05 Real 100k Physical Distinct Local CAS vs Offline Pack and GC
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a05-real-100k-offline-pack-ab:
+    if: github.head_ref == 'perf/cas-a05-physical-100k-small-blob-pack-ab-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify permanent source-exact raw 11-file original 100k CAS Pack A/B archive
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a05-physical-100k-pack/ci-run-38923178061.tar.gz
+          printf '%s  %s\n' '8e4ce0493ac50f478b425f504fb5286ccb8702648f6e196e90554322e0b87040' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,statistics,sys,tarfile
+          expected={f"sample-{i}.{ext}" for i in (1,2,3) for ext in ("json","log","resources.txt")}
+          expected|={"source.txt","summary.json"}
+          with tarfile.open(sys.argv[1],"r:gz") as tar:
+              members=tar.getmembers()
+              assert len(members)==11 and set(m.name for m in members)==expected
+              parts={m.name:tar.extractfile(m).read() for m in members}
+          txt=parts["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=5f6e65be454ff9b4e44b134dbf5037d21e298ad8" in txt
+          assert "RUN_ID=38923178061" in txt
+          for path in ("internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go",
+                       "internal/storage/local.go","internal/storage/cas_immutable.go",
+                       "internal/storage/storage.go"):
+              digest=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f"{digest}  {path}" in txt,("source_changed_since_original_benchmark",path)
+          rows=[json.loads(parts[f"sample-{i}.json"]) for i in (1,2,3)]
+          summary=json.loads(parts["summary.json"])
+          assert summary["passed"] and summary["n"]==3 and not summary["production_changed"]
+          assert len({r["ordered_source_sha256"] for r in rows})==3
+          for i,row in enumerate(rows,1):
+              assert row["sample"]==i and row["passed"] and not row["production_changed"]
+              assert row["count"]==row["distinct_sha256"]==100000
+              assert row["real_file_payload_bytes"]==1024
+              assert row["surviving_references"]==5000 and row["unreferenced_objects_removed"]==95000
+              assert row["corrupt_pack_content_rejected"] and row["process_max_rss_kib"]<=524288
+              a=row["baseline_immutable_local_cas"];b=row["offline_single_pack_and_binary_index"]
+              assert a["full_allocated_bytes"]==409600000
+              assert a["after_gc_allocated_bytes"]==20480000
+              assert a["full_physical_objects_or_chunks"]==100000
+              assert a["after_gc_physical_objects_or_chunks"]==5000
+              assert b["full_allocated_bytes"]/a["full_allocated_bytes"]<=.35
+              assert b["after_gc_allocated_bytes"]/a["after_gc_allocated_bytes"]<=.35
+              assert b["full_physical_objects_or_chunks"]==b["after_gc_physical_objects_or_chunks"]==3
+              assert b["peak_gc_allocated_bytes"]>b["full_allocated_bytes"]
+              assert a["after_clear_bytes"]==b["after_clear_bytes"]==0
+              assert "CAS_A05_REAL_100K_PACK_PHYSICAL_AB " in parts[f"sample-{i}.log"].decode()
+              assert "Maximum resident set size" in parts[f"sample-{i}.resources.txt"].decode()
+          m=lambda fn:statistics.median(fn(r) for r in rows)
+          assert summary["original_full_allocated_bytes_p50"]==m(lambda r:r["baseline_immutable_local_cas"]["full_allocated_bytes"])
+          assert summary["packed_full_allocated_bytes_p50"]==m(lambda r:r["offline_single_pack_and_binary_index"]["full_allocated_bytes"])
+          assert summary["original_put_ms_p50"]==m(lambda r:r["baseline_immutable_local_cas"]["initial_write"]["wall_ms"])
+          assert summary["packed_write_ms_p50"]==m(lambda r:r["offline_single_pack_and_binary_index"]["initial_write"]["wall_ms"])
+          assert summary["original_release_95k_ms_p50"]==m(lambda r:r["baseline_immutable_local_cas"]["release_95pct"]["wall_ms"])
+          assert summary["packed_compact_95k_ms_p50"]==m(lambda r:r["offline_single_pack_and_binary_index"]["release_95pct"]["wall_ms"])
+          assert summary["max_rss_kib"]==max(r["process_max_rss_kib"] for r in rows)
+          print("CAS_A05_PERMANENT_RAW_ARCHIVE_EXACT_SOURCE_N3_VERIFIED")
+          PY
+      - name: Compile actual immutable CAS and preserve gofmt-normalized opt-in benchmark source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go)"
+          go test -mod=readonly -c -o "$RUNNER_TEMP/cas-a05-storage.test" ./internal/storage
+          df -h .
+      - name: Smoke actual 1k Local.Put and independent persisted offline pack before 100k
+        run: |
+          set -euo pipefail
+          env XD_CAS_A05_REAL_100K_PACK_PERF=1 XD_CAS_A05_SMOKE=1 XD_CAS_A05_SAMPLE=sample-1 \
+            "$RUNNER_TEMP/cas-a05-storage.test" \
+            -test.run '^TestCASA05Real100KPhysicalLocalCASVersusOfflinePackGC$' \
+            -test.count=1 -test.timeout=12m -test.v
+      - name: Run 3 independent physical 100k actual immutable CAS and offline pack GC A/B
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a05-physical-100k"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go \
+              internal/storage/local.go internal/storage/cas_immutable.go internal/storage/storage.go
+          } > "$out/source.txt"
+          for sample in 1 2 3; do
+            env XD_CAS_A05_REAL_100K_PACK_PERF=1 XD_CAS_A05_SAMPLE="sample-$sample" \
+              /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              "$RUNNER_TEMP/cas-a05-storage.test" \
+              -test.run '^TestCASA05Real100KPhysicalLocalCASVersusOfflinePackGC$' \
+              -test.count=1 -test.timeout=36m -test.v \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json, pathlib, re, statistics, sys
+          folder=pathlib.Path(sys.argv[1]); rows=[]
+          for i in (1,2,3):
+              logfile=(folder/f"sample-{i}.log").read_text()
+              hits=re.findall(r"CAS_A05_REAL_100K_PACK_PHYSICAL_AB (\{[^\n]+\})",logfile)
+              assert len(hits)==1,(i,"missing one original source-accurate full benchmark")
+              row=json.loads(hits[0])
+              assert row["passed"] and row["sample"]==i and not row["production_changed"]
+              assert row["count"]==row["distinct_sha256"]==100000
+              assert row["real_file_payload_bytes"]==1024
+              assert row["surviving_references"]==5000 and row["unreferenced_objects_removed"]==95000
+              assert len(row["ordered_source_sha256"])==64 and row["corrupt_pack_content_rejected"]
+              a,b=row["baseline_immutable_local_cas"],row["offline_single_pack_and_binary_index"]
+              assert a["full_physical_objects_or_chunks"]==100000 and a["after_gc_physical_objects_or_chunks"]==5000
+              assert b["full_physical_objects_or_chunks"]==b["after_gc_physical_objects_or_chunks"]==3
+              assert a["full_allocated_bytes"]>=409600000
+              assert a["after_gc_allocated_bytes"]>=20480000
+              assert b["full_allocated_bytes"]>102400000 and b["full_allocated_bytes"]/a["full_allocated_bytes"]<=.35
+              assert b["after_gc_allocated_bytes"]>5120000 and b["after_gc_allocated_bytes"]/a["after_gc_allocated_bytes"]<=.35
+              assert b["peak_gc_allocated_bytes"]>b["full_allocated_bytes"]
+              assert a["after_clear_bytes"]==b["after_clear_bytes"]==0
+              assert row["process_max_rss_kib"]<=524288
+              for arm in (a,b):
+                  for step in ("initial_write","random_read_2000","release_95pct","verify_all_5pct_keepers"):
+                      val=arm[step]
+                      assert 0<val["wall_ms"]<=900000 and val["kernel_write_bytes"]>=0
+                      assert val["process_max_rss_kib"]<=524288
+              (folder/f"sample-{i}.json").write_text(json.dumps(row,indent=2)+"\n")
+              rows.append(row)
+          assert len(set(r["ordered_source_sha256"] for r in rows))==3
+          median=lambda fn:statistics.median(fn(r) for r in rows)
+          summary={"workload_id":"CAS-A05-100k-distinct-1KiB-physical-local-CAS-vs-offline-pack-gc",
+              "n":3,"count":100000,"content_bytes":102400000,"keeper_count":5000,
+              "original_full_allocated_bytes_p50":median(lambda r:r["baseline_immutable_local_cas"]["full_allocated_bytes"]),
+              "packed_full_allocated_bytes_p50":median(lambda r:r["offline_single_pack_and_binary_index"]["full_allocated_bytes"]),
+              "original_after_gc_allocated_bytes_p50":median(lambda r:r["baseline_immutable_local_cas"]["after_gc_allocated_bytes"]),
+              "packed_after_gc_allocated_bytes_p50":median(lambda r:r["offline_single_pack_and_binary_index"]["after_gc_allocated_bytes"]),
+              "initial_space_ratio_p50":median(lambda r:r["packed_to_original_allocated_ratio"]),
+              "post_gc_space_ratio_p50":median(lambda r:r["packed_to_original_after_gc_ratio"]),
+              "original_put_ms_p50":median(lambda r:r["baseline_immutable_local_cas"]["initial_write"]["wall_ms"]),
+              "packed_write_ms_p50":median(lambda r:r["offline_single_pack_and_binary_index"]["initial_write"]["wall_ms"]),
+              "original_random_2000_ms_p50":median(lambda r:r["baseline_immutable_local_cas"]["random_read_2000"]["wall_ms"]),
+              "packed_random_2000_ms_p50":median(lambda r:r["offline_single_pack_and_binary_index"]["random_read_2000"]["wall_ms"]),
+              "original_release_95k_ms_p50":median(lambda r:r["baseline_immutable_local_cas"]["release_95pct"]["wall_ms"]),
+              "packed_compact_95k_ms_p50":median(lambda r:r["offline_single_pack_and_binary_index"]["release_95pct"]["wall_ms"]),
+              "max_rss_kib":max(r["process_max_rss_kib"] for r in rows),
+              "passed":True,"production_changed":False,
+              "scope":"Original Local.Put/Open/Delete 100k genuine SHA distinct 1KiB object files vs test-only offline binary-index contiguous pack; 95k GC physical pruning; no SQL cross-user refcount/Owner, pack encryption, online compaction or clients."}
+          (folder/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("CAS_A05_REAL_100K_PACK_N3_SUMMARY",json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a05-100k-physical-sha-immutable-vs-offline-pack-gc-n3
+          path: ${{ runner.temp }}/cas-a05-physical-100k/
+          retention-days: 14
+          if-no-files-found: warn

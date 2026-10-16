@@ -185,3 +185,12 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 ### LP-P002 100k Linux Agent IPC Go子链路 original CURRENT n3验证（2026-10-16）
 
 [LP-P002真实原始CI #38917769347](https://github.com/lazyxu/xdrive/actions/runs/38917769347)通过实际http localhost +真实生产Agent路由+测试只读manager adapter到正式LocalPush Scanner/两代Journal+advisory Delta，100k独立inode、真源409600000B分配，保存两代及增量≤2.44秒、进程RSS≤25,944KiB；并验证无本机OS路径泄露。数据表明**已实现的IPC+本机Journal摘要层原版达标，不需生产优化**。这是不产生ContentBlob且不写Server任何Node/File的测试；不提供原始内容SHA→云端CAS/FullFile dedup/历史Version/CfAPI、真实Push网络带宽/全链路恢复，也没有生产owning Agent Credential和Renderer路径。六应用平台Not measured，[完整原始数据](performance-evidence/lp-p002-agent-100k-ipc/README.md)，准确证据HEAD CI待验收。
+
+
+## CAS-A05 100k小原片真实st_blocks/Pack候选与GC边界（2026-10-17）
+
+已验证的CAS-A01是100k逻辑File和历史Version共享**单一物理Blob**；P046是实际100k份不同SHA的原始Local CAS、95k真实unlink而没有Pack对照。新增 [CAS-A05](cas-small-pack-performance.md) 才是同一组10万不同1KiB原片比较immutable Local.Put原版（每小文件通常≥4KiB实体）和**完全离线、独立Index/HEAD的100k Pack对象**的真实分配、写盘与2000随机读、95k release/完整5k全SHA幸存的实体GC与复原（n3同源实体已测：原版409600000B、离线Pack+index107208704B，GC后20480000B vs5365760B）。候选在旧Pack+压缩中间新Pack并存期间的真实峰值也必须记录；以内容SHA做逻辑身份，但此实验没有线上SQL ContentBlob的跨Owner引持、原子发布/回滚/坏pack回收、持久备份/Restore、CfAPI和云ObjectStore读语义，**绝不能因为离线空间占优就切换默认StorageKey和完整文件CAS接口**。历史已测Blob高熵4GiB和跨代备份数字保留，不重复对比不同数据形状。
+
+### CAS-A05 n3离线Pack候选准确物理收益与不能合入生产的约束（2026-10-16）
+
+[真实原版/候选同源CI #38923178061](https://github.com/lazyxu/xdrive/actions/runs/38923178061)各3组100k不同SHA的1KiB原片，实测原版`Local.Put`真正fsync独立文件用409,600,000B，离线Pack+Index/HEAD用107,208,704B，物理差约73.826%；95k真实原片GC/Pack离线compact后5k分别20,480,000B/5,365,760B，但candidate新旧Pack同时存在时峰值112,570,368B。CPU/RSS/随机2000原片读取/5000完整SHA/故意腐坏拒绝原始数据[永久归档](performance-evidence/cas-a05-physical-100k-pack/README.md)。这说明**小对象分配块**可以成为独立优化机会；然而 Pack原型未包含在线ContentBlob/跨Owner SQL引用、不可变blob索引原子可重建、跨进程并发GC/锁、异机ObjectStore、小对象删除后持久配额审计、加密Pack、FUSE Random Read及Windows/移动PWA等不变量，**不能以单机本地Space/CPU改善直接替换生产完整文件CAS**。可参考 [restic Pack先于索引再快照提交规则](https://github.com/restic/restic/blob/master/doc/design.rst)、[Kopia CABS Offset/Length索引与Pack尾可恢复索引](https://kopia.io/docs/advanced/architecture/)、[Borg内容hash的全仓对象复用](https://borgbackup.readthedocs.io/en/stable/internals.html)。生产全部未更改，下一项优先隔离线上有界小对象pack迁移安全设计及真实100k物理Push/Pull数据流。

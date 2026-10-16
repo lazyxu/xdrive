@@ -245,3 +245,12 @@ LP-P001在Linux使用真实100k个独立普通文件、102,400,000B源逻辑字�
 ### LP-P002 三份真实 Agent Loopback HTTP 100k原始样本 — 仅Go端已测（2026-10-16）
 
 [源码准确专项CI #38917769347](https://github.com/lazyxu/xdrive/actions/runs/38917769347)每样本100k不同inode真实1KiB普通物理原片，生产Agent HTTP `newDesktopIPCHandler` Bearer路由+仅测试Manager Adapter→生产LocalPush Scan/Journal/Delta，n3 P50 first/second POST **985.176/997.674ms**、GET Delta **2416.314ms**；RSS峰25944KiB，详见[永久完整样本](performance-evidence/lp-p002-agent-100k-ipc/README.md)。本层非真实Electron/Server Source owner proof，因此**Native Desktop（完整Electron+真实Agent用户身份）Not measured**；Wide Web Not measured；Mobile Web Not measured；Desktop installed PWA Not measured；Android installed PWA Not measured；iOS installed PWA Not measured。LP-P002 Agent Go loopback子链路已测不替代任何OS/GUI列，生产修改无。
+
+
+## CAS-A05 新100k不同原始物理CAS小对象Pack/GC资源A/B（2026-10-17）
+
+从原版实际Linux `storage.Local.Put`100,000 SHA256不同原片（每件1024B、强制物理st_blocks）对照隔离离线pack/index相同源/2000次真实原片Range/95k physical deletion/5000 survivor SHA、全部归零（n3独立），参见[专属规范](cas-small-pack-performance.md)和[统一台账](performance-test-registry.md)。现阶段本精确match ****同源Linux storage 原版CURRENT n3与离线候选n3均已测**，原版409,600,000B vs离线Pack107,208,704B；95k原片GC后原版20,480,000B vsPack5,365,760B（离线节省约73.8%），生产AFTER=N/A，参见永久证据**。即使离线候选减少真实原片物理字节，也属于同宿主**Server storage模型**，不是实际用户App/系统：Native Desktop=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop installed PWA=Not measured；Android installed PWA=Not measured；iOS installed PWA=Not measured；原生视频/Live/thumbnail/Pull/Push/上传下载/任务取消不能以Pack模型替代。
+
+### CAS-A05 100k不同SHA小对象原版vs离线Pack真实n3（2026-10-16）
+
+[原始源码CI #38923178061](https://github.com/lazyxu/xdrive/actions/runs/38923178061)三组同源Linux物理Local CAS原版vs离线Pack，100k原片P50分配409.60MB vs107.21MB，回收95k后保留5k两者20.48MB vs5.36576MB，均SHA正确、客户端未涉；准确原始11文件[长期归档](performance-evidence/cas-a05-physical-100k-pack/README.md)。这只有**Server LocalStorage物理原型**，六列仍：Native Desktop Electron Not measured、Wide Web Not measured、Mobile Web Not measured、Desktop Installed PWA Not measured、Android Installed PWA Not measured、iOS Installed PWA Not measured；源布局非JPEG/MP4/Live/RAW，未测试真实Push/Pull/用户授权和网络。生产AFTER=N/A。
