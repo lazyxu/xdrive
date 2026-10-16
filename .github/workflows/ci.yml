@@ -3383,6 +3383,18 @@ jobs:
           code=$?
           set -e
           cat "$RUNNER_TEMP/xdrive-gallery-ios27/results.json"
+          if [[ "$GITHUB_HEAD_REF" == test/mobile-gallery-ios27-real-chrome-p13-* ]]; then
+            mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27/p13"
+            set +e
+            XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+            XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+            node ../desktop/scripts/mobile-web-app-browser.cjs --scenario=gallery-ios27-album-nav \
+              --output-dir="$RUNNER_TEMP/xdrive-gallery-ios27/p13"
+            album_code=$?
+            set -e
+            cat "$RUNNER_TEMP/xdrive-gallery-ios27/p13/results.json"
+            if [[ "$code" -eq 0 ]]; then code="$album_code"; fi
+          fi
           exit "$code"
       - uses: actions/upload-artifact@v4
         if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
