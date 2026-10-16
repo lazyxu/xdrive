@@ -364,3 +364,16 @@
 - Freeze corrected immutable P20 browser runner Git Blob `1bff6282d05f3ca5d894674284c353327c2d1dc5`. Its P20 assertions, original P13–P16 acceptance and CI opt-in are **NOT edited** in the repair. The original red job must never be labeled accepted CI.
 - **Minimum scoped candidate** in shared `ui/shared/src/mui/MediaGallery.tsx`: both parent and child Mobile Collections Sync Folder callbacks stop hiding the overview on click; after the authorized folder-view GET, stage its full metadata/filter/section/overview state until `loadFirstPage` accepts the matching first authenticated sparse photo range, reusing its existing `onCommitted` transaction. The synchronous winning commit primes the canonical sparse VirtualCollection and swaps current folder/section/filters together; pending or failed reads preserve the previous Collections and scroll. Wide Web/Desktop and non-Collections established immediate behavior remain unchanged; no REST, Go, Agent IPC or second mobile data client is introduced.
 - **Acceptance gate still pending**: exact-head compiled Chrome P20 unmodified first-red→green, all unchanged P13–P16 and core Gallery browser suites, Desktop/Web/Go/Windows and complete CI/Final Gate before Ready/Rebase merge and verifying branch cleanup. Physical Safari/Android/installed PWA/100k WAN/FPS/CLS and Places still unmeasured.
+
+## U01 · Denied and superseded first-range safety regression (2026-10-16)
+
+The previous P1–P10 built-Chromium mobile Files stability work staged
+content until an authorized first range commit. The new `U01` hook tests
+prove or reject, on the original source, the complementary **failure** cases:
+pending first range retains real previously committed `items`/`crumbs`,
+403/timeout reports an error without committing an empty folder, and an older
+denied/successful response after a newer authenticated folder cannot overwrite
+its contents or emit a misleading old error. See
+[Files UX audit matrix](file-explorer-ux-acceptance-20261016.md).
+Await exact PR-head CI before claiming passing evidence; this test is not a
+physical iOS/Android/browser-Back acceptance.

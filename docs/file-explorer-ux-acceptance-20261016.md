@@ -22,7 +22,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | F02 P1 | Shared Details ARIA full rowcount/group row index and Grid setsize/posinset; `desktop/tests/file-explorer-virtual-aria.cjs` covers 100k logical items | NVDA, VoiceOver, TalkBack and sparse live DOM |
 | F03 P1 | Shared and mobile context menus use `FileExplorerMenuReasons`; **this PR patches previously missing selected-items More explanation** | Real permission responses and keyboard/long-hold screen reader |
 | F04 P2 | Shared 6/8px separators retain geometry, widen invisible targets and support arrows/Home/End; `file-explorer-splitter-hitbox.cjs` | Real pointer, keyboard focus and high DPI |
-| U01 P1 | Shared navigation/controller retains prior committed content and has stale-refresh/navigation-race tests | Slow 403/404, canceled and unauthorized first-page transitions in actual browser |
+| U01 P1 | Shared navigation/controller stages first counted range before committing; new mounted-hook regressions cover delayed 403/timeout and superseded 403/success without replacing prior rows | Browser Back/Forward, real permissions, aborted HTTP wire, focus and anchor |
 | U02 P1 | 899.95px breakpoint and one shared Web workspace; Chrome 375/390/899/900 acceptance exists | Cross-boundary live state matrix (scroll, search, dialogs, selection) without reload |
 | U03 P1 | Server-backed selection limits 200 mutation / 500 tags / 1000 download; mounted 257/1001 tests extended by this PR | Real 100k selection, disabled aggregate feedback and full action matrix |
 | U04 P1 | `FileExplorerActionFeedback` and `FileOperationLifecycle` distinguish queued/running/cancel-requested/completed/failed | Correlate actual Server durable task receipt and terminal outcome |
@@ -74,3 +74,16 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 Do not alter unrelated PRs, the 900px breakpoint, Server sort/group index,
 permission limits, real download bytes, PWA private SW cache rules, Desktop
 system-open semantics, or the shared 52px global title bar.
+
+## U01 follow-up · committed-first-page regression (2026-10-16)
+
+New deterministic hooked-controller tests mount the **original** `useXDriveCloudFilesController`
+implementation. They intentionally hold a real first-page `port.getRange` Promise
+behind a responsive Files navigation, reject with 403/timeout, and race stale 403/
+success after a newer authorized folder commits. Assertions require the old
+folder's *real items and crumbs* during pending/error, no stale false error,
+no pending overwrite, and a settled loading indicator. No implementation,
+Server contract, scroll host or navigation redesign is added. This is not
+a screenshot/frame metric, end-to-end auth decision or actual HTTP cancellation:
+those gates remain open. Exact-HEAD Desktop CI and full final-gate are required
+before this test is credited as passed.
