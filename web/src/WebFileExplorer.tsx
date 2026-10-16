@@ -553,6 +553,20 @@ export default function WebFileExplorer({
     trashActive ? trash.virtualCollection?.interactionKey ?? '' :
       explorerVirtualCollection?.interactionKey ?? '',
   ].join(':')
+  // The 899/900 presentation switch replaces MobileFiles with the wide
+  // Explorer. An unsubmitted rename belongs to the authenticated shared Web
+  // workspace, not to either transient presentation's React lifecycle.
+  const [responsiveRenameRequest, setResponsiveRenameRequest] = useState<{
+    scope: string
+    item: XDriveFileExplorerItem
+  } | null>(null)
+  const activeResponsiveRename = responsiveRenameRequest?.scope === responsiveSelectionScope
+    ? responsiveRenameRequest.item : null
+  useEffect(() => {
+    setResponsiveRenameRequest(previous =>
+      previous && previous.scope !== responsiveSelectionScope ? null : previous)
+  }, [responsiveSelectionScope])
+
   const [responsiveSelection, setResponsiveSelection] = useState<{
     scope: string
     ids: XDriveFileExplorerItem['id'][]
@@ -1329,6 +1343,10 @@ export default function WebFileExplorer({
           onCopyPaths={selected => { void copyItemPaths(selected) }}
           renameDisabled={trashActive || fileOperationBusy}
           onRename={renameItem}
+          onOpenRenameDialog={(item) => {
+            if (trashActive || fileOperationBusy) return
+            setResponsiveRenameRequest({ scope: responsiveSelectionScope, item })
+          }}
           onCopy={copyItems}
           onCut={cutItems}
           onMove={selected => openDestination('move', selected, crumbs)}
@@ -1653,6 +1671,27 @@ export default function WebFileExplorer({
             )}
       />
       )}
+      {/* Keep this original shared MUI Rename Dialog mounted when MobileFiles
+          unmounts at 900px. The existing dialog owns the draft/error/focus;
+          its lifecycle changes on account/folder/Search permission scopes. */}
+      <XDriveFileNameDialog
+        open={Boolean(activeResponsiveRename)}
+        mode="rename"
+        initialValue={activeResponsiveRename?.name ?? ''}
+        lifecycleKey={responsiveSelectionScope + ':rename:' +
+          String(activeResponsiveRename?.id ?? 0) + ':' +
+          String(activeResponsiveRename?.revision ?? 0)}
+        onSubmit={async (name) => {
+          if (!activeResponsiveRename) {
+            throw new Error('当前文件选择已失效，请重新打开重命名。')
+          }
+          if (trashActive || fileOperationBusy) {
+            throw new Error('文件操作进行中，暂时无法重命名，请稍后重试。')
+          }
+          await renameItem(activeResponsiveRename, name)
+        }}
+        onClose={() => setResponsiveRenameRequest(null)}
+      />
       {destinationRequest && (
         <XDriveFileExplorerDestinationDialog
           open

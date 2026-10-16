@@ -38,3 +38,24 @@ test('U02 minimal fix lifts only selection identity to the same Web workspace', 
   assert(mobile.includes('const lastResetSelectionScopeRef = useRef(selectionScopeKey)'))
   assert(!mobile.includes('fetch('))
 })
+
+test('U02 original built-Web Chrome checks unsubmitted rename draft across 899↔900, without an invented Server API', () => {
+  for (const token of [
+    'async function filesU02BreakpointRenameDraftAcceptance(origin)',
+    "startsWith('test/mobile-files-ios27-real-chrome-u02-rename-')",
+    'await filesU02BreakpointRenameDraftAcceptance(origin)',
+    "page.locator('[data-mobile-files-item-rename]').click()",
+    "page.getByRole('dialog', { name: /^重命名/ })",
+    "await page.setViewportSize({ width: 900, height: 700 })",
+    "await page.setViewportSize({ width: 899, height: 700 })",
+    'filesIos27Fixture.renameAttempts.length - priorWrites',
+  ]) assert.ok(source.includes(token), 'missing genuine U02 rename regression: ' + token)
+  assert.ok(workflow.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')"))
+  const before = source.indexOf('async function filesU02BreakpointRenameDraftAcceptance(origin)')
+  const next = source.indexOf('async function filesCommittedFolderBreakpointResumeAcceptance(origin)', before)
+  assert.ok(next > before)
+  const block = source.slice(before, next)
+  assert.ok(block.includes('wide.dialogs === 1 && wide.name === draft'), 'wide must preserve the unsubmitted dialog')
+  assert.ok(block.includes('returned.dialogs === 1 && returned.name === draft'), 'compact must restore the same draft')
+  assert.ok(!block.includes("route.fulfill({ status: 200"), 'no forged mutation success')
+})

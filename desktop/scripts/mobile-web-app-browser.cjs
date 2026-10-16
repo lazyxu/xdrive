@@ -4108,6 +4108,10 @@ async function filesIos27ChromeAcceptance(origin) {
       process.env.XDRIVE_MOBILE_FILES_U02 === '1') {
     await filesU02BreakpointSelectedNodeAcceptance(origin);
   }
+  if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-u02-rename-') ||
+      process.env.XDRIVE_MOBILE_FILES_U02_RENAME === '1') {
+    await filesU02BreakpointRenameDraftAcceptance(origin);
+  }
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p17-') ||
       process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
       process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p19-') ||
@@ -5345,6 +5349,83 @@ async function filesU02BreakpointSelectedNodeAcceptance(origin) {
   result.samples[activeStage]={selectedID,prior,wide,returned,realBuiltChromium:true,
     serverFixtureIntercepted:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+
+async function filesU02BreakpointRenameDraftAcceptance(origin) {
+  // P1/U02 exact ORIGINAL production browser regression, initially test-only.
+  // Compact MobileFiles currently owns rename local state and unmounts at
+  // 900px. A pending draft must remain in the SAME shared FileNameDialog
+  // without any Server mutation while resizing 899 -> 900 -> 899.
+  activeStage = 'user-files-u02-rename-draft-899-900';
+  const canonical = allNodes.get(101);
+  assert(canonical && canonical.name === 'document-002.txt' && canonical.revision === 1,
+    'U02 test must use the unchanged authoritative fixture Node');
+  const priorWrites = filesIos27Fixture.renameAttempts.length;
+  await page.setViewportSize({ width: 899, height: 700 });
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const row = page.locator('[data-mobile-files-item]')
+    .filter({ hasText: canonical.name }).first();
+  await row.waitFor();
+  await row.click({ button: 'right' });
+  await page.locator('[data-mobile-files-item-rename]').click();
+  const dialog = page.getByRole('dialog', { name: /^重命名/ });
+  await dialog.waitFor();
+  const input = dialog.getByRole('textbox', { name: '名称', exact: true });
+  const draft = '待提交-跨断点重命名.txt';
+  await input.fill(draft);
+
+  const snapshot = async () => ({
+    width: await page.evaluate(() => innerWidth),
+    hash: new URL(page.url()).hash,
+    mobile: await page.locator('[data-xdrive-mobile-files]').count(),
+    wide: await page.locator('[data-xdrive-file-explorer]').count(),
+    dialogs: await dialog.count(),
+    name: (await dialog.count()) > 0
+      ? await dialog.getByRole('textbox', { name: '名称', exact: true }).inputValue()
+      : null,
+    scrollHosts: await page.locator('[data-xdrive-file-explorer-scroll-host]').count(),
+    writes: filesIos27Fixture.renameAttempts.length - priorWrites,
+  });
+  const before = await snapshot();
+  check(activeStage + ': Mobile has one unsubmitted exact-revision draft',
+    before.width === 899 && before.mobile === 1 && before.dialogs === 1 &&
+    before.name === draft && before.writes === 0 &&
+    before.hash === '#/app/files?dir=1', before);
+  await page.screenshot({ path: path.join(outputDir, activeStage + '-before.png') });
+
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.locator('[data-xdrive-file-explorer]').waitFor();
+  await settle();
+  const wide = await snapshot();
+  check(activeStage + ': Wide remount must keep the SAME unfinished shared rename draft',
+    wide.width === 900 && wide.mobile === 0 && wide.wide === 1 &&
+    wide.dialogs === 1 && wide.name === draft && wide.writes === 0 &&
+    wide.scrollHosts === 1 && wide.hash === before.hash, { before, wide });
+  await page.screenshot({ path: path.join(outputDir, activeStage + '-wide.png') });
+
+  await page.setViewportSize({ width: 899, height: 700 });
+  await row.waitFor();
+  await settle();
+  const returned = await snapshot();
+  check(activeStage + ': Compact remount returns to original dialog and draft',
+    returned.width === 899 && returned.mobile === 1 &&
+    returned.dialogs === 1 && returned.name === draft &&
+    returned.writes === 0 && returned.scrollHosts === 1 &&
+    returned.hash === before.hash, { before, wide, returned });
+  if (returned.dialogs === 1) {
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await dialog.waitFor({ state: 'hidden' });
+  }
+  check(activeStage + ': breakpoint and Cancel never sent an unconfirmed PATCH',
+    filesIos27Fixture.renameAttempts.length === priorWrites &&
+    canonical.revision === 1 && canonical.name === 'document-002.txt',
+    filesIos27Fixture.renameAttempts.slice(priorWrites));
+  result.samples[activeStage] = { before, wide, returned, fixtureNodeID: 101,
+    realBuiltWebChrome: true, syntheticServer: true,
+    realIOS: false, realAndroid: false, installedPWA: false };
+  await page.screenshot({ path: path.join(outputDir, activeStage + '-returned.png') });
 }
 
 async function filesCommittedFolderBreakpointResumeAcceptance(origin) {

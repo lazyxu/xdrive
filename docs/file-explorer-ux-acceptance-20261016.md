@@ -23,7 +23,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | F03 P1 | Shared and mobile context menus use `FileExplorerMenuReasons`; **this PR patches previously missing selected-items More explanation** | Real permission responses and keyboard/long-hold screen reader |
 | F04 P2 | Shared 6/8px separators retain geometry, widen invisible targets and support arrows/Home/End; `file-explorer-splitter-hitbox.cjs` | Real pointer, keyboard focus and high DPI |
 | U01 P1 | Shared navigation/controller stages first counted range before committing; new mounted-hook regressions cover delayed 403/timeout and superseded 403/success without replacing prior rows | Browser Back/Forward, real permissions, aborted HTTP wire, focus and anchor |
-| U02 P1 | Original built-Web Chromium U02 First-red: 899px selected Node 102 and toolbar disappear after 900px remount; scoped candidate shares selection IDs/items in one Web workspace | Require unmodified original selected-node Chrome red→green, full HEAD CI, and separate search/modal/anchor cases |
+| U02 P1 | Actual built-Web Chromium first-red #38877483489 confirmed Mobile Rename draft disappears at 900px, still missing at 899px return, zero PATCH and stable route/scroll host; common Web-owned Rename repair in one-commit PR | New exact-head red→green/full CI pending; other Search/focus/dialog/anchor and physical Safari/Android acceptance remain |
 | U03 P1 | Server-backed selection limits 200 mutation / 500 tags / 1000 download; mounted 257/1001 tests extended by this PR | Real 100k selection, disabled aggregate feedback and full action matrix |
 | U04 P1 | `FileExplorerActionFeedback` and `FileOperationLifecycle` distinguish queued/running/cancel-requested/completed/failed | Correlate actual Server durable task receipt and terminal outcome |
 | U05 P1 | Shared `FileNameDialog`, Web rename adapter and real Chrome intercepted 403→409→200 scenario | Real Server 403/409, stale Revision and UTF-8 boundary with retained focus |
@@ -215,3 +215,38 @@ transpile the real keyboard helper and exercise Windows/macOS/Web profiles.
 **Exact-HEAD CI: NOT YET RUN at PR creation.** Physical Chinese/Japanese IME,
 actual assistive technology, iOS27/Android installed PWA and external keyboard
 validation remain NOT RUN until independent authentic device evidence.
+
+## U02-B · Pending Mobile Rename draft across 899↔900 (2026-10-16)
+
+The real Web adapter renders compact <MobileFiles> or wide <XDriveFileExplorer>
+mutually exclusively at the existing 900px boundary. Source audit finds compact
+Rename ownership in MobileFiles local renaming state and the corresponding
+FileNameDialog beneath that conditional component, while shared WebFileExplorer
+owns the actual authenticated rename request and current Node/revision.
+
+This **first-red/test-only** phase adds a bounded native Chromium regression
+to the existing original **built-Web** Files iOS27 runner (no copied presenter
+or added API). It opens the genuine context-menu Rename dialog for original
+Server-fixture Node 101 at 899px, types a draft **without submitting**, crosses
+900px, returns to 899px, and requires the exact draft/dialog to survive, while
+making zero PATCH requests and retaining one FileExplorer scroll owner. It runs
+only for the focused U02-rename PR branch, in addition to the current base
+375/390/899/900 Files runtime, selection and navigation cases. Evidence
+includes the test-only original source SHA, 3 viewport screenshots and the
+synthetic-result JSON.
+
+**At test-only PR creation:** first-red NOT RUN. Do not claim a production bug
+solely from component source. If original compiled Chrome confirms RED, preserve
+the test unchanged and make the narrowest parent-owned rename-state repair
+in this same fixed-parent single-work-commit branch, then require entirely
+new exact-head complete CI. No changes to iOS 27 visual, 52px App Frame,
+900px threshold, Server permissions, Web/Desktop shared backend or 100k
+virtualization. This does NOT prove real Safari/Android, physical IME, actual
+403/409 after a viewport transition or Desktop/OS-specific hardware.
+
+### Original built-Web first-red evidence and repair scope
+
+- **Exact original test-only HEAD:** `10acd3a98694e51e0878ded0ecd73fd278e3edca`, [full CI #38877483489](https://github.com/lazyxu/xdrive/actions/runs/38877483489), Web job 116895930346, real Chrome built from original Web App. Original 899px had precisely one renamedraft `待提交-跨断点重命名.txt`, route `#/app/files?dir=1`, single scroll host and zero PATCH. At 900px original dialog count=0/name=null, and returning to 899px was still missing. Precisely **two** new U02-B assertions failed; the original selection/navigation/403/409 cases passed, with zero unknown requests/page errors. This is a genuine presentation-lifecycle bug, not a fixture or Server error.
+- **Immutable original first-red browser runner blob:** `4bafb3d19af125f41c28647234ddae1b3be7ed48`; unmodified focused Node test blob `b94fdaa84714c5afe181abd428f51c3ea68cf855`. Neither assertion or runner changes in the repair.
+- **Minimal repair:** one common WebFileExplorer owner holds only the pending Mobile rename item/scope and renders the EXISTING shared XDriveFileNameDialog outside the 899px/900px conditional. MobileFiles delegates the actual Web rename-dialog opening through one optional presentation callback, while retaining its existing local fallback for independent consumers/tests. The original Web renameItem, Server ACL, canonical Node/revision, dialog validation/error/focus, 200-item mutation limit and transport are unchanged. Scope fences the draft to authenticated account, directory, Search/Trash and exact virtual collection; owner/scope change closes it rather than storing private content.
+- **Delivery:** Repair candidate must pass entirely new exact-head 76-job CI/Final Gate, including the frozen original U02-B browser assertion from RED→GREEN. Real iOS27/Android/installed PWA and physical 403/409 or IME across resize remain NOT RUN.
