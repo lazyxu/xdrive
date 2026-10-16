@@ -175,3 +175,13 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 ### LP-P001 Linux本机真实100k物理文件原版测量（2026-10-16）
 
 [专用 original n3 #38911723111](https://github.com/lazyxu/xdrive/actions/runs/38911723111) 完成100k独立实际本机普通inode/409600000B已分配块的Root强身份→扫描→2代持久Journal→100k Delta路径，生产原版P50 Scan1=912.402ms、Scan2=928.290ms、Delta=2418.643ms、Go峰RSS≈23.52MiB；真实写Journal每代约26.8MB，两个代际变更准确，缺失候选严格非Delete。由于预算满足，生产`localpush`不改。此工作负载并没有调用上传协议、SourceCommit、`ContentBlob`引用、Owner跨账户PG、真实网络，因而不能据此称100k独立CAS物理去重性能最优、移动PWA上传已经完成或LocalPush安全状态授权改变。原始样本完整资源文件在[永久归档](performance-evidence/localpush-native-physical-100k/README.md)，还需准确证据HEAD专用CI/完整FinalGate验收。
+
+
+### LP-P002：本机真实IPC与底层原片CAS职责的分离（2026-10-16）
+
+[LP-P002新Agent Loopback IPC原版100k物理扫描](localpush-desktop-agent-ipc-100k-performance.md)仅用真实100,000个独立本机常规小文件测试Agent HTTP鉴权及摘要响应/生产LocalPush私有Reader/Journal/Delta本机路径。它不会执行实际远端SourceCommit、内容分块传输、ContentBlob/RefCount、Owner权限、云端GC；且测试Controller Adapter明确不是`agentController`真实远端授权路径，也不是Electron Main/Renderer。真实源码CURRENT尚未测，不能用另一LP-P001 n3的本地库延迟推算或宣称Blob减少物理副本。等到真实Owner授权+Agent上云10万物理SHA数据明确存在并有权限安全依据后才能单独制定下一步全路径n3和相同runner A/B，不能提前优化生产。
+
+
+### LP-P002 100k Linux Agent IPC Go子链路 original CURRENT n3验证（2026-10-16）
+
+[LP-P002真实原始CI #38917769347](https://github.com/lazyxu/xdrive/actions/runs/38917769347)通过实际http localhost +真实生产Agent路由+测试只读manager adapter到正式LocalPush Scanner/两代Journal+advisory Delta，100k独立inode、真源409600000B分配，保存两代及增量≤2.44秒、进程RSS≤25,944KiB；并验证无本机OS路径泄露。数据表明**已实现的IPC+本机Journal摘要层原版达标，不需生产优化**。这是不产生ContentBlob且不写Server任何Node/File的测试；不提供原始内容SHA→云端CAS/FullFile dedup/历史Version/CfAPI、真实Push网络带宽/全链路恢复，也没有生产owning Agent Credential和Renderer路径。六应用平台Not measured，[完整原始数据](performance-evidence/lp-p002-agent-100k-ipc/README.md)，准确证据HEAD CI待验收。

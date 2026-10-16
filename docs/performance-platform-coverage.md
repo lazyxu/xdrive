@@ -235,3 +235,13 @@ LP-P001在Linux使用真实100k个独立普通文件、102,400,000B源逻辑字�
 ### LP-P001 100k 本机原版 n3 真实归档对照（2026-10-16）
 
 [原版真实n3源码CI #38911723111](https://github.com/lazyxu/xdrive/actions/runs/38911723111)：每组100,000不同普通文件/409,600,000B已分配块，实际生产Linux Native Go LocalPush gen1/journal/PREVIOUS/Delta，首次扫描P50 **912.402ms**，第二次 **928.290ms**，两代Delta **2418.643ms**，峰RSS **24,084KiB**，所有真实项与500批、Native strong identity、SHA正确。此行只有**共享本机Linux Go层已测**，六端App/UI维度仍 Native Desktop Electron=**Not measured**（无真实Renderer/Agent IPC与Windows实机）/Wide Web=**Not measured**/Mobile Web=**Not measured**/Desktop installed PWA=**Not measured**/Android installed PWA=**Not measured**/iOS installed PWA=**Not measured**。没有100k原片云端上传或缩略图/视频解码；完整原始资源[在此](performance-evidence/localpush-native-physical-100k/README.md)。完整CI Final Gate未通过前状态为Measured ORIGINAL / not Merged。
+
+
+### LP-P002 · Agent真实localhost IPCHTTP 100k native物理扫描（2026-10-16）
+
+新增LP-P002层针对真实100,000不同inode/102,400,000B逻辑原片，在真实loopback TCP上调用原生Go Agent生产HTTP Handler/Bearer私有摘要路由；Handler后的Manager为 **test-only适配器** 调用生产LocalPush Scanner/两代Journal/Delta，**未执行生产拥有设备的Controller与Server Source授权**。三独立源n3首次尚未实际完成：CURRENT=Not measured/AFTER=N/A。详见[专属规范](localpush-desktop-agent-ipc-100k-performance.md)和[去重登记](performance-test-registry.md)。覆盖划分：Agent Loopback Go本机层=**原版n3已测（首/次POST P50 985.176/997.674ms，GET Delta2416.314ms），待证据HEAD FinalGate**；**完整Native Desktop Electron**=Not measured；**Wide Web**=Not measured；**Mobile Web**=Not measured；**Desktop installed PWA**=Not measured；**Android installed PWA**=Not measured；**iOS installed PWA**=Not measured。不得因HTTP通过便宣称真实OS桌面备份/100k源网络Push或Installed PWA通过。
+
+
+### LP-P002 三份真实 Agent Loopback HTTP 100k原始样本 — 仅Go端已测（2026-10-16）
+
+[源码准确专项CI #38917769347](https://github.com/lazyxu/xdrive/actions/runs/38917769347)每样本100k不同inode真实1KiB普通物理原片，生产Agent HTTP `newDesktopIPCHandler` Bearer路由+仅测试Manager Adapter→生产LocalPush Scan/Journal/Delta，n3 P50 first/second POST **985.176/997.674ms**、GET Delta **2416.314ms**；RSS峰25944KiB，详见[永久完整样本](performance-evidence/lp-p002-agent-100k-ipc/README.md)。本层非真实Electron/Server Source owner proof，因此**Native Desktop（完整Electron+真实Agent用户身份）Not measured**；Wide Web Not measured；Mobile Web Not measured；Desktop installed PWA Not measured；Android installed PWA Not measured；iOS installed PWA Not measured。LP-P002 Agent Go loopback子链路已测不替代任何OS/GUI列，生产修改无。

@@ -1,0 +1,153 @@
+name: LP-P002 Native Agent Loopback IPC 100k Real Physical Files Performance
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  lp-p002-loopback-original:
+    if: github.head_ref == 'perf/localpush-desktop-agent-ipc-100k-physical-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify permanent original 11-file n3 archive and precise unchanged benchmark source
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/lp-p002-agent-100k-ipc/ci-run-38917769347.tar.gz
+          printf '%s  %s\n' '90b85c99a7543b7436a143de24e3ef272730323249405f289be485b743c85ee4' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,statistics,sys,tarfile
+          expected={f"sample-{i}.{ext}" for i in (1,2,3) for ext in ("json","log","resources.txt")}
+          expected|={"source.txt","summary.json"}
+          with tarfile.open(sys.argv[1],"r:gz") as archive:
+              members=archive.getmembers()
+              assert len(members)==11 and {m.name for m in members}==expected
+              files={m.name:archive.extractfile(m).read() for m in members}
+          src=files["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=d2fd14f8f1ecbdc5ed772aa2e1c00be08cfc56d4" in src
+          assert "GITHUB_RUN_ID=38917769347" in src
+          for path in ("cmd/xdrive-agent/desktop_ipc_localpush_physical_100k_performance_linux_test.go",
+                       "cmd/xdrive-agent/desktop_ipc.go",
+                       "cmd/xdrive-agent/desktop_ipc_device_backup_snapshot.go",
+                       "cmd/xdrive-agent/desktop_ipc_device_backup_delta.go",
+                       "internal/localpush/scanner.go","internal/localpush/journal.go",
+                       "internal/localpush/inventory_delta.go","internal/localpush/root.go"):
+              sha=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f"{sha}  {path}" in src,("original_source_drift",path)
+          rows=[json.loads(files[f"sample-{i}.json"]) for i in (1,2,3)]
+          summary=json.loads(files["summary.json"])
+          assert summary["passed"] and summary["n"]==3 and not summary["production_changed"]
+          assert len({r["seed_sha256"] for r in rows})==3
+          for i,row in enumerate(rows,1):
+              assert row["sample"]==f"sample-{i}" and row["passed"] and not row["production_changed"]
+              assert row["physical_file_count"]==row["unique_native_inodes"]==100000
+              assert row["physical_directory_count"]==100
+              assert row["source_allocated_blocks_bytes"]==409600000
+              assert row["delta_added"]==row["delta_absent_candidates"]==1000
+              assert row["delta_changed"]==1001 and row["delta_metadata_stable"]==98099
+              assert not row["delta_authoritative"] and not row["missing_inference_safe"]
+              assert "test-only IPC controller adapter" in row["manager_kind"]
+              assert all(0<row[key]<=4096 for key in ("first_response_bytes","second_response_bytes","delta_response_bytes"))
+              assert "LP_P002_AUTHENTIC_LOOPBACK_PHYSICAL_100K " in files[f"sample-{i}.log"].decode()
+              assert "Maximum resident set size" in files[f"sample-{i}.resources.txt"].decode()
+          median=lambda key:statistics.median(r[key]["wall_ms"] for r in rows)
+          assert summary["first_snapshot_ipc_ms_p50"]==median("first_snapshot_http")
+          assert summary["second_snapshot_ipc_ms_p50"]==median("second_snapshot_http")
+          assert summary["delta_ipc_ms_p50"]==median("delta_http")
+          assert summary["peak_rss_kib"]==max(r["process_peak_rss_kib"] for r in rows)
+          print("LP_P002_ORIGINAL_11_RAW_ARCHIVE_SOURCE_EXACT_VALIDATED")
+          PY
+      - name: Build actual Agent IPC test binary and preserve gofmt-normalized test source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l cmd/xdrive-agent/desktop_ipc_localpush_physical_100k_performance_linux_test.go)"
+          go test -mod=readonly -c -o "$RUNNER_TEMP/xdrive-agent-lp-p002.test" ./cmd/xdrive-agent
+          df -h .
+      - name: Real 1000 physical native files smoke through authenticated IPC HTTP
+        run: |
+          set -euo pipefail
+          env XD_LP_P002_AGENT_IPC_PERF=1 XD_LP_P002_SMOKE=1 XD_LP_P002_SAMPLE=sample-1 \
+            "$RUNNER_TEMP/xdrive-agent-lp-p002.test" \
+              -test.run '^TestLP002DesktopAgentLoopbackIPCPhysical100KPerformance$' \
+              -test.count=1 -test.timeout=12m -test.v
+      - name: Three independent actual 100k physical original Agent loopback HTTP samples
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/lp-p002-native-real-100k"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nGITHUB_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum cmd/xdrive-agent/desktop_ipc_localpush_physical_100k_performance_linux_test.go \
+              cmd/xdrive-agent/desktop_ipc.go \
+              cmd/xdrive-agent/desktop_ipc_device_backup_snapshot.go \
+              cmd/xdrive-agent/desktop_ipc_device_backup_delta.go \
+              internal/localpush/scanner.go internal/localpush/journal.go \
+              internal/localpush/inventory_delta.go internal/localpush/root.go
+          } > "$out/source.txt"
+          for sample in 1 2 3; do
+            env XD_LP_P002_AGENT_IPC_PERF=1 XD_LP_P002_SAMPLE="sample-$sample" \
+              /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              "$RUNNER_TEMP/xdrive-agent-lp-p002.test" \
+                -test.run '^TestLP002DesktopAgentLoopbackIPCPhysical100KPerformance$' \
+                -test.count=1 -test.timeout=25m -test.v \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1]); rows=[]
+          for i in (1,2,3):
+              raw=(root/f"sample-{i}.log").read_text()
+              match=re.findall(r"LP_P002_AUTHENTIC_LOOPBACK_PHYSICAL_100K (\{[^\n]+\})",raw)
+              assert len(match)==1,(i,"one real complete source sample")
+              d=json.loads(match[0])
+              assert d["passed"] and not d["production_changed"] and d["sample"]==f"sample-{i}"
+              assert d["physical_file_count"]==d["unique_native_inodes"]==100000
+              assert d["physical_directory_count"]==100
+              assert d["physical_source_logical_bytes"]==102400000
+              assert d["source_allocated_blocks_bytes"]>=409600000
+              assert d["scanned_first"]==d["scanned_second"]==100000
+              assert d["delta_added"]==d["delta_absent_candidates"]==1000
+              assert d["delta_changed"]==1001 and d["delta_metadata_stable"]==98099
+              assert not d["delta_authoritative"] and not d["missing_inference_safe"]
+              assert "test-only IPC controller adapter" in d["manager_kind"]
+              assert len(d["seed_sha256"])==64 and d["process_peak_rss_kib"]<=524288
+              assert all(0<d[f]<=4096 for f in ("first_response_bytes","second_response_bytes","delta_response_bytes"))
+              for phase,limit in (("seed",300000),("first_snapshot_http",180000),
+                                  ("mutation",300000),("second_snapshot_http",180000),
+                                  ("delta_http",180000)):
+                  p=d[phase]
+                  assert 0<p["wall_ms"]<=limit,(i,phase,p["wall_ms"])
+                  assert p["kernel_write_bytes"]>=0
+                  assert p["max_rss_kib"]<=524288
+              (root/f"sample-{i}.json").write_text(json.dumps(d,indent=2)+"\n")
+              rows.append(d)
+          assert len({d["seed_sha256"] for d in rows})==3
+          med=lambda key:statistics.median(r[key]["wall_ms"] for r in rows)
+          summary={"workload_id":"LP-P002-go-agent-ipc-native-100k-physical-inventory-delta",
+              "n":3,"physical_files_per_source":100000,"distinct_inode_count":100000,
+              "source_logical_bytes":102400000,
+              "physical_allocated_bytes_p50":statistics.median(r["source_allocated_blocks_bytes"] for r in rows),
+              "first_snapshot_ipc_ms_p50":med("first_snapshot_http"),
+              "second_snapshot_ipc_ms_p50":med("second_snapshot_http"),
+              "delta_ipc_ms_p50":med("delta_http"),
+              "seed_ms_p50":med("seed"),"peak_rss_kib":max(r["process_peak_rss_kib"] for r in rows),
+              "passed":True,"production_changed":False,
+              "scope":"Real 100k independent native files + authenticated real Go Agent HTTP loopback -> test-only source manager adapter -> production LocalPush scan/journal/delta. NOT actual agentController owner proof/Server/CAS or Electron/PWA."}
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("LP_P002_AUTHENTIC_LOOPBACK_PHYSICAL_100K_N3_SUMMARY",json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lp-p002-native-go-agent-100k-physical-loopback-n3
+          path: ${{ runner.temp }}/lp-p002-native-real-100k/
+          retention-days: 14
+          if-no-files-found: warn
