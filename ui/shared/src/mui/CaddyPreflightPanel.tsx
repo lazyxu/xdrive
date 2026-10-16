@@ -239,7 +239,10 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               是否已启动、能否访问和管理员登录成功仍未获得运行验证；
               操作员可在服务器本机执行 scripts/caddy-rescue-operator-check.py 的只读预检，
               核对独立固定摘要镜像、localhost 隔离和匿名拒绝；此检查不验证真实 SSH、
-              独立管理员登录、生产停机或回滚，不能据此启用 Caddy 配置应用、停用或回滚。
+              独立管理员登录、生产停机或回滚。另可在受信任工作站显式使用
+              scripts/caddy-rescue-ssh-auth-check.py，通过已预先固定主机密钥的 SSH
+              标准输入输出转发完成真实管理员登录与权限验证；不运行远端命令，不改变网关。
+              两项本地结果均不能据此启用 Caddy 配置应用、停用或回滚。
             </Typography>
             <Typography variant="caption" color="warning.main">
               {result.apply_supported
