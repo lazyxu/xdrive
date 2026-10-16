@@ -72,6 +72,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: '打开',
         icon: <FolderOpenRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onOpen,
       })
     }
@@ -81,6 +82,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: '在新标签页中打开',
         icon: <TabRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onOpenInNewTab,
       })
     }
@@ -90,6 +92,8 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: quickAccessPinned ? '从快速访问取消固定' : '固定到快速访问',
         icon: <PushPinRoundedIcon fontSize="small" />,
         disabled: primaryDisabled || quickAccessDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。'
+          : quickAccessDisabled ? '快速访问正在更新，请稍后重试。' : undefined,
         onSelect: onToggleQuickAccess,
       })
     }
@@ -99,6 +103,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: revealLabel,
         icon: <OpenInNewRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onReveal,
       })
     }
@@ -109,6 +114,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: '打开',
         icon: <VisibilityRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onOpen,
       })
     }
@@ -120,6 +126,8 @@ export function xDriveFileExplorerStandardItemMenuItems({
           ? <StarRoundedIcon fontSize="small" />
           : <StarBorderRoundedIcon fontSize="small" />,
         disabled: primaryDisabled || favoriteDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。'
+          : favoriteDisabled ? '收藏状态正在更新，请稍后重试。' : undefined,
         onSelect: onToggleFavorite,
       })
     }
@@ -129,6 +137,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: systemOpenLabel,
         icon: <OpenInNewRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onSystemOpen,
       })
     }
@@ -138,6 +147,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: downloadLabel,
         icon: <DownloadRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onDownload,
       })
     }
@@ -147,6 +157,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
         label: revealLabel,
         icon: <FolderOpenRoundedIcon fontSize="small" />,
         disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
         onSelect: onReveal,
       })
     }
@@ -174,6 +185,7 @@ export function xDriveFileExplorerStandardItemMenuItems({
       label: '显示所在文件夹',
       icon: <FolderOpenRoundedIcon fontSize="small" />,
       disabled: primaryDisabled,
+        disabledReason: primaryDisabled ? '当前文件操作尚未结束，请稍后重试。' : undefined,
       onSelect: onShowContainingFolder,
     })
   }
@@ -222,6 +234,7 @@ export function xDriveFileExplorerBackgroundMenuItems({
       label: '上传文件',
       icon: <UploadRoundedIcon fontSize="small" />,
       disabled: uploadDisabled,
+      disabledReason: uploadDisabled ? '当前上传操作尚未完成，请稍后重试。' : undefined,
       onSelect: onUpload,
     },
     ...(onUploadFolder ? [{
@@ -229,6 +242,7 @@ export function xDriveFileExplorerBackgroundMenuItems({
       label: '上传文件夹',
       icon: <DriveFolderUploadRoundedIcon fontSize="small" />,
       disabled: uploadDisabled,
+      disabledReason: uploadDisabled ? '当前上传操作尚未完成，请稍后重试。' : undefined,
       onSelect: onUploadFolder,
     }] : []),
     {

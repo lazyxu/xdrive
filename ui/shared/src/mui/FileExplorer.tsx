@@ -128,6 +128,8 @@ import type { XDriveFilePropertiesDialogProperty } from './FilePropertiesDialog'
 import { useXDriveFileExplorerPropertiesController } from './FileExplorerPropertiesController'
 import type { XDriveFileExplorerPropertiesLoader } from './FileExplorerPropertiesController'
 import { xDriveFileExplorerReadExternalDrop } from './FileExplorerExternalDrop'
+import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from './FileExplorerMenuReasons'
+import { xDriveFileExplorerKeyboardResizeWidth } from './FileExplorerPaneKeyboardResize'
 import type { XDriveFileExplorerExternalDropPayload } from './FileExplorerExternalDrop'
 import {
   xDriveFileExplorerDetailsVirtualWindow,
@@ -537,6 +539,7 @@ export type XDriveFileExplorerMenuItem = {
   label: string
   icon?: ReactNode
   disabled?: boolean
+  disabledReason?: string
   danger?: boolean
   dividerBefore?: boolean
   onSelect: () => void
@@ -2664,6 +2667,7 @@ export function XDriveFileExplorer({
         icon: <EditRoundedIcon fontSize="small" />,
         dividerBefore: true,
         disabled: renameDisabled || renameSubmitting,
+        disabledReason: renameSubmitting ? '正在重命名，请完成当前操作后重试。' : renameDisabled ? '当前不可重命名此项目。' : undefined,
         onSelect: () => beginRename(item),
       }
       const renameIndex = actionItems.findIndex((menuItem) => menuItem.id === 'rename')
@@ -2686,6 +2690,7 @@ export function XDriveFileExplorer({
         icon: <ContentCutRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0,
         disabled: Boolean(selectionActionDisabledReason('cut', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('cut', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('cut', onCutItems, selection, contextSelectionCount),
       })
     }
@@ -2696,6 +2701,7 @@ export function XDriveFileExplorer({
         icon: <ContentCopyRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
         disabled: Boolean(selectionActionDisabledReason('copy', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('copy', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('copy', onCopyItems, selection, contextSelectionCount),
       })
     }
@@ -2706,6 +2712,7 @@ export function XDriveFileExplorer({
         icon: <ContentCutRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
         disabled: Boolean(selectionActionDisabledReason('move-to', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('move-to', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('move-to', onMoveItemsTo, selection, contextSelectionCount),
       })
     }
@@ -2716,6 +2723,7 @@ export function XDriveFileExplorer({
         icon: <ContentCopyRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
         disabled: Boolean(selectionActionDisabledReason('copy-to', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('copy-to', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('copy-to', onCopyItemsTo, selection, contextSelectionCount),
       })
     }
@@ -2726,6 +2734,7 @@ export function XDriveFileExplorer({
         icon: <ContentCopyRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length > 0 && clipboardItems.length === 0,
         disabled: selection.length !== contextSelectionCount,
+        disabledReason: selection.length !== contextSelectionCount ? '部分所选项目尚未加载，无法复制完整路径。' : undefined,
         onSelect: () => {
           if (selection.length === contextSelectionCount) onCopyPaths(selection)
         },
@@ -2742,6 +2751,7 @@ export function XDriveFileExplorer({
         icon: <DownloadRoundedIcon fontSize="small" />,
         dividerBefore: actionItems.length + clipboardItems.length > 0,
         disabled: Boolean(selectionActionDisabledReason('download', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('download', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('download', onDownloadItems, selection, contextSelectionCount),
       })
     }
@@ -2753,6 +2763,7 @@ export function XDriveFileExplorer({
         danger: true,
         dividerBefore: actionItems.length + clipboardItems.length > 0 && bulkItems.length === 0,
         disabled: Boolean(selectionActionDisabledReason('delete', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('delete', selection, contextSelectionCount) ?? undefined,
         onSelect: () => runSelectionAction('delete', onDeleteItems, selection, contextSelectionCount),
       })
     }
@@ -2762,6 +2773,7 @@ export function XDriveFileExplorer({
       icon: <LocalOfferRoundedIcon fontSize="small" />,
       dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length > 0,
       disabled: Boolean(selectionActionDisabledReason('manage-tags', selection, contextSelectionCount)),
+        disabledReason: selectionActionDisabledReason('manage-tags', selection, contextSelectionCount) ?? undefined,
       onSelect: () => runSelectionAction('manage-tags', onManageTags, selection, contextSelectionCount),
     }] : []
     const inspectorItems: XDriveFileExplorerMenuItem[] = [{
@@ -2770,6 +2782,7 @@ export function XDriveFileExplorer({
       icon: <InfoOutlinedIcon fontSize="small" />,
       dividerBefore: actionItems.length + clipboardItems.length + bulkItems.length + organizationItems.length > 0,
       disabled: selection.length !== contextSelectionCount,
+      disabledReason: selection.length !== contextSelectionCount ? '部分所选项目尚未加载，无法查看完整属性。' : undefined,
       onSelect: () => {
         if (selection.length === contextSelectionCount) setPropertiesItems(selection)
       },
@@ -3106,6 +3119,52 @@ export function XDriveFileExplorer({
       ...current,
       navigationPaneVisible: !current.navigationPaneVisible,
     }))
+  }
+
+  const handlePaneResizeKey = (
+    event: KeyboardEvent<HTMLElement>,
+    pane: 'navigation' | 'inspector',
+  ) => {
+    const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
+      altKey: event.altKey, metaKey: event.metaKey }
+    const navigation = pane === 'navigation'
+    const minWidth = navigation ? fileExplorerNavigationPaneMinWidth : fileExplorerInspectorMinWidth
+    const maxWidth = navigation ? fileExplorerNavigationPaneMaxWidth : fileExplorerInspectorMaxWidth
+    const expandArrow = navigation ? 'ArrowRight' as const : 'ArrowLeft' as const
+    const width = navigation ? viewPreferences.navigationPaneWidth : viewPreferences.inspectorWidth
+    if (xDriveFileExplorerKeyboardResizeWidth({ ...input, width, minWidth, maxWidth, expandArrow }) === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    setViewPreferences((current) => {
+      const before = navigation ? current.navigationPaneWidth : current.inspectorWidth
+      const after = xDriveFileExplorerKeyboardResizeWidth({
+        ...input, width: before, minWidth, maxWidth, expandArrow,
+      })
+      if (after === null || after === before) return current
+      return navigation ? { ...current, navigationPaneWidth: after } : { ...current, inspectorWidth: after }
+    })
+  }
+
+  const handleDetailsColumnResizeKey = (
+    event: KeyboardEvent<HTMLElement>, key: XDriveFileExplorerDetailsColumnKey,
+  ) => {
+    const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
+      altKey: event.altKey, metaKey: event.metaKey }
+    const minWidth = detailsColumnMeta[key].minWidth
+    const maxWidth = detailsColumnMeta[key].maxWidth
+    if (xDriveFileExplorerKeyboardResizeWidth({
+      ...input, width: detailsLayout.widths[key], minWidth, maxWidth, expandArrow: 'ArrowRight',
+    }) === null) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDetailsLayout((current) => {
+      const before = current.widths[key]
+      const after = xDriveFileExplorerKeyboardResizeWidth({
+        ...input, width: before, minWidth, maxWidth, expandArrow: 'ArrowRight',
+      })
+      return after === null || after === before ? current
+        : { ...current, widths: { ...current.widths, [key]: after } }
+    })
   }
 
   const startNavigationPaneResize = (event: ReactPointerEvent<HTMLElement>) => {
@@ -6088,6 +6147,13 @@ export function XDriveFileExplorer({
             role="separator"
             aria-orientation="vertical"
             aria-label="调整导航窗格宽度"
+            aria-valuemin={fileExplorerNavigationPaneMinWidth}
+            aria-valuemax={fileExplorerNavigationPaneMaxWidth}
+            aria-valuenow={viewPreferences.navigationPaneWidth}
+            aria-valuetext={viewPreferences.navigationPaneWidth + " 像素"}
+            tabIndex={0}
+            title="方向键调整宽度，Shift 加速，Home/End 跳到边界"
+            onKeyDown={(event) => handlePaneResizeKey(event, "navigation")}
             data-xdrive-file-explorer-navigation-splitter
             onPointerDown={startNavigationPaneResize}
             onPointerMove={moveNavigationPaneResize}
@@ -6099,6 +6165,9 @@ export function XDriveFileExplorer({
               cursor: 'col-resize',
               position: 'relative',
               touchAction: 'none',
+              zIndex: 2,
+              '&::before': { content: '""', position: 'absolute', left: '-5px', right: '-5px', top: 0, bottom: 0 },
+              '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
               '&::after': {
                 content: '""',
                 position: 'absolute',
@@ -6287,12 +6356,18 @@ export function XDriveFileExplorer({
                     role="separator"
                     aria-orientation="vertical"
                     aria-label={`调整${detailsColumnMeta[key].label}列宽`}
-                    title={`拖动调整${detailsColumnMeta[key].label}列宽；双击自动适应`}
+                    title={`拖动调整${detailsColumnMeta[key].label}列宽；双击自动适应；方向键、Shift、Home/End 可键盘调整`}
                     onDoubleClick={(event) => {
                       event.preventDefault()
                       event.stopPropagation()
                       autoFitDetailsColumn(key)
                     }}
+                    aria-valuemin={detailsColumnMeta[key].minWidth}
+                    aria-valuemax={detailsColumnMeta[key].maxWidth}
+                    aria-valuenow={detailsLayout.widths[key]}
+                    aria-valuetext={detailsLayout.widths[key] + " 像素"}
+                    tabIndex={0}
+                    onKeyDown={(event) => handleDetailsColumnResizeKey(event, key)}
                     onPointerDown={(event) => startDetailsColumnResize(event, key)}
                     onPointerMove={(event) => moveDetailsColumnResize(event, key)}
                     onPointerUp={endDetailsColumnResize}
@@ -6306,6 +6381,8 @@ export function XDriveFileExplorer({
                       cursor: 'col-resize',
                       zIndex: 2,
                       touchAction: 'none',
+                      '&::before': { content: '""', position: 'absolute', left: '-4px', right: '-4px', top: 0, bottom: 0 },
+                      '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
                       '&:hover::after': {
                         content: '""',
                         position: 'absolute',
@@ -6523,6 +6600,13 @@ export function XDriveFileExplorer({
             role="separator"
             aria-orientation="vertical"
             aria-label="调整详细信息窗格宽度"
+            aria-valuemin={fileExplorerInspectorMinWidth}
+            aria-valuemax={fileExplorerInspectorMaxWidth}
+            aria-valuenow={viewPreferences.inspectorWidth}
+            aria-valuetext={viewPreferences.inspectorWidth + " 像素"}
+            tabIndex={0}
+            title="方向键调整宽度（左键增宽），Shift 加速，Home/End 跳到边界"
+            onKeyDown={(event) => handlePaneResizeKey(event, "inspector")}
             data-xdrive-file-explorer-inspector-splitter
             onPointerDown={startInspectorResize}
             onPointerMove={moveInspectorResize}
@@ -6534,6 +6618,9 @@ export function XDriveFileExplorer({
               cursor: 'col-resize',
               position: 'relative',
               touchAction: 'none',
+              zIndex: 2,
+              '&::before': { content: '""', position: 'absolute', left: '-5px', right: '-5px', top: 0, bottom: 0 },
+              '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
               '&::after': {
                 content: '""',
                 position: 'absolute',
@@ -6783,6 +6870,8 @@ export function XDriveFileExplorer({
                   {menuItem.dividerBefore ? <Divider /> : null}
                   <ListItemButton
                     disabled={menuItem.disabled}
+                    title={xDriveFileExplorerMenuDisabledReason(menuItem) ?? undefined}
+                    aria-label={menuItem.disabled ? menuItem.label + '：' + xDriveFileExplorerMenuDisabledReason(menuItem) : undefined}
                     onClick={() => {
                       setContextMenu(null)
                       menuItem.onSelect()
@@ -6790,7 +6879,7 @@ export function XDriveFileExplorer({
                     sx={{ minHeight: 48, color: menuItem.danger ? 'error.main' : undefined }}
                   >
                     {menuItem.icon ? <ListItemIcon sx={{ minWidth: 36, color: 'inherit' }}>{menuItem.icon}</ListItemIcon> : null}
-                    <ListItemText primary={menuItem.label} />
+                    <ListItemText primary={menuItem.label} secondary={xDriveFileExplorerMenuReasonLabel(menuItem) ?? undefined} secondaryTypographyProps={{ sx: { overflowWrap: 'anywhere' } }} />
                   </ListItemButton>
                 </Fragment>
               ))}
@@ -6799,6 +6888,7 @@ export function XDriveFileExplorer({
         </Drawer>
       ) : (
         <Menu
+          slotProps={{ list: { disabledItemsFocusable: true } }}
           open={Boolean(contextMenu)}
           onClose={() => setContextMenu(null)}
           anchorReference="anchorPosition"
@@ -6809,6 +6899,8 @@ export function XDriveFileExplorer({
               {menuItem.dividerBefore ? <Divider /> : null}
               <MenuItem
                 disabled={menuItem.disabled}
+                title={xDriveFileExplorerMenuDisabledReason(menuItem) ?? undefined}
+                aria-label={menuItem.disabled ? menuItem.label + '：' + xDriveFileExplorerMenuDisabledReason(menuItem) : undefined}
                 onClick={() => {
                   setContextMenu(null)
                   menuItem.onSelect()
@@ -6816,7 +6908,7 @@ export function XDriveFileExplorer({
                 sx={menuItem.danger ? { color: 'error.main' } : undefined}
               >
                 {menuItem.icon ? <Box sx={{ mr: 1, display: 'flex' }}>{menuItem.icon}</Box> : null}
-                <Box sx={{ minWidth: 0, flex: 1 }}>{menuItem.label}</Box>
+                <Box sx={{ minWidth: 0, flex: 1, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{menuItem.label}{xDriveFileExplorerMenuReasonLabel(menuItem) ? ' · ' + xDriveFileExplorerMenuReasonLabel(menuItem) : ''}</Box>
                 {fileExplorerMenuShortcut(menuItem.id, keyboardProfile) ? (
                   <Typography variant="caption" color="text.secondary" sx={{ ml: 3, whiteSpace: 'nowrap' }}>
                     {fileExplorerMenuShortcut(menuItem.id, keyboardProfile)}

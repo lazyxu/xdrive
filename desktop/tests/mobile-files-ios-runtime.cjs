@@ -114,6 +114,13 @@ const ui = {
     },
 }
 const dragCalls = []
+const menuReasons = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', compile('ui/shared/src/mui/FileExplorerMenuReasons.ts'))(
+    mod, mod.exports,
+  )
+  return mod.exports
+})()
 const imports = {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
@@ -134,6 +141,7 @@ const imports = {
     }),
   },
   './mobileFilesState': state,
+  '../../ui/shared/src/mui/FileExplorerMenuReasons': menuReasons,
 }
 const MobileFiles = (() => {
   const mod = { exports: {} }
@@ -2181,8 +2189,11 @@ test('F-iOS27-09A: direct file actions honor and recheck shared forbidden/unknow
       const item = find(h.view, 'data-mobile-files-context-selection-action', action)
       assert.equal(item.props.disabled, true, action + ' must be disabled by the shared Web validator')
       assert.equal(item.props.title, '原始 Node/Revision 暂不可用')
-      assert.equal(item.props['aria-label'], textOf(item.props.children) + '：原始 Node/Revision 暂不可用',
-        'VoiceOver can announce the real shared disabled reason')
+      const label = ({ cut: '剪切', 'move-to': '移动到…', 'copy-to': '复制到…' })[action]
+      assert.equal(item.props['aria-label'], label + '：原始 Node/Revision 暂不可用',
+        'VoiceOver receives one clear action label plus one real disabled reason')
+      assert.match(textOf(item.props.children), /不可用：原始 Node\/Revision 暂不可用/,
+        'the same reason must remain readable on a touch screen')
       // Force an otherwise disabled callback to ensure the guard also blocks
       // programmatic invocation while a native Portal state is stale.
       await act(async () => { item.props.onClick() })
