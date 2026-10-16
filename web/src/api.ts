@@ -2113,6 +2113,13 @@ export class XDriveApi {
     return this.request<XDriveDeviceBackupOverview>('/api/v1/device-backups')
   }
 
+  // Same redacted endpoint and keyset contract as Desktop's Go Client.
+  deviceBackupsPage(limit = 100, afterDeviceID = '') {
+    const params = new URLSearchParams({ limit: String(limit) })
+    if (afterDeviceID) params.set('after_device_id', afterDeviceID)
+    return this.request<XDriveDeviceBackupOverview>(`/api/v1/device-backups?${params.toString()}`)
+  }
+
   deviceBackupRunSummaries(sourceID: number, limit = 20, offset = 0) {
     const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
     return this.request<XDriveDeviceBackupRunPage>(`/api/v1/device-backups/${sourceID}/runs?${params.toString()}`)

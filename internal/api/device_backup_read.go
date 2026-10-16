@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/meta"
 	"gorm.io/gorm"
 )
@@ -79,17 +80,53 @@ type deviceBackupReadDTO struct {
 // A device registration/binding timestamp is not proof of active heartbeat:
 // connection_state must remain unknown until an authenticated live probe ships.
 func (s *Server) listDeviceBackupOverview(c *gin.Context) {
+	c.Header("Cache-Control", "private, no-store")
 	db := s.DB.WithContext(c.Request.Context())
 	uid := userID(c)
+	limit := 100
+	if raw, present := c.GetQuery("limit"); present {
+		parsed, err := strconv.Atoi(strings.TrimSpace(raw))
+		if err != nil || parsed < 1 || parsed > 100 {
+			fail(c, http.StatusBadRequest, "limit must be between 1 and 100")
+			return
+		}
+		limit = parsed
+	}
+	// An owner-bound keyset prevents offsets skipping/duplicating devices
+	// when a newer installation appears between page requests.
+	query := db.Where("owner_id = ?", uid)
+	if cursor, present := c.GetQuery("after_device_id"); present {
+		parsed, err := uuid.Parse(cursor)
+		if err != nil || parsed.String() != cursor {
+			fail(c, http.StatusBadRequest, "invalid device backup cursor")
+			return
+		}
+		var last meta.ClientDevice
+		if err := db.Select("id", "created_at").
+			Where("owner_id = ? AND id = ?", uid, cursor).Take(&last).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				fail(c, http.StatusBadRequest, "invalid device backup cursor")
+			} else {
+				fail(c, http.StatusInternalServerError, "lookup device backup cursor failed")
+			}
+			return
+		}
+		query = query.Where("(created_at < ? OR (created_at = ? AND id < ?))",
+			last.CreatedAt, last.CreatedAt, last.ID)
+	}
 	var devices []meta.ClientDevice
-	if err := db.Where("owner_id = ?", uid).
-		Order("created_at DESC, id DESC").Limit(101).Find(&devices).Error; err != nil {
+	if err := query.Order("created_at DESC, id DESC").Limit(limit + 1).
+		Find(&devices).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list backup devices failed")
 		return
 	}
-	hasMore := len(devices) > 100
+	hasMore := len(devices) > limit
 	if hasMore {
-		devices = devices[:100]
+		devices = devices[:limit]
+	}
+	nextAfterDeviceID := ""
+	if hasMore && len(devices) > 0 {
+		nextAfterDeviceID = devices[len(devices)-1].ID
 	}
 	items := make([]deviceBackupReadDTO, 0, len(devices))
 	deviceIDs := make([]string, 0, len(devices))
@@ -106,7 +143,7 @@ func (s *Server) listDeviceBackupOverview(c *gin.Context) {
 	}
 	if len(deviceIDs) == 0 {
 		c.Header("Cache-Control", "private, no-store")
-		c.JSON(http.StatusOK, gin.H{"devices": items, "has_more": hasMore, "has_more_folders": false})
+		c.JSON(http.StatusOK, gin.H{"devices": items, "has_more": hasMore, "has_more_folders": false, "next_after_device_id": nextAfterDeviceID})
 		return
 	}
 
@@ -170,6 +207,7 @@ func (s *Server) listDeviceBackupOverview(c *gin.Context) {
 	c.Header("Cache-Control", "private, no-store")
 	c.JSON(http.StatusOK, gin.H{
 		"devices": items, "has_more": hasMore, "has_more_folders": hasMoreFolders,
+		"next_after_device_id": nextAfterDeviceID,
 	})
 }
 

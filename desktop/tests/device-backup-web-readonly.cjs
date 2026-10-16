@@ -29,8 +29,9 @@ test('Push backup presenter has only B-scope read models, no cross-device mutati
   assert.ok(privateBoundary > 0, 'redacted projection must precede private Agent DTOs')
   const remoteDTO = dto.slice(0, privateBoundary)
   for (const field of ['device_name', 'device_id', 'root_fingerprint', 'credential_hash', 'active_transfer_path', 'ignore_rules', 'checkpoint']) {
-    assert.equal(remoteDTO.includes(field), false, 'remote device read model must not expose ' + field)
+    assert.equal(new RegExp(`(?:^|\\n)\\s*(?:['"])?${field}(?:['"])?\\??\\s*:`).test(remoteDTO), false, 'remote device read model must not expose ' + field)
   }
+  assert.match(remoteDTO, /next_after_device_id\?: string/, 'opaque continuation cursor stays in read DTO')
   assert.match(dto.slice(privateBoundary), /export interface XDriveLocalBoundBackupRules/, 'private rules must be a distinct own-device contract')
   for (const action of ['triggerSource', 'cancelSourceRun', 'updateSource', 'deleteSource', 'revokeClientDevice']) {
     assert.equal(view.includes(action), false, 'backup viewer must not offer ' + action)

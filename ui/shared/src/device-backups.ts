@@ -46,6 +46,7 @@ export interface XDriveDeviceBackupOverview {
   devices: XDriveDeviceBackupDevice[]
   has_more: boolean
   has_more_folders: boolean
+  next_after_device_id?: string
 }
 export interface XDriveDeviceBackupRunPage {
   items: XDriveDeviceBackupRun[]
@@ -55,6 +56,9 @@ export interface XDriveDeviceBackupDataSource {
   // Optional Desktop-only verified installation identity. No Root authority.
   verifiedLocalDevice?(): Promise<string | null>
   list(): Promise<XDriveDeviceBackupOverview>
+  // Optional read-only keyset extension, shared by Web/Mobile Web/Desktop.
+  // The presenter will use it in the follow-up UI phase.
+  listPage?(limit: number, afterDeviceID: string): Promise<XDriveDeviceBackupOverview>
   runs(sourceID: number, limit: number, offset: number): Promise<XDriveDeviceBackupRunPage>
 }
 
