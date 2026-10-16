@@ -315,6 +315,9 @@ export default function WebFileExplorer({
     onError,
   })
 
+  // Local Files navigation already committed this Node before App mirrors it to ?dir=.
+  // This acknowledgement must not suppress an independent external deep link.
+  const internalDirectoryRouteRef = useRef<{ directoryID: number; lifecycleKey: string } | null>(null)
   const routedDirectoryRef = useRef<{
     directoryID: number
     lifecycleKey: string
@@ -336,6 +339,16 @@ export default function WebFileExplorer({
     // workspace may otherwise switch folders after this early return.
     // Our per-route ticket prevents duplicate dispatch on later rerenders.
     if (!initialDirectoryID) return
+    // The parent App mirrors a successful *internal* Files navigation to the URL.
+    // Re-dispatching that acknowledged ?dir= as a new deep link appends a duplicate
+    // history entry and makes Search -> Show in folder -> Files Back miss Search.
+    // Only skip the internal update when its already-authorized current Node,
+    // target URL ID and account-scoped lifecycle all agree.
+    if (
+      current?.id === initialDirectoryID &&
+      internalDirectoryRouteRef.current?.directoryID === initialDirectoryID &&
+      internalDirectoryRouteRef.current.lifecycleKey === lifecycleKey
+    ) return
     if (routedDirectoryRef.current) return
     const navigationIntentID = beginNavigationIntent()
     const routedRequest = {
@@ -397,6 +410,15 @@ export default function WebFileExplorer({
       pendingRoute.lifecycleKey === (navigationSessionStorageKey ?? '') &&
       isNavigationIntentCurrent(pendingRoute.navigationIntentID)
     ) return
+    if (onDirectoryChange && current.id !== initialDirectoryID) {
+      // A committed internal change may update the App URL asynchronously.
+      // Tag only that emission; deep-link startup and foreign URL changes are
+      // never acknowledged merely because their target ID happens to be loaded.
+      internalDirectoryRouteRef.current = {
+        directoryID: current.id,
+        lifecycleKey: navigationSessionStorageKey ?? '',
+      }
+    }
     onDirectoryChange?.(current.id)
   }, [current?.id, initialDirectoryID, isNavigationIntentCurrent,
     navigationSessionStorageKey, onDirectoryChange, trashActive])
