@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -42,11 +42,12 @@ const gallerySelectionScenario = options.scenario === 'gallery-selection';
 const galleryIos27ChromeScenario = options.scenario === 'gallery-ios27-chrome';
 const galleryIos27ViewerScenario = options.scenario === 'gallery-ios27-viewer';
 const galleryAlbumNavigationScenario = options.scenario === 'gallery-ios27-album-nav';
+const galleryMemoryNavigationScenario = options.scenario === 'gallery-ios27-memory-nav';
 const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
-const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario;
+const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
@@ -446,7 +447,10 @@ function fixtureFor(request, role) {
       assert.equal(integerQuery(url, 'limit', 8, 100), 8);
       assert.equal(url.searchParams.get('time_zone'), 'UTC');
       assert.match(url.searchParams.get('anchor_date') || '', /^\d{4}-\d{2}-\d{2}$/);
-      return [];
+      return galleryMemoryNavigationScenario ? [{
+        id: 'qa-memory-1', title: '验收回忆 B', subtitle: '首次范围延迟',
+        item_count: 120, cover_node_id: 1120,
+      }] : [];
     }
     case 'GET /api/v1/media/sync-folders':
       assert(galleryIos27Fixture, 'Sync folder overview belongs to iOS27 Gallery fixture');
@@ -497,6 +501,18 @@ function fixtureFor(request, role) {
       offset, limit,
       ...(url.searchParams.has('initial_position') ? {anchor_index:partition.length-1}:{}),
       timeline_group_sets: {year:grouped('2026'),month:grouped('2026-10'),day:grouped('2026-10-08')} };
+  }
+  if (galleryMemoryNavigationScenario && key === 'GET /api/v1/media/memories/qa-memory-1/items') {
+    assert.equal(role, 'user', 'memory range must be owner-scoped');
+    queryOnly(url, ['time_zone','range','limit','offset']);
+    assert.equal(url.searchParams.get('time_zone'), 'UTC');
+    assert.equal(url.searchParams.get('range'), 'true');
+    const limit = integerQuery(url, 'limit', 200, 500);
+    const offset = integerQuery(url, 'offset', 0, 120);
+    const partition = mediaItems.slice(120);
+    const group = key => [{key,item_count:partition.length,start_index:0}];
+    return {items:partition.slice(offset,offset+limit),total_count:partition.length,
+      offset,limit,timeline_group_sets:{year:group('2026'),month:group('2026-10'),day:group('2026-10-08')}};
   }
   let match = /^GET \/api\/v1\/nodes\/(1|2)\/children$/.exec(key);
   if (match) {
@@ -736,6 +752,7 @@ let page;
 let metadataGate;
 let directoryGate;
 let galleryAlbumGate;
+let galleryMemoryGate;
 const expectedConsoleURLs = new Set();
 function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
@@ -2570,6 +2587,83 @@ async function galleryAlbumNavigationAcceptance() {
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
+async function galleryMemoryNavigationAcceptance() {
+  // P14 uses real production built React/Web and existing owner-memory transport.
+  activeStage = 'user-gallery-p14-memory-first-range-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  const memory = page.locator('[data-xdrive-mobile-gallery-collection-card="memory-qa-memory-1"]');
+  await memory.waitFor();
+  await memory.scrollIntoViewIfNeeded();
+  await settle();
+  await page.evaluate(() => {
+    window.__galleryP14Main = document.querySelector('main');
+    window.__galleryP14Root = document.querySelector('#xdrive-mobile-gallery-main');
+  });
+  const observe = () => page.evaluate(() => {
+    const main = document.querySelector('main');
+    const header = document.querySelector('[data-xdrive-mobile-app-header]');
+    const rect = el => el?.getBoundingClientRect().toJSON() || null;
+    return {
+      mainSame: main === window.__galleryP14Main,
+      gallerySame: document.querySelector('#xdrive-mobile-gallery-main') === window.__galleryP14Root,
+      mainRect: rect(main), headerRect: rect(header),
+      scrollTop: main?.scrollTop ?? null,
+      collectionsOverview: !!document.querySelector('[data-xdrive-mobile-gallery-collections]'),
+      memoryCard: !!document.querySelector('[data-xdrive-mobile-gallery-collection-card="memory-qa-memory-1"]'),
+      memoryTitle: document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent?.includes('验收回忆 B') || false,
+      firstAlt: document.querySelector('[data-xdrive-media-tile] img')?.getAttribute('alt') ?? null,
+      docOverflow: Math.max(0,document.documentElement.scrollHeight-innerHeight),
+    };
+  });
+  const before = await observe();
+  check('P14 initial: authenticated Memory card in real Collections',
+    before.collectionsOverview && before.memoryCard && before.mainSame &&
+    before.gallerySame && before.headerRect?.height >= 52 && before.docOverflow <= 1,before);
+  let release, notify;
+  const reached = new Promise(resolve => {notify=resolve;});
+  const wait = new Promise(resolve => {release=resolve;});
+  galleryMemoryGate={hits:0,notify,wait};
+  let pending;
+  try {
+    await memory.tap();
+    await Promise.race([reached,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P14 Memory first counted Server range never started')),10000))]);
+    await settle();
+    pending=await observe();
+    check('P14 pending Memory first page retains last committed Collections and scroll',
+      galleryMemoryGate.hits>=1 && pending.collectionsOverview && pending.memoryCard &&
+      !pending.memoryTitle && pending.mainSame && pending.gallerySame &&
+      Math.abs(pending.scrollTop-before.scrollTop)<=2 &&
+      pending.mainRect && before.mainRect &&
+      Math.abs(pending.mainRect.y-before.mainRect.y)<=1 &&
+      Math.abs(pending.mainRect.height-before.mainRect.height)<=1 &&
+      pending.headerRect && before.headerRect &&
+      Math.abs(pending.headerRect.y-before.headerRect.y)<=1 &&
+      Math.abs(pending.headerRect.height-before.headerRect.height)<=1 &&
+      pending.docOverflow<=1,{before,pending,gateHits:galleryMemoryGate.hits});
+  } finally {
+    galleryMemoryGate=null;
+    release();
+  }
+  await page.waitForFunction(() => {
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    const alt=document.querySelector('[data-xdrive-media-tile] img')?.getAttribute('alt')||'';
+    return title.includes('验收回忆 B') && /^photo-(12[1-9]|1[3-9]\d|2[0-3]\d|240)\.png$/.test(alt);
+  });
+  await settle();
+  const committed=await observe();
+  const index=Number(committed.firstAlt?.match(/photo-(\d+)\.png/)?.[1]);
+  check('P14 only authorized Memory range commits its virtual photo wall',
+    committed.mainSame && committed.gallerySame && committed.memoryTitle &&
+    !committed.collectionsOverview && index>=121 && index<=240 &&
+    committed.docOverflow<=1,{before,pending,committed});
+  result.samples[activeStage]={before,pending,committed,held:true,
+    actualCompiledReact:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
 
 async function filesIos27RenameAcceptance(viewport, narrow, row) {
   const label = `user-files-ios27-${viewport.width}x${viewport.height}-rename`;
@@ -4491,7 +4585,7 @@ async function main() {
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
-      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
+      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -4536,6 +4630,14 @@ async function main() {
         result.requests[key] = (result.requests[key] || 0) + 1;
         try {
           assert.equal(url.origin, origin, 'App attempted an external network request');
+          if (galleryMemoryGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/memories/qa-memory-1/items' &&
+              url.searchParams.get('offset') === '0') {
+            const gate = galleryMemoryGate;
+            gate.hits += 1;
+            gate.notify();
+            await gate.wait;
+          }
           if (galleryAlbumGate && request.method() === 'GET' &&
               url.pathname === '/api/v1/media/albums/qa-nav-b/items' &&
               url.searchParams.get('offset') === '0') {
@@ -4595,6 +4697,7 @@ async function main() {
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
        else if (galleryAlbumNavigationScenario) await galleryAlbumNavigationAcceptance();
+       else if (galleryMemoryNavigationScenario) await galleryMemoryNavigationAcceptance();
       else if (galleryIos27ViewerScenario) await galleryIos27ViewerAcceptance(viewerPointer);
       else if (filesIos27ChromeScenario) await filesIos27ChromeAcceptance(origin);
       else if (viewMode) await inheritedColumnsAcceptance();
