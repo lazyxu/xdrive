@@ -44,7 +44,7 @@ import type {
 import {
   XDriveFileExplorerAvailabilityBadge, xDriveFileExplorerMarkThumbnailScrollActivity,
   XDriveFileExplorerThumbnail, XDriveFileExplorerThumbnailProvider,
-  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
+  XDriveFileNameDialog, XDriveFilePropertiesDialog, XDriveStatePanel, XDriveMediaDetailsInspector, xDriveFileSupportsThumbnail,
   useXDriveFileExplorerPropertiesController,
   xDriveFileKind, xDriveFileTypeLabel, xDriveCreateFileExplorerGroupLayout,
   xDriveFileExplorerVisibleGroupSegments, xDriveFileExplorerReadExternalDrop,
@@ -447,6 +447,19 @@ export default function MobileFiles(props: Props) {
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
   const rowHeight = effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
   const totalCount = props.virtualCollection?.itemCount ?? props.items.length
+  // Empty must mean an authoritative zero count, not an unanswered Search,
+  // failed Search or empty Trash. Reuse the existing shared StatePanel rather
+  // than creating a second mobile-only empty/error state component.
+  const searchCountPending = Boolean(props.searchActive &&
+    props.searchSummary?.resultCount === null && !props.searchSummary?.error)
+  const zeroStateLoading = props.loading || searchCountPending
+  const zeroStateMessage = props.loading
+    ? props.searchActive ? '正在查询…' : '正在加载文件…'
+    : props.searchActive
+      ? props.searchSummary?.error ? '搜索失败，请重试'
+        : searchCountPending ? '正在查询…'
+          : '未找到匹配的文件或文件夹'
+      : props.trashActive ? '最近删除为空' : '此文件夹为空'
   const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
     !props.searchActive && directoryID !== null && Boolean(props.onToggleInlineFolder)
   // Run-length projection: no full-directory materialization at 100k items.
@@ -1983,8 +1996,11 @@ export default function MobileFiles(props: Props) {
                   px: 1.25, py: 0.5, display: props.loading ? 'block' : 'none' }}>
                 正在加载… · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
-              {props.loading && totalCount === 0 ? <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress size={24}/></Box> : null}
-              {totalCount === 0 && !props.loading ? <Typography sx={{ p: 4 }} color="text.secondary">这里还没有文件</Typography> : null}
+              {totalCount === 0 ? (
+                <Box data-mobile-files-zero-state>
+                  <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
+                </Box>
+              ) : null}
               {groupedLayout ? (
                 <Box data-xdrive-mobile-files-grouped sx={{
                   position: 'relative', height: groupedLayout.totalHeight, minWidth: 0,

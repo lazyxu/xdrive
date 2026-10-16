@@ -93,6 +93,7 @@ const sharedNameDialog = (() => {
 })()
 const ui = {
   XDriveFileNameDialog: sharedNameDialog,
+  XDriveStatePanel: 'state-panel',
   XDriveFileExplorerAvailabilityBadge: 'availability-badge',
   XDriveFileExplorerItemIcon: 'file-icon',
   XDriveFileExplorerThumbnail: 'file-thumbnail',
@@ -2926,4 +2927,71 @@ test('U02 Mobile responsive remount seeds selected identity and does not clear i
     props: { requestedDirectoryID: 1, initialSelectedItems: [selected],
       onSelectedItemsChange: items => retained.push(items.map(item => [item.id, item.revision])) },
   })
+})
+
+test('U08: Mobile Files uses shared StatePanel for authorized empty folder, Trash and zero Search', async () => {
+  const statePanel = h => {
+    const matches = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(matches.length, 1, 'one shared visual state owner, no duplicated spinner or empty copy')
+    return matches[0]
+  }
+  await withView(async h => {
+    const root = h.view.root.findAll(n => n.props?.role === 'button' && n.props?.onClick)
+      .find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(root, 'Browse Home must expose actual cloud root')
+    await act(async () => { root.props.onClick() })
+    assert.equal(statePanel(h).props.message, '此文件夹为空')
+    assert.equal(statePanel(h).props.loading, false)
+  }, { props: { items: [] } })
+  await withView(async h => {
+    assert.equal(statePanel(h).props.message, '最近删除为空')
+    assert.equal(statePanel(h).props.loading, false)
+  }, { props: { items: [], trashActive: true } })
+  await withView(async h => {
+    assert.equal(statePanel(h).props.message, '未找到匹配的文件或文件夹')
+    assert.equal(statePanel(h).props.loading, false)
+  }, { props: { items: [], searchActive: true,
+    searchSummary: { query: 'not-found', resultCount: 0, loading: false } } })
+})
+
+test('U08: pending first Search count, failed Search and actual loading do not impersonate empty directory', async () => {
+  const panel = h => {
+    const found = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(found.length, 1)
+    return found[0]
+  }
+  await withView(async h => {
+    assert.equal(panel(h).props.loading, true)
+    assert.equal(panel(h).props.message, '正在查询…')
+  }, { props: { items: [], searchActive: true, loading: false,
+    searchSummary: { query: 'pending', resultCount: null, loading: false } } })
+  await withView(async h => {
+    assert.equal(panel(h).props.loading, false)
+    assert.equal(panel(h).props.message, '搜索失败，请重试')
+    const warnings = h.view.root.findAll(n => n.props?.role === 'alert')
+    assert.ok(warnings.some(n => textOf(n.props.children).includes('503')),
+      'Server error and existing retry entry remain visible')
+  }, { props: { items: [], searchActive: true, loading: false,
+    searchSummary: { query: 'denied', resultCount: null, loading: false,
+      error: '503 服务暂不可用', onRetry() {} } } })
+  await withView(async h => {
+    assert.equal(panel(h).props.loading, true)
+    assert.equal(panel(h).props.message, '正在查询…')
+  }, { props: { items: [], searchActive: true, loading: true,
+    searchSummary: { query: 'loading', resultCount: 0, loading: true } } })
+  await withView(async h => {
+    assert.equal(panel(h).props.loading, true)
+    assert.equal(panel(h).props.message, '正在加载文件…')
+  }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { items: [], loading: true,
+      crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
+test('U08: reuse the existing StatePanel and keep one virtual-range owner and shared Search API', () => {
+  const code = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  assert(code.includes('XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage}'))
+  assert(code.includes('data-mobile-files-zero-state'))
+  assert(!code.includes('这里还没有文件'))
+  assert(!code.includes('api.search('), 'Mobile must continue using shared Web Search transport')
+  assert(!code.includes('searchRange('), 'Mobile must not issue separate Server search ranges')
 })

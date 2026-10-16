@@ -29,7 +29,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | U05 P1 | Shared `FileNameDialog`, Web rename adapter and real Chrome intercepted 403→409→200 scenario | Real Server 403/409, stale Revision and UTF-8 boundary with retained focus |
 | U06 P1 | `file-explorer-search-return-browser` and shared navigation/query code | Real Search → enclosing folder → Back, conditions/sort/focus/anchor |
 | U07 P2 | Existing `dir=auto` and isolated full item names; Unicode-specific source regression | RTL/CJK/emoji native rendering and accessibility |
-| U08 P2 | `StatePanel` handles loading/empty; Controller status and error code paths exist | Distinguish offline, first-page pending, 403, timeout, zero-search in a real browser |
+| U08 P2 | Shared StatePanel remains the only component; Mobile zero-count now distinguishes pending Search, Search error, zero Search, true empty folder and Trash | Real offline/403/timeout and physical installed PWA need authoritative browser evidence |
 | U09 P2 | Shared `FileExplorerVirtualSurface`, grouping and view snapshot/restoration | Anchor/selection across Grid/Details/Columns/Groups at 100k |
 | U10 P2 | `FileExplorerThumbnailVisualState` distinguishes eligible failed loading without extra original request | Real RAW/video/Live failure and 100k viewport pressure |
 | U11 P2 | `FilePropertiesDialog` plus media inspector adapter | Screen-reader ordering and hierarchy across ordinary/media files |
@@ -127,3 +127,20 @@ to existing `responsiveSelectionScope`; the inline store still resets
 per presentation and never preloads the 100k directory. This is a deterministic
 source-mounted test, not physical iOS or fully authenticated Server evidence.
 Require the own exact-head full CI/Final Gate for the candidate.
+
+## U08 · Distinguish empty directory from zero Search and request failures (2026-10-16)
+
+A `totalCount=0` in dedicated Mobile Files previously used a single
+`这里还没有文件` text for an empty directory, empty Trash and a Search that
+had zero results or whose first count failed. Reuse the existing exported
+shared `XDriveStatePanel` with a single zero-state owner. For Search,
+distinguish `resultCount=null` still pending, a genuine error (retaining
+the existing Server error/Retry control), and authoritative zero results.
+A root with a real empty first page uses `此文件夹为空`; Trash has its own
+`最近删除为空`. Preserve the existing loading refresh overlay when older
+nonempty content is committed; do not replace old rows with an empty spinner.
+This is **presentation-only**: no permission inference from an unknown
+state, REST, Server sort/groups, virtual range, SW CacheStorage or uploads.
+Actual offline/403/network timeout and physical iOS/Android PWA remain
+separate real browser/device gates. Require exact-head CI and Final Gate
+before Ready/merge.
