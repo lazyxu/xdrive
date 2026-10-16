@@ -1751,13 +1751,27 @@ export function XDriveMediaGalleryPage({
     return created
   }, [draftFilters, source])
 
-  const openMemory = useCallback((memory: MediaMemory) => {
-    setCurrentMemory(memory)
-    setSection('memories')
-    setActiveMediaType('')
-    setDraftFilters(emptyMediaGalleryFilterDraft)
-    setQuery({})
-    void loadFirstPage(null, {}, null, null, 'default', memory)
+  const openMemory = useCallback((memory: MediaMemory, fromCollections = false) => {
+    // As with Mobile Albums, the overview owns its visible scroll/content
+    // until the winning authenticated Memory's first counted range succeeds.
+    const commitFromCollections = fromCollections ? () => {
+      setCurrentFolderView(null)
+      setSection('memories')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+    } : undefined
+    if (!fromCollections) {
+      // Preserve existing immediate routing outside Mobile Collections.
+      setCurrentMemory(memory)
+      setSection('memories')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+    }
+    void loadFirstPage(null, {}, null, null, 'default', memory,
+      null, null, commitFromCollections)
   }, [loadFirstPage])
 
   const openBurstReview = useCallback((group: MediaBurstReview) => {
@@ -2840,7 +2854,7 @@ export function XDriveMediaGalleryPage({
             }
           : undefined}
         onOpenPlace={(place) => { openPlace(place, mobileCollectionsOverview); setMobileCollectionsOverview(false) }}
-        onOpenMemory={(memory) => { setMobileCollectionsOverview(false); openMemory(memory) }}
+        onOpenMemory={(memory) => openMemory(memory, mobileCollectionsOverview)}
         onOpenBurstReview={openBurstReview}
         onLoadMoreBurst={() => void loadMoreCleanupGroups()}
         cleanupMoreLoading={cleanupMoreLoading}
@@ -6270,10 +6284,7 @@ export function XDriveMediaGallery({
             onSectionChange?.(next)
           }}
           onOpenAlbum={onOpenAlbum}
-          onOpenMemory={onOpenMemory ? (memory) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenMemory(memory)
-          } : undefined}
+          onOpenMemory={onOpenMemory}
           onOpenPerson={onOpenPerson ? (person) => {
             onMobileCollectionsOverviewChange?.(false)
             onOpenPerson(person)
