@@ -1,0 +1,36 @@
+{
+  "workloadId": "P053/M005-j",
+  "evidenceStatus": "Invalid harness, n=0 real physical fixtures",
+  "sourceHead": "ecd7f3bf7ee253bbc38729ec6c9ab1d533a99f43",
+  "nativeRunId": 38831272729,
+  "nativeJobId": 116750363829,
+  "stage": "Validate native FileExplorer to Go cancellation source and frozen bounds",
+  "result": "Node source-contract mismatch: the test expected literal single quotes around the DOM selector name, but production test script correctly has '[data-xdrive-file-explorer-scroll-host]' with a '[' before the selector name.",
+  "actualPhysicalCASFixtureRuns": 0,
+  "validCancellationSessions": 0,
+  "goContextDoneSamples": 0,
+  "before": "Not measured",
+  "after": null,
+  "productPerformanceRed": false,
+  "productionCodeChanged": false,
+  "remediation": "Correct only the Node static test string to search for data-xdrive-file-explorer-scroll-host without surrounding literal quotes. Preserve original real Desktop / 100k SHA-distinct CAS / 54 cancels / 160ms / 0 stale handlers / 0 B and resource budgets.",
+  "frozenBudgets": {
+    "physicalUniqueJPEGOriginalsPerFixture": 100000,
+    "freshPgCasFixtures": 3,
+    "nativeDesktopLifecycleModes": [
+      "virtual-scroll",
+      "app-switch",
+      "window-destroy"
+    ],
+    "nativeSessions": 9,
+    "expectedGoContextDone": 54,
+    "expectedGoHandlerCancel": 54,
+    "maxGoNotificationMs": 160,
+    "activeOldHandlersAt160Ms": 0,
+    "staleResponseBytes": 0,
+    "agentRssGrowthMaxBytes": 134217728,
+    "serverRssGrowthMaxBytes": 268435456,
+    "liveRendererWindowRssGrowthMaxBytes": 134217728
+  },
+  "originalCI": "https://github.com/lazyxu/xdrive/actions/runs/38831272729"
+}

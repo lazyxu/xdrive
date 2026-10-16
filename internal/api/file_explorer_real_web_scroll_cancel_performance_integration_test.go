@@ -63,6 +63,15 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 	if physicalCancelMode && os.Getenv("XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF") != "1" {
 		t.Fatal("P052 physical cancellation requires the P040 mobile viewport driver")
 	}
+	// P053 opt-in: test native Desktop Renderer -> Main -> Go Agent -> Server
+	// cancellation against 100k truly distinct physical JPEG/CAS originals.
+	desktopPhysicalCancelMode := os.Getenv("XD_FILEEXPLORER_DESKTOP_PHYSICAL_GO_CANCEL_100K_PERF") == "1"
+	if desktopPhysicalCancelMode && os.Getenv("XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF") != "1" {
+		t.Fatal("P053 physical mode requires the existing native Desktop Agent benchmark")
+	}
+	if desktopPhysicalCancelMode {
+		physicalCancelMode = true
+	}
 	// Native Desktop FileExplorer cancellation needs the same real Desktop
 	// read-only schema and Capacity() prerequisites as the accepted P035
 	// physical-JPEG viewport. Keep physicalMode independently controlled so
@@ -277,7 +286,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
-			// In P052 ONLY, the six genuinely distinct first-viewport JPEG CAS
+			// In P052/P053 only, the six genuinely distinct first-viewport JPEG CAS
 			// thumbnails must pass the slow-body watcher before the general physical
 			// counter. Preserve P039/P035's accepted unmodified route behavior.
 			if physicalCancelMode && r.Method == http.MethodGet && probe.matches(r.URL.Path) {
