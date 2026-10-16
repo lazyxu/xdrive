@@ -96,3 +96,95 @@ func TestCaddyRuntimeTLSAlignmentReadOnlyFailClosed(t *testing.T) {
 		t.Fatalf("stale heartbeat gave false runtime-domain evidence")
 	}
 }
+
+// Only a fixed healthy HTTPS Caddy with verified local TLS may attach a
+// sanitized digest from the in-container admin API. Missing/old evidence stays
+// neutral; no digest ever appears in the administrator DTO.
+func TestCaddyLiveConfigObservationRequiresTrustedCurrentTLS(t *testing.T) {
+	dir := t.TempDir()
+	s := &Server{HostControlDir: dir}
+	statusPath := filepath.Join(dir, caddyHostStatusName)
+	heartbeatPath := filepath.Join(dir, "heartbeat")
+	if err := os.WriteFile(heartbeatPath, []byte("ok"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	normal := caddyHostStatus{
+		State:                   "healthy",
+		HTTPSConfigured:         true,
+		TLSCheckSupported:       true,
+		TLSState:                "verified",
+		TLSVerifiedDomainSHA256: strings.Repeat("a", 64),
+		LiveConfigSHA256:        strings.Repeat("b", 64),
+	}
+	cases := []struct {
+		name   string
+		change func(*caddyHostStatus)
+		valid  bool
+		want   string
+	}{
+		{"positive fixed live config", func(*caddyHostStatus) {}, true, "observed-local"},
+		{"missing old host", func(s *caddyHostStatus) {
+			s.LiveConfigSHA256 = ""
+		}, true, "unverified"},
+		{"bad fingerprint", func(s *caddyHostStatus) {
+			s.LiveConfigSHA256 = "bogus"
+		}, false, "unverified"},
+		{"empty response fingerprint", func(s *caddyHostStatus) {
+			s.LiveConfigSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+		}, false, "unverified"},
+		{"no TLS chain validation", func(s *caddyHostStatus) {
+			s.TLSState = "failed"
+		}, false, "unverified"},
+		{"no authenticated SNI fingerprint", func(s *caddyHostStatus) {
+			s.TLSVerifiedDomainSHA256 = ""
+		}, false, "unverified"},
+		{"stopped fixed container", func(s *caddyHostStatus) {
+			s.State = "stopped"
+			s.TLSState = "unavailable"
+		}, false, "unverified"},
+		{"HTTP only", func(s *caddyHostStatus) {
+			s.HTTPSConfigured = false
+			s.TLSState = "disabled"
+			s.TLSVerifiedDomainSHA256 = ""
+		}, false, "unverified"},
+		{"startup env drift is independent", func(s *caddyHostStatus) {
+			s.RuntimeTLSAlignment = "mismatch-local"
+		}, true, "observed-local"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			status := normal
+			tc.change(&status)
+			raw, err := json.Marshal(status)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(statusPath, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, observed := s.readCaddyHostStatus()
+			if observed != tc.valid {
+				t.Fatalf("observed=%v, expected %v", observed, tc.valid)
+			}
+			if state := caddyObservedLiveConfigState(got, observed); state != tc.want {
+				t.Fatalf("active config state=%q, expected %q", state, tc.want)
+			}
+		})
+	}
+	// A valid payload with stale heartbeat can never turn into a positive.
+	raw, err := json.Marshal(normal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusPath, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Minute)
+	if err := os.Chtimes(heartbeatPath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	status, observed := s.readCaddyHostStatus()
+	if observed || caddyObservedLiveConfigState(status, observed) != "unverified" {
+		t.Fatal("stale Caddy heartbeat permitted active-config proof")
+	}
+}

@@ -152,6 +152,13 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                   : '未核验：旧版 Host Manager、运行容器启动环境不可读或本机 TLS 尚未通过。'}
               此结果不证明公网访问、AliDNS 生效或可以安全切换网关。
             </Typography>
+            <Typography variant="body2" color="text.secondary"
+              data-xdrive-caddy-host-live-config-state>
+              固定 Caddy 进程的当前配置：{result.host_live_config_state === 'observed-local'
+                ? '容器内部管理 API 已返回配置，并在容器内计算指纹（原始配置及 AliDNS 密钥未传出）'
+                : '未核验：旧版 Host Manager、内部管理 API 不可用，或缺少本机 TLS 可信证据。'}
+              此结果不证明管理员期望修订已经应用、备用管理入口存在或公网 HTTPS 生效。
+            </Typography>
             <Typography variant="caption" color="text.secondary"
               data-xdrive-caddy-preflight-revision-snapshot>
               本次只读预检修订一致性：{result.revision_snapshot_consistent === true
