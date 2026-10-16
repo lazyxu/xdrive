@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -45,7 +45,8 @@ const galleryAlbumNavigationScenario = options.scenario === 'gallery-ios27-album
 const galleryMemoryNavigationScenario = options.scenario === 'gallery-ios27-memory-nav';
 const galleryPetNavigationScenario = options.scenario === 'gallery-ios27-pet-nav';
 const galleryPersonNavigationScenario = options.scenario === 'gallery-ios27-person-nav';
-const gallerySyncFolderNavigationScenario = options.scenario === 'gallery-ios27-sync-folder-nav';
+const gallerySyncFolderChildNavigationScenario = options.scenario === 'gallery-ios27-sync-folder-child-nav';
+const gallerySyncFolderNavigationScenario = options.scenario === 'gallery-ios27-sync-folder-nav' || gallerySyncFolderChildNavigationScenario;
 const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
@@ -66,7 +67,8 @@ const galleryNavigationSyncFolder = {
   source_id: 7, source_name: '验收同步目录', source_kind: 'synology',
   source_status: 'enabled', target_node_id: 2, target_name: '验收同步目录',
   target_path: '/验收同步目录', direct_media_count: 120,
-  child_folder_count: 0, cover_node_id: 1120,
+  child_folder_count: gallerySyncFolderChildNavigationScenario ? 1 : 0,
+  cover_node_id: 1120,
 };
 const galleryNavigationAlbums = [
   { id: 'qa-nav-a', name: '验收相册 A', kind: 'manual', revision: 7, item_count: 120,
@@ -414,10 +416,11 @@ function fixtureFor(request, role) {
       const limit = integerQuery(url, 'limit', 200, 500);
       if (gallerySyncFolderNavigationScenario && url.searchParams.has('folder_id')) {
         assert.equal(role, 'user', 'sync-folder photo range must be owner-scoped');
-        assert.equal(url.searchParams.get('folder_id'), '2');
+        const folderID = url.searchParams.get('folder_id');
+        assert(['2', ...(gallerySyncFolderChildNavigationScenario ? ['3'] : [])].includes(folderID));
         assert.equal(url.searchParams.get('range'), 'true');
         const offset = integerQuery(url, 'offset', 0, 120);
-        const partition = mediaItems.slice(120);
+        const partition = folderID === '3' ? mediaItems.slice(0, 120) : mediaItems.slice(120);
         const group = key => [{ key, item_count: partition.length, start_index: 0 }];
         return { items: partition.slice(offset, offset + limit),
           total_count: partition.length, offset, limit,
@@ -484,8 +487,23 @@ function fixtureFor(request, role) {
       return { source: galleryNavigationSyncFolder,
         current: { id: 2, parent_id: 1, name: '验收同步目录',
           path: '/验收同步目录', direct_media_count: 120,
-          child_folder_count: 0, cover_node_id: 1120 },
+          child_folder_count: gallerySyncFolderChildNavigationScenario ? 1 : 0, cover_node_id: 1120 },
         breadcrumbs: [{ id: 2, name: '验收同步目录', path: '/验收同步目录' }],
+        children: gallerySyncFolderChildNavigationScenario
+          ? [{ id: 3, parent_id: 2, name: '验收嵌套子目录',
+            path: '/验收同步目录/验收嵌套子目录',
+            direct_media_count: 120, child_folder_count: 0, cover_node_id: 1010 }]
+          : [] };
+    case 'GET /api/v1/media/sync-folders/7/folders/3':
+      assert(gallerySyncFolderChildNavigationScenario && role === 'user',
+        'Only P21 owner may fetch the child folder view');
+      queryOnly(url, []);
+      return { source: galleryNavigationSyncFolder,
+        current: { id: 3, parent_id: 2, name: '验收嵌套子目录',
+          path: '/验收同步目录/验收嵌套子目录',
+          direct_media_count: 120, child_folder_count: 0, cover_node_id: 1010 },
+        breadcrumbs: [{ id: 2, name: '验收同步目录', path: '/验收同步目录' },
+          { id: 3, name: '验收嵌套子目录', path: '/验收同步目录/验收嵌套子目录' }],
         children: [] };
     case 'GET /api/v1/media/album-folders':
       // Browsing real manual Albums also calls the shared read-only folder
@@ -833,6 +851,8 @@ let galleryPetGate;
 let galleryPersonGate;
 let gallerySyncFolderViewGate;
 let gallerySyncFolderRangeGate;
+let gallerySyncChildViewGate;
+let gallerySyncChildRangeGate;
 const expectedConsoleURLs = new Set();
 function check(name, passed, evidence) {
   result.checks.push({ name, passed: Boolean(passed), ...(evidence === undefined ? {} : { evidence }) });
@@ -2996,6 +3016,161 @@ async function gallerySyncFolderNavigationAcceptance() {
     viewHits, rangeHits, genuineOwnerView: true, genuineOwnerFirstRange: true,
     compiledReact: true, physicalIOS: false, physicalAndroid: false, installedPWA: false };
   await page.screenshot({ path: path.join(outputDir, activeStage + '.png') });
+}
+
+
+async function gallerySyncFolderChildNavigationAcceptance() {
+  // P21: with a legitimate root Sync Folder already committed, opening a
+  // nested folder is only an intent until its own owner view and first counted
+  // media range succeed. Hold both real production Web request routes.
+  activeStage='user-gallery-p21-sync-child-two-phase-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('[data-xdrive-mobile-gallery-tab="collections"]').tap();
+  const sourceCard=page.locator('[data-xdrive-mobile-gallery-collection-card="source-7"]');
+  await sourceCard.waitFor();
+  await sourceCard.tap();
+  const child=page.locator('[data-xdrive-gallery-folder="3"]');
+  await child.waitFor();
+  await page.waitForFunction(() => {
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    return title.includes('验收同步目录') && !!document.querySelector('[data-xdrive-gallery-folder="3"]') &&
+      !!document.querySelector('[data-xdrive-media-tile] img[alt^="photo-"]');
+  });
+  await child.scrollIntoViewIfNeeded();
+  // Playwright tap() may auto-scroll a PARTLY visible card into the viewport,
+  // even while the destination Server GET is held. Put the source card safely
+  // inside the same committed scroll owner BEFORE measuring navigation.
+  // This is actual scrolling of the real Gallery, not a fabricated frame.
+  await child.evaluate(el => {
+    const main=document.querySelector('main');
+    if (!main) throw new Error('P21 missing real scroll owner');
+    const mr=main.getBoundingClientRect(), er=el.getBoundingClientRect();
+    main.scrollTop += er.top-(mr.top+Math.min(208,mr.height*0.35));
+  });
+  await page.waitForFunction(() => {
+    const main=document.querySelector('main');
+    const child=document.querySelector('[data-xdrive-gallery-folder="3"]');
+    if(!main||!child)return false;
+    const mr=main.getBoundingClientRect(),cr=child.getBoundingClientRect();
+    return cr.top>=mr.top+12&&cr.bottom<=mr.bottom-32;
+  });
+  // A just-committed sparse parent can still be reconciling its FIRST
+  // visible image/virtual-row geometry after navigation from Collections.
+  // Do not take a half-settled parent as the baseline of a child-tap test.
+  // This waits for real parent photo rows and a stable rendered scroll for
+  // multiple frames. It does NOT change the strict held-child business oracle.
+  await page.waitForFunction(() => {
+    const main=document.querySelector('main');
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    const alt=document.querySelector('[data-xdrive-media-tile] img')?.getAttribute('alt')||'';
+    const rows=document.querySelectorAll('[data-xdrive-media-tile]').length;
+    const valid=!!main&&title.includes('验收同步目录')&&
+      !!document.querySelector('[data-xdrive-gallery-folder="3"]')&&
+      /^photo-[0-9]+[.]png$/.test(alt)&&rows>0;
+    const signature=valid?[main.scrollTop,rows,alt].join('|'):'';
+    const now=performance.now();
+    const previous=window.__p21ParentStable;
+    if (!valid||!previous||previous.signature!==signature) {
+      window.__p21ParentStable={signature,since:now};
+      return false;
+    }
+    return now-previous.since>=240;
+  },null,{polling:'raf',timeout:15000});
+  await settle();
+  await page.evaluate(()=>{
+    window.__galleryP21Main=document.querySelector('main');
+    window.__galleryP21Root=document.querySelector('#xdrive-mobile-gallery-main');
+  });
+  const observe=()=>page.evaluate(()=>{
+    const main=document.querySelector('main');
+    const rect=el=>el?.getBoundingClientRect().toJSON()||null;
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    return {
+      sameMain:main===window.__galleryP21Main,
+      sameGallery:document.querySelector('#xdrive-mobile-gallery-main')===window.__galleryP21Root,
+      mainRect:rect(main),
+      headerRect:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      scrollTop:main?.scrollTop??null,
+      parentTitle:title.includes('验收同步目录')&&!title.includes('验收嵌套子目录'),
+      childTitle:title.includes('验收嵌套子目录'),
+      parentChildCard:!!document.querySelector('[data-xdrive-gallery-folder="3"]'),
+      folderBrowser:!!document.querySelector('[data-xdrive-gallery-folder-browser]'),
+      collectionsOverview:!!document.querySelector('[data-xdrive-mobile-gallery-collections]'),
+      firstAlt:document.querySelector('[data-xdrive-media-tile] img')?.getAttribute('alt')??null,
+      mediaRows:document.querySelectorAll('[data-xdrive-media-tile]').length,
+      childRect:rect(document.querySelector('[data-xdrive-gallery-folder="3"]')),
+      documentOverflow:Math.max(0,document.documentElement.scrollHeight-innerHeight),
+    };
+  });
+  const before=await observe();
+  const stable=state=>state.sameMain&&state.sameGallery&&state.parentTitle&&
+    !state.childTitle&&state.parentChildCard&&state.folderBrowser&&
+    !state.collectionsOverview&&state.mediaRows>0&&
+    state.scrollTop!==null&&Math.abs(state.scrollTop-before.scrollTop)<=2&&
+    !!before.mainRect&&!!state.mainRect&&
+    Math.abs(state.mainRect.y-before.mainRect.y)<=1&&
+    Math.abs(state.mainRect.height-before.mainRect.height)<=1&&
+    !!before.childRect&&!!state.childRect&&
+    Math.abs(state.childRect.y-before.childRect.y)<=1&&
+    Math.abs(state.childRect.height-before.childRect.height)<=1&&
+    !!before.headerRect&&!!state.headerRect&&
+    Math.abs(state.headerRect.y-before.headerRect.y)<=1&&
+    Math.abs(state.headerRect.height-before.headerRect.height)<=1&&
+    state.headerRect.height===52&&state.documentOverflow<=1;
+  check('P21 initial committed root Sync Folder and visible real child folder',
+    stable(before) && /^photo-[0-9]+[.]png$/.test(before.firstAlt||''),before);
+  let notifyView,releaseView,notifyRange,releaseRange;
+  const viewStart=new Promise(resolve=>{notifyView=resolve;});
+  const rangeStart=new Promise(resolve=>{notifyRange=resolve;});
+  const viewWait=new Promise(resolve=>{releaseView=resolve;});
+  const rangeWait=new Promise(resolve=>{releaseRange=resolve;});
+  gallerySyncChildViewGate={hits:0,notify:notifyView,wait:viewWait};
+  gallerySyncChildRangeGate={hits:0,notify:notifyRange,wait:rangeWait};
+  let duringView,duringRange,viewHits=0,rangeHits=0;
+  try {
+    await child.tap();
+    await Promise.race([viewStart,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P21 authenticated child folder view not requested')),10000))]);
+    await settle();
+    duringView=await observe();
+    viewHits=gallerySyncChildViewGate.hits;
+    check('P21 pending child view retains accepted root and its scroll anchor',
+      viewHits>=1&&stable(duringView),{before,duringView,viewHits});
+    releaseView();
+    await Promise.race([rangeStart,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P21 authenticated child media first page not requested')),10000))]);
+    await settle();
+    duringRange=await observe();
+    rangeHits=gallerySyncChildRangeGate.hits;
+    check('P21 pending child first media range retains accepted root and scroll',
+      rangeHits>=1&&stable(duringRange),{before,duringView,duringRange,viewHits,rangeHits});
+  } finally {
+    gallerySyncChildViewGate=null;
+    gallerySyncChildRangeGate=null;
+    releaseView();
+    releaseRange();
+  }
+  await page.waitForFunction(()=>{
+    const title=document.querySelector('[data-xdrive-mobile-gallery-actions]')?.textContent||'';
+    const img=document.querySelector('[data-xdrive-media-tile] img');
+    const m=img?.getAttribute('alt')?.match(/^photo-(\d+)\.png$/);
+    return title.includes('验收嵌套子目录')&&!!m&&
+      Number(m[1])>=1&&Number(m[1])<=120;
+  });
+  await settle();
+  const committed=await observe();
+  const id=Number(committed.firstAlt?.match(/photo-(\d+)\.png/)?.[1]);
+  check('P21 child photo wall is committed only after its authenticated first range',
+    committed.sameMain&&committed.sameGallery&&committed.childTitle&&
+    !committed.parentChildCard&&!committed.collectionsOverview&&
+    committed.mediaRows>0&&id>=1&&id<=120&&committed.documentOverflow<=1,
+    {before,duringView,duringRange,committed});
+  result.samples[activeStage]={before,duringView,duringRange,committed,
+    viewHits,rangeHits,originalCompiledReact:true,genuineOwnerChildView:true,
+    genuineOwnerSparseRange:true,realIOS:false,realAndroid:false,installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
 async function filesIos27RenameAcceptance(viewport, narrow, row) {
@@ -5386,6 +5561,18 @@ async function main() {
         result.requests[key] = (result.requests[key] || 0) + 1;
         try {
           assert.equal(url.origin, origin, 'App attempted an external network request');
+          if (gallerySyncChildViewGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/sync-folders/7/folders/3') {
+            const gate=gallerySyncChildViewGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
+          if (gallerySyncChildRangeGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('folder_id') === '3' &&
+              url.searchParams.get('offset') === '0') {
+            const gate=gallerySyncChildRangeGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
           if (gallerySyncFolderViewGate && request.method() === 'GET' &&
               url.pathname === '/api/v1/media/sync-folders/7/folders/2') {
             const gate = gallerySyncFolderViewGate;
@@ -5496,6 +5683,7 @@ async function main() {
        else if (galleryMemoryNavigationScenario) await galleryMemoryNavigationAcceptance();
        else if (galleryPetNavigationScenario) await galleryPetNavigationAcceptance();
        else if (galleryPersonNavigationScenario) await galleryPersonNavigationAcceptance();
+       else if (gallerySyncFolderChildNavigationScenario) await gallerySyncFolderChildNavigationAcceptance();
        else if (gallerySyncFolderNavigationScenario) await gallerySyncFolderNavigationAcceptance();
       else if (galleryIos27ViewerScenario) await galleryIos27ViewerAcceptance(viewerPointer);
       else if (filesIos27ChromeScenario) await filesIos27ChromeAcceptance(origin);
