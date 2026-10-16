@@ -205,3 +205,10 @@ The new pure-Go `ValidateJSAPI4ChildCandidate` and `MatchJSAPI4ChildCandidate` v
 - 官方定义见 https://lbs.baidu.com/jsapi/refdoc/v4/classes/BMap.ClusterLayer.html 及 https://lbs.baidu.com/jsapi/refdoc/v4/interfaces/BMap.ClusterClickValue.html：接收 GeoJSON FeatureCollection，点击事件 value.isCluster 表示聚合点，pointCount 是点数而非照片数。当前源码新增的 `ui/shared/src/media-gallery-baidu-jsapi4-layer.ts` 仅消费人工注入的 Map/ClusterLayer/Convertor interface；**无任何生产调用点**，不能用 TS 对象模拟所谓安全会话。
 - 视角 start 事件同步 AbortController 取消；end 事件通知 WGS84 请求重算而不直接发送 BD-09 Map.getBounds。官方 WGS84→BD-09 FeatureCollection 与从 Server 返回的当前 ≤100 完整 Owner 地点页共同锁定可选中的 place_id/photo_count；旧页、截断、错码、点击伪造和错误转换一律不调用图库 Viewer。卸载需清理监听、图层及数据。
 - 生产 JSAPI4 继续 NO-GO，百度唯一 Provider：独立 Browser AK 加密保留于 Server，Static v2 由 Server AK 调用；只有获得许可和官方被许可的完整脚本/瓦片/字体/WASM 清单、逐请求 Owner/epoch+配额校验、原始上游和浏览器 HAR 密钥非泄露、受信发布签名、Caddy/PWA/Electron 安全隔离、真机浏览器测试后才能接入实际脚本与 layer。此阶段无新 HTTP 路由，不能暴露 AK、切换 provider 或破坏 52px App Frame 与三端共用 Gallery。
+
+
+## 2026-10-16 A3b3a3c Server Owner 有界视窗到原生聚合的联接（仍 NO-GO）
+
+- `ui/shared/src/media-gallery-baidu-jsapi4-viewport.ts` 仅是**未调用**的共享协调器。它以已有认证 Gallery Web/Mobile Web REST 或 Desktop Agent IPC 的 `listPlacesViewport` 为唯一数据源，limit=100、offset=0；使用 AbortSignal/8s 上限以及代际防陈旧，收到不完整视窗绝不拉取更后页/10万点。打开地点仍委托一个既有 Server Range/Viewer。
+- JSAPI 4.0 官方在中国地区默认 BD-09。原生 Map.getBounds 的数值绝不能无证据直接当成 Server 要求的 WGS84；必须等批准的 WGS84 区域映射方法，由可信 Map adapter 注入经过验证的 west/south/east/north，严禁把 map 原始第三方资源直接当成真实摄影 GPS。
+- 两种 AK 仍各自仅 Server 内加密，JSAPI 生产 runtime 仍关（`runtime_enabled=false`），无新的 Session/Cookie/proxy/JSAPI Loader/地图脚本、无真机运行证明。A3 后续上线前必须经百度真实 self-host/PWA/Electron 许可、完整原始资源清单、逐 Host/Path/Query/MIME/大小/超时的不可由浏览器编辑的资源策略、浏览器+Server 上游 HAR 无密钥泄漏、不可伪造签名的 release、逐请求 Owner/epoch 和跨副本配额、Caddy CSP 和 Electron 隔离/真实 iOS27、Android、Desktop 验收。即使所有 mock 全绿，当前发版仍 **NO-GO**。
