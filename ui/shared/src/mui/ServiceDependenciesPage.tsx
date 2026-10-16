@@ -15,10 +15,12 @@ import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
+import { alpha } from '@mui/material/styles'
 import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
-import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals } from '../system-dependencies-overview'
+import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOverviewSignals, xDriveDashboardAssessment, xDriveDashboardCounts, xDriveDashboardMatches } from '../system-dependencies-overview'
+import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES } from '../system-dependencies-capabilities'
-import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab } from '../system-dependencies-navigation'
+import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
 import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
 import type {
   XDriveBaiduMapAdminConfig,
@@ -195,6 +197,14 @@ const applyModeLabels: Record<XDriveServiceApplyMode, string> = {
 
 function ServiceRow({ service }: { service: XDriveServiceDependency }) {
   const state = statusLabels[service.status] ?? statusLabels.unknown
+  const evidenceDetails = [
+    configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知',
+    installationStateLabels[service.installation_state ?? 'unknown'] ?? '部署未确认',
+    healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认',
+    service.id === 'background-worker' && service.activation_state === 'verified'
+      ? '已观测的在线 Pull Worker 均确认目标修订（不代表全部部署实例）'
+      : activationStateLabels[service.activation_state ?? 'unknown'] ?? '生效未确认',
+  ]
   return (
     <Box
       data-xdrive-service-id={service.id}
@@ -237,23 +247,28 @@ function ServiceRow({ service }: { service: XDriveServiceDependency }) {
               </Typography>
             </Stack>
           )}
-          <Stack direction="row" flexWrap="wrap" useFlexGap spacing={1.5} sx={{ mt: 1 }}
-            data-xdrive-service-lifecycle>
-            <Typography variant="caption" color="text.secondary">
-              配置：{configurationStateLabels[service.configuration_state ?? 'unknown'] ?? '配置未知'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              部署：{installationStateLabels[service.installation_state ?? 'unknown'] ?? '安装/部署未确认'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              健康：{healthStateLabels[service.health_state ?? 'unknown'] ?? '健康无法确认'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              生效：{service.id === 'background-worker' && service.activation_state === 'verified'
-                ? '已观测的在线 Pull Worker 均确认目标修订（不代表全部部署实例）'
-                : activationStateLabels[service.activation_state ?? 'unknown'] ?? '无法确认目标修订生效'}
-            </Typography>
-          </Stack>
+          <Box data-xdrive-service-lifecycle aria-label="配置、部署、健康、生效独立证据" sx={{
+            mt: 2, display: 'grid', gap: 1,
+            gridTemplateColumns: { xs: 'minmax(0,1fr)', sm: 'repeat(2, minmax(0,1fr))',
+              lg: 'repeat(4, minmax(0,1fr))' },
+          }}>
+            {xDriveSystemDependencyOverviewSignals(service).map((axis, index) => (
+              <Box key={axis.label} sx={{ p: 1.25, minWidth: 0, border: 1,
+                borderColor: 'divider', borderRadius: 1.5, bgcolor: 'action.hover' }}>
+                <Typography variant="caption" color="text.secondary">{axis.label}</Typography>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ my: 0.5,
+                  color: axis.tone === 'positive' ? 'success.main'
+                    : axis.tone === 'negative' ? 'error.main'
+                      : axis.tone === 'attention' ? 'warning.main' : 'text.primary' }}>
+                  {axis.value}
+                </Typography>
+                <Typography variant="caption" color="text.secondary"
+                  sx={{ display: 'block', overflowWrap: 'anywhere' }}>
+                  {evidenceDetails[index]}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
           {service.group === 'intelligence' && (
             <Stack spacing={0.25} sx={{ mt: 1 }} data-xdrive-photo-host-observation>
               <Typography variant="caption" color="text.secondary">
@@ -326,55 +341,39 @@ const serviceOverviewIcons: Record<string, ReactNode> = {
   geonames: <PlaceRoundedIcon fontSize="small" />,
 }
 
-// No reported DTO exists here: show only a read-only explanation. The click
-// uses the existing guarded missing-service detail, never an editor or apply.
+// Missing entries never synthesize health or grant configuration actions.
 function UnreportedServiceOverviewCard({ id, label, onOpen }: {
-  id: string
-  label: string
-  onOpen: () => void
+  id: string; label: string; onOpen: () => void
 }) {
   return (
     <Button variant="outlined" color="inherit" onClick={onOpen}
       aria-label={'查看' + label + '未报告详情（只读）'}
       data-xdrive-system-dependency-unreported-card={id}
-      sx={{
-        display: 'flex', width: '100%', minWidth: 0, minHeight: 160,
-        flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start',
-        px: 1.75, py: 1.5, gap: 1, borderRadius: 2, borderStyle: 'dashed',
-        borderColor: 'divider', bgcolor: 'background.paper',
-        textAlign: 'left', textTransform: 'none',
-        '&:hover': { bgcolor: 'action.hover', borderColor: 'text.disabled' },
+      data-xdrive-system-dependency-overview-state="unknown"
+      sx={(theme) => ({
+        display: 'flex', minWidth: 0, width: '100%', minHeight: 138,
+        flexDirection: 'column', alignItems: 'stretch', textAlign: 'left',
+        justifyContent: 'flex-start', textTransform: 'none', px: 1.75, py: 1.5,
+        gap: 1, borderRadius: 2, borderStyle: 'dashed',
+        borderColor: alpha(theme.palette.info.main, 0.48),
+        bgcolor: alpha(theme.palette.info.main, theme.palette.mode === 'dark' ? 0.12 : 0.055),
+        '&:hover': { bgcolor: alpha(theme.palette.info.main, 0.18), borderColor: 'info.main' },
         '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
-      }}
-    >
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ width: '100%', minWidth: 0 }}>
-        <Box sx={{ width: 32, height: 32, borderRadius: 1.5, bgcolor: 'action.hover',
-          color: 'text.disabled', flexShrink: 0, display: 'grid', placeItems: 'center' }}>
-          <HelpOutlineRoundedIcon fontSize="small" />
-        </Box>
+      })}>
+      <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, width: '100%' }}>
+        <HelpOutlineRoundedIcon fontSize="small" color="info" />
         <Typography variant="subtitle2" color="text.primary" fontWeight={700}
           sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>{label}</Typography>
-        <Chip size="small" color="default" variant="outlined" label="未报告"
-          sx={{ flexShrink: 0, height: 24 }} />
+        <Chip size="small" color="info" variant="outlined" label="未报告"
+          sx={{ height: 24, flexShrink: 0 }} />
       </Stack>
-      <Typography variant="caption" color="text.secondary">
-        当前 Server/Agent 未返回可信状态，无法确认配置、部署、健康或生效。
+      <Typography variant="body2" color="text.secondary">
+        未获取可信状态，配置与运行情况均未知。
       </Typography>
-      <Box data-xdrive-service-overview-lifecycle sx={{
-        display: 'grid', width: '100%', gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
-        gap: 0.75, pt: 1, borderTop: 1, borderColor: 'divider',
-      }}>
-        {(['配置', '部署', '健康', '生效'] as const).map((axis) => (
-          <Stack key={axis} direction="row" spacing={0.75} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary">{axis}</Typography>
-            <Typography variant="caption" color="text.disabled">未确认</Typography>
-          </Stack>
-        ))}
-      </Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center"
+      <Stack direction="row" alignItems="center" justifyContent="space-between"
         sx={{ width: '100%', mt: 'auto' }}>
-        <Typography variant="caption" color="text.secondary">无可用操作</Typography>
-        <Typography variant="caption" color="text.secondary" fontWeight={700}>查看只读说明 ›</Typography>
+        <Typography variant="caption" color="text.secondary">只读说明</Typography>
+        <Typography variant="caption" fontWeight={700}>查看详情 ›</Typography>
       </Stack>
     </Button>
   )
@@ -401,98 +400,65 @@ function pageLocalNavSx(selected: boolean) {
   } as const
 }
 
-// Cards navigate to one real service detail. They do not enable, apply, or
-// validate credentials and never turn a legacy ready string into health proof.
-function ServiceOverviewCard({
-  service, onOpen,
-}: {
-  service: XDriveServiceDependency
-  onOpen: () => void
+// One display state per card, never a claim that saved deployment was applied.
+function ServiceOverviewCard({ service, onOpen }: {
+  service: XDriveServiceDependency; onOpen: () => void
 }) {
-  const status = statusLabels[service.status] ?? statusLabels.unknown
-  const axes = xDriveSystemDependencyOverviewSignals(service)
-  const legacyReadyUnverified = service.status === 'ready' && service.health_state !== 'ready'
-  const configurationHint = configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown
+  const assessment = xDriveDashboardAssessment(service)
+  const chipColors: Record<XDriveDashboardState, 'success' | 'error' | 'warning' | 'default' | 'info'> = {
+    healthy: 'success', failed: 'error', attention: 'warning',
+    disabled: 'default', unknown: 'info',
+  }
   return (
-    <Button
-      variant="outlined"
-      color="inherit"
-      onClick={onOpen}
-      aria-label={'查看' + service.label + '详情；健康：' + axes[2].value + '；生效：' + axes[3].value}
+    <Button variant="outlined" color="inherit" onClick={onOpen}
+      aria-label={'查看' + service.label + '详情，主状态：' + assessment.label + '；四维证据请查看详情'}
       data-xdrive-system-dependency-overview-card={service.id}
-      title={configurationHint}
-      sx={{
-        display: 'flex',
-        width: '100%',
-        minWidth: 0,
-        minHeight: 160,
-        flexDirection: 'column',
-        alignItems: 'stretch',
-        justifyContent: 'flex-start',
-        px: 1.75,
-        py: 1.5,
-        gap: 1,
-        borderColor: service.health_state === 'failed' ? 'error.main' : 'divider',
-        borderRadius: 2,
-        bgcolor: 'background.paper',
-        textAlign: 'left',
-        textTransform: 'none',
-        '&:hover': {
-          borderColor: service.health_state === 'failed' ? 'error.main' : 'primary.main',
-          bgcolor: 'action.hover',
-        },
-        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
-      }}
-    >
+      data-xdrive-system-dependency-overview-state={assessment.state}
+      title={configModeLabels[service.config_mode ?? 'unknown'] ?? configModeLabels.unknown}
+      sx={(theme) => {
+        const accent = assessment.state === 'healthy' ? theme.palette.success.main
+          : assessment.state === 'failed' ? theme.palette.error.main
+            : assessment.state === 'attention' ? theme.palette.warning.main
+              : assessment.state === 'unknown' ? theme.palette.info.main
+                : theme.palette.text.secondary
+        return {
+          display: 'flex', minWidth: 0, width: '100%', minHeight: 138,
+          flexDirection: 'column', alignItems: 'stretch', justifyContent: 'flex-start',
+          px: 1.75, py: 1.5, gap: 1, borderRadius: 2, textTransform: 'none',
+          textAlign: 'left', border: '1px solid',
+          borderColor: alpha(accent, theme.palette.mode === 'dark' ? 0.58 : 0.48),
+          bgcolor: alpha(accent, theme.palette.mode === 'dark' ? 0.15 : 0.07),
+          '&:hover': { borderColor: accent, bgcolor: alpha(accent, theme.palette.mode === 'dark' ? 0.22 : 0.12) },
+          '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+        }
+      }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0, width: '100%' }}>
-        <Box sx={{
-          width: 32, height: 32, borderRadius: 1.5, bgcolor: 'action.hover',
-          color: 'text.secondary', flexShrink: 0, display: 'grid', placeItems: 'center',
-        }}>
+        <Box sx={{ flexShrink: 0, display: 'grid', placeItems: 'center',
+          color: assessment.state === 'healthy' ? 'success.main'
+            : assessment.state === 'failed' ? 'error.main'
+              : assessment.state === 'attention' ? 'warning.main'
+                : assessment.state === 'unknown' ? 'info.main' : 'text.secondary' }}>
           {serviceOverviewIcons[service.id]}
         </Box>
         <Typography variant="subtitle2" color="text.primary" fontWeight={700}
-          sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>
-          {service.label}
-        </Typography>
-        <Chip size="small" variant="outlined"
-          color={legacyReadyUnverified ? 'default' : status.color}
-          label={legacyReadyUnverified ? '健康未核验' : status.label}
-          sx={{ flexShrink: 0, height: 24 }} />
+          sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>{service.label}</Typography>
+        <Chip size="small" variant="outlined" label={assessment.label}
+          color={chipColors[assessment.state]} sx={{ height: 24, flexShrink: 0, fontWeight: 700 }} />
       </Stack>
-      <Typography variant="caption" color="text.secondary" title={service.detail}
-        sx={{ width: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <Typography variant="body2" color="text.secondary" title={service.detail}
+        sx={{ width: '100%', overflow: 'hidden', display: '-webkit-box',
+          WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflowWrap: 'anywhere' }}>
         {service.detail}
       </Typography>
-      <Box sx={{
-        display: 'grid', width: '100%', gridTemplateColumns: 'repeat(2, minmax(0,1fr))',
-        gap: 0.75, pt: 1, borderTop: 1, borderColor: 'divider',
-      }} data-xdrive-service-overview-lifecycle>
-        {axes.map((axis) => (
-          <Stack key={axis.label} direction="row" alignItems="baseline" spacing={0.75} sx={{ minWidth: 0 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>
-              {axis.label}
-            </Typography>
-            <Typography variant="caption" fontWeight={600} title={axis.value} sx={{
-              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              color: axis.tone === 'positive' ? 'success.main'
-                : axis.tone === 'negative' ? 'error.main'
-                  : axis.tone === 'attention' ? 'warning.main' : 'text.primary',
-            }}>
-              {axis.value}
-            </Typography>
-          </Stack>
-        ))}
-      </Box>
       <Stack direction="row" alignItems="center" justifyContent="space-between"
-        sx={{ width: '100%', mt: 'auto' }}>
-        <Typography variant="caption" color="text.secondary">
-          {service.config_mode === 'in-app' ? '应用内可配置'
-            : service.config_mode === 'deployment' ? '需受控部署'
-              : service.config_mode === 'planned' ? '暂不支持配置' : '配置能力未知'}
+        sx={{ width: '100%', mt: 'auto', pt: 0.5, gap: 1 }}>
+        <Typography variant="caption" color="text.secondary" title={assessment.summary}
+          sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {assessment.summary}
         </Typography>
-        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ color: 'primary.main' }}>
-          <Typography variant="caption" fontWeight={700}>查看详情</Typography>
+        <Stack direction="row" alignItems="center" spacing={0.25}
+          sx={{ color: 'primary.main', flexShrink: 0 }}>
+          <Typography variant="caption" fontWeight={700}>详情</Typography>
           <ChevronRightRoundedIcon sx={{ fontSize: 17 }} />
         </Stack>
       </Stack>
@@ -511,6 +477,7 @@ export function XDriveServiceDependenciesPage({
   navigationResetKey?: number
 }) {
   const [showCapabilityMatrix, setShowCapabilityMatrix] = useState(false)
+  const [overviewFilter, setOverviewFilter] = useState<XDriveDashboardFilter>('all')
   const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
     () => xDriveNormalizeSystemDependenciesLocation(location),
   )
@@ -1238,6 +1205,23 @@ export function XDriveServiceDependenciesPage({
   )
   const overviewEntries = xDriveSystemDependenciesOverviewEntries(systemServices)
   const overviewCounts = xDriveSystemDependenciesOverviewCoverage(systemServices, XDRIVE_SYSTEM_DEPENDENCY_IDS.length)
+  const dashboardCounts = xDriveDashboardCounts(overviewEntries)
+  // These five buckets are mutually exclusive; a failed health probe is
+  // included in "需关注" with a separate failure subcount.
+  const dashboardMetrics = [
+    { label: '全部服务', value: String(dashboardCounts.total),
+      hint: '已报告 ' + overviewCounts.reported + ' · 未报告 ' + overviewCounts.unreported,
+      color: 'text.primary', filter: 'all' },
+    { label: '健康正常', value: String(dashboardCounts.healthy),
+      hint: '真实健康探针通过', color: 'success.main', filter: 'healthy' },
+    { label: '需关注', value: String(dashboardCounts.attention + dashboardCounts.failed),
+      hint: '异常 ' + dashboardCounts.failed + ' · 待处理 ' + dashboardCounts.attention,
+      color: dashboardCounts.failed ? 'error.main' : 'warning.main', filter: 'attention' },
+    { label: '未启用／未接入', value: String(dashboardCounts.disabled),
+      hint: '未启用或尚未接入', color: 'text.secondary', filter: 'disabled' },
+    { label: '状态未知', value: String(dashboardCounts.unknown),
+      hint: '缺少可信的健康证据', color: 'info.main', filter: 'unknown' },
+  ] as const
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
   const selectedServiceMissing = xDriveSystemDependencySelectionMissing(selectedPage, systemServices)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
@@ -1289,7 +1273,7 @@ export function XDriveServiceDependenciesPage({
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems="flex-start">
           <Box component="nav" aria-label="系统依赖页内导航" sx={{
             width: 198, flexShrink: 0, position: { md: 'sticky' }, top: 12,
-            display: { xs: 'none', md: 'block' }, maxHeight: 'calc(100dvh - 196px)',
+            display: { xs: 'none', md: selectedPage === 'overview' ? 'none' : 'block' }, maxHeight: 'calc(100dvh - 196px)',
             overflowY: 'auto', borderRight: 1, borderColor: 'divider', pr: 1.5,
           }}>
             <Button fullWidth size="small" variant="text" color="inherit"
@@ -1326,7 +1310,7 @@ export function XDriveServiceDependenciesPage({
           </Box>
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             <TextField select size="small" fullWidth label="选择系统依赖"
-              sx={{ display: { xs: 'block', md: 'none' }, mb: 2,
+              sx={{ display: { xs: selectedPage === 'overview' ? 'none' : 'block', md: 'none' }, mb: 2,
                 '& .MuiInputBase-root': { minHeight: 44 },
               }}
               value={selectedPage}
@@ -1357,35 +1341,53 @@ export function XDriveServiceDependenciesPage({
                   <Chip size="small" variant="outlined"
                     label={'已报告 ' + overviewCounts.reported + ' / ' + XDRIVE_SYSTEM_DEPENDENCY_IDS.length + ' 项'} />
                 </Stack>
-                <Box component="section" aria-label="系统依赖状态统计"
+                <Box component="section" aria-label="系统依赖状态统计与筛选"
                   data-xdrive-system-dependencies-metrics sx={{
-                    display: 'grid',
+                    display: 'grid', gap: 1, mb: 1.5,
                     gridTemplateColumns: {
-                      xs: 'repeat(2, minmax(0,1fr))',
-                      sm: 'repeat(3, minmax(0,1fr))',
+                      xs: 'repeat(2, minmax(0,1fr))', sm: 'repeat(3, minmax(0,1fr))',
                       xl: 'repeat(5, minmax(0,1fr))',
                     },
-                    gap: 1, mb: 2.5,
                   }}>
-                  {[
-                    { label: '系统服务', value: overviewCounts.reported + ' / ' + XDRIVE_SYSTEM_DEPENDENCY_IDS.length, hint: '未报告 ' + overviewCounts.unreported + ' 项', color: 'text.primary' },
-                    { label: '健康已验证', value: String(overviewCounts.healthVerified), hint: '真实健康探针通过', color: 'success.main' },
-                    { label: '健康异常', value: String(overviewCounts.healthFailed), hint: '存在实际失败证据', color: overviewCounts.healthFailed ? 'error.main' : 'text.primary' },
-                    { label: '健康未核验', value: String(overviewCounts.healthUnverified), hint: '含未报告 ' + overviewCounts.unreported + ' 项；未知或未检测', color: overviewCounts.healthUnverified ? 'warning.main' : 'text.primary' },
-                    { label: '生效未核验', value: String(overviewCounts.activationUnverified), hint: '含待应用 ' + overviewCounts.activationPending + ' 项、未报告 ' + overviewCounts.unreported + ' 项', color: 'text.primary' },
-                  ].map((metric) => (
-                    <Paper key={metric.label} variant="outlined" sx={{
-                      p: 1.5, borderRadius: 2, bgcolor: 'background.paper', minWidth: 0,
-                      gridColumn: metric.label === '生效未核验' ? { xs: 'span 2', sm: 'auto' } : undefined,
-                    }}>
+                  {dashboardMetrics.map((metric) => (
+                    <Button key={metric.filter} variant="outlined" color="inherit"
+                      aria-pressed={overviewFilter === metric.filter}
+                      aria-label={'筛选' + metric.label + '，' + metric.value + '项'}
+                      onClick={() => setOverviewFilter(metric.filter)}
+                      data-xdrive-system-dependencies-filter={metric.filter}
+                      sx={{ p: 1.5, minHeight: 90, minWidth: 0, borderRadius: 2,
+                        flexDirection: 'column', alignItems: 'flex-start', gap: 0.5,
+                        textTransform: 'none', textAlign: 'left',
+                        bgcolor: overviewFilter === metric.filter ? 'action.selected' : 'background.paper',
+                        borderColor: overviewFilter === metric.filter ? 'primary.main' : 'divider',
+                        gridColumn: metric.filter === 'unknown' ? { xs: 'span 2', sm: 'auto' } : undefined,
+                        '&:hover': { bgcolor: 'action.hover', borderColor: 'primary.main' },
+                        '&.Mui-focusVisible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 },
+                      }}>
                       <Typography variant="caption" color="text.secondary">{metric.label}</Typography>
-                      <Typography variant="h6" fontWeight={700} sx={{ color: metric.color, my: 0.25 }}
-                        data-xdrive-system-dependencies-metric-value={metric.label}>{metric.value}</Typography>
+                      <Typography variant="h6" fontWeight={700}
+                        sx={{ color: metric.color, lineHeight: 1.2 }}
+                        data-xdrive-system-dependencies-metric-value={metric.label}>
+                        {metric.value}
+                      </Typography>
                       <Typography variant="caption" color="text.secondary"
-                        sx={{ display: 'block', overflowWrap: 'anywhere' }}>{metric.hint}</Typography>
-                    </Paper>
+                        sx={{ overflowWrap: 'anywhere' }}>{metric.hint}</Typography>
+                    </Button>
                   ))}
                 </Box>
+                <Stack direction="row" justifyContent="space-between" alignItems="center"
+                  spacing={1} sx={{ mb: 2 }}>
+                  <Typography variant="caption" color="text.secondary" role="status"
+                    data-xdrive-system-dependencies-active-filter>
+                    点击统计可筛选服务；当前：
+                    {dashboardMetrics.find((metric) => metric.filter === overviewFilter)?.label}
+                  </Typography>
+                  {overviewFilter !== 'all' && (
+                    <Button size="small" variant="text" onClick={() => setOverviewFilter('all')}>
+                      清除筛选
+                    </Button>
+                  )}
+                </Stack>
                 <Paper variant="outlined" sx={{ p: { xs: 1.25, sm: 1.5 }, mb: 2, borderRadius: 2 }}
                   data-xdrive-system-dependencies-capability-matrix>
                   <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}
@@ -1463,7 +1465,9 @@ export function XDriveServiceDependenciesPage({
                   )}
                 </Paper>
                 {groups.map((group) => {
-                  const items = overviewEntries.filter((item) => item.group === group.id)
+                  const items = overviewEntries.filter((item) =>
+                    item.group === group.id &&
+                    xDriveDashboardMatches(xDriveDashboardAssessment(item.service).state, overviewFilter))
                   const reported = items.filter((item) => item.service !== null).length
                   if (items.length === 0) return null
                   return (
@@ -1472,7 +1476,7 @@ export function XDriveServiceDependenciesPage({
                         alignItems={{ xs: 'flex-start', sm: 'baseline' }} sx={{ mb: 1 }}>
                         <Typography variant="subtitle1" component="h3" fontWeight={700}>{group.label}</Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {reported} / {items.length} 已报告 · {group.description}
+                          {items.length} 项 · 其中 {reported} 项已报告
                         </Typography>
                       </Stack>
                       <Box sx={{
@@ -1502,6 +1506,14 @@ export function XDriveServiceDependenciesPage({
                     </Box>
                   )
                 })}
+                {overviewFilter !== 'all' && !overviewEntries.some((item) =>
+                  xDriveDashboardMatches(xDriveDashboardAssessment(item.service).state, overviewFilter)) && (
+                  <Paper role="status" variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      当前筛选没有匹配的服务。可点击「全部服务」恢复列表。
+                    </Typography>
+                  </Paper>
+                )}
               </Box>
             )}
             {!loading && snapshot && selectedServiceMissing && (
@@ -1538,6 +1550,38 @@ export function XDriveServiceDependenciesPage({
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                     {group.description}
                   </Typography>
+                  {selectedItem && selectedItem.config_mode && selectedItem.apply_mode && (() => {
+                    const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[selectedItem.id as XDriveSystemDependencyID]
+                    return (
+                      <Paper variant="outlined" data-xdrive-system-dependency-actions
+                        sx={{ p: 1.5, mb: 2, borderRadius: 2 }}>
+                        <Stack direction={{ xs: 'column', sm: 'row' }}
+                          alignItems={{ xs: 'flex-start', sm: 'center' }}
+                          justifyContent="space-between" gap={1}>
+                          <Box>
+                            <Typography variant="subtitle2" fontWeight={700}>配置与检测</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {capability.enable}；实际权限与结果以 Server 为准。
+                            </Typography>
+                          </Box>
+                          <Stack direction="row" gap={1} useFlexGap flexWrap="wrap">
+                            {capability.configTarget && (
+                              <Button size="small" variant="outlined"
+                                onClick={() => navigateTo(capability.configTarget!)}>
+                                配置与修改
+                              </Button>
+                            )}
+                            {capability.verifyTarget && (
+                              <Button size="small" variant="outlined"
+                                onClick={() => navigateTo(capability.verifyTarget!)}>
+                                {capability.verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
+                              </Button>
+                            )}
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    )
+                  })()}
                   <Tabs variant="scrollable" scrollButtons="auto" value={currentTab}
                     onChange={(_event, next: XDriveSystemDependencyTab) =>
                       navigateTo(selectedPage === 'photo-auto'
