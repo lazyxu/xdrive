@@ -7,6 +7,8 @@ export XD_CONFIG_DIR="$scratch"
 export XD_CADDY_TEST_FIXTURE="$scratch/caddy-health"
 export XD_CADDY_RUNTIME_DOMAIN_FIXTURE="$scratch/caddy-runtime-domain"
 export XD_CADDY_LIVE_SHA_FIXTURE="$scratch/caddy-live-sha"
+export XD_CADDY_LIVE_SHA_NEXT_FIXTURE="$scratch/caddy-live-sha-next"
+export XD_CADDY_LIVE_SHA_COUNT_FIXTURE="$scratch/caddy-live-sha-count"
 export XD_CADDY_GENERATION_FIXTURE="$scratch/caddy-generation"
 export XD_CADDY_GENERATION_NEXT_FIXTURE="$scratch/caddy-generation-next"
 export XD_CADDY_GENERATION_COUNT_FIXTURE="$scratch/caddy-generation-count"
@@ -46,7 +48,18 @@ elif [[ "$#" == 5 && "$1" == exec && "$2" == xdrive-caddy &&
         "$3" == /bin/sh && "$4" == -ec &&
         "$5" == 'set -o pipefail; wget -q -T 2 -O - http://127.0.0.1:2019/config/ | sha256sum' ]]; then
   [[ -f "$XD_CADDY_LIVE_SHA_FIXTURE" ]] || exit 1
-  cat "$XD_CADDY_LIVE_SHA_FIXTURE"
+  if [[ -f "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE" ]]; then
+    count="$(cat "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE" 2>/dev/null || printf '0')"
+    count=$((count + 1))
+    printf '%s\n' "$count" > "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+    if (( count % 2 == 0 )); then
+      cat "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE"
+    else
+      cat "$XD_CADDY_LIVE_SHA_FIXTURE"
+    fi
+  else
+    cat "$XD_CADDY_LIVE_SHA_FIXTURE"
+  fi
 else
   exit 2
 fi
@@ -96,6 +109,31 @@ test "$(json_value "$status" instance_generation_state)" = same-instance-local
 ! grep -q "$fixed_caddy_id" "$status"
 ! grep -q '|2478|' "$status"
 ! grep -q '2026-10-16T09:23' "$status"
+# Caddy can hot-reload without a new container/PID. Distinct valid in-memory
+# JSON samples in one fixed-generation window revoke stale positive TLS/SNI,
+# startup alignment and active config signals. Never expose either digest.
+next_live_sha="$(printf 'd%.0s' {1..64})"
+printf '%s  -\n' "$next_live_sha" > "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE"
+printf '0\n' > "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" tls_state)" = unavailable
+test "$(json_value "$status" tls_verified_domain_sha256)" = ""
+test "$(json_value "$status" runtime_tls_alignment)" = unverified
+test "$(json_value "$status" live_config_sha256)" = ""
+test "$(json_value "$status" instance_generation_state)" = unverified
+! grep -q "$next_live_sha" "$status"
+# If a digest cannot be read, only the config observation is unverified;
+# local TLS and process generation are independently still observable.
+printf 'malformed\n' > "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE"
+printf '0\n' > "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" tls_state)" = verified
+test "$(json_value "$status" instance_generation_state)" = same-instance-local
+test "$(json_value "$status" live_config_sha256)" = ""
+rm -f "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE" "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" tls_state)" = verified
+test "$(json_value "$status" live_config_sha256)" = "$expected_live_sha"
 # A replaced container/process during successive local checks must revoke
 # the TLS SNI digest, startup alignment, live config hash and positive status.
 printf '%s|%s|%s|true|healthy\n' "$fixed_caddy_id" '2026-10-16T09:24:00.000000001Z' '2479' > "$XD_CADDY_GENERATION_NEXT_FIXTURE"
@@ -228,4 +266,4 @@ test "$(json_value "$status" tls_state)" = verified
 rm -f "$XD_CADDY_TEST_FIXTURE"
 caddy_host_refresh
 test "$(json_value "$status" state)" = unknown
-echo "Caddy fixed runtime health, process-generation fence, TLS, startup Env and in-container live config hashing, fail-closed privacy: OK"
+echo "Caddy fixed runtime health, process-generation and double config-sample fences, TLS, startup Env, fail-closed privacy: OK"
