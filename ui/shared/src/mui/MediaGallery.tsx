@@ -1867,17 +1867,31 @@ export function XDriveMediaGalleryPage({
     void loadFirstPage(null, {}, person, null)
   }, [loadFirstPage])
 
-  const openPerson = useCallback((person: MediaPersonIdentity) => {
-    setSection('people')
-    setActiveMediaType('')
+  const openPerson = useCallback((person: MediaPersonIdentity, fromCollections = false) => {
     const nextDraft = {
       ...emptyMediaGalleryFilterDraft,
       personIdentity: person.id,
     }
     const nextQuery = mediaGalleryQueryFromDraft(nextDraft)
-    setQuery(nextQuery)
-    setDraftFilters(nextDraft)
-    void loadFirstPage(null, nextQuery, null, person)
+    // Do not expose an empty Person range while its authenticated first page
+    // is still pending; the previous Mobile Collections owns the scroll.
+    const commitFromCollections = fromCollections ? () => {
+      setCurrentFolderView(null)
+      setSection('people')
+      setActiveMediaType('')
+      setQuery(nextQuery)
+      setDraftFilters(nextDraft)
+      setMobileCollectionsOverview(false)
+    } : undefined
+    if (!fromCollections) {
+      // Wide Web/Desktop and already-entered People retain prior navigation.
+      setSection('people')
+      setActiveMediaType('')
+      setQuery(nextQuery)
+      setDraftFilters(nextDraft)
+    }
+    void loadFirstPage(null, nextQuery, null, person, 'default', null, null,
+      null, commitFromCollections)
   }, [loadFirstPage])
 
   const openMediaType = useCallback((assetKind: string) => {
@@ -2865,7 +2879,7 @@ export function XDriveMediaGalleryPage({
         cleanupMoreLoading={cleanupMoreLoading}
         onOpenPet={(pet) => openPet(pet, mobileCollectionsOverview)}
         onOpenSuggestedPerson={openSuggestedPerson}
-        onOpenPerson={(person) => { setMobileCollectionsOverview(false); openPerson(person) }}
+        onOpenPerson={(person) => openPerson(person, mobileCollectionsOverview)}
         onReviewSuggestedPerson={
           source.reviewSuggestedPerson ? reviewSuggestedPerson : undefined
         }
@@ -6290,10 +6304,7 @@ export function XDriveMediaGallery({
           }}
           onOpenAlbum={onOpenAlbum}
           onOpenMemory={onOpenMemory}
-          onOpenPerson={onOpenPerson ? (person) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenPerson(person)
-          } : undefined}
+          onOpenPerson={onOpenPerson}
           onOpenPet={onOpenPet}
           onOpenPlace={onOpenPlace ? (place) => {
             onMobileCollectionsOverviewChange?.(false)
