@@ -11,6 +11,8 @@ const root = path.resolve(__dirname, '..', '..')
 const dist = path.join(root, 'web', 'dist')
 // P040 is a new narrow-viewport measurement, not a re-run of accepted wide-Web P015.
 const mobileCancelMode = process.env.XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF === '1'
+const physicalCancelMode = process.env.XD_FILEEXPLORER_MOBILE_PHYSICAL_GO_CANCEL_100K_PERF === '1'
+if (physicalCancelMode) assert(mobileCancelMode, 'P052 requires actual Mobile Web viewport mode')
 const out = path.resolve(process.env.XD_FILEEXPLORER_REAL_SCROLL_RESULTS ||
   path.join(__dirname, '..', mobileCancelMode ?
     'file-explorer-mobile-go-cancel-100k-results' : 'file-explorer-real-scroll-results'))
@@ -66,7 +68,7 @@ async function startFixture(view, sample, readyFile) {
   const config = await until(() => {
     if (child.exitCode !== null) throw Error('native fixture exited before ready: ' + child.exitCode)
     return fs.existsSync(readyFile) ? JSON.parse(fs.readFileSync(readyFile, 'utf8')) : null
-  }, 180000, 'native 100k FileExplorer signed PostgreSQL fixture')
+  }, physicalCancelMode ? 480000 : 180000, 'native 100k FileExplorer signed PostgreSQL fixture')
   return { child, config, exited, log }
 }
 
@@ -117,7 +119,7 @@ async function independentRange(fixture) {
   assert.equal(configResponse.status, 200)
   const config = await configResponse.json()
   assert.equal(config.logical_count, 100000)
-  assert.equal(config.physical_images, 16)
+  assert.equal(config.physical_images, physicalCancelMode ? 100000 : 16)
   const request = await fetch(base + '/api/v1/nodes/' + config.folder_id +
     '/children?offset=50000&limit=200&sort=name&order=asc', {
       headers: { Authorization: 'Bearer ' + config.token }, cache: 'no-store',
@@ -139,6 +141,13 @@ async function sampleOnce(view, sample, readyFile) {
     fixture = await startFixture(view, sample, readyFile)
     assert.equal(fixture.config.logical_count, 100000)
     assert.equal(fixture.config.first_image_nodes.length, 6)
+    if (physicalCancelMode) {
+      assert.equal(fixture.config.physical_images, 100000)
+      assert.equal(fixture.config.physical_mode, true)
+      assert.equal(fixture.config.physical_cancel_mode, true)
+      assert(fixture.config.physical_source_bytes >= 50000000,
+        'P052 requires 100k real unique decodable JPEG CAS source bytes')
+    }
     window = new BrowserWindow({
       show: true, width: mobileCancelMode ? 390 : 1440,
       height: mobileCancelMode ? 844 : 900,
@@ -155,7 +164,8 @@ async function sampleOnce(view, sample, readyFile) {
     window.webContents.on('did-fail-load', (_event, code, message) =>
       failures.push('did-fail-load ' + code + ': ' + message))
     await window.loadURL(fixture.config.url +
-      '/?xdriveFileExplorerRealScroll=1&xdriveFileExplorerViewMode=' + view)
+      '/?xdriveFileExplorerRealScroll=1&xdriveFileExplorerViewMode=' + view +
+      (physicalCancelMode ? '&xdriveFileExplorerPhysical100k=1' : ''))
     const started = await until(async () => {
       if (failures.length) throw Error(failures.join('; '))
       const error = await window.webContents.executeJavaScript(
@@ -218,11 +228,16 @@ async function sampleOnce(view, sample, readyFile) {
     })() : null
     const healthy = await independentRange(fixture)
     const row = {
-      view, sample, logicalNodes: 100000, physicalJPEGOriginals: 16,
+      view, sample, logicalNodes: 100000,
+      physicalJPEGOriginals: physicalCancelMode ? 100000 : 16,
+      physicalCASSourceBytes: fixture.config.physical_source_bytes,
+      physicalCancelMode,
       seedMsExcluded: fixture.config.seed_ms, mobileCancelMode,
       mobileCssWindowWidth: mobileCancelMode ? 390 : 1440,
       scroll, go, resource, healthy,
-      scope: 'Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN.',
+      scope: physicalCancelMode ?
+        'P052 mounted narrow Web Files Grid/Details, 100k SHA-distinct true 80x64 JPEG original CAS. Six real slow original-backed HTTP thumbnail responses and 160ms AbortSignal -> Gin Request.Context.Done, Go/Renderer process RSS and CPU. Not real Android/iOS/PWA or Live/H264, and not Task Center cancellation.' :
+        'Mounted shared Web FileExplorer Grid/Details, native PostgreSQL 17/Gin/auth/Local CAS genuine JPEG GETs; deliberate test-only slow-writer 1500ms after 256 bytes. Not Desktop Agent, Live/H264/RAW decoding or real WAN.',
     }
     if (mobileCancelMode && (resource.goRssGrowthBytes > 134217728 ||
       resource.rendererRssGrowthBytes > 134217728)) {
@@ -257,10 +272,13 @@ async function main() {
       }
     }
     const summary = {
-      status: mobileCancelMode ?
+      status: physicalCancelMode ?
+        'measured-P052-Mobile-Web-100k-DISTINCT-physical-CAS-JPEG-scroll-Go-cancellation' : mobileCancelMode ?
         'measured-Mobile-Web-390px-FileExplorer-100k-scroll-to-real-Go-cancellation' :
         'measured-real-Web-FileExplorer-Grid-Details-100k-scroll-to-Go-cancellation',
-      mobileCancelMode, cssWindowWidth: mobileCancelMode ? 390 : 1440,
+      mobileCancelMode, physicalCancelMode,
+      physicalOriginalsPerFixture: physicalCancelMode ? 100000 : 16,
+      cssWindowWidth: mobileCancelMode ? 390 : 1440,
       observedDocumentWidth: mobileCancelMode ? 375 : null,
       sampleCount: rows.length, eachModeSamples: 3, budgetMs: 160,
       views: ['grid', 'details'],
@@ -273,8 +291,11 @@ async function main() {
           row.scroll.clientWidth >= 375 && row.scroll.clientWidth <= 390 &&
           row.resource?.goRssGrowthBytes <= 134217728 &&
           row.resource?.rendererRssGrowthBytes <= 134217728)) &&
-        row.healthy.total === 100000 && row.healthy.returned === 200),
-      limits: mobileCancelMode ?
+        row.healthy.total === 100000 && row.healthy.returned === 200 &&
+        (!physicalCancelMode || (row.physicalJPEGOriginals === 100000 &&
+          row.physicalCASSourceBytes >= 50000000 && row.physicalCancelMode))),
+      limits: physicalCancelMode ?
+        'P052 real 100k SHA-distinct physical JPEG CAS originals per fresh PG/Go fixture; 390px shared Web FileExplorer mounted Grid/Details; 6 genuine first-body JPEG HTTP GETs per view intentionally delayed 1500ms after 256B, n3 each view. At +160ms 0 Go handlers/SQL work, 6/6 Context.Done, zero wasted response bytes, native CPU/RSS <=128MiB; does NOT claim live Android/iOS/PWA or persistent task cancellation.' : mobileCancelMode ?
         '390px shared Web FileExplorer, 100k metadata + only 16 physical JPEG originals, 6 first-chunk slow HTTP requests per Grid/Details view; 3 independent runs each. Actual Electron Chromium 375px document and Linux native Go Context.Done, not full Mobile App Frame, real iOS/Android device, installed PWA, sustained Go/Renderer peak or durable Task Center cancellation.' :
         '100k image Nodes/Files/MediaMetadata but only 16 distinct physical JPEG CAS originals; actual mounted Web Grid/Details and Go HTTP; no Windows or Desktop Main/Agent, native Live/RAW/video codec, full-file network throughput or peak RSS.',
     }

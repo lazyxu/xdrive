@@ -196,3 +196,33 @@
 **去重边界：** P044宽Web原版4GiB P50上传48.509s/下载18.417s、P045 Desktop Agent原版55.087s/21.969s是**不同平台历史数据，不能算P051前后优化**；真实iOS/Android/桌面安装PWA、WAN弱网、Task Center明确任务取消、100k真实物理Push/Pull仍 Not measured。用户持久上传/下载不能因为虚拟列表离开就取消。
 
 **P051真实原版n3（源码准确原生[CI #38758949429](https://github.com/lazyxu/xdrive/actions/runs/38758949429) SUCCESS；固定原始HEAD `9f2b6b56b497e19e4fb6526e728d8823b9cecb9f`）**：3/3不同SHA物理4GiB各有真实fsync源且CAS/File SHA和下载OPFS全部字节相符；每组512×8MiB PUT与1 GET，真实`window.innerWidth=390/document.clientWidth=375`/移动断点为真。上传三样本**47,803.5 / 47,960.8 / 47,323.9ms**，P50 **47,803.5ms（85.684MiB/s）**；下载**17,587.4 / 17,572.0 / 17,588.8ms**，P50 **17,587.4ms（232.894MiB/s）**。全OPFS后置校验每轮另用**23,289.5 / 23,033.2 / 22,827.8ms**（不混入下载计时）；Renderer最大RSS增长**92,832KiB**、Go Server最大增量**5,144,576B**、Go CPU P50**26,110ms**，全部原冻结预算≤360s/方向及各RSS≤256MiB；三组真实SHA各不同。**保留原版，不做生产优化，AFTER和速度提升N/A**；不能拿P044/P045不同平台的耗时计算提升。[永久完整原始三样本/summary/source压缩归档](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/raw-n3.tar.gz)（SHA256 `7c469635a52ef3df4b4858930add8e5dc18006e0b6c47fbbdd4639d64236a367`）· [易读独立n3指标](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/metrics.json) · [原始CI artifact](https://github.com/lazyxu/xdrive/actions/runs/38758949429/artifacts/11985756369)。此为首轮原始准确工作HEAD；归档后HEAD已变化，只有重新跑原生真n3及full CI/final-gate双绿才可合入。真实手机及installed PWA、WAN、100k物理Push/Pull仍Not measured。
+
+## P052 / M005-i · Mobile Web 100k不同物理JPEG CAS真实滚动取消（2026-10-16）
+
+| 冻结ID | 新工作负载（不同于已验收P039、P040） | 原版CURRENT门槛 / 测量状态 | 证据与下一步 |
+| --- | --- | --- | --- |
+| **P052 / M005-i** | 真实Linux Chromium窄屏 **390px BrowserWindow / 375px document**，共享Mounted Web FileExplorer Grid/Details，**每独立PostgreSQL17+Gin+Local CAS样本生成100,000个SHA-256不同、真实fsync的80×64可解码JPEG原片**（来源种子会证明至少50MB真实CAS，3点独立读取解码且SQL COUNT DISTINCT=100k），而非P040的100k元数据+16物理JPEG。每视图真实滚动约50%，从6条正式认证thumb HTTP各已送256B的1500ms慢写入触发浏览器AbortSignal，Go `Request.Context().Done`和handler实际结束。Grid/Details各n=3（共6个独立100k物理来源），每轮中段额外认证分页HTTP200/200条/total100k。没有真实Android/iOS、OS-installed PWA或H264/Live/RAW混合。 | 首测 **CURRENT=Accepted original n3 / BEFORE=CURRENT，AFTER=N/A，speedup=N/A**。冻结6/6真实Go Context.Done和6/6 Handler退出，+160ms旧Handler=0、废弃响应字节0、最慢Go取消通知≤160ms，所有6个虚拟滚动视口DOM mount<1000、CSS宽375–390、真实子项100k、Go与Renderer 160ms采样RSS增长各≤128MiB，记录CPU、物理CAS源字节与源/缓存、首256B真实字节，**n=3×Grid/Details**。原版达标不改生产；只有重复有效RED才做同环境n≥3最小性能修复与AFTER；否则拒绝猜测式优化。 | **Accepted original CURRENT n3，证据归档后准确 HEAD CI 待验证**；沿用P040已验收实际DOM/Go取消测试 driver+Go夹具，仅P052分支开启物理原片种子和test-only HTTP慢body watcher优先级；[分支专项CI](../.github/workflows/file-explorer-mobile-physical-100k-go-cancel-p052.yml)及[源契约](../desktop/tests/file-explorer-mobile-physical-100k-cancel-p052-source.cjs)。首轮有效/失败/无效证据必须归档`docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/`中的机器JSON、原始CI/run/SHA，修订仍为一工作提交，准确HEAD专项+完整CI/final-gate成功后才交付。 |
+
+**去重边界**：P039测试100k真实物理JPEG可见渲染但未测Go取消；P040验证390px真实Go取消36/36（旧Handler0，浪费0B），但只有16真实CAS JPEG。P052组合不同数据真实形状+客户端取消所有权；不是重新测速已通过同一负载。窗口滚动只取消无人消费的HTTP请求，不得取消用户拥有的上传/下载/同步/删除持久任务。Desktop installed PWA、Android installed PWA、iOS installed PWA及真手机仍为**Not measured**。
+
+**P052 首次源准确CI为 Invalid harness（n=0，不是产品RED）**：初始工作提交 `77273d9c9e1e09a7af59ba203f24b1891d1c050f` 的[原生 #38778285379](https://github.com/lazyxu/xdrive/actions/runs/38778285379)在 `gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go` 预检失败；仅 Go 测试用 `map[string]any` 新增字段导致字面量值格式对齐，尚未构造 100k 物理JPEG/CAS、不曾启动浏览器滚动、没有任何取消延迟样本。保留[不可变无效记录](performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38778285379-invalid.json)，只修正Go源码格式、保持P052全部原冻结真实CAS/36取消/160ms/0B/128MiB门槛，不做产品优化或把首次失败称性能RED。修复后重新运行同一新负载的原版CURRENT n3。
+
+**P052 第二轮 Invalid harness（2026-10-16，非产品RED）**：修正gofmt后的源码`2df4506beca11ddf1f305d57006e6d3af0bad850`在[原生CI #38778786252](https://github.com/lazyxu/xdrive/actions/runs/38778786252)已通过源合同与真实Web/Go构建，第一独立PG17/Local CAS夹具实际构造并验证**100,000 SHA不同的80×64 JPEG原片（70,893,376B，seed=90,888.799ms）**。随后测试专用Web入口仍使用P040的16物理JPEG默认模式，拒绝了正确的100k物理配置；**有效取消样本n=0，Go ctx取消耗时未测，生产无改动**。永久记录[第二轮无效JSON](performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38778786252-invalid.json)、[原始native artifact](https://github.com/lazyxu/xdrive/actions/runs/38778786252/artifacts/11995155658)。仅给P052真实Web入口附加已存在的`xdriveFileExplorerPhysical100k=1`参数并加静态合同；保持原来冻结的6组100k CAS、160ms/0 Handler/0B、128MiB门槛与P040 16原片行为，重新实测CURRENT。
+
+
+### P052 原版 CURRENT 首次有效物理 CAS + Go 取消样本（2026-10-16）
+
+准确原始测试源码 `a4dc597c5c4507c1cb0b7044146f888a138abd67`，[专项CI #38779915915](https://github.com/lazyxu/xdrive/actions/runs/38779915915) **SUCCESS**，独立真实PG17/Gin/Local CAS六组Grid/Details×n3，各组 **100,000个 SHA 不同的可解码80×64 JPEG原片 / 70,893,376B源负载**（独立schema/CAS根；并不意味着六组之间总共60万种不同编码内容）。实际Chromium 390px外框/375px document，真实DOM滚动到中段、6条受权thumbnail各先发送256B后触发生产前端AbortSignal，Go `Request.Context().Done` 真实通知且Handler退出。
+
+| 独立样本 | Grid 最慢Go通知 | Details 最慢Go通知 |
+| --- | ---: | ---: |
+| 1 | 14.528ms | 16.200ms |
+| 2 | 11.660ms | 17.909ms |
+| 3 | 11.485ms | 14.213ms |
+| **n3中位** | **11.660ms** | **16.200ms** |
+
+**冻结预算验收**：36/36真实Go Context.Done + 36/36 Handler取消，全部六轮各6/6；160ms后active Handler **0**，过期多发响应字节 **0B**，首片有效实际发出6×256B×6轮 **9,216B**；最慢Go通知 **17.909ms ≤160ms**。全部六组真实认证中段分页每次HTTP200、总数100k、返回200项；最大DOM挂载 **23** (<1000)，Go 160ms RSS增长最大 **12,288B**，Renderer增长最大 **3,080,192B**，每组Go CPU delta最大 **10ms**、Renderer CPU delta最大 **20ms**（部分Go 0ms是采样精度限制，不等于无CPU成本）。真实每组100k JPEG CAS构造耗时72.440–78.953s不计入取消响应时延；Go/Renderer RSS为取消窗口开始与160ms后比较，而非整个100k seed或应用生命周期峰值。
+
+**结论**：所有原版 `CURRENT` 真实性/取消/资源/字节预算通过，**不改生产代码**，AFTER=N/A，速度提升=N/A。首次成功的原始机读 `summary.json` 与 `grid/details-sample-{1,2,3}.json`、`source.txt` 永久归档 [完整原始六样本、summary和source压缩包](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/raw-n3.tar.gz)（原始压缩包SHA-256 `57f669e110da4d3c6fb95296c89dd4775488f3a12a421a10c418c40da1a0938e`），[可读机器汇总](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/metrics.json) 与 [原始 Artifact](https://github.com/lazyxu/xdrive/actions/runs/38779915915/artifacts/11995333174)。原始测试源码准确专项 + 完整CI #38779915873（25 success、含Final Gate）已通过；本次归档变更后的新HEAD必须再运行源码准确专项和完整CI/Final Gate后才能Ready/Merge，不把仅历史CI红色Invalid harness误认为产品性能RED。
+
+**设备与范围仍未覆盖**：这是390px Linux Chromium 宿主中的共享Web FileExplorer，不是Android/iOS真实设备、安装态PWA、H264/Live Motion/RAW/HEVC/LIVP取消，也不是100k真实物理Push/Pull同步/GUI删除。既有P039/P040与本负载不等价，不能跨工作负载计算提速；浏览器视口取消不得终止用户拥有的持久上传/下载/同步/删除任务。
