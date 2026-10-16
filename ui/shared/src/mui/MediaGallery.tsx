@@ -896,6 +896,7 @@ export function XDriveMediaGalleryPage({
     onCommitted?: () => void,
     sortOverride?: XDriveGallerySortChoice,
     foldOverride?: boolean,
+    timeZoneOverride?: string,
   ) => {
     const request = ++requestID.current
     // A selected Mobile Album is only an intent until its first authorized
@@ -914,7 +915,7 @@ export function XDriveMediaGalleryPage({
     const scopedQuery: MediaGalleryQuery = {
       ...nextQuery,
       fold_duplicates: (foldOverride ?? foldDuplicatesRef.current) && !nextQuery.fold_member_ids?.length,
-      time_zone: mediaTimeZoneRef.current,
+      time_zone: timeZoneOverride ?? mediaTimeZoneRef.current,
       sort_by: effectiveSort.by,
       sort_dir: effectiveSort.dir,
       unknown_first: mobileGalleryViewport &&
@@ -1787,11 +1788,11 @@ export function XDriveMediaGalleryPage({
 
   const changeGalleryTimeZone = useCallback((nextZone: string) => {
     if (!xDriveValidMediaTimeZone(nextZone) || mediaTimeZoneRef.current === nextZone) return
-    // Update the preference before recomputing capture-date boundaries.
-    xDriveWriteMediaTimeZone(nextZone)
-    mediaTimeZoneRef.current = nextZone
-    setMediaTimeZone(nextZone)
     if (section === 'memories') {
+      // The Memories index has its own loading contract, not a Gallery wall.
+      xDriveWriteMediaTimeZone(nextZone)
+      mediaTimeZoneRef.current = nextZone
+      setMediaTimeZone(nextZone)
       void loadMemories()
       return
     }
@@ -1799,11 +1800,33 @@ export function XDriveMediaGalleryPage({
       ...mediaGalleryQueryFromDraft(draftFilters),
       ...(currentFolderView ? { folder_id: currentFolderView.current.id, include_descendants: query.include_descendants } : {}),
     }
+    const acceptedKind = collectionTargetRef.current?.kind
+    // A date time-zone changes authenticated group boundaries. Until its
+    // first owner Range wins, the OLD sparse wall, accepted UI time-zone,
+    // query and persisted preference all belong to the last accepted view.
+    // Request only with a per-call override; do not mutate the shared ref.
+    if (mobileGalleryViewport && items.length > 0 &&
+        (acceptedKind === 'all' || acceptedKind === 'album')) {
+      void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson,
+        'default', null, null, null, () => {
+          xDriveWriteMediaTimeZone(nextZone)
+          mediaTimeZoneRef.current = nextZone
+          setMediaTimeZone(nextZone)
+          setQuery(nextQuery)
+        }, undefined, undefined, nextZone)
+      return
+    }
+    // Cold, non-photo collections and wide Web/Desktop keep their established
+    // lifecycle, with independent network thumbnail/poster progress.
+    xDriveWriteMediaTimeZone(nextZone)
+    mediaTimeZoneRef.current = nextZone
+    setMediaTimeZone(nextZone)
     setQuery(nextQuery)
     void loadFirstPage(currentAlbum, nextQuery, currentSuggestedPerson, currentPerson)
   }, [
     currentAlbum, currentFolderView, currentPerson, currentSuggestedPerson,
-    draftFilters, loadFirstPage, loadMemories, query.include_descendants, section,
+    draftFilters, items.length, loadFirstPage, loadMemories, mobileGalleryViewport,
+    query.include_descendants, section,
   ])
 
   const clearFilters = useCallback(() => {
