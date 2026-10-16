@@ -1,0 +1,71 @@
+{
+  "workloadId": "P052/M005-i",
+  "sourceHead": "a4dc597c5c4507c1cb0b7044146f888a138abd67",
+  "runId": 38779915915,
+  "artifactId": 11995333174,
+  "conclusion": "success",
+  "status": "Accepted ORIGINAL CURRENT n3 / delivered only after evidence-head CI",
+  "platform": "Linux Electron-hosted Chromium shared Mobile Web FileExplorer (not installed PWA, not Android/iOS device)",
+  "cssWindowWidth": 390,
+  "documentWidth": 375,
+  "virtualListModes": [
+    "grid",
+    "details"
+  ],
+  "nPerMode": 3,
+  "independentFixtures": 6,
+  "logicalNodesPerFixture": 100000,
+  "shaDistinctPhysicallyStoredJPEGPerFixture": 100000,
+  "physicalCASOriginalPayloadBytesPerFixture": 70893376,
+  "truePhysicalMediaType": "80x64 decodable JPEG",
+  "sixRequestsEachSentFirstBytes": 256,
+  "realGoContextDone": 36,
+  "realGoCanceledHandlers": 36,
+  "liveHandlersAt160ms": 0,
+  "staleBodyBytesAfterScroll": 0,
+  "firstBodyBytesBeforeCancelTotal": 9216,
+  "worstGoContextNotificationMs": 17.909,
+  "gridGoContextWorstMs": [
+    14.528,
+    11.66,
+    11.485
+  ],
+  "gridP50WorstMs": 11.66,
+  "detailsGoContextWorstMs": [
+    16.2,
+    17.909,
+    14.213
+  ],
+  "detailsP50WorstMs": 16.2,
+  "maximumMountedDOM": 23,
+  "peakGoCancellationWindowRssGrowthBytes": 12288,
+  "peakRendererCancellationWindowRssGrowthBytes": 3080192,
+  "maximumGoCancellationWindowCpuDeltaMs": 10,
+  "maximumRendererCancellationWindowCpuDeltaMs": 20,
+  "frozenBudget": {
+    "maxContextNotificationMs": 160,
+    "activeHandlersAt160ms": 0,
+    "staleBodyBytes": 0,
+    "maxGoCancellationWindowRssGrowthBytes": 134217728,
+    "maxRendererCancellationWindowRssGrowthBytes": 134217728
+  },
+  "correctness": {
+    "eachFixtureIndependentlySeeded": true,
+    "realAuthenticatedChildrenMiddlePage": "HTTP 200 offset 50000 / limit 200 / total 100000",
+    "allSixMountedScrolls": true
+  },
+  "before": "original CURRENT",
+  "after": null,
+  "optimization": "not attempted; original CURRENT is within frozen budgets",
+  "rawArchive": "raw-n3.tar.gz",
+  "rawArchiveSHA256": "57f669e110da4d3c6fb95296c89dd4775488f3a12a421a10c418c40da1a0938e",
+  "rawArtifactURL": "https://github.com/lazyxu/xdrive/actions/runs/38779915915/artifacts/11995333174",
+  "limitations": [
+    "No native installed PWA",
+    "No Android or iOS device",
+    "No H264 or Live Motion playback",
+    "No physical 100k Push/Pull sync",
+    "No GUI delete/restore performance",
+    "Cancellation-window CPU/RSS not whole-process peak"
+  ]
+}

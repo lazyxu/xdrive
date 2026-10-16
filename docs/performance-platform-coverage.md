@@ -103,3 +103,15 @@ P048的100k是**逻辑项/元数据**，不等于100k不同物理CAS、全量缩
 **准确边界：** P051 Chrome/Electron承载真实窄视口，而非Android/iOS实体机、OS安装PWA或完整Mobile Files App Frame。不可把P044/P045数字当P051新跑分或速度提升。冻结每方向≤360秒、Go/Renderer内存增长各≤256MiB、源分配≥98%、每组PUT512/GET1、3组SHA不同、全4GiB OPFS真实比对。慢网中断、Task Center取消及100k真实物理文件同步/GUI删除仍为 Not measured。来源：[登记簿](performance-test-registry.md)和[FileExplorer专项](file-explorer-performance.md)。
 
 **P051更新结果：** 已归档原始[3组机器JSON与source压缩包](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/raw-n3.tar.gz)及[可读指标](docs/performance-evidence/real-mobile-web-incompressible-cas-4gib-p051/ci-run-38758949429/metrics.json)，原始[专项CI #38758949429](https://github.com/lazyxu/xdrive/actions/runs/38758949429) success。`P051 Mobile Web 390px`已取得原版Linux Chromium性能，不得与P044 1280px宽屏Web、P045 Desktop Agent的历史结果横向算提速。Desktop installed PWA、Android installed PWA、iOS installed PWA仍全部**Not measured**；当前工作提交仅性能测量及归档、未改真实上传下载业务逻辑，AFTER=N/A。准确证据HEAD专项及完整CI/final-gate成功前PR仍保持Draft。
+
+## P052 / M005-i · 100k真实物理JPEG取消跨平台对照（2026-10-16）
+
+| 取消负载与真实物理原片数 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100k SHA不同可解码80×64 JPEG原始CAS + Mounted FileExplorer Grid/Details真实滚动取消至Go | **Not measured**（Desktop P037只有16个真实JPEG） | **Not measured**（Web P015只有少量真实JPEG） | **P052 原版已验收 CURRENT n3（准确证据 HEAD CI 待完成）**：36/36真实 Context.Done 和 Handler退出、最慢17.909ms、160ms后旧Handler0、废弃0B、375px document；新真实375px窄屏/100k不同物理CAS×Grid/Details n3，首6条slow HTTP 256B后滚动，冻结≤160ms全部Go Context.Done/Handler完成且废弃0B。P039物理渲染和P040元数据取消都是另一个负载。 | **Not measured** | **Not measured** | **Not measured** |
+
+**P052是独立平台＋真实物理CAS形状，当前BEFORE=CURRENT（原版有效真实n3）、AFTER=N/A。** 已合入P040取消36/36、最慢21.979ms不能冒充100k个独立JPEG原片下的性能；P039的纯物理JPEG渲染也不是取消。新工作流必须真实n3×2布局、每组六条已送256B再滚动、Go Context.Done与Handler结束、+160ms遗留0、浪费0B、128MiB Go/Renderer预算以及独立分页100k才可Accepted；错误/无效夹具原样归档。OS安装态PWA和真实设备全部Not measured。
+
+**P052更新：** 既有Mobile Web P040物理16张取消验收保持不变。新增P052首个有效100k物理JPEG来源在#38778786252已真正构造并验证（70,893,376B），但因测试Web入口缺少100k-physical配置而**有效取消n0**；归档为[Invalid harness](performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38778786252-invalid.json)，并非生产RED。P052六平台状态仍然Mobile Web **Not measured**（尚无有效原版取消延迟），三种installed PWA及真机同样Not measured，不拿P040已验收21.979ms代替P052真实成绩。
+
+**P052 真实有效CURRENT补充（2026-10-16）**：每独立PG17/Gin/CAS来源包含100,000个SHA不同JPEG（70,893,376B）；Mobile Web 390px外框/375px实际document，Grid/Details×n3共六组，36/36 `Request.Context.Done`与Handler退出；最慢17.909ms，+160ms旧Handler 0、废弃0B，最大Go/Renderer取消窗口RSS增长12,288/3,080,192B，P052 **原版Accepted CURRENT，不优化**。原始[专项CI #38779915915](https://github.com/lazyxu/xdrive/actions/runs/38779915915)、[完整原始六样本、summary和source压缩包](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/raw-n3.tar.gz)，机器[可读机器汇总](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/metrics.json)，证据修订HEAD的最终专项与完整CI仍需验证。其余五个平台在此相同100k实体JPEG+取消负载上均为**Not measured**；含已安装Desktop/Android/iOS PWA，不用窄屏Chromium代替真机。

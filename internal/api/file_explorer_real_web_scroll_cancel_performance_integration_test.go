@@ -57,12 +57,18 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		&meta.File{}, &meta.AuditEvent{}, &meta.MediaMetadata{}); err != nil {
 		t.Fatal(err)
 	}
+	// P052 opt-in: combine P039's 100k DISTINCT physical CAS originals with
+	// P040's production Mobile Web viewport-to-Go cancellation probe.
+	physicalCancelMode := os.Getenv("XD_FILEEXPLORER_MOBILE_PHYSICAL_GO_CANCEL_100K_PERF") == "1"
+	if physicalCancelMode && os.Getenv("XD_FILEEXPLORER_MOBILE_GO_CANCEL_100K_PERF") != "1" {
+		t.Fatal("P052 physical cancellation requires the P040 mobile viewport driver")
+	}
 	// Native Desktop FileExplorer cancellation needs the same real Desktop
 	// read-only schema and Capacity() prerequisites as the accepted P035
 	// physical-JPEG viewport. Keep physicalMode independently controlled so
 	// P037 retains 100k metadata + only 16 actual JPEG originals / slow IO.
 	desktopNeedsBoot := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" ||
-		os.Getenv("XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF") == "1"
+		os.Getenv("XD_FILEEXPLORER_DESKTOP_GO_CANCEL_100K_PERF") == "1" || physicalCancelMode
 	if desktopNeedsBoot {
 		if err := db.AutoMigrate(&meta.FileVersion{}, &meta.Source{},
 			&meta.FileRecentAccess{}, &meta.FileFavorite{}, &meta.FileQuickAccess{},
@@ -110,7 +116,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 
 	const logicalCount = 100000
 	distinctPhysicalImages := 16
-	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1"
+	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_PHYSICAL_JPEG_100K_PERF") == "1" || physicalCancelMode
 	if physicalMode {
 		distinctPhysicalImages = logicalCount
 	}
@@ -246,6 +252,7 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 				"logical_count": logicalCount, "physical_images": distinctPhysicalImages,
 				"seed_ms": seedMS, "physical_mode": physicalMode,
 				"physical_source_bytes": physicalSourceBytes,
+				"physical_cancel_mode":  physicalCancelMode,
 			})
 		case "/__perf/physical-jpeg-stats":
 			w.Header().Set("Content-Type", "application/json")
@@ -270,6 +277,13 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 			once.Do(func() { close(stopped) })
 			w.WriteHeader(http.StatusNoContent)
 		default:
+			// In P052 ONLY, the six genuinely distinct first-viewport JPEG CAS
+			// thumbnails must pass the slow-body watcher before the general physical
+			// counter. Preserve P039/P035's accepted unmodified route behavior.
+			if physicalCancelMode && r.Method == http.MethodGet && probe.matches(r.URL.Path) {
+				probe.serve(w, r, router)
+				return
+			}
 			if physicalMode && r.Method == http.MethodGet &&
 				strings.HasPrefix(r.URL.Path, "/api/v1/media/items/") &&
 				strings.HasSuffix(r.URL.Path, "/thumbnail") {
@@ -296,7 +310,8 @@ func TestFileExplorerRealWebScrollCancelFixture100K(t *testing.T) {
 		"url":        service.URL, "folder_id": folder.ID, "logical_count": logicalCount,
 		"physical_images": distinctPhysicalImages, "seed_ms": seedMS,
 		"physical_mode": physicalMode, "physical_source_bytes": physicalSourceBytes,
-		"first_image_nodes": firstIDs,
+		"physical_cancel_mode": physicalCancelMode,
+		"first_image_nodes":    firstIDs,
 	}
 	contents, err := json.Marshal(ready)
 	if err != nil {

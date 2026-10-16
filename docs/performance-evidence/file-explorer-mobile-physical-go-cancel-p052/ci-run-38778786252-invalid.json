@@ -1,0 +1,19 @@
+{
+  "workload": "P052/M005-i",
+  "status": "Invalid harness",
+  "source_head": "2df4506beca11ddf1f305d57006e6d3af0bad850",
+  "native_run": 38778786252,
+  "artifact_id": 11995155658,
+  "valid_cancel_samples": 0,
+  "successful_physical_fixture_seeds": 1,
+  "sha_distinct_jpeg_originals": 100000,
+  "original_cas_payload_bytes": 70893376,
+  "physical_seed_ms": 90888.799,
+  "reason": "The test-only Web entry did not set xdriveFileExplorerPhysical100k=1, so it expected P040's 16 original files and rejected the correct 100k physical fixture before the cancellation measurement.",
+  "remediation": "Enable the existing 100k-physical Web test query only in P052 mode; preserve P040 and all predeclared budgets.",
+  "before": "Not measured",
+  "after": null,
+  "product_red": false,
+  "ci_url": "https://github.com/lazyxu/xdrive/actions/runs/38778786252",
+  "artifact_url": "https://github.com/lazyxu/xdrive/actions/runs/38778786252/artifacts/11995155658"
+}

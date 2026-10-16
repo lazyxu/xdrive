@@ -1,0 +1,33 @@
+{
+  "workload_id": "P052/M005-i",
+  "evidence_status": "Invalid harness — no physical workload started",
+  "source_head": "77273d9c9e1e09a7af59ba203f24b1891d1c050f",
+  "run_id": 38778285379,
+  "job_id": 116571521852,
+  "full_ci_run_id": 38778285380,
+  "native_ci_conclusion": "failure",
+  "stage": "Source-exact P052 100k physically distinct CAS and real Go cancellation contract",
+  "failed_precondition": "gofmt -l internal/api/file_explorer_real_web_scroll_cancel_performance_integration_test.go was nonempty; shell test -z aborted",
+  "actual_physical_cas_seeded": 0,
+  "valid_sample_count": 0,
+  "viewport_samples": 0,
+  "benchmark_current": null,
+  "before": "Not measured",
+  "after": null,
+  "optimization": "none; only gofmt/test-only map alignment corrected",
+  "frozen_gates_unchanged": {
+    "physical_sha_distinct_jpeg_originals_per_fixture": 100000,
+    "independent_fixtures": 6,
+    "grid_samples": 3,
+    "details_samples": 3,
+    "old_handlers_after_160ms": 0,
+    "stale_response_bytes_after_scroll": 0,
+    "go_context_done_each": 6,
+    "go_canceled_handlers_each": 6,
+    "max_go_cancel_ms": 160,
+    "max_go_rss_delta_bytes": 134217728,
+    "max_renderer_rss_delta_bytes": 134217728
+  },
+  "original_ci_url": "https://github.com/lazyxu/xdrive/actions/runs/38778285379",
+  "reason": "formatter failed before JS source tests, Go compilation, PostgreSQL fixture, physical CAS construction, or actual browser viewport cancellation; not a production RED"
+}
