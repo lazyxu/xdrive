@@ -128,7 +128,7 @@ func TestRunnerScansSyncsEncryptedYikeCredentialAndMarksMissing(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{}, &meta.ContentDigestAlias{},
-		&meta.UploadSession{}, &meta.UploadPart{},
+		&meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceCredential{},
 		&meta.SourceCollection{}, &meta.SourceCollectionItem{}, &meta.SourceItemMetadata{},
 	); err != nil {

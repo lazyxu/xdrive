@@ -82,7 +82,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		&meta.ContentBlob{},
 		&meta.Share{},
 		&meta.UploadSession{},
-		&meta.UploadPart{},
+		&meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.AuditEvent{},
 		&meta.FileOperation{},
 		&meta.ArchivePrepareRun{},
