@@ -159,6 +159,16 @@ def main():
             alias = root / "pinned-known-hosts-symlink"
             alias.symlink_to(pinned)
             case(root, False, known_hosts=alias)
+            # Reject special files without blocking and without any SSH call.
+            if hasattr(os, "mkfifo"):
+                fifo = root / "pinned-known-hosts-fifo"
+                os.mkfifo(fifo, 0o600)
+                args_before = (root / "args.jsonl").read_text()
+                case(root, False, known_hosts=fifo)
+                assert (root / "args.jsonl").read_text() == args_before
+            oversized = root / "pinned-known-hosts-oversized"
+            oversized.write_bytes(b"x" * 131073)
+            case(root, False, known_hosts=oversized)
             pinned.chmod(0o664)
             case(root, False)
             pinned.chmod(0o600)

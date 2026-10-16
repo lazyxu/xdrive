@@ -42,10 +42,11 @@ def pinned_known_hosts_bytes(path):
     This is a trusted operator-supplied PIN snapshot, not an attestation of
     publisher provenance or an actual off-host Caddy-outage recovery test.
     """
-    require(hasattr(os, "O_NOFOLLOW"),
-            "Safe pinned SSH host-key snapshot is unavailable")
+    require(hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_NONBLOCK"),
+            "Safe nonblocking pinned SSH host-key snapshot is unavailable")
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW |
+        # FIFOs must not block at open() before fstat can reject them.
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK |
                      getattr(os, "O_CLOEXEC", 0))
         with os.fdopen(fd, "rb") as source:
             info = os.fstat(source.fileno())
@@ -53,9 +54,15 @@ def pinned_known_hosts_bytes(path):
                     and not (info.st_mode & (stat.S_IWGRP | stat.S_IWOTH)),
                     "Pinned SSH host keys must be a small restricted regular file")
             raw = source.read(131073)
+            after = os.fstat(source.fileno())
     except OSError:
         raise Blocked("Pinned SSH host keys are unavailable or unsafe") from None
-    require(len(raw) == info.st_size and b"\x00" not in raw,
+    # Reading may update atime; only metadata that proves in-place mutation
+    # or inode replacement belongs in the before/after identity fence.
+    stamp = lambda st: (st.st_dev, st.st_ino, st.st_size,
+                        st.st_mtime_ns, st.st_ctime_ns)
+    require(stamp(info) == stamp(after) and len(raw) == info.st_size
+            and b"\x00" not in raw,
             "Pinned SSH host-key snapshot is malformed or changed")
     return raw
 
