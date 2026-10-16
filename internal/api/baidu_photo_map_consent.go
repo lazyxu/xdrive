@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -12,18 +13,39 @@ import (
 
 var errBaiduPhotoMapConsentDenied = errors.New("baidu photo map consent unavailable")
 
+type baiduPhotoMapConsentSource struct {
+	NodeID         uint64
+	NodeRevision   uint64
+	MediaUpdatedAt time.Time
+	Latitude       float64
+	Longitude      float64
+}
+
 // verifyBaiduPhotoMapConsentTx is the mandatory, independent DB privacy gate
 // for any future private indexed-position writer. Its caller already holds
 // Owner -> PhotoAsset -> primary Node -> MediaMetadata locks in the SAME tx.
+// Revalidate the specific GPS pair and media generation explicitly authorized
+// by the Owner, not merely the current actor or consent revision. Old rows
+// lacking a fingerprint fail closed even after a source mutation.
 // No client bool or synthetic callback can replace this row and its lock.
-func verifyBaiduPhotoMapConsentTx(ctx context.Context, tx *gorm.DB, ownerID, assetID uint64) (uint64, error) {
-	if ctx == nil || ctx.Err() != nil || tx == nil || ownerID == 0 || assetID == 0 {
+func verifyBaiduPhotoMapConsentTx(ctx context.Context, tx *gorm.DB, ownerID, assetID uint64, fingerprints ...baiduPhotoMapConsentSource) (uint64, error) {
+	if ctx == nil || ctx.Err() != nil || tx == nil || ownerID == 0 || assetID == 0 ||
+		len(fingerprints) != 1 {
+		return 0, errBaiduPhotoMapConsentDenied
+	}
+	source := fingerprints[0]
+	if source.NodeID == 0 || source.NodeRevision == 0 || source.MediaUpdatedAt.IsZero() ||
+		math.IsNaN(source.Latitude) || math.IsInf(source.Latitude, 0) ||
+		math.IsNaN(source.Longitude) || math.IsInf(source.Longitude, 0) ||
+		source.Latitude < -90 || source.Latitude > 90 ||
+		source.Longitude < -180 || source.Longitude > 180 {
 		return 0, errBaiduPhotoMapConsentDenied
 	}
 	var consent meta.BaiduPhotoMapConsent
 	err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("owner_id = ? AND asset_id = ? AND revision > 0 AND allow_index = ? AND allow_baidu_conversion = ? AND revoked_at IS NULL AND expires_at > clock_timestamp()",
-			ownerID, assetID, true, true).
+		Where("owner_id = ? AND asset_id = ? AND revision > 0 AND allow_index = ? AND allow_baidu_conversion = ? AND revoked_at IS NULL AND expires_at > clock_timestamp() AND source_node_id = ? AND source_node_revision = ? AND source_media_updated_at = ? AND source_latitude = ? AND source_longitude = ?",
+			ownerID, assetID, true, true, source.NodeID, source.NodeRevision,
+			source.MediaUpdatedAt, source.Latitude, source.Longitude).
 		Take(&consent).Error
 	if err != nil || consent.Revision == 0 || ctx.Err() != nil {
 		return 0, errBaiduPhotoMapConsentDenied

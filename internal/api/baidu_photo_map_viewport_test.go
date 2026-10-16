@@ -132,7 +132,10 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		grant := meta.BaiduPhotoMapConsent{
 			AssetID: asset.ID, OwnerID: owner, Revision: 1,
 			AllowIndex: true, AllowBaiduConversion: true,
-			ExpiresAt: time.Now().UTC().Add(time.Hour),
+			ExpiresAt:    time.Now().UTC().Add(time.Hour),
+			SourceNodeID: node.ID, SourceNodeRevision: node.Revision,
+			SourceMediaUpdatedAt: &metadata.UpdatedAt,
+			SourceLatitude:       &sourceLat, SourceLongitude: &sourceLng,
 		}
 		if err := db.Create(&grant).Error; err != nil {
 			t.Fatal(err)
@@ -169,6 +172,20 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 	peer, err := queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
 	if err != nil || peer.TotalCount != 1 || len(peer.Items) != 1 || peer.Items[0].AssetID != bobAsset.ID {
 		t.Fatalf("other owner leaked: %+v, %v", peer, err)
+	}
+	// Rows with an absent source-bound opt-in must disappear from the real
+	// count, not merely be hidden by the renderer or a later GC task.
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
+		Update("source_node_revision", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	missingSource, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 100, 0)
+	if err != nil || missingSource.TotalCount != 1 || missingSource.Items[0].AssetID != secondAsset.ID {
+		t.Fatalf("unbound consent leaked the original location: %+v %v", missingSource, err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
+		Update("source_node_revision", first.Revision).Error; err != nil {
+		t.Fatal(err)
 	}
 	wrongSpace := world
 	wrongSpace.CoordinateSpace = meta.BaiduPhotoMapSpaceWGS84LL

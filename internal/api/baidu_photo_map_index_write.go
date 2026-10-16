@@ -125,7 +125,12 @@ func upsertBaiduPhotoMapPosition(
 		// A synthetic or future caller-provided callback is never sufficient:
 		// acquire the separately persisted per-photo opt-in under the SAME
 		// PostgreSQL transaction before storing any derived coordinates.
-		consentRevision, consentErr := verifyBaiduPhotoMapConsentTx(ctx, tx, owner.ID, asset.ID)
+		consentRevision, consentErr := verifyBaiduPhotoMapConsentTx(ctx, tx, owner.ID, asset.ID,
+			baiduPhotoMapConsentSource{
+				NodeID: node.ID, NodeRevision: node.Revision,
+				MediaUpdatedAt: media.UpdatedAt,
+				Latitude:       *media.Latitude, Longitude: *media.Longitude,
+			})
 		if consentErr != nil {
 			return denied
 		}

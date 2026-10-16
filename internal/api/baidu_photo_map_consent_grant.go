@@ -123,10 +123,18 @@ func grantBaiduPhotoMapConsent(
 			if candidate.ExpectedConsentRevision != 0 {
 				return denied
 			}
+			// Copy ONLY the freshly locked metadata pair. The caller's proposed
+			// latitude/longitude was independently compared above, but is never
+			// trusted as a source of persisted authorization.
+			latitude, longitude := *media.Latitude, *media.Longitude
+			mediaUpdatedAt := media.UpdatedAt
 			saved = meta.BaiduPhotoMapConsent{
 				AssetID: asset.ID, OwnerID: owner.ID, Revision: 1,
 				AllowIndex: true, AllowBaiduConversion: true,
-				ExpiresAt: candidate.ExpiresAt.UTC(),
+				ExpiresAt:    candidate.ExpiresAt.UTC(),
+				SourceNodeID: node.ID, SourceNodeRevision: node.Revision,
+				SourceMediaUpdatedAt: &mediaUpdatedAt,
+				SourceLatitude:       &latitude, SourceLongitude: &longitude,
 			}
 			if err := tx.Create(&saved).Error; err != nil {
 				return denied
@@ -143,6 +151,11 @@ func grantBaiduPhotoMapConsent(
 					"revision":    old.Revision + 1,
 					"allow_index": true, "allow_baidu_conversion": true,
 					"revoked_at": nil, "expires_at": candidate.ExpiresAt.UTC(),
+					"source_node_id":          node.ID,
+					"source_node_revision":    node.Revision,
+					"source_media_updated_at": media.UpdatedAt,
+					"source_latitude":         *media.Latitude,
+					"source_longitude":        *media.Longitude,
 				})
 			if updated.Error != nil || updated.RowsAffected != 1 {
 				return denied
@@ -152,6 +165,8 @@ func grantBaiduPhotoMapConsent(
 				return denied
 			}
 		}
+		// Source changes require a NEW independently authorized grant and
+		// monotonic revision even when a previous consent has not expired.
 		// Policy revision itself invalidates old positions. Purging in the
 		// same transaction additionally bounds retention after a new consent.
 		if err := tx.Where("asset_id = ? AND owner_id = ?", asset.ID, owner.ID).
