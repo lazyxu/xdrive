@@ -155,6 +155,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/nodes/root", s.root)
 	authed.GET("/nodes/:id", s.getNode)
 	authed.GET("/nodes/:id/children", s.children)
+	authed.GET("/nodes/:id/children/position", s.childrenPosition)
 	authed.GET("/file-quick-access", s.listFileQuickAccess)
 	authed.PUT("/file-quick-access/order", s.reorderFileQuickAccess)
 	authed.PUT("/file-quick-access/:id", s.pinFileQuickAccess)
