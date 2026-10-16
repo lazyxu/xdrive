@@ -206,6 +206,16 @@ func (s *Server) cleanupUncommittedContentBlob(ctx context.Context, hash, storag
 			// Do not erase physical bytes still owned by a File/FileVersion.
 			return fmt.Errorf("uncommitted CAS cleanup found surviving File/FileVersion references")
 		}
+		// The ordinary CAS GC finalizer already protects reused upload
+		// parts. This best-effort missing-Blob-row cleanup must do the
+		// same: a resumable session may still read the canonical bytes.
+		reused, err := reusedUploadPartExistsTx(tx, storageKey)
+		if err != nil {
+			return err // An unmigrated/failed UploadPart check denies deletion.
+		}
+		if reused {
+			return nil // Defer cleanup until the reused session part is gone.
+		}
 		return s.Store.Delete(ctx, storageKey)
 	})
 }

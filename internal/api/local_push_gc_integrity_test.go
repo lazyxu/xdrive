@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/lazyxu/xdrive/internal/meta"
@@ -155,5 +156,86 @@ func TestLocalPushGCAllowsDeletionAfterAllCanonicalFileReferencesGone(t *testing
 		Where("sha256 = ?", f.stage.ContentSHA256).
 		Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("unreferenced Blob row survived GC: count=%d err=%v", count, err)
+	}
+}
+
+func TestLocalPushUncommittedCleanupPreservesActiveReusedUploadParts(t *testing.T) {
+	f, first := localPushGCFirstLeafFixture(t)
+	if err := f.server.DB.AutoMigrate(&meta.UploadPart{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.DB.Where("id = ?", first.SourceItemID).Delete(&meta.SourceItem{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.DB.Where("node_id = ?", first.NodeID).Delete(&meta.File{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.DB.Where("sha256 = ?", f.stage.ContentSHA256).Delete(&meta.ContentBlob{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	reused := meta.UploadPart{
+		SessionID:        "11111111-1111-4111-8111-111111111111",
+		PartIndex:        0,
+		Size:             int64(len(f.body)),
+		SHA256:           f.stage.ContentSHA256,
+		StorageKey:       ".xdrive-reuse/1/missing-blob-session/000000",
+		Reused:           true,
+		SourceStorageKey: f.casKey,
+	}
+	if err := f.server.DB.Create(&reused).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.server.cleanupUncommittedContentBlob(context.Background(), f.stage.ContentSHA256, f.casKey)
+	localPushGCExpectPhysicalCAS(t, f)
+	if err := f.server.DB.Delete(&reused).Error; err != nil {
+		t.Fatal(err)
+	}
+	f.server.cleanupUncommittedContentBlob(context.Background(), f.stage.ContentSHA256, f.casKey)
+	if file, err := f.local.Open(context.Background(), f.casKey); err == nil {
+		_ = file.Close()
+		t.Fatal("unreferenced CAS remained after reused upload part released")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected post-cleanup CAS status: %v", err)
+	}
+	var runCount int64
+	if err := f.server.DB.Model(&meta.SyncRun{}).Where("source_id = ?", f.source.ID).Count(&runCount).Error; err != nil || runCount != 0 {
+		t.Fatalf("cleanup fabricated backup run: %d err=%v", runCount, err)
+	}
+}
+
+func TestLocalPushReaperConvergesWhenPhysicalDeletePrecedesSQLDelete(t *testing.T) {
+	f, first := localPushGCFirstLeafFixture(t)
+	if err := f.server.DB.AutoMigrate(&meta.UploadPart{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.DB.Where("id = ?", first.SourceItemID).Delete(&meta.SourceItem{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.server.DB.Where("node_id = ?", first.NodeID).Delete(&meta.File{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	localPushGCMarkBlobInconsistent(t, f)
+	if err := f.local.Delete(context.Background(), f.casKey); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := storage.NewLocal(f.local.FilesystemRoot())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.server.Store = reopened
+	for i := 0; i < 2; i++ {
+		if err := f.server.reapDeletingContentBlobs(context.Background()); err != nil {
+			t.Fatalf("reaper retry %d failed: %v", i+1, err)
+		}
+	}
+	var blobs int64
+	if err := f.server.DB.Model(&meta.ContentBlob{}).Where("sha256 = ?", f.stage.ContentSHA256).Count(&blobs).Error; err != nil || blobs != 0 {
+		t.Fatalf("stale deleting Blob survived idempotent GC: count=%d err=%v", blobs, err)
+	}
+	if file, err := reopened.Open(context.Background(), f.casKey); err == nil {
+		_ = file.Close()
+		t.Fatal("physically deleted CAS was unexpectedly restored")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("unexpected post-GC CAS status: %v", err)
 	}
 }
