@@ -83,8 +83,8 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
     'loadPostgresPoolConfig', 'savePostgresPoolConfig',
     'loadSourceWorkerConfig', 'saveSourceWorkerConfig',
     'loadCaddyHTTPSConfig', 'saveCaddyHTTPSConfig', 'loadCaddyHTTPSPreflight',
-    'loadMediaWorkerConfig', 'saveMediaWorkerConfig',
-    'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight',
+    'loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker',
+    'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight', 'applyPhotoHost',
     'loadBaiduMapConfig', 'saveBaiduMapConfig', 'verifyBaiduMap',
     'loadGeoNamesConfig', 'saveGeoNamesConfig',
   ].map((key) => [key, () => Promise.resolve()]))
@@ -129,6 +129,7 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
   assert.deepEqual(resolve('baidu-map', [row('baidu-map')], allPorts), {
     configTarget: { service: 'baidu-map', tab: 'config' },
     verifyTarget: { service: 'baidu-map', tab: 'verify' },
+    activationTarget: { service: 'baidu-map', tab: 'config' },
   })
 })
 
@@ -142,4 +143,55 @@ test('one shared Web/Desktop capability UI gates quick links, never creates host
   assert.match(cap, /reportedApplyModes\.has/)
   assert.match(cap, /typeof port\[method\] === 'function'/)
   assert.doesNotMatch(cap, /docker\.sock|StopHost|RestartHost|admin\.services\/.+apply/)
+})
+
+
+test('only three current safe enable panels have optional navigation, never Caddy/DB/storage', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const matrix = support.XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const row = (id, apply_mode = 'controlled-restart') =>
+    ({ id, config_mode: 'in-app', apply_mode, status: 'disabled' })
+  const methods = [
+    'loadBaiduMapConfig', 'saveBaiduMapConfig',
+    'loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker',
+    'loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight', 'applyPhotoHost',
+  ]
+  const port = Object.fromEntries(methods.map(name => [name, () => Promise.resolve()]))
+  assert.deepEqual(Object.entries(matrix).filter(([, v]) => v.activationTarget)
+    .map(([id]) => id).sort(), ['baidu-map', 'media-worker', 'photo-face'])
+  for (const id of ['database', 'storage', 'background-worker', 'caddy', 'geonames',
+    'photo-smart', 'photo-semantic', 'photo-creative']) {
+    assert.equal(matrix[id].activationTarget, undefined, 'no fake service toggle: ' + id)
+  }
+  assert.deepEqual(resolve('baidu-map', [row('baidu-map', 'immediate')], port), {
+    configTarget: { service: 'baidu-map', tab: 'config' }, verifyTarget: undefined,
+    activationTarget: { service: 'baidu-map', tab: 'config' },
+  })
+  assert.deepEqual(resolve('media-worker', [row('media-worker')], port), {
+    configTarget: { service: 'media-worker', tab: 'config' },
+    verifyTarget: { service: 'media-worker', tab: 'verify' },
+    activationTarget: { service: 'media-worker', tab: 'config' },
+  })
+  assert.deepEqual(resolve('photo-face', [row('photo-face')], port), {
+    configTarget: { service: 'photo-face', tab: 'config' },
+    verifyTarget: { service: 'photo-face', tab: 'verify' },
+    activationTarget: { service: 'photo-face', tab: 'config' },
+  })
+  const withoutApply = { ...port, applyMediaWorker: undefined, applyPhotoHost: undefined }
+  assert.equal(resolve('media-worker', [row('media-worker')], withoutApply).activationTarget, undefined)
+  assert.equal(resolve('photo-face', [row('photo-face')], withoutApply).activationTarget, undefined)
+  assert.equal(resolve('photo-face', [row('photo-face', 'immediate')], port).activationTarget, undefined)
+  assert.deepEqual(resolve('caddy', [row('caddy')], port), {})
+})
+
+test('Web/Desktop shared enable entry is navigation with a warning, not a one-click host start', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const cap = read('ui/shared/src/system-dependencies-capabilities.ts')
+  assert.match(page, /data-xdrive-dependency-existing-activation/)
+  assert.match(page, /activationTarget \? capability.activationLabel/)
+  assert.match(page, /保存目标不等于已启用/)
+  assert.match(cap, /activationOwner.apply_mode === activationApplyMode\[id\]/)
+  assert.match(cap, /'media-worker': \['loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker'\]/)
+  assert.doesNotMatch(page, /docker\.sock|adminStopHost|adminRestartHost/)
 })

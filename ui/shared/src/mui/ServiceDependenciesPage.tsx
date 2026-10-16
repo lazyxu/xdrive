@@ -1410,7 +1410,7 @@ export function XDriveServiceDependenciesPage({
                     }} data-xdrive-system-dependencies-capability-rows>
                       {overviewEntries.map((item) => {
                         const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[item.id]
-                        const { configTarget, verifyTarget } = xDriveSystemDependencyAvailableTargets(
+                        const { configTarget, verifyTarget, activationTarget } = xDriveSystemDependencyAvailableTargets(
                           item.id, systemServices, source,
                         )
                         // Older Agent/Server response without both scope/mode
@@ -1448,7 +1448,7 @@ export function XDriveServiceDependenciesPage({
                                 {configTarget && (
                                   <Button size="small" variant="outlined"
                                     onClick={() => navigateTo(configTarget)}>
-                                    查看配置入口
+                                    {activationTarget ? capability.activationLabel : '查看配置入口'}
                                   </Button>
                                 )}
                                 {verifyTarget && (
@@ -1458,6 +1458,12 @@ export function XDriveServiceDependenciesPage({
                                   </Button>
                                 )}
                               </Stack>
+                            )}
+                            {recognized && activationTarget && (
+                              <Typography variant="caption" color="text.secondary"
+                                data-xdrive-dependency-existing-activation>
+                                此处只进入已有受控配置页面；保存目标不等于已启用，需在详情页核验实际权限和生效结果。
+                              </Typography>
                             )}
                             {recognized && (
                               (capability.configTarget && !configTarget) ||
@@ -1562,7 +1568,7 @@ export function XDriveServiceDependenciesPage({
                   </Typography>
                   {selectedItem && selectedItem.config_mode && selectedItem.apply_mode && (() => {
                     const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[selectedItem.id as XDriveSystemDependencyID]
-                    const { configTarget, verifyTarget } = xDriveSystemDependencyAvailableTargets(
+                    const { configTarget, verifyTarget, activationTarget } = xDriveSystemDependencyAvailableTargets(
                       selectedItem.id as XDriveSystemDependencyID, systemServices, source,
                     )
                     return (
@@ -1581,7 +1587,7 @@ export function XDriveServiceDependenciesPage({
                             {configTarget && (
                               <Button size="small" variant="outlined"
                                 onClick={() => navigateTo(configTarget)}>
-                                配置与修改
+                                {activationTarget ? capability.activationLabel : '配置与修改'}
                               </Button>
                             )}
                             {verifyTarget && (

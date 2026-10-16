@@ -10,6 +10,9 @@ export type XDriveSystemDependencyCapability = {
   history: string
   configTarget?: XDriveSystemDependenciesLocation
   verifyTarget?: XDriveSystemDependenciesLocation
+  // Existing enable-management panel only; never host action or proof of effect.
+  activationTarget?: XDriveSystemDependenciesLocation
+  activationLabel?: string
 }
 
 // Include all 11 global dependencies and NO per-user Sync Folder / Sources.
@@ -55,6 +58,8 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
     history: '已审计配置可回滚',
     configTarget: { service: 'media-worker', tab: 'config' },
     verifyTarget: { service: 'media-worker', tab: 'verify' },
+    activationTarget: { service: 'media-worker', tab: 'config' },
+    activationLabel: '管理受限启停与配置',
   },
   'photo-face': {
     configure: '共享宿主期望修订可编辑',
@@ -63,6 +68,8 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
     history: '宿主期望修订可回滚',
     configTarget: { service: 'photo-face', tab: 'config' },
     verifyTarget: { service: 'photo-face', tab: 'verify' },
+    activationTarget: { service: 'photo-face', tab: 'config' },
+    activationLabel: '管理共享宿主安全启用',
   },
   'photo-smart': {
     configure: '共用 Photo Host 配置',
@@ -95,6 +102,8 @@ export const XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES: Record<
     history: '无独立配置回滚页',
     configTarget: { service: 'baidu-map', tab: 'config' },
     verifyTarget: { service: 'baidu-map', tab: 'verify' },
+    activationTarget: { service: 'baidu-map', tab: 'config' },
+    activationLabel: '管理地图开关与 AK',
   },
   geonames: {
     configure: '匹配距离可编辑和热加载',
@@ -115,8 +124,8 @@ type XDriveSystemDependencyRuntimeMethod =
   | 'loadPostgresPoolConfig' | 'savePostgresPoolConfig'
   | 'loadSourceWorkerConfig' | 'saveSourceWorkerConfig'
   | 'loadCaddyHTTPSConfig' | 'saveCaddyHTTPSConfig' | 'loadCaddyHTTPSPreflight'
-  | 'loadMediaWorkerConfig' | 'saveMediaWorkerConfig'
-  | 'loadPhotoHostConfig' | 'savePhotoHostConfig' | 'loadPhotoHostPreflight'
+  | 'loadMediaWorkerConfig' | 'saveMediaWorkerConfig' | 'applyMediaWorker'
+  | 'loadPhotoHostConfig' | 'savePhotoHostConfig' | 'loadPhotoHostPreflight' | 'applyPhotoHost'
   | 'loadBaiduMapConfig' | 'saveBaiduMapConfig' | 'verifyBaiduMap'
   | 'loadGeoNamesConfig' | 'saveGeoNamesConfig'
 export type XDriveSystemDependencyRuntimePort =
@@ -154,6 +163,20 @@ const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   'baidu-map': ['verifyBaiduMap'],
   geonames: ['loadGeoNamesConfig'],
 }
+
+// These links navigate to existing config panels, never run host changes.
+const activationPortRequirements: Partial<
+  Record<XDriveSystemDependencyID, readonly XDriveSystemDependencyRuntimeMethod[]>
+> = {
+  'baidu-map': ['loadBaiduMapConfig', 'saveBaiduMapConfig'],
+  'media-worker': ['loadMediaWorkerConfig', 'saveMediaWorkerConfig', 'applyMediaWorker'],
+  'photo-face': ['loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostPreflight', 'applyPhotoHost'],
+}
+const activationApplyMode: Partial<Record<XDriveSystemDependencyID, string>> = {
+  'baidu-map': 'immediate',
+  'media-worker': 'controlled-restart',
+  'photo-face': 'controlled-restart',
+}
 const reportedConfigModes = new Set(['in-app', 'deployment'])
 const reportedApplyModes = new Set([
   'immediate', 'task-boundary', 'manual-reload', 'controlled-restart', 'not-available',
@@ -168,7 +191,11 @@ export function xDriveSystemDependencyAvailableTargets(
   id: XDriveSystemDependencyID,
   services: readonly XDriveSystemDependencyRuntimeRow[],
   port: XDriveSystemDependencyRuntimePort,
-): { configTarget?: XDriveSystemDependenciesLocation; verifyTarget?: XDriveSystemDependenciesLocation } {
+): {
+  configTarget?: XDriveSystemDependenciesLocation
+  verifyTarget?: XDriveSystemDependenciesLocation
+  activationTarget?: XDriveSystemDependenciesLocation
+} {
   const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[id]
   const reported = (target: string) => {
     const matching = services.filter((service) => service.id === target)
@@ -189,6 +216,16 @@ export function xDriveSystemDependencyAvailableTargets(
   const verifyOwner = capability.verifyTarget ? reported(capability.verifyTarget.service ?? '') : null
   const verifyTarget = verifyOwner && hasMethods(verifyPortRequirements[id])
     ? capability.verifyTarget : undefined
+  // This checks only navigation to an existing bounded settings panel. The
+  // server still enforces permissions and requires a separate real apply proof.
+  const activationOwner = capability.activationTarget
+    ? reported(capability.activationTarget.service ?? '') : null
+  const requiredActivationMethods = activationPortRequirements[id]
+  const activationTarget = activationOwner?.config_mode === 'in-app' &&
+    activationOwner.apply_mode === activationApplyMode[id] &&
+    requiredActivationMethods != null && hasMethods(requiredActivationMethods) &&
+    configTarget ? capability.activationTarget : undefined
   if (!configTarget && !verifyTarget) return {}
-  return { configTarget, verifyTarget }
+  return activationTarget ? { configTarget, verifyTarget, activationTarget }
+    : { configTarget, verifyTarget }
 }
