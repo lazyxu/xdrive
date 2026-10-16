@@ -242,7 +242,10 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               独立管理员登录、生产停机或回滚。另可在受信任工作站显式使用
               scripts/caddy-rescue-ssh-auth-check.py，通过已预先固定主机密钥的 SSH
               标准输入输出转发完成真实管理员登录与权限验证；不运行远端命令，不改变网关。
-              两项本地结果均不能据此启用 Caddy 配置应用、停用或回滚。
+              对独立救援镜像，操作员还应离线运行 scripts/caddy-rescue-image-approval-check.py，
+              使用预先固定的 Ed25519 公钥校验签名批准清单、有效期及镜像摘要；
+              该证明不等于发布方签名、部署匹配或故障恢复成功。三项检查均不能
+              据此启用 Caddy 配置应用、停用或回滚。
             </Typography>
             <Typography variant="caption" color="warning.main">
               {result.apply_supported
