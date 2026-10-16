@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Accordion, AccordionDetails, AccordionSummary, Box, Button,
-  Divider, Stack, Typography,
+  Divider, LinearProgress, Stack, Typography,
 } from '@mui/material'
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded'
 import DnsRoundedIcon from '@mui/icons-material/DnsRounded'
@@ -184,6 +184,18 @@ export function XDriveDeviceBackupPage({
   const overview = current ? snapshot.overview : null
   const loading = current ? snapshot.loading : Boolean(source)
   const failed = current && snapshot.failed
+  const [delayedRead, setDelayedRead] = useState<{
+    source: XDriveDeviceBackupDataSource; revision: number
+  } | null>(null)
+  const showReadProgress = Boolean(source && loading && delayedRead?.source === source &&
+    delayedRead.revision === refreshID)
+  // Request immediately; only cosmetic progress waits 300ms. The source and
+  // revision boundary prevents a previous session/refresh spinner leaking.
+  useEffect(() => {
+    if (!source || !loading) return
+    const timer = window.setTimeout(() => setDelayedRead({ source, revision: refreshID }), 300)
+    return () => window.clearTimeout(timer)
+  }, [source, refreshID, loading])
   const pageLoading = current && Boolean(snapshot.pageLoading)
   const pageFailed = current && Boolean(snapshot.pageFailed)
   const [expanded, setExpanded] = useState<{ source?: XDriveDeviceBackupDataSource; id: number | null }>({
@@ -234,11 +246,19 @@ export function XDriveDeviceBackupPage({
   useEffect(() => {
     if (!source) return
     let active = true
-    setSnapshot({ source, overview: null, loading: true, failed: false })
+    // Retain a same-account authoritative snapshot until the next owner
+    // response. A changed Server/account source must never show prior devices.
+    setSnapshot((prev) => ({
+      source,
+      overview: prev.source === source ? prev.overview : null,
+      loading: true, failed: false,
+    }))
     void source.list().then((result) => {
       if (active) setSnapshot({ source, overview: result, loading: false, failed: false })
     }).catch(() => {
-      if (active) setSnapshot({ source, overview: null, loading: false, failed: true })
+      if (active) setSnapshot((prev) => prev.source === source
+        ? { ...prev, loading: false, failed: true }
+        : prev)
     })
     return () => { active = false }
   }, [source, refreshID])
@@ -412,7 +432,8 @@ export function XDriveDeviceBackupPage({
       subtitle="查看各设备的同步文件夹、进度与历史；所有操作只能在所属设备本机进行。"
       pageActions={source ? (
         <Stack direction="row" spacing={1} alignItems="center">
-          <Button size="small" startIcon={<RefreshRoundedIcon />} onClick={() => refresh((n) => n + 1)}>
+          <Button size="small" startIcon={<RefreshRoundedIcon />} disabled={loading}
+            onClick={() => refresh((n) => n + 1)}>
             刷新
           </Button>
           {localCreate && targetBrowser ? (
@@ -438,13 +459,27 @@ export function XDriveDeviceBackupPage({
           }}
         />
       ) : null}
+      <Box data-xdrive-device-backup-overview sx={{
+        position: 'relative', minWidth: 0, minHeight: source && !overview ? 180 : undefined,
+      }}>
+      {failed && overview ? (
+        <XDriveStatusAlert tone="neutral">
+          设备备份刷新失败；已保留上次成功读取的设备信息，请重试。
+        </XDriveStatusAlert>
+      ) : null}
       {!source ? (
         <XDriveStatusAlert tone="neutral">
           当前 Desktop Agent 暂不支持读取脱敏设备备份数据。请更新 Agent；不能从普通 Source 接口读取异机私有路径。
         </XDriveStatusAlert>
       ) : loading && !overview ? (
-        <XDriveStatePanel loading variant="plain" message="正在读取设备备份…" />
-      ) : failed ? (
+        <Box data-xdrive-device-backup-first-read sx={{
+          minHeight: 180, display: 'grid', placeItems: 'center',
+        }}>
+          {showReadProgress ? (
+            <XDriveStatePanel loading variant="plain" message="正在读取设备备份…" />
+          ) : null}
+        </Box>
+      ) : failed && !overview ? (
         <XDriveStatePanel variant="plain" message="设备备份信息读取失败，请刷新重试。" />
       ) : !overview || overview.devices.length === 0 ? (
         <XDriveStatePanel variant="plain" message="当前账号尚未登记电脑备份设备。" />
@@ -666,6 +701,13 @@ export function XDriveDeviceBackupPage({
           ) : null}
         </Stack>
       )}
+      {overview && showReadProgress ? (
+        <LinearProgress aria-label="正在刷新设备备份" sx={{
+          position: 'absolute', top: 0, left: 0, right: 0,
+          pointerEvents: 'none',
+        }} />
+      ) : null}
+      </Box>
       <Box sx={{ mt: 2, border: 1, borderColor: 'divider', borderRadius: 2, p: 2 }}>
         <Stack direction="row" spacing={1} alignItems="center">
           <DnsRoundedIcon color="disabled" />
