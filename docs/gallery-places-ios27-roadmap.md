@@ -374,3 +374,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 承接已合并 #1747，修复未来地图专用会话 POST、子资源 GET 的预检边界：使用逐字段无歧义检查而非 `Header.Get()` 静默取第一个值，拒绝重复/大小写别名/空值的 Origin、Sec-Fetch-Site 等安全相关头及资源凭证头；严格拒绝非法 Query escape、编码路径别名、空强制 Query 和 fragment。Go 测试覆盖正常同源请求与攻击样例，Web/Mobile Web/Desktop 仍共用一个 Gallery 数据源、真实 Owner Range、VirtualCollection 和 Viewer。
 
 **不代表百度动态地图已经开启。** 没有启用任何 JSAPI 路由、Browser AK、Cookie、Loader；`runtime_enabled=false`、零许可子资源和签名发布硬拒绝保持不变。真实百度适用于自托管/PWA/Electron 的授权、九场景私有原始 HAR、完整 Loader/瓦片/脚本/字体/WASM 依赖、钉扎发布公钥、每请求 Owner/撤销/跨副本配额、Caddy CSP/Electron 隔离和 iOS27/Android/Desktop 真机比对仍阻塞 A3b3a3d2。全屏 52px App Frame、百度唯一 Provider、分离的 Server/Browser AK 和 iOS 27「照片」1:1 目标不变，后续按 A3→A4→B1→B2→B3→C1。
+
+
+## A3 · 三端共用百度静态地图的双指误拖修复（2026-10-16，JSAPI4 仍 NO-GO）
+
+在共享 `MediaGalleryBaiduStaticMap` 中新增双指距离记录、离散缩放与多指误拖保护，只有手势结束后才提交一次整数 zoom，图片请求仍由现有 AbortController 取消、Server Static PNG 加载，Owner GPS 范围查询/照片集合复用原 DataSource、Range、Viewer。按同一组件覆盖 Web、Mobile Web、Desktop，避免手机双指造成单指平移或连续向服务器发起图片请求。无效距离、取消手势、第三指、尾指抬起不能修改相机；0/0 真实 GPS 不变。
+
+此阶段属于当前静态地图体验修复，**不是** iOS 27「照片」1:1 原生连续 Pinch/百度 JSAPI4 Marker/Cluster 正式交付。只有在百度 self-host/PWA/Electron 实际许可、全量官方资源人工批准、九场景私有网络无 AK 泄漏、受信发布签名/Owner 撤销/配额/CSP/Electron/真机验证后方可启用真实 JSAPI4。保留 52px 全屏 App Frame、唯一百度 Provider、Server AK/Browser AK 各自加密仅 Server、三端共享图库。A3 完成才进入 A4、B1、B2、B3、C1。

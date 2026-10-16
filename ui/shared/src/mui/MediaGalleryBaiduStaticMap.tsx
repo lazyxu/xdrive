@@ -8,7 +8,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds } from '../media-gallery-baidu-camera'
+import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds, xDriveBaiduStaticPinchZoom } from '../media-gallery-baidu-camera'
 import type { XDriveBaiduMapViewportBounds } from '../media-gallery-baidu-camera'
 import { xDriveValidPlacesCameraPosition } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition } from '../media-gallery-places-camera-session'
@@ -125,23 +125,82 @@ export function XDriveMediaGalleryBaiduStaticMap({
       setZoom(value => Math.max(3, value - 1))
     }
   }
+  const gesturePointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinchStart = useRef<{ distance: number } | null>(null)
+  const suppressPan = useRef(false)
+  const pointerDistance = () => {
+    const [a, b] = Array.from(gesturePointers.current.values())
+    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+  }
+
+  // A selected Place/Viewer return must never inherit the prior GPS gesture.
+  useEffect(() => {
+    gesturePointers.current.clear()
+    dragStart.current = null
+    pinchStart.current = null
+    suppressPan.current = false
+  }, [originKey, enabled])
+
   const onMapPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!enabled || !loadStaticMap || !validCenter ||
-        (event.pointerType === 'mouse' && event.button !== 0)) return
-    dragStart.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY }
-    event.currentTarget.setPointerCapture?.(event.pointerId)
+        (event.pointerType === 'mouse' && event.button !== 0) ||
+        gesturePointers.current.has(event.pointerId)) return
+    gesturePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    try { event.currentTarget.setPointerCapture?.(event.pointerId) } catch { /* browser may remove target */ }
+    if (gesturePointers.current.size === 1) {
+      suppressPan.current = false
+      pinchStart.current = null
+      dragStart.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY }
+    } else {
+      // A second finger always suppresses single-finger pan, including its
+      // eventual trailing pointer-up event. More than two fingers never pan.
+      suppressPan.current = true
+      dragStart.current = null
+      pinchStart.current = gesturePointers.current.size === 2
+        ? { distance: pointerDistance() } : null
+    }
+  }
+  const onMapPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (gesturePointers.current.has(event.pointerId)) {
+      gesturePointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    }
   }
   const onMapPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = dragStart.current
+    const pointers = gesturePointers.current
+    if (!pointers.has(event.pointerId)) return
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+    const startPinch = pinchStart.current
+    const startDrag = dragStart.current
+    if (pointers.size === 2 && startPinch) {
+      // Commit at most one integer zoom change at gesture release, never one
+      // network request per finger movement. Existing effect aborts old PNG.
+      const distance = pointerDistance()
+      setZoom(value => xDriveBaiduStaticPinchZoom(value, startPinch.distance, distance))
+      suppressPan.current = true
+    } else if (pointers.size === 1 && !suppressPan.current &&
+               startDrag && startDrag.pointer === event.pointerId) {
+      const deltaX = event.clientX - startDrag.x
+      const deltaY = event.clientY - startDrag.y
+      // One Server request on release, none per pointer move.
+      if (Math.hypot(deltaX, deltaY) < 18) {
+        // Ignore taps, without leaving the gesture ref active.
+      } else {
+        pan(-deltaX * 480 / (event.currentTarget.clientWidth || 480),
+          -deltaY * 280 / (event.currentTarget.clientHeight || 280))
+      }
+    }
+    pointers.delete(event.pointerId)
+    pinchStart.current = null
     dragStart.current = null
-    if (!start || start.pointer !== event.pointerId) return
-    const deltaX = event.clientX - start.x
-    const deltaY = event.clientY - start.y
-    // One Server request on release, none per pointer move.
-    if (Math.hypot(deltaX, deltaY) < 18) return
-    pan(-deltaX * 480 / (event.currentTarget.clientWidth || 480),
-      -deltaY * 280 / (event.currentTarget.clientHeight || 280))
+    if (pointers.size === 0) suppressPan.current = false
   }
+  const onMapPointerCancel = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!gesturePointers.current.delete(event.pointerId)) return
+    dragStart.current = null
+    pinchStart.current = null
+    suppressPan.current = gesturePointers.current.size > 0
+  }
+
 
   useEffect(() => {
     const controller = new AbortController()
@@ -252,7 +311,8 @@ export function XDriveMediaGalleryBaiduStaticMap({
       <Box role="group" tabIndex={enabled && validCenter ? 0 : -1}
         aria-label="百度地图：方向键移动，按加号或减号缩放，拖动松开后更新"
         onKeyDown={onMapKeyDown} onPointerDown={onMapPointerDown}
-        onPointerUp={onMapPointerUp} onPointerCancel={() => { dragStart.current = null }}
+        onPointerMove={onMapPointerMove} onPointerUp={onMapPointerUp}
+        onPointerCancel={onMapPointerCancel}
         sx={{
         touchAction: enabled ? 'none' : 'auto', cursor: enabled ? 'grab' : 'default',
         bgcolor: 'action.hover',

@@ -66,3 +66,18 @@ export function xDriveBaiduStaticViewportBounds(
     south: clamp(invertY(clamp(y + halfHeight, minY, maxY)), -maxMapLatitude, maxMapLatitude),
   }
 }
+
+
+/** Discrete gesture zoom for the shared, Server-authorized Static Map fallback.
+ * This is NOT JSAPI4 continuous map/pinch projection. Keep one PNG request
+ * only when a completed two-finger gesture changes integer camera zoom. */
+export function xDriveBaiduStaticPinchZoom(
+  zoom: number, initialDistance: number, finalDistance: number,
+): number {
+  if (!Number.isInteger(zoom) || zoom < 3 || zoom > 18 ||
+      !Number.isFinite(initialDistance) || !Number.isFinite(finalDistance) ||
+      initialDistance < 20 || finalDistance <= 0) return zoom
+  const steps = Math.max(-3, Math.min(3, Math.round(Math.log2(finalDistance / initialDistance))))
+  return Math.max(3, Math.min(18, zoom + steps))
+}
+

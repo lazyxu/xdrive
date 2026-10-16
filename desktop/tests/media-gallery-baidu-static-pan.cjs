@@ -51,3 +51,21 @@ test('A3 shared static Baidu view requests once after drag release and cancels s
   assert.match(mapSource, /loadStaticMap\(\{/)
   assert.doesNotMatch(mapSource, /[?&]ak=|api\.map\.baidu\.com|new BMap\./)
 })
+
+
+test('A3 shared static pinch rounds/clamps zoom and fails closed on bad gesture values', () => {
+  const pinch = holder.exports.xDriveBaiduStaticPinchZoom
+  assert.equal(pinch(12, 100, 200), 13)
+  assert.equal(pinch(12, 100, 50), 11)
+  assert.equal(pinch(12, 100, 101), 12)
+  assert.equal(pinch(18, 100, 400), 18)
+  assert.equal(pinch(3, 100, 25), 3)
+  assert.equal(pinch(12, 100, 10000), 15, 'no unbounded jump')
+  assert.equal(pinch(12, NaN, 100), 12)
+  assert.equal(pinch(12, 0, 100), 12)
+  assert.equal(pinch(12, 100, Infinity), 12)
+  assert.equal(pinch(19, 100, 200), 19)
+  assert.match(mapSource, /onPointerMove=\{onMapPointerMove\}/)
+  assert.match(mapSource, /onPointerCancel=\{onMapPointerCancel\}/)
+  assert.doesNotMatch(mapSource, /new BMap\.|api\.map\.baidu\.com|\?ak=/)
+})
