@@ -2264,7 +2264,10 @@ export function XDriveFileExplorer({
     return grid ? (
       <Typography
         variant="body2"
+        dir="auto"
+        title={item.name}
         sx={{
+          unicodeBidi: 'plaintext',
           width: '100%',
           overflowWrap: 'anywhere',
           display: '-webkit-box',
@@ -2277,7 +2280,8 @@ export function XDriveFileExplorer({
         {item.name}
       </Typography>
     ) : (
-      <Typography variant="body2" noWrap>{item.name}</Typography>
+      <Typography variant="body2" noWrap dir="auto" title={item.name}
+        sx={{ unicodeBidi: 'plaintext' }}>{item.name}</Typography>
     )
   }
 
