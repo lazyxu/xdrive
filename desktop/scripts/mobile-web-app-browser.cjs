@@ -3490,8 +3490,13 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesBreakpointPendingFolderStabilityAcceptance(origin);
   await filesCommittedFolderBreakpointResumeAcceptance(origin);
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p17-') ||
+      process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
       process.env.XDRIVE_MOBILE_FILES_P17 === '1') {
     await filesNavigationFirstPaintFramesAcceptance(origin);
+  }
+  if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
+      process.env.XDRIVE_MOBILE_FILES_P18 === '1') {
+    await filesTouchFolderFirstPaintFramesAcceptance(origin);
   }
 }
 
@@ -3719,6 +3724,137 @@ async function filesNavigationFirstPaintFramesAcceptance(origin) {
       violations:violations.slice(0,12),firstCommitIndex:frames.findIndex(committed)});
   result.samples[activeStage]={before,held,after,frames,
     sourceExactCompiledWeb:true,realChromium:true,heldAuthorizedFirstRange:true,
+    trueWAN:false,realIOSDevice:false,realAndroidDevice:false,installedPWA:false,
+    framesMeasured:true,fpsOrCLSNotMeasured:true};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+async function filesTouchFolderFirstPaintFramesAcceptance(origin) {
+  // P18: actual touch activation of a visible MobileFiles folder row.
+  // P17 covers a URL intent; this captures tap/pointer callback frame order.
+  // Prior P1-P10 verify settled/pending snapshots, but a transient blank
+  // painted frame or wrong scroll between first-page release and commit can
+  // still escape those checks. This observes every actual animation frame.
+  activeStage = 'user-files-p18-touch-first-frame-folder-390';
+  await page.setViewportSize({width:390,height:844});
+  await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('[data-mobile-files-folder-id="2"]').first().waitFor();
+  await page.locator('[data-mobile-files-item]').filter({hasText:'document-002.txt'}).first().waitFor();
+  await settle();
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host => {host.scrollTop=0;});
+  await page.waitForFunction(()=>{
+    const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const savedKey=Object.keys(localStorage).find(x=>x.startsWith('xdrive.mobile.files.v1:'));
+    const stored=savedKey?JSON.parse(localStorage.getItem(savedKey)):null;
+    return host?.scrollTop===0 && stored?.folderID===1 && stored?.scrollTop===0;
+  },null,{timeout:10000});
+  await page.evaluate(() => {
+    const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    window.__p18Host=host;
+    window.__p18Frames=[];
+    window.__p18Stopped=false;
+    const rect=el=>{
+      if(!el)return null;
+      const r=el.getBoundingClientRect();
+      return {x:r.x,y:r.y,width:r.width,height:r.height};
+    };
+    const snapshot=()=>{
+      const current=document.querySelector('[data-xdrive-mobile-files-scroll]');
+      const key=Object.keys(localStorage).find(x=>x.startsWith('xdrive.mobile.files.v1:'));
+      const saved=key?JSON.parse(localStorage.getItem(key)):null;
+      const labels=[...document.querySelectorAll('[data-mobile-files-item]')]
+        .map(node=>node.getAttribute('aria-label')||node.textContent||'');
+      return {
+        hash:location.hash,
+        sameHost:current===window.__p18Host,
+        hostCount:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+        scrollTop:current?.scrollTop??null,
+        savedFolderID:saved?.folderID??null,
+        title:document.querySelector('[data-mobile-files-compact-title]')?.textContent??'',
+        oldRows:labels.filter(x=>x.includes('document-')).length,
+        newRows:labels.filter(x=>x.includes('nested-')).length,
+        placeholders:document.querySelectorAll('[data-mobile-files-placeholder]').length,
+        header:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+        scrollFrame:rect(current),
+        overflow:document.documentElement.scrollHeight-innerHeight,
+      };
+    };
+    window.__p18Read=snapshot;
+    const frame=()=>{
+      if(window.__p18Stopped)return;
+      const arr=window.__p18Frames;
+      if(arr.length<180)arr.push(snapshot());
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  const before=await page.evaluate(()=>window.__p18Read());
+  const close=(a,b)=>a&&b&&Math.abs(a.x-b.x)<=1&&
+    Math.abs(a.y-b.y)<=1&&Math.abs(a.width-b.width)<=1&&Math.abs(a.height-b.height)<=1;
+  check('P18: accepted root is scrolled and physically mounted before navigation',
+    before.sameHost && before.hostCount===1 && before.scrollTop===0 &&
+    before.savedFolderID===1 && before.oldRows>0 && before.newRows===0 &&
+    before.header?.height===52 && before.overflow<=1,before);
+
+  let notify,release;
+  const started=new Promise(resolve=>{notify=resolve;});
+  const waiting=new Promise(resolve=>{release=resolve;});
+  directoryGate={hits:0,notify,wait:waiting};
+  let held,heldFrames;
+  try {
+    // Tap a real visible folder row at root scrollTop 0. Playwright supplies
+    // native Chromium touch events to the existing MobileFiles row handler.
+    await page.locator('[data-mobile-files-folder-id="2"]').first().tap();
+    await Promise.race([started,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P18 real child counted first page did not begin')),10000))]);
+    await page.waitForTimeout(150);
+    held=await page.evaluate(()=>window.__p18Read());
+    heldFrames=await page.evaluate(()=>window.__p18Frames.slice());
+    const oldStable=frame=>frame.sameHost && frame.hostCount===1 &&
+      frame.scrollTop!==null && Math.abs(frame.scrollTop-before.scrollTop)<=2 &&
+      frame.savedFolderID===1 && frame.title===before.title &&
+      frame.oldRows>0 && frame.newRows===0 &&
+      close(frame.header,before.header)&&close(frame.scrollFrame,before.scrollFrame)&&
+      frame.overflow<=1;
+    check('P18: every held first-page frame preserves the last authorized directory',
+      directoryGate.hits>=1 && heldFrames.length>=6 &&
+      heldFrames.every(oldStable) && /\/files\?dir=(?:1|2)$/.test(held.hash),
+      {before,held,heldFrames,gateHits:directoryGate.hits});
+  } finally {
+    directoryGate=null;
+    release();
+  }
+  await page.locator('[data-mobile-files-item]').filter({hasText:'nested-001.txt'}).first().waitFor();
+  await settle();
+  await page.waitForTimeout(260);
+  const frames=await page.evaluate(()=>{
+    window.__p18Stopped=true;
+    return window.__p18Frames.slice();
+  });
+  const after=await page.evaluate(()=>window.__p18Read());
+  const committed=frame=>frame.sameHost&&frame.hostCount===1&&
+    frame.savedFolderID===2&&frame.scrollTop===0&&frame.title!==before.title&&
+    frame.oldRows===0&&frame.newRows>0&&
+    close(frame.header,before.header)&&close(frame.scrollFrame,before.scrollFrame)&&
+    frame.overflow<=1;
+  const oldStable=frame=>frame.sameHost&&frame.hostCount===1&&
+    frame.savedFolderID===1&&frame.title===before.title&&frame.oldRows>0&&
+    frame.newRows===0&&frame.scrollTop!==null&&
+    Math.abs(frame.scrollTop-before.scrollTop)<=2&&
+    close(frame.header,before.header)&&close(frame.scrollFrame,before.scrollFrame)&&
+    frame.overflow<=1;
+  const releaseFrames=frames.slice(heldFrames.length);
+  const violations=frames.map((frame,index)=>({index,frame}))
+    .filter(({frame})=>!oldStable(frame)&&!committed(frame));
+  check('P18: every painted folder navigation frame is old or fully committed, never blank or off-anchor',
+    frames.length>=heldFrames.length+10 && releaseFrames.some(committed) &&
+    violations.length===0 && committed(after) && after.hash==='#/app/files?dir=2',
+    {before,held,after,frameCount:frames.length,heldCount:heldFrames.length,
+      violations:violations.slice(0,12),firstCommitIndex:frames.findIndex(committed)});
+  result.samples[activeStage]={before,held,after,frames,
+    sourceExactCompiledWeb:true,realChromium:true,heldAuthorizedFirstRange:true,
+    actualTouchActivation:true,
     trueWAN:false,realIOSDevice:false,realAndroidDevice:false,installedPWA:false,
     framesMeasured:true,fpsOrCLSNotMeasured:true};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
