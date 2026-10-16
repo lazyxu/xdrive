@@ -490,3 +490,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 #1857 的真实 Server 授权 GET/PUT/DELETE 以准确 HEAD CI 合入之后，本阶段使用 `ui/shared` 唯一的 `MediaBaiduMapConsent` 和 `MediaGalleryDataSource`，经 Web/Mobile Web/PWA 同一 Web API + Adapter 与 Desktop Go Client→受信 Agent→独立 IPC→Electron 预加载接入。Viewer「照片位置」共用 MUI 对话框，新定位授权默认不勾选、必须明确同意向百度发送原始 GPS 转换及 xDrive 地图派生索引两项，手动授权一小时，修订号 CAS 撤销；切换照片时不会将旧异步响应带到新照片。
 
 **用户授权不等于百度 JSAPI 4.0 动态地图可用**，当前仍只有原有 Static PNG 底图和惯有位置导航；不新增实际 Geoconv/JSAPI4 Loader/Cookie/Proxy/未审核第三方资源。iOS 27「照片」逐页 1:1 视觉、手势、暗色、横屏、无障碍和 iOS27/Android/Desktop 真机，以及 100k/网络取消仍需独立通过，不能用静态假数据冒充。百度是唯一 Provider、AK 全部 Server-only、52px 全屏 App Frame 不改。下一项：正式可取消源修订绑定 Geoconv 索引队列与跨副本配额、安全代理和 9 组双端私有 HAR/发布签名审查，之后 A4→B1→B2→B3→C1。
+
+
+## A3d2m1a · Server 百度 Geoconv 跨副本双层配额（2026-10-16）
+
+在 #1865 Web/Mobile Web/Desktop 共用照片位置授权已由准确 HEAD 76-job CI 合并后，进一步加入**独立于 JSAPI4 加载资源**的 `BaiduGeoconvQuotaBucket`。一份 fleet 全局配额与每位有效 Owner 配额在同一 PostgreSQL 事务、固定先全局后 Owner 的锁顺序下预约，使用数据库钟的分钟窗口并累计「请求数」与「源坐标点数」。采用保守的工程保护（每 Owner 2 请求／20 点／分钟；fleet 20 请求／200 点／分钟；每批最多 20 点），这些不是对百度真实 SKU、价格和许可额度的验证。两个独立数据库连接池的真实 PostgreSQL 并发回归要求无超卖、失败不扣全球预算、月/分钟窗口不得由 Server 时钟重绕，丢表必须拒绝。
+
+本阶段 **仅提交私有、未被生产调用的配额原语和迁移**，无需访问百度、无需 AK、不发送或保存任何用户 GPS、无需浏览器权限或新地图源。下一步必须把当前源 PhotoAsset、Owner、原始 WGS84、Node/媒体修订与有效且未被撤销的转换授权安全绑定到可取消的 Server 索引任务，再核对百度账号真实限制之后才考虑向官方固定 HTTPS 端点发送数据。JSAPI4 动态 Loader/Proxy/Session 仍禁用，子资源审核 0，9 组真实私人 Browser/上游 HAR、发布签名和 iOS27/Android/Desktop 真机验收未完成。保持现有 iOS 27「照片」1:1 目标、52px 全屏 App Frame、百度唯一 Provider、三端共享图库 Range/虚拟化/Viewer，顺序 A3→A4→B1→B2→B3→C1。

@@ -47,11 +47,17 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if !db.Migrator().HasTable(&meta.BaiduJSAPIQuotaBucket{}) {
 		t.Fatal("JSAPI quota table missing")
 	}
+	if !db.Migrator().HasTable(&meta.BaiduGeoconvQuotaBucket{}) {
+		t.Fatal("Server Geoconv quota table missing")
+	}
 	if err := migrate(db); err != nil {
 		t.Fatal(err)
 	}
 	var count int64
 	if err := db.Model(&meta.BaiduJSAPIQuotaBucket{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("migration must not grant/charge quota: count=%d err=%v", count, err)
+	}
+	if err := db.Model(&meta.BaiduGeoconvQuotaBucket{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("Geoconv migration cannot charge or export GPS: count=%d err=%v", count, err)
 	}
 }
