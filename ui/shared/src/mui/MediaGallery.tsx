@@ -890,6 +890,7 @@ export function XDriveMediaGalleryPage({
     pet: MediaPetFacet | null = null,
     onCommitted?: () => void,
     sortOverride?: XDriveGallerySortChoice,
+    foldOverride?: boolean,
   ) => {
     const request = ++requestID.current
     // A selected Mobile Album is only an intent until its first authorized
@@ -907,7 +908,7 @@ export function XDriveMediaGalleryPage({
     const effectiveSort = sortOverride ?? gallerySortRef.current
     const scopedQuery: MediaGalleryQuery = {
       ...nextQuery,
-      fold_duplicates: foldDuplicatesRef.current && !nextQuery.fold_member_ids?.length,
+      fold_duplicates: (foldOverride ?? foldDuplicatesRef.current) && !nextQuery.fold_member_ids?.length,
       time_zone: mediaTimeZoneRef.current,
       sort_by: effectiveSort.by,
       sort_dir: effectiveSort.dir,
@@ -1168,6 +1169,34 @@ export function XDriveMediaGalleryPage({
   }, [reportError, source, virtualCollection.reset])
 
   const changeFoldDuplicates = useCallback((enabled: boolean) => {
+    const acceptedKind = collectionTargetRef.current?.kind
+    // On a mounted compact Album/Library, folding changes the Server query,
+    // not the last accepted visible photo wall. Fetch the new owner first
+    // Range before changing its virtual generation or the toggle's state.
+    // An explicit fold override keeps the old ref authoritative while the
+    // new authenticated request is pending (and on failure/supersession).
+    if (mobileGalleryViewport && items.length > 0 &&
+        (acceptedKind === 'all' || acceptedKind === 'album')) {
+      void loadFirstPage(
+        currentAlbum,
+        query,
+        currentSuggestedPerson,
+        currentPerson,
+        'default',
+        currentMemory,
+        currentCleanupReview,
+        currentPet,
+        () => {
+          foldDuplicatesRef.current = enabled
+          setFoldDuplicates(enabled)
+        },
+        undefined,
+        enabled,
+      )
+      return
+    }
+    // Cold startup, other collection types and wide Web/Desktop retain their
+    // existing lifecycle. Thumbnail/poster network loading is independent.
     foldDuplicatesRef.current = enabled
     setFoldDuplicates(enabled)
     void loadFirstPage(
@@ -1182,7 +1211,8 @@ export function XDriveMediaGalleryPage({
     )
   }, [
     currentAlbum, currentCleanupReview, currentMemory, currentPerson,
-    currentPet, currentSuggestedPerson, loadFirstPage, query, section,
+    currentPet, currentSuggestedPerson, items.length, loadFirstPage,
+    mobileGalleryViewport, query, section,
   ])
 
   const closeFoldDialog = useCallback(() => {
