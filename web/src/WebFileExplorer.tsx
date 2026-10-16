@@ -339,13 +339,12 @@ export default function WebFileExplorer({
     // workspace may otherwise switch folders after this early return.
     // Our per-route ticket prevents duplicate dispatch on later rerenders.
     if (!initialDirectoryID) return
-    // The parent App mirrors a successful *internal* Files navigation to the URL.
-    // Re-dispatching that acknowledged ?dir= as a new deep link appends a duplicate
-    // history entry and makes Search -> Show in folder -> Files Back miss Search.
-    // Only skip the internal update when its already-authorized current Node,
-    // target URL ID and account-scoped lifecycle all agree.
+    // The previously authorized internal URL must not be replayed when Files
+    // Back/parent navigation has ALREADY committed new crumbs but App has not
+    // mirrored the new directory to ?dir= yet. Checking current?.id here
+    // mistakenly re-dispatched the obsolete child and cancelled Back.
+    // Distinct external targets and account rotations still reauthorize.
     if (
-      current?.id === initialDirectoryID &&
       internalDirectoryRouteRef.current?.directoryID === initialDirectoryID &&
       internalDirectoryRouteRef.current.lifecycleKey === lifecycleKey
     ) return

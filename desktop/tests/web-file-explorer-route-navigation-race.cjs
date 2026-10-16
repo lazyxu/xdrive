@@ -97,6 +97,7 @@ function routeHarness() {
     initialDirectoryID: 30,
     current: { id: 10 },
     routedDirectoryRef: { current: null },
+    internalDirectoryRouteRef: { current: null },
     navigationSessionStorageKey: 'files:account-a',
     api: {
       node: () => pending.promise,
@@ -163,4 +164,45 @@ test('Web route-directory rejection cannot publish an error after a newer manual
   assert.deepEqual(harness.navigations, [])
 
   cleanup()
+})
+
+test('acknowledged old child URL cannot undo committed Files Back; new external URL and account still reauthorize', async () => {
+  const { filename, callback } = extractRouteDirectoryEffect()
+  const routedDirectoryRef = { current: null }
+  const internalDirectoryRouteRef = { current: { directoryID: 2, lifecycleKey: 'files:account-a' } }
+  const nodeCalls = [], navigations = []
+  let generation = 0
+  const execute = (initialDirectoryID, currentID, lifecycleKey) => compileEffect(filename, callback, {
+    initialDirectoryID, current: { id: currentID }, navigationSessionStorageKey: lifecycleKey,
+    routedDirectoryRef, internalDirectoryRouteRef,
+    api: { node: async id => {
+      nodeCalls.push({ id, lifecycleKey })
+      return { id, parent_id: null, name: String(id), type: 'dir' }
+    } },
+    beginNavigationIntent: () => ++generation,
+    isNavigationIntentCurrent: id => generation === id,
+    navigateTo: async crumbs => { navigations.push(crumbs.at(-1).id); return true },
+    onError: error => { throw error },
+  })
+
+  // Parent=1 won Back, but App has not mirrored old acknowledged child URL=2.
+  assert.equal(execute(2, 1, 'files:account-a')(), undefined)
+  await flushAsync()
+  assert.deepEqual(nodeCalls, [], 'stale child must not be re-read')
+  assert.deepEqual(navigations, [], 'stale child must not undo Back')
+
+  const external = execute(3, 1, 'files:account-a')()
+  await flushAsync()
+  assert.deepEqual(nodeCalls, [{ id: 3, lifecycleKey: 'files:account-a' }])
+  assert.deepEqual(navigations, [3])
+  external?.()
+
+  const nextAccount = execute(2, 1, 'files:account-b')()
+  await flushAsync()
+  assert.deepEqual(nodeCalls, [
+    { id: 3, lifecycleKey: 'files:account-a' },
+    { id: 2, lifecycleKey: 'files:account-b' },
+  ])
+  assert.deepEqual(navigations, [3, 2])
+  nextAccount?.()
 })

@@ -2647,14 +2647,17 @@ test('P29 pending navigation from settled empty folder keeps its truthful empty 
       crumbs:[{id:1,name:'我的文件'}]}})
 })
 
-test('P29 sustained Search still reports real network progress',async()=>{
+test('P29 sustained Search reports real network progress only after 300ms',async()=>{
   await withView(async h=>{
     const status=()=>find(h.view,'data-mobile-files-arrangement-status',true)
     await h.update({loading:true})
     assert.equal(status().props.sx.display,'none')
-    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,230))})
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,220))})
+    assert.equal(status().props.sx.display,'none',
+      'a short Search request must not paint an intermediate progress chip')
+    await act(async()=>{await new Promise(resolve=>setTimeout(resolve,150))})
     assert.equal(status().props.sx.display,'block',
-      'a genuine Search response remains user-visible after brief delay')
+      'a sustained Search request remains user-visible after 300ms')
     await h.update({loading:false})
     assert.equal(status().props.sx.display,'none')
   },{props:{searchActive:true,requestedDirectoryID:1,
@@ -3036,15 +3039,21 @@ test('U08: Mobile Files uses shared StatePanel for authorized empty folder, Tras
     searchSummary: { query: 'not-found', resultCount: 0, loading: false } } })
 })
 
-test('U08: pending first Search count, failed Search and actual loading do not impersonate empty directory', async () => {
+test('U08: unanswered Search, error and cold load do not flash a fake empty folder', async () => {
   const panel = h => {
     const found = h.view.root.findAll(n => n.type === 'state-panel')
     assert.equal(found.length, 1)
     return found[0]
   }
-  await withView(async h => {
+  const initiallyQuietThenLoading = async (h, message) => {
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'an uncommitted first Range must not mount a spinner on the first frame')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
     assert.equal(panel(h).props.loading, true)
-    assert.equal(panel(h).props.message, '正在查询…')
+    assert.equal(panel(h).props.message, message)
+  }
+  await withView(async h => {
+    await initiallyQuietThenLoading(h, '正在查询…')
   }, { props: { items: [], searchActive: true, loading: false,
     searchSummary: { query: 'pending', resultCount: null, loading: false } } })
   await withView(async h => {
@@ -3052,21 +3061,36 @@ test('U08: pending first Search count, failed Search and actual loading do not i
     assert.equal(panel(h).props.message, '搜索失败，请重试')
     const warnings = h.view.root.findAll(n => n.props?.role === 'alert')
     assert.ok(warnings.some(n => textOf(n.props.children).includes('503')),
-      'Server error and existing retry entry remain visible')
+      'Server error and existing retry entry remain visible immediately')
   }, { props: { items: [], searchActive: true, loading: false,
     searchSummary: { query: 'denied', resultCount: null, loading: false,
       error: '503 服务暂不可用', onRetry() {} } } })
   await withView(async h => {
-    assert.equal(panel(h).props.loading, true)
-    assert.equal(panel(h).props.message, '正在查询…')
+    await initiallyQuietThenLoading(h, '正在查询…')
   }, { props: { items: [], searchActive: true, loading: true,
     searchSummary: { query: 'loading', resultCount: 0, loading: true } } })
   await withView(async h => {
-    assert.equal(panel(h).props.loading, true)
-    assert.equal(panel(h).props.message, '正在加载文件…')
+    await initiallyQuietThenLoading(h, '正在加载文件…')
   }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
     props: { items: [], loading: true,
       crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
+test('Quiet Search: sub-300ms network completion never mounts a loading state', async () => {
+  await withView(async h => {
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 120)) })
+    await h.update({ loading: false,
+      searchSummary: { query: 'quick', resultCount: 0, loading: false } })
+    const panels = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(panels.length, 1)
+    assert.equal(panels[0].props.message, '未找到匹配的文件或文件夹')
+    assert.equal(panels[0].props.loading, false)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 260)) })
+    assert.equal(h.view.root.findAll(n => n.props?.role === 'progressbar').length, 0,
+      'a cancelled deferred loading timer cannot insert a late spinner')
+  }, { props: { items: [], searchActive: true, loading: true,
+    searchSummary: { query: 'quick', resultCount: null, loading: true } } })
 })
 
 test('U08: reuse the existing StatePanel and keep one virtual-range owner and shared Search API', () => {
