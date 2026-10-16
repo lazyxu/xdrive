@@ -1247,6 +1247,9 @@ class AnalyzerState:
         self.creative_runtime = creative_runtime
         self.preview_origin = normalize_origin(preview_origin)
         self.token = token.strip()
+        # Reserved test-only guard hook: no production serve() config enables it.
+        # Default None preserves legacy and require-bearer-v1 behavior.
+        self.model_permit_verifier = None
         # One process-boot session, shared by four independently checked model APIs.
         # It is self-reported, not Docker/Host Manager attestation or a secret.
         self.runtime_instance_id = secrets.token_hex(16)
@@ -1363,7 +1366,12 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 if ":" not in decoded:
                     raise RequestError(400, "invalid HTTP header")
                 key, value = decoded.split(":", 1)
-                headers[key.strip().lower()] = value.strip()
+                normalized_key = key.strip().lower()
+                # Ambiguous duplicate authorization must never silently use
+                # whichever inference permit header appeared last.
+                if normalized_key == "x-xdrive-model-permit" and normalized_key in headers:
+                    raise RequestError(400, "duplicate model permit header")
+                headers[normalized_key] = value.strip()
 
             if method == "POST" and target == "/v1/host-apply-ack":
                 # Ordinary analyzer auth must never authorize host apply.
@@ -1432,6 +1440,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "content-length", "0"
                 ) != "0":
                     raise RequestError(400, "face detector canary rejects a body")
+                self._require_model_permit("GET", target, b"", headers)
                 self._write_json(
                     200, self.server.state.runtime.probe_synthetic_face_and_embedding(),
                 )
@@ -1460,6 +1469,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "content-length", "0"
                 ) != "0":
                     raise RequestError(400, "Smart model canary rejects a body")
+                self._require_model_permit("GET", target, b"", headers)
                 self._write_json(
                     200, self.server.state.smart_runtime.probe_synthetic_visual_ocr(),
                 )
@@ -1488,6 +1498,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "content-length", "0"
                 ) != "0":
                     raise RequestError(400, "synthetic image canary rejects a body")
+                self._require_model_permit("GET", target, b"", headers)
                 self._write_json(
                     200,
                     self.server.state.semantic_runtime.embed_image(
@@ -1519,6 +1530,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                     "content-length", "0"
                 ) != "0":
                     raise RequestError(400, "synthetic Creative canary rejects a body")
+                self._require_model_permit("GET", target, b"", headers)
                 self._write_json(
                     200, self.server.state.creative_runtime.probe_synthetic_cutout()
                 )
@@ -1573,6 +1585,10 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
                 payload = self.rfile.read(length)
                 if len(payload) != length:
                     raise RequestError(400, "incomplete request body")
+                # Test-injected verifier sees exact request bytes, after the
+                # existing static Bearer and protocol checks, before any
+                # JSON task decoding, preview access or model inference.
+                self._require_model_permit(method, target, payload, headers)
                 try:
                     task = json.loads(payload)
                 except json.JSONDecodeError as exc:
@@ -1693,6 +1709,23 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
             )
             self._write_json(500, {"error": "analysis failed"})
 
+    def _require_model_permit(
+        self, method: str, target: str, body: bytes,
+        headers: dict[str, str],
+    ) -> None:
+        # The production AnalyzerState never installs this optional verifier.
+        # Only an explicit offline test fixture supplies trusted epoch,
+        # membership, model boot identity, key and expected revision.
+        verifier = getattr(self.server.state, "model_permit_verifier", None)
+        if verifier is None:
+            return
+        try:
+            allowed = callable(verifier) and verifier(method, target, body, headers)
+        except Exception:
+            allowed = False
+        if allowed is not True:
+            raise RequestError(403, "model permit not authorized")
+
     @staticmethod
     def _require_protocol(
         headers: dict[str, str],
@@ -1759,6 +1792,7 @@ class AnalyzerHandler(socketserver.StreamRequestHandler):
             200: "OK",
             400: "Bad Request",
             401: "Unauthorized",
+            403: "Forbidden",
             404: "Not Found",
             411: "Length Required",
             413: "Payload Too Large",
