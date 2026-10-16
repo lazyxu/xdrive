@@ -1383,6 +1383,7 @@ export function XDriveMediaGalleryPage({
     sourceID: number,
     folderID: number,
     resetFilters = false,
+    fromCollections = false,
   ) => {
     if (!source.getSyncFolder) {
       setError('当前客户端不支持同步文件夹图库')
@@ -1400,18 +1401,34 @@ export function XDriveMediaGalleryPage({
         folder_id: view.current.id,
         ...(resetFilters ? {} : { include_descendants: query.include_descendants }),
       }
-      setCurrentFolderView(view)
-      setCurrentAlbum(null)
-      setCurrentSuggestedPerson(null)
-      setCurrentPerson(null)
-      setCurrentPet(null)
-      setCurrentMemory(null)
-      setCurrentCleanupReview(null)
-      setSection('albums')
-      setActiveMediaType('')
-      setDraftFilters(nextDraft)
-      setQuery(nextQuery)
-      await loadFirstPage(null, nextQuery)
+      // A Mobile Collections card is an intent until BOTH the authorized
+      // folder-view lookup and its first counted media range have succeeded.
+      // Keep the previously committed Collections + scroll host intact while
+      // either Server request is pending; commit metadata/section/sparse range
+      // together using the same first-page transaction as Albums and Memories.
+      const commitFolder = () => {
+        if (request !== syncFolderRequestID.current) return
+        setCurrentFolderView(view)
+        setCurrentAlbum(null)
+        setCurrentSuggestedPerson(null)
+        setCurrentPerson(null)
+        setCurrentPet(null)
+        setCurrentMemory(null)
+        setCurrentCleanupReview(null)
+        setSection('albums')
+        setActiveMediaType('')
+        setDraftFilters(nextDraft)
+        setQuery(nextQuery)
+        if (fromCollections) setMobileCollectionsOverview(false)
+      }
+      if (fromCollections && mobileGalleryViewport) {
+        await loadFirstPage(null, nextQuery, null, null, 'default',
+          null, null, null, commitFolder)
+      } else {
+        // Preserve wide Web/Desktop and established non-Collections routing.
+        commitFolder()
+        await loadFirstPage(null, nextQuery)
+      }
     } catch (loadError) {
       if (request !== syncFolderRequestID.current) return
       setSyncFoldersError(xDriveMediaGalleryErrorMessage(loadError))
@@ -1419,7 +1436,7 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === syncFolderRequestID.current) setSyncFoldersLoading(false)
     }
-  }, [draftFilters, loadFirstPage, onError, query.include_descendants, source])
+  }, [draftFilters, loadFirstPage, mobileGalleryViewport, onError, query.include_descendants, source])
 
   const selectSection = useCallback((nextSection: MediaGallerySection) => {
     placesReturnPageRef.current = null
@@ -2858,8 +2875,9 @@ export function XDriveMediaGalleryPage({
         onOpenAlbum={(album) => openAlbum(album, mobileCollectionsOverview)}
         onOpenSyncFolder={source.getSyncFolder
           ? (folder) => {
-              setMobileCollectionsOverview(false)
-              void openSyncFolderDirectory(folder.source_id, folder.target_node_id, true)
+              void openSyncFolderDirectory(
+                folder.source_id, folder.target_node_id, true, mobileCollectionsOverview,
+              )
             }
           : undefined}
         onOpenFolder={source.getSyncFolder && currentFolderView
@@ -6310,10 +6328,7 @@ export function XDriveMediaGallery({
             onMobileCollectionsOverviewChange?.(false)
             onOpenPlace(place)
           } : undefined}
-          onOpenSyncFolder={onOpenSyncFolder ? (folder) => {
-            onMobileCollectionsOverviewChange?.(false)
-            onOpenSyncFolder(folder)
-          } : undefined}
+          onOpenSyncFolder={onOpenSyncFolder}
         />
       ) : (
         <>
