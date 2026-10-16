@@ -388,3 +388,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 承接已合并 #1759，新增三端共享 TypeScript 的未激活 BMap 原生接口适配。未来只能由独立获准的官方 JSAPI4 容器提供 Map、ClusterLayer、Convertor、Point；本阶段校验官方入参和方法，复用原 Owner viewport/ClusterLayer 和 Server Range/VirtualCollection/Viewer。不创建第二套 Mobile Web 或 Desktop 地图后端；测试中的 Mock BMap 既不是许可凭据，也不是运行授权。坐标只能通过官方 Convertor.translate(points,1,5) 处理 WGS84→BD-09，不能把 BD-09 getBounds 直接发给 Server WGS84 API。
 
 此模块没有生产调用方、没有第三方 JS SDK 加载、Cookie、Browser AK 前端注入、百度上游请求或新路由。runtime_enabled=false、0 条已批准 JSAPI 子资源规则、生产签名根未配置，仍 NO-GO。A3b3a3d2 需要真实 self-host/PWA/Electron 商用许可、完整上游脚本/瓦片/WASM/字体白名单、九场景 HAR 原始字节防泄漏审核、受信签名、Owner/跨副本配额/CSP/Electron 隔离及真机实证。保留百度唯一 Provider、Server AK/Browser AK 服务端独立加密、52px 全屏 App Frame、iOS27「照片」1:1 标准。达到实际 A3 动态地图发布门禁后再实施 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d1c · 百度原生地图与三端 Owner 视窗端到端预集成（2026-10-16）
+
+继续 #1763 之后，为 Web/Mobile Web/Desktop 共用 Gallery 新增仅供未来被单独授权的 Baidu JSAPI4 运行环境使用的 TypeScript 组合入口。其组合已有官方 Map/ClusterLayer/Convertor/Point 适配器和统一 Owner 视窗桥接器，仍复用同一 Gallery Server Range、VirtualCollection 和 Viewer。Node 模拟测试从官方构造器开始，验证第一次真实 GPS(0,0) 查询、限额 100 个地点网格、官方 WGS84→BD09 变换、聚合标记、正确地点点开照片集合、开始拖动时取消旧 Go 视窗请求、过期结果不回写、退出销毁全部事件/图层。
+
+**未上线 JSAPI4**：目前不调用这个组合入口，也没有 BMap Loader、代理路由、地图 Cookie、Browser AK、GPS 持久化。BD09 的 BMap.getBounds 不能充作 Owner WGS84 范围；仍要求一个经许可和坐标正确性审查的 WGS84 包围盒来源，没有便擅自推进真实动态地图。生产 runtime_enabled=false、零已审核 JSAPI 子资源、未配置钉扎签名根保持 NO-GO。需要独立百度 self-host/PWA/Electron 许可、完整实际脚本/瓦片/WASM/字体白名单、九场景私有 upstream/browser 原始 HAR 防 AK 泄漏、受信发布签名、Server Owner/撤销/配额与 Caddy CSP/Electron 隔离及 iOS27/Android/Desktop 真机证据。保留百度唯一 Provider、Server AK/Browser AK 服务端独立加密、52px 全屏 App Frame、iOS27「照片」1:1 标准；A3 真正完成后才开始 A4、B1、B2、B3、C1。
