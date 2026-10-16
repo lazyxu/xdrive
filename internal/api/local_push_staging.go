@@ -473,6 +473,13 @@ func (s *Server) cancelLocalPushStage(c *gin.Context) {
 		return
 	}
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		// Quota writers lock User before Device/Source/CAS/Stage. Take the same
+		// User row FIRST, so a cancellation does not invert their lock order.
+		var owner meta.User
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", userID(c)).Take(&owner).Error; err != nil {
+			return err
+		}
 		stage, err := s.loadLocalPushStageTx(tx, c, sourceID, revision, proof, stageID)
 		if err != nil {
 			return err
@@ -480,9 +487,35 @@ func (s *Server) cancelLocalPushStage(c *gin.Context) {
 		if stage.Status == localPushStageWriting {
 			return errLocalPushStageConflict
 		}
-		return tx.Model(&meta.LocalPushStaging{}).
+		// A live or historical quota reservation is private to this EXACT
+		// immutable Stage generation. A foreign/mismatched record is not
+		// safe to release even when the device JWT is otherwise valid.
+		var hold meta.LocalPushQuotaHold
+		err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("stage_id = ?", stageID).Take(&hold).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		found := err == nil
+		if found && !sameLocalPushQuotaHold(hold, stage) {
+			return errLocalPushStageConflict
+		}
+		if err := tx.Model(&meta.LocalPushStaging{}).
 			Where("source_id = ? AND stage_id = ?", sourceID, stageID).
-			Update("status", localPushStageCanceled).Error
+			Update("status", localPushStageCanceled).Error; err != nil {
+			return err
+		}
+		if found && hold.ReleasedAt == nil {
+			// Commit Stage cancellation AND quota release together. An
+			// expired hold is still marked released for audit; it already
+			// stopped consuming quota via the expiry predicate.
+			now := time.Now().UTC()
+			return tx.Model(&meta.LocalPushQuotaHold{}).
+				Where("stage_id = ? AND owner_id = ? AND released_at IS NULL",
+					stageID, stage.OwnerID).
+				Update("released_at", now).Error
+		}
+		return nil
 	})
 	if err != nil {
 		failLocalPushStage(c, err)
