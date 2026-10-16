@@ -7,11 +7,13 @@ import {
   useState,
 } from 'react'
 import type { ReactNode } from 'react'
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded'
 import { Box } from '@mui/material'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { XDriveFileExplorerItem } from './FileExplorer'
 import { XDriveLivePhotoGlyph } from './LivePhotoSurface'
 import { XDriveMediaLoadingProgress } from './MediaLoadProgress'
+import { xDriveFileExplorerThumbnailVisualState } from './FileExplorerThumbnailVisualState'
 import type { XDriveMediaLoadStage } from './MediaLoadProgress'
 import type { XDriveByteProgressHandler } from '../file-preview'
 
@@ -360,6 +362,13 @@ export function XDriveFileExplorerThumbnail({
   const leaseRef = useRef<FileThumbnailLease | null>(null)
   const loadThumbnail = context?.loadThumbnail
   const cache = context?.cache
+  const visualState = xDriveFileExplorerThumbnailVisualState({
+    eligible,
+    visible,
+    failed,
+    hasSource: Boolean(src || item.thumbnail),
+    canLoad: Boolean(loadThumbnail),
+  })
 
   useEffect(() => {
     setFailed(false)
@@ -445,6 +454,12 @@ export function XDriveFileExplorerThumbnail({
     <Box
       ref={hostRef}
       data-xdrive-file-explorer-item-visual
+      data-xdrive-file-explorer-thumbnail-state={visualState}
+      title={visualState === 'failed'
+        ? '缩略图加载失败，显示文件类型图标'
+        : item.kind === 'file' && visualState === 'type-icon' && !eligible
+          ? '此文件类型暂无缩略图，显示文件类型图标'
+          : undefined}
       sx={[
         {
           width: '100%',
@@ -472,6 +487,21 @@ export function XDriveFileExplorerThumbnail({
       ) : fallback)}
       {eligible && visible && !src && !failed && !item.thumbnail && loadThumbnail ? (
         <XDriveMediaLoadingProgress compact stage={stage} {...progress} />
+      ) : null}
+      {visualState === 'failed' ? (
+        <Box component="span" role="status"
+          data-xdrive-file-explorer-thumbnail-failure
+          aria-label="缩略图加载失败，显示文件类型图标"
+          title="缩略图加载失败，显示文件类型图标"
+          sx={{
+            position: 'absolute',
+            right: 2, bottom: 2, width: 16, height: 16,
+            display: 'grid', placeItems: 'center', borderRadius: '50%',
+            color: 'common.white', bgcolor: 'rgba(0,0,0,0.62)',
+            pointerEvents: 'none',
+          }}>
+          <ErrorOutlineRoundedIcon aria-hidden sx={{ fontSize: 13 }} />
+        </Box>
       ) : null}
       {livePhoto && !failed && Boolean(item.thumbnail || src) ? (
         <Box
