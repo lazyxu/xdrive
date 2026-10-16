@@ -358,3 +358,12 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 百度默认地图边界采用 BD-09；新桥接器仅接收显式受审查的未来 WGS84 范围回调，并严格校验四个数值/反日期变更线/0/极地，拒绝把 BMap.getBounds 直接送给 Server WGS84 查询。真实 WGS84 样本经 A3b3a3a 官方转换后的 FeatureCollection 才能交给 A3b3a3b native 层；转换失败、过期、取消、卸载、权限变化都清空地图而非保留过时照片标记。
 
 上述为 Node 模拟层和共享源契约测试，不代表线上真实百度 JSAPI4 已经可用：生产 `runtime_enabled=false`，百度唯一 Provider、Static Server AK 与独立加密 Browser AK 仍仅在 Server。实际自托管/PWA/Electron 商用许可、官方完整子资源 Host/Path/Query/MIME/bytes、上游和浏览器 HAR AK 无泄漏、Server Owner/session/epoch/签名发布/跨副本限额、Caddy CSP、Electron 沙盒与 iOS27/Android/Desktop 物理真机及 1:1 像素/手势检查仍是下一步 A3b3a3d 的独立发布门禁。合格上线后才严格按序 A4 Nearby、B1 地理语义、B2 旅程、B3 位置编辑/隐私、C1 视觉和性能验收。
+
+
+## A3b3a3d1 · 发布前地图专用会话的 Server Owner 数据底座（2026-10-16）
+
+承接已合入 #1743 的未激活 JSAPI4 Shared Viewport/ClusterLayer，本阶段在 Go Server 增加没有 Router 的私人 baiduJSAPIBootstrapCandidate。它验证服务器配置的 HTTPS 同源地址、精确空正文无参数 POST、唯一签名 Bearer、当前真实 PostgreSQL 用户及会话版本、地图专用持久撤销 epoch 和独立 Browser AK 配置存在性/修订号，不读取 AK 明文，不依赖 Host 或请求自报 UserID。验证失败统一关闭，不泄漏 SQL、原始坐标、Token、上游 URL。
+
+**该候选结果绝不是生产授权。** RuntimeAuthorized 永久为 false，IssueMapSession 必须拒绝；Gin 未开放 POST /api/v1/media/places/baidu-jsapi/session、/_BMapService/ 或任何 JSAPI 资源代理。缺百度适用许可证据、正式全量子资源清单、真实浏览器+Server 上游 HAR AK 无泄漏证据、可信固定签名发布根、跨副本可撤销会话/请求字节配额、Caddy/CSP/Electron 沙盒和 iOS27/Android/Desktop 真机覆盖，因此 JSAPI4 runtime_enabled=false、百度唯一 Provider、Server Static AK 与加密 Browser AK 分离均不变。
+
+下一项 A3b3a3d2 在**实际拿到百度授权证据**后，审核脚本/瓦片/字体/WASM/接口的固定 Host/Path/Query/MIME/超时/响应大小，构建强授权生产 map Cookie/Proxy 和可信签名发布，再进行 Web/Mobile Web/Desktop 原生 JSAPI4 平移、缩放、Marker、ClusterLayer 与既有 Gallery Range/Viewer 连接；最后按用户原序 A4、B1、B2、B3、C1 iOS 27 真机 1:1 验收。xDrive 52px App Frame 和共用后端/虚拟化不改变。

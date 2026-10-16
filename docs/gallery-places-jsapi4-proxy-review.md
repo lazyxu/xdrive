@@ -212,3 +212,12 @@ The new pure-Go `ValidateJSAPI4ChildCandidate` and `MatchJSAPI4ChildCandidate` v
 - `ui/shared/src/media-gallery-baidu-jsapi4-viewport.ts` 仅是**未调用**的共享协调器。它以已有认证 Gallery Web/Mobile Web REST 或 Desktop Agent IPC 的 `listPlacesViewport` 为唯一数据源，limit=100、offset=0；使用 AbortSignal/8s 上限以及代际防陈旧，收到不完整视窗绝不拉取更后页/10万点。打开地点仍委托一个既有 Server Range/Viewer。
 - JSAPI 4.0 官方在中国地区默认 BD-09。原生 Map.getBounds 的数值绝不能无证据直接当成 Server 要求的 WGS84；必须等批准的 WGS84 区域映射方法，由可信 Map adapter 注入经过验证的 west/south/east/north，严禁把 map 原始第三方资源直接当成真实摄影 GPS。
 - 两种 AK 仍各自仅 Server 内加密，JSAPI 生产 runtime 仍关（`runtime_enabled=false`），无新的 Session/Cookie/proxy/JSAPI Loader/地图脚本、无真机运行证明。A3 后续上线前必须经百度真实 self-host/PWA/Electron 许可、完整原始资源清单、逐 Host/Path/Query/MIME/大小/超时的不可由浏览器编辑的资源策略、浏览器+Server 上游 HAR 无密钥泄漏、不可伪造签名的 release、逐请求 Owner/epoch 和跨副本配额、Caddy CSP 和 Electron 隔离/真实 iOS27、Android、Desktop 验收。即使所有 mock 全绿，当前发版仍 **NO-GO**。
+
+
+## 2026-10-16 A3b3a3d1 · 独立 Browser AK/Owner 预校验与硬 NO-GO
+
+Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 same-origin、无 query/body 的 POST 读取唯一登录 Bearer，使用 existing verifiedMapBootstrapIdentity 验证真实 PostgreSQL User.SessionVersion、Signed JWT、持久地图 epoch/logout cutoff 和 Owner，然后只读取独立加密 Browser JSAPI desired_enabled、configured、revision 元数据。没有 Browser/Server AK 明文、通配 upstream URL、Cookie 签发或客户端地图代码；所有错误为固定拒绝文本。
+
+正向验证只得到 RuntimeAuthorized=false 的内部 MapSessionState，不能 IssueMapSession；真实 Router 的 Session POST 和 JSAPI Loader GET 仍为 404 且不泄密。隔离 PostgreSQL 回归覆盖配置旋转/关闭、JWT/Owner 隔离、禁用账户、会话撤销，以及绝对或编码别名路径、跨站 Origin、异常 Authorization/请求体和取消。此阶段依旧没有真实百度许可证据、全量经许可资源路径、私有浏览器与 upstream HAR、固定生产发布签名、并发字节配额或 iOS27/Android/Desktop 实机验收；reviewed child count=0，runtime_enabled=false 且 production resource gate 始终关闭。
+
+百度官方支持基于 serviceHost / Server-side BMAP_PROXY_URL 的同源 JSAPI4 代理（https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcepts%2Fproxy），但不允许把官方开放式 Nginx 通配示例复制为 xDrive 的多用户授权代理。用户批准工程实施不等于百度为自托管、PWA、Electron 或商业场景授予许可。保留 iOS27 Photos 1:1、xDrive 52px App Frame、百度唯一 Provider 和同一 Web/Mobile Web/Desktop Gallery Range/VirtualCollection/Viewer。
