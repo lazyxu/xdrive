@@ -28,6 +28,11 @@ test('signed expected-roster candidate stays offline and cannot silently enable 
   assert.match(offlineContinuation, /VerifyOfflinePhotoModelExpectedRosterV1\s*\(/)
   assert.match(offlineContinuation, /func VerifyOfflinePhotoModelAllMembersPreparedV1\s*\(/)
 
+  // The dual-signed transition is another narrowly reviewed OFFLINE user
+  // of the same roster verifier, never a production request path.
+  const rotation = read('internal/photointelligence/model_trust_rotation_offline.go')
+  assert.match(rotation, /VerifyOfflinePhotoModelExpectedRosterV1\s*\(/)
+
   // The verifier is a test-only crypto building block, not a trusted
   // deployment binding. No running Go entry point may call it in this phase.
   for (const dir of ['internal/api', 'internal/photointelligence', 'cmd/server']) {
@@ -35,7 +40,8 @@ test('signed expected-roster candidate stays offline and cannot silently enable 
       if (!name.endsWith('.go') || name.endsWith('_test.go') ||
         (dir === 'internal/photointelligence' &&
           (name === 'model_expected_roster_offline.go' ||
-           name === 'model_member_rollout_offline.go'))) continue
+           name === 'model_member_rollout_offline.go' ||
+           name === 'model_trust_rotation_offline.go'))) continue
       assert.doesNotMatch(read(dir + '/' + name),
         /\bVerifyOfflinePhotoModelExpectedRosterV1\s*\(/,
         'unexpected production roster verifier call: ' + dir + '/' + name)
