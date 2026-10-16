@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +20,7 @@ type sourceRunFailureDTO struct {
 	Path         string    `json:"path"`
 	Size         int64     `json:"size"`
 	Error        string    `json:"error"`
+	Category     string    `json:"category"`
 	FailedAt     time.Time `json:"failed_at"`
 }
 
@@ -54,9 +56,17 @@ func (s *Server) listSourceRunFailures(c *gin.Context) {
 	if !ok {
 		return
 	}
+	category := strings.TrimSpace(c.Query("category"))
+	if category != "" && !validSourceFailureCategory(category) {
+		fail(c, http.StatusBadRequest, "invalid failure category")
+		return
+	}
+	query := s.DB.Where("run_id = ? AND source_id = ?", runID, sourceID)
+	if category != "" {
+		query = query.Where("category = ?", category)
+	}
 	var failures []meta.SourceRunFailure
-	if err := s.DB.Where("run_id = ? AND source_id = ?", runID, sourceID).
-		Order("failed_at ASC, id ASC").
+	if err := query.Order("failed_at ASC, id ASC").
 		Limit(limit).Offset(offset).
 		Find(&failures).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "list source run failures failed")
@@ -68,7 +78,7 @@ func (s *Server) listSourceRunFailures(c *gin.Context) {
 			ID: failure.ID, SourceItemID: failure.SourceItemID,
 			ExternalID: failure.ExternalID, Kind: failure.Kind,
 			Path: failure.Path, Size: failure.Size,
-			Error: failure.Error, FailedAt: failure.FailedAt,
+			Error: failure.Error, Category: failure.Category, FailedAt: failure.FailedAt,
 		})
 	}
 	c.JSON(http.StatusOK, out)
@@ -97,14 +107,14 @@ func (s *Server) cleanupSourceRunFailureHistory(ctx context.Context) error {
 			return err
 		}
 		if len(ids) == 0 {
-			return nil
+			return s.cleanupSourceRunSkipHistory(ctx)
 		}
 		if err := s.DB.WithContext(ctx).Where("id IN ?", ids).
 			Delete(&meta.SourceRunFailure{}).Error; err != nil {
 			return err
 		}
 		if len(ids) < sourceRunFailureCleanupBatchSize {
-			return nil
+			return s.cleanupSourceRunSkipHistory(ctx)
 		}
 	}
 }

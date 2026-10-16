@@ -26,6 +26,9 @@ type UploadResult struct {
 	SHA256           string
 	TransferredBytes int64
 	Skipped          bool
+	CASReused        bool
+	ReusedPartBytes  int64
+	ResumedBytes     int64
 }
 
 type UploadConflictPolicy string
@@ -85,6 +88,7 @@ type UploadSession struct {
 	ResumeKey        string               `json:"resume_key,omitempty"`
 	ExpectedRevision uint64               `json:"expected_revision,omitempty"`
 	Status           string               `json:"status"`
+	CASReused        bool                 `json:"cas_reused,omitempty"`
 	ExpiresAt        time.Time            `json:"expires_at"`
 	Received         []UploadPart         `json:"received_chunks"`
 	Result           *Node                `json:"result,omitempty"`
@@ -298,7 +302,7 @@ func (c *Client) uploadStreamResult(
 	if err != nil {
 		return UploadResult{}, err
 	}
-	result := UploadResult{}
+	result := UploadResult{CASReused: session.CASReused}
 	if session.Status == "finalized" && session.Result != nil {
 		result.Node = *session.Result
 		result.SHA256 = session.Result.SHA256
@@ -323,6 +327,11 @@ func (c *Client) uploadStreamResult(
 		}
 		received[part.Index] = part
 		done += part.Size
+		if part.Reused {
+			result.ReusedPartBytes += part.Size
+		} else {
+			result.ResumedBytes += part.Size
+		}
 	}
 	if progress != nil {
 		progress(done, init.Size)
@@ -445,6 +454,7 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 	if err != nil {
 		return UploadResult{}, err
 	}
+	result.CASReused = session.CASReused
 	if session.Status == "finalized" && session.Result != nil {
 		if progress != nil {
 			progress(init.Size, init.Size)
@@ -471,6 +481,11 @@ func (c *Client) uploadPathResult(ctx context.Context, path string, init UploadI
 		}
 		received[part.Index] = part
 		done += part.Size
+		if part.Reused {
+			result.ReusedPartBytes += part.Size
+		} else {
+			result.ResumedBytes += part.Size
+		}
 	}
 	if progress != nil {
 		progress(done, init.Size)

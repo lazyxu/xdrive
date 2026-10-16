@@ -226,6 +226,7 @@ import {
   type AgentUpdateSourceInput,
   type AgentSourceRun,
   type AgentSourceRunFailure,
+  type AgentSourceRunSkip,
   type AgentSourceItem,
   type AgentSourceCollection,
   type AgentSourceCollectionItem,
@@ -2466,6 +2467,30 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Source run failure offset must be zero or greater.')
     }
     return requireAgentClient().sourceRunFailures(sourceID, runID.trim(), requestedLimit, requestedOffset)
+  }, false))
+  ipcMain.handle('agent:get-source-run-skips', (_event, sourceID: unknown, runID: unknown, limit: unknown, offset: unknown, reason: unknown) => runAgentAction<AgentSourceRunSkip[]>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'external-sources')
+    if (typeof sourceID !== 'number' || !Number.isSafeInteger(sourceID) || sourceID <= 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source id is required.')
+    }
+    if (typeof runID !== 'string' || !runID.trim()) {
+      throw new AgentIPCError('invalid_input', 0, 'Source run id is required.')
+    }
+    const requestedLimit = limit === undefined ? 20 : limit
+    if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) || requestedLimit < 1 || requestedLimit > 1000) {
+      throw new AgentIPCError('invalid_input', 0, 'Source run failure limit must be between 1 and 1000.')
+    }
+    const requestedOffset = offset === undefined ? 0 : offset
+    if (typeof requestedOffset !== 'number' || !Number.isSafeInteger(requestedOffset) || requestedOffset < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Source run failure offset must be zero or greater.')
+    }
+    const requestedReason = reason === undefined ? '' : reason
+    if (typeof requestedReason !== 'string' ||
+      (requestedReason !== '' && requestedReason !== 'ignore' && requestedReason !== 'unchanged')) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid source run skip reason.')
+    }
+    return requireAgentClient().sourceRunSkips(sourceID, runID.trim(), requestedLimit, requestedOffset, requestedReason)
   }, false))
   ipcMain.handle('agent:cancel-source-run', (_event, sourceID: unknown, runID: unknown) => runAgentAction<AgentSourceRun>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

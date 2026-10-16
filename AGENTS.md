@@ -445,6 +445,10 @@ Provider delivery rules:
 - Merge only after the reproduced race is fixed, the relevant regression suite is green, and the repository's normal authoritative CI gate passes. Do not merge a branch that is only statically plausible, partially tested, or still failing the original race.
 - This policy applies equally to FileExplorer, Gallery/Photo UI, transfers, thumbnails, background tasks, sync, navigation/session lifecycle, caches, and any other subsystem where the task is specifically a race/concurrency investigation.
 
+## Sync-run outcome, transfer reuse and history contract (2026-10-16)
+
+- Source Run status and counts must follow [sync-run outcome history](docs/sync-run-outcome-history.md): do not use scanned minus failed as success, do not conflate ignored/unchanged with confirmed commits, classify only actual authoritative CAS/part/resume receipts, and report observed pending vs failed disjointly. Preserve per-run immutable skip and failure history, source authorization, one-commit/final-gate, and never infer missing counts from cancelled or non-full inventories. Web, Desktop and Mobile Web must consume the same DTOs.
+
 ## Performance specialization policy
 
 - **CAS-A03 4GiB local edit version cost:** for whole-file versus 1MiB interior edit, first read [CAS-A03 Storage Version Benchmark](docs/cas-version-performance.md). This is a server-local physical SHA/CAS test distinct from first-upload 4GiB transfer throughput; do not infer CDC implementation, FileVersion database integrity or six-platform acceptance from fixed-block theoretical sharing. Record valid original n≥3 bytes/CPU/RSS/full-restore evidence before any production chunking change.

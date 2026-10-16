@@ -50,6 +50,7 @@ export interface ExternalSourceRun {
   mode: ExternalSourceRunMode
   trigger: string
   status: ExternalSourceRunStatus
+  telemetry_version?: number
   scanned_items: number
   scanned_bytes: number
   ignored_items: number
@@ -69,6 +70,15 @@ export interface ExternalSourceRun {
   processed_transfer_bytes?: number
   created_items: number
   updated_items: number
+  completed_moved_items?: number
+  cas_reused_items?: number
+  cas_reused_bytes?: number
+  reused_part_items?: number
+  reused_part_bytes?: number
+  resumed_items?: number
+  resumed_bytes?: number
+  unprocessed_items?: number
+  failure_categories?: string
   skipped_items: number
   deleted_items?: number
   transferred_items: number
@@ -83,6 +93,16 @@ export interface ExternalSourceRun {
   finished_at?: string
 }
 
+export interface ExternalSourceRunSkip {
+  id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  reason: 'ignore' | 'unchanged'
+  observed_at: string
+}
+
 export interface ExternalSourceRunFailure {
   id: number
   source_item_id: number
@@ -91,6 +111,7 @@ export interface ExternalSourceRunFailure {
   path: string
   size: number
   error: string
+  category?: string
   failed_at: string
 }
 
@@ -451,6 +472,11 @@ export interface ExternalSourceRunMetric {
     | 'skipped'
     | 'deleted'
     | 'transferred'
+    | 'completed_moved'
+    | 'cas_reused'
+    | 'reused_part'
+    | 'resumed'
+    | 'saved_bytes'
     | 'failed'
   label: string
   items: number
@@ -473,6 +499,11 @@ export interface ExternalSourceRunDetailView {
   finishedAt?: string
   durationLabel: string
   successItems: number
+  scannedItems: number
+  unchangedItems: number
+  ignoredItems: number
+  unprocessedItems?: number
+  failureCategoryCounts: Record<string, number>
   failedItems: number
   error?: string
   progress?: ExternalSourceRunProgressView
@@ -775,6 +806,31 @@ function externalSourceRunTriggerLabel(trigger: string) {
   return trigger || '未知'
 }
 
+export const sourceFailureCategoryLabels: Record<string, string> = {
+  rate_limit: '限流',
+  permission: '权限',
+  source_changed: '文件变化',
+  conflict: '冲突',
+  network: '网络',
+  other: '其他',
+}
+
+function externalSourceFailureCategoryCounts(raw?: string): Record<string, number> {
+  if (!raw) return {}
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const counts: Record<string, number> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (key in sourceFailureCategoryLabels && typeof value === 'number' &&
+        Number.isSafeInteger(value) && value > 0) counts[key] = value
+    }
+    return counts
+  } catch {
+    return {}
+  }
+}
+
 export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSourceRunDetailView {
   const activeBytes = Math.max(0, Math.min(run.active_transfer_bytes || 0, run.active_transfer_total_bytes || 0))
   const plannedBytes = Math.max(0, run.planned_transfer_bytes || 0)
@@ -808,7 +864,13 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
     startedAt: run.started_at,
     finishedAt: run.finished_at,
     durationLabel: externalSourceRunDurationLabel(run),
-    successItems: Math.max(0, run.scanned_items - run.failed_items),
+    // Confirmed commits only: scanned/ignored/unchanged are not new successes.
+    successItems: Math.max(0, (run.created_items || 0) + (run.updated_items || 0)),
+    scannedItems: Math.max(0, run.scanned_items || 0),
+    unchangedItems: Math.max(0, run.unchanged_items || 0),
+    ignoredItems: Math.max(0, run.ignored_items || 0),
+    unprocessedItems: typeof run.unprocessed_items === 'number' ? Math.max(0, run.unprocessed_items) : undefined,
+    failureCategoryCounts: externalSourceFailureCategoryCounts(run.failure_categories),
     failedItems: Math.max(0, run.failed_items),
     error: run.error || undefined,
     progress,
@@ -823,6 +885,17 @@ export function externalSourceRunDetailView(run: ExternalSourceRun): ExternalSou
       { key: 'planned_transfer', label: '计划传输', items: run.planned_transfer_items, bytes: run.planned_transfer_bytes },
       { key: 'created', label: '创建', items: run.created_items },
       { key: 'updated', label: '更新', items: run.updated_items },
+      ...(run.telemetry_version
+        ? [
+            { key: 'completed_moved' as const, label: '确认完成移动', items: run.completed_moved_items ?? 0 },
+            { key: 'cas_reused' as const, label: 'CAS 已有内容复用', items: run.cas_reused_items ?? 0, bytes: run.cas_reused_bytes ?? 0 },
+            { key: 'reused_part' as const, label: '相同分片复用', items: run.reused_part_items ?? 0, bytes: run.reused_part_bytes ?? 0 },
+            { key: 'resumed' as const, label: '断点续传复用', items: run.resumed_items ?? 0, bytes: run.resumed_bytes ?? 0 },
+            { key: 'saved_bytes' as const, label: '可验证避免传输量（不含忽略）', items: 0,
+              bytes: (run.unchanged_bytes || 0) + (run.cas_reused_bytes || 0) +
+                (run.reused_part_bytes || 0) + (run.resumed_bytes || 0) },
+          ]
+        : []),
       { key: 'skipped', label: '跳过', items: run.skipped_items },
       ...(run.sync_mode === 'mirror' || (run.deleted_items ?? 0) > 0
         ? [{ key: 'deleted' as const, label: '移入回收站', items: run.deleted_items ?? 0 }]

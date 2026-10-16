@@ -76,6 +76,7 @@ type SourceRunFailure struct {
 	Path         string    `json:"path"`
 	Size         int64     `json:"size"`
 	Error        string    `json:"error"`
+	Category     string    `json:"category"`
 	FailedAt     time.Time `json:"failed_at"`
 }
 
@@ -90,6 +91,7 @@ type SyncRun struct {
 	Mode                   string     `json:"mode"`
 	Trigger                string     `json:"trigger"`
 	Status                 string     `json:"status"`
+	TelemetryVersion       int        `json:"telemetry_version"`
 	CheckpointBefore       string     `json:"checkpoint_before,omitempty"`
 	CheckpointAfter        string     `json:"checkpoint_after,omitempty"`
 	ScannedItems           int64      `json:"scanned_items"`
@@ -116,6 +118,15 @@ type SyncRun struct {
 	SyncedBytes            int64      `json:"synced_bytes"`
 	CreatedItems           int64      `json:"created_items"`
 	UpdatedItems           int64      `json:"updated_items"`
+	CompletedMovedItems    int64      `json:"completed_moved_items"`
+	CASReusedItems         int64      `json:"cas_reused_items"`
+	CASReusedBytes         int64      `json:"cas_reused_bytes"`
+	ReusedPartItems        int64      `json:"reused_part_items"`
+	ReusedPartBytes        int64      `json:"reused_part_bytes"`
+	ResumedItems           int64      `json:"resumed_items"`
+	ResumedBytes           int64      `json:"resumed_bytes"`
+	UnprocessedItems       *int64     `json:"unprocessed_items,omitempty"`
+	FailureCategories      string     `json:"failure_categories,omitempty"`
 	SkippedItems           int64      `json:"skipped_items"`
 	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
@@ -517,6 +528,9 @@ type SourceCommit struct {
 	RemoteRevision   string     `json:"remote_revision,omitempty"`
 	Transferred      bool       `json:"transferred,omitempty"`
 	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+	CASReused        bool       `json:"cas_reused,omitempty"`
+	ReusedPartBytes  int64      `json:"reused_part_bytes,omitempty"`
+	ResumedBytes     int64      `json:"resumed_bytes,omitempty"`
 }
 
 func (c *Client) BeginSourceRun(ctx context.Context, sourceID uint64, runID, trigger string) (SyncRun, error) {
@@ -577,5 +591,37 @@ func (c *Client) HeartbeatSourceRun(ctx context.Context, sourceID uint64, runID 
 func (c *Client) FinishSourceRun(ctx context.Context, sourceID uint64, runID string, input FinishSourceRunInput) (SyncRun, error) {
 	var out SyncRun
 	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/sources/%d/runs/%s/finish", sourceID, url.PathEscape(runID)), input, &out)
+	return out, err
+}
+
+// SourceRunSkip is a retained immutable observation for one run, not the
+// current SourceItem state. Snapshots are retained for up to 30 days.
+type SourceRunSkip struct {
+	ID         uint64    `json:"id"`
+	ExternalID string    `json:"external_id"`
+	Kind       string    `json:"kind"`
+	Path       string    `json:"path"`
+	Size       int64     `json:"size"`
+	Reason     string    `json:"reason"`
+	ObservedAt time.Time `json:"observed_at"`
+}
+
+func (c *Client) SourceRunSkips(ctx context.Context, id uint64, runID string, limit, offset int, reason string) ([]SourceRunSkip, error) {
+	var out []SourceRunSkip
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if offset > 0 {
+		values.Set("offset", strconv.Itoa(offset))
+	}
+	if reason != "" {
+		values.Set("reason", reason)
+	}
+	path := fmt.Sprintf("/api/v1/sources/%d/runs/%s/skips", id, url.PathEscape(runID))
+	if query := values.Encode(); query != "" {
+		path += "?" + query
+	}
+	err := c.json(ctx, http.MethodGet, path, nil, &out)
 	return out, err
 }

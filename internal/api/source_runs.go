@@ -67,6 +67,9 @@ type sourceCommitDTO struct {
 	RemoteRevision   string     `json:"remote_revision,omitempty"`
 	Transferred      bool       `json:"transferred,omitempty"`
 	TransferredBytes int64      `json:"transferred_bytes,omitempty"`
+	CASReused        bool       `json:"cas_reused,omitempty"`
+	ReusedPartBytes  int64      `json:"reused_part_bytes,omitempty"`
+	ResumedBytes     int64      `json:"resumed_bytes,omitempty"`
 }
 
 type commitSourceRunRequest struct {
@@ -284,6 +287,7 @@ func (s *Server) beginSourceRun(c *gin.Context) {
 			ID: runID, SourceID: source.ID, RunNumber: maxRunNumber + 1, SourceRevision: source.Revision,
 			SyncMode: source.SyncMode, TargetNodeID: &targetID, IgnoreRules: source.IgnoreRules,
 			Mode: source.RunMode, Trigger: req.Trigger, Status: meta.SyncRunStatusRunning,
+			TelemetryVersion: 1,
 			CheckpointBefore: source.Checkpoint, StartedAt: now,
 		}
 		if err := tx.Create(&out).Error; err != nil {
@@ -401,6 +405,7 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 		}
 
 		plans = make([]sourcePlanDTO, 0, len(observations))
+		skipSnapshots := make([]meta.SourceRunSkip, 0)
 		resolvedItemIDs := make(map[uint64]string)
 		for _, observation := range observations {
 			item := observation.item
@@ -455,6 +460,13 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 			if err := persistObservedSourceItem(tx, sourceID, runID, now, current, exists, plan, nodeRevision); err != nil {
 				return err
 			}
+			if plan.Action == sourcepkg.ActionIgnore || plan.Action == sourcepkg.ActionUnchanged {
+				skipSnapshots = append(skipSnapshots, meta.SourceRunSkip{
+					RunID: runID, SourceID: sourceID, ExternalID: item.ExternalID,
+					Kind: item.Kind, Path: item.Path, Size: item.Size,
+					Reason: string(plan.Action), ObservedAt: now,
+				})
+			}
 			if !exists && plan.Action != sourcepkg.ActionIgnore {
 				if err := identityIndex.registerCreated(tx, sourceID, item.ExternalID, observation.aliases, now); err != nil {
 					return err
@@ -470,6 +482,13 @@ func (s *Server) observeSourceRun(c *gin.Context) {
 				}
 			}
 			plans = append(plans, dto)
+		}
+		if len(skipSnapshots) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "run_id"}, {Name: "external_id"}}, DoNothing: true,
+			}).CreateInBatches(&skipSnapshots, sourceObservationBatchLimit).Error; err != nil {
+				return err
+			}
 		}
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Update("updated_at", now).Error
 	})
@@ -514,7 +533,11 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			return
 		}
 		if raw.NodeID == 0 || raw.NodeRevision == 0 || raw.TransferredBytes < 0 ||
-			(!raw.Transferred && raw.TransferredBytes != 0) {
+			(!raw.Transferred && raw.TransferredBytes != 0) ||
+			raw.ReusedPartBytes < 0 || raw.ResumedBytes < 0 ||
+			raw.ReusedPartBytes > raw.Size || raw.ResumedBytes > raw.Size ||
+			raw.ReusedPartBytes > raw.Size-raw.ResumedBytes ||
+			(raw.CASReused && (raw.Transferred || raw.ReusedPartBytes != 0 || raw.ResumedBytes != 0)) {
 			fail(c, http.StatusBadRequest, "invalid source execution result")
 			return
 		}
@@ -526,7 +549,8 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
 		}
-		if item.Kind == meta.SourceItemKindDirectory && raw.Transferred {
+		if item.Kind == meta.SourceItemKindDirectory &&
+			(raw.Transferred || raw.CASReused || raw.ReusedPartBytes != 0 || raw.ResumedBytes != 0) {
 			fail(c, http.StatusBadRequest, "directories cannot report transferred bytes")
 			return
 		}
@@ -578,6 +602,7 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		}
 
 		var created, updated, processedTransferItems, processedTransferBytes, transferredItems, transferredBytes int64
+		var completedMoved, casReusedItems, casReusedBytes, reusedPartItems, reusedPartBytes, resumedItems, resumedBytes int64
 		var syncedFileItems, syncedDirectoryItems, syncedBytes int64
 		for _, commit := range commits {
 			item := commit.item
@@ -672,6 +697,21 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 			} else {
 				updated++
 			}
+			if action == sourcepkg.ActionMove || action == sourcepkg.ActionMoveUpdate {
+				completedMoved++
+			}
+			if raw.CASReused {
+				casReusedItems++
+				casReusedBytes += item.Size
+			}
+			if raw.ReusedPartBytes > 0 {
+				reusedPartItems++
+				reusedPartBytes += raw.ReusedPartBytes
+			}
+			if raw.ResumedBytes > 0 {
+				resumedItems++
+				resumedBytes += raw.ResumedBytes
+			}
 			switch item.Kind {
 			case meta.SourceItemKindFile:
 				syncedFileItems++
@@ -692,6 +732,13 @@ func (s *Server) commitSourceRun(c *gin.Context) {
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
 			"created_items":            gorm.Expr("created_items + ?", created),
 			"updated_items":            gorm.Expr("updated_items + ?", updated),
+			"completed_moved_items":   gorm.Expr("completed_moved_items + ?", completedMoved),
+			"cas_reused_items":        gorm.Expr("cas_reused_items + ?", casReusedItems),
+			"cas_reused_bytes":        gorm.Expr("cas_reused_bytes + ?", casReusedBytes),
+			"reused_part_items":       gorm.Expr("reused_part_items + ?", reusedPartItems),
+			"reused_part_bytes":       gorm.Expr("reused_part_bytes + ?", reusedPartBytes),
+			"resumed_items":           gorm.Expr("resumed_items + ?", resumedItems),
+			"resumed_bytes":           gorm.Expr("resumed_bytes + ?", resumedBytes),
 			"processed_transfer_items": gorm.Expr("processed_transfer_items + ?", processedTransferItems),
 			"processed_transfer_bytes": gorm.Expr("processed_transfer_bytes + ?", processedTransferBytes),
 			"synced_file_items":        gorm.Expr("synced_file_items + ?", syncedFileItems),
@@ -793,7 +840,7 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 			history := meta.SourceRunFailure{
 				RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
 				ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
-				Error: failure.Error, FailedAt: now,
+				Error: failure.Error, Category: sourcepkg.FailureCategory(failure.Error), FailedAt: now,
 			}
 			if err := tx.Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
@@ -816,7 +863,12 @@ func (s *Server) failSourceRunItems(c *gin.Context) {
 		if err := tx.Model(&meta.SourceRunFailure{}).Where("run_id = ?", run.ID).Count(&failureCount).Error; err != nil {
 			return err
 		}
+		categories, err := sourceRunFailureCategoryCountsTx(tx, runID)
+		if err != nil {
+			return err
+		}
 		return tx.Model(&meta.SyncRun{}).Where("id = ?", run.ID).Updates(map[string]any{
+			"failure_categories":  categories,
 			"failed_items":          gorm.Expr("GREATEST(failed_items, ?)", failureCount),
 			"active_transfer_path":  "",
 			"active_transfer_bytes": 0,
@@ -1177,7 +1229,7 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 				history := meta.SourceRunFailure{
 					RunID: runID, SourceID: sourceID, SourceItemID: item.ID,
 					ExternalID: item.ExternalID, Kind: item.Kind, Path: item.Path, Size: item.Size,
-					Error: errorText, FailedAt: now,
+					Error: errorText, Category: sourcepkg.FailureCategory(errorText), FailedAt: now,
 				}
 				if err := tx.Clauses(clause.OnConflict{
 					Columns:   []clause.Column{{Name: "run_id"}, {Name: "source_item_id"}},
@@ -1219,6 +1271,23 @@ func (s *Server) finishSourceRun(c *gin.Context) {
 		}
 
 		summary.ApplyToSyncRun(&run)
+		categoryCounts, err := sourceRunFailureCategoryCountsTx(tx, runID)
+		if err != nil {
+			return err
+		}
+		run.FailureCategories = categoryCounts
+		if run.Mode == meta.SourceRunModeSync && status != meta.SyncRunStatusCompleted {
+			var pending int64
+			if err := tx.Model(&meta.SourceItem{}).Where(
+				"source_id = ? AND last_seen_run_id = ? AND state = ?",
+				sourceID, runID, meta.SourceItemStatePending,
+			).Where("id NOT IN (?)", tx.Model(&meta.SourceRunFailure{}).
+				Select("source_item_id").Where("run_id = ?", runID)).
+				Count(&pending).Error; err != nil {
+				return err
+			}
+			run.UnprocessedItems = &pending
+		}
 		run.DeletedItems = deletedItems
 		finished := now
 		run.Status = status

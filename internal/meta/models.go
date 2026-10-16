@@ -320,6 +320,7 @@ type UploadSession struct {
 	ExpectedMD5        string `gorm:"size:32;index"`
 	ResumeKey          string `gorm:"size:128;index"`
 	Status             string `gorm:"size:16;not null;index"`
+	CASReused          bool   `gorm:"not null;default:false"`
 	ReservedBytes      int64  `gorm:"not null;default:0"`
 	QuotaReservedBytes int64  `gorm:"not null;default:0"`
 	ResultNodeID       *uint64

@@ -448,7 +448,12 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   assert.equal(detail.startedAt, '2026-09-26T18:00:00Z')
   assert.equal(detail.finishedAt, '2026-09-26T18:05:00Z')
   assert.equal(detail.durationLabel, '5 分')
-  assert.equal(detail.successItems, 99)
+  assert.equal(detail.successItems, 5)
+  assert.equal(detail.scannedItems, 100)
+  assert.equal(detail.unchangedItems, 90)
+  assert.equal(detail.ignoredItems, 1)
+  assert.equal(detail.unprocessedItems, undefined)
+  assert.deepEqual(detail.failureCategoryCounts, {})
   assert.equal(detail.failedItems, 1)
   assert.deepEqual(detail.metrics.map((metric) => metric.key), [
     'scanned',
@@ -467,6 +472,40 @@ test('shared run detail view defines one metric order for Web and Desktop', () =
   ])
   assert.deepEqual(detail.metrics[0], { key: 'scanned', label: '扫描', items: 100, bytes: 1000 })
   assert.deepEqual(detail.metrics[12], { key: 'failed', label: '失败', items: 1 })
+})
+
+test('sync telemetry distinguishes scanned, confirmed commits and exact provenance', () => {
+  const baseline = {
+    id: 'run', source_id: 4, source_revision: 1, mode: 'sync', trigger: 'scheduled',
+    status: 'cancelled', started_at: '2026-10-16T04:00:00Z',
+    finished_at: '2026-10-16T04:17:58Z', telemetry_version: 1,
+    scanned_items: 7100, failed_items: 5, created_items: 8, updated_items: 4,
+    ignored_items: 20, unchanged_items: 7000, unprocessed_items: 63,
+    moved_items: 3, completed_moved_items: 2, transferred_items: 4, transferred_bytes: 100,
+    cas_reused_items: 2, cas_reused_bytes: 256, reused_part_items: 1,
+    reused_part_bytes: 64, resumed_items: 1, resumed_bytes: 48, unchanged_bytes: 8192,
+    failure_categories: '{"network":2,"permission":1,"rate_limit":2}',
+  }
+  const view = shared.externalSourceRunDetailView(baseline)
+  assert.equal(view.successItems, 12)
+  assert.equal(view.scannedItems, 7100)
+  assert.equal(view.unprocessedItems, 63)
+  assert.equal(view.failedItems, 5)
+  assert.deepEqual(view.failureCategoryCounts, { network: 2, permission: 1, rate_limit: 2 })
+  assert.equal(view.metrics.find((m) => m.key === 'completed_moved').items, 2)
+  assert.equal(view.metrics.find((m) => m.key === 'cas_reused').bytes, 256)
+  assert.equal(view.metrics.find((m) => m.key === 'saved_bytes').bytes, 8560)
+  const old = shared.externalSourceRunDetailView({
+    ...baseline, telemetry_version: 0, unprocessed_items: undefined,
+    failure_categories: undefined,
+  })
+  assert.equal(old.successItems, 12)
+  assert.equal(old.unprocessedItems, undefined)
+  assert.equal(old.metrics.some((m) => m.key === 'cas_reused'), false)
+  assert.deepEqual(old.failureCategoryCounts, {})
+  assert.deepEqual(shared.externalSourceRunDetailView({
+    ...baseline, failure_categories: '{"network":-4,"future":100,"permission":1.5}',
+  }).failureCategoryCounts, {})
 })
 
 test('shared Synology DSM guide binds the exact Source and keeps secrets out of scheduled task', () => {

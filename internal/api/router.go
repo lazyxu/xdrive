@@ -381,6 +381,7 @@ func (s *Server) Router() *gin.Engine {
 	authed.POST("/sources/:id/runs", s.requireLocalSourceExecutor(), s.beginSourceRun)
 	authed.GET("/sources/:id/runs/:runID", s.getSourceRun)
 	authed.GET("/sources/:id/runs/:runID/failures", s.listSourceRunFailures)
+	authed.GET("/sources/:id/runs/:runID/skips", s.listSourceRunSkips)
 	authed.POST("/sources/:id/runs/:runID/observe", s.requireLocalSourceExecutor(), s.observeSourceRun)
 	authed.POST("/sources/:id/runs/:runID/commit", s.requireLocalSourceExecutor(), s.commitSourceRun)
 	authed.POST("/sources/:id/runs/:runID/failures", s.requireLocalSourceExecutor(), s.failSourceRunItems)

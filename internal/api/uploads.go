@@ -99,6 +99,7 @@ type uploadSessionDTO struct {
 	ExpiresAt          time.Time       `json:"expires_at"`
 	Received           []uploadPartDTO `json:"received_chunks"`
 	Result             *nodeDTO        `json:"result,omitempty"`
+	CASReused          bool            `json:"cas_reused,omitempty"`
 }
 
 func (s *Server) preflightUploadConflict(c *gin.Context) {
@@ -1134,6 +1135,7 @@ func (s *Server) writeUploadSession(c *gin.Context, session meta.UploadSession, 
 		SHA256: session.SHA256, MD5: session.ExpectedMD5,
 		ResumeKey: session.ResumeKey, ExpectedRevision: session.ExpectedRevision,
 		Status: session.Status, QuotaReservedBytes: session.QuotaReservedBytes, ExpiresAt: session.ExpiresAt,
+		CASReused: session.CASReused && session.Status == meta.UploadStatusFinalized,
 		Received: make([]uploadPartDTO, 0, len(parts)),
 	}
 	for _, part := range parts {

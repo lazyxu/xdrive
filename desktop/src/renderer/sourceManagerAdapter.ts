@@ -19,6 +19,8 @@ function desktopSourceManagerPort(localFolderSupported: boolean): XDriveSourceMa
     sourceRuns: (sourceID, limit, offset) => agent.getSourceRuns(sourceID, limit, offset),
     sourceRunFailures: (sourceID, runID, limit, offset) =>
       agent.getSourceRunFailures(sourceID, runID, limit, offset),
+    sourceRunSkips: (sourceID, runID, limit, offset, reason) =>
+      agent.getSourceRunSkips(sourceID, runID, limit, offset, reason),
     cancelSourceRun: (sourceID, runID) => agent.cancelSourceRun(sourceID, runID),
     sourceItems: (sourceID, state, limit, offset) =>
       agent.getSourceItems(sourceID, state, limit, offset),

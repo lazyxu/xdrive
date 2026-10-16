@@ -28,7 +28,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceItemAlias{}, &meta.SourceRunSkip{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -36,7 +36,7 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -170,6 +170,25 @@ func TestSourceScanProtocolIsIdempotentAndMissingSafe(t *testing.T) {
 	if ignoredNewCount != 0 {
 		t.Fatalf("first-seen ignored item was persisted: %d", ignoredNewCount)
 	}
+	// Retried observations cannot duplicate one run's immutable path/reason.
+	skipPath := fmt.Sprintf("/api/v1/sources/%d/runs/%s/skips", source.ID, runID)
+	skipRes := request(t, router, http.MethodGet, skipPath+"?limit=20", token, nil, http.StatusOK)
+	var skips []sourceRunSkipDTO
+	if err := json.Unmarshal(skipRes.Body.Bytes(), &skips); err != nil {
+		t.Fatal(err)
+	}
+	if len(skips) != 2 {
+		t.Fatalf("retry duplicated immutable skip snapshots: %+v", skips)
+	}
+	byReason := map[string]string{}
+	for _, skip := range skips {
+		byReason[skip.Reason] = skip.Path
+	}
+	if byReason["ignore"] != "@eaDir/thumb.jpg" || byReason["unchanged"] != "same.jpg" {
+		t.Fatalf("run-scoped skipped paths/reasons changed: %+v", skips)
+	}
+	request(t, router, http.MethodGet, skipPath+"?reason=unknown", token, nil, http.StatusBadRequest)
+
 
 	finishBody := `{
 		"status":"completed",
@@ -351,7 +370,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
+		&meta.SourceItemAlias{}, &meta.SourceRunSkip{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{}, &meta.AuditEvent{}, &meta.Share{},
 		&meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{}, &meta.FileVersion{}, &meta.File{},
 		&meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -359,7 +378,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +555,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
 		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
-		run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		run.TransferredItems != 1 || run.TransferredBytes != 10 || run.CompletedMovedItems != 1 {
 		t.Fatalf("unexpected execution counters: %+v", run)
 	}
 
@@ -547,7 +566,7 @@ func TestSourceExecutionCommitIsIdempotentAndRevisionAware(t *testing.T) {
 	}
 	if run.UpdatedItems != 1 || run.ProcessedTransferItems != 1 || run.ProcessedTransferBytes != 10 ||
 		run.SyncedFileItems != 1 || run.SyncedDirectoryItems != 0 || run.SyncedBytes != 10 ||
-		run.TransferredItems != 1 || run.TransferredBytes != 10 {
+		run.TransferredItems != 1 || run.TransferredBytes != 10 || run.CompletedMovedItems != 1 {
 		t.Fatalf("idempotent commit changed counters: %+v", run)
 	}
 

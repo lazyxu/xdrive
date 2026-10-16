@@ -35,11 +35,19 @@ export function XDriveSourceRunSummary({
           {' · ' + detail.durationLabel}
         </Typography>
       </Box>
-      <Stack direction="row" spacing={1}>
-        <Typography variant="caption">成功 {detail.successItems.toLocaleString('zh-CN')}</Typography>
+      <Stack direction="row" gap={1.25} alignItems="center" flexWrap="wrap" sx={{ minWidth: 0 }}>
+        <Typography variant="caption">扫描 {detail.scannedItems.toLocaleString('zh-CN')}</Typography>
+        <Typography variant="caption">已同步 {detail.successItems.toLocaleString('zh-CN')}</Typography>
+        <Typography variant="caption" color="text.secondary">未变化 {detail.unchangedItems.toLocaleString('zh-CN')}</Typography>
+        <Typography variant="caption" color="text.secondary">已忽略 {detail.ignoredItems.toLocaleString('zh-CN')}</Typography>
         <Typography variant="caption" color={detail.failedItems > 0 ? 'error' : 'text.secondary'}>
           失败 {detail.failedItems.toLocaleString('zh-CN')}
         </Typography>
+        {detail.unprocessedItems !== undefined ? (
+          <Typography variant="caption" color={detail.unprocessedItems > 0 ? 'warning.main' : 'text.secondary'}>
+            已发现未处理 {detail.unprocessedItems.toLocaleString('zh-CN')}
+          </Typography>
+        ) : null}
       </Stack>
     </Stack>
   )

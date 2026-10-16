@@ -401,3 +401,8 @@ incremental transfer
 ```
 
 不要使用 `mtime > last_sync_time`、indexed time、pagination cursor、MD5 或 size/path 组合作为伪 change cursor。
+
+
+## 同步运行历史结果分层（2026-10-16）
+
+运行的规划/完成、未变化/忽略、失败/取消、可信CAS/分片/续传字节及不可变逐文件快照的完整权限/去重契约见[同步运行历史统计](sync-run-outcome-history.md)。**扫描成功不是完成同步**；即使源扫描到100k项，未提交并非成功，不得把 `scanned_items-failed_items` 当已同步。只在确认操作执行和幂等提交后计完成计数。

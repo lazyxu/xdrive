@@ -17,6 +17,7 @@ import { XDriveSourceDetailsDialog } from './SourceManagerDetailsDialog'
 import type {
   XDriveSourceCollectionItemPage,
   XDriveSourceRunFailurePage,
+  XDriveSourceRunSkipPage,
 } from './SourceManagerDetailsDialog'
 import { XDriveSynologyDsmGuideDialog as SynologyDsmGuideDialog } from './SynologyDsmGuideDialog'
 import {
@@ -46,6 +47,7 @@ import type {
   ExternalSourceRow,
   ExternalSourceRun,
   ExternalSourceRunFailure,
+  ExternalSourceRunSkip,
   SynologyPhotoSpace,
   SupportedExternalSourceKind,
   UpdateExternalSourceInput,
@@ -59,6 +61,7 @@ export interface XDriveSourceManagerAdapter {
   triggerSource(sourceID: number): Promise<ExternalSource>
   sourceRuns(sourceID: number, limit?: number, offset?: number): Promise<ExternalSourceRun[]>
   sourceRunFailures(sourceID: number, runID: string, limit?: number, offset?: number): Promise<ExternalSourceRunFailure[]>
+  sourceRunSkips?(sourceID: number, runID: string, limit?: number, offset?: number, reason?: string): Promise<ExternalSourceRunSkip[]>
   cancelSourceRun(sourceID: number, runID: string): Promise<ExternalSourceRun>
   sourceItems(sourceID: number, state?: string, limit?: number, offset?: number): Promise<ExternalSourceItem[]>
   sourceCollections(sourceID: number, state?: string): Promise<ExternalSourceCollection[]>
@@ -107,6 +110,7 @@ function sourceErrorDetail(error: unknown) {
 
 const SOURCE_HISTORY_PAGE_SIZE = 20
 const SOURCE_RUN_FAILURE_PAGE_SIZE = 20
+const SOURCE_RUN_SKIP_PAGE_SIZE = 20
 const SOURCE_COLLECTION_ITEM_PAGE_SIZE = 50
 const SOURCE_RUNNING_POLL_MS = 2000
 const SOURCE_REQUESTED_POLL_MS = 5000
@@ -201,6 +205,7 @@ export function XDriveSourceManager({
   const [historyHasNext, setHistoryHasNext] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [runFailurePages, setRunFailurePages] = useState<Record<string, XDriveSourceRunFailurePage>>({})
+  const [runSkipPages, setRunSkipPages] = useState<Record<string, XDriveSourceRunSkipPage>>({})
   const [collections, setCollections] = useState<ExternalSourceCollection[]>([])
   const [collectionsLoading, setCollectionsLoading] = useState(false)
   const [collectionItemPages, setCollectionItemPages] = useState<Record<number, XDriveSourceCollectionItemPage>>({})
@@ -309,6 +314,47 @@ export function XDriveSourceManager({
       }))
     } catch (error) {
       setRunFailurePages((current) => ({
+        ...current,
+        [runID]: {
+          items: current[runID]?.items ?? [],
+          page: current[runID]?.page ?? nextPage,
+          hasNext: current[runID]?.hasNext ?? false,
+          loading: false,
+          loaded: current[runID]?.loaded ?? false,
+        },
+      }))
+      onError(error)
+    }
+  }, [adapter, onError])
+
+  const loadRunSkips = useCallback(async (sourceID: number, runID: string, page = 1) => {
+    if (!adapter.sourceRunSkips) return
+    const nextPage = Math.max(1, Math.trunc(page))
+    setRunSkipPages((current) => ({
+      ...current,
+      [runID]: {
+        items: current[runID]?.items ?? [],
+        page: current[runID]?.page ?? nextPage,
+        hasNext: current[runID]?.hasNext ?? false,
+        loading: true,
+        loaded: current[runID]?.loaded ?? false,
+      },
+    }))
+    try {
+      const offset = (nextPage - 1) * SOURCE_RUN_SKIP_PAGE_SIZE
+      const records = await adapter.sourceRunSkips(sourceID, runID, SOURCE_RUN_SKIP_PAGE_SIZE + 1, offset)
+      setRunSkipPages((current) => ({
+        ...current,
+        [runID]: {
+          items: records.slice(0, SOURCE_RUN_SKIP_PAGE_SIZE),
+          page: nextPage,
+          hasNext: records.length > SOURCE_RUN_SKIP_PAGE_SIZE,
+          loading: false,
+          loaded: true,
+        },
+      }))
+    } catch (error) {
+      setRunSkipPages((current) => ({
         ...current,
         [runID]: {
           items: current[runID]?.items ?? [],
@@ -1148,6 +1194,7 @@ export function XDriveSourceManager({
     setHistoryPage(1)
     setHistoryHasNext(false)
     setRunFailurePages({})
+    setRunSkipPages({})
     setCollections([])
     setCollectionItemPages({})
     setFailedItemsLoading(true)
@@ -1182,6 +1229,7 @@ export function XDriveSourceManager({
     setHistoryPage(1)
     setHistoryHasNext(false)
     setRunFailurePages({})
+    setRunSkipPages({})
     setCollections([])
     setCollectionsLoading(false)
     setCollectionItemPages({})
@@ -1230,6 +1278,8 @@ export function XDriveSourceManager({
         historyPageSize={SOURCE_HISTORY_PAGE_SIZE}
         runFailurePages={runFailurePages}
         runFailurePageSize={SOURCE_RUN_FAILURE_PAGE_SIZE}
+        runSkipPages={runSkipPages}
+        runSkipPageSize={SOURCE_RUN_SKIP_PAGE_SIZE}
         failedItems={failedItems}
         failedItemsLoading={failedItemsLoading}
         triggeringSourceID={triggeringSourceID}
@@ -1238,6 +1288,7 @@ export function XDriveSourceManager({
         onLoadCollectionItems={loadCollectionItems}
         onLoadRunHistory={loadRunHistory}
         onLoadRunFailures={loadRunFailures}
+        onLoadRunSkips={adapter.sourceRunSkips ? loadRunSkips : undefined}
         onCancelRun={cancelRun}
         onCopyRunID={copyRunID}
         onOpenFailedItems={() => setFailedItemsOpen(true)}

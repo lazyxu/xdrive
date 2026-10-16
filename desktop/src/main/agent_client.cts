@@ -517,6 +517,16 @@ export type AgentUpdateSourceInput = {
   ignore_rules?: string
 }
 
+export type AgentSourceRunSkip = {
+  id: number
+  external_id: string
+  kind: string
+  path: string
+  size: number
+  reason: 'ignore' | 'unchanged'
+  observed_at: string
+}
+
 export type AgentSourceRunFailure = {
   id: number
   source_item_id: number
@@ -526,6 +536,7 @@ export type AgentSourceRunFailure = {
   size: number
   error: string
   failed_at: string
+  category?: string
 }
 
 export type AgentSourceRun = {
@@ -536,6 +547,7 @@ export type AgentSourceRun = {
   mode: 'scan' | 'sync'
   trigger: string
   status: 'running' | 'completed' | 'partial' | 'failed' | 'cancelled'
+  telemetry_version?: number
   scanned_items: number
   scanned_bytes: number
   scanned_file_items: number
@@ -3228,6 +3240,17 @@ export class AgentIPCClient {
       offset: String(offset),
     })
     return this.request<AgentSourceRun[]>('GET', `/v1/sources/runs?${query.toString()}`)
+  }
+
+  sourceRunSkips(sourceID: number, runID: string, limit = 20, offset = 0, reason = '') {
+    const query = new URLSearchParams({
+      source_id: String(sourceID),
+      run_id: runID,
+      limit: String(limit),
+      offset: String(offset),
+    })
+    if (reason === 'ignore' || reason === 'unchanged') query.set('reason', reason)
+    return this.request<AgentSourceRunSkip[]>('GET', `/v1/sources/runs/skips?${query.toString()}`)
   }
 
   sourceRunFailures(sourceID: number, runID: string, limit = 20, offset = 0) {

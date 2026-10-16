@@ -28,7 +28,7 @@ func TestSourceIdentityAliasPromotionWorksForGenericFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Migrator().DropTable(
-		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{},
+		&meta.SourceItemAlias{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{}, &meta.SyncRun{}, &meta.SourceItem{}, &meta.Source{},
 		&meta.AuditEvent{}, &meta.Share{}, &meta.UploadPart{}, &meta.UploadSession{}, &meta.ContentBlob{},
 		&meta.FileVersion{}, &meta.File{}, &meta.Node{}, &meta.RefreshToken{}, &meta.User{},
 	); err != nil {
@@ -36,7 +36,7 @@ func TestSourceIdentityAliasPromotionWorksForGenericFiles(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{}, &meta.File{}, &meta.AuditEvent{},
-		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.Source{}, &meta.SourceItem{}, &meta.SourceItemAlias{}, &meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

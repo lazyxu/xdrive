@@ -128,6 +128,7 @@ type SyncRun struct {
 	Mode                   string     `gorm:"size:16;not null;default:sync;index"`
 	Trigger                string     `gorm:"size:16;not null;index"`
 	Status                 string     `gorm:"size:16;not null;default:running;index"`
+	TelemetryVersion       int        `gorm:"not null;default:0"`
 	CheckpointBefore       string     `gorm:"type:text"`
 	CheckpointAfter        string     `gorm:"type:text"`
 	ScannedItems           int64      `gorm:"not null;default:0"`
@@ -154,6 +155,15 @@ type SyncRun struct {
 	SyncedBytes            int64      `gorm:"not null;default:0"`
 	CreatedItems           int64      `gorm:"not null;default:0"`
 	UpdatedItems           int64      `gorm:"not null;default:0"`
+	CompletedMovedItems    int64      `gorm:"not null;default:0"`
+	CASReusedItems         int64      `gorm:"not null;default:0"`
+	CASReusedBytes         int64      `gorm:"not null;default:0"`
+	ReusedPartItems        int64      `gorm:"not null;default:0"`
+	ReusedPartBytes        int64      `gorm:"not null;default:0"`
+	ResumedItems           int64      `gorm:"not null;default:0"`
+	ResumedBytes           int64      `gorm:"not null;default:0"`
+	UnprocessedItems       *int64     `gorm:"default:null"`
+	FailureCategories      string     `gorm:"type:text"`
 	SkippedItems           int64      `gorm:"not null;default:0"`
 	DeletedItems           int64      `gorm:"not null;default:0"`
 	TransferredItems       int64      `gorm:"not null;default:0"`
@@ -187,6 +197,7 @@ type SourceRunFailure struct {
 	Path         string    `gorm:"size:2048"`
 	Size         int64     `gorm:"not null;default:0"`
 	Error        string    `gorm:"type:text;not null"`
+	Category     string    `gorm:"size:24;not null;default:other;index"`
 	FailedAt     time.Time `gorm:"not null;index"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -281,3 +292,21 @@ func SyncRunTerminal(status string) bool {
 		return false
 	}
 }
+
+// SourceRunSkip captures immutable path/reason at observation time. Unlike
+// SourceItem it remains correct after subsequent synchronization runs.
+type SourceRunSkip struct {
+	ID         uint64    `gorm:"primaryKey"`
+	RunID      string    `gorm:"size:36;not null;index;uniqueIndex:idx_xd_run_skip_identity"`
+	SourceID   uint64    `gorm:"not null;index"`
+	ExternalID string    `gorm:"size:512;not null;uniqueIndex:idx_xd_run_skip_identity"`
+	Kind       string    `gorm:"size:16;not null"`
+	Path       string    `gorm:"size:2048;not null"`
+	Size       int64     `gorm:"not null;default:0"`
+	Reason     string    `gorm:"size:16;not null;index"`
+	ObservedAt time.Time `gorm:"not null;index"`
+
+	Run SyncRun `gorm:"foreignKey:RunID;references:ID;constraint:OnUpdate:CASCADE,OnDelete:CASCADE;"`
+}
+
+func (SourceRunSkip) TableName() string { return "xd_source_run_skips" }

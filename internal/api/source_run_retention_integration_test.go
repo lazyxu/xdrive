@@ -45,7 +45,7 @@ func TestSourceRunFailureRetentionKeepsRunSummaries(t *testing.T) {
 	}
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.Node{}, &meta.Source{}, &meta.SourceItem{},
-		&meta.SyncRun{}, &meta.SourceRunFailure{},
+		&meta.SyncRun{}, &meta.SourceRunFailure{}, &meta.SourceRunSkip{},
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -58,6 +58,7 @@ type syncRunDTO struct {
 	Mode                   string     `json:"mode"`
 	Trigger                string     `json:"trigger"`
 	Status                 string     `json:"status"`
+	TelemetryVersion       int        `json:"telemetry_version"`
 	CheckpointBefore       string     `json:"checkpoint_before,omitempty"`
 	CheckpointAfter        string     `json:"checkpoint_after,omitempty"`
 	ScannedItems           int64      `json:"scanned_items"`
@@ -87,6 +88,15 @@ type syncRunDTO struct {
 	SkippedItems           int64      `json:"skipped_items"`
 	DeletedItems           int64      `json:"deleted_items"`
 	TransferredItems       int64      `json:"transferred_items"`
+	CompletedMovedItems    int64      `json:"completed_moved_items"`
+	CASReusedItems         int64      `json:"cas_reused_items"`
+	CASReusedBytes         int64      `json:"cas_reused_bytes"`
+	ReusedPartItems        int64      `json:"reused_part_items"`
+	ReusedPartBytes        int64      `json:"reused_part_bytes"`
+	ResumedItems           int64      `json:"resumed_items"`
+	ResumedBytes           int64      `json:"resumed_bytes"`
+	UnprocessedItems       *int64     `json:"unprocessed_items,omitempty"`
+	FailureCategories      string     `json:"failure_categories,omitempty"`
 	TransferredBytes       int64      `json:"transferred_bytes"`
 	FailedItems            int64      `json:"failed_items"`
 	ActiveTransferPath     string     `json:"active_transfer_path,omitempty"`
@@ -157,6 +167,7 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		ID: run.ID, SourceID: run.SourceID, RunNumber: run.RunNumber, SourceRevision: run.SourceRevision,
 		SyncMode: run.SyncMode, TargetNodeID: run.TargetNodeID, IgnoreRules: run.IgnoreRules,
 		Mode: run.Mode, Trigger: run.Trigger, Status: run.Status,
+		TelemetryVersion: run.TelemetryVersion,
 		CheckpointBefore: run.CheckpointBefore, CheckpointAfter: run.CheckpointAfter,
 		ScannedItems: run.ScannedItems, ScannedBytes: run.ScannedBytes,
 		ScannedFileItems: run.ScannedFileItems, ScannedDirectoryItems: run.ScannedDirectoryItems,
@@ -170,6 +181,10 @@ func toSyncRunDTO(run meta.SyncRun) syncRunDTO {
 		CreatedItems: run.CreatedItems, UpdatedItems: run.UpdatedItems, SkippedItems: run.SkippedItems,
 		DeletedItems:     run.DeletedItems,
 		TransferredItems: run.TransferredItems, TransferredBytes: run.TransferredBytes,
+		CompletedMovedItems: run.CompletedMovedItems, CASReusedItems: run.CASReusedItems, CASReusedBytes: run.CASReusedBytes,
+		ReusedPartItems: run.ReusedPartItems, ReusedPartBytes: run.ReusedPartBytes,
+		ResumedItems: run.ResumedItems, ResumedBytes: run.ResumedBytes,
+		UnprocessedItems: run.UnprocessedItems, FailureCategories: run.FailureCategories,
 		FailedItems:        run.FailedItems,
 		ActiveTransferPath: run.ActiveTransferPath, ActiveTransferBytes: run.ActiveTransferBytes,
 		ActiveTransferTotal: run.ActiveTransferTotal, CancelRequestedAt: run.CancelRequestedAt,

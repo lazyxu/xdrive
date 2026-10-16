@@ -574,6 +574,7 @@ const agent = Object.freeze({
   getDeviceBackupRuns: (sourceID: number, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-device-backup-runs', sourceID, limit, offset),
   getSourceRuns: (sourceID: number, limit = 1, offset = 0) => ipcRenderer.invoke('agent:get-source-runs', sourceID, limit, offset),
   getSourceRunFailures: (sourceID: number, runID: string, limit = 20, offset = 0) => ipcRenderer.invoke('agent:get-source-run-failures', sourceID, runID, limit, offset),
+  getSourceRunSkips: (sourceID: number, runID: string, limit = 20, offset = 0, reason = '') => ipcRenderer.invoke('agent:get-source-run-skips', sourceID, runID, limit, offset, reason),
   cancelSourceRun: (sourceID: number, runID: string) => ipcRenderer.invoke('agent:cancel-source-run', sourceID, runID),
   getSourceItems: (sourceID: number, state = 'error', limit = 1000, offset = 0) => ipcRenderer.invoke('agent:get-source-items', sourceID, state, limit, offset),
   getSourceCollections: (sourceID: number, state = '') => ipcRenderer.invoke('agent:get-source-collections', sourceID, state),
