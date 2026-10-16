@@ -1,0 +1,128 @@
+name: CAS-A03-d2 Real 4GiB Full CAS vs Offline Fixed 8MiB Blocks
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a03-d2-real-4gib-offline-ab:
+    if: github.head_ref == 'perf/cas-a03-d2-offline-fixed-block-ab-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify opt-in benchmark source and unchanged production Local.Put
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/storage/cas_a03_offline_chunk_poc_linux_test.go)"
+          mkdir -p desktop/cas-a03-d2-real-4gib-bin
+          go test -mod=readonly -c -o desktop/cas-a03-d2-real-4gib-bin/storage.test ./internal/storage
+          df -h .
+      - name: Verify immutable n3 raw evidence archive SHA and exact source
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a03-d2-offline-block-ab/ci-run-38875620877.tar.gz
+          printf '%s  %s\n' '9a55362cd66ea725cd49ce79de1dcc3f81b1f654210bac3b0e28c68fd1cc4772' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib, json, pathlib, statistics, sys, tarfile
+          expected = {f'sample-{i}.{suffix}' for i in (1, 2, 3) for suffix in ('json', 'log', 'resources.txt')}
+          expected |= {'summary.json', 'source.txt'}
+          with tarfile.open(sys.argv[1], 'r:gz') as tf:
+              members = tf.getmembers()
+              assert set(m.name for m in members) == expected and len(members) == 11
+              data = {m.name: tf.extractfile(m).read() for m in members}
+          src = data['source.txt'].decode()
+          assert 'EXACT_SOURCE_HEAD=f3086920d226f7cb600650b7fee33770b6ad0f44' in src
+          for path in ('internal/storage/cas_a03_offline_chunk_poc_linux_test.go',
+                       'internal/storage/cas_a03_real_4gib_version_performance_linux_test.go',
+                       'internal/storage/local.go'):
+              digest = hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f'{digest}  {path}' in src, ('source_changed_after_raw_n3', path)
+          rows = [json.loads(data[f'sample-{i}.json']) for i in (1, 2, 3)]
+          s = json.loads(data['summary.json'])
+          assert s['passed'] and s['n'] == 3 and not s['production_changed']
+          for i, row in enumerate(rows, 1):
+              assert row['sample'] == i and row['passed'] and row['source_bytes'] == 4294967296
+              assert row['patched_bytes'] == 1048576
+              orig, cand = row['baseline_local_put'], row['candidate_offline_fixed_8mib']
+              assert cand['unique_blocks'] == 513 and cand['shared_blocks'] == 511
+              assert orig['after_delete_all_bytes'] == cand['after_delete_all_bytes'] == 0
+              assert cand['changed_additional_physical_bytes'] == 8425472
+              assert orig['changed_additional_physical_bytes'] == 4294971392
+          assert statistics.median(x['baseline_local_put']['changed_put_ms'] for x in rows) == s['current_changed_put_ms_p50']
+          assert statistics.median(x['candidate_offline_fixed_8mib']['changed_put_ms'] for x in rows) == s['prototype_changed_put_ms_p50']
+          print('ARCHIVED_CAS_A03_D2_ORIGINAL_N3_VERIFIED', len(members), s['n'])
+          PY
+      - name: Measure 3 independent actual 4GiB A/B originals, physical chunk reuse, Range and restore
+        run: |
+          set -euo pipefail
+          out=desktop/cas-a03-d2-real-4gib-results
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$out/source.txt"
+          sha256sum internal/storage/cas_a03_offline_chunk_poc_linux_test.go internal/storage/cas_a03_real_4gib_version_performance_linux_test.go internal/storage/local.go >> "$out/source.txt"
+          for sample in 1 2 3; do
+            export XD_CAS_A03_SAMPLE="$sample"
+            export XD_CAS_A03_D2_OFFLINE_CHUNK_PERF=1
+            /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              desktop/cas-a03-d2-real-4gib-bin/storage.test \
+              -test.run '^TestCASA03OfflinePhysicalFixedChunksVersusLocal4GiBSmallEdit$' -test.count=1 -test.timeout=45m -test.v \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1]); rows=[]
+          sha_pairs={
+            1:('e7614122807f071d35b2dd3d5f6734d7aecc4391992c95c1a99f3999d016a490','243bcd42aaa712f244b2bb1f16710395ce9adb3c019e66adb8066698262174c4'),
+            2:('9e9043ddc306a54340ae49e865a2cc82c891f2b38fc0e9d0a2b8317a5cddaa8e','1b8b2d6f370838f57f87153b3e3cd79d34e051d89a8e03c2affef3aac3e08a2c'),
+            3:('531ae87f9529980dabb754cc3f91a6a044c4d9ca5fe1ced35c44603e43b9b171','7705f6bc4aa46f529e302e6cf2cdf904da17c5ea8d750bc2b594a2f5aceb4b78')
+          }
+          for i in (1,2,3):
+              matches=re.findall(r'CAS_A03_D2_OFFLINE_REAL_4GIB (\{[^\n]+\})',(root/f'sample-{i}.log').read_text())
+              assert len(matches)==1,(i,'exactly one unmodified real JSON per independent process')
+              row=json.loads(matches[0]); (root/f'sample-{i}.json').write_text(json.dumps(row,indent=2)+'\n')
+              assert row['sample']==i and row['passed'] and (row['hash_a'],row['hash_b'])==sha_pairs[i]
+              assert row['source_bytes']==4294967296 and row['patched_bytes']==1048576
+              original=row['baseline_local_put'];candidate=row['candidate_offline_fixed_8mib']
+              assert original['both_physical_bytes']>=8589934592 and original['changed_additional_physical_bytes']>=4294967296
+              assert original['kernel_write_bytes']>=8589934592
+              assert candidate['unique_blocks']==513 and candidate['shared_blocks']==511
+              assert candidate['first_physical_bytes']>=4294967296 and 8388608<candidate['changed_additional_physical_bytes']<=10485760
+              assert candidate['both_physical_bytes']*10<=original['both_physical_bytes']*6
+              assert candidate['kernel_write_bytes']*10<=original['kernel_write_bytes']*6
+              assert original['range_queries']==40 and candidate['range_queries']==40
+              assert original['verify_both_sha_ms']>0 and candidate['verify_both_sha_ms']>0
+              assert candidate['b_materialize_and_verify_ms']>0
+              assert original['after_delete_all_bytes']==0 and candidate['after_delete_all_bytes']==0
+              assert row['process_max_rss_kib']<=524288
+              assert row['actual_additional_physical_bytes_saved']>0
+              rows.append(row)
+          assert len({row['hash_a'] for row in rows})==3
+          median=lambda phase,key:statistics.median(row[phase][key] for row in rows)
+          summary={'workload_id':'CAS-A03/S001-d2/offline-fixed-8MiB-vs-production-LocalPut','n':3,
+                   'current_full_file_changed_additional_bytes_p50':median('baseline_local_put','changed_additional_physical_bytes'),
+                   'prototype_changed_additional_bytes_p50':median('candidate_offline_fixed_8mib','changed_additional_physical_bytes'),
+                   'current_kernel_write_bytes_p50':median('baseline_local_put','kernel_write_bytes'),
+                   'prototype_kernel_write_bytes_p50':median('candidate_offline_fixed_8mib','kernel_write_bytes'),
+                   'current_changed_put_ms_p50':median('baseline_local_put','changed_put_ms'),
+                   'prototype_changed_put_ms_p50':median('candidate_offline_fixed_8mib','changed_put_ms'),
+                   'range_ms_current_p50':median('baseline_local_put','range_64kib_ms'),
+                   'range_ms_prototype_p50':median('candidate_offline_fixed_8mib','range_64kib_ms'),
+                   'max_rss_kib':max(row['process_max_rss_kib'] for row in rows),
+                   'passed':True,'production_changed':False,
+                   'scope':'Full-file Local.Put baseline vs offline in-memory-manifest fixed 8MiB hash-block fsync files, both real physical SHA-valid 4GiB versions; neither online CDC nor actual desktop/web/PWA/SQL/FileVersion/GC'}
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('CAS_A03_D2_REAL_4GIB_N3',json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a03-d2-real-4gib-offline-fixed-block-ab-n3
+          path: desktop/cas-a03-d2-real-4gib-results/
+          if-no-files-found: warn
+          retention-days: 14

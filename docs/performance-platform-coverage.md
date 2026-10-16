@@ -192,3 +192,16 @@ Linux原生Go `storage.Local.Put` 仅为**共享Server存储层基准**，不是
 
 
 **CAS-A03共享Server存储层真实 n3 基线（2026-10-16）：** [专项CI #38870252470](https://github.com/lazyxu/xdrive/actions/runs/38870252470) 首次源准确SUCCESS，3组物理各2×4GiB SHA原片、只改中间1MiB，新版本实体增加4,294,971,392B、第二版Put P50 22.594151s、KernelWrite(两版本) 8,589,934,592B、RestoreSHA全8GiB通过，资源预算通过。永久原始数据[CAS-A03证据](performance-evidence/cas-a03-real-4gib-local-versions/README.md)。这是**后端 Local CAS 单层结果**，上表的 Native Desktop/Wide Web/Mobile Web/Desktop installed PWA/Android installed PWA/iOS installed PWA 仍分别 **Not measured**，不以本原版Go值填六端客户端版本同步或传输。须独立测试身份/上传/范围读/后台与任务取消。
+
+
+## CAS-A03/S001-d2：固定8MiB离线真实块A/B，严格六端未实测边界（2026-10-16）
+
+| 单独负载 | Native Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A03-d2 · 4GiB高熵A/B只有1MiB修改，生产Local.Put vs **独立离线块PoC**，物理/Range/恢复/GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+此阶段只有共享 Server Linux storage/离线候选真字节压测（[规范](cas-version-performance.md)），不包含六平台的UI版本历史、上传/下载/后台恢复、视频seek或客户端真正发送网络请求，任何Server单层结果不能填客户端列。Web/Mobile Web/PWA及Desktop端的100k Gallery/FileExplorer、HTTP流取消、真实大文件传输保持原独立已Accepted/Not measured 状态。
+
+## 2026-10-16 · CAS-A03-d2服务器离线分块A/B（六端结果不冒充）
+
+真实[专项CI #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)同Runner三独立高熵4GiB+1MiB变更A/B，原生产完整CAS vs离线固定8MiB块，B额外物理4,294,971,392B vs8,425,472B；两版本持久占用8,589,942,784B vs4,303,429,632B，内核写盘8,589,934,592B vs4,303,429,632B；B Put P50 22,404.654 vs3,394.406ms、额外完整B物化26,370.862ms。真实原始11机读文件、SHA/GC/Range/CPU/RSS详见[CAS-d2归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)和[中央台账](performance-test-registry.md)。只算Server Linux Local storage/离线单账号PoC，**native Desktop / wide Web / Mobile Web / desktop installed PWA / Android installed PWA / iOS installed PWA 六列继续全部 Not measured**。先验收准确归档新HEAD CI再提交合入；生产AFTER=N/A。
