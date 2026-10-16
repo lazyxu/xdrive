@@ -1,4 +1,4 @@
-import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage } from '../../ui/shared/src'
+import type { XDriveDeviceBackupOverview, XDriveDeviceBackupRunPage, XDriveDeviceBackupFolderPage } from '../../ui/shared/src'
 import type { XDriveBaiduMapAdminConfig, XDriveBaiduMapAdminUpdate, XDriveBaiduMapAKReveal, XDriveBaiduMapVerification, XDriveBaiduMapProviderInfo, XDriveBaiduStaticMapRequest } from '../../ui/shared/src'
 import type { XDriveServiceDependenciesSnapshot, XDriveSourceWorkerConfig, XDriveSourceWorkerUpdate, XDriveSourceWorkerRevisionPage, XDriveSourceWorkerRollbackInput, XDriveGeoNamesConfig, XDriveGeoNamesReloadResult, XDriveGeoNamesUpdate, XDriveGeoNamesRevisionPage, XDriveGeoNamesRollbackInput, XDrivePhotoAutoConfig, XDrivePhotoAutoUpdate, XDrivePhotoAutoRevisionPage, XDrivePhotoAutoRollbackInput } from '../../ui/shared/src'
 import type {
@@ -2118,6 +2118,14 @@ export class XDriveApi {
     const params = new URLSearchParams({ limit: String(limit) })
     if (afterDeviceID) params.set('after_device_id', afterDeviceID)
     return this.request<XDriveDeviceBackupOverview>(`/api/v1/device-backups?${params.toString()}`)
+  }
+
+  // Only the redacted owner-scoped projection; shared MUI pagination is a
+  // separate phase so older Server/Agent versions cannot claim complete data.
+  deviceBackupFoldersPage(deviceID: string, limit = 100, afterSourceID = 0) {
+    const params = new URLSearchParams({ device_id: deviceID, limit: String(limit) })
+    if (afterSourceID > 0) params.set('after_source_id', String(afterSourceID))
+    return this.request<XDriveDeviceBackupFolderPage>(`/api/v1/device-backups/folders?${params.toString()}`)
   }
 
   deviceBackupRunSummaries(sourceID: number, limit = 20, offset = 0) {

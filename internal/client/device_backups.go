@@ -67,6 +67,13 @@ type DeviceBackupRunPage struct {
 	HasMore bool              `json:"has_more"`
 }
 
+// Always limited to one authorized owner's device and Source identities.
+type DeviceBackupFolderPage struct {
+	Folders           []DeviceBackupFolder `json:"folders"`
+	HasMore           bool                 `json:"has_more"`
+	NextAfterSourceID uint64               `json:"next_after_source_id"`
+}
+
 // Both requests inherit the currently authenticated owner's server session.
 // Remote Desktop never receives the generic Source or local binding DTO.
 func (c *Client) DeviceBackupOverview(ctx context.Context) (DeviceBackupOverview, error) {
@@ -84,6 +91,21 @@ func (c *Client) DeviceBackupOverviewPage(ctx context.Context, limit int, afterD
 		query.Set("after_device_id", afterDeviceID)
 	}
 	err := c.json(ctx, http.MethodGet, "/api/v1/device-backups?"+query.Encode(), nil, &out)
+	return out, err
+}
+
+// DeviceBackupFoldersPage reads one enrolled device's bounded, owner-redacted
+// folder projection. The server independently validates JWT owner and cursor.
+func (c *Client) DeviceBackupFoldersPage(ctx context.Context, deviceID string, limit int, afterSourceID uint64) (DeviceBackupFolderPage, error) {
+	var out DeviceBackupFolderPage
+	query := url.Values{
+		"device_id": {deviceID},
+		"limit":     {strconv.Itoa(limit)},
+	}
+	if afterSourceID != 0 {
+		query.Set("after_source_id", strconv.FormatUint(afterSourceID, 10))
+	}
+	err := c.json(ctx, http.MethodGet, "/api/v1/device-backups/folders?"+query.Encode(), nil, &out)
 	return out, err
 }
 
