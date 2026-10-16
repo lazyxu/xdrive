@@ -15,7 +15,7 @@ for (const argument of process.argv.slice(2)) {
   options[match[1]] = match[2];
 }
 if (!options['output-dir']) throw new Error('Supply --output-dir=/path for JSON and screenshots.');
-if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav', 'gallery-ios27-media-type-nav', 'gallery-ios27-person-index-nav', 'gallery-ios27-place-index-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav, or gallery-ios27-media-type-nav, or gallery-ios27-person-index-nav, or gallery-ios27-place-index-nav.');
+if (options.scenario && !['smoke', 'all', 'inherited-columns', 'fullscreen', 'search-return', 'files-operations', 'files-organization', 'files-touch-drag', 'mobile-panels', 'gallery-selection', 'gallery-ios27-chrome', 'files-ios27-chrome', 'gallery-ios27-viewer', 'gallery-ios27-album-nav', 'gallery-ios27-memory-nav', 'gallery-ios27-pet-nav', 'gallery-ios27-person-nav', 'gallery-ios27-sync-folder-nav', 'gallery-ios27-sync-folder-child-nav', 'gallery-ios27-place-nav', 'gallery-ios27-trash-nav', 'gallery-ios27-cleanup-nav', 'gallery-ios27-burst-review-nav', 'gallery-ios27-memory-index-nav', 'gallery-ios27-pet-index-nav', 'gallery-ios27-sort-nav', 'gallery-ios27-media-type-nav', 'gallery-ios27-person-index-nav', 'gallery-ios27-place-index-nav', 'gallery-ios27-refresh-nav'].includes(options.scenario)) throw new Error('Use --scenario=smoke, all, inherited-columns, fullscreen, search-return, files-operations, files-organization, files-touch-drag, mobile-panels, gallery-selection, gallery-ios27-chrome, files-ios27-chrome, gallery-ios27-viewer, or gallery-ios27-album-nav, or gallery-ios27-memory-nav, or gallery-ios27-pet-nav, or gallery-ios27-person-nav, or gallery-ios27-sync-folder-nav, or gallery-ios27-sync-folder-child-nav, or gallery-ios27-place-nav, or gallery-ios27-trash-nav, or gallery-ios27-cleanup-nav, or gallery-ios27-burst-review-nav, or gallery-ios27-memory-index-nav, or gallery-ios27-pet-index-nav, or gallery-ios27-sort-nav, or gallery-ios27-media-type-nav, or gallery-ios27-person-index-nav, or gallery-ios27-place-index-nav, or gallery-ios27-refresh-nav.');
 const sourceRoot = path.resolve(options['source-root'] || path.resolve(__dirname, '../..'));
 const outputDir = path.resolve(options['output-dir']);
 const distRoot = path.join(sourceRoot, 'web/dist');
@@ -47,6 +47,7 @@ const galleryMemoryIndexNavigationScenario = options.scenario === 'gallery-ios27
 const galleryPetNavigationScenario = options.scenario === 'gallery-ios27-pet-nav';
 const galleryPetIndexNavigationScenario = options.scenario === 'gallery-ios27-pet-index-nav';
 const gallerySortNavigationScenario = options.scenario === 'gallery-ios27-sort-nav';
+const galleryRefreshNavigationScenario = options.scenario === 'gallery-ios27-refresh-nav';
 const galleryMediaTypeNavigationScenario = options.scenario === 'gallery-ios27-media-type-nav';
 const galleryPersonNavigationScenario = options.scenario === 'gallery-ios27-person-nav';
 const galleryPersonIndexNavigationScenario = options.scenario === 'gallery-ios27-person-index-nav';
@@ -61,7 +62,7 @@ const galleryViewerEditFixture = { saved: [], reset: [] };
 const galleryViewerCreativeFixture = { attempts: [], accepted: [], polls: [], cancelled: [],
   denyNext: false, generations: new Map() };
 const galleryViewerDeleteFixture = { attempts: [], accepted: [], operations: [], rejectNext: false };
-const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
+const galleryIos27Fixture = galleryIos27ChromeScenario || galleryIos27ViewerScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario;
 const filesIos27ChromeScenario = options.scenario === 'files-ios27-chrome';
 const filesIos27Fixture = {
   accepted: [], operations: [], renameAttempts: [], renameRejectQueue: [],
@@ -964,6 +965,7 @@ let competingFolderGate;
 let galleryAlbumGate;
 let galleryMemoryGate;
 let galleryPetGate;
+let galleryRefreshGate;
 let gallerySortGate;
 let galleryMediaTypeGate;
 let galleryPersonGate;
@@ -2428,6 +2430,107 @@ async function fullscreenAcceptance(role) {
 }
 
 
+
+async function galleryRefreshFirstRangeAcceptance() {
+  // P34 genuine compiled Web: a refresh must not clear an authorized sparse
+  // photo wall while the same owner first counted Range is still pending.
+  activeStage='user-gallery-p34-refresh-first-range-held';
+  await page.setViewportSize({width:390,height:844});
+  await navigateWorkspace('图库','gallery');
+  await page.locator('[data-xdrive-media-tile]').first().waitFor();
+  await page.locator('main').evaluate(el=>{
+    el.scrollTop=Math.min(900,Math.max(0,el.scrollHeight-el.clientHeight));
+  });
+  await settle();
+  await page.evaluate(()=>{
+    window.__p34Main=document.querySelector('main');
+    window.__p34Gallery=document.querySelector('#xdrive-mobile-gallery-main');
+    window.__p34Wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+  });
+  const observe=()=>page.evaluate(()=>{
+    const main=document.querySelector('main');
+    const wall=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    const rect=e=>e?.getBoundingClientRect().toJSON()||null;
+    const first=wall?.querySelector('[data-xdrive-media-tile]');
+    return {
+      sameMain:main===window.__p34Main,
+      sameGallery:document.querySelector('#xdrive-mobile-gallery-main')===window.__p34Gallery,
+      sameWall:wall===window.__p34Wall,
+      mainRect:rect(main),
+      headerRect:rect(document.querySelector('[data-xdrive-mobile-app-header]')),
+      scrollTop:main?.scrollTop??null,
+      rows:wall?.querySelectorAll('[data-xdrive-media-tile]').length??0,
+      firstName:first?.querySelector('.media-name')?.textContent?.trim()||'',
+      loading:!!wall?.textContent?.includes('正在加载图库'),
+      overflow:Math.max(0,document.documentElement.scrollHeight-innerHeight)
+    };
+  });
+  const before=await observe();
+  const stable=v=>v.sameMain&&v.sameGallery&&v.sameWall&&
+    before.scrollTop>=200&&v.scrollTop!==null&&
+    v.rows>0&&v.rows===before.rows&&
+    !!before.firstName&&v.firstName===before.firstName&&!v.loading&&
+    Math.abs(v.scrollTop-before.scrollTop)<=2&&
+    v.mainRect&&before.mainRect&&
+    Math.abs(v.mainRect.y-before.mainRect.y)<=1&&
+    Math.abs(v.mainRect.height-before.mainRect.height)<=1&&
+    v.headerRect&&before.headerRect&&v.headerRect.height===52&&
+    Math.abs(v.headerRect.y-before.headerRect.y)<=1&&
+    Math.abs(v.headerRect.height-before.headerRect.height)<=1&&v.overflow<=1;
+  check('P34 accepted Library photo wall/scroll and fixed 52px header',stable(before),before);
+  let release,notify;
+  const entered=new Promise(resolve=>{notify=resolve;});
+  const wait=new Promise(resolve=>{release=resolve;});
+  galleryRefreshGate={hits:0,notify,wait};
+  // Attach both outcomes before UI interaction: a missed Page/locator cannot
+  // trigger an unhandled detached-browser rejection that hides the REAL cause.
+  const freshResponse=page.waitForResponse(resp=>{
+    const u=new URL(resp.url());
+    return u.pathname==='/api/v1/media/items'&&
+      u.searchParams.get('range')==='true'&&
+      u.searchParams.get('offset')==='0';
+  }).then(async response=>({status:response.status(),payload:await response.json()}),
+    error=>({error:String(error)}));
+  let pending,hits=0;
+  try {
+    await page.locator('[data-xdrive-mobile-gallery-more]').tap();
+    const drawer=page.locator('[data-xdrive-mobile-gallery-more-panel]');
+    await drawer.waitFor();
+    // The More sheet contains both a text button and an aria-label-only
+    // Refresh icon. Target the visible text action, not two role matches.
+    await drawer.getByText('刷新图库',{exact:true}).first().tap({timeout:10000});
+    // Do not require the modal to close before the first owner request is
+    // observed: the pending-state assertion reads the real mounted wall DOM.
+    await Promise.race([entered,new Promise((_,reject)=>setTimeout(()=>
+      reject(new Error('P34 authenticated first refresh Range never requested')),10000))]);
+    await settle();
+    pending=await observe();hits=galleryRefreshGate.hits;
+    check('P34 pending owner refresh keeps accepted wall, logical first photo and scroll',
+      hits>=1&&stable(pending),{before,pending,hits});
+  }finally {
+    galleryRefreshGate=null;release();
+  }
+  const refreshed=await freshResponse;
+  const payload=refreshed.payload;
+  if (refreshed.error) throw new Error('P34 first Range response observation: '+refreshed.error);
+  await page.waitForFunction(()=>{
+    const w=document.querySelector('[data-xdrive-gallery-photo-wall]');
+    return (w?.querySelectorAll('[data-xdrive-media-tile]').length??0)>0&&
+      !w?.textContent?.includes('正在加载图库');
+  });
+  await settle();
+  const committed=await observe();
+  const ownerOk=refreshed.status===200&&payload.total_count===240&&
+    payload.items?.length>0&&payload.items[0]?.node?.name?.startsWith('photo-');
+  check('P34 only successful owner first Range commits refreshed sparse photo wall',
+    hits>=1&&ownerOk&&committed.sameMain&&committed.sameGallery&&
+    committed.sameWall&&committed.rows>0&&!committed.loading&&
+    committed.overflow<=1,{before,pending,committed,hits,ownerOk});
+  result.samples[activeStage]={before,pending,committed,gateHits:hits,
+    ownerOk,compiledProductionWeb:true,physicalIOS:false,physicalAndroid:false,
+    installedPWA:false};
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
 
 async function galleryMediaTypeNavigationAcceptance() {
   // P31: a mounted accepted Media Types index must retain its real card,
@@ -6709,7 +6812,7 @@ async function main() {
     const args = process.env.XDRIVE_BROWSER_ARGS ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined;
     if (args) assert(Array.isArray(args) && args.every((arg) => typeof arg === 'string'), 'XDRIVE_BROWSER_ARGS must be a JSON string array');
     const cases = galleryIos27ViewerScenario ? [{ role: 'user', viewerPointer: 'fine' }, { role: 'user', viewerPointer: 'coarse' }]
-      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
+      : options.scenario === 'smoke' || searchReturnScenario || filesOrganizationScenario || filesTouchDragScenario || mobilePanelsScenario || gallerySelectionScenario || galleryIos27ChromeScenario || galleryAlbumNavigationScenario || galleryMemoryNavigationScenario || galleryMemoryIndexNavigationScenario || galleryPetNavigationScenario || galleryPetIndexNavigationScenario || gallerySortNavigationScenario || galleryRefreshNavigationScenario || galleryMediaTypeNavigationScenario || galleryPersonNavigationScenario || galleryPersonIndexNavigationScenario || gallerySyncFolderNavigationScenario || galleryPlaceNavigationScenario || galleryPlaceIndexNavigationScenario || galleryTrashNavigationScenario || galleryCleanupNavigationScenario || galleryBurstDetailNavigationScenario || filesIos27ChromeScenario ? [{ role: 'user' }]
       : filesOperationsScenario ? [{ role: 'user' }, { role: 'admin' }]
       : options.scenario === 'inherited-columns' ? [{ role: 'user', viewMode: 'columns' }]
         : options.scenario === 'fullscreen' ? [{ role: 'user' }, { role: 'admin' }, { role: 'user', galleryDensity: 96 }, { role: 'user', galleryDensity: 240 }]
@@ -6827,6 +6930,13 @@ async function main() {
             const gate=galleryMediaTypeGate;
             gate.hits+=1;gate.notify();await gate.wait;
           }
+          if (galleryRefreshGate && request.method() === 'GET' &&
+              url.pathname === '/api/v1/media/items' &&
+              url.searchParams.get('range') === 'true' &&
+              url.searchParams.get('offset') === '0') {
+            const gate=galleryRefreshGate;
+            gate.hits+=1;gate.notify();await gate.wait;
+          }
           if (gallerySortGate && request.method() === 'GET' &&
               url.pathname === '/api/v1/media/items' &&
               url.searchParams.get('sort_by') === 'captured' &&
@@ -6919,6 +7029,7 @@ async function main() {
       else if (gallerySelectionScenario) await gallerySelectionAcceptance();
       else if (galleryIos27ChromeScenario) await galleryIos27ChromeAcceptance();
        else if (gallerySortNavigationScenario) await gallerySortFirstRangeAcceptance();
+       else if (galleryRefreshNavigationScenario) await galleryRefreshFirstRangeAcceptance();
         else if (galleryMediaTypeNavigationScenario) await galleryMediaTypeNavigationAcceptance();
        else if (galleryAlbumNavigationScenario) await galleryAlbumNavigationAcceptance();
        else if (galleryMemoryNavigationScenario) await galleryMemoryNavigationAcceptance();

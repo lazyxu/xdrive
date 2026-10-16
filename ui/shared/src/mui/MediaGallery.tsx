@@ -2755,6 +2755,15 @@ export function XDriveMediaGalleryPage({
       void loadCleanup()
       return
     }
+    // A visible, already-authorized compact Library photo wall remains
+    // committed while its replacement owner first Range0 is in flight.
+    // Do not clear 100k-safe sparse tiles, show a transient cold spinner,
+    // or replay scroll anchors merely because the user tapped Refresh.
+    // A true first uncached Library load and wide Web/Desktop retain their
+    // established lifecycle; thumbnail fetches remain independent.
+    const preserveCommittedMobileLibrary = mobileGalleryViewport &&
+      section === 'library' && collectionTargetRef.current?.kind === 'all' &&
+      items.length > 0
     void loadFirstPage(
       currentAlbum,
       query,
@@ -2764,6 +2773,7 @@ export function XDriveMediaGalleryPage({
       currentMemory,
       currentCleanupReview,
       currentPet,
+      preserveCommittedMobileLibrary ? () => {} : undefined,
     )
   }
 
