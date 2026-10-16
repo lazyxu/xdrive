@@ -1514,6 +1514,55 @@ export function XDriveMediaGalleryPage({
     })
   }, [loadFirstPage, onSectionRouteChange])
 
+  // This Mobile Collections index uses a different Server DTO from photo
+  // ranges. Fetch the owner-authorized BurstReview list WITHOUT changing the
+  // visible Collections or resetting its sparse photo/scroll host. Only an
+  // accepted, current first list may atomically commit the Cleanup screen.
+  const openCleanupFromCollections = useCallback(async () => {
+    if (!source.listBurstReviews) {
+      setError('当前客户端不支持图库清理建议')
+      return
+    }
+    const request = ++requestID.current
+    setLoading(true)
+    setError('')
+    try {
+      const nextBursts = await source.listBurstReviews(48, 0)
+      if (request !== requestID.current) return
+      cleanupMoreInFlightRef.current = false
+      setCleanupMoreLoading(null)
+      collectionTargetRef.current = null
+      setCollectionTarget(null)
+      setCurrentAlbum(null)
+      setCurrentSuggestedPerson(null)
+      setCurrentPerson(null)
+      setCurrentPet(null)
+      setCurrentMemory(null)
+      setCurrentCleanupReview(null)
+      setCurrentFolderView(null)
+      syncFolderRequestID.current += 1
+      placesReturnPageRef.current = null
+      placeOpenedFromCollectionsRef.current = false
+      setLastOpenedPlaceID(null)
+      placesExpandedRef.current = false
+      setItems([])
+      setTimelineGroupSets(emptyMediaTimelineGroupSets())
+      virtualCollection.reset(`media-gallery:cleanup:index:${request}`)
+      setBurstReviews(nextBursts)
+      setSection('cleanup')
+      setActiveMediaType('')
+      setDraftFilters(emptyMediaGalleryFilterDraft)
+      setQuery({})
+      setMobileCollectionsOverview(false)
+      onSectionRouteChange?.('cleanup')
+    } catch (loadError) {
+      if (request !== requestID.current) return
+      reportError(loadError)
+    } finally {
+      if (request === requestID.current) setLoading(false)
+    }
+  }, [onSectionRouteChange, reportError, source, virtualCollection.reset])
+
   // Page replacement (not append) bounds the number of live location cards.
   // The photo-wall remains on the existing shared sparse VirtualCollection.
   const changePlacesPage = useCallback(async (nextOffset: number) => {
@@ -2914,9 +2963,15 @@ export function XDriveMediaGalleryPage({
         onAddToAlbum={source.addToAlbum ? addToAlbum : undefined}
         onRemoveFromAlbum={source.removeFromAlbum ? removeFromAlbum : undefined}
         onSectionChange={(next) => {
-          if (next === 'trash' && mobileGalleryViewport && mobileCollectionsOverview) {
-            openTrashFromCollections()
-            return
+          if (mobileGalleryViewport && mobileCollectionsOverview) {
+            if (next === 'trash') {
+              openTrashFromCollections()
+              return
+            }
+            if (next === 'cleanup') {
+              void openCleanupFromCollections()
+              return
+            }
           }
           setMobileCollectionsOverview(false)
           selectSection(next)
@@ -6397,7 +6452,9 @@ export function XDriveMediaGallery({
           onOpenSection={(next) => {
             // Trash is staged by the page controller until its first owner
             // range is authorized. The child must not hide Collections early.
-            if (next !== 'trash') onMobileCollectionsOverviewChange?.(false)
+            if (next !== 'trash' && next !== 'cleanup') {
+              onMobileCollectionsOverviewChange?.(false)
+            }
             onSectionChange?.(next)
           }}
           onOpenAlbum={onOpenAlbum}
