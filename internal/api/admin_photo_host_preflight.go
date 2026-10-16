@@ -41,6 +41,7 @@ type adminPhotoHostPreflightDTO struct {
 	ReplicaMembershipState      string                         `json:"replica_membership_blocker_state"`
 	PrivateIngressAuthState     string                         `json:"private_ingress_auth_blocker_state"`
 	PrivatePolicyObserved       string                         `json:"private_ingress_policy_observation"`
+	TrustMaterialObservation    string                         `json:"trust_material_observation"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
@@ -136,6 +137,11 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		return
 	}
 	report := photoHostPreflight(desired, host, observed, control, supported, s.photoHostLocalQueueClear())
+	// A deployment-owned PUBLIC file can show material integrity only;
+	// never promote this into live model permit, stop or fleet readiness.
+	report.TrustMaterialObservation = photoHostTrustMaterialObservation(
+		s.PhotoHostTrustAnchorPath, s.PhotoHostTrustAnchorSHA256,
+	)
 	// Only a negative persisted-work signal; never proof of fleet drain or stop authorization.
 	report.DurableWorkBlockerState = s.photoHostDurableWorkBlocker(c.Request.Context())
 	// Fresh scheduler presence provides another NEGATIVE signal, never stop permission.
