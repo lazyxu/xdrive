@@ -792,7 +792,7 @@ caddy_container_generation_sample() {
 # Fixed-container HTTP health and independent loopback TLS chain/host proof.
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
-  local dir tmp observed domain generation_before="" generation_after="" instance_generation_state=unverified state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
+  local dir tmp observed domain generation_before="" generation_after="" live_config_before="" live_config_after="" instance_generation_state=unverified state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
   domain="$(env_value XD_DOMAIN)"
   if [[ -n "$domain" ]]; then
     https_configured=true
@@ -824,13 +824,27 @@ caddy_host_refresh() {
       # Read ONLY the fixed container's startup XD_DOMAIN after verified
       # local TLS. This does not prove an active config or applied revision.
       if [[ -n "$tls_domain_sha256" ]]; then
+        # First hash is captured before reading the fixed startup domain.
+        # A second hash after that observation detects a mid-window reload.
+        live_config_before="$(caddy_live_active_config_sha256)"
         runtime_tls_alignment="$(caddy_container_runtime_tls_alignment "$domain")"
-        # Separate read-only probe for the currently loaded in-memory Caddy
-        # JSON; all raw JSON and AliDNS secrets remain inside the container.
-        live_config_sha256="$(caddy_live_active_config_sha256)"
+        # Two in-container digest samples, no raw Caddy JSON or credentials.
+        # Matching samples still cannot exclude an A-B-A reload in between.
+        live_config_after="$(caddy_live_active_config_sha256)"
         generation_after="$(caddy_container_generation_sample)" || generation_after=""
         if [[ -n "$generation_before" && "$generation_before" == "$generation_after" ]]; then
           instance_generation_state=same-instance-local
+          if [[ -n "$live_config_before" && "$live_config_before" == "$live_config_after" ]]; then
+            live_config_sha256="$live_config_after"
+          elif [[ -n "$live_config_before" && -n "$live_config_after" ]]; then
+            # Caddy can reload in place without changing container ID/PID.
+            # Revoke mixed TLS, startup Env and config evidence when two
+            # validated in-memory JSON samples differ during this window.
+            tls_state=unavailable
+            tls_domain_sha256=""
+            runtime_tls_alignment=unverified
+            instance_generation_state=unverified
+          fi
         else
           # A container/process restart (or inability to prove one generation)
           # invalidates all prior positive local TLS and active-config signals.
