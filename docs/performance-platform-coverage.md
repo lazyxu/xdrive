@@ -254,3 +254,13 @@ LP-P001在Linux使用真实100k个独立普通文件、102,400,000B源逻辑字�
 ### CAS-A05 100k不同SHA小对象原版vs离线Pack真实n3（2026-10-16）
 
 [原始源码CI #38923178061](https://github.com/lazyxu/xdrive/actions/runs/38923178061)三组同源Linux物理Local CAS原版vs离线Pack，100k原片P50分配409.60MB vs107.21MB，回收95k后保留5k两者20.48MB vs5.36576MB，均SHA正确、客户端未涉；准确原始11文件[长期归档](performance-evidence/cas-a05-physical-100k-pack/README.md)。这只有**Server LocalStorage物理原型**，六列仍：Native Desktop Electron Not measured、Wide Web Not measured、Mobile Web Not measured、Desktop Installed PWA Not measured、Android Installed PWA Not measured、iOS Installed PWA Not measured；源布局非JPEG/MP4/Live/RAW，未测试真实Push/Pull/用户授权和网络。生产AFTER=N/A。
+
+
+## CAS-A06: 100k 不同物理小Blob的Linux FADV_DONTNEED冷／热随机读取（2026-10-17）
+
+CAS-A05已测100k真实不同1KiB SHA LocalCAS vs离线pack初始空间/热缓存读取；新CAS-A06**独立缓存维度**比较两个物理格式在Linux fadvise(DONTNEED)提示驱逐后的2000次不同物理原片SHA+256B Range、`read_bytes`及请求P95/P99、立即重复同位置Warm、全部CPU/RSS和源SHA同Runner n3。当前该新负载原版/候选均**Not measured (n0)**，产品AFTER=N/A，参见[CAS-A06规范](cas-small-pack-cold-performance.md)及[总登记簿](performance-test-registry.md)。仅Server Linux Local CAS/隔离Pack，Native Desktop Electron=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop installed PWA=Not measured；Android installed PWA=Not measured；iOS installed PWA=Not measured。Linux hint并非真实HDD或Android/iOS设备确认。
+
+
+### CAS-A06 已测Linux Server存储子层cold/warm，六端UI仍未测（2026-10-17）
+
+[原始Go源码真实n3 CI #38932992440](https://github.com/lazyxu/xdrive/actions/runs/38932992440)：100,000 SHA不同1KiB实际实体原片、同源Local CAS vs测试专用Pack，FADV_DONTNEED 2000次cold读原版315.122ms/Pack247.882ms、P95 193/149μs、kernel`read_bytes`P50两者皆8,192,000B，warm总wall61.187/17.015ms，最大RSS38,060KiB。**只算Linux Server本机物理读取，三次成功。** 对照: Native Desktop Electron应用=Not measured、Wide Web应用=Not measured、Mobile Web应用=Not measured、Desktop installed PWA=Not measured、Android installed PWA=Not measured、iOS installed PWA=Not measured。不能将POSIX advisory cold测量冒称真实手机硬件冷读或在线播放/上传取消。完整机读样本存于[CAS-A06证据](performance-evidence/cas-a06-physical-cold-pack/README.md)，准确修订HEAD双CI待验收，生产AFTER=N/A。

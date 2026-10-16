@@ -1,0 +1,20 @@
+{
+  "schema": "xdrive-cas-a06-invalid-harness-v1",
+  "invalid_attempts": [
+    {
+      "head": "0cc9c5ea83396e6670946e93b21c410a1f891526",
+      "ci_run": 38932274121,
+      "valid_n": 0,
+      "reason": "test-only Go file gofmt not clean, no smoke or true 100k runs"
+    },
+    {
+      "head": "ed417dcbd0e7d6eeae758768a2d14051d541d70e",
+      "ci_run": 38932483756,
+      "valid_n": 0,
+      "reason": "test-only compile error int64 multiplied by untyped floating constant, no 1k or 100k samples"
+    }
+  ],
+  "production_changed": false,
+  "classification": "Invalid harness, not product performance regression",
+  "corrected_experiment_head": "c0a0951d577676755f82196ea58ac1da02ac0c52"
+}
