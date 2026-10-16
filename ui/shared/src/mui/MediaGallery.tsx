@@ -2830,6 +2830,37 @@ export function XDriveMediaGalleryPage({
             warmMobileCollectionsPreview()
             setMobileCollectionsOverview(true)
           } else {
+            // A committed compact Album is the visible page until the real
+            // owner Library Range0 is accepted. Selecting a bottom tab is
+            // only navigation intent: do not clear 100k-safe sparse rows or
+            // expose a blank Library while its first request is pending.
+            if (mobileGalleryViewport && section === 'albums' && currentAlbum &&
+                collectionTargetRef.current?.kind === 'album') {
+              const libraryDraft = mediaGallerySectionDraft('library')
+              const libraryQuery = mediaGalleryQueryFromDraft(libraryDraft)
+              void loadFirstPage(null, libraryQuery, null, null, 'default',
+                null, null, null, () => {
+                  placesReturnPageRef.current = null
+                  placeOpenedFromCollectionsRef.current = false
+                  setLastOpenedPlaceID(null)
+                  placePageRequestID.current += 1
+                  setPlacesPagePending(false)
+                  setPlacesPageError('')
+                  syncFolderRequestID.current += 1
+                  setCurrentFolderView(null)
+                  setCurrentPet(null)
+                  setCurrentMemory(null)
+                  setCurrentCleanupReview(null)
+                  placesExpandedRef.current = false
+                  setSection('library')
+                  setActiveMediaType('')
+                  setDraftFilters(libraryDraft)
+                  setQuery(libraryQuery)
+                  setMobileCollectionsOverview(false)
+                  onSectionRouteChange?.('library')
+                })
+              return
+            }
             setMobileCollectionsOverview(false)
             if (section !== 'library') selectSection('library')
           }
