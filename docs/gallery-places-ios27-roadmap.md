@@ -409,3 +409,12 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 承接已合入 #1780，修复原先二指缩放默认以图片中心而非双指焦点缩放的跳动。共享 `media-gallery-baidu-camera.ts` 的 WGS84 Web Mercator 相机计算以手指初始/结束屏幕中点为锚，保持地图照片的大致视觉焦点；两指同向移动可在松手后进行一次有界平移。响应式元素真实边界转换为 480×280 的静态 PNG 逻辑相机，不在每次 PointerMove 调用百度；取消/第三根手指、过大移动、未变更手势、切换地点均不得产生误操作。纯函数测试和实际共享 React 手势测试覆盖 0/0 GPS、经度跨 180°、缩放焦点、平移、旧请求 AbortSignal 与单次 Server 请求。
 
 该近似只能用于已有 Server Baidu Static PNG 相机，**不能**拿来替换百度官方 BD-09 JSAPI4 动态地图、真实 WGS84 逆变换或 iOS27「照片」1:1 像素/手势验收。独立 Server Static AK 和 Browser JSAPI AK 继续只在 Server 加密使用、百度唯一 Provider、52px 全屏 App Frame、Web/Mobile Web/Desktop 同一图库请求/虚拟化/Viewer；动态 JSAPI4 生产发布硬 NO-GO，仍需账户许可、完整经审查子资源、九组真实 browser/upstream HAR 无 AK 泄漏、受信签名、Owner 撤销和配额、Caddy/Electron 隔离及真实 iOS27/Android/Desktop 验收。A3 完成后再进入 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d2d · 避免百度 BD-09 视窗被误当成真实照片 WGS84（2026-10-16）
+
+根据百度官方 JSAPI4 [坐标系说明](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord)和 [Geoconv v2 转换方向](https://lbsyun.baidu.com/docs/webapi?title=geoconv%2Fguide%2Fchangeposition-base)，境内地图默认使用 BD-09；官方支持原始照片 WGS84 → BD-09 标点，却不支持 BD-09/其他坐标系向 GPS 的反向转换。绝不能将 BMap.getBounds 返回值、手算近似逆变换或客户端自行声称的地图坐标直接作为原始 GPS 传入 Server /media/places/viewport，否则地点总数、附近照片与 Viewer 可能错误。
+
+本阶段针对既有 **尚未接入生产** 的共享 JSAPI4 Owner 视窗桥接器增加显式且严格的坐标标记：输入必须为 coordinate_space='photo-wgs84' 且 bounds 只有 west/south/east/north，拒绝原始 BD-09、GCJ02、无标记、额外字段和非法范围，拒绝时不请求 Server、不创建照片 Marker。该标记只是**接口契约防误用**，不构成许可、安全来源或 WGS84 真实性证明。后续真正动态地图推荐在获得百度账户许可且确认衍生坐标保留合法后，以原始 WGS84 照片位置经过官方 WGS84→BD-09 正向转换建立有版本、Owner、隐私、删除/撤销同步的 **BD-09 查询索引**；地图视窗基于 BD-09 查索引，Viewer/Range 仍使用原有 PhotoAsset 身份与原始 GPS，绝不执行 BD-09→GPS。授权未确认前不创建或填充该索引。
+
+A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 运行/资源代理/地图 Cookie 不启用。Web、Mobile Web 和 Desktop 共享 Server 请求、虚拟列表、图库 Viewer，52px 全屏 App Frame 不变；iOS 27「照片」1:1 仍需逐页真机截图、手势、暗/亮主题、横屏和性能验收。真实百度自托管/PWA/Electron 许可、完整 Loader/tiles/JS/WASM/fonts 经审查清单、真实九组 browser/upstream HAR 无 AK 泄漏、签名放行、Owner 撤销/配额、Caddy CSP/Electron 隔离均未完成。A3 真正完成后再依次 A4、B1、B2、B3、C1。

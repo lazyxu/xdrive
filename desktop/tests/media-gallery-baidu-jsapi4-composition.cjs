@@ -33,6 +33,7 @@ const composition = transpile(compositionPath, {
 })
 const compose = composition.xDriveComposeBaiduJSAPI4OwnerViewport
 const bounds = { west: -1, south: -1, east: 1, north: 1 }
+const photoWindow = value => ({ coordinate_space: 'photo-wgs84', bounds: value })
 function page() {
   return {
     items: [{ id: 'place:0:0', name: '原始 GPS', latitude: 0.005,
@@ -86,7 +87,7 @@ test('A3 official native composition binds one Owner viewport and original Galle
   const calls = [], opened = [], outcomes = []
   const inputs = {
     map: f.map, namespace: f.namespace,
-    trustedWGS84Bounds: async () => ({ ...bounds }),
+    trustedWGS84Bounds: async () => photoWindow({ ...bounds }),
     listOwnerViewport: async (b, limit, offset, signal) => {
       calls.push({ b, limit, offset, signal })
       return page()
@@ -127,7 +128,7 @@ test('A3 native pan cancels old Go viewport promptly; stale response cannot rein
   let resolveOld
   const bridge = compose({
     map: f.map, namespace: f.namespace,
-    trustedWGS84Bounds: async () => ({ ...bounds }),
+    trustedWGS84Bounds: async () => photoWindow({ ...bounds }),
     listOwnerViewport: (_b, limit, offset, signal) => {
       calls.push({ limit, offset, signal })
       if (calls.length === 1) return new Promise(resolve => { resolveOld = resolve })
@@ -163,7 +164,7 @@ test('A3 rejects unproven bounds and broken official namespace before Owner quer
   let queries = 0
   const inputs = {
     map: f.map, namespace: f.namespace,
-    trustedWGS84Bounds: async () => ({ ...bounds, coordType: 'bd09' }),
+    trustedWGS84Bounds: async () => ({ coordinate_space: 'bd09', bounds }),
     listOwnerViewport: async () => { queries++; return page() },
     callbacks: { onOpenPlace() {} },
   }
@@ -172,6 +173,13 @@ test('A3 rejects unproven bounds and broken official namespace before Owner quer
   assert.equal(queries, 0)
   assert.equal(f.layers[0].data, null)
   bridge.dispose()
+  const naked = compose({
+    ...inputs, trustedWGS84Bounds: async () => ({ ...bounds }),
+  })
+  assert.equal((await naked.refresh()).kind, 'invalid-bounds',
+    'raw BMap.getBounds coordinates must not be relabeled as GPS')
+  assert.equal(queries, 0, 'invalid coordinate frame cannot request Owner photos')
+  naked.dispose()
   assert.throws(() => compose({ ...inputs, namespace: {} }),
     /baidu_jsapi4_composition_unavailable/)
   assert.throws(() => compose({ ...inputs, callbacks: {} }),

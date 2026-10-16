@@ -242,3 +242,14 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 新增无生产调用方的共享组合入口 xDriveComposeBaiduJSAPI4OwnerViewport。它仅依赖未来经合法许可、受信 Server 放行的原生 Map/Namespace、三端已有 Owner 授权 listPlacesViewport(100,0,AbortSignal)，以及经过独立审查的准确 WGS84 bounds 回调。不得把原生 BD09 getBounds 或来自用户的伪称经纬度当 WGS84；不通过客户端传入 Map/Namespace 对象来决定法律许可、运营者签名或 Server 对资源的授权。
 
 离线 Node 测试使用模拟官方转换、百度 ClusterLayer 和地图事件，证明 bounded 100 点输入、原 Gallery Range/Viewer 导航、移动立即取消旧 Go 查询、失效页面无老标记、释放事件和拒绝伪造坐标类型。模拟成功并非生产完成；没有真实 JSAPI 加载请求、Browser AK、Cookie、Server 路由、JS/WASM/瓦片、地图脚本执行或真实官方 WGS84 反向视窗证明。生产 runtime_enabled=false、已审核子资源数 0、无钉扎签名根、无可用资源代理不变。取得账户对应的百度 self-host/PWA/Electron 合法授权、九场景私有完整 upstream+browser HAR、经人逐项审核的不可编辑 Host/Path/MIME 限额、真实 Server Owner/撤销/配额、Caddy/CSP/Electron 沙箱和 iOS27/Android/Desktop 真机证明之前均不能放行。保留百度唯一 Provider、分别加密仅在 Server 的 Static Server AK / JSAPI Browser AK、52px App Frame、三端统一 Gallery。
+
+
+## A3b3a3d2d · 动态地图坐标合法转换与 Server 查询边界（2026-10-16）
+
+**官方已核实约束**：百度国内 JSAPI4 Map 的原始查询范围通常为 BD-09；[JSAPI 4.0 坐标系](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord)允许用 Convertor.translate(points,1,5) 将 GPS/WGS84 转为 BD-09，而 [Geoconv v2 官方转换文档](https://lbsyun.baidu.com/docs/webapi?title=geoconv%2Fguide%2Fchangeposition-base) 明确不能将任何类型转回 GPS（状态码 4）。因此严禁调用虚构的 5→1 官方转换、手写逆转换算法或原样将 BMap.getBounds BD-09 伪装成 Server 的 WGS84 查询范围。此为真实产品正确性与合规限制，不是优化选项。
+
+既有共享 JSAPI4 Owner bridge 改为接受带 coordinate_space='photo-wgs84' 与精确 bounds 子对象的接口合同，额外字段、BD09、GCJ02、无标签与非法经纬度不进入 Server。只由未来经独立校验的原始 WGS84 viewport 源提供；**一个可以被客户端伪造的字符串标签不是可信变换证据**，测试通过不能触发生产激活。
+
+建议实际动态相册地图采取**正向坐标索引**：合法来源的原始 WGS84 照片与受百度正式授权的 WGS84→BD09 映射，按 Owner/PhotoAsset/Location revision 建立有界索引，BD-09 native viewport 只用于对 BD-09 派生位置做匹配，不反向变换；结果照片仍以原始 Owner 授权媒体 Range + Viewer 打开。必须先取得具体百度商业/自托管/PWA/Electron 授权及是否允许保存衍生坐标的条款或书面确认，再讨论实际存储、更新/删除一致性和高并发索引性能，不能预先假设缓存合法。
+
+本阶段完全不增加新的地图 Route、Caddy 资源反代、Browser AK、生产信任根或持久位置索引，JSAPI4 runtime_enabled=false、child count=0、无可用代理。生产上线仍需完整官方子资源白名单、九格真实私有 Browser/Upstream HAR 无泄漏、运营者签名、Owner/Session/Epoch/跨副本配额与 CSP/Electron/iOS27/Android/Desktop 真机。xDrive 52px 全屏 App Frame、百度唯一 Provider 及三端共享图库不变。

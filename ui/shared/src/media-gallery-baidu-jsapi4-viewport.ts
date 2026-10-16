@@ -31,9 +31,18 @@ export type XDriveBaiduJSAPI4OwnerListViewport = (
   signal: AbortSignal,
 ) => Promise<MediaPlacesViewportPage>
 
+/** This tag is a coordinate-contract assertion, NOT legal permission, cryptographic
+ * provenance, or evidence that BD-09 coordinates were transformed into GPS.
+ * A future reviewed adapter must supply truly original photo WGS84 bounds,
+ * never relabel the native Baidu BD-09 viewport result. */
+export type XDriveBaiduJSAPI4PhotoWGS84Window = {
+  coordinate_space: 'photo-wgs84'
+  bounds: MediaPlacesViewportBounds
+}
+
 export type XDriveBaiduJSAPI4TrustedWGS84Bounds = (
   signal: AbortSignal,
-) => Promise<MediaPlacesViewportBounds>
+) => Promise<XDriveBaiduJSAPI4PhotoWGS84Window>
 
 export interface XDriveBaiduJSAPI4ViewportCallbacks {
   /** Original shared Gallery's onOpenPlace -> Range/VirtualCollection/Viewer. */
@@ -66,9 +75,15 @@ function awaitAbortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T>
 }
 
 /** Validate independently even if the future adapter has TS types. */
-export function xDriveValidJSAPI4WGS84Bounds(value: unknown): value is MediaPlacesViewportBounds {
+export function xDriveValidJSAPI4WGS84Bounds(value: unknown): value is XDriveBaiduJSAPI4PhotoWGS84Window {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  const v = value as Record<string, unknown>
+  const envelope = value as Record<string, unknown>
+  const outer = Object.keys(envelope)
+  if (outer.length !== 2 || !outer.includes('coordinate_space') ||
+      !outer.includes('bounds') || envelope.coordinate_space !== 'photo-wgs84' ||
+      !envelope.bounds || typeof envelope.bounds !== 'object' ||
+      Array.isArray(envelope.bounds)) return false
+  const v = envelope.bounds as Record<string, unknown>
   const fields = Object.keys(v)
   if (fields.length !== 4 ||
       fields.some(key => !['west', 'south', 'east', 'north'].includes(key))) return false
@@ -139,15 +154,16 @@ export class XDriveBaiduJSAPI4OwnerViewportBridge {
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       timer = setTimeout(() => request.abort(), requestTimeoutMs)
-      const bounds = await awaitAbortable(this.trustedWGS84Bounds(request.signal), request.signal)
+      const envelope = await awaitAbortable(this.trustedWGS84Bounds(request.signal), request.signal)
       if (this.disposed || request.signal.aborted || this.generation !== generation) {
         return { kind: 'cancelled' }
       }
-      if (!xDriveValidJSAPI4WGS84Bounds(bounds)) {
+      if (!xDriveValidJSAPI4WGS84Bounds(envelope)) {
         const failed: XDriveBaiduJSAPI4ViewportResult = { kind: 'invalid-bounds' }
         this.deliver(failed, generation)
         return failed
       }
+      const bounds = envelope.bounds
       // Read no more than one 100-cell page: Server supplies exact counts;
       // native ClusterLayer can only display a COMPLETE current viewport.
       const page = await awaitAbortable(

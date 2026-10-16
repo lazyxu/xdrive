@@ -43,6 +43,7 @@ function page(n, total = n) {
   }
 }
 const wgs84 = { west: -5, south: -5, east: 5, north: 5 }
+const photoWindow = bounds => ({ coordinate_space: 'photo-wgs84', bounds })
 function mockRuntime() {
   const listeners = new Map()
   const layerListeners = new Map()
@@ -92,15 +93,26 @@ function mockRuntime() {
 }
 
 test('A3b3a3c validates strict WGS84, dateline and polar bounds without BD09 confusion', () => {
-  assert.equal(validBounds(wgs84), true)
-  assert.equal(validBounds({ west: 170, south: -90, east: -170, north: 90 }), true)
-  assert.equal(validBounds({ west: -180, south: -90, east: 180, north: 90 }), true)
+  assert.equal(validBounds(photoWindow(wgs84)), true)
+  assert.equal(validBounds(photoWindow(
+    { west: 170, south: -90, east: -170, north: 90 })), true)
+  assert.equal(validBounds(photoWindow(
+    { west: -180, south: -90, east: 180, north: 90 })), true)
   for (const value of [
-    null, {}, { ...wgs84, west: NaN }, { ...wgs84, north: Infinity },
-    { ...wgs84, west: 181 }, { ...wgs84, south: -91 },
-    { ...wgs84, west: 0, east: 0 }, { ...wgs84, north: -5 },
-    { ...wgs84, ak: 'bad' }, { ...wgs84, callback: 'bad' },
-    { west: 180, south: -1, east: -180, north: 1 },
+    null, {}, wgs84, { ...wgs84, coordType: 'bd09' },
+    { coordinate_space: 'bd09', bounds: wgs84 },
+    { coordinate_space: 'gcj02', bounds: wgs84 },
+    { ...photoWindow(wgs84), extra: 1 },
+    { ...photoWindow(wgs84), bounds: null },
+    photoWindow({ ...wgs84, west: NaN }),
+    photoWindow({ ...wgs84, north: Infinity }),
+    photoWindow({ ...wgs84, west: 181 }),
+    photoWindow({ ...wgs84, south: -91 }),
+    photoWindow({ ...wgs84, west: 0, east: 0 }),
+    photoWindow({ ...wgs84, north: -5 }),
+    photoWindow({ ...wgs84, ak: 'bad' }),
+    photoWindow({ ...wgs84, callback: 'bad' }),
+    photoWindow({ west: 180, south: -1, east: -180, north: 1 }),
   ]) assert.equal(validBounds(value), false, JSON.stringify(value))
 })
 
@@ -110,7 +122,7 @@ test('A3b3a3c bounded authenticated Owner query feeds native layer and original 
   const bridge = new Bridge(c.runtime, async (bounds, limit, offset, signal) => {
     calls.push({ bounds, limit, offset, signal })
     return page(2)
-  }, async () => ({ ...wgs84 }), {
+  }, async () => photoWindow({ ...wgs84 }), {
     onOpenPlace: place => opened.push(place),
     onResult: result => statuses.push(result),
   })
@@ -148,7 +160,7 @@ test('A3b3a3c future map movestart instantly aborts Server even if source ignore
       return new Promise(resolve => { resolveOld = resolve })
     }
     return page(1)
-  }, async () => ({ ...wgs84 }), {
+  }, async () => photoWindow({ ...wgs84 }), {
     onOpenPlace() {},
     onResult: result => status.push(result.kind),
   })
@@ -175,7 +187,7 @@ test('A3b3a3c rejects malformed bounds without Server fetch or map data', async 
   const c = mockRuntime()
   let calls = 0
   const bridge = new Bridge(c.runtime, async () => { calls++; return page(1) },
-    async () => ({ ...wgs84, east: NaN }), { onOpenPlace() {} })
+    async () => photoWindow({ ...wgs84, east: NaN }), { onOpenPlace() {} })
   assert.equal((await bridge.refresh()).kind, 'invalid-bounds')
   assert.equal(calls, 0)
   assert.equal(c.layer.frame, null)
@@ -185,7 +197,7 @@ test('A3b3a3c rejects malformed bounds without Server fetch or map data', async 
 test('A3b3a3c 100k cells or mismatched total never reaches a fake full cluster', async () => {
   const c = mockRuntime()
   let response = page(2)
-  const bridge = new Bridge(c.runtime, async () => response, async () => wgs84,
+  const bridge = new Bridge(c.runtime, async () => response, async () => photoWindow(wgs84),
     { onOpenPlace() {} })
   assert.equal((await bridge.refresh()).kind, 'rendered')
   response = page(100, 100000)
@@ -204,7 +216,7 @@ test('A3b3a3c bad Server/coordinate adapter and logout dispose fail closed', asy
   const bridge = new Bridge(c.runtime, async () => {
     if (mode === 'reject') throw Error('private Server URL/token not leaked')
     return page(1)
-  }, async () => wgs84, { onOpenPlace() { open++ } })
+  }, async () => photoWindow(wgs84), { onOpenPlace() { open++ } })
   assert.equal((await bridge.refresh()).kind, 'query-unavailable')
   mode = 'ok'
   assert.equal((await bridge.refresh()).kind, 'rendered')
