@@ -133,6 +133,15 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               内部 HTTP：{result.host_ingress_ready ? '健康' : '未确认健康'}；
               既有配置本机 TLS：{result.host_local_tls_verified ? '证书校验通过（非本次修订证明）' : '未确认'}。
             </Typography>
+            <Typography variant="body2"
+              data-xdrive-caddy-desired-domain-local-match
+              color={result.desired_domain_local_match === 'mismatch-local' ? 'error.main' : 'text.secondary'}>
+              期望域名与本机已验证 TLS 域名：{result.desired_domain_local_match === 'matched-local'
+                ? '本机握手的 SNI 与管理员期望域名匹配（不代表目标修订已应用或公网可用）'
+                : result.desired_domain_local_match === 'mismatch-local'
+                  ? '不匹配：当前 HTTPS 证书验证使用的部署域名与期望域名不同；不能认定配置已生效。'
+                  : '尚未核验：缺少新鲜的 TLS 验证域名指纹、旧版 Host Manager，或当前期望不是启用 HTTPS。'}
+            </Typography>
             <Stack spacing={1}>
               {result.checks.map((item) => (
                 <Stack key={item.id} direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>

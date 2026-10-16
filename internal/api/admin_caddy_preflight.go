@@ -17,16 +17,17 @@ type adminCaddyPreflightCheck struct {
 }
 
 type adminCaddyPreflightDTO struct {
-	CheckedAt             time.Time                  `json:"checked_at"`
-	Action                string                     `json:"action"`
-	DesiredRevision       uint64                     `json:"desired_revision"`
-	CredentialRevision    uint64                     `json:"credential_revision"`
-	ConfigurationComplete bool                       `json:"configuration_complete"`
-	HostObserved          bool                       `json:"host_observed"`
-	HostIngressReady      bool                       `json:"host_ingress_ready"`
-	HostLocalTLSVerified  bool                       `json:"host_local_tls_verified"`
-	ApplySupported        bool                       `json:"apply_supported"`
-	Checks                []adminCaddyPreflightCheck `json:"checks"`
+	CheckedAt               time.Time                  `json:"checked_at"`
+	Action                  string                     `json:"action"`
+	DesiredRevision         uint64                     `json:"desired_revision"`
+	CredentialRevision      uint64                     `json:"credential_revision"`
+	ConfigurationComplete   bool                       `json:"configuration_complete"`
+	HostObserved            bool                       `json:"host_observed"`
+	HostIngressReady        bool                       `json:"host_ingress_ready"`
+	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
+	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
+	ApplySupported          bool                       `json:"apply_supported"`
+	Checks                  []adminCaddyPreflightCheck `json:"checks"`
 }
 
 func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
@@ -116,7 +117,8 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		DesiredRevision: desired.Revision, CredentialRevision: credential.Revision,
 		ConfigurationComplete: complete,
 		HostObserved:          observed, HostIngressReady: ingressReady,
-		HostLocalTLSVerified: observed && host.HTTPSConfigured && host.TLSCheckSupported && host.TLSState == "verified",
-		ApplySupported:       false, Checks: checks,
+		HostLocalTLSVerified:    observed && host.HTTPSConfigured && host.TLSCheckSupported && host.TLSState == "verified",
+		DesiredDomainLocalMatch: caddyDesiredDomainLocalMatch(desired, host, observed),
+		ApplySupported:          false, Checks: checks,
 	})
 }

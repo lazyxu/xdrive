@@ -792,6 +792,8 @@ export type AgentAdminCaddyHTTPSPreflight = {
   host_observed: boolean
   host_ingress_ready: boolean
   host_local_tls_verified: boolean
+  // Optional for old Server/Agent: matching local TLS SNI is never revision/apply proof.
+  desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   apply_supported: boolean
   checks: AgentAdminCaddyPreflightCheck[]
 }

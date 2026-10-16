@@ -49,11 +49,16 @@ test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" https_configured)" = true
 test "$(json_bool_value "$status" tls_check_supported)" = true
 test "$(json_value "$status" tls_state)" = verified
+# Only the successful local TLS chain/hostname handshake may attach a
+# lowercased, non-reversible SNI digest. Never write the raw deployment FQDN.
+expected_tls_sni_sha="$(printf '%s' example.invalid | sha256sum | awk '{print $1}')"
+test "$(json_value "$status" tls_verified_domain_sha256)" = "$expected_tls_sni_sha"
 ! grep -q 'example.invalid' "$status"
 # A misleading success string must NEVER override a failed TLS command.
 export XD_TEST_CADDY_TLS_RESULT=false-success
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = failed
+test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 export XD_TEST_CADDY_TLS_RESULT=failed
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = failed
@@ -82,6 +87,7 @@ caddy_host_refresh
 test "$(json_value "$status" state)" = healthy
 test "$(json_bool_value "$status" https_configured)" = false
 test "$(json_value "$status" tls_state)" = disabled
+test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 
 # A non-loopback-only bind cannot be concluded TLS-broken from localhost.
 printf 'XD_DOMAIN=example.invalid\nXD_HTTPS_BIND=192.0.2.23\n' > "$scratch/config/.env"
@@ -99,6 +105,7 @@ test "$(json_value "$status" tls_state)" = invalid-config
 printf 'XD_DOMAIN=example.invalid\nXD_HTTPS_PORT=65536\n' > "$scratch/config/.env"
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = invalid-config
+test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 printf 'XD_DOMAIN=example.invalid\nXD_HTTPS_PORT=8443\n' > "$scratch/config/.env"
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = verified

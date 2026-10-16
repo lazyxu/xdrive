@@ -15,16 +15,17 @@ type AdminCaddyPreflightCheck struct {
 }
 
 type AdminCaddyPreflight struct {
-	CheckedAt             time.Time                  `json:"checked_at"`
-	Action                string                     `json:"action"`
-	DesiredRevision       uint64                     `json:"desired_revision"`
-	CredentialRevision    uint64                     `json:"credential_revision"`
-	ConfigurationComplete bool                       `json:"configuration_complete"`
-	HostObserved          bool                       `json:"host_observed"`
-	HostIngressReady      bool                       `json:"host_ingress_ready"`
-	HostLocalTLSVerified  bool                       `json:"host_local_tls_verified"`
-	ApplySupported        bool                       `json:"apply_supported"`
-	Checks                []AdminCaddyPreflightCheck `json:"checks"`
+	CheckedAt               time.Time                  `json:"checked_at"`
+	Action                  string                     `json:"action"`
+	DesiredRevision         uint64                     `json:"desired_revision"`
+	CredentialRevision      uint64                     `json:"credential_revision"`
+	ConfigurationComplete   bool                       `json:"configuration_complete"`
+	HostObserved            bool                       `json:"host_observed"`
+	HostIngressReady        bool                       `json:"host_ingress_ready"`
+	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
+	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
+	ApplySupported          bool                       `json:"apply_supported"`
+	Checks                  []AdminCaddyPreflightCheck `json:"checks"`
 }
 
 func (c *Client) AdminCaddyHTTPSPreflight(ctx context.Context) (AdminCaddyPreflight, error) {

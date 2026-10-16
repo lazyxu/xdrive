@@ -16,10 +16,11 @@ const (
 )
 
 type caddyHostStatus struct {
-	State             string `json:"state"`
-	HTTPSConfigured   bool   `json:"https_configured"`
-	TLSCheckSupported bool   `json:"tls_check_supported"`
-	TLSState          string `json:"tls_state"`
+	State                   string `json:"state"`
+	HTTPSConfigured         bool   `json:"https_configured"`
+	TLSCheckSupported       bool   `json:"tls_check_supported"`
+	TLSState                string `json:"tls_state"`
+	TLSVerifiedDomainSHA256 string `json:"tls_verified_domain_sha256,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -29,6 +30,21 @@ func validCaddyHostState(state string) bool {
 	default:
 		return false
 	}
+}
+
+// An observed hostname digest is optional for older Host Managers. It is
+// only SHA-256 over the fixed local SNI used for the successful loopback TLS
+// certificate handshake, not an authorized applied admin revision.
+func validCaddyTLSVerifiedDomainDigest(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, char := range value {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 // TLS state records ONLY an authenticated local loopback handshake with trusted
@@ -64,7 +80,9 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 		(!status.TLSCheckSupported && status.TLSState != "") ||
 		(status.TLSState == "verified" && (!status.HTTPSConfigured || status.State != "healthy")) ||
 		(status.TLSCheckSupported && status.HTTPSConfigured && status.TLSState == "disabled") ||
-		(status.TLSCheckSupported && !status.HTTPSConfigured && status.TLSState != "disabled") {
+		(status.TLSCheckSupported && !status.HTTPSConfigured && status.TLSState != "disabled") ||
+		(status.TLSVerifiedDomainSHA256 != "" &&
+			(status.TLSState != "verified" || !validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) {
 		return caddyHostStatus{}, false
 	}
 	return status, true
