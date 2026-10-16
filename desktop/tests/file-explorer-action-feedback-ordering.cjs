@@ -94,6 +94,15 @@ async function mountHarness() {
       status: { server: 'server-a', username: 'account-a' },
       rememberCloudFileOperation: owner.rememberOperation,
       cloudFileOperations: owner.operations,
+      // The App feedback JSX now binds optional task actions. This extracted
+      // existing-ordering test must supply neutral capability/action context;
+      // it still exercises the actual App JSX and refuses unrequested actions.
+      fileOperationUndoSupported: false,
+      fileOperationActions: {
+        busy: false,
+        retryOperation: () => assert.fail('not testing task retry here'),
+        undoOperation: () => assert.fail('not testing task undo here'),
+      },
       XDriveFileExplorerActionFeedback: 'action-feedback',
       setView: () => {},
       // These ordering cases render feedback without opening Task Center. Its
