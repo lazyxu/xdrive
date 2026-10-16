@@ -311,7 +311,10 @@ func cancelBaiduPhotoMapIndexIntent(
 		if err != nil {
 			return denied
 		}
-		if row.Status == baiduMapIndexCancelled {
+		// A completed receipt is terminal. Cancelling old work must not
+		// retroactively erase a successfully committed position; the Owner's
+		// separate consent revocation path purges derived data atomically.
+		if row.Status == baiduMapIndexCancelled || row.Status == baiduMapIndexCompleted {
 			return nil
 		}
 		now, err := baiduMapIndexClockTx(tx)

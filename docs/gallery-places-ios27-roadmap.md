@@ -504,3 +504,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 在 #1870 的独立 Geoconv 配额通过完整 76-job CI 合入后，本阶段加入 **Server-only** 的 `BaiduPhotoMapIndexIntent`（每 PhotoAsset 一条，持久状态 `queued/leased/cancelled`）。严格以数据库读取当前 Owner、PhotoAsset、主 Node 版本、MediaMetadata 更新时间和原始经纬度及有效且未撤销的双方确认授权；任务只保存来源版本、授权修订号、会话版本和 20 秒 PostgreSQL 时钟租约，不复制 GPS、照片路径、AK 或坐标转换结果。并发重复入队幂等，两独立 DB 连接池争抢只允许一个租约；租约失效、取消、撤销、会话变化后均不能继续通过二次验证；最多 3 次领取。真实 GPS (0,0) 合法，绝不以地点网格中心冒充照片原始坐标。
 
 **当前边界：这是持久化、安全领取与撤销前置阶段，不是已上线的后台索引器。** 没有公开 API/自动后台提交、实际 Geoconv 外发、BD-09 派生写入、前端 JSAPI Loader/Proxy/地图 Cookie、第二地图 Provider，也不收取生产配额；用户的既有静态百度地图不受影响。下一项 A3d2m1b2 才将授权需求与可取消 Server Worker 接线，并加入实际许可证/账户限额、索引完成 CAS、派生位置事务与真正出站前再次检查。JSAPI4 依然 `runtime_enabled=false`、人工审批真实子资源数 0；九组原始私有 Browser/Server HAR、固定签名发布根、CSP/Electron/PWA 及 iOS27/Android/Desktop 实机逐项 1:1 视觉手势验收均不可跳过。Web、Mobile Web 和 Desktop 持续共享 Server Range、VirtualCollection、Viewer 和 52px 全屏 App Frame，按 A3→A4→B1→B2→B3→C1 推进。
+
+
+## A3d2m1b2a · 可取消的私有单任务执行及原子完成收据（2026-10-17）
+
+承接 #1877 已合入的 `BaiduPhotoMapIndexIntent`，增加 **Server 内部、显式调用、单张照片** 的 `executeBaiduPhotoMapIndexIntent`。执行前后多次核验当前 Owner/Session/PhotoAsset、主 Node、Ready Media、原始 WGS84 GPS 和未过期未撤销的精确授权修订，并校验真实跨副本 DB 租约；向受信转换器传递最长 8 秒的 Go Context。另一个 Server 取消任务、撤销位置许可、修改源或轮换会话后，250ms 有界轮询使正在等待的转换器收到 `ctx.Done()`；即使伪造的无视取消回调返回成功，最后的 PostgreSQL 事务也必须同时完成真实 BD-09 派生点写入与任务 `completed` CAS，失败时均回滚。过期、取消、来源错误或不合法 BD09 不得生成位置；旧取消不会倒退已经完成的任务。真实 PostgreSQL 双连接池测试仅用合成转换结果，(0,0) 仍是合法原始 GPS。
+
+**本阶段不是已经上线的百度地图索引服务。** 无生产许可放行器、无真正百度上游请求、无 Server AK 注入、无启动时任务扫描、无对外任务 REST、无 JSAPI Loader/Proxy/Cookie，既有静态百度 PNG 无影响。下一步 A3d2m1b2b 需真实百度账户服务条款/额度核验、固定 HTTPS 上游、跨副本配额、认证 Owner 显式入队与取消、完成/失败重试观测和实际可取消 Worker 集成；JSAPI4 自身仍需 9 对私有上游与 Browser HAR、受审查固定子资源白名单及签名、CSP/Electron/PWA 和 iOS27/Android/Desktop 逐项 1:1 真机验收。继续百度唯一 Provider、独立加密 Server/Browser AK、52px 全屏 App Frame、三端统一 Range/VirtualCollection/Viewer，不冒充正式发布。后续严格 A3→A4→B1→B2→B3→C1。
