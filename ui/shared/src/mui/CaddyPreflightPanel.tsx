@@ -142,6 +142,17 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                   ? '不匹配：当前 HTTPS 证书验证使用的部署域名与期望域名不同；不能认定配置已生效。'
                   : '尚未核验：缺少新鲜的 TLS 验证域名指纹、旧版 Host Manager，或当前期望不是启用 HTTPS。'}
             </Typography>
+            <Typography variant="body2"
+              data-xdrive-caddy-ingress-change-risk
+              color={result.ingress_change_risk && result.ingress_change_risk !== 'unverified'
+                ? 'warning.main' : 'text.secondary'}>
+              网关变更防失联提示：{result.ingress_change_risk === 'local-https-removal'
+                ? '当前本机 HTTPS 证书已验证；若将保存的停用意图真正部署，可能移除现有 HTTPS 访问路径。未证明存在备用管理入口。'
+                : result.ingress_change_risk === 'local-domain-switch'
+                  ? '管理员期望域名与既有本机 TLS 域名不同；如果执行切换，可能影响当前访问。未验证 DNS、证书和回滚路径。'
+                  : '无法证明切换安全；缺少可靠的本机风险证据，或目前未观察到以上两类变更风险。'}
+              这是只读风险提示，不是应用许可或公网 HTTPS 生效证明。
+            </Typography>
             <Stack spacing={1}>
               {result.checks.map((item) => (
                 <Stack key={item.id} direction="row" spacing={1} alignItems="flex-start" flexWrap="wrap" useFlexGap>
