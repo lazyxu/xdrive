@@ -63,6 +63,47 @@ func readCurrentNativeFirstDirectory(grant RootGrant, name string) (*InventoryNa
 	return native, nil
 }
 
+// openPinnedCurrentFirstDirectory holds one OS directory handle while the
+// private CURRENT inventory and native identity are checked. This narrows
+// path-substitution races during the read; it is NOT a Server/SQL lease.
+func openPinnedCurrentFirstDirectory(grant RootGrant, name string) (*os.File, error) {
+	path := filepath.Join(grant.Path, name)
+	before, err := os.Lstat(path)
+	if err != nil || before == nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
+		return nil, ErrRootChanged
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, ErrRootChanged
+	}
+	if !currentPinnedFirstDirectoryMatches(grant, name, f) {
+		_ = f.Close()
+		return nil, ErrRootChanged
+	}
+	held, err := f.Stat()
+	if err != nil || !os.SameFile(before, held) {
+		_ = f.Close()
+		return nil, ErrRootChanged
+	}
+	return f, nil
+}
+
+// Require the path to resolve to the SAME opened native directory, not a
+// symlink or a replaced directory. Rechecking after the verified inventory
+// still cannot rule out temporary A-B-A substitutions or changes after return.
+func currentPinnedFirstDirectoryMatches(grant RootGrant, name string, f *os.File) bool {
+	if f == nil {
+		return false
+	}
+	held, err := f.Stat()
+	if err != nil || !held.IsDir() {
+		return false
+	}
+	current, err := os.Lstat(filepath.Join(grant.Path, name))
+	return err == nil && current != nil && current.IsDir() &&
+		current.Mode()&os.ModeSymlink == 0 && os.SameFile(held, current)
+}
+
 // RecheckLocalFirstDirectoryNative observes one direct-child directory ONLY.
 // The owning Agent must independently authenticate current Source/Root/revision
 // against the Server at any future call boundary. This helper verifies its
@@ -112,6 +153,13 @@ func RecheckLocalFirstDirectoryNative(
 	if err != nil {
 		return deny(err)
 	}
+	// Keep one open handle across the complete CURRENT read. Closing the
+	// handle releases this LOCAL witness and creates no remote commit right.
+	pinned, err := openPinnedCurrentFirstDirectory(grant, request.RelativeDirectory)
+	if err != nil {
+		return deny(err)
+	}
+	defer pinned.Close()
 	var matches int
 	snapshot, err := StreamVerifiedInventoryJournal(ctx, configDir, grant, DefaultInventoryBatchSize,
 		func(rows []InventoryItem) error {
@@ -138,7 +186,8 @@ func RecheckLocalFirstDirectoryNative(
 		return deny(nil)
 	}
 	first, err := readCurrentNativeFirstDirectory(grant, request.RelativeDirectory)
-	if err != nil || first.Key != request.ExpectedNativeIdentityKey {
+	if err != nil || first.Key != request.ExpectedNativeIdentityKey ||
+		!currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
 		return deny(err)
 	}
 	after, err := LoadLocalReconcileEvidence(ctx, configDir, grant, request.SourceRevision)
@@ -150,7 +199,8 @@ func RecheckLocalFirstDirectoryNative(
 		return deny(err)
 	}
 	second, err := readCurrentNativeFirstDirectory(grant, request.RelativeDirectory)
-	if err != nil || second.Key != first.Key || second.LinkCount != first.LinkCount {
+	if err != nil || second.Key != first.Key || second.LinkCount != first.LinkCount ||
+		!currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
 		return deny(err)
 	}
 	stored, err = LoadRootGrant(configDir, grant.Server, grant.Account, grant.RootID)
@@ -159,6 +209,9 @@ func RecheckLocalFirstDirectoryNative(
 	}
 	if err := ctx.Err(); err != nil {
 		return deny(err)
+	}
+	if !currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
+		return deny(nil)
 	}
 	return LocalFirstDirectoryNativeObservation{
 		SourceID: request.SourceID, SourceRevision: request.SourceRevision,
