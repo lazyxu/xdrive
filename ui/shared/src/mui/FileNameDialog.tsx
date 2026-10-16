@@ -130,6 +130,15 @@ export function XDriveFileNameDialog({
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const lifecycleRef = useRef(0)
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
+  // A denied Server write temporarily disables the input. When the same
+  // dialog becomes editable again, restore its original keyboard focus
+  // without touching the user's draft, Revision or request snapshot.
+  // Do not focus a closed/foreign-lifecycle dialog or a pending write.
+  useEffect(() => {
+    if (open && !submitting && error) inputRef.current?.focus()
+  }, [error, open, submitting])
 
   useEffect(() => {
     lifecycleRef.current += 1
@@ -179,6 +188,7 @@ export function XDriveFileNameDialog({
       name={name}
       error={error}
       submitting={submitting}
+      inputRef={inputRef}
       onNameChange={(value) => {
         setName(value)
         if (error) setError('')

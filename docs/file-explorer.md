@@ -775,3 +775,19 @@ limits, 44px Mobile targets, the 52px global App Frame and PWA caching/transfer
 policies are untouched. The mounted 257/1001-item existing regressions have
 been extended; actual VoiceOver/TalkBack and installed PWA touch validation is
 still not run. See [Files UX audit matrix](file-explorer-ux-acceptance-20261016.md).
+
+## U05 · Restore shared file-name dialog focus after rejected rename (2026-10-16)
+
+The ordinary Web/Desktop shared FileExplorer already restores its inline
+rename input after an asynchronous Server failure. Mobile Files uses the
+separate **same shared** `XDriveFileNameDialog` form, which temporarily
+disables its text field during an authorized revision-fenced rename. On a
+403/409 denial the draft and error were retained, but the field was not
+explicitly refocused after becoming enabled. Restore keyboard focus through
+the existing input ref only when the same dialog is still open, no longer
+submitting, and holds a real validation/Server error. Preserve the immutable
+Node ID/Revision, exact name draft, 255 UTF-8-byte validation, no duplicate
+Server operation or resumed writes, and current 52px App Frame. Mounted real
+component hook regressions cover 403 then 409 then success, oversized Unicode
+rejection, and old account denial after lifecycle change. This is not native
+iOS 27 VoiceOver/Safari physical proof and requires own exact-head PR CI.
