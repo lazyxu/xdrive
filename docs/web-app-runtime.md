@@ -152,3 +152,16 @@ Server 文本预览上限为 **1 MiB**。超过上限返回 `truncated=true`，V
 图片预览在 1× 时支持横向 swipe 切换前后项目；放大后单指移动图片，双指 pinch 缩放，双击在 1× / 2× 间切换。单击内容延迟切换 chrome，从而与双击缩放区分。视频继续由原生 media controls 拥有手势；Live Photo 继续保持按住播放、松开停止，不用 Gallery swipe 覆盖其 hold 语义。
 
 手机布局只是呈现投影：只有 Preview / Media Viewer 保留 Viewer context 与前后项 range 查找；Text/PDF/Audio 继续保持单文件程序。Favorite/Info/Share/Download 等适用命令以及浏览器 Back/Forward 规则保持原契约。
+
+## Storage workspace quiet loading (2026-10-17)
+
+- Local Storage and Cloud Storage are independent full-screen Web App workspaces, also shared with Desktop where available. First paint must never say “暂无存储信息” before the first provider response and then briefly swap to “正在加载”. Reserve a bounded 180px content slot under a stable page header, defer visible network progress by 300ms and render successful storage metrics or genuine errors immediately. Do not delay actual authenticated requests or hide explicit failures.
+- Refresh controls remain disabled during the real in-flight operation, but only change to a spinner after the delay. The visible “刷新” label retains its width. Every refresh has a new generation, so an old delayed indicator cannot flash on a new request or after an error/unmount.
+- Local Storage's Web/desktop-specific content continues to reflect the authentic browser/Electron/Agent source. The initial page subtitle is neutral and fixed; it must not change height when the first Agent response arrives. Shared Server/API, CAS/metadata, folders, offline policy, source identity and task progress are untouched.
+- The CI contract includes a mounted React 18 hook test for quick/slow/superseded requests and source contracts for both pages; actual iOS Safari/Android/PWA physical visual validation remains an independent unverified gate.
+
+## Source overview quiet first paint (2026-10-17)
+
+- The same shared Source Manager serves Web/Desktop remote Pull source rows. Its first paint previously initialized loading=false with zero unverified rows, briefly claiming “尚未添加拉取来源” before `sourceOverview()` began; a request then replaced that claim with an instant spinner. This false-empty→loading→rows sequence is prohibited just as it is on Local/Cloud Storage.
+- Initialize the first source overview as **pending**, maintain an explicit first-response confirmation flag, and share the existing 300ms request-generation-scoped loading hook. Until authorized first read succeeds, a stable 180px content slot stays quiet and only a genuinely sustained request shows progress. On success with authoritative zero rows, show the real empty state. On failure, show the existing retryable action and a truthful error, not an empty result. Previously authorized source cards remain mounted on refresh and refresh failures, with no in-flow badge or layout collapse; the refresh button is disabled while pending and keeps a stable “刷新” label.
+- Preserve all original source authorization, ownership, cookies/DSM credentials, scan/sync/cancel/task progress, dangerous mutations and Server/Agent transport. Thumbnail/cover requests and remote collection loading remain independent and visible. New source-contract regression checks this rendering boundary on the real shared MUI source list. Physical Safari/Android/PWA visual geometry and live WAN remain separate unmeasured gates.

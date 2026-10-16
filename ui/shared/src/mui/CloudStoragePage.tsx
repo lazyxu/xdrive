@@ -10,6 +10,7 @@ import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStorageDistributionChart } from './StorageDistributionChart'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 
 export type XDriveCloudStorageSnapshot = {
   quota: QuotaUsage
@@ -27,10 +28,13 @@ export function XDriveCloudStoragePage({
   source: XDriveCloudStorageDataSource
 }) {
   const [snapshot, setSnapshot] = useState<XDriveCloudStorageSnapshot | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [requestGeneration, setRequestGeneration] = useState(0)
+  const showDelayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
+    setRequestGeneration(value => value + 1)
     setLoading(true)
     setError('')
     try {
@@ -58,8 +62,9 @@ export function XDriveCloudStoragePage({
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
-          loading={loading}
-          loadingLabel="正在刷新…"
+          loading={showDelayedLoading}
+          disabled={loading}
+          loadingLabel="刷新"
           onClick={() => { void load() }}
         >
           刷新
@@ -69,11 +74,13 @@ export function XDriveCloudStoragePage({
       {error ? <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
 
       {!snapshot && !error ? (
-        <XDriveStatePanel
-          variant="plain"
-          loading={loading}
-          message={loading ? '正在加载云端存储信息…' : '暂无云端存储信息'}
-        />
+        <Box data-xdrive-cloud-storage-loading-slot sx={{ minHeight: 180 }}>
+          {loading ? (
+            showDelayedLoading
+              ? <XDriveStatePanel variant="plain" loading message="正在加载云端存储信息…" />
+              : null
+          ) : <XDriveStatePanel variant="plain" message="暂无云端存储信息" />}
+        </Box>
       ) : null}
 
       {snapshot ? (

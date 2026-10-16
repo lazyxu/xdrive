@@ -1,6 +1,7 @@
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import {
+  Box,
   Button as MuiButton,
   Stack,
   Tooltip,
@@ -9,6 +10,7 @@ import { XDriveActionButton } from './ActionButton'
 import { XDriveSourceKindIcon } from './SourceKindIcon'
 import { XDriveSourceSummaryCard } from './SourceSummaryCard'
 import { XDriveStatePanel } from './StatePanel'
+import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import {
   externalSourceCardView,
@@ -26,6 +28,9 @@ export function XDriveSourceManagerListPage({
   rows,
   directionFilter,
   loading,
+  hasLoaded,
+  loadError,
+  showDelayedLoading,
   failedItemsLoading,
   triggeringSourceID,
   cancellingRunID,
@@ -43,6 +48,9 @@ export function XDriveSourceManagerListPage({
   rows: ExternalSourceRow[]
   directionFilter?: 'pull'
   loading: boolean
+  hasLoaded: boolean
+  loadError: boolean
+  showDelayedLoading: boolean
   failedItemsLoading: boolean
   triggeringSourceID: number | null
   cancellingRunID: string | null
@@ -65,8 +73,9 @@ export function XDriveSourceManagerListPage({
         <>
           <XDriveActionButton
             startIcon={<RefreshRoundedIcon />}
-            loading={loading}
-            loadingLabel="正在刷新…"
+            loading={showDelayedLoading}
+            disabled={loading}
+            loadingLabel="刷新"
             onClick={() => void onRefresh()}
           >
             刷新
@@ -81,8 +90,17 @@ export function XDriveSourceManagerListPage({
         </>
       }
     >
-      {loading && rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" loading message={`正在加载${sourceNoun}…`} />
+      {loadError && rows.length > 0 ? (
+        <XDriveStatusAlert tone="bad">刷新{sourceNoun}失败，仍显示上次成功读取的内容；可重试。</XDriveStatusAlert>
+      ) : null}
+      {!hasLoaded && loading ? (
+        <Box data-xdrive-source-overview-loading-slot sx={{ minHeight: 180 }}>
+          {showDelayedLoading
+            ? <XDriveStatePanel variant="plain" loading message={`正在加载${sourceNoun}…`} />
+            : null}
+        </Box>
+      ) : loadError && rows.length === 0 ? (
+        <XDriveStatusAlert tone="bad">无法读取{sourceNoun}，请点击刷新重试。</XDriveStatusAlert>
       ) : rows.length === 0 ? (
         <XDriveStatePanel variant="plain" message={`尚未添加${sourceNoun}`} />
       ) : (

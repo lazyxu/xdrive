@@ -13,6 +13,7 @@ import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 
 export type XDriveLocalStorageMode = 'default' | 'exclude' | 'always-local'
 
@@ -199,13 +200,16 @@ function LocalFolderRow({
 export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageDataSource }) {
   const [snapshot, setSnapshot] = useState<XDriveLocalStorageSnapshot | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [requestGeneration, setRequestGeneration] = useState(0)
+  const showDelayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
   const [action, setAction] = useState('')
   const [pendingAction, setPendingAction] = useState<'browser' | 'desktop' | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
+    setRequestGeneration(value => value + 1)
     setLoading(true)
     setError('')
     try {
@@ -310,14 +314,15 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
     <XDriveWorkspaceSurface
       presentation="page"
       title="本地存储"
-      subtitle={desktop
-        ? '当前设备：分别管理 Electron HTTP 缓存、Agent 本地文件缓存与离线保留策略；不代表当前账号的云端配额。'
-        : '当前浏览器资料中的 xDrive 站点缓存，可由此前登录的多个账号共用；不代表当前账号的云端配额。'}
+      // Stable on first paint: the later Server/Agent snapshot must not swap
+      // the subtitle height while the user is entering this workspace.
+      subtitle="管理当前客户端站点缓存、可用的本地文件缓存及离线保留策略；不代表当前账号的云端配额。"
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
-          loading={loading}
-          loadingLabel="正在刷新…"
+          loading={showDelayedLoading}
+          disabled={loading}
+          loadingLabel="刷新"
           onClick={() => { void load() }}
         >
           刷新
@@ -327,7 +332,13 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
       {error ? <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
       {notice ? <XDriveStatusAlert tone="good" sx={{ mb: 2 }}>{notice}</XDriveStatusAlert> : null}
       {!snapshot && !error ? (
-        <XDriveStatePanel variant="plain" loading={loading} message={loading ? '正在加载本地存储信息…' : '暂无本地存储信息'} />
+        <Box data-xdrive-local-storage-loading-slot sx={{ minHeight: 180 }}>
+          {loading ? (
+            showDelayedLoading
+              ? <XDriveStatePanel variant="plain" loading message="正在加载本地存储信息…" />
+              : null
+          ) : <XDriveStatePanel variant="plain" message="暂无本地存储信息" />}
+        </Box>
       ) : null}
 
       {snapshot ? (
