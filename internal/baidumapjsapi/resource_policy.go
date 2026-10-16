@@ -49,12 +49,19 @@ func ReviewJSAPI4ResourceRequest(req *http.Request) (JSAPI4ResourceReview, error
 	if req == nil || req.URL == nil || req.Context().Err() != nil {
 		return denied, ErrUnreviewedResource
 	}
+	// Any credential header must be absent, not merely have an empty
+	// Header.Get() result. Reuse the audited map-session transport guard to
+	// reject duplicate fields, mixed-case aliases, nil and empty values.
+	_, hasAuthorization, validAuthorization := strictMapTransportHeader(req, "Authorization")
+	_, hasProxyAuthorization, validProxyAuthorization := strictMapTransportHeader(req, "Proxy-Authorization")
+	if !validAuthorization || hasAuthorization ||
+		!validProxyAuthorization || hasProxyAuthorization {
+		return denied, ErrUnreviewedResource
+	}
 	u := req.URL
 	if u.IsAbs() || u.Host != "" || u.User != nil || u.Opaque != "" ||
 		u.RawPath != "" || u.Path != LoaderPath || u.EscapedPath() != LoaderPath ||
-		u.ForceQuery || u.Fragment != "" || u.RawFragment != "" ||
-		req.Header.Get("Authorization") != "" ||
-		req.Header.Get("Proxy-Authorization") != "" {
+		u.ForceQuery || u.Fragment != "" || u.RawFragment != "" {
 		return denied, ErrUnreviewedResource
 	}
 	if err := ValidateLoaderRoute(req.Method, u.EscapedPath(), u.RawQuery); err != nil {

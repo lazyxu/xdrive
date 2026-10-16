@@ -131,3 +131,52 @@ func TestJSAPI4MalformedURLAndCancellationDenied(t *testing.T) {
 		t.Fatal("accepted canceled context")
 	}
 }
+
+func TestJSAPI4LoaderShapeRejectsAmbiguousOrBlankCredentialHeaders(t *testing.T) {
+	// Header.Get silently returns an empty/first canonical value. Every
+	// credential-bearing field must instead be absent, including direct
+	// map mutations possible in an upstream Go middleware.
+	tests := []struct {
+		name string
+		set  func(http.Header)
+	}{
+		{"blank authorization", func(h http.Header) { h["Authorization"] = []string{""} }},
+		{"empty authorization slice", func(h http.Header) { h["Authorization"] = []string{} }},
+		{"nil authorization slice", func(h http.Header) { h["Authorization"] = nil }},
+		{"lowercase authorization alias", func(h http.Header) { h["authorization"] = []string{"Bearer leaked"} }},
+		{"duplicate authorization values", func(h http.Header) { h["Authorization"] = []string{"", "Bearer leaked"} }},
+		{"authorization case collision", func(h http.Header) {
+			h["Authorization"] = []string{""}
+			h["AUTHORIZATION"] = []string{"Bearer leaked"}
+		}},
+		{"blank proxy authorization", func(h http.Header) { h["Proxy-Authorization"] = []string{""} }},
+		{"nil proxy authorization", func(h http.Header) { h["Proxy-Authorization"] = nil }},
+		{"lowercase proxy authorization alias", func(h http.Header) { h["proxy-authorization"] = []string{"Basic leaked"} }},
+		{"duplicate proxy authorization", func(h http.Header) { h["Proxy-Authorization"] = []string{"", "Basic leaked"} }},
+		{"proxy authorization case collision", func(h http.Header) {
+			h["Proxy-Authorization"] = []string{""}
+			h["PROXY-AUTHORIZATION"] = []string{"Basic leaked"}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req := reviewedRequest(t, http.MethodGet, "/_BMapService/api?v=4.0")
+			tc.set(req.Header)
+			got, err := ReviewJSAPI4ResourceRequest(req)
+			if !errors.Is(err, ErrUnreviewedResource) || got.Kind != JSAPI4ResourceUnreviewed {
+				t.Fatalf("review accepted ambiguous credentials: %#v, %v", got, err)
+			}
+			// This is a second NO-GO gate even if synthetic release flags
+			// appear ready. Runtime remains unconfigured and non-routable.
+			allSyntheticGates := ReleaseGates{true, true, true, true, true}
+			if err := JSAPI4ProductionResourceGate(context.Background(), req, allSyntheticGates); !errors.Is(err, ErrGateClosed) {
+				t.Fatalf("credential-bearing resource reached release gate: %v", err)
+			}
+		})
+	}
+	req := reviewedRequest(t, http.MethodGet, "/_BMapService/api?v=4.0")
+	got, err := ReviewJSAPI4ResourceRequest(req)
+	if err != nil || got.Kind != JSAPI4ResourceLoader {
+		t.Fatalf("missing credentials should preserve original shape review: %#v, %v", got, err)
+	}
+}

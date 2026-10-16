@@ -267,3 +267,14 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 现有本地 HAR 审计原先依赖 Node 宽松 Base64 解码：非法字节、非规范填充、未知 encoding 或空脚本体不应被视为已审核正常。现在浏览器 HAR 必须通过有界、规范的 Base64 round-trip 校验；分别扫描原始 HAR 文本与解码后的正文，防止伪造编码标签隐藏可见 AK，并添加正反例 Desktop 回归。诊断仅固定码/计数，不能泄漏原始密钥或 URL。详见 [百度 JSAPI4 操作员私有许可和九场景取证指南](gallery-places-jsapi4-operator-runbook.md)。
 
 这仅完善未来上线前**离线证据检测**，不运行生产浏览器 SDK、不访问百度接口、不读取/解密 Browser AK、不产生 JSAPI4 Cookie 或公开路由。没有账户适用自托管/商用/PWA/Electron 许可、完整人工核准的子资源清单、9 组真实 HAR、可信发布/跨副本 Owner 配额/CSP/Electron 和真实设备证明之前，JSAPI4 继续 runtime_enabled=false、资源审查数 0、唯一 Provider 百度，xDrive Web/Mobile Web/Desktop 共享图库 Range/VirtualCollection/Viewer、全屏 App Frame 与 52px 标题栏不变。
+
+
+## P0-Places-A3b2d2b3c · Operator 授权确认后的 Loader 头部前置加固（2026-10-16）
+
+**授权状态来源：用户报告已逐项确认**：当前账户已有独立 Server AK / Browser 类型 AK，使用范围包括多用户自托管同源 JSAPI4 代理、Web / Mobile Web、iOS/Android PWA 和 Electron Desktop，报告无额外付费；官方 WGS84→BD-09 正向派生坐标索引的保留亦报告可用。此结论作为运营方声明已写入 [Issue #1798](https://github.com/lazyxu/xdrive/issues/1798)，不是代码库已独立核验许可原件、配额表、地域条件或保留期限。后续不重复要求运营方口头确认同样事项，只在发现具体条款不明时针对该项核验。
+
+**本阶段真实代码范围**：未来 JSAPI4 Loader 的非路由 `ReviewJSAPI4ResourceRequest` 原本用 `Header.Get("Authorization")` / `Header.Get("Proxy-Authorization")` 检查；空值、大小写别名和重复头可以绕过“字段必须不存在”这一前置约束。改为复用现有 `strictMapTransportHeader` 的完整遍历与去歧义验证，任何出现的 Authorization 或 Proxy-Authorization 即拒绝；合法无凭证的 GET `/_BMapService/api?v=4.0` 仍只能通过**形态审查**。Go 回归覆盖空、nil、重复、混合大小写别名与正常空 Header，签发与生产资源门禁继续硬拒绝。无百度真实网络请求、未持有 AK、不增加 Router、SDK 或代理。
+
+**前向派生坐标架构边界**：拟定的 BD-09 地图视窗索引必须使用官方正向 WGS84→BD-09 转换结果，绑定当前 Owner + PhotoAsset + 源位置修订/有效性 + 索引转换版本，清理被删除、回收、撤销定位或隐私不允许共享的结果。任何过期源修订不允许用于 Marker、附近照片计数或 Viewer；地图 BD-09 视窗只能查询独立派生索引，不得把 `BMap.getBounds()` 反算或贴标签当成原始 WGS84。正式表结构、写入事务、授权条件、配额、响应边界和真机覆盖需独立后续 PR 实现并测试；本阶段**不创建表、不写入任何转换坐标**。
+
+现有 iOS 27「照片」1:1、52px 全屏 App Frame、Web/Mobile Web/Desktop 共同的 Server Range、VirtualCollection 与 Viewer 不变。JSAPI4 动态生产仍 `runtime_enabled=false`、0 个完成审核的子资源、未配置发布签名根、无公开 Loader/Session/Proxy。真实 9 组 Browser/Server HAR、人工逐项固定 Host/Path/Query/MIME/字节限制、受信签名发布与 Owner/epoch/fleet 配额、Caddy/CSP/Electron 和真机 iOS/Android/Desktop 仍是技术 GO/NO-GO 条件。A3 完成后再 A4→B1→B2→B3→C1。
