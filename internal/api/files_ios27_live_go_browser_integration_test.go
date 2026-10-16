@@ -42,7 +42,7 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	if err := db.AutoMigrate(
 		&meta.User{}, &meta.RefreshToken{}, &meta.Node{},
 		&meta.File{}, &meta.FileVersion{}, &meta.ContentBlob{},
-		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{},
+		&meta.Share{}, &meta.UploadSession{}, &meta.UploadPart{}, &meta.LocalPushQuotaHold{},
 		&meta.DownloadProgress{}, &meta.AuditEvent{},
 		&meta.FileOperation{}, &meta.FileRecentAccess{},
 		&meta.FileFavorite{}, &meta.FileQuickAccess{},
@@ -90,6 +90,18 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	wideTarget := requestNode(t, router, http.MethodPost,
 		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
 		strings.NewReader(`{"name":"wide-copy-target"}`), http.StatusCreated)
+	// U01-C: real Owner-authorized folders and physical CAS bytes for both
+	// mobile and wide Chromium navigation, without any mocked /api/v1 body.
+	u01Slow := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"zz-u01-slow-folder"}`), http.StatusCreated)
+	u01Fast := requestNode(t, router, http.MethodPost,
+		fmt.Sprintf("/api/v1/nodes/%d/directories", root.ID), token,
+		strings.NewReader(`{"name":"zz-u01-fast-folder"}`), http.StatusCreated)
+	u01SlowLeaf := uploadTestFile(t, router, token, u01Slow.ID,
+		"u01-slow-authorized.txt", "actual delayed U01 navigation bytes")
+	u01FastLeaf := uploadTestFile(t, router, token, u01Fast.ID,
+		"u01-fast-authorized.txt", "actual latest U01 navigation bytes")
 	mobileMove := uploadTestFile(t, router, token, root.ID, "a-mobile-move.txt", "real mobile move source")
 	wideMove := uploadTestFile(t, router, token, root.ID, "b-wide-move.txt", "real wide move source")
 	mobileDelete := uploadTestFile(t, router, token, root.ID, "c-mobile-delete.txt", "real mobile delete source")
@@ -126,6 +138,14 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 
 	stopped := make(chan struct{})
 	var stopOnce sync.Once
+	// Private, state-only U01-C barrier: one authenticated and already
+	// computed counted first range is held before its response bytes are sent.
+	// The browser must cancel that actual HTTP request by navigating to
+	// another real folder. No production Gin route or response is replaced.
+	var u01Mu sync.Mutex
+	var u01Generation, u01Entered, u01Cancelled int
+	var u01Armed bool
+	u01SlowPath := fmt.Sprintf("/api/v1/nodes/%d/children", u01Slow.ID)
 	// Test-only barrier: the browser queues real requests before D3/D4
 	// assertions, then remains live for Mobile/Wide Undo/Redo taps.
 	executeStarted := make(chan struct{})
@@ -135,6 +155,70 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 	tapIDs := make([]string, 0, 4)
 	fileServer := http.FileServer(http.Dir(dist))
 	mux := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__test/files/u01/arm" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "POST required", http.StatusMethodNotAllowed)
+				return
+			}
+			u01Mu.Lock()
+			if u01Armed || u01Entered != u01Cancelled {
+				u01Mu.Unlock()
+				http.Error(w, "prior authorized U01 request not yet cancelled", http.StatusConflict)
+				return
+			}
+			u01Generation++
+			u01Armed = true
+			generation := u01Generation
+			u01Mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]int{"generation": generation})
+			return
+		}
+		if r.URL.Path == "/__test/files/u01/state" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "GET required", http.StatusMethodNotAllowed)
+				return
+			}
+			u01Mu.Lock()
+			snapshot := map[string]int{
+				"generation": u01Generation, "entered": u01Entered, "cancelled": u01Cancelled,
+			}
+			u01Mu.Unlock()
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(snapshot)
+			return
+		}
+		if r.Method == http.MethodGet && r.URL.Path == u01SlowPath &&
+			r.URL.Query().Get("offset") == "0" {
+			u01Mu.Lock()
+			hold := u01Armed
+			generation := u01Generation
+			if hold {
+				u01Armed = false
+			}
+			u01Mu.Unlock()
+			if hold {
+				authorized := httptest.NewRecorder()
+				router.ServeHTTP(authorized, r)
+				if authorized.Code != http.StatusOK {
+					w.WriteHeader(authorized.Code)
+					_, _ = w.Write(authorized.Body.Bytes())
+					return
+				}
+				u01Mu.Lock()
+				u01Entered = generation
+				u01Mu.Unlock()
+				select {
+				case <-r.Context().Done():
+					u01Mu.Lock()
+					u01Cancelled = generation
+					u01Mu.Unlock()
+				case <-stopped:
+				}
+				return
+			}
+		}
 		if r.URL.Path == "/__test/files/execute" {
 			if r.Method != http.MethodPost {
 				http.Error(w, "POST required", http.StatusMethodNotAllowed)
@@ -222,6 +306,10 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 		"real_gin":        true,
 		"intercepted_api": false,
 	}
+	ready["u01_slow_id"] = u01Slow.ID
+	ready["u01_slow_leaf_id"] = u01SlowLeaf.ID
+	ready["u01_fast_id"] = u01Fast.ID
+	ready["u01_fast_leaf_id"] = u01FastLeaf.ID
 	ready["mobile_copy_target_id"] = mobileTarget.ID
 	ready["wide_copy_target_id"] = wideTarget.ID
 	ready["foreign_root_id"] = foreignRoot.ID
@@ -270,6 +358,13 @@ func TestIOS27FilesLiveGoFixture(t *testing.T) {
 
 	select {
 	case <-executeStarted:
+		u01Mu.Lock()
+		navEntered, navCancelled, navCycles := u01Entered, u01Cancelled, u01Generation
+		u01Mu.Unlock()
+		if navCycles != 2 || navEntered != navCycles || navCancelled != navCycles {
+			t.Fatalf("genuine mobile+wide navigation must cancel both authorized delayed first-page requests: generation=%d entered=%d cancelled=%d",
+				navCycles, navEntered, navCancelled)
+		}
 		var after, collision meta.Node
 		if err := db.First(&after, file.ID).Error; err != nil {
 			t.Fatal(err)

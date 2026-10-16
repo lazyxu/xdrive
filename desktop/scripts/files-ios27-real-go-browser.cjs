@@ -26,7 +26,7 @@ const results = {
   phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
   initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
-  foreignOwner: [], screenshots: [], errors: [],
+  foreignOwner: [], u01Navigations: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
     'ui/shared/src/mui/FileExplorerNavigation.ts',
@@ -76,9 +76,12 @@ async function queueCopyFromUI(owner, width, targetID) {
   await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id,
     { waitUntil: 'domcontentloaded' })
   await page.reload({ waitUntil: 'domcontentloaded' })
-  const row = page.locator(mobile ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
-    .filter({ hasText: 'wide-accepted.txt' }).first()
-  await row.waitFor()
+  // The added real U01 folders can move this valid Node beyond the
+  // initial bounded virtual viewport. Use the existing real pointer/scroll
+  // lookup, never assume an off-window row must already be mounted.
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first()
+  await host.waitFor({ state: 'visible' })
+  const row = await findBatchRow(mobile, host, 'wide-accepted.txt')
   await row.click({ button: 'right' })
   if (mobile) {
     await page.locator('[data-mobile-files-context-selection-action="copy-to"]').click()
@@ -645,6 +648,93 @@ async function tapRealUndoRedoFromBothLayouts() {
     'real Mobile/Wide Undo/Redo actions must create four distinct tasks', results.tapUndoRedo)
 }
 
+// U01-C: Production-built Mobile/Wide Web and real Gin/PostgreSQL first page.
+// The disposable Go fixture executes the actual Owner-authorized Gin range
+// before holding the response. The only browser-originated cancellation here
+// is the original app's own AbortSignal after a newer route supersedes it.
+async function assertRealU01BrowserNavigation(width) {
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 844 : 700 })
+  const rootURL = fixture.url + '/#/app/files?dir=' + fixture.root_id
+  await page.goto(rootURL, { waitUntil: 'domcontentloaded' })
+  const firstRange = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/nodes/' + fixture.root_id + '/children' &&
+    response.request().method() === 'GET' && response.status() === 200)
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await (await firstRange).json()
+
+  const itemSelector = mobile ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]'
+  const oldRootRow = page.locator(itemSelector).filter({ hasText: 'mobile-copy-target' }).first()
+  await oldRootRow.waitFor({ state: 'visible' })
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first()
+  const frameBefore = await host.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return { y: rect.y, height: rect.height }
+  })
+  const arm = await page.request.post(fixture.url + '/__test/files/u01/arm')
+  check(arm.status() === 200, 'real U01 test barrier must be uniquely armed')
+  const { generation } = await arm.json()
+  check(Number.isSafeInteger(generation) && generation > 0, 'real U01 barrier generation')
+  await page.evaluate(directoryID => {
+    window.location.hash = '/app/files?dir=' + directoryID
+  }, fixture.u01_slow_id)
+  await page.waitForFunction(async expected => {
+    const state = await (await fetch('/__test/files/u01/state', { cache: 'no-store' })).json()
+    return state.entered === expected
+  }, generation, { timeout: 12000 })
+
+  check(await oldRootRow.isVisible(),
+    'pending real Gin first page must not unmount the previous authorized directory',
+    { width, generation })
+  check(await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
+    'pending real-Gin navigation must keep a single stable scroll owner', { width })
+  const framePending = await host.evaluate(element => {
+    const rect = element.getBoundingClientRect()
+    return { y: rect.y, height: rect.height }
+  })
+  check(Math.abs(frameBefore.y - framePending.y) <= 1 &&
+    Math.abs(frameBefore.height - framePending.height) <= 1,
+    'pending real-Gin first page must not shift the old scroll viewport',
+    { width, frameBefore, framePending })
+
+  await page.evaluate(directoryID => {
+    window.location.hash = '/app/files?dir=' + directoryID
+  }, fixture.u01_fast_id)
+  const fastLeaf = page.locator(itemSelector).filter({ hasText: 'u01-fast-authorized.txt' }).first()
+  await fastLeaf.waitFor({ state: 'visible' })
+  await page.waitForFunction(async expected => {
+    const state = await (await fetch('/__test/files/u01/state', { cache: 'no-store' })).json()
+    return state.cancelled === expected
+  }, generation, { timeout: 12000 })
+  check(page.url().endsWith('/files?dir=' + fixture.u01_fast_id),
+    'latest authorized folder route must win over the cancelled slow range',
+    { width, url: page.url() })
+  check(await page.locator(itemSelector).filter({ hasText: 'u01-slow-authorized.txt' }).count() === 0,
+    'superseded and cancelled slow folder must not replace the latest visible node',
+    { width })
+
+  // Browser history is distinct from Files' own in-folder parent control.
+  // Return through the genuinely authorized B folder, then back to root.
+  await page.goBack()
+  const slowLeaf = page.locator(itemSelector).filter({ hasText: 'u01-slow-authorized.txt' }).first()
+  await slowLeaf.waitFor({ state: 'visible' })
+  check(page.url().endsWith('/files?dir=' + fixture.u01_slow_id),
+    'browser Back must restore real slow-folder URL and full authorized page', { width })
+  await page.goBack()
+  await oldRootRow.waitFor({ state: 'visible' })
+  check(page.url().endsWith('/files?dir=' + fixture.root_id),
+    'second browser Back returns to original root without stale navigation', { width })
+  check(await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
+    'browser Back must retain a single virtualized FileExplorer scroll host', { width })
+
+  results.u01Navigations.push({
+    width, mobile, generation, initialRootID: fixture.root_id,
+    cancelledSlowID: fixture.u01_slow_id, committedFastID: fixture.u01_fast_id,
+    returnedViaHistory: true, actualGin200: true, wireContextCancelled: true,
+  })
+  await screenshot('live-go-u01-real-navigation-' + width)
+}
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -728,6 +818,13 @@ async function main() {
       revision: fixture.node_revision, oneScrollOwner: true, headerHeight })
     await screenshot('live-go-files-' + viewport.width)
   }
+
+  for (const width of [390, 900]) {
+    await assertRealU01BrowserNavigation(width)
+  }
+  check(results.u01Navigations.length === 2 &&
+    results.u01Navigations.every(item => item.returnedViaHistory && item.wireContextCancelled),
+    'both Mobile and Wide must cancel superseded authorized Gin first pages and return by browser history')
 
   // Real owner isolation, from the same browser network stack. The back end
   // deliberately returns owner-scoped 404, not a synthetic fixture 403.
@@ -915,6 +1012,7 @@ async function main() {
       mutationQueues: results.mutationQueues.length, batchDeletes: results.batchDeletes.length,
       batchDestinations: results.batchDestinations.length,
       tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
+      u01RealNavigations: results.u01Navigations.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
