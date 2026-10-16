@@ -957,7 +957,7 @@ function FileManager({
     resolveConflict: (id, policy) => api.resolveFileOperationConflict(id, policy),
     clearOperationHistory: () => api.clearFileOperationHistory(),
     clearTransferHistory: async () => { api.clearTransferHistory('local') },
-    rememberOperation: rememberFileOperation,
+    rememberOperation: rememberFilesOperation,
     refreshOperations: refreshFileOperations,
     onError: handleError,
     onFeedback: (message) => setFeedback({ tone: 'good', message }),
@@ -1741,6 +1741,10 @@ function FileManager({
                   <XDriveFileExplorerActionFeedback
                     value={filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
                     onViewTask={openFilesOperationTask}
+                    onRetryTask={!filesFeedbackOperation || !fileOperations.some(task => task.retry_of_id === filesFeedbackOperation.id)
+                      ? (id) => { void fileOperationActions.retryOperation(id) } : undefined}
+                    onUndoTask={(id) => { void fileOperationActions.undoOperation(id) }}
+                    actionsBusy={fileOperationActions.busy}
                     onDismiss={() => setFilesActionFeedback(null)}
                   />
                 )}

@@ -7,6 +7,9 @@ import {
 export type XDriveFileExplorerActionFeedbackProps = {
   value: XDriveFileExplorerActionFeedbackValue | null
   onViewTask?: (operationID: string) => void
+  onRetryTask?: (operationID: string) => void
+  onUndoTask?: (operationID: string) => void
+  actionsBusy?: boolean
   onDismiss: () => void
 }
 
@@ -14,10 +17,16 @@ export type XDriveFileExplorerActionFeedbackProps = {
 export function XDriveFileExplorerActionFeedback({
   value,
   onViewTask,
+  onRetryTask,
+  onUndoTask,
+  actionsBusy = false,
   onDismiss,
 }: XDriveFileExplorerActionFeedbackProps) {
   if (!value) return null
   const feedback = xDriveFileExplorerActionFeedback(value)
+  const operation = value.kind === 'operation' ? value.operation : null
+  const retryID = operation?.status === 'failed' && operation.retryable ? operation.id : null
+  const undoID = operation?.status === 'completed' && operation.undoable ? operation.id : null
   const severity = feedback.tone === 'good' ? 'success'
     : feedback.tone === 'warning' ? 'warning'
       : feedback.tone === 'bad' ? 'error' : 'info'
@@ -61,7 +70,34 @@ export function XDriveFileExplorerActionFeedback({
             </Stack>
           </Box>
         ) : null}
+        {actionsBusy && ((retryID && onRetryTask) || (undoID && onUndoTask)) ? (
+          <Typography variant="caption" color="text.secondary" role="status">
+            正在处理其他文件操作，暂不可重复提交。
+          </Typography>
+        ) : null}
         <Stack direction="row" sx={{ flexWrap: 'wrap', gap: 1 }}>
+          {retryID && onRetryTask ? (
+            <Button
+              size="small"
+              variant="outlined"
+              sx={buttonSx}
+              disabled={actionsBusy}
+              onClick={() => onRetryTask(retryID)}
+            >
+              重试
+            </Button>
+          ) : null}
+          {undoID && onUndoTask ? (
+            <Button
+              size="small"
+              variant="outlined"
+              sx={buttonSx}
+              disabled={actionsBusy}
+              onClick={() => onUndoTask(undoID)}
+            >
+              撤销
+            </Button>
+          ) : null}
           {feedback.operationID && onViewTask ? (
             <Button
               size="small"

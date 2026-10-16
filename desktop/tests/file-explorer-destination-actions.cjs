@@ -232,11 +232,18 @@ for (const platform of ['Web', 'Desktop']) {
 
   test(`${platform} View Task selects mine scope and carries a repeatable exact operation focus request`, () => {
     const source = appSource(platform, true)
-    const views = [], scopes = [], requests = []
+    const views = [], scopes = [], requests = [], actions = []
     const dependencies = {
       useCallback: callback => callback, require, exports: {},
       XDriveFileExplorerActionFeedback: 'action-feedback',
       filesFeedbackOperation: { id: 'operation-target' }, currentFilesActionFeedback: null,
+      fileOperations: [], cloudFileOperations: [],
+      fileOperationUndoSupported: false,
+      fileOperationActions: {
+        busy: false,
+        retryOperation: (id) => actions.push(['retry', id]),
+        undoOperation: (id) => actions.push(['undo', id]),
+      },
       filesOperationFocusSequenceRef: { current: 0 },
       setFilesOperationFocus: value => requests.push(value), setTaskCenterFocus: () => {},
       taskCenter: { pageProps: { onBackgroundScopeChange: value => scopes.push(value) } },
@@ -245,6 +252,12 @@ for (const platform of ['Web', 'Desktop']) {
     const opener = source.expression('openFilesOperationTask')
     if (opener) dependencies.openFilesOperationTask = source.compile(opener, dependencies)
     const presenter = source.compile(source.expression('actionFeedback', true), dependencies)
+    assert.equal(presenter.props.actionsBusy, false, 'shared Files feedback must bind real action busy state')
+    assert.equal(typeof presenter.props.onRetryTask, 'function', 'existing retry capability remains available')
+    assert.equal(typeof presenter.props.onUndoTask, platform === 'Web' ? 'function' : 'undefined',
+      'Desktop undo remains guarded by the actual Agent capability')
+    presenter.props.onRetryTask('operation-target')
+    assert.deepEqual(actions, [['retry', 'operation-target']])
     presenter.props.onViewTask('operation-target')
     presenter.props.onViewTask('operation-target')
     assert.deepEqual(views, ['transfers', 'transfers'])

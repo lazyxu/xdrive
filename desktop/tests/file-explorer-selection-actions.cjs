@@ -326,6 +326,10 @@ for (const platform of ['Web', 'Desktop']) {
     const views = [], dismissed = []
     const presenterDependencies = {
       ...dependencies, filesFeedbackOperation, require, exports: {},
+      // Extracted App JSX is compiled outside its normal hook owner. Keep the
+      // source exact and provide only its already-existing optional action gate.
+      fileOperationActions: { busy: false, retryOperation() {}, undoOperation() {} },
+      fileOperationUndoSupported: false,
       XDriveFileExplorerActionFeedback: 'action-feedback',
       setAppView: value => views.push(value), setView: value => views.push(value),
       setFilesActionFeedback: value => dismissed.push(value),

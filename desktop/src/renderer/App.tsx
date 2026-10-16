@@ -846,7 +846,7 @@ export default function App({
     onTransferHistoryCleared: (value) => {
       acceptTransferSnapshot(value)
     },
-    rememberOperation: rememberCloudFileOperation,
+    rememberOperation: rememberFilesOperation,
     refreshOperations: refreshCloudFileOperations,
     onError: (operationError) => setError(
       operationError instanceof Error ? operationError.message : String(operationError),
@@ -2847,6 +2847,11 @@ export default function App({
                     ? { kind: 'download', result: currentFilesActionFeedback.downloadResult }
                     : filesFeedbackOperation ? { kind: 'operation', operation: filesFeedbackOperation } : null}
                   onViewTask={openFilesOperationTask}
+                  onRetryTask={!filesFeedbackOperation || !cloudFileOperations.some(task => task.retry_of_id === filesFeedbackOperation.id)
+                    ? (id) => { void fileOperationActions.retryOperation(id) } : undefined}
+                  onUndoTask={fileOperationUndoSupported
+                    ? (id) => { void fileOperationActions.undoOperation(id) } : undefined}
+                  actionsBusy={fileOperationActions.busy}
                   onDismiss={() => setFilesActionFeedback(null)}
                 />
               ),

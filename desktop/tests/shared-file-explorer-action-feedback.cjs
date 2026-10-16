@@ -198,3 +198,67 @@ test('stateless presenter actions forward the current operation identity and dis
   buttons.find((button) => button.props.children === '关闭提示').props.onClick()
   assert.deepEqual(calls, [['task', 'actual-operation-91'], ['dismiss']])
 })
+
+
+function feedbackButtonLabels(html) {
+  return Array.from(html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g), match => visibleText(match[1]))
+}
+
+test('U13 retry action is shown for retryable failed tasks only and forwards the authoritative ID', () => {
+  const value = { kind: 'operation', operation: operation({ id: 'failed-9', status: 'failed', retryable: true, undoable: true }) }
+  const calls = []
+  const props = {
+    value, onRetryTask: (id) => calls.push(['retry', id]),
+    onUndoTask: (id) => calls.push(['undo', id]),
+    onViewTask: (id) => calls.push(['view', id]),
+    onDismiss: () => calls.push(['dismiss']),
+  }
+  assert.deepEqual(feedbackButtonLabels(render(props)), ['重试', '查看任务', '关闭提示'])
+  const element = Feedback(props)
+  const buttons = []
+  function visit(child) {
+    if (!React.isValidElement(child)) return
+    if (child.type === Button) buttons.push(child)
+    React.Children.forEach(child.props.children, visit)
+  }
+  visit(element)
+  assert.deepEqual(buttons.map(item => item.props.children), ['重试', '查看任务', '关闭提示'])
+  buttons[0].props.onClick()
+  buttons[1].props.onClick()
+  assert.deepEqual(calls, [['retry', 'failed-9'], ['view', 'failed-9']])
+})
+
+test('U13 undo is shown only for completed and undoable operations with an authorized callback', () => {
+  const value = { kind: 'operation', operation: operation({ status: 'completed', undoable: true, retryable: true }) }
+  assert.deepEqual(feedbackButtonLabels(render({ value, onRetryTask() {}, onUndoTask() {}, onViewTask() {} })), ['撤销', '查看任务', '关闭提示'])
+  for (const status of ['queued', 'running', 'cancel_requested', 'cancelled', 'failed']) {
+    const v = { kind: 'operation', operation: operation({ status, undoable: true, retryable: true }) }
+    assert.ok(!feedbackButtonLabels(render({ value: v, onRetryTask() {}, onUndoTask() {} })).includes('撤销'), status)
+  }
+  assert.deepEqual(feedbackButtonLabels(render({ value, onRetryTask() {} })), ['关闭提示'])
+})
+
+test('U13 busy actions are disabled with reason and never invent retry/undo for noneligible tasks', () => {
+  const failed = { kind: 'operation', operation: operation({ status: 'failed', retryable: true }) }
+  const busy = render({ value: failed, onRetryTask() {}, actionsBusy: true, onViewTask() {} })
+  assert.deepEqual(feedbackButtonLabels(busy), ['重试', '查看任务', '关闭提示'])
+  assert.match(busy, /disabled=""/)
+  assert.match(visibleText(busy), /正在处理其他文件操作，暂不可重复提交/)
+  assert.deepEqual(feedbackButtonLabels(render({ value: { kind: 'operation', operation: operation({ status: 'failed', retryable: false }) }, onRetryTask() {}, onUndoTask() {} })), ['关闭提示'])
+  assert.deepEqual(feedbackButtonLabels(render({ value: { kind: 'download', result: { downloaded: 1, failed: 0, skippedFolders: 0 } }, onRetryTask() {}, onUndoTask() {} })), ['关闭提示'])
+})
+
+test('U13 Web and Desktop use current task, old Agent capability gate and existing operation controller', () => {
+  const repo = path.resolve(__dirname, '../..')
+  const web = fs.readFileSync(path.join(repo, 'web/src/App.tsx'), 'utf8')
+  const desktop = fs.readFileSync(path.join(repo, 'desktop/src/renderer/App.tsx'), 'utf8')
+  for (const [name, source] of [['Web', web], ['Desktop', desktop]]) {
+    assert.match(source, /onRetryTask=\{[\s\S]*?fileOperationActions\.retryOperation\(id\)/, name + ': original retry action')
+    assert.match(source, /onUndoTask=\{[\s\S]*?fileOperationActions\.undoOperation\(id\)/, name + ': original undo action')
+    assert.match(source, /actionsBusy=\{fileOperationActions\.busy\}/, name + ': active task gate')
+    assert.match(source, /onViewTask=\{openFilesOperationTask\}/, name + ': retained task details')
+    assert.match(source, /rememberOperation: rememberFilesOperation,/, name + ': accepted new task replaces old feedback')
+    assert.match(source, /\.some\(task => task\.retry_of_id === filesFeedbackOperation\.id\)/, name + ': no duplicate retry after continuation')
+  }
+  assert.match(desktop, /onUndoTask=\{fileOperationUndoSupported/, 'older Agent without undo fails closed')
+})
