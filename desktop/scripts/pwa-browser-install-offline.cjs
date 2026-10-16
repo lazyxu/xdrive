@@ -6,6 +6,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
 const http = require('node:http')
+const { createHash } = require('node:crypto')
 const { chromium } = require(process.env.XDRIVE_PLAYWRIGHT_MODULE || 'playwright-core')
 
 const root = path.resolve(__dirname, '../..')
@@ -17,6 +18,7 @@ assert(fs.existsSync(path.join(dist, 'index.html')), 'Build the production Web b
 fs.mkdirSync(output, { recursive: true })
 
 const authMode = process.env.XD_PWA_S2B_AUTH === '1'
+const deviceEvidenceMode = process.env.XD_PWA_S5A2_EVIDENCE === '1'
 const evidence = {
   kind: authMode ? 'S2B2 real Chromium authenticated deep-link test (NOT OS-installed PWA)' : 'S2B1 real Chromium production-shell test (NOT OS-installed PWA)',
   commit: process.env.XD_PR_HEAD || null,
@@ -196,7 +198,8 @@ async function validateCase(browser, origin, spec) {
     deepLinkPreserved: false, cachedPublicOnly: false, readinessNoCredentials: false,
     loopbackTransportWarning: false, offlineAssetChecked: false, iconsChecked: false,
     authenticatedDeepLink: false, authenticatedColdReload: false,
-    pendingInstallProbeCancelled: false, updateCheckSettled: false }
+    pendingInstallProbeCancelled: false, updateCheckSettled: false,
+    s5a2BrowserObservationValidated: false }
   let page
   try {
     page = await context.newPage()
@@ -252,6 +255,44 @@ async function validateCase(browser, origin, spec) {
     assert.equal(await dialog.getByText('公开安装图标类型正确；静态图标允许缓存。', { exact: true }).count(), 2)
     result.offlineAssetChecked = true
     result.iconsChecked = true
+    if (deviceEvidenceMode) {
+      // Genuine Web UI user click, not a synthetic browser event or React
+      // shortcut. Android UA/Touch is only a Chrome emulation, not OS Android.
+      const beforePublic = [observed.readyz, observed.privateApi,
+        observed.headManifest, observed.headWorker, observed.headOffline,
+        observed.headIcon192, observed.headIcon512]
+      await dialog.locator('[data-xdrive-pwa-s5-evidence-create]').click()
+      const field = dialog.locator('[data-xdrive-pwa-s5-evidence-output] textarea:not([aria-hidden="true"])')
+      await field.waitFor()
+      const serialized = await field.inputValue()
+      const report = JSON.parse(serialized)
+      assert.equal(report.schema, 'xdrive-pwa-s5a2-browser-observation-v1')
+      assert.equal(report.case_id, 'S5-02')
+      assert.equal(report.captured_by, 'explicit_user_click')
+      assert.equal(report.display_mode_observed, 'browser')
+      assert.equal(report.platform_hint_only, spec.mobile ? 'android' : 'other')
+      assert.equal(report.transport_observed, 'http')
+      assert.equal(report.secure_context_observed, true)
+      assert.equal(report.service_worker_controller_observed, true)
+      assert.equal(report.service_worker_matches_public_script, true)
+      assert.equal(report.origin_sha256, createHash('sha256').update(origin).digest('hex'))
+      assert.equal(report.public_asset_checks.context, 'pass')
+      assert.equal(report.public_asset_checks.transport, 'warn')
+      for (const name of ['manifest', 'worker', 'offline', 'icon192', 'icon512']) {
+        assert.equal(report.public_asset_checks[name], 'pass')
+      }
+      assert.equal(report.installation_from_os_icon_verified, 'NOT_VERIFIED')
+      assert.equal(report.trusted_os_certificate_verified, 'NOT_VERIFIED')
+      assert.equal(report.physical_device_acceptance, 'NOT_RUN')
+      assert.equal(report.release_gate, 'NO_GO_PHYSICAL_INSTALL_NOT_RUN')
+      assert.deepEqual([observed.readyz, observed.privateApi,
+        observed.headManifest, observed.headWorker, observed.headOffline,
+        observed.headIcon192, observed.headIcon512], beforePublic,
+      'evidence must not send any new public HEAD or private API request')
+      assert(!serialized.includes(origin) && !serialized.includes(expectedHash),
+        'do not export raw URL, target directory or private hash route')
+      result.s5a2BrowserObservationValidated = true
+    }
     const readyBefore = observed.readyz
     await dialog.locator('[data-xdrive-pwa-check-server]').click()
     await dialog.getByText(/xDrive Server 当前报告已就绪/).waitFor()
@@ -424,6 +465,10 @@ async function main() {
     assert.equal(observed.headIcon512Aborted, 1)
     assert(evidence.cases.some(x => x.pendingInstallProbeCancelled))
     assert(evidence.cases.every(x => x.updateCheckSettled))
+    if (deviceEvidenceMode) {
+      assert(evidence.cases.every(x => x.s5a2BrowserObservationValidated),
+        'S5-A2a both real Chrome contexts must report strict release NO-GO')
+    }
     assert(evidence.cases.every(x => x.loopbackTransportWarning && x.offlineAssetChecked && x.iconsChecked))
     assert.equal(observed.readyz, 2)
     if (authMode) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle,
-  Divider, Stack, Typography, useMediaQuery,
+  Divider, Stack, TextField, Typography, useMediaQuery,
 } from '@mui/material'
 import {
   checkXDrivePwaAssets, requestXDrivePwaInstall,
@@ -9,6 +9,7 @@ import {
 } from './pwaInstall'
 import type { XDrivePwaAssetCheck, XDrivePwaPromptOutcome } from './pwaInstall'
 import XDrivePwaUpdateSection from './PwaUpdateSection'
+import { collectXDrivePwaS5DeviceEvidence } from './pwaDeviceEvidence'
 
 export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const compact = useMediaQuery('(max-width:599.95px)')
@@ -16,6 +17,9 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
   const [checks, setChecks] = useState<XDrivePwaAssetCheck[] | null>(null)
   const [checking, setChecking] = useState(false)
   const [feedback, setFeedback] = useState<XDrivePwaPromptOutcome | null>(null)
+  const [deviceEvidence, setDeviceEvidence] = useState<string | null>(null)
+  const [deviceEvidencePending, setDeviceEvidencePending] = useState(false)
+  const [deviceEvidenceError, setDeviceEvidenceError] = useState(false)
   const generation = useRef(0)
   const inspectionRef = useRef<AbortController | null>(null)
   useEffect(() => () => {
@@ -23,6 +27,19 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
     inspectionRef.current?.abort()
     inspectionRef.current = null
   }, [])
+  useEffect(() => {
+    if (!open) {
+      // The dialog may remain mounted after closing. Never keep stale
+      // evidence on screen when the next account/session reopens it.
+      generation.current += 1
+      inspectionRef.current?.abort()
+      inspectionRef.current = null
+      setChecking(false)
+      setDeviceEvidence(null)
+      setDeviceEvidencePending(false)
+      setDeviceEvidenceError(false)
+    }
+  }, [open])
   const inspect = () => {
     const id = ++generation.current
     inspectionRef.current?.abort()
@@ -42,6 +59,20 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
     const id = generation.current
     void requestXDrivePwaInstall().then(outcome => {
       if (id === generation.current) setFeedback(outcome)
+    })
+  }
+  const captureDeviceEvidence = () => {
+    const id = generation.current
+    setDeviceEvidence(null)
+    setDeviceEvidenceError(false)
+    setDeviceEvidencePending(true)
+    // An explicitly clicked in-memory observation, never a Server report.
+    void collectXDrivePwaS5DeviceEvidence(checks).then(report => {
+      if (id === generation.current) setDeviceEvidence(JSON.stringify(report, null, 2))
+    }).catch(() => {
+      if (id === generation.current) setDeviceEvidenceError(true)
+    }).finally(() => {
+      if (id === generation.current) setDeviceEvidencePending(false)
     })
   }
   const standalone = state.displayMode !== 'browser'
@@ -123,6 +154,37 @@ export default function XDrivePwaInstallDialog({ open, onClose }: { open: boolea
                     <Typography variant="body2">{item.detail}</Typography>
                   </Alert>
                 ))}
+              </Stack>
+            ) : null}
+          </Box>
+          <Divider />
+          <Box>
+            <Typography variant="subtitle2" fontWeight={700}>S5 设备验收记录（手动生成）</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ my: 1 }}>
+              请在真实设备的浏览器或系统图标启动的窗口中操作。仅记录当前显示模式、公开资源检测状态、
+              视口尺寸、Service Worker 是否受控及匿名 Origin 摘要；不包含原始网址、
+              User-Agent、Cookie、Token、账号、文件或私人请求。不会自动上传、存储或标记真机验收通过。
+            </Typography>
+            <Button data-xdrive-pwa-s5-evidence-create variant="outlined"
+              disabled={deviceEvidencePending} sx={{ minHeight: 44 }} onClick={captureDeviceEvidence}>
+              {deviceEvidencePending ? '生成中…' : '生成脱敏验收记录'}
+            </Button>
+            {deviceEvidenceError ? (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                无法生成记录。请在当前浏览器重试；此操作不会向服务器提交任何测试数据。
+              </Alert>
+            ) : null}
+            {deviceEvidence ? (
+              <Stack spacing={1} sx={{ mt: 1.5 }}>
+                <Alert severity="info">
+                  此记录只是浏览器自行报告的状态。仍须人工确认系统图标启动、
+                  设备证书信任和登录/深链接，并附截图或录屏后才能评审 S5；
+                  不能仅凭 standalone 或模拟触摸模式标记 PASS。
+                </Alert>
+                <TextField fullWidth multiline minRows={4} maxRows={8}
+                  label="脱敏记录（选中文字手动复制）" value={deviceEvidence}
+                  data-xdrive-pwa-s5-evidence-output
+                  slotProps={{ input: { readOnly: true } }} />
               </Stack>
             ) : null}
           </Box>
