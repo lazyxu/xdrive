@@ -1755,6 +1755,15 @@ export type AgentMediaPlaceFacet = {
   attribution_url?: string
 }
 
+export type AgentMediaBaiduMapIndexJob = {
+  status: 'not_queued' | 'queued' | 'leased' | 'completed' | 'cancelled'
+  consent_revision: number
+  attempts: number
+  dispatch_enabled: boolean
+  activation_state: 'blocked_pending_licence_and_provider_review'
+}
+export type AgentMediaBaiduMapIndexJobInput = { expected_revision: number; confirm: true }
+
 export type AgentMediaBaiduMapConsent = {
   status: 'not_granted' | 'authorized' | 'revoked' | 'expired' | 'source_changed'
   revision: number
@@ -2574,6 +2583,21 @@ export class AgentIPCClient {
     return this.request<AgentMediaAlbum>('PATCH', '/v1/media/album/folder', {
       album_id: albumID, revision, folder_id: folderID,
     })
+  }
+
+  mediaBaiduIndexJob(nodeID: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaBaiduMapIndexJob>('GET', `/v1/media/baidu-index-job?${query.toString()}`)
+  }
+
+  enqueueMediaBaiduIndexJob(nodeID: number, input: AgentMediaBaiduMapIndexJobInput) {
+    const query = new URLSearchParams({ node_id: String(nodeID) })
+    return this.request<AgentMediaBaiduMapIndexJob>('POST', `/v1/media/baidu-index-job?${query.toString()}`, input)
+  }
+
+  cancelMediaBaiduIndexJob(nodeID: number, revision: number) {
+    const query = new URLSearchParams({ node_id: String(nodeID), revision: String(revision) })
+    return this.request<AgentMediaBaiduMapIndexJob>('DELETE', `/v1/media/baidu-index-job?${query.toString()}`)
   }
 
   mediaBaiduConsent(nodeID: number) {

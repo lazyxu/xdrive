@@ -946,6 +946,55 @@ func (c *Client) MoveMediaAlbumToFolder(
 	return out, err
 }
 
+// MediaBaiduMapIndexJob is an Owner-only sanitized task receipt. It never
+// includes source WGS84, derived BD09, AK, URLs or lease tokens.
+type MediaBaiduMapIndexJob struct {
+	Status          string `json:"status"`
+	ConsentRevision uint64 `json:"consent_revision"`
+	Attempts        uint32 `json:"attempts"`
+	DispatchEnabled bool   `json:"dispatch_enabled"`
+	ActivationState string `json:"activation_state"`
+}
+
+type MediaBaiduMapIndexJobInput struct {
+	ExpectedRevision uint64 `json:"expected_revision"`
+	Confirm          bool   `json:"confirm"`
+}
+
+func (c *Client) MediaBaiduIndexJob(ctx context.Context, nodeID uint64) (MediaBaiduMapIndexJob, error) {
+	if nodeID == 0 {
+		return MediaBaiduMapIndexJob{}, fmt.Errorf("photo node id is required")
+	}
+	var out MediaBaiduMapIndexJob
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/media/items/%d/baidu-map-index-job", nodeID), nil, &out)
+	return out, err
+}
+
+func (c *Client) EnqueueMediaBaiduIndexJob(
+	ctx context.Context, nodeID uint64, input MediaBaiduMapIndexJobInput,
+) (MediaBaiduMapIndexJob, error) {
+	if nodeID == 0 || input.ExpectedRevision == 0 ||
+		input.ExpectedRevision == ^uint64(0) || !input.Confirm {
+		return MediaBaiduMapIndexJob{}, fmt.Errorf("current revision and explicit job confirmation required")
+	}
+	var out MediaBaiduMapIndexJob
+	err := c.json(ctx, http.MethodPost,
+		fmt.Sprintf("/api/v1/media/items/%d/baidu-map-index-job", nodeID), input, &out)
+	return out, err
+}
+
+func (c *Client) CancelMediaBaiduIndexJob(
+	ctx context.Context, nodeID, revision uint64,
+) (MediaBaiduMapIndexJob, error) {
+	if nodeID == 0 || revision == 0 || revision == ^uint64(0) {
+		return MediaBaiduMapIndexJob{}, fmt.Errorf("current photo map job revision required")
+	}
+	var out MediaBaiduMapIndexJob
+	err := c.jsonRevision(ctx, http.MethodDelete,
+		fmt.Sprintf("/api/v1/media/items/%d/baidu-map-index-job", nodeID), revision, nil, &out)
+	return out, err
+}
+
 // MediaBaiduMapConsent is the shared Owner-only consent wire contract.
 // The server never returns original GPS, SourceNode identity or either AK.
 type MediaBaiduMapConsent struct {

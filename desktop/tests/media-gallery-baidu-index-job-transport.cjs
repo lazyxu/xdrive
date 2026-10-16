@@ -1,0 +1,70 @@
+'use strict'
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+const read = name => fs.readFileSync(path.resolve(__dirname, '..', '..', name), 'utf8')
+
+test('A3d2m1b2b2a one Owner index job DTO, API and Gallery Viewer across all platforms', () => {
+  const models = read('ui/shared/src/models.ts')
+  const ui = read('ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx')
+  const adapter = read('ui/shared/src/mui/MediaGalleryAdapter.ts')
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  const viewer = read('ui/shared/src/mui/MediaGalleryViewer.tsx')
+  const web = read('web/src/mediaGalleryAdapter.ts')
+  const desktop = read('desktop/src/renderer/mediaGalleryAdapter.ts')
+  const rest = read('web/src/api.ts')
+  for (const fn of ['getBaiduMapIndexJob', 'enqueueBaiduMapIndexJob', 'cancelBaiduMapIndexJob']) {
+    for (const file of [ui, adapter, gallery, viewer, web, desktop]) {
+      assert.ok(file.includes(fn), fn + ' missing in Gallery shared path')
+    }
+  }
+  assert.match(models, /activation_state: 'blocked_pending_licence_and_provider_review'/)
+  assert.match(ui, /expected_revision: consent\.revision, confirm: true/)
+  assert.match(ui, /cancelBaiduMapIndexJob\(nodeID, job\.consent_revision\)/)
+  assert.match(ui, /generation\.current/)
+  assert.match(ui, /!job\.dispatch_enabled/)
+  assert.match(ui, /consent\.revision > job\.consent_revision/)
+  assert.match(ui, /暂不|尚未放行|等待队列/)
+  assert.match(rest, /'POST'[\s\S]{0,100}JSON\.stringify\(input\)/)
+  assert.match(rest, /If-Match/)
+  assert.doesNotMatch(rest, /BrowserAK|BMAP_PROXY_URL/)
+})
+
+test('A3d2m1b2b2a independent authenticated Native Agent/Go path and strict ingress', () => {
+  const native = read('desktop/src/main/index.cts')
+  const preload = read('desktop/src/preload/index.cts')
+  const types = read('desktop/src/renderer/global.d.ts')
+  const client = read('desktop/src/main/agent_client.cts')
+  const routes = read('cmd/xdrive-agent/desktop_ipc.go')
+  const bridge = read('cmd/xdrive-agent/desktop_ipc_media_baidu_index_job.go')
+  const cloud = read('cmd/xdrive-agent/cloud_files.go')
+  const go = read('internal/client/media.go')
+  const server = read('internal/api/router.go')
+  for (const name of ['get-media-baidu-index-job', 'enqueue-media-baidu-index-job', 'cancel-media-baidu-index-job']) {
+    assert.ok(native.includes('agent:' + name))
+    assert.ok(preload.includes('agent:' + name))
+  }
+  assert.match(types, /getMediaBaiduIndexJob:/)
+  assert.match(client, /'DELETE', `\/v1\/media\/baidu-index-job/)
+  assert.match(routes, /"GET \/v1\/media\/baidu-index-job"/)
+  assert.match(routes, /"POST \/v1\/media\/baidu-index-job"/)
+  assert.match(routes, /"DELETE \/v1\/media\/baidu-index-job"/)
+  assert.match(bridge, /decodeDesktopIPCJSONLimit\(w, r, &input, 512\)/)
+  assert.match(bridge, /CloudEnqueueMediaBaiduIndexJob\(r\.Context\(\), nodeID, input\)/)
+  assert.match(cloud, /cli\.CancelMediaBaiduIndexJob\(ctx, nodeID, revision\)/)
+  assert.match(go, /jsonRevision\(ctx, http\.MethodDelete/)
+  assert.match(server, /authed\.POST\("\/media\/items\/:id\/baidu-map-index-job"/)
+  assert.match(native, /input\.confirm !== true/)
+  assert.match(native, /Object\.keys\(input\)/)
+  assert.doesNotMatch(bridge, /BrowserAK|BaiduMapAK|Getenv\(|Latitude|Longitude/)
+})
+
+test('A3d2m1b2b2a does not activate JSAPI or leak provider authority', () => {
+  const policy = read('internal/baidumapjsapi/resource_policy.go')
+  const dialog = read('ui/shared/src/mui/MediaGalleryViewerLocationDialog.tsx')
+  assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(policy, /return ErrGateClosed/)
+  assert.doesNotMatch(dialog, /BMAP_PROXY_URL|serviceHost|BrowserAK|window\.BMap/)
+})

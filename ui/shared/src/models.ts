@@ -859,6 +859,20 @@ export type MediaBaiduMapConsentInput = {
   consent_to_derived_index: true
 }
 
+/** Owner-only persisted request receipt, never a completed Baidu map runtime. */
+export type MediaBaiduMapIndexJob = {
+  status: 'not_queued' | 'queued' | 'leased' | 'completed' | 'cancelled'
+  consent_revision: number
+  attempts: number
+  dispatch_enabled: boolean
+  activation_state: 'blocked_pending_licence_and_provider_review'
+}
+
+export type MediaBaiduMapIndexJobInput = {
+  expected_revision: number
+  confirm: true
+}
+
 export interface MediaPlaceFacet {
   id: string
   /** Exact GPS of ONE representative photo, distinct from the historical cell center. */

@@ -2761,6 +2761,32 @@ func (c *agentController) CloudMoveMediaAlbumToFolder(
 	return cli.MoveMediaAlbumToFolder(ctx, albumID, revision, folderID)
 }
 
+// Explicit photo-map index jobs use the SAME Agent-held Server session as consent.
+// No renderer GPS, provider URL or credential is accepted at this layer.
+func (c *agentController) CloudMediaBaiduIndexJob(ctx context.Context, nodeID uint64) (client.MediaBaiduMapIndexJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapIndexJob{}, err
+	}
+	return cli.MediaBaiduIndexJob(ctx, nodeID)
+}
+
+func (c *agentController) CloudEnqueueMediaBaiduIndexJob(ctx context.Context, nodeID uint64, input client.MediaBaiduMapIndexJobInput) (client.MediaBaiduMapIndexJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapIndexJob{}, err
+	}
+	return cli.EnqueueMediaBaiduIndexJob(ctx, nodeID, input)
+}
+
+func (c *agentController) CloudCancelMediaBaiduIndexJob(ctx context.Context, nodeID, revision uint64) (client.MediaBaiduMapIndexJob, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.MediaBaiduMapIndexJob{}, err
+	}
+	return cli.CancelMediaBaiduIndexJob(ctx, nodeID, revision)
+}
+
 // Current account credentials live only in the Agent/Server, never renderer.
 func (c *agentController) CloudMediaBaiduConsent(ctx context.Context, nodeID uint64) (client.MediaBaiduMapConsent, error) {
 	cli, _, err := c.cloudClient()

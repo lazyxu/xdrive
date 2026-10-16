@@ -63,6 +63,8 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
+  MediaBaiduMapIndexJob,
+  MediaBaiduMapIndexJobInput,
   XDriveBaiduMapProviderInfo,
   MediaSuggestedPerson,
   UpdateMediaPersonIdentityInput,
@@ -710,6 +712,9 @@ declare global {
         cancelMediaCreativeGeneration: (
           generationID: string,
         ) => Promise<DesktopResult<MediaCreativeGeneration>>
+        getMediaBaiduIndexJob: (nodeID: number) => Promise<DesktopResult<MediaBaiduMapIndexJob>>
+        enqueueMediaBaiduIndexJob: (nodeID: number, input: MediaBaiduMapIndexJobInput) => Promise<DesktopResult<MediaBaiduMapIndexJob>>
+        cancelMediaBaiduIndexJob: (nodeID: number, revision: number) => Promise<DesktopResult<MediaBaiduMapIndexJob>>
         getMediaBaiduConsent: (nodeID: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
         saveMediaBaiduConsent: (nodeID: number, input: MediaBaiduMapConsentInput) => Promise<DesktopResult<MediaBaiduMapConsent>>
         revokeMediaBaiduConsent: (nodeID: number, revision: number) => Promise<DesktopResult<MediaBaiduMapConsent>>
