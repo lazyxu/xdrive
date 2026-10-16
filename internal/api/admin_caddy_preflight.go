@@ -26,6 +26,7 @@ type adminCaddyPreflightDTO struct {
 	HostIngressReady        bool                       `json:"host_ingress_ready"`
 	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
+	SnapshotStable          bool                       `json:"revision_snapshot_consistent"`
 	IngressChangeRisk       string                     `json:"ingress_change_risk"`
 	ApplySupported          bool                       `json:"apply_supported"`
 	Checks                  []adminCaddyPreflightCheck `json:"checks"`
@@ -35,16 +36,13 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")
-	desired, err := s.readCaddyHTTPSDesired(c.Request.Context())
+	snapshot, err := s.readCaddyPreflightSnapshot(c.Request.Context())
 	if err != nil {
-		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS configuration unavailable")
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS or AliDNS settings unavailable")
 		return
 	}
-	credential, hasCredentialRow, err := s.readCaddyAliDNSSetting(c)
-	if err != nil {
-		fail(c, http.StatusServiceUnavailable, "Caddy credential metadata unavailable")
-		return
-	}
+	desired := snapshot.Desired
+	credential, hasCredentialRow := snapshot.Credential, snapshot.CredentialExists
 	action := "unset"
 	if desired.Revision > 0 {
 		action = "disable"
@@ -113,6 +111,18 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	add("public-https", "unknown", "本机观测不能证明公网 DNS、证书签发、端口及 WAN 可达性")
 
 	complete := desired.Revision > 0 && (!desired.Enabled || (domainReady && pairReady))
+	// Check again after plaintext validation and host observation. A
+	// concurrent administrator edit/rotation produces an explicit 409, not
+	// a mixed/stale positive preflight. This is NOT a host-apply CAS.
+	current, err := s.readCaddyPreflightSnapshot(c.Request.Context())
+	if err != nil {
+		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS or AliDNS revision recheck unavailable")
+		return
+	}
+	if !sameCaddyPreflightSnapshot(snapshot, current) {
+		fail(c, http.StatusConflict, "HTTPS or AliDNS revision changed; run preflight again")
+		return
+	}
 	c.JSON(http.StatusOK, adminCaddyPreflightDTO{
 		CheckedAt: time.Now().UTC(), Action: action,
 		DesiredRevision: desired.Revision, CredentialRevision: credential.Revision,
@@ -121,6 +131,7 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		HostLocalTLSVerified:    observed && host.HTTPSConfigured && host.TLSCheckSupported && host.TLSState == "verified",
 		DesiredDomainLocalMatch: caddyDesiredDomainLocalMatch(desired, host, observed),
 		IngressChangeRisk:       caddyIngressChangeRisk(desired, host, observed),
+		SnapshotStable:          true,
 		ApplySupported:          false, Checks: checks,
 	})
 }

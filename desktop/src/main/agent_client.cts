@@ -796,6 +796,9 @@ export type AgentAdminCaddyHTTPSPreflight = {
   desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Advisory only; no HTTPS change or rollback is authorized by this field.
   ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
+  // Two revisioned settings remained stable during this one readonly preflight.
+  // Never a host-apply receipt or license to switch ingress.
+  revision_snapshot_consistent?: boolean
   apply_supported: boolean
   checks: AgentAdminCaddyPreflightCheck[]
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -100,7 +101,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 		if err := json.Unmarshal(out.Body.Bytes(), &dto); err != nil {
 			t.Fatal(err)
 		}
-		if out.Header().Get("Cache-Control") != "no-store" || dto.ApplySupported || len(dto.Checks) != 7 {
+		if out.Header().Get("Cache-Control") != "no-store" || dto.ApplySupported ||
+			!dto.SnapshotStable || len(dto.Checks) != 7 {
 			t.Fatalf("preflight must be private and never claim host apply: %+v", dto)
 		}
 		return dto
@@ -242,5 +244,36 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	}
 	if auditAfter != auditBefore+1 {
 		t.Fatalf("read-only preflight wrote unexpected audit records before=%d after=%d", auditBefore, auditAfter)
+	}
+
+	// PostgreSQL REPEATABLE READ guarantees that two independently revisioned
+	// rows in a single admin preflight observation come from one snapshot:
+	// mutate the credential after the first SELECT on another SQL connection.
+	tx := db.Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	capturedDesired, err := readCaddyHTTPSDesiredDB(tx)
+	if err != nil || capturedDesired.Revision != 2 {
+		_ = tx.Rollback().Error
+		t.Fatalf("repeatable-read HTTPS desired: %+v, %v", capturedDesired, err)
+	}
+	if err := db.Model(&meta.AdminServiceSecret{}).
+		Where("name = ?", caddyAliDNSSecretName).
+		Update("revision", gorm.Expr("revision + ?", 1)).Error; err != nil {
+		_ = tx.Rollback().Error
+		t.Fatal(err)
+	}
+	oldCredential, exists, err := readCaddyAliDNSSettingDB(tx)
+	if err != nil || !exists || oldCredential.Revision != 1 {
+		_ = tx.Rollback().Error
+		t.Fatalf("repeatable-read mixed new credential: %+v, %v", oldCredential, err)
+	}
+	if err := tx.Rollback().Error; err != nil {
+		t.Fatal(err)
+	}
+	now, err := s.readCaddyPreflightSnapshot(t.Context())
+	if err != nil || now.Credential.Revision != 2 {
+		t.Fatalf("fresh preflight snapshot missed rotation: %+v, %v", now, err)
 	}
 }

@@ -29,6 +29,7 @@ const good = () => ({
   host_local_tls_verified: true,
   apply_supported: false,
   desired_domain_local_match: 'matched-local',
+  revision_snapshot_consistent: true,
   checks: checkIDs.map(id => ({
     id,
     state: id === 'restricted-apply' ? 'blocked'
@@ -98,6 +99,42 @@ test('Caddy read-only ingress-continuity advisory is bounded and old Agent compa
     mutate(forged)
     assert.throws(() => validatorExports.verifyCaddyPreflightContract(forged))
   }
+})
+
+test('preflight read-window revision verification is optional for old agents and fail-closed for forged values', () => {
+  const goodSnapshot = good()
+  assert.equal(validatorExports.verifyCaddyPreflightContract(goodSnapshot).revision_snapshot_consistent, true)
+  const legacy = good()
+  delete legacy.revision_snapshot_consistent
+  assert.equal(validatorExports.verifyCaddyPreflightContract(legacy).revision_snapshot_consistent, undefined)
+  for (const invalid of [false, null, 'true', 1, 'applied']) {
+    const forged = good()
+    forged.revision_snapshot_consistent = invalid
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(forged))
+  }
+  const snapshot = read('internal/api/admin_caddy_preflight_snapshot.go')
+  const api = read('internal/api/admin_caddy_preflight.go')
+  const desired = read('internal/api/admin_caddy_https_desired.go')
+  const credential = read('internal/api/admin_caddy_alidns.go')
+  const client = read('internal/client/admin_caddy_preflight.go')
+  const shared = read('ui/shared/src/service-dependencies.ts')
+  const desktop = read('desktop/src/main/agent_client.cts')
+  const panel = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(snapshot, /sql\.LevelRepeatableRead,\s*ReadOnly:\s*true/)
+  assert.match(snapshot, /sameCaddyPreflightSnapshot/)
+  assert.match(snapshot, /subtle\.ConstantTimeCompare/)
+  assert.match(desired, /readCaddyHTTPSDesiredDB\(db \*gorm\.DB\)/)
+  assert.match(credential, /readCaddyAliDNSSettingDB\(db \*gorm\.DB\)/)
+  assert.match(api, /readCaddyPreflightSnapshot\(c\.Request\.Context\(\)\)/)
+  assert.match(api, /!sameCaddyPreflightSnapshot\(snapshot,\s*current\)/)
+  assert.match(api, /http\.StatusConflict/)
+  assert.match(api, /SnapshotStable:\s+true/)
+  assert.match(client, /SnapshotStable/)
+  assert.match(shared, /revision_snapshot_consistent\?:/)
+  assert.match(desktop, /revision_snapshot_consistent\?:/)
+  assert.match(panel, /data-xdrive-caddy-preflight-revision-snapshot/)
+  assert.match(panel, /不代表宿主机已经应用/)
+  assert.doesNotMatch(api + snapshot, /admin\.(?:POST|PUT|DELETE)\(".*services\/caddy\/https\/(?:apply|stop|restart)/)
 })
 
 test('the expected domain is compared only to real host-local verified TLS, with no new control action', () => {
