@@ -291,3 +291,12 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 **关键边界：** 尚未在生产扫描/源同步/Gallery 请求中调用它，没有 Server→百度的真实用户 GPS 转换，也没有持久 BD-09 索引、回收/隐私失效事务、地图外部接口或 JSAPI4 SDK。以后使用转换结果需先实现 Owner/PhotoAsset/来源位置修订、有效性/用户隐私/删除检查，来源变化必须让旧索引失效；聚合不得把地图 BD-09 bounds 冒充原始照片 WGS84，且 PhotoAsset 原始 GPS/Viewer 身份不被修改。
 
 运营方已确认两类 AK、跨平台/派生数据用途及无需额外付费，此为在 [Issue #1798](https://github.com/lazyxu/xdrive/issues/1798) 中记录的用户声明，并非已独立检查实际账户条款。生产 JSAPI4 继续 `runtime_enabled=false`、已核准子资源 0、未配置签名根、无公开 Loader/Session/Cookie/Proxy。还需 9 组真实私有 Browser+Server upstream HAR、人工核准资源白名单、可撤销受信签名/Owner/跨副本配额、Caddy/CSP/Electron、iOS27「照片」1:1 及 Android/Desktop 真机验收。百度唯一 Provider，Server Static AK/加密 Browser AK 分离，Web/Mobile Web/Desktop 统一 Gallery Range/VirtualCollection/Viewer 和 52px 全屏 App Frame 不变。完成 A3 后方可 A4→B1→B2→B3→C1。
+
+
+## A3b3a3d2i · Owner/原始 GPS 版本校验的百度派生位置索引（2026-10-16，仍非生产地图）
+
+在 #1825 已将百度 Geoconv v2 Server-only 官方 WGS84→BD-09 正向转换能力交付后，本阶段建立 **空的、可重建的独立坐标索引表** `xd_baidu_photo_map_positions` 和仅供未来 Server 授权调用的无公开路由视窗读取方法。逻辑身份是当前 `PhotoAsset`（非源文件副本），约束 `OwnerID`、`PrimaryNodeID`、`NodeRevision`、`MediaMetadata.UpdatedAt`、真实源 WGS84 latitude/longitude、显式 `bd09ll`/境外 `wgs84ll` 坐标空间、官方转换版本及派生经纬度；有复合地理索引和 PhotoAsset/Owner FK 删除级联。迁移自动创建空表，**不回填 GPS、不联系百度、不启用任何前端地图资源**。
+
+只读范围查询必须同时 JOIN 当前 Owner、PhotoAsset、未删除 Node、`MediaMetadata`：用户停用、照片被删除、Node revision 变化、原始 GPS 修改、媒体重新扫描/UpdatedAt 变化、投影转换版本过期或坐标系不符，旧行必须**立即不可见**，不能用于标记、数量或照片导航；Owner 必填、最多 100 条/页、经纬度有界、支持日期变更线、总数不从当前页猜测。代码中不开放外部 HTTP 端点，不提供写入程序或任何 Browser AK/Server AK；只在 PostgreSQL 隔离 schema 的合成测试验证范围数据、真实计数和撤销安全。未来 ingestion/cleanup 需要当前照片 Owner、用户定位隐私策略和有效源修订作为写入许可，调用 #1825 的官方 Server 转换并加跨副本额度；视窗将用显式 BD09 边界匹配派生位置，**绝不逆算 BD09 为源 WGS84，也绝不将旧网格中心当拍摄地点**。
+
+用户关于百度两种 AK、自托管 PWA/Electron、无额外费用和 WGS84 正向派生索引保存权限的确认已在 [#1798](https://github.com/lazyxu/xdrive/issues/1798) 分类记录，不再重复询问。正式动态 JSAPI4 的完整子资源列表、九组真实私有双端 HAR、受信发布签名、Owner/Session/撤销和额度、CSP/Electron/PWA 隔离、iOS27「照片」1:1 与 Android/Desktop 真机依旧未完成；`runtime_enabled=false`、零核准 child 资源、无公共 Loader/Cookie/代理不变。图库 Web/Mobile Web/Desktop 继续共用 Server Range、VirtualCollection、Viewer 和 52px App Frame，A3 真正验收后依次 A4→B1→B2→B3→C1。
