@@ -311,9 +311,13 @@ export default function MobileFiles(props: Props) {
     if (typeof window === 'undefined') return mobileFilesDecodeState(null)
     try {
       const previous = mobileFilesDecodeState(window.localStorage.getItem(storageKey))
-      return props.requestedDirectoryID && props.requestedDirectoryID === committedFolderID
-        ? { ...previous, section: 'browse' as const, folderID: props.requestedDirectoryID, scrollTop: 0 }
-        : previous
+      const authorizedRouteID = props.requestedDirectoryID === committedFolderID
+        ? props.requestedDirectoryID : null
+      if (!authorizedRouteID) return previous
+      // A same-folder responsive remount is a resume, not a new navigation.
+      // A different already-committed deep link still opens at the top.
+      return { ...previous, section: 'browse' as const, folderID: authorizedRouteID,
+        scrollTop: previous.folderID === authorizedRouteID ? previous.scrollTop : 0 }
     } catch { return mobileFilesDecodeState(null) }
   }, [storageKey, props.requestedDirectoryID, committedFolderID])
   // A new Files launch resumes the last Browse location, not a different
@@ -783,7 +787,10 @@ export default function MobileFiles(props: Props) {
 
   useEffect(() => {
     if (!ready || !showDirectory || props.searchActive || props.trashActive || directoryID === null) return
-    persist({ folderID: directoryID })
+    // Persist the committed folder's *matching* scroll snapshot together.
+    // Otherwise a cold deep link into a different folder could inherit the
+    // previous folder's stored anchor on the next responsive remount.
+    persist({ folderID: directoryID, scrollTop: browseScrollRef.current })
   }, [ready, showDirectory, props.searchActive, props.trashActive, directoryID, persist])
 
   useEffect(() => {
