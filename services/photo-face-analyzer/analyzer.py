@@ -1205,6 +1205,27 @@ class SemanticRuntime:
         return self._quantize(output)
 
 
+# Deployment-owned staged security capability. Legacy is the only default:
+# opt-in hardening must not silently interrupt tokenless existing services.
+PRIVATE_INGRESS_LEGACY = "legacy"
+PRIVATE_INGRESS_REQUIRE_BEARER_V1 = "require-bearer-v1"
+
+
+def validate_private_ingress_policy(
+    mode: str, token: str, host_apply_token: str = ""
+) -> str:
+    if mode not in (PRIVATE_INGRESS_LEGACY, PRIVATE_INGRESS_REQUIRE_BEARER_V1):
+        raise ValueError("unsupported model-private ingress policy")
+    if mode == PRIVATE_INGRESS_REQUIRE_BEARER_V1:
+        # Exactly 32 bytes in lowercase hex. Shape alone cannot prove entropy;
+        # generate a random credential with the operator and rotate both peers.
+        if not re.fullmatch(r"[0-9a-f]{64}", token):
+            raise ValueError("model-private Bearer must be 64 lowercase hex chars")
+        if host_apply_token and hmac.compare_digest(token, host_apply_token):
+            raise ValueError("model-private and Host Apply tokens must differ")
+    return mode
+
+
 class AnalyzerState:
     def __init__(
         self,
@@ -1215,7 +1236,11 @@ class AnalyzerState:
         preview_origin: str,
         token: str,
         host_apply_token: str = "",
+        private_ingress_policy: str = PRIVATE_INGRESS_LEGACY,
     ) -> None:
+        self.private_ingress_policy = validate_private_ingress_policy(
+            private_ingress_policy, token, host_apply_token
+        )
         self.runtime = runtime
         self.smart_runtime = smart_runtime
         self.semantic_runtime = semantic_runtime
@@ -1239,6 +1264,8 @@ class AnalyzerState:
         response = {**info, "runtime_instance_id": self.runtime_instance_id}
         # A local negative authentication observation, not a fleet admission fence.
         response["private_bearer_auth_required"] = bool(self.token)
+        # This is only this one process' policy; not a global admission proof.
+        response["private_ingress_policy_mode"] = self.private_ingress_policy
         with self._host_apply_lock:
             if self._host_apply_receipt is not None:
                 revision, request_id = self._host_apply_receipt
@@ -1967,7 +1994,12 @@ def benchmark(
     )
 
 
-def healthcheck(socket_path: str, token: str) -> str:
+def healthcheck(
+    socket_path: str,
+    token: str,
+    private_ingress_policy: str = PRIVATE_INGRESS_LEGACY,
+) -> str:
+    validate_private_ingress_policy(private_ingress_policy, token)
     checks = (
         ("/v1/info", "X-XDrive-Face-Protocol", PROTOCOL_VERSION),
         (
@@ -2008,6 +2040,13 @@ def healthcheck(socket_path: str, token: str) -> str:
                 raise RuntimeError(
                     f"analyzer protocol version mismatch for {target}"
                 )
+            if private_ingress_policy == PRIVATE_INGRESS_REQUIRE_BEARER_V1 and (
+                payload.get("private_ingress_policy_mode") != private_ingress_policy
+                or payload.get("private_bearer_auth_required") is not True
+            ):
+                # A new container configuration must not get a healthy signal
+                # from an old model process that does not advertise the policy.
+                raise RuntimeError("model-private bearer enforcement not confirmed")
             session_id = payload.get("runtime_instance_id")
             if not isinstance(session_id, str) or not re.fullmatch(
                 r"[0-9a-f]{32}", session_id
@@ -2036,6 +2075,11 @@ def serve(args: argparse.Namespace) -> None:
     preview_origin = args.preview_origin
     if not preview_origin:
         raise RuntimeError("XD_FACE_PREVIEW_ORIGIN is required")
+    # Validate before loading any expensive model or touching the socket.
+    host_token = os.environ.get("XD_PHOTO_HOST_APPLY_TOKEN", "")
+    private_policy = validate_private_ingress_policy(
+        args.private_ingress_policy, args.token, host_token
+    )
     state = AnalyzerState(
         runtime=FaceRuntime(),
         smart_runtime=SmartRuntime(),
@@ -2043,7 +2087,8 @@ def serve(args: argparse.Namespace) -> None:
         creative_runtime=CreativeRuntime(),
         preview_origin=preview_origin,
         token=args.token,
-        host_apply_token=os.environ.get("XD_PHOTO_HOST_APPLY_TOKEN", ""),
+        host_apply_token=host_token,
+        private_ingress_policy=private_policy,
     )
 
     path = Path(socket_path)
@@ -2104,6 +2149,10 @@ def parse_args() -> argparse.Namespace:
         "--token",
         default=os.environ.get("XD_FACE_ANALYZER_TOKEN", ""),
     )
+    parser.add_argument(
+        "--private-ingress-policy",
+        default=os.environ.get("XD_PHOTO_PRIVATE_INGRESS_POLICY", PRIVATE_INGRESS_LEGACY),
+    )
     parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--benchmark", action="store_true")
@@ -2113,8 +2162,12 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    policy = validate_private_ingress_policy(
+        args.private_ingress_policy, args.token,
+        os.environ.get("XD_PHOTO_HOST_APPLY_TOKEN", ""),
+    )
     if args.healthcheck:
-        session_id = healthcheck(args.socket, args.token)
+        session_id = healthcheck(args.socket, args.token, policy)
         print(
             "XD_PHOTO_INSTANCE_SHA256="
             + healthcheck_session_digest(session_id),

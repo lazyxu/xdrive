@@ -75,3 +75,26 @@ test('private model route auth is NOT a PostgreSQL fleet admission or safe-stop 
   assert.doesNotMatch(source, /pg_try_advisory_lock_shared|xd_photo_host_admission_gates/)
   assert.doesNotMatch(router, /admin\.(?:POST|PUT|DELETE)\(".*photo-intelligence\/host\/(?:stop|restart|freeze|disable)/)
 })
+
+
+test('opt-in model bearer required-v1 is deployment-owned and denies tokenless startup', () => {
+  const model = read('services/photo-face-analyzer/analyzer.py')
+  const testSource = read('services/photo-face-analyzer/tests/test_private_ingress.py')
+  const compose = read('deploy/docker-compose.yml')
+  const env = read('deploy/.env.example')
+  const router = read('internal/api/router.go')
+  assert.match(compose, /XD_PHOTO_PRIVATE_INGRESS_POLICY:\s+\$\{XD_PHOTO_PRIVATE_INGRESS_POLICY:-legacy\}/)
+  assert.match(env, /XD_PHOTO_PRIVATE_INGRESS_POLICY=legacy/)
+  assert.match(model, /def validate_private_ingress_policy\(/)
+  assert.match(model, /PRIVATE_INGRESS_REQUIRE_BEARER_V1 = "require-bearer-v1"/)
+  assert.match(model, /re\.fullmatch\(r"\[0-9a-f\]\{64\}", token\)/)
+  assert.match(model, /hmac\.compare_digest\(token, host_apply_token\)/)
+  assert.match(model, /response\["private_ingress_policy_mode"\] = self\.private_ingress_policy/)
+  assert.match(model, /private_policy = validate_private_ingress_policy\(/)
+  assert.match(model, /private_ingress_policy=private_policy/)
+  assert.match(model, /model-private bearer enforcement not confirmed/)
+  assert.match(testSource, /test_strict_mode_info_and_existing_private_unix_bearer_enforcement/)
+  assert.match(testSource, /test_opt_in_strict_model_bearer_policy_fails_closed_before_runtime_start/)
+  // The model startup policy is NOT a browser toggle, no new Host actions.
+  assert.doesNotMatch(router, /admin\.(?:POST|PUT|DELETE)\(".*photo-intelligence\/host\/(?:stop|restart|freeze|disable)/)
+})

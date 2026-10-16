@@ -10,6 +10,7 @@ import socket
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -126,9 +127,107 @@ class PrivateModelIngressTests(unittest.TestCase):
                     set(info), {
                         "protocol_version", "runtime_instance_id",
                         "private_bearer_auth_required",
+                    "private_ingress_policy_mode",
                     },
                 )
                 self.assertNotIn("dummy-model-private-token", str(info))
+                self.assertEqual(info["private_ingress_policy_mode"], "legacy")
+
+    def test_opt_in_strict_model_bearer_policy_fails_closed_before_runtime_start(self) -> None:
+        strong_token = "a" * 64
+        other_host_token = "b" * 64
+        self.assertEqual(
+            analyzer.validate_private_ingress_policy("legacy", ""), "legacy"
+        )
+        self.assertEqual(
+            analyzer.validate_private_ingress_policy(
+                "require-bearer-v1", strong_token, other_host_token,
+            ),
+            "require-bearer-v1",
+        )
+        for bad_policy, token, host_token in (
+            ("require-bearer-v1", "", ""),
+            ("require-bearer-v1", "weak", ""),
+            ("require-bearer-v1", "A" * 64, ""),
+            ("require-bearer-v1", strong_token, strong_token),
+            ("invalid", strong_token, ""),
+            ("LEGACY", strong_token, ""),
+            ("", strong_token, ""),
+        ):
+            with self.subTest(mode=bad_policy, token_configured=bool(token)):
+                with self.assertRaises(ValueError):
+                    analyzer.validate_private_ingress_policy(
+                        bad_policy, token, host_token
+                    )
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_path = Path(tmp) / "must-not-create.sock"
+            args = SimpleNamespace(
+                socket=str(socket_path),
+                preview_origin="http://server:8080",
+                token="", private_ingress_policy="require-bearer-v1",
+            )
+            with mock.patch.object(
+                analyzer, "FaceRuntime", side_effect=AssertionError("model loaded")
+            ):
+                with self.assertRaises(ValueError):
+                    analyzer.serve(args)
+            self.assertFalse(socket_path.exists())
+
+    def test_strict_mode_info_and_existing_private_unix_bearer_enforcement(self) -> None:
+        token = "c" * 64
+        # Lightweight runtime stubs give real Info responses with zero model
+        # initialization and no user image/text task execution.
+        models = (
+            analyzer.PROTOCOL_VERSION,
+            analyzer.SMART_PROTOCOL_VERSION,
+            analyzer.SEMANTIC_PROTOCOL_VERSION,
+            analyzer.CREATIVE_PROTOCOL_VERSION,
+        )
+        runtimes = tuple(
+            SimpleNamespace(info=lambda version=version: {"protocol_version": version})
+            for version in models
+        )
+        state = analyzer.AnalyzerState(
+            *runtimes, "http://server:8080", token,
+            private_ingress_policy="require-bearer-v1",
+        )
+        info = state.info_with_session({"protocol_version": 1})
+        self.assertIs(info["private_bearer_auth_required"], True)
+        self.assertEqual(info["private_ingress_policy_mode"], "require-bearer-v1")
+        self.assertNotIn(token, str(info))
+        with tempfile.TemporaryDirectory() as tmp:
+            socket_path = str(Path(tmp) / "strict-ingress.sock")
+            server = analyzer.ThreadingUnixHTTPServer(
+                socket_path, analyzer.AnalyzerHandler, state,
+            )
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                for method, route in (
+                    *(( "GET", r) for r in INFO_GET + CANARY_GET),
+                    *(( "POST", r) for r in INFERENCE_POST),
+                ):
+                    for bad in (None, "incorrect"):
+                        with self.subTest(method=method, route=route, bad=bad):
+                            self.assertEqual(forbidden_status(
+                                socket_path, method, route, bad,
+                                announce_unread_body=(method == "POST"),
+                            ), 401)
+                session = analyzer.healthcheck(
+                    socket_path, token, "require-bearer-v1"
+                )
+                self.assertEqual(session, state.runtime_instance_id)
+                # Even a matching Bearer does not prove that the running model
+                # has switched to the requested strict policy.
+                state.private_ingress_policy = "legacy"
+                with self.assertRaisesRegex(RuntimeError, "not confirmed"):
+                    analyzer.healthcheck(
+                        socket_path, token, "require-bearer-v1"
+                    )
+            finally:
+                server.shutdown()
+                server.server_close()
+                worker.join(timeout=3)
 
     def test_missing_host_apply_token_never_grants_host_control(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
