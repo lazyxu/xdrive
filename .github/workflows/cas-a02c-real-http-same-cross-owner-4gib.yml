@@ -1,0 +1,143 @@
+name: CAS-A02c Real HTTP 4GiB Same-Owner Instant and Cross-Owner Physical Reuse
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  cas-a02c-real-owner-reuse:
+    if: github.head_ref == 'perf/cas-a02c-real-http-owner-reuse-4gib-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      RESULTS: ${{ github.workspace }}/cas-a02c-real-http-reuse-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Check exact head and gofmt; compile with opt-in disabled
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          gofmt -d internal/api/cas_a02c_real_http_owner_reuse_4gib_performance_linux_test.go
+          test -z "$(gofmt -l internal/api/cas_a02c_real_http_owner_reuse_4gib_performance_linux_test.go)"
+          env -u XD_CAS_A02C_REAL_HTTP go test -mod=readonly ./internal/api -run '^TestCASA02CRealHTTP4GiBSameAndCrossOwnerReuse$' -count=1 -timeout=90s
+          df -h .
+      - name: Verify permanent source-exact numeric archive and all eleven digests
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a02c-real-http-owner-reuse-4gib/ci-run-38971859757-verified-numeric.tar.gz
+          printf '%s  %s\n' 'bae7c3c0442db884bdcd71bca4ff4a6f8bb46f65f0e5f9010addcbce7153ec13' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,sys,tarfile
+          with tarfile.open(sys.argv[1],"r:gz") as tar:
+            files={m.name:tar.extractfile(m).read() for m in tar.getmembers()}
+          assert len(files)==10,sorted(files)
+          manifest=json.loads(files["MANIFEST.json"])
+          original=manifest["original_members"]
+          assert len(original)==11
+          assert manifest["original_zip_sha256"]=="c39769ff530f9067513049d7aaf744c6754d931288a374891b33ecfed47891d2"
+          for name in original:
+            if name not in files:
+              assert name.endswith(".log")
+              continue
+            assert len(files[name])==original[name]["bytes"]
+            assert hashlib.sha256(files[name]).hexdigest()==original[name]["sha256"]
+          summary=json.loads(files["summary.json"])
+          assert summary["passed"] and summary["samples"]==3
+          assert len(set(summary["source_hashes"]))==3
+          assert summary["source_bytes_per_sample"]==4294967296
+          assert b"EXACT_SOURCE_HEAD=46e80a71734d4f4b0bc16943f6c7d7cf2d1031ae" in files["source.txt"]
+          for i in (1,2,3):
+            row=json.loads(files[f"sample-{i}.json"])
+            assert row["passed"] and row["source_bytes"]==4294967296
+            assert row["cross_owner_real_http_puts"]==512
+            assert row["same_owner_instant_http_puts"]==0
+            assert row["physical_cas_count_after_both_owners"]==1
+            assert row["physical_cas_allocated_bytes_after_both_owners"]==4294971392
+            assert row["final_physical_cas_count"]==0
+          PY
+      - name: Genuine 64MiB PostgreSQL/Gin/Local-CAS smoke (not 4GiB evidence)
+        run: |
+          set -euo pipefail
+          XD_CAS_A02C_REAL_HTTP=1 XD_CAS_A02C_SAMPLE=sample-1 XD_CAS_A02C_SMOKE=1 \
+            go test -mod=readonly ./internal/api -run '^TestCASA02CRealHTTP4GiBSameAndCrossOwnerReuse$' -count=1 -timeout=12m -v
+      - name: Three independent real 4GiB sources; actual A/B owners and physical CAS
+        run: |
+          set -euo pipefail
+          mkdir -p "$RESULTS"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$RESULTS/source.txt"
+          for number in 1 2 3; do
+            name="sample-$number"
+            df -h .
+            /usr/bin/time -v -o "$RESULTS/$name-resources.txt" \
+              env XD_CAS_A02C_REAL_HTTP=1 XD_CAS_A02C_SAMPLE="$name" \
+              go test -mod=readonly ./internal/api \
+                -run '^TestCASA02CRealHTTP4GiBSameAndCrossOwnerReuse$' \
+                -count=1 -timeout=32m -v | tee "$RESULTS/$name.log"
+            python3 - "$RESULTS/$name.log" "$RESULTS/$name.json" <<'PY'
+          import json,sys
+          lines=[l for l in open(sys.argv[1]) if 'CAS_A02C_REAL_HTTP ' in l]
+          assert len(lines)==1, f"missing/duplicate sample JSON: {len(lines)}"
+          item=json.loads(lines[0].split('CAS_A02C_REAL_HTTP ',1)[1])
+          assert item['passed'] and not item['smoke_only']
+          assert item['source_bytes']==4294967296
+          assert item['first_owner_http_puts']==512
+          assert item['same_owner_instant_http_puts']==0
+          assert item['cross_owner_real_http_puts']==512
+          assert item['cross_owner_body_bytes']==4294967296
+          assert item['physical_cas_count_after_both_owners']==1
+          assert item['final_physical_cas_count']==0
+          with open(sys.argv[2],'w') as f: json.dump(item,f,indent=2,sort_keys=True)
+          PY
+          done
+          python3 - "$RESULTS" <<'PY'
+          import json,os,statistics,sys
+          directory=sys.argv[1]
+          rows=[json.load(open(os.path.join(directory,f'sample-{i}.json'))) for i in (1,2,3)]
+          assert {r['sample'] for r in rows}=={'sample-1','sample-2','sample-3'}
+          assert len({r['source_sha256'] for r in rows})==3
+          keys=['first_owner_full_upload_ms','same_owner_instant_ms',
+                'cross_owner_upload_ms','cross_owner_finalize_ms',
+                'cross_owner_staging_allocated_bytes','cross_owner_finalize_go_write_bytes',
+                'cross_owner_peak_go_rss_growth_bytes','all_owner_last_reference_gc_ms']
+          summary={'workload':'CAS-A02c','samples':3,'passed':all(r['passed'] for r in rows),
+                   'source_bytes_per_sample':4294967296,
+                   'medians':{k:statistics.median(r[k] for r in rows) for k in keys},
+                   'maxima':{k:max(r[k] for r in rows) for k in keys},
+                   'source_hashes':[r['source_sha256'] for r in rows]}
+          with open(os.path.join(directory,'summary.json'),'w') as f:
+            json.dump(summary,f,indent=2,sort_keys=True)
+          print('CAS_A02C_SOURCE_EXACT_SUMMARY',json.dumps(summary,sort_keys=True))
+          PY
+      - name: Preserve original source/exact samples and resource logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cas-a02c-real-owner-reuse-${{ github.run_id }}
+          path: cas-a02c-real-http-reuse-results/
+          if-no-files-found: warn
+          retention-days: 30

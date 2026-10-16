@@ -327,3 +327,19 @@ CAS-A05已测100k真实不同1KiB SHA LocalCAS vs离线pack初始空间/热缓�
 | 客户端真正已安装且经过认证的批量Trash恢复/完整原片核验 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
 
 [永久 P055 来源](performance-evidence/p055-real-100k-physical-restore/README.md) / [中央注册表](performance-test-registry.md)。窄屏Linux Chromium不冒充Android/iOS，绝不从PG17本地Server P50推导浏览器UI P50或WAN性能。
+
+
+## CAS-A02c / S001-f · 真正4GiB重复内容在同Owner秒传与跨Owner上传后的物理去重（2026-10-17）：共享Server原片与六端交付边界
+
+| 新精确负载 | Native Desktop Electron+Agent | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| CAS-A02c：4GiB相同SHA、A首次真HTTP、A秒传、B跨Owner全量上传后物理CAS共用/全GC | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+**Linux Server Gin+PostgreSQL17+Local CAS = Planned / valid n0 / AFTER=N/A**，源尺寸3×独立4GiB，A真实512PUT，A同Owner 0 PUT、B跨Owner真实512PUT；保留单CAS、物理stage、真实Linux write_bytes、25ms RSS与Owner释放，等候独立[新工作流](../.github/workflows/cas-a02c-real-http-same-cross-owner-4gib.yml)真实n3后更新。本项不是 Desktop/web/mobile 浏览器客户端的实测；历史P044/P045/P051已测首次上传速度不可冒充A02c，也不可用于计算跨Runner速度提升。入口：[中央登记簿](performance-test-registry.md) / [A02c规范](cas-upload-staging-performance.md)。
+
+**CAS-A02c Invalid harness #38971379131:** 首轮真实4GiB A/B上传成功到HTTP finalize后，把逻辑文件大小4,294,967,296B错误对比实体磁盘分配4,294,971,392B（4KiB块尾开销），提前停止后续SHA/GC，因此有效完整n3=0；不是物理去重失败。只更正本测试记录逻辑/实体两指标，六客户端继续Not measured。
+
+
+### CAS-A02c same/cross Owner real Server 4GiB n3 source-exact evidence (2026-10-17)
+
+On **shared Linux Go HTTP Gin/PostgreSQL17/Local CAS ONLY**, first valid [native specialized CI #38971859757](https://github.com/lazyxu/xdrive/actions/runs/38971859757) performed n3×3 true 4GiB A + B full HTTP sources and A same-owner instant, B cross-owner full PUT, 3 refs→single physical CAS→final zero. Original P50 (ms): A upload **31800.751**, A instant **11.240**, B upload **13026.537**, B finalize **10864.469**, final Owner GC **3781.828**. B finalize Go write_bytes = **0B**, B peak Go RSS growth P50 **1941504B**, 1 CAS allocated **4294971392B**, all full SHA and Owner protections successful. Original source SHA `46e80a71734d4f4b0bc16943f6c7d7cf2d1031ae`, [permanent source-evidence record](performance-evidence/cas-a02c-real-http-owner-reuse-4gib/README.md). **All six GUI client cells remain Not measured**, and no cross-platform code speedup can be inferred; production BEFORE=CURRENT and AFTER=N/A. Evidence commit still needs exact new head CI.
