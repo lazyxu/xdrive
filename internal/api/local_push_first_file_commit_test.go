@@ -95,7 +95,8 @@ func TestLocalPushFirstLeafCommitPersistsAllReferencesAndReplays(t *testing.T) {
 	var hold meta.LocalPushQuotaHold
 	if err := f.server.DB.Where("stage_id = ?", f.stage.StageID).Take(&hold).Error; err != nil ||
 		hold.ReleasedAt == nil || hold.CommittedAt == nil ||
-		hold.CommittedNodeID == nil || *hold.CommittedNodeID != node.ID {
+		hold.CommittedNodeID == nil || *hold.CommittedNodeID != node.ID ||
+		hold.CommittedSourceItemID == nil || *hold.CommittedSourceItemID != item.ID {
 		t.Fatalf("quota hold was not atomically transferred: %+v err=%v", hold, err)
 	}
 	var stage meta.LocalPushStaging

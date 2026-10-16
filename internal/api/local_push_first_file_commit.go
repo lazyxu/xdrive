@@ -214,7 +214,8 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 			blob.SHA256 != stage.ContentSHA256 || blob.StorageKey != casKey ||
 			blob.Size != stage.TotalSize || blob.RefCount < 1 ||
 			hold.ReleasedAt == nil || hold.CommittedAt == nil ||
-			hold.CommittedNodeID == nil || *hold.CommittedNodeID == 0 {
+			hold.CommittedNodeID == nil || *hold.CommittedNodeID == 0 ||
+			hold.CommittedSourceItemID == nil || *hold.CommittedSourceItemID == 0 {
 			return empty, false, errLocalPushStageConflict
 		}
 		var node meta.Node
@@ -235,6 +236,9 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 			sourceID, stage.CurrentPathKey, node.ID, node.Revision,
 			relativeLeaf, stage.TotalSize, stage.ContentSHA256, meta.SourceItemStatePending).
 			Take(&item).Error; err != nil {
+			return empty, false, errLocalPushStageConflict
+		}
+		if *hold.CommittedSourceItemID != item.ID {
 			return empty, false, errLocalPushStageConflict
 		}
 		result = localPushFirstFileCommitResult{NodeID: node.ID, SourceItemID: item.ID, Replayed: true}
@@ -294,7 +298,7 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 						stage.StageID, stage.OwnerID).
 					Updates(map[string]any{
 						"released_at": now, "committed_at": now,
-						"committed_node_id": node.ID, "updated_at": now,
+						"committed_node_id": node.ID, "committed_source_item_id": item.ID, "updated_at": now,
 					})
 				if updateHold.Error != nil || updateHold.RowsAffected != 1 {
 					if updateHold.Error != nil {
