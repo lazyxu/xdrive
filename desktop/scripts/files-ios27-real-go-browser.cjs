@@ -26,7 +26,7 @@ const results = {
   phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
   initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
-  foreignOwner: [], u01Navigations: [], u05StaleRenames: [], u06SearchReturns: [], screenshots: [], errors: [],
+  foreignOwner: [], u01Navigations: [], u05StaleRenames: [], u05VisibilityLossRenames: [], u06SearchReturns: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
     'ui/shared/src/mui/FileExplorerNavigation.ts',
@@ -166,6 +166,125 @@ async function assertRealU05StaleRevisionRename(width, originalName, expectedRev
   } else {
     await input.press('Escape')
   }
+}
+
+
+// U05-B: Genuine authenticated visibility loss AFTER the rename editor opens.
+// A separate legitimate Owner DELETE soft-removes an already-authorized Node.
+// PATCH then MUST be denied by the production Gin owner-scoped path (404), not
+// a mocked UI 403, stale If-Match 409 or merely an intercepted HTTP response.
+// Account-disabled 403 is a distinct revoked-auth security lifecycle: it must
+// not promise that a disabled account's old editor remains interactive.
+async function assertRealU05VisibilityLossRename(width, spec) {
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 844 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + spec.parentID,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const row = page.locator(mobile
+    ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: spec.name }).first()
+  await row.waitFor({ state: 'visible' })
+  await row.click({ button: 'right' })
+  let input
+  let dialog
+  let submit
+  if (mobile) {
+    await page.locator('[data-mobile-files-item-rename]').click()
+    dialog = page.getByRole('dialog', { name: /^重命名/ })
+    await dialog.waitFor()
+    input = dialog.getByRole('textbox', { name: '名称', exact: true })
+    submit = () => dialog.getByRole('button', { name: '保存', exact: true }).click()
+  } else {
+    await page.getByRole('menuitem', { name: /重命名/ }).first().click()
+    input = page.getByRole('textbox', { name: '重命名 ' + spec.name, exact: true })
+    await input.waitFor()
+    submit = () => input.press('Enter')
+  }
+  const draft = mobile ? 'u05b-mobile-retained-draft.txt' : 'u05b-wide-retained-draft.txt'
+  await input.fill(draft)
+  const external = await page.evaluate(async ({ nodeID, revision, token }) => {
+    const response = await fetch('/api/v1/nodes/' + nodeID, {
+      method: 'DELETE', headers: {
+        Authorization: 'Bearer ' + token,
+        'If-Match': '"' + revision + '"',
+      },
+    })
+    return { status: response.status }
+  }, { nodeID: spec.nodeID, revision: spec.revision, token: fixture.token })
+  check(external.status === 204,
+    'second authenticated Owner operation must genuinely remove the renamed target', {
+      width, nodeID: spec.nodeID, status: external.status,
+    })
+  const [denied] = await Promise.all([
+    page.waitForResponse(response =>
+      new URL(response.url()).pathname === '/api/v1/nodes/' + spec.nodeID &&
+      response.request().method() === 'PATCH' && response.status() === 404),
+    submit(),
+  ])
+  const sentRevision = denied.request().headers()['if-match']
+  const sentBody = denied.request().postDataJSON()
+  const rejection = await denied.json()
+  check(sentRevision === '"' + spec.revision + '"' && sentBody.name === draft &&
+    rejection.error === 'node not found',
+    'original rename draft and revision must reach real Gin and be denied for missing Node',
+    { width, sentRevision, requestedName: sentBody.name, status: denied.status(),
+      error: rejection.error })
+  await page.waitForFunction(expected =>
+    document.activeElement instanceof HTMLInputElement &&
+    document.activeElement.value === expected, draft, { timeout: 12000 })
+  check(await input.inputValue() === draft,
+    'original Mobile/Wide editor must preserve rejected draft and keyboard focus',
+    { width, draft })
+  const persisted = await page.evaluate(async ({ nodeID, token }) => {
+    const response = await fetch('/api/v1/nodes/' + nodeID, {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    return response.status
+  }, { nodeID: spec.nodeID, token: fixture.token })
+  check(persisted === 404, 'real Owner GET must confirm the soft-deleted Node is absent',
+    { width, persisted })
+  await screenshot('live-go-u05b-disappeared-during-rename-' + width)
+  if (mobile) {
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+  } else {
+    await input.press('Escape')
+  }
+  // Do NOT leave unrelated Trash state for the original D3/D4 Undo/Redo
+  // fixture assertions. This restores only the test-owned deleted leaf,
+  // through the REAL authenticated production API with the deletion revision.
+  // Restore is strictly AFTER the 404 + draft/focus + Owner GET 404 checks;
+  // it cannot falsify or bypass those original negative assertions.
+  const restored = await page.evaluate(async ({ nodeID, revision, token }) => {
+    const response = await fetch('/api/v1/trash/' + nodeID + '/restore', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'If-Match': '"' + (revision + 1) + '"',
+      },
+    })
+    const body = await response.json()
+    return { status: response.status, id: body.id, revision: body.revision }
+  }, { nodeID: spec.nodeID, revision: spec.revision, token: fixture.token })
+  check(restored.status === 200 && restored.id === spec.nodeID &&
+    restored.revision === spec.revision + 2,
+    'real revision-fenced Trash restore must return the exact original Node',
+    { width, restored, nodeID: spec.nodeID })
+  const restoredOwnerStatus = await page.evaluate(async ({ nodeID, token }) => {
+    const response = await fetch('/api/v1/nodes/' + nodeID, {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    return response.status
+  }, { nodeID: spec.nodeID, token: fixture.token })
+  check(restoredOwnerStatus === 200,
+    'original physical-CAS leaf must be visible again for independent Undo/Redo oracle',
+    { width, restoredOwnerStatus })
+  results.u05VisibilityLossRenames.push({
+    width, mobile, status: denied.status(), realOwnerDelete: external.status,
+    persistedMissing: persisted === 404, draftPreserved: true, focusRestored: true,
+    realOwnerRestore: restored.status, restoredOriginalNode: restored.id === spec.nodeID,
+  })
 }
 
 async function screenshot(name) {
@@ -1193,6 +1312,23 @@ async function main() {
   check(results.u05StaleRenames.length === 2,
     'real 390/900px UI must preserve both stale Revision drafts under Gin 409')
   await tapRealUndoRedoFromBothLayouts()
+  // Both cases execute after the immutable original queues/Worker/Undo/Redo
+  // checks. They remove only separate U01 folder leaves, not the original
+  // Copy/Move/Delete fixtures whose physical CAS and revisions are asserted.
+  await assertRealU05VisibilityLossRename(390, {
+    parentID: fixture.u01_slow_id, nodeID: fixture.u01_slow_leaf_id,
+    name: 'u01-slow-authorized.txt', revision: 1,
+  })
+  await assertRealU05VisibilityLossRename(900, {
+    parentID: fixture.u01_fast_id, nodeID: fixture.u01_fast_leaf_id,
+    name: 'u05-wide-authoritative.txt', revision: 3,
+  })
+  check(results.u05VisibilityLossRenames.length === 2 &&
+    results.u05VisibilityLossRenames.every(item =>
+      item.status === 404 && item.realOwnerDelete === 204 &&
+      item.persistedMissing && item.draftPreserved && item.focusRestored &&
+      item.realOwnerRestore === 200 && item.restoredOriginalNode),
+    'U05-B requires two independent real Gin/PostgreSQL visibility-loss rename denials')
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
 }
@@ -1224,6 +1360,7 @@ async function main() {
       tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
       u01RealNavigations: results.u01Navigations.length,
       u05RealStaleRenames: results.u05StaleRenames.length,
+      u05RealVisibilityLossRenames: results.u05VisibilityLossRenames.length,
       u06RealSearchReturns: results.u06SearchReturns.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,

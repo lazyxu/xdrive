@@ -602,3 +602,75 @@ Its exact-head full CI/final-gate must pass before Ready/Rebase Merge.
 A Node test and compiled Web can verify the projected values and wiring, but
 actual NVDA/VoiceOver/TalkBack announcement order and iOS27/Android Installed
 behavior remain **NOT RUN**, as does the PWA S5 physical release gate.
+
+
+## U05-B · genuine Owner visibility loss during open rename editor (2026-10-17)
+
+**Frozen baseline:** after merged F02-M [#1911](https://github.com/lazyxu/xdrive/pull/1911),
+the subsequent unrelated Admin/LocalPush merge advanced GitHub `master`.
+Freeze `master@e5ff852e8a4fa6175d667b9d4daa55ddbd95e1e4` for exactly ONE U05-B test+ledger work commit on
+`test/files-u05-visibility-loss-live-go-20261017`. The existing four native
+Files browser workflow gates already include the `test/files-u05-` prefix,
+so the actual PostgreSQL17/Gin/Chromium execution must be **success**, not
+conditionally skipped. Preserve unrelated AGENTS/Admin/Gallery/Performance/
+LocalPush/Race/PWA changes and #1901 quiet navigation.
+
+**Exact semantics found in production:** authentic FileExplorer `PATCH /nodes/:id`
+returns owner-scoped **404** if a Node is no longer visible, an actionable **409**
+for stale `If-Match` or duplicate names, while the authenticated middleware's
+**403 account_disabled** also revokes that user's session. A disabled or switched
+account must not keep a prior user's interactive rename draft on screen merely to
+satisfy a synthetic 403 presentation test. Cross-Owner attempts intentionally
+return 404, not a fake 403. The existing U05-A already proves independent
+genuine PostgreSQL 409 / retained draft and focus at 390 and 900 CSS px.
+
+**New independent U05-B regression, no production change unless a real RED:**
+the *same* built production Web/Chrome and isolated real Gin/PostgreSQL/Local CAS
+fixture opens the actual Mobile 390px dialog and Wide 900px inline rename editor
+on separate previously-authorized physical-CAS-backed folder leaves. While
+each editor retains a draft, a second authenticated Owner connection sends
+the exact legitimate `DELETE /api/v1/nodes/:id` with original revision and
+receives **204**. Submit the still-open original editor: assert actual UI PATCH
+retains original `If-Match` and exact draft, genuine Gin responds
+**404 `node not found`**, the original textbox draft and keyboard focus
+remain, and authenticated Owner GET confirms 404. No fake `/api/v1`
+response, no adapter stub, no changed Server/Agent/Node permissions, and no
+deletion of original worker/undo fixtures. Both independent cases must emit
+`u05RealVisibilityLossRenames=2`; preserve all prior U01/U05-A/U06,
+Copy/Move/Delete/Undo/Redo real API assertions unchanged.
+
+**Acceptance boundary:** this is legitimate Owner visibility loss (404),
+not a file ACL grant/revoke feature or an account-disabled 403 UI persistence
+promise. It is native Linux Chromium with Mobile viewport simulation and
+real Gin/PostgreSQL/CAS, not Safari iOS27, Android Installed, Windows CfAPI,
+VoiceOver/TalkBack, or a real external administrator disabling an account.
+Keep PWA S5 `NO-GO`. Full exact-head 76-job CI, real browser step,
+single-commit/final-gate green and clean Rebase Merge are required.
+
+### U05-B first exact-head CI: browser green, test-only Trash leakage (2026-10-17)
+
+First work HEAD `b22418bf41e6cbc82e18a4ea82ee88a1f93276cf`, exact [CI #38961811175](https://github.com/lazyxu/xdrive/actions/runs/38961811175) was **RED**:
+the original production built Chromium→real Gin/PostgreSQL17 script emitted
+`IOS27_FILES_REAL_GO_RESULT {"passed":true,...,"u05RealVisibilityLossRenames":2,
+"u05RealStaleRenames":2,"u01RealNavigations":2,"u06RealSearchReturns":2,
+"errors":[]}`. Both new genuine 204→404→draft+focus UI cases passed, as did all
+original browser-side Copy/Move/Delete/Undo/Redo cases. However the underlying
+Go fixture's unchanged **D4 final Trash-empty oracle** correctly failed at
+`files_ios27_live_go_browser_integration_test.go:709`: the two U05-B test
+leaves had been deliberately soft-deleted in the negative scenario and
+were still present in Trash. This is **new test state pollution**, not
+evidence of a product rename, Undo/Redo, real PostgreSQL or virtualizer bug.
+
+Keep the original Go D4 oracle entirely unchanged. After each completed
+authentic Gin 404, browser editor draft/focus check and Owner GET 404,
+close the original editor and use the genuine authenticated production
+`POST /api/v1/trash/:id/restore` with exact post-delete `If-Match`.
+Require HTTP 200, the same Node ID, current restored Revision and Owner
+GET 200. Only then allow the other original Go test's Trash-empty invariant
+to run. The restoration CANNOT run before the negative 404 evidence.
+
+Reconstruct exactly **ONE** corrected U05-B work commit on the same frozen
+parent `e5ff852e8a4fa6175d667b9d4daa55ddbd95e1e4`; previous CI is diagnostic ONLY. Require NEW complete
+source-exact 76-job CI with actually executed real Gin Chromium and
+unchanged D3/D4/Undo/Redo, then Ready/Rebase merge. No Server/Agent/Web UI,
+permission rule, REST implementation or production test oracle is weakened.
