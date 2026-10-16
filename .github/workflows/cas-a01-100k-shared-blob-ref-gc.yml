@@ -1,0 +1,150 @@
+name: CAS-A01 Real 100k Logical Refs Shared One Physical Blob Go GC
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  cas-a01-100k-shared-original-blob:
+    if: github.head_ref == 'perf/cas-a01-100k-shared-blob-gc-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 85
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_CAS_A01_SHARED_BLOB_PERF: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate A01 real single physical CAS and 100k history refs source contract
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l internal/api/cas_a01_shared_blob_100k_http_performance_integration_test.go)"
+          node --test desktop/tests/cas-a01-shared-blob-100k-ref-gc-source.cjs
+      - name: Build real signed Gin PostgreSQL17 physical CAS fixture
+        run: |
+          set -euo pipefail
+          mkdir -p desktop/cas-a01-100k-shared-blob-bin
+          go test -mod=readonly -c -o desktop/cas-a01-100k-shared-blob-bin/api.test ./internal/api
+      - name: Measure three isolated 100k logical refs one immutable CAS HTTP delete and last owner GC
+        run: |
+          set -euo pipefail
+          result_dir=desktop/cas-a01-100k-shared-blob-results
+          mkdir -p "$result_dir"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$result_dir/source.txt"
+          for i in 1 2 3; do
+            export XD_CAS_A01_SAMPLE="sample-$i"
+            /usr/bin/time -f 'whole_process_max_rss_kib=%M\nwhole_process_user_cpu_sec=%U\nwhole_process_system_cpu_sec=%S' -o "$result_dir/sample-$i.time" \
+              desktop/cas-a01-100k-shared-blob-bin/api.test \
+              -test.run '^TestCASA01SharedBlob100KActualHTTP$' -test.count=1 -test.timeout=25m -test.v \
+              | tee "$result_dir/sample-$i.log"
+          done
+          python3 - "$result_dir" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          for i in (1,2,3):
+              log=(root/f'sample-{i}.log').read_text()
+              matches=re.findall(r'CAS_A01_SHARED_REFS_REAL_HTTP (\{[^\n]+\})',log)
+              assert len(matches)==1,(i,'actual full signed HTTP CAS-A01 machine result missing')
+              row=json.loads(matches[0])
+              expected={
+                  'original_CAS_SHA_unique_count':1,
+                  'original_logical_file_count':100000,
+                  'original_FileVersion_count':100000,
+                  'shared_blob_ref_count_before':200002,
+                  'physical_write_count_before':1,
+                  'original_physical_CAS_count':1,
+                  'physical_Blob_count_after_selection':1,
+                  'physical_CAS_unlinked_count':0,
+                  'remaining_CAS_originals':1,
+                  'remaining_CAS_bytes':1024,
+                  'physical_Blob_count_before':1,
+                  'shared_Blob_ref_count_after_selection':2,
+                  'owner_physical_quota_B':1024,
+                  'other_owner_physical_quota_B':1024,
+                  'owner_after_physical_quota_B':1024,
+                  'owner_after_trash_B':0,
+                  'owner_after_history_B':0,
+                  'selected_nodes_remaining':0,
+                  'File_rows_after':2,
+                  'FileVersion_rows_after':0,
+                  'ContentBlob_rows_after':1,
+                  'deleted_share_rows_remaining':0,
+                  'protected_share_rows_remaining':1,
+                  'auth_audit_rows':1,
+                  'foreign_owner_HTTP':404,
+                  'stale_revision_HTTP':409,
+                  'owner_delete_HTTP':204,
+                  'HTTP_response_bytes':0,
+                  'final_other_owner_one_ref_count':1,
+                  'final_physical_CAS_count':0,
+                  'final_physical_CAS_bytes':0,
+                  'final_ContentBlob_rows':0,
+                  'HTTP_budget_ms':1200000,
+                  'RSS_growth_budget_B':536870912,
+              }
+              for key,want in expected.items():
+                  assert row.get(key)==want,(i,key,row.get(key),want)
+              assert row['passed'] is True
+              assert row['protected_outside_file_complete_bytes'] is True
+              assert row['outside_sibling_unchanged'] is True
+              assert 0<row['HTTP_delete_ms']<=1200000
+              assert 0<row['two_keeper_last_reference_delete_ms']<=120000
+              assert row['Go_CPU_ticks']>=0 and 0<=row['Go_RSS_growth_B']<=536870912
+              assert row['HTTP_error']=='<nil>'
+              row['whole_process_resources']=(root/f'sample-{i}.time').read_text()
+              (root/f'sample-{i}.json').write_text(json.dumps(row,indent=2)+'\n')
+              rows.append(row)
+          summary={
+              'workload_id':'CAS-A01/100k-shared-one-true-physical-Blob-vs-P047-100k-unique',
+              'status':'original CURRENT/BEFORE only, after N/A, product unchanged',
+              'n':3,
+              'physical_cas_original_count':1,
+              'logical_current_file_count':100000,
+              'logical_history_version_count':100000,
+              'ref_count_before':200002,
+              'ref_count_after_selection_delete':2,
+              'after_last_owner_gc_file_count':0,
+              'median_100k_shared_refs_HTTP_delete_ms':statistics.median(x['HTTP_delete_ms'] for x in rows),
+              'median_last_two_keeper_GC_ms':statistics.median(x['two_keeper_last_reference_delete_ms'] for x in rows),
+              'max_GO_RSS_growth_B':max(x['Go_RSS_growth_B'] for x in rows),
+              'passed':all(x['passed'] for x in rows),
+              'samples':rows,
+              'boundary':'Actual Gin HTTP+PG17/Local immutable CAS, 100k distinct Node/File+100k historic refs sharing 1 original 1KiB physical blob, two owner keepers and last reference GC. Not 100k unique CAS, not real OS installed PWA or FileExplorer GUI.'
+          }
+          (root/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('CAS_A01_REAL_SHARED_BLOB_100K_N3 '+json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a01-100k-shared-physical-blob-owner-gc-n3
+          path: desktop/cas-a01-100k-shared-blob-results/
+          if-no-files-found: warn
+          retention-days: 14
