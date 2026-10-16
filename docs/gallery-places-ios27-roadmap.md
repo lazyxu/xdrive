@@ -425,3 +425,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 这次修复生产中由 Web、Mobile Web、Desktop 共用的 Server `/media/places/baidu-static` 请求，而不是新增无调用方的 JSAPI4 Mock。之前 Go `URL.Query().Get()` 会在用户传入重复经纬度参数时选择首值，也会静默舍弃坏百分号 escape。改为原始 Query 强校验：五个固定参数 lat/lng/zoom/width/height 各一次，无扩展 AK/token/url、无大小写或百分号编码别名、无非法/空段、无异常 RawPath/Fragment；保留真实 0/0 GPS 和正常极小坐标科学计数法。所有无效输入 400 返回，不占百度上游配额也不触发网络；增加伪 HTTP transport 实测验证。原有配额、超时、取消、Server-only AK、PNG 响应和三端单一接口保持不变。
 
 这项是**真实 Static Map 请求安全性**，不是百度 JSAPI4 动态地图发布。正式 JSAPI4 仍要依法完成 self-host/PWA/Electron 许可，完整子资源清单、九组私有 Browser/Upstream HAR 无 AK 泄漏、受信签名、Owner/撤销/跨副本额度和 Caddy/Electron 沙盒及 iOS 27「照片」1:1 真机验收。运行硬门禁未解除；地图仅百度，Web/Mobile Web/Desktop 共享 Gallery Range、VirtualCollection、Viewer，保留 52px 全屏 App Frame。待 A3 真正完成后，再依次实施 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d2f · 已运行的百度静态地图上游禁用环境代理（2026-10-16）
+
+加固 Web/Mobile Web/Desktop 共用的 Server 百度静态 PNG HTTP 客户端。过去 Go 默认 Transport 可能继承 `HTTPS_PROXY` 等环境变量，将带 Static Server AK 和用户原始 GPS 的百度 HTTPS 请求转交给未审查的代理。改为复用一个严格 TLS 校验的连接池，明确 `Proxy=nil`、禁用自动响应压缩、限定最多三个上游连接和短期空闲回收；保持 5 秒超时、禁止重定向、原始百度固定 Host、Owner 限额、可取消 Go Context、3MiB PNG 校验、静态 Server AK 不返回客户端。Go 测试通过恶意环境变量和注入的离线 HTTP Transport 验证。
+
+**与真正 JSAPI4 动态地图分开验收**：这属于现有运行中的静态底图 AK 泄漏面修复，不能凭此认为百度已经授予自托管/PWA/Electron 商业许可，也不建立任何 JSAPI 资源代理或持久 BD09 衍生数据库。JSAPI4 继续 `runtime_enabled=false`、无审核通过的完整子资源清单/生产受信签名根；真实 9 组 Browser/Server HAR 证据及 AK 无泄漏、逐请求 Owner 认证和跨副本配额、Caddy/Electron 隔离、iOS27/Android/Desktop 真机仍是 A3 硬条件。保留百度唯一 Provider、Server/Browser AK 独立服务端加密、52px 全屏 App Frame、三端共享图库 Range/VirtualCollection/Viewer；A3 实际完成后再实施 A4、B1、B2、B3、C1。
