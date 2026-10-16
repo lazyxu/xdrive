@@ -31,6 +31,43 @@ function hasAKParameter(value) {
     /\b(?:ak|browser_ak)\s*[:=]\s*['"][A-Za-z0-9]/i.test(value)
 }
 
+/** HAR body encoding is untrusted evidence. Node silently tolerates junk,
+ * noncanonical Base64 and whitespace: reject these rather than certify them. */
+function decodedCapturedText(content, issues) {
+  const raw = content?.text
+  if (typeof raw !== 'string') return null
+  const encoding = content.encoding
+  if (encoding === undefined || encoding === '') {
+    if (Buffer.byteLength(raw, 'utf8') > MAX_TEXT_BYTES) {
+      issues.add('OVERSIZED_TEXT_BODY')
+      return null
+    }
+    return raw
+  }
+  if (encoding !== 'base64') {
+    issues.add('INVALID_BODY_ENCODING')
+    return null
+  }
+  if (raw.length > Math.ceil(MAX_TEXT_BYTES / 3) * 4) {
+    issues.add('OVERSIZED_TEXT_BODY')
+    return null
+  }
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw)) {
+    issues.add('INVALID_BODY_ENCODING')
+    return null
+  }
+  const bytes = Buffer.from(raw, 'base64')
+  if (bytes.length > MAX_TEXT_BYTES) {
+    issues.add('OVERSIZED_TEXT_BODY')
+    return null
+  }
+  if (bytes.toString('base64') !== raw) {
+    issues.add('INVALID_BODY_ENCODING')
+    return null
+  }
+  return bytes.toString('utf8')
+}
+
 function auditJSAPIHar(har, { origin, client, secret, proxyPrefix = '/_BMapService/' } = {}) {
   const issues = new Set()
   let base
@@ -79,13 +116,18 @@ function auditJSAPIHar(har, { origin, client, secret, proxyPrefix = '/_BMapServi
     const mime = response.content?.mimeType || headerValue(response.headers, 'content-type')
     const body = response.content?.text
     if (typeof body === 'string') {
-      let decoded = body
-      if (response.content.encoding === 'base64') {
-        try { decoded = Buffer.from(body, 'base64').toString('utf8') } catch { issues.add('INVALID_BODY_ENCODING') }
+      // Scan the HAR's original field AND canonically decoded bytes: a false
+      // "base64" label cannot conceal a literal Browser AK in the source.
+      if (containsSecret(body, secret)) issues.add('BROWSER_SECRET_LEAK')
+      if (hasAKParameter(body)) issues.add('BROWSER_AK_PARAMETER')
+      const decoded = decodedCapturedText(response.content, issues)
+      if (decoded !== null) {
+        if (containsSecret(decoded, secret)) issues.add('BROWSER_SECRET_LEAK')
+        if (hasAKParameter(decoded)) issues.add('BROWSER_AK_PARAMETER')
+        if ((isMap || isSession) && TEXTUAL.test(mime) && decoded.length === 0) {
+          issues.add('UNCAPTURED_TEXT_BODY')
+        }
       }
-      if (Buffer.byteLength(decoded) > MAX_TEXT_BYTES) issues.add('OVERSIZED_TEXT_BODY')
-      if (containsSecret(decoded, secret)) issues.add('BROWSER_SECRET_LEAK')
-      if (hasAKParameter(decoded)) issues.add('BROWSER_AK_PARAMETER')
     } else if ((isMap || isSession) && TEXTUAL.test(mime)) {
       issues.add('UNCAPTURED_TEXT_BODY')
     }

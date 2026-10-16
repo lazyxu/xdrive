@@ -87,3 +87,47 @@ test('all diagnostics contain only fixed result codes and counts, never raw URLs
   assert.doesNotMatch(output, /gallery\.example|synthetic-browser-ak|_BMapService|opaque/)
   assert.match(output, /BROWSER_SECRET_LEAK/)
 })
+
+test('A3 private HAR rejects noncanonical, junk, unknown and empty JS response encodings', () => {
+  for (const [encoding, body] of [
+    ['base64', '@@@'], ['base64', 'AB=='],
+    ['base64', 'YWJj' + String.fromCharCode(10)],
+    ['gzip', 'window.BMap = {};'], ['base64url', 'd2luZG93'],
+  ]) {
+    const h = fixture()
+    h.log.entries[1].response.content = { mimeType: 'application/javascript', encoding, text: body }
+    code(h, 'INVALID_BODY_ENCODING')
+    assert.equal(audit(h).ok, false)
+  }
+  const empty = fixture()
+  empty.log.entries[1].response.content.text = ''
+  code(empty, 'UNCAPTURED_TEXT_BODY')
+})
+
+test('A3 private HAR scans original and decoded AK, preserves valid Base64 and bounds bytes', () => {
+  const ok = fixture()
+  ok.log.entries[1].response.content = {
+    mimeType: 'application/javascript', encoding: 'base64',
+    text: Buffer.from('window.BMap = {};').toString('base64'),
+  }
+  assert.equal(audit(ok).ok, true)
+  const leaked = fixture()
+  leaked.log.entries[1].response.content = {
+    mimeType: 'application/javascript', encoding: 'base64',
+    text: Buffer.from('window.private = "' + SECRET + '"').toString('base64'),
+  }
+  code(leaked, 'BROWSER_SECRET_LEAK')
+  const mislabeled = fixture()
+  mislabeled.log.entries[1].response.content = {
+    mimeType: 'application/javascript', encoding: 'base64', text: SECRET,
+  }
+  code(mislabeled, 'BROWSER_SECRET_LEAK')
+  code(mislabeled, 'INVALID_BODY_ENCODING')
+  const huge = fixture()
+  huge.log.entries[1].response.content = {
+    mimeType: 'application/javascript', encoding: 'base64', text: 'A'.repeat(2800000),
+  }
+  code(huge, 'OVERSIZED_TEXT_BODY')
+  const output = JSON.stringify(audit(leaked)) + JSON.stringify(audit(mislabeled))
+  assert.doesNotMatch(output, /synthetic-browser-ak|gallery\\.example|_BMapService|window\\.private/)
+})

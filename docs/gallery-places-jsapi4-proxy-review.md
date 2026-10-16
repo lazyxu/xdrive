@@ -260,3 +260,10 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 对实际生产启用的 Static v2 Go HTTP 客户端，默认不能受宿主环境 `HTTPS_PROXY`、`HTTP_PROXY` 或 `ALL_PROXY` 影响。Proxy=nil + TLS 默认验证 + 统一只连 api.map.baidu.com/staticimage/v2 + 三路连接池 + 5 秒超时 + 禁止跳转，可减少 Static Server AK/GPS 意外离开预期链路的风险。测试注入自定义 RoundTripper 仅供 Server 可信配置/离线验证，不能通过客户端 URL 选择。该措施不能证明运营商中间人、进程级自定义 Transport、恶意宿主根证书或真实 JSAPI4 子资源无泄漏，生产运行须仍采用被信任的部署环境和账户策略。
 
 **JSAPI4 法律/产品 NO-GO 未变化**：未取得百度对多用户自托管、PWA、Electron 实际场景的账户许可、完整官方资源及 9 组真实请求 HAR；不能修改生产 Loader/签名/路由和 `runtime_enabled=false`，更不能将静态通道当作官方商业授权。现有 52px App Frame、iOS 27 照片 1:1 基准、三端共享图库不变。证据工作跟踪 Issue #1798。
+
+
+## A3b2a1 · 离线浏览器 HAR 严格正文解码与操作员交接（2026-10-16）
+
+现有本地 HAR 审计原先依赖 Node 宽松 Base64 解码：非法字节、非规范填充、未知 encoding 或空脚本体不应被视为已审核正常。现在浏览器 HAR 必须通过有界、规范的 Base64 round-trip 校验；分别扫描原始 HAR 文本与解码后的正文，防止伪造编码标签隐藏可见 AK，并添加正反例 Desktop 回归。诊断仅固定码/计数，不能泄漏原始密钥或 URL。详见 [百度 JSAPI4 操作员私有许可和九场景取证指南](gallery-places-jsapi4-operator-runbook.md)。
+
+这仅完善未来上线前**离线证据检测**，不运行生产浏览器 SDK、不访问百度接口、不读取/解密 Browser AK、不产生 JSAPI4 Cookie 或公开路由。没有账户适用自托管/商用/PWA/Electron 许可、完整人工核准的子资源清单、9 组真实 HAR、可信发布/跨副本 Owner 配额/CSP/Electron 和真实设备证明之前，JSAPI4 继续 runtime_enabled=false、资源审查数 0、唯一 Provider 百度，xDrive Web/Mobile Web/Desktop 共享图库 Range/VirtualCollection/Viewer、全屏 App Frame 与 52px 标题栏不变。
