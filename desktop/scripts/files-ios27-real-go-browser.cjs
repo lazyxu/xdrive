@@ -26,7 +26,7 @@ const results = {
   phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
   initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
-  foreignOwner: [], u01Navigations: [], u05StaleRenames: [], screenshots: [], errors: [],
+  foreignOwner: [], u01Navigations: [], u05StaleRenames: [], u06SearchReturns: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
     'ui/shared/src/mui/FileExplorerNavigation.ts',
@@ -839,6 +839,102 @@ async function assertRealU01BrowserNavigation(width) {
   await screenshot('live-go-u01-real-navigation-' + width)
 }
 
+
+async function verifyU06RealSearchHistory(width) {
+  const mobile = width < 900;
+  const query = 'u01-fast-authorized';
+  const filename = 'u01-fast-authorized.txt';
+  const itemSelector = mobile ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]';
+  await page.setViewportSize({width, height: mobile ? 844 : 700});
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.root_id, {waitUntil: 'domcontentloaded'});
+  const ready = page.waitForResponse(r => new URL(r.url()).pathname ===
+    '/api/v1/nodes/' + fixture.root_id + '/children' && r.status() === 200);
+  await page.reload({waitUntil: 'domcontentloaded'});
+  await (await ready).json();
+  const input = page.getByRole('textbox', {
+    name: mobile ? '搜索全部文件' : '搜索全部文件和文件夹', exact: true,
+  });
+  await input.fill(query);
+  const result = page.waitForResponse(r => {
+    const url = new URL(r.url());
+    return url.pathname === '/api/v1/search' &&
+      url.searchParams.get('q') === query &&
+      url.searchParams.get('offset') === '0' &&
+      r.request().method() === 'GET' && r.status() === 200;
+  });
+  await input.press('Enter');
+  const response = await result;
+  const body = await response.json();
+  const match = (body.items || []).find(x => x.node?.id === fixture.u01_fast_leaf_id);
+  check(body.total_count === 1 && match?.node?.name === filename &&
+    match.breadcrumbs?.[0]?.id === fixture.root_id &&
+    match.breadcrumbs?.some(x => x.id === fixture.u01_fast_id),
+    'U06 real authenticated search must identify the exact Server Node and ancestry',
+    {width, total: body.total_count, node: match?.node?.id});
+  const row = page.locator(itemSelector).filter({hasText: filename}).first();
+  await row.waitFor({state: 'visible'});
+  const host = page.locator('[data-xdrive-file-explorer-scroll-host]').first();
+  const before = await host.evaluate(el => ({
+    y: el.getBoundingClientRect().y,
+    height: el.getBoundingClientRect().height,
+    scrollTop: el.scrollTop,
+  }));
+  await row.click({button: 'right'});
+  const show = mobile
+    ? page.locator('[data-mobile-files-context-action="show-containing-folder"]')
+    : page.getByRole('menuitem', {name: '显示所在文件夹', exact: true});
+  await show.waitFor({state: 'visible'});
+  const folderHTTP = page.waitForResponse(r => new URL(r.url()).pathname ===
+    '/api/v1/nodes/' + fixture.u01_fast_id + '/children' &&
+    r.request().method() === 'GET' && r.status() === 200);
+  await show.click();
+  await (await folderHTTP).json();
+  if (mobile) {
+    await page.locator('[data-mobile-files-compact-title]')
+      .filter({hasText: 'zz-u01-fast-folder'}).waitFor({state: 'visible'});
+  } else {
+    await page.locator('[data-xdrive-file-explorer-crumb]').last()
+      .filter({hasText: 'zz-u01-fast-folder'}).waitFor({state: 'visible'});
+  }
+  if (mobile) {
+    await page.getByRole('button', {name: '文件操作菜单'}).click();
+    const back = page.locator('[data-mobile-files-more-menu]')
+      .getByRole('menuitem', {name: '后退（浏览历史）', exact: true});
+    check(await back.isEnabled(), 'U06 Mobile Files internal history Back must be enabled');
+    await back.click();
+  } else {
+    const back = page.getByRole('button', {name: '后退', exact: true});
+    check(await back.isEnabled(), 'U06 Wide Files history Back must be enabled');
+    await back.click();
+  }
+  // The original result file also exists in the containing folder. Waiting
+  // for that row alone is NOT a proof of returning to the Search state.
+  if (mobile) {
+    await page.locator('[data-mobile-files-compact-title]')
+      .filter({hasText: '搜索结果'}).waitFor({state: 'visible'});
+  } else {
+    await page.locator('[data-xdrive-file-explorer-search-summary]')
+      .waitFor({state: 'visible'});
+  }
+  await page.locator(itemSelector).filter({hasText: filename}).first().waitFor({state: 'visible'});
+  check(await input.inputValue() === query,
+    'U06 real Files Back must restore the original Search query', {width});
+  const after = await host.evaluate(el => ({
+    y: el.getBoundingClientRect().y,
+    height: el.getBoundingClientRect().height,
+    scrollTop: el.scrollTop,
+  }));
+  check(Math.abs(after.y - before.y) <= 1 &&
+    Math.abs(after.height - before.height) <= 1 &&
+    Math.abs(after.scrollTop - before.scrollTop) <= 1,
+    'U06 Search return must preserve the logical-zero viewport', {width, before, after});
+  check(await page.locator('[data-xdrive-file-explorer-scroll-host]').count() === 1,
+    'U06 Search return must keep one shared virtual scroll owner');
+  results.u06SearchReturns.push({width, query, nodeID: match.node.id,
+    parentID: fixture.u01_fast_id, genuineGinSearch: true, filesBack: true});
+  await screenshot('live-go-u06-search-return-' + width);
+}
+
 async function main() {
   const launchArgs = process.env.XDRIVE_BROWSER_ARGS
     ? JSON.parse(process.env.XDRIVE_BROWSER_ARGS) : undefined
@@ -929,6 +1025,10 @@ async function main() {
   check(results.u01Navigations.length === 2 &&
     results.u01Navigations.every(item => item.returnedViaHistory && item.wireContextCancelled),
     'both Mobile and Wide must cancel superseded authorized Gin first pages and return by browser history')
+
+  for (const width of [390, 900]) await verifyU06RealSearchHistory(width)
+  check(results.u06SearchReturns.length === 2,
+    'U06 Mobile/Wide must search Gin and restore results through Files Back')
 
   // Real owner isolation, from the same browser network stack. The back end
   // deliberately returns owner-scoped 404, not a synthetic fixture 403.
@@ -1124,6 +1224,7 @@ async function main() {
       tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
       u01RealNavigations: results.u01Navigations.length,
       u05RealStaleRenames: results.u05StaleRenames.length,
+      u06RealSearchReturns: results.u06SearchReturns.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))

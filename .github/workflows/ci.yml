@@ -494,13 +494,13 @@ jobs:
         run: go test -mod=readonly ./internal/api -run '^TestMobileGalleryTailReal100K$' -count=1 -timeout=25m -v
       # F-iOS27-09I-A: existing Go/API PostgreSQL17 service is authoritative.
       - uses: actions/setup-node@v4
-        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-'))
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-') || startsWith(github.head_ref, 'test/files-u06-'))
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Build real Web and prepare native Chromium for Files Go acceptance
-        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-'))
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-') || startsWith(github.head_ref, 'test/files-u06-'))
         shell: bash
         run: |
           set -euo pipefail
@@ -510,7 +510,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/xdrive-ios27-live-playwright" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
           command -v google-chrome-stable || command -v google-chrome || command -v chromium
       - name: Actual Chromium Files 375/390/899/900 to Gin and PostgreSQL17
-        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-'))
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-') || startsWith(github.head_ref, 'test/files-u06-'))
         shell: bash
         env:
           XD_FILES_PR_HEAD: ${{ github.event.pull_request.head.sha }}
@@ -573,7 +573,7 @@ jobs:
           cat "$OUT/results.json"
           grep -q 'IOS27_FILES_LIVE_GO_VERIFIED' "$OUT/gin-postgresql.log"
       - uses: actions/upload-artifact@v4
-        if: always() && github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-'))
+        if: always() && github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-files-ios27-live-go-') || startsWith(github.head_ref, 'test/files-u01c-') || startsWith(github.head_ref, 'test/files-u05-') || startsWith(github.head_ref, 'test/files-u06-'))
         with:
           name: files-ios27-real-go-postgres
           path: ${{ runner.temp }}/xdrive-ios27-files-live-go/
