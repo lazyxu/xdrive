@@ -353,11 +353,16 @@ export function XDrivePhotoHostDesiredPanel({
                       <Typography variant="body2"
                         color={preflight.trust_material_observation === 'blocked' ? 'error.main' : 'text.secondary'}
                         data-xdrive-photo-trust-material-observation>
-                        运维公钥材料（仅当前 Server）：{preflight.trust_material_observation === 'material-only'
-                          ? '部署提供的只读公钥文件与固定 SHA-256 一致；仅证明本机材料完整，未证明实际 Server 成员、签名准入或可安全停用。'
-                          : preflight.trust_material_observation === 'blocked'
-                            ? '运维文件或固定值缺失、校验不通过，或材料格式/权限异常；此材料不可用于安全迁移。'
-                            : '未配置或旧版 Server/Agent 尚未支持检测；不代表已完成部署信任身份核验。'}
+                        运维公钥材料（仅当前 Server）：{preflight.trust_material_observation === 'root-pin-match-local'
+                          ? '本机只读公钥文件的完整 SHA-256 与单独配置的操作员公钥指纹均匹配；仅为静态材料核验，尚未证明信任根来源、真实模型授权或全集群安全停用。'
+                          : preflight.trust_material_observation === 'material-only'
+                            ? '部署提供的只读公钥文件与固定 SHA-256 一致；仅证明本机材料完整，未证明实际 Server 成员、签名准入或可安全停用。'
+                            : preflight.trust_material_observation === 'blocked'
+                              ? '运维文件、文件固定值或操作员公钥指纹缺失/不匹配，或材料格式/权限异常；此材料不可用于安全迁移。'
+                              : '未配置或旧版 Server/Agent 尚未支持检测；不代表已完成部署信任身份核验。'}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        运维侧可单独固定 XD_PHOTO_TRUST_OPERATOR_KEY_SHA256；网页不能修改此身份材料，检测通过也不会自动启用模型准入或停用控制。
                       </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified

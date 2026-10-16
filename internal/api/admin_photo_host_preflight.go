@@ -141,6 +141,7 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 	// never promote this into live model permit, stop or fleet readiness.
 	report.TrustMaterialObservation = photoHostTrustMaterialObservation(
 		s.PhotoHostTrustAnchorPath, s.PhotoHostTrustAnchorSHA256,
+		s.PhotoHostTrustRootSHA256,
 	)
 	// Only a negative persisted-work signal; never proof of fleet drain or stop authorization.
 	report.DurableWorkBlockerState = s.photoHostDurableWorkBlocker(c.Request.Context())

@@ -1011,3 +1011,19 @@ Threat boundary: an operator who can alter both the file and its pin can forge a
 
 Validation: Go independent parser tests (normal file, wrong pins, symlink, writable, modified, duplicates, wrong count/order, oversized/invalid encoding), Go preflight DTO secrecy tests, shared Desktop/Web type contract and exact-head full CI/final-gate. Until CI green and merged the feature is a draft, not deployed.
 
+## P1-PH1b3a2b2b2c3b2b2f2b2 (2026-10-16): separate public operator key pin
+
+This phase follows #1781's fully green corrected exact-head 76-job CI, linear merge and verified work-branch cleanup. It improves the EXISTING manual, read-only Photo Host integrity verification without enabling model permits or host stop/restart/freeze. Web/Mobile Web/Desktop continue to use one administrator no-store GET preflight → Go Client/authenticated Agent IPC → shared MUI panel; no separate API, automatic polling, deployment edits or credentials form.
+
+An operator can optionally supply XD_PHOTO_TRUST_OPERATOR_KEY_SHA256 only via Server deployment. It is the lowercase SHA-256 of the RAW 32-byte Ed25519 operator PUBLIC key decoded from line 3 of the existing canonical bundle, NOT the SHA-256 of ASCII hex characters and NOT the SHA-256 of the whole public bundle. XD_PHOTO_TRUST_ANCHOR_PATH and XD_PHOTO_TRUST_ANCHOR_SHA256 must still both be present. The original file path/symlink/permissions, 4096 byte maximum, strict ordered-member format and whole-file digest validation run first. A valid optional 64-lowercase-hex root pin is compared in constant time with the parsed key fingerprint. All errors return only bounded enum states, never path, raw key, expected hash, or OS message.
+
+The existing optional trust_material_observation has four backwards-compatible outcomes:
+- unverified: no configured public bundle or pin, or an old Server/Agent omits the field
+- blocked: incomplete, missing, modified or invalid file/whole-file pin, or supplied bad/mismatching operator-key fingerprint (including pin alone without the bundle)
+- material-only: the local bundle is complete and its entire-file SHA256 matches, but no independent operator-key equality pin is set
+- root-pin-match-local: both the file's exact bytes and the operator PUBLIC key SHA256 match separately configured values. This is still neutral local static equality, NEVER global verified model inference, approved release membership, established operator authority, real signed permit enforcement or safe Host stop.
+
+The operator controlling the deployment can change all three inputs (file plus two expected SHA256 pins). These are not independent out-of-band trusted roots or cryptographic deployment attestations. Real durable monotonic anti-rollback and revocation, authentic signed operator/root provenance, model process boot proof, an immutable complete old/new Server roster, migration of all nine actual model execution paths to lease-bound signed permits and enforced Python verification, and an audited global revision-CAS freeze with every replica's positive drain acknowledgment are still missing. Host Manager stays enable-only; seven Host checks, global effect-proof=unknown, four model activation_state=deployment-only, user 同步文件夹/transfers and all other service settings remain unchanged.
+
+Regression gates: Go bounded public-key loader tests (missing, malformed, uppercase, wrong/future root, correct file hash with unexpected new root), Go API state/JSON privacy tests, Desktop static shared-source contract and exact-head complete GitHub CI/final-gate on the single work commit. Next f2b3 must anchor the trusted operator root outside mutable deployment config and persist monotonic revocation/rotation evidence before considering any runtime grant.
+
