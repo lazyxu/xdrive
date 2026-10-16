@@ -26,7 +26,7 @@ const results = {
   phase: 'F-iOS27-09I-D6', actualGoServer: true, postgresql17: true,
   interceptedAPI: false, physicalIOS27: false, fixtureOwnedNode: fixture.node_id,
   initialRevision: fixture.node_revision, widths: [], patches: [], copyQueues: [], mutationQueues: [], batchDeletes: [], batchDestinations: [], tapUndoRedo: [], folderCreates: [],
-  foreignOwner: [], u01Navigations: [], screenshots: [], errors: [],
+  foreignOwner: [], u01Navigations: [], u05StaleRenames: [], screenshots: [], errors: [],
   sourceSHA256: Object.fromEntries([
     'web/src/WebFileExplorer.tsx', 'web/src/MobileFiles.tsx', 'web/src/api.ts',
     'ui/shared/src/mui/FileExplorerNavigation.ts',
@@ -64,6 +64,110 @@ async function renamed(input, submit, targetName, expectedStatus, expectedRevisi
   }
   return response
 }
+// U05: a genuinely concurrent authorized Server PATCH changes the same
+// physical CAS-backed Node after the original Web rename editor is opened.
+// Submit through the *actual UI* with its now-stale revision: genuine Gin 409
+// must not discard the user's draft, focus, or a newer Server value.
+async function assertRealU05StaleRevisionRename(width, originalName, expectedRevision, authoritativeName) {
+  const mobile = width < 900
+  await page.setViewportSize({ width, height: mobile ? 844 : 700 })
+  await page.goto(fixture.url + '/#/app/files?dir=' + fixture.u01_fast_id,
+    { waitUntil: 'domcontentloaded' })
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  const row = page.locator(mobile
+    ? '[data-mobile-files-item]' : '[data-xdrive-file-explorer-item]')
+    .filter({ hasText: originalName }).first()
+  await row.waitFor({ state: 'visible' })
+  await row.click({ button: 'right' })
+  let input
+  let submit
+  let dialog
+  if (mobile) {
+    await page.locator('[data-mobile-files-item-rename]').click()
+    dialog = page.getByRole('dialog', { name: /^重命名/ })
+    await dialog.waitFor()
+    input = dialog.getByRole('textbox', { name: '名称', exact: true })
+    submit = () => dialog.getByRole('button', { name: '保存', exact: true }).click()
+  } else {
+    await page.getByRole('menuitem', { name: /重命名/ }).first().click()
+    input = page.getByRole('textbox', { name: '重命名 ' + originalName, exact: true })
+    await input.waitFor()
+    submit = () => input.press('Enter')
+  }
+
+  const draft = mobile ? 'u05-mobile-unsaved-draft.txt' : 'u05-wide-unsaved-draft.txt'
+  await input.fill(draft)
+  // An independent authenticated connection updates the authoritative Node
+  // while the production Web edit remains open. No Server response is mocked.
+  const external = await page.evaluate(async ({ nodeID, token, revision, name }) => {
+    const response = await fetch('/api/v1/nodes/' + nodeID, {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+        'If-Match': '"' + revision + '"',
+      },
+      body: JSON.stringify({ name }),
+    })
+    const body = await response.json()
+    return { status: response.status, name: body.name, revision: body.revision }
+  }, {
+    nodeID: fixture.u01_fast_leaf_id, token: fixture.token,
+    revision: expectedRevision, name: authoritativeName,
+  })
+  check(external.status === 200 && external.revision === expectedRevision + 1 &&
+    external.name === authoritativeName,
+  'real concurrent Server revision update must commit before stale UI PATCH',
+  { width, external, expectedRevision })
+
+  const [response] = await Promise.all([
+    page.waitForResponse(r =>
+      new URL(r.url()).pathname === '/api/v1/nodes/' + fixture.u01_fast_leaf_id &&
+      r.request().method() === 'PATCH' && r.status() === 409),
+    submit(),
+  ])
+  const submitted = response.request().postDataJSON()
+  const sentRevision = response.request().headers()['if-match']
+  const body = await response.json()
+  check(sentRevision === '"' + expectedRevision + '"' && submitted.name === draft,
+    'actual Mobile/Wide UI must submit its original stale If-Match and unmodified draft',
+    { width, sentRevision, draft, name: submitted.name })
+  check(response.status() === 409 && body.error === 'revision_conflict',
+    'real Gin must reject stale CAS revision with actionable 409',
+    { width, status: response.status(), error: body.error })
+
+  await page.waitForFunction(expected => (
+    document.activeElement instanceof HTMLInputElement &&
+    document.activeElement.value === expected
+  ), draft, { timeout: 12000 })
+  check(await input.inputValue() === draft,
+    'real rejected rename preserves exact draft and keyboard focus', { width, draft })
+
+  const current = await page.evaluate(async ({ id, token }) => {
+    const response = await fetch('/api/v1/nodes/' + id, {
+      headers: { Authorization: 'Bearer ' + token },
+    })
+    const body = await response.json()
+    return { status: response.status, name: body.name, revision: body.revision }
+  }, { id: fixture.u01_fast_leaf_id, token: fixture.token })
+  check(current.status === 200 &&
+    current.name === authoritativeName && current.revision === expectedRevision + 1,
+    'failed stale UI rename must not undo the actual Server-authoritative change',
+    { width, current, authoritativeName })
+  results.u05StaleRenames.push({
+    width, mobile, originalRevision: expectedRevision,
+    committedRevision: current.revision, status: response.status(),
+    draftPreserved: true, focusRestored: true,
+  })
+  await screenshot('live-go-u05-stale-revision-' + width)
+  if (mobile) {
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await dialog.waitFor({ state: 'hidden' })
+  } else {
+    await input.press('Escape')
+  }
+}
+
 async function screenshot(name) {
   const file = name + '.png'
   await page.screenshot({ path: path.join(output, file), fullPage: false })
@@ -982,6 +1086,12 @@ async function main() {
     results.foreignOwner.push({ method: 'POST file-operations/' + spec.kind + '-batch', status: denied })
   }
   await createRealFoldersFromBothLayouts()
+  await assertRealU05StaleRevisionRename(390,
+    'u01-fast-authorized.txt', 1, 'u05-mobile-authoritative.txt')
+  await assertRealU05StaleRevisionRename(900,
+    'u05-mobile-authoritative.txt', 2, 'u05-wide-authoritative.txt')
+  check(results.u05StaleRenames.length === 2,
+    'real 390/900px UI must preserve both stale Revision drafts under Gin 409')
   await tapRealUndoRedoFromBothLayouts()
   check(results.errors.length === 0, 'unexpected native browser or real Go API errors', results.errors)
   results.passed = true
@@ -1013,6 +1123,7 @@ async function main() {
       batchDestinations: results.batchDestinations.length,
       tapUndoRedo: results.tapUndoRedo.length, folderCreates: results.folderCreates.length,
       u01RealNavigations: results.u01Navigations.length,
+      u05RealStaleRenames: results.u05StaleRenames.length,
       actualGoServer: true, postgresql17: true,
       failure: results.failure || null, errors: results.errors,
     }))
