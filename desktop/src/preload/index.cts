@@ -523,6 +523,8 @@ const agent = Object.freeze({
   getDeviceBackups: () => ipcRenderer.invoke('agent:get-device-backups'),
   getDeviceBackupsPage: (limit = 100, afterDeviceID = '') =>
     ipcRenderer.invoke('agent:get-device-backups-page', limit, afterDeviceID),
+  getDeviceBackupFoldersPage: (deviceID: string, limit = 100, afterSourceID = 0) =>
+    ipcRenderer.invoke('agent:get-device-backup-folders-page', deviceID, limit, afterSourceID),
   getDeviceBackupLocalDevice: () => ipcRenderer.invoke('agent:get-device-backup-local-device'),
   getDeviceBackupLocalDrafts: (limit = 20, afterID = 0) =>
     ipcRenderer.invoke('agent:get-device-backup-local-drafts', limit, afterID),

@@ -208,6 +208,7 @@ import {
   type AgentMediaThumbnail,
   type AgentSource,
   type AgentDeviceBackupOverview,
+  type AgentDeviceBackupFolderPage,
   type AgentVerifiedLocalDevice,
   type AgentLocalSourceDraftPage,
   type AgentLocalBoundBackupSettings,
@@ -2413,6 +2414,27 @@ function registerIPCHandlers() {
       throw new AgentIPCError('invalid_input', 0, 'Invalid backup device page cursor.')
     }
     return requireAgentClient().deviceBackupsPage(requestedLimit, requestedCursor)
+  }, false))
+  // Authenticated local loopback reads redacted folders for one Owner/Device.
+  // Renderer parameters cannot grant Root or device-local mutation authority.
+  ipcMain.handle('agent:get-device-backup-folders-page', (_event, deviceID: unknown, limit: unknown, afterSourceID: unknown) => runAgentAction<AgentDeviceBackupFolderPage>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'device-backup-read')
+    if (typeof deviceID !== 'string' ||
+      !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(deviceID)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid backup folder device ID.')
+    }
+    const requestedLimit = limit === undefined ? 100 : limit
+    if (typeof requestedLimit !== 'number' || !Number.isSafeInteger(requestedLimit) ||
+      requestedLimit < 1 || requestedLimit > 100) {
+      throw new AgentIPCError('invalid_input', 0, 'Backup folder page limit must be between 1 and 100.')
+    }
+    const requestedCursor = afterSourceID === undefined ? 0 : afterSourceID
+    if (typeof requestedCursor !== 'number' || !Number.isSafeInteger(requestedCursor) ||
+      requestedCursor < 0) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid backup folder page cursor.')
+    }
+    return requireAgentClient().deviceBackupFoldersPage(deviceID, requestedLimit, requestedCursor)
   }, false))
   ipcMain.handle('agent:get-device-backup-runs', (_event, sourceID: unknown, limit: unknown, offset: unknown) => runAgentAction<AgentDeviceBackupRunPage>(async () => {
     const hello = await requireAgentLifecycle().ensureRunning()

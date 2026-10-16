@@ -66,6 +66,8 @@ export interface XDriveDeviceBackupDataSource {
   // Optional read-only keyset extension, shared by Web/Mobile Web/Desktop.
   // The presenter will use it in the follow-up UI phase.
   listPage?(limit: number, afterDeviceID: string): Promise<XDriveDeviceBackupOverview>
+  // Optional B-scope per-device Source keyset, never writable Source/Root.
+  foldersPage?(deviceID: string, limit: number, afterSourceID: number): Promise<XDriveDeviceBackupFolderPage>
   runs(sourceID: number, limit: number, offset: number): Promise<XDriveDeviceBackupRunPage>
 }
 

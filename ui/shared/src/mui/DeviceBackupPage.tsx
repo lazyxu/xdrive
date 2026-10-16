@@ -42,6 +42,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
+  XDriveDeviceBackupDevice, XDriveDeviceBackupFolder,
   XDriveLocalSourceDraftPage,
 } from '../device-backups'
 
@@ -58,6 +59,15 @@ type HistoryState = {
   source?: XDriveDeviceBackupDataSource
   pages: Record<number, HistoryPage>
 }
+type DeviceFolderRead = {
+  items: XDriveDeviceBackupFolder[]
+  nextAfterSourceID: number
+  complete: boolean
+  loading: boolean
+  failed: boolean
+  requestID: number
+}
+type FolderReadState = { scope: number; devices: Record<string, DeviceFolderRead> }
 type VerifiedLocalIdentityState = {
   source?: XDriveDeviceBackupDataSource
   deviceID: string | null
@@ -122,6 +132,12 @@ export function XDriveDeviceBackupPage({
   localRemove?: XDriveLocalBackupRemoveActions
 }) {
   const [refreshID, refresh] = useState(0)
+  // The render-scoped epoch invalidates requests on A→B→A account,
+  // Server/Agent changes and refreshes, even when the viewer is not unmounted.
+  const folderScopeRef = useRef({ source, refreshID, epoch: 0 })
+  if (folderScopeRef.current.source !== source || folderScopeRef.current.refreshID !== refreshID) {
+    folderScopeRef.current = { source, refreshID, epoch: folderScopeRef.current.epoch + 1 }
+  }
   const [createOpen, setCreateOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const [targetChange, setTargetChange] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
@@ -173,10 +189,25 @@ export function XDriveDeviceBackupPage({
   const expandedID = expanded.source === source ? expanded.id : initialSourceID ?? null
   const [historyState, setHistoryState] = useState<HistoryState>({ pages: {} })
   const histories = historyState.source === source ? historyState.pages : emptyHistory
+  const [folderReadState, setFolderReadState] = useState<FolderReadState>({ scope: -1, devices: {} })
+  const folderPages = folderReadState.scope === folderScopeRef.current.epoch ? folderReadState.devices : {}
+  const folderRequestIDs = useRef<Record<string, number>>({})
+  const visibleFolders = (device: XDriveDeviceBackupDevice): XDriveDeviceBackupFolder[] => {
+    const page = folderPages[device.id]
+    return page && (page.items.length !== 0 || page.complete) ? page.items : device.folders
+  }
   const [historyError, setHistoryError] = useState<{ source?: XDriveDeviceBackupDataSource; id: number } | null>(null)
   const requests = useRef<Record<number, number>>({})
   const [localIdentity, setLocalIdentity] = useState<VerifiedLocalIdentityState>({ deviceID: null })
   const verifiedLocalDeviceID = localIdentity.source === source ? localIdentity.deviceID : null
+  // Read-only folder paging may surface local Source IDs beyond the first
+  // overview 1000 bindings. Native actions remain gated by verified Agent
+  // device identity plus Server-side Root/Source revision permissions.
+  const localOwnsFolder = (sourceID: number): boolean => Boolean(
+    verifiedLocalDeviceID && overview?.devices.some((device) =>
+      device.id === verifiedLocalDeviceID && !device.revoked &&
+      visibleFolders(device).some((folder) => folder.source_id === sourceID)),
+  )
   const groupedDevices = overview && verifiedLocalDeviceID &&
     overview.devices.some((device) => device.id === verifiedLocalDeviceID)
     ? [
@@ -253,6 +284,67 @@ export function XDriveDeviceBackupPage({
         ? { ...prev, pageLoading: false, pageFailed: true } : prev)
     }
   }, [source, overview, loading, pageLoading])
+
+  // 1000 bindings is a global overview limit, not a per-device count. A
+  // deliberate, per-device keyset read is required to verify completeness.
+  const loadDeviceFolders = useCallback(async (deviceID: string) => {
+    if (!source?.foldersPage || !overview?.devices.some((device) => device.id === deviceID) || loading) return
+    const scope = folderScopeRef.current.epoch
+    const currentPage = folderPages[deviceID]
+    if (currentPage?.loading || currentPage?.complete) return
+    const cursor = currentPage?.nextAfterSourceID ?? 0
+    const requestID = (folderRequestIDs.current[deviceID] ?? 0) + 1
+    folderRequestIDs.current[deviceID] = requestID
+    setFolderReadState((prev) => {
+      const devices = prev.scope === scope ? prev.devices : {}
+      const old = devices[deviceID]
+      return { scope, devices: { ...devices, [deviceID]: {
+        items: old?.items ?? [], nextAfterSourceID: cursor, complete: false,
+        loading: true, failed: false, requestID,
+      } } }
+    })
+    try {
+      const page = await source.foldersPage(deviceID, 100, cursor)
+      if (folderScopeRef.current.epoch !== scope || folderRequestIDs.current[deviceID] !== requestID) return
+      if (!Array.isArray(page.folders) || typeof page.has_more !== 'boolean' ||
+        !Number.isSafeInteger(page.next_after_source_id) || page.next_after_source_id < 0 ||
+        page.folders.some((folder) => !Number.isSafeInteger(folder.source_id) || folder.source_id <= 0)) {
+        throw new Error('Invalid redacted backup folder page')
+      }
+      setFolderReadState((prev) => {
+        if (prev.scope !== scope) return prev
+        const old = prev.devices[deviceID]
+        if (!old || old.requestID !== requestID) return prev
+        const items = cursor === 0 ? [] : [...old.items]
+        const ids = new Set(items.map((item) => item.source_id))
+        for (const folder of page.folders) {
+          if (!ids.has(folder.source_id)) {
+            ids.add(folder.source_id)
+            items.push(folder)
+          }
+        }
+        const lastID = page.folders.length ? page.folders[page.folders.length - 1].source_id : 0
+        const invalidCursor = page.has_more
+          ? lastID <= cursor || page.next_after_source_id !== lastID || items.length === (cursor === 0 ? 0 : old.items.length)
+          : page.next_after_source_id !== 0
+        if (invalidCursor) {
+          return { ...prev, devices: { ...prev.devices, [deviceID]: { ...old, loading: false, failed: true } } }
+        }
+        return { ...prev, devices: { ...prev.devices, [deviceID]: {
+          items, nextAfterSourceID: page.has_more ? page.next_after_source_id : 0,
+          complete: !page.has_more, loading: false, failed: false, requestID,
+        } } }
+      })
+    } catch {
+      if (folderScopeRef.current.epoch !== scope || folderRequestIDs.current[deviceID] !== requestID) return
+      setFolderReadState((prev) => {
+        if (prev.scope !== scope) return prev
+        const old = prev.devices[deviceID]
+        if (!old || old.requestID !== requestID) return prev
+        return { ...prev, devices: { ...prev.devices, [deviceID]: { ...old, loading: false, failed: true } } }
+      })
+    }
+  }, [source, overview, folderPages, loading])
 
   const loadHistory = useCallback(async (id: number, page: number) => {
     if (!source) return
@@ -373,9 +465,36 @@ export function XDriveDeviceBackupPage({
                 </Box>
               </Stack>
               <Divider sx={{ my: 1.5 }} />
-              {device.folders.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">此设备没有已绑定的同步文件夹。</Typography>
-              ) : device.folders.map((folder) => {
+              {overview.has_more_folders ? (
+                <Stack spacing={1} sx={{ mb: 1.5 }} alignItems="flex-start">
+                  <Typography variant="caption" color="text.secondary">
+                    {folderPages[device.id]?.complete
+                      ? `本轮已逐页读取此设备的 ${folderPages[device.id].items.length.toLocaleString('zh-CN')} 个同步文件夹`
+                      : '概览可能受到 1000 条绑定上限影响，此设备的列表仍待核对。'}
+                  </Typography>
+                  {source?.foldersPage ? (
+                    !folderPages[device.id]?.complete ? (
+                      <Button size="small" variant="outlined" disabled={Boolean(folderPages[device.id]?.loading)}
+                        onClick={() => void loadDeviceFolders(device.id)}>
+                        {folderPages[device.id]?.loading ? '正在读取文件夹…'
+                          : folderPages[device.id]?.items.length ? '加载更多此设备文件夹' : '核对并加载此设备文件夹'}
+                      </Button>
+                    ) : null
+                  ) : <Typography variant="caption" color="text.secondary">
+                    当前 Server 或 Agent 不支持文件夹连续分页，请升级后重试。
+                  </Typography>}
+                  {folderPages[device.id]?.failed ? (
+                    <Typography variant="caption" color="error">文件夹读取失败，已保留当前内容；可重试。</Typography>
+                  ) : null}
+                </Stack>
+              ) : null}
+              {visibleFolders(device).length === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  {overview.has_more_folders && !folderPages[device.id]?.complete
+                    ? '本次概览尚未返回此设备的文件夹，请核对完整列表。'
+                    : '此设备没有已绑定的同步文件夹。'}
+                </Typography>
+              ) : visibleFolders(device).map((folder) => {
                 const history = histories[folder.source_id]
                 return (
                   <Accordion key={folder.source_id} disableGutters elevation={0}
@@ -535,7 +654,11 @@ export function XDriveDeviceBackupPage({
             </Stack>
           ) : null}
           {overview.has_more_folders ? (
-            <XDriveStatusAlert tone="neutral">部分设备的同步文件夹仍未全部返回；文件夹独立分页尚待实现。</XDriveStatusAlert>
+            <XDriveStatusAlert tone="neutral">
+              {!overview.has_more && overview.devices.every((device) => folderPages[device.id]?.complete)
+                ? '本次已逐设备读取文件夹；新增或修改的绑定请刷新后查看。'
+                : '设备概览中的文件夹存在截断。请逐台分页核对；未读完前不能将当前列表视作完整。'}
+            </XDriveStatusAlert>
           ) : null}
         </Stack>
       )}
@@ -564,8 +687,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {renameTarget && renameTarget.source === source && source && localSettings && verifiedLocalDeviceID &&
-        overview?.devices.some((device) => device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === renameTarget.id)) ? (
+        localOwnsFolder(renameTarget.id) ? (
         <XDriveDeviceBackupLocalRenameDialog
           key={renameTarget.id}
           sourceID={renameTarget.id}
@@ -580,9 +702,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {targetChange && targetChange.source === source && source && localTarget && targetBrowser &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === targetChange.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(targetChange.id) ? (
         <XDriveDeviceBackupLocalTargetDialog
           key={targetChange.id}
           sourceID={targetChange.id}
@@ -598,9 +718,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {modeChange && modeChange.source === source && source && localMode &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === modeChange.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(modeChange.id) ? (
         <XDriveDeviceBackupLocalModeDialog
           key={modeChange.id}
           sourceID={modeChange.id}
@@ -615,9 +733,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {rulesTarget && rulesTarget.source === source && source && localRules &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === rulesTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(rulesTarget.id) ? (
         <XDriveDeviceBackupLocalRulesDialog
           key={rulesTarget.id}
           sourceID={rulesTarget.id}
@@ -632,9 +748,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {scheduleTarget && scheduleTarget.source === source && source && localSchedule &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === scheduleTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(scheduleTarget.id) ? (
         <XDriveDeviceBackupLocalScheduleDialog
           key={scheduleTarget.id}
           sourceID={scheduleTarget.id}
@@ -649,9 +763,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {previewTarget && previewTarget.source === source && source && localPreview &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === previewTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(previewTarget.id) ? (
         <XDriveDeviceBackupLocalPreviewDialog
           key={previewTarget.id}
           sourceID={previewTarget.id}
@@ -660,9 +772,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {snapshotTarget && snapshotTarget.source === source && source && localSnapshot &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === snapshotTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(snapshotTarget.id) ? (
         <XDriveDeviceBackupLocalSnapshotDialog
           key={snapshotTarget.id}
           sourceID={snapshotTarget.id}
@@ -671,9 +781,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {deltaTarget && deltaTarget.source === source && source && localDelta &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === deltaTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(deltaTarget.id) ? (
         <XDriveDeviceBackupLocalDeltaDialog
           key={deltaTarget.id}
           sourceID={deltaTarget.id}
@@ -682,9 +790,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {evidenceTarget && evidenceTarget.source === source && source && localEvidence &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === evidenceTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(evidenceTarget.id) ? (
         <XDriveDeviceBackupLocalEvidenceDialog
           key={evidenceTarget.id}
           sourceID={evidenceTarget.id}
@@ -693,9 +799,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {evidenceSummaryTarget && evidenceSummaryTarget.source === source && source && localEvidenceSummary &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === evidenceSummaryTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(evidenceSummaryTarget.id) ? (
         <XDriveDeviceBackupLocalEvidenceSummaryDialog
           key={evidenceSummaryTarget.id}
           sourceID={evidenceSummaryTarget.id}
@@ -704,9 +808,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {evidencePreflightTarget && evidencePreflightTarget.source === source && source && localEvidencePreflight &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === evidencePreflightTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(evidencePreflightTarget.id) ? (
         <XDriveDeviceBackupLocalEvidencePreflightDialog
           key={evidencePreflightTarget.id}
           sourceID={evidencePreflightTarget.id}
@@ -715,9 +817,7 @@ export function XDriveDeviceBackupPage({
         />
       ) : null}
       {removeTarget && removeTarget.source === source && source && localRemove &&
-        verifiedLocalDeviceID && overview?.devices.some((device) =>
-          device.id === verifiedLocalDeviceID && !device.revoked &&
-          device.folders.some((folder) => folder.source_id === removeTarget.id)) ? (
+        verifiedLocalDeviceID && localOwnsFolder(removeTarget.id) ? (
         <XDriveDeviceBackupLocalRemoveDialog
           key={removeTarget.id}
           sourceID={removeTarget.id}

@@ -4,6 +4,7 @@ import type {
   ExternalSource,
   XDriveDeviceBackupOverview,
   XDriveDeviceBackupRunPage,
+  XDriveDeviceBackupFolderPage,
   XDriveLocalSourceDraftPage,
   XDriveLocalBoundBackupSettings,
   XDriveLocalBoundBackupRules,
@@ -722,6 +723,7 @@ declare global {
         getSources: () => Promise<DesktopResult<AgentSource[]>>
         getDeviceBackups: () => Promise<DesktopResult<XDriveDeviceBackupOverview>>
         getDeviceBackupsPage: (limit?: number, afterDeviceID?: string) => Promise<DesktopResult<XDriveDeviceBackupOverview>>
+        getDeviceBackupFoldersPage: (deviceID: string, limit?: number, afterSourceID?: number) => Promise<DesktopResult<XDriveDeviceBackupFolderPage>>
         getDeviceBackupLocalDevice: () => Promise<DesktopResult<{ device_id: string }>>
         getDeviceBackupLocalDrafts: (limit?: number, afterID?: number) => Promise<DesktopResult<XDriveLocalSourceDraftPage>>
         getDeviceBackupLocalSource: (sourceID: number) => Promise<DesktopResult<XDriveLocalBoundBackupSettings>>

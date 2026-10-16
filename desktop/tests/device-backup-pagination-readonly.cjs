@@ -44,7 +44,8 @@ test('shared paging is deduplicated, datasource-scoped, and honest about unpaged
     'requestedOverview.has_more_folders || page.has_more_folders',
     'page.has_more ? page.next_after_device_id : undefined',
     '设备读取失败；已加载设备保持不变',
-    '文件夹独立分页尚待实现',
+    'source.foldersPage(deviceID, 100, cursor)',
+    '未读完前不能将当前列表视作完整',
   ]) assert.ok(page.includes(expected), expected)
   assert.equal(page.includes('sourceOverview('), false)
   assert.equal(page.includes('sourceItems('), false)
