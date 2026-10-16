@@ -19,6 +19,13 @@ const COMMIT = /^[0-9a-f]{40}$/
 const PLATFORM_SET = new Set(PLATFORMS)
 const SCRIPT_SCHEMA = 'xdrive-pwa-s5a2b1-evidence-review-v1'
 const INPUT_SCHEMA = 'xdrive-pwa-s5a2b1-platform-submissions-v1'
+// S5-A1 emits ten specifically named checks in this fixed order. A forged
+// report with ten copies of one passing check is NOT an HTTPS audit.
+const ORIGIN_CHECK_IDS = Object.freeze([
+  'manifest_head', 'worker_head', 'offline_head', 'icon192_head', 'icon512_head',
+  'manifest_contract', 'https_security_headers', 'server_ready',
+  'private_nodes_denied', 'private_operations_denied',
+])
 
 function exactKeys(value, keys) {
   return value !== null && typeof value === 'object' && !Array.isArray(value) &&
@@ -82,16 +89,26 @@ function originReportStatus(raw, expected) {
   if (!exactKeys(raw, ['schema', 'observed_at', 'origin_sha256', 'evidence_environment',
     'actual_https_preflight', 'release_gate', 'physical_platforms', 'checks']) ||
     raw.schema !== 'xdrive-pwa-s5a-live-origin-v1' || !validHash(raw.origin_sha256) ||
-    raw.origin_sha256 !== expected || !Array.isArray(raw.checks)) {
+    raw.origin_sha256 !== expected || typeof raw.observed_at !== 'string' ||
+    !Number.isFinite(Date.parse(raw.observed_at)) || !Array.isArray(raw.checks)) {
     return 'REJECTED'
   }
   if (raw.evidence_environment === 'test-fixture-https') return 'REJECTED_TEST_FIXTURE'
-  if (raw.evidence_environment !== 'node-trusted-https-origin' ||
-      raw.actual_https_preflight !== 'pass' || raw.release_gate !== 'NO_GO_PHYSICAL_INSTALL_NOT_RUN' ||
-      raw.checks.length !== 10 || raw.checks.some(c => c?.status !== 'pass')) {
+  const physical = raw.physical_platforms
+  if (!exactKeys(physical, ['ios27_safari_home_screen', 'android_chrome_installed',
+    'desktop_chrome_edge_installed']) ||
+    Object.values(physical).some(status => status !== 'not-run') ||
+    raw.evidence_environment !== 'node-trusted-https-origin' ||
+    raw.actual_https_preflight !== 'pass' ||
+    raw.release_gate !== 'NO_GO_PHYSICAL_INSTALL_NOT_RUN' ||
+    raw.checks.length !== ORIGIN_CHECK_IDS.length ||
+    raw.checks.some((check, index) =>
+      !exactKeys(check, ['id', 'status', 'reason']) ||
+      check.id !== ORIGIN_CHECK_IDS[index] || check.status !== 'pass' ||
+      check.reason !== 'verified')) {
     return 'REJECTED'
   }
-  // This is a local JSON CLAIM, not an independently validated certificate.
+  // This is still a local JSON CLAIM, not an independently validated certificate.
   return 'CLAIM_REQUIRES_INDEPENDENT_CONFIRMATION'
 }
 function validBrowserObservation(record, origin, platform) {
@@ -118,12 +135,19 @@ function validBrowserObservation(record, origin, platform) {
   const hint = platform.startsWith('ios27_') ? 'ios' :
     platform.startsWith('android_') ? 'android' : 'other'
   if (record.platform_hint_only !== hint ||
-      typeof record.observed_at !== 'string' || !Number.isFinite(Date.parse(record.observed_at))) return false
+      typeof record.observed_at !== 'string' || !Number.isFinite(Date.parse(record.observed_at)) ||
+      !['browser', 'standalone', 'fullscreen', 'minimal-ui', 'window-controls-overlay']
+        .includes(record.display_mode_observed) ||
+      (record.navigator_standalone_observed !== null &&
+        typeof record.navigator_standalone_observed !== 'boolean') ||
+      record.service_worker_controller_observed !== true) return false
   const installed = platform.endsWith('_installed') || platform === 'ios27_home_screen'
   if (installed ? record.display_mode_observed === 'browser' :
       record.display_mode_observed !== 'browser') return false
-  if (!record.viewport_css_px || !Number.isInteger(record.viewport_css_px.width) ||
-      !Number.isInteger(record.viewport_css_px.height)) return false
+  const viewport = record.viewport_css_px
+  if (!exactKeys(viewport, ['width', 'height']) ||
+      [viewport.width, viewport.height].some(value =>
+        !Number.isSafeInteger(value) || value < 1 || value > 32768)) return false
   const expected = ['context', 'transport', 'manifest', 'worker', 'offline', 'icon192', 'icon512']
   if (!exactKeys(record.public_asset_checks, expected) ||
       expected.some(id => record.public_asset_checks[id] !== 'pass')) return false
@@ -141,6 +165,8 @@ function validManualChecks(value, platform) {
       (family && value.os_family !== family) || value.browser !== browser ||
       typeof value.os_version !== 'string' || !/^[a-zA-Z0-9._ -]{2,40}$/.test(value.os_version) ||
       value.trusted_https_in_device_os !== true || value.login_and_deeplinks_verified !== true) return false
+  if (!family && !['Windows', 'Linux', 'macOS'].includes(value.os_family)) return false
+  if (family === 'iOS' && !/^27(?:\.[0-9]+){0,2}$/.test(value.os_version)) return false
   const installed = platform.endsWith('_installed') || platform === 'ios27_home_screen'
   return value.launch_source === (installed ? 'os_icon' : 'browser_tab')
 }
@@ -237,5 +263,5 @@ async function main(args = process.argv.slice(2)) {
   }
 }
 if (require.main === module) void main()
-module.exports = { PLATFORMS, parseArgs, validateEnvelope, originReportStatus,
+module.exports = { PLATFORMS, ORIGIN_CHECK_IDS, parseArgs, validateEnvelope, originReportStatus,
   validBrowserObservation, validManualChecks, verifyProof, review, main }

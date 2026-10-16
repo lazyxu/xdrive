@@ -88,3 +88,7 @@ node desktop/scripts/pwa-s5b-physical-evidence-review.cjs \
 **严格的发布权限边界：** CLI 有完整七平台材料也**始终返回退出码 1**、`release_gate=NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED` 和 `independent_device_review_completed=false`；它只核验文件存在、摘要及输入契约，绝对**不**证明截图拍摄地点或 OS 原生安装真实性，更不能签发发布许可。未来需要独立人工评审/发布批准（S5-A2b2）和 S5-04~S5-11 完整验收才能谈 Release GO。GitHub CI 只能执行合成材料的**拒绝误通过测试**，不收集真实用户硬件、真实凭据或私人截图。
 
 对应平台及功能矩阵仍以本文首表全部 `NOT RUN` 为准，直到独立实体设备证据得到实审。Desktop Browser/Installed、iOS Safari/Home Screen、Android Browser/Installed 的 OS 行为不能由 Android UA/Touch 或 `standalone` 一项来推断。正式版本发布流程本阶段不自动消费未经授权的本地材料，也不改动其他应用的发布和更新链路。
+
+## S5-A2b1a · 脱敏材料输入契约收紧（2026-10-16）
+
+S5-A2b1 核验器对本地 S5-A1 JSON 不再只数“十条 pass”：**十项原始检查必须与 S5-A1 实际输出的 ID、顺序、`reason=verified`、唯一完整字段逐项一致**；缺失的匿名私有 API 拒绝测试、重复伪造检查或附带隐藏字段不得进入“已提交待审核”。严格限定原始 `physical_platforms` 为三个 `not-run` 状态；这仍是自述材料，不是 HTTPS/设备证明。S5-A2a 浏览器观察仅接受源代码定义的五种 display mode、实际 Service Worker controller、合规正整数视口和合法 `navigator.standalone`；iOS 27 版本和 Desktop OS 家族必须匹配平台；缺失或伪造时 `INCOMPLETE_OR_UNVERIFIED`。新增 Node 真正调用核验器的反例测试，专项 workflow 覆盖本阶段。**不修改生产 Web/Service Worker/Server/文件任务，不改变零设备证据/Release NO-GO。** S5-A2b2 的真实七平台证书、系统图标启动、登录/深链接与独立物理审核依然未执行。

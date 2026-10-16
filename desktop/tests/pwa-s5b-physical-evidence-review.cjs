@@ -35,8 +35,8 @@ function fakeHTTPS(origin = SHA, environment = 'node-trusted-https-origin') {
       android_chrome_installed: 'not-run',
       desktop_chrome_edge_installed: 'not-run',
     },
-    checks: Array.from({ length: 10 }, (_, i) => ({
-      id: 'synthetic-check-' + i, status: 'pass', reason: 'verified',
+    checks: verifier.ORIGIN_CHECK_IDS.map(id => ({
+      id, status: 'pass', reason: 'verified',
     })),
   }
 }
@@ -238,4 +238,63 @@ test('S5b mode 0600 exclusive report and strict sandbox (no uploads, browser UA 
   const ledger = fs.readFileSync(path.join(root, 'docs/pwa-delivery.md'), 'utf8')
   assert(docs.includes('S5-A2b1'))
   assert(ledger.includes('PWA-S5-A2b1'))
+})
+
+// S5-A2b1a: negative-first offline input regressions. These are synthetic
+// evidence records; a complete local submission NEVER attests a physical OS.
+test('S5b requires ten exact, unique S5-A1 checks, no hidden claim fields', () => {
+  const input = envelope()
+  submit(input, 'ios27_home_screen', 61)
+  const variants = [
+    report => { report.checks = Array(10).fill(null).map(() => ({ ...report.checks[0] })) },
+    report => { report.checks[0].id = 'other_check' },
+    report => { report.checks[0].reason = 'not_independently_verified' },
+    report => { report.checks[0].private_token = 'SECRET_NEVER_PRINT' },
+    report => { report.physical_platforms.android_chrome_installed = 'pass' },
+    report => { report.physical_platforms.cookie = 'SECRET_NEVER_PRINT' },
+    report => { report.observed_at = 'not-a-real-timestamp' },
+  ]
+  for (const mutate of variants) {
+    const fake = fakeHTTPS()
+    mutate(fake)
+    const { report, status, printed } = execute(input, { https: fake })
+    assert.equal(status, 1)
+    assert.equal(report.https_evidence_state, 'REJECTED')
+    assert.equal(report.submitted_pending_review, 0)
+    assert.equal(report.platform_rows.find(r => r.platform_id === 'ios27_home_screen').evidence_state,
+      'INCOMPLETE_OR_UNVERIFIED')
+    assert.doesNotMatch(printed, /SECRET_NEVER_PRINT/)
+  }
+})
+
+test('S5b rejects spoofed display, OS version, viewport, and worker-controller claims', () => {
+  const initial = envelope()
+  submit(initial, 'ios27_home_screen', 62)
+  const cases = [
+    row => { row.browser_observation.display_mode_observed = 'pretend-installed' },
+    row => { row.browser_observation.navigator_standalone_observed = 'true' },
+    row => { row.browser_observation.service_worker_controller_observed = false },
+    row => { row.browser_observation.viewport_css_px.width = -1 },
+    row => { row.browser_observation.viewport_css_px.secret = 'SECRET_NEVER_PRINT' },
+    row => { row.manual_checks.os_version = '26.9' },
+  ]
+  for (const mutate of cases) {
+    const input = JSON.parse(JSON.stringify(initial))
+    mutate(input.cases.find(row => row.platform_id === 'ios27_home_screen'))
+    const { report, status, printed } = execute(input, { https: fakeHTTPS() })
+    assert.equal(status, 1)
+    assert.equal(report.submitted_pending_review, 0)
+    assert.equal(report.platform_rows.find(r => r.platform_id === 'ios27_home_screen').evidence_state,
+      'INCOMPLETE_OR_UNVERIFIED')
+    assert.doesNotMatch(printed, /SECRET_NEVER_PRINT/)
+  }
+  const desktop = envelope()
+  submit(desktop, 'desktop_edge_installed', 63)
+  desktop.cases.find(row => row.platform_id === 'desktop_edge_installed')
+    .manual_checks.os_family = 'Android'
+  const { report, status } = execute(desktop, { https: fakeHTTPS() })
+  assert.equal(status, 1)
+  assert.equal(report.submitted_pending_review, 0)
+  assert.equal(report.platform_rows.find(r => r.platform_id === 'desktop_edge_installed').evidence_state,
+    'INCOMPLETE_OR_UNVERIFIED')
 })
