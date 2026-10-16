@@ -20,7 +20,8 @@ export function useXDriveCompactTouchDialog() {
           ...xDriveDialogPaperProps.sx,
           width: '100vw',
           height: '100dvh',
-          minHeight: '100vh',
+          // Do not let the large/layout viewport outgrow the dynamic visual viewport.
+          minHeight: '100dvh',
           maxHeight: 'none',
           m: 0,
           borderRadius: 0,
