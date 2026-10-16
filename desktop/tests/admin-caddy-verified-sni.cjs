@@ -279,6 +279,8 @@ test('Caddy rescue option is separate localhost-only and never a grant to apply'
   assert.match(panel, /caddy-rescue-operator-check\.py/)
   assert.match(shellTest, /test-caddy-rescue-operator-check\.py/)
   assert.match(shellTest, /test-caddy-rescue-ssh-auth-check\.py/)
+  assert.match(shellTest, /test-caddy-rescue-image-approval-check\.py/)
+  assert.match(panel, /caddy-rescue-image-approval-check\.py/)
   assert.match(panel, /caddy-rescue-ssh-auth-check\.py/)
   assert.match(panel, /仍未获得运行验证/)
   assert.match(preflight, /ApplySupported:\s+false/)
