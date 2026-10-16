@@ -237,7 +237,9 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               运维救援入口：可选独立 caddy-rescue Compose profile 默认关闭，仅允许操作员
               通过宿主机本机地址或 SSH 隧道访问，并重新通过 Server 认证。
               是否已启动、能否访问和管理员登录成功仍未获得运行验证；
-              不能据此启用 Caddy 配置应用、停用或回滚。
+              操作员可在服务器本机执行 scripts/caddy-rescue-operator-check.py 的只读预检，
+              核对独立固定摘要镜像、localhost 隔离和匿名拒绝；此检查不验证真实 SSH、
+              独立管理员登录、生产停机或回滚，不能据此启用 Caddy 配置应用、停用或回滚。
             </Typography>
             <Typography variant="caption" color="warning.main">
               {result.apply_supported

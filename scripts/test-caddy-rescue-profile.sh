@@ -58,3 +58,4 @@ assert "dns alidns" not in config
 assert "ALIYUN_ACCESS_KEY" not in config
 PY
 echo "Optional Caddy rescue profile: separated and private Compose contract OK"
+python3 "$ROOT/scripts/test-caddy-rescue-operator-check.py"

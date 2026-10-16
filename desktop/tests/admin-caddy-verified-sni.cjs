@@ -276,6 +276,8 @@ test('Caddy rescue option is separate localhost-only and never a grant to apply'
   assert.match(ci, /bash scripts\/test-caddy-rescue-profile\.sh/)
   assert.match(ci, /caddy validate --config \/etc\/caddy\/Caddyfile\.rescue/)
   assert.match(panel, /data-xdrive-caddy-rescue-ingress-advisory/)
+  assert.match(panel, /caddy-rescue-operator-check\.py/)
+  assert.match(shellTest, /test-caddy-rescue-operator-check\.py/)
   assert.match(panel, /仍未获得运行验证/)
   assert.match(preflight, /ApplySupported:\s+false/)
   assert.match(preflight, /"restricted-apply", "blocked"/)
