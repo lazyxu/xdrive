@@ -40,6 +40,7 @@ type adminPhotoHostPreflightDTO struct {
 	RuntimeWorkBlockerState     string                         `json:"runtime_work_blocker_state"`
 	ReplicaMembershipState      string                         `json:"replica_membership_blocker_state"`
 	PrivateIngressAuthState     string                         `json:"private_ingress_auth_blocker_state"`
+	PrivatePolicyObserved       string                         `json:"private_ingress_policy_observation"`
 	SemanticTextTaskState       string                         `json:"semantic_text_task_state"`
 	SemanticImageTaskState      string                         `json:"semantic_image_task_state"`
 	FaceDetectorTaskState       string                         `json:"face_detector_task_state"`
@@ -233,6 +234,12 @@ func (s *Server) adminPhotoHostPreflight(c *gin.Context) {
 		s.PhotoFaceAnalyzer != nil || s.PhotoSmartAnalyzer != nil ||
 			s.PhotoSemanticAnalyzer != nil || s.PhotoCreativeAnalyzer != nil,
 		report.ModelInfoChecks,
+	)
+	// Four same-process, already authorized Info acknowledgments can give a
+	// local SELF-REPORTED policy observation only. This is not a fleet effect
+	// proof, a dynamic lease-bound model permit or a safe-stop authorization.
+	report.PrivatePolicyObserved = photoHostPrivatePolicyObservation(
+		report.ModelInfoChecks, report.ModelRequestAckVerified,
 	)
 	if report.ModelRequestAckVerified {
 		report.Checks[6].Detail = "四类模型已确认同一次宿主请求；合成语义文本／图片、YuNet、SFace 固定向量、Smart 三模型、Creative 固定抠图执行状态分别显示；固定字形 OCR 匹配独立呈现，真实 OCR/SFace/创作效果、图库任务及全集群仍未验证"
