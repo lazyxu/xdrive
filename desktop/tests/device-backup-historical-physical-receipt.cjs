@@ -1,0 +1,48 @@
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..', '..')
+const read = filename => fs.readFileSync(path.join(root, filename), 'utf8')
+
+test('historical physical first-leaf recovery requires owning Agent and is read-only', () => {
+  const router = read('internal/api/router.go')
+  const handler = read('internal/api/local_push_first_file_physical_receipt_api.go')
+  const client = read('internal/client/local_push_first_file_receipt.go')
+  const model = read('internal/api/local_push_first_file_sql_receipt.go')
+  const apiTests = read('internal/api/local_push_first_file_physical_receipt_api_test.go')
+  const clientTests = read('internal/client/local_push_first_file_receipt_test.go')
+  const agent = read('cmd/xdrive-agent/desktop_ipc.go')
+  const renderer = read('desktop/src/main/index.cts')
+  const web = read('web/src/App.tsx')
+
+  assert.match(router, /local-staging\/:stageID\/physical-receipt", s\.requireLocalSourceExecutor\(\), s\.readLocalPushFirstLeafCommittedPhysicalReceipt/)
+  assert.match(handler, /readBoundLocalPushFirstLeafPhysicalReceipt\(/)
+  assert.match(handler, /localPushFirstLeafPathKey\(proof\.RootID, request\.RelativeLeaf\)/)
+  assert.match(handler, /http\.MaxBytesReader\(c\.Writer, c\.Request\.Body, 512\)/)
+  assert.match(handler, /decoder\.DisallowUnknownFields\(\)/)
+  assert.match(handler, /Cache-Control", "private, no-store"/)
+  assert.match(handler, /native_verified/)
+  assert.match(handler, /backup_complete/)
+  assert.match(handler, /CommitSupported: false, Authoritative: false/)
+  assert.doesNotMatch(handler, /(?:commitBoundLocalPushFirstLeaf|reserveBoundLocalPushQuota|prepareQuarantinedBoundLocalPushNewCAS|CreateSource|beginSourceRun)\(/)
+  assert.doesNotMatch(handler, /json:"(?:root_path|root_fingerprint|device_token|cas_key|sha256)"/)
+
+  assert.match(client, /func \(c \*Client\) ReadLocalPushFirstLeafPhysicalReceipt\(/)
+  assert.match(client, /localPushStageRequestHeaders\(req, revision, proof\)/)
+  assert.match(client, /NativeVerified\s+bool\s+`json:"-"`/)
+  assert.match(client, /BackupComplete\s+bool\s+`json:"-"`/)
+  assert.match(client, /flags\["cas_observed"\]/)
+  assert.match(client, /missing_inference_safe/)
+  assert.match(model, /localPushFirstLeafPhysicalReceiptState/)
+  assert.match(apiTests, /TestLocalPushFirstLeafHTTPHistoricalCASReceiptIsDeviceOnlyAndReadOnly/)
+  assert.match(apiTests, /TestLocalPushFirstLeafHTTPPhysicalReceiptRejectsUnboundAndWrongClaims/)
+  assert.match(apiTests, /TestLocalPushFirstLeafHTTPReceiptRequiresCurrentCASAndDeviceState/)
+  assert.match(clientTests, /TestLocalPushFirstLeafHistoricalPhysicalClientRejectsUntrustedWire/)
+  for (const surface of [agent, renderer, web]) {
+    assert.equal(surface.includes('ReadLocalPushFirstLeafPhysicalReceipt'), false,
+      'no private physical recovery operation may be exposed through Desktop IPC or Web')
+    assert.equal(surface.includes('readLocalPushFirstLeafCommittedPhysicalReceipt'), false)
+  }
+})
