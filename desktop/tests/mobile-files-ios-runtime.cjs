@@ -3162,3 +3162,63 @@ test('M07: legacy state, cold relaunch and new account keep rail anchors isolate
     assert.equal(saved.recentScrollTop, undefined, 'new window/account without saved state starts fresh')
   }, { props: { recentItems: many } })
 })
+
+test('U09 first-red: 100k Mobile List→Grid→List keeps the same visible logical file', async () => {
+  const anchorIndex = 54_321
+  const rowName = (i) => 'u09-' + i + '.txt'
+  for (const groupedMode of [false, true]) {
+    const groups = groupedMode ? [
+      { key: 'ext:jpg', start_index: 0, item_count: 48_000 },
+      { key: 'ext:txt', start_index: 48_000, item_count: 52_000 },
+    ] : []
+    const originalGroupLayout = groupedMode ? grouped.xDriveCreateFileExplorerGroupLayout({
+      groups, groupBy: 'type', itemCount: 100_000, rowHeight: state.MOBILE_FILES_ROW_HEIGHT,
+      groupHeaderHeight: 30, groupGap: 6,
+    }) : null
+    const firstTop = groupedMode
+      ? grouped.xDriveFileExplorerGroupedItemTop(originalGroupLayout, anchorIndex) + 23
+      : anchorIndex * state.MOBILE_FILES_ROW_HEIGHT + 23
+    let admitted = 0
+    const virtualCollection = {
+      interactionKey: 'U09-100k:' + groupedMode,
+      itemCount: 100_000,
+      groups,
+      itemAt(index) {
+        admitted += 1
+        return { id: 200_000 + index, name: rowName(index), kind: 'file', revision: 1, size: index }
+      },
+      onRangeChange() {},
+    }
+    await withView(async h => {
+      const labels = () => h.view.root.findAll(node =>
+        Object.hasOwn(node.props ?? {}, 'data-mobile-files-item'))
+        .map(node => node.props['aria-label'])
+      const saved = () => state.mobileFilesDecodeState(
+        h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+      assert(labels().some(label => label === rowName(anchorIndex)), 'precondition: real sparse List row at 54,321 is mounted')
+      assert(!labels().includes(rowName(0)), 'deep scroll must not already render the first file')
+      await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+      await act(async () => { find(h.view, 'data-mobile-files-view-option', 'grid').props.onClick() })
+      assert.equal(saved().view, 'grid')
+      assert(labels().includes(rowName(anchorIndex)),
+        'same logical Node must stay in the Grid virtual viewport, not snap to row zero')
+      assert(saved().scrollTop > 0, 'persisted Browse position must be translated to Grid rows')
+      assert.equal(saved().folderID, 1)
+      assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+      await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+      await act(async () => { find(h.view, 'data-mobile-files-view-option', 'details').props.onClick() })
+      assert(labels().includes(rowName(anchorIndex)), 'return to List must keep the original logical row')
+      assert.equal(saved().view, 'details')
+      assert(saved().scrollTop > 0)
+      assert.equal(saved().folderID, 1)
+    }, {
+      saved: { section: 'browse', folderID: 1, scrollTop: firstTop, view: 'details' },
+      props: {
+        requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+        virtualCollection,
+        grouping: groupedMode ? { groupBy: 'type', foldersFirst: true } : undefined,
+      },
+    })
+    assert(admitted < 2000, 'no materialization of 100k entries or extra Server transport')
+  }
+})

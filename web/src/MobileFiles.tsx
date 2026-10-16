@@ -61,7 +61,8 @@ import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
 import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
-  mobileFilesRowTextInset, mobileFilesNativeMetadata, MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
+  mobileFilesRowTextInset, mobileFilesNativeMetadata, mobileFilesViewportAnchor, mobileFilesViewportTop,
+  MOBILE_FILES_HOLD_MS, MOBILE_FILES_GRID_ROW_HEIGHT, MOBILE_FILES_ROW_HEIGHT,
 } from './mobileFilesState'
 import type { MobileFilesSection } from './mobileFilesState'
 
@@ -419,6 +420,7 @@ export default function MobileFiles(props: Props) {
   const restoredScrollRef = useRef(false)
   const browseScrollRef = useRef(initial.scrollTop)
   const pendingSectionScrollRef = useRef<number | null>(null)
+  const pendingViewScrollRef = useRef<{ view: 'details' | 'grid'; scope: string; top: number; browse: boolean } | null>(null)
   const navigationIntentRef = useRef(0)
   // A typed path is only a navigation intent until shared authorized crumbs
   // and its counted first range commit. Retain old section/scroll meanwhile.
@@ -454,6 +456,10 @@ export default function MobileFiles(props: Props) {
   const selectionScopeRef = useRef(selectionScopeKey)
   selectionScopeRef.current = selectionScopeKey
   const showDirectory = section === 'browse' && (!browseHome || props.trashActive || props.searchActive)
+  const viewPositionScope = [
+    selectionScopeKey, props.sort.key, props.sort.direction,
+    props.grouping?.groupBy ?? 'none', props.grouping?.foldersFirst ?? true,
+  ].join(':')
   const selectionActive = selectionMode && showDirectory
   const effectiveGrid = viewPreference === 'grid'
   const columns = Math.max(2, Math.min(5, Math.floor(viewport.width / 120)))
@@ -796,6 +802,25 @@ export default function MobileFiles(props: Props) {
     host.scrollTop = target
     setScrollTop(host.scrollTop)
   }, [section, browseHome, props.trashActive, props.searchActive])
+
+  useLayoutEffect(() => {
+    const pending = pendingViewScrollRef.current
+    if (!pending || pending.view !== viewPreference) return
+    pendingViewScrollRef.current = null
+    if (pending.scope !== viewPositionScope) return
+    const host = scrollHostRef.current
+    if (!host) return
+    // Commit after the new row geometry is in the DOM, before painting. A
+    // browser may clamp a deep offset if the new Grid is shorter than List.
+    host.scrollTop = pending.top
+    if (host.scrollTop !== pending.top) {
+      setScrollTop(host.scrollTop)
+      if (pending.browse) {
+        browseScrollRef.current = host.scrollTop
+        persist({ scrollTop: host.scrollTop })
+      }
+    }
+  }, [viewPreference, viewPositionScope, persist])
 
   useEffect(() => {
     if (!ready || !showDirectory || !totalCount) return
@@ -1844,11 +1869,54 @@ export default function MobileFiles(props: Props) {
   const chooseMobileView = (next: 'details' | 'grid') => {
     setMoreAnchor(null)
     if (next === viewPreference) return
+    const nextGrid = next === 'grid'
+    const nextColumns = nextGrid ? columns : 1
+    const nextRowHeight = nextGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT
+    const sourceTop = scrollHostRef.current?.scrollTop ?? scrollTop
+    const anchor = mobileFilesViewportAnchor(
+      displayedCount, sourceTop, rowHeight, effectiveGrid ? columns : 1, groupedLayout)
+    const nextCount = nextGrid ? totalCount : displayedCount
+    // Expanded child rows are visible only in List. When leaving an inline
+    // child, keep its nearest preceding root folder instead of treating the
+    // child's flat index as an unrelated root Node.
+    if (nextGrid && inlineLayout && inlineLayout.itemCount !== totalCount && directoryID !== null) {
+      const cell = xDriveFileExplorerInlineCellAt(inlineLayout, anchor.index)
+      if (cell?.ownerID === directoryID) anchor.index = cell.sourceIndex
+      else {
+        const rootRun = [...inlineLayout.segments].reverse().find(
+          segment => segment.ownerID === directoryID && segment.flatStart <= anchor.index)
+        anchor.index = rootRun
+          ? rootRun.sourceStart + rootRun.flatEnd - rootRun.flatStart - 1 : 0
+      }
+    }
+    anchor.index = Math.max(0, Math.min(Math.max(0, nextCount - 1), anchor.index))
+    const sourceGroups = nextGrid && inlineLayout && inlineLayout.itemCount !== totalCount
+      ? props.virtualCollection?.groups ?? []
+      : groupedLayout?.groups.map(group => ({
+          key: group.key, item_count: group.itemCount, start_index: group.startIndex,
+        })) ?? []
+    const nextGrouped = groupedLayout && props.grouping
+      ? xDriveCreateFileExplorerGroupLayout({
+          groups: sourceGroups, groupBy: props.grouping.groupBy, itemCount: nextCount,
+          columns: nextColumns, rowHeight: nextRowHeight,
+          rowGap: groupedLayout.rowGap, padding: groupedLayout.padding,
+          groupHeaderHeight: groupedLayout.groupHeaderHeight, groupGap: groupedLayout.groupGap,
+        }) : null
+    const targetTop = mobileFilesViewportTop(anchor, nextRowHeight, nextColumns, nextGrouped)
+    const browse = section === 'browse' && !props.trashActive && !props.searchActive &&
+      !browseHome && directoryID !== null
+    // Update the sparse viewport synchronously with the view: no transient
+    // first-page range or wrong-folder flash while awaiting the layout effect.
+    pendingViewScrollRef.current = { view: next, scope: viewPositionScope, top: targetTop, browse }
     setViewPreference(next)
-    browseScrollRef.current = 0
-    setScrollTop(0)
-    scrollHostRef.current?.scrollTo({ top: 0 })
-    persist({ view: next, scrollTop: 0 })
+    setScrollTop(targetTop)
+    if (browse) {
+      browseScrollRef.current = targetTop
+      pendingScrollRef.current = null
+      if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+      scrollSaveRef.current = null
+      persist({ view: next, scrollTop: targetTop })
+    } else persist({ view: next })
   }
 
   return (

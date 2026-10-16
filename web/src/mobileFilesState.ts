@@ -1,3 +1,4 @@
+import type { XDriveFileExplorerGroupLayout } from '../../ui/shared/src/mui/FileExplorerGroupingLayout'
 import { xDriveFileExplorerDetailsVirtualWindow } from '../../ui/shared/src/mui/FileExplorerVirtualSurface'
 
 export type MobileFilesSection = 'recent' | 'browse' | 'favorites'
@@ -133,4 +134,71 @@ export function mobileFilesWindow(
     itemCount: total, scrollTop, viewportHeight, rowHeight,
     headerHeight: 0, overscan, minViewportHeight: 300,
   })
+}
+
+/** U09: preserve a logical item, not a pixel offset, across List/Grid geometry.
+ * The sparse Server group index is enough; never walk itemAt() or enumerate 100k.
+ */
+export type MobileFilesViewportAnchor = { index: number; fraction: number }
+export function mobileFilesViewportAnchor(
+  itemCount: number, scrollTop: number, rowHeight: number, columns: number,
+  grouped: XDriveFileExplorerGroupLayout | null = null,
+): MobileFilesViewportAnchor {
+  if (!Number.isSafeInteger(itemCount) || itemCount <= 0) return { index: 0, fraction: 0 }
+  const y = Number.isFinite(scrollTop) ? Math.max(0, scrollTop) : 0
+  const row = Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : 1
+  const cols = Number.isSafeInteger(columns) && columns > 0 ? columns : 1
+  if (grouped?.groups.length) {
+    let lo = 0
+    let hi = grouped.groups.length - 1
+    let ordinal = 0
+    while (lo <= hi) {
+      const middle = (lo + hi) >>> 1
+      if (grouped.groups[middle].top <= y) { ordinal = middle; lo = middle + 1 }
+      else hi = middle - 1
+    }
+    const group = grouped.groups[ordinal]
+    if (group.itemCount > 0) {
+      const step = Math.max(1, grouped.rowHeight + grouped.rowGap)
+      const rowNumber = Math.max(0, Math.min(group.rowCount - 1,
+        Math.floor(Math.max(0, y - group.itemsTop) / step)))
+      const index = Math.min(itemCount - 1,
+        group.startIndex + Math.min(group.itemCount - 1, rowNumber * grouped.columns))
+      const rowTop = group.itemsTop + rowNumber * step
+      const fraction = Math.max(0, Math.min(0.999, (y - rowTop) / grouped.rowHeight))
+      return { index, fraction }
+    }
+  }
+  const rowNumber = Math.floor(y / row)
+  return {
+    index: Math.min(itemCount - 1, rowNumber * cols),
+    fraction: Math.max(0, Math.min(0.999, (y - rowNumber * row) / row)),
+  }
+}
+
+export function mobileFilesViewportTop(
+  anchor: MobileFilesViewportAnchor, rowHeight: number, columns: number,
+  grouped: XDriveFileExplorerGroupLayout | null = null,
+): number {
+  const row = Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : 1
+  const cols = Number.isSafeInteger(columns) && columns > 0 ? columns : 1
+  const index = Number.isSafeInteger(anchor.index) ? Math.max(0, anchor.index) : 0
+  const fraction = Number.isFinite(anchor.fraction)
+    ? Math.max(0, Math.min(0.999, anchor.fraction)) : 0
+  if (grouped?.groups.length) {
+    let lo = 0
+    let hi = grouped.groups.length - 1
+    while (lo <= hi) {
+      const middle = (lo + hi) >>> 1
+      const group = grouped.groups[middle]
+      if (index < group.startIndex) hi = middle - 1
+      else if (index >= group.startIndex + group.itemCount) lo = middle + 1
+      else return group.itemsTop +
+        Math.floor((index - group.startIndex) / grouped.columns) * (grouped.rowHeight + grouped.rowGap) +
+        Math.floor(fraction * grouped.rowHeight)
+    }
+    // A Server regroup/resort invalidates positional identity: never guess.
+    return 0
+  }
+  return Math.floor(index / cols) * row + Math.floor(fraction * row)
 }
