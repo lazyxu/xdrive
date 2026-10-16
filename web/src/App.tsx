@@ -753,6 +753,7 @@ function FileManager({
   const deviceBackupSource = useMemo(() => ({
     list: () => api.deviceBackups(),
     listPage: (limit: number, afterDeviceID: string) => api.deviceBackupsPage(limit, afterDeviceID),
+    foldersPage: (deviceID: string, limit: number, afterSourceID: number) => api.deviceBackupFoldersPage(deviceID, limit, afterSourceID),
     runs: (sourceID: number, limit: number, offset: number) => api.deviceBackupRunSummaries(sourceID, limit, offset),
   }), [api])
 

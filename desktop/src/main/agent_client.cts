@@ -334,6 +334,12 @@ export interface AgentDeviceBackupRunPage {
   has_more: boolean
 }
 
+export interface AgentDeviceBackupFolderPage {
+  folders: AgentDeviceBackupFolder[]
+  has_more: boolean
+  next_after_source_id: number
+}
+
 export type AgentLocalSourceDraftPage = {
   items: Array<{
     source_id: number
@@ -3102,6 +3108,13 @@ export class AgentIPCClient {
     const query = new URLSearchParams({ limit: String(limit) })
     if (afterDeviceID) query.set('after_device_id', afterDeviceID)
     return this.request<AgentDeviceBackupOverview>('GET', `/v1/device-backups?${query.toString()}`)
+  }
+
+  // The Go Agent validates Owner and device. Read-only, never local Roots.
+  deviceBackupFoldersPage(deviceID: string, limit = 100, afterSourceID = 0) {
+    const query = new URLSearchParams({ device_id: deviceID, limit: String(limit) })
+    if (afterSourceID > 0) query.set('after_source_id', String(afterSourceID))
+    return this.request<AgentDeviceBackupFolderPage>('GET', `/v1/device-backups/folders?${query.toString()}`)
   }
 
   verifiedLocalDevice() {
