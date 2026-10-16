@@ -106,3 +106,69 @@ test('A3 real shared Baidu view: drag release issues one new authorized map call
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('A3 shared Mobile Web/Desktop two-pointer pinch commits one zoom, never a fake pan', async () => {
+  const requests = []
+  const provider = async () => ({
+    provider: 'baidu-server-static', enabled: true,
+    attribution: '© 百度地图', privacy: '地图坐标经 Server 处理',
+  })
+  const load = (input, signal) => {
+    requests.push({ input, signal })
+    return new Promise(() => {})
+  }
+  let renderer
+  try {
+    await act(async () => {
+      renderer = create(React.createElement(BaiduMap, {
+        location: { latitude: 0, longitude: 0, name: '赤道照片' },
+        getProvider: provider, loadStaticMap: load,
+      }))
+    })
+    assert.equal(requests.length, 1)
+    const region = () => renderer.root.find(el =>
+      el.type === 'div' && el.props.role === 'group')
+    const surface = { clientWidth: 480, clientHeight: 280, setPointerCapture() {} }
+    const pointer = (id, x, y) => ({
+      pointerId: id, pointerType: 'touch', button: 0,
+      clientX: x, clientY: y, currentTarget: surface,
+    })
+
+    await act(async () => {
+      region().props.onPointerDown(pointer(1, 100, 140))
+      region().props.onPointerDown(pointer(2, 200, 140))
+      region().props.onPointerMove(pointer(2, 300, 140))
+    })
+    assert.equal(requests.length, 1, 'no PNG request during gesture movement')
+    await act(async () => { region().props.onPointerUp(pointer(2, 300, 140)) })
+    assert.equal(requests.length, 2, 'exactly one map PNG after pinch release')
+    assert.equal(requests[0].signal.aborted, true)
+    assert.equal(requests[1].input.zoom, 13, '2x pinch increases one discrete zoom')
+    assert.equal(requests[1].input.latitude, 0, 'real 0/0 GPS remains valid')
+    assert.equal(requests[1].input.longitude, 0)
+    await act(async () => { region().props.onPointerUp(pointer(1, 100, 140)) })
+    assert.equal(requests.length, 2, 'trailing finger must not become a pan')
+
+    await act(async () => {
+      region().props.onPointerDown(pointer(3, 110, 120))
+      region().props.onPointerDown(pointer(4, 210, 120))
+      region().props.onPointerMove(pointer(4, 20, 120))
+      region().props.onPointerCancel(pointer(4, 20, 120))
+      region().props.onPointerUp(pointer(3, 110, 120))
+    })
+    assert.equal(requests.length, 2, 'canceled pinch cannot change camera')
+    await act(async () => {
+      region().props.onPointerDown(pointer(5, 200, 150))
+      region().props.onPointerMove(pointer(5, 90, 150))
+      region().props.onPointerUp(pointer(5, 90, 150))
+    })
+    assert.equal(requests.length, 3, 'ordinary single-pointer pan remains usable')
+    assert.equal(requests[1].signal.aborted, true)
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.equal(requests[2].signal.aborted, true)
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+  }
+})
