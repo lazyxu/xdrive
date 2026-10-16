@@ -1421,11 +1421,15 @@ export function XDriveMediaGalleryPage({
         setQuery(nextQuery)
         if (fromCollections) setMobileCollectionsOverview(false)
       }
-      if (fromCollections && mobileGalleryViewport) {
+      if (mobileGalleryViewport) {
+        // Mobile child folders and ancestor breadcrumbs require the same
+        // authorized first-page commit as Collections → Sync Folder. Merely
+        // resolving the child metadata must not drop the previously displayed
+        // sparse parent photo wall or move its scroll anchor.
         await loadFirstPage(null, nextQuery, null, null, 'default',
           null, null, null, commitFolder)
       } else {
-        // Preserve wide Web/Desktop and established non-Collections routing.
+        // Preserve wide Web/Desktop and established non-Mobile routing.
         commitFolder()
         await loadFirstPage(null, nextQuery)
       }
@@ -4207,8 +4211,14 @@ function MediaVirtualTileGrid({
     }
   }, [collection.itemCount, collection.onRangeChange, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
+  // A restore revision is a one-shot navigation/gesture intent. Re-rendering
+  // the existing sparse wall for pending metadata, loading badges or a newly
+  // observed visible row must not replay an old scroll-to-anchor command.
+  const restoredAnchorRevisionRef = useRef(0)
   useLayoutEffect(() => {
-    if (returnViewport || restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    if (returnViewport || restoreAnchorRevision <= 0 ||
+        restoreAnchorIndex === undefined ||
+        restoredAnchorRevisionRef.current === restoreAnchorRevision) return
     const host = hostRef.current
     if (!host || collection.itemCount <= 0) return
     const metrics = xDriveMediaGalleryGridMetrics({
@@ -4225,22 +4235,30 @@ function MediaVirtualTileGrid({
     )
     const offset = Math.floor(index / Math.max(1, metrics.columns)) * metrics.rowStep
     // Wait for the new row/total-height layout before restoring the position
-    // of a pinched tile; other navigation retains its previous timing.
+    // of a pinched tile. A later unrelated render may change the visible
+    // index (or layout metrics), but must not replay this revision's restore.
+    restoredAnchorRevisionRef.current = restoreAnchorRevision
+    let restored = false
     let afterLayout: number | null = null
+    const applyRestore = () => {
+      if (!hostRef.current) return
+      scrollMediaGalleryHostToOffset(
+        hostRef.current, offset, restoreAnchorViewportOffset ?? 0,
+      )
+      restored = true
+    }
     const frame = window.requestAnimationFrame(() => {
-      if (restoreAnchorViewportOffset === undefined) {
-        if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
-      } else {
-        afterLayout = window.requestAnimationFrame(() => {
-          if (hostRef.current) {
-            scrollMediaGalleryHostToOffset(hostRef.current, offset, restoreAnchorViewportOffset)
-          }
-        })
-      }
+      if (restoreAnchorViewportOffset === undefined) applyRestore()
+      else afterLayout = window.requestAnimationFrame(applyRestore)
     })
     return () => {
       window.cancelAnimationFrame(frame)
       if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+      // StrictMode may clean up the initial scheduled frame before it paints.
+      // Only a genuinely completed restore consumes the revision.
+      if (!restored && restoredAnchorRevisionRef.current === restoreAnchorRevision) {
+        restoredAnchorRevisionRef.current = 0
+      }
     }
   }, [
     collection.itemCount,
@@ -4527,8 +4545,14 @@ function MediaVirtualTimeline({
     }
   }, [collection.onRangeChange, groups, minTileWidth, minColumns, referenceColumnWidth, baselineColumns, onVisibleAnchorChange])
 
+  // A restore revision is a one-shot navigation/gesture intent. Re-rendering
+  // the existing sparse wall for pending metadata, loading badges or a newly
+  // observed visible row must not replay an old scroll-to-anchor command.
+  const restoredAnchorRevisionRef = useRef(0)
   useLayoutEffect(() => {
-    if (returnViewport || restoreAnchorRevision <= 0 || restoreAnchorIndex === undefined) return
+    if (returnViewport || restoreAnchorRevision <= 0 ||
+        restoreAnchorIndex === undefined ||
+        restoredAnchorRevisionRef.current === restoreAnchorRevision) return
     const host = hostRef.current
     if (!host) return
     const layout = xDriveMediaGalleryTimelineLayout({
@@ -4542,22 +4566,30 @@ function MediaVirtualTimeline({
     const offset = mediaGalleryTimelineOffsetForIndex(layout, restoreAnchorIndex)
     if (offset === null) return
     // Wait for the new row/total-height layout before restoring the position
-    // of a pinched tile; other navigation retains its previous timing.
+    // of a pinched tile. A later unrelated render may change the visible
+    // index (or layout metrics), but must not replay this revision's restore.
+    restoredAnchorRevisionRef.current = restoreAnchorRevision
+    let restored = false
     let afterLayout: number | null = null
+    const applyRestore = () => {
+      if (!hostRef.current) return
+      scrollMediaGalleryHostToOffset(
+        hostRef.current, offset, restoreAnchorViewportOffset ?? 0,
+      )
+      restored = true
+    }
     const frame = window.requestAnimationFrame(() => {
-      if (restoreAnchorViewportOffset === undefined) {
-        if (hostRef.current) scrollMediaGalleryHostToOffset(hostRef.current, offset)
-      } else {
-        afterLayout = window.requestAnimationFrame(() => {
-          if (hostRef.current) {
-            scrollMediaGalleryHostToOffset(hostRef.current, offset, restoreAnchorViewportOffset)
-          }
-        })
-      }
+      if (restoreAnchorViewportOffset === undefined) applyRestore()
+      else afterLayout = window.requestAnimationFrame(applyRestore)
     })
     return () => {
       window.cancelAnimationFrame(frame)
       if (afterLayout !== null) window.cancelAnimationFrame(afterLayout)
+      // StrictMode may clean up the initial scheduled frame before it paints.
+      // Only a genuinely completed restore consumes the revision.
+      if (!restored && restoredAnchorRevisionRef.current === restoreAnchorRevision) {
+        restoredAnchorRevisionRef.current = 0
+      }
     }
   }, [
     groups,

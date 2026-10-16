@@ -111,7 +111,14 @@ test('Only a pinch revision uses the screen-space anchor: sort, time and slider 
   assert.match(source, /anchorViewportTop !== undefined && Number\.isFinite\(anchorViewportTop\)/)
   assert.equal((source.match(/restoreAnchorViewportOffset=\{/g) || []).length, 2)
   assert.equal((source.match(/restoreAnchorViewportOffset === undefined/g) || []).length, 2)
-  assert.equal((source.match(/scrollMediaGalleryHostToOffset\(hostRef\.current, offset, restoreAnchorViewportOffset\)/g) || []).length, 2)
+  // Explicit pinch/sort revisions retain the original one-/two-frame restore
+  // timing, but ordinary sparse-range or loading re-renders must not replay
+  // an already-applied revision for either shared virtual layout.
+  assert.equal((source.match(/scrollMediaGalleryHostToOffset\(\s*hostRef\.current, offset, restoreAnchorViewportOffset \?\? 0,/g) || []).length, 2)
+  assert.equal((source.match(/const restoredAnchorRevisionRef = useRef\(0\)/g) || []).length, 2)
+  assert.equal((source.match(/restoredAnchorRevisionRef\.current === restoreAnchorRevision\) return/g) || []).length, 2)
+  assert.equal((source.match(/restoredAnchorRevisionRef\.current = restoreAnchorRevision/g) || []).length, 2)
+  assert.equal((source.match(/if \(!restored && restoredAnchorRevisionRef\.current === restoreAnchorRevision\)/g) || []).length, 2)
   assert.equal((source.match(/if \(afterLayout !== null\) window\.cancelAnimationFrame\(afterLayout\)/g) || []).length, 2)
   assert.match(source, /onTouchStartCapture=\{handleGalleryTouchStart\}/)
   assert.match(source, /onTouchCancelCapture=\{\(\) => finishGalleryPinch\(false\)\}/)
