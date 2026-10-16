@@ -51,3 +51,14 @@ node desktop/scripts/pwa-s5a-live-https-audit.cjs --origin https://drive.your-do
 每一条实际设备 case 都记录：`case_id`、`platform`、`hardware/os_version/browser_version`、`app_build_sha`、`origin_sha256`、真实 `display_mode`、安装来源、网络/电源/屏幕锁定状态、账号权限类别（不要账号 ID）、重现步骤、Server 真实 HTTP/持久状态、原件总字节和 SHA-256（不保留文件原文）、测量工具/p50/p95/内存、`result=PASS|FAIL|NOT_RUN`、录屏/截图/CI URL 和测试时间。保存到 `docs/validation/` 的**脱敏**记录，不上传授权 Token、Cookie、个人路径、证书私钥、浏览器 profile 或私人媒体。审查者必须能逐格核实；如果缺失，保持 `NOT RUN` 和 Release NO-GO。
 
 **下一个阶段 S5-A2：** 使用实际部署域名运行 S5-A1 Origin 检测并在真实 iOS 27 Safari/Home Screen、Android Chrome/Installed、Desktop Chrome/Edge Installed 分别完成安装+证书+首次登录/深链接的记录；之后再按 S5-04→S5-11 推进可靠性、性能、权限和发布回滚验收。
+
+
+## S5-A2a · 从真实设备浏览器主动生成脱敏验收信息
+
+既有“安装与运行环境”对话框在 Web/Mobile Web/PWA Installed 中共用同一 React/MUI 实现。点击“生成脱敏验收记录”，将当前浏览器可**客观观察到**的 display-mode、`navigator.standalone`（若可用）、HTTPS/安全上下文、受控 SW 路径是否本地 `/sw.js`、CSS 视口、已完成的七项公开安装资源检查状态和 Origin 的 SHA-256 在屏幕上呈现为只读 JSON。该操作不发送新网络请求，不访问任何身份或私有文件，不保存到 Server、SW CacheStorage、localStorage 或浏览器历史；关闭对话框时删除可见的旧记录。
+
+**手动验收流程（一个平台一份）：** 在 OS 浏览器中打开真实 xDrive HTTPS 域名；使用现有按钮主动检测安装资源；如平台支持，按真实系统流程安装 PWA 并从**操作系统图标**关闭、重启；在普通 Web 和安装窗口分别打开“安装与运行环境”，点击“生成脱敏验收记录”并手动复制；补录原生 OS 安装图标、实际浏览器/设备系统版本、受信任证书、重新登录、Files/Gallery/Viewer 深链接、截图/录屏和 Server 结果。只根据真实设备及独立复核证据人工填写平台矩阵结果。
+
+JSON `schema=xdrive-pwa-s5a2-browser-observation-v1` 中的 `platform_hint_only` **只是文案级提示，不是操作系统证明**；`display_mode_observed` 也不能证明安装；`origin_sha256` 仅为跨端对比不泄露实例地址。恒定 `installation_from_os_icon_verified=NOT_VERIFIED`、`trusted_os_certificate_verified=NOT_VERIFIED`、`physical_device_acceptance=NOT_RUN`、`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN`，需要另行人工复核才可将相应原始矩阵格子从 `NOT RUN` 更新为 `PASS/FAIL`。
+
+**自动化限制：** Node 纯逻辑、Web 类型检查与真正 Chromium Desktop 及 Android UA/touch 双模式的共享 MUI 点击测试只能证明记录结构、DOM、匿名边界和不触发额外 API；不是 iOS 27 Safari、Android 系统 Installed 或桌面 Edge 的真机安装验收。缺少真实设备及部署域名时，所有矩阵格子保持 `NOT RUN`，保持发布 `NO-GO`。详见 [docs/pwa-delivery.md](pwa-delivery.md#pwa-s5-a2a-用户主动采集设备浏览器验收记录2026-10-16)。

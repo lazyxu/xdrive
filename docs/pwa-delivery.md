@@ -569,3 +569,29 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 **证据与门槛：** 专用 CI 在真实 TLS socket 上安装仅测试的 OpenSSL 证书，用 `NODE_EXTRA_CA_CERTS` 让 Node 独立确认证书链和 IP SAN；若未信任证书、使用 HTTP、URI 中有密码或 Ticket、强行跳过 TLS、将 200 HTML 当 JS、公共资源被重定向、静态缓存策略错误、HSTS 缺失、匿名私人文件返回 200/可缓存，都必须出错且不得报告发布 GO。测试用 `XD_PWA_S5_FIXTURE=1 --fixture-loopback` 明确区分局部 fixture，**CI 的测试证书不是实际公网 HTTPS 部署记录**。不触碰生产 SW/Caddy/Auth/文件协议/UI/设备 Push 或无关 PR。固定基线**恰一工作提交**，测试与完整 CI Final Gate 在准确 HEAD 全绿后才能从 Draft 转 Ready、rebase merge 并清理分支；GitLab 未推送时不称已交付。
 
 **下一步 S5-A2：** 拿到用户真实部署实例的合法域名/信任的实际运行环境，运行该 CLI 的真实 Origin 模式，再分别在真实 iOS 27 Safari/Home Screen、Android Chrome/Installed 和 Desktop Chrome/Edge Installed 完成启动图标、首次登录/深链接、系统证书信任的取证。再推进 S5 网络、下载、上传、100k、锁屏、无障碍、版本/回滚。没有这些设备和 Origin 访问时不应人为填 PASS 或冒充测试执行。
+
+
+## PWA-S5-A1 · 可信 HTTPS 只读部署预检已合并（2026-10-16）
+
+[PR #1731](https://github.com/lazyxu/xdrive/pull/1731) 在工作 HEAD `e084dbc0eddc42edaae36e0ada56d63716a5323c` 通过 [专用真实 OpenSSL/Node TLS 15 项 CI #38778782472](https://github.com/lazyxu/xdrive/actions/runs/38778782472) 与 [完整 GitHub CI #38778782109](https://github.com/lazyxu/xdrive/actions/runs/38778782109)（Go race/Web/Desktop/Linux/Windows/Caddy/升级回滚、Final Gate），rebase 线性合并成 `master@b3b1202f2056d8aca3c67c05728b985751458b53`。临时 PWA 分支已核实删除。只读工具检查真实受信任 HTTPS Origin 的公开安装资产、HSTS、匿名权限边界并生成脱敏报告；专项 CI 使用的自签证书只是**隔离测试工具本身**，绝非用户公网实例或手机系统证书验收。
+
+## PWA-S5-A2a · 用户主动采集设备浏览器验收记录（2026-10-16）
+
+**固定交付基线：** GitHub `lazyxu/xdrive master@449269876896ed194a734225de8d9c330da5e198`。PWA 关联 PR/分支已核对无开放项，保持仓库固定基线和严格一个工作提交。本阶段接续 S5-A1，仅新增独立的 `web/src/pwaDeviceEvidence.ts` 浏览器观察模块、将“生成脱敏验收记录”按钮集成到现有共用 `PwaInstallDialog.tsx`、新增 Node 契约测试和实际 Chrome Web 构建浏览器专项、CI workflow，以及本台账和 `docs/pwa-s5-acceptance.md`。保留 52px App Frame、Web/Mobile Web Files/Gallery 完全共用 REST/业务逻辑、Desktop/Server 文件任务权限、SW 仅公开离线缓存和所有当前更新/上传/Viewer 安全策略。不增加新的 Server REST、PWA 缓存或系统操作，禁止后台采集。
+
+**实际设备操作方式：** 在真实 iOS 27 Safari/主屏 Web App、Android Chrome/已安装 PWA、Desktop Chrome/Edge 浏览器/独立 PWA 中，经已有登录前或账号菜单的“安装与运行环境”，点击**生成脱敏验收记录**。在当次点击里只读已有安装模式 `display-mode`、`navigator.standalone`、安全上下文与 http/https、SW API/controller 和是否来自本站固定 `/sw.js`、当前 CSS 视口、UA 衍生平台*提示*和先前人工触发过的公开静态 HEAD 的固定七个 `pass/warn/fail/not_run` 状态。不发起任何网络请求，绝不枚举用户文件或在本地持久存储；若浏览器 `crypto.subtle` 可用，仅输出本站 Origin 的 SHA-256，不输出域名、地址、Hash deep link、Query、原始 UA、账号、Token、Cookie、下载票据、媒体和完整诊断原文。记录在共享 MUI 对话框内以只读多行显示，用户主动选中复制后才可用于线下验收；对话框关闭时清除显示及异步状态，避免跨账号保留旧记录。
+
+**严格防止冒充真机 PASS：** 即使浏览器返回 `standalone`、观察到 `appinstalled` 或安装提示 accepted、SW 已接管，生成 JSON 始终写 `installation_from_os_icon_verified=NOT_VERIFIED`、`trusted_os_certificate_verified=NOT_VERIFIED`、`physical_device_acceptance=NOT_RUN`、`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN`。用户须以真实系统图标重开、屏幕录制及独立证书/访问验证来人工完成 `S5-02`，无法通过产品内部按键自行改为 PASS。Android/iOS UA Chrome 390px 模拟是自动化**UI 回归**而非实机安装。
+
+**明确测试范围：** Node 隔离运行生产 TS 模块，检查 Android/iOS/other 观察提示、原始域名/UA/秘密 Detail 不泄露、未知 SW 来源不写入、缺失 crypto 返回 null 不猜 SHA、严格不读 `/api` 和不可存储、所有状态仍 NO_GO；新的真实 Chrome 双模式（桌面 1280px 和 Android UA/touch 390px）必须通过生产构建后实际点击原 MUI 对话框、复制框读取并验证只是安全观察、不产生额外 HEAD/私有 API/请求控制，不破坏已有 S2/S3 的真实浏览器安装/离线/更新检查。单一准确 HEAD 的专项 CI 与完整 PR CI/Final Gate 双绿才能 Draft→Ready→rebase 合并并核实工作分支删除。物理 iOS 27 Safari/Home Screen、Android Chrome Installed、Desktop Edge Installed 和公网 CA 部署仍均须保持 `NOT RUN`，不能伪报 S5-A2 已验收。
+
+**下一验收：** S5-A2b 需由真正持有设备、实际受信任 HTTPS 部署访问权限的测试人员在七平台矩阵逐一留下 `S5-02/S5-03` 的截图、独立系统安装/证书验证与登录深链接结果，再推进 S5-04 至 S5-11 弱网、文件传输、100k、锁屏、无障碍、发布回滚。安装行为取决于真实浏览器与 OS，不能声称能力与 Desktop 绝对相等。
+
+
+**S5-A2a 首轮真实 Chrome UI First-red（2026-10-16）：** 原准确工作 SHA `99c73a1b2d635623328efe6fe7f53c248beb4d81` 的 [专用真实 Chrome/Node CI #38829922479](https://github.com/lazyxu/xdrive/actions/runs/38829922479) 完成了 4 项 Node 契约测试、生产 Web 构建和桌面 Chromium 的真实用户登录前安装 Dialog 点击；在从只读 MUI TextField 读取 JSON 时 `locator.waitFor: strict mode violation`，因为 MUI 的 multiline 输入同时存在实际文本 `textarea` 和 `aria-hidden=true` 的尺寸测量辅助 `textarea`。这证明前端按钮已经生成 JSON，**尚未通过读取断言，也未开始 Android 390px 模拟**；不是产品功能/安全失败，更不代表任何 OS Installed 真机证据。只将测试读取目标限定为非隐藏 `textarea:not([aria-hidden="true"])`，新增 Node 静态防回归断言；保持现有用户真实点击、脱敏哈希、公共请求次数、NO-GO 和双模式验收完全不变。保留固定基线并重建唯一工作提交，旧 CI 结果不得用于后继合并；需要新 HEAD 专项和完整 PR CI/Final Gate 同时成功后才能 Ready、rebase merge、清理分支。
+
+
+**S5-A2a 真实 Chrome 后完整 CI 首次 Desktop 测试 First-red（2026-10-16）：** 旧准确 HEAD `8e2d08f43347614095bf62656d0473765d404d5a` 的 [独立真实 Chrome S5-A2a 专项 #38830281851](https://github.com/lazyxu/xdrive/actions/runs/38830281851) 成功：Node 脱敏契约 4/4、真实生产 Web 构建、Desktop Chrome + Android UA/Touch 390px 双模式 MUI 用户主动采集和绝对 NO-GO 均通过。然而 [完整 CI #38830282002](https://github.com/lazyxu/xdrive/actions/runs/38830282002) 的 `desktop-tests/Test desktop main IPC client` 在加载新的 `tests/pwa-s5a2-device-evidence.cjs` 时失败：`Cannot find module 'web/node_modules/typescript'`。仓库既有 Desktop 测试 `tests/web-pwa-install.cjs` 使用 `require('typescript')`，CI 的 desktop-tests 仅在 `desktop/` 安装依赖，而 `desktop/package.json` 已明确列入 TypeScript 开发依赖。这是**测试入口错误地依赖另一个工作区安装目录**，与产品业务/模拟浏览器/OS 安装状态无关。仅将新测试导入改为与既有 Desktop 测试一致的 `require('typescript')`，并添加桌面依赖路径回归；保留生产 Web、Node/Chrome 双环境全部验收不变。在原固定父提交 `449269876896ed194a734225de8d9c330da5e198` 上重建同一唯一工作提交，原准确 SHA 的所有 CI 成绩不可用于新提交合并；必须重新跑专项与完整 Final Gate，双绿才 Ready→rebase merge→核查临时分支删除。
+
+
+**S5-A2a 双 CI 工作区依赖布局修正（2026-10-16）：** 旧准确 HEAD `b4dadf5c86cb1ca5842d020e2fc8450e2c1a1d46` 的 [真实 Chrome 专项 #38831219423](https://github.com/lazyxu/xdrive/actions/runs/38831219423) 在新增 Node 契约阶段因 `Cannot find module 'typescript'` 失败：该专用 workflow 只在 `web/` 执行 `npm ci`；而上一轮出错的 `desktop-tests` 只在 `desktop/` 安装 Node 模块。两个工作区各自 `devDependencies` 都声明 TypeScript，但测试仅使用 CJS 模块本地解析路径，不能覆盖两种 CI。仅在测试夹具用 `createRequire` 从明确的 `desktop/package.json` 优先解析已安装 TypeScript，若 `MODULE_NOT_FOUND` 再从 `web/package.json` 解析；不修改任何 lockfile/package.json、业务 UI、Server 或 SW、不额外安装整个 Electron 到 Chrome CI。新增测试验证两个工作区的声明和入口存在。旧提交的专用/完整 CI 不能作为新 SHA 合并证据。固定基线单提交规则维持，须在新准确 HEAD 的专用 Chrome+Node 与完整 Desktop/Web/Go/Final Gate 双绿才可线性合并。

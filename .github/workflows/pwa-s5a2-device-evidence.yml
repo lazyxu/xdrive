@@ -1,0 +1,75 @@
+name: PWA S5A2 Actual Browser Evidence NO-GO Contract
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s5a2-browser-observation:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'feat/pwa-s5a2-device-evidence-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Verify exact HEAD and install authentic Web dependencies
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_PR_HEAD"
+          npm --prefix web ci --no-audit --no-fund
+      - name: Dedicated real browser driver without app dependency changes
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/xdrive-pwa-s5a2-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-pwa-s5a2-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chromium/Chrome required" >&2
+            exit 1
+          fi
+      - name: Prove sanitized evidence never creates physical installation PASS
+        run: |
+          set -euo pipefail
+          node --check desktop/tests/pwa-s5a2-device-evidence.cjs
+          node --check desktop/scripts/pwa-browser-install-offline.cjs
+          node --test desktop/tests/pwa-s5a2-device-evidence.cjs
+      - name: Build genuine shared Web and Mobile Web production app
+        run: npm --prefix web run build
+      - name: Desktop Chrome plus Android-UA/touch mobile simulation from real MUI dialog
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          XD_PWA_S5A2_EVIDENCE: '1'
+          XD_PWA_S2B_RESULT_DIR: ${{ github.workspace }}/desktop/pwa-s5a2-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_PWA_BROWSER }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-pwa-s5a2-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          node desktop/scripts/pwa-browser-install-offline.cjs
+          node - <<'NODE'
+          const assert = require('node:assert/strict')
+          const report = require('./desktop/pwa-s5a2-results/summary.json')
+          assert.equal(report.passed, true)
+          assert.equal(report.physicalDevice, false)
+          assert.equal(report.cases.length, 2)
+          assert(report.cases.every(c => c.s5a2BrowserObservationValidated))
+          assert(report.cases.some(c => c.mode === 'desktop-Chromium-browser'))
+          assert(report.cases.some(c => c.mode === 'Android-UA-mobile-emulation'))
+          console.log('PWA_S5A2_REAL_CHROME_NO_GO_VERIFIED cases=2 physical_device=false')
+          NODE
