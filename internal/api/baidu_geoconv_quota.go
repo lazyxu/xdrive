@@ -36,12 +36,26 @@ type baiduGeoconvQuotaLimits struct {
 func reserveBaiduGeoconvQuota(
 	ctx context.Context, db *gorm.DB, ownerID uint64, pointCount int,
 ) error {
-	return reserveBaiduGeoconvQuotaWithLimits(ctx, db, ownerID, pointCount, baiduGeoconvQuotaLimits{
-		OwnerRequests: baiduGeoconvOwnerRequestsPerMinute,
-		FleetRequests: baiduGeoconvFleetRequestsPerMinute,
-		OwnerPoints:   baiduGeoconvOwnerPointsPerMinute,
-		FleetPoints:   baiduGeoconvFleetPointsPerMinute,
+	if ctx == nil || db == nil || ctx.Err() != nil {
+		return errBaiduGeoconvQuotaDenied
+	}
+	// Commit minute, same-second and UTC-day consumption together. A denied
+	// cadence gate MUST roll back both fleet and Owner minute charges.
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := reserveBaiduGeoconvQuotaWithLimits(ctx, tx, ownerID, pointCount, baiduGeoconvQuotaLimits{
+			OwnerRequests: baiduGeoconvOwnerRequestsPerMinute,
+			FleetRequests: baiduGeoconvFleetRequestsPerMinute,
+			OwnerPoints:   baiduGeoconvOwnerPointsPerMinute,
+			FleetPoints:   baiduGeoconvFleetPointsPerMinute,
+		}); err != nil {
+			return errBaiduGeoconvQuotaDenied
+		}
+		return reserveBaiduGeoconvCadenceTx(ctx, tx, ownerID)
 	})
+	if err != nil || ctx.Err() != nil {
+		return errBaiduGeoconvQuotaDenied
+	}
+	return nil
 }
 
 // Test-only lower caps can never increase production maxima. All Server
