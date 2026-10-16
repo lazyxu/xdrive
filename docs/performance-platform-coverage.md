@@ -225,3 +225,13 @@ Linux原生Go `storage.Local.Put` 仅为**共享Server存储层基准**，不是
 
 Linux同源真实4GiB高熵stage文件512×8MiB，当前整文件拼装物理模型对比离线对象原子rename+Manifest，另测回放完整4GiB文件额外成本；[规范](cas-upload-staging-performance.md)、[登记簿](performance-test-registry.md)。新负载 valid n=0，matched BEFORE=Not measured，Offline Candidate=Not measured，生产AFTER=N/A。六端实际用户传输：Desktop Native=Not measured；Wide Web=Not measured；Mobile Web=Not measured；Desktop installed PWA=Not measured；Android installed PWA=Not measured；iOS installed PWA=Not measured。已有三平台真实4GiB通过记录保留，不重复纳入离线方案加速。
 \n\n## CAS-A02b首轮实测归档补记 · 2026-10-16\n\n[专项CI #38905016820](https://github.com/lazyxu/xdrive/actions/runs/38905016820) 在原HEAD 84fc5684a556b4a895deddbb91c758f42c509a3e 成功：3×真实4GiB SHAKE-256源、512个8MiB不同物理stage分片，原版布局模型st_blocks峰值8,589,938,688B vs候选4,295,004,160B；kernel stage+final写入8,589,934,592B vs4,295,004,160B，P50 finalize16,305.935ms vs8,229.359ms，平面兼容物化另外写4GiB、P50 15,422.271ms；原版和候选的全SHA/40次64KiB随机Range验证全通过，最大RSS37,796KiB。**Accepted only OFFLINE experiment；生产 AFTER=N/A，真实6客户端未测。** 仓库内[原始数字+source exact+原JSON SHA](performance-evidence/cas-a02b-first-upload-staging/README.md)为永久可查证索引；完整11文件原GitHub Artifact #12047453131只有有限保留期，不能冒称已经永久归档其全部字节。归档修订新HEAD源码及全仓FinalGate仍需执行。
+
+
+## LP-P001（2026-10-16）· 六平台 Native 100k 实体目录扫描与两代Inventory增量审计
+
+LP-P001在Linux使用真实100k个独立普通文件、102,400,000B源逻辑字节/真实非稀疏磁盘块，生产Go LocalPush Scanner→Root native identity→两代完整Journal SHA→advisory Delta。每组新增1000/变更1000/移除1000，n3不同真实根；[独立基准](localpush-native-physical-performance.md)、[中央注册](performance-test-registry.md)。已取得**真实Linux Go本机 CURRENT n=3**（首代P50 912.402ms、二代928.290ms、Delta 2418.643ms、RSS峰24084KiB）；产品AFTER=N/A，原始证据归档新HEAD双CI待验收。对照列：**Native Desktop Electron+Agent：Not measured**（只测了Linux Go库，没有真实Renderer/Main/Agent端到端）；**Wide Web：Not measured；Mobile Web：Not measured；Desktop installed PWA：Not measured；Android installed PWA：Not measured；iOS installed PWA：Not measured**。这一行无法替代100k物理Push/云端CAS真正同步或任何浏览器PWA数据；一旦得到有效原始n3仅能把“共享设备本机Go层”记录为已测。
+
+
+### LP-P001 100k 本机原版 n3 真实归档对照（2026-10-16）
+
+[原版真实n3源码CI #38911723111](https://github.com/lazyxu/xdrive/actions/runs/38911723111)：每组100,000不同普通文件/409,600,000B已分配块，实际生产Linux Native Go LocalPush gen1/journal/PREVIOUS/Delta，首次扫描P50 **912.402ms**，第二次 **928.290ms**，两代Delta **2418.643ms**，峰RSS **24,084KiB**，所有真实项与500批、Native strong identity、SHA正确。此行只有**共享本机Linux Go层已测**，六端App/UI维度仍 Native Desktop Electron=**Not measured**（无真实Renderer/Agent IPC与Windows实机）/Wide Web=**Not measured**/Mobile Web=**Not measured**/Desktop installed PWA=**Not measured**/Android installed PWA=**Not measured**/iOS installed PWA=**Not measured**。没有100k原片云端上传或缩略图/视频解码；完整原始资源[在此](performance-evidence/localpush-native-physical-100k/README.md)。完整CI Final Gate未通过前状态为Measured ORIGINAL / not Merged。

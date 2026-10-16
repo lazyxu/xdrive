@@ -1,0 +1,10 @@
+{
+  "status": "Invalid harness",
+  "workload_id": "LP-P001-native-100k-real-physical-files-two-inventory-generations-and-delta",
+  "source_head": "0467b80d257cde5b3dade46793b74e985c5842a7",
+  "run_id": 38911400657,
+  "run_url": "https://github.com/lazyxu/xdrive/actions/runs/38911400657",
+  "valid_sample_count": 0,
+  "cause": "New Go opt-in test was not gofmt-clean. Job failed at test -z gofmt -l, before compile or 100k physical test. Product unchanged. Resolved by preserving exact gofmt output as the measured original Go test source; format-only change.",
+  "production_performance_red": false
+}

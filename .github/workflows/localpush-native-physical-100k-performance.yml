@@ -1,0 +1,166 @@
+name: LP-P001 Native 100k Physical Files Inventory Journal Delta Performance
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  localpush-real-native-100k-original:
+    if: github.head_ref == 'perf/localpush-native-physical-100k-inventory-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Verify archived exact original n3 machine evidence and Go source SHA before rerun
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/localpush-native-physical-100k/ci-run-38911723111.tar.gz
+          printf '%s  %s\n' 'c4c53661674321af204d2393f94c4ce0f4f05c5deeeb2e62a56bad722d448b2b' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,re,statistics,sys,tarfile
+          expected={f"sample-{i}.{ext}" for i in (1,2,3) for ext in ("json","log","resources.txt")}
+          expected|={"source.txt","summary.json"}
+          with tarfile.open(sys.argv[1],mode="r:gz") as tar:
+              entries=tar.getmembers()
+              assert len(entries)==11 and {entry.name for entry in entries}==expected
+              members={entry.name:tar.extractfile(entry).read() for entry in entries}
+          source=members["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=d0ed8b730eac02e80e8ccec719381920a970dcce" in source
+          assert "CI_RUN_ID=38911723111" in source
+          for path in ("internal/localpush/inventory_physical_100k_performance_linux_test.go",
+                       "internal/localpush/scanner.go",
+                       "internal/localpush/journal.go",
+                       "internal/localpush/inventory_delta.go",
+                       "internal/localpush/root.go"):
+              digest=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f"{digest}  {path}" in source,("source_file_changed",path)
+          summary=json.loads(members["summary.json"])
+          assert summary["passed"] and summary["n"]==3 and not summary["production_changed"]
+          assert summary["physical_file_count"]==100000 and summary["original_logical_bytes"]==102400000
+          rows=[json.loads(members[f"sample-{i}.json"]) for i in (1,2,3)]
+          for i,row in enumerate(rows,1):
+              assert row["sample"]==f"sample-{i}" and row["passed"] and not row["production_changed"]
+              assert row["original_file_count"]==100000 and row["physical_directory_count"]==100
+              assert row["original_allocated_blocks_bytes"]==409600000
+              assert row["journal_generation_1_bytes"]>26000000 and row["journal_generation_2_bytes"]>26000000
+              assert row["delta_added"]==row["absent_candidates_not_deletes"]==1000
+              assert row["delta_changed_including_directory"]==1001
+              assert row["metadata_stable_not_content_proof"]==98099
+              assert row["delta_emitted_records"]==101100
+              assert row["missing_inference_safe"] is False
+              assert "LOCALPUSH_NATIVE_PHYSICAL_100K_N3 " in members[f"sample-{i}.log"].decode()
+              assert "Maximum resident set size" in members[f"sample-{i}.resources.txt"].decode()
+          assert len({r["seed_content_sha256"] for r in rows})==3
+          median=lambda field:statistics.median(r[field]["wall_ms"] for r in rows)
+          assert summary["scan1_ms_p50"]==median("scan_and_persist_generation_1")
+          assert summary["scan2_ms_p50"]==median("scan_and_persist_generation_2")
+          assert summary["delta_ms_p50"]==median("two_generation_delta")
+          assert summary["peak_rss_kib"]==max(r["process_peak_rss_kib"] for r in rows)
+          print("LP_P001_ORIGINAL_N3_ARCHIVE_EXACT_SOURCE_VERIFIED",len(entries))
+          PY
+      - name: Confirm exact test-only source and compile original Go localpush
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/localpush/inventory_physical_100k_performance_linux_test.go)"
+          mkdir -p desktop/localpush-native-100k-bin
+          go test -mod=readonly -c -o desktop/localpush-native-100k-bin/localpush.test ./internal/localpush
+          df -h .
+      - name: Real small filesystem smoke before 100k physical data
+        run: |
+          set -euo pipefail
+          XD_LOCALPUSH_NATIVE_100K_PHYSICAL_PERF=1 \
+          XD_LOCALPUSH_NATIVE_100K_SMOKE=1 \
+          XD_LOCALPUSH_NATIVE_100K_SAMPLE=sample-1 \
+            desktop/localpush-native-100k-bin/localpush.test \
+            -test.run '^TestLocalPushNativeReal100KPhysicalInventoryAndDeltaPerformance$' \
+            -test.count=1 -test.timeout=10m -test.v
+      - name: Three independent genuine 100k physical Root inventory/journal/delta samples
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/localpush-native-100k-physical"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/localpush/inventory_physical_100k_performance_linux_test.go \
+              internal/localpush/scanner.go internal/localpush/journal.go \
+              internal/localpush/inventory_delta.go internal/localpush/root.go
+          } > "$out/source.txt"
+          for sample in 1 2 3; do
+            env XD_LOCALPUSH_NATIVE_100K_PHYSICAL_PERF=1 \
+              XD_LOCALPUSH_NATIVE_100K_SAMPLE="sample-$sample" \
+              /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              desktop/localpush-native-100k-bin/localpush.test \
+              -test.run '^TestLocalPushNativeReal100KPhysicalInventoryAndDeltaPerformance$' \
+              -test.count=1 -test.timeout=25m -test.v \
+              | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1])
+          rows=[]
+          for i in (1,2,3):
+              log=(root/f"sample-{i}.log").read_text()
+              matches=re.findall(r"LOCALPUSH_NATIVE_PHYSICAL_100K_N3 (\{[^\n]+\})",log)
+              assert len(matches)==1,(i,"one complete authentic test JSON expected")
+              row=json.loads(matches[0])
+              (root/f"sample-{i}.json").write_text(json.dumps(row,indent=2)+"\n")
+              assert row["passed"] and not row["production_changed"] and row["sample"]==f"sample-{i}"
+              assert row["original_file_count"]==100000 and row["physical_directory_count"]==100
+              assert row["original_logical_bytes"]==102400000
+              assert row["original_allocated_blocks_bytes"]>=102400000
+              assert len(row["seed_content_sha256"])==64
+              assert row["changed_original_files"]==row["added_original_files"]==1000
+              assert row["delta_added"]==row["absent_candidates_not_deletes"]==1000
+              assert row["delta_changed_including_directory"]==1001
+              assert row["metadata_stable_not_content_proof"]==98099
+              assert row["delta_emitted_records"]==101100
+              assert 0<row["delta_max_callback_batch"]<=500
+              assert row["missing_inference_safe"] is False
+              assert row["journal_generation_1_bytes"]>0 and row["journal_generation_2_bytes"]>0
+              assert row["process_peak_rss_kib"]<=524288
+              for k,lim in (("source_seed",300000),
+                            ("scan_and_persist_generation_1",180000),
+                            ("generation_1_verify",120000),
+                            ("mutate_second_physical_generation",300000),
+                            ("scan_and_persist_generation_2",180000),
+                            ("both_generations_verify",120000),
+                            ("two_generation_delta",180000)):
+                  assert row[k]["wall_ms"]>0 and row[k]["wall_ms"]<=lim,(i,k,row[k]["wall_ms"])
+                  assert row[k]["kernel_write_bytes"]>=0
+                  assert row[k]["max_process_rss_kib"]<=524288
+              rows.append(row)
+          assert len(set(r["seed_content_sha256"] for r in rows))==3
+          metric=lambda field:statistics.median(row[field]["wall_ms"] for row in rows)
+          summary={
+            "workload_id":"LP-P001-native-100k-real-physical-files-two-inventory-generations-and-delta",
+            "n":3,"physical_file_count":100000,"native_directory_count":100,
+            "original_logical_bytes":102400000,"independent_source_shas":3,
+            "seed_ms_p50":metric("source_seed"),
+            "scan1_ms_p50":metric("scan_and_persist_generation_1"),
+            "scan2_ms_p50":metric("scan_and_persist_generation_2"),
+            "verify1_ms_p50":metric("generation_1_verify"),
+            "verify2_ms_p50":metric("both_generations_verify"),
+            "delta_ms_p50":metric("two_generation_delta"),
+            "peak_rss_kib":max(r["process_peak_rss_kib"] for r in rows),
+            "delta_added":1000,"delta_changed_including_directory":1001,
+            "absent_candidates_not_deletes":1000,"passed":True,
+            "production_changed":False,
+            "scope":"Actual 100k distinct physical Linux native .bin files + production Go scanner/native identity/complete journal/delta. No Agent IPC, Server upload/Blob or GUI/PWA."
+          }
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("LOCALPUSH_NATIVE_PHYSICAL_100K_ORIGINAL_N3",json.dumps(summary))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: localpush-native-100k-real-physical-inventory-delta-n3
+          path: ${{ runner.temp }}/localpush-native-100k-physical/
+          retention-days: 14
+          if-no-files-found: warn
