@@ -40,6 +40,7 @@ import type { XDriveSourceTargetBrowser } from './SourceManager'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { formatBytes } from '../format'
+import { validateXDriveDeviceBackupFolderPage } from '../device-backup-folder-page-validation'
 import type {
   XDriveDeviceBackupDataSource, XDriveDeviceBackupOverview, XDriveDeviceBackupRun,
   XDriveDeviceBackupDevice, XDriveDeviceBackupFolder,
@@ -306,6 +307,7 @@ export function XDriveDeviceBackupPage({
     try {
       const page = await source.foldersPage(deviceID, 100, cursor)
       if (folderScopeRef.current.epoch !== scope || folderRequestIDs.current[deviceID] !== requestID) return
+      validateXDriveDeviceBackupFolderPage(page, cursor)
       if (!Array.isArray(page.folders) || typeof page.has_more !== 'boolean' ||
         !Number.isSafeInteger(page.next_after_source_id) || page.next_after_source_id < 0 ||
         page.folders.some((folder) => !Number.isSafeInteger(folder.source_id) || folder.source_id <= 0)) {
