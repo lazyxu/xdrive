@@ -2609,6 +2609,35 @@ test('F-iOS27-10D: folder title opens ancestors without a second heading or path
 })
 
 
+
+test('P26: skip sub-160ms Mobile Files transient arrangement status, retain sustained loading', async () => {
+  // The mounted actual MobileFiles component has an accepted nonempty folder.
+  // A fast navigator may set loading=true then false before any user-relevant
+  // change. That must not paint or announce a transient arrangement badge.
+  await withView(async h => {
+    const badge = () => find(h.view, 'data-mobile-files-arrangement-status', true)
+    assert.equal(badge().props.sx.display, 'none')
+    await h.update({ loading: true })
+    assert.equal(badge().props.sx.display, 'none',
+      'first loading render must not flash a badge over accepted file rows')
+    await h.update({ loading: false })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 200)) })
+    assert.equal(badge().props.sx.display, 'none',
+      'a completed short navigation must not show a stale timer badge')
+    await h.update({ loading: true })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 210)) })
+    assert.equal(badge().props.sx.display, 'block',
+      'a genuinely pending network range remains visible after the short grace period')
+    assert.equal(badge().props.sx.position, 'absolute',
+      'delayed status must never alter the indexed file-row geometry')
+    await h.update({ loading: false })
+    assert.equal(badge().props.sx.display, 'none',
+      'successful commit removes the badge synchronously')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: { requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
 test('Mobile Files search geometry remains stable while scrolling and loading ranges', async () => {
   await withView(async h => {
     const search = find(h.view, 'data-mobile-files-search-region', true)
@@ -2625,7 +2654,8 @@ test('Mobile Files search geometry remains stable while scrolling and loading ra
     const status = find(h.view, 'data-mobile-files-arrangement-status', true)
     assert.equal(status.props.sx.position, 'absolute',
       'range loading status may not push any of the virtual rows downward')
-    assert.equal(status.props.sx.display, 'block')
+    assert.equal(status.props.sx.display, 'none',
+      'transient arrangement chip is suppressed on the initial fast-loading frame')
     await h.update({ loading: false })
     assert.equal(find(h.view, 'data-mobile-files-arrangement-status', true).props.sx.display, 'none')
     assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)

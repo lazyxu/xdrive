@@ -464,6 +464,20 @@ export default function MobileFiles(props: Props) {
   // than creating a second mobile-only empty/error state component.
   const searchCountPending = Boolean(props.searchActive &&
     props.searchSummary?.resultCount === null && !props.searchSummary?.error)
+  // Files already retains its last accepted list while a Server range is
+  // pending. Do not flash a redundant status badge for quick request turns:
+  // a genuine sustained pending read gets the same non-flow status after
+  // 160ms. Authoritative empty-list loading and network thumbnails remain
+  // visible through their separate, unchanged owners.
+  const [showArrangementLoading, setShowArrangementLoading] = useState(false)
+  useEffect(() => {
+    if (!props.loading) {
+      setShowArrangementLoading(false)
+      return
+    }
+    const timer = window.setTimeout(() => setShowArrangementLoading(true), 160)
+    return () => window.clearTimeout(timer)
+  }, [props.loading])
   const zeroStateLoading = props.loading || searchCountPending
   const zeroStateMessage = props.loading
     ? props.searchActive ? '正在查询…' : '正在加载文件…'
@@ -2044,7 +2058,7 @@ export default function MobileFiles(props: Props) {
                 sx={{ position: 'absolute', top: 117, right: 12, zIndex: 2,
                   pointerEvents: 'none', borderRadius: '999px',
                   bgcolor: 'background.paper', boxShadow: '0 2px 12px rgba(0,0,0,0.06)',
-                  px: 1.25, py: 0.5, display: props.loading ? 'block' : 'none' }}>
+                  px: 1.25, py: 0.5, display: props.loading && showArrangementLoading ? 'block' : 'none' }}>
                 正在加载… · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {totalCount === 0 ? (
