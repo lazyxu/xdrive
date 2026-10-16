@@ -27,7 +27,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | U03 P1 | Server-backed selection limits 200 mutation / 500 tags / 1000 download; mounted 257/1001 tests extended by this PR | Real 100k selection, disabled aggregate feedback and full action matrix |
 | U04 P1 | `FileExplorerActionFeedback` and `FileOperationLifecycle` distinguish queued/running/cancel-requested/completed/failed | Correlate actual Server durable task receipt and terminal outcome |
 | U05 P1 | Shared `FileNameDialog`, Web rename adapter and real Chrome intercepted 403→409→200 scenario | Real Server 403/409, stale Revision and UTF-8 boundary with retained focus |
-| U06 P1 | `file-explorer-search-return-browser` and shared navigation/query code | Real Search → enclosing folder → Back, conditions/sort/focus/anchor |
+| U06 P1 | Shared Search/Navigation and real MUI renderer fixture exist; U06-specific native Chromium Web CI gate added (outcome pending) | Verify synthetic 4096-item sparse Search → enclosing folder → Back/Forward, conditions/sort/group/selection/anchor; real authenticated Server and physical platform scenarios remain |
 | U07 P2 | Existing `dir=auto` and isolated full item names; Unicode-specific source regression | RTL/CJK/emoji native rendering and accessibility |
 | U08 P2 | Shared StatePanel remains the only component; Mobile zero-count now distinguishes pending Search, Search error, zero Search, true empty folder and Trash | Real offline/403/timeout and physical installed PWA need authoritative browser evidence |
 | U09 P2 | Shared `FileExplorerVirtualSurface`, grouping and view snapshot/restoration | Anchor/selection across Grid/Details/Columns/Groups at 100k |
@@ -127,6 +127,34 @@ to existing `responsiveSelectionScope`; the inline store still resets
 per presentation and never preloads the 100k directory. This is a deterministic
 source-mounted test, not physical iOS or fully authenticated Server evidence.
 Require the own exact-head full CI/Final Gate for the candidate.
+
+## U06 · Shared production-renderer Chromium search return gate (2026-10-16)
+
+The existing `desktop/scripts/file-explorer-search-return-browser.cjs` and
+`file-explorer-search-return-browser.tsx` already mount the actual shared MUI
+FileExplorer, Workspace, Navigation, Search filters and sparse VirtualCollection,
+using a synthetic 4,096-result Server-range boundary. Previously the acceptance
+ledger showed their source presence without a U06-specific exact-head browser
+execution result.
+
+This test-only change wires the existing runner into the **Web** CI job for
+`test/files-search-return-chromium-u06-` branches, running native runner
+Chrome/Chromium with a pinned Playwright-core module and verified PR-source
+commit. It covers grouped deep Details/Grid return, Search→containing folder
+→Back/Forward, query/filter/sort/group stability, selected IDs, scroll and
+logical anchor restoration, responsive Grid, failed count/deep-window retry,
+superseded scroll/new query, and changed result identities. Synthetic test
+screenshots and the result JSON are retained as CI artifacts without private
+user data. The ordinary CI final-gate still requires the Web job and other
+required build/integration jobs to pass.
+
+**At creation: NOT RUN / no passing evidence yet.** A first-red must be
+classified as test harness failure or an actual original-product regression
+before a production repair. This synthetic 4,096-item test does not prove real
+authenticated Server 403/409/timeout, actual 100k files, hardware Web/Mobile
+Web/Desktop or iOS/Android installed PWA navigation. The latter remain
+explicitly unaccepted, and no file navigation, Server, REST/IPC, 900px breakpoint
+or 52px App Frame production behavior changes in this test-only PR.
 
 ## U08 · Distinguish empty directory from zero Search and request failures (2026-10-16)
 

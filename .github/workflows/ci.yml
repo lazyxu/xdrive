@@ -3318,7 +3318,8 @@ jobs:
            startsWith(github.head_ref, 'test/mobile-breakpoint-committed-folder-resume-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
-           startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-'))
+           startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-') ||
+           startsWith(github.head_ref, 'test/files-search-return-chromium-u06-'))
         shell: bash
         run: |
           set -euo pipefail
@@ -3337,6 +3338,38 @@ jobs:
           else
             echo "No native Chrome available on runner"; exit 1
           fi
+      - name: U06 native Chromium Search to containing folder and Back/Forward regression
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/files-search-return-chromium-u06-')
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          current="$(git rev-parse HEAD)"
+          if [ "$current" != "$XD_PR_HEAD" ]; then
+            git cat-file -p HEAD | grep -Fx "parent $XD_PR_HEAD" >/dev/null || {
+              echo "Checked-out commit does not contain exact PR head" >&2
+              exit 1
+            }
+          fi
+          npm install --prefix ../desktop --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-files-search-return-u06"
+          node --check ../desktop/scripts/file-explorer-search-return-browser.cjs
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+            node ../desktop/scripts/file-explorer-search-return-browser.cjs \
+              --source-root="$GITHUB_WORKSPACE" \
+              --output-dir="$RUNNER_TEMP/xdrive-files-search-return-u06" \
+              --case=all
+          cat "$RUNNER_TEMP/xdrive-files-search-return-u06/results.json"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/files-search-return-chromium-u06-')
+        with:
+          name: files-u06-native-chromium-search-return
+          path: ${{ runner.temp }}/xdrive-files-search-return-u06/
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Native Chrome compact Gallery selection More and album keyboard/viewport contract
         if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-')
         shell: bash
