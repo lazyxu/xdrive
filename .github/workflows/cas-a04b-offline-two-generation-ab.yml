@@ -1,0 +1,123 @@
+name: CAS-A04b Real 400MiB Two-Generation Offline Blob Snapshot vs Full Tar
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a04b-real-offline-ab:
+    if: github.head_ref == 'perf/cas-a04b-offline-generational-backup-ab-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify archived nine real raw sample JSONs and exact unchanged benchmark source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, pathlib, statistics
+          folder=pathlib.Path("docs/performance-evidence/cas-a04b-offline-two-generation-ab")
+          source=(folder/"source.txt").read_text()
+          assert "EXACT_SOURCE_HEAD=fa217484641d679cfe8e8de8da67b8f9e9d87d29" in source
+          assert "RUN_ID=38901666869" in source
+          for name in ("scripts/bench-cas-a04-backup-generations.py",
+                       "scripts/bench-cas-a04b-offline-incremental-ab.py",
+                       "scripts/server-backup.sh","scripts/server-restore.sh"):
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()+"  "+name in source
+          summary=json.loads((folder/"summary.json").read_text())
+          assert summary["passed"] and summary["n_per_scenario"]==3 and summary["object_bytes"]==4194304
+          count=0
+          for scenario,delta in (("unchanged",0),("one-percent-new-versions",1),("all-new-versions",100)):
+              rows=[]
+              for sample in (1,2,3):
+                  row=json.loads((folder/f"{scenario}-{sample}.json").read_text())
+                  assert row["passed"] and row["sample"]==sample and row["scenario"]==scenario
+                  assert row["original_physical_cas"]==100 and row["original_bytes"]==419430400
+                  assert row["new_physical_cas"]==delta and row["pruned_new_objects"]==delta
+                  assert row["pruned_original_objects"]==100 and row["process_max_rss_kib"]<524288
+                  assert all(row["phases"][phase]["wall_ms"]>0 for phase in (
+                      "tar1","tar2","candidate1","candidate2","tar_restore_1",
+                      "candidate_restore_1","tar_restore_2","candidate_restore_2","restore_after_prune"))
+                  rows.append(row)
+                  count+=1
+              assert statistics.median(r["two_full_tar_allocated_bytes"] for r in rows)==summary["metrics"][scenario]["tar_disk_bytes_p50"]
+              assert statistics.median(r["offline_two_generation_allocated_bytes"] for r in rows)==summary["metrics"][scenario]["offline_disk_bytes_p50"]
+              assert summary["metrics"][scenario]["offline_to_tar_disk_ratio"]<(.80 if delta==100 else .55)
+          assert count==9 and not summary["production_changed"]
+          print("CAS_A04B_PERSISTED_N3_SOURCE_EXACT_VALIDATED",count)
+          PY
+      - name: Compile and smoke test original and isolated offline candidate
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/bench-cas-a04-backup-generations.py scripts/bench-cas-a04b-offline-incremental-ab.py
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          command -v tar
+          df -h .
+          python3 scripts/bench-cas-a04b-offline-incremental-ab.py \
+            --results-dir "$RUNNER_TEMP/cas-a04b-small-smoke" \
+            --samples 1 --source-count 10 --object-bytes 65536
+      - name: Test nine actual independent 400MiB CAS sources in same-source physical A/B
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a04b-real-n3"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum scripts/bench-cas-a04-backup-generations.py \
+              scripts/bench-cas-a04b-offline-incremental-ab.py \
+              scripts/server-backup.sh scripts/server-restore.sh
+          } > "$out/source.txt"
+          /usr/bin/time -v -o "$out/all.resources.txt" \
+            python3 scripts/bench-cas-a04b-offline-incremental-ab.py \
+            --results-dir "$out" --samples 3 --source-count 100 \
+            --object-bytes 4194304 --stage-budget-seconds 180 \
+            | tee "$out/stdout.log"
+          python3 - "$out" <<'PY'
+          import json, pathlib, sys
+          root=pathlib.Path(sys.argv[1])
+          summary=json.loads((root/"summary.json").read_text())
+          assert summary["passed"] and not summary["production_changed"]
+          assert summary["source_count"]==100 and summary["object_bytes"]==4194304
+          assert summary["n_per_scenario"]==3 and len(summary["metrics"])==3
+          for scenario,delta in (("unchanged",0),("one-percent-new-versions",1),("all-new-versions",100)):
+              metric=summary["metrics"][scenario]
+              assert metric["n"]==3
+              limit=.80 if delta==100 else .55
+              assert metric["offline_to_tar_disk_ratio"]<=limit
+              assert metric["offline_to_tar_write_ratio"]<=limit
+              for sample in (1,2,3):
+                  row=json.loads((root/f"{scenario}-{sample}.json").read_text())
+                  assert row["passed"] and row["sample"]==sample
+                  assert row["original_physical_cas"]==100 and row["original_bytes"]==419430400
+                  assert row["new_physical_cas"]==delta
+                  assert row["pruned_new_objects"]==delta and row["pruned_original_objects"]==100
+                  assert row["process_max_rss_kib"]<=524288
+                  for stage in ("tar1","tar2","candidate1","candidate2","tar_restore_1",
+                                "candidate_restore_1","tar_restore_2","candidate_restore_2","restore_after_prune"):
+                      assert row["phases"][stage]["wall_ms"]>0
+                      assert row["phases"][stage]["kernel_write_bytes"]>=0
+          print("CAS_A04B_REAL_N3_VALIDATED 9")
+          PY
+      - name: Emit exact source sample JSON for later permanent archive
+        if: always()
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a04b-real-n3"
+          if [ -d "$out" ]; then
+            for f in "$out"/*.json "$out"/source.txt "$out"/all.resources.txt; do
+              [ -f "$f" ] || continue
+              printf 'CAS_A04B_EVIDENCE_BEGIN:%s\n' "$(basename "$f")"
+              cat "$f"
+              printf 'CAS_A04B_EVIDENCE_END:%s\n' "$(basename "$f")"
+            done
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a04b-real-two-generation-offline-blob-snapshots-n3
+          path: |
+            ${{ runner.temp }}/cas-a04b-real-n3/
+          retention-days: 14
+          if-no-files-found: warn

@@ -1,0 +1,9 @@
+{"scenario":"unchanged","sample":1,"tar_bytes":839065600,"offline_bytes":419463168}
+{"scenario":"unchanged","sample":2,"tar_bytes":839065600,"offline_bytes":419463168}
+{"scenario":"unchanged","sample":3,"tar_bytes":839065600,"offline_bytes":419463168}
+{"scenario":"one-percent-new-versions","sample":1,"tar_bytes":843264000,"offline_bytes":423657472}
+{"scenario":"one-percent-new-versions","sample":2,"tar_bytes":843255808,"offline_bytes":423657472}
+{"scenario":"one-percent-new-versions","sample":3,"tar_bytes":843264000,"offline_bytes":423657472}
+{"scenario":"all-new-versions","sample":1,"tar_bytes":1258573824,"offline_bytes":838909952}
+{"scenario":"all-new-versions","sample":2,"tar_bytes":1258582016,"offline_bytes":838909952}
+{"scenario":"all-new-versions","sample":3,"tar_bytes":1258573824,"offline_bytes":838909952}

@@ -145,3 +145,16 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 ## CAS-A03/S001-d2 — 实体8MiB固定块作为**备份先行**的离线空间A/B（2026-10-16）
 
 真实[d1](cas-version-performance.md)已证明生产full-file SHA不可变CAS：只修改1MiB仍为整份4GiB新Blob。下一阶段仅新增 `internal/storage/cas_a03_offline_chunk_poc_linux_test.go` 的**opt-in离线单账户测试实现**；候选两份manifest合计指向**513个实际物理块（512旧版+1个新块）**，511个复用索引。与同轮生产 `storage.Local.Put` A/B比较实际分配字节和内核写盘，做完整恢复SHA、64KiB随机Range、实体materialize与参考块独立清理。没有集成到生产内容Blob、备份格式、DB FileVersion或上传/下发协议；真正CDC中部插入/移动边界、局部视频加密和CfAPI/FUSE Range/Seek要另测。[详细冻结规格](cas-version-performance.md)。首轮4GiB同源真实n3已在[专项 #38875620877](https://github.com/lazyxu/xdrive/actions/runs/38875620877)成功：离线持久B增量8,425,472B，实际生产Local.Put B为4,294,971,392B；本地40次Range与全SHA、离线引用清理通过。详见[原始11文件可复核归档](performance-evidence/cas-a03-d2-offline-block-ab/README.md)和[同条件完整指标](cas-version-performance.md)。**只承认离线候选的-99.8038% B增量空间，不是生产在线性能/CDC收益；完整B物化还需P50 26,370.862ms**。归档新HEAD双CI/FinalGate仍待重验。
+
+
+## CAS-A04b：文件数据tar与离线跨代原始Blob引用的成本边界（2026-10-16）
+
+历史A04a已确认不变的第二代`blobs.tar`仍复制完整数据；CAS-A03-d2固定8MiB实验仅离线。新CAS-A04b在**独立备份目标**存储按完整SHA指向原始Blob并为每一代独立持久化Manifest，专门测量**物理CAS内容完全不变**时跨代重用与恢复/GC。若4GiB原片只改1MiB，根SHA变化导致整份4GiB仍为新Blob，此模型**不具备CDC局部差异复用**；若想支持需后续独立Chunk/Pack、文件版引用/Owner隔离、视频Range、索引故障恢复、数据库+CAS快照一致性及部署方案。源删除后双代完整SHA复原、无效/腐坏拒绝、剪枝GC是候选硬门槛；同源n3×3初轮已测，证据归档及准确新HEAD CI待完成，**绝不可宣称减少生产备份空间**。详见[CAS-A04b规范](backup-performance.md)，不改变当前正式全量备份恢复协议或Race、用户持久任务。
+
+### CAS-A04b实测回填：存储可去重但恢复读取成本显著（2026-10-16）
+
+[同源专项CI #38899731578](https://github.com/lazyxu/xdrive/actions/runs/38899731578)成功n3×3；0%/1%/100%新增时两代独立离线hash仓库物理分配分别为419463168/423657472/838909952B，现行同源完整tar为839065600/843264000/1258573824B。真实`/proc/self/io write_bytes`比例与物理比例一致。但实验原型逐原片hash/fync恢复速度约为原版tar的1/4.4，故不能将「减少备份空间」等同全面性能最优；应在独立pack/并行Restore/完整PG一致性证据后再评估。完整内容原片微改依旧生成全4GiB SHA新物理Blob，另见CAS-A03-d2。
+
+### CAS-A04b second n3：原版备份子阶段SHA正确，在线与PG仍不覆盖
+
+同源真实[CI #38901666869](https://github.com/lazyxu/xdrive/actions/runs/38901666869)和[永久真实完整9样本](performance-evidence/cas-a04b-offline-two-generation-ab/README.md)再次确认隔离备份目标只保存不同完整SHA Blob可使不变/小幅变更跨代占用与写盘降约50%，两代恢复原SHA正确、损坏拒绝、未引用GC正确。然而每次完整恢复更慢，单文件内容变化仍全Blob空间，无在线CDC/分片版本、正式Server PostgreSQL一致性与客户PWA测试；因此只保留离线参考设计，不动生产备份或上传。
