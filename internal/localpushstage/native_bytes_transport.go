@@ -228,11 +228,19 @@ func StageVerifiedNativeOriginalBytes(
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	stageAccepted = true
-	return LocalOriginalServerStage{
+	receipt := LocalOriginalServerStage{
 		SourceID: grant.SourceID, Revision: sourceRevision,
 		StageID: reserved.StageID, Size: before.Size, SHA256: before.SHA256,
 		SnapshotSHA256: current.SnapshotSHA256,
 		CurrentPathKey: key,
-	}, nil
+	}
+	// A successfully staged native file MUST leave a bounded, private,
+	// immutable recovery pointer on this device before reporting success.
+	// It is NOT a commit or permission to run a backup. If the private
+	// disk write fails, reject and best-effort cancel the temporary Stage.
+	if err := SaveLocalOriginalRecoveryHint(ctx, configDir, grant, receipt, relativePath); err != nil {
+		return empty, errors.New("private native Stage recovery hint unavailable")
+	}
+	stageAccepted = true
+	return receipt, nil
 }
