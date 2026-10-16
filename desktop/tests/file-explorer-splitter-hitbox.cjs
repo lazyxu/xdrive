@@ -82,3 +82,11 @@ test('F04 Tab-focusable ARIA splitters use actual persisted bounds, plus working
 test('F04 CSS must never repeat position within the same splitter sx literal', () => {
   assert(!/position: 'relative',\s*touchAction: 'none',\s*position: 'relative'/.test(source))
 })
+
+test('U14 composing or legacy keyCode 229 cannot resize splitters', () => {
+  const nav = { width: 232, minWidth: 176, maxWidth: 320, expandArrow: 'ArrowRight' }
+  assert.equal(resize({ ...nav, key: 'ArrowRight', isComposing: true }), null)
+  assert.equal(resize({ ...nav, key: 'Home', keyCode: 229 }), null)
+  assert.equal(resize({ ...nav, key: 'ArrowRight', keyCode: 229 }), null)
+  assert.equal(resize({ ...nav, key: 'ArrowRight' }), 248)
+})

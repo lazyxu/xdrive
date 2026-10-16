@@ -307,3 +307,56 @@ test('F-iOS27-09C2: wide Web/Desktop inline Rename labels the actual HTML input 
   assert.ok(!inline.includes("title={renameError || undefined}"),
     'outer MUI FormControl title is not the editable textbox title')
 })
+
+test('U14 composing Enter/Space/F2/Delete and keyboard shortcuts never dispatch', () => {
+  const { xDriveFileExplorerIsComposingKey: composing,
+    xDriveFileExplorerKeyboardCommand: resolve,
+    xDriveFileExplorerKeyboardTabIndex: numbered } = loadKeyboardModule()
+  const held = [
+    { key: 'Enter', isComposing: true },
+    { key: ' ', nativeEvent: { isComposing: true } },
+    { key: 'Delete', keyCode: 229 },
+    { key: 'F2', nativeEvent: { keyCode: 229 } },
+    { key: '1', ctrlKey: true, nativeEvent: { isComposing: true } },
+    { key: 'c', ctrlKey: true, isComposing: true },
+    { key: 'ArrowLeft', altKey: true, keyCode: 229 },
+  ]
+  for (const profile of ['windows', 'macos', 'web']) for (const event of held) {
+    assert.equal(composing(event), true, JSON.stringify(event))
+    assert.equal(resolve(event, profile), null, JSON.stringify({ profile, event }))
+    assert.equal(numbered(event, profile), null, JSON.stringify({ profile, event }))
+  }
+  assert.equal(resolve({ key: 'Enter' }, 'windows'), 'open')
+  assert.equal(resolve({ key: ' ' }, 'web'), 'quick-look')
+  assert.equal(numbered({ key: '1', ctrlKey: true }, 'windows'), 0)
+  assert.equal(composing({ key: 'Enter' }), false)
+})
+
+test('U14 actual shared/Mobile UI handlers fence IME before keyboard side effects', () => {
+  const mobile = read('web', 'src', 'MobileFiles.tsx')
+  const section = (code, a, b) => {
+    const start = code.indexOf(a), end = code.indexOf(b, start + a.length)
+    assert.ok(start >= 0 && end > start, 'missing real handler ' + a)
+    return code.slice(start, end)
+  }
+  for (const [a,b] of [
+    ['const handlePaneResizeKey =', 'const handleDetailsColumnResizeKey ='],
+    ['const handleDetailsColumnResizeKey =', 'const startNavigationPaneResize ='],
+    ['const handlePathKeyDown =', 'const submitSearch ='],
+    ['const itemKeyDown =', 'const isEditableTarget ='],
+    ['const handleExplorerKeyDown =', 'const mediaDetailsForItem ='],
+  ]) {
+    const code = section(explorer, a, b)
+    const at = code.indexOf('xDriveFileExplorerIsComposingKey(event)')
+    const effect = code.indexOf('event.preventDefault()')
+    assert.ok(at >= 0 && (effect === -1 || at < effect), a + ' must guard first')
+  }
+  assert.ok(section(explorer, 'const renderItemName =', 'const selectItem =')
+    .includes('if (xDriveFileExplorerIsComposingKey(event)) return'), 'inline Rename')
+  assert.ok(section(mobile, 'const handleFilesKeyboard =', 'const renderEntry =')
+    .includes('xDriveFileExplorerIsComposingKey(event)'), 'mobile root')
+  assert.ok(section(mobile, 'const renderEntry =', 'const mobileRow =')
+    .includes('if (xDriveFileExplorerIsComposingKey(event)) return'), 'mobile item')
+  assert.ok(mobile.slice(mobile.indexOf('const mobileRow ='), mobile.indexOf('const mobileRow =') + 6500)
+    .includes('if (xDriveFileExplorerIsComposingKey(event)) return'), 'mobile collection')
+})

@@ -33,6 +33,7 @@ import {
 } from '@mui/material'
 import {
   formatBytes, xDriveFileExplorerDragAutoScrollDelta, xDriveFileExplorerKeyboardCommand,
+  xDriveFileExplorerIsComposingKey,
   xDriveFileExplorerKeyboardProfileFromPlatform, xDriveFileExplorerInlineLayout,
   xDriveFileExplorerInlineCellAt, xDriveFileExplorerInlineVisibleRanges,
   xDriveFileExplorerInlineGroupIndex, XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE,
@@ -1451,7 +1452,7 @@ export default function MobileFiles(props: Props) {
     // Native editing, accessibility menus, dialogs and text selection retain
     // their own keyboard handling; never intercept an input's Ctrl/Cmd+A/C/V.
     if (
-      event.nativeEvent?.isComposing || event.repeat ||
+      event.nativeEvent?.isComposing || xDriveFileExplorerIsComposingKey(event) || event.repeat ||
       target?.isContentEditable ||
       target?.closest?.('input, textarea, select, [role="textbox"], [role="dialog"], [role="menu"], [role="menuitem"]') ||
       moreAnchor || arrangeAnchor || selectionMoreAnchor || savedSearchMenu ||
@@ -1541,6 +1542,7 @@ export default function MobileFiles(props: Props) {
         onPointerUp={pointerUp}
         onPointerCancel={() => { closeHold(); cancelClickRef.current = false }}
         onKeyDown={event => {
+          if (xDriveFileExplorerIsComposingKey(event)) return
           const command = xDriveFileExplorerKeyboardCommand(event, filesKeyboardProfile)
           if (!selectionActive && !props.trashActive &&
               (command === 'copy' || command === 'cut' || command === 'copy-path' || command === 'delete')) {
@@ -1695,6 +1697,7 @@ export default function MobileFiles(props: Props) {
       }}
       onPointerCancel={() => { closeCollectionHold(); cancelClickRef.current = false }}
       onKeyDown={event => {
+        if (xDriveFileExplorerIsComposingKey(event)) return
         // ContextMenu and Shift+F10 must work on the same Recent/Favorites
         // selection as touch hold/right-click, without launching the item.
         // Never turn a nested Browse-home edit control's key into row Open.

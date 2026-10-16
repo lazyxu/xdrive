@@ -96,6 +96,7 @@ import type {
 } from '../file-explorer-media-details'
 import {
   xDriveFileExplorerKeyboardCommand,
+  xDriveFileExplorerIsComposingKey,
   xDriveFileExplorerKeyboardTabIndex,
   xDriveFileExplorerPrimaryModifierActive,
   xDriveFileExplorerShortcutLabel,
@@ -2246,6 +2247,7 @@ export function XDriveFileExplorer({
           }}
           onKeyDown={(event) => {
             event.stopPropagation()
+            if (xDriveFileExplorerIsComposingKey(event)) return
             if (event.key === 'Enter') {
               event.preventDefault()
               void submitRename(item)
@@ -3129,6 +3131,7 @@ export function XDriveFileExplorer({
     event: KeyboardEvent<HTMLElement>,
     pane: 'navigation' | 'inspector',
   ) => {
+    if (xDriveFileExplorerIsComposingKey(event)) return
     const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
       altKey: event.altKey, metaKey: event.metaKey }
     const navigation = pane === 'navigation'
@@ -3152,6 +3155,7 @@ export function XDriveFileExplorer({
   const handleDetailsColumnResizeKey = (
     event: KeyboardEvent<HTMLElement>, key: XDriveFileExplorerDetailsColumnKey,
   ) => {
+    if (xDriveFileExplorerIsComposingKey(event)) return
     const input = { key: event.key, shiftKey: event.shiftKey, ctrlKey: event.ctrlKey,
       altKey: event.altKey, metaKey: event.metaKey }
     const minWidth = detailsColumnMeta[key].minWidth
@@ -3326,6 +3330,7 @@ export function XDriveFileExplorer({
   }
 
   const handlePathKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (xDriveFileExplorerIsComposingKey(event)) return
     if (event.key === 'Enter') {
       event.preventDefault()
       submitPath()
@@ -3584,6 +3589,7 @@ export function XDriveFileExplorer({
   }
 
   const itemKeyDown = (event: KeyboardEvent<HTMLElement>, item: XDriveFileExplorerItem) => {
+    if (xDriveFileExplorerIsComposingKey(event)) return
     const command = xDriveFileExplorerKeyboardCommand(event, keyboardProfile)
 
     if (command === 'properties') {
@@ -3630,6 +3636,7 @@ export function XDriveFileExplorer({
       event.metaKey ||
       event.altKey ||
       event.nativeEvent.isComposing ||
+      xDriveFileExplorerIsComposingKey(event) ||
       event.key === ' ' ||
       Array.from(event.key).length !== 1
     ) {
@@ -3716,7 +3723,8 @@ export function XDriveFileExplorer({
   const handleExplorerKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     // React portals bubble through this component even though their dialogs and
     // menus are outside its DOM. Those surfaces own their keyboard interactions.
-    if (event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return
+    if (event.defaultPrevented || xDriveFileExplorerIsComposingKey(event) ||
+        !event.currentTarget.contains(event.target as Node)) return
     const tabIndex = xDriveFileExplorerKeyboardTabIndex(event, keyboardProfile)
     if (!compactViewport && tabIndex !== null && onActivateTabAtIndex) {
       event.preventDefault()

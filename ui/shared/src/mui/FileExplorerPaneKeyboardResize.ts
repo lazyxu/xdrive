@@ -11,12 +11,15 @@ export type XDriveFileExplorerKeyboardResizeInput = {
   ctrlKey?: boolean
   altKey?: boolean
   metaKey?: boolean
+  isComposing?: boolean
+  keyCode?: number
 }
 export function xDriveFileExplorerKeyboardResizeWidth({
   key, width, minWidth, maxWidth, expandArrow,
   shiftKey = false, ctrlKey = false, altKey = false, metaKey = false,
+  isComposing = false, keyCode,
 }: XDriveFileExplorerKeyboardResizeInput): number | null {
-  if (ctrlKey || altKey || metaKey ||
+  if (isComposing || keyCode === 229 || ctrlKey || altKey || metaKey ||
       !['Home', 'End', 'ArrowLeft', 'ArrowRight'].includes(key)) return null
   if (![width, minWidth, maxWidth].every(Number.isFinite) || minWidth > maxWidth) return null
   const min = Math.ceil(minWidth)
