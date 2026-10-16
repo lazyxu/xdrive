@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded'
 import { Box, LinearProgress, useMediaQuery } from '@mui/material'
@@ -67,6 +67,14 @@ import type {
   XDriveWebAppBrowseContext,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+
+/** The existing Files Search input in either responsive presentation. */
+function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
+  return typeof HTMLInputElement !== 'undefined' && target instanceof HTMLInputElement &&
+    target.placeholder === '搜索全部文件' && Boolean(target.closest(
+      '[data-mobile-files-search-region], [data-xdrive-file-explorer]',
+    ))
+}
 
 type WebSearchResult = XDriveCloudFilesSearchResult<Node>
 
@@ -566,6 +574,53 @@ export default function WebFileExplorer({
     setResponsiveRenameRequest(previous =>
       previous && previous.scope !== responsiveSelectionScope ? null : previous)
   }, [responsiveSelectionScope])
+
+  // The original Search value remains in one shared Web workspace.
+  // Observe browser selection changes at DOCUMENT scope, never add focus/select
+  // listeners to React-controlled input nodes or mount duplicate renderers.
+  const filesRootRef = useRef<HTMLDivElement | null>(null)
+  const previousCompactFilesRef = useRef(compactMobile)
+  const responsiveSearchFocusRef = useRef<{
+    scope: string
+    start: number | null
+    end: number | null
+    direction: HTMLInputElement['selectionDirection']
+  } | null>(null)
+  const captureFocusedSearchSelection = useCallback(() => {
+    const active = document.activeElement
+    if (!xDriveWebFilesSearchInput(active) || !filesRootRef.current?.contains(active)) return
+    responsiveSearchFocusRef.current = {
+      scope: responsiveSelectionScope,
+      start: active.selectionStart,
+      end: active.selectionEnd,
+      direction: active.selectionDirection,
+    }
+  }, [responsiveSelectionScope])
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    // Native input selectionchange does not bubble to document. Capture phase
+    // observes the original textbox without registering a handler on the input.
+    document.addEventListener('selectionchange', captureFocusedSearchSelection, true)
+    return () => document.removeEventListener('selectionchange', captureFocusedSearchSelection, true)
+  }, [captureFocusedSearchSelection])
+  useLayoutEffect(() => {
+    if (previousCompactFilesRef.current === compactMobile) return
+    previousCompactFilesRef.current = compactMobile
+    const saved = responsiveSearchFocusRef.current
+    if (saved?.scope !== responsiveSelectionScope || !document.hasFocus()) return
+    // Do not take focus from an unrelated still-mounted dialog/control.
+    if (document.activeElement && document.activeElement !== document.body &&
+        document.activeElement !== document.documentElement) return
+    const selector = compactMobile
+      ? '[data-mobile-files-search-region] input'
+      : '[data-xdrive-file-explorer] input[placeholder="搜索全部文件"]'
+    const input = filesRootRef.current?.querySelector<HTMLInputElement>(selector)
+    if (!input) return
+    input.focus({ preventScroll: true })
+    if (saved.start !== null && saved.end !== null) {
+      input.setSelectionRange(saved.start, saved.end, saved.direction ?? 'none')
+    }
+  }, [compactMobile, responsiveSelectionScope])
 
   const [responsiveSelection, setResponsiveSelection] = useState<{
     scope: string
@@ -1126,7 +1181,8 @@ export default function WebFileExplorer({
   }, [api, beginNavigationIntent, isNavigationIntentCurrent, navigateTo])
 
   return (
-    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <Box ref={filesRootRef}
+      sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <input
         ref={uploadInputRef}
         hidden

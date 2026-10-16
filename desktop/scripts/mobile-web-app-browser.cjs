@@ -4213,6 +4213,10 @@ async function filesIos27ChromeAcceptance(origin) {
       process.env.XDRIVE_MOBILE_FILES_U02 === '1') {
     await filesU02BreakpointSelectedNodeAcceptance(origin);
   }
+  if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-u02-search-focus-') ||
+      process.env.XDRIVE_MOBILE_FILES_U02_FOCUS === '1') {
+    await filesU02SearchFocusBreakpointAcceptance(origin);
+  }
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-u02-rename-') ||
       process.env.XDRIVE_MOBILE_FILES_U02_RENAME === '1') {
     await filesU02BreakpointRenameDraftAcceptance(origin);
@@ -5530,6 +5534,78 @@ async function filesU02BreakpointRenameDraftAcceptance(origin) {
   result.samples[activeStage] = { before, wide, returned, fixtureNodeID: 101,
     realBuiltWebChrome: true, syntheticServer: true,
     realIOS: false, realAndroid: false, installedPWA: false };
+  await page.screenshot({ path: path.join(outputDir, activeStage + '-returned.png') });
+}
+
+
+async function filesU02SearchFocusBreakpointAcceptance(origin) {
+  // Genuine first-red on original built Web + bounded existing Server fixture.
+  // Mobile and wide presentations unmount each other at 900px. The shared
+  // unsubmitted Search draft must not lose keyboard focus/caret during resize.
+  activeStage = 'user-files-u02-search-focus-899-900';
+  await page.setViewportSize({ width: 899, height: 700 });
+  await page.goto(origin + '/#/app/files?dir=1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const compactInput = () => page.locator('[data-mobile-files-search-region] input').first();
+  await compactInput().waitFor();
+  const draft = '跨断点未提交搜索草稿';
+  const countSearchRequests = () => Object.entries(result.requests)
+    .filter(([key]) => key.includes(' /api/v1/search'))
+    .reduce((count, [, entries]) => count + (Number(entries) || 0), 0);
+  const initialSearchCount = countSearchRequests();
+  await compactInput().fill(draft);
+  await compactInput().focus();
+  await compactInput().evaluate(input => {
+    input.setSelectionRange(2, 5);
+    input.dispatchEvent(new Event('select', { bubbles: true }));
+  });
+  const snapshot = () => page.evaluate(() => {
+    const mobile = document.querySelector('[data-xdrive-mobile-files]');
+    const wide = document.querySelector('[data-xdrive-file-explorer]');
+    const input = mobile
+      ? mobile.querySelector('[data-mobile-files-search-region] input')
+      : wide?.querySelector('input[placeholder="搜索全部文件"]');
+    return {
+      width: innerWidth, hash: location.hash,
+      mobile: !!mobile, wide: !!wide,
+      focus: !!input && document.activeElement === input,
+      draft: input?.value ?? null,
+      selectionStart: input?.selectionStart ?? null,
+      selectionEnd: input?.selectionEnd ?? null,
+      scrollOwners: document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+    };
+  });
+  const before = await snapshot();
+  check(activeStage + ': original Mobile Search draft is focused with a selected range',
+    before.width === 899 && before.mobile && before.focus && before.draft === draft &&
+    before.selectionStart === 2 && before.selectionEnd === 5 &&
+    before.scrollOwners === 1 && before.hash === '#/app/files?dir=1', before);
+
+  await page.setViewportSize({ width: 900, height: 700 });
+  await page.locator('[data-xdrive-file-explorer]').waitFor();
+  await settle();
+  const wide = await snapshot();
+  check(activeStage + ': Wide Search keeps the draft, focus and caret after 900px',
+    wide.width === 900 && wide.wide && !wide.mobile &&
+    wide.draft === draft && wide.focus &&
+    wide.selectionStart === 2 && wide.selectionEnd === 5 &&
+    wide.scrollOwners === 1 && wide.hash === before.hash, { before, wide });
+  await page.screenshot({ path: path.join(outputDir, activeStage + '-wide.png') });
+
+  await page.setViewportSize({ width: 899, height: 700 });
+  await compactInput().waitFor();
+  await settle();
+  const returned = await snapshot();
+  check(activeStage + ': returning Mobile Search keeps draft, focus and caret',
+    returned.width === 899 && returned.mobile && !returned.wide &&
+    returned.draft === draft && returned.focus &&
+    returned.selectionStart === 2 && returned.selectionEnd === 5 &&
+    returned.scrollOwners === 1 && returned.hash === before.hash, { before, wide, returned });
+  check(activeStage + ': responsive focus restoration must not submit Search or navigate',
+    countSearchRequests() === initialSearchCount &&
+    returned.hash === '#/app/files?dir=1', { initialSearchCount, actual: countSearchRequests() });
+  result.samples[activeStage] = { before, wide, returned, simulatedServer: true,
+    compiledWebApp: true, physicalIOS: false, physicalAndroid: false, installedPWA: false };
   await page.screenshot({ path: path.join(outputDir, activeStage + '-returned.png') });
 }
 
