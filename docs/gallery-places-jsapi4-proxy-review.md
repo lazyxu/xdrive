@@ -253,3 +253,10 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 建议实际动态相册地图采取**正向坐标索引**：合法来源的原始 WGS84 照片与受百度正式授权的 WGS84→BD09 映射，按 Owner/PhotoAsset/Location revision 建立有界索引，BD-09 native viewport 只用于对 BD-09 派生位置做匹配，不反向变换；结果照片仍以原始 Owner 授权媒体 Range + Viewer 打开。必须先取得具体百度商业/自托管/PWA/Electron 授权及是否允许保存衍生坐标的条款或书面确认，再讨论实际存储、更新/删除一致性和高并发索引性能，不能预先假设缓存合法。
 
 本阶段完全不增加新的地图 Route、Caddy 资源反代、Browser AK、生产信任根或持久位置索引，JSAPI4 runtime_enabled=false、child count=0、无可用代理。生产上线仍需完整官方子资源白名单、九格真实私有 Browser/Upstream HAR 无泄漏、运营者签名、Owner/Session/Epoch/跨副本配额与 CSP/Electron/iOS27/Android/Desktop 真机。xDrive 52px 全屏 App Frame、百度唯一 Provider 及三端共享图库不变。
+
+
+## A3b3a3d2f · Static AK 上游请求与 JSAPI4 同等级传输安全（2026-10-16）
+
+对实际生产启用的 Static v2 Go HTTP 客户端，默认不能受宿主环境 `HTTPS_PROXY`、`HTTP_PROXY` 或 `ALL_PROXY` 影响。Proxy=nil + TLS 默认验证 + 统一只连 api.map.baidu.com/staticimage/v2 + 三路连接池 + 5 秒超时 + 禁止跳转，可减少 Static Server AK/GPS 意外离开预期链路的风险。测试注入自定义 RoundTripper 仅供 Server 可信配置/离线验证，不能通过客户端 URL 选择。该措施不能证明运营商中间人、进程级自定义 Transport、恶意宿主根证书或真实 JSAPI4 子资源无泄漏，生产运行须仍采用被信任的部署环境和账户策略。
+
+**JSAPI4 法律/产品 NO-GO 未变化**：未取得百度对多用户自托管、PWA、Electron 实际场景的账户许可、完整官方资源及 9 组真实请求 HAR；不能修改生产 Loader/签名/路由和 `runtime_enabled=false`，更不能将静态通道当作官方商业授权。现有 52px App Frame、iOS 27 照片 1:1 基准、三端共享图库不变。证据工作跟踪 Issue #1798。

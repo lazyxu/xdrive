@@ -63,6 +63,37 @@ func (l *baiduMapLimiter) allow(owner uint64, now time.Time) bool {
 var baiduMapInFlight = make(chan struct{}, 3)
 var baiduPNGHeader = []byte("\x89PNG\r\n\x1a\n")
 
+// Static PNG requests carry the Server AK in the Baidu upstream URL.
+// http.DefaultClient would honor HTTPS_PROXY/HTTP_PROXY from the environment;
+// that must never silently send map credentials or photo GPS through an
+// administrator-unreviewed proxy. Clone the standard TLS-validating transport
+// once, but disable inherited proxy discovery and bound pooled connections.
+var baiduStaticDirectTransport = func() *http.Transport {
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = nil
+	tr.DisableCompression = true
+	tr.MaxConnsPerHost = cap(baiduMapInFlight)
+	tr.MaxIdleConnsPerHost = cap(baiduMapInFlight)
+	tr.MaxIdleConns = cap(baiduMapInFlight)
+	tr.IdleConnTimeout = 30 * time.Second
+	return tr
+}()
+
+// The override is only a trusted Server-side test/configuration hook; never
+// allow an incoming request to supply a RoundTripper, upstream host or proxy.
+// Enforce the same timeout and no-redirect rule even for injected clients.
+func baiduStaticSafeHTTPClient(override *http.Client) http.Client {
+	client := http.Client{Transport: baiduStaticDirectTransport}
+	if override != nil {
+		client = *override
+	}
+	client.Timeout = baiduMapTimeout
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	return client
+}
+
 type baiduMapStatusDTO struct {
 	Provider    string `json:"provider"`
 	Enabled     bool   `json:"enabled"`
@@ -191,15 +222,9 @@ func (s *Server) mediaBaiduStaticMap(c *gin.Context) {
 		fail(c, http.StatusBadGateway, "map service unavailable")
 		return
 	}
-	client := http.Client{Timeout: baiduMapTimeout}
-	if s.BaiduMapHTTPClient != nil {
-		client = *s.BaiduMapHTTPClient
-	}
-	client.Timeout = baiduMapTimeout
-	// Never forward AK to a redirect target or follow arbitrary external URLs.
-	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse
-	}
+	// A direct, TLS-validating transport is mandatory for the default
+	// Server->Baidu AK-bearing request, even when HTTPS_PROXY is configured.
+	client := baiduStaticSafeHTTPClient(s.BaiduMapHTTPClient)
 	res, err := client.Do(req)
 	if err != nil {
 		code := http.StatusBadGateway

@@ -253,3 +253,50 @@ func TestBaiduStaticMapRejectsAmbiguousEncodedAndInjectedQuery(t *testing.T) {
 		t.Fatalf("%d invalid static-map requests reached Baidu upstream", called)
 	}
 }
+
+func TestBaiduStaticServerAKNeverUsesEnvironmentProxyByDefault(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://untrusted-proxy.invalid:8888")
+	t.Setenv("HTTP_PROXY", "http://untrusted-proxy.invalid:8888")
+	t.Setenv("ALL_PROXY", "http://untrusted-proxy.invalid:8888")
+	client := baiduStaticSafeHTTPClient(nil)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport.Proxy != nil || !transport.DisableCompression {
+		t.Fatal("server map transport must bypass environment proxies and automatic decompression")
+	}
+	if transport.MaxConnsPerHost != cap(baiduMapInFlight) ||
+		transport.MaxIdleConnsPerHost > cap(baiduMapInFlight) ||
+		client.Timeout != baiduMapTimeout ||
+		client.CheckRedirect == nil ||
+		client.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
+		t.Fatal("server map TLS transport lost resource or AK redirect boundaries")
+	}
+	if transport.TLSClientConfig != nil && transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("provider TLS certificate validation disabled")
+	}
+}
+
+func TestBaiduStaticInjectedHTTPClientStillCannotOverrideSafetyDeadlineOrRedirect(t *testing.T) {
+	calls := 0
+	roundTripper := baiduMapRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return nil, context.Canceled
+	})
+	injected := &http.Client{
+		Transport:     roundTripper,
+		Timeout:       500 * baiduMapTimeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return nil },
+	}
+	client := baiduStaticSafeHTTPClient(injected)
+	if client.Timeout != baiduMapTimeout || client.CheckRedirect == nil ||
+		client.CheckRedirect(nil, nil) != http.ErrUseLastResponse {
+		t.Fatal("injected static map client disabled deadline or redirect protection")
+	}
+	req, err := http.NewRequest(http.MethodGet, baiduStaticMapURL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = client.Transport.RoundTrip(req)
+	if calls != 1 {
+		t.Fatal("trusted fake HTTP transport must remain available for offline tests")
+	}
+}
