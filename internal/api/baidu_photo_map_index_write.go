@@ -122,6 +122,13 @@ func upsertBaiduPhotoMapPosition(
 		}
 		// The future real implementation must lock its persisted, revisioned
 		// privacy/consent state; tests can inject a trusted synthetic checker.
+		// A synthetic or future caller-provided callback is never sufficient:
+		// acquire the separately persisted per-photo opt-in under the SAME
+		// PostgreSQL transaction before storing any derived coordinates.
+		consentRevision, consentErr := verifyBaiduPhotoMapConsentTx(ctx, tx, owner.ID, asset.ID)
+		if consentErr != nil {
+			return denied
+		}
 		if err := verifyPrivacy(ctx, tx, owner.ID, asset.ID); err != nil ||
 			ctx.Err() != nil {
 			return denied
@@ -130,6 +137,7 @@ func upsertBaiduPhotoMapPosition(
 			AssetID: asset.ID, OwnerID: owner.ID,
 			PrimaryNodeID: node.ID, NodeRevision: node.Revision,
 			MediaUpdatedAt:    media.UpdatedAt,
+			ConsentRevision:   consentRevision,
 			SourceLatitude:    candidate.SourceLatitude,
 			SourceLongitude:   candidate.SourceLongitude,
 			CoordinateSpace:   candidate.CoordinateSpace,
@@ -141,7 +149,7 @@ func upsertBaiduPhotoMapPosition(
 			Columns: []clause.Column{{Name: "asset_id"}},
 			DoUpdates: clause.AssignmentColumns([]string{
 				"owner_id", "primary_node_id", "node_revision",
-				"media_updated_at", "source_latitude", "source_longitude",
+				"media_updated_at", "consent_revision", "source_latitude", "source_longitude",
 				"coordinate_space", "projection_version", "latitude",
 				"longitude", "updated_at",
 			}),

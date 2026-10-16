@@ -110,7 +110,7 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	pool.SetMaxIdleConns(0)
 	defer pool.Close()
 	if err := db.AutoMigrate(&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
-		&meta.PhotoAsset{}, &meta.BaiduPhotoMapPosition{}); err != nil {
+		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{}, &meta.BaiduPhotoMapPosition{}); err != nil {
 		t.Fatal(err)
 	}
 	alice := meta.User{Username: "map-writer-alice", PasswordHash: "test", Role: meta.UserRoleUser, SessionVersion: 1}
@@ -175,6 +175,19 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 		t.Fatal("missing durable privacy authorization accepted")
 	}
 	assertVisible(0, 0)
+	// A trusted callback alone cannot authorize absent persisted consent.
+	if err := upsertBaiduPhotoMapPosition(context.Background(), db, candidate, approved); err == nil {
+		t.Fatal("test callback bypassed missing durable grant")
+	}
+	assertVisible(0, 0)
+	consent := meta.BaiduPhotoMapConsent{
+		OwnerID: alice.ID, AssetID: asset.ID, Revision: 1,
+		AllowIndex: true, AllowBaiduConversion: true,
+		ExpiresAt: time.Now().UTC().Add(time.Hour),
+	}
+	if err := db.Create(&consent).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	reject := func(context.Context, *gorm.DB, uint64, uint64) error {
 		return errors.New("test private album GPS not permitted")
@@ -194,7 +207,7 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	}
 	if row.ProjectionVersion != meta.BaiduPhotoMapProjectionGeoconvV2 ||
 		row.OwnerID != alice.ID || row.SourceLongitude != lng ||
-		row.MediaUpdatedAt.IsZero() {
+		row.ConsentRevision != 1 || row.MediaUpdatedAt.IsZero() {
 		t.Fatalf("lost source provenance: %+v", row)
 	}
 
@@ -279,5 +292,17 @@ func TestBaiduPhotoMapWriteTransactionOwnerPrivacyAndRevision(t *testing.T) {
 	if err := db.Model(&meta.BaiduPhotoMapPosition{}).Where("asset_id = ?", asset.ID).
 		Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("privacy cleanup did not remove location: %d, %v", count, err)
+	}
+	// Revocation must be allowed even when the Owner has been disabled.
+	if err := revokeBaiduPhotoMapConsent(context.Background(), db, alice.ID, asset.ID, 1); err != nil {
+		t.Fatalf("disabled Owner could not revoke a map grant: %v", err)
+	}
+	if err := revokeBaiduPhotoMapConsent(context.Background(), db, alice.ID, asset.ID, 1); err == nil {
+		t.Fatal("stale revision repeated the revocation")
+	}
+	if err := db.First(&consent, "asset_id = ?", asset.ID).Error; err != nil ||
+		consent.Revision != 2 || consent.AllowIndex || consent.AllowBaiduConversion ||
+		consent.RevokedAt == nil {
+		t.Fatalf("revocation failed to persist: %+v %v", consent, err)
 	}
 }

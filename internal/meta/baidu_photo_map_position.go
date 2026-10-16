@@ -12,6 +12,8 @@ import "time"
 // edited, the primary node changes, an asset is deleted, or a source index
 // becomes stale, the derived point must become invisible immediately.
 // A future writer must also obey the Owner's map/privacy and retention policy.
+// ConsentRevision binds each derived location to its exact opt-in generation;
+// revocation, expiry or any policy revision immediately hides old positions.
 const (
 	BaiduPhotoMapSpaceBD09LL  = "bd09ll"
 	BaiduPhotoMapSpaceWGS84LL = "wgs84ll"
@@ -37,6 +39,7 @@ type BaiduPhotoMapPosition struct {
 	PrimaryNodeID     uint64    `gorm:"not null"`
 	NodeRevision      uint64    `gorm:"not null"`
 	MediaUpdatedAt    time.Time `gorm:"not null"`
+	ConsentRevision   uint64    `gorm:"not null;default:0"`
 	SourceLatitude    float64   `gorm:"not null"`
 	SourceLongitude   float64   `gorm:"not null"`
 	CoordinateSpace   string    `gorm:"size:16;not null;index:idx_xd_baidu_photo_positions_owner_space_lat_lon,priority:2"`
