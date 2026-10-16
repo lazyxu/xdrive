@@ -441,3 +441,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 新共享 `MediaGalleryBaiduStaticMap` **只**接受完整的真实代表照片 GPS 样本对，或者 Viewer 已持有的真实照片 `location`。样本缺失时静态底图保持原区域和明确的 Server/Agent 版本提示，但**绝不发送原网格中心、不得经其他 Provider 兜底**；已开始的视窗请求随样本失效而取消，避免复用旧相机。保留合法真实 GPS (0,0)；失效地图不得吞掉 Mobile Web 页面滚动或提供无效的键盘焦点。增加共享组件真实 React mount/regression，覆盖旧 DTO、半对样本、(0,0)、取消和 Viewer 坐标，不改变真实图库 Range、100k 虚拟化、Desktop Agent 通道或 52px App Frame。
 
 这是**真实运行的 Static Server API 的正确性修复**，不等于 JSAPI4 资源许可、原生平移/聚合或 iOS 27「照片」1:1 交付。生产 JSAPI4 继续 runtime_enabled=false、零实际审核子资源、无可用 Loader/Proxy/Map Cookie；Browser AK 与 Server AK 分别加密仅 Server，必须先取得百度 self-host/PWA/Electron 适用账户许可、完整真实九场景隐私 HAR、不可变子资源白名单、信任根和 Owner 配额/CSP/Electron/真机证据。A3 真正验收通过后再按原序 A4→B1→B2→B3→C1。
+
+
+## A3b3a3d2i · 百度原始照片 GPS 强失效派生索引底座（2026-10-16）
+
+根据 #1825 的 Server-only 官方 Geoconv v2，新增空的 `BaiduPhotoMapPosition` PostgreSQL 派生坐标表及私有只读范围查询。每条记录关联 Owner + PhotoAsset + 原始主 Node/Node revision + MediaMetadata 更新时间 + 精确原始 WGS84 GPS + 显式 BD09/WGS84 地图坐标空间和固定转换版本。读取先校验账户有效、源 Node 未删除、PhotoAsset 仍属于 Owner、原始 GPS 与索引源坐标完整匹配、媒体状态 Ready；任何删除/修订变化都将派生点即时隐藏，后续清理还可物理回收。查询必须 Owner 隔离、真实总数、最多 100 条、严格坐标边界及日期变更线。只有未来独立审核的生产后台才可按照隐私许可生成索引、限流同步和删除；本阶段**没有任何新照片坐标外发，没有 public map API、无新前端、无用户数据 backfill**。
+
+此项不是 A3 动态地图已上线：百度唯一 Provider、Server Static AK 与加密 Browser AK 分离、runtime_enabled=false、真实九组私有浏览器/上游 HAR 和经人工核准的 JSAPI4 child 清单、可信签名/Owner 撤销/跨副本配额/Caddy/Electron 安全和 iOS27/Android/Desktop 真机均需独立验收。绝不将百度原生 BD09 视窗当 WGS84，也不得将虚构网格中心作为实际照片位置。保留全屏 52px App Frame，Web/Mobile Web/Desktop 同一 Gallery Range、虚拟化和 Viewer，A3 完成后才进入 A4→B1→B2→B3→C1。
