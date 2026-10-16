@@ -395,3 +395,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 继续 #1763 之后，为 Web/Mobile Web/Desktop 共用 Gallery 新增仅供未来被单独授权的 Baidu JSAPI4 运行环境使用的 TypeScript 组合入口。其组合已有官方 Map/ClusterLayer/Convertor/Point 适配器和统一 Owner 视窗桥接器，仍复用同一 Gallery Server Range、VirtualCollection 和 Viewer。Node 模拟测试从官方构造器开始，验证第一次真实 GPS(0,0) 查询、限额 100 个地点网格、官方 WGS84→BD09 变换、聚合标记、正确地点点开照片集合、开始拖动时取消旧 Go 视窗请求、过期结果不回写、退出销毁全部事件/图层。
 
 **未上线 JSAPI4**：目前不调用这个组合入口，也没有 BMap Loader、代理路由、地图 Cookie、Browser AK、GPS 持久化。BD09 的 BMap.getBounds 不能充作 Owner WGS84 范围；仍要求一个经许可和坐标正确性审查的 WGS84 包围盒来源，没有便擅自推进真实动态地图。生产 runtime_enabled=false、零已审核 JSAPI 子资源、未配置钉扎签名根保持 NO-GO。需要独立百度 self-host/PWA/Electron 许可、完整实际脚本/瓦片/WASM/字体白名单、九场景私有 upstream/browser 原始 HAR 防 AK 泄漏、受信发布签名、Server Owner/撤销/配额与 Caddy CSP/Electron 隔离及 iOS27/Android/Desktop 真机证据。保留百度唯一 Provider、Server AK/Browser AK 服务端独立加密、52px 全屏 App Frame、iOS27「照片」1:1 标准；A3 真正完成后才开始 A4、B1、B2、B3、C1。
+
+
+## A3b3a3d2b · 百度静态地图跨端连续画面交接（2026-10-16）
+
+在 #1770 合入后，修正三端共享 `MediaGalleryBaiduStaticMap` 每次更改相机立即清空图片造成的闪白：同一地点的新 PNG 加载期间，只保留上一张已成功的服务端百度 PNG 并以淡化及“上一视窗 · 正在更新”标明过期，绝不将旧地图坐标冒充当前 GPS。加载成功后切换并释放旧 Blob URL；切换不同地点/权限关闭、请求失败时不显示过时地图；过期请求、卸载严格释放 Blob。Node React 交互回归覆盖相机切换、旧请求取消、跨地点隐藏、(0,0)真实 GPS 和 URL 回收。
+
+此项仅改善现有 Static Map，不是 iOS27 Photos 1:1 原生地图、不是 JSAPI4 平移/聚合功能上线。保留全屏 App Frame、52px 全局标题栏、百度唯一 Provider，Server AK/Browser AK 独立且只在 Server，Web/Mobile Web/Desktop 一套 Gallery DataSource、虚拟化、Viewer 与 Go Server Range。真实百度 JSAPI4 仍须 self-host/PWA/Electron 许可、完整子资源及九场景真实 upstream/browser HAR 脱敏审查、签名放行、Owner 撤销配额、Caddy CSP/Electron 沙盒、iOS27/Android/Desktop 真机验收；运行保持关闭。后续遵循 A3 → A4 → B1 → B2 → B3 → C1。

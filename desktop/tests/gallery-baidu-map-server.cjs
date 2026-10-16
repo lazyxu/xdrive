@@ -55,7 +55,9 @@ test('Disabled, unsupported or failing Baidu renders a visible error state witho
     '百度地图返回的图片无法显示',
     'role="status"',
     'AbortController',
-    'URL.revokeObjectURL(imageObjectURL)',
+    'URL.revokeObjectURL(previous.objectURL)',
+    'URL.revokeObjectURL(imageFrameRef.current.objectURL)',
+    'for (const url of retiredURLs.current.splice(0)) URL.revokeObjectURL(url)',
   ]) {
     assert.ok(ui.includes(token), 'Baidu-only error/cleanup contract missing: ' + token)
   }

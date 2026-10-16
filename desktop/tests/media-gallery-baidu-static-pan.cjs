@@ -47,7 +47,7 @@ test('A3 shared static Baidu view requests once after drag release and cancels s
   assert.match(mapSource, /onKeyDown=\{onMapKeyDown\}/)
   assert.match(mapSource, /new AbortController\(\)/)
   assert.match(mapSource, /controller\.abort\(\)/)
-  assert.match(mapSource, /\[enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID\]/)
+  assert.match(mapSource, /\[enabled, centerLatitude, centerLongitude, loadStaticMap, zoom, requestID, originKey\]/)
   assert.match(mapSource, /loadStaticMap\(\{/)
   assert.doesNotMatch(mapSource, /[?&]ak=|api\.map\.baidu\.com|new BMap\./)
 })

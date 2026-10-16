@@ -172,3 +172,86 @@ test('A3 shared Mobile Web/Desktop two-pointer pinch commits one zoom, never a f
     if (renderer) await act(async () => renderer.unmount())
   }
 })
+
+
+test('A3 shared static map retains old raster only within same place, discards late PNGs', async () => {
+  const requests = []
+  const created = [], revoked = []
+  const originalCreate = URL.createObjectURL
+  const originalRevoke = URL.revokeObjectURL
+  const provider = async () => ({
+    provider: 'baidu-server-static', enabled: true,
+    attribution: '© 百度地图', privacy: 'Server 代理百度地图',
+  })
+  const source = (input, signal) => new Promise(resolve => {
+    requests.push({ input, signal, resolve })
+  })
+  const a = { id: 'place:0:0', name: '地点 A', latitude: 0.005, longitude: 0.005,
+    sample_latitude: 0, sample_longitude: 0 }
+  const b = { id: 'place:1:1', name: '地点 B', latitude: 1.005, longitude: 1.005,
+    sample_latitude: 1.002, sample_longitude: 1.003 }
+  const image = () => renderer.root.findAll(el =>
+    el.type === 'img' && typeof el.props.src === 'string' &&
+    el.props.src.startsWith('blob:fake-map-'))
+  let renderer
+  try {
+    URL.createObjectURL = () => {
+      const value = 'blob:fake-map-' + (created.length + 1)
+      created.push(value)
+      return value
+    }
+    URL.revokeObjectURL = value => revoked.push(value)
+    await act(async () => {
+      renderer = create(React.createElement(BaiduMap,
+        { place: a, getProvider: provider, loadStaticMap: source }))
+    })
+    assert.equal(requests.length, 1)
+    await act(async () => { requests[0].resolve(new Blob(['first'])) })
+    assert.equal(image().length, 1)
+    assert.equal(image()[0].props.src, 'blob:fake-map-1')
+    const zoomIn = () => renderer.root.findAll(el => el.type === 'button' &&
+      el.props['aria-label'] === '放大百度地图')[0]
+    await act(async () => { zoomIn().props.onClick() })
+    assert.equal(requests.length, 2)
+    assert.equal(image()[0].props.src, 'blob:fake-map-1',
+      'do not flash empty map while the same place camera refreshes')
+    assert.match(image()[0].props.alt, /上一视窗/)
+    await act(async () => { image()[0].props.onError() })
+    assert.equal(image().length, 1,
+      'an old raster decode error must not hide the newer active camera request')
+    assert.deepEqual(revoked, [], 'old Blob stays usable until new frame commits')
+    await act(async () => { requests[1].resolve(new Blob(['second'])) })
+    assert.equal(image()[0].props.src, 'blob:fake-map-2')
+    assert.ok(revoked.includes('blob:fake-map-1'), 'retired URL released after new DOM commit')
+    assert.doesNotMatch(image()[0].props.alt, /上一视窗/)
+
+    await act(async () => { zoomIn().props.onClick() })
+    assert.equal(requests.length, 3)
+    assert.equal(image()[0].props.src, 'blob:fake-map-2')
+    await act(async () => {
+      renderer.update(React.createElement(BaiduMap,
+        { place: b, getProvider: provider, loadStaticMap: source }))
+    })
+    assert.equal(requests.length, 4)
+    assert.equal(requests[2].signal.aborted, true)
+    assert.equal(image().length, 0,
+      'never show another place previous raster even before new request resolves')
+    assert.ok(revoked.includes('blob:fake-map-2'))
+    await act(async () => { requests[2].resolve(new Blob(['late stale'])) })
+    assert.equal(created.length, 2, 'late aborted Server response makes no Blob URL')
+    assert.equal(image().length, 0)
+    await act(async () => { requests[3].resolve(new Blob(['new place'])) })
+    assert.equal(image()[0].props.src, 'blob:fake-map-3')
+    assert.equal(requests[3].input.latitude, b.sample_latitude)
+    await act(async () => renderer.unmount())
+    renderer = null
+    assert.ok(revoked.includes('blob:fake-map-3'),
+      'last committed Blob URL is released at unmount')
+    assert.equal(new Set(revoked).size, created.length,
+      'all created Blob URLs are revoked exactly once')
+  } finally {
+    if (renderer) await act(async () => renderer.unmount())
+    URL.createObjectURL = originalCreate
+    URL.revokeObjectURL = originalRevoke
+  }
+})
