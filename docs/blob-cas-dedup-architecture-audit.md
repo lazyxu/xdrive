@@ -194,3 +194,13 @@ xDrive已有[storageDecision](../internal/api/storage_history.go)内可观测、
 ### CAS-A05 n3离线Pack候选准确物理收益与不能合入生产的约束（2026-10-16）
 
 [真实原版/候选同源CI #38923178061](https://github.com/lazyxu/xdrive/actions/runs/38923178061)各3组100k不同SHA的1KiB原片，实测原版`Local.Put`真正fsync独立文件用409,600,000B，离线Pack+Index/HEAD用107,208,704B，物理差约73.826%；95k真实原片GC/Pack离线compact后5k分别20,480,000B/5,365,760B，但candidate新旧Pack同时存在时峰值112,570,368B。CPU/RSS/随机2000原片读取/5000完整SHA/故意腐坏拒绝原始数据[永久归档](performance-evidence/cas-a05-physical-100k-pack/README.md)。这说明**小对象分配块**可以成为独立优化机会；然而 Pack原型未包含在线ContentBlob/跨Owner SQL引用、不可变blob索引原子可重建、跨进程并发GC/锁、异机ObjectStore、小对象删除后持久配额审计、加密Pack、FUSE Random Read及Windows/移动PWA等不变量，**不能以单机本地Space/CPU改善直接替换生产完整文件CAS**。可参考 [restic Pack先于索引再快照提交规则](https://github.com/restic/restic/blob/master/doc/design.rst)、[Kopia CABS Offset/Length索引与Pack尾可恢复索引](https://kopia.io/docs/advanced/architecture/)、[Borg内容hash的全仓对象复用](https://borgbackup.readthedocs.io/en/stable/internals.html)。生产全部未更改，下一项优先隔离线上有界小对象pack迁移安全设计及真实100k物理Push/Pull数据流。
+
+
+## CAS-A06 Linux真实小Blob读路径冷／热分布的新性能门槛（2026-10-17）
+
+CAS-A05已同源证明1KiB/100k不同SHA对象Pack实体空间降低73.826%，但热缓存2k随机读10.299ms不能预测机械盘/NVMe/WAN尾延迟。CAS-A06在原版**每个物理CAS `Local.Open`**与离线`gen1.pack/Index`均真实写出后，对2000不同位置执行Linux`FADV_DONTNEED` advisory cache hint，记录`/proc/self/io read_bytes`、CPU/RSS及逐访问P50/P95/P99，再相同位置Warm，两种物理格式全部SHA/256B校验；无Linux kernel实际read_bytes则无有效冷读样本。只测试存储层，在`docs/cas-small-pack-cold-performance.md`登记结果。该离线试验不证明线上SQL ContentBlob/Owner/跨进程Pack GC/HTTP Range/视频Seek的生产替代安全性，更不替代六端100k媒体及4GiB传输的已归档负载。
+
+
+### CAS-A06 100k物理Blob「提示冷缓存」随机读取证据（2026-10-17）
+
+在已验收CAS-A05 100k不同小文件Pack空间实验后，[CAS-A06原始物理n3](cas-small-pack-cold-performance.md) 同一个source真实生产Local.Open与离线Pack/Index执行2000不同原片FADV_DONTNEED advisory cold，结果原版Local/Pack P50总wall315.122/247.882ms、单访问P95 193/149μs、P99 268/209μs，**两侧内核`read_bytes`都是8,192,000B**；随后同源热读61.187/17.015ms，样本峰RSS38,060KiB。说明测试Runner上Pack不见冷读尾延迟劣势，却**无法证明节省真实读取字节，无法保证券外OS存储是冷缓存**；实际部署需线上Owner、ContentBlob引用、并发Pack重写、索引坏块恢复、FUSE/CfAPI随机Seek/云后端认证以及真实6端设备证据。冻结原版`Local`及业务同步不改，[全部11份原始机器资源](performance-evidence/cas-a06-physical-cold-pack/README.md)。

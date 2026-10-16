@@ -394,3 +394,18 @@ Same six-platform status directly visible in [cross-platform matrix](performance
 ### CAS-A05 / S001-f 首轮真实100k不同原片离线Pack A/B n3（2026-10-16）
 
 [准确源码CI #38923178061](https://github.com/lazyxu/xdrive/actions/runs/38923178061)：三独立Linux源各100,000不重复SHA 1KiB生产`storage.Local.Put/Open/Delete`原始CAS vs相同原片离线Pack+48B索引HEAD。原版P50写入39,876.635ms、真实分配409,600,000B、2000原片SHA/Range 39.789ms、95k Local.Delete15,224.772ms、剩5000真实原片20,480,000B。离线原型 P50首存1,746.064ms、107,208,704B、2000原片Range10.299ms、Pack重写95k原片后67.932ms、5k持久5,365,760B、压缩时最大新旧包并存112,570,368B、进程MaxRSS40,412KiB；两端完整SHA、模拟Pack腐坏拒绝和全部最终0B。候选空间保留26.174%（节省73.826%）、95k GC后比例26.2%；**此是离线原型层，不是线上SQL/Owner安全GC或上传加速**，生产未改，BEFORE=CURRENT、产品AFTER=N/A。完整11机器文件[已永久归档](performance-evidence/cas-a05-physical-100k-pack/README.md)，包SHA256 `8e4ce0493ac50f478b425f504fb5286ccb8702648f6e196e90554322e0b87040`；初轮原始来源及新证据HEAD双CI需严格区分，最终验收前不能声称merged。六真实客户端保持Not measured。
+
+
+## CAS-A06/S001-g：新100k实体小Blob冷／热缓存随机访问对照（2026-10-17）
+
+| 新真实工作负载 | 原版CURRENT与候选的样本和预算 | 当前阶段 / 原始证据 | 六端边界 |
+| --- | --- | --- | --- |
+| **CAS-A06** 同一CI三独立100k不同SHA真1KiB生产`Local.Put/Open` vs 离线独立Pack+Index，之前CAS-A05只测热缓存2k读取；新增 Linux `FADV_DONTNEED` 条件下各2k不同对象SHA/256B真实Range **Advisory Cold**，立即相同2k **Warm**，p50/p95/p99、真实`read_bytes`/rchar、CPU、RSS，奇偶交替AB顺序。 | **本冷缓存负载真实已测：原版CURRENT n3，候选OFFLINE n3，生产 AFTER=N/A**。原版Cold 2k P50 315.122ms/P95 193μs/P99 268μs，离线Pack247.882ms/P95 149μs/P99 209μs；`read_bytes`P50双方8,192,000B，warm61.187/17.015ms，RSS峰38,060KiB。无线上改善声明。。首次Runner专项 n3 各原版实际空间≥409600000B、pack≤.35×、驱逐hint成功且双方cold`read_bytes>0`，2000 SHA/Range全真、每阶段读≤180s、源种子≤300s、RSS≤512MiB。离线候选冷P95/read_bytes如超过原版20%或P99/RSS显著恶化，判决为冷读Rejected；不强制优化生产。 | Benchmarking：[独立规范](cas-small-pack-cold-performance.md)、[opt-in Go](../internal/storage/cas_a06_cold_small_blobs_100k_physical_linux_test.go)、[branch CI](../.github/workflows/cas-a06-real-100k-physical-cold-pack.yml)。n3原始数据确认后11文件永久归档；最终精准证据HEAD双CI/FinalGate。六端实际App全Not measured；Posix FADV仅建议，不能称真手机磁盘冷启动。 |
+
+
+### CAS-A06真实n3原版／Pack Advisory Cold&WARM资源（2026-10-17）
+
+[源码准确首次成功n3 CI #38932992440](https://github.com/lazyxu/xdrive/actions/runs/38932992440) 3个100k不同SHA真物理1KiB原片；Linux FADV_DONTNEED后相同2000个真实SHA+256B Range，P50原版/Pack Cold=315.122/247.882ms、Cold P95 193/149μs、P99 268/209μs，真实Linux read_bytes=8,192,000/8,192,000B（**没有减少物理读字节**），紧接相同2kWarm P50 61.187/17.015ms。最坏Go MaxRSS 38,060KiB，源身份/物理st_blocks/四源码SHA、完整0缓存驱逐失败检查与CPU/IO在[永久完整11份证据](performance-evidence/cas-a06-physical-cold-pack/README.md)，原归档SHA `4207d853cbed2f3c1311b08aee19be3ac2e3d332e72923fb6e237333982cfc47`。实验状态 Accepted OFFLINE/advisory cold-only；生产AFTER=N/A。先前两个Go编译/格式Invalid harness n0 [#38932274121](https://github.com/lazyxu/xdrive/actions/runs/38932274121)、[#38932483756](https://github.com/lazyxu/xdrive/actions/runs/38932483756) 单独归档不算性能失败。最终归档HEAD专项及完整CI FinalGate待核对。
+
+
+**CAS-A06 证据归档Invalid harness纠正（2026-10-17）：** 证据提交初次专项 #38934142527 SHA256 check失败（新有效物理样本n0），诊断 #38936913161 证明Git压缩blob CRC损坏；不将它计入CAS读延迟RED。已经按原始 CI #38932992440/ZIP digest `1c414e57...` 逐原始11件重建压缩包，修正仓库Git Blob `cb7686e0d5bcc2eae53c2ccfdfbc63b355a4d63c` 和原本正确SHA256 `4207d853...`，准确新HEAD双CI/final-gate必须成功，产品没有性能修改或新增线上收益。

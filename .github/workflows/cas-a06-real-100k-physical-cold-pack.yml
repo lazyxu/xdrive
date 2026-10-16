@@ -1,0 +1,161 @@
+name: CAS-A06 Real 100k Physical Local CAS vs Offline Pack Advisory Cold Reads
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a06-physical-100k-cold-read:
+    if: github.head_ref == 'perf/cas-a06-physical-100k-cold-read-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Validate archived original n3 physical byte evidence against exact four Go sources
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a06-physical-cold-pack/ci-run-38932992440.tar.gz
+          printf '%s  %s\n' '4207d853cbed2f3c1311b08aee19be3ac2e3d332e72923fb6e237333982cfc47' "$archive" | sha256sum -c -
+          test "$(git hash-object "$archive")" = 'cb7686e0d5bcc2eae53c2ccfdfbc63b355a4d63c'
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,statistics,sys,tarfile
+          expected={f"sample-{i}.{ext}" for i in (1,2,3) for ext in ("json","log","resources.txt")}
+          expected|={"summary.json","source.txt"}
+          with tarfile.open(sys.argv[1],"r:gz") as tar:
+              infos=tar.getmembers()
+              assert len(infos)==11 and {i.name for i in infos}==expected
+              raw={i.name:tar.extractfile(i).read() for i in infos}
+          src=raw["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=c0a0951d577676755f82196ea58ac1da02ac0c52" in src
+          assert "RUN_ID=38932992440" in src
+          for path in ("internal/storage/cas_a06_cold_small_blobs_100k_physical_linux_test.go",
+                       "internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go",
+                       "internal/storage/local.go","internal/storage/cas_immutable.go"):
+              digest=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+              assert f"{digest}  {path}" in src,("original_source_drift",path)
+          rows=[json.loads(raw[f"sample-{i}.json"]) for i in (1,2,3)]
+          assert len({r["source_identity_sha256"] for r in rows})==3
+          summary=json.loads(raw["summary.json"])
+          assert summary["n"]==3 and summary["passed"] and not summary["production_changed"]
+          orig="production_local_cas";pack="offline_pack";cold="advisory_cold_read_2000";warm="warm_read_same_2000"
+          for i,row in enumerate(rows,1):
+              assert row["sample"]==i and row["passed"] and not row["production_changed"]
+              assert row["original_count"]==row["unique_sha256"]==100000
+              assert row["cold_query_count"]==2000 and row["payload_bytes"]==1024
+              assert row["baseline_file_evictions_attempted"]==2000 and row["pack_evictions_attempted"]==1
+              assert row["linux_fadvise_dontneed_supported"] and row["physical_read_io_observed"]
+              assert row["matched_exact_bytes_and_ranges"] and row["distinct_storage_roots"]
+              assert row["original_allocated_bytes"]>=409600000 and row["pack_allocated_bytes"]<=.35*row["original_allocated_bytes"]
+              for arm in (orig,pack):
+                  assert row[arm][cold]["linux_read_bytes"]>0
+                  for kind in (cold,warm):
+                      metrics=row[arm][kind]
+                      assert metrics["requests"]==2000 and metrics["wall_ms"]>0
+                      assert metrics["per_request_p99_us"]>=metrics["per_request_p95_us"]>=metrics["per_request_p50_us"]>=0
+              assert "CAS_A06_REAL_100K_COLD_READS " in raw[f"sample-{i}.log"].decode()
+              assert "Maximum resident set size" in raw[f"sample-{i}.resources.txt"].decode()
+          median=lambda arm,kind,field:statistics.median(r[arm][kind][field] for r in rows)
+          assert summary["baseline_cold_total_ms_p50"]==median(orig,cold,"wall_ms")
+          assert summary["packed_cold_total_ms_p50"]==median(pack,cold,"wall_ms")
+          assert summary["baseline_cold_p95_us_p50"]==median(orig,cold,"per_request_p95_us")
+          assert summary["packed_cold_p95_us_p50"]==median(pack,cold,"per_request_p95_us")
+          assert summary["baseline_cold_kernel_read_bytes_p50"]==median(orig,cold,"linux_read_bytes")
+          assert summary["packed_cold_kernel_read_bytes_p50"]==median(pack,cold,"linux_read_bytes")
+          print("CAS_A06_ORIGINAL_11_RAW_PHYSICAL_ARCHIVE_VERIFIED",len(infos),summary["n"])
+          PY
+      - name: Compile real Local CAS and frozen advisory cold-read benchmark
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/storage/cas_a06_cold_small_blobs_100k_physical_linux_test.go)"
+          go test -mod=readonly -c -o "$RUNNER_TEMP/cas-a06-cold-read.test" ./internal/storage
+          df -h .
+      - name: Probe 1k physical originals and 200 advisory cold reads
+        run: |
+          set -euo pipefail
+          env XD_CAS_A06_COLD_READ_100K_PERF=1 XD_CAS_A06_SMOKE=1 XD_CAS_A06_SAMPLE=sample-1 \
+            "$RUNNER_TEMP/cas-a06-cold-read.test" \
+              -test.run '^TestCASA06Physical100KOriginalCASVersusOfflinePackAdvisoryColdReads$' \
+              -test.count=1 -test.timeout=15m -test.v
+      - name: 3 independent 100k real Local CAS and packed originals with POSIX fadvise DONTNEED
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a06-cold-100k"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/storage/cas_a06_cold_small_blobs_100k_physical_linux_test.go \
+              internal/storage/cas_a05_offline_pack_100k_physical_linux_test.go \
+              internal/storage/local.go internal/storage/cas_immutable.go
+          } > "$out/source.txt"
+          for sample in 1 2 3; do
+            env XD_CAS_A06_COLD_READ_100K_PERF=1 XD_CAS_A06_SAMPLE="sample-$sample" \
+              /usr/bin/time -v -o "$out/sample-$sample.resources.txt" \
+              "$RUNNER_TEMP/cas-a06-cold-read.test" \
+              -test.run '^TestCASA06Physical100KOriginalCASVersusOfflinePackAdvisoryColdReads$' \
+              -test.count=1 -test.timeout=40m -test.v | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          root=pathlib.Path(sys.argv[1]); rows=[]
+          for i in (1,2,3):
+              raw=(root/f"sample-{i}.log").read_text()
+              match=re.findall(r"CAS_A06_REAL_100K_COLD_READS (\{[^\n]+\})",raw)
+              assert len(match)==1,(i,"one authentic sample")
+              row=json.loads(match[0])
+              assert row["sample"]==i and row["passed"] and not row["production_changed"]
+              assert row["original_count"]==row["unique_sha256"]==100000
+              assert row["payload_bytes"]==1024 and row["cold_query_count"]==2000
+              assert row["baseline_file_evictions_attempted"]==2000
+              assert row["pack_evictions_attempted"]==1
+              assert row["linux_fadvise_dontneed_supported"] and row["physical_read_io_observed"]
+              assert row["distinct_storage_roots"] and row["matched_exact_bytes_and_ranges"]
+              assert row["original_allocated_bytes"]>=409600000
+              assert row["pack_allocated_bytes"]<=.35*row["original_allocated_bytes"]
+              assert row["process_max_rss_kib"]<=524288
+              assert len(row["source_identity_sha256"])==64
+              for arm in ("production_local_cas","offline_pack"):
+                  for name in ("advisory_cold_read_2000","warm_read_same_2000"):
+                      stage=row[arm][name]
+                      assert stage["requests"]==2000 and 0<stage["wall_ms"]<180000
+                      assert stage["peak_process_rss_kib"]<=524288
+                      assert stage["per_request_p95_us"]>=stage["per_request_p50_us"]
+                      assert stage["per_request_p99_us"]>=stage["per_request_p95_us"]
+                      assert stage["linux_read_bytes"]>=0
+                  assert row[arm]["advisory_cold_read_2000"]["linux_read_bytes"]>0
+              (root/f"sample-{i}.json").write_text(json.dumps(row,indent=2)+"\n")
+              rows.append(row)
+          assert len({r["source_identity_sha256"] for r in rows})==3
+          m=lambda arm,kind,field:statistics.median(r[arm][kind][field] for r in rows)
+          orig="production_local_cas"; pack="offline_pack"; cold="advisory_cold_read_2000"; warm="warm_read_same_2000"
+          summary={"workload_id":"CAS-A06-100k-distinct-1KiB-advisory-cold-warm-original-CAS-vs-offline-pack",
+              "n":3,"source_count":100000,"read_queries_per_arm":2000,
+              "baseline_cold_total_ms_p50":m(orig,cold,"wall_ms"),
+              "packed_cold_total_ms_p50":m(pack,cold,"wall_ms"),
+              "baseline_cold_p95_us_p50":m(orig,cold,"per_request_p95_us"),
+              "packed_cold_p95_us_p50":m(pack,cold,"per_request_p95_us"),
+              "baseline_cold_p99_us_p50":m(orig,cold,"per_request_p99_us"),
+              "packed_cold_p99_us_p50":m(pack,cold,"per_request_p99_us"),
+              "baseline_cold_kernel_read_bytes_p50":m(orig,cold,"linux_read_bytes"),
+              "packed_cold_kernel_read_bytes_p50":m(pack,cold,"linux_read_bytes"),
+              "baseline_warm_ms_p50":m(orig,warm,"wall_ms"),
+              "packed_warm_ms_p50":m(pack,warm,"wall_ms"),
+              "max_process_rss_kib":max(r["process_max_rss_kib"] for r in rows),
+              "passed":True,"production_changed":False,
+              "scope":"Linux POSIX_FADV_DONTNEED advisory cold read only; real 100k physical immutable Local CAS vs offline independent packed original; cannot guarantee true HDD coldness or online Owner/UI/HTTP performance"}
+          (root/"summary.json").write_text(json.dumps(summary,indent=2)+"\n")
+          print("CAS_A06_REAL_100K_COLD_READ_N3_SUMMARY",json.dumps(summary),flush=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a06-100k-real-physical-advisory-cold-warm-pack-n3
+          path: ${{ runner.temp }}/cas-a06-cold-100k/
+          retention-days: 14
+          if-no-files-found: warn
