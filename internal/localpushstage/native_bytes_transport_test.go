@@ -173,6 +173,12 @@ func TestStageVerifiedNativeOriginalBytesRealAgentToServerProtocol(t *testing.T)
 	receipt, err := StageVerifiedNativeOriginalBytes(
 		cli, ctx, config, grant, 7, proof, "photo.bin", sha,
 	)
+	if err == nil {
+		hint, hintErr := ReadLocalOriginalRecoveryHint(ctx, config, grant, receipt.StageID)
+		if hintErr != nil || hint.Stage != receipt || hint.RelativePath != "photo.bin" {
+			t.Fatalf("native Stage completed without private restart hint: %+v %v", hint, hintErr)
+		}
+	}
 	mu.Lock()
 	defer mu.Unlock()
 	if err != nil || receipt.StageID != stageID ||
