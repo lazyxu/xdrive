@@ -8,8 +8,8 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import ZoomInRoundedIcon from '@mui/icons-material/ZoomInRounded'
 import ZoomOutRoundedIcon from '@mui/icons-material/ZoomOutRounded'
 import { Box, IconButton, Stack, Tooltip, Typography } from '@mui/material'
-import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds, xDriveBaiduStaticPinchZoom } from '../media-gallery-baidu-camera'
-import type { XDriveBaiduMapViewportBounds } from '../media-gallery-baidu-camera'
+import { xDriveBaiduStaticStepCenter, xDriveBaiduStaticViewportBounds, xDriveBaiduStaticPinchZoom, xDriveBaiduStaticFocusCenter } from '../media-gallery-baidu-camera'
+import type { XDriveBaiduMapViewportBounds, XDriveBaiduMapCameraCenter, XDriveBaiduStaticGestureFocus } from '../media-gallery-baidu-camera'
 import { xDriveValidPlacesCameraPosition } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition } from '../media-gallery-places-camera-session'
 import type {
@@ -157,11 +157,42 @@ export function XDriveMediaGalleryBaiduStaticMap({
     }
   }
   const gesturePointers = useRef(new Map<number, { x: number; y: number }>())
-  const pinchStart = useRef<{ distance: number } | null>(null)
+  type StaticPinchSurface = { left: number; top: number; width: number; height: number }
+  const pinchStart = useRef<{
+    distance: number
+    zoom: number
+    center: XDriveBaiduMapCameraCenter
+    focus: XDriveBaiduStaticGestureFocus
+    surface: StaticPinchSurface | undefined
+  } | null>(null)
   const suppressPan = useRef(false)
   const pointerDistance = () => {
     const [a, b] = Array.from(gesturePointers.current.values())
     return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0
+  }
+  const readPinchSurface = (event: ReactPointerEvent<HTMLDivElement>): StaticPinchSurface | undefined => {
+    try {
+      const rect = event.currentTarget.getBoundingClientRect?.()
+      if (!rect || ![rect.left, rect.top, rect.width, rect.height].every(Number.isFinite) ||
+          rect.width <= 0 || rect.height <= 0) return undefined
+      return { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+    } catch {
+      return undefined
+    }
+  }
+  const pointerFocus = (surface: StaticPinchSurface | undefined): XDriveBaiduStaticGestureFocus => {
+    const [a, b] = Array.from(gesturePointers.current.values())
+    if (!surface || !a || !b) return { eastPixels: 0, southPixels: 0 }
+    const east = ((a.x + b.x) / 2 - surface.left - surface.width / 2) *
+      (480 / surface.width)
+    const south = ((a.y + b.y) / 2 - surface.top - surface.height / 2) *
+      (280 / surface.height)
+    // Pointer capture may move outside the raster. Never extrapolate
+    // arbitrarily distant screen points into global GPS camera jumps.
+    return {
+      eastPixels: Math.max(-240, Math.min(240, east)),
+      southPixels: Math.max(-140, Math.min(140, south)),
+    }
   }
 
   // A selected Place/Viewer return must never inherit the prior GPS gesture.
@@ -183,12 +214,18 @@ export function XDriveMediaGalleryBaiduStaticMap({
       pinchStart.current = null
       dragStart.current = { pointer: event.pointerId, x: event.clientX, y: event.clientY }
     } else {
-      // A second finger always suppresses single-finger pan, including its
-      // eventual trailing pointer-up event. More than two fingers never pan.
+      // A second finger suppresses the old one-finger drag. Third or later
+      // fingers invalidate this pinch; their eventual releases cannot pan.
       suppressPan.current = true
       dragStart.current = null
-      pinchStart.current = gesturePointers.current.size === 2
-        ? { distance: pointerDistance() } : null
+      const surface = readPinchSurface(event)
+      pinchStart.current = gesturePointers.current.size === 2 &&
+        centerLatitude !== undefined && centerLongitude !== undefined
+        ? {
+          distance: pointerDistance(), zoom,
+          center: { latitude: centerLatitude, longitude: centerLongitude },
+          focus: pointerFocus(surface), surface,
+        } : null
     }
   }
   const onMapPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -202,11 +239,25 @@ export function XDriveMediaGalleryBaiduStaticMap({
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     const startPinch = pinchStart.current
     const startDrag = dragStart.current
-    if (pointers.size === 2 && startPinch) {
-      // Commit at most one integer zoom change at gesture release, never one
-      // network request per finger movement. Existing effect aborts old PNG.
+    if (pointers.size === 2 && startPinch &&
+        startPinch.distance >= 20 && centerLatitude !== undefined &&
+        centerLongitude !== undefined &&
+        zoom === startPinch.zoom &&
+        centerLatitude === startPinch.center.latitude &&
+        centerLongitude === startPinch.center.longitude) {
+      // Commit one snapshot at release. Native browser pinch motion never
+      // starts per-move network requests or fabricates local map tiles.
       const distance = pointerDistance()
-      setZoom(value => xDriveBaiduStaticPinchZoom(value, startPinch.distance, distance))
+      const nextZoom = xDriveBaiduStaticPinchZoom(zoom, startPinch.distance, distance)
+      const nextCenter = xDriveBaiduStaticFocusCenter(
+        startPinch.center, zoom, nextZoom,
+        startPinch.focus, pointerFocus(startPinch.surface),
+      )
+      if (Math.abs(nextCenter.latitude - centerLatitude) > 1e-9 ||
+          Math.abs(nextCenter.longitude - centerLongitude) > 1e-9) {
+        setCamera({ key: originKey, ...nextCenter })
+      }
+      if (nextZoom !== zoom) setZoom(nextZoom)
       suppressPan.current = true
     } else if (pointers.size === 1 && !suppressPan.current &&
                startDrag && startDrag.pointer === event.pointerId) {
@@ -347,7 +398,7 @@ export function XDriveMediaGalleryBaiduStaticMap({
         ))}
       </Stack>
       <Box role="group" tabIndex={enabled && validCenter ? 0 : -1}
-        aria-label="百度地图：方向键移动，按加号或减号缩放，拖动松开后更新"
+        aria-label="百度地图：方向键移动，按加号或减号缩放，单指拖动及双指移动或缩放后松开更新"
         onKeyDown={onMapKeyDown} onPointerDown={onMapPointerDown}
         onPointerMove={onMapPointerMove} onPointerUp={onMapPointerUp}
         onPointerCancel={onMapPointerCancel}

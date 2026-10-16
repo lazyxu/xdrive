@@ -81,3 +81,39 @@ export function xDriveBaiduStaticPinchZoom(
   return Math.max(3, Math.min(18, zoom + steps))
 }
 
+/** Coordinates of the finger centroid relative to the logical 480x280
+ * Server Static PNG camera, NOT Baidu JSAPI4 BD-09 screen projection. */
+export type XDriveBaiduStaticGestureFocus = {
+  eastPixels: number
+  southPixels: number
+}
+
+/** Preserve the approximate geographic point beneath moving pinch fingers
+ * when committing a discrete zoom. Moving two fingers together also pans.
+ * Never use this approximation for BD-09 markers or authorized GPS identity. */
+export function xDriveBaiduStaticFocusCenter(
+  center: XDriveBaiduMapCameraCenter,
+  zoom: number,
+  nextZoom: number,
+  initial: XDriveBaiduStaticGestureFocus,
+  final: XDriveBaiduStaticGestureFocus,
+): XDriveBaiduMapCameraCenter {
+  if (!center || !initial || !final || !Number.isInteger(zoom) ||
+      !Number.isInteger(nextZoom) || zoom < 3 || zoom > 18 ||
+      nextZoom < 3 || nextZoom > 18 ||
+      ![initial.eastPixels, initial.southPixels,
+        final.eastPixels, final.southPixels].every(Number.isFinite) ||
+      [initial.eastPixels, final.eastPixels].some(v => Math.abs(v) > 480) ||
+      [initial.southPixels, final.southPixels].some(v => Math.abs(v) > 280)) {
+    return center
+  }
+  if (zoom === nextZoom && initial.eastPixels === final.eastPixels &&
+      initial.southPixels === final.southPixels) return center
+  // Old-point screen coordinate: C_old + initial/W_old.
+  // New-point screen coordinate: C_new + final/W_new.
+  // Solve C_new = C_old + initial/W_old - final/W_new.
+  const factor = Math.pow(2, zoom - nextZoom)
+  return xDriveBaiduStaticStepCenter(center, zoom,
+    initial.eastPixels - final.eastPixels * factor,
+    initial.southPixels - final.southPixels * factor)
+}

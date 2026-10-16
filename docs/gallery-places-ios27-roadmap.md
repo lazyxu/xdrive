@@ -402,3 +402,10 @@ This bounded sub-phase adds **Server-internal, non-routable** PostgreSQL concurr
 在 #1770 合入后，修正三端共享 `MediaGalleryBaiduStaticMap` 每次更改相机立即清空图片造成的闪白：同一地点的新 PNG 加载期间，只保留上一张已成功的服务端百度 PNG 并以淡化及“上一视窗 · 正在更新”标明过期，绝不将旧地图坐标冒充当前 GPS。加载成功后切换并释放旧 Blob URL；切换不同地点/权限关闭、请求失败时不显示过时地图；过期请求、卸载严格释放 Blob。Node React 交互回归覆盖相机切换、旧请求取消、跨地点隐藏、(0,0)真实 GPS 和 URL 回收。
 
 此项仅改善现有 Static Map，不是 iOS27 Photos 1:1 原生地图、不是 JSAPI4 平移/聚合功能上线。保留全屏 App Frame、52px 全局标题栏、百度唯一 Provider，Server AK/Browser AK 独立且只在 Server，Web/Mobile Web/Desktop 一套 Gallery DataSource、虚拟化、Viewer 与 Go Server Range。真实百度 JSAPI4 仍须 self-host/PWA/Electron 许可、完整子资源及九场景真实 upstream/browser HAR 脱敏审查、签名放行、Owner 撤销配额、Caddy CSP/Electron 沙盒、iOS27/Android/Desktop 真机验收；运行保持关闭。后续遵循 A3 → A4 → B1 → B2 → B3 → C1。
+
+
+## A3b3a3d2c · 三端共用静态地图双指焦点稳定（2026-10-16）
+
+承接已合入 #1780，修复原先二指缩放默认以图片中心而非双指焦点缩放的跳动。共享 `media-gallery-baidu-camera.ts` 的 WGS84 Web Mercator 相机计算以手指初始/结束屏幕中点为锚，保持地图照片的大致视觉焦点；两指同向移动可在松手后进行一次有界平移。响应式元素真实边界转换为 480×280 的静态 PNG 逻辑相机，不在每次 PointerMove 调用百度；取消/第三根手指、过大移动、未变更手势、切换地点均不得产生误操作。纯函数测试和实际共享 React 手势测试覆盖 0/0 GPS、经度跨 180°、缩放焦点、平移、旧请求 AbortSignal 与单次 Server 请求。
+
+该近似只能用于已有 Server Baidu Static PNG 相机，**不能**拿来替换百度官方 BD-09 JSAPI4 动态地图、真实 WGS84 逆变换或 iOS27「照片」1:1 像素/手势验收。独立 Server Static AK 和 Browser JSAPI AK 继续只在 Server 加密使用、百度唯一 Provider、52px 全屏 App Frame、Web/Mobile Web/Desktop 同一图库请求/虚拟化/Viewer；动态 JSAPI4 生产发布硬 NO-GO，仍需账户许可、完整经审查子资源、九组真实 browser/upstream HAR 无 AK 泄漏、受信签名、Owner 撤销和配额、Caddy/Electron 隔离及真实 iOS27/Android/Desktop 验收。A3 完成后再进入 A4、B1、B2、B3、C1。
