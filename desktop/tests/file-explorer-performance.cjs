@@ -140,7 +140,11 @@ test('FileExplorer bounds thumbnail and pointer/scroll work under large director
 
 test('FileExplorer directory and search ranges reject duplicate and stale requests', () => {
   assert.ok(cloudFilesController.includes('const directoryRequestRef = useRef(0)'), 'directory request generation guard is missing')
-  assert.ok(cloudFilesController.includes('if (requestID !== directoryRequestRef.current) return'), 'stale directory responses must be ignored')
+  assert.ok(
+    cloudFilesController.includes('if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return') &&
+    cloudFilesController.includes('if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return false'),
+    'both initial-load and folder first-page commits must reject aborted or superseded requests',
+  )
   assert.ok(cloudFilesController.includes('useXDriveVirtualCollection<TNode>'), 'directory range loading must delegate in-flight ownership to VirtualCollection')
   assert.ok(virtualCollectionController.includes('const inFlightRef = useRef(new Map<string, InFlightRange>())'), 'VirtualCollection in-flight range map is missing')
   assert.ok(virtualCollectionController.includes('existing && existing.generation === generation'), 'VirtualCollection must deduplicate same-generation range requests')

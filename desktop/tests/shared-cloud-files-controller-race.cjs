@@ -1016,3 +1016,105 @@ test('U01 late superseded 403/success cannot erase a newer authorized folder com
   assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1, 3])
   assert.deepEqual(failures, [])
 })
+
+
+test('U01-B a new authorized first page aborts the actual previous signal before committing new rows', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  const requests = [], errors = [], aborted = []
+  let settleOld
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (parentID, offset, limit, requestSort, includeCount, grouping, signal) => {
+      requests.push({ parentID, offset, limit, includeCount, signal })
+      if (parentID === 1) return Promise.resolve(u01Range(10, '根目录原文件.txt', offset, limit))
+      if (parentID === 2) {
+        return new Promise((resolve, reject) => {
+          settleOld = resolve
+          signal?.addEventListener('abort', () => {
+            aborted.push(parentID)
+            reject(Object.assign(new Error('expected cancelled request'), { name: 'AbortError' }))
+          }, { once: true })
+        })
+      }
+      if (parentID === 3) return Promise.resolve(u01Range(30, '已授权的新目录.txt', offset, limit))
+      throw new Error('unexpected directory ' + parentID)
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey: 'account-a',
+    defaultSort: sort, quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => errors.push(String(error)),
+  }))
+  render()
+  await flushAsync()
+  let controller = render()
+  assert.equal(controller.current?.id, 1)
+  assert.equal(controller.items[0]?.name, '根目录原文件.txt')
+
+  const old = controller.loadDirectory(2,
+    [{ id: 1, name: '我的文件' }, { id: 2, name: '旧待处理目录' }], sort)
+  controller = render()
+  assert.equal(controller.current?.id, 1, 'pending navigation cannot replace the committed folder')
+  assert.equal(controller.items[0]?.name, '根目录原文件.txt')
+  const pending = requests.find(request => request.parentID === 2)
+  assert.ok(pending?.signal instanceof AbortSignal, 'the original counted GET must carry a real AbortSignal')
+  assert.equal(pending.signal.aborted, false)
+
+  const next = controller.loadDirectory(3,
+    [{ id: 1, name: '我的文件' }, { id: 3, name: '新已授权目录' }], sort)
+  assert.equal(pending.signal.aborted, true, 'new intent must cancel stale Server work immediately')
+  assert.deepEqual(aborted, [2], 'original port must observe exactly one abort')
+  assert.equal(await old, false)
+  assert.equal(await next, true)
+  controller = render()
+  assert.equal(controller.current?.id, 3)
+  assert.equal(controller.items[0]?.name, '已授权的新目录.txt')
+  assert.deepEqual(controller.crumbs.map(crumb => crumb.id), [1, 3])
+  assert.deepEqual(errors, [], 'intentional cancellation must not create a failure toast')
+  assert.equal(typeof settleOld, 'function')
+})
+
+test('U01-B account replacement aborts an in-flight initial counted GET without leaking stale items', async () => {
+  const runtime = createHookRuntime()
+  const useController = loadCloudFilesController(runtime.react)
+  const sort = { key: 'name', direction: 'asc' }
+  let lifecycleKey = 'server-a:account-a'
+  let account = 'A'
+  const captures = [], errors = []
+  const port = {
+    getRoot: async () => ({ id: 1 }),
+    getQuota: async () => ({ quota_bytes: 100, used_bytes: 10 }),
+    getRange: (parentID, offset, limit, requestSort, includeCount, grouping, signal) => {
+      captures.push({ account, signal, parentID })
+      if (account === 'B') return Promise.resolve(u01Range(10, '新账号内容.txt', offset, limit))
+      return new Promise((resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          reject(Object.assign(new Error('superseded account'), { name: 'AbortError' }))
+        }, { once: true })
+      })
+    },
+  }
+  const render = () => runtime.render(() => useController({
+    port, enabled: true, lifecycleKey, defaultSort: sort,
+    quotaRefreshIntervalMs: 0, changePollIntervalMs: 0,
+    onError: error => errors.push(String(error)),
+  }))
+  render()
+  await flushAsync()
+  const oldRequest = captures.find(x => x.account === 'A')
+  assert.ok(oldRequest?.signal instanceof AbortSignal, 'initial root first counted page must be abortable')
+  assert.equal(oldRequest.signal.aborted, false)
+  account = 'B'
+  lifecycleKey = 'server-b:account-b'
+  render()
+  assert.equal(oldRequest.signal.aborted, true, 'account change must abort old Server work')
+  await flushAsync()
+  const controller = render()
+  assert.equal(controller.current?.id, 1)
+  assert.equal(controller.items[0]?.name, '新账号内容.txt')
+  assert.deepEqual(errors, [])
+  assert.equal(captures.filter(x => x.account === 'B').length, 1)
+})

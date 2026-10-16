@@ -99,6 +99,7 @@ export function useXDriveCloudFilesController<
   const directoryRequestRef = useRef(0)
   const directoryInFlightRequestRef = useRef<number | null>(null)
   const directoryInFlightParentIDRef = useRef<number | null>(null)
+  const directoryFirstPageAbortRef = useRef<AbortController | null>(null)
   const quotaRequestRef = useRef(0)
   const changeCursorRef = useRef<number | null>(null)
   const changeRequestRef = useRef(0)
@@ -117,6 +118,15 @@ export function useXDriveCloudFilesController<
   onErrorRef.current = onError
   const reportError = useCallback((error: unknown) => {
     onErrorRef.current(error)
+  }, [])
+
+  // Only the one counted first page owns this controller. VirtualCollection
+  // ranges retain independent request ownership and are not cancelled here.
+  const startDirectoryFirstPage = useCallback(() => {
+    directoryFirstPageAbortRef.current?.abort()
+    const next = new AbortController()
+    directoryFirstPageAbortRef.current = next
+    return next
   }, [])
 
   const lifecycleCurrent = lifecycleKeyRef.current === lifecycleKey
@@ -259,6 +269,7 @@ export function useXDriveCloudFilesController<
     const effectiveGrouping = grouping ?? virtualTargetRef.current?.grouping ?? XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
+    const firstPageRequest = startDirectoryFirstPage()
     directoryInFlightRequestRef.current = requestID
     directoryInFlightParentIDRef.current = id
     setLoading(true)
@@ -270,8 +281,9 @@ export function useXDriveCloudFilesController<
         effectiveSort,
         true,
         effectiveGrouping,
+        firstPageRequest.signal,
       )
-      if (requestID !== directoryRequestRef.current) return false
+      if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return false
       setItems([...range.items])
       if (nextCrumbs) {
         const copiedCrumbs = [...nextCrumbs]
@@ -281,9 +293,10 @@ export function useXDriveCloudFilesController<
       activateVirtualDirectory(id, effectiveSort, effectiveGrouping, requestID, range)
       return true
     } catch (error) {
-      if (requestID === directoryRequestRef.current) reportError(error)
+      if (!firstPageRequest.signal.aborted && requestID === directoryRequestRef.current) reportError(error)
       return false
     } finally {
+      if (directoryFirstPageAbortRef.current === firstPageRequest) directoryFirstPageAbortRef.current = null
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightRequestRef.current = null
         directoryInFlightParentIDRef.current = null
@@ -295,6 +308,7 @@ export function useXDriveCloudFilesController<
     defaultSort,
     port,
     reportError,
+    startDirectoryFirstPage,
   ])
 
   const refreshChangedDirectory = useCallback(async (
@@ -455,6 +469,7 @@ export function useXDriveCloudFilesController<
   const loadInitial = useCallback(async () => {
     const requestID = directoryRequestRef.current + 1
     directoryRequestRef.current = requestID
+    const firstPageRequest = startDirectoryFirstPage()
     directoryInFlightRequestRef.current = requestID
     directoryInFlightParentIDRef.current = null
     const quotaRequestID = quotaRequestRef.current + 1
@@ -465,6 +480,7 @@ export function useXDriveCloudFilesController<
         port.getQuota(),
         port.getRoot(),
       ])
+      if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightParentIDRef.current = root.id
       }
@@ -475,8 +491,9 @@ export function useXDriveCloudFilesController<
         defaultSort,
         true,
         XDRIVE_FILE_EXPLORER_DEFAULT_GROUPING,
+        firstPageRequest.signal,
       )
-      if (requestID !== directoryRequestRef.current) return
+      if (firstPageRequest.signal.aborted || requestID !== directoryRequestRef.current) return
       if (
         quotaRequestID === quotaRequestRef.current &&
         enabledRef.current
@@ -493,18 +510,26 @@ export function useXDriveCloudFilesController<
         range,
       )
     } catch (error) {
-      if (requestID === directoryRequestRef.current) reportError(error)
+      if (!firstPageRequest.signal.aborted && requestID === directoryRequestRef.current) reportError(error)
     } finally {
+      if (directoryFirstPageAbortRef.current === firstPageRequest) directoryFirstPageAbortRef.current = null
       if (directoryInFlightRequestRef.current === requestID) {
         directoryInFlightRequestRef.current = null
         directoryInFlightParentIDRef.current = null
       }
       if (requestID === directoryRequestRef.current) setLoading(false)
     }
-  }, [activateVirtualDirectory, defaultSort, port, reportError, rootLabel])
+  }, [activateVirtualDirectory, defaultSort, port, reportError, rootLabel, startDirectoryFirstPage])
+
+  useEffect(() => () => {
+    directoryFirstPageAbortRef.current?.abort()
+    directoryFirstPageAbortRef.current = null
+  }, [])
 
   useEffect(() => {
     const invalidateAsyncWork = () => {
+      directoryFirstPageAbortRef.current?.abort()
+      directoryFirstPageAbortRef.current = null
       directoryRequestRef.current += 1
       directoryInFlightRequestRef.current = null
       directoryInFlightParentIDRef.current = null
