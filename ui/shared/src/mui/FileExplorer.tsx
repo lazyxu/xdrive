@@ -133,6 +133,10 @@ import {
   xDriveFileExplorerDetailsVirtualWindow,
   xDriveFileExplorerGridVirtualWindow,
   xDriveFileExplorerVirtualWindowSlots,
+  xDriveFileExplorerAriaTableRowCount,
+  xDriveFileExplorerAriaItemRowIndex,
+  xDriveFileExplorerAriaGroupRowIndex,
+  xDriveFileExplorerAriaItemPosition,
 } from './FileExplorerVirtualSurface'
 import {
   XDriveFileExplorerThumbnail,
@@ -4277,6 +4281,7 @@ export function XDriveFileExplorer({
         }}
         component="div"
         role="row"
+        aria-rowindex={xDriveFileExplorerAriaItemRowIndex(index, groupedDetailsLayout?.groups ?? [])}
         data-xdrive-file-explorer-item
         data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
         data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
@@ -4440,6 +4445,8 @@ export function XDriveFileExplorer({
         }}
         component="div"
         role="listitem"
+        aria-setsize={logicalItemCount}
+        aria-posinset={xDriveFileExplorerAriaItemPosition(index)}
         data-xdrive-file-explorer-item
         data-xdrive-file-explorer-item-id={explorerIDKey(item.id)}
         data-xdrive-file-explorer-drop-target={dropTargetID !== null && explorerIDKey(dropTargetID) === explorerIDKey(item.id) ? 'folder' : undefined}
@@ -6176,9 +6183,13 @@ export function XDriveFileExplorer({
         ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
         ) : viewMode === 'details' ? (
-          <Box role="table" aria-label="文件列表" sx={{ minWidth: detailsMinWidth }}>
+          <Box role="table" aria-label="文件列表"
+            aria-rowcount={xDriveFileExplorerAriaTableRowCount(logicalItemCount, groupedDetailsLayout?.groups.length ?? 0)}
+            aria-colcount={visibleDetailsColumns.length}
+            sx={{ minWidth: detailsMinWidth }}>
             <Box
               role="row"
+              aria-rowindex={1}
               sx={{
                 position: 'sticky',
                 top: 0,
@@ -6323,6 +6334,7 @@ export function XDriveFileExplorer({
                     {segment.headerVisible ? (
                       <Box
                         role="row"
+                        aria-rowindex={xDriveFileExplorerAriaGroupRowIndex(segment.group.startIndex, groupedDetailsLayout.groups)}
                         data-xdrive-file-explorer-group-header
                         aria-label={segment.group.label}
                         sx={{
@@ -6340,9 +6352,11 @@ export function XDriveFileExplorer({
                           zIndex: 1,
                         }}
                       >
-                        <Typography variant="caption" fontWeight={700} color="text.secondary">
-                          {segment.group.label} · {segment.group.itemCount}
-                        </Typography>
+                        <Box role="cell">
+                          <Typography variant="caption" fontWeight={700} color="text.secondary">
+                            {segment.group.label} · {segment.group.itemCount}
+                          </Typography>
+                        </Box>
                       </Box>
                     ) : null}
                     {segment.endIndex > segment.startIndex ? (
