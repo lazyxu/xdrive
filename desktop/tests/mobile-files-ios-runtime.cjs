@@ -2835,3 +2835,50 @@ test('P3: Go-to-Path from Recent keeps the old rail until destination directory 
     },
   })
 })
+
+// The sparse row window is the observable scroll-state oracle in the mounted
+// original component. A compact navigation title stays visible in both states
+// and therefore cannot prove viewport restoration.
+const p10Rows = Array.from({ length: 96 }, (_, index) => ({
+  id: 10000 + index, name: `scroll-${index}.txt`, kind: 'file', revision: 1,
+}))
+
+test('P10: already committed same-route Mobile Files remount retains its stored scroll anchor', async () => {
+  await withView(async h => {
+    const labels = h.view.root.findAll(node =>
+      Object.hasOwn(node.props ?? {}, 'data-mobile-files-item'))
+      .map(node => node.props['aria-label'])
+    assert.ok(labels.length > 0, 'the real virtual row window is mounted')
+    assert.ok(!labels.includes('scroll-0.txt'),
+      'a same-route remount must not render the first row when its saved anchor is deep down')
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 1)
+    assert.equal(saved.scrollTop, 1888)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 1, scrollTop: 1888, view: 'details' },
+    props: { requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+      items: p10Rows },
+  })
+})
+
+test('P10: different already committed URL starts at row zero and clears the old saved anchor', async () => {
+  await withView(async h => {
+    const labels = h.view.root.findAll(node =>
+      Object.hasOwn(node.props ?? {}, 'data-mobile-files-item'))
+      .map(node => node.props['aria-label'])
+    assert.ok(labels.includes('scroll-0.txt'),
+      'a different authorized route must start its virtual rows at index zero')
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.folderID, 1)
+    assert.equal(saved.scrollTop, 0,
+      'new target ID and zero offset must be committed in the same storage snapshot')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 42, scrollTop: 1888, view: 'details' },
+    props: { requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+      items: p10Rows },
+  })
+})

@@ -2973,6 +2973,7 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesTransientAppFrameStabilityAcceptance(origin);
   await filesOrientationPendingFolderStabilityAcceptance(origin);
   await filesBreakpointPendingFolderStabilityAcceptance(origin);
+  await filesCommittedFolderBreakpointResumeAcceptance(origin);
 }
 
 
@@ -3718,6 +3719,68 @@ async function filesBreakpointPendingFolderStabilityAcceptance(origin) {
     before,pending,wide,returned,committed,firstRangeHeldAcrossResponsiveRemount:true,
     realChromium:true,physicalIOSDevice:false,physicalAndroidDevice:false,installedPWA:false
   };
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+async function filesCommittedFolderBreakpointResumeAcceptance(origin) {
+  // P10 intentionally differs from P9: there is NO newer pending URL or
+  // blocked HTTP response. Resizing the same already committed route must
+  // retain the user's existing virtual scroll when MobileFiles remounts.
+  activeStage='user-files-committed-root-breakpoint-resume-899-900';
+  await page.setViewportSize({width:899,height:700});
+  await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.locator('[data-mobile-files-folder-id="2"]').first().waitFor();
+  const read=()=>page.evaluate(()=>{
+    const host=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const savedKey=Object.keys(localStorage).find(x=>x.startsWith('xdrive.mobile.files.v1:'));
+    const saved=savedKey?JSON.parse(localStorage.getItem(savedKey)):null;
+    return {
+      hash:location.hash,width:innerWidth,height:innerHeight,
+      hostPresent:!!host,hostSame:host===window.__p10RootHost,
+      count:document.querySelectorAll('[data-xdrive-file-explorer-scroll-host]').length,
+      scrollTop:host?.scrollTop??null,savedFolderID:saved?.folderID??null,
+      savedScrollTop:saved?.scrollTop??null,
+      folder:document.querySelector('[data-mobile-files-compact-title]')?.textContent??null,
+      overflowX:document.documentElement.scrollWidth-innerWidth,
+      overflowY:document.documentElement.scrollHeight-innerHeight,
+    };
+  });
+  await page.locator('[data-xdrive-mobile-files-scroll]').evaluate(host=>{
+    window.__p10RootHost=host;host.scrollTop=450;
+  });
+  await page.waitForFunction(()=>{
+    const el=document.querySelector('[data-xdrive-mobile-files-scroll]');
+    const key=Object.keys(localStorage).find(k=>k.startsWith('xdrive.mobile.files.v1:'));
+    const saved=key?JSON.parse(localStorage.getItem(key)):null;
+    return el?.scrollTop>=420 && saved?.folderID===1 && saved?.scrollTop>=420;
+  },null,{timeout:10000});
+  const before=await read();
+  check(activeStage+': accepted root has persisted user scroll before resize',
+    before.hash==='#/app/files?dir=1' && before.hostSame && before.count===1 &&
+    before.savedFolderID===1 && before.scrollTop>=420 && before.savedScrollTop>=420,before);
+  await page.setViewportSize({width:900,height:700});
+  await page.waitForFunction(()=>!document.querySelector('[data-xdrive-mobile-files-scroll]'));
+  await settle();
+  const wide=await read();
+  check(activeStage+': breakpoint unmount leaves committed root storage untouched',
+    wide.width===900 && !wide.hostPresent && wide.savedFolderID===1 &&
+    wide.savedScrollTop>=420 && wide.hash==='#/app/files?dir=1' &&
+    wide.overflowX<=1 && wide.overflowY<=1,wide);
+  await page.setViewportSize({width:899,height:700});
+  await page.locator('[data-xdrive-mobile-files-scroll]').waitFor();
+  await settle();
+  const after=await read();
+  check(activeStage+': same-route responsive remount restores old committed scroll',
+    after.width===899 && after.hash==='#/app/files?dir=1' &&
+    after.count===1 && after.hostPresent && !after.hostSame &&
+    after.savedFolderID===1 && after.savedScrollTop>=420 &&
+    after.folder===before.folder && after.scrollTop>=420 &&
+    after.overflowX<=1 && after.overflowY<=1,
+    {before,wide,after});
+  result.samples[activeStage]={before,wide,after,realChromium:true,
+    noPendingNavigation:true,physicalIOSDevice:false,physicalAndroidDevice:false,
+    installedPWA:false};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 
