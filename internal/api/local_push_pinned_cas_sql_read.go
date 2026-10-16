@@ -35,6 +35,29 @@ func (s *Server) inspectQuarantinedBoundLocalPushCASPinnedSQL(
 	)
 }
 
+// inspectQuarantinedBoundLocalPushCASQuotaPinnedSQL adds a preliminary,
+// transaction-scoped user quota/headroom check to the existing private pinned
+// physical and SQL read window. The user's row is locked FIRST, before any
+// device/Source/CAS locks, to follow normal upload's user-before-CAS order.
+// It does not reserve bytes or write canonical records; the eventual writer
+// must recheck quota and reserve/commit references atomically.
+func (s *Server) inspectQuarantinedBoundLocalPushCASQuotaPinnedSQL(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID string,
+) (bool, error) {
+	if s == nil || s.Store == nil {
+		return false, errLocalPushStageConflict
+	}
+	local, ok := s.Store.(*storage.Local)
+	if !ok || local == nil {
+		return false, errLocalPushStageConflict
+	}
+	return s.inspectQuarantinedBoundLocalPushCASPinnedSQLWithReaderAndQuota(
+		c, sourceID, revision, proof, stageID,
+		local.InspectMatchingLocalPushStageAndCASPinned, true,
+	)
+}
+
 // Reader injection is unexported and exercises SQL/OS lock order and failed
 // admission. The production reader physically hashes BOTH files twice; a
 // synthetic reader result is NEVER accepted as a content/commit witness.
@@ -42,6 +65,20 @@ func (s *Server) inspectQuarantinedBoundLocalPushCASPinnedSQLWithReader(
 	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
 	stageID string,
 	inspect func(context.Context, string, string, int64, func(context.Context) error) (bool, error),
+) (bool, error) {
+	return s.inspectQuarantinedBoundLocalPushCASPinnedSQLWithReaderAndQuota(
+		c, sourceID, revision, proof, stageID, inspect, false,
+	)
+}
+
+// inspectQuarantinedBoundLocalPushCASPinnedSQLWithReaderAndQuota is an
+// internal read-only variant. A production writer MUST NOT reuse its positive
+// return as a quota reservation or physical commit ticket.
+func (s *Server) inspectQuarantinedBoundLocalPushCASPinnedSQLWithReaderAndQuota(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID string,
+	inspect func(context.Context, string, string, int64, func(context.Context) error) (bool, error),
+	checkQuota bool,
 ) (bool, error) {
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
 		sourceID == 0 || revision == 0 || stageID == "" || inspect == nil {
@@ -64,6 +101,16 @@ func (s *Server) inspectQuarantinedBoundLocalPushCASPinnedSQLWithReader(
 		}
 	}()
 
+	var quota quotaUsageDTO
+	if checkQuota {
+		// Generic upload quota writers lock User before CAS. Acquiring the
+		// identical user row FIRST avoids inverting that lock order.
+		var quotaErr error
+		quota, quotaErr = s.loadQuotaUsage(tx, userID(c), true)
+		if quotaErr != nil {
+			return false, quotaErr
+		}
+	}
 	stage, err := s.loadLocalPushStageTx(tx, c, sourceID, revision, proof, stageID)
 	if err != nil {
 		return false, err
@@ -106,6 +153,30 @@ func (s *Server) inspectQuarantinedBoundLocalPushCASPinnedSQLWithReader(
 	}
 	if !sameLocalPushCASPrepareIntent(intent, stage) {
 		return false, errLocalPushStageConflict
+	}
+	if checkQuota {
+		if stage.OwnerID != userID(c) || quota.QuotaBytes < 0 ||
+			quota.PhysicalUsedBytes < 0 || quota.ReservedBytes < 0 {
+			return false, errLocalPushStageConflict
+		}
+		// A File/FileVersion referencing CAS with no ContentBlob is corrupt
+		// canonical metadata. Never treat it as "already paid" content.
+		owned, err := userOwnsStorageKey(tx, stage.OwnerID, casKey)
+		if err != nil {
+			return false, err
+		}
+		if owned {
+			return false, errLocalPushStageConflict
+		}
+		if quota.QuotaBytes > 0 {
+			available := quota.QuotaBytes - quota.PhysicalUsedBytes
+			if available < 0 || quota.ReservedBytes > available ||
+				stage.TotalSize > available-quota.ReservedBytes {
+				return false, &quotaExceededError{
+					Usage: quota, Additional: stage.TotalSize,
+				}
+			}
+		}
 	}
 
 	// The last read-only SQL COMMIT runs INSIDE the physical pair's pinned
