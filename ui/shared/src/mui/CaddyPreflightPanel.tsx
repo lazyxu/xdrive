@@ -249,6 +249,9 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               恢复后手动运行 scripts/caddy-rescue-primary-state-witness.py，
               核对主网关、Server 与独立 Rescue 的真实状态；此脚本绝不启停容器，
               也不自动串联三次观测或证明独立 SSH 登录与公网 TLS 恢复。
+              对同一个本机时段，还可显式运行 scripts/caddy-rescue-approved-runtime-check.py，
+              把当前运行镜像与操作员签名批准的摘要和故障阶段状态关联核验；
+              它不证明远程管理员在故障时能登录、三阶段属于同一事故或公网上的 HTTPS 恢复。
               以上检查均不能据此启用 Caddy 配置应用、停用或回滚。
             </Typography>
             <Typography variant="caption" color="warning.main">
