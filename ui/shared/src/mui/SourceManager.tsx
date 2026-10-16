@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { XDriveFeedbackSnackbar } from './FeedbackSnackbar'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { XDriveSourceCreateDialog } from './SourceManagerCreateDialog'
 import { XDriveSourceManagerListPage } from './SourceManagerListPage'
 import type { XDriveSourceCreateValues } from './SourceManagerCreateDialog'
@@ -193,7 +194,13 @@ export function XDriveSourceManager({
   const sourceNoun = directionFilter === 'pull' ? '拉取来源' : '来源'
   const [rows, setRows] = useState<ExternalSourceRow[]>([])
   const initialSourceOpenedRef = useRef<number | null>(null)
-  const [loading, setLoading] = useState(false)
+  // The initial source overview has no authoritative zero count yet.
+  // Never flash "尚未添加" before the first authenticated response.
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [loadRequestGeneration, setLoadRequestGeneration] = useState(0)
+  const showDelayedLoading = useXDriveDeferredLoading(loading, loadRequestGeneration)
   const [selected, setSelected] = useState<ExternalSourceRow | null>(null)
   const [failedItems, setFailedItems] = useState<ExternalSourceItem[]>([])
   const [failedItemsLoading, setFailedItemsLoading] = useState(false)
@@ -265,7 +272,10 @@ export function XDriveSourceManager({
   }
 
   const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
+    if (!silent) {
+      setLoadRequestGeneration((n) => n + 1)
+      setLoading(true)
+    }
     try {
       const overview = await adapter.sourceOverview()
       const next: ExternalSourceRow[] = overview
@@ -276,13 +286,20 @@ export function XDriveSourceManager({
         credential: item.credential,
       }))
       setRows(next)
+      if (!silent) setLoadError(false)
       setSelected((current) => current
         ? next.find((row) => row.source.id === current.source.id) ?? current
         : null)
     } catch (error) {
+      // Keep previously accepted rows on refresh failure. On the first
+      // request, report a genuine error rather than claiming zero sources.
+      if (!silent) setLoadError(true)
       onError(error)
     } finally {
-      if (!silent) setLoading(false)
+      if (!silent) {
+        setHasLoaded(true)
+        setLoading(false)
+      }
     }
   }, [adapter, directionFilter, onError])
 
@@ -1247,6 +1264,9 @@ export function XDriveSourceManager({
         rows={rows}
         directionFilter={directionFilter}
         loading={loading}
+        hasLoaded={hasLoaded}
+        loadError={loadError}
+        showDelayedLoading={showDelayedLoading}
         failedItemsLoading={failedItemsLoading}
         triggeringSourceID={triggeringSourceID}
         cancellingRunID={cancellingRunID}
