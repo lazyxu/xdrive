@@ -614,3 +614,10 @@ Exact old HEAD `566962f` [dedicated CI #38736126852](https://github.com/lazyxu/x
 ## PWA-S5-A2b1a · 本地七平台材料校验的伪造检查拒绝（2026-10-16）
 
 在已合并 #1745 的离线核验器中发现：原校验仅判断 S5-A1 HTTPS 报告含十条状态 `pass`，但没有验证十个**规定且不同的**安全检查 ID；同时 Installed display-mode 可接受未定义字符串，iOS 版本和 Desktop OS 家族交叉检查不足。该问题不会直接使发布 `GO`（旧工具也始终 NO-GO），但会把不充分的虚假材料错误归为 `SUBMITTED_REQUIRES_INDEPENDENT_REVIEW`。本阶段只收紧 S5-A1 十项检查 ID/顺序/字段/未执行设备状态、S5-A2a 安装模式与视口/SW、iOS 27/Desktop OS 规则，增加真实 Node 进程的伪造输入回归和本分支 CI 入口。原先的合成七平台完整材料仍仅是待独立审查的自述；不新增 OS 安装真实性判定、不中断 PWA/文件上传/Viewer、不改变公共 SW 离线范围、不上传证据，也不解除 `NO_GO_INDEPENDENT_PHYSICAL_REVIEW_REQUIRED`。**当前物理平台记录仍全部 NOT RUN；S5-A2b2 需要真实可信 HTTPS 实例、设备操作员和独立审核人员。**
+
+
+## PWA-S5-04A · 真实 Chromium 双窗口候选 Service Worker 更新的自动化预验收（2026-10-16）
+
+在 S5-A2b1a #1750 完整准确 HEAD CI/Final Gate 绿后线性合并并核对 PWA 旧分支删除的基础上，新增**专用真实 Chromium（非 OS 安装）**测试：从 Web 生产构建 / 真实 loopback HTTP 安全上下文注册原版 SW，并为测试专用响应追加有限的版本查询 message hook（绝不部署到正式 sw.js），两个已受控窗口保持旧 worker 时显式执行浏览器原生 \`registration.update()\`，确认 v2 仅处于 waiting；同时保持一个受控合成慢 POST 不被页面刷新/控制器变更打断，并验证匿名私有 \`/api\` 仍被 Server 拒绝且 CacheStorage 仅有公开 \`offline.html\`。旧窗口主动关闭后再新开，证明 v2 才成为 active。独立覆盖桌面 Chrome 和 Android UA/Touch 390px **模拟**，只上传匿名 JSON 测试结果，准确 HEAD 的专项及完整 GitHub CI/Final Gate 都须绿，严格一工作提交。
+
+**证据边界：** 长 POST 是隔离 fixture 的少量合成字节，不是真实文件上传、下载、Viewer 活动，也不证明已安装 PWA、iOS 27 Safari/Home Screen、Android OS Installed、物理锁屏或真实 HTTPS 证书。此自动化只能证明 S5-04 的安全更新基础在 Chromium 表现正确，不能把 S5-02/S5-03/S5-04 真机矩阵从 NOT RUN 改 PASS；发布仍 \`NO_GO_PHYSICAL_INSTALL_NOT_RUN\`。下一步由真实七平台设备操作者与独立审核者提供 S5-01～S5-03 证据，之后执行真实 S5-04～S5-11 验收。

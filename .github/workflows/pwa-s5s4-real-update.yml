@@ -1,0 +1,64 @@
+name: PWA S5-04 Real Chromium Waiting Update Safety
+on:
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pwa-s5s4-real-chromium:
+    if: github.event_name == 'workflow_dispatch' || github.head_ref == 'test/pwa-s5s4-real-sw-upgrade-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install Web and isolated Playwright-core driver
+        run: |
+          set -euo pipefail
+          npm --prefix web ci --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/xdrive-pwa-s5s4-driver"
+          npm install --prefix "$RUNNER_TEMP/xdrive-pwa-s5s4-driver" --no-save --no-package-lock --ignore-scripts playwright-core@1.56.1
+          if command -v google-chrome-stable >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v google-chrome-stable)" >> "$GITHUB_ENV"
+          elif command -v google-chrome >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v google-chrome)" >> "$GITHUB_ENV"
+          elif command -v chromium >/dev/null; then
+            echo "XD_PWA_BROWSER=$(command -v chromium)" >> "$GITHUB_ENV"
+          else
+            echo "Native Chromium is unavailable" >&2
+            exit 1
+          fi
+      - name: Verify isolated real-SW update test contract
+        run: |
+          set -euo pipefail
+          node --check desktop/scripts/pwa-s5s4-real-update.cjs
+          node --test desktop/tests/pwa-s5s4-real-update-contract.cjs
+      - name: Build actual Web production assets
+        run: npm --prefix web run build
+      - name: Run genuine two-tab old-to-new worker lifecycle with held synthetic POST
+        env:
+          XD_PWA_S5S4_RESULT_DIR: ${{ github.workspace }}/desktop/pwa-s5s4-results
+          XDRIVE_BROWSER_EXECUTABLE: ${{ env.XD_PWA_BROWSER }}
+          XDRIVE_PLAYWRIGHT_MODULE: ${{ runner.temp }}/xdrive-pwa-s5s4-driver/node_modules/playwright-core
+        run: |
+          set -euo pipefail
+          export XD_PR_HEAD="$(git rev-parse HEAD)"
+          test "$XD_PR_HEAD" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          node desktop/scripts/pwa-s5s4-real-update.cjs
+          node -e "const x=require('./desktop/pwa-s5s4-results/summary.json');if(!x.passed||x.physicalDevice!==false||x.release_gate!=='NO_GO_PHYSICAL_INSTALL_NOT_RUN'||x.cases.length!==2||x.cases.some(c=>!c.realBrowserUpdate||!c.waitingWithoutReload||!c.twoWindowProtection||!c.syntheticPOSTSurvived||!c.privateAPIBypassed||!c.publicCacheOnly||!c.postClosureActivation||c.physicalDevice!==false))process.exit(1)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pwa-s5s4-synthetic-chromium-update
+          path: desktop/pwa-s5s4-results/summary.json
+          if-no-files-found: warn
+          retention-days: 14

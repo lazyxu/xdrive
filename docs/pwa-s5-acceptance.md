@@ -92,3 +92,8 @@ node desktop/scripts/pwa-s5b-physical-evidence-review.cjs \
 ## S5-A2b1a · 脱敏材料输入契约收紧（2026-10-16）
 
 S5-A2b1 核验器对本地 S5-A1 JSON 不再只数“十条 pass”：**十项原始检查必须与 S5-A1 实际输出的 ID、顺序、`reason=verified`、唯一完整字段逐项一致**；缺失的匿名私有 API 拒绝测试、重复伪造检查或附带隐藏字段不得进入“已提交待审核”。严格限定原始 `physical_platforms` 为三个 `not-run` 状态；这仍是自述材料，不是 HTTPS/设备证明。S5-A2a 浏览器观察仅接受源代码定义的五种 display mode、实际 Service Worker controller、合规正整数视口和合法 `navigator.standalone`；iOS 27 版本和 Desktop OS 家族必须匹配平台；缺失或伪造时 `INCOMPLETE_OR_UNVERIFIED`。新增 Node 真正调用核验器的反例测试，专项 workflow 覆盖本阶段。**不修改生产 Web/Service Worker/Server/文件任务，不改变零设备证据/Release NO-GO。** S5-A2b2 的真实七平台证书、系统图标启动、登录/深链接与独立物理审核依然未执行。
+
+
+## S5-04A · 实际 Chrome 更新等待与双窗口不中断（自动化预验收）
+
+\`.github/workflows/pwa-s5s4-real-update.yml\` 使用真实构建的 Web、原版 PWA SW 和为隔离测试**临时追加**的受限版本探针，在 genuine Desktop Chromium 与 Android UA/Touch 390px 模拟窗口验证：两个旧窗口仍受旧 worker 控制、新 worker 只 waiting，不刷新页面、不更换 controller；测试专用慢 POST 响应直到 Server 人工释放后才结束；匿名私有 API 仍被拒绝，SW 仅缓存公开离线页；所有旧窗口关闭后新 worker 才激活。脚本和 CI 报告恒写 \`physicalDevice=false\`、\`release_gate=NO_GO_PHYSICAL_INSTALL_NOT_RUN\`，不能证明真实 iOS 27/Android 已安装系统、物理 17MiB–4GiB 文件字节或真实运营 HTTPS。七平台 S5-01～S5-11 原始物理矩阵**全部保持 NOT RUN**，不得以专项绿灯当作发布放行。
