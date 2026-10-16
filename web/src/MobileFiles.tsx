@@ -86,6 +86,7 @@ type Props = {
   onRetryInlineFolder?: (ownerID: number) => void
   onInlineViewport?: (ranges: readonly XDriveFileExplorerInlineVisibleRange[]) => void
   onClearInline?: () => void
+  initialSelectedItems?: readonly XDriveFileExplorerItem[]
   onSelectedItemsChange?: (items: readonly XDriveFileExplorerItem[]) => void
   getSelectionActionDisabledReason?: (
     action: XDriveFileExplorerSelectionAction,
@@ -377,11 +378,13 @@ export default function MobileFiles(props: Props) {
     typeof navigator.share === 'function' &&
     typeof navigator.canShare === 'function',
   )
-  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectionMode, setSelectionMode] = useState(Boolean(props.initialSelectedItems?.length))
   const [selectionLoad, setSelectionLoad] = useState<{ intent: number; loaded: number; total: number } | null>(null)
   const [selectionMoreAnchor, setSelectionMoreAnchor] = useState<HTMLElement | null>(null)
   const [selectionFeedback, setSelectionFeedback] = useState('')
-  const [selected, setSelected] = useState<Map<string, XDriveFileExplorerItem>>(() => new Map())
+  const [selected, setSelected] = useState<Map<string, XDriveFileExplorerItem>>(
+    () => new Map((props.initialSelectedItems ?? []).map((item) => [mobileItemKey(item), item])),
+  )
   const [renaming, setRenaming] = useState<XDriveFileExplorerItem | null>(null)
   // Single and multi-item Properties share the same Server-owned stats hook,
   // MUI dialog, and selection identity as wide Web. Keep only one inspector.
@@ -758,7 +761,13 @@ export default function MobileFiles(props: Props) {
     if (!showDirectory || props.trashActive || props.searchActive) props.onClearInline?.()
   }, [showDirectory, props.trashActive, props.searchActive, props.onClearInline])
 
+  // On the first mount, a validated same-scope responsive selection seed is
+  // intentional state, not stale state that should be cleared by an effect.
+  // Only a *subsequent* account/folder/Search/Trash scope change resets it.
+  const lastResetSelectionScopeRef = useRef(selectionScopeKey)
   useEffect(() => {
+    if (lastResetSelectionScopeRef.current === selectionScopeKey) return
+    lastResetSelectionScopeRef.current = selectionScopeKey
     selectionAbortRef.current?.abort()
     selectionAbortRef.current = null
     selectionIntentRef.current += 1
@@ -777,7 +786,7 @@ export default function MobileFiles(props: Props) {
     // Owner/scope changes close the inspector and abort old Server stats
     // through the existing shared PropertiesController cleanup.
     setPropertiesItems([])
-  }, [section, props.trashActive, props.searchActive, props.virtualCollection?.interactionKey, props.lifecycleKey, directoryID])
+  }, [selectionScopeKey])
 
   // Notify the same Web workspace of selected sparse Nodes before their pages
   // can be evicted by scrolling. The callback retains IDs/revisions only;
