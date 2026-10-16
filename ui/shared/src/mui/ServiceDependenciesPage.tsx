@@ -1641,7 +1641,7 @@ export function XDriveServiceDependenciesPage({
                     </Typography>
                   )}
                   {currentTab === 'verify' &&
-                    !['caddy', 'baidu-map', 'geonames', 'database', 'media-worker', 'background-worker']
+                    !['caddy', 'baidu-map', 'geonames', 'media-worker']
                       .includes(selectedPage) && (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
                       {selectedPage === 'storage' ? (
@@ -1650,6 +1650,20 @@ export function XDriveServiceDependenciesPage({
                         「可用」仅代表此次当前实例的后端就绪，不是文件实际读写、内容校验、冗余完整、
                         数据快照恢复、迁移或所有节点生效的证明；不会修改挂载或启停存储服务。
                       </Typography>
+                      ) : selectedPage === 'database' ? (
+                        <Typography variant="body2" color="text.secondary" data-xdrive-postgres-liveness-scope>
+                          此处重新请求当前 Server 的 PostgreSQL PingContext 连接探针（共享两秒超时）；
+                          「可用」仅证明此次本实例能连通数据库，不能证明读写事务、备份恢复、
+                          主从复制、其他实例状态或连接池目标修订已在全实例生效。
+                          下方连接池配置修订需单独核对；不会启停或迁移数据库。
+                        </Typography>
+                      ) : selectedPage === 'background-worker' ? (
+                        <Typography variant="body2" color="text.secondary" data-xdrive-pull-worker-liveness-scope>
+                          此处重新请求当前 Server 从数据库读取的 Pull Worker 限时心跳状态；
+                          「可用」仅代表本次观察到新鲜心跳，不证明单个同步任务成功、
+                          全部 Worker 都已应用目标修订或容器已安全启停。
+                          下方调度修订需单独核对；不会启动、停止或重启 Worker。
+                        </Typography>
                       ) : (
                       <Typography variant="body2" color="text.secondary">
                         当前检测基于 Server 提供的真实探针和本实例生效修订，

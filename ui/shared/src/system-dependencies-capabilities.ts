@@ -152,9 +152,9 @@ const configPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   geonames: ['loadGeoNamesConfig', 'saveGeoNamesConfig'],
 }
 const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSystemDependencyRuntimeMethod[]> = {
-  database: ['loadPostgresPoolConfig'],
+  database: ['load', 'loadPostgresPoolConfig'],
   storage: ['load'], // A fresh admin inventory invokes Store.Ready(ctx).
-  'background-worker': ['loadSourceWorkerConfig'],
+  'background-worker': ['load', 'loadSourceWorkerConfig'],
   caddy: ['loadCaddyHTTPSPreflight'],
   'media-worker': ['loadMediaWorkerConfig'],
   'photo-face': ['loadPhotoHostPreflight'],
