@@ -116,7 +116,7 @@ const dependencyTabLabels: Record<XDriveSystemDependencyTab, string> = {
 
 function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
   switch (service) {
-    case 'storage': return ['status']
+    case 'storage': return ['status', 'verify']
     case 'photo-face': return ['status', 'config', 'verify', 'history']
     case 'photo-smart':
     case 'photo-semantic':
@@ -1454,7 +1454,7 @@ export function XDriveServiceDependenciesPage({
                                 {verifyTarget && (
                                   <Button size="small" variant="text"
                                     onClick={() => navigateTo(verifyTarget)}>
-                                    查看检测入口
+                                    {item.id === 'storage' ? '存储就绪检测' : '查看检测入口'}
                                   </Button>
                                 )}
                               </Stack>
@@ -1593,7 +1593,8 @@ export function XDriveServiceDependenciesPage({
                             {verifyTarget && (
                               <Button size="small" variant="outlined"
                                 onClick={() => navigateTo(verifyTarget)}>
-                                {verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
+                                {selectedPage === 'storage' ? '存储就绪检测' :
+                                  verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
                               </Button>
                             )}
                             {((capability.configTarget && !configTarget) ||
@@ -1643,10 +1644,18 @@ export function XDriveServiceDependenciesPage({
                     !['caddy', 'baidu-map', 'geonames', 'database', 'media-worker', 'background-worker']
                       .includes(selectedPage) && (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
+                      {selectedPage === 'storage' ? (
+                      <Typography variant="body2" color="text.secondary" data-xdrive-storage-readiness-scope>
+                        本次检测通过管理员服务清单重新请求当前 Server 的存储 Ready 探针（限时、只读）。
+                        「可用」仅代表此次当前实例的后端就绪，不是文件实际读写、内容校验、冗余完整、
+                        数据快照恢复、迁移或所有节点生效的证明；不会修改挂载或启停存储服务。
+                      </Typography>
+                      ) : (
                       <Typography variant="body2" color="text.secondary">
                         当前检测基于 Server 提供的真实探针和本实例生效修订，
                         不代表所有部署节点，也不等同于一次实际媒体分析或同步任务成功。
                       </Typography>
+                      )}
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                       {['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && (
                         <Typography variant="body2" color="text.secondary"
