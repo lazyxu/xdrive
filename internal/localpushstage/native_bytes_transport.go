@@ -18,11 +18,12 @@ const localOriginalServerStageMaxBytes = int64(64 << 20)
 // receipt. Even a successful result cannot authorize File, SourceItem, CAS,
 // SyncRun, Mirror or a remote deletion. Never serialize this as an IPC DTO.
 type LocalOriginalServerStage struct {
-	SourceID uint64 `json:"-"`
-	Revision uint64 `json:"-"`
-	StageID  string `json:"-"`
-	Size     int64  `json:"-"`
-	SHA256   string `json:"-"`
+	SourceID       uint64 `json:"-"`
+	Revision       uint64 `json:"-"`
+	StageID        string `json:"-"`
+	Size           int64  `json:"-"`
+	SHA256         string `json:"-"`
+	SnapshotSHA256 string `json:"-"`
 }
 
 // StageVerifiedNativeOriginalBytes uses native CURRENT journal membership,
@@ -230,5 +231,6 @@ func StageVerifiedNativeOriginalBytes(
 	return LocalOriginalServerStage{
 		SourceID: grant.SourceID, Revision: sourceRevision,
 		StageID: reserved.StageID, Size: before.Size, SHA256: before.SHA256,
+		SnapshotSHA256: current.SnapshotSHA256,
 	}, nil
 }
