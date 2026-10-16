@@ -231,6 +231,53 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		}
 	}
 
+	// U04: A real authenticated 202 Accepted must never be mistaken for a
+	// committed file mutation. Cancel a queued copy through the public Client
+	// before any worker starts; the Server, DB and Local CAS are real.
+	cancelProbe, err := cli.CreateFileOperation(
+		ctx,
+		meta.FileOperationTypeCopy,
+		[]clientpkg.BatchNodeRef{{ID: hello.ID, Revision: hello.Revision}},
+		target.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBasicQueuedFileOperation(t, cli, cancelProbe)
+	request(
+		t, router, http.MethodGet,
+		"/api/v1/file-operations/"+cancelProbe.ID,
+		otherToken, nil, http.StatusNotFound,
+	)
+	request(
+		t, router, http.MethodPost,
+		"/api/v1/file-operations/"+cancelProbe.ID+"/cancel",
+		otherToken, nil, http.StatusNotFound,
+	)
+	cancelledProbe, err := cli.CancelFileOperation(ctx, cancelProbe.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelledProbe.Status != meta.FileOperationStatusCancelled ||
+		cancelledProbe.ProcessedItems != 0 || cancelledProbe.ProcessedBytes != 0 ||
+		cancelledProbe.Percent != 0 || cancelledProbe.FinishedAt == nil {
+		t.Fatalf("queued cancel must be terminal with zero committed progress: %+v", cancelledProbe)
+	}
+	confirmedCancel, err := cli.GetFileOperation(ctx, cancelProbe.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if confirmedCancel.Status != meta.FileOperationStatusCancelled ||
+		confirmedCancel.ProcessedItems != 0 || confirmedCancel.FinishedAt == nil {
+		t.Fatalf("cancel receipt changed between POST and GET: %+v", confirmedCancel)
+	}
+	if processed, err := srv.processNextFileOperation(ctx); err != nil || processed {
+		t.Fatalf("cancelled queued operation must not execute: processed=%v err=%v", processed, err)
+	}
+	if targetBefore := basicFileExplorerRange(t, cli, target.ID); targetBefore.TotalCount != 0 {
+		t.Fatalf("cancelled operation changed the target before worker commit: %+v", targetBefore)
+	}
+
 	copyOperation, err := cli.CreateFileOperation(
 		ctx,
 		meta.FileOperationTypeCopy,
@@ -239,6 +286,10 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	assertBasicQueuedFileOperation(t, cli, copyOperation)
+	if page := basicFileExplorerRange(t, cli, target.ID); page.TotalCount != 0 {
+		t.Fatalf("accepted copy changed target before worker execution: %+v", page)
 	}
 	processBasicFileOperation(t, srv, cli, copyOperation.ID)
 
@@ -250,6 +301,10 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	assertBasicQueuedFileOperation(t, cli, movedOperation)
+	if beforeMove := basicFileExplorerRange(t, cli, source.ID); !basicRangeHasNode(beforeMove, moveFile.ID) {
+		t.Fatalf("accepted move removed source before worker execution: %+v", beforeMove)
 	}
 	processBasicFileOperation(t, srv, cli, movedOperation.ID)
 
@@ -291,6 +346,10 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	assertBasicQueuedFileOperation(t, cli, deleteOperation)
+	if beforeDelete := basicFileExplorerRange(t, cli, source.ID); !basicRangeHasNode(beforeDelete, hello.ID) {
+		t.Fatalf("accepted delete removed source before worker execution: %+v", beforeDelete)
 	}
 	processBasicFileOperation(t, srv, cli, deleteOperation.ID)
 
@@ -425,6 +484,45 @@ func processBasicFileOperation(
 		t.Fatalf("file operation did not complete cleanly: %+v", current)
 	}
 	return current
+}
+
+// assertBasicQueuedFileOperation uses the actual Client->Gin->PostgreSQL
+// control plane: a newly accepted task has an ID, but no committed file
+// mutations, progress, or terminal receipt. The same lifecycle must be
+// visible through GET and the Task Center's owner-scoped list.
+func assertBasicQueuedFileOperation(
+	t *testing.T,
+	cli *clientpkg.Client,
+	accepted clientpkg.FileOperation,
+) {
+	t.Helper()
+	ctx := context.Background()
+	assertPending := func(source string, op clientpkg.FileOperation) {
+		t.Helper()
+		if op.ID != accepted.ID || op.Status != meta.FileOperationStatusQueued ||
+			op.TotalItems != 1 || op.ProcessedItems != 0 || op.ProcessedBytes != 0 ||
+			op.Percent != 0 || op.CurrentItem != "" || op.StartedAt != nil ||
+			op.FinishedAt != nil || op.CancelRequestedAt != nil || op.Undoable {
+			t.Fatalf("%s represented queued acceptance as committed progress: %+v", source, op)
+		}
+	}
+	assertPending("POST", accepted)
+	fetched, err := cli.GetFileOperation(ctx, accepted.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPending("GET", fetched)
+	operations, err := cli.ListFileOperations(ctx, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range operations {
+		if operation.ID == accepted.ID {
+			assertPending("list", operation)
+			return
+		}
+	}
+	t.Fatalf("accepted operation %s missing from owner-scoped task list", accepted.ID)
 }
 
 func assertBasicNodeChange(
