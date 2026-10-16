@@ -483,4 +483,82 @@ func TestChildrenCursorPaginationSortingAndIsolation(t *testing.T) {
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2", rootB.ID), tokenA, nil, http.StatusNotFound)
 	request(t, router, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/children?offset=0&limit=2&include_count=false", rootB.ID), tokenA, nil, http.StatusNotFound)
+
+	// U09-D1: real Gin/PostgreSQL stable ID must resolve to exactly the same
+	// logical ordinal as the current Owner-authorized Server Range.
+	position := func(parentID, nodeID uint64, params, token string, wantStatus int) childrenPositionDTO {
+		url := fmt.Sprintf("/api/v1/nodes/%d/children/position?node_id=%d", parentID, nodeID)
+		if params != "" {
+			url += "&" + params
+		}
+		response := request(t, router, http.MethodGet, url, token, nil, wantStatus)
+		if wantStatus != http.StatusOK {
+			return childrenPositionDTO{}
+		}
+		var located childrenPositionDTO
+		if err := json.Unmarshal(response.Body.Bytes(), &located); err != nil {
+			t.Fatalf("decode owner position: %v body=%s", err, response.Body.String())
+		}
+		if response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("private position response must not enter a shared cache")
+		}
+		return located
+	}
+	for _, params := range []string{
+		"sort=name&order=asc&group=none&folders_first=true",
+		"sort=name&order=desc&group=none&folders_first=false",
+		"sort=name&order=asc&group=type&folders_first=true",
+		"sort=name&order=asc&group=type&folders_first=false",
+		"sort=updated&order=desc&group=modified&folders_first=true",
+		"sort=size&order=desc&group=size&folders_first=false",
+		"sort=type&order=asc&group=none&folders_first=true",
+	} {
+		rangeResult := readRange(fmt.Sprintf(
+			"/api/v1/nodes/%d/children?offset=0&limit=8&%s", rootA.ID, params,
+		), http.StatusOK)
+		if len(rangeResult.Items) != 8 || rangeResult.TotalCount != 8 {
+			t.Fatalf("expected eight original Nodes for %s: %+v", params, rangeResult)
+		}
+		for i, node := range rangeResult.Items {
+			got := position(rootA.ID, node.ID, params, tokenA, http.StatusOK)
+			if got.NodeID != node.ID || got.Revision != node.Revision ||
+				got.Index != int64(i) || got.Sort != rangeResult.Sort ||
+				got.Order != rangeResult.Order {
+				t.Fatalf("U09-D1 exact Server reindex disagrees: params=%s index=%d node=%+v got=%+v",
+					params, i, node, got)
+			}
+		}
+	}
+	// The same c.pdf changes from original name ordinal 5 to type-group 4.
+	cPDFID := groupedType.Items[4].ID
+	original := position(rootA.ID, cPDFID, "sort=name&order=asc", tokenA, http.StatusOK)
+	changed := position(rootA.ID, cPDFID, "sort=name&order=asc&group=type", tokenA, http.StatusOK)
+	if original.NodeID != changed.NodeID || original.Index != 5 || changed.Index != 4 {
+		t.Fatalf("U09-D1 stale ordinal reused: original=%+v regrouped=%+v", original, changed)
+	}
+	position(rootA.ID, cPDFID, "", tokenB, http.StatusNotFound)
+	position(rootB.ID, cPDFID, "", tokenA, http.StatusNotFound)
+	position(emptyDir.ID, cPDFID, "", tokenA, http.StatusNotFound)
+	position(rootA.ID, 1000000000, "", tokenA, http.StatusNotFound)
+	for _, invalid := range []string{
+		"node_id=0", "node_id=garbage", "node_id=1&node_id=2",
+		"node_id=1&sort=bogus", "node_id=1&order=reverse",
+		"node_id=1&group=invalid", "node_id=1&folders_first=bad",
+		"node_id=1&offset=0", "node_id=18446744073709551615",
+	} {
+		request(t, router, http.MethodGet, fmt.Sprintf(
+			"/api/v1/nodes/%d/children/position?%s", rootA.ID, invalid),
+			tokenA, nil, http.StatusBadRequest)
+	}
+	// A deleted but historically valid ID must be invisible immediately.
+	now := time.Now()
+	if err := db.Model(&meta.Node{}).Where("id = ? AND owner_id = ?", cPDFID, alice.ID).
+		Update("deleted_at", &now).Error; err != nil {
+		t.Fatal(err)
+	}
+	position(rootA.ID, cPDFID, "", tokenA, http.StatusNotFound)
+	if err := db.Model(&meta.Node{}).Where("id = ? AND owner_id = ?", cPDFID, alice.ID).
+		Update("deleted_at", nil).Error; err != nil {
+		t.Fatal(err)
+	}
 }

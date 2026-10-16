@@ -191,20 +191,12 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 
 	rankExpr := "(CASE WHEN xd_nodes.type = 'dir' THEN 0 ELSE 1 END)"
 	nameExpr := "lower(xd_nodes.name)"
-	sortExpr := nameExpr
+	sortExpr := childrenSortExpression(options.Sort)
 	groupFields := fileExplorerGroupFields{
 		Type:    "xd_nodes.type",
 		Name:    "xd_nodes.name",
 		Updated: "xd_nodes.updated_at",
 		Size:    "COALESCE(child_file.size, 0)",
-	}
-	switch options.Sort {
-	case "updated":
-		sortExpr = "xd_nodes.updated_at"
-	case "size":
-		sortExpr = "COALESCE(child_file.size, 0)"
-	case "type":
-		sortExpr = "(CASE WHEN xd_nodes.type = 'dir' THEN '' WHEN strpos(xd_nodes.name, '.') > 1 AND right(xd_nodes.name, 1) <> '.' THEN lower(regexp_replace(xd_nodes.name, '^.*\\.', '')) ELSE '' END)"
 	}
 
 	uid := userID(c)
@@ -278,15 +270,7 @@ func (s *Server) childrenPage(c *gin.Context, parentID uint64) {
 		direction = "DESC"
 	}
 	orderBy := fmt.Sprintf("%s ASC, %s %s, %s %s, xd_nodes.id %s", rankExpr, sortExpr, direction, nameExpr, direction, direction)
-	rangeOrderBy := fmt.Sprintf(
-		"%s%s %s, %s %s, xd_nodes.id %s",
-		fileExplorerItemOrderPrefix(groupFields, options.Grouping),
-		sortExpr,
-		direction,
-		nameExpr,
-		direction,
-		direction,
-	)
+	rangeOrderBy := childrenRangeOrderBy(sortExpr, direction, groupFields, options.Grouping)
 
 	if options.Offset != nil {
 		var rows []childrenPageRow
