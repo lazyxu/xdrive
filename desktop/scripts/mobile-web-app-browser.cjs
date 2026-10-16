@@ -3807,6 +3807,10 @@ async function filesIos27ChromeAcceptance(origin) {
   await filesOrientationPendingFolderStabilityAcceptance(origin);
   await filesBreakpointPendingFolderStabilityAcceptance(origin);
   await filesCommittedFolderBreakpointResumeAcceptance(origin);
+  if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-u02-') ||
+      process.env.XDRIVE_MOBILE_FILES_U02 === '1') {
+    await filesU02BreakpointSelectedNodeAcceptance(origin);
+  }
   if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p17-') ||
       process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p18-') ||
       process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p19-') ||
@@ -4975,6 +4979,74 @@ async function filesBreakpointPendingFolderStabilityAcceptance(origin) {
     before,pending,wide,returned,committed,firstRangeHeldAcrossResponsiveRemount:true,
     realChromium:true,physicalIOSDevice:false,physicalAndroidDevice:false,installedPWA:false
   };
+  await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+}
+
+async function filesU02BreakpointSelectedNodeAcceptance(origin) {
+  // Unmodified production Web, actual Chromium, strict existing Server
+  // fixture. This branch ONLY asks whether original U02 selection survives.
+  activeStage='user-files-u02-selected-node-899-900';
+  const selectedID=102, selectedName='document-003.txt';
+  const canonical=allNodes.get(selectedID);
+  assert(canonical?.id===selectedID,'fixture Node missing');
+  Object.assign(canonical,{name:selectedName,revision:1});
+  await page.setViewportSize({width:899,height:700});
+  await page.goto(origin+'/#/app/files?dir=1',{waitUntil:'domcontentloaded'});
+  await page.reload({waitUntil:'domcontentloaded'});
+  const mobileRow=()=>page.locator('[data-mobile-files-item]')
+    .filter({hasText:selectedName}).first();
+  await mobileRow().waitFor();
+  await settle();
+  await page.getByRole('button',{name:'文件操作菜单'}).click();
+  await page.getByRole('menuitem',{name:'选择',exact:true}).click();
+  await mobileRow().click();
+  await settle();
+  const prior={
+    selectionToolbar:await page.locator('[data-xdrive-mobile-selection-toolbar]').count(),
+    selected:await mobileRow().getAttribute('aria-pressed'),
+    url:new URL(page.url()).hash,
+  };
+  check(activeStage+': genuine Mobile selection of canonical Node',prior.selectionToolbar===1 &&
+    prior.selected==='true' && prior.url==='#/app/files?dir=1',prior);
+
+  await page.setViewportSize({width:900,height:700});
+  await page.locator('[data-xdrive-file-explorer]').waitFor();
+  await settle();
+  // User explicitly switches this already mounted wide presenter to the
+  // original Details view: Column View uses separate rows and must not be
+  // mistaken for missing selection or compared via Details-row selectors.
+  await page.getByRole('button',{name:'视图',exact:true}).click();
+  await page.getByRole('menuitem',{name:'详细信息',exact:true}).click();
+  await settle();
+  await page.locator('[data-xdrive-file-explorer-scroll-host]').evaluate(host => { host.scrollTop=0; });
+  // Explorer uses the actual typed key "number:102", not literal "102".
+  const wideRow=page.locator('[data-xdrive-file-explorer-item-id="number:'+selectedID+'"]').first();
+  await wideRow.waitFor({state:'visible',timeout:10000});
+  const wide={
+    mobileOwners:await page.locator('[data-xdrive-mobile-files]').count(),
+    wideOwners:await page.locator('[data-xdrive-file-explorer]').count(),
+    scrollHosts:await page.locator('[data-xdrive-file-explorer-scroll-host]').count(),
+    selected:await wideRow.getAttribute('aria-selected'),
+    url:new URL(page.url()).hash,
+  };
+  check(activeStage+': 900px wide presenter must retain identical selected Node',
+    wide.mobileOwners===0&&wide.wideOwners===1&&wide.scrollHosts===1&&
+    wide.selected==='true'&&wide.url==='#/app/files?dir=1',{prior,wide});
+
+  await page.setViewportSize({width:899,height:700});
+  await mobileRow().waitFor();
+  await settle();
+  const returned={
+    selectionToolbar:await page.locator('[data-xdrive-mobile-selection-toolbar]').count(),
+    selected:await mobileRow().getAttribute('aria-pressed'),
+    scrollHosts:await page.locator('[data-xdrive-file-explorer-scroll-host]').count(),
+    url:new URL(page.url()).hash,
+  };
+  check(activeStage+': 899px remount retains selection and action controls',
+    returned.selectionToolbar===1&&returned.selected==='true'&&returned.scrollHosts===1&&
+    returned.url==='#/app/files?dir=1',{prior,wide,returned});
+  result.samples[activeStage]={selectedID,prior,wide,returned,realBuiltChromium:true,
+    serverFixtureIntercepted:true,physicalIOS:false,physicalAndroid:false,installedPWA:false};
   await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
 }
 

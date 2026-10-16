@@ -2910,3 +2910,20 @@ test('P10: different already committed URL starts at row zero and clears the old
       items: p10Rows },
   })
 })
+
+test('U02 Mobile responsive remount seeds selected identity and does not clear it in mount effects', async () => {
+  const selected = { id: 3, name: '说明.txt', kind: 'file', revision: 1, size: 120 }
+  const retained = []
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 1)
+    const row = find(h.view, 'aria-label', '已选，说明.txt')
+    assert.equal(row.props['aria-pressed'], true)
+    assert.deepEqual(retained.at(-1), [[3, 1]], 'mount must notify shared Web owner of unchanged identity')
+    await act(async () => { row.props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-selection-toolbar'), 1)
+    assert.deepEqual(retained.at(-1), [], 'user may deselect after the remount')
+  }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { requestedDirectoryID: 1, initialSelectedItems: [selected],
+      onSelectedItemsChange: items => retained.push(items.map(item => [item.id, item.revision])) },
+  })
+})

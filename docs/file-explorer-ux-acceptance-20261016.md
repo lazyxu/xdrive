@@ -23,7 +23,7 @@ Keep the independent 52px global App Frame and the 900px breakpoint.
 | F03 P1 | Shared and mobile context menus use `FileExplorerMenuReasons`; **this PR patches previously missing selected-items More explanation** | Real permission responses and keyboard/long-hold screen reader |
 | F04 P2 | Shared 6/8px separators retain geometry, widen invisible targets and support arrows/Home/End; `file-explorer-splitter-hitbox.cjs` | Real pointer, keyboard focus and high DPI |
 | U01 P1 | Shared navigation/controller stages first counted range before committing; new mounted-hook regressions cover delayed 403/timeout and superseded 403/success without replacing prior rows | Browser Back/Forward, real permissions, aborted HTTP wire, focus and anchor |
-| U02 P1 | 899.95px breakpoint and one shared Web workspace; Chrome 375/390/899/900 acceptance exists | Cross-boundary live state matrix (scroll, search, dialogs, selection) without reload |
+| U02 P1 | Original built-Web Chromium U02 First-red: 899px selected Node 102 and toolbar disappear after 900px remount; scoped candidate shares selection IDs/items in one Web workspace | Require unmodified original selected-node Chrome red→green, full HEAD CI, and separate search/modal/anchor cases |
 | U03 P1 | Server-backed selection limits 200 mutation / 500 tags / 1000 download; mounted 257/1001 tests extended by this PR | Real 100k selection, disabled aggregate feedback and full action matrix |
 | U04 P1 | `FileExplorerActionFeedback` and `FileOperationLifecycle` distinguish queued/running/cancel-requested/completed/failed | Correlate actual Server durable task receipt and terminal outcome |
 | U05 P1 | Shared `FileNameDialog`, Web rename adapter and real Chrome intercepted 403→409→200 scenario | Real Server 403/409, stale Revision and UTF-8 boundary with retained focus |
@@ -87,3 +87,43 @@ Server contract, scroll host or navigation redesign is added. This is not
 a screenshot/frame metric, end-to-end auth decision or actual HTTP cancellation:
 those gates remain open. Exact-HEAD Desktop CI and full final-gate are required
 before this test is credited as passed.
+
+## U02 · Genuine selection-loss browser regression and scoped candidate
+
+- Original source: CI [#38861059007](https://github.com/lazyxu/xdrive/actions/runs/38861059007)
+  observed Mobile 899px selected Node 102 with `aria-pressed=true` and one
+  bulk toolbar, then a 899px remount with no selected Node and no toolbar.
+  No unknown API, console error or route change; wide Details DOM position
+  originally lacked a row mount so this part of that first check alone does
+  not prove selection loss.
+- The original-browser script was corrected **only** to make the same real
+  Node visible in existing wide Details via the real View menu before reading
+  `aria-selected`. Its exact regression source Blob must remain unchanged
+  through production repair; browser fixture responses stay unchanged.
+- The candidate retains validated selected identities and their original
+  item snapshots in the shared Web workspace through a responsive component
+  remount. Mobile's first mount may consume the restored state, while a
+  subsequent scope change invalidates it. Wide FileExplorer uses its existing
+  controlled selectedIDs/onSelectionChange contract; Desktop stays untouched.
+- No second HTTP controller or full folder materialization, permission
+  escalation, PWA cache mutation, 900px breakpoint or 52px App Frame change.
+  The 100k logical selection memory budget, cross-width editing dialog,
+  search and focus/anchor cases remain separate acceptance gates. CI/red→green
+  and PR merge must be verified on the exact submitted head.
+
+## U02 nested Inline List selection · 899↔900 (2026-10-16)
+
+The shared `WebFileExplorer` Mobile inline child range store must reset at
+the 899/900 presentation boundary, but selected Node provenance must **not**.
+The previous `selectedMobileScopeRef` compared the breakpoint-bearing
+`inlineScopeKey`, clearing the selected child Node/revision/ancestor path when
+Wide first mounted. A new actual-source `file-explorer-inline-store.cjs`
+regression exercises a selected item in a **sparse 100k-child branch**,
+tears down Mobile's inline child page at 900px, checks the original Node
+Revision and containing path still resolve via the existing shared controller,
+returns to 899px, and independently checks the account-B privacy reset.
+The production repair changes only this bounded selection provenance scope
+to existing `responsiveSelectionScope`; the inline store still resets
+per presentation and never preloads the 100k directory. This is a deterministic
+source-mounted test, not physical iOS or fully authenticated Server evidence.
+Require the own exact-head full CI/Final Gate for the candidate.

@@ -139,7 +139,13 @@ function actualWebInlineProjection() {
   const originalStart = web.indexOf('  const inlineOwnerByNodeID = new Map<number, number>()')
   const retainedStart = web.indexOf('  const selectedMobileNodesRef = useRef(')
   const start = retainedStart >= 0 && retainedStart < originalStart ? retainedStart : originalStart
-  const end = web.indexOf('  const inlineMobileBranches =', start)
+  // Responsive handoff lives AFTER the real inline projection and uses
+  // additional React hooks. This isolated test must compile only the
+  // original inline selected-Node retention, not unrelated UI callbacks.
+  const responsiveHandoffStart = web.indexOf('  const retainMobileSelectionRef =', start)
+  const end = responsiveHandoffStart >= 0
+    ? responsiveHandoffStart
+    : web.indexOf('  const inlineMobileBranches =', start)
   assert.ok(start >= 0 && end > start, 'Web inline Node projection must be present')
   const ending = [
     'return {nodeByID, inlineCrumbsForItem,',
@@ -151,14 +157,14 @@ function actualWebInlineProjection() {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText
   const invoke = new Function('inlineSnapshot', 'nodeByID', 'useRef', 'current', 'crumbs',
-    'inlineScopeKey', 'explorerVirtualCollection', output)
+    'inlineScopeKey', 'explorerVirtualCollection', 'responsiveSelectionScope', output)
   const refs = []
-  return function render(snapshot, nodes, scope = 'session-A:root:1') {
+  return function render(snapshot, nodes, scope = 'session-A:root:1', presentationScope = scope) {
     let hookIndex = 0
     const useRef = initial => refs[hookIndex++] ??= { current: initial }
     return invoke(snapshot, new Map(nodes.map(node => [node.id, node])), useRef,
       { id: 1, name: '我的文件' }, [{ id: 1, name: '我的文件' }],
-      scope, { retainInteractionIDs() {} })
+      presentationScope, { retainInteractionIDs() {} }, scope)
   }
 }
 
@@ -262,4 +268,40 @@ test('F-PARITY-07F: operation limit precedes sparse Node metadata failure for 10
     selected: [{ id: 9 }], selectedCount: 1, nodeByID: new Map(),
     requireRevision: true, maxItems: 200,
   }), /尚未完整加载/, 'within the limit missing Node metadata must still be rejected')
+})
+
+test('U02: nested selected Node survives 899/900 presentation store reset with true owner and revision', () => {
+  const render = actualWebInlineProjection()
+  const validation = actualSelectionController()
+  const root = { id: 1, name: '我的文件', type: 'dir', revision: 1, parent_id: 0 }
+  const folder = { id: 2, name: 'Work', type: 'dir', revision: 2, parent_id: 1 }
+  const child = { id: 41, name: 'inside.txt', type: 'file', revision: 7, parent_id: 2 }
+  const selected = [{ id: 41, name: 'inside.txt', kind: 'file', revision: 7 }]
+  const expanded = { branches: [{
+    ownerID: 2, parentID: 1, parentIndex: 0, name: 'Work',
+    itemCount: 100000, items: new Map([[0, child]]),
+  }] }
+  const sameOwner = 'server-A:account-A:folder-1:current-search'
+  const compact = render(expanded, [root, folder], sameOwner, sameOwner + ':899')
+  assert.equal(compact.nodeByID.get(41)?.revision, 7)
+  compact.notifySelection(selected)
+  // Wide presentation destroys the compact inline range store; the selected
+  // Node is no longer present in mounted sparse pages or ordinary root rows.
+  const wide = render({ branches: [] }, [root, folder], sameOwner, sameOwner + ':900')
+  assert.equal(wide.retainedCount, 1, 'breakpoint alone must not clear the selected child')
+  assert.equal(wide.nodeByID.get(41)?.revision, 7, 'retain Server Revision, not a synthesized wide row')
+  assert.equal(validation.xDriveFileExplorerSelectionActionDisabledReason({
+    selected, selectedCount: 1, nodeByID: wide.nodeByID,
+    requireRevision: true, maxItems: 200,
+  }), null, 'valid selected child must remain operation-eligible across layouts')
+  assert.equal(validation.xDriveFileExplorerCopyPath(selected[0],
+    wide.inlineCrumbsForItem(selected[0])), '/Work/inside.txt',
+  'selected child retains true ancestor breadcrumbs after inline store teardown')
+  const mobileAgain = render({ branches: [] }, [root, folder], sameOwner, sameOwner + ':899')
+  assert.equal(mobileAgain.retainedCount, 1)
+  assert.equal(mobileAgain.nodeByID.get(41)?.revision, 7)
+  const otherAccount = render({ branches: [] }, [root, folder],
+    'server-A:account-B:folder-1:current-search', 'server-A:account-B:folder-1:899')
+  assert.equal(otherAccount.retainedCount, 0, 'cross-account selected provenance must be dropped')
+  assert.equal(otherAccount.nodeByID.has(41), false)
 })

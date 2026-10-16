@@ -542,6 +542,53 @@ export default function WebFileExplorer({
     sort.key, sort.direction, grouping.groupBy, grouping.foldersFirst,
     trashActive, searchState.results !== null, compactMobile,
   ].join(':')
+  // One Web workspace owns the selected logical IDs on both sides of 900px.
+  // The two presentations intentionally unmount each other; a selection must
+  // not be scoped to the transient Mobile/Details React component instance.
+  // Never persist selected private metadata across account/directory/Search.
+  const responsiveSelectionScope = [
+    navigationSessionStorageKey ?? '',
+    current?.id ?? 0,
+    trashActive ? 'trash' : searchState.results !== null ? 'search' : 'directory',
+    trashActive ? trash.virtualCollection?.interactionKey ?? '' :
+      explorerVirtualCollection?.interactionKey ?? '',
+  ].join(':')
+  const [responsiveSelection, setResponsiveSelection] = useState<{
+    scope: string
+    ids: XDriveFileExplorerItem['id'][]
+    items: XDriveFileExplorerItem[]
+  }>({ scope: '', ids: [], items: [] })
+  const currentResponsiveSelection = responsiveSelection.scope === responsiveSelectionScope
+    ? responsiveSelection : null
+  const responsiveSelectionOwnerRef = useRef({
+    scope: responsiveSelectionScope, compact: compactMobile,
+  })
+  responsiveSelectionOwnerRef.current = {
+    scope: responsiveSelectionScope, compact: compactMobile,
+  }
+  const responsiveSelectionNodesRef = useRef(nodeByID)
+  responsiveSelectionNodesRef.current = nodeByID
+  const onWideResponsiveSelectionChange = useCallback((
+    ids: XDriveFileExplorerItem['id'][],
+  ) => {
+    if (responsiveSelectionOwnerRef.current.compact) return
+    const scope = responsiveSelectionOwnerRef.current.scope
+    setResponsiveSelection((previous) => {
+      if (previous.scope === scope && previous.ids.length === ids.length &&
+          previous.ids.every((id, index) => String(id) === String(ids[index]))) return previous
+      const previousItems = new Map(
+        (previous.scope === scope ? previous.items : []).map((item) => [String(item.id), item]),
+      )
+      const items: XDriveFileExplorerItem[] = []
+      for (const id of ids) {
+        const retained = previousItems.get(String(id))
+        const node = responsiveSelectionNodesRef.current.get(Number(id))
+        const resolved = retained ?? (node ? xDriveProjectFileExplorerNode(node, '') : undefined)
+        if (resolved) items.push(resolved)
+      }
+      return { scope, ids: [...ids], items }
+    })
+  }, [])
   const inlineLoaderRef = useRef((
     parentID: number, offset: number, limit: number, signal: AbortSignal,
   ) => api.listRange(parentID, offset, limit, sort.key, sort.direction, true, grouping, signal)
@@ -577,9 +624,13 @@ export default function WebFileExplorer({
   const selectedMobileNodesRef = useRef(new Map<number, {
     node: Node; ownerID: number; crumbs: Crumb[]
   }>())
-  const selectedMobileScopeRef = useRef(inlineScopeKey)
-  if (selectedMobileScopeRef.current !== inlineScopeKey) {
-    selectedMobileScopeRef.current = inlineScopeKey
+  // Selection belongs to the shared authenticated workspace, not the
+  // breakpoint-specific inline range store. Keep the selected child's true
+  // owner/revision when 899px Mobile unmounts for the 900px Wide presenter.
+  // Account/folder/Search/sort/group changes still invalidate this scope.
+  const selectedMobileScopeRef = useRef(responsiveSelectionScope)
+  if (selectedMobileScopeRef.current !== responsiveSelectionScope) {
+    selectedMobileScopeRef.current = responsiveSelectionScope
     selectedMobileNodesRef.current.clear()
   }
   const inlineOwnerByNodeID = new Map<number, number>()
@@ -647,6 +698,25 @@ export default function WebFileExplorer({
     // Existing shared workspace retention handles root/Search selections.
     explorerVirtualCollection?.retainInteractionIDs?.([...next.keys()])
   }
+  // Stable identity prevents selected-items effects from recursively
+  // publishing the same selection every time the parent workspace rerenders.
+  // Ignore delayed callbacks belonging to a presentation already unmounted.
+  const retainMobileSelectionRef = useRef(retainMobileSelection)
+  retainMobileSelectionRef.current = retainMobileSelection
+  const onMobileResponsiveSelectionChange = useCallback((
+    items: readonly XDriveFileExplorerItem[],
+  ) => {
+    if (!responsiveSelectionOwnerRef.current.compact) return
+    retainMobileSelectionRef.current(items)
+    const scope = responsiveSelectionOwnerRef.current.scope
+    setResponsiveSelection((previous) => {
+      if (previous.scope === scope && previous.items.length === items.length &&
+          previous.items.every((item, index) =>
+            String(item.id) === String(items[index].id) &&
+            item.revision === items[index].revision)) return previous
+      return { scope, ids: items.map((item) => item.id), items: [...items] }
+    })
+  }, [])
   const inlineMobileBranches = inlineSnapshot.branches.map(branch => {
     const parentPath = inlineParentCrumbs(branch.ownerID).map(crumb => crumb.name).join('/')
     const prefix = parentPath ? parentPath + '/' : ''
@@ -1095,7 +1165,8 @@ export default function WebFileExplorer({
           onRetryInlineFolder={ownerID => inlineStore.retry(ownerID)}
           onInlineViewport={ranges => inlineStore.ensureViewport(ranges)}
           onClearInline={() => inlineStore.clear()}
-          onSelectedItemsChange={retainMobileSelection}
+          initialSelectedItems={currentResponsiveSelection?.items ?? []}
+          onSelectedItemsChange={onMobileResponsiveSelectionChange}
           getSelectionActionDisabledReason={getSelectionActionDisabledReason}
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
@@ -1295,6 +1366,8 @@ export default function WebFileExplorer({
       ) : (
       <XDriveFileExplorer
         interactionLifecycleKey={navigationSessionStorageKey ?? ''}
+        selectedIDs={currentResponsiveSelection?.ids ?? []}
+        onSelectionChange={onWideResponsiveSelectionChange}
         presentation="workspace"
         keyboardProfile={FILE_KEYBOARD_PROFILE}
         items={trashActive ? trash.items : explorerItems}
