@@ -278,3 +278,16 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 **前向派生坐标架构边界**：拟定的 BD-09 地图视窗索引必须使用官方正向 WGS84→BD-09 转换结果，绑定当前 Owner + PhotoAsset + 源位置修订/有效性 + 索引转换版本，清理被删除、回收、撤销定位或隐私不允许共享的结果。任何过期源修订不允许用于 Marker、附近照片计数或 Viewer；地图 BD-09 视窗只能查询独立派生索引，不得把 `BMap.getBounds()` 反算或贴标签当成原始 WGS84。正式表结构、写入事务、授权条件、配额、响应边界和真机覆盖需独立后续 PR 实现并测试；本阶段**不创建表、不写入任何转换坐标**。
 
 现有 iOS 27「照片」1:1、52px 全屏 App Frame、Web/Mobile Web/Desktop 共同的 Server Range、VirtualCollection 与 Viewer 不变。JSAPI4 动态生产仍 `runtime_enabled=false`、0 个完成审核的子资源、未配置发布签名根、无公开 Loader/Session/Proxy。真实 9 组 Browser/Server HAR、人工逐项固定 Host/Path/Query/MIME/字节限制、受信签名发布与 Owner/epoch/fleet 配额、Caddy/CSP/Electron 和真机 iOS/Android/Desktop 仍是技术 GO/NO-GO 条件。A3 完成后再 A4→B1→B2→B3→C1。
+
+
+## P0-Places-A3b3a3d2h · 百度官方 Server Geoconv v2 正向转换构件（2026-10-16）
+
+承接 #1820 经准确 HEAD [CI #38878187278](https://github.com/lazyxu/xdrive/actions/runs/38878187278) 76 作业（25 success/51 conditional skipped）、Final Gate 通过，Rebase 合入 master@`98d31fea240677e4749abefa47155164d6ba52aa` 并核实相关工作分支删除。此阶段仅为未来 BD-09 地理索引增加**真实协议级、内部可调用但生产尚无调用方**的 Go Server 正向转换构件。
+
+**官方参数不能混淆：** [百度 Geoconv v2](https://lbsyun.baidu.com/docs/webapi?title=geoconv%2Fguide%2Fchangeposition-base) 的 `https://api.map.baidu.com/geoconv/v2/` 使用 `model=2` 将 GPS/WGS84 转换成 BD-09LL（longitude,latitude；分号分隔、最多 100 对），**不是** JSAPI4 原生 [Convertor](https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord) 的 `translate(points,1,5)`。不得进行 BD-09→GPS/WGS84 反向转换，也不得用近似偏移替代官方结果。百度文档说明中国境外底图通常直接采用 WGS84；派生索引将来必须具有明确坐标空间，不能把境外地图错误标记成 BD-09。
+
+`internal/baidumapjsapi/geoconv_forward.go` 使用 Server AK 创建固定主机、固定模型的 GET，逐项校验来源 WGS84，最大 100 对；其执行函数沿用 `SafeHTTPClient` 的 TLS 验证、无环境代理、无重定向、5 秒超时和可取消 Context，原始 AK-bearing URL 严禁日志/前端/Agent IPC。只接受无压缩 HTTP 200、JSON MIME、至多 64 KiB 的完整响应；显式 status=0、结果数与来源一一对应、有限经纬度、无多余 JSON；任何失败仅固定脱敏错误。Go 离线测试覆盖 (0,0)、日期变更线、非法输入、100/101 点、缺字段、状态异常、溢出、非 JSON、上游重定向/压缩、伪造密钥回显及 Context 取消。合成假 HTTP Transport 不发生真实百度请求。
+
+**关键边界：** 尚未在生产扫描/源同步/Gallery 请求中调用它，没有 Server→百度的真实用户 GPS 转换，也没有持久 BD-09 索引、回收/隐私失效事务、地图外部接口或 JSAPI4 SDK。以后使用转换结果需先实现 Owner/PhotoAsset/来源位置修订、有效性/用户隐私/删除检查，来源变化必须让旧索引失效；聚合不得把地图 BD-09 bounds 冒充原始照片 WGS84，且 PhotoAsset 原始 GPS/Viewer 身份不被修改。
+
+运营方已确认两类 AK、跨平台/派生数据用途及无需额外付费，此为在 [Issue #1798](https://github.com/lazyxu/xdrive/issues/1798) 中记录的用户声明，并非已独立检查实际账户条款。生产 JSAPI4 继续 `runtime_enabled=false`、已核准子资源 0、未配置签名根、无公开 Loader/Session/Cookie/Proxy。还需 9 组真实私有 Browser+Server upstream HAR、人工核准资源白名单、可撤销受信签名/Owner/跨副本配额、Caddy/CSP/Electron、iOS27「照片」1:1 及 Android/Desktop 真机验收。百度唯一 Provider，Server Static AK/加密 Browser AK 分离，Web/Mobile Web/Desktop 统一 Gallery Range/VirtualCollection/Viewer 和 52px 全屏 App Frame 不变。完成 A3 后方可 A4→B1→B2→B3→C1。
