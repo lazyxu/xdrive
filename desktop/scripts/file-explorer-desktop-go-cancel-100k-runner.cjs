@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const { spawn } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const { performance } = require('node:perf_hooks')
 const { AgentIPCClient } = require('../dist/main/agent_client.cjs')
 const electron = require('electron')
@@ -14,6 +14,16 @@ const agentBinary = path.resolve(process.env.XD_FILEEXPLORER_DESKTOP_CANCEL_AGEN
 const results = path.resolve(process.env.XD_FILEEXPLORER_DESKTOP_CANCEL_RESULTS ||
   path.join(desktop, 'file-explorer-desktop-go-cancel-100k-results'))
 const modes = ['virtual-scroll', 'app-switch', 'window-destroy']
+const desktopPhysicalCancelMode = process.env.XD_FILEEXPLORER_DESKTOP_PHYSICAL_GO_CANCEL_100K_PERF === '1'
+const clockHz = desktopPhysicalCancelMode ? Number(execFileSync('getconf',['CLK_TCK'],{encoding:'utf8'}).trim()) : 0
+if(desktopPhysicalCancelMode) assert(clockHz > 0, 'native Go/Agent CPU clock source absent')
+function cpuMs(pid){
+  const raw=fs.readFileSync('/proc/'+pid+'/stat','utf8')
+  const x=raw.slice(raw.lastIndexOf(')')+2).trim().split(/\s+/)
+  const total=Number(x[11])+Number(x[12])
+  assert(Number.isFinite(total)&&total>=0, 'CPU tick source absent')
+  return 1000*total/clockHz
+}
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 async function until(check, budgetMs, label) {
   const began = performance.now()
@@ -67,7 +77,13 @@ async function nativeFixture(sample, tmp) {
       return fs.existsSync(readyPath) ? JSON.parse(fs.readFileSync(readyPath, 'utf8')) : null
     }, 12 * 60 * 1000, 'genuine 100k Node/PostgreSQL fixture')
     assert.equal(ready.logical_count, 100000)
-    assert.equal(ready.physical_images, 16)
+    assert.equal(ready.physical_images, desktopPhysicalCancelMode ? 100000 : 16)
+    if(desktopPhysicalCancelMode){
+      assert.equal(ready.physical_mode,true)
+      assert.equal(ready.physical_cancel_mode,true)
+      assert(ready.physical_source_bytes >= 50000000, '100k distinct actual CAS JPEG source unavailable')
+      assert(Number.isSafeInteger(ready.server_pid) && ready.server_pid>0)
+    }
     assert(ready.folder_id > 0 && ready.url, 'real folder or Server missing')
     return { proc, ready }
   } catch (error) { await stop(proc, 1000); throw error }
@@ -111,12 +127,18 @@ async function electronMode(sample, mode, ready, agent) {
     XD_FILEEXPLORER_DESKTOP_GO_CANCEL_MODE: mode,
     XD_FILEEXPLORER_DESKTOP_GO_CANCEL_SERVER: ready.url,
     XD_FILEEXPLORER_DESKTOP_GO_CANCEL_OUTPUT: filename,
+    XD_FILEEXPLORER_DESKTOP_CANCEL_SOURCE_BYTES: String(ready.physical_source_bytes || 0),
   }, 'electron-' + sample + '-' + mode, desktop)
   try {
     const result = await Promise.race([proc.finished, sleep(150000).then(() => ({ code: 'timeout' }))])
     assert.equal(result.code, 0, 'real Desktop cancellation Electron failed ' + JSON.stringify({sample,mode,result}))
     assert(fs.existsSync(filename), 'real Electron benchmark row file missing')
     const row = JSON.parse(fs.readFileSync(filename, 'utf8'))
+    if(desktopPhysicalCancelMode){
+      assert.equal(row.data.distinctPhysicalJPEGs,100000)
+      assert(row.data.originalPhysicalPayloadBytes>=50000000)
+      assert(row.physicalCancelMode===true)
+    }
     assert(row.passed && row.mode === mode && row.sample === sample,
       'unchanged product Desktop FileExplorer cancellation budget RED')
     return row
@@ -143,6 +165,9 @@ async function main() {
       try {
         agent = await nativeAgent(n, fixture.ready, tmp)
         const beforeRSS = rss(agent.proc.child.pid)
+        const agentCPUStart = desktopPhysicalCancelMode ? cpuMs(agent.proc.child.pid) : null
+        const serverRSSStart = desktopPhysicalCancelMode ? rss(fixture.ready.server_pid) : null
+        const serverCPUStart = desktopPhysicalCancelMode ? cpuMs(fixture.ready.server_pid) : null
         for (const mode of modes) {
           const row = await electronMode(n, mode, fixture.ready, agent)
           const page = await agent.client.cloudChildrenRange(fixture.ready.folder_id,
@@ -157,6 +182,17 @@ async function main() {
         const agentGrowth = Math.max(0, rss(agent.proc.child.pid) - beforeRSS)
         assert(agentGrowth <= 128*1024*1024, 'Go Agent post-seed RSS >128MiB')
         for (const row of rows.filter(x => x.sample === n)) row.agentRssGrowthBytes = agentGrowth
+        if(desktopPhysicalCancelMode){
+          const serverRssGrowth = Math.max(0,rss(fixture.ready.server_pid)-serverRSSStart)
+          const serverCpuMs = Math.max(0,cpuMs(fixture.ready.server_pid)-serverCPUStart)
+          const agentCpuMs = Math.max(0,cpuMs(agent.proc.child.pid)-agentCPUStart)
+          assert(serverRssGrowth <= 268435456,'P053 Go Server RSS growth >256MiB')
+          for(const row of rows.filter(x=>x.sample===n)){
+            row.serverRssGrowthBytes=serverRssGrowth
+            row.serverCpuMsThreeModes=serverCpuMs
+            row.agentCpuMsThreeModes=agentCpuMs
+          }
+        }
       } finally {
         if (agent) { await agent.client.shutdown().catch(() => {}); await stop(agent.proc) }
         await fetch(fixture.ready.url + '/__perf/stop', { method: 'POST' }).catch(() => {})
@@ -171,6 +207,7 @@ async function main() {
       platform: 'native Linux Xvfb Electron Renderer/Preload/Main -> Go Agent -> Gin/PG17/CAS',
       fixtures: 3, modes, cases: rows.length,
       logicalFiles: 100000, realPhysicalJPEGsPerFixture: 16,
+      desktopPhysicalCancelMode,
       started: rows.reduce((n, x) => n + x.startedRequests, 0),
       actualGoContextDone: rows.reduce((n, x) => n + x.contextDone, 0),
       canceledHandlers: rows.reduce((n, x) => n + x.cancelledHandlers, 0),
@@ -187,6 +224,19 @@ async function main() {
         x.wastedBytesAfterAction === 0 && x.worstGoContextNotificationMs <= 160 &&
         x.agentRssGrowthBytes <= 134217728),
       exclusions: 'Actual 100k Node metadata but only 16 actual JPEG original files; no 100k physical image decode, H264/Live/RAW/HEVC, physical Windows, WAN, durable task cancellation or Race proof',
+    }
+    if(desktopPhysicalCancelMode){
+      summary.id = 'P053/M005-j-fileexplorer-desktop-100k-distinct-physical-CAS-Go-cancel'
+      summary.realPhysicalJPEGsPerFixture = 100000
+      summary.maxServerRssGrowthBytes = Math.max(...rows.map(x=>x.serverRssGrowthBytes||0))
+      summary.maxRenderer160msRssGrowthBytes = Math.max(...rows.map(x=>x.renderer160msRssGrowthBytes||0))
+      summary.budgets.serverRSSGrowthMaxBytes = 268435456
+      summary.budgets.renderer160msRSSGrowthMaxBytes = 134217728
+      summary.passed = summary.passed && rows.every(x=>
+        x.data.distinctPhysicalJPEGs===100000 && x.data.originalPhysicalPayloadBytes>=50000000 &&
+        x.serverRssGrowthBytes<=268435456 &&
+        (x.mode==='window-destroy'||x.renderer160msRssGrowthBytes<=134217728))
+      summary.exclusions = 'P053 real native Linux Electron/Agent 100k different JPEG CAS physical sources, no actual Windows/macOS, installed PWA, phone, RAW/HEVC/H264/Live Motion, WAN or durable task cancel; Renderer process after window-destroy is terminated and not sampled.'
     }
     fs.writeFileSync(path.join(results, 'summary.json'), JSON.stringify(summary, null, 2) + '\n')
     console.log('FILEEXPLORER_DESKTOP_GO_CANCEL_100K_SUMMARY ' + JSON.stringify(summary))

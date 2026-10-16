@@ -1,5 +1,7 @@
 # FileExplorer performance roadmap
 
+> **2026-10-16 P052最终核查**：原生100k物理JPEG真实取消性能PR [#1728](https://github.com/lazyxu/xdrive/pull/1728)已经以单提交线性合入 `master@6229ac6a922ed12da47e618d2ab4f56ab95cde56`，已验证临时分支清理。其证据HEAD `90e816c3421d44e624ba687ed4541117c11a8e84` 的[专项CI #38829321827](https://github.com/lazyxu/xdrive/actions/runs/38829321827)、[完整CI #38829321902](https://github.com/lazyxu/xdrive/actions/runs/38829321902)含Final Gate成功。真实六组Grid/Details，每组10万不同JPEG CAS，36/36 HTTP `Request.Context.Done`和Handler终止，复测最慢 **16.305ms**，160ms旧Handler **0**，废弃响应 **0B**；全部预算内，原版不优化，AFTER=N/A。前面试验时间线中“待复验”已经过时，P052真实有效原始样本仍在[物理证据目录](performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/)归档。Desktop真实物理CAS场景还未测，下一阶段P053如下。六平台持续对照[详见矩阵](performance-platform-coverage.md)。
+
 > **2026-10-15 最终交付状态（优先于以下历史时间线）：P050 / M002-e 已 Accepted CURRENT / Merged [#1709](https://github.com/lazyxu/xdrive/pull/1709)。** 在固定master `a7654570` 上唯一工作提交 `3e969074`，原版Web文件管理器100k逻辑/115k不同物理JPEG/H264/Live的3独立PG17/Gin/CAS数据集、30/30 Grid+Details真实可见滚动视口全部预算内；Grid/Details P50 **663.716/485.783ms**，最慢727.933ms，Go并发峰值6、DOM121、非取消5xx0、Go/Renderer RSS增长均小于256MiB。归档后准确HEAD [专项 #38748158459](https://github.com/lazyxu/xdrive/actions/runs/38748158459) 和 [完整 #38748158841](https://github.com/lazyxu/xdrive/actions/runs/38748158841)（含final-gate）双绿，线性合入master `3dcabd3c12d0da72ec40b56c7c8eb21958977a22`，远端分支已清理。**保留生产原版，BEFORE=CURRENT、AFTER=N/A、speedup=N/A**；[完整原始n3机器证据](performance-evidence/file-explorer-wide-mixed-p050/ci-run-38745263789/summary.json)。P049 #1694亦已准确HEAD双绿合入；以下“尚未测出/待复验”属于原始阶段历史，不代表最终状态。P030 Desktop IPC进度 #1185仍为Blocked Draft，不属于Race专题。真正安装Desktop/Android/iOS PWA、物理100k Push/Pull、实机及Live motion播放仍Not measured，见[六平台矩阵](performance-platform-coverage.md)。
 
 ## P0 — P050 / M002-e · 宽屏 Wide Web FileExplorer 100k逻辑／115k真实混合JPEG H264 Live原片（2026-10-15）
@@ -4125,3 +4127,42 @@ A FileExplorer/Gallery thumbnail leaving the viewport detaches its own progress 
 **结论**：所有原版 `CURRENT` 真实性/取消/资源/字节预算通过，**不改生产代码**，AFTER=N/A，速度提升=N/A。首次成功的原始机读 `summary.json` 与 `grid/details-sample-{1,2,3}.json`、`source.txt` 永久归档 [完整原始六样本、summary和source压缩包](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/raw-n3.tar.gz)（原始压缩包SHA-256 `57f669e110da4d3c6fb95296c89dd4775488f3a12a421a10c418c40da1a0938e`），[可读机器汇总](docs/performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/metrics.json) 与 [原始 Artifact](https://github.com/lazyxu/xdrive/actions/runs/38779915915/artifacts/11995333174)。原始测试源码准确专项 + 完整CI #38779915873（25 success、含Final Gate）已通过；本次归档变更后的新HEAD必须再运行源码准确专项和完整CI/Final Gate后才能Ready/Merge，不把仅历史CI红色Invalid harness误认为产品性能RED。
 
 **设备与范围仍未覆盖**：这是390px Linux Chromium 宿主中的共享Web FileExplorer，不是Android/iOS真实设备、安装态PWA、H264/Live Motion/RAW/HEVC/LIVP取消，也不是100k真实物理Push/Pull同步/GUI删除。既有P039/P040与本负载不等价，不能跨工作负载计算提速；浏览器视口取消不得终止用户拥有的持久上传/下载/同步/删除任务。
+
+---
+
+## P0 — P053 / M005-j · Native Desktop 100k不同真实JPEG物理原片 Go取消（2026-10-16）
+
+**状态：Accepted original CURRENT n3，归档后的准确证据HEAD专项/完整CI待验证；BEFORE=CURRENT，AFTER=N/A，speedup=N/A。** 不重复P037 Linux真实Desktop Agent的100k逻辑／16物理JPEG取消54/54（最慢72.082ms），也不将P052 Mobile Web物理100k取消最慢16.305ms当作Desktop的 BEFORE。P053是独立的**Native Electron Renderer→Preload→Main→Go Agent IPC→实际Gin/PG17/CAS**负载、仅在测试专属环境开关生效，不改生产行为，也不处理Race。
+
+### 真实物理内容、客户端和取消语义
+
+- 每独立PG17/Local CAS来源真实Local.Put **100,000个SHA不同、80×64确实可解码JPEG**（≥50,000,000B、已验收P039/P052的真实物理源构造/SQL COUNT DISTINCT和三点CAS读回），而不是只写元数据；每个种子分离于取消时延计时。共n=3独立来源，每个来源下真实Native Desktop运行三模式：虚拟滚动到50%，切换Files→主页，真实销毁Electron窗口，共**9个Desktop会话与54条已首发256B的受权真实缩略图HTTP**。
+- P053测试Go夹具开启单独`XD_FILEEXPLORER_DESKTOP_PHYSICAL_GO_CANCEL_100K_PERF=1`才让100k实体JPEG通过原有测试only慢Body观察器；与P037的16物理源默认及P052的Mobile Web100k测试相互独立。每条下载Body真实首发256B，再测试真实Desktop生命周期变化后到Server `Request.Context().Done`；取消请求作用域，绝不误停持续上传、下载、同步、删除Task Center。
+- 真实Go Agent IPC认证登录、CloudRoot、Children真实分页；每模式额外独立Agent查询中间offset50k limit200，`total_count=100000`、HTTP200/200项及账号权限不降低。桌面浏览器是Linux Xvfb真实生产Electron链路，不冒充Windows/macOS本机或OS已安装PWA。
+
+### 冻结性能预算与测量决策
+
+- 原版独立n3×三模式，期待**9/9通过，54/54 Go上下文通知和54/54 Handler真实退出**、最慢通知`≤160ms`、+160ms旧Handler`0`、过时响应多发`0B`，各起始HTTP实发`1536B/会话`。虚拟列表挂载DOM低于1000，每组真实CAS SHA唯一100k、原始源至少50MB、来源字节与HTTP认证正确。
+- 记录Native Agent RSS增长≤128MiB，Go Server RSS增长≤256MiB，实际尚存Renderer进程160ms窗口RSS增长≤128MiB；实际Agent/Server CPU ticks、Renderer CPU/RSS开始与+160ms后数值独立归档。销毁模式Renderer进程已经不存在，其后CPU/RSS **Not measured**，不能报告假造0；不把编译、物理CAS种子和首次应用启动计算入Go取消时延。超预算仅在真实性能产品RED时记录根因；候选必须匹配相同来源/环境n≥3 BEFORE/AFTER及CPU/RSS/IO/权限，收益不明显或退化则回退、保留Rejected。
+- [仅P053工作分支原生CI](../.github/workflows/file-explorer-desktop-physical-go-cancel-p053.yml)、[P053 Node物理真实性与独立范围契约](../desktop/tests/file-explorer-desktop-physical-cancel-p053-source.cjs)，复用已验收P037的Desktop生产Electron driver和真实Go fixture。将每轮原生9样本/summary/source SHA、CPU/RSS和测试结论写入`docs/performance-evidence/file-explorer-desktop-physical-go-cancel-p053/`、中央台账及六平台矩阵；后续证据修订仍保留冻结master一个工作提交，再执行准确HEAD专项n3和完整仓库CI/final-gate后方可线性合入。
+
+**仍未验收**：Windows/macOS真实Desktop硬件、Desktop/Android/iOS真正已安装PWA、H264/HEVC/RAW/LIVP/Live motion动态媒体取消、100k物理Push/Pull完整同步、GUI删除恢复Undo及实际WAN弱网。所有没有真实设备证据的列继续Not measured。
+**P053首次 CI 无效（2026-10-16，Invalid harness，不是产品性能RED）**：精确初始工作头 `ecd7f3bf7ee253bbc38729ec6c9ab1d533a99f43` 的[专项CI #38831272729](https://github.com/lazyxu/xdrive/actions/runs/38831272729) 在 Go gofmt 和 Node source-contract预检之后失败：P053新增的静态测试误将 DOM 选择器名称外围的单引号也要求为源码字面量，实际真实Electron选择器为`[data-xdrive-file-explorer-scroll-host]`。错误发生在Web/Desktop/Agent编译、物理CAS种子与真实取消之前，**n=0、物理数据未生成，没有任何新 Go 取消时延**。仅修正测试用字符串断言并保存[不可变无效JSON](performance-evidence/file-explorer-desktop-physical-go-cancel-p053/ci-run-38831272729-invalid.json)；严格保持100k不同物理JPEG、三独立CAS/9真实Desktop会话、54 Go取消、160ms/0旧Handler/0B、CPU/RSS预算及原版P037/P052合同。复测CURRENT之前不做生产优化。
+
+### P053 原版有效物理 100k JPEG CAS + native Go 取消 n3 实测结果（2026-10-16）
+
+| 样本 | 取消操作 | 最慢Go通知 ms | Context.Done/Handler | 160ms旧 Handler | 过期字节 | DOM | Renderer 160ms RSS / CPU |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | virtual-scroll | 28.087 | 6/6 | 0 | 0B | 29 | 11317248B / 130ms |
+| 1 | app-switch | 16.901 | 6/6 | 0 | 0B | 29 | 5656576B / 150ms |
+| 1 | window-destroy | 4.220 | 6/6 | 0 | 0B | 29 | N/A（进程已退出） |
+| 2 | virtual-scroll | 42.990 | 6/6 | 0 | 0B | 27 | 8630272B / 160ms |
+| 2 | app-switch | 17.862 | 6/6 | 0 | 0B | 27 | 9265152B / 160ms |
+| 2 | window-destroy | 6.349 | 6/6 | 0 | 0B | 29 | N/A（进程已退出） |
+| 3 | virtual-scroll | 50.226 | 6/6 | 0 | 0B | 27 | 3117056B / 150ms |
+| 3 | app-switch | 18.695 | 6/6 | 0 | 0B | 27 | 7012352B / 140ms |
+| 3 | window-destroy | 4.892 | 6/6 | 0 | 0B | 29 | N/A（进程已退出） |
+
+**P053 首次真实有效 ORIGINAL CURRENT n3（2026-10-16）**：冻结源 `c5219d6d6a79c761a4a5e770e4aef362b723accb` 的原生[专项CI #38831695299](https://github.com/lazyxu/xdrive/actions/runs/38831695299)与[全仓 CI #38831695498](https://github.com/lazyxu/xdrive/actions/runs/38831695498)均 SUCCESS（后者含Final Gate）。三独立 PG17/Gin/Local CAS 每组真实 **100,000 SHA 不同 JPEG，70,893,376B**，每组真实 native Desktop（Renderer→Preload→Main→Go Agent）滚动、切 Home、销毁窗口各一次，共 9 真实会话、**54/54 HTTP Context.Done + Handler 退出**、+160ms旧Handler **0**、额外 stale HTTP **0B**；首发 54×256B=13,824B，最慢通知 **50.226ms ≤160ms**。滚动三轮 **28.087/42.990/50.226ms，P50 42.990ms**；切应用 **16.901/17.862/18.695ms，P50 17.862ms**；关窗 **4.220/6.349/4.892ms，P50 4.892ms**；最大 DOM **29**；Agent postseed RSS峰增 **5,611,520B**、Go Server postseed RSS峰增 **0B**（不是总进程 RSS 为0）、仍存活的 Renderer 160ms RSS峰增 **11,317,248B**；已记录真实 CPU ticks，销毁后的Renderer资源为 **N/A**。9/9 Agent 授权中段分页为200项/总100k。所有冻结预算通过，**保留生产原版，不优化；BEFORE=CURRENT，AFTER=N/A，speedup=N/A**。永久[原始9样本+summary+source](performance-evidence/file-explorer-desktop-physical-go-cancel-p053/ci-run-38831695299/raw-n3.tar.gz)（tar.gz SHA256 `6d6303d7acba46d6d7ad54bc823ca2dd31de3dbf899acc875acc05c6703e8e6a`，Git blob `7fda058f2c02e5190def31dc4c7a4a8ee2f6c393`）、[易读机器指标](performance-evidence/file-explorer-desktop-physical-go-cancel-p053/ci-run-38831695299/metrics.json)、[完整原始 GitHub artifact](https://github.com/lazyxu/xdrive/actions/runs/38831695299/artifacts/12018225428) 可核对，原始 ZIP SHA256 `aacfda97a7ed334fc51120b4fd298f3c082cbf58ee80dd9adfc3b1601b0d3645`。**证据文件更新后的新 HEAD 必须重新跑准确源码专项 n3 和全仓 Final Gate 后方可 Ready/Merged。** P037 只含16个不同物理JPEG，P052是不同客户端，不能跨它们计算提速；同负载 Wide Web、真Windows/macOS以及三种安装态PWA仍 Not measured。
+
+**资源和抽样边界**：上述 Go Server/Agent CPU 为每轮3模式累计的同机实际操作过程样本（不是每次取消独立 CPU），活动 Renderer RSS/CPU 为有效生命周期窗口的原生采样；关闭进程后不可计数。100k JPEG 的真实 CAS 构造/Go fixture 启动时间不计入请求取消时延；真实 CI artifact 另有各 PG/Local CAS 夹具和 Electron 运行原始日志。所有设备 PWA 列按实际 OS 安装要求持续 Not measured。
