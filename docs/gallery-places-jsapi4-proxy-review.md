@@ -235,3 +235,10 @@ Go Server 内部、无任何路由的 baiduJSAPIBootstrapCandidate 从精确 sam
 新增 ui/shared/src/media-gallery-baidu-jsapi4-native.ts，仅把未来合法加载、隔离的 JSAPI4 namespace 和 Map 实例绑定到现有共享 native ClusterLayer。严格限制 ClusterLayer 入参、setData/clearData/click 方法，以及 Convertor/Point 构造器有效性。异常固定化，不返回第三方错误或密钥。百度官方 ClusterLayer 类参考 https://lbs.baidu.com/jsapi/refdoc/v4/classes/BMap.ClusterLayer.html 支持 new ClusterLayer、setData、clearData、addEventListener；官方坐标文档 https://lbs.baidu.com/docs/jsapi?title=jsapi4%2Fguide%2Fconcept%2Fcoord 列举 WGS84→BD-09 Convertor.translate(1,5)。原生 Map.getBounds 使用 BD-09，必须另行审查 WGS84 查询视窗变换，不得当成已实现。
 
 这是一个非路由、无生产调用方的纯适配，不执行 BMap Loader/网络代理，不读取全局 BMap，不创建地图 Cookie，不返回 Browser AK。既有 Server AK / Browser AK 加密隔离、Owner Session/epoch/配额、零许可资源和 hard NO-GO 保持不变。上线前需真实百度账户许可覆盖 self-host/PWA/Electron，完整私有九组上游与浏览器 HAR 的 AK 防泄漏实证、人工核准的代码白名单、钉扎受信发布根、Caddy/CSP/Electron 沙箱、真实 iOS27/Android/Desktop 验收。不得把 mock 通过或用户工程授权当成百度许可。xDrive 52px 全屏 App Frame、百度唯一 Provider、三端共用 Gallery、iOS27「照片」1:1 目标不变。
+
+
+## A3b3a3d1c · 原生 Map 与 Owner 真实视窗的安全组合边界（2026-10-16）
+
+新增无生产调用方的共享组合入口 xDriveComposeBaiduJSAPI4OwnerViewport。它仅依赖未来经合法许可、受信 Server 放行的原生 Map/Namespace、三端已有 Owner 授权 listPlacesViewport(100,0,AbortSignal)，以及经过独立审查的准确 WGS84 bounds 回调。不得把原生 BD09 getBounds 或来自用户的伪称经纬度当 WGS84；不通过客户端传入 Map/Namespace 对象来决定法律许可、运营者签名或 Server 对资源的授权。
+
+离线 Node 测试使用模拟官方转换、百度 ClusterLayer 和地图事件，证明 bounded 100 点输入、原 Gallery Range/Viewer 导航、移动立即取消旧 Go 查询、失效页面无老标记、释放事件和拒绝伪造坐标类型。模拟成功并非生产完成；没有真实 JSAPI 加载请求、Browser AK、Cookie、Server 路由、JS/WASM/瓦片、地图脚本执行或真实官方 WGS84 反向视窗证明。生产 runtime_enabled=false、已审核子资源数 0、无钉扎签名根、无可用资源代理不变。取得账户对应的百度 self-host/PWA/Electron 合法授权、九场景私有完整 upstream+browser HAR、经人逐项审核的不可编辑 Host/Path/MIME 限额、真实 Server Owner/撤销/配额、Caddy/CSP/Electron 沙箱和 iOS27/Android/Desktop 真机证明之前均不能放行。保留百度唯一 Provider、分别加密仅在 Server 的 Static Server AK / JSAPI Browser AK、52px App Frame、三端统一 Gallery。
