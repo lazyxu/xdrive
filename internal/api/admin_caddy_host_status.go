@@ -21,6 +21,7 @@ type caddyHostStatus struct {
 	TLSCheckSupported       bool   `json:"tls_check_supported"`
 	TLSState                string `json:"tls_state"`
 	TLSVerifiedDomainSHA256 string `json:"tls_verified_domain_sha256,omitempty"`
+	RuntimeTLSAlignment     string `json:"runtime_tls_alignment,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -58,6 +59,28 @@ func validCaddyTLSState(state string) bool {
 	}
 }
 
+// The optional startup-domain alignment belongs ONLY to the fixed running
+// container. Even a match never proves an applied desired revision or WAN TLS.
+func validCaddyRuntimeTLSAlignment(value string) bool {
+	switch value {
+	case "unverified", "matched-local", "mismatch-local":
+		return true
+	default:
+		return false
+	}
+}
+
+func caddyObservedRuntimeTLSAlignment(host caddyHostStatus, observed bool) string {
+	if !observed || host.RuntimeTLSAlignment == "" ||
+		host.State != "healthy" || !host.HTTPSConfigured ||
+		!host.TLSCheckSupported || host.TLSState != "verified" ||
+		!validCaddyTLSVerifiedDomainDigest(host.TLSVerifiedDomainSHA256) ||
+		!validCaddyRuntimeTLSAlignment(host.RuntimeTLSAlignment) {
+		return "unverified"
+	}
+	return host.RuntimeTLSAlignment
+}
+
 func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 	var status caddyHostStatus
 	if s == nil || strings.TrimSpace(s.HostControlDir) == "" {
@@ -82,7 +105,13 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 		(status.TLSCheckSupported && status.HTTPSConfigured && status.TLSState == "disabled") ||
 		(status.TLSCheckSupported && !status.HTTPSConfigured && status.TLSState != "disabled") ||
 		(status.TLSVerifiedDomainSHA256 != "" &&
-			(status.TLSState != "verified" || !validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) {
+			(status.TLSState != "verified" || !validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))) ||
+		(status.RuntimeTLSAlignment != "" &&
+			(!validCaddyRuntimeTLSAlignment(status.RuntimeTLSAlignment) ||
+				(status.RuntimeTLSAlignment != "unverified" &&
+					(status.State != "healthy" || !status.HTTPSConfigured ||
+						!status.TLSCheckSupported || status.TLSState != "verified" ||
+						!validCaddyTLSVerifiedDomainDigest(status.TLSVerifiedDomainSHA256))))) {
 		return caddyHostStatus{}, false
 	}
 	return status, true

@@ -70,6 +70,16 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
          !value.host_ingress_ready || !value.host_local_tls_verified ||
          byID.get('domain') !== 'pass')))) invalidPreflight()
 
+  // Old Server/Agent may omit this fixed-container startup observation.
+  // A non-neutral state requires existing authenticated local TLS evidence,
+  // but never permits Apply/Stop/Restart or proves the desired revision.
+  if (value.host_runtime_tls_alignment !== undefined &&
+      (typeof value.host_runtime_tls_alignment !== 'string' ||
+       !['unverified', 'matched-local', 'mismatch-local'].includes(value.host_runtime_tls_alignment) ||
+       (value.host_runtime_tls_alignment !== 'unverified' &&
+        (!value.host_observed || !value.host_ingress_ready ||
+         !value.host_local_tls_verified)))) invalidPreflight()
+
   // Old Server/Agent can omit this advisory. Positive warnings require
   // actual verified local HTTPS. Never accept an arbitrary claim as a
   // deployment or rollback authorization.

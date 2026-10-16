@@ -142,6 +142,16 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                   ? '不匹配：当前 HTTPS 证书验证使用的部署域名与期望域名不同；不能认定配置已生效。'
                   : '尚未核验：缺少新鲜的 TLS 验证域名指纹、旧版 Host Manager，或当前期望不是启用 HTTPS。'}
             </Typography>
+            <Typography variant="body2"
+              data-xdrive-caddy-host-runtime-tls-alignment
+              color={result.host_runtime_tls_alignment === 'mismatch-local' ? 'error.main' : 'text.secondary'}>
+              Caddy 运行容器启动域名与本机 TLS SNI：{result.host_runtime_tls_alignment === 'matched-local'
+                ? '一致（仅容器启动环境与本机证书握手对应，不证明正在运行的 Caddy 配置或期望修订已应用）'
+                : result.host_runtime_tls_alignment === 'mismatch-local'
+                  ? '不一致：容器启动域名与本机 TLS 校验域名不同，部署可能存在配置漂移。'
+                  : '未核验：旧版 Host Manager、运行容器启动环境不可读或本机 TLS 尚未通过。'}
+              此结果不证明公网访问、AliDNS 生效或可以安全切换网关。
+            </Typography>
             <Typography variant="caption" color="text.secondary"
               data-xdrive-caddy-preflight-revision-snapshot>
               本次只读预检修订一致性：{result.revision_snapshot_consistent === true

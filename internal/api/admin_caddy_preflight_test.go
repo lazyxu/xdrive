@@ -118,7 +118,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	blank := read()
 	if blank.Action != "unset" || blank.ConfigurationComplete || blank.HostObserved ||
 		blank.DesiredRevision != 0 || blank.CredentialRevision != 0 ||
-		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" {
+		blank.DesiredDomainLocalMatch != "unverified" || blank.IngressChangeRisk != "unverified" ||
+		blank.HostRuntimeTLSAlignment != "unverified" {
 		t.Fatalf("no staged configuration should fail closed: %+v", blank)
 	}
 	if out := call(http.MethodPost, path+"/apply", adminToken, `{"revision":1}`); out.Code != 404 {
@@ -148,7 +149,8 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if cfg.Action != "enable" || !cfg.ConfigurationComplete || cfg.HostObserved ||
 		cfg.DesiredRevision != 1 || cfg.CredentialRevision != 1 ||
 		cfg.HostIngressReady || cfg.HostLocalTLSVerified || cfg.ApplySupported ||
-		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" {
+		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
+		cfg.HostRuntimeTLSAlignment != "unverified" {
 		t.Fatalf("local config was not recorded, or fake host effect published: %+v", cfg)
 	}
 	if cfg.Checks[2].ID != "alidns" || cfg.Checks[2].State != "pass" ||
@@ -172,18 +174,20 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if !cfg.HostObserved || !cfg.HostIngressReady || !cfg.HostLocalTLSVerified ||
 		!cfg.ConfigurationComplete || cfg.ApplySupported || cfg.Checks[5].State != "blocked" ||
-		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" {
+		cfg.DesiredDomainLocalMatch != "unverified" || cfg.IngressChangeRisk != "unverified" ||
+		cfg.HostRuntimeTLSAlignment != "unverified" {
 		t.Fatalf("trusted host TLS observation must not acknowledge new desired HTTPS: %+v", cfg)
 	}
 	// Explicitly compare the desired FQDN with the host's TLS-verified
 	// local SNI, without disclosing either hostname or implying applied revision.
-	writeVerifiedHostSNI := func(domain string) {
+	writeVerifiedHostSNI := func(domain, alignment string) {
 		t.Helper()
 		sum := sha256.Sum256([]byte(domain))
 		proof, marshalErr := json.Marshal(caddyHostStatus{
 			State: "healthy", HTTPSConfigured: true,
 			TLSCheckSupported: true, TLSState: "verified",
 			TLSVerifiedDomainSHA256: fmt.Sprintf("%x", sum),
+			RuntimeTLSAlignment:     alignment,
 		})
 		if marshalErr != nil {
 			t.Fatal(marshalErr)
@@ -192,7 +196,7 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 			t.Fatal(writeErr)
 		}
 	}
-	writeVerifiedHostSNI("photos.example.com")
+	writeVerifiedHostSNI("photos.example.com", "matched-local")
 	matchedResponse := call(http.MethodGet, path, adminToken, "")
 	if matchedResponse.Code != 200 ||
 		bytes.Contains(matchedResponse.Body.Bytes(), []byte("photos.example.com")) {
@@ -201,13 +205,24 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "matched-local" || cfg.ApplySupported ||
 		cfg.Checks[5].State != "blocked" || !cfg.HostLocalTLSVerified ||
-		cfg.IngressChangeRisk != "unverified" {
+		cfg.IngressChangeRisk != "unverified" || cfg.HostRuntimeTLSAlignment != "matched-local" {
 		t.Fatalf("matching local SNI must not authorize Caddy apply: %+v", cfg)
 	}
-	writeVerifiedHostSNI("old.example.com")
+	// The startup Env and staged admin desired FQDN are distinct facts.
+	// Matching desired TLS can coexist with a different running Env.
+	writeVerifiedHostSNI("photos.example.com", "mismatch-local")
+	cfg = read()
+	if cfg.DesiredDomainLocalMatch != "matched-local" ||
+		cfg.HostRuntimeTLSAlignment != "mismatch-local" || cfg.ApplySupported {
+		t.Fatalf("runtime startup drift must not imply desired revision applied: %+v", cfg)
+	}
+	// Conversely, the fixed running container can match its verified SNI
+	// while the independently saved administrator desired FQDN is different.
+	writeVerifiedHostSNI("old.example.com", "matched-local")
 	cfg = read()
 	if cfg.DesiredDomainLocalMatch != "mismatch-local" || cfg.ApplySupported ||
-		cfg.Checks[5].State != "blocked" || cfg.IngressChangeRisk != "local-domain-switch" {
+		cfg.Checks[5].State != "blocked" || cfg.IngressChangeRisk != "local-domain-switch" ||
+		cfg.HostRuntimeTLSAlignment != "matched-local" {
 		t.Fatalf("mismatched desired and observed TLS SNI was not detected: %+v", cfg)
 	}
 	// A decryption failure is a *blocked credential prerequisite*, not an

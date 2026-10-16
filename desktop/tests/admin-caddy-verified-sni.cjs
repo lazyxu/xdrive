@@ -29,6 +29,7 @@ const good = () => ({
   host_local_tls_verified: true,
   apply_supported: false,
   desired_domain_local_match: 'matched-local',
+  host_runtime_tls_alignment: 'matched-local',
   revision_snapshot_consistent: true,
   checks: checkIDs.map(id => ({
     id,
@@ -66,7 +67,54 @@ test('Caddy validator rejects forged local SNI status without a verified current
   }
 })
 
+test('fixed Caddy container startup domain differs from desired domain and never authorizes apply', () => {
+  for (const alignment of ['matched-local', 'mismatch-local', 'unverified']) {
+    const value = { ...good(), host_runtime_tls_alignment: alignment }
+    assert.equal(validatorExports.verifyCaddyPreflightContract(value).host_runtime_tls_alignment, alignment)
+    assert.equal(value.apply_supported, false)
+  }
+  const legacy = good()
+  delete legacy.host_runtime_tls_alignment
+  assert.equal(validatorExports.verifyCaddyPreflightContract(legacy).host_runtime_tls_alignment, undefined)
+  for (const mutate of [
+    x => { x.host_runtime_tls_alignment = 'applied' },
+    x => { x.host_runtime_tls_alignment = null },
+    x => { x.host_runtime_tls_alignment = false },
+    x => { x.host_runtime_tls_alignment = 'matched-local'; x.host_observed = false },
+    x => { x.host_runtime_tls_alignment = 'mismatch-local'; x.host_ingress_ready = false },
+    x => { x.host_runtime_tls_alignment = 'matched-local'; x.host_local_tls_verified = false },
+  ]) {
+    const candidate = good()
+    mutate(candidate)
+    assert.throws(() => validatorExports.verifyCaddyPreflightContract(candidate))
+  }
+  const shell = read('scripts/server-control.sh')
+  const runner = read('scripts/test-caddy-host-status.sh')
+  const host = read('internal/api/admin_caddy_host_status.go')
+  const preflight = read('internal/api/admin_caddy_preflight.go')
+  const client = read('internal/client/admin_caddy_preflight.go')
+  const desktop = read('desktop/src/main/agent_client.cts')
+  const shared = read('ui/shared/src/service-dependencies.ts')
+  const ui = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  assert.match(shell, /caddy_container_runtime_tls_alignment/)
+  assert.match(shell, /\{\{range \.Config\.Env\}\}/)
+  assert.match(shell, /"XD_DOMAIN"/)
+  assert.match(shell, /xdrive-caddy 2>\/dev\/null/)
+  assert.doesNotMatch(shell, /\{\{json \.Config\.Env\}\}/)
+  assert.match(runner, /runtime_tls_alignment/)
+  assert.match(host, /RuntimeTLSAlignment/)
+  assert.match(host, /validCaddyRuntimeTLSAlignment/)
+  assert.match(preflight, /HostRuntimeTLSAlignment:\s+caddyObservedRuntimeTLSAlignment/)
+  assert.match(client, /HostRuntimeTLSAlignment/)
+  assert.match(desktop, /host_runtime_tls_alignment\?:/)
+  assert.match(shared, /host_runtime_tls_alignment\?:/)
+  assert.match(ui, /data-xdrive-caddy-host-runtime-tls-alignment/)
+  assert.match(ui, /不证明公网访问、AliDNS 生效或可以安全切换网关/)
+  assert.match(preflight, /ApplySupported:\s+false/)
+})
+
 test('Caddy read-only ingress-continuity advisory is bounded and old Agent compatible', () => {
+
   const matched = good()
   matched.ingress_change_risk = 'unverified'
   assert.equal(validatorExports.verifyCaddyPreflightContract(matched).ingress_change_risk, 'unverified')

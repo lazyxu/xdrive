@@ -24,6 +24,7 @@ type AdminCaddyPreflight struct {
 	HostIngressReady        bool                       `json:"host_ingress_ready"`
 	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
+	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment,omitempty"`
 	SnapshotStable          *bool                      `json:"revision_snapshot_consistent,omitempty"`
 	IngressChangeRisk       string                     `json:"ingress_change_risk,omitempty"`
 	ApplySupported          bool                       `json:"apply_supported"`
