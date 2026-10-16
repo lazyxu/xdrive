@@ -42,16 +42,43 @@ def bounded_run(args, maximum=8192, seconds=90):
     return run.stdout
 
 
-def file_hash(path, maximum):
+def file_proof(path, maximum, allow_empty=False):
+    """Snapshot bounded bytes AND file identity; never follow final symlinks.
+
+    Recording inode/ctime detects same-byte atomic replacements that a simple
+    hash comparison would miss. This is not protection from intermediate A-B-A.
+    """
+    need(hasattr(os, "O_NOFOLLOW"),
+         "Operator platform cannot prevent input symlink substitution")
+    flags = (os.O_RDONLY | os.O_NOFOLLOW
+             | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0))
     try:
-        info = os.lstat(path)
-        need(stat.S_ISREG(info.st_mode) and 0 < info.st_size <= maximum,
-             "Approval material must be a small regular file")
-        raw = Path(path).read_bytes()
+        fd = os.open(path, flags)
+        try:
+            before = os.fstat(fd)
+            need(stat.S_ISREG(before.st_mode)
+                 and (allow_empty or before.st_size > 0)
+                 and before.st_size <= maximum,
+                 "Operator input must be a bounded regular file")
+            parts, remaining = [], maximum + 1
+            while remaining:
+                piece = os.read(fd, min(65536, remaining))
+                if not piece:
+                    break
+                parts.append(piece)
+                remaining -= len(piece)
+            raw = b"".join(parts)
+            after = os.fstat(fd)
+        finally:
+            os.close(fd)
     except OSError:
-        raise Blocked("Operator approval input unreadable") from None
-    need(len(raw) == info.st_size, "Approval material changed while reading")
-    return hashlib.sha256(raw).digest()
+        raise Blocked("Operator input cannot be read safely") from None
+    identity = lambda st: (
+        st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+    )
+    need(identity(before) == identity(after) and len(raw) == before.st_size,
+         "Operator input changed while being read")
+    return (*identity(before), hashlib.sha256(raw).digest())
 
 
 def docker_json(*args):
@@ -113,10 +140,15 @@ def check():
     env, compose, manifest, signature, pubkey, fingerprint, expected = sys.argv[2:]
     need(bool(OCI.fullmatch(expected)) and ".." not in expected,
          "Expected operator-approved image must be an immutable digest")
-    need(Path(env).is_file() and Path(compose).is_file(),
-         "Trusted deployment config files unavailable")
-    approval_inputs = ((manifest, 8192), (signature, 64), (pubkey, 8192))
-    hashes = [file_hash(path, bound) for path, bound in approval_inputs]
+    # Fence the actual deployment inputs as well as approval material. Only
+    # approved reference equality is checked by Docker Compose; an unnoticed
+    # .env/Compose change during the observation otherwise invalidates proof.
+    inputs = (
+        (env, 131072, True), (compose, 262144, False),
+        (manifest, 8192, False), (signature, 64, False),
+        (pubkey, 8192, False),
+    )
+    proofs = [file_proof(path, limit, empty) for path, limit, empty in inputs]
 
     gen_before = generation()
     expected_image(env, compose, expected)
@@ -149,8 +181,9 @@ def check():
     expected_image(env, compose, expected)
     need(gen_before == generation(),
          "Container process generation or current state changed during approval window")
-    need(hashes == [file_hash(path, bound) for path, bound in approval_inputs],
-         "Signed approval file or trust root changed during observation")
+    need(proofs == [file_proof(path, limit, empty)
+                    for path, limit, empty in inputs],
+         "Deployment input or signed approval changed during observation")
     print("approved-rescue-runtime-local-phase: " + phase)
     print("operator-pinned-signature-and-deployed-image: matched-within-same-local-window")
     print("server-rescue-current-generation: consistent-local")
