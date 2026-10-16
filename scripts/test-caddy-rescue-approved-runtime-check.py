@@ -17,7 +17,24 @@ import threading
 ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / "scripts/caddy-rescue-approved-runtime-check.py"
 EXISTING = runpy.run_path(str(ROOT / "scripts/test-caddy-rescue-primary-state-witness.py"))
-FAKE_DOCKER = EXISTING["FAKE_DOCKER"]
+FAKE_DOCKER = EXISTING["FAKE_DOCKER"].replace(
+    'sys.stdout.write((root / (file + ".json")).read_text())',
+    r'''# Controlled test-only modification during the first Docker read,
+# strictly AFTER the operator script snapshots local input files.
+trigger = root / "mutate-input.txt"
+if trigger.exists():
+    name = trigger.read_text().strip()
+    trigger.unlink()
+    destination = root / name
+    if name == ".env":
+        destination.write_text("# revised while verification runs\\n"
+                               "ALIYUN_ACCESS_KEY_SECRET=NEVER_PRINT_THIS_SECRET\\n")
+    elif name == "compose.yml":
+        replacement = root / "same-bytes-new-inode.yml"
+        replacement.write_bytes(destination.read_bytes())
+        os.replace(replacement, destination)
+sys.stdout.write((root / (file + ".json")).read_text())''',
+)
 FIXTURE = EXISTING["fixture"]
 HTTP = EXISTING["HTTP"]
 REFERENCE = "ghcr.io/lazyxu/xdrive-caddy@sha256:" + "a" * 64
@@ -56,7 +73,9 @@ def make_approval(root, image=REFERENCE):
 
 
 def run_test(port, stage, change=None, bad_ref=None, wrong_fingerprint=False,
-             mutate_signature=False, swapped_primary=False, anonymous_open=False):
+             mutate_signature=False, swapped_primary=False, anonymous_open=False,
+             mutate_input=None, symlink_input=None, oversized_input=None,
+             empty_env=False):
     HTTP.allow_anon = anonymous_open
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -79,9 +98,21 @@ def run_test(port, stage, change=None, bad_ref=None, wrong_fingerprint=False,
                 json.dumps([after]), encoding="utf-8",
             )
         envfile, compose = root / ".env", root / "compose.yml"
-        envfile.write_text("# fixture-only\n")
+        envfile.write_text("" if empty_env else "# fixture-only\n")
         compose.write_text("# fixture-only\n")
         manifest, sig, pub, fingerprint = make_approval(root)
+        targets = {".env": envfile, "compose.yml": compose,
+                   "operator-approval.json": manifest}
+        if symlink_input:
+            path = targets[symlink_input]
+            backing = root / ("backing-" + path.name)
+            backing.write_bytes(path.read_bytes())
+            path.unlink()
+            path.symlink_to(backing)
+        if oversized_input:
+            targets[oversized_input].write_bytes(b"x" * 262145)
+        if mutate_input:
+            (root / "mutate-input.txt").write_text(mutate_input)
         if wrong_fingerprint:
             fingerprint = "0" * 64
         if mutate_signature:
@@ -97,7 +128,9 @@ def run_test(port, stage, change=None, bad_ref=None, wrong_fingerprint=False,
         ], env=env, capture_output=True, text=True, timeout=90, check=False)
         ok = (change is None and bad_ref is None and not wrong_fingerprint
               and not mutate_signature and not swapped_primary
-              and not anonymous_open and stage in ("before", "primary-down", "restored"))
+              and not anonymous_open and mutate_input is None
+              and symlink_input is None and oversized_input is None
+              and stage in ("before", "primary-down", "restored"))
         assert (result.returncode == 0) == ok, result.stderr
         if ok:
             assert "approved-rescue-runtime-local-phase: " + stage in result.stdout
@@ -145,7 +178,15 @@ def main():
         run_test(port, "primary-down", swapped_primary=True)
         run_test(port, "primary-down", anonymous_open=True)
         run_test(port, "invalid-phase")
-        print("operator-approved runtime Caddy rescue: fake Docker + real HTTP + Ed25519 passed")
+        # Empty .env is legal. All other inputs must be bounded and regular.
+        run_test(port, "primary-down", empty_env=True)
+        for victim in (".env", "compose.yml"):
+            run_test(port, "primary-down", symlink_input=victim)
+        run_test(port, "primary-down", oversized_input="compose.yml")
+        # Hash equality alone would miss a same-content replacement (new inode).
+        run_test(port, "primary-down", mutate_input="compose.yml")
+        run_test(port, "primary-down", mutate_input=".env")
+        print("operator-approved runtime Caddy rescue: immutable local inputs + Ed25519 passed")
     finally:
         server.shutdown()
         server.server_close()
