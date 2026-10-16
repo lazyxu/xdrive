@@ -269,6 +269,8 @@ func main() {
 		PhotoCreativeAnalyzer:       photoCreativeAnalyzer,
 		PhotoFacePreviewBaseURL:     cfg.PhotoFacePreviewBaseURL,
 		HostControlDir:              strings.TrimSpace(os.Getenv("XD_HOST_CONTROL_DIR")),
+		PhotoHostTrustAnchorPath:    strings.TrimSpace(os.Getenv("XD_PHOTO_TRUST_ANCHOR_PATH")),
+		PhotoHostTrustAnchorSHA256:  strings.TrimSpace(os.Getenv("XD_PHOTO_TRUST_ANCHOR_SHA256")),
 		FilesDataHostPath:           strings.TrimSpace(os.Getenv("XD_FILES_DATA_HOST_PATH")),
 		PostgresDataHostPath:        strings.TrimSpace(os.Getenv("XD_POSTGRES_DATA_HOST_PATH")),
 		BackupRootHostPath:          strings.TrimSpace(os.Getenv("XD_BACKUP_ROOT_HOST_PATH")),

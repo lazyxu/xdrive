@@ -350,6 +350,15 @@ export function XDrivePhotoHostDesiredPanel({
                               ? '四类模型自报的认证策略不一致，或严格模式未启用 Bearer；不能认定策略实际生效。'
                               : '未核验：旧版模型／Server、宿主请求回执不匹配、Info 不完整或检测失败均不能确认运行策略。'}
                       </Typography>
+                      <Typography variant="body2"
+                        color={preflight.trust_material_observation === 'blocked' ? 'error.main' : 'text.secondary'}
+                        data-xdrive-photo-trust-material-observation>
+                        运维公钥材料（仅当前 Server）：{preflight.trust_material_observation === 'material-only'
+                          ? '部署提供的只读公钥文件与固定 SHA-256 一致；仅证明本机材料完整，未证明实际 Server 成员、签名准入或可安全停用。'
+                          : preflight.trust_material_observation === 'blocked'
+                            ? '运维文件或固定值缺失、校验不通过，或材料格式/权限异常；此材料不可用于安全迁移。'
+                            : '未配置或旧版 Server/Agent 尚未支持检测；不代表已完成部署信任身份核验。'}
+                      </Typography>
                       <Typography variant="body2" color="text.secondary" data-xdrive-photo-model-request-ack-verified>
                         四类模型确认原始启用请求：{preflight.model_request_ack_verified
                           ? '同一已审计请求的 ID／修订号已由当前模型进程全部确认（仅请求回执，非任务生效）'

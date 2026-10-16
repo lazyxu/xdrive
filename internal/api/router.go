@@ -59,6 +59,8 @@ type Server struct {
 	PhotoSemanticAnalyzer          photointelligence.SemanticAnalyzer
 	PhotoCreativeAnalyzer          photointelligence.CreativeAnalyzer
 	PhotoModelBearerConfigured     bool
+	PhotoHostTrustAnchorPath       string
+	PhotoHostTrustAnchorSHA256     string
 	PhotoFacePreviewBaseURL        string
 	HostControlDir                 string
 	FilesDataHostPath              string
