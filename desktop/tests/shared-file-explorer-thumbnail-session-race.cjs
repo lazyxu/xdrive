@@ -125,6 +125,18 @@ function loadThumbnailProvider(runtime) {
     if (request === './LivePhotoSurface') {
       return { XDriveLivePhotoGlyph: () => null }
     }
+    if (request === './FileExplorerThumbnailVisualState') {
+      const file = path.join(repo, 'ui/shared/src/mui/FileExplorerThumbnailVisualState.ts')
+      const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+      }).outputText
+      const result = { exports: {} }
+      new Function('exports', 'module', js)(result.exports, result)
+      return result.exports
+    }
+    if (request === '@mui/icons-material/ErrorOutlineRounded') {
+      return { __esModule: true, default: () => null }
+    }
     if (request === '@mui/icons-material/PlayCircleOutlineRounded') {
       return { __esModule: true, default: () => null }
     }
