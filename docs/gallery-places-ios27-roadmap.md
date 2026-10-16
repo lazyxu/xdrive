@@ -469,3 +469,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 #1840 的 per-PhotoAsset 位置授权已基于准确 HEAD 全量 CI 成功合入。本阶段只补充内部可测试、尚无生产调用方的**授权签发和续期事务**：当前 Owner、真实原始 WGS84/Node/MediaMetadata 修订号与授权修订号必须在同一 PostgreSQL 事务内锁定，验证当前用户独立的明确授权决定；准许的期限 5 分钟至 30 天，过期、旧身份或错 Owner 一律拒绝。每次新授权或更新都会清理旧的 BD-09 派生位置并递增 consent revision；审计失败一并回滚，无原始位置或 AK 进入审计。独立 PostgreSQL 测试并非用户真的授予过许可；仍没有 HTTP 签发路由、前端同意操作、任务队列或百度 GPS 出站。
 
 后续必须实施真实 Owner 登录状态校验、角色权限和 CSRF/同源保护，添加 Web/Mobile Web/Desktop 共用的授权读取/修改/撤销交互与 Adapter/Agent 运输，再做跨副本 Geoconv 配额、可取消索引任务和正式 JSAPI4 子资源代理。仍拒绝产品态开启 runtime_enabled=false、0 reviewed children，无真实 9 组 HAR、签名信任根和真机 iOS27/Android/Desktop 证据前不得放行。iOS 27「照片」视觉与交互 1:1、52px 全屏 App Frame、百度唯一 Provider 以及共享图库 Range/VirtualCollection/Viewer 均保持不变。
+
+
+## A3b3a3d2l2a · 将定位授权绑定到具体原始 GPS 修订（2026-10-16）
+
+#1845 已通过准确 HEAD 76-job CI/final-gate 并 Rebase 合入。本阶段修正用户授权持久化中缺少 GPS 来源指纹的隐患：新增原始照片主 Node、NodeRevision、MediaMetadata 更新时间及原始 WGS84 latitude/longitude 对的授权快照。允许的授权只能来自同事务锁定的当前照片及用户明确授权；原有未绑定来源的旧授权必须失败关闭，不迁移为自动有效。后续地点索引写入和查询都同时验证照片来源版本与授权版本，照片 GPS 修改后必须再次得到用户授权才能重新派生 BD-09。测试覆盖正常 0,0、编辑 GPS 后旧授权拒绝、明确再授权、撤销/审计回滚及严格查询总数。
+
+这里不新建公开授权 HTTP、移动端图库、JSAPI4 Loader/Cookie/Proxy，也不会让 Server 读取或向百度发送真实用户坐标。动态地图仍 `runtime_enabled=false`，待真实账户/九组私有上游+Browser HAR、人工签名审核、完整资源白名单和 Web/Mobile Web/Desktop 真机之后才能 GO。接下来先完成被 Owner/session 严格认证的显式授权读写接口，再在唯一共享 MUI Gallery / Range / VirtualCollection / Viewer 上完成三端对等；之后 A4→B1→B2→B3→C1，维持 iOS 27「照片」1:1 目标和 52px App Frame。

@@ -63,7 +63,7 @@ func TestMigrateCreatesEmptyOwnerScopedBaiduPhotoMapIndex(t *testing.T) {
 	if !db.Migrator().HasTable(&meta.BaiduPhotoMapConsent{}) {
 		t.Fatal("missing private per-asset Baidu map consent table")
 	}
-	for _, field := range []string{"AssetID", "OwnerID", "Revision", "AllowIndex", "AllowBaiduConversion", "ExpiresAt", "RevokedAt"} {
+	for _, field := range []string{"AssetID", "OwnerID", "Revision", "AllowIndex", "AllowBaiduConversion", "ExpiresAt", "RevokedAt", "SourceNodeID", "SourceNodeRevision", "SourceMediaUpdatedAt", "SourceLatitude", "SourceLongitude"} {
 		if !db.Migrator().HasColumn(&meta.BaiduPhotoMapConsent{}, field) {
 			t.Fatalf("missing privacy grant field %s", field)
 		}
