@@ -476,3 +476,10 @@ A3 的 Provider 仍仅百度，AK 两种分别服务端加密，生产 JSAPI4 �
 #1845 已通过准确 HEAD 76-job CI/final-gate 并 Rebase 合入。本阶段修正用户授权持久化中缺少 GPS 来源指纹的隐患：新增原始照片主 Node、NodeRevision、MediaMetadata 更新时间及原始 WGS84 latitude/longitude 对的授权快照。允许的授权只能来自同事务锁定的当前照片及用户明确授权；原有未绑定来源的旧授权必须失败关闭，不迁移为自动有效。后续地点索引写入和查询都同时验证照片来源版本与授权版本，照片 GPS 修改后必须再次得到用户授权才能重新派生 BD-09。测试覆盖正常 0,0、编辑 GPS 后旧授权拒绝、明确再授权、撤销/审计回滚及严格查询总数。
 
 这里不新建公开授权 HTTP、移动端图库、JSAPI4 Loader/Cookie/Proxy，也不会让 Server 读取或向百度发送真实用户坐标。动态地图仍 `runtime_enabled=false`，待真实账户/九组私有上游+Browser HAR、人工签名审核、完整资源白名单和 Web/Mobile Web/Desktop 真机之后才能 GO。接下来先完成被 Owner/session 严格认证的显式授权读写接口，再在唯一共享 MUI Gallery / Range / VirtualCollection / Viewer 上完成三端对等；之后 A4→B1→B2→B3→C1，维持 iOS 27「照片」1:1 目标和 52px App Frame。
+
+
+## A3b3a3d2l2b1 · 当前用户显式地图定位授权 API（2026-10-16）
+
+在 #1851 精确 GPS 来源绑定通过准确 HEAD CI 合入后，新增 GET/PUT/DELETE /api/v1/media/items/:id/baidu-map-consent。只接受经过 Bearer 登录与最新 SessionVersion 检查的 Owner 主 Node/PhotoAsset，PUT 必须显式确认「允许将此照片原始坐标发送至百度用于地图坐标转换」与「允许建立派生地图索引」，同时要求授权修订号及 10 分钟到 30 天的有效期。不接收任何前端 GPS/AssetID/OwnerID，更不会将存储的原始坐标/密钥返回给浏览器。原始定位改动后，旧许可失效；授权新版本由当前 Server PostgreSQL 同事务锁核对。DELETE 使用 If-Match CAS、审计事务和索引清理，审计失败整个事务回滚；同一用户的软删除文件仍允许撤销。CORS Origin 和 Fetch Metadata 单独严格校验，Desktop Native Agent 可用自己的 Bearer 客户端认证。
+
+这一阶段仅为 Go Server 用户授权协议及真实 PostgreSQL 测试；尚未连上 Go Client、Desktop Agent IPC 或 Web/Mobile Web/Desktop 的同一 MUI 位置授权 Dialog，亦无任何实际百度 Geoconv/JSAPI Loader/子资源代理/GPS 发送。位置授权开启不等于地图加载或获得用户已实际使用地图的许可。后续先完成共同 TS 数据模型/Agent 运输/共享 Viewer 控件，再做有界可取消 Geoconv 工作队列与百度 JSAPI4 生产资源白名单、签名发布及 9 组私有双端 HAR。保持百度唯一 Provider、Server AK/Browser AK 仅在 Server、iOS 27「照片」1:1 交互验收及 52px 全屏 App Frame，顺序 A3→A4→B1→B2→B3→C1。
