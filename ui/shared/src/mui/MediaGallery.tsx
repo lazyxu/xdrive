@@ -1963,9 +1963,13 @@ export function XDriveMediaGalleryPage({
   }, [draftFilters, loadFirstPage, mobileGalleryViewport, persistPlacesCamera, places, placesPageOffset, placesTotalCount, query.place, section])
 
   const openPet = useCallback((pet: MediaPetFacet, fromCollections = false) => {
-    // Mobile Collections stays committed while the owner's Pet first range
-    // is pending; release the old scroll only after the winning range loads.
-    const commitFromCollections = fromCollections ? () => {
+    // P15 already protected Collections -> Pet. An accepted compact People
+    // index is likewise the owner of its card and real scroll until the
+    // authenticated first Pet Range wins. It must not flash an empty detail
+    // or replay the next virtual photo anchor during a pending navigation.
+    const fromCommittedPeopleIndex = mobileGalleryViewport && !fromCollections &&
+      section === 'people' && !currentPet && !currentPerson && !currentSuggestedPerson
+    const commitAfterFirstRange = (fromCollections || fromCommittedPeopleIndex) ? () => {
       setCurrentFolderView(null)
       setSection('people')
       setActiveMediaType('')
@@ -1973,8 +1977,9 @@ export function XDriveMediaGalleryPage({
       setQuery({})
       setMobileCollectionsOverview(false)
     } : undefined
-    if (!fromCollections) {
-      // Keep existing immediate People/Pets navigation on wide Web/Desktop.
+    if (!fromCollections && !fromCommittedPeopleIndex) {
+      // Preserve established immediate navigation outside compact indexes,
+      // including wide Web and Desktop, with the original shared transport.
       setCurrentPet(pet)
       setSection('people')
       setActiveMediaType('')
@@ -1982,8 +1987,8 @@ export function XDriveMediaGalleryPage({
       setQuery({})
     }
     void loadFirstPage(null, {}, null, null, 'default', null, null, pet,
-      commitFromCollections)
-  }, [loadFirstPage])
+      commitAfterFirstRange)
+  }, [currentPerson, currentPet, currentSuggestedPerson, loadFirstPage, mobileGalleryViewport, section])
 
   const openSuggestedPerson = useCallback((person: MediaSuggestedPerson) => {
     setSection('people')
