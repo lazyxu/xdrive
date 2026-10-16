@@ -19,6 +19,10 @@ test('native precommit remains Agent-private and never an exposed backup action'
   assert.match(impl, /c\.ReadLocalPushStaging\(/)
   assert.match(impl, /c\.PreflightLocalPushStagingPhysical\(/)
   assert.match(transport, /SnapshotSHA256: current\.SnapshotSHA256/)
+  assert.match(transport, /CurrentPathKey: key/)
+  assert.match(impl, /localpush\.LocalInventoryPathKey\(grant, "file", relativePath\)/)
+  assert.match(impl, /pathKey !==? staged\.CurrentPathKey|pathKey != staged\.CurrentPathKey/)
+  assert.match(goTests, /TestPrivateNativeStagePrecommitRejectsDifferentEqualContentSourceBeforeNetwork/)
   assert.match(goTests, /TestPrivateNativeStagePrecommitRehashesOriginalAndPhysicalStage/)
   assert.match(goTests, /TestPrivateNativeStagePrecommitFailsClosed/)
   for (const raw of [api, agent, desktop, shared]) {
