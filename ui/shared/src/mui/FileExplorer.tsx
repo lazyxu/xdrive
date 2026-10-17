@@ -4022,14 +4022,15 @@ export function XDriveFileExplorer({
     const mediaDetails = mediaDetailsForItem(item)
     const duration = xDriveMediaFormatDuration(mediaDetails?.duration_ms)
     return [
-      { label: '类型', value: defaultTypeLabel(item), section: 'general' },
+      { label: '位置', value: item.path || item.secondaryLabel || derivedPath, section: 'general' },
+      { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0), section: 'general' },
       { label: '修改时间', value: item.updatedAt ? new Date(item.updatedAt).toLocaleString() : '—', section: 'general' },
       { label: '创建时间', value: item.createdAt ? new Date(item.createdAt).toLocaleString() : '—', section: 'general' },
-      { label: '位置', value: item.path || item.secondaryLabel || derivedPath, section: 'general' },
+      { label: 'Revision', value: item.revision ?? '—', section: 'general' },
+      { label: '类型', value: defaultTypeLabel(item), section: 'general' },
       ...(availability
         ? [{ label: '可用性', value: availability.label, section: 'general' as const }]
         : []),
-      { label: '大小', value: item.kind === 'dir' ? '—' : formatBytes(item.size ?? 0), section: 'content' },
       ...(mediaDetails?.width && mediaDetails?.height
         ? [{
             label: '尺寸',
@@ -4044,7 +4045,6 @@ export function XDriveFileExplorer({
       ...(item.kind === 'file'
         ? [{ label: 'SHA-256', value: item.sha256 || '—', section: 'technical' as const }]
         : []),
-      { label: 'Revision', value: item.revision ?? '—', section: 'technical' },
       { label: 'ID', value: String(item.id), section: 'technical' },
       ...(sourceValue !== undefined
         ? [{ label: '来源', value: sourceValue, section: 'technical' as const }]
@@ -4252,17 +4252,17 @@ export function XDriveFileExplorer({
   const propertiesDialogProperties = propertiesDialogItem
     ? propertiesDialogItem.kind === 'dir'
       ? [
-          { label: '类型', value: defaultTypeLabel(propertiesDialogItem), section: 'general' },
+          { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath, section: 'general' },
+          { label: '大小', value: propertiesDialogRecursiveSize, section: 'general' },
           { label: '修改时间', value: propertiesDialogItem.updatedAt ? new Date(propertiesDialogItem.updatedAt).toLocaleString() : '—', section: 'general' },
           { label: '创建时间', value: propertiesDialogItem.createdAt ? new Date(propertiesDialogItem.createdAt).toLocaleString() : '—', section: 'general' },
-          { label: '位置', value: propertiesDialogItem.path || propertiesDialogItem.secondaryLabel || derivedPath, section: 'general' },
+          { label: 'Revision', value: propertiesDialogItem.revision ?? '—', section: 'general' },
+          { label: '类型', value: defaultTypeLabel(propertiesDialogItem), section: 'general' },
           ...(propertiesDialogAvailability
             ? [{ label: '可用性', value: propertiesDialogAvailability.label, section: 'general' as const }]
             : []),
-          { label: '大小', value: propertiesDialogRecursiveSize, section: 'content' },
           { label: '内容', value: propertiesDialogRecursiveContent, section: 'content' },
           ...(propertiesDialogItem.properties ?? []),
-          { label: 'Revision', value: propertiesDialogItem.revision ?? '—', section: 'technical' },
           { label: 'ID', value: String(propertiesDialogItem.id), section: 'technical' },
           { label: '来源', value: propertiesDialogSource, section: 'technical' },
         ] satisfies XDriveFileExplorerProperty[]
