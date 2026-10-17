@@ -67,6 +67,7 @@ import type {
   XDriveWebAppBrowseContext,
 } from '../../ui/shared/src'
 import type { XDriveApi } from './api'
+import { xDriveFileExplorerVerifiedChildReanchor } from '../../ui/shared/src/mui/FileExplorerReanchor'
 
 /** The existing Files Search input in either responsive presentation. */
 function xDriveWebFilesSearchInput(target: Element | null): target is HTMLInputElement {
@@ -571,6 +572,8 @@ export default function WebFileExplorer({
     sort.key, sort.direction, grouping.groupBy, grouping.foldersFirst,
     trashActive, searchState.results !== null, compactMobile,
   ].join(':')
+  const currentDirectoryReanchorRange = !trashActive && searchState.results === null
+    ? explorerVirtualCollection?.collectRange : undefined
   // One Web workspace owns the selected logical IDs on both sides of 900px.
   // The two presentations intentionally unmount each other; a selection must
   // not be scoped to the transient Mobile/Details React component instance.
@@ -1249,6 +1252,17 @@ export default function WebFileExplorer({
           requestedDirectoryID={initialDirectoryID}
           items={trashActive ? trash.items : explorerItems}
           virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+          locateVerifiedCurrentChild={currentDirectoryReanchorRange
+            ? (parentID, nodeID, revision, itemCount, targetSort, targetGrouping, signal) =>
+              xDriveFileExplorerVerifiedChildReanchor({
+                parentID, nodeID, revision, itemCount, sort: targetSort,
+                grouping: targetGrouping, signal,
+                locate: (parent, node, requestedSort, requestedGrouping, scopedSignal) =>
+                  api.childPosition(parent, node, requestedSort.key,
+                    requestedSort.direction, requestedGrouping, scopedSignal),
+                collectRange: currentDirectoryReanchorRange,
+              })
+            : undefined}
           inlineBranches={inlineMobileBranches}
           onToggleInlineFolder={(item, ownerID, parentIndex) => {
             inlineStore.toggle(Number(item.id), ownerID, parentIndex, item.name)
