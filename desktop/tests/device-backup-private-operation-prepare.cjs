@@ -12,7 +12,7 @@ test('private LocalPush prepare does not grant upload authority or renderer acce
   const client = read('internal/client/local_push_operation_prepare.go')
   const manifest = read('internal/api/router_contract_test.go')
   const route = '/sources/:id/local-operation/prepare'
-  assert.match(router, /authed\.POST\("\/sources\/:id\/local-operation\/prepare", s\.requireLocalSourceExecutor\(\), s\.prepareLocalPushOperation\)/)
+  assert.match(router, /authed\.POST\("\/sources\/:id\/local-operation\/prepare", localPushOperationNoStore, s\.requireLocalSourceExecutor\(\), s\.prepareLocalPushOperation\)/)
   assert.ok(manifest.includes('/api/v1' + route), 'coverage manifest must include private prepare')
   assert.match(handler, /reserveBoundLocalPushOperationIntentWithKey\(/)
   assert.match(handler, /localPushStageProof\(/)
