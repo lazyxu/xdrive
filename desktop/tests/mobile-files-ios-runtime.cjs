@@ -3420,3 +3420,51 @@ test('mounted Mobile Browse Home keeps organization rows stable through quick an
     tags: [{ id: 61, name: '重要标签' }],
   } })
 })
+
+
+test('Mobile Recent and Favorites require a confirmed zero; a failed read offers retry', async () => {
+  let recentRetries = 0
+  let favoriteRetries = 0
+  await withView(async h => {
+    const list = () => find(h.view, 'data-xdrive-mobile-files-collection', true)
+    const labels = () => textOf(list().props.children)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-collection-first-read'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 0)
+    assert.equal(labels().includes('暂无最近打开的项目'), false)
+    assert.equal(find(h.view, 'data-mobile-files-collection-state', true).props['aria-busy'], true)
+    await h.update({ recentReadState: 'error', recentLoading: false })
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 1)
+    assert.equal(labels().includes('暂无最近打开的项目'), false)
+    const error = find(h.view, 'data-mobile-files-collection-error', true)
+    const retry = error.findAll(n => typeof n.props?.onClick === 'function')
+    assert.equal(retry.length, 1)
+    await act(async () => { retry[0].props.onClick() })
+    assert.equal(recentRetries, 1)
+    await h.update({ recentReadState: 'error', recentLoading: true })
+    assert.equal(count(h.view, 'data-mobile-files-collection-first-read'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 0)
+    await h.update({ recentReadState: 'ready', recentLoading: false })
+    assert.equal(count(h.view, 'data-mobile-files-collection-first-read'), 0)
+    assert.equal(labels().includes('暂无最近打开的项目'), true)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    assert.equal(count(h.view, 'data-mobile-files-collection-first-read'), 1)
+    assert.equal(labels().includes('暂无收藏的文件'), false)
+    await h.update({ favoritesReadState: 'error', favoritesLoading: false })
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 1)
+    const favoriteError = find(h.view, 'data-mobile-files-collection-error', true)
+    await act(async () => {
+      favoriteError.findAll(n => typeof n.props?.onClick === 'function')[0].props.onClick()
+    })
+    assert.equal(favoriteRetries, 1)
+    await h.update({ favoritesReadState: 'ready', favoritesLoading: false })
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 0)
+    assert.equal(labels().includes('暂无收藏的文件'), true)
+  }, { props: {
+    recentItems: [], favorites: [],
+    recentReadState: 'unverified', recentLoading: true,
+    favoritesReadState: 'unverified', favoritesLoading: true,
+    onRefreshRecent: () => { recentRetries++ },
+    onRefreshFavorites: () => { favoriteRetries++ },
+  } })
+})

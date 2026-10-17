@@ -58,6 +58,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
 }) {
   const [items, setItems] = useState<XDriveFileExplorerFavoriteEntry<TNode>[]>([])
   const [loading, setLoading] = useState(false)
+  const [readState, setReadState] = useState<'unverified' | 'ready' | 'error'>('unverified')
   const [busyID, setBusyID] = useState<number | null>(null)
   const loadItemsRef = useRef(loadItems)
   const favoriteItemRef = useRef(favoriteItem)
@@ -97,7 +98,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
 
   const loadFresh = useCallback(async (requestID: number) => {
     const next = (await loadItemsRef.current()).map(projectFavoriteItem)
-    if (requestID === loadRequestRef.current) setItems(next)
+    if (requestID === loadRequestRef.current) {
+      setItems(next)
+      setReadState('ready')
+    }
     return next
   }, [])
 
@@ -107,6 +111,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
       setItems([])
       setLoading(false)
       setBusyID(null)
+      setReadState('unverified')
       return []
     }
     const requestID = loadRequestRef.current + 1
@@ -115,7 +120,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     try {
       return await loadFresh(requestID)
     } catch (error) {
-      if (requestID === loadRequestRef.current) onErrorRef.current(error)
+      if (requestID === loadRequestRef.current) {
+        setReadState('error')
+        onErrorRef.current(error)
+      }
       return []
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
@@ -127,6 +135,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
     setItems([])
     setLoading(false)
     setBusyID(null)
+    setReadState('unverified')
     void refresh()
   }, [lifecycleKey, refresh])
 
@@ -190,6 +199,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
         // snapshot after this write succeeds. Give the write ownership.
         loadRequestRef.current += 1
         setLoading(false)
+        setReadState('ready')
         setItems((current) => (
           current.some((item) => item.id === next.id)
             ? current.map((item) => item.id === next.id ? next : item)
@@ -211,6 +221,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
         if (generation !== lifecycleGenerationRef.current || !enabledRef.current) return true
         loadRequestRef.current += 1
         setLoading(false)
+        setReadState('ready')
         setItems((current) => current.filter((item) => item.id !== nodeID))
         return true
       } catch (error) {
@@ -241,7 +252,10 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
       await onActivate(target.node, target.crumbs)
       return true
     } catch (error) {
-      if (requestID === loadRequestRef.current) onErrorRef.current(error)
+      if (requestID === loadRequestRef.current) {
+        setReadState(current => current === 'unverified' ? 'error' : current)
+        onErrorRef.current(error)
+      }
       return false
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
@@ -251,6 +265,7 @@ export function useXDriveFileExplorerFavorites<TNode extends FavoriteNodeShape>(
   return {
     items: visibleItems,
     loading: scopeVisible ? loading : enabled,
+    readState: scopeVisible ? readState : 'unverified',
     busyID: scopeVisible ? busyID : null,
     favoriteIDs, refresh, favorite, unfavorite, toggle, activate,
   }

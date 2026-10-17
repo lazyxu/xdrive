@@ -1302,6 +1302,10 @@ export default function WebFileExplorer({
             openWebQuickLook({ item, logicalIndex: logicalIndexForItem(item) })
           }}
           onOpenError={onError}
+          recentLoading={recent.loading}
+          recentReadState={recent.readState}
+          favoritesLoading={favorites.loading}
+          favoritesReadState={favorites.readState}
           recentItems={recent.items.map(item => ({
             id: item.id, name: item.name, kind: item.kind, subtitle: item.path,
             size: item.size, revision: typeof item.revision === 'number' ? item.revision : undefined,

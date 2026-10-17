@@ -127,7 +127,11 @@ type Props = {
   onQuickLookItem?: (item: XDriveFileExplorerItem, parentID?: number) => void
   onOpenError: (error: unknown) => void
   recentItems: SectionEntry[]
+  recentLoading?: boolean
+  recentReadState?: 'unverified' | 'ready' | 'error'
   favorites: SectionEntry[]
+  favoritesLoading?: boolean
+  favoritesReadState?: 'unverified' | 'ready' | 'error'
   quickAccess: SectionEntry[]
   savedSearches: SavedEntry[]
   tags: SavedEntry[]
@@ -604,6 +608,17 @@ export default function MobileFiles(props: Props) {
   }, [props.inlineBranches])
   const sectionItems = section === 'recent' ? props.recentItems : props.favorites
   const sectionWindow = mobileFilesWindow(sectionItems.length, scrollTop, viewport.height, MOBILE_FILES_ROW_HEIGHT)
+  // 'unverified' is not a real empty list. A failed first GET cannot claim
+  // “暂无”; prior accepted contents remain mounted throughout refresh.
+  const collectionReadState = section === 'recent'
+    ? props.recentReadState ?? 'ready' : props.favoritesReadState ?? 'ready'
+  const collectionLoading = section === 'recent'
+    ? Boolean(props.recentLoading) : Boolean(props.favoritesLoading)
+  const collectionFirstRead = section !== 'browse' && sectionItems.length === 0 &&
+    (collectionReadState === 'unverified' ||
+      (collectionReadState === 'error' && collectionLoading))
+  const showRecentFirstRead = useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead)
+  const showFavoriteFirstRead = useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead)
   const sortLabel = ({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[props.sort.key]
   const groupLabel = props.grouping?.groupBy === 'type' ? '类型' :
     props.grouping?.groupBy === 'modified' ? '修改日期' :
@@ -2413,7 +2428,30 @@ export default function MobileFiles(props: Props) {
             </>
           ) : (
             <Box data-xdrive-mobile-files-collection>
-              {sectionItems.length === 0 ? <Typography color="text.secondary" sx={{ p: 3 }}>暂无{section === 'recent' ? '最近打开的项目' : '收藏的文件'}</Typography> : null}
+              {sectionItems.length === 0 ? (
+                <Box
+                  data-mobile-files-collection-state
+                  aria-busy={collectionFirstRead && collectionLoading || undefined}
+                  sx={{ minHeight: 180, px: 2, py: 2, display: 'grid', placeItems: 'center' }}
+                >
+                  {collectionFirstRead ? (
+                    <Box data-mobile-files-collection-first-read role="status">
+                      {(section === 'recent' ? showRecentFirstRead : showFavoriteFirstRead)
+                        ? <CircularProgress size={24} aria-label={section === 'recent' ? '正在读取最近项目' : '正在读取收藏'} />
+                        : null}
+                    </Box>
+                  ) : collectionReadState === 'error' && !collectionLoading ? (
+                    <Stack data-mobile-files-collection-error role="alert" alignItems="center" spacing={1}>
+                      <Typography variant="body2" color="error.main">
+                        {section === 'recent' ? '最近项目读取失败，请重试。' : '收藏读取失败，请重试。'}
+                      </Typography>
+                      <Button sx={{ minHeight: MIN_TOUCH }} onClick={section === 'recent' ? props.onRefreshRecent : props.onRefreshFavorites}>重试</Button>
+                    </Stack>
+                  ) : collectionReadState === 'ready' ? (
+                    <Typography color="text.secondary">暂无{section === 'recent' ? '最近打开的项目' : '收藏的文件'}</Typography>
+                  ) : null}
+                </Box>
+              ) : null}
               <Box data-mobile-files-group="collection" sx={{ mx: 2, mt: 1.5,
                 borderRadius: '13px', overflow: 'hidden', bgcolor: 'background.paper' }}>
                 <Box sx={{ height: sectionWindow.before }}/>
