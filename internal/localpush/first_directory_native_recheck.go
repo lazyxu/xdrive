@@ -119,6 +119,22 @@ func RecheckLocalFirstDirectoryNative(
 	return recheckLocalFirstDirectoryNativeHeld(ctx, configDir, grant, request, nil)
 }
 
+// RecheckLocalFirstDirectoryNativeWithHeldCheckpoint is an INTERNAL
+// owning-Agent read-only boundary. It runs the caller's trusted checkpoint
+// while the SAME OS directory handle is open and verified. No handle, secret,
+// path, permission to commit or durable Server lease escapes this function.
+// An absent checkpoint MUST fail closed, unlike the compatible legacy read.
+func RecheckLocalFirstDirectoryNativeWithHeldCheckpoint(
+	ctx context.Context, configDir string, grant RootGrant,
+	request LocalFirstDirectoryNativeRecheckRequest,
+	checkpoint func(context.Context, LocalFirstDirectoryNativeObservation) error,
+) (LocalFirstDirectoryNativeObservation, error) {
+	if checkpoint == nil {
+		return LocalFirstDirectoryNativeObservation{}, errors.New("owning native first directory unavailable")
+	}
+	return recheckLocalFirstDirectoryNativeHeld(ctx, configDir, grant, request, checkpoint)
+}
+
 // recheckLocalFirstDirectoryNativeHeld is strictly package-private. The
 // supplied callback is an Agent-LOCAL read-only observation window: the same
 // native OS directory handle remains open throughout the callback. Success
