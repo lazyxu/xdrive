@@ -188,6 +188,7 @@ export default function DesktopFileExplorer({
   mediaDetailsSupported = false,
   mediaPropertiesSupported = false,
   nodeLocationSupported = false,
+  childPositionSupported = false,
   fileAvailabilitySupported = false,
   openWithSupported = false,
   quickAccessSupported = false,
@@ -249,6 +250,7 @@ export default function DesktopFileExplorer({
   mediaDetailsSupported?: boolean
   mediaPropertiesSupported?: boolean
   nodeLocationSupported?: boolean
+  childPositionSupported?: boolean
   fileAvailabilitySupported?: boolean
   openWithSupported?: boolean
   quickAccessSupported?: boolean
@@ -1915,6 +1917,17 @@ const desktopTransferLifecycleChildBatchSize = 1000
         items={trashActive ? trash.items : explorerItems}
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+        locateCurrentChild={childPositionSupported && !trashActive && searchState.results === null
+          ? async (parentID, nodeID, targetSort, targetGrouping, signal) => {
+              const result = await xDriveDesktopViewportRequest(signal, (requestID) =>
+                window.xdriveDesktop.agent.cloudChildPosition(
+                  parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, requestID,
+                ),
+              )
+              if (!result.ok) throw new Error(result.error.message)
+              return result.data
+            }
+          : undefined}
         loading={trashActive ? trash.loading : loading || searchLoading || explorerActionBusy}
         emptyMessage={trashActive ? '回收站为空' : searchState.results !== null
           ? searchError ? '搜索未完成，请重试' : searchReady ? '未找到匹配的文件或文件夹' : '正在搜索…'

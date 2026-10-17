@@ -755,39 +755,35 @@ export function useXDriveFileExplorerNavigation<TCrumb extends XDriveFileExplore
     updateActiveTab((tab) => ({ ...tab, viewMode: nextViewMode }))
   }
 
-  const changeSort = (nextSort: XDriveFileExplorerSort) => {
+  const changeSort = (nextSort: XDriveFileExplorerSort): Promise<boolean> => {
     const requestID = beginNavigation(activeTabID)
     if (isSearchActive() || !current) {
       updateActiveTab((tab) => ({ ...tab, sort: nextSort }))
-      return
+      return Promise.resolve(true)
     }
-    void (async () => {
+    return (async () => {
       const committed = await onLoadDirectory(
-        current.id,
-        crumbs,
-        nextSort,
-        grouping,
+        current.id, crumbs, nextSort, grouping,
       )
-      if (committed === false || !isNavigationCurrent(requestID)) return
+      if (committed === false || !isNavigationCurrent(requestID)) return false
       updateActiveTab((tab) => ({ ...tab, sort: nextSort }))
+      return true
     })()
   }
 
-  const changeGrouping = (nextGrouping: XDriveFileExplorerGrouping) => {
+  const changeGrouping = (nextGrouping: XDriveFileExplorerGrouping): Promise<boolean> => {
     const requestID = beginNavigation(activeTabID)
     if (isSearchActive() || !current) {
       updateActiveTab((tab) => ({ ...tab, grouping: { ...nextGrouping } }))
-      return
+      return Promise.resolve(true)
     }
-    void (async () => {
+    return (async () => {
       const committed = await onLoadDirectory(
-        current.id,
-        crumbs,
-        sort,
-        nextGrouping,
+        current.id, crumbs, sort, nextGrouping,
       )
-      if (committed === false || !isNavigationCurrent(requestID)) return
+      if (committed === false || !isNavigationCurrent(requestID)) return false
       updateActiveTab((tab) => ({ ...tab, grouping: { ...nextGrouping } }))
+      return true
     })()
   }
 

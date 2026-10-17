@@ -1468,6 +1468,11 @@ export default function WebFileExplorer({
         items={trashActive ? trash.items : explorerItems}
         crumbs={trashActive ? trash.crumbs : explorerCrumbs}
         virtualCollection={trashActive ? trash.virtualCollection : explorerVirtualCollection}
+        locateCurrentChild={!trashActive && searchState.results === null
+          ? (parentID, nodeID, targetSort, targetGrouping, signal) => api.childPosition(
+              parentID, nodeID, targetSort.key, targetSort.direction, targetGrouping, signal,
+            )
+          : undefined}
         loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
         emptyMessage={trashActive ? '回收站为空' : searchState.results !== null
           ? searchError ? '搜索未完成，请重试' : searchReady ? '未找到匹配的文件或文件夹' : '正在搜索…'
