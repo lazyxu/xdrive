@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Autocomplete, Box, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Autocomplete, Box, Button, Chip, CircularProgress, Paper, Stack, TextField, Typography } from '@mui/material'
 import type {
   MediaPlaceFacet,
   MediaPlacesViewportBounds,
@@ -8,6 +8,7 @@ import type {
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
 
@@ -57,10 +58,17 @@ export function XDriveMediaGalleryPlacesMap({
   const viewportOffsetRef = useRef(viewportOffset)
   const cameraRef = useRef<XDrivePlacesCameraPosition | null>(null)
   const [viewportResult, setViewportResult] = useState<{
+    // Current authorized Server/Agent port is the owner of these GPS results.
+    // Do not show an old account's map list even for one initial frame.
+    source: NonNullable<typeof listPlacesViewport>
     bounds: MediaPlacesViewportBounds
     page: MediaPlacesViewportPage
   } | null>(null)
   const [viewportLoading, setViewportLoading] = useState(false)
+  const [loadFeedbackGeneration, setLoadFeedbackGeneration] = useState(0)
+  const showDeferredViewportLoading = useXDriveDeferredLoading(
+    viewportLoading, loadFeedbackGeneration,
+  )
   const [viewportError, setViewportError] = useState('')
   const boundsRef = useRef<MediaPlacesViewportBounds | null>(null)
   const activeRequest = useRef<AbortController | null>(null)
@@ -71,6 +79,8 @@ export function XDriveMediaGalleryPlacesMap({
     const initialView = boundsRef.current === null
     boundsRef.current = bounds
     activeRequest.current?.abort()
+    // Disarm a previous slow-request spinner before the next camera frame.
+    setLoadFeedbackGeneration((generation) => generation + 1)
     setViewportBounds(bounds)
     // Restore the previously committed viewport page only on first map mount.
     if (!initialView) {
@@ -100,7 +110,7 @@ export function XDriveMediaGalleryPlacesMap({
             page.total_photo_count < 0 || typeof page.has_more !== 'boolean') {
           throw new Error('invalid_viewport_response')
         }
-        setViewportResult({ bounds: viewportBounds, page })
+        setViewportResult({ source: listPlacesViewport, bounds: viewportBounds, page })
       })
       .catch(() => {
         if (!controller.signal.aborted && generation === requestGeneration.current) {
@@ -122,13 +132,18 @@ export function XDriveMediaGalleryPlacesMap({
     if (!Number.isSafeInteger(nextOffset) || nextOffset < 0 ||
         nextOffset > 10_000_000 || nextOffset === viewportOffset) return
     activeRequest.current?.abort()
+    setLoadFeedbackGeneration((generation) => generation + 1)
     viewportOffsetRef.current = nextOffset
     setViewportOffset(nextOffset)
     if (cameraRef.current) onCameraChange?.({ ...cameraRef.current, viewportOffset: nextOffset })
   }
+  const displayedViewportResult = viewportResult?.source === listPlacesViewport
+    ? viewportResult : null
   const currentViewportResult = viewportResult &&
+    viewportResult.source === listPlacesViewport &&
     viewportBounds && sameViewport(viewportResult.bounds, viewportBounds) &&
     viewportResult.page.offset === viewportOffset
+  const showingPreviousViewport = Boolean(displayedViewportResult && !currentViewportResult)
   const viewportReturnRef = useRef<HTMLButtonElement | null>(null)
   useEffect(() => {
     if (!currentViewportResult || !focusPlaceID || !viewportReturnRef.current) return
@@ -195,12 +210,21 @@ export function XDriveMediaGalleryPlacesMap({
         initialCamera={initialCamera}
         onCameraChange={onStaticCameraChange}
       />
-      <Box component="section" data-xdrive-gallery-places-viewport sx={{ px: 1.5, pb: 1.5 }}>
+      <Box component="section" data-xdrive-gallery-places-viewport
+        sx={{ px: 1.5, pb: 1.5, minWidth: 0, position: 'relative' }}>
         <Typography variant="subtitle2" fontWeight={700}>当前地图视窗内的地点</Typography>
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           由百度静态地图相机估算 WGS84 范围，Server 按照片真实 GPS 查询；
           不是 JSAPI 4.0 动态标记或精确瓦片叠加。
         </Typography>
+        {listPlacesViewport && viewportBounds && showDeferredViewportLoading ? (
+          <Box role="status" data-xdrive-places-viewport-loading sx={{
+            position: 'absolute', top: 2, right: 12, zIndex: 1,
+            pointerEvents: 'none', width: 18, height: 18,
+          }}>
+            <CircularProgress size={18} aria-label="正在更新视窗地点" />
+          </Box>
+        ) : null}
         {!listPlacesViewport ? (
           <Typography role="status" variant="body2" color="text.secondary">
             此版本暂不支持视窗地点查询，请更新 Server/Agent。
@@ -210,36 +234,29 @@ export function XDriveMediaGalleryPlacesMap({
             百度静态地图可用后显示相机视窗地点；原始地点列表仍可使用。
           </Typography>
         ) : (
-          <Stack spacing={1}>
-            {viewportLoading ? (
-              <Typography role="status" variant="caption" color="text.secondary">
-                正在更新视窗地点…
-              </Typography>
-            ) : null}
+          <Stack spacing={1} aria-busy={viewportLoading}>
             {viewportError ? (
               <Typography role="alert" variant="caption" color="error">
                 {viewportError}
               </Typography>
             ) : null}
-            {viewportResult && !currentViewportResult ? (
-              <Typography variant="caption" color="text.secondary">
-                保留上一视窗结果，当前视窗尚未确认。
-              </Typography>
-            ) : null}
-            {viewportResult && currentViewportResult ? (
+            {displayedViewportResult ? (
               <>
                 <Typography variant="caption" color="text.secondary"
                   data-xdrive-places-viewport-counts>
-                  当前范围共 {viewportResult.page.total_count.toLocaleString('zh-CN')} 个地点网格、
-                  {viewportResult.page.total_photo_count.toLocaleString('zh-CN')} 张照片；
-                  本页 {viewportResult.page.items.length} 个地点
+                  {showingPreviousViewport ? '上次确认范围' : '当前范围'}共
+                  {displayedViewportResult.page.total_count.toLocaleString('zh-CN')} 个地点网格、
+                  {displayedViewportResult.page.total_photo_count.toLocaleString('zh-CN')} 张照片；
+                  本页 {displayedViewportResult.page.items.length} 个地点
                 </Typography>
-                <Box data-xdrive-places-viewport-results sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                  gap: 0.75,
-                }}>
-                  {viewportResult.page.items.map((place) => (
+                <Box data-xdrive-places-viewport-results
+                  data-xdrive-places-viewport-stale={showingPreviousViewport ? 'true' : undefined}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                    gap: 0.75,
+                  }}>
+                  {displayedViewportResult.page.items.map((place) => (
                     <Button key={place.id} size="small" variant="outlined"
                       ref={place.id === focusPlaceID ? viewportReturnRef : undefined}
                       data-xdrive-places-viewport-return-anchor={place.id === focusPlaceID ? 'true' : undefined}
@@ -249,27 +266,31 @@ export function XDriveMediaGalleryPlacesMap({
                     </Button>
                   ))}
                 </Box>
-                {viewportResult.page.items.length === 0 ? (
+                {displayedViewportResult.page.items.length === 0 ? (
                   <Typography variant="caption" color="text.secondary">
-                    此范围没有已索引的 GPS 地点，可移动地图查看其他范围。
+                    {showingPreviousViewport
+                      ? '上次确认范围没有已索引地点；当前视窗尚未确认。'
+                      : '此范围没有已索引的 GPS 地点，可移动地图查看其他范围。'}
                   </Typography>
                 ) : null}
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Button size="small" variant="outlined" sx={{ minHeight: 44 }}
-                    disabled={viewportLoading || viewportOffset === 0}
+                    disabled={viewportLoading || !currentViewportResult || viewportOffset === 0}
                     onClick={() => changeViewportPage(Math.max(0, viewportOffset - 24))}>
                     上一页
                   </Button>
                   <Button size="small" variant="outlined" sx={{ minHeight: 44 }}
-                    disabled={viewportLoading || !viewportResult.page.has_more ||
-                      viewportResult.page.items.length === 0 ||
-                      viewportOffset + viewportResult.page.items.length > 10_000_000}
+                    disabled={viewportLoading || !currentViewportResult || !displayedViewportResult.page.has_more ||
+                      displayedViewportResult.page.items.length === 0 ||
+                      viewportOffset + displayedViewportResult.page.items.length > 10_000_000}
                     onClick={() => changeViewportPage(
-                      viewportOffset + viewportResult.page.items.length)}>
+                      viewportOffset + displayedViewportResult.page.items.length)}>
                     下一页
                   </Button>
                 </Stack>
               </>
+            ) : !viewportError ? (
+              <Box data-xdrive-places-viewport-first-read sx={{ minHeight: 96 }} />
             ) : null}
           </Stack>
         )}
