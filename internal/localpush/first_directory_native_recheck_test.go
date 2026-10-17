@@ -215,3 +215,111 @@ func TestLocalFirstDirectoryHeldHandleNativeIdentityMatchesInventory(t *testing.
 		t.Fatal("closed native handle was accepted")
 	}
 }
+
+func TestLocalFirstDirectoryHeldNativeReadWindowPreservesPrivateObservation(t *testing.T) {
+	grant, config, _, request := firstDirectoryNativeFixture(t)
+	if err := SaveRootGrant(config, grant); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	got, err := recheckLocalFirstDirectoryNativeHeld(
+		context.Background(), config, grant, request,
+		func(ctx context.Context, observed LocalFirstDirectoryNativeObservation) error {
+			calls++
+			if ctx.Err() != nil || !observed.NativeObserved ||
+				observed.NativeIdentityKey != request.ExpectedNativeIdentityKey ||
+				observed.CommitSupported || observed.BackupComplete ||
+				observed.Authoritative || observed.MissingInferenceSafe {
+				return errors.New("held native callback received invalid/authoritative observation")
+			}
+			return nil
+		},
+	)
+	if err != nil || calls != 1 || !got.NativeObserved || got.CommitSupported ||
+		got.Authoritative || got.BackupComplete || got.MissingInferenceSafe {
+		t.Fatalf("held read-only native window did not preserve its scope: %+v calls=%d err=%v", got, calls, err)
+	}
+	body, err := json.Marshal(got)
+	if err != nil || string(body) != "{}" {
+		t.Fatalf("held window leaked native details into JSON: %s err=%v", body, err)
+	}
+}
+
+func TestLocalFirstDirectoryHeldNativeReadWindowRejectsRevocationAndCancel(t *testing.T) {
+	for _, scenario := range []string{"remove-root-grant", "cancel", "private-error", "rotate-generation"} {
+		t.Run(scenario, func(t *testing.T) {
+			grant, config, root, request := firstDirectoryNativeFixture(t)
+			if err := SaveRootGrant(config, grant); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			calls := 0
+			got, err := recheckLocalFirstDirectoryNativeHeld(
+				ctx, config, grant, request,
+				func(_ context.Context, _ LocalFirstDirectoryNativeObservation) error {
+					calls++
+					switch scenario {
+					case "remove-root-grant":
+						return RemoveRootGrant(config, grant.Server, grant.Account, grant.RootID)
+					case "cancel":
+						cancel()
+					case "private-error":
+						return errors.New("private absolute root " + grant.Path)
+					case "rotate-generation":
+						if err := os.WriteFile(filepath.Join(root, "rotated.txt"), []byte("changed"), 0o600); err != nil {
+							return err
+						}
+						deltaScan(t, config, grant)
+						_, err := PublishLocalReconcileEvidence(context.Background(), config, grant, request.SourceRevision)
+						return err
+					}
+					return nil
+				},
+			)
+			if calls != 1 || err == nil || got.NativeObserved || got.SourceID != 0 {
+				t.Fatalf("%s accepted stale/unsafe held observation: %+v calls=%d err=%v", scenario, got, calls, err)
+			}
+			if scenario == "cancel" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("held-window cancel not propagated: %v", err)
+			}
+			if strings.Contains(err.Error(), grant.Path) {
+				t.Fatalf("held-window error disclosed private root: %v", err)
+			}
+		})
+	}
+}
+
+func TestLocalFirstDirectoryHeldNativeReadWindowRejectsPathReplacement(t *testing.T) {
+	grant, config, root, request := firstDirectoryNativeFixture(t)
+	if err := SaveRootGrant(config, grant); err != nil {
+		t.Fatal(err)
+	}
+	called, replaced := false, false
+	got, err := recheckLocalFirstDirectoryNativeHeld(
+		context.Background(), config, grant, request,
+		func(_ context.Context, _ LocalFirstDirectoryNativeObservation) error {
+			called = true
+			current := filepath.Join(root, request.RelativeDirectory)
+			if err := os.Rename(current, current+"-old"); err != nil {
+				if runtime.GOOS == "windows" {
+					// Windows is permitted to reject renaming an open directory.
+					return nil
+				}
+				return err
+			}
+			replaced = true
+			return os.Mkdir(current, 0o700)
+		},
+	)
+	if !called {
+		t.Fatal("held window callback never executed")
+	}
+	if replaced {
+		if err == nil || got.NativeObserved {
+			t.Fatalf("native path replacement bypassed held-handle fence: %+v err=%v", got, err)
+		}
+	} else if err != nil || !got.NativeObserved {
+		t.Fatalf("unmodified Windows pinned directory incorrectly rejected: %+v err=%v", got, err)
+	}
+}
