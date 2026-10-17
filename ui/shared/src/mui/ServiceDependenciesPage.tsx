@@ -1669,7 +1669,7 @@ export function XDriveServiceDependenciesPage({
                     </Typography>
                   )}
                   {currentTab === 'verify' &&
-                    !['caddy', 'baidu-map', 'geonames']
+                    !['baidu-map', 'geonames']
                       .includes(selectedPage) && (
                     <Stack spacing={1.5} sx={{ mt: 1 }}>
                       {selectedPage === 'storage' ? (
@@ -1700,6 +1700,14 @@ export function XDriveServiceDependenciesPage({
                           未受管的旧模式「可用」仅说明独立 FFmpeg/FFprobe 探针通过，并非宿主配额生效。
                           下方「验证实际生效」单独读取 Host Manager 的目标／应用修订和配额；
                           两次读取不是原子快照，也不证明媒体作业成功，不会在本页执行容器启停。
+                        </Typography>
+                      ) : selectedPage === 'caddy' ? (
+                        <Typography variant="body2" color="text.secondary" data-xdrive-caddy-liveness-scope>
+                          此处只读刷新当前 Server 实际观测到的 Caddy 容器健康、本机 HTTPS 握手与证书状态；
+                          「可用」可能只证明内部 HTTP 代理健康或本机 TLS 校验，不证明公网 HTTPS 可访问，
+                          也不证明当前目标修订已经应用。缺少可信本机 TLS 结果必须保持未知／不可用。
+                          下方另有七项独立的只读安全预检，用于确认缺失的操作员救援与回滚条件；
+                          预检通过也绝不在此处启用、停用、重启或应用 Caddy。
                         </Typography>
                       ) : (
                       <Typography variant="body2" color="text.secondary">

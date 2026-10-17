@@ -80,6 +80,7 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
     id, config_mode: mode, apply_mode: 'immediate', status: 'ready',
   })
   const allPorts = Object.fromEntries([
+    'load',
     'loadPostgresPoolConfig', 'savePostgresPoolConfig',
     'loadSourceWorkerConfig', 'saveSourceWorkerConfig',
     'loadCaddyHTTPSConfig', 'saveCaddyHTTPSConfig', 'loadCaddyHTTPSPreflight',
@@ -106,6 +107,7 @@ test('quick actions fail closed for unknown ports, incomplete or duplicate lifec
     saveCaddyHTTPSConfig: allPorts.saveCaddyHTTPSConfig,
   }), { configTarget: { service: 'caddy', tab: 'config' }, verifyTarget: undefined })
   assert.deepEqual(resolve('caddy', [row('caddy')], {
+    load: allPorts.load,
     loadCaddyHTTPSPreflight: allPorts.loadCaddyHTTPSPreflight,
   }), { configTarget: undefined, verifyTarget: { service: 'caddy', tab: 'verify' } })
   assert.deepEqual(resolve('storage', [row('storage', 'deployment')], {}), {})
@@ -361,5 +363,50 @@ test('shared GeoNames read-only refresh is separate from explicit mutating datas
   assert.match(page, /onClick=\{\(\) => \{ void reloadGeoNames\(\) \}\}/)
   for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
     assert.equal(page.includes(forbidden), false)
+  }
+})
+
+
+test('Caddy current Server liveness verify requires a real inventory AND the original seven preflights', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const caddy = { id: 'caddy', config_mode: 'in-app',
+    apply_mode: 'not-available', status: 'unknown' }
+  const fn = () => Promise.resolve()
+  const port = { load: fn, loadCaddyHTTPSPreflight: fn,
+    loadCaddyHTTPSConfig: fn, saveCaddyHTTPSConfig: fn }
+  const config = { service: 'caddy', tab: 'config' }
+  const verify = { service: 'caddy', tab: 'verify' }
+  assert.deepEqual(resolve('caddy', [caddy], port),
+    { configTarget: config, verifyTarget: verify })
+  assert.deepEqual(resolve('caddy', [caddy], { ...port, load: undefined }),
+    { configTarget: config, verifyTarget: undefined })
+  assert.deepEqual(resolve('caddy', [caddy], { load: fn }),
+    {})
+  assert.deepEqual(resolve('caddy', [caddy], { load: fn, loadCaddyHTTPSPreflight: fn }),
+    { configTarget: undefined, verifyTarget: verify })
+  assert.deepEqual(resolve('caddy', [caddy, caddy], port), {})
+  assert.deepEqual(resolve('caddy', [{ ...caddy, status: 'planned' }], port), {})
+  assert.deepEqual(resolve('caddy', [{ ...caddy, apply_mode: 'planned' }], port), {})
+  assert.equal(support.XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES.caddy.activationTarget, undefined)
+})
+
+test('shared Caddy verify shows actual current-instance Host/TLS scope and never implies public HTTPS or permits apply', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const helper = read('ui/shared/src/system-dependencies-capabilities.ts')
+  const preflight = read('ui/shared/src/mui/CaddyPreflightPanel.tsx')
+  const server = read('internal/api/admin_service_dependencies.go')
+  assert.match(page, /data-xdrive-caddy-liveness-scope/)
+  assert.match(page, /selectedPage === 'caddy' \? \(/)
+  assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
+  assert.match(helper, /caddy: \['load', 'loadCaddyHTTPSPreflight'\]/)
+  assert.match(server, /s\.readCaddyHostStatus\(\)/)
+  assert.match(server, /gateway\.TLSState == "verified"/)
+  assert.match(server, /services\[10\]\.LocalTLSState = gateway\.TLSState/)
+  assert.match(preflight, /source\.loadCaddyHTTPSPreflight\(\)/)
+  assert.match(page, /<XDriveCaddyPreflightPanel source=\{source\}/)
+  assert.match(page, /refreshID=\{caddyEvidenceRevision\}/)
+  for (const bad of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
+    assert.equal(page.includes(bad), false)
   }
 })
