@@ -35,6 +35,16 @@ var baiduGeoconvDefaultCadenceCaps = baiduGeoconvCadenceCaps{
 // A single PostgreSQL clock sample governs BOTH scopes and BOTH new windows.
 // Client clocks, payloads and account-provided limit increases are not trusted.
 func reserveBaiduGeoconvCadenceTx(ctx context.Context, tx *gorm.DB, ownerID uint64) error {
+	return reserveBaiduGeoconvCadenceTxWithCaps(ctx, tx, ownerID, baiduGeoconvDefaultCadenceCaps)
+}
+
+// PRIVATE lower-cap extension inside the outer minute reservation transaction.
+// This is NOT a production licence gate or a public clock/limit override.
+// Both second and UTC day derive from one PostgreSQL clock sample. A failed
+// charge must roll back the outer minute and all previously updated buckets.
+func reserveBaiduGeoconvCadenceTxWithCaps(
+	ctx context.Context, tx *gorm.DB, ownerID uint64, caps baiduGeoconvCadenceCaps,
+) error {
 	if ctx == nil || ctx.Err() != nil || tx == nil {
 		return errBaiduGeoconvQuotaDenied
 	}
@@ -50,7 +60,7 @@ func reserveBaiduGeoconvCadenceTx(ctx context.Context, tx *gorm.DB, ownerID uint
 	if err != nil || clock.Second <= 0 || clock.Day <= 0 {
 		return errBaiduGeoconvQuotaDenied
 	}
-	return reserveBaiduGeoconvCadenceAt(ctx, tx, ownerID, clock.Second, clock.Day, baiduGeoconvDefaultCadenceCaps)
+	return reserveBaiduGeoconvCadenceAt(ctx, tx, ownerID, clock.Second, clock.Day, caps)
 }
 
 // A deterministic clock/cap seam exclusively for isolated PostgreSQL tests.

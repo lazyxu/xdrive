@@ -1,3 +1,11 @@
+## P0-Places-A3d2m1b2b2c6 · 更低账号额度的原子预留（2026-10-17）
+
+承接 #1974 合入的百度账号配额历史台账。新增一个**仅限 Go Server 内部**使用的 `reserveBaiduGeoconvQuotaWithLowerAccountCaps`，接收未来经独立许可核验与可信签名绑定的更低分钟请求/点、每秒请求、UTC 日请求四类 Fleet/Owner 限额。它只调用已有真实 PostgreSQL 原子 reservation，并在同一外部事务内处理全部维度：秒/日失败时，分钟、点和已写入的 Fleet/Owner 行一起回滚；已有消耗不能因更换/降低限额而清零。所有输入仍受现有更严格的工程上限约束，杜绝通过“3 QPS、5,000次/天”截图扩大容量。跨两个独立真实 PostgreSQL pool 的合成回归验证拒绝回滚、历史消耗、一项非法额度后的零行、24 次并发和默认路径合同。
+
+**明确不意味着已经获得生产授权。** 生产 `reserveBaiduGeoconvQuota` 仍只能传入固定默认安全上限，尚无可信签名实证或授权 Worker 调用此新方法。签名候选 `verifyPinnedBaiduGeoconvAccountEvidence` 继续硬拒绝；JSAPI4 `runtime_enabled=false`、0 个获批 child，Web/Mobile Web/PWA/Desktop 不增加 Loader/Proxy/Server 公开路由、Agent IPC 或自动 Indexer；无真实 AK、GPS、百度请求、真实用户扫描或配额上调。仍须真实账号 AK 服务范围、额度归属与撤销证据、签名受信根、配额领取顺序、可取消任务和真实九场景 Browser+upstream HAR 等审查后才能继续开启。保持百度唯一 Provider、iOS 27「照片」1:1、52px 全屏 App Frame、一个跨端 Gallery Range/VirtualCollection/Viewer。
+
+本阶段必须自身一个工作提交、准确 HEAD 完整 76-job CI（PostgreSQL Go API Race、Linux/Windows、Web/Desktop、Rootless、制品镜像、single-commit/final-gate）和 GitHub clean 后才能 Rebase Merge；不以 #1974 的绿色 CI 代替本阶段。
+
 # xDrive · 百度地图账号服务额度与配额证据台账
 
 > **记录日期：2026-10-17（Asia/Tokyo）。来源：用户在本次讨论中提供的百度地图开放平台「资源管理 → 我的额度 / 额度管理」控制台文本快照。** 截图的实际采集时刻及 AK 归属范围未由 Server 独立校验。以下为**历史快照，不是实时用量、长期额度保证或正式许可合同**。本文不保存控制台用户名、账号编号、AK、原始 HAR、照片/GPS、访问 Cookie、Token 或许可证全文。

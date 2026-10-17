@@ -36,23 +36,41 @@ type baiduGeoconvQuotaLimits struct {
 func reserveBaiduGeoconvQuota(
 	ctx context.Context, db *gorm.DB, ownerID uint64, pointCount int,
 ) error {
-	if ctx == nil || db == nil || ctx.Err() != nil {
-		return errBaiduGeoconvQuotaDenied
-	}
-	// Commit minute, same-second and UTC-day consumption together. A denied
-	// cadence gate MUST roll back both fleet and Owner minute charges.
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := reserveBaiduGeoconvQuotaWithLimits(ctx, tx, ownerID, pointCount, baiduGeoconvQuotaLimits{
+	return reserveBaiduGeoconvQuotaWithLowerAccountCaps(ctx, db, ownerID, pointCount,
+		baiduGeoconvQuotaLimits{
 			OwnerRequests: baiduGeoconvOwnerRequestsPerMinute,
 			FleetRequests: baiduGeoconvFleetRequestsPerMinute,
 			OwnerPoints:   baiduGeoconvOwnerPointsPerMinute,
 			FleetPoints:   baiduGeoconvFleetPointsPerMinute,
-		}); err != nil {
+		}, baiduGeoconvDefaultCadenceCaps)
+}
+
+// A PRIVATE quota primitive for future independently verified, signed LOWER
+// Baidu account limits. No current production caller passes account-specific
+// caps; the existing default reservation always uses local conservative caps.
+// Caller MUST separately verify the live Owner/session/AK revision, licensed
+// evidence and consent before any GPS egress. A successful reservation alone
+// never authorizes a network call, and this function does not call Baidu.
+//
+// Minute requests/points and second/UTC-day requests share ONE outer
+// PostgreSQL transaction; rejection in any dimension rolls back ALL fleet
+// and Owner charges, including rows created by an earlier dimension.
+// Existing lower counters cannot be reset or refunded to fit new caps.
+func reserveBaiduGeoconvQuotaWithLowerAccountCaps(
+	ctx context.Context, db *gorm.DB, ownerID uint64, pointCount int,
+	minuteCaps baiduGeoconvQuotaLimits, cadenceCaps baiduGeoconvCadenceCaps,
+) error {
+	if ctx == nil || db == nil || ctx.Err() != nil {
+		return errBaiduGeoconvQuotaDenied
+	}
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := reserveBaiduGeoconvQuotaWithLimits(ctx, tx, ownerID, pointCount, minuteCaps); err != nil {
 			return errBaiduGeoconvQuotaDenied
 		}
-		return reserveBaiduGeoconvCadenceTx(ctx, tx, ownerID)
+		return reserveBaiduGeoconvCadenceTxWithCaps(ctx, tx, ownerID, cadenceCaps)
 	})
 	if err != nil || ctx.Err() != nil {
+		// Never echo PostgreSQL internals, Owner, AK or account evidence.
 		return errBaiduGeoconvQuotaDenied
 	}
 	return nil
