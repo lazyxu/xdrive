@@ -105,9 +105,13 @@ func retainExistingContentReferenceTx(tx *gorm.DB, file meta.File) error {
 	if !ok {
 		return fmt.Errorf("invalid content-addressed key %q", file.StorageKey)
 	}
-	if err := lockContentHash(tx, hash); err != nil {
-		return err
-	}
+	// This path only increments an existing, READY ContentBlob whose original
+	// File already pins the physical CAS. The SELECT FOR UPDATE below holds
+	// the ContentBlob row lock to COMMIT and serializes with release/GC.
+	// Do not acquire a distinct transaction-scoped PostgreSQL advisory lock
+	// per copied SHA: large atomic folder copies exhausted shared lock memory
+	// at ~12k of 100k physically distinct files (P056 original baseline).
+	// New Blob promotion and physical deletion still take the hash advisory lock.
 	var blob meta.ContentBlob
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("sha256 = ?", hash).First(&blob).Error; err != nil {
@@ -116,9 +120,16 @@ func retainExistingContentReferenceTx(tx *gorm.DB, file meta.File) error {
 	if blob.State != meta.ContentBlobStateReady || blob.StorageKey != file.StorageKey || blob.Size != file.Size {
 		return fmt.Errorf("content blob metadata mismatch for %s", hash)
 	}
-	return tx.Model(&meta.ContentBlob{}).
-		Where("sha256 = ?", hash).
-		Update("ref_count", gorm.Expr("ref_count + 1")).Error
+	result := tx.Model(&meta.ContentBlob{}).
+		Where("sha256 = ? AND state = ? AND ref_count > 0", hash, meta.ContentBlobStateReady).
+		Update("ref_count", gorm.Expr("ref_count + 1"))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return fmt.Errorf("content blob %s ceased to be ready during copy", hash)
+	}
+	return nil
 }
 
 func storageObjectSize(ctx context.Context, store storage.Store, key string) (int64, error) {
