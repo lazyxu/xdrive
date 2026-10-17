@@ -477,6 +477,13 @@ export default function MobileFiles(props: Props) {
   // A Browse Home → Cloud root tap is a pending intent, not a committed page.
   const pendingBrowseRootRef = useRef<{ rootID: number; intent: number } | null>(null)
   const searchReturnHomeRef = useRef(initial.folderID === null)
+  // A Search entered from Recent/Favorites is still the one global Search.
+  // Remember its presentation origin, without retaining another query/ACL.
+  const searchReturnSectionRef = useRef<MobileFilesSection>('browse')
+  const searchClearPendingRef = useRef(false)
+  // Search is an intent before the owning Web props acknowledge it. During
+  // that gap, do not persist the underlying root as if a folder was opened.
+  const globalSearchPresentationRef = useRef(false)
   const restoreFolderRef = useRef(props.onRestoreFolder)
   restoreFolderRef.current = props.onRestoreFolder
   const restoreTaskRef = useRef<{ id: number; promise: Promise<void> } | null>(null)
@@ -734,6 +741,10 @@ export default function MobileFiles(props: Props) {
       favorites: initial.favoritesScrollTop ?? 0,
     }
     pendingCollectionScrollRef.current = null
+    searchReturnSectionRef.current = 'browse'
+    searchReturnHomeRef.current = initial.folderID === null
+    searchClearPendingRef.current = false
+    globalSearchPresentationRef.current = false
   }, [storageKey])
 
   useEffect(() => {
@@ -1090,7 +1101,8 @@ export default function MobileFiles(props: Props) {
   }, [selected, props.onSelectedItemsChange])
 
   useEffect(() => {
-    if (!ready || !showDirectory || props.searchActive || props.trashActive || directoryID === null) return
+    if (!ready || !showDirectory || globalSearchPresentationRef.current ||
+      props.searchActive || props.trashActive || directoryID === null) return
     // Persist the committed folder's *matching* scroll snapshot together.
     // Otherwise a cold deep link into a different folder could inherit the
     // previous folder's stored anchor on the next responsive remount.
@@ -1098,10 +1110,16 @@ export default function MobileFiles(props: Props) {
   }, [ready, showDirectory, props.searchActive, props.trashActive, directoryID, persist])
 
   useEffect(() => {
-    if (!props.searchActive || section === 'browse') return
-    // The same authoritative global Search can be started from any Files tab.
-    // Reveal its results rather than leaving the user in an unrelated list.
+    if (!props.searchActive) {
+      searchClearPendingRef.current = false
+      return
+    }
+    if (section === 'browse' || searchClearPendingRef.current) return
+    // A Search may also be opened by the owning Web workspace, not only
+    // through this component's Search field. Capture that rail origin once.
+    searchReturnSectionRef.current = section
     searchReturnHomeRef.current = browseHome
+    globalSearchPresentationRef.current = true
     setSection('browse')
     setBrowseHome(false)
     setScrollTop(0)
@@ -1221,6 +1239,8 @@ export default function MobileFiles(props: Props) {
     setEditBrowseHome(false)
     setSection('browse')
     setBrowseHome(id === null)
+    globalSearchPresentationRef.current = false
+    searchReturnSectionRef.current = 'browse'
     searchReturnHomeRef.current = id === null
     setScrollTop(0)
     pendingSectionScrollRef.current = 0
@@ -1296,7 +1316,13 @@ export default function MobileFiles(props: Props) {
       props.onCloseTrash()
       if (next === 'browse') setBrowseHome(true)
     }
-    if (props.searchActive && next !== 'browse') props.onClearSearch()
+    if (props.searchActive && next !== 'browse') {
+      // A previous Search may still be true until the owning workspace
+      // processes the clear. Do not bounce this explicit rail switch back.
+      searchClearPendingRef.current = true
+      props.onClearSearch()
+    }
+    globalSearchPresentationRef.current = false
     setSection(next)
     const top = next === 'browse'
       ? !browseHome && !props.trashActive ? browseScrollRef.current : 0
@@ -1308,14 +1334,27 @@ export default function MobileFiles(props: Props) {
     persist({ section: next })
   }
   const clearGlobalSearch = () => {
+    const returnSection = searchReturnSectionRef.current
+    searchClearPendingRef.current = true
+    globalSearchPresentationRef.current = false
     props.onClearSearch()
+    setSection(returnSection)
     setBrowseHome(searchReturnHomeRef.current)
-    setScrollTop(searchReturnHomeRef.current ? 0 : browseScrollRef.current)
-    pendingSectionScrollRef.current = searchReturnHomeRef.current ? 0 : browseScrollRef.current
+    const top = returnSection === 'browse'
+      ? searchReturnHomeRef.current ? 0 : browseScrollRef.current
+      : collectionScrollRef.current[returnSection]
+    setScrollTop(top)
+    pendingSectionScrollRef.current = top
+    persist({ section: returnSection })
   }
   const launchGlobalSearch = (action: () => void) => {
     flushBrowseScroll()
-    if (!props.searchActive) searchReturnHomeRef.current = browseHome
+    if (!props.searchActive) {
+      searchReturnHomeRef.current = browseHome
+      searchReturnSectionRef.current = section
+    }
+    searchClearPendingRef.current = false
+    globalSearchPresentationRef.current = true
     navigationIntentRef.current += 1
     setSection('browse')
     setBrowseHome(false)

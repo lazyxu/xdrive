@@ -3587,6 +3587,96 @@ test('P47 Mobile Trash never claims empty before accepted GET; failed reads offe
 })
 
 
+test('M07: global Search exits to original Recent/Favorites virtual rail position', async () => {
+  const recentItems = Array.from({ length: 240 }, (_, i) => ({
+    id: 4000 + i, name: 'recent-search-' + i, kind: 'file', revision: 1,
+  }))
+  const favorites = Array.from({ length: 240 }, (_, i) => ({
+    id: 5000 + i, name: 'favorite-search-' + i, kind: 'file', revision: 1,
+  }))
+  const sent = []
+  const rows = h => h.view.root.findAll(n =>
+    Object.hasOwn(n.props ?? {}, 'data-mobile-files-collection-title'))
+    .map(n => n.props.title).filter(Boolean)
+  const navigate = async (h, name) => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', name).props.onClick() })
+  }
+  const scroll = async (h, top) => {
+    const host = find(h.view, 'data-xdrive-mobile-files-scroll', true)
+    await act(async () => { host.props.onScroll({ currentTarget: { scrollTop: top } }) })
+  }
+  await withView(async h => {
+    for (const [origin, top] of [['recent', 1700], ['favorites', 3000]]) {
+      await navigate(h, origin)
+      await scroll(h, top)
+      const expected = rows(h)
+      assert.ok(expected.length > 0, 'source rail must mount real virtual rows')
+      const input = h.view.root.findAll(n => n.props?.['aria-label'] === '搜索全部文件')
+      assert.equal(input.length, 1)
+      await act(async () => { input[0].props.onKeyDown({ key: 'Enter', preventDefault() {} }) })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0,
+        'a global Search intentionally uses the existing Browse results surface')
+      const pendingState = state.mobileFilesDecodeState(
+        h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+      assert.equal(pendingState.folderID, null,
+        'Search intent before the owner confirms results must not commit a false Browse folder')
+      await h.update({ searchActive: true,
+        searchSummary: { query: 'report', conditions: [], resultCount: 0, onClear() {} } })
+      const clear = h.view.root.findAll(n => n.props?.onClick && n.props.children === '清除')
+      assert.equal(clear.length, 1)
+      await act(async () => { clear[0].props.onClick() })
+      assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+        'clear should restore rail even before the owning Web search prop settles')
+      await h.update({ searchActive: false, searchSummary: undefined })
+      assert.equal(find(h.view, 'data-mobile-files-section', origin).props['aria-current'], 'page')
+      assert.deepEqual(rows(h), expected, 'global Search must not overwrite collection virtual anchor')
+    }
+    assert.deepEqual(sent, ['report', 'report'])
+    const saved = state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(saved.recentScrollTop, 1700)
+    assert.equal(saved.favoritesScrollTop, 3000)
+    assert.equal(saved.folderID, null, 'Search never persists a rail as a cloud folder')
+  }, { props: { searchValue: 'report', recentItems, favorites,
+    onSearch: query => { sent.push(query) } } })
+})
+
+test('M07: switching rail while an active Search clears does not bounce to Browse', async () => {
+  let clears = 0
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    // The shared Web owner can activate an authenticated Search from outside
+    // this particular Search Enter handler.
+    await h.update({ searchActive: true,
+      searchSummary: { query: 'report', conditions: [], resultCount: 0, onClear() {} } })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(clears, 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'recent').props['aria-current'], 'page')
+    await h.update({ searchActive: false, searchSummary: undefined })
+    assert.equal(find(h.view, 'data-mobile-files-section', 'recent').props['aria-current'], 'page',
+      'the previous Search effect cannot steal an explicit newer rail intent')
+  }, { props: { onClearSearch: () => { clears++ } } })
+})
+
+test('M07: Search return state is current-account-only and does not add a second query API', () => {
+  const source = fs.readFileSync(path.join(root, 'web/src/MobileFiles.tsx'), 'utf8')
+  for (const token of [
+    "const searchReturnSectionRef = useRef<MobileFilesSection>('browse')",
+    "searchReturnSectionRef.current = 'browse'",
+    "searchClearPendingRef.current = false",
+    "searchClearPendingRef.current = true",
+    "globalSearchPresentationRef.current = true",
+    "globalSearchPresentationRef.current = false",
+    "globalSearchPresentationRef.current ||",
+    "collectionScrollRef.current[returnSection]",
+    "persist({ section: returnSection })",
+  ]) assert.ok(source.includes(token), token)
+  assert.doesNotMatch(source, /api\.search\(|fetch\(/,
+    'the only global Search transport must remain the existing Web owner')
+})
+
+
 test('P52 Mobile inline folder disclosure keeps chevron and 44px hit target through quick and sustained child GET', async () => {
   const toggles = []
   const opens = []
