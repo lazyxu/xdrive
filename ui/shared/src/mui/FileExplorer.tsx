@@ -6327,11 +6327,19 @@ export function XDriveFileExplorer({
         <Box data-xdrive-file-explorer-action-feedback-slot sx={{ minWidth: 0, flexShrink: 0 }}>{actionFeedback}</Box>
       ) : null}
       {searchSummary ? (
-        <Box data-xdrive-file-explorer-search-summary sx={{ flexShrink: 0, px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
+        <Box data-xdrive-file-explorer-search-summary
+          aria-busy={Boolean(searchSummary.loading && searchSummary.resultCount === null) || undefined}
+          sx={{ flexShrink: 0, px: 1.25, py: 0.75, borderBottom: 1, borderColor: 'divider' }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
             <Typography variant="body2" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
               范围：全部文件
-              {' · '}{searchSummary.resultCount === null ? (searchSummary.error ? '搜索未完成' : '正在搜索…') : `${searchSummary.resultCount} 个结果`}
+              {' · '}
+              <Box component="span" data-xdrive-file-explorer-search-count-slot
+                sx={{ display: 'inline-block', minWidth: '12ch', whiteSpace: 'nowrap' }}>
+                {searchSummary.resultCount === null
+                  ? (searchSummary.error ? '搜索未完成' : '结果待确认')
+                  : `${searchSummary.resultCount} 个结果`}
+              </Box>
             </Typography>
             <Button onClick={searchSummary.onClear} sx={{ flexShrink: 0, minHeight: 44, minWidth: 44, whiteSpace: 'normal', lineHeight: 1.35 }}>
               清除搜索与筛选
