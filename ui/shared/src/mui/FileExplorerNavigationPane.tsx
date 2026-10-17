@@ -54,6 +54,7 @@ import type { XDriveFileSavedSearch, XDriveFileTag } from '../file-explorer-orga
 import { xDriveFileExplorerSavedSearchRuleLabels } from '../file-explorer-organization'
 import { xDriveFileExplorerDragAutoScrollDelta } from '../file-explorer-controller'
 import { useXDrivePointerDrag } from './usePointerDrag'
+import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import type { XDrivePointerDragPoint } from './usePointerDrag'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
@@ -108,6 +109,15 @@ type XDriveFileExplorerSidebarPreferences = {
 const defaultSidebarPreferences: XDriveFileExplorerSidebarPreferences = {
   visible: { ...defaultNavigationSectionState },
   quickAccessSort: 'manual',
+}
+
+
+// Keep disclosure controls mounted and delay *only* the visual spinner.
+// The underlying directory/quick-access REST call still starts immediately;
+// requests that finish within one frame never flash an intermediate state.
+function XDriveNavigationQuietSpinner({ pending, size = 14 }: { pending: boolean; size?: number }) {
+  const visible = useXDriveDeferredPendingLoading(pending)
+  return visible ? <CircularProgress size={size} /> : null
 }
 
 function loadSidebarPreferences(storageKey: string): XDriveFileExplorerSidebarPreferences {
@@ -631,6 +641,7 @@ export function XDriveFileExplorerNavigationPane({
         key={node.id}
         role="treeitem"
         aria-expanded={expandable ? expanded : undefined}
+        aria-busy={loading || undefined}
       >
         <Box
           sx={{
@@ -643,27 +654,44 @@ export function XDriveFileExplorerNavigationPane({
             minHeight: compactViewport ? 44 : 32,
           }}
         >
-          {loading && !loaded ? (
-            <Box sx={{ width: actionEdge, height: compactViewport ? 44 : 30, display: 'grid', placeItems: 'center' }}>
-              <CircularProgress size={13} />
-            </Box>
-          ) : expandable ? (
-            <IconButton
-              size="small"
-              aria-label={expanded ? `折叠 ${node.name}` : `展开 ${node.name}`}
-              onClick={(event) => {
-                event.stopPropagation()
-                toggleExpanded(node)
+          <Box sx={{
+            width: actionEdge,
+            height: compactViewport ? 44 : 30,
+            position: 'relative',
+            display: 'grid',
+            placeItems: 'center',
+          }}>
+            {expandable ? (
+              <IconButton
+                size="small"
+                aria-label={expanded ? `折叠 ${node.name}` : `展开 ${node.name}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggleExpanded(node)
+                }}
+                sx={{ width: actionEdge, height: compactViewport ? 44 : 28, flexShrink: 0, borderRadius: 0.5 }}
+              >
+                {expanded
+                  ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />
+                  : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
+              </IconButton>
+            ) : null}
+            <Box
+              data-xdrive-file-explorer-tree-load-feedback
+              sx={{
+                position: 'absolute',
+                right: 0,
+                bottom: 0,
+                width: 14,
+                height: 14,
+                display: 'grid',
+                placeItems: 'center',
+                pointerEvents: 'none',
               }}
-              sx={{ width: actionEdge, height: compactViewport ? 44 : 28, flexShrink: 0, borderRadius: 0.5 }}
             >
-              {expanded
-                ? <ExpandMoreRoundedIcon sx={{ fontSize: 18 }} />
-                : <ChevronRightRoundedIcon sx={{ fontSize: 18 }} />}
-            </IconButton>
-          ) : (
-            <Box sx={{ width: actionEdge, height: compactViewport ? 44 : 28 }} />
-          )}
+              <XDriveNavigationQuietSpinner pending={loading && !loaded && expanded} size={12} />
+            </Box>
+          </Box>
 
           <ListItemButton
             aria-label={node.name}
@@ -1058,7 +1086,7 @@ export function XDriveFileExplorerNavigationPane({
 
           {quickAccessLoading && quickAccessItems.length === 0 ? (
             <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <CircularProgress size={14} />
+              <XDriveNavigationQuietSpinner pending={quickAccessLoading && quickAccessItems.length === 0} />
             </Box>
           ) : quickAccessItems.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
@@ -1400,7 +1428,7 @@ export function XDriveFileExplorerNavigationPane({
           </Stack>
           {favoritesLoading && favoriteItems.length === 0 ? (
             <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <CircularProgress size={14} />
+              <XDriveNavigationQuietSpinner pending={favoritesLoading && favoriteItems.length === 0} />
             </Box>
           ) : favoriteItems.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
@@ -1504,7 +1532,7 @@ export function XDriveFileExplorerNavigationPane({
 
           {recentLoading && recentItems.length === 0 ? (
             <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <CircularProgress size={14} />
+              <XDriveNavigationQuietSpinner pending={recentLoading && recentItems.length === 0} />
             </Box>
           ) : recentItems.length === 0 ? (
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
