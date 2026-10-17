@@ -79,6 +79,7 @@ type storageStatsDTO struct {
 	UploadStaging             *uploadStagingStatsDTO       `json:"upload_staging,omitempty"`
 	Inventory                 *storageInventoryDTO         `json:"inventory,omitempty"`
 	Performance               *storagePerformanceDTO       `json:"performance,omitempty"`
+	RecentPerformance         *storageRecentPerformanceDTO `json:"recent_performance,omitempty"`
 	FileCount                 int64                        `json:"file_count,omitempty"`
 	LogicalFileBytes          int64                        `json:"logical_file_bytes,omitempty"`
 	DuplicateGroupCount       int64                        `json:"duplicate_group_count"`
@@ -185,6 +186,7 @@ func (s *Server) adminStorageStats(c *gin.Context) {
 	// Process-only HTTP rollups are computed from already recorded counters;
 	// opening this page does not scan file data or instrument hot requests.
 	stats.Performance = s.snapshotStoragePerformance()
+	stats.RecentPerformance = s.snapshotRecentStoragePerformance(time.Now().UTC())
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, stats)
 }

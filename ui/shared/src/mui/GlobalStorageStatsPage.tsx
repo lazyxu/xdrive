@@ -506,18 +506,29 @@ export default function StorageStatsPanel({
                     {' 至 '}{new Date(stats.performance.captured_at).toLocaleString()}。
                     仅当前 Server 进程；重启后重新累计，多实例不自动合并。
                   </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {stats.recent_performance?.available
+                      ? `最近窗口：${stats.recent_performance.window_seconds.toLocaleString()} 秒（目标最多 300 秒，采样间隔 60 秒）${stats.recent_performance.warming_up ? ' · 尚在积累' : ''}；仅当前 Server 进程。`
+                      : '最近五分钟数据正在积累或后台采样暂不可用；不会把缺失数据显示为零。'}
+                  </Typography>
                   <XDriveTableSurface>
-                    <Table size="small" aria-label="全实例读写请求性能" sx={{ minWidth: 660 }}>
+                    <Table size="small" aria-label="全实例读写请求性能" sx={{ minWidth: 920 }}>
                       <TableHead>
                         <TableRow>
                           <TableCell>操作类型</TableCell>
                           <TableCell align="right">HTTP 请求次数</TableCell>
                           <TableCell align="right">平均耗时</TableCell>
                           <TableCell align="right">HTTP 5xx</TableCell>
+                          <TableCell align="right">近期请求/s</TableCell>
+                          <TableCell align="right">近期平均耗时</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {stats.performance.rows.map((metric) => (
+                        {stats.performance.rows.map((metric) => {
+                          const recent = stats.recent_performance?.available
+                            ? stats.recent_performance.rows.find((row) => row.key === metric.key)
+                            : undefined
+                          return (
                           <TableRow key={metric.key}>
                             <TableCell>{STORAGE_OPERATION_LABELS[metric.key]}</TableCell>
                             <TableCell align="right">{metric.requests.toLocaleString()}</TableCell>
@@ -525,15 +536,18 @@ export default function StorageStatsPanel({
                               {metric.requests > 0 ? `${metric.average_ms.toFixed(1)} ms` : '—'}
                             </TableCell>
                             <TableCell align="right">{metric.server_errors.toLocaleString()}</TableCell>
+                            <TableCell align="right">{recent ? recent.requests_per_second.toFixed(2) : '—'}</TableCell>
+                            <TableCell align="right">{recent && recent.requests > 0 ? `${recent.average_ms.toFixed(1)} ms` : '—'}</TableCell>
                           </TableRow>
-                        ))}
+                          )
+                        })}
                       </TableBody>
                     </Table>
                   </XDriveTableSurface>
                   <Typography variant="caption" color="text.secondary">
                     平均耗时包括 HTTP 传输和流式响应耗时，并非 CPU 时间或 p95。
                     HTTP 404/取消可能是正常操作，错误列仅计 5xx；文件操作排队耗时不等于后台执行耗时。
-                    每日容量与 GC 趋势继续由下方持久快照提供，此处不保存路径、文件名或账户身份。
+                    近期速率与平均耗时由每分钟只读快照计算，并非真实 p95/p99、客户端吞吐量或后台 Worker 用时；窗口会明确标示实际覆盖秒数。每日容量与 GC 趋势继续由下方持久快照提供，此处不保存路径、文件名或账户身份。
                   </Typography>
                 </Stack>
               )}

@@ -2,6 +2,10 @@
 
 This document is the normative contract for the separation between xDrive **云端存储** (current-account logical view) and **全局存储** (administrator physical view), including host-path presentation and safe cache cleanup.
 
+## OBS-P002 进程内最近HTTP性能窗口（2026-10-17）
+
+在[OBS-P001累积匿名9类性能指标](global-storage-performance-observability.md)之后，管理员可查看**实际覆盖秒数≤300**的近期HTTP请求/s、HTTP5xx与平均耗时，由现存存储采样器每60秒**只读取内存**并以严格7槽上限保存；不写新SQL、不中断用户自己的传输任务、不扫描100k Blob，也不进行客户端自动轮询。各平台实机与p95均未验收，详细 [OBS-P002合同](global-storage-performance-window-obs-p002.md)。
+
 ## Goals
 
 ## 全局存储运行时性能观测（OBS-P001）

@@ -79,6 +79,7 @@ type Server struct {
 	credentialTest                 sourceCredentialTester
 	fileStationBrowse              sourceFileStationBrowser
 	obs                            *serverObservability
+	storagePerformanceSamples      storagePerformanceSampleRing
 	stagingCacheMu                 sync.Mutex
 	stagingCacheAt                 time.Time
 	stagingCache                   uploadStagingInventory

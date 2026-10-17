@@ -1,0 +1,115 @@
+name: OBS-P002 5-Minute Anonymous HTTP Operation Deltas (bounded RAM)
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  obs-p002-five-minute-admin-window:
+    if: github.head_ref == 'perf/obs-p002-5m-operation-deltas-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Enforce exact original HTTP hot-path, formatting and shared Web/Desktop source contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test "$(git rev-parse HEAD:internal/api/observability.go)" = '9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a'
+          test "$(git rev-parse HEAD:internal/api/storage_performance_observation.go)" = 'a461da393c7971c3f0794bd100a8ace1c6900e06'
+          test -z "$(gofmt -l internal/api/storage_performance_window.go internal/api/storage_performance_window_test.go internal/api/storage_history.go internal/api/storage_intelligence.go internal/api/storage_intelligence_integration_test.go internal/api/router.go)"
+          node --test desktop/tests/global-storage-performance-obs-p001.cjs desktop/tests/global-storage-performance-obs-p002.cjs desktop/tests/web-storage-metrics.cjs
+          node web/scripts/check-gui-chinese.mjs
+      - name: Verify immutable n3 source archive including precise content source SHA
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/obs-p002/ci-run-39023778259.zip
+          printf '%s  %s\n' '5e6c55d388bc632acc9ac4f5c50b80f85852dd299b52d44cd18cc395739dd369' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              items={'resources.txt':'06e4560bc39e0d6c5d566f207003f1958e46ef4cf08e18e2892bfd04a1342e16',
+                     'run.log':'51ede5874461b0e9e1d86b4a635e06af7fa30aced0fb84a813dc9813c71b3952',
+                     'source.txt':'470f3857cc5166d472820808b8f0328be0ffbc253d06605d07ed7da5357c5da5',
+                     'summary.json':'cefd23bf5f5c6dff5279adf1bb9f127f9722c2b34a1bf8ed1ba0423d249ebea2'}
+              assert set(z.namelist())==set(items),z.namelist()
+              for file,expected in items.items():
+                  assert hashlib.sha256(z.read(file)).hexdigest()==expected,file
+              origin=z.read('source.txt').decode()
+              assert 'EXACT_SOURCE_HEAD=86bb58f2563136204bf4d7bc443d0d8abae35000' in origin
+              assert 'CI_RUN_ID=39023778259' in origin
+              for path in (
+                  'internal/api/observability.go',
+                  'internal/api/storage_performance_observation.go',
+                  'internal/api/storage_performance_window.go',
+                  'internal/api/storage_performance_window_test.go',
+                  'internal/api/storage_history.go',
+                  'internal/api/storage_intelligence.go'):
+                  local_hash=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+                  assert local_hash+'  '+path in origin,('original_benchmark_source_drift',path)
+              result=json.loads(z.read('summary.json'))
+              assert result['source_head'].endswith('86bb58f2563136204bf4d7bc443d0d8abae35000')
+              assert result['n']==3 and not result['operation_hot_path_changed']
+              assert result['median']['RecentSample']['ns_per_op']==118.4
+              assert result['median']['RecentRead']['ns_per_op']==468.3
+          print('OBS_P002_ORIGINAL_N3_ARCHIVE_ALL_4_FILES_AND_6_SOURCE_HASHES_VERIFIED')
+          PY
+      - name: Exact-source three repeats of old observer and both new RAM-only operations
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/obs-p002-results"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/api/observability.go internal/api/storage_performance_observation.go internal/api/storage_performance_window.go internal/api/storage_performance_window_test.go internal/api/storage_history.go internal/api/storage_intelligence.go
+            go version
+            uname -a
+          } > "$out/source.txt"
+          /usr/bin/time -v -o "$out/resources.txt" \
+            go test -mod=readonly ./internal/api \
+              -run '^TestStoragePerformance(Recent|100k|Summary|Nil)' \
+              -bench '^BenchmarkStoragePerformance(ExistingHotPath|ReadOnlySnapshot|RecentSample|RecentRead)$' \
+              -benchtime=400ms -count=3 -benchmem -timeout=20m -v \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          out=pathlib.Path(sys.argv[1])
+          log=(out/'run.log').read_text()
+          benchmarks=['ExistingHotPath','ReadOnlySnapshot','RecentSample','RecentRead']
+          vals={}
+          rx=re.compile(r'^BenchmarkStoragePerformance(ExistingHotPath|ReadOnlySnapshot|RecentSample|RecentRead)-\d+\s+\d+\s+([\d.]+) ns/op\s+(\d+) B/op\s+(\d+) allocs/op',re.M)
+          for kind,ns,bytes_,allocs in rx.findall(log):
+              vals.setdefault(kind,[]).append({'ns_per_op':float(ns),'bytes_per_op':int(bytes_),'allocs_per_op':int(allocs)})
+          assert sorted(vals)==sorted(benchmarks), vals
+          assert all(len(vals[x])==3 for x in benchmarks),vals
+          assert '--- FAIL:' not in log and 'FAIL\t' not in log
+          for kind in ['RecentSample','RecentRead']:
+              assert max(x['ns_per_op'] for x in vals[kind])<=2_000_000,(kind,vals[kind])
+              assert max(x['bytes_per_op'] for x in vals[kind])<=65_536,(kind,vals[kind])
+          summary={'workload_id':'OBS-P002/5-minute-bounded-http-counter-deltas',
+            'source_head':(out/'source.txt').read_text().splitlines()[0],
+            'source_exact':True,'n':3,'operation_hot_path_changed':False,
+            'current_baseline':'OBS-P001 real CI 39010151064 original observer 51.06ns/op/0 B/op/0 alloc and cumulative snapshot 281.9ns/op/464B/2alloc',
+            'after_new_feature_only':'candidate read-only minute sampler and admin recent window; no production throughput change',
+            'frozen_max_ns_per_op':2_000_000,'frozen_max_bytes_per_op':65536,
+            'raw':vals,
+            'median':{k:{metric:statistics.median(x[metric] for x in samples)
+               for metric in ('ns_per_op','bytes_per_op','allocs_per_op')}
+               for k,samples in vals.items()},
+            'scope_limits':'Old observer route source unchanged. Synthetic 100k counters only, no real 100k physical media, 4GiB, devices/PWA, true p95, bytes/sec, or FileOperation worker time.'}
+          (out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print('OBS_P002_SOURCE_EXACT_N3_PASSED',json.dumps(summary['median'],sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs-p002-server-existing-http-vs-new-5m-sampler-n3
+          path: ${{ runner.temp }}/obs-p002-results/
+          retention-days: 14
+          if-no-files-found: warn

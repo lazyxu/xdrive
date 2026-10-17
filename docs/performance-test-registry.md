@@ -1,5 +1,17 @@
 # xDrive 已测性能登记簿（Performance Test Registry）
 
+> **OBS-P002 source-accurate real Go n3 benchmark evidence (2026-10-17):** [specialized CI #39023778259](https://github.com/lazyxu/xdrive/actions/runs/39023778259) at `86bb58f2563136204bf4d7bc443d0d8abae35000`, archived original [ZIP + SHA/Go/OS/12 raw samples](performance-evidence/obs-p002/README.md). On same runner: unchanged old HTTP hot observer P50 **67.25ns/op, 0B, 0alloc**; original admin cumulative summary P50 **351.8ns/op, 464B, 2alloc**; **new every60s read-only sample P50 118.4ns/op, 0B, 0alloc**; **new admin recent window P50 468.3ns/op, 568B, 3alloc**. All n3 individual new op samples <2ms and <64KiB. This is not production 100k/4GiB throughput, true p95, CPU or a product BEFORE/AFTER speedup; P001 historical distinct-run 51.06ns does not prove a 31% regression. Original old hot-path source GitBlob unchanged. Evidence update changes Git HEAD: final HEAD n3 + full 76-job CI/final gate still required.
+
+
+## OBS-P002 · 最近5分钟固定九类HTTP性能增量（2026-10-17）
+
+**状态：候选/尚未真实源码 CI，本轮不重测任何既有 100k 物理CAS、4GiB上传、版本或备份压力。** 规范 [OBS-P002](global-storage-performance-window-obs-p002.md)；已合入 P001 首轮原始[n3证据](performance-evidence/obs-p001-global-storage/README.md)。
+
+**原版CURRENT**（已合入 OBS-P001 的真实专用CI #39010151064） `BenchmarkStoragePerformanceExistingHotPath` n3 P50 **51.06 ns/op、0 B/op、0 allocs/op**；管理员原有9行累积均值读取 `BenchmarkStoragePerformanceReadOnlySnapshot` P50 **281.9 ns/op、464 B/op、2 allocs/op**。真实用户请求壁钟p95、浏览器首屏、GPU/IPC、下载字节和CAS/GC CPU **Not measured**。全程保留原 `observeRequest` 和9类已有汇总 Git Blob SHA 不变，不能声称性能优化提速。
+
+**候选新场景**：既有存储后台生命周期增加一条60秒RAM只读快照，最多7×9个常量累加器，管理员刷新时计算**实际覆盖秒数**的 recent requests/s、5xx与mean，不写数据库、不扫描磁盘、不添加每HTTP探针。新快照BEFORE=N/A，新窗口GET BEFORE=N/A，AFTER（候选）=Not measured，待专用真实CI输出三组 `ns/op/B/op/allocs`、来源SHA、原始机器日志。冻结两种新增操作每次最慢≤2ms、≤64KiB；高频热路径必须字节不变且同Runner重测n3。长传输Worker/真物理4GiB/取消到Go ctx 的性能前后均不得据此推论。即使Web+Desktop共用GUI，六端真实OS/安装PWA仍分别 Not measured。
+
+
 > **2026-10-17 OBS-P001 first real source-exact microbenchmark / archive:** [specialized CI #39009569013](https://github.com/lazyxu/xdrive/actions/runs/39009569013), work HEAD `88c00d428a2ae6832a9d3c73870a338a7172dfc2`, n=3 existing unchanged HTTP observer **43.28 ns/op P50, 0 B/op, 0 allocs/op** and new admin-only nine-class read summary **213.7 ns/op P50, 464 B/op, 2 allocs/op**; both pure Go microbenchmark operations, **not** actual 100k CAS, 4GiB transfer, Web/Desktop GUI or p95. The original [four-file Actions ZIP](performance-evidence/obs-p001-global-storage/ci-run-39009569013.zip) is permanently stored with complete [SHA and source manifest](performance-evidence/obs-p001-global-storage/README.md). Frozen new snapshot <=2ms/op and <=64KiB/op passed n3; production original per-request hot-path source **unchanged**, therefore NO measured end-user speedup/B-A percentage and production AFTER=N/A. For this new admin summary capability original BEFORE=N/A, measured candidate P50 as above. Evidence commit moves HEAD, require NEW source-exact dedicated n3 + full 76-job CI/Final Gate before Ready/Merge. Daily capacity/GC snapshot existed already; daily latency and installed PWA remain Not measured.
 
 ## OBS-P001 · 管理员全局存储低开销性能摘要（2026-10-17）
