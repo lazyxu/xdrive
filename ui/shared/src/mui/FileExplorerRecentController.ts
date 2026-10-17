@@ -63,6 +63,8 @@ export function useXDriveFileExplorerRecent<
 }) {
   const [items, setItems] = useState<XDriveFileExplorerRecentEntry[]>([])
   const [loading, setLoading] = useState(false)
+  // A zero-item REST response is meaningful only after a current read succeeds.
+  const [readState, setReadState] = useState<'unverified' | 'ready' | 'error'>('unverified')
   const loadItemsRef = useRef(loadItems)
   const touchItemRef = useRef(touchItem)
   const clearItemsRef = useRef(clearItems)
@@ -96,6 +98,7 @@ export function useXDriveFileExplorerRecent<
     if (requestID === loadRequestRef.current) {
       rawItemsRef.current = new Map(raw.map((item) => [item.node.id, item]))
       setItems(raw.map(projectRecentItem))
+      setReadState('ready')
     }
     return raw
   }, [])
@@ -106,6 +109,7 @@ export function useXDriveFileExplorerRecent<
       rawItemsRef.current.clear()
       setItems([])
       setLoading(false)
+      setReadState('unverified')
       return []
     }
     const requestID = loadRequestRef.current + 1
@@ -114,6 +118,7 @@ export function useXDriveFileExplorerRecent<
     try {
       return await loadFresh(requestID)
     } catch {
+      if (requestID === loadRequestRef.current) setReadState('error')
       return []
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
@@ -125,6 +130,7 @@ export function useXDriveFileExplorerRecent<
     rawItemsRef.current.clear()
     setItems([])
     setLoading(false)
+    setReadState('unverified')
     void refresh()
   }, [lifecycleKey, refresh])
 
@@ -165,6 +171,7 @@ export function useXDriveFileExplorerRecent<
         loadRequestRef.current += 1
         setLoading(false)
         rawItemsRef.current.set(nodeID, raw)
+        setReadState('ready')
         const projected = projectRecentItem(raw)
         setItems((current) => [
           projected,
@@ -190,6 +197,7 @@ export function useXDriveFileExplorerRecent<
         setLoading(false)
         rawItemsRef.current.clear()
         setItems([])
+        setReadState('ready')
         return true
       } catch {
         return false
@@ -230,6 +238,9 @@ export function useXDriveFileExplorerRecent<
       }
       return true
     } catch {
+      if (requestID === loadRequestRef.current) {
+        setReadState(current => current === 'unverified' ? 'error' : current)
+      }
       return false
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
@@ -242,6 +253,7 @@ export function useXDriveFileExplorerRecent<
   return {
     items: scopeVisible ? items : [],
     loading: scopeVisible ? loading : enabled,
+    readState: scopeVisible ? readState : 'unverified',
     refresh,
     record,
     clear,
