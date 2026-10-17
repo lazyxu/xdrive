@@ -79,6 +79,7 @@ var desktopIPCCapabilities = []string{
 	"cache-management",
 	"local-disk-space",
 	"cloud-files",
+	"cloud-child-position",
 	"cloud-change-feed",
 	"background-tasks",
 	"background-task-summary",
@@ -226,6 +227,7 @@ type desktopIPCController interface {
 	CloudList(context.Context, uint64) ([]client.Node, error)
 	CloudListPage(context.Context, uint64, client.ChildrenOptions) (client.ChildrenPage, error)
 	CloudListRange(context.Context, uint64, client.ChildrenRangeOptions) (client.ChildrenRange, error)
+	CloudLocateChildPosition(context.Context, uint64, uint64, client.ChildrenPositionOptions) (client.ChildrenPosition, error)
 	CloudNodeChanges(context.Context, uint64, int) (client.NodeChangePage, error)
 	CloudFileQuickAccess(context.Context) ([]client.FileQuickAccessItem, error)
 	CloudPinFileQuickAccess(context.Context, uint64) (client.FileQuickAccessItem, error)
@@ -568,6 +570,7 @@ func newDesktopIPCHandler(
 	mux.HandleFunc("POST /v1/cache/release", h.releaseCache)
 	mux.HandleFunc("GET /v1/cloud/root", h.cloudRoot)
 	mux.HandleFunc("GET /v1/cloud/children", h.cloudChildren)
+	mux.HandleFunc("GET /v1/cloud/children/position", h.cloudChildPosition)
 	mux.HandleFunc("GET /v1/cloud/changes", h.cloudChanges)
 	mux.HandleFunc("GET /v1/cloud/quick-access", h.cloudFileQuickAccess)
 	mux.HandleFunc("POST /v1/cloud/quick-access/pin", h.cloudPinFileQuickAccess)
@@ -1193,6 +1196,83 @@ func desktopIPCFileExplorerGrouping(
 		Group:        group,
 		FoldersFirst: foldersFirst,
 	}, true
+}
+
+// cloudChildPosition is loopback-authenticated and only forwards an allowlisted
+// bounded read to the Owner-authenticated Server endpoint. Search has a distinct
+// result order and must never use this directory-only identity lookup.
+func (h *desktopIPCHandler) cloudChildPosition(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	query := r.URL.Query()
+	allowed := map[string]bool{
+		"parent_id": true, "node_id": true, "sort": true,
+		"order": true, "group": true, "folders_first": true,
+	}
+	for key, values := range query {
+		if !allowed[key] || len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+			writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_child_position", "invalid directory position parameter")
+			return
+		}
+	}
+	parentID, ok := desktopIPCUint64Query(w, r, "parent_id")
+	if !ok {
+		return
+	}
+	nodeID, ok := desktopIPCUint64Query(w, r, "node_id")
+	if !ok {
+		return
+	}
+	if parentID > uint64(1<<63-1) || nodeID > uint64(1<<63-1) {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_child_position", "node id is out of bounds")
+		return
+	}
+	sortKey := strings.TrimSpace(query.Get("sort"))
+	if sortKey == "" {
+		sortKey = "name"
+	}
+	order := strings.TrimSpace(query.Get("order"))
+	if order == "" {
+		order = "asc"
+	}
+	if sortKey != "name" && sortKey != "updated" && sortKey != "size" && sortKey != "type" ||
+		(order != "asc" && order != "desc") {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_child_position", "invalid directory ordering")
+		return
+	}
+	if raw, exists := query["folders_first"]; exists && raw[0] != "true" && raw[0] != "false" {
+		writeDesktopIPCError(w, http.StatusBadRequest, "invalid_cloud_child_position", "invalid folder grouping")
+		return
+	}
+	grouping, ok := desktopIPCFileExplorerGrouping(w, r)
+	if !ok {
+		return
+	}
+	position, err := h.ctrl.CloudLocateChildPosition(r.Context(), parentID, nodeID, client.ChildrenPositionOptions{
+		Sort: sortKey, Order: order, Grouping: grouping,
+	})
+	if err != nil {
+		writeDesktopIPCControllerError(w, err)
+		return
+	}
+	if position.NodeID != nodeID || position.Revision == 0 || position.Index < 0 ||
+		position.Sort != sortKey || position.Order != order ||
+		(position.Group != "none" && position.Group != grouping.Group) {
+		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_cloud_child_position_reply", "untrusted directory position response")
+		return
+	}
+	expectedGroup := grouping.Group
+	if expectedGroup == "" {
+		expectedGroup = "none"
+	}
+	expectedFoldersFirst := true
+	if grouping.FoldersFirst != nil {
+		expectedFoldersFirst = *grouping.FoldersFirst
+	}
+	if position.Group != expectedGroup || position.FoldersFirst != expectedFoldersFirst {
+		writeDesktopIPCError(w, http.StatusBadGateway, "invalid_cloud_child_position_reply", "untrusted directory grouping response")
+		return
+	}
+	writeDesktopIPCJSON(w, http.StatusOK, position)
 }
 
 func (h *desktopIPCHandler) cloudChildren(w http.ResponseWriter, r *http.Request) {

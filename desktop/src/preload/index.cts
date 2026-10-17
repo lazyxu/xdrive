@@ -652,6 +652,16 @@ const agent = Object.freeze({
     grouping,
     requestID,
   ),
+  cloudChildPosition: (
+    parentID: number,
+    nodeID: number,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    grouping: Record<string, unknown> = {},
+    requestID?: string,
+  ) => ipcRenderer.invoke(
+    'agent:cloud-child-position', parentID, nodeID, sort, order, grouping, requestID,
+  ),
   cloudChanges: (after = 0, limit = 200) =>
     ipcRenderer.invoke('agent:cloud-changes', after, limit),
   cloudFileQuickAccess: () => ipcRenderer.invoke('agent:cloud-quick-access'),

@@ -77,6 +77,11 @@ type fakeDesktopIPCController struct {
 	cloudChildren               []client.Node
 	cloudChildrenOptions        client.ChildrenOptions
 	cloudChildrenRangeOptions   client.ChildrenRangeOptions
+	cloudPositionParent         uint64
+	cloudPositionNode           uint64
+	cloudPositionOptions        client.ChildrenPositionOptions
+	cloudPositionCalls          int
+	cloudPositionResult         client.ChildrenPosition
 	cloudChanges                client.NodeChangePage
 	cloudChangesAfter           uint64
 	cloudChangesLimit           int
@@ -372,6 +377,17 @@ func (f *fakeDesktopIPCController) CloudListRange(_ context.Context, _ uint64, o
 		Sort:               options.Sort,
 		Order:              options.Order,
 	}, f.err
+}
+
+func (f *fakeDesktopIPCController) CloudLocateChildPosition(
+	ctx context.Context, parentID, nodeID uint64, options client.ChildrenPositionOptions,
+) (client.ChildrenPosition, error) {
+	f.cloudPositionCalls++
+	f.cloudPositionParent, f.cloudPositionNode, f.cloudPositionOptions = parentID, nodeID, options
+	if err := ctx.Err(); err != nil {
+		return client.ChildrenPosition{}, err
+	}
+	return f.cloudPositionResult, f.err
 }
 
 func (f *fakeDesktopIPCController) CloudNodeChanges(_ context.Context, after uint64, limit int) (client.NodeChangePage, error) {
@@ -3776,5 +3792,71 @@ func TestDesktopIPCFileAvailabilityBatchTreatsMissingManagedItemAsCloud(t *testi
 	state := got.Items[0].Availability
 	if state.Mode != "cloud" || state.AvailableOffline || got.Items[0].Error != "" {
 		t.Fatalf("availability=%+v error=%q", state, got.Items[0].Error)
+	}
+}
+
+func TestDesktopIPCCloudChildPositionOwnerRelay(t *testing.T) {
+	ctrl := &fakeDesktopIPCController{
+		cloudPositionResult: client.ChildrenPosition{
+			NodeID: 99, Revision: 7, Index: 1024, Sort: "updated", Order: "desc",
+			Group: "modified", FoldersFirst: false,
+		},
+	}
+	handler := newDesktopIPCHandler(ctrl, "secret", func() {})
+	const base = "/v1/cloud/children/position?parent_id=12&node_id=99&sort=updated&order=desc&group=modified&folders_first=false"
+	res := desktopIPCRequest(t, handler, http.MethodGet, base, "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("valid position status=%d body=%s", res.Code, res.Body.String())
+	}
+	if res.Header().Get("Cache-Control") != "no-store" {
+		t.Fatal("Owner directory position reply must be private no-store")
+	}
+	var result client.ChildrenPosition
+	if err := json.Unmarshal(res.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.NodeID != 99 || result.Revision != 7 || result.Index != 1024 ||
+		result.Sort != "updated" || result.Group != "modified" || result.FoldersFirst {
+		t.Fatalf("unexpected position reply %+v", result)
+	}
+	if ctrl.cloudPositionCalls != 1 || ctrl.cloudPositionParent != 12 || ctrl.cloudPositionNode != 99 ||
+		ctrl.cloudPositionOptions.Sort != "updated" || ctrl.cloudPositionOptions.Order != "desc" ||
+		ctrl.cloudPositionOptions.Grouping.Group != "modified" ||
+		ctrl.cloudPositionOptions.Grouping.FoldersFirst == nil || *ctrl.cloudPositionOptions.Grouping.FoldersFirst {
+		t.Fatalf("position relay/options mismatch %+v", ctrl)
+	}
+
+	// The loopback access token is mandatory before any Server-side identity work.
+	anonymous := httptest.NewRecorder()
+	anonymousRequest := httptest.NewRequest(http.MethodGet, base, nil)
+	// httptest's default 192.0.2.1 is not loopback; exercise the
+	// missing-token gate separately from the loopback-only gate.
+	anonymousRequest.RemoteAddr = "127.0.0.1:43210"
+	handler.ServeHTTP(anonymous, anonymousRequest)
+	if anonymous.Code != http.StatusUnauthorized || ctrl.cloudPositionCalls != 1 {
+		t.Fatalf("anonymous position request reached Controller: code=%d calls=%d", anonymous.Code, ctrl.cloudPositionCalls)
+	}
+	for _, suffix := range []string{
+		"&node_id=98", "&sort=name", "&extra=secret", "&cursor=somewhere",
+		"&folders_first=1", "&group=unrecognized", "&order=sideways",
+		"&parent_id=-1", "&node_id=9223372036854775808", "&node_id=0",
+	} {
+		invalid := desktopIPCRequest(t, handler, http.MethodGet, base+suffix, "")
+		if invalid.Code != http.StatusBadRequest || ctrl.cloudPositionCalls != 1 {
+			t.Fatalf("invalid position suffix %q status=%d calls=%d body=%s",
+				suffix, invalid.Code, ctrl.cloudPositionCalls, invalid.Body.String())
+		}
+	}
+
+	ctrl.cloudPositionResult.NodeID = 88
+	mismatch := desktopIPCRequest(t, handler, http.MethodGet, base, "")
+	if mismatch.Code != http.StatusBadGateway || ctrl.cloudPositionCalls != 2 {
+		t.Fatalf("untrusted upstream position identity must be rejected: %d %s", mismatch.Code, mismatch.Body.String())
+	}
+	ctrl.cloudPositionResult.NodeID = 99
+	ctrl.cloudPositionResult.Group = "type"
+	mismatch = desktopIPCRequest(t, handler, http.MethodGet, base, "")
+	if mismatch.Code != http.StatusBadGateway {
+		t.Fatalf("untrusted upstream grouping must be rejected: %d %s", mismatch.Code, mismatch.Body.String())
 	}
 }
