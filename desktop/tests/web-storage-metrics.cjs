@@ -26,7 +26,10 @@ const desktopStyles = fs.readFileSync(path.join(repoRoot, 'desktop', 'src', 'ren
 test('Web global storage statistics use shared metric primitives', () => {
   assert.equal((storageStats.match(/<XDriveMetricGrid\b/g) || []).length, 4)
   assert.equal((storageStats.match(/<XDriveMetricCard\b/g) || []).length, 28)
-  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 11)
+  assert.equal((storageStats.match(/<XDriveSectionHeader\b/g) || []).length, 12)
+  assert.ok(storageStats.includes('data-xdrive-storage-section="performance"'))
+  assert.ok(storageStats.includes('title="读写性能观测"'))
+  assert.ok(storageStats.includes('stats.performance.rows.map'))
   assert.equal(storageStats.includes('function StorageStatGrid'), false)
   assert.equal(storageStats.includes('function StorageStat('), false)
   assert.equal(storageStats.includes('function SectionTitle'), false)

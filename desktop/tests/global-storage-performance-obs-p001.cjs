@@ -1,0 +1,43 @@
+'use strict'
+
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const path = require('node:path')
+
+const root = path.resolve(__dirname, '../..')
+const text = (name) => readFileSync(path.join(root, name), 'utf8')
+
+test('OBS-P001 global storage performance is admin-only and uses existing HTTP aggregation', () => {
+  const router = text('internal/api/router.go')
+  const stats = text('internal/api/storage_intelligence.go')
+  const obs = text('internal/api/observability.go')
+  const summary = text('internal/api/storage_performance_observation.go')
+  assert.match(router, /admin := authed\.Group\("\/admin"\)[\s\S]*?admin\.Use\(s\.requireAdmin\(\)\)/)
+  assert.match(router, /admin\.GET\("\/storage", s\.adminStorageStats\)/)
+  assert.match(stats, /stats\.Performance = s\.snapshotStoragePerformance\(\)/)
+  assert.doesNotMatch(obs, /snapshotStoragePerformance|storagePerformanceCategory/)
+  assert.match(summary, /o\.httpRequests/)
+  assert.match(summary, /o\.mu\.Lock\(\)/)
+  assert.doesNotMatch(summary, /\.WithContext\(|\.Exec\(|\.Find\(|\.WalkDir\(|http\.Get\(/)
+  assert.match(summary, /key\.Status >= 500/)
+  assert.match(summary, /func storagePerformanceCategory\(/)
+  assert.match(summary, /len\(storagePerformanceKeys\)/)
+})
+
+test('OBS-P001 shared Web/Desktop Global Storage UI is scope-fenced and no permanent daily latency claim', () => {
+  const ui = text('ui/shared/src/mui/GlobalStorageStatsPage.tsx')
+  const model = text('ui/shared/src/models.ts')
+  const web = text('web/src/StorageStatsPanel.tsx')
+  const admin = text('ui/shared/src/admin-management.ts')
+  assert.match(ui, /scope === 'global' && stats\.performance && \(/)
+  assert.match(ui, /stats\.performance\.rows\.map/)
+  assert.match(ui, /Server 进程/)
+  assert.match(ui, /平均耗时/)
+  assert.match(ui, /并非 CPU 时间或 p95/)
+  assert.match(model, /export interface StoragePerformance/)
+  assert.match(model, /performance\?: StoragePerformance/)
+  assert.match(web, /@xdrive\/ui\/mui/)
+  assert.match(admin, /adminStorageStats\(\): Promise<StorageStats>/)
+  assert.doesNotMatch(ui, /setInterval\(|performance\.now\(|new Worker\(/)
+})

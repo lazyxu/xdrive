@@ -234,6 +234,24 @@ export interface StoragePendingGC {
   deleting_blob_metadata_bytes: number
 }
 
+export type StoragePerformanceKey =
+  | 'files_list' | 'gallery_list' | 'preview' | 'download'
+  | 'upload_chunk' | 'upload_finalize' | 'operation_enqueue'
+  | 'delete_request' | 'changefeed'
+
+export interface StoragePerformanceRow {
+  key: StoragePerformanceKey
+  requests: number
+  server_errors: number
+  average_ms: number
+}
+
+export interface StoragePerformance {
+  started_at: string
+  captured_at: string
+  rows: StoragePerformanceRow[]
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number
@@ -242,6 +260,7 @@ export interface StorageStats {
   xdrive_physical_bytes?: number
   upload_staging?: UploadStagingStats
   inventory?: StorageInventory
+  performance?: StoragePerformance
   file_count?: number
   logical_file_bytes?: number
   duplicate_group_count?: number
