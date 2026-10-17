@@ -1,6 +1,9 @@
 package api
 
-import "strings"
+import (
+	"net/netip"
+	"strings"
+)
 
 // Only ASCII DNS hostnames may be staged for future Caddy HTTPS configuration.
 // Excludes ports, schemes, paths, wildcards, local IP literals and host flags.
@@ -36,4 +39,26 @@ func validCaddyHTTPSDomain(domain string) bool {
 		}
 	}
 	return true
+}
+
+// Only canonical RFC1918 IPv4 literals are valid private-IP HTTPS identities.
+// Explicitly disallow IPv4-mapped IPv6, short/octal/hex IP and CIDR syntax.
+func validCaddyLANIP(value string) bool {
+	ip, err := netip.ParseAddr(value)
+	return err == nil && ip.Is4() && ip.IsPrivate() && ip.String() == value
+}
+
+func validCaddyIngressFields(domainEnabled bool, domain string, lanEnabled bool, lanIP string) bool {
+	if (domainEnabled && domain == "") || (domain != "" && !validCaddyHTTPSDomain(domain)) {
+		return false
+	}
+	if (lanEnabled && lanIP == "") || (lanIP != "" && !validCaddyLANIP(lanIP)) {
+		return false
+	}
+	return true
+}
+
+func validCaddyIngressSelection(domainEnabled bool, domain string, lanEnabled bool, lanIP string) bool {
+	return (domainEnabled || lanEnabled) &&
+		validCaddyIngressFields(domainEnabled, domain, lanEnabled, lanIP)
 }

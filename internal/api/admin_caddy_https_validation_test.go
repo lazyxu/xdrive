@@ -22,3 +22,33 @@ func stringsRepeatA(n int) string {
 	}
 	return string(b)
 }
+
+func TestCaddyPrivateLANIPAndDualEntryIntent(t *testing.T) {
+	for _, valid := range []string{"192.168.2.4", "10.0.0.1", "172.16.0.1", "172.31.255.254"} {
+		if !validCaddyLANIP(valid) {
+			t.Fatalf("rejected valid private IPv4 %s", valid)
+		}
+	}
+	for _, bad := range []string{"", "8.8.8.8", "127.0.0.1", "169.254.1.1",
+		"172.15.0.1", "172.32.1.1", "192.168.02.4", "192.168.2.256",
+		"192.168.2.4:8443", "::ffff:192.168.2.4", "192.168.2.4/24"} {
+		if validCaddyLANIP(bad) {
+			t.Fatalf("accepted unsafe LAN IP %s", bad)
+		}
+	}
+	if validCaddyIngressSelection(false, "", false, "") {
+		t.Fatal("accepted both HTTPS entries disabled")
+	}
+	if !validCaddyIngressSelection(false, "", true, "192.168.2.4") {
+		t.Fatal("rejected LAN-only HTTPS")
+	}
+	if !validCaddyIngressSelection(true, "drive.example.com", false, "") {
+		t.Fatal("rejected domain-only HTTPS")
+	}
+	if !validCaddyIngressSelection(true, "drive.example.com", true, "192.168.2.4") {
+		t.Fatal("rejected dual-entry HTTPS")
+	}
+	if validCaddyIngressSelection(false, "", true, "127.0.0.1") {
+		t.Fatal("accepted loopback pretending to be LAN")
+	}
+}
