@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// OBS-P002 adds **no work to observeHTTP/observeRequest**. Once a minute the
-// existing Server storage sampler snapshots the preexisting route/status
-// counters into seven fixed, process-local slots. No user, URL or file labels,
-// persistent SQL writes, filesystem walk, probes or request-driven timers.
+// OBS-P002 reads existing request counters once per minute. OBS-P003 also
+// copies a fixed 9×25 HTTP duration-bucket array, recorded inside the already
+// existing request metrics mutex. No user, URL or file labels, persistent SQL
+// writes, filesystem walk, extra mutex or request-driven timers.
 const (
 	storagePerformancePeriod     = time.Minute
 	storagePerformanceWindow     = 5 * time.Minute
@@ -16,11 +16,13 @@ const (
 )
 
 type storageRecentPerformanceRowDTO struct {
-	Key               string  `json:"key"`
-	Requests          uint64  `json:"requests"`
-	ServerErrors      uint64  `json:"server_errors"`
-	AverageMS         float64 `json:"average_ms"`
-	RequestsPerSecond float64 `json:"requests_per_second"`
+	Key               string   `json:"key"`
+	Requests          uint64   `json:"requests"`
+	ServerErrors      uint64   `json:"server_errors"`
+	AverageMS         float64  `json:"average_ms"`
+	RequestsPerSecond float64  `json:"requests_per_second"`
+	P95UpperMS        *float64 `json:"p95_upper_ms,omitempty"`
+	P99UpperMS        *float64 `json:"p99_upper_ms,omitempty"`
 }
 
 type storageRecentPerformanceDTO struct {
@@ -41,8 +43,9 @@ type storagePerformanceCounter struct {
 }
 
 type storagePerformanceSample struct {
-	at       time.Time
-	counters [len(storagePerformanceKeys)]storagePerformanceCounter
+	at        time.Time
+	counters  [len(storagePerformanceKeys)]storagePerformanceCounter
+	histogram [len(storagePerformanceKeys)][storageP003BucketCount]uint64
 }
 
 type storagePerformanceSampleRing struct {
@@ -52,8 +55,9 @@ type storagePerformanceSampleRing struct {
 	count   int
 }
 
-// Called only on the server's preexisting 60s storage-sampler goroutine, and
-// from explicit admin reads. The existing per-request recording is untouched.
+// Called only on the Server's preexisting 60s sampler goroutine and explicit
+// Admin reads. The copy and classification reuse the existing observability
+// lock: there is no additional collection/query for each HTTP request.
 func (s *Server) storagePerformanceCounters(at time.Time) storagePerformanceSample {
 	snapshot := storagePerformanceSample{at: at.UTC()}
 	if s == nil || s.obs == nil {
@@ -72,6 +76,7 @@ func (s *Server) storagePerformanceCounters(at time.Time) storagePerformanceSamp
 			item.errors += value.Count
 		}
 	}
+	snapshot.histogram = s.obs.p003Histogram.bins
 	s.obs.mu.Unlock()
 	return snapshot
 }
@@ -164,6 +169,28 @@ func (s *Server) snapshotRecentStoragePerformance(now time.Time) *storageRecentP
 		row.RequestsPerSecond = float64(row.Requests) / sec
 		if row.Requests > 0 {
 			row.AverageMS = (after.duration - before.duration) * 1000 / float64(row.Requests)
+		}
+		// Compare only closed, fixed-bound histograms of the SAME process and
+		// same observed interval. Never infer quantiles from duration averages.
+		var delta [storageP003BucketCount]uint64
+		var total uint64
+		consistent := true
+		for bin := range delta {
+			oldCount, newCount := first.histogram[i][bin], current.histogram[i][bin]
+			if newCount < oldCount {
+				consistent = false
+				break
+			}
+			delta[bin] = newCount - oldCount
+			total += delta[bin]
+		}
+		if consistent && total > 0 && total == row.Requests {
+			if value, ok := storageP003QuantileUpperMS(delta, total, 95); ok {
+				row.P95UpperMS = &value
+			}
+			if value, ok := storageP003QuantileUpperMS(delta, total, 99); ok {
+				row.P99UpperMS = &value
+			}
 		}
 	}
 	return result

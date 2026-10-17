@@ -1,0 +1,166 @@
+name: OBS-P003 Original HTTP vs Fixed 9x25 Quantile Histogram Hot-Path A/B
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  obs-p003-quantile-overhead:
+    if: github.head_ref == 'perf/obs-p003-bounded-quantile-overhead-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged historical observer function bytes in test-only same-process baseline
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          files="$(gofmt -l internal/api/observability.go internal/api/storage_performance_histogram.go internal/api/storage_performance_window.go internal/api/storage_performance_histogram_test.go internal/api/storage_performance_histogram_benchmark_test.go)"
+          if [[ -n "$files" ]]; then
+            printf '%s\n' "$files"
+            gofmt -d $files
+            exit 1
+          fi
+          python3 - <<'PY'
+          import subprocess,pathlib
+          old=subprocess.check_output(['git','cat-file','-p','9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a']).decode()
+          bench=pathlib.Path('internal/api/storage_performance_histogram_benchmark_test.go').read_text()
+          start=old.index('func (o *serverObservability) observeRequest(')
+          stop=old.index('func uploadOperation(',start)
+          frozen=old[start:stop].replace('func (o *serverObservability) observeRequest(','func obsP003LegacyObserve(o *serverObservability, ',1)
+          current=bench[bench.index('func obsP003LegacyObserve('):bench.index('type obsP003Request struct')]
+          assert current.strip()==frozen.strip(),'original observeRequest method body was altered; no valid before/after'
+          print('OBS_P003_FROZEN_PRODUCTION_BASELINE_METHOD_BYTE_IDENTICAL')
+          PY
+          node --test desktop/tests/global-storage-performance-obs-p001.cjs desktop/tests/global-storage-performance-obs-p002.cjs desktop/tests/obs-p003-histogram-source.cjs
+          node web/scripts/check-gui-chinese.mjs
+      - name: Three repeat same Go binary serial and four CPU contention A/B
+        env:
+          GOMAXPROCS: '4'
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/obs-p003-results"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/api/observability.go \
+              internal/api/storage_performance_observation.go \
+              internal/api/storage_performance_window.go \
+              internal/api/storage_performance_histogram.go \
+              internal/api/storage_performance_histogram_benchmark_test.go \
+              ui/shared/src/mui/GlobalStorageStatsPage.tsx
+            go version
+            uname -a
+          } > "$out/source.txt"
+          /usr/bin/time -v -o "$out/resources.txt" \
+            go test -mod=readonly ./internal/api \
+              -run '^TestOBSP003' \
+              -bench '^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead) \
+              -cpu=4 -benchtime=450ms -count=3 -benchmem -timeout=20m -v \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          out=pathlib.Path(sys.argv[1])
+          log=(out/'run.log').read_text()
+          kinds=['OriginalSequential','CandidateSequential','OriginalParallel','CandidateParallel','PeriodicSample','AdminRecentRead']
+          values={}
+          rx=re.compile(r'^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)-4\s+\d+\s+([\d.]+) ns/op\s+(\d+) B/op\s+(\d+) allocs/op',re.M)
+          for kind,ns,bytes_,allocs in rx.findall(log):
+              values.setdefault(kind,[]).append({'ns_per_op':float(ns),'bytes_per_op':int(bytes_),'allocs_per_op':int(allocs)})
+          assert set(values)==set(kinds),values
+          assert all(len(values[k])==3 for k in kinds),values
+          assert '--- FAIL:' not in log
+          med={k:{metric:statistics.median(v[metric] for v in values[k]) for metric in ('ns_per_op','bytes_per_op','allocs_per_op')} for k in kinds}
+          gains={}
+          valid=True
+          for mode in ('Sequential','Parallel'):
+              original=med['Original'+mode]['ns_per_op']
+              cand=med['Candidate'+mode]['ns_per_op']
+              ratio=cand/original
+              add_ns=cand-original
+              gains[mode]={'baseline_ns':original,'candidate_ns':cand,'ratio':ratio,'increment_ns':add_ns}
+              valid &= ratio<=1.25 and add_ns<=50
+          valid &= all(x['bytes_per_op']==0 and x['allocs_per_op']==0 for kind in kinds[:4] for x in values[kind])
+          for kind in ['PeriodicSample','AdminRecentRead']:
+              valid &= max(x['ns_per_op'] for x in values[kind])<=2_000_000
+              valid &= max(x['bytes_per_op'] for x in values[kind])<=65_536
+          summary={'workload':'OBS-P003/nine-class-fixed-histogram-original-vs-candidate',
+            'n':3,'source_exact_baseline_git_blob':'9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a',
+            'head':(out/'source.txt').read_text().splitlines()[0],
+            'budget_ratio_max':1.25,'budget_increment_ns_max':50,'budget_zero_alloc':True,
+            'budget_admin_max_ns_per_op':2_000_000,'budget_admin_max_bytes_per_op':65_536,
+            'source_note':'Real xDrive original method body copied exactly (only declaration changed) and candidate product method compared on same Go1.25 runner; synthetic nine fixed route templates, not actual end-user p95 latency.',
+            'raw':values,'median':med,'deltas':gains,
+            'candidate_admission':'ACCEPT' if valid else 'REJECT',
+            'limits':'Server-only HTTP in-memory counter hot path. Does not measure real CAS originals, 100k GUI rendering, 4GiB upload, OS-installed PWA, or full multi-server p95.'
+          }
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print('OBS_P003_SAME_RUNNER_AB',json.dumps({'median':med,'deltas':gains,'candidate_admission':summary['candidate_admission']},sort_keys=True))
+          assert valid,'P003 instrumentation exceeds predeclared CPU/alloc budget; reject production hotpath and preserve raw evidence'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs-p003-nine-class-histogram-original-vs-candidate-n3
+          path: ${{ runner.temp }}/obs-p003-results/
+          retention-days: 30
+          if-no-files-found: warn
+ \
+              -cpu=4 -benchtime=450ms -count=3 -benchmem -timeout=20m -v \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          out=pathlib.Path(sys.argv[1])
+          log=(out/'run.log').read_text()
+          kinds=['OriginalSequential','CandidateSequential','OriginalParallel','CandidateParallel','PeriodicSample','AdminRecentRead']
+          values={}
+          rx=re.compile(r'^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)-4\s+\d+\s+([\d.]+) ns/op\s+(\d+) B/op\s+(\d+) allocs/op',re.M)
+          for kind,ns,bytes_,allocs in rx.findall(log):
+              values.setdefault(kind,[]).append({'ns_per_op':float(ns),'bytes_per_op':int(bytes_),'allocs_per_op':int(allocs)})
+          assert set(values)==set(kinds),values
+          assert all(len(values[k])==3 for k in kinds),values
+          assert '--- FAIL:' not in log
+          med={k:{metric:statistics.median(v[metric] for v in values[k]) for metric in ('ns_per_op','bytes_per_op','allocs_per_op')} for k in kinds}
+          gains={}
+          valid=True
+          for mode in ('Sequential','Parallel'):
+              original=med['Original'+mode]['ns_per_op']
+              cand=med['Candidate'+mode]['ns_per_op']
+              ratio=cand/original
+              add_ns=cand-original
+              gains[mode]={'baseline_ns':original,'candidate_ns':cand,'ratio':ratio,'increment_ns':add_ns}
+              valid &= ratio<=1.25 and add_ns<=50
+          valid &= all(x['bytes_per_op']==0 and x['allocs_per_op']==0 for kind in kinds[:4] for x in values[kind])
+          for kind in ['PeriodicSample','AdminRecentRead']:
+              valid &= max(x['ns_per_op'] for x in values[kind])<=2_000_000
+              valid &= max(x['bytes_per_op'] for x in values[kind])<=65_536
+          summary={'workload':'OBS-P003/nine-class-fixed-histogram-original-vs-candidate',
+            'n':3,'source_exact_baseline_git_blob':'9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a',
+            'head':(out/'source.txt').read_text().splitlines()[0],
+            'budget_ratio_max':1.25,'budget_increment_ns_max':50,'budget_zero_alloc':True,
+            'budget_admin_max_ns_per_op':2_000_000,'budget_admin_max_bytes_per_op':65_536,
+            'source_note':'Real xDrive original method body copied exactly (only declaration changed) and candidate product method compared on same Go1.25 runner; synthetic nine fixed route templates, not actual end-user p95 latency.',
+            'raw':values,'median':med,'deltas':gains,
+            'candidate_admission':'ACCEPT' if valid else 'REJECT',
+            'limits':'Server-only HTTP in-memory counter hot path. Does not measure real CAS originals, 100k GUI rendering, 4GiB upload, OS-installed PWA, or full multi-server p95.'
+          }
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print('OBS_P003_SAME_RUNNER_AB',json.dumps({'median':med,'deltas':gains,'candidate_admission':summary['candidate_admission']},sort_keys=True))
+          assert valid,'P003 instrumentation exceeds predeclared CPU/alloc budget; reject production hotpath and preserve raw evidence'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs-p003-nine-class-histogram-original-vs-candidate-n3
+          path: ${{ runner.temp }}/obs-p003-results/
+          retention-days: 30
+          if-no-files-found: warn

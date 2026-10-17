@@ -512,7 +512,7 @@ export default function StorageStatsPanel({
                       : '最近五分钟数据正在积累或后台采样暂不可用；不会把缺失数据显示为零。'}
                   </Typography>
                   <XDriveTableSurface>
-                    <Table size="small" aria-label="全实例读写请求性能" sx={{ minWidth: 920 }}>
+                    <Table size="small" aria-label="全实例读写请求性能" sx={{ minWidth: 1120 }}>
                       <TableHead>
                         <TableRow>
                           <TableCell>操作类型</TableCell>
@@ -521,6 +521,8 @@ export default function StorageStatsPanel({
                           <TableCell align="right">HTTP 5xx</TableCell>
                           <TableCell align="right">近期请求/s</TableCell>
                           <TableCell align="right">近期平均耗时</TableCell>
+                          <TableCell align="right">近期 p95 上界</TableCell>
+                          <TableCell align="right">近期 p99 上界</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -538,6 +540,8 @@ export default function StorageStatsPanel({
                             <TableCell align="right">{metric.server_errors.toLocaleString()}</TableCell>
                             <TableCell align="right">{recent ? recent.requests_per_second.toFixed(2) : '—'}</TableCell>
                             <TableCell align="right">{recent && recent.requests > 0 ? `${recent.average_ms.toFixed(1)} ms` : '—'}</TableCell>
+                            <TableCell align="right">{recent?.p95_upper_ms !== undefined ? `≤ ${recent.p95_upper_ms.toFixed(1)} ms` : '—'}</TableCell>
+                            <TableCell align="right">{recent?.p99_upper_ms !== undefined ? `≤ ${recent.p99_upper_ms.toFixed(1)} ms` : '—'}</TableCell>
                           </TableRow>
                           )
                         })}
@@ -547,7 +551,7 @@ export default function StorageStatsPanel({
                   <Typography variant="caption" color="text.secondary">
                     平均耗时包括 HTTP 传输和流式响应耗时，并非 CPU 时间或 p95。
                     HTTP 404/取消可能是正常操作，错误列仅计 5xx；文件操作排队耗时不等于后台执行耗时。
-                    近期速率与平均耗时由每分钟只读快照计算，并非真实 p95/p99、客户端吞吐量或后台 Worker 用时；窗口会明确标示实际覆盖秒数。每日容量与 GC 趋势继续由下方持久快照提供，此处不保存路径、文件名或账户身份。
+                    近期请求速率和均值由每分钟只读快照计算；p95/p99 为 HTTP 延迟固定桶的保守上界，不是精确分位数，超过最大桶界限、无采样或统计不一致时显示“—”。这些指标不包括客户端绘制、上传下载字节吞吐或后台 Worker 用时；窗口明确标示实际覆盖秒数。每日容量与 GC 趋势继续由下方持久快照提供，此处不保存路径、文件名或账户身份。
                   </Typography>
                 </Stack>
               )}

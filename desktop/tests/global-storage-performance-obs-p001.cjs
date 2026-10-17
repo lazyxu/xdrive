@@ -16,7 +16,12 @@ test('OBS-P001 global storage performance is admin-only and uses existing HTTP a
   assert.match(router, /admin := authed\.Group\("\/admin"\)[\s\S]*?admin\.Use\(s\.requireAdmin\(\)\)/)
   assert.match(router, /admin\.GET\("\/storage", s\.adminStorageStats\)/)
   assert.match(stats, /stats\.Performance = s\.snapshotStoragePerformance\(\)/)
-  assert.doesNotMatch(obs, /snapshotStoragePerformance|storagePerformanceCategory/)
+  assert.doesNotMatch(obs, /snapshotStoragePerformance|snapshotRecentStoragePerformance/)
+  // OBS-P003 explicitly allows one bounded duration-bucket increment inside
+  // the existing observer mutex, not an additional per-request probe/lock.
+  assert.match(obs, /storagePerformanceCategory\(method, route\)/)
+  assert.match(obs, /storageP003BucketForDuration\(duration\)/)
+  assert.match(obs, /o\.p003Histogram\.bins\[category\]\[bucket\]\+\+/)
   assert.match(summary, /o\.httpRequests/)
   assert.match(summary, /o\.mu\.Lock\(\)/)
   assert.doesNotMatch(summary, /\.WithContext\(|\.Exec\(|\.Find\(|\.WalkDir\(|http\.Get\(/)
