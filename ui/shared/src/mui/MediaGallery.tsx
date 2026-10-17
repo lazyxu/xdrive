@@ -158,6 +158,7 @@ import {
   xDriveMediaGalleryErrorMessage,
 } from './MediaGalleryUtils'
 import { XDriveStatusAlert } from './StatusAlert'
+import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveMediaGalleryAnchorScrollDelta } from './MediaGalleryScrollAnchor'
@@ -6122,6 +6123,14 @@ export function XDriveMediaGallery({
       : undefined
   const showAlbumIndex = isRootSection && section === 'albums'
   const showPlacesIndex = isRootSection && section === 'places'
+  // These are presentational delays only; real Source/Server/Agent GETs and
+  // the previously accepted albums/places lists are never delayed or cleared.
+  const showDelayedSyncFolders = useXDriveDeferredPendingLoading(
+    showAlbumIndex && syncFoldersLoading && syncFolders.length === 0)
+  const showDelayedPlacesInitial = useXDriveDeferredPendingLoading(
+    showPlacesIndex && placesStatus === 'loading' && places.length === 0)
+  const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
+    showPlacesIndex && placesPagePending)
   useEffect(() => {
     if (!showPlacesIndex || !focusPlaceID || !placesReturnAnchorRef.current) return
     const anchor = placesReturnAnchorRef.current
@@ -7159,7 +7168,7 @@ export function XDriveMediaGallery({
         <XDriveStatusAlert tone="bad">{syncFoldersError}</XDriveStatusAlert>
       ) : null}
 
-      {showAlbumIndex && (syncFoldersLoading || syncFolders.length > 0) ? (
+      {showAlbumIndex && (showDelayedSyncFolders || syncFolders.length > 0) ? (
         <Box data-xdrive-gallery-sync-folders>
           <Stack direction="row" spacing={0.75} alignItems="baseline" sx={{ mb: 1.25 }}>
             <Typography variant="subtitle1" fontWeight={700}>
@@ -7329,7 +7338,7 @@ export function XDriveMediaGallery({
               ))}
             </Box>
             <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap"
-              data-xdrive-places-pagination sx={{ mt: 1.5 }}>
+              data-xdrive-places-pagination sx={{ mt: 1.5, position: 'relative' }}>
               <Typography variant="caption" color="text.secondary">
                 {placesTotalCount === null
                   ? '当前仅有旧版地点列表（' + places.length + ' 个，可能不完整），请更新 Server/Agent'
@@ -7354,9 +7363,14 @@ export function XDriveMediaGallery({
                   </Button>
                 </>
               ) : null}
-              {placesPagePending ? (
-                <Typography role="status" variant="caption">正在加载地点…</Typography>
-              ) : null}
+              <Box data-xdrive-places-pagination-quiet-status
+                aria-busy={placesPagePending || undefined}
+                sx={{ width: 18, height: 18, flexShrink: 0, display: 'grid',
+                  placeItems: 'center', pointerEvents: 'none' }}>
+                {showDelayedPlacesPage
+                  ? <CircularProgress size={14} aria-label="正在更新地点列表" />
+                  : null}
+              </Box>
               {placesPageError ? (
                 <Typography role="alert" variant="caption" color="error">
                   {placesPageError}
@@ -8001,8 +8015,17 @@ export function XDriveMediaGallery({
           <Typography color="text.secondary">还没有相册</Typography>
         </Paper>
       ) : null}
-      {showPlacesIndex && placesStatus === 'loading' ? (
-        <Typography role="status" color="text.secondary">正在加载地点…</Typography>
+      {showPlacesIndex && placesStatus === 'loading' && places.length === 0 ? (
+        <Paper data-xdrive-gallery-places-first-read variant="outlined"
+          aria-busy="true"
+          sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
+          {showDelayedPlacesInitial ? (
+            <Stack role="status" alignItems="center" spacing={1}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">正在加载地点…</Typography>
+            </Stack>
+          ) : null}
+        </Paper>
       ) : null}
       {showPlacesIndex && places.length === 0 && !loading && placesStatus === 'ready' ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
