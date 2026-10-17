@@ -859,6 +859,7 @@ export function XDriveFileExplorer({
   presentation = 'card',
   keyboardProfile = 'web',
   emptyMessage = '此文件夹为空',
+  emptyReadState = 'ready',
   tabBar,
   onNewTab,
   onCloseTab,
@@ -959,6 +960,8 @@ export function XDriveFileExplorer({
   presentation?: XDriveFileExplorerPresentation
   keyboardProfile?: XDriveFileExplorerKeyboardProfile
   emptyMessage?: string
+  /** Current Owner first-list status; ordinary folders keep 'ready'. */
+  emptyReadState?: 'unverified' | 'ready' | 'error'
   tabBar?: ReactNode
   onNewTab?: () => void
   onCloseTab?: () => void
@@ -6525,6 +6528,22 @@ export function XDriveFileExplorer({
             onOpenFile={(item) => (onColumnOpenItem ?? onOpenItem)?.(item)}
             onItemContextMenu={openItemContextMenu}
           />
+        ) : logicalItemCount === 0 &&
+          (emptyReadState === 'unverified' || (emptyReadState === 'error' && loading)) ? (
+          <Box data-xdrive-file-explorer-unverified-first-read
+            aria-busy={loading || undefined}
+            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+            {showDelayedLoading
+              ? <XDriveStatePanel variant="plain" loading message="正在读取回收站…" />
+              : null}
+          </Box>
+        ) : logicalItemCount === 0 && emptyReadState === 'error' && !loading ? (
+          <Stack data-xdrive-file-explorer-empty-read-error role="alert"
+            alignItems="center" justifyContent="center" spacing={1}
+            sx={{ minHeight: 180, px: 2 }}>
+            <Typography variant="body2" color="error.main">回收站读取失败，请重试。</Typography>
+            {onRefresh ? <Button size="small" onClick={onRefresh} sx={{ minHeight: 44, minWidth: 44 }}>重试</Button> : null}
+          </Stack>
         ) : loading && logicalItemCount === 0 && !keepAcceptedEmpty ? (
           showDelayedLoading ? <XDriveStatePanel variant="plain" loading message="正在加载文件…" /> : null
         ) : logicalItemCount === 0 ? (
