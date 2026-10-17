@@ -146,6 +146,7 @@ import {
   type AgentCloudUploadResult,
   type AgentCloudChildrenPage,
   type AgentCloudChildrenRange,
+  type AgentCloudChildrenPosition,
   type AgentCloudTrashRange,
   type AgentCloudNodeChangePage,
   type AgentCloudQuickAccessItem,
@@ -4641,6 +4642,48 @@ function registerIPCHandlers() {
       grouping,
       signal,
     )
+    }), false,
+  ))
+
+  ipcMain.handle('agent:cloud-child-position', (
+    event,
+    parentIDValue: unknown,
+    nodeIDValue: unknown,
+    sortValue: unknown,
+    orderValue: unknown,
+    groupingValue: unknown,
+    requestID: unknown,
+  ) => runAgentAction<AgentCloudChildrenPosition>(
+    () => viewportRequests.run(event.sender, requestID, async (signal) => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      // Distinct capability: older Agents must fail explicitly, not return a
+      // misleading missing-file error from an endpoint they do not implement.
+      requireAgentCapability(hello, 'cloud-child-position')
+      const parentID = parentIDValue
+      const nodeID = nodeIDValue
+      if (typeof parentID !== 'number' || !Number.isSafeInteger(parentID) || parentID <= 0 ||
+          typeof nodeID !== 'number' || !Number.isSafeInteger(nodeID) || nodeID <= 0) {
+        throw new AgentIPCError('invalid_input', 0, 'A valid directory and child identity are required.')
+      }
+      const sort = sortValue === undefined ? 'name' : sortValue
+      const order = orderValue === undefined ? 'asc' : orderValue
+      if (!['name', 'updated', 'size', 'type'].includes(String(sort)) ||
+          !['asc', 'desc'].includes(String(order))) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid directory position ordering.')
+      }
+      const grouping = normalizeFileExplorerGrouping(groupingValue)
+      if (signal?.aborted) throw new AgentIPCError('aborted', 0, 'Directory position request was cancelled.')
+      const position = await requireAgentClient().cloudChildPosition(
+        parentID, nodeID, sort as AgentCloudChildrenPosition['sort'],
+        order as AgentCloudChildrenPosition['order'], grouping, signal,
+      )
+      if (position.node_id !== nodeID || !Number.isSafeInteger(position.revision) || position.revision <= 0 ||
+          !Number.isSafeInteger(position.index) || position.index < 0 ||
+          position.sort !== sort || position.order !== order || position.group !== grouping.groupBy ||
+          position.folders_first !== grouping.foldersFirst) {
+        throw new AgentIPCError('invalid_response', 0, 'Directory position identity or revision is stale.')
+      }
+      return position
     }), false,
   ))
 

@@ -80,6 +80,7 @@ import type {
   XDriveCloudFilesPage,
   XDriveCloudFilesPageOptions,
   XDriveCloudFilesRange,
+  XDriveCloudFilesPosition,
   XDriveCloudFilesSearchPage,
   XDriveCloudFilesSearchRange,
   XDriveCloudFilesSearchResult,
@@ -370,6 +371,7 @@ declare global {
   type AgentCloudNode = Node
   type AgentCloudChildrenPage = XDriveCloudFilesPage<AgentCloudNode>
   type AgentCloudChildrenRange = XDriveCloudFilesRange<AgentCloudNode>
+  type AgentCloudChildrenPosition = XDriveCloudFilesPosition
   type AgentCloudTrashRange = XDriveCloudFilesRange<AgentCloudNode>
   type AgentCloudNodeChangePage = XDriveCloudFilesChangePage<AgentCloudNode>
   type AgentCloudQuickAccessItem = XDriveFileQuickAccessItem<AgentCloudNode>
@@ -800,6 +802,14 @@ declare global {
           grouping?: XDriveFileExplorerGrouping,
           requestID?: string,
         ) => Promise<DesktopResult<AgentCloudChildrenRange>>
+        cloudChildPosition: (
+          parentID: number,
+          nodeID: number,
+          sort?: 'name' | 'updated' | 'size' | 'type',
+          order?: 'asc' | 'desc',
+          grouping?: XDriveFileExplorerGrouping,
+          requestID?: string,
+        ) => Promise<DesktopResult<AgentCloudChildrenPosition>>
         cloudChanges: (
           after?: number,
           limit?: number,

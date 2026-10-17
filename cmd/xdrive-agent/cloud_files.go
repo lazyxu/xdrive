@@ -240,6 +240,21 @@ func (c *agentController) CloudListRange(ctx context.Context, parentID uint64, o
 	return cli.ListRange(ctx, parentID, options)
 }
 
+// CloudLocateChildPosition relays a single authorized directory identity lookup.
+// It never enumerates a directory locally or changes the Desktop navigation state.
+func (c *agentController) CloudLocateChildPosition(
+	ctx context.Context, parentID, nodeID uint64, options client.ChildrenPositionOptions,
+) (client.ChildrenPosition, error) {
+	if parentID == 0 || nodeID == 0 || parentID > uint64(1<<63-1) || nodeID > uint64(1<<63-1) {
+		return client.ChildrenPosition{}, fmt.Errorf("invalid directory or node ID")
+	}
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.ChildrenPosition{}, err
+	}
+	return cli.LocateChildPosition(ctx, parentID, nodeID, options)
+}
+
 func (c *agentController) CloudNodeChanges(ctx context.Context, after uint64, limit int) (client.NodeChangePage, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

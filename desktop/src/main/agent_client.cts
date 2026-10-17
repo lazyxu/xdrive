@@ -1330,6 +1330,16 @@ export type AgentCloudChildrenRange = {
   groups?: AgentFileExplorerGroupIndex[]
 }
 
+export type AgentCloudChildrenPosition = {
+  node_id: number
+  revision: number
+  index: number
+  sort: 'name' | 'updated' | 'size' | 'type'
+  order: 'asc' | 'desc'
+  group: 'none' | 'type' | 'modified' | 'size'
+  folders_first: boolean
+}
+
 export type AgentCloudNodeChange = {
   cursor: number
   node_id: number
@@ -3505,6 +3515,27 @@ export class AgentIPCClient {
     if (!includeCount) query.set('include_count', 'false')
     appendAgentFileExplorerGrouping(query, grouping)
     return this.request<AgentCloudChildrenRange>('GET', `/v1/cloud/children?${query.toString()}`, undefined, 10_000, signal)
+  }
+
+  // Cancelable token-authenticated loopback relay; not a directory enumeration.
+  cloudChildPosition(
+    parentID: number,
+    nodeID: number,
+    sort: 'name' | 'updated' | 'size' | 'type' = 'name',
+    order: 'asc' | 'desc' = 'asc',
+    grouping?: AgentFileExplorerGrouping,
+    signal?: AbortSignal,
+  ) {
+    const query = new URLSearchParams({
+      parent_id: String(parentID),
+      node_id: String(nodeID),
+      sort,
+      order,
+    })
+    appendAgentFileExplorerGrouping(query, grouping)
+    return this.request<AgentCloudChildrenPosition>(
+      'GET', `/v1/cloud/children/position?${query.toString()}`, undefined, 10_000, signal,
+    )
   }
 
   cloudChanges(after = 0, limit = 200) {
