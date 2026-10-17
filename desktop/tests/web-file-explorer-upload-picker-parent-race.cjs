@@ -183,6 +183,8 @@ test('Web FileExplorer folder picker captures current parent before opening', ()
   const source = extractVariableInitializer('openFolderUploadPicker')
   const folderUploadPickerParentIDRef = { current: null }
   let clicks = 0
+  const folderPickerLimitNoticeShownRef = { current: false }
+  const notices = []
   const openFolderUploadPicker = compileExpression(
     source.filename,
     'openFolderUploadPicker',
@@ -190,6 +192,8 @@ test('Web FileExplorer folder picker captures current parent before opening', ()
     {
       current: { id: 10 },
       folderUploadPickerParentIDRef,
+      folderPickerLimitNoticeShownRef,
+      onFeedback: (tone, message) => notices.push({ tone, message }),
       folderUploadInputRef: { current: { click: () => { clicks += 1 } } },
     },
   )
@@ -198,4 +202,12 @@ test('Web FileExplorer folder picker captures current parent before opening', ()
 
   assert.equal(folderUploadPickerParentIDRef.current, 10)
   assert.equal(clicks, 1)
+  assert.equal(notices.length, 1)
+  assert.equal(notices[0].tone, 'warning')
+  assert.match(notices[0].message, /空目录/)
+  folderUploadPickerParentIDRef.current = null
+  openFolderUploadPicker()
+  assert.equal(clicks, 2)
+  assert.equal(folderUploadPickerParentIDRef.current, 10)
+  assert.equal(notices.length, 1, 'picker limitation is explained once, not on every click')
 })

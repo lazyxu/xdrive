@@ -1381,15 +1381,40 @@ function FileManager({
   }
 
   const uploadFolderFiles = async (expectedCurrentID: number, files: FileList | null) => {
+    // A cancelled chooser and a chooser that returns no file entries are
+    // indistinguishable. Never claim an upload or an empty-directory result.
     if (!files?.length) return
+    const selected = Array.from(files)
+    // webkitdirectory can enumerate files without a usable relative path on
+    // some platforms. Silently falling back to file.name flattens folders.
+    if (selected.some((file) => {
+      const relative = file.webkitRelativePath
+      return typeof relative !== 'string' || !relative.trim() || !/[\\/]/.test(relative)
+    })) {
+      setFeedback({
+        tone: 'warning',
+        message: '当前浏览器未提供完整的文件夹相对路径，本次未上传，以免将多层文件错误放到同一目录。请使用支持目录选择的浏览器，或改用“上传文件”。',
+      })
+      return
+    }
     try {
-      await uploadFolderEntriesTo(
+      const result = await uploadFolderEntriesTo(
         expectedCurrentID,
-        Array.from(files).map((file) => ({
+        selected.map((file) => ({
           file,
-          relativePath: file.webkitRelativePath || file.name,
+          relativePath: file.webkitRelativePath,
         })),
       )
+      // The OS file picker provides only files, not a manifest of empty
+      // subdirectories. Make that limitation explicit after successful work,
+      // without hiding a real failure or reporting cancellation as success.
+      if (result.started && !result.cancelled && result.failed === 0 &&
+          result.uploaded + result.skipped > 0) {
+        setFeedback({
+          tone: 'warning',
+          message: `文件夹文件处理完毕：上传 ${result.uploaded}、跳过 ${result.skipped}。浏览器选择器无法列出纯空目录，它们可能未创建；如需保留空目录，请在 xDrive 中使用“新建文件夹”。`,
+        })
+      }
       await refreshCurrentDirectory(expectedCurrentID)
     } catch (error) {
       handleError(error)
