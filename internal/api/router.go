@@ -364,6 +364,7 @@ func (s *Server) Router() *gin.Engine {
 	// L03-E1a: private bounded physical CAS check of exact quarantined IDs; never a commit token.
 	authed.POST("/sources/:id/local-identity/commit-intents/content-preflight", s.requireLocalSourceExecutor(), s.preflightLocalQuarantinedContent)
 	// Owning-Agent-only temporary byte transfer. No canonical upload, Node, SourceItem or Run writes.
+	authed.POST("/sources/:id/local-operation/prepare", s.requireLocalSourceExecutor(), s.prepareLocalPushOperation)
 	authed.POST("/sources/:id/local-staging", s.requireLocalSourceExecutor(), s.createLocalPushStage)
 	authed.GET("/sources/:id/local-staging/:stageID", s.requireLocalSourceExecutor(), s.getLocalPushStage)
 	// Read-only, owning-Agent, point-in-time physical bytes; NEVER canonical commit authority.
