@@ -50,6 +50,9 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	if !db.Migrator().HasTable(&meta.BaiduGeoconvQuotaBucket{}) {
 		t.Fatal("Server Geoconv quota table missing")
 	}
+	if !db.Migrator().HasTable(&meta.BaiduGeoconvFlight{}) {
+		t.Fatal("Server Geoconv in-flight capacity table missing")
+	}
 	if !db.Migrator().HasTable(&meta.BaiduPhotoMapIndexIntent{}) {
 		t.Fatal("private photo map index intent table missing")
 	}
@@ -62,6 +65,9 @@ func TestMigrateCreatesBaiduJSAPICrossReplicaQuota(t *testing.T) {
 	}
 	if err := db.Model(&meta.BaiduGeoconvQuotaBucket{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("Geoconv migration cannot charge or export GPS: count=%d err=%v", count, err)
+	}
+	if err := db.Model(&meta.BaiduGeoconvFlight{}).Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("Geoconv migration cannot start external tasks: count=%d err=%v", count, err)
 	}
 	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("index intent migration must not enqueue or export coordinates: count=%d err=%v", count, err)
