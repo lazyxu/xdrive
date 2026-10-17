@@ -61,6 +61,8 @@ type XDriveBackgroundTaskPageState = {
   history: XDriveBackgroundTask[]
   nextCursor: string
   loadedMore: boolean
+  hasLoaded: boolean
+  failed: boolean
 }
 
 function emptyBackgroundTaskPageState(): XDriveBackgroundTaskPageState {
@@ -69,6 +71,8 @@ function emptyBackgroundTaskPageState(): XDriveBackgroundTaskPageState {
     history: [],
     nextCursor: '',
     loadedMore: false,
+    hasLoaded: false,
+    failed: false,
   }
 }
 
@@ -204,6 +208,8 @@ function useXDriveBackgroundTasks({
   )
   const [mineLoading, setMineLoading] = useState(false)
   const [globalLoading, setGlobalLoading] = useState(false)
+  const [mineLoadEpoch, setMineLoadEpoch] = useState(0)
+  const [globalLoadEpoch, setGlobalLoadEpoch] = useState(0)
   const [mineLoadingMore, setMineLoadingMore] = useState(false)
   const [globalLoadingMore, setGlobalLoadingMore] = useState(false)
   // Error feedback is not a polling input. Desktop callers create a new
@@ -260,8 +266,13 @@ function useXDriveBackgroundTasks({
     const load = global ? port.loadGlobalPage : port.loadMinePage
     if (!load) return
 
-    if (global) setGlobalLoading(true)
-    else setMineLoading(true)
+    if (global) {
+      setGlobalLoadEpoch((epoch) => epoch + 1)
+      setGlobalLoading(true)
+    } else {
+      setMineLoadEpoch((epoch) => epoch + 1)
+      setMineLoading(true)
+    }
     try {
       const page = xDriveNormalizeBackgroundTaskPage(
         await load(XDRIVE_BACKGROUND_TASK_HISTORY_PAGE_LIMIT),
@@ -278,11 +289,19 @@ function useXDriveBackgroundTasks({
           ? previous.nextCursor
           : page.next_cursor ?? '',
         loadedMore: previous.loadedMore,
+        hasLoaded: true,
+        failed: false,
       })
       if (global) setGlobalTasks(update)
       else setMine(update)
     } catch (error) {
-      if (valid()) onErrorRef.current?.(error)
+      if (valid()) {
+        // An unsuccessful first read is not an authoritative empty list.
+        // Keep the last accepted task cards during a failed refresh.
+        if (global) setGlobalTasks((previous) => ({ ...previous, failed: true }))
+        else setMine((previous) => ({ ...previous, failed: true }))
+        onErrorRef.current?.(error)
+      }
     } finally {
       if (valid()) {
         if (global) setGlobalLoading(false)
@@ -381,6 +400,12 @@ function useXDriveBackgroundTasks({
     globalTasks: [...scopedGlobal.current, ...scopedGlobal.history],
     mineLoading: ownerCurrent ? mineLoading : false,
     globalLoading: ownerCurrent ? globalLoading : false,
+    mineHasLoaded: ownerCurrent && scopedMine.hasLoaded,
+    globalHasLoaded: ownerCurrent && scopedGlobal.hasLoaded,
+    mineReadFailed: ownerCurrent && scopedMine.failed,
+    globalReadFailed: ownerCurrent && scopedGlobal.failed,
+    mineLoadEpoch: ownerCurrent ? mineLoadEpoch : 0,
+    globalLoadEpoch: ownerCurrent ? globalLoadEpoch : 0,
     effectiveScope,
     refresh,
     loadMore,
@@ -540,6 +565,12 @@ export function useXDriveTaskCenterController({
     globalBackgroundTasks: background.globalTasks,
     backgroundTasksLoading: background.mineLoading,
     globalBackgroundTasksLoading: background.globalLoading,
+    backgroundTasksLoaded: background.mineHasLoaded,
+    globalBackgroundTasksLoaded: background.globalHasLoaded,
+    backgroundTasksReadFailed: background.mineReadFailed,
+    globalBackgroundTasksReadFailed: background.globalReadFailed,
+    backgroundTasksLoadEpoch: background.mineLoadEpoch,
+    globalBackgroundTasksLoadEpoch: background.globalLoadEpoch,
     backgroundTasksAvailable: Boolean(backgroundTaskPort) && backgroundTasksEnabled,
     globalTasksEnabled: Boolean(backgroundTaskPort?.loadGlobalPage) && globalTasksEnabled,
     backgroundScope: background.effectiveScope,
