@@ -3647,3 +3647,43 @@ test('P52 Mobile inline folder disclosure keeps chevron and 44px hit target thro
     onOpenItem: (item, owner) => { opens.push([item.id, owner]); return false },
   } })
 })
+
+test('P53 mounted Mobile Recent/Favorites idle-unverified first read never spins without network', async () => {
+  await withView(async h => {
+    const row = () => find(h.view, 'data-mobile-files-collection-first-read', true)
+    const ringCount = () => row().findAll(n => n.type === 'CircularProgress').length
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(ringCount(), 0)
+    assert.equal(find(h.view, 'data-mobile-files-collection-state', true).props['aria-busy'], undefined,
+      'unverified but idle is not a running authenticated network request')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 345)) })
+    assert.equal(ringCount(), 0, 'an idle unverified collection must remain quiet even after 300ms')
+    await h.update({ recentLoading: true })
+    assert.equal(row().props.role, 'status')
+    assert.equal(find(h.view, 'data-mobile-files-collection-state', true).props['aria-busy'], true)
+    assert.equal(ringCount(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
+    assert.equal(ringCount(), 0, 'fast current request never flashes its spinner')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 325)) })
+    assert.equal(ringCount(), 1, 'real sustained 360ms Recent request has genuine progress')
+    await h.update({ recentLoading: false })
+    assert.equal(ringCount(), 0, 'a settled request removes only decorative progress')
+    await h.update({ recentReadState: 'error' })
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 1,
+      'a true failure still exposes the explicit retryable error')
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    assert.equal(ringCount(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
+    assert.equal(ringCount(), 0, 'idle unverified Favorites must not spin either')
+    await h.update({ favoritesLoading: true })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 330)) })
+    assert.equal(ringCount(), 1, 'real sustained Favorites request is shown after 300ms')
+    await h.update({ favoritesLoading: false })
+    assert.equal(ringCount(), 0)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+  }, { props: {
+    recentItems: [], favorites: [],
+    recentReadState: 'unverified', recentLoading: false,
+    favoritesReadState: 'unverified', favoritesLoading: false,
+  } })
+})
