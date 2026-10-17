@@ -202,16 +202,14 @@ services:
     image: ${XD_CADDY_IMAGE:-ghcr.io/lazyxu/xdrive-caddy:latest}
     environment:
       XD_DOMAIN: ${XD_DOMAIN:-}
+      # Opt-in private IP HTTPS identity, served on the existing 8443:443
+      # listener. Never exposes XD_WEB_PORT or enables plaintext IP login.
+      XD_LAN_HTTPS_IP: ${XD_LAN_HTTPS_IP:-}
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
     command:
       - /bin/sh
-      - -ec
-      - |
-        if [ -n "$$XD_DOMAIN" ]; then
-          exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
-        fi
-        exec caddy run --config /etc/caddy/Caddyfile.http --adapter caddyfile
+      - /usr/local/bin/xdrive-caddy-start
     ports:
       - "${XD_WEB_BIND:-127.0.0.1}:${XD_WEB_PORT:-3000}:80/tcp"
       - "${XD_HTTPS_BIND:-0.0.0.0}:${XD_HTTPS_PORT:-8443}:443/tcp"

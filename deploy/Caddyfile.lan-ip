@@ -1,0 +1,24 @@
+import /etc/caddy/Caddyfile.common
+
+# Preserve the existing HTTP internal-only listener and public AliDNS HTTPS.
+:80 {
+	import xdrive_app
+}
+
+{$XD_DOMAIN} {
+	tls {
+		dns alidns {
+			access_key_id {env.ALIYUN_ACCESS_KEY_ID}
+			access_key_secret {env.ALIYUN_ACCESS_KEY_SECRET}
+		}
+	}
+	import xdrive_app
+}
+
+# A second HTTPS virtual host on the SAME :443 listener. Public CAs do not
+# sign RFC1918 private IP addresses: clients must explicitly trust this
+# deployment's Caddy local root CA. No HTTP LAN login is enabled.
+{$XD_LAN_HTTPS_IP} {
+	tls internal
+	import xdrive_app
+}

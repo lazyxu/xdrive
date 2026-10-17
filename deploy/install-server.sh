@@ -1130,6 +1130,25 @@ validate_domain() {
   fi
 }
 
+validate_private_lan_https_ip() {
+  local value="$1" a b c d octet
+  if [[ ! "$value" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]]; then
+    echo "xDrive server installer: XD_LAN_HTTPS_IP must be a canonical private IPv4 address." >&2
+    return 1
+  fi
+  IFS=. read -r a b c d <<< "$value"
+  for octet in "$a" "$b" "$c" "$d"; do
+    if [[ ! "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || (( 10#$octet > 255 )); then
+      echo "xDrive server installer: invalid XD_LAN_HTTPS_IP octet." >&2
+      return 1
+    fi
+  done
+  if ! (( a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168) )); then
+    echo "xDrive server installer: XD_LAN_HTTPS_IP must be RFC1918 (10/8, 172.16/12, 192.168/16)." >&2
+    return 1
+  fi
+}
+
 validate_port() {
   local value="$1"
   if [[ ! "$value" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
@@ -1509,6 +1528,7 @@ ensure_env XD_WEB_PORT "${XD_WEB_PORT:-3000}"
 ensure_env XD_ALLOWED_ORIGIN "${XD_ALLOWED_ORIGIN:-http://localhost:3000}"
 ensure_env XD_MAX_UPLOAD_BYTES "${XD_MAX_UPLOAD_BYTES:-21474836480}"
 ensure_env XD_DOMAIN "${XD_DOMAIN:-}"
+ensure_env XD_LAN_HTTPS_IP "${XD_LAN_HTTPS_IP:-}"
 ensure_env XD_HTTPS_BIND "${XD_HTTPS_BIND:-0.0.0.0}"
 ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
 ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
@@ -1645,6 +1665,22 @@ else
   # HTTP/private mode remains directly reachable on XD_WEB_PORT.
   if [[ "$(env_value XD_WEB_BIND)" == "127.0.0.1" && "${XD_KEEP_LOOPBACK_HTTP:-0}" != "1" ]]; then
     set_env XD_WEB_BIND "0.0.0.0"
+  fi
+fi
+
+# No LAN HTTP bind changes: users with modem DMZ must not expose passwords on
+# new plaintext ports. An opt-in IP site shares existing HTTPS :443 only.
+lan_https_ip="$(env_value XD_LAN_HTTPS_IP)"
+if [[ -n "$lan_https_ip" ]]; then
+  validate_private_lan_https_ip "$lan_https_ip"
+  if [[ -z "$domain" ]]; then
+    echo "xDrive server installer: XD_LAN_HTTPS_IP requires XD_DOMAIN." >&2
+    exit 1
+  fi
+  https_bind="$(env_value XD_HTTPS_BIND)"
+  if [[ "$https_bind" != "0.0.0.0" && "$https_bind" != "$lan_https_ip" ]]; then
+    echo "xDrive server installer: XD_HTTPS_BIND must permit the LAN IPv4 address when private-IP HTTPS is enabled." >&2
+    exit 1
   fi
 fi
 

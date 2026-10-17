@@ -35,7 +35,15 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 # normal process capabilities. Do not weaken the nonroot rescue sandbox.
 RUN setcap -r /usr/bin/caddy && test -z "$(getcap /usr/bin/caddy)"
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY deploy/Caddyfile.lan-ip /etc/caddy/Caddyfile.lan-ip
+COPY deploy/caddy-lan-start.sh /usr/local/bin/xdrive-caddy-start
 COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
 COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
 COPY deploy/Caddyfile.common /etc/caddy/Caddyfile.common
 COPY web/dist/ /srv/
+
+# The opt-in private-IP HTTPS Caddyfile must parse with the pinned AliDNS
+# module; keep a real image-build syntax gate without issuing any certificate.
+RUN chmod 0755 /usr/local/bin/xdrive-caddy-start && \
+    XD_DOMAIN=drive.example.com XD_LAN_HTTPS_IP=192.168.2.4 \
+    caddy adapt --config /etc/caddy/Caddyfile.lan-ip --adapter caddyfile >/dev/null

@@ -451,8 +451,8 @@ function accountMenuHarness() {
     ...runtime.react,
     ...Object.fromEntries([
       'XDriveAccountAvatarButton', 'XDriveAccountMenu', 'XDriveAccountMenuActions',
-      'XDriveSettingsDialog',
-      'MenuItem', 'ListItemIcon', 'ListItemText', 'InstallDesktopRoundedIcon',
+      'XDriveSettingsDialog', 'XDriveManualConnectionDialog',
+      'MenuItem', 'ListItemIcon', 'ListItemText', 'InstallDesktopRoundedIcon', 'DnsRoundedIcon',
       'Suspense', 'XDrivePwaInstallDialog',
     ].map((name) => [name, name])),
   }
@@ -516,13 +516,33 @@ test('disabled personal account controls cannot reopen Settings or trigger logou
 })
 
 
+test('manual connection entry belongs to the account session and closes before Viewer exit', () => {
+  const harness = accountMenuHarness()
+  const anchor = { id: 'account-button' }
+  only(harness.render(), 'XDriveAccountAvatarButton').props.onClick({ currentTarget: anchor })
+  let tree = harness.render()
+  const entry = only(tree, 'MenuItem',
+    node => node.props['data-xdrive-manual-connection-menu'] !== undefined)
+  entry.props.onClick()
+  tree = harness.render()
+  assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
+  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, true)
+  assert.equal(nodes(tree).filter(node => node.type === 'XDrivePwaInstallDialog').length, 0)
+
+  tree = harness.render({ disabled: true })
+  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, false)
+  tree = harness.render({ disabled: false })
+  assert.equal(only(tree, 'XDriveManualConnectionDialog').props.open, false)
+  assert.deepEqual(harness.effects, [])
+})
+
 test('PWA install dialog belongs to the account session and closes before Viewer exit', () => {
   const harness = accountMenuHarness()
   const anchor = { id: 'account-button' }
   only(harness.render(), 'XDriveAccountAvatarButton').props.onClick({ currentTarget: anchor })
   let tree = harness.render()
   assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, anchor)
-  only(tree, 'MenuItem').props.onClick()
+  only(tree, 'MenuItem', node => node.props['data-xdrive-pwa-account-entry'] !== undefined).props.onClick()
   tree = harness.render()
   assert.equal(only(tree, 'XDriveAccountMenu').props.anchorEl, null)
   assert.equal(only(tree, 'XDrivePwaInstallDialog').props.open, true)
