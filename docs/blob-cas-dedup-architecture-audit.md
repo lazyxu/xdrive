@@ -1,5 +1,13 @@
 # xDrive Blob / CAS 去重全链路与性能审查（v1.0）
 
+
+## 2026-10-17 · CAS-A03-d4 真实插入改变分片边界：离线容量节省与CPU成本取舍
+
+现有 CAS-A03-d3 4GiB文件内**覆盖**1MiB时，服务端上传仅8MiB但最终仍新增完整4GiB ContentBlob；d4则测 **offset=1MiB插入1MiB**，后续8MiB固定位置整体移动。独立Linux本地3×4GiB真实物理SHA源（同源交替顺序）离线固定8MiB分块 B 新增P50 **4296015872B**，离线64KiB对齐内容锚点 B 新增P50 **10682368B**，相对固定块**少99.7513%**；两版全SHA、Range、GC物理0均通过，最大RSS172004KiB。但是B wall 固定6051.561ms/锚点14766.122ms、CPU 4286.420/14697.758ms，**CPU和耗时均明显退化**。证据 [真实原始n3](performance-evidence/cas-a03-d4-offline-insertion/README.md)；[版本性能合同](cas-version-performance.md)、[登记簿](performance-test-registry.md)、[六端矩阵](performance-platform-coverage.md)。
+
+**上线决策 NO-GO、生产 AFTER=N/A：** 这两个arm均是离线实验，不是现生产 Local.Put、FileVersion、SQL/Owner/RefCount、Auth、长期Manifest/Pack、备份一致性或客户端；内容锚点按64KiB原子对齐，不是任意字节Rabin/CDC。保留生产全SHA Blob/存储接口与GC原样。下一步应先在未对齐插入/删除、真实影像分布下对照字节级CDC，同时验证CPU/RSS、随机Range/视频Seek、完整物化、坏索引修复、跨Owner安全与崩溃恢复、真实6端，不能只按节省磁盘选择格式。[Restic Rabin/Blob](https://github.com/restic/restic/blob/master/doc/design.rst)、[Kopia CAOS/CABS](https://kopia.io/docs/advanced/architecture/)、[Seafile File/Block CDC](https://manual.seafile.com/11.0/develop/data_model/)只作参照，不直接挪用其权限与数据模型。
+
+
 **审查时间：2026-10-16。状态：Source-audited / 测试缺口已冻结；不是现场机器性能认证或生产代码优化。**
 **源码基线：** lazyxu/xdrive GitHub master 1eebb460cedda1f8f712d117e04e717ba21d9a88。本文只审查已读到的生产实现与测试，明确区分「有代码和测试」与「生产真实负载已测」。本审查不改任何产品行为，**不触碰 Race、用户所有的上传/同步/删除任务所有权**。
 

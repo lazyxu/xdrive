@@ -1,0 +1,112 @@
+name: CAS-A03-d4 4GiB Shifted Insert Offline Fixed versus Anchored Chunks
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  cas-a03-d4-real-4gib-insertion:
+    if: github.head_ref == 'perf/cas-a03-d4-shifted-insert-offline-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Validate benchmark source and opt-in small physical smoke
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          python3 -m py_compile scripts/bench-cas-a03-d4-shifted-insert.py
+          python3 scripts/bench-cas-a03-d4-shifted-insert.py \
+            --results-dir "$RUNNER_TEMP/cas-a03-d4-smoke" --samples 1 --source-bytes 33554432
+          df -h "$RUNNER_TEMP"
+      - name: Verify permanently archived local n3 bytes and source SHA (not CI acceptance)
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/cas-a03-d4-offline-insertion/n3-local-20261017.tar.gz
+          printf '%s  %s\n' '1c5a9ab43a10c384a6fecaec07ead52b2f0043e61ea28f8ff2a5c93d1dc63bbb' "$archive" | sha256sum -c -
+          printf '%s  %s\n' '0bcf68395b49ed62d0e923a88772794d01d9551895766ff2087b9bad8d2f4378' scripts/bench-cas-a03-d4-shifted-insert.py | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/cas-a03-d4-local-archive-check"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/cas-a03-d4-local-archive-check"
+          (cd "$RUNNER_TEMP/cas-a03-d4-local-archive-check" && sha256sum -c SHA256SUMS)
+          python3 - "$RUNNER_TEMP/cas-a03-d4-local-archive-check" <<'PY'
+          import json,pathlib,sys
+          d=pathlib.Path(sys.argv[1]); s=json.loads((d/'summary.json').read_text())
+          assert s['passed'] and s['n']==3 and s['source_bytes']==4294967296
+          assert s['production_after'] is None and not s['product_changed']
+          for i in (1,2,3):
+              x=json.loads((d/f'sample-{i}.json').read_text())
+              assert x['passed'] and x['source_bytes']==4294967296 and x['insert_bytes']==1048576
+              assert x['baseline']['b']['new_allocated_bytes']==4296015872
+              assert x['offline_candidate']['b']['new_allocated_bytes']>0
+              assert x['baseline']['last_ref_physical_bytes']==x['offline_candidate']['last_ref_physical_bytes']==0
+          assert 'SCRIPT_GIT_BLOB_SHA1=300dc80eb0e0b428ac4b098c69528c769a451b47' in (d/'source.txt').read_text()
+          print('LOCAL_OFFLINE_ARCHIVE_VERIFIED_ONLY__NEW_CI_4GIB_STILL_REQUIRED')
+          PY
+      - name: Verify enough free physical disk for non-sparse true 4GiB A and B
+        run: |
+          set -euo pipefail
+          available="$(df -B1 --output=avail "$RUNNER_TEMP" | tail -n1 | tr -d ' ')"
+          if [ "$available" -lt 15032385536 ]; then
+            echo "INVALID ENVIRONMENT: 4GiB physical input plus two full 4GiB fixed-reference objects require >=14GiB free; free=$available"
+            exit 78
+          fi
+      - name: Three independent 4GiB high-entropy INSERT A/B physical and SHA trials
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/cas-a03-d4-true-4gib-n3"
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$out/source.txt"
+          sha256sum scripts/bench-cas-a03-d4-shifted-insert.py >> "$out/source.txt"
+          python3 --version >> "$out/source.txt"
+          uname -a >> "$out/source.txt"
+          /usr/bin/time -v -o "$out/resources.txt" \
+            python3 -u scripts/bench-cas-a03-d4-shifted-insert.py \
+              --results-dir "$out" --samples 3 --source-bytes 4294967296 \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,statistics,sys
+          r=pathlib.Path(sys.argv[1])
+          rows=[json.loads((r/f"sample-{i}.json").read_text()) for i in (1,2,3)]
+          s=json.loads((r/"summary.json").read_text())
+          assert s["passed"] and s["n"]==3 and s["source_bytes"]==4294967296
+          assert s["insert_bytes"]==1048576 and s["product_changed"] is False
+          assert s["production_after"] is None
+          assert len({x["original_sha256"] for x in rows})==3
+          assert len({x["changed_sha256"] for x in rows})==3
+          for i,row in enumerate(rows,1):
+              assert row["sample"]==i and row["passed"] and row["source_bytes"]==4294967296
+              assert row["insert_bytes"]==1048576
+              assert row["original_sha256"]!=row["changed_sha256"]
+              fixed,anchored=row["baseline"],row["offline_candidate"]
+              assert fixed["a"]["reused_chunks"]==anchored["a"]["reused_chunks"]==0
+              assert fixed["b"]["reused_chunks"]==0
+              assert fixed["b"]["new_allocated_bytes"]>=4294967296+1048576
+              assert anchored["b"]["new_allocated_bytes"]>0
+              assert anchored["b"]["new_allocated_bytes"]<=.15*fixed["b"]["new_allocated_bytes"]
+              assert anchored["b"]["reused_chunks"]>0
+              for phase in (fixed,anchored):
+                  assert phase["physical_a_bytes"]>=4294967296
+                  assert phase["physical_two_versions_bytes"]>=phase["physical_a_bytes"]
+                  assert phase["released_b_kept_a_bytes"]==phase["physical_a_bytes"]
+                  assert phase["last_ref_physical_bytes"]==0
+                  assert phase["b"]["kernel_write_bytes"]>=phase["b"]["new_allocated_bytes"]
+                  assert phase["a"]["cpu_ms"]>0 and phase["b"]["cpu_ms"]>0
+          assert s["anchored_to_fixed_bytes_p50"]<=.15
+          assert s["fixed_new_bytes_p50"]==statistics.median(x["baseline"]["b"]["new_allocated_bytes"] for x in rows)
+          assert s["anchored_new_bytes_p50"]==statistics.median(x["offline_candidate"]["b"]["new_allocated_bytes"] for x in rows)
+          print("CAS_A03_D4_REAL_4GIB_N3_VALIDATED",s["fixed_new_bytes_p50"],s["anchored_new_bytes_p50"])
+          PY
+          grep -E 'Maximum resident set size|User time|System time' "$out/resources.txt"
+          maxrss="$(awk -F: '/Maximum resident set size/{gsub(/ /, "", $2);print $2}' "$out/resources.txt")"
+          test -n "$maxrss" && test "$maxrss" -le 524288
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cas-a03-d4-real-4gib-insertion-offline-n3
+          path: |
+            ${{ runner.temp }}/cas-a03-d4-true-4gib-n3/
+            ${{ runner.temp }}/cas-a03-d4-smoke/
+          retention-days: 14
+          if-no-files-found: warn
