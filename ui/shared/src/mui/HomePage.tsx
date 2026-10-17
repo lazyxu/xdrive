@@ -23,6 +23,8 @@ import {
 import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
 import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatusAlert } from './StatusAlert'
+import { XDriveStatePanel } from './StatePanel'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type { XDriveStatusTone } from './StatusBadge'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -63,6 +65,13 @@ export function XDriveHomePage({
   favoriteItems = [],
   recentAvailable = true,
   favoritesAvailable = true,
+  recentVerified = true,
+  favoritesVerified = true,
+  recentLoading = false,
+  favoritesLoading = false,
+  listReadEpoch = 0,
+  recentError,
+  favoritesError,
   loadThumbnail,
   openLocalFolderLoading = false,
   onOpenLocalFolder,
@@ -86,6 +95,13 @@ export function XDriveHomePage({
   favoriteItems?: readonly XDriveHomeListItem[]
   recentAvailable?: boolean
   favoritesAvailable?: boolean
+  recentVerified?: boolean
+  favoritesVerified?: boolean
+  recentLoading?: boolean
+  favoritesLoading?: boolean
+  listReadEpoch?: number
+  recentError?: string
+  favoritesError?: string
   loadThumbnail?: (item: XDriveFileExplorerItem, signal?: AbortSignal) => Promise<string | null | undefined>
   openLocalFolderLoading?: boolean
   onOpenLocalFolder?: () => void
@@ -97,6 +113,8 @@ export function XDriveHomePage({
   onOpenTransfers: () => void
   onOpenConflicts?: () => void
 }) {
+  const showRecentLoading = useXDriveDeferredLoading(recentLoading, listReadEpoch)
+  const showFavoritesLoading = useXDriveDeferredLoading(favoritesLoading, listReadEpoch)
   const cloudUsage = !quota
     ? '—'
     : quota.quotaBytes > 0
@@ -119,17 +137,20 @@ export function XDriveHomePage({
   const itemSection = (
     title: string,
     available: boolean,
+    verified: boolean,
     items: readonly XDriveHomeListItem[],
     empty: string,
+    showLoading: boolean,
+    error?: string,
   ) => (
-    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0 }}>
+    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0, minHeight: 160 }}>
       <XDriveSectionHeader
         level="h3"
         title={title}
         actions={<XDriveActionButton compact onClick={onOpenFiles}>查看全部</XDriveActionButton>}
       />
       <Stack spacing={0.5} sx={{ mt: 1 }}>
-        {available && items.length > 0 ? items.map((entry, index) => (
+        {available && verified && items.length > 0 ? items.map((entry, index) => (
           <ListItemButton
             key={`${String(entry.item.id)}:${index}`}
             onClick={entry.onOpen}
@@ -146,7 +167,21 @@ export function XDriveHomePage({
               }}
             />
           </ListItemButton>
-        )) : (
+        )) : !available ? (
+          <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+            此列表在当前客户端暂不可用。
+          </Typography>
+        ) : !verified ? (
+          <Box data-xdrive-home-list-first-read sx={{
+            minHeight: 96, display: 'grid', placeItems: 'center',
+          }}>
+            {error ? (
+              <Typography variant="body2" color="text.secondary">{error}</Typography>
+            ) : showLoading ? (
+              <XDriveStatePanel variant="plain" loading message="正在读取列表…" />
+            ) : null}
+          </Box>
+        ) : (
           <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
             {empty}
           </Typography>
@@ -258,8 +293,10 @@ export function XDriveHomePage({
               gap: 2,
             }}
           >
-            {itemSection('最近使用', recentAvailable, recentItems, '暂无最近访问文件。')}
-            {itemSection('收藏', favoritesAvailable, favoriteItems, '暂无收藏文件。')}
+            {itemSection('最近使用', recentAvailable, recentVerified, recentItems,
+              '暂无最近访问文件。', showRecentLoading, recentError)}
+            {itemSection('收藏', favoritesAvailable, favoritesVerified, favoriteItems,
+              '暂无收藏文件。', showFavoritesLoading, favoritesError)}
           </Box>
         </Stack>
       </XDriveWorkspaceSurface>
