@@ -1,5 +1,16 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## OBS-P003 · 全局存储近5分钟固定桶p95/p99上界（2026-10-17）
+
+本场景目前仅有候选Server层实现/待验收 A/B：固定9类×25桶，使用既有 HTTP观测 mutex，无DB/FS/path/IP/Owner标签。**p95_upper_ms / p99_upper_ms 是HTTP时延所属Bucket上界，绝非精确分位数或客户端可见渲染/Worker耗时**；要看真机客户端性能必须独立安装态或操作系统真实浏览器测试。记录见[冻结预算合同](global-storage-percentile-overhead-obs-p003.md)、[性能总登记簿](performance-test-registry.md)。
+
+| 新增 GUI真实验收负载 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 管理员查看 P003 实际窗口 p95/p99 上界、权限隔离与真实请求性能 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+Server Go基准只度量固定路由的请求计数热路径额外开销，**不能**冒充先前真实100k SHA不同CAS或4GiB Agent/Web/PWA性能新测量。仍遵循各平台已归档独立资料与CI证据，不重复测试已接受负载。
+
+
 ## OBS-P002 Go-only evidence (2026-10-17, six client cells unchanged)
 
 [Exactly measured Go #39023778259](https://github.com/lazyxu/xdrive/actions/runs/39023778259): old unchanged HTTP observer n3 P50 67.25ns/op/0B/0alloc, old cumulative read P50 351.8ns/464B/2alloc; new once/minute memory-only sample P50 **118.4ns/0B/0alloc** and admin recent read P50 **468.3ns/568B/3alloc**. These are Server unit-level timings and **not** any real Desktop/Web/Mobile/PWA Gallery/Explorer/4GiB workload results. Evidence [original 4-file zip](performance-evidence/obs-p002/README.md); all six OBS-P002 GUI cells remain Not measured.

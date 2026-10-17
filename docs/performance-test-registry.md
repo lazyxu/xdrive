@@ -1,5 +1,20 @@
 # xDrive 已测性能登记簿（Performance Test Registry）
 
+## OBS-P003 · 全局存储 p95/p99 固定桶采集开销 A/B（2026-10-17）
+
+**OBS-P003 source-exact microbenchmark scheduling safeguard (2026-10-17):** Existing dedicated workflow [initial invalid #39037277451](https://github.com/lazyxu/xdrive/actions/runs/39037277451) was scheduled on original opened PR but has not produced a specialized new-HEAD run on subsequent commit updates despite ordinary CI being triggered. To avoid treating missing data as green, copy the **unchanged identical dedicated job** into `.github/workflows/ci.yml` as a P003-branch-only `obs-p003-quantile-overhead` job. It runs full same-GitBlob legacy baseline verification plus all **six** n3 serial/parallel/minute/admin benchmarks with frozen 1.25× / +50ns / 0B/0alloc budgets, and emits raw artifacts. It is not a replacement for actual measurement or license to bypass required full CI/final-gate; require this exact new HEAD special job **AND** complete CI success, otherwise keep Draft / candidate rejected if genuine overhead RED. Existing Race and durable task paths remain unchanged.
+
+**OBS-P003 第二次 Invalid harness（2026-10-17）：** 修正测试四／六类不一致及第一次go fmt后，源码HEAD `a48b3065b6ee3408094206f6e6dd9c4b32de35bf` 的 [完整CI #39038252090](https://github.com/lazyxu/xdrive/actions/runs/39038252090) 在 `go-linux` → `Check formatting` 打印出 `storage_performance_window.go` 新增 `*float64` 字段后，四条原有DTO字段JSON tag空格尚未按gofmt重对齐；源码未进入真实n3同Runner A/B，**有效n=0**，不能认定候选CPU RED。本准确HEAD尚未产生独立OBS-P003专项CI（之前旧HEAD的失败不得复用）。仅按CI的四行精确格式差异修复及增强专项workflow格式诊断输出，所有固定开销门槛、直方图结构和安全/隐私约束不变。新唯一工作提交必须重新跑全部源准确门禁。
+
+**OBS-P003 首轮 Invalid harness（2026-10-17）：** 提交 `65af655c777c06bb02dc7e0510cdc913449a66c0` 的 [专项CI #39037277451](https://github.com/lazyxu/xdrive/actions/runs/39037277451) 在源比较与微基准之前即失败：Go `gofmt -l` 静默返回非空，固定范围包括新增HTTP histogram/近期窗口及同进程A/B基准夹具，故**真实同Runner有效n=0**；该门禁也曾配置仅运行4个基准，却要求解析6类数据，属于下一必修测试夹具缺陷。未采集真实候选CPU/锁成本，不是产品性能RED，也不能放宽预算或跳过真实对照。只调整Go字段格式及CI `-bench`六类清单，保持旧生产函数逐字节对照、24个桶、预算≤1.25×/50ns、0B/op/0alloc和全部安全/平台边界不变。重建原固定基线上**唯一工作提交**，再跑准确新HEAD专项 n=3 和全仓CI。
+
+**状态：候选产品仪表 + 源准确 n3 CI 仍待验收；生产提速AFTER=N/A，若开销预算RED必须撤回新增热路径。** [冻结合同](global-storage-percentile-overhead-obs-p003.md) · [六端矩阵](performance-platform-coverage.md) · [P003原始机器证据（待采）](performance-evidence/obs-p003/README.md)。
+
+**CURRENT:** 已合入OBS-P002，旧原生 Go HTTP观察器生产函数GitBlob `9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a`，历史准确专项 n3 P50 **62.34ns/op、0B/op、0alloc**，但这个数据在旧Runner产生，**不可直接对新候选做A/B比值**。既有五分钟固定计数只提供requests/s、mean wall和HTTP5xx；原版真实p95/p99 **Not available**，并非“0ms”。
+
+**新负载 ID:** `OBS-P003/9-route-24-edge-histogram-request-hotpath`，从Git原始Blob逐字节提取旧 `observeRequest` 到测试函数（仅改声明）和产品Candidate同一Go Runner Go1.25 -cpu=4、n3，包含顺序/4CPU并行9类固定路由、实际同一个mutex的固定9×25 Bucket。接受严格条件：两模式候选中位≤旧**1.25×**且额外绝对≤**50ns/op**、双方 0B/op/0alloc；每分钟RAM采样和管理员读取另外各需每样本≤2ms/op、≤64KiB/op；RAM固定1800B、60s×7槽、无SQL/磁盘I/O或每请求身份标签。新候选 FIRST-RED为真实仪表成本RED，需剔除或拒绝并归档，不可忽略/标记速度提升。可选数值必须写真实桶p95/p99**上界**，overflow/未采样为“—”。全部六端真实GUI/Installed PWA仍**Not measured**；100k请求计数只是合成事件，不是100k原片。
+
+
 > **OBS-P002 source-accurate real Go n3 benchmark evidence (2026-10-17):** [specialized CI #39023778259](https://github.com/lazyxu/xdrive/actions/runs/39023778259) at `86bb58f2563136204bf4d7bc443d0d8abae35000`, archived original [ZIP + SHA/Go/OS/12 raw samples](performance-evidence/obs-p002/README.md). On same runner: unchanged old HTTP hot observer P50 **67.25ns/op, 0B, 0alloc**; original admin cumulative summary P50 **351.8ns/op, 464B, 2alloc**; **new every60s read-only sample P50 118.4ns/op, 0B, 0alloc**; **new admin recent window P50 468.3ns/op, 568B, 3alloc**. All n3 individual new op samples <2ms and <64KiB. This is not production 100k/4GiB throughput, true p95, CPU or a product BEFORE/AFTER speedup; P001 historical distinct-run 51.06ns does not prove a 31% regression. Original old hot-path source GitBlob unchanged. Evidence update changes Git HEAD: final HEAD n3 + full 76-job CI/final gate still required.
 
 

@@ -258,6 +258,10 @@ export interface StorageRecentPerformanceRow {
   server_errors: number
   average_ms: number
   requests_per_second: number
+  /** Conservative upper edge of fixed HTTP latency bucket, not exact p95. */
+  p95_upper_ms?: number
+  /** Conservative upper edge of fixed HTTP latency bucket, not exact p99. */
+  p99_upper_ms?: number
 }
 
 export interface StorageRecentPerformance {
