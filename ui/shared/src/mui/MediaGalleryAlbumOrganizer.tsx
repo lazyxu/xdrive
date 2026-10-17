@@ -18,7 +18,7 @@ import {
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
+import { useXDriveDeferredLoading, useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -42,6 +42,11 @@ export type XDriveMediaGalleryAlbumFolderActions = {
 
 type Props = {
   albums: MediaAlbum[]
+  /** Current Owner's first accepted canonical facets, not array length. */
+  indexVerified?: boolean
+  indexPending?: boolean
+  indexError?: boolean
+  onRetryIndex?: () => void
   accountScope: string
   loadThumbnail: (nodeID: number) => Promise<string | null>
   onOpenAlbum?: (album: MediaAlbum) => void
@@ -191,6 +196,10 @@ function AlbumCard({
 
 export function XDriveMediaGalleryAlbumOrganizer({
   albums,
+  indexVerified = true,
+  indexPending = false,
+  indexError = false,
+  onRetryIndex,
   accountScope,
   loadThumbnail,
   onOpenAlbum,
@@ -238,6 +247,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const visibleFolderID = foldersVerified ? activeFolderID : 0
   const currentFolderLoading = folderBusyState.scope === folderActionScope && foldersLoading
   const showDelayedFolderLoading = useXDriveDeferredLoading(currentFolderLoading, folderListVersionRef.current)
+  const showDelayedIndexRead = useXDriveDeferredPendingLoading(!indexVerified && indexPending)
   const visibleFolderError = folderBusyState.scope === folderActionScope ? folderError : ''
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
@@ -528,7 +538,8 @@ export function XDriveMediaGalleryAlbumOrganizer({
           <MenuItem value="manual">自定义顺序</MenuItem>
         </TextField>
       </Stack>
-      <Typography variant="caption" color="text.secondary">
+      <Typography variant="caption" color="text.secondary"
+        sx={{ visibility: indexVerified ? 'visible' : 'hidden' }}>
         显示 {displayedCount.toLocaleString('zh-CN')} / {visibleAlbumItems.length.toLocaleString('zh-CN')} 个相册 · 固定和自定义顺序仅影响此账号在本设备的展示
       </Typography>
       {grouped.pinned.length > 0 && (
@@ -545,14 +556,30 @@ export function XDriveMediaGalleryAlbumOrganizer({
           {cards(grouped.other)}
         </Stack>
       )}
-      {displayedCount === 0 && visibleFolders.length === 0 &&
-        !currentFolderLoading && (!folderActions || foldersVerified) && (
-        <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-          <Typography color="text.secondary">
-            {albums.length > 0 ? '当前文件夹没有匹配的相册' : '还没有相册'}
-          </Typography>
+      {displayedCount === 0 && visibleFolders.length === 0 ? (
+        <Paper variant="outlined" data-xdrive-gallery-album-index-read-state
+          aria-busy={(!indexVerified && indexPending) || (Boolean(folderActions) && !foldersVerified) || undefined}
+          sx={{ p: 3, minHeight: 160, display: 'grid', placeItems: 'center', textAlign: 'center' }}>
+          {!indexVerified ? (
+            indexError ? (
+              <Stack spacing={1} alignItems="center" role="alert">
+                <Typography variant="body2" color="error.main">相册索引读取失败，请重试。</Typography>
+                {onRetryIndex ? <Button size="small" onClick={onRetryIndex}
+                  sx={{ minWidth: 44, minHeight: 44 }}>重试</Button> : null}
+              </Stack>
+            ) : showDelayedIndexRead ? (
+              <Stack alignItems="center" spacing={1} role="status">
+                <CircularProgress size={20} />
+                <Typography variant="body2" color="text.secondary">正在读取相册…</Typography>
+              </Stack>
+            ) : null
+          ) : (!currentFolderLoading && (!folderActions || foldersVerified)) ? (
+            <Typography color="text.secondary">
+              {albums.length > 0 ? '当前文件夹没有匹配的相册' : '还没有相册'}
+            </Typography>
+          ) : null}
         </Paper>
-      )}
+      ) : null}
       <Dialog open={Boolean(folderDialog)} onClose={() => { if (!folderBusy) setFolderDialog(null) }}
         fullWidth maxWidth="xs" aria-labelledby="gallery-folder-dialog-title">
         <DialogTitle id="gallery-folder-dialog-title">

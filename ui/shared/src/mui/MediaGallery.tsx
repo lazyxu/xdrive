@@ -618,6 +618,10 @@ export function XDriveMediaGalleryPage({
     })
   }, [persistPlacesCamera])
   const [placesStatus, setPlacesStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  // Albums, people, pets and Places arrive together in one authorized facets
+  // response; empty arrays are not a successful zero on the first render.
+  // Keep the last accepted receipt for this account during later refreshes.
+  const [acceptedFacetOwner, setAcceptedFacetOwner] = useState<string | null>(null)
   const [placesTotalCount, setPlacesTotalCount] = useState<number | null>(null)
   const [placesPageOffset, setPlacesPageOffset] = useState(0)
   const [placesPagePending, setPlacesPagePending] = useState(false)
@@ -1077,6 +1081,7 @@ export function XDriveMediaGalleryPage({
             nextSuggestedPeople.filter((item) => item.review_state !== 'accepted'),
           )
           setPersonIdentities(nextPeople)
+          setAcceptedFacetOwner(preferenceScope)
         })
         return
       }
@@ -2931,7 +2936,8 @@ export function XDriveMediaGalleryPage({
         loadingEpoch={requestID.current}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
-        albums={albums}
+        albums={acceptedFacetOwner === preferenceScope ? albums : []}
+        indexFacetsVerified={acceptedFacetOwner === preferenceScope}
         albumFolderActions={source.listAlbumFolders ? {
           list: source.listAlbumFolders,
           create: source.createAlbumFolder,
@@ -2976,9 +2982,9 @@ export function XDriveMediaGalleryPage({
         onPlacesPageChange={source.listPlacesPage ? changePlacesPage : undefined}
         memories={memories}
         burstReviews={burstReviews}
-        pets={pets}
-        suggestedPeople={suggestedPeople}
-        people={people}
+        pets={acceptedFacetOwner === preferenceScope ? pets : []}
+        suggestedPeople={acceptedFacetOwner === preferenceScope ? suggestedPeople : []}
+        people={acceptedFacetOwner === preferenceScope ? people : []}
         activePlaceID={query.place}
         currentAlbum={currentAlbum}
         currentSuggestedPerson={currentSuggestedPerson}
@@ -3391,6 +3397,8 @@ export interface XDriveMediaGalleryProps {
   /** Stable logical selection scope, distinct from a sort/range request generation. */
   selectionScopeKey?: string
   albums?: MediaAlbum[]
+  /** True only after the current account's canonical albums/people facets reply. */
+  indexFacetsVerified?: boolean
   albumFolderActions?: XDriveMediaGalleryAlbumFolderActions
   syncFolders?: MediaSyncFolder[]
   currentFolderView?: MediaFolderView | null
@@ -5088,6 +5096,7 @@ export function XDriveMediaGallery({
   collectionKey = '',
   selectionScopeKey = collectionKey,
   albums = [],
+  indexFacetsVerified = true,
   albumFolderActions,
   syncFolders = [],
   currentFolderView = null,
@@ -6140,6 +6149,11 @@ export function XDriveMediaGallery({
     return () => window.cancelAnimationFrame(frame)
   }, [showPlacesIndex, focusPlaceID, placesPageOffset])
   const showPeopleIndex = isRootSection && section === 'people'
+  // An initial [] is not the same as a verified zero. Do not even mount the
+  // final empty-state message until the current Owner's facets were accepted.
+  const coldPeopleIndex = showPeopleIndex && !indexFacetsVerified
+  const showDelayedColdFacetRead = useXDriveDeferredPendingLoading(
+    coldPeopleIndex && (loading || placesStatus === 'loading'))
   const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
   const isTrashSection = isRootSection && section === 'trash'
   const showPhotoCollection =
@@ -7244,6 +7258,10 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryAlbumOrganizer
           key={preferenceScope || 'gallery-default'}
           albums={albums}
+          indexVerified={indexFacetsVerified}
+          indexPending={!indexFacetsVerified && (loading || placesStatus === 'loading' || syncFoldersLoading)}
+          indexError={!indexFacetsVerified && placesStatus === 'error' && !loading}
+          onRetryIndex={onRefresh}
           accountScope={preferenceScope}
           loadThumbnail={loadThumbnail}
           onOpenAlbum={onOpenAlbum}
@@ -8006,13 +8024,23 @@ export function XDriveMediaGallery({
         </Box>
       ) : null}
 
-      {showAlbumIndex &&
-      albums.length === 0 &&
-      syncFolders.length === 0 &&
-      !loading &&
-      !syncFoldersLoading ? (
-        <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
-          <Typography color="text.secondary">还没有相册</Typography>
+      {coldPeopleIndex ? (
+        <Paper data-xdrive-gallery-unverified-facet-index
+          aria-busy={placesStatus === 'loading' || loading || undefined}
+          variant="outlined"
+          sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
+          {placesStatus === 'error' && !loading ? (
+            <Stack alignItems="center" spacing={1} role="alert">
+              <Typography variant="body2" color="error.main">人物索引读取失败，请重试。</Typography>
+              {onRefresh ? <Button size="small" onClick={onRefresh}
+                sx={{ minWidth: 44, minHeight: 44 }}>重试</Button> : null}
+            </Stack>
+          ) : showDelayedColdFacetRead ? (
+            <Stack alignItems="center" spacing={1} role="status">
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">正在读取人物…</Typography>
+            </Stack>
+          ) : null}
         </Paper>
       ) : null}
       {showPlacesIndex && placesStatus === 'loading' && places.length === 0 ? (
@@ -8036,7 +8064,7 @@ export function XDriveMediaGallery({
       people.length === 0 &&
       suggestedPeople.length === 0 &&
       pets.length === 0 &&
-      !loading ? (
+      indexFacetsVerified ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
           <Typography color="text.secondary">还没有可浏览的人物</Typography>
         </Paper>
