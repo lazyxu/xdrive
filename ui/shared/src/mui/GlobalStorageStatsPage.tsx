@@ -1,5 +1,5 @@
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Accordion,
   AccordionDetails,
@@ -33,6 +33,7 @@ import { XDriveStorageDistributionChart } from './StorageDistributionChart'
 import { XDriveStorageInventorySection } from './StorageInventorySection'
 import { XDriveTableSurface } from './TableSurface'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { XDriveStatusBadge } from './StatusBadge'
 import type {
   StorageDecision, StorageHealth, StorageHistory, StorageHistoryPoint,
@@ -126,7 +127,32 @@ export default function StorageStatsPanel({
 }) {
   const compactViewport = useMediaQuery('(max-width:899.95px)')
   const surfaceRef = useRef<HTMLDivElement | null>(null)
-  const [stats, setStats] = useState<StorageStats | null>(null)
+  // Only a snapshot from the current authenticated storage adapter and
+  // scope may render, even on the first frame of an account/Server change.
+  const acceptedScopeRef = useRef<{
+    api: XDriveAdminStoragePort
+    scope: 'self' | 'global'
+  } | null>(null)
+  const [statsSnapshot, setStatsSnapshot] = useState<{
+    api: XDriveAdminStoragePort
+    scope: 'self' | 'global'
+    value: StorageStats | null
+  } | null>(null)
+  const stats = statsSnapshot?.api === api && statsSnapshot.scope === scope
+    ? statsSnapshot.value : null
+  const setStats = useCallback((
+    update: StorageStats | null | ((current: StorageStats | null) => StorageStats | null),
+  ) => {
+    setStatsSnapshot((previous) => {
+      const current = previous?.api === api && previous.scope === scope
+        ? previous.value : null
+      return {
+        api,
+        scope,
+        value: typeof update === 'function' ? update(current) : update,
+      }
+    })
+  }, [api, scope])
   const [health, setHealth] = useState<StorageHealth | null>(null)
   const [history, setHistory] = useState<StorageHistory | null>(null)
   const [historyDays, setHistoryDays] = useState<StorageHistoryDays>(30)
@@ -152,31 +178,40 @@ export default function StorageStatsPanel({
   const [unreferencedCursors, setUnreferencedCursors] = useState<string[]>([''])
   const [unreferencedLoading, setUnreferencedLoading] = useState(false)
   const [maintenanceLoading, setMaintenanceLoading] = useState<StorageMaintenanceKind | ''>('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadGeneration, setLoadGeneration] = useState(0)
+  const showDeferredLoading = useXDriveDeferredLoading(loading, loadGeneration)
   const [error, setError] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let active = true
+    const sourceChanged = acceptedScopeRef.current?.api !== api ||
+      acceptedScopeRef.current.scope !== scope
     setLoading(true)
+    setLoadGeneration((generation) => generation + 1)
     setError('')
-    setStats(null)
-    setHealth(null)
-    setStaging(null)
-    setStagingPage(1)
-    setStagingCursors([''])
-    setStagingNotice('')
-    setCleanupConfirmOpen(false)
-    setCleanupActionError('')
-    setCleanupResultWarning('')
-    setCleanupRuns([])
-    setCleanupFailures({})
-    setLegacyPage(null)
-    setLegacyPageNumber(1)
-    setLegacyCursors([''])
-    setUnreferencedPage(null)
-    setUnreferencedPageNumber(1)
-    setUnreferencedCursors([''])
+    // Keep the last authorized metrics and expanded diagnostics during a
+    // same-scope Refresh. Only a new account/Server/scope resets those reads.
+    if (sourceChanged) {
+      setStats(null)
+      setHealth(null)
+      setStaging(null)
+      setStagingPage(1)
+      setStagingCursors([''])
+      setStagingNotice('')
+      setCleanupConfirmOpen(false)
+      setCleanupActionError('')
+      setCleanupResultWarning('')
+      setCleanupRuns([])
+      setCleanupFailures({})
+      setLegacyPage(null)
+      setLegacyPageNumber(1)
+      setLegacyCursors([''])
+      setUnreferencedPage(null)
+      setUnreferencedPageNumber(1)
+      setUnreferencedCursors([''])
+    }
     const request = scope === 'global' ? api.adminStorageStats() : api.storageStats()
     const healthRequest = scope === 'global'
       ? api.adminStorageHealth().catch(() => null)
@@ -187,6 +222,7 @@ export default function StorageStatsPanel({
     void Promise.all([request, healthRequest, cleanupRunsRequest])
       .then(([value, healthValue, cleanupRunValues]) => {
         if (!active) return
+        acceptedScopeRef.current = { api, scope }
         setStats(value)
         setHealth(healthValue)
         setCleanupRuns(cleanupRunValues)
@@ -194,7 +230,7 @@ export default function StorageStatsPanel({
       .catch((err: unknown) => { if (active) setError(err instanceof Error ? err.message : '加载存储统计失败') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
-  }, [api, scope, reloadKey])
+  }, [api, scope, reloadKey, setStats])
 
   useEffect(() => {
     if (!focusSection || !stats) return
@@ -401,7 +437,7 @@ export default function StorageStatsPanel({
 
   return (
     <>
-      <Box ref={surfaceRef}>
+      <Box ref={surfaceRef} sx={{ position: 'relative' }}>
       <XDriveWorkspaceSurface
         presentation="page"
         title={scope === 'global' ? '全局存储' : '存储'}
@@ -413,8 +449,7 @@ export default function StorageStatsPanel({
         pageActions={
           <XDriveActionButton
             startIcon={<RefreshRoundedIcon />}
-            loading={loading}
-            loadingLabel="正在刷新…"
+            disabled={loading}
             onClick={() => setReloadKey((value) => value + 1)}
           >
             刷新
@@ -430,7 +465,19 @@ export default function StorageStatsPanel({
           )}
 
           {!stats && !error ? (
-            <XDriveStatePanel variant="plain" loading={loading} message={loading ? '正在加载存储统计…' : '暂无存储统计'} />
+            <Box data-xdrive-storage-first-read sx={{
+              minHeight: 180, display: 'grid', placeItems: 'center',
+            }}>
+              {showDeferredLoading ? (
+                <XDriveStatePanel variant="plain" loading message="正在加载存储统计…" />
+              ) : null}
+            </Box>
+          ) : null}
+          {stats && showDeferredLoading ? (
+            <LinearProgress aria-label="正在刷新存储统计" sx={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              pointerEvents: 'none',
+            }} />
           ) : null}
 
           {stats && (
