@@ -3585,3 +3585,65 @@ test('P47 Mobile Trash never claims empty before accepted GET; failed reads offe
   }, { props: { items: [], trashActive: true, trashReadState: 'unverified',
     loading: false, onRefresh: () => { reloads += 1 } } })
 })
+
+
+test('P52 Mobile inline folder disclosure keeps chevron and 44px hit target through quick and sustained child GET', async () => {
+  const toggles = []
+  const opens = []
+  const pendingBranch = {
+    ownerID: 2, parentID: 1, parentIndex: 0, name: '照片文件夹',
+    itemCount: null, items: new Map(), loading: true, error: null,
+  }
+  const acceptedBranch = { ...pendingBranch, loading: false, itemCount: 0 }
+  await withView(async h => {
+    const location = h.view.root.findAll(n => n.props?.role === 'button' && n.props?.onClick)
+      .find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(location)
+    await act(async () => { location.props.onClick() })
+    const arrow = () => find(h.view, 'data-mobile-files-folder-disclosure', '2')
+    const progress = () => find(h.view, 'data-mobile-files-folder-disclosure-progress', true)
+    const chevrons = () => arrow().findAll(n => n.type === 'ArrowBackIosNewRounded').length
+    const rings = () => progress().findAll(n => n.type === 'CircularProgress').length
+    assert.equal(arrow().props.sx.width, 44)
+    assert.equal(arrow().props.sx.height, 44)
+    assert.equal(chevrons(), 1)
+    assert.equal(rings(), 0)
+    await h.update({ inlineBranches: [pendingBranch] })
+    assert.equal(arrow().props['aria-expanded'], true)
+    assert.equal(arrow().props['aria-busy'], true)
+    assert.equal(arrow().props.disabled, undefined,
+      'the 44px collapse hit target must remain available during network reads')
+    assert.equal(progress().props.sx.pointerEvents, 'none')
+    assert.equal(chevrons(), 1, 'the actual chevron must not be replaced on the first pending frame')
+    assert.equal(rings(), 0, 'the network progress ring must not appear immediately')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+    assert.equal(rings(), 0, 'a 40ms child GET never flashes its spinner')
+    await h.update({ inlineBranches: [acceptedBranch] })
+    assert.equal(rings(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 325)) })
+    assert.equal(rings(), 0, 'a completed fast read never leaves a stale delayed ring')
+    assert.equal(chevrons(), 1)
+    await h.update({ inlineBranches: [pendingBranch] })
+    assert.equal(rings(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
+    assert.equal(rings(), 1, 'a genuinely sustained child Range shows small overlay feedback')
+    assert.equal(chevrons(), 1, 'the same expanded chevron remains while busy')
+    assert.equal(arrow().props['aria-busy'], true)
+    let stopped = 0
+    await act(async () => { arrow().props.onClick({ stopPropagation() { stopped++ } }) })
+    assert.equal(stopped, 1)
+    assert.deepEqual(toggles, [[2, 1, 0]],
+      'second tap still reaches original shared inline store to collapse and abort its GET')
+    assert.deepEqual(opens, [], 'disclosure must never open a folder on row activation')
+    await h.update({ inlineBranches: [] })
+    assert.equal(arrow().props['aria-expanded'], false)
+    assert.equal(arrow().props['aria-busy'], false)
+    assert.equal(rings(), 0)
+    assert.equal(chevrons(), 1)
+    assert.equal(find(h.view, 'data-xdrive-mobile-files-scroll', true).props.sx.minHeight, 0)
+  }, { props: {
+    grouping: { groupBy: 'none', foldersFirst: true },
+    onToggleInlineFolder: (item, owner, index) => toggles.push([item.id, owner, index]),
+    onOpenItem: (item, owner) => { opens.push([item.id, owner]); return false },
+  } })
+})
