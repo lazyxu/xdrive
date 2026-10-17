@@ -49,6 +49,7 @@ const component = loadSource('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx',
   './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
   './MediaGalleryAlbumOrganization': preferences,
   './MediaGalleryAlbumFolderModel': folders,
+  './useDeferredLoading': { useXDriveDeferredLoading: () => false },
 }, true).XDriveMediaGalleryAlbumOrganizer
 
 function deferred() {
