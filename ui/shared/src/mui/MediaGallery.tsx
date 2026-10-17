@@ -6193,6 +6193,12 @@ export function XDriveMediaGallery({
     !currentMemory &&
     !currentPet &&
     !currentCleanupReview
+  // Feedback is not a new layout state: preserve accepted count/scope/chips
+  // and reserve small indicator slots while the actual Owner requests run.
+  const showDelayedGalleryQuery = useXDriveDeferredPendingLoading(
+    showCollectionFilters && !compactGallery && loading)
+  const showDelayedIndexCheck = useXDriveDeferredPendingLoading(
+    showCollectionFilters && !compactGallery && Boolean(indexStatusLoading))
   // The same scope/permission gate governs wide Web sorting and Mobile's
   // Gallery-local menu. Do not expose a no-op sort where the owner is absent.
   const canSortPhotoCollection =
@@ -7000,12 +7006,24 @@ export function XDriveMediaGallery({
           aria-live="polite"
           sx={{ display: compactGallery ? 'none' : 'flex' }}
         >
-          <Typography variant="caption" color="text.secondary">
-            {'范围：' + (appliedScopeLabel || galleryTitle) + ' · '}
-            {loading ? '正在查询…'
-              : collectionError ? '查询失败'
-                : logicalItemCount.toLocaleString('zh-CN') + ' 个匹配项目'}
-          </Typography>
+          <Box data-xdrive-gallery-query-quiet-feedback
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75, maxWidth: '100%' }}>
+            <Typography variant="caption" color="text.secondary">
+              {'范围：' + (appliedScopeLabel || galleryTitle) + ' · '}
+              {collectionError ? '查询失败'
+                : loading && logicalItemCount === 0 && !keepAcceptedEmpty
+                  ? '结果待确认'
+                  : logicalItemCount.toLocaleString('zh-CN') + ' 个匹配项目'}
+            </Typography>
+            <Box data-xdrive-gallery-query-progress-slot
+              aria-busy={loading || undefined}
+              sx={{ width: 16, height: 16, flexShrink: 0, display: 'grid',
+                placeItems: 'center', pointerEvents: 'none' }}>
+              {showDelayedGalleryQuery
+                ? <CircularProgress size={13} aria-label="正在更新图库匹配结果" />
+                : null}
+            </Box>
+          </Box>
           {appliedChips.map((chip) => (
             <Chip
               key={chip.key}
@@ -7036,7 +7054,20 @@ export function XDriveMediaGallery({
               onClick={onRequestIndexStatus}
               data-xdrive-gallery-index-status-request
             >
-              {indexStatusLoading ? '检查索引中…' : indexStatus ? '刷新索引状态' : '查看索引状态'}
+              <Box data-xdrive-gallery-index-quiet-action
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                <Typography component="span" variant="caption">
+                  {indexStatus ? '刷新索引状态' : '查看索引状态'}
+                </Typography>
+                <Box data-xdrive-gallery-index-progress-slot
+                  aria-busy={indexStatusLoading || undefined}
+                  sx={{ width: 16, height: 16, flexShrink: 0, display: 'grid',
+                    placeItems: 'center', pointerEvents: 'none' }}>
+                  {showDelayedIndexCheck
+                    ? <CircularProgress size={13} aria-label="正在检查图库索引" />
+                    : null}
+                </Box>
+              </Box>
             </Button>
           ) : null}
           {indexStatus ? (
