@@ -1917,8 +1917,14 @@ function FileManager({
             onRunStorageMaintenance={runStorageMaintenance}
           />
         ) : (
-          <Box sx={{ height: '100%', minHeight: 0 }}>
-            <XDriveStatePanel variant="plain" loading message="正在切换工作区…" />
+          // An unresolved profile should have a quiet, height-stable frame.
+          // An authenticated unsupported/denied route is an actual error, not
+          // a perpetual fake "switching" network spinner.
+          <Box data-xdrive-workspace-unavailable sx={{ height: '100%', minHeight: 0 }}>
+            {profile ? (
+              <XDriveStatePanel variant="plain"
+                message="该工作区不可用或没有访问权限，请从导航返回主页。" />
+            ) : null}
           </Box>
         )}
         </XDriveWorkspaceContent>
