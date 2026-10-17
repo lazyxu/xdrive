@@ -9,6 +9,7 @@ import {
 import { XDriveDialogActions } from './DialogActions'
 import { XDriveDialogContent } from './DialogContent'
 import { XDriveDialogTitle, useXDriveCompactTouchDialog } from './DialogTitle'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type { XDriveFileExplorerNavigationTreePage } from './FileExplorerNavigationPane'
 
 export type XDriveFileExplorerDestinationDialogProps = {
@@ -38,8 +39,14 @@ export function XDriveFileExplorerDestinationDialog({
 }: XDriveFileExplorerDestinationDialogProps) {
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
   const sessionKey = JSON.stringify([lifecycleKey, operation, sources])
-  const sessionRef = useRef({ open, key: sessionKey })
-  sessionRef.current = { open, key: sessionKey }
+  // A reopened picker is a new visual session even when its source IDs match.
+  const openEpochRef = useRef({ open, epoch: 0 })
+  if (openEpochRef.current.open !== open) {
+    openEpochRef.current = { open, epoch: openEpochRef.current.epoch + 1 }
+  }
+  const viewKey = JSON.stringify([sessionKey, openEpochRef.current.epoch])
+  const sessionRef = useRef({ open, key: viewKey })
+  sessionRef.current = { open, key: viewKey }
   const initialCrumbsRef = useRef(initialCrumbs)
   initialCrumbsRef.current = initialCrumbs
   const loaderRef = useRef(loadDirectoryPage)
@@ -52,6 +59,16 @@ export function XDriveFileExplorerDestinationDialog({
   const [pageIndex, setPageIndex] = useState(0)
   const [page, setPage] = useState<XDriveFileExplorerNavigationTreePage | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingViewKey, setLoadingViewKey] = useState('')
+  const [loadingGeneration, setLoadingGeneration] = useState(0)
+  const [acceptedViewKey, setAcceptedViewKey] = useState('')
+  const [loadErrorViewKey, setLoadErrorViewKey] = useState('')
+  const failedTargetRef = useRef<{
+    viewKey: string
+    crumbs: readonly XDriveFileExplorerDestinationCrumb[]
+    cursors: string[]
+    pageIndex: number
+  } | null>(null)
   const [loadError, setLoadError] = useState('')
   const [submitError, setSubmitError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -63,25 +80,42 @@ export function XDriveFileExplorerDestinationDialog({
   ) => {
     const request = ++requestRef.current
     const key = sessionRef.current.key
-    setCrumbs(nextCrumbs.map((crumb) => ({ ...crumb })))
-    setCursors(nextCursors)
-    setPageIndex(nextPageIndex)
-    setPage(null)
+    const target = nextCrumbs.map((crumb) => ({ ...crumb }))
+    // Keep confirmed folder rows, breadcrumbs and pager mounted while this
+    // genuine server request is pending. Intent never commits visual state.
+    setLoadingViewKey(key)
+    setLoadingGeneration(request)
+    setLoading(true)
     setLoadError('')
     setSubmitError('')
-    const parentID = nextCrumbs.at(-1)?.id
+    failedTargetRef.current = null
+    const parentID = target.at(-1)?.id
+    const current = () => sessionRef.current.open && sessionRef.current.key === key && requestRef.current === request
     if (!parentID) {
-      setLoading(false)
-      setLoadError('无法确定目标文件夹，请重新打开选择窗口。')
+      if (current()) {
+        failedTargetRef.current = { viewKey: key, crumbs: target, cursors: nextCursors, pageIndex: nextPageIndex }
+        setLoadErrorViewKey(key)
+        setLoadError('无法确定目标文件夹，请重新打开选择窗口。')
+        setLoading(false)
+      }
       return
     }
-    setLoading(true)
-    const current = () => sessionRef.current.open && sessionRef.current.key === key && requestRef.current === request
     try {
       const result = await loaderRef.current(parentID, nextCursors[nextPageIndex] || undefined)
-      if (current()) setPage(result)
+      if (current()) {
+        setCrumbs(target)
+        setCursors(nextCursors)
+        setPageIndex(nextPageIndex)
+        setPage(result)
+        setAcceptedViewKey(key)
+        failedTargetRef.current = null
+      }
     } catch (error) {
-      if (current()) setLoadError(destinationError(error))
+      if (current()) {
+        failedTargetRef.current = { viewKey: key, crumbs: target, cursors: nextCursors, pageIndex: nextPageIndex }
+        setLoadErrorViewKey(key)
+        setLoadError(destinationError(error))
+      }
     } finally {
       if (current()) setLoading(false)
     }
@@ -100,8 +134,15 @@ export function XDriveFileExplorerDestinationDialog({
     }
   }, [loadPage, open, sessionKey])
 
-  const targetReason = xDriveFileExplorerDestinationTargetDisabledReason(operation, sources, crumbs)
-  const submitDisabled = loading || !page || Boolean(loadError) || Boolean(targetReason) || submitting
+  const pageAccepted = open && acceptedViewKey === viewKey
+  const visibleCrumbs = pageAccepted ? crumbs : initialCrumbs
+  const visiblePage = pageAccepted ? page : null
+  const visibleLoading = open && loading && loadingViewKey === viewKey
+  const visibleLoadError = loadErrorViewKey === viewKey ? loadError : ''
+  const visibleSubmitError = pageAccepted ? submitError : ''
+  const showDelayedProgress = useXDriveDeferredLoading(visibleLoading, loadingGeneration)
+  const targetReason = xDriveFileExplorerDestinationTargetDisabledReason(operation, sources, visibleCrumbs)
+  const submitDisabled = visibleLoading || !visiblePage || Boolean(visibleLoadError) || Boolean(targetReason) || submitting
   const close = () => {
     if (submittingRef.current) return
     requestRef.current += 1
@@ -110,13 +151,13 @@ export function XDriveFileExplorerDestinationDialog({
   const submit = async () => {
     if (submittingRef.current || submitDisabled) return
     const generation = sessionGenerationRef.current
-    const key = sessionKey
+    const key = viewKey
     const current = () => sessionRef.current.open && sessionRef.current.key === key && sessionGenerationRef.current === generation
     submittingRef.current = true
     setSubmitting(true)
     setSubmitError('')
     try {
-      await onSubmit(crumbs.map((crumb) => ({ ...crumb })))
+      await onSubmit(visibleCrumbs.map((crumb) => ({ ...crumb })))
       if (current()) onClose()
     } catch (error) {
       if (current()) setSubmitError(destinationError(error))
@@ -128,7 +169,7 @@ export function XDriveFileExplorerDestinationDialog({
     }
   }
   const verb = operation === 'move' ? '移动' : '复制'
-  const path = crumbs.map((crumb) => crumb.name).join(' / ')
+  const path = visibleCrumbs.map((crumb) => crumb.name).join(' / ')
   const buttonSx = { minHeight: 44, minWidth: 44, whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
 
   return (
@@ -172,12 +213,12 @@ export function XDriveFileExplorerDestinationDialog({
             目标位置：{path || '尚未确定'}
           </Typography>
           <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.5} aria-label="目标文件夹路径">
-            {crumbs.map((crumb, index) => (
+            {visibleCrumbs.map((crumb, index) => (
               <Button
                 key={crumb.id}
                 aria-label={`前往 ${crumb.name}`}
-                disabled={submitting || index === crumbs.length - 1}
-                onClick={() => { void loadPage(crumbs.slice(0, index + 1)) }}
+                disabled={submitting || index === visibleCrumbs.length - 1}
+                onClick={() => { void loadPage(visibleCrumbs.slice(0, index + 1)) }}
                 sx={buttonSx}
               >
                 {crumb.name}
@@ -185,18 +226,30 @@ export function XDriveFileExplorerDestinationDialog({
             ))}
           </Stack>
           {targetReason ? <Alert severity="info" sx={{ overflowWrap: 'anywhere' }}>{targetReason}</Alert> : null}
-          {loading ? <LinearProgress aria-label="正在加载文件夹" /> : null}
-          {loadError ? (
+          <Box data-xdrive-destination-quiet-loading
+            aria-busy={visibleLoading || undefined}
+            sx={{ position: 'relative', height: 4, flexShrink: 0 }}>
+            {showDelayedProgress ? <LinearProgress aria-label="正在加载文件夹"
+              sx={{ position: 'absolute', inset: 0 }} /> : null}
+          </Box>
+          {visibleLoadError ? (
             <Stack spacing={0.5}>
-              <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}>{loadError}</Alert>
-              <Button onClick={() => { void loadPage(crumbs, cursors, pageIndex) }} sx={buttonSx}>重试加载</Button>
+              <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}>{visibleLoadError}</Alert>
+              <Button onClick={() => {
+                const failed = failedTargetRef.current
+                if (failed?.viewKey === viewKey) {
+                  void loadPage(failed.crumbs, failed.cursors, failed.pageIndex)
+                } else {
+                  void loadPage(visibleCrumbs, cursors, pageIndex)
+                }
+              }} sx={buttonSx}>重试加载</Button>
             </Stack>
           ) : null}
-          {page ? (
+          {visiblePage ? (
             <>
               <Box role="group" aria-label="目标位置中的文件夹">
-                {page.items.length === 0 ? <Typography variant="body2" color="text.secondary">此位置没有子文件夹。</Typography> : null}
-                {page.items.map((directory) => (
+                {visiblePage.items.length === 0 ? <Typography variant="body2" color="text.secondary">此位置没有子文件夹。</Typography> : null}
+                {visiblePage.items.map((directory) => (
                   <Button
                     key={directory.id}
                     fullWidth
@@ -204,7 +257,7 @@ export function XDriveFileExplorerDestinationDialog({
                     aria-label={`打开文件夹 ${directory.name}`}
                     data-xdrive-file-explorer-destination-directory={directory.id}
                     disabled={submitting}
-                    onClick={() => { void loadPage([...crumbs, { id: directory.id, name: directory.name }]) }}
+                    onClick={() => { void loadPage([...visibleCrumbs, { id: directory.id, name: directory.name }]) }}
                     sx={{ ...buttonSx, justifyContent: 'flex-start', textAlign: 'left' }}
                   >
                     {directory.name}
@@ -212,15 +265,15 @@ export function XDriveFileExplorerDestinationDialog({
                 ))}
               </Box>
               <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1} useFlexGap flexWrap="wrap">
-                <Button aria-label="上一页文件夹" disabled={submitting || pageIndex === 0} onClick={() => { void loadPage(crumbs, cursors, pageIndex - 1) }} sx={buttonSx}>上一页</Button>
+                <Button aria-label="上一页文件夹" disabled={submitting || pageIndex === 0} onClick={() => { void loadPage(visibleCrumbs, cursors, pageIndex - 1) }} sx={buttonSx}>上一页</Button>
                 <Typography variant="body2">第 {pageIndex + 1} 页</Typography>
-                <Button aria-label="下一页文件夹" disabled={submitting || !page.hasMore} onClick={() => {
-                  void loadPage(crumbs, [...cursors.slice(0, pageIndex + 1), page.nextCursor], pageIndex + 1)
+                <Button aria-label="下一页文件夹" disabled={submitting || !visiblePage.hasMore} onClick={() => {
+                  void loadPage(visibleCrumbs, [...cursors.slice(0, pageIndex + 1), visiblePage.nextCursor], pageIndex + 1)
                 }} sx={buttonSx}>下一页</Button>
               </Stack>
             </>
           ) : null}
-          {submitError ? <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}>{submitError}</Alert> : null}
+          {visibleSubmitError ? <Alert severity="error" sx={{ overflowWrap: 'anywhere' }}>{visibleSubmitError}</Alert> : null}
         </Stack>
       </XDriveDialogContent>
       <XDriveDialogActions>

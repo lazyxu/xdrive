@@ -237,3 +237,90 @@ test('lifecycle/source replacement ignores an older submit error and cannot clos
     assert.equal(Boolean(button(harness.renderer, '取消').props.disabled), false)
   } finally { await harness.unmount() }
 })
+
+test('P51: held child folder navigation preserves accepted target, rows and pager',async()=>{
+  const held=deferred()
+  const h=await mount({loadDirectoryPage:async(id,cursor)=>{
+    if(id===30)return held.promise
+    if(id===2&&!cursor)return page([directory(30),directory(50)],'next-page')
+    return page([])
+  }})
+  try{
+    const ids=()=>host(h.renderer,'data-xdrive-file-explorer-destination-directory')
+      .map(x=>Number(x.props['data-xdrive-file-explorer-destination-directory']))
+    const path=()=>text(host(h.renderer,'data-xdrive-file-explorer-destination-path')[0])
+    assert.deepEqual(ids(),[30,50])
+    const original=path()
+    await click(button(h.renderer,'打开文件夹 目录-30'))
+    assert.deepEqual(ids(),[30,50],'old authenticated directory remains')
+    assert.equal(path(),original,'pending destination cannot change breadcrumbs')
+    assert.equal(button(h.renderer,'复制到这里').props.disabled,true)
+    assert.equal(host(h.renderer,'data-xdrive-destination-quiet-loading').length,1)
+    assert.equal(host(h.renderer,'data-xdrive-destination-quiet-loading')[0].props['aria-busy'],true)
+    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,0)
+    await TestRenderer.act(async()=>{await new Promise(resolve=>setTimeout(resolve,35))})
+    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,0)
+    await TestRenderer.act(async()=>{held.resolve(page([directory(300)]));await held.promise})
+    assert.deepEqual(ids(),[300])
+    assert.match(path(),/目录-30/)
+    assert.equal(Boolean(button(h.renderer,'复制到这里').props.disabled),false)
+    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,0)
+  }finally{await h.unmount()}
+})
+
+test('P51: a sustained load uses only the fixed-slot progress; failure retries the intended target',async()=>{
+  const held=deferred()
+  let attempts=0
+  const h=await mount({loadDirectoryPage:async id=>{
+    if(id===30)return ++attempts===1?held.promise:page([directory(300)])
+    return page([directory(30),directory(50)])
+  }})
+  try{
+    await click(button(h.renderer,'打开文件夹 目录-30'))
+    await TestRenderer.act(async()=>{await new Promise(resolve=>setTimeout(resolve,350))})
+    assert.equal(host(h.renderer,'aria-label').filter(x=>x.props['aria-label']==='正在加载文件夹').length,1)
+    assert.match(text(h.renderer.root),/目录-50/,'old rows persist while a real GET waits')
+    await TestRenderer.act(async()=>{held.reject(new Error('目标目录服务暂不可用'));await held.promise.catch(()=>undefined)})
+    assert.match(text(h.renderer.root),/目标目录服务暂不可用/)
+    assert.match(text(h.renderer.root),/目录-50/)
+    assert.doesNotMatch(text(host(h.renderer,'data-xdrive-file-explorer-destination-path')[0]),/目录-30/)
+    assert.equal(button(h.renderer,'复制到这里').props.disabled,true)
+    await click(button(h.renderer,'重试加载'))
+    assert.equal(attempts,2,'Retry must address failed target rather than last accepted parent')
+    assert.match(text(host(h.renderer,'data-xdrive-file-explorer-destination-path')[0]),/目录-30/)
+    assert.equal(Boolean(button(h.renderer,'复制到这里').props.disabled),false)
+  }finally{await h.unmount()}
+})
+
+test('P51: newer folder wins over a late previous folder request',async()=>{
+  const old=deferred()
+  const h=await mount({loadDirectoryPage:async id=>id===30?old.promise:
+    id===50?page([directory(500)]):page([directory(30),directory(50)])})
+  try{
+    await click(button(h.renderer,'打开文件夹 目录-30'))
+    await click(button(h.renderer,'打开文件夹 目录-50'))
+    assert.match(text(host(h.renderer,'data-xdrive-file-explorer-destination-path')[0]),/目录-50/)
+    assert.match(text(h.renderer.root),/目录-500/)
+    await TestRenderer.act(async()=>{old.resolve(page([directory(300)]));await old.promise})
+    assert.match(text(h.renderer.root),/目录-500/)
+    assert.doesNotMatch(text(h.renderer.root),/目录-300/)
+  }finally{await h.unmount()}
+})
+
+test('P51: a reopened second account hides prior accepted target in its first frame',async()=>{
+  const next=deferred()
+  const h=await mount()
+  try{
+    await click(button(h.renderer,'打开文件夹 目录-30'))
+    assert.match(text(h.renderer.root),/目录-300/)
+    await h.update({open:false})
+    await h.update({open:true,lifecycleKey:'account-b',initialCrumbs:[root,{id:9,name:'B-文件夹'}],
+      sources:[{id:90,revision:1,name:'B-file.txt',type:'file',parent_id:9}],
+      loadDirectoryPage:async()=>next.promise})
+    assert.match(text(h.renderer.root),/B-文件夹/)
+    assert.doesNotMatch(text(h.renderer.root),/目录-300|目录-30/)
+    assert.equal(button(h.renderer,'复制到这里').props.disabled,true)
+    await TestRenderer.act(async()=>{next.resolve(page([directory(900,'B-only')]));await next.promise})
+    assert.match(text(h.renderer.root),/B-only/)
+  }finally{await h.unmount()}
+})
