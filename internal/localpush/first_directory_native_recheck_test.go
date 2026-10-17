@@ -323,3 +323,32 @@ func TestLocalFirstDirectoryHeldNativeReadWindowRejectsPathReplacement(t *testin
 		t.Fatalf("unmodified Windows pinned directory incorrectly rejected: %+v err=%v", got, err)
 	}
 }
+
+func TestLocalFirstDirectoryHeldCheckpointRequiresTrustedCallback(t *testing.T) {
+	grant, config, _, request := firstDirectoryNativeFixture(t)
+	if err := SaveRootGrant(config, grant); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := RecheckLocalFirstDirectoryNativeWithHeldCheckpoint(
+		context.Background(), config, grant, request, nil,
+	); err == nil || got.NativeObserved {
+		t.Fatalf("nil Agent checkpoint accepted: %+v err=%v", got, err)
+	}
+	called := false
+	got, err := RecheckLocalFirstDirectoryNativeWithHeldCheckpoint(
+		context.Background(), config, grant, request,
+		func(_ context.Context, observation LocalFirstDirectoryNativeObservation) error {
+			called = true
+			if !observation.NativeObserved || observation.CommitSupported ||
+				observation.BackupComplete || observation.Authoritative ||
+				observation.MissingInferenceSafe {
+				return errors.New("unexpected read-only checkpoint observation")
+			}
+			return nil
+		},
+	)
+	if err != nil || !called || !got.NativeObserved ||
+		got.CommitSupported || got.BackupComplete {
+		t.Fatalf("real verified native checkpoint unavailable: %+v called=%t err=%v", got, called, err)
+	}
+}

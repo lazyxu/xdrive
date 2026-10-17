@@ -13,12 +13,46 @@ import (
 // to one Server-issued advisory challenge. Both bound reads must agree BEFORE
 // any seal is returned. A valid seal is NOT a native-handle lifetime guarantee
 // or permission to create a cloud Node/SourceItem.
+// sealLocalBoundFirstDirectoryAdvisory preserves the existing PRIVATE test
+// API. Its injected reader is the legacy non-held observation path.
 func sealLocalBoundFirstDirectoryAdvisory(
 	ctx context.Context, sourceID uint64,
 	request localpush.LocalFirstDirectoryNativeRecheckRequest,
 	challenge localpush.LocalFirstDirectoryAdvisoryChallenge,
 	readBound localFirstDirectoryBoundReader,
 	readNative localFirstDirectoryNativeReader,
+) (localpush.LocalFirstDirectoryAdvisorySeal, error) {
+	if readNative == nil {
+		return localpush.LocalFirstDirectoryAdvisorySeal{}, privateLocalFirstDirectoryBoundError(nil)
+	}
+	return sealLocalBoundFirstDirectoryAdvisoryHeld(ctx, sourceID, request,
+		challenge, readBound,
+		func(ctx context.Context, proof client.LocalBoundSourceProof,
+			req localpush.LocalFirstDirectoryNativeRecheckRequest,
+			checkpoint func(context.Context, localpush.LocalFirstDirectoryNativeObservation) error,
+		) (localpush.LocalFirstDirectoryNativeObservation, error) {
+			observed, err := readNative(ctx, proof, req)
+			if err != nil {
+				return localpush.LocalFirstDirectoryNativeObservation{}, err
+			}
+			if err := checkpoint(ctx, observed); err != nil {
+				return localpush.LocalFirstDirectoryNativeObservation{}, err
+			}
+			return observed, nil
+		},
+	)
+}
+
+// sealLocalBoundFirstDirectoryAdvisoryHeld reads the SAME authentic owning
+// Source/Device/Root/Target twice, with the second read performed by the native
+// reader's checkpoint while its verified OS handle remains open. This is not
+// Server SQL native-handle attestation and must never be treated as commit.
+func sealLocalBoundFirstDirectoryAdvisoryHeld(
+	ctx context.Context, sourceID uint64,
+	request localpush.LocalFirstDirectoryNativeRecheckRequest,
+	challenge localpush.LocalFirstDirectoryAdvisoryChallenge,
+	readBound localFirstDirectoryBoundReader,
+	readNativeHeld localFirstDirectoryNativeHeldReader,
 ) (localpush.LocalFirstDirectoryAdvisorySeal, error) {
 	var empty localpush.LocalFirstDirectoryAdvisorySeal
 	deny := func(err error) (localpush.LocalFirstDirectoryAdvisorySeal, error) {
@@ -27,14 +61,14 @@ func sealLocalBoundFirstDirectoryAdvisory(
 	if ctx == nil || sourceID == 0 || challenge.OwnerID == 0 ||
 		challenge.SourceID != sourceID ||
 		challenge.SourceRevision != request.SourceRevision ||
-		readBound == nil || readNative == nil {
+		readBound == nil || readNativeHeld == nil {
 		return deny(nil)
 	}
 	if err := ctx.Err(); err != nil {
 		return deny(err)
 	}
 	var finalProof client.LocalBoundSourceProof
-	observed, err := observeLocalBoundFirstDirectory(
+	observed, err := observeLocalBoundFirstDirectoryHeld(
 		ctx, sourceID, request,
 		func(ctx context.Context, id uint64) (client.Source, client.LocalBoundSourceProof, error) {
 			source, proof, err := readBound(ctx, id)
@@ -48,7 +82,7 @@ func sealLocalBoundFirstDirectoryAdvisory(
 			finalProof = proof
 			return source, proof, nil
 		},
-		readNative,
+		readNativeHeld,
 	)
 	if err != nil {
 		return deny(err)
@@ -97,13 +131,16 @@ func (c *agentController) sealOwnLocalBoundBackupFirstDirectoryNative(
 	if err != nil {
 		return empty, privateLocalFirstDirectoryBoundError(err)
 	}
-	sealed, err := sealLocalBoundFirstDirectoryAdvisory(
+	sealed, err := sealLocalBoundFirstDirectoryAdvisoryHeld(
 		readCtx, sourceID, request, challenge,
 		func(ctx context.Context, id uint64) (client.Source, client.LocalBoundSourceProof, error) {
 			source, proof, _, err := c.localBoundBackupConfig(ctx, id)
 			return source, proof, err
 		},
-		func(ctx context.Context, proof client.LocalBoundSourceProof, request localpush.LocalFirstDirectoryNativeRecheckRequest) (localpush.LocalFirstDirectoryNativeObservation, error) {
+		func(ctx context.Context, proof client.LocalBoundSourceProof,
+			request localpush.LocalFirstDirectoryNativeRecheckRequest,
+			checkpoint func(context.Context, localpush.LocalFirstDirectoryNativeObservation) error,
+		) (localpush.LocalFirstDirectoryNativeObservation, error) {
 			grant, err := localpush.LoadRootGrant(configDir, account.Server, account.Username, proof.RootID)
 			if err != nil || grant.SourceID != sourceID ||
 				grant.DeviceID != proof.DeviceID || grant.RootID != proof.RootID ||
@@ -111,7 +148,7 @@ func (c *agentController) sealOwnLocalBoundBackupFirstDirectoryNative(
 				grant.Server != account.Server || grant.Account != account.Username {
 				return localpush.LocalFirstDirectoryNativeObservation{}, privateLocalFirstDirectoryBoundError(err)
 			}
-			return localpush.RecheckLocalFirstDirectoryNative(ctx, configDir, grant, request)
+			return localpush.RecheckLocalFirstDirectoryNativeWithHeldCheckpoint(ctx, configDir, grant, request, checkpoint)
 		},
 	)
 	if err != nil {

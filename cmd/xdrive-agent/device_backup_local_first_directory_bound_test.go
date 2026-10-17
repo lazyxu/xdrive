@@ -164,3 +164,114 @@ func TestLocalFirstDirectoryOwningPreflightRejectsRevocationAndScopeChanges(t *t
 		})
 	}
 }
+
+func TestLocalFirstDirectoryHeldCheckpointReadsServerInsideNativeWindow(t *testing.T) {
+	source, proof, request, observation := sampleLocalBoundFirstDirectory()
+	serverReads, nativeReads, checkpoints := 0, 0, 0
+	held := false
+	got, err := observeLocalBoundFirstDirectoryHeld(
+		context.Background(), source.ID, request,
+		func(_ context.Context, id uint64) (client.Source, client.LocalBoundSourceProof, error) {
+			serverReads++
+			if id != source.ID || (serverReads == 1 && held) ||
+				(serverReads == 2 && !held) {
+				return client.Source{}, client.LocalBoundSourceProof{}, errors.New("Server proof read outside expected native lifetime")
+			}
+			return source, proof, nil
+		},
+		func(ctx context.Context, owner client.LocalBoundSourceProof,
+			selector localpush.LocalFirstDirectoryNativeRecheckRequest,
+			checkpoint func(context.Context, localpush.LocalFirstDirectoryNativeObservation) error,
+		) (localpush.LocalFirstDirectoryNativeObservation, error) {
+			nativeReads++
+			if owner != proof || selector != request || held {
+				return localpush.LocalFirstDirectoryNativeObservation{}, errors.New("wrong device native read")
+			}
+			held = true
+			checkpoints++
+			err := checkpoint(ctx, observation)
+			held = false
+			return observation, err
+		},
+	)
+	if err != nil || !got.NativeObserved || got.CommitSupported || got.BackupComplete ||
+		got.Authoritative || got.MissingInferenceSafe || held ||
+		serverReads != 2 || nativeReads != 1 || checkpoints != 1 {
+		t.Fatalf("Server was not rechecked during the held native read: %+v err=%v server=%d native=%d checks=%d held=%t",
+			got, err, serverReads, nativeReads, checkpoints, held)
+	}
+	serialized, err := json.Marshal(got)
+	if err != nil || string(serialized) != "{}" {
+		t.Fatalf("held-checkpoint observation leaked private metadata: %s err=%v", serialized, err)
+	}
+}
+
+func TestLocalFirstDirectoryHeldCheckpointRejectsFakeLifetimeAndRevocation(t *testing.T) {
+	for _, scenario := range []string{
+		"missing-checkpoint", "double-checkpoint", "changed-return",
+		"invalid-native", "revoked-device", "target-changed",
+		"private-server-error", "cancel-during-held",
+	} {
+		t.Run(scenario, func(t *testing.T) {
+			source, proof, request, observation := sampleLocalBoundFirstDirectory()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			serverReads, checkpointCalls := 0, 0
+			got, err := observeLocalBoundFirstDirectoryHeld(
+				ctx, source.ID, request,
+				func(_ context.Context, _ uint64) (client.Source, client.LocalBoundSourceProof, error) {
+					serverReads++
+					if serverReads == 2 {
+						switch scenario {
+						case "revoked-device":
+							proof.DeviceToken = ""
+						case "target-changed":
+							newTarget := uint64(4000)
+							source.TargetNodeID = &newTarget
+						case "private-server-error":
+							return client.Source{}, client.LocalBoundSourceProof{}, errors.New("secret native Root and token")
+						}
+					}
+					return source, proof, nil
+				},
+				func(ctx context.Context, _ client.LocalBoundSourceProof,
+					_ localpush.LocalFirstDirectoryNativeRecheckRequest,
+					checkpoint func(context.Context, localpush.LocalFirstDirectoryNativeObservation) error,
+				) (localpush.LocalFirstDirectoryNativeObservation, error) {
+					switch scenario {
+					case "missing-checkpoint":
+						return observation, nil
+					case "invalid-native":
+						observation.CommitSupported = true
+					case "cancel-during-held":
+						cancel()
+					}
+					checkpointCalls++
+					firstErr := checkpoint(ctx, observation)
+					if scenario == "double-checkpoint" {
+						checkpointCalls++
+						_ = checkpoint(ctx, observation)
+					}
+					if scenario == "changed-return" {
+						observation.NativeIdentityKey = strings.Repeat("f", 64)
+						return observation, nil
+					}
+					return observation, firstErr
+				},
+			)
+			if err == nil || got.NativeObserved || got.CommitSupported ||
+				got.BackupComplete || got.SourceID != 0 {
+				t.Fatalf("%s gained authority after missing/stale held checkpoint: %+v err=%v", scenario, got, err)
+			}
+			if scenario == "cancel-during-held" && !errors.Is(err, context.Canceled) {
+				t.Fatalf("cancel not propagated through held read: %v", err)
+			}
+			if strings.Contains(err.Error(), "secret native Root and token") {
+				t.Fatalf("held Server proof error leaked private details: %v", err)
+			}
+			if scenario == "missing-checkpoint" && (checkpointCalls != 0 || serverReads != 1) {
+				t.Fatalf("missing callback incorrectly rechecked Server: callbacks=%d reads=%d", checkpointCalls, serverReads)
+			}
+		})
+	}
+}
