@@ -17,6 +17,7 @@ const indexJobStatusText: Record<MediaBaiduMapIndexJob['status'], string> = {
   leased: '任务已被领取',
   completed: '派生位置索引已生成',
   cancelled: '任务已取消',
+  failed: '位置索引多次失败，请重新授权后再次提交',
 }
 
 const consentStatusText: Record<MediaBaiduMapConsent['status'], string> = {
@@ -68,7 +69,8 @@ export function XDriveMediaGalleryViewerLocationDialog({
   const [confirmJob, setConfirmJob] = useState(false)
   // A cancelled intent needs a NEW user-consent generation before retry.
   const canQueueJob = Boolean(job && (job.status === 'not_queued' ||
-    (job.status === 'cancelled' && consent && consent.revision > job.consent_revision)))
+    ((job.status === 'cancelled' || job.status === 'failed') &&
+      consent && consent.revision > job.consent_revision)))
 
   useEffect(() => {
     const request = ++generation.current

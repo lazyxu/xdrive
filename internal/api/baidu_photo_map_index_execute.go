@@ -145,9 +145,19 @@ func executeBaiduPhotoMapIndexIntent(
 			}
 		}
 	}()
+	completed := false
 	defer func() {
 		cancel()
 		<-done
+		if completed {
+			return
+		}
+		// A canceled request Context cannot release a durable job receipt.
+		// Use short independent cleanup, but NEVER overwrite Owner revocation,
+		// a replaced lease, or an already completed photo index.
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cleanupCancel()
+		_ = settleFailedBaiduPhotoMapIndexAttempt(cleanupCtx, db, lease)
 	}()
 
 	if validateBaiduPhotoMapIndexLease(workCtx, db, lease) != nil {
@@ -171,5 +181,6 @@ func executeBaiduPhotoMapIndexIntent(
 	if err := completeBaiduPhotoMapIndexIntent(workCtx, db, lease, converted); err != nil {
 		return denied
 	}
+	completed = true
 	return nil
 }
