@@ -143,6 +143,7 @@ XD_CONFIG_DIR="$TMP/config-ok" \
 XD_SHELL_RC_PATH="$TMP/config-ok.bashrc" \
 XD_NONINTERACTIVE=1 \
 XD_INSTALL_NO_START=1 \
+XD_LAN_HTTPS_IP=192.168.2.4 \
 bash "$INSTALLER" >"$TMP/ok.out" 2>"$TMP/ok.err"
 
 grep -q '\[xDrive\] \[1/9\] resolve release channel' "$TMP/ok.out"
@@ -167,6 +168,40 @@ if grep -q '^  web:' "$ROOT/deploy/docker-compose.yml"; then
   exit 1
 fi
 grep -q "XD_HTTPS_PORT=8443" "$TMP/config-ok/config/.env"
+grep -q '^XD_LAN_HTTPS_IP=192.168.2.4$' "$TMP/config-ok/config/.env"
+grep -q '^XD_WEB_BIND=127.0.0.1$' "$TMP/config-ok/config/.env"
+
+# A noninteractive fresh host without a trusted/private identity must NOT
+# silently fall back to plaintext HTTP login merely to pass a bootstrap test.
+set +e
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin-ok:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config-no-identity" \
+XD_SHELL_RC_PATH="$TMP/config-no-identity.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+XD_LAN_HTTPS_IP='' \
+bash "$INSTALLER" >"$TMP/no-identity.out" 2>"$TMP/no-identity.err"
+no_identity_status=$?
+set -e
+[[ "$no_identity_status" -ne 0 ]]
+grep -q 'cannot disable both LAN IP HTTPS and public domain HTTPS' "$TMP/no-identity.err"
+# Existing-upgrade-only plaintext compatibility must be forbidden on fresh hosts,
+# even when the operator tries to force the marker explicitly.
+set +e
+TEST_STATE="$TMP/state" \
+PATH="$TMP/bin-ok:/usr/bin:/bin" \
+XD_CONFIG_DIR="$TMP/config-no-identity-explicit-legacy" \
+XD_SHELL_RC_PATH="$TMP/config-no-identity-explicit-legacy.bashrc" \
+XD_NONINTERACTIVE=1 \
+XD_INSTALL_NO_START=1 \
+XD_LAN_HTTPS_IP='' \
+XD_LEGACY_HTTP_ONLY=1 \
+bash "$INSTALLER" >"$TMP/no-identity-explicit-legacy.out" 2>"$TMP/no-identity-explicit-legacy.err"
+explicit_legacy_status=$?
+set -e
+[[ "$explicit_legacy_status" -ne 0 ]]
+grep -q 'cannot disable both LAN IP HTTPS and public domain HTTPS' "$TMP/no-identity-explicit-legacy.err"
 connector_active="$(grep '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"
 connector_keys="$(grep '^XD_CONNECTOR_SECRET_KEYS=' "$TMP/config-ok/config/.env" | tail -n1 | cut -d= -f2-)"
 [[ "$connector_active" == "1" ]]
@@ -335,6 +370,8 @@ test -f "$TMP/state/password-repaired"
 test -f "$TMP/config-upgrade/.env"
 grep -q '^POSTGRES_PASSWORD=stale-db-password$' "$TMP/config-upgrade/config/.env"
 grep -q '^XD_JWT_SECRET=legacy-jwt-secret$' "$TMP/config-upgrade/config/.env"
+grep -q '^XD_LEGACY_HTTP_ONLY=1$' "$TMP/config-upgrade/config/.env"
+grep -Fq 'XD_LEGACY_HTTP_ONLY: ${XD_LEGACY_HTTP_ONLY:-0}' "$ROOT/deploy/docker-compose.yml"
 grep -q '^XD_CONNECTOR_SECRET_ACTIVE_VERSION=1$' "$TMP/config-upgrade/config/.env"
 grep -q '^XD_CONNECTOR_SECRET_KEYS=1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$' "$TMP/config-upgrade/config/.env"
 if grep -q '^XD_CONNECTOR_SECRET_KEY=' "$TMP/config-upgrade/config/.env"; then

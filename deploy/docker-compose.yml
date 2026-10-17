@@ -205,6 +205,7 @@ services:
       # Opt-in private IP HTTPS identity, served on the existing 8443:443
       # listener. Never exposes XD_WEB_PORT or enables plaintext IP login.
       XD_LAN_HTTPS_IP: ${XD_LAN_HTTPS_IP:-}
+      XD_LEGACY_HTTP_ONLY: ${XD_LEGACY_HTTP_ONLY:-0}
       ALIYUN_ACCESS_KEY_ID: ${ALIYUN_ACCESS_KEY_ID:-}
       ALIYUN_ACCESS_KEY_SECRET: ${ALIYUN_ACCESS_KEY_SECRET:-}
     command:

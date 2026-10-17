@@ -1,0 +1,18 @@
+{
+	# Browsers visiting https://<IP> omit SNI by convention; select the
+	# managed private-IP SAN certificate when ClientHello has no SNI.
+	default_sni {$XD_LAN_HTTPS_IP}
+}
+
+import /etc/caddy/Caddyfile.common
+
+# The default new-install private-IP HTTPS entry, even when NO public domain
+# and NO AliDNS credentials exist. Trusted client CA setup is always manual.
+:80 {
+	import xdrive_app
+}
+
+https://{$XD_LAN_HTTPS_IP} {
+	tls internal
+	import xdrive_app
+}

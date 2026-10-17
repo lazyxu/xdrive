@@ -11,11 +11,13 @@ const script = path.join(root, 'deploy/caddy-lan-start.sh')
 test('opt-in IP site shares HTTPS port, proxies exact same Web/API, retains public AliDNS', () => {
   const compose = read('deploy/docker-compose.yml')
   const file = read('deploy/Caddyfile.lan-ip')
+  const lanOnly = read('deploy/Caddyfile.lan-only')
   const old = read('deploy/Caddyfile')
   const image = read('deploy/Caddy.Dockerfile')
   const common = read('deploy/Caddyfile.common')
   const router = read('internal/api/router.go')
   assert.match(compose, /XD_LAN_HTTPS_IP: \$\{XD_LAN_HTTPS_IP:-\}/)
+  assert.match(compose, /XD_LEGACY_HTTP_ONLY: \$\{XD_LEGACY_HTTP_ONLY:-0\}/)
   assert.match(compose, /XD_WEB_BIND:-127\.0\.0\.1/)
   assert.match(compose, /XD_HTTPS_PORT:-8443}:443\/tcp/)
   assert.match(compose, /\/usr\/local\/bin\/xdrive-caddy-start/)
@@ -24,8 +26,15 @@ test('opt-in IP site shares HTTPS port, proxies exact same Web/API, retains publ
   assert.match(image, /chmod 0755 \/usr\/local\/bin\/xdrive-caddy-start/)
   assert.match(image, /caddy adapt --config \/etc\/caddy\/Caddyfile\.lan-ip/)
   assert.match(file, /\{\$XD_DOMAIN\} \{/)
-  assert.match(file, /\{\$XD_LAN_HTTPS_IP\} \{\s*tls internal/)
+  assert.match(file, /default_sni \{\$XD_LAN_HTTPS_IP\}/)
+  assert.match(file, /https:\/\/\{\$XD_LAN_HTTPS_IP\} \{\s*tls internal/)
   assert.match(file, /dns alidns/)
+  assert.match(lanOnly, /default_sni \{\$XD_LAN_HTTPS_IP\}/)
+  assert.match(lanOnly, /https:\/\/\{\$XD_LAN_HTTPS_IP\} \{\s*tls internal/)
+  assert.match(image, /tls_connection_policies/)
+  assert.match(image, /default_sni/)
+  assert.doesNotMatch(lanOnly, /dns alidns|\{\$XD_DOMAIN\}/)
+  assert.match(lanOnly, /import xdrive_app/)
   assert.match(file, /import xdrive_app/g)
   assert.match(old, /dns alidns/)
   assert.match(common, /reverse_proxy server:8080/)
@@ -38,8 +47,16 @@ test('installer rejects unsafe/ambiguous private IP and never opens plaintext WA
   const installer = read('deploy/install-server.sh')
   const compose = read('deploy/docker-compose.yml')
   assert.match(installer, /ensure_env XD_LAN_HTTPS_IP/)
+  assert.ok(installer.includes('^([0-9]{1,3}\\.){3}[0-9]{1,3}$'), 'installer must match canonical dotted-quad IPv4')
   assert.match(installer, /validate_private_lan_https_ip "\$lan_https_ip"/)
-  assert.match(installer, /XD_LAN_HTTPS_IP requires XD_DOMAIN/)
+  assert.match(installer, /cannot disable both LAN IP HTTPS and public domain HTTPS/)
+  assert.match(installer, /detect_default_lan_https_ip/)
+  assert.match(installer, /UPGRADE_EXISTING/)
+  assert.match(installer, /XD_LEGACY_HTTP_ONLY/)
+  assert.ok(installer.includes('"$UPGRADE_EXISTING" != "1"'), 'fresh installs cannot opt into legacy plaintext-only mode')
+  assert.match(installer, /wait_lan_https/)
+  assert.match(installer, /--cacert/)
+  assert.doesNotMatch(installer, /curl -k /)
   assert.match(installer, /XD_HTTPS_BIND must permit the LAN IPv4 address/)
   assert.match(installer, /set_env XD_WEB_BIND "127\.0\.0\.1"/)
   assert.match(compose, /XD_WEB_BIND:-127\.0\.0\.1/)
@@ -54,7 +71,18 @@ test('Caddy runtime selector refuses spoofed IPs and defaults to untouched domai
     env: { PATH: process.env.PATH || '/usr/bin:/bin', XD_DOMAIN: domain, XD_LAN_HTTPS_IP: ip },
   })
   assert.equal(check('').stdout.trim(), '/etc/caddy/Caddyfile')
-  assert.equal(check('', '').stdout.trim(), '/etc/caddy/Caddyfile.http')
+  assert.equal(check('192.168.2.4', '').stdout.trim(), '/etc/caddy/Caddyfile.lan-only')
+  // Existing deployments may explicitly keep their old HTTP mode. New dual
+  // disable attempts cannot silently expose a plaintext LAN login instead.
+  const legacy = spawnSync('sh', [script, '--check'], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH || '/usr/bin:/bin',
+      XD_DOMAIN: '', XD_LAN_HTTPS_IP: '', XD_LEGACY_HTTP_ONLY: '1' },
+  })
+  assert.equal(legacy.stdout.trim(), '/etc/caddy/Caddyfile.http')
+  const bothOff = check('', '')
+  assert.notEqual(bothOff.status, 0)
+  assert.match(bothOff.stderr, /cannot disable both LAN IP HTTPS and domain HTTPS/)
   for (const ip of ['192.168.2.4', '10.0.0.2', '172.16.0.1', '172.31.255.254']) {
     const result = check(ip)
     assert.equal(result.status, 0, ip + ': ' + result.stderr)
@@ -69,8 +97,8 @@ test('Caddy runtime selector refuses spoofed IPs and defaults to untouched domai
     assert.match(result.stderr, /canonical RFC1918 IPv4/)
   }
   const noDomain = check('192.168.2.4', '')
-  assert.notEqual(noDomain.status, 0)
-  assert.match(noDomain.stderr, /requires a configured public XD_DOMAIN/)
+  assert.equal(noDomain.status, 0)
+  assert.equal(noDomain.stdout.trim(), '/etc/caddy/Caddyfile.lan-only')
 })
 
 test('manual Web and Agent switching is independent of server certificate and refresh-token secrets', () => {

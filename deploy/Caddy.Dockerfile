@@ -36,14 +36,25 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 RUN setcap -r /usr/bin/caddy && test -z "$(getcap /usr/bin/caddy)"
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
 COPY deploy/Caddyfile.lan-ip /etc/caddy/Caddyfile.lan-ip
+COPY deploy/Caddyfile.lan-only /etc/caddy/Caddyfile.lan-only
 COPY deploy/caddy-lan-start.sh /usr/local/bin/xdrive-caddy-start
 COPY deploy/Caddyfile.http /etc/caddy/Caddyfile.http
 COPY deploy/Caddyfile.rescue /etc/caddy/Caddyfile.rescue
 COPY deploy/Caddyfile.common /etc/caddy/Caddyfile.common
 COPY web/dist/ /srv/
 
-# The opt-in private-IP HTTPS Caddyfile must parse with the pinned AliDNS
-# module; keep a real image-build syntax gate without issuing any certificate.
+# A bare IP URL normally sends no SNI. Caddy 2.10.2 must emit a real
+# TLS connection policy with default_sni for BOTH IP-only and dual modes,
+# not merely parse a Caddyfile that later fails during a TLS handshake.
 RUN chmod 0755 /usr/local/bin/xdrive-caddy-start && \
     XD_DOMAIN=drive.example.com XD_LAN_HTTPS_IP=192.168.2.4 \
-    caddy adapt --config /etc/caddy/Caddyfile.lan-ip --adapter caddyfile >/dev/null
+    caddy adapt --config /etc/caddy/Caddyfile.lan-ip --adapter caddyfile --pretty \
+      > /tmp/xdrive-lan-ip-adapted.json && \
+    grep -Fq '"default_sni": "192.168.2.4"' /tmp/xdrive-lan-ip-adapted.json && \
+    grep -Fq '"tls_connection_policies"' /tmp/xdrive-lan-ip-adapted.json && \
+    XD_LAN_HTTPS_IP=192.168.2.4 \
+    caddy adapt --config /etc/caddy/Caddyfile.lan-only --adapter caddyfile --pretty \
+      > /tmp/xdrive-lan-only-adapted.json && \
+    grep -Fq '"default_sni": "192.168.2.4"' /tmp/xdrive-lan-only-adapted.json && \
+    grep -Fq '"tls_connection_policies"' /tmp/xdrive-lan-only-adapted.json && \
+    rm -f /tmp/xdrive-lan-ip-adapted.json /tmp/xdrive-lan-only-adapted.json

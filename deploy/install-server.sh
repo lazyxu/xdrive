@@ -1132,7 +1132,7 @@ validate_domain() {
 
 validate_private_lan_https_ip() {
   local value="$1" a b c d octet
-  if [[ ! "$value" =~ ^([0-9]{1,3}\\.){3}[0-9]{1,3}$ ]]; then
+  if [[ ! "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
     echo "xDrive server installer: XD_LAN_HTTPS_IP must be a canonical private IPv4 address." >&2
     return 1
   fi
@@ -1147,6 +1147,33 @@ validate_private_lan_https_ip() {
     echo "xDrive server installer: XD_LAN_HTTPS_IP must be RFC1918 (10/8, 172.16/12, 192.168/16)." >&2
     return 1
   fi
+}
+
+# No network request: Linux FIB route lookup (or local interface list).
+# Never silently choose a public IP, loopback or a VPN-only/non-RFC1918 host.
+detect_default_lan_https_ip() {
+  local candidate="" token
+  if command -v ip >/dev/null 2>&1; then
+    candidate="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' || true)"
+    if validate_private_lan_https_ip "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  # A multihomed server must be explicit; never guess between multiple LAN IPs.
+  if command -v hostname >/dev/null 2>&1; then
+    local -a found=()
+    for token in $(hostname -I 2>/dev/null || true); do
+      if validate_private_lan_https_ip "$token" >/dev/null 2>&1; then
+        found+=("$token")
+      fi
+    done
+    if (( ${#found[@]} == 1 )); then
+      printf '%s\n' "${found[0]}"
+      return 0
+    fi
+  fi
+  return 1
 }
 
 validate_port() {
@@ -1529,6 +1556,7 @@ ensure_env XD_ALLOWED_ORIGIN "${XD_ALLOWED_ORIGIN:-http://localhost:3000}"
 ensure_env XD_MAX_UPLOAD_BYTES "${XD_MAX_UPLOAD_BYTES:-21474836480}"
 ensure_env XD_DOMAIN "${XD_DOMAIN:-}"
 ensure_env XD_LAN_HTTPS_IP "${XD_LAN_HTTPS_IP:-}"
+ensure_env XD_LEGACY_HTTP_ONLY "${XD_LEGACY_HTTP_ONLY:-0}"
 ensure_env XD_HTTPS_BIND "${XD_HTTPS_BIND:-0.0.0.0}"
 ensure_env XD_HTTPS_PORT "${XD_HTTPS_PORT:-8443}"
 ensure_env ALIYUN_ACCESS_KEY_ID "${ALIYUN_ACCESS_KEY_ID:-}"
@@ -1626,8 +1654,8 @@ web_port="$(env_value XD_WEB_PORT)"
 validate_port "$https_port"
 validate_rootless_port "Web" "$web_port"
 validate_rootless_port "HTTPS" "$https_port"
-if [[ -z "$domain" ]] && interactive_tty_available; then
-  read -r -p "Public domain for DNS-01 HTTPS (blank for HTTP/private mode): " input_domain </dev/tty || true
+if [[ -z "$domain" && "$UPGRADE_EXISTING" != "1" ]] && interactive_tty_available; then
+  read -r -p "Optional public domain for DNS-01 HTTPS (blank keeps LAN IP HTTPS only): " input_domain </dev/tty || true
   domain="${input_domain:-}"
   if [[ -n "$domain" ]]; then
     domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
@@ -1660,28 +1688,49 @@ if [[ -n "$domain" ]]; then
   fi
   public_url="$(https_url "$domain" "$https_port")"
   set_env XD_ALLOWED_ORIGIN "$public_url"
-  set_env XD_WEB_BIND "127.0.0.1"
-else
-  # HTTP/private mode remains directly reachable on XD_WEB_PORT.
-  if [[ "$(env_value XD_WEB_BIND)" == "127.0.0.1" && "${XD_KEEP_LOOPBACK_HTTP:-0}" != "1" ]]; then
-    set_env XD_WEB_BIND "0.0.0.0"
-  fi
 fi
 
-# No LAN HTTP bind changes: users with modem DMZ must not expose passwords on
-# new plaintext ports. An opt-in IP site shares existing HTTPS :443 only.
+# Always keep the plaintext Caddy HTTP mapping on host loopback, including LAN
+# only mode; clients must first trust the Caddy local root CA for HTTPS/IP.
+set_env XD_WEB_BIND "127.0.0.1"
+
 lan_https_ip="$(env_value XD_LAN_HTTPS_IP)"
+legacy_http_only="$(env_value XD_LEGACY_HTTP_ONLY)"
+if [[ "$legacy_http_only" != "0" && "$legacy_http_only" != "1" ]]; then
+  echo "xDrive server installer: XD_LEGACY_HTTP_ONLY must be 0 or 1." >&2
+  exit 1
+fi
+# Do not unexpectedly enable a new ingress on an existing installation.
+# Fresh installs without an explicit override detect a stable RFC1918 LAN IP.
+if [[ -z "$lan_https_ip" && "$UPGRADE_EXISTING" != "1" && -z "${XD_LAN_HTTPS_IP+x}" ]]; then
+  lan_https_ip="$(detect_default_lan_https_ip || true)"
+  if [[ -n "$lan_https_ip" ]]; then
+    set_env XD_LAN_HTTPS_IP "$lan_https_ip"
+    echo "Detected local HTTPS IP identity: $lan_https_ip"
+  fi
+fi
 if [[ -n "$lan_https_ip" ]]; then
   validate_private_lan_https_ip "$lan_https_ip"
-  if [[ -z "$domain" ]]; then
-    echo "xDrive server installer: XD_LAN_HTTPS_IP requires XD_DOMAIN." >&2
-    exit 1
-  fi
   https_bind="$(env_value XD_HTTPS_BIND)"
   if [[ "$https_bind" != "0.0.0.0" && "$https_bind" != "$lan_https_ip" ]]; then
-    echo "xDrive server installer: XD_HTTPS_BIND must permit the LAN IPv4 address when private-IP HTTPS is enabled." >&2
+    echo "xDrive server installer: XD_HTTPS_BIND must permit the LAN IPv4 address." >&2
     exit 1
   fi
+fi
+if [[ -z "$domain" && -z "$lan_https_ip" ]]; then
+  # The legacy HTTP compatibility flag is NEVER an option for fresh installs,
+  # even when an operator passes XD_LEGACY_HTTP_ONLY=1 explicitly.
+  if [[ "$UPGRADE_EXISTING" != "1" ]]; then
+    echo "xDrive server installer: cannot disable both LAN IP HTTPS and public domain HTTPS. Supply XD_LAN_HTTPS_IP for the initial install." >&2
+    exit 1
+  fi
+  if [[ "$legacy_http_only" == "0" ]]; then
+    # Preserve a pre-feature domainless HTTP upgrade without surprise lockout.
+    set_env XD_LEGACY_HTTP_ONLY "1"
+    echo "Existing legacy HTTP-only deployment preserved; configure LAN HTTPS before disabling this compatibility mode."
+  fi
+else
+  set_env XD_LEGACY_HTTP_ONLY "0"
 fi
 
 stage 5 "create pre-upgrade backup"
@@ -2012,6 +2061,31 @@ if [[ "$edge_healthy" != "1" ]]; then
   exit 1
 fi
 
+# Read the pinned local root over existing Docker management; DO NOT
+# install CA on the host or disable TLS verification. The cert's IP SAN must
+# match the selected LAN address.
+wait_lan_https() {
+  local ip="$1" port="$2" attempt cert
+  cert="$(mktemp "${TMPDIR:-/tmp}/xdrive-lan-ca.XXXXXX")" || return 1
+  chmod 0600 "$cert"
+  echo "Waiting for private-IP HTTPS with local CA and IP-SAN validation on port $port..."
+  for attempt in $(seq 1 45); do
+    if compose exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > "$cert" 2>/dev/null; then
+      if curl -fsS --noproxy '*' --cacert "$cert" --connect-timeout 3 --max-time 6 \
+        "https://$ip:$port/api/v1/readyz" >/dev/null 2>&1; then
+        rm -f "$cert"
+        echo "LAN HTTPS responds with verified local CA: https://$ip:$port"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  rm -f "$cert"
+  echo "xDrive LAN HTTPS did not pass certificate and IP SAN validation." >&2
+  compose logs --tail=80 caddy >&2 || true
+  return 1
+}
+
 wait_https() {
   local domain="$1" port="$2" attempt
   local bind probe_ip url
@@ -2047,6 +2121,9 @@ wait_https() {
 
 if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   wait_https "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)"
+fi
+if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
+  wait_lan_https "$(env_value XD_LAN_HTTPS_IP)" "$(env_value XD_HTTPS_PORT)"
 fi
 
 DATABASE_ROLLBACK_REQUIRED=0
@@ -2096,8 +2173,13 @@ if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   public_url="$(https_url "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)")"
   echo "xDrive is running at: $public_url"
   echo "TLS mode: AliDNS DNS-01; inbound TCP $(env_value XD_HTTPS_PORT) must reach this server. Ports 80/443 are not required for ACME."
-else
-  echo "xDrive is running in HTTP/private mode on port $(env_value XD_WEB_PORT)."
+elif [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
+  echo "xDrive LAN HTTPS is running at: $(https_url "$(env_value XD_LAN_HTTPS_IP)" "$(env_value XD_HTTPS_PORT)")"
+elif [[ "$(env_value XD_LEGACY_HTTP_ONLY)" == "1" ]]; then
+  echo "Legacy HTTP-only deployment retained on the loopback Web port $(env_value XD_WEB_PORT)."
+fi
+if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
+  echo "LAN IP requires explicit browser trust of the Caddy local CA; never bypass the certificate warning to sign in."
 fi
 echo "Backup now:      $BIN_DIR/server-backup.sh"
 echo "Restore:         $BIN_DIR/server-restore.sh"

@@ -24,6 +24,7 @@ FAKE_BIN="$TMP_ROOT/bin"
 DOCKER_LOG="$TMP_ROOT/dockerd-rootless.log"
 INSTALL_LOG="$TMP_ROOT/install.log"
 DAEMON_PID=""
+LAN_ALIAS_IP=""
 
 export XDG_RUNTIME_DIR="$RUNTIME_DIR"
 export DOCKER_HOST="unix://$RUNTIME_DIR/docker.sock"
@@ -33,6 +34,10 @@ export DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS="${DOCKERD_ROOTLESS_ROOTLESSKIT_FLAGS:
 cleanup() {
   local status=$?
   set +e
+  # The alias belongs to this ephemeral CI fixture, not an xDrive install.
+  if [[ -n "$LAN_ALIAS_IP" ]]; then
+    sudo ip -4 address del "$LAN_ALIAS_IP/32" dev lo >/dev/null 2>&1 || true
+  fi
   if docker info >/dev/null 2>&1; then
     if [[ -x "$XDRIVE_HOME/bin/xdrive-server" ]]; then
       XD_CONFIG_DIR="$XDRIVE_HOME" XD_HOST_BIN_DIR="$TMP_ROOT/no-host-bin"         "$XDRIVE_HOME/bin/xdrive-server" uninstall --purge-data --purge-backups --yes >/dev/null 2>&1 || true
@@ -188,10 +193,56 @@ fi
 SH
 chmod +x "$FAKE_BIN/curl"
 
+# Hosted runners may have only a public/local-link host address. A new install
+# MUST fail closed rather than guess one. For this disposable E2E, provision one
+# concrete RFC1918 IP on the runner's loopback to test real RootlessKit Caddy,
+# Caddy-issued IP-SAN TLS and verified local CA; remove it on every exit.
+command -v ip >/dev/null 2>&1 || { echo "rootless LAN HTTPS E2E needs iproute2" >&2; exit 1; }
+command -v sudo >/dev/null 2>&1 || { echo "rootless LAN HTTPS E2E needs sudo on the CI runner" >&2; exit 1; }
+LAN_TEST_IP=192.168.254.246
+if ip -4 address show dev lo | grep -Fq "$LAN_TEST_IP/32"; then
+  echo "rootless LAN HTTPS test address unexpectedly already in use" >&2
+  exit 1
+fi
+sudo ip -4 address add "$LAN_TEST_IP/32" dev lo
+LAN_ALIAS_IP="$LAN_TEST_IP"
+ip -4 address show dev lo | grep -Fq "$LAN_ALIAS_IP/32"
+
 echo "[rootless-e2e] installing xDrive against the real rootless daemon"
-if ! TEST_ROOT="$ROOT" TEST_REAL_CURL="$REAL_CURL" PATH="$FAKE_BIN:$PATH" XD_CONFIG_DIR="$XDRIVE_HOME" XD_HOST_BIN_DIR="$TMP_ROOT/no-host-bin" XD_SOURCE_REF=rootless-e2e XD_IMAGE_TAG="$TAG" XD_BUILT_CHANNEL=master XD_BUILT_COMMIT= XD_BUILT_SOURCE=github XD_IMAGE_REGISTRY="$registry" XD_NONINTERACTIVE=1 XD_KEEP_LOOPBACK_HTTP=1 XD_WEB_BIND=127.0.0.1 XD_WEB_PORT="$WEB_PORT" XD_PULL_ATTEMPTS=1 XD_PULL_RETRY_DELAY_SECONDS=1 bash "$ROOT/deploy/install-server.sh" --source github --channel master >"$INSTALL_LOG" 2>&1; then
+if ! TEST_ROOT="$ROOT" TEST_REAL_CURL="$REAL_CURL" PATH="$FAKE_BIN:$PATH" XD_CONFIG_DIR="$XDRIVE_HOME" XD_HOST_BIN_DIR="$TMP_ROOT/no-host-bin" XD_SOURCE_REF=rootless-e2e XD_IMAGE_TAG="$TAG" XD_BUILT_CHANNEL=master XD_BUILT_COMMIT= XD_BUILT_SOURCE=github XD_IMAGE_REGISTRY="$registry" XD_NONINTERACTIVE=1 XD_KEEP_LOOPBACK_HTTP=1 XD_WEB_BIND=127.0.0.1 XD_WEB_PORT="$WEB_PORT" XD_LAN_HTTPS_IP="$LAN_ALIAS_IP" XD_HTTPS_BIND="$LAN_ALIAS_IP" XD_PULL_ATTEMPTS=1 XD_PULL_RETRY_DELAY_SECONDS=1 bash "$ROOT/deploy/install-server.sh" --source github --channel master >"$INSTALL_LOG" 2>&1; then
   echo "rootless xDrive installer failed; full installer output follows:" >&2
   cat "$INSTALL_LOG" >&2 || true
+  # CI-only troubleshooting. Keep real SAN validation, never add curl -k or
+  # an operator-facing probe override to the production installer.
+  if [[ -f "$XDRIVE_HOME/config/.env" && -f "$XDRIVE_HOME/config/docker-compose.yml" ]]; then
+    echo "---- synthetic LAN TLS diagnosis (private CI fixture only) ----" >&2
+    probe_root="$TMP_ROOT/rootless-ci-lan-root.crt"
+    if docker compose --env-file "$XDRIVE_HOME/config/.env" -f "$XDRIVE_HOME/config/docker-compose.yml" \
+        exec -T caddy cat /data/caddy/pki/authorities/local/root.crt >"$probe_root" 2>/dev/null && \
+        [[ -s "$probe_root" ]]; then
+      chmod 0600 "$probe_root"
+      if "$REAL_CURL" -fsS --noproxy '*' --cacert "$probe_root" \
+          --connect-timeout 3 --max-time 6 \
+          "https://$LAN_ALIAS_IP:8443/api/v1/readyz" >/dev/null 2>"$TMP_ROOT/lan-direct.err"; then
+        echo "synthetic direct-IP TLS: verified" >&2
+      else
+        echo "synthetic direct-IP TLS: unavailable; sanitized curl error follows" >&2
+        sed -E 's@https?://[^ ]+@<endpoint>@g' "$TMP_ROOT/lan-direct.err" >&2 || true
+      fi
+      if "$REAL_CURL" -fsS --noproxy '*' --cacert "$probe_root" \
+          --connect-to "$LAN_ALIAS_IP:8443:127.0.0.1:8443" \
+          --connect-timeout 3 --max-time 6 \
+          "https://$LAN_ALIAS_IP:8443/api/v1/readyz" >/dev/null 2>"$TMP_ROOT/lan-loopback.err"; then
+        echo "synthetic loopback-routed IP-SAN TLS: verified" >&2
+      else
+        echo "synthetic loopback-routed IP-SAN TLS: unavailable" >&2
+        sed -E 's@https?://[^ ]+@<endpoint>@g' "$TMP_ROOT/lan-loopback.err" >&2 || true
+      fi
+      rm -f "$probe_root"
+    else
+      echo "synthetic Caddy local CA root unavailable from expected fixed container path" >&2
+    fi
+  fi
   echo "---- rootless Docker info ----" >&2
   docker info >&2 || true
   echo "---- rootless containers ----" >&2
@@ -205,6 +256,8 @@ if ! TEST_ROOT="$ROOT" TEST_REAL_CURL="$REAL_CURL" PATH="$FAKE_BIN:$PATH" XD_CON
 fi
 
 cat "$INSTALL_LOG"
+grep -q 'LAN HTTPS responds with verified local CA:' "$INSTALL_LOG"
+grep -Fq "https://$LAN_ALIAS_IP:" "$INSTALL_LOG"
 grep -q 'Docker mode: rootless' "$INSTALL_LOG"
 grep -q '^xDrive installation environment$' "$INSTALL_LOG"
 grep -Eq 'Docker mode[[:space:]]+rootless$' "$INSTALL_LOG"
