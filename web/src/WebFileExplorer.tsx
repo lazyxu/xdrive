@@ -1498,6 +1498,7 @@ export default function WebFileExplorer({
             )
           : undefined}
         loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
+        emptyReadState={trashActive ? trash.readState : 'ready'}
         emptyMessage={trashActive ? '回收站为空' : searchState.results !== null
           ? searchError ? '搜索未完成，请重试' : searchReady ? '未找到匹配的文件或文件夹' : '正在搜索…'
           : undefined}
