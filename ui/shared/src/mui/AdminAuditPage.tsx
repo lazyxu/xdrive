@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -9,6 +10,7 @@ import {
   Autocomplete,
   Box,
   Dialog,
+  LinearProgress,
   MenuItem,
   Stack,
   Table,
@@ -30,6 +32,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStatusBadge } from './StatusBadge'
 import { XDriveTableSurface } from './TableSurface'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { useXDriveVirtualCollection } from './VirtualCollectionController'
 import { xDriveVirtualCollectionFixedRowWindow } from '../virtual-collection'
 import type { XDriveAdminAuditPort } from '../admin-management'
@@ -117,8 +120,21 @@ export default function AdminAuditPanel({
   const [actor, setActor] = useState('')
   const [appliedFilters, setAppliedFilters] = useState<AuditFilters>({})
   const [queryRevision, setQueryRevision] = useState(1)
+  const queryRevisionRef = useRef(1)
+  const sourceScopeRef = useRef({ api, serial: 1 })
+  if (sourceScopeRef.current.api !== api) {
+    sourceScopeRef.current = { api, serial: sourceScopeRef.current.serial + 1 }
+  }
+  const activeApiRef = useRef(api)
+  activeApiRef.current = api
+  const [acceptedSource, setAcceptedSource] = useState<XDriveAdminAuditPort | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [requestGeneration, setRequestGeneration] = useState(1)
+  const delayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
+  const [errorSnapshot, setErrorSnapshot] = useState<{
+    source: XDriveAdminAuditPort; message: string
+  } | null>(null)
+  const error = errorSnapshot?.source === api ? errorSnapshot.message : ''
   const [detailEvent, setDetailEvent] = useState<AuditEvent | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(0)
@@ -126,15 +142,21 @@ export default function AdminAuditPanel({
   const scrollFrameRef = useRef<number | null>(null)
   const pendingScrollTopRef = useRef(0)
   const snapshotMaxIDRef = useRef(0)
+  const initialReadRef = useRef<AbortController | null>(null)
+  const pendingFilterRef = useRef<AbortController | null>(null)
+  const stagedQueryKeyRef = useRef<string | null>(null)
 
   const queryKey = useMemo(
-    () => auditQueryKey(appliedFilters, queryRevision),
-    [appliedFilters, queryRevision],
+    () => `${sourceScopeRef.current.serial}:${auditQueryKey(appliedFilters, queryRevision)}`,
+    [api, appliedFilters, queryRevision],
   )
 
   const handleRangeError = useCallback((nextError: unknown) => {
-    setError(nextError instanceof Error ? nextError.message : '加载审计日志失败')
-  }, [])
+    setErrorSnapshot({
+      source: api,
+      message: nextError instanceof Error ? nextError.message : '加载审计日志失败',
+    })
+  }, [api])
 
   const loadRange = useCallback(async (
     range: { offset: number; limit: number },
@@ -176,10 +198,18 @@ export default function AdminAuditPanel({
   })
 
   useEffect(() => {
+    // A user-confirmed filter primes its own exact authenticated first page
+    // BEFORE publishing the new query; do not duplicate the Server request.
+    if (stagedQueryKeyRef.current === queryKey) {
+      stagedQueryKeyRef.current = null
+      return
+    }
     const controller = new AbortController()
+    initialReadRef.current = controller
     snapshotMaxIDRef.current = 0
     setLoading(true)
-    setError('')
+    setRequestGeneration((value) => value + 1)
+    setErrorSnapshot(null)
     setDetailEvent(null)
 
     void api.adminAuditRange({
@@ -188,7 +218,7 @@ export default function AdminAuditPanel({
       offset: 0,
     }, controller.signal)
       .then((page) => {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || activeApiRef.current !== api) return
         snapshotMaxIDRef.current = page.snapshot_max_id
         virtualCollection.primePage({
           items: page.items,
@@ -196,16 +226,21 @@ export default function AdminAuditPanel({
           limit: page.limit,
           totalCount: page.total_count,
         })
+        setAcceptedSource(api)
       })
       .catch((nextError: unknown) => {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted || activeApiRef.current !== api) return
         handleRangeError(nextError)
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false)
+        if (initialReadRef.current === controller) initialReadRef.current = null
+        if (!controller.signal.aborted && activeApiRef.current === api) setLoading(false)
       })
 
-    return () => controller.abort()
+    return () => {
+      controller.abort()
+      if (initialReadRef.current === controller) initialReadRef.current = null
+    }
   }, [
     api,
     appliedFilters,
@@ -213,6 +248,11 @@ export default function AdminAuditPanel({
     queryKey,
     virtualCollection.primePage,
   ])
+
+  useEffect(() => () => {
+    pendingFilterRef.current?.abort()
+    pendingFilterRef.current = null
+  }, [api])
 
   useEffect(() => {
     const host = tableContainerRef.current
@@ -225,7 +265,9 @@ export default function AdminAuditPanel({
     return () => observer.disconnect()
   }, [virtualCollection.totalCount])
 
-  useEffect(() => {
+  // A new accepted query starts at its first row before the browser paints.
+  // A pending or rejected query never touches the old scroll host.
+  useLayoutEffect(() => {
     const host = tableContainerRef.current
     if (host) host.scrollTop = 0
     pendingScrollTopRef.current = 0
@@ -238,7 +280,7 @@ export default function AdminAuditPanel({
     }
   }, [])
 
-  const totalCount = virtualCollection.totalCount
+  const totalCount = acceptedSource === api ? virtualCollection.totalCount : null
   const logicalCount = totalCount ?? 0
   const virtualWindow = useMemo(() => xDriveVirtualCollectionFixedRowWindow({
     itemCount: logicalCount,
@@ -263,10 +305,65 @@ export default function AdminAuditPanel({
   ])
 
   const applyFilters = useCallback((filters: AuditFilters) => {
+    const nextFilters = normalizeAuditFilters(filters)
+    pendingFilterRef.current?.abort()
+    initialReadRef.current?.abort()
+    const controller = new AbortController()
+    pendingFilterRef.current = controller
     setLoading(true)
-    setAppliedFilters(normalizeAuditFilters(filters))
-    setQueryRevision((current) => current + 1)
-  }, [])
+    setRequestGeneration((value) => value + 1)
+    setErrorSnapshot(null)
+    // Keep the accepted virtual rows, count and scroll alive until the new
+    // owner's first snapshot page is authorized. No eager collection reset.
+    void api.adminAuditRange({
+      ...nextFilters,
+      limit: AUDIT_PAGE_SIZE,
+      offset: 0,
+    }, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted || pendingFilterRef.current !== controller ||
+            activeApiRef.current !== api) return
+        // Reject malformed/count-free server responses before touching the
+        // accepted sparse collection. Failure must leave old rows intact.
+        if (!Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
+            !Number.isSafeInteger(page.snapshot_max_id) || page.snapshot_max_id < 0 ||
+            page.offset !== 0 || !Number.isSafeInteger(page.limit) ||
+            page.limit <= 0 || page.limit > AUDIT_PAGE_SIZE ||
+            !Array.isArray(page.items) || page.items.length > page.total_count ||
+            page.items.length > page.limit) {
+          throw new Error('审计日志首批结果无效，请重试。')
+        }
+        const revision = queryRevisionRef.current + 1
+        const nextKey = `${sourceScopeRef.current.serial}:${auditQueryKey(nextFilters, revision)}`
+        // React 18 batches this reset + prime + scope switch in one commit.
+        // The shared sparse VirtualCollection still owns every later Range.
+        virtualCollection.reset(nextKey)
+        snapshotMaxIDRef.current = page.snapshot_max_id
+        virtualCollection.primePage({
+          items: page.items,
+          offset: page.offset,
+          limit: page.limit,
+          totalCount: page.total_count,
+        })
+        stagedQueryKeyRef.current = nextKey
+        queryRevisionRef.current = revision
+        setAppliedFilters(nextFilters)
+        setQueryRevision(revision)
+        setAcceptedSource(api)
+        setDetailEvent(null)
+      })
+      .catch((nextError: unknown) => {
+        if (controller.signal.aborted || pendingFilterRef.current !== controller ||
+            activeApiRef.current !== api) return
+        handleRangeError(nextError)
+      })
+      .finally(() => {
+        if (pendingFilterRef.current === controller) {
+          pendingFilterRef.current = null
+          if (activeApiRef.current === api) setLoading(false)
+        }
+      })
+  }, [api, handleRangeError, virtualCollection.primePage, virtualCollection.reset])
 
   const visibleRows: Array<{ index: number; event?: AuditEvent }> = []
   for (let index = virtualWindow.start; index < virtualWindow.end; index += 1) {
@@ -328,8 +425,7 @@ export default function AdminAuditPanel({
             />
             <XDriveActionButton
               intent="primary"
-              loading={loading}
-              loadingLabel="正在加载…"
+              disabled={loading}
               onClick={() => applyFilters({ action, result, actor })}
             >
               应用
@@ -354,12 +450,19 @@ export default function AdminAuditPanel({
 
           {error ? <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert> : null}
 
+          <Box data-xdrive-admin-audit-content sx={{
+            position: 'relative', minWidth: 0, minHeight: totalCount === null ? 180 : undefined,
+          }}>
           {totalCount === null ? (
-            <XDriveStatePanel
-              variant="plain"
-              loading={loading}
-              message={loading ? '正在加载审计日志…' : '审计日志尚未加载'}
-            />
+            <Box data-xdrive-admin-audit-first-read sx={{
+              minHeight: 180, display: 'grid', placeItems: 'center',
+            }}>
+              {delayedLoading ? (
+                <XDriveStatePanel variant="plain" loading message="正在加载审计日志…" />
+              ) : !loading && error ? (
+                <XDriveStatePanel variant="plain" message="审计日志读取失败，请重试。" />
+              ) : null}
+            </Box>
           ) : totalCount === 0 ? (
             <XDriveStatePanel variant="plain" message="未找到审计事件" />
           ) : (
@@ -596,6 +699,13 @@ export default function AdminAuditPanel({
               )}
             </XDriveTableSurface>
           )}
+          {totalCount !== null && delayedLoading ? (
+            <LinearProgress aria-label="正在更新审计日志" sx={{
+              position: 'absolute', top: 0, left: 0, right: 0,
+              pointerEvents: 'none',
+            }} />
+          ) : null}
+          </Box>
         </Stack>
       </XDriveWorkspaceSurface>
 
