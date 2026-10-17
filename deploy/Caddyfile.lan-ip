@@ -1,3 +1,9 @@
+{
+	# Browsers visiting https://<IP> omit SNI by convention; select the
+	# managed private-IP SAN certificate when ClientHello has no SNI.
+	default_sni {$XD_LAN_HTTPS_IP}
+}
+
 import /etc/caddy/Caddyfile.common
 
 # Preserve the existing HTTP internal-only listener and public AliDNS HTTPS.
@@ -18,7 +24,7 @@ import /etc/caddy/Caddyfile.common
 # A second HTTPS virtual host on the SAME :443 listener. Public CAs do not
 # sign RFC1918 private IP addresses: clients must explicitly trust this
 # deployment's Caddy local root CA. No HTTP LAN login is enabled.
-{$XD_LAN_HTTPS_IP} {
+https://{$XD_LAN_HTTPS_IP} {
 	tls internal
 	import xdrive_app
 }

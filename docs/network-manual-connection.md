@@ -1,3 +1,15 @@
+**NET-M3 IP TLS 无 SNI 安全兼容（2026-10-17）：** 普通浏览器访问 `https://192.168.x.x` 往往不发送 SNI；固定 Caddy 2.10.2 可能在自动 HTTPS 适配时没有生成默认 TLS 策略，出现 TLS internal error，虽然本地 CA 已签发 IP SAN 证书。私网单入口与域名+私网双入口现在均以 `default_sni` 绑定规范私网 IP，并显式使用 `https://` 站点；Caddy 镜像构建核对两份 adapted JSON 的 `tls_connection_policies/default_sni`。Rootless 必须真实使用受信 root 以及 `curl --cacert` 直连 IP 验证主机名，不允许 `--insecure`。此为实现和 CI 候选，不声明客户设备 CA 信任或实际网络已通过验收。
+
+**NET-M3 exact-head CI test-fixture correction (2026-10-17):** [CI #39009313435](https://github.com/lazyxu/xdrive/actions/runs/39009313435) initially failed the original no-start bootstrap and real Rootless Docker install at secure stage 4, since CI environment offered neither public domain nor a canonical RFC1918 LAN identity. New production installs correctly reject both-disabled HTTPS; the fix is explicitly limited to the fixtures. The no-start bootstrap supplies `192.168.2.4` and also asserts that an explicitly empty IP + domain fails. The real Rootless Docker test temporarily adds `192.168.254.246/32` on ephemeral runner loopback, uses this one private IP with existing HTTPS port, and asserts a real Caddy-issued local CA + matching IP SAN is verified by installer `curl --cacert`. Temporary alias is removed on every exit. Tests MUST never use `--insecure` or weaken identity checks. Rebuild one M3 commit on same fixed parent and require NEW complete exact-head 76-job CI; no production physical browser trust or DMZ firewall proof is claimed.
+
+## NET-M3（2026-10-17）— 新部署默认 IP HTTPS／域名可选与真实 IP TLS 验收
+
+已合入的前置 NET-M1/M2 [#1958](https://github.com/lazyxu/xdrive/pull/1958) 完整 [76-job CI #39007318688](https://github.com/lazyxu/xdrive/actions/runs/39007318688) 通过，Ready/Rebase 合并为 `master@fbb131a0bd4017ef3cf4fd05c43786f35416ac83`。本阶段 [#1966](https://github.com/lazyxu/xdrive/pull/1966) 把原单工作提交重建为 `master@e7e4340b3af68debfe4007ec2a102e8226c4d37c` 上恰好一个 NET-M3 代码提交，复用原 Docker/Caddyfile/安装器和 Desktop 契约测试字节，只保留自己的差异，发起新的准确 HEAD 全 76 项 CI，禁止复用上阶段 CI。
+
+新的安装不强制填写公网域名。安装器从 Linux 本机路由或接口识别 RFC1918 IPv4，拒绝不规范或模糊情形；无有效安全入口时要求配置，不能全部禁用。IP-only 固定 Caddyfile.lan-only，domain-only 固定原 AliDNS 文件，dual 同一已有 HTTPS 端口启用二者；不开放未加密 LAN HTTP 密码登录。升级原有域名部署不自动更改入口；仅明确标记的旧 HTTP-only 部署使用兼容 `XD_LEGACY_HTTP_ONLY=1`。Rootless 与绑定端口验证和既有安装回滚保持一致。
+
+安装器必须从可信同一 Caddy 容器读取本地 CA 根证书，在私有暂存文件上用 `curl --cacert` 校验真实 `https://LAN_IP:HTTPS_PORT/api/v1/readyz` 的 IP SAN、证书链和 HTTP JSON。它不会以 `-k` 跳过安全检查，也不能自动令浏览器或系统信任该 CA：终端设备需人工安全核对并安装受信任 CA 后才可进行 IP HTTPS 登录。UNR030H1 DMZ 可能使 Linux 的共享 8443 对外可达，必须单独验证防火墙和物理网络。此阶段不修改系统依赖中现有 staged desired DB 状态，不提供危险 Caddy 在线应用；NET-M4/M5 分别完成目标配置和受限同步/实际运行生效，只有后者通过 Operator Rescue／超时回退等安全前置条件才能交付。
+
 # xDrive 手动内外网入口切换 MVP（NET-M1）
 
 ## 目标与边界

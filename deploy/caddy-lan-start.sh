@@ -26,20 +26,29 @@ private_ipv4() {
   return 1
 }
 
+# New installs require one of the two HTTPS entries; old domainless HTTP
+# deployments can remain in compatibility mode only with an explicit marker.
+case "${XD_LEGACY_HTTP_ONLY:-0}" in
+  0|1) ;;
+  *) echo "xDrive Caddy: invalid legacy compatibility mode." >&2; exit 1 ;;
+esac
 if [ -n "${XD_LAN_HTTPS_IP:-}" ]; then
-  if [ -z "${XD_DOMAIN:-}" ]; then
-    echo "xDrive Caddy: private-IP HTTPS requires a configured public XD_DOMAIN." >&2
-    exit 1
-  fi
   if ! private_ipv4 "$XD_LAN_HTTPS_IP"; then
     echo "xDrive Caddy: XD_LAN_HTTPS_IP must be a canonical RFC1918 IPv4 address." >&2
     exit 1
   fi
-  config=/etc/caddy/Caddyfile.lan-ip
+  if [ -n "${XD_DOMAIN:-}" ]; then
+    config=/etc/caddy/Caddyfile.lan-ip
+  else
+    config=/etc/caddy/Caddyfile.lan-only
+  fi
 elif [ -n "${XD_DOMAIN:-}" ]; then
   config=/etc/caddy/Caddyfile
-else
+elif [ "${XD_LEGACY_HTTP_ONLY:-0}" = "1" ]; then
   config=/etc/caddy/Caddyfile.http
+else
+  echo "xDrive Caddy: cannot disable both LAN IP HTTPS and domain HTTPS." >&2
+  exit 1
 fi
 
 # Test-only/diagnostic mode: validates the selector without running Caddy.
