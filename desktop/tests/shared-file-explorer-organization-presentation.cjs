@@ -36,12 +36,22 @@ function section(html, label) {
   return html.match(new RegExp(`<nav\\b[^>]*aria-label="${label}"[\\s\\S]*?<\\/nav>`))?.[0] || ''
 }
 
-test('pending organization reads are not presented as confirmed empty lists', () => {
-  const html = render({ organizationLoading: true })
-  for (const label of ['智能文件夹', '标签']) {
-    const body = section(html, label)
-    assert.ok(body.includes(`正在加载${label}`), label + ' has a readable pending state')
-    assert.ok(!body.includes('暂无'), label + ' must not claim emptiness before the read completes')
+test('pending organization reads are busy, stable and never falsely empty', () => {
+  for (const retainKnown of [false, true]) {
+    const html = render({
+      organizationLoading: true,
+      ...(retainKnown ? { savedSearches: [saved], tags: [tag] } : {}),
+    })
+    for (const [label, marker, knownName] of [
+      ['智能文件夹', 'saved-searches', saved.name],
+      ['标签', 'tags', tag.name],
+    ]) {
+      const body = section(html, label)
+      assert.ok(body.includes('aria-busy="true"'), label + ' exposes immediate accessible busy state')
+      assert.ok(body.includes(`data-xdrive-organization-quiet-header="${marker}"`), label + ' reserves a persistent feedback slot')
+      assert.doesNotMatch(body, /暂无|正在(?:加载|更新)|MuiCircularProgress-root/, label + ' must not flash a fake empty or fast loading row')
+      if (retainKnown) assert.ok(body.includes(knownName), label + ' retains previous authorized items while refreshing')
+    }
   }
 })
 
