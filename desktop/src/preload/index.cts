@@ -718,7 +718,9 @@ const agent = Object.freeze({
   cloudAdminDeleteUser: (id: number) => ipcRenderer.invoke('agent:cloud-admin-users-delete', id),
   cloudAdminBaiduMapConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-map'),
   cloudAdminCaddyHTTPSConfig: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https'),
-  cloudSetAdminCaddyHTTPS: (input: { revision: number; enabled: boolean; domain: string }) =>
+  cloudSetAdminCaddyHTTPS: (input: {
+    revision: number; enabled: boolean; domain: string; lan_enabled?: boolean; lan_ip?: string
+  }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-caddy-https', input),
   cloudAdminCaddyHTTPSRevisions: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-revisions'),
   cloudRollbackAdminCaddyHTTPS: (input: { revision: number; target_revision: number }) =>

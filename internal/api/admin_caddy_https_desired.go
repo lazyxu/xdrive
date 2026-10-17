@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -17,20 +18,27 @@ import (
 const caddyHTTPSSettingName = "caddy-https"
 
 var errCaddyHTTPSRevision = errors.New("caddy HTTPS desired revision changed")
+var errCaddyHTTPSIngress = errors.New("at least one valid HTTPS entry must remain enabled")
 
 // The Server stores only *desired* Caddy state. No interface offered here may
 // restart or reconfigure the ingress or assert a host-applied revision.
 type adminCaddyHTTPSDesired struct {
-	Revision  uint64
-	Enabled   bool
-	Domain    string
-	Source    string
-	UpdatedAt *time.Time
+	Revision   uint64
+	Enabled    bool
+	Domain     string
+	LANEnabled bool
+	LANIP      string
+	Source     string
+	UpdatedAt  *time.Time
 }
 
 type adminCaddyHTTPSConfigDTO struct {
 	DesiredEnabled                bool       `json:"desired_enabled"`
 	DesiredDomain                 string     `json:"desired_domain"`
+	DesiredLANEnabled             bool       `json:"desired_lan_enabled"`
+	DesiredLANIP                  string     `json:"desired_lan_ip"`
+	HostLANConfigured             bool       `json:"host_lan_configured"`
+	HostLANIP                     string     `json:"host_lan_ip,omitempty"`
 	Revision                      uint64     `json:"revision"`
 	Source                        string     `json:"source"`
 	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
@@ -63,12 +71,13 @@ func readCaddyHTTPSDesiredDB(db *gorm.DB) (adminCaddyHTTPSDesired, error) {
 	if err != nil {
 		return defaults, err
 	}
-	if row.Revision == 0 || (row.Enabled && row.Domain == "") ||
-		(row.Domain != "" && !validCaddyHTTPSDomain(row.Domain)) {
+	if row.Revision == 0 ||
+		!validCaddyIngressFields(row.Enabled, row.Domain, row.LANEnabled, row.LANIP) {
 		return defaults, errors.New("invalid stored Caddy HTTPS desired revision")
 	}
 	return adminCaddyHTTPSDesired{
 		Revision: row.Revision, Enabled: row.Enabled, Domain: row.Domain,
+		LANEnabled: row.LANEnabled, LANIP: row.LANIP,
 		Source: "saved", UpdatedAt: &row.UpdatedAt,
 	}, nil
 }
@@ -79,6 +88,17 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 	if err != nil {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired settings unavailable")
 		return
+	}
+	// A freshly deployed IP-only instance has no persisted admin revision.
+	// Initialize the editor from a canonical deployment declaration without
+	// reporting that the desired revision was saved, applied or TLS-verified.
+	hostLANIP := os.Getenv("XD_LAN_HTTPS_IP")
+	if !validCaddyLANIP(hostLANIP) {
+		hostLANIP = ""
+	}
+	if desired.Revision == 0 && hostLANIP != "" {
+		desired.LANEnabled = true
+		desired.LANIP = hostLANIP
 	}
 	state := "unmanaged"
 	if desired.Revision > 0 {
@@ -91,7 +111,10 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, adminCaddyHTTPSConfigDTO{
 		DesiredEnabled: desired.Enabled, DesiredDomain: desired.Domain,
-		Revision: desired.Revision, Source: desired.Source, UpdatedAt: desired.UpdatedAt,
+		DesiredLANEnabled: desired.LANEnabled, DesiredLANIP: desired.LANIP,
+		HostLANConfigured: hostLANIP != "",
+		HostLANIP:         hostLANIP,
+		Revision:          desired.Revision, Source: desired.Source, UpdatedAt: desired.UpdatedAt,
 		ApplyState: state, Editable: true, ApplySupported: false,
 		RequiresRestrictedMaintenance: true, Requirement: caddyHTTPSApplyRequirement,
 		HostObserved: observed, HostHTTPSConfigured: observed && host.HTTPSConfigured,
@@ -99,14 +122,16 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 	})
 }
 
-func recordCaddyHTTPSRevisionTx(tx *gorm.DB, revision uint64, enabled bool, domain, origin string) error {
-	if (enabled && domain == "") || (domain != "" && !validCaddyHTTPSDomain(domain)) {
+func recordCaddyHTTPSRevisionTx(tx *gorm.DB, revision uint64, enabled bool,
+	domain string, lanEnabled bool, lanIP, origin string) error {
+	if !validCaddyIngressFields(enabled, domain, lanEnabled, lanIP) {
 		return errors.New("invalid historical Caddy HTTPS configuration")
 	}
 	var existing meta.AdminCaddyHTTPSRevision
 	err := tx.Where("name = ? AND revision = ?", caddyHTTPSSettingName, revision).Take(&existing).Error
 	if err == nil {
-		if existing.Enabled != enabled || existing.Domain != domain {
+		if existing.Enabled != enabled || existing.Domain != domain ||
+			existing.LANEnabled != lanEnabled || existing.LANIP != lanIP {
 			return errors.New("immutable Caddy HTTPS revision mismatch")
 		}
 		return nil
@@ -116,7 +141,8 @@ func recordCaddyHTTPSRevisionTx(tx *gorm.DB, revision uint64, enabled bool, doma
 	}
 	return tx.Create(&meta.AdminCaddyHTTPSRevision{
 		Name: caddyHTTPSSettingName, Revision: revision, Enabled: enabled,
-		Domain: domain, Origin: origin, CreatedAt: time.Now().UTC(),
+		Domain: domain, LANEnabled: lanEnabled, LANIP: lanIP,
+		Origin: origin, CreatedAt: time.Now().UTC(),
 	}).Error
 }
 
@@ -128,9 +154,11 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 	}
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
 	var input struct {
-		Revision *uint64 `json:"revision"`
-		Enabled  *bool   `json:"enabled"`
-		Domain   *string `json:"domain"`
+		Revision   *uint64 `json:"revision"`
+		Enabled    *bool   `json:"enabled"`
+		Domain     *string `json:"domain"`
+		LANEnabled *bool   `json:"lan_enabled"`
+		LANIP      *string `json:"lan_ip"`
 	}
 	if c.ShouldBindJSON(&input) != nil || input.Revision == nil || input.Enabled == nil ||
 		input.Domain == nil || *input.Revision > 1<<60 {
@@ -138,7 +166,7 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 		return
 	}
 	domain := strings.ToLower(*input.Domain)
-	if (*input.Enabled && domain == "") || (domain != "" && !validCaddyHTTPSDomain(domain)) {
+	if !validCaddyIngressFields(*input.Enabled, domain, false, "") {
 		fail(c, http.StatusBadRequest, "invalid Caddy HTTPS FQDN; supply a plain DNS hostname")
 		return
 	}
@@ -154,18 +182,32 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 		if (exists && previous.Revision != *input.Revision) || (!exists && *input.Revision != 0) {
 			return errCaddyHTTPSRevision
 		}
-		oldEnabled, oldDomain, oldOrigin := false, "", "default"
+		oldEnabled, oldDomain, oldLANEnabled, oldLANIP, oldOrigin := false, "", false, "", "default"
 		if exists {
-			oldEnabled, oldDomain, oldOrigin = previous.Enabled, previous.Domain, "saved"
+			oldEnabled, oldDomain = previous.Enabled, previous.Domain
+			oldLANEnabled, oldLANIP, oldOrigin = previous.LANEnabled, previous.LANIP, "saved"
 		}
-		if err := recordCaddyHTTPSRevisionTx(tx, *input.Revision, oldEnabled, oldDomain, oldOrigin); err != nil {
+		lanEnabled, lanIP := oldLANEnabled, oldLANIP
+		if input.LANEnabled != nil {
+			lanEnabled = *input.LANEnabled
+		}
+		if input.LANIP != nil {
+			lanIP = *input.LANIP
+		}
+		if !validCaddyIngressSelection(*input.Enabled, domain, lanEnabled, lanIP) {
+			return errCaddyHTTPSIngress
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, *input.Revision, oldEnabled, oldDomain,
+			oldLANEnabled, oldLANIP, oldOrigin); err != nil {
 			return err
 		}
 		next := *input.Revision + 1
 		if exists {
 			updated := tx.Model(&meta.AdminCaddyHTTPSSetting{}).
 				Where("name = ? AND revision = ?", caddyHTTPSSettingName, previous.Revision).
-				Updates(map[string]any{"enabled": *input.Enabled, "domain": domain, "revision": next, "updated_at": time.Now().UTC()})
+				Updates(map[string]any{"enabled": *input.Enabled, "domain": domain,
+					"lan_enabled": lanEnabled, "lan_ip": lanIP,
+					"revision": next, "updated_at": time.Now().UTC()})
 			if updated.Error != nil {
 				return updated.Error
 			}
@@ -175,6 +217,7 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 		} else {
 			created := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&meta.AdminCaddyHTTPSSetting{
 				Name: caddyHTTPSSettingName, Revision: next, Enabled: *input.Enabled, Domain: domain,
+				LANEnabled: lanEnabled, LANIP: lanIP,
 			})
 			if created.Error != nil {
 				return created.Error
@@ -183,7 +226,8 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 				return errCaddyHTTPSRevision
 			}
 		}
-		if err := recordCaddyHTTPSRevisionTx(tx, next, *input.Enabled, domain, "saved"); err != nil {
+		if err := recordCaddyHTTPSRevisionTx(tx, next, *input.Enabled, domain,
+			lanEnabled, lanIP, "saved"); err != nil {
 			return err
 		}
 		return recordAuditTx(tx, auditEventFromContext(c,
@@ -191,9 +235,14 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 			"Caddy HTTPS desired configuration", auditpkg.ResultSuccess,
 			map[string]any{"revision": next, "desired_enabled": *input.Enabled,
 				"domain_configured": domain != "", "domain_changed": domain != oldDomain,
+				"lan_enabled": lanEnabled, "lan_changed": lanEnabled != oldLANEnabled || lanIP != oldLANIP,
 				"host_applied": false},
 		))
 	})
+	if errors.Is(err, errCaddyHTTPSIngress) {
+		fail(c, http.StatusBadRequest, "at least one valid HTTPS entry must remain enabled")
+		return
+	}
 	if errors.Is(err, errCaddyHTTPSRevision) {
 		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed; refresh")
 		return
@@ -206,11 +255,13 @@ func (s *Server) adminSaveCaddyHTTPS(c *gin.Context) {
 }
 
 type adminCaddyHTTPSRevisionDTO struct {
-	Revision  uint64    `json:"revision"`
-	Enabled   bool      `json:"enabled"`
-	Domain    string    `json:"domain"`
-	Origin    string    `json:"origin"`
-	CreatedAt time.Time `json:"created_at"`
+	Revision   uint64    `json:"revision"`
+	Enabled    bool      `json:"enabled"`
+	Domain     string    `json:"domain"`
+	LANEnabled bool      `json:"lan_enabled"`
+	LANIP      string    `json:"lan_ip"`
+	Origin     string    `json:"origin"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 func (s *Server) adminCaddyHTTPSRevisions(c *gin.Context) {
@@ -229,6 +280,7 @@ func (s *Server) adminCaddyHTTPSRevisions(c *gin.Context) {
 	for _, row := range rows {
 		list = append(list, adminCaddyHTTPSRevisionDTO{
 			Revision: row.Revision, Enabled: row.Enabled, Domain: row.Domain,
+			LANEnabled: row.LANEnabled, LANIP: row.LANIP,
 			Origin: row.Origin, CreatedAt: row.CreatedAt,
 		})
 	}
@@ -254,15 +306,8 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 	s.caddyHTTPSSaveMu.Lock()
 	defer s.caddyHTTPSSaveMu.Unlock()
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var history meta.AdminCaddyHTTPSRevision
-		err := tx.Where("name = ? AND revision = ?", caddyHTTPSSettingName, *input.TargetRevision).Take(&history).Error
-		if err != nil {
-			return err
-		}
-		if (history.Enabled && history.Domain == "") ||
-			(history.Domain != "" && !validCaddyHTTPSDomain(history.Domain)) {
-			return errors.New("invalid historical Caddy HTTPS domain")
-		}
+		// A stale caller must see 409 before we read a legacy both-off
+		// revision, and all writes stay under one PostgreSQL row lock.
 		var row meta.AdminCaddyHTTPSSetting
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("name = ?", caddyHTTPSSettingName).Take(&row).Error; err != nil {
@@ -271,20 +316,33 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 		if row.Revision != *input.Revision {
 			return errCaddyHTTPSRevision
 		}
-		if err := recordCaddyHTTPSRevisionTx(tx, row.Revision, row.Enabled, row.Domain, "saved"); err != nil {
+		var history meta.AdminCaddyHTTPSRevision
+		if err := tx.Where("name = ? AND revision = ?",
+			caddyHTTPSSettingName, *input.TargetRevision).Take(&history).Error; err != nil {
+			return err
+		}
+		if !validCaddyIngressSelection(history.Enabled, history.Domain,
+			history.LANEnabled, history.LANIP) {
+			return errCaddyHTTPSIngress
+		}
+		if err := recordCaddyHTTPSRevisionTx(tx, row.Revision, row.Enabled, row.Domain,
+			row.LANEnabled, row.LANIP, "saved"); err != nil {
 			return err
 		}
 		next := row.Revision + 1
 		update := tx.Model(&meta.AdminCaddyHTTPSSetting{}).
 			Where("name = ? AND revision = ?", caddyHTTPSSettingName, row.Revision).
-			Updates(map[string]any{"enabled": history.Enabled, "domain": history.Domain, "revision": next, "updated_at": time.Now().UTC()})
+			Updates(map[string]any{"enabled": history.Enabled, "domain": history.Domain,
+				"lan_enabled": history.LANEnabled, "lan_ip": history.LANIP,
+				"revision": next, "updated_at": time.Now().UTC()})
 		if update.Error != nil {
 			return update.Error
 		}
 		if update.RowsAffected != 1 {
 			return errCaddyHTTPSRevision
 		}
-		if err := recordCaddyHTTPSRevisionTx(tx, next, history.Enabled, history.Domain, "rollback"); err != nil {
+		if err := recordCaddyHTTPSRevisionTx(tx, next, history.Enabled, history.Domain,
+			history.LANEnabled, history.LANIP, "rollback"); err != nil {
 			return err
 		}
 		return recordAuditTx(tx, auditEventFromContext(c,
@@ -292,11 +350,15 @@ func (s *Server) adminRollbackCaddyHTTPS(c *gin.Context) {
 			"Caddy HTTPS desired rollback", auditpkg.ResultSuccess,
 			map[string]any{"revision": next, "target_revision": *input.TargetRevision,
 				"desired_enabled": history.Enabled, "domain_configured": history.Domain != "",
-				"host_applied": false},
+				"lan_enabled": history.LANEnabled, "host_applied": false},
 		))
 	})
 	if errors.Is(err, errCaddyHTTPSRevision) {
 		fail(c, http.StatusConflict, "Caddy HTTPS desired revision changed")
+		return
+	}
+	if errors.Is(err, errCaddyHTTPSIngress) {
+		fail(c, http.StatusBadRequest, "historical revision disables both HTTPS entries")
 		return
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) {

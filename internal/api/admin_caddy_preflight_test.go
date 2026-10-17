@@ -307,11 +307,15 @@ func TestAdminCaddyHTTPSPreflightReadOnlyNoFalseApplied(t *testing.T) {
 	if cfg.ConfigurationComplete || cfg.Checks[2].State != "blocked" {
 		t.Fatalf("missing keyring falsely passed credential check: %+v", cfg)
 	}
-	// Disable intent never needs fresh AliDNS credentials, but still cannot
-	// restart the real Caddy ingress or claim host applied.
+	// The last active HTTPS ingress cannot be disabled; switch the
+	// public domain off ONLY if the private IP HTTPS entry remains on.
 	if out := call(http.MethodPut, "/api/v1/admin/services/caddy/https", adminToken,
-		`{"revision":1,"enabled":false,"domain":""}`); out.Code != 200 {
-		t.Fatalf("staging HTTPS disable failed: %d %s", out.Code, out.Body.String())
+		`{"revision":1,"enabled":false,"domain":"","lan_enabled":false,"lan_ip":""}`); out.Code != 400 {
+		t.Fatalf("double-disabled HTTPS intent accepted: %d %s", out.Code, out.Body.String())
+	}
+	if out := call(http.MethodPut, "/api/v1/admin/services/caddy/https", adminToken,
+		`{"revision":1,"enabled":false,"domain":"","lan_enabled":true,"lan_ip":"192.168.2.4"}`); out.Code != 200 {
+		t.Fatalf("domain-off/LAN-on staging failed: %d %s", out.Code, out.Body.String())
 	}
 	cfg = read()
 	if cfg.Action != "disable" || !cfg.ConfigurationComplete ||

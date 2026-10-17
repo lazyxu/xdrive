@@ -34,7 +34,7 @@ func serviceDependencyConfigContract(id string) (mode, apply, hint string) {
 			"管理员可保存、审计、回滚独立 Pull Worker 的扫描周期、轮询周期和并发。Worker 在已运行批次结束后的安全边界热应用，心跳确认前只显示待生效；容器镜像、CPU/RAM 和启动停止仍由部署管理"
 	case "caddy":
 		return "in-app", "controlled-restart",
-			"管理员可在本页编辑并审计 HTTPS 期望启用状态和域名，查看历史及回滚；此设置尚不能应用宿主机，不能代替安全的 Caddy 网关部署。真实 HTTP 健康与本机 TLS 证书验证由 Host Manager 独立观察，期望配置保存永远不等于生效。DNS 凭据、证书、端口和实际启停仍属受控部署；防失联应用和公网 HTTPS 验证尚未实现。"
+			"管理员可在本页独立编辑与审计私网 IP HTTPS 和公网域名 HTTPS 的期望启用状态，并阻止两者同时关闭；提供历史与期望回滚。配置保存不会重启 Caddy，也不保证下次重启自动同步宿主机 .env；真实运行与本机 TLS 仍须独立验证。公网网关的实际应用／停用仍受防失联 Rescue 和受控 Host Manager 门禁阻止。"
 	default:
 		return "planned", "not-available", "尚无受支持的安全配置与应用合同"
 	}

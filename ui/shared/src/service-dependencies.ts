@@ -51,6 +51,11 @@ export type XDriveServiceDependenciesSnapshot = {
 export type XDriveCaddyHTTPSConfig = {
   desired_enabled: boolean
   desired_domain: string
+  // Older Server/Agent versions omit private-IP settings: never infer applied.
+  desired_lan_enabled?: boolean
+  desired_lan_ip?: string
+  host_lan_configured?: boolean // deployment environment only, NOT effective HTTPS proof
+  host_lan_ip?: string
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
@@ -63,11 +68,19 @@ export type XDriveCaddyHTTPSConfig = {
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
 }
-export type XDriveCaddyHTTPSUpdate = { revision: number; enabled: boolean; domain: string }
+export type XDriveCaddyHTTPSUpdate = {
+  revision: number
+  enabled: boolean
+  domain: string
+  lan_enabled?: boolean
+  lan_ip?: string
+}
 export type XDriveCaddyHTTPSRevision = {
   revision: number
   enabled: boolean
   domain: string
+  lan_enabled?: boolean
+  lan_ip?: string
   origin: 'default' | 'saved' | 'rollback'
   created_at: string
 }

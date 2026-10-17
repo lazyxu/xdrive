@@ -341,6 +341,10 @@ type ServiceDependency struct {
 type AdminCaddyHTTPSConfig struct {
 	DesiredEnabled                bool       `json:"desired_enabled"`
 	DesiredDomain                 string     `json:"desired_domain"`
+	DesiredLANEnabled             bool       `json:"desired_lan_enabled"`
+	DesiredLANIP                  string     `json:"desired_lan_ip"`
+	HostLANConfigured             bool       `json:"host_lan_configured"`
+	HostLANIP                     string     `json:"host_lan_ip,omitempty"`
 	Revision                      uint64     `json:"revision"`
 	Source                        string     `json:"source"`
 	UpdatedAt                     *time.Time `json:"updated_at,omitempty"`
@@ -354,16 +358,20 @@ type AdminCaddyHTTPSConfig struct {
 	HostTLSState                  string     `json:"host_tls_state"`
 }
 type AdminCaddyHTTPSUpdate struct {
-	Revision uint64 `json:"revision"`
-	Enabled  bool   `json:"enabled"`
-	Domain   string `json:"domain"`
+	Revision   uint64  `json:"revision"`
+	Enabled    bool    `json:"enabled"`
+	Domain     string  `json:"domain"`
+	LANEnabled *bool   `json:"lan_enabled,omitempty"`
+	LANIP      *string `json:"lan_ip,omitempty"`
 }
 type AdminCaddyHTTPSRevision struct {
-	Revision  uint64    `json:"revision"`
-	Enabled   bool      `json:"enabled"`
-	Domain    string    `json:"domain"`
-	Origin    string    `json:"origin"`
-	CreatedAt time.Time `json:"created_at"`
+	Revision   uint64    `json:"revision"`
+	Enabled    bool      `json:"enabled"`
+	Domain     string    `json:"domain"`
+	LANEnabled bool      `json:"lan_enabled"`
+	LANIP      string    `json:"lan_ip"`
+	Origin     string    `json:"origin"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 type AdminCaddyHTTPSRevisionPage struct {
 	Items []AdminCaddyHTTPSRevision `json:"items"`

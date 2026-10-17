@@ -106,12 +106,34 @@ func TestAdminCaddyHTTPSDesiredRevisionAndActualStatus(t *testing.T) {
 		cfg.HostObserved || cfg.DesiredEnabled || cfg.DesiredDomain != "" {
 		t.Fatalf("unmanaged default pretended host config: %+v", cfg)
 	}
+	// The first read after a fresh, IP-only installation should make the
+	// validated host LAN address editable as the unsaved default, while never
+	// mistaking it for an applied or audited database revision.
+	t.Setenv("XD_LAN_HTTPS_IP", "192.168.2.4")
+	freshIP := get()
+	if freshIP.Revision != 0 || freshIP.Source != "default" ||
+		!freshIP.DesiredLANEnabled || freshIP.DesiredLANIP != "192.168.2.4" ||
+		!freshIP.HostLANConfigured || freshIP.ApplyState != "unmanaged" ||
+		freshIP.ApplySupported || freshIP.HostLANIP != "192.168.2.4" {
+		t.Fatalf("fresh IP deployment did not initialize an honest default: %+v", freshIP)
+	}
+	// Invalid public or spoofed host environment never becomes a login option.
+	t.Setenv("XD_LAN_HTTPS_IP", "8.8.8.8")
+	unsafeIP := get()
+	if unsafeIP.DesiredLANEnabled || unsafeIP.DesiredLANIP != "" ||
+		unsafeIP.HostLANConfigured || unsafeIP.HostLANIP != "" {
+		t.Fatalf("unsafe deployment IP became a default HTTPS entry: %+v", unsafeIP)
+	}
+	t.Setenv("XD_LAN_HTTPS_IP", "")
 	for _, body := range []string{
 		`{"revision":0}`,
 		`{"revision":0,"enabled":true,"domain":""}`,
 		`{"revision":0,"enabled":true,"domain":"https://example.com"}`,
 		`{"revision":0,"enabled":true,"domain":"127.0.0.1"}`,
 		`{"revision":0,"enabled":false,"domain":"bad.example.com/path"}`,
+		`{"revision":0,"enabled":false,"domain":""}`,
+		`{"revision":0,"enabled":false,"domain":"","lan_enabled":true,"lan_ip":"8.8.8.8"}`,
+		`{"revision":0,"enabled":false,"domain":"","lan_enabled":true,"lan_ip":"192.168.02.4"}`,
 	} {
 		if r := request(http.MethodPut, path, adminToken, body); r.Code != 400 {
 			t.Fatalf("invalid/incomplete desired Caddy HTTPS edit accepted: %d %s", r.Code, body)
@@ -164,15 +186,34 @@ func TestAdminCaddyHTTPSDesiredRevisionAndActualStatus(t *testing.T) {
 		history.Items[1].Enabled || history.Items[1].Domain != "" {
 		t.Fatalf("untrusted revision journal: %d %+v", revisions.Code, history)
 	}
-	const second = `{"revision":1,"enabled":false,"domain":"photos.example.com"}`
+	const second = `{"revision":1,"enabled":false,"domain":"photos.example.com","lan_enabled":true,"lan_ip":"192.168.2.4"}`
 	if r := request(http.MethodPut, path, adminToken, second); r.Code != 200 {
-		t.Fatalf("desired disable failed: %d", r.Code)
+		t.Fatalf("domain disable with preserved LAN entry failed: %d", r.Code)
+	}
+	cfg = get()
+	if cfg.DesiredEnabled || !cfg.DesiredLANEnabled || cfg.DesiredLANIP != "192.168.2.4" ||
+		cfg.ApplySupported || cfg.ApplyState != "pending" {
+		t.Fatalf("LAN-only desired state was not persisted or falsely applied: %+v", cfg)
+	}
+	// Old clients that omit lan_enabled/lan_ip preserve current LAN settings;
+	// removing the last enabled endpoint must still fail.
+	if r := request(http.MethodPut, path, adminToken,
+		`{"revision":2,"enabled":false,"domain":"","lan_enabled":false,"lan_ip":""}`); r.Code != 400 {
+		t.Fatalf("accepted disabled LAN and domain: %d", r.Code)
 	}
 	if r := request(http.MethodPost, path+"/rollback", memberToken, `{"revision":2,"target_revision":1}`); r.Code != 403 {
 		t.Fatalf("non-admin HTTPS rollback accepted: %d", r.Code)
 	}
 	if r := request(http.MethodPost, path+"/rollback", adminToken, `{"revision":1,"target_revision":0}`); r.Code != 409 {
-		t.Fatalf("stale HTTPS rollback accepted: %d", r.Code)
+		t.Fatalf("stale HTTPS rollback must conflict before unsafe history: %d", r.Code)
+	}
+	// Old revision zero is preserved for audit, not restorable: both
+	// trusted HTTPS entry points were disabled at that legacy default.
+	if r := request(http.MethodPost, path+"/rollback", adminToken, `{"revision":2,"target_revision":0}`); r.Code != 400 {
+		t.Fatalf("unsafe historical both-off rollback was accepted: %d", r.Code)
+	}
+	if current := get(); current.Revision != 2 || !current.DesiredLANEnabled {
+		t.Fatalf("rejected rollback mutated current ingress: %+v", current)
 	}
 	if r := request(http.MethodPost, path+"/rollback", adminToken, `{"revision":2,"target_revision":1}`); r.Code != 200 {
 		t.Fatalf("desired HTTPS rollback failed: %d %s", r.Code, r.Body.String())
@@ -196,7 +237,7 @@ func TestAdminCaddyHTTPSDesiredRevisionAndActualStatus(t *testing.T) {
 	if err := db.Migrator().DropTable(&meta.AuditEvent{}); err != nil {
 		t.Fatal(err)
 	}
-	if res := request(http.MethodPut, path, adminToken, `{"revision":3,"enabled":false,"domain":""}`); res.Code != 503 {
+	if res := request(http.MethodPut, path, adminToken, `{"revision":3,"enabled":true,"domain":"photos.example.com"}`); res.Code != 503 {
 		t.Fatalf("unaudited staged HTTPS change accepted: %d", res.Code)
 	}
 	if err := db.Where("name = ?", caddyHTTPSSettingName).Take(&row).Error; err != nil || row.Revision != 3 {

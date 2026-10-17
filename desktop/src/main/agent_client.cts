@@ -769,6 +769,10 @@ export type AgentBackgroundTaskControlResult = {
 export type AgentAdminCaddyHTTPSConfig = {
   desired_enabled: boolean
   desired_domain: string
+  desired_lan_enabled?: boolean
+  desired_lan_ip?: string
+  host_lan_configured?: boolean
+  host_lan_ip?: string
   revision: number
   source: 'default' | 'saved'
   updated_at?: string
@@ -781,9 +785,23 @@ export type AgentAdminCaddyHTTPSConfig = {
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
 }
-export type AgentAdminCaddyHTTPSUpdate = { revision: number; enabled: boolean; domain: string }
+export type AgentAdminCaddyHTTPSUpdate = {
+  revision: number
+  enabled: boolean
+  domain: string
+  lan_enabled?: boolean
+  lan_ip?: string
+}
 export type AgentAdminCaddyHTTPSRevisionPage = {
-  items: Array<{ revision: number; enabled: boolean; domain: string; origin: 'default' | 'saved' | 'rollback'; created_at: string }>
+  items: Array<{
+    revision: number
+    enabled: boolean
+    domain: string
+    lan_enabled?: boolean
+    lan_ip?: string
+    origin: 'default' | 'saved' | 'rollback'
+    created_at: string
+  }>
 }
 export type AgentAdminCaddyHTTPSRollbackInput = { revision: number; target_revision: number }
 
