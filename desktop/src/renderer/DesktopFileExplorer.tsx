@@ -1599,6 +1599,12 @@ const desktopTransferLifecycleChildBatchSize = 1000
     const node = xDriveFileExplorerNodeForItem(item, nodeByID)
     if (!node) return []
 
+    // These Desktop-only actions remain present while another operation is
+    // active. Explain the temporary busy state without inventing an ACL
+    // denial, a damaged file, or an unavailable Agent capability.
+    const localActionDisabledReason = explorerActionBusy
+      ? '当前文件操作尚未完成，请稍后重试。'
+      : undefined
     const standardItems = xDriveFileExplorerStandardItemMenuItems({
       kind: node.type,
       primaryDisabled: explorerActionBusy,
@@ -1642,6 +1648,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
             label: '打开方式…',
             icon: <AppsRoundedIcon fontSize="small" />,
             disabled: explorerActionBusy,
+            disabledReason: localActionDisabledReason,
             onSelect: () => { void openLocalNodeWith(node) },
           } satisfies XDriveFileExplorerMenuItem,
         ]
@@ -1660,6 +1667,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         icon: <CheckCircleRoundedIcon fontSize="small" sx={{ color: 'success.main' }} />,
         dividerBefore: true,
         disabled: explorerActionBusy,
+            disabledReason: localActionDisabledReason,
         onSelect: () => { void setNodeAvailability(node, 'keep') },
       })
     }
@@ -1676,6 +1684,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
         icon: <CloudOutlinedIcon fontSize="small" sx={{ color: 'primary.main' }} />,
         dividerBefore: availabilityItems.length === 0,
         disabled: explorerActionBusy,
+            disabledReason: localActionDisabledReason,
         onSelect: () => { void setNodeAvailability(node, 'release') },
       })
     }

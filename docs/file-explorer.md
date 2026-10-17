@@ -805,3 +805,9 @@ Server operation or resumed writes, and current 52px App Frame. Mounted real
 component hook regressions cover 403 then 409 then success, oversized Unicode
 rejection, and old account denial after lifecycle change. This is not native
 iOS 27 VoiceOver/Safari physical proof and requires own exact-head PR CI.
+
+## F03/D01 · Desktop native command disabled reasons (2026-10-17)
+
+- **Verified narrow gap:** the shared F03 reason resolver already gives visible, keyboard-focusable disabled explanations for Web/Mobile/standard FileExplorer actions. Three **Desktop-specific** existing context commands — Windows capability-gated “打开方式…”, current-device CfAPI “始终保留在此设备上”, and “释放空间” — were disabled during `explorerActionBusy` without an explicit reason, leaving only an unhelpful generic fallback.
+- **Minimal shared-contract reuse:** attach one temporary, truthful busy explanation to those exact three menu items while preserving their existing `disabled` predicates, Agent/CfAPI capability gates, OS availability, system-shell authority, revision/Owner scope, and handler behavior. Do NOT present an unsupported Open With capability, infer Server access control, change a File's availability, add REST/IPC or modify the global 52px App Frame.
+- **Evidence:** extend the original `desktop/tests/file-explorer-disabled-menu-reasons.cjs` with a source-executed assertion for exactly three Desktop-only reasons plus the actual shared F03 `xDriveFileExplorerMenuReasonLabel` runtime results (busy vs enabled), and verify missing old-Agent capabilities still suppress unsupported commands. Demand one fixed-base work commit and complete accurate-head 76-job GitHub CI including Desktop/Windows, Web, Go API PostgreSQL Race, single-commit and Final Gate before Ready/rebase merge. True old-version Agent/CfAPI device state, NVDA/VoiceOver, real keyboard menus and physical DPI remain NOT RUN.
