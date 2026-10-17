@@ -21,10 +21,20 @@ const tags = {
   LinearProgress: 'linear-progress', Paper: 'paper', Stack: 'stack',
   Typography: 'typography',
 }
+const deferredCode = ts.transpileModule(read('ui/shared/src/mui/useDeferredLoading.ts'), {
+  fileName: path.join(root, 'ui/shared/src/mui/useDeferredLoading.ts'),
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+}).outputText
+const deferredModule = { exports: {} }
+new Function('exports','module','require',deferredCode)(
+  deferredModule.exports,deferredModule,
+  name => { if(name==='react')return React;throw Error('Unexpected deferred dependency '+name) },
+)
 const mods = {
   react: React, 'react/jsx-runtime': require('react/jsx-runtime'),
   '@mui/material': tags,
   './MediaGalleryUtils': { xDriveMediaGalleryErrorMessage: String },
+  './useDeferredLoading': { useXDriveDeferredLoading: deferredModule.exports.useXDriveDeferredLoading },
 }
 const current = { exports: {} }
 new Function('exports', 'module', 'require', code)(current.exports, current, name => {

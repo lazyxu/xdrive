@@ -7,6 +7,7 @@ import type {
   MediaSelectionJob, MediaSelectionJobFailurePage,
 } from '../models'
 import { xDriveMediaGalleryErrorMessage } from './MediaGalleryUtils'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 
 export interface XDriveMediaSelectionJobPort {
   list: () => Promise<MediaSelectionJob[]>
@@ -38,6 +39,7 @@ type MediaJobCenterState = {
   owner: MediaJobCenterScope
   jobs: MediaSelectionJob[]
   loading: boolean
+  hasLoaded: boolean
   error: string
   busyID: string
   failureJobID: string
@@ -47,7 +49,7 @@ type MediaJobCenterState = {
 
 function emptyMediaJobCenterState(owner: MediaJobCenterScope): MediaJobCenterState {
   return {
-    owner, jobs: [], loading: true, error: '', busyID: '',
+    owner, jobs: [], loading: true, hasLoaded: false, error: '', busyID: '',
     failureJobID: '', failurePage: null, failureOffset: 0,
   }
 }
@@ -62,8 +64,10 @@ export function XDriveMediaSelectionJobCenter({
   const scopeRef = useRef<MediaJobCenterScope>({
     port, inFlight: false, listGeneration: 0,
   })
+  const feedbackGenerationRef = useRef(1)
   if (scopeRef.current.port !== port) {
     scopeRef.current = { port, inFlight: false, listGeneration: 0 }
+    feedbackGenerationRef.current += 1
   }
   const scope = scopeRef.current
   const [stored, setStored] = useState<MediaJobCenterState>(
@@ -74,8 +78,11 @@ export function XDriveMediaSelectionJobCenter({
   const visible = stored.owner === scope
     ? stored : emptyMediaJobCenterState(scope)
   const {
-    jobs, loading, error, busyID, failureJobID, failurePage, failureOffset,
+    jobs, loading, hasLoaded, error, busyID, failureJobID, failurePage, failureOffset,
   } = visible
+  const showDeferredLoading = useXDriveDeferredLoading(
+    loading, feedbackGenerationRef.current,
+  )
 
   const update = (patch: Partial<Omit<MediaJobCenterState, 'owner'>>) => {
     if (scopeRef.current !== scope) return
@@ -99,7 +106,7 @@ export function XDriveMediaSelectionJobCenter({
       void port.list().then((list) => {
         if (!alive || scopeRef.current !== scope || scope.inFlight ||
           request !== scope.listGeneration) return
-        update({ jobs: list, error: '' })
+        update({ jobs: list, hasLoaded: true, error: '' })
       }).catch((reason) => {
         if (alive && scopeRef.current === scope && !scope.inFlight &&
           request === scope.listGeneration) {
@@ -141,7 +148,7 @@ export function XDriveMediaSelectionJobCenter({
       const list = await port.list()
       if (scopeRef.current !== scope) return
       update({
-        jobs: list, error: '',
+        jobs: list, hasLoaded: true, error: '',
         failurePage: null, failureJobID: '', failureOffset: 0,
       })
     } catch (reason) {
@@ -176,13 +183,21 @@ export function XDriveMediaSelectionJobCenter({
         <Typography variant="h6" fontWeight={700} sx={{ flex: 1 }}>
           媒体批量任务
         </Typography>
-        {loading ? <CircularProgress size={18} /> : null}
+        <Box data-xdrive-media-job-loading-slot sx={{
+          width: 18, height: 18, flex: '0 0 18px',
+        }}>
+          {showDeferredLoading ? (
+            <CircularProgress size={18} aria-label="正在读取媒体批量任务" />
+          ) : null}
+        </Box>
       </Stack>
       {error ? (
         <Typography role="alert" variant="body2" color="error"
           sx={{ mb: 1, overflowWrap: 'anywhere' }}>{error}</Typography>
       ) : null}
-      {!loading && jobs.length === 0 ? (
+      {!hasLoaded ? (
+        <Box data-xdrive-media-jobs-first-read sx={{ minHeight: 96 }} />
+      ) : jobs.length === 0 ? (
         <Typography variant="body2" color="text.secondary">
           暂无媒体批量任务
         </Typography>
