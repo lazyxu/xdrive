@@ -34,37 +34,30 @@ func localPushFirstDirectoryPathKey(rootID, name string) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// commitBoundLocalPushFirstDirectory is a one-level DIRECTORY prerequisite,
-// NOT a routed API or owning-Agent Runner. It can create one NEW directory
-// directly below an already-authorized cloud target, together with a PENDING
-// SourceItem, in ONE PostgreSQL transaction.
-//
-// CRITICAL: this function does NOT see a native sealed CURRENT directory
-// snapshot or hold a native inode across SQL. A future executor MUST bind an
-// independently revalidated device Root/CURRENT directory proof before using
-// this primitive. Do NOT wire it to REST/Agent IPC/Renderer/Web/scheduler.
-// No File/CAS/FileVersion/SourceRun is written; no Mirror deletion is allowed.
-func (s *Server) commitBoundLocalPushFirstDirectory(
-	c *gin.Context, sourceID, revision uint64,
+// commitBoundLocalPushFirstDirectoryTx is Server-private and performs one
+// owning-device-fenced PENDING directory write inside an EXISTING caller SQL
+// transaction. It never commits that transaction and does NOT accept an
+// advisory challenge as proof of current native filesystem lifetime.
+func (s *Server) commitBoundLocalPushFirstDirectoryTx(
+	tx *gorm.DB, c *gin.Context, sourceID, revision uint64,
 	proof localSourceExecutorProof, relativeDir string,
-) (localPushFirstDirectoryCommitResult, bool, error) {
+) (localPushFirstDirectoryCommitResult, error) {
 	var empty localPushFirstDirectoryCommitResult
-	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
-		sourceID == 0 || revision == 0 {
-		return empty, false, errLocalPushStageConflict
+	if s == nil || s.DB == nil || tx == nil || c == nil || c.Request == nil ||
+		sourceID == 0 || revision == 0 || c.Request.Context().Err() != nil {
+		return empty, errLocalPushStageConflict
 	}
 	bound, ok := localPushStageProof(c)
 	if !ok || bound != proof || proof.SourceRevision != revision {
-		return empty, false, errLocalSourceExecutorTransactionUnauthorized
+		return empty, errLocalSourceExecutorTransactionUnauthorized
 	}
 	pathKey, err := localPushFirstDirectoryPathKey(proof.RootID, relativeDir)
 	if err != nil {
-		return empty, false, err
+		return empty, err
 	}
-	ctx, cancel := context.WithTimeout(c.Request.Context(), localEvidencePhysicalCASDeadline)
-	defer cancel()
+	ctx := c.Request.Context()
 	var result localPushFirstDirectoryCommitResult
-	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = func() error {
 		// Existing local Push writers serialize owner quota before the bound
 		// Device, Source, Root and target Node; preserve the same order even
 		// when a directory consumes zero CAS bytes.
@@ -148,12 +141,57 @@ func (s *Server) commitBoundLocalPushFirstDirectory(
 			NodeID: node.ID, SourceItemID: item.ID,
 		}
 		return ctx.Err()
+	}()
+	if err != nil {
+		return empty, err
+	}
+	if err := ctx.Err(); err != nil {
+		return empty, err
+	}
+	return result, nil
+}
+
+// commitBoundLocalPushFirstDirectory is a one-level DIRECTORY prerequisite,
+// NOT a routed API or owning-Agent Runner. It can create one NEW directory
+// directly below an already-authorized cloud target, together with a PENDING
+// SourceItem, in ONE PostgreSQL transaction.
+//
+// CRITICAL: this function does NOT see a native sealed CURRENT directory
+// snapshot or hold a native inode across SQL. A future executor MUST bind an
+// independently revalidated device Root/CURRENT directory proof before using
+// this primitive. Do NOT wire it to REST/Agent IPC/Renderer/Web/scheduler.
+// No File/CAS/FileVersion/SourceRun is written; no Mirror deletion is allowed.
+func (s *Server) commitBoundLocalPushFirstDirectory(
+	c *gin.Context, sourceID, revision uint64,
+	proof localSourceExecutorProof, relativeDir string,
+) (localPushFirstDirectoryCommitResult, bool, error) {
+	var empty localPushFirstDirectoryCommitResult
+	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
+		sourceID == 0 || revision == 0 {
+		return empty, false, errLocalPushStageConflict
+	}
+	bound, ok := localPushStageProof(c)
+	if !ok || bound != proof || proof.SourceRevision != revision {
+		return empty, false, errLocalSourceExecutorTransactionUnauthorized
+	}
+	if _, err := localPushFirstDirectoryPathKey(proof.RootID, relativeDir); err != nil {
+		return empty, false, err
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), localEvidencePhysicalCASDeadline)
+	defer cancel()
+	var result localPushFirstDirectoryCommitResult
+	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var txErr error
+		result, txErr = s.commitBoundLocalPushFirstDirectoryTx(
+			tx, c, sourceID, revision, proof, relativeDir,
+		)
+		return txErr
 	})
 	if err != nil {
 		return empty, false, err
 	}
-	if ctx.Err() != nil {
-		return empty, false, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return empty, false, err
 	}
 	return result, true, nil
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lazyxu/xdrive/internal/localpush"
 	"github.com/lazyxu/xdrive/internal/meta"
+	"gorm.io/gorm"
 )
 
 func (f localPushExistingCASTestFixture) firstDirectory(
@@ -264,5 +266,126 @@ func TestLocalPushFirstDirectorySourceItemSQLFailureRollsBackNode(t *testing.T) 
 	if err != nil || !admitted || got.NodeID == 0 || got.Replayed {
 		t.Fatalf("failed SQL transaction left directory retry unsafe: %+v admitted=%t %v",
 			got, admitted, err)
+	}
+}
+
+// The caller-transaction helper has no production caller. This real
+// PostgreSQL regression proves a future PENDING directory operation can be
+// rolled back atomically with its caller, without marking it backed up.
+func TestLocalPushFirstDirectoryCallerTransactionRollbackAndRetry(t *testing.T) {
+	f := makeLocalPushExistingCASTestFixture(t)
+	abort := errors.New("private test-only downstream transaction failure")
+	err := f.server.DB.WithContext(f.ctx.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		got, err := f.server.commitBoundLocalPushFirstDirectoryTx(
+			tx, f.ctx, f.source.ID, f.source.Revision, f.proof, "Atomic Folder",
+		)
+		if err != nil {
+			return err
+		}
+		if got.NodeID == 0 || got.SourceItemID == 0 || got.Replayed {
+			return errors.New("caller transaction did not prepare a new PENDING folder")
+		}
+		var node meta.Node
+		if err := tx.Where("id = ?", got.NodeID).Take(&node).Error; err != nil {
+			return err
+		}
+		if node.Type != meta.NodeTypeDir || node.OwnerID != f.device.OwnerID {
+			return errors.New("transaction observed a directory with wrong owner/kind")
+		}
+		var item meta.SourceItem
+		if err := tx.Where("id = ?", got.SourceItemID).Take(&item).Error; err != nil {
+			return err
+		}
+		if item.State != meta.SourceItemStatePending || item.LastSyncedAt != nil ||
+			item.LastSyncedRunID != "" {
+			return errors.New("PENDING directory claimed a completed backup")
+		}
+		return abort
+	})
+	if !errors.Is(err, abort) {
+		t.Fatalf("forced caller rollback did not surface: %v", err)
+	}
+	var nodes, items int64
+	if err := f.server.DB.Model(&meta.Node{}).
+		Where("parent_id = ? AND name = ?", *f.source.TargetNodeID, "Atomic Folder").
+		Count(&nodes).Error; err != nil || nodes != 0 {
+		t.Fatalf("aborted tx left a cloud directory: count=%d err=%v", nodes, err)
+	}
+	if err := f.server.DB.Model(&meta.SourceItem{}).
+		Where("source_id = ?", f.source.ID).Count(&items).Error; err != nil || items != 0 {
+		t.Fatalf("aborted tx left a SourceItem: count=%d err=%v", items, err)
+	}
+	got, ok, err := f.firstDirectory("Atomic Folder")
+	if err != nil || !ok || got.NodeID == 0 || got.SourceItemID == 0 || got.Replayed {
+		t.Fatalf("ordinary private retry after rollback failed: %+v allowed=%v err=%v", got, ok, err)
+	}
+	if next, ok, err := f.firstDirectory("Atomic Folder"); err != nil || !ok ||
+		!next.Replayed || next.NodeID != got.NodeID || next.SourceItemID != got.SourceItemID {
+		t.Fatalf("retry duplicated or promoted pending directory: %+v allowed=%v err=%v", next, ok, err)
+	}
+}
+
+func TestLocalPushFirstDirectoryCallerTxOwnDeviceAndReplayBoundaries(t *testing.T) {
+	f := makeLocalPushExistingCASTestFixture(t)
+	if _, err := f.server.commitBoundLocalPushFirstDirectoryTx(
+		nil, f.ctx, f.source.ID, f.source.Revision, f.proof, "Private",
+	); err == nil {
+		t.Fatal("nil private caller transaction was accepted")
+	}
+	err := f.server.DB.WithContext(f.ctx.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		first, err := f.server.commitBoundLocalPushFirstDirectoryTx(
+			tx, f.ctx, f.source.ID, f.source.Revision, f.proof, "Private",
+		)
+		if err != nil {
+			return err
+		}
+		if first.NodeID == 0 || first.SourceItemID == 0 || first.Replayed {
+			return errors.New("first private directory was rejected or marked replay")
+		}
+		second, err := f.server.commitBoundLocalPushFirstDirectoryTx(
+			tx, f.ctx, f.source.ID, f.source.Revision, f.proof, "Private",
+		)
+		if err != nil {
+			return err
+		}
+		if !second.Replayed || second.NodeID != first.NodeID ||
+			second.SourceItemID != first.SourceItemID {
+			return errors.New("same-tx replay changed immutable pending identity")
+		}
+		var nodes, items int64
+		if err := tx.Model(&meta.Node{}).
+			Where("parent_id = ? AND name = ?", *f.source.TargetNodeID, "Private").
+			Count(&nodes).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&meta.SourceItem{}).
+			Where("source_id = ?", f.source.ID).Count(&items).Error; err != nil {
+			return err
+		}
+		if nodes != 1 || items != 1 {
+			return errors.New("same-tx replay duplicated Node or SourceItem")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("exact owning Tx unexpectedly failed: %v", err)
+	}
+	f.ctx.Request.Header.Set("X-XDrive-Device-Token", "forged-other-device-secret")
+	err = f.server.DB.WithContext(f.ctx.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		got, err := f.server.commitBoundLocalPushFirstDirectoryTx(
+			tx, f.ctx, f.source.ID, f.source.Revision, f.proof, "Unauthorized",
+		)
+		if err == nil || got.NodeID != 0 || got.SourceItemID != 0 {
+			return errors.New("foreign device wrote a PENDING directory")
+		}
+		return err
+	})
+	if err == nil {
+		t.Fatal("foreign device crossed private caller transaction boundary")
+	}
+	var forbidden int64
+	if err := f.server.DB.Model(&meta.Node{}).Where("name = ?", "Unauthorized").
+		Count(&forbidden).Error; err != nil || forbidden != 0 {
+		t.Fatalf("unauthorized caller created cloud Node: %d err=%v", forbidden, err)
 	}
 }
