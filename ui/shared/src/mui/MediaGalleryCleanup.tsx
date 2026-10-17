@@ -19,6 +19,7 @@ import type {
 } from '../models'
 import { XDriveMediaGalleryCleanupIndexStatus } from './MediaGalleryCleanupIndexStatus'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 
@@ -139,18 +140,31 @@ export function XDriveMediaGalleryCleanup({
   indexStatusError?: string
   onRequestIndexStatus?: () => void
 }) {
-  if (loading && !bursts) {
+  const firstReadPending = Boolean(loading) && bursts === null
+  const showFirstReadLoading = useXDriveDeferredPendingLoading(firstReadPending)
+  const showMoreLoading = useXDriveDeferredPendingLoading(loadingMore === 'burst')
+  // An absent canonical Server response is never authoritative zero. Failed
+  // first reads retain their real parent error instead of claiming no advice.
+  if (bursts === null) {
     return (
       <Paper
+        data-xdrive-gallery-cleanup-first-read
         variant="outlined"
         sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
       >
-        <CircularProgress size={28} />
+        {firstReadPending ? (
+          showFirstReadLoading ? <CircularProgress size={28} /> : null
+        ) : (
+          <Stack spacing={0.75} alignItems="center">
+            <Typography color="text.secondary">连拍清理结果尚未确认，请重新检查。</Typography>
+            {onRefresh ? <Button onClick={onRefresh} sx={{ minHeight: 44 }}>重新检查</Button> : null}
+          </Stack>
+        )}
       </Paper>
     )
   }
 
-  const burstGroups = bursts?.groups ?? []
+  const burstGroups = bursts.groups
   const indexCoverage = (
     <XDriveMediaGalleryCleanupIndexStatus
       status={indexStatus}
@@ -218,10 +232,17 @@ export function XDriveMediaGalleryCleanup({
               variant="outlined"
               onClick={onLoadMoreBurst}
               disabled={Boolean(loadingMore)}
-              startIcon={loadingMore === 'burst' ? <CircularProgress size={16} /> : undefined}
+              startIcon={(
+                <Box component="span" sx={{
+                  width: 16, height: 16, display: 'inline-flex', alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {showMoreLoading ? <CircularProgress size={16} /> : null}
+                </Box>
+              )}
               sx={{ minHeight: 44 }}
             >
-              {loadingMore === 'burst' ? '正在加载' : '加载更多连拍组'}
+              加载更多连拍组
             </Button>
           </Stack>
         ) : null}
