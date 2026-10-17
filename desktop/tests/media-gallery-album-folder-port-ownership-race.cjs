@@ -47,7 +47,7 @@ const component = load('ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx', {
   './MediaGalleryCoverThumbnail': { XDriveMediaGalleryCoverThumbnail: 'thumbnail' },
   './MediaGalleryAlbumOrganization': organization,
   './MediaGalleryAlbumFolderModel': folderModel,
-  './useDeferredLoading': { useXDriveDeferredLoading: () => false },
+  './useDeferredLoading': { useXDriveDeferredLoading: () => false, useXDriveDeferredPendingLoading: () => false },
 }, true).XDriveMediaGalleryAlbumOrganizer
 
 function pending() {
