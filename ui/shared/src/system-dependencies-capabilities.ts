@@ -162,7 +162,7 @@ const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   'photo-semantic': ['loadPhotoHostPreflight'],
   'photo-creative': ['loadPhotoHostPreflight'],
   'baidu-map': ['verifyBaiduMap'],
-  geonames: ['loadGeoNamesConfig'],
+  geonames: ['load', 'loadGeoNamesConfig'],
 }
 
 // These links navigate to existing config panels, never run host changes.

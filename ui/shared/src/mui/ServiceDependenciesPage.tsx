@@ -719,13 +719,16 @@ export function XDriveServiceDependenciesPage({
       })
     }
     if (selectedPage === 'geonames' && currentTab !== 'status' && source.loadGeoNamesConfig) {
+      const initialGeoNamesEpoch = geoNamesEpochRef.current
       void source.loadGeoNamesConfig().then((config) => {
-        if (active) {
+        if (active && initialGeoNamesEpoch === geoNamesEpochRef.current) {
           setGeoNamesConfig(config)
           setGeoNamesDraftDistance(String(config.max_distance_km))
         }
       }).catch(() => {
-        if (active) setGeoNamesError('无法读取 GeoNames 管理配置，请检查 Server 或更新客户端。')
+        if (active && initialGeoNamesEpoch === geoNamesEpochRef.current) {
+          setGeoNamesError('无法读取 GeoNames 管理配置，请检查 Server 或更新客户端。')
+        }
       })
     }
     return () => {
@@ -1003,6 +1006,31 @@ export function XDriveServiceDependenciesPage({
         setGeoNamesBusy(false)
         setGeoNamesSnapshotConfirmOpen(false)
       }
+    }
+  }
+
+  // Read-only GeoNames status is separate from reloadGeoNames: never validate,
+  // copy, switch or reapply a dataset just to check the applied revision.
+  const refreshGeoNamesReadOnly = async () => {
+    if (!source.loadGeoNamesConfig || geoNamesBusy || currentTab !== 'verify' || unsavedRef.current) return
+    const epoch = ++geoNamesEpochRef.current
+    setGeoNamesBusy(true)
+    setGeoNamesError('')
+    setGeoNamesNotice('')
+    try {
+      const next = await source.loadGeoNamesConfig()
+      if (epoch !== geoNamesEpochRef.current) return
+      setGeoNamesConfig(next)
+      // Verification is read-only: keep the local editor's clean baseline in
+      // sync with the newly observed desired revision, never invent a dirty edit.
+      setGeoNamesDraftDistance(String(next.max_distance_km))
+      setGeoNamesNotice('已只读刷新当前 Server 与已观测在线实例的索引修订；未校验数据文件或执行热加载。')
+    } catch (err) {
+      if (epoch === geoNamesEpochRef.current) {
+        setGeoNamesError(err instanceof Error ? err.message : 'GeoNames 实际修订只读检测失败；当前索引未改变。')
+      }
+    } finally {
+      if (epoch === geoNamesEpochRef.current) setGeoNamesBusy(false)
     }
   }
 
@@ -1950,6 +1978,21 @@ export function XDriveServiceDependenciesPage({
                   />
                 </Paper>
               )}
+              {selectedPage === 'geonames' && currentTab === 'verify' && (
+                <Stack spacing={1.5} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>
+                  <Typography variant="body2" color="text.secondary">
+                    本次只读状态检测重新读取当前 Server 已加载的 GeoNames 解析器及其版本，
+                    不扫描文件、不重新计算 SHA-256、不中断地名解析，也不会切换数据集。
+                    「可用」仅代表此 Server 当前已加载索引，不等于持久目标修订、所有副本或地名标签结果已验证。
+                    下方「只读刷新目标与副本修订」读取当前受限管理状态；
+                    「校验并热加载」才会修改正在使用的索引，两类操作必须明确区分。
+                  </Typography>
+                  {items.map((service) => <ServiceRow key={service.id} service={service} />)}
+                  <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
+                    onClick={() => setRefreshID((value) => value + 1)}
+                    disabled={loading || refreshing}>只读刷新当前实例索引状态</Button>
+                </Stack>
+              )}
               {selectedPage === 'geonames' && (currentTab === 'config' || currentTab === 'verify' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
@@ -2041,6 +2084,16 @@ export function XDriveServiceDependenciesPage({
                     </Stack>
                     </Stack>}
                     {currentTab === 'verify' && <Stack spacing={1.5}>
+                    <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
+                      disabled={geoNamesBusy || !source.loadGeoNamesConfig || unsavedRef.current}
+                      onClick={() => { void refreshGeoNamesReadOnly() }}
+                      data-xdrive-geonames-readonly-revision>
+                      {geoNamesBusy ? '正在读取修订…' : '只读刷新目标与副本修订'}
+                    </Button>
+                    <Typography variant="caption" color="text.secondary">
+                      仅重新读取期望／实际修订及最近心跳副本；不会校验、复制、应用或切换 GeoNames 数据集。
+                      下一个「校验并热加载」是独立修改操作，不属于只读检测。
+                    </Typography>
                     <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
                       disabled={geoNamesBusy || !geoNamesConfig?.reload_supported || !source.reloadGeoNames}
                       onClick={() => { void reloadGeoNames() }}>

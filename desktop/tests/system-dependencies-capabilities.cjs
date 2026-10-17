@@ -316,3 +316,50 @@ test('shared Media Worker verify explicitly separates real health from applied H
     assert.equal(page.includes(forbidden), false)
   }
 })
+
+
+test('GeoNames verify quick link needs a read-only real inventory and real config revision reader', () => {
+  const support = load('ui/shared/src/system-dependencies-capabilities.ts')
+  const resolve = support.xDriveSystemDependencyAvailableTargets
+  const geo = { id: 'geonames', config_mode: 'in-app', apply_mode: 'manual-reload',
+    status: 'ready' }
+  const fn = () => Promise.resolve()
+  const port = { load: fn, loadGeoNamesConfig: fn, saveGeoNamesConfig: fn }
+  const configure = { service: 'geonames', tab: 'config' }
+  const verify = { service: 'geonames', tab: 'verify' }
+  assert.deepEqual(resolve('geonames', [geo], port), {
+    configTarget: configure, verifyTarget: verify,
+  })
+  assert.deepEqual(resolve('geonames', [geo], { ...port, load: undefined }), {
+    configTarget: configure, verifyTarget: undefined,
+  })
+  assert.deepEqual(resolve('geonames', [geo], { load: fn }), {})
+  assert.deepEqual(resolve('geonames', [geo, geo], port), {})
+  assert.deepEqual(resolve('geonames', [{ ...geo, status: 'planned' }], port), {})
+  assert.deepEqual(resolve('geonames', [{ ...geo, config_mode: 'deployment' }], port), {
+    configTarget: undefined, verifyTarget: verify,
+  })
+})
+
+test('shared GeoNames read-only refresh is separate from explicit mutating dataset reload', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const caps = read('ui/shared/src/system-dependencies-capabilities.ts')
+  const server = read('internal/api/admin_service_dependencies.go')
+  assert.match(caps, /geonames: \['load', 'loadGeoNamesConfig'\]/)
+  assert.match(page, /data-xdrive-geonames-readonly-runtime/)
+  assert.match(page, /data-xdrive-geonames-readonly-revision/)
+  assert.match(page, /const refreshGeoNamesReadOnly = async \(\) => \{/)
+  assert.match(page, /initialGeoNamesEpoch === geoNamesEpochRef\.current/)
+  assert.match(page, /const next = await source\.loadGeoNamesConfig\(\)/)
+  assert.match(page, /void refreshGeoNamesReadOnly\(\)/)
+  assert.match(page, /setRefreshID\(\(value\) => value \+ 1\)/)
+  assert.match(server, /if s\.PhotoPlaceResolver != nil \{/)
+  assert.match(server, /services\[6\]\.Status = "ready"/)
+  assert.match(server, /services\[6\]\.Version = s\.PhotoPlaceResolver\.Version\(\)/)
+  assert.match(page, /const reloadGeoNames = async \(\) => \{/)
+  assert.match(page, /await source\.reloadGeoNames\(geoNamesConfig\.current_version\)/)
+  assert.match(page, /onClick=\{\(\) => \{ void reloadGeoNames\(\) \}\}/)
+  for (const forbidden of ['docker.sock', 'adminStopHost', 'adminRestartHost']) {
+    assert.equal(page.includes(forbidden), false)
+  }
+})
