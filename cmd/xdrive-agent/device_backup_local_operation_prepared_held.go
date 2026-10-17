@@ -16,6 +16,11 @@ type localPushPrivatePrepare func(context.Context, uint64, uint64,
 type localPushPrivateObserve func(context.Context, uint64, uint64,
 	client.LocalBoundSourceProof, string, uint64) (client.LocalPushOperationStatus, error)
 
+// An optional private test seam; only the owning Agent supplies the real
+// durable writer. No Renderer/IPC can pass a persistence callback.
+type localPushPreparedReceiptWriter func(string, localPushRequestKeyScope,
+	localPushPrivateRequestKey, client.LocalPushPreparedOperation) error
+
 // withBoundLocalPushPreparedOperation is a PRIVATE native/Server read window.
 // The existing held witness independently checks the owner/Root/Source before,
 // during and after this action. Only the same request key can be recovered;
@@ -29,13 +34,15 @@ func withBoundLocalPushPreparedOperation(
 	readBound localFirstDirectoryBoundReader,
 	readNativeHeld localFirstDirectoryNativeHeldReader,
 	prepare localPushPrivatePrepare, observe localPushPrivateObserve,
+	receiptWriters ...localPushPreparedReceiptWriter,
 ) (client.LocalPushPreparedOperation, error) {
 	var empty client.LocalPushPreparedOperation
 	deny := func(err error) (client.LocalPushPreparedOperation, error) {
 		return empty, privateLocalFirstDirectoryBoundError(err)
 	}
 	if ctx == nil || readBound == nil || readNativeHeld == nil ||
-		prepare == nil || observe == nil || currentSession == nil {
+		prepare == nil || observe == nil || currentSession == nil ||
+		len(receiptWriters) > 1 || (len(receiptWriters) == 1 && receiptWriters[0] == nil) {
 		return deny(nil)
 	}
 	var current client.Source
@@ -78,6 +85,22 @@ func withBoundLocalPushPreparedOperation(
 				status.OperationID != candidate.OperationID ||
 				status.Generation != candidate.Generation || status.State != "reserved" {
 				return errLocalPushRequestKeyUnavailable
+			}
+			// Persist an offline-only UUID/generation correlation BEFORE the
+			// third Server/Root read and before native handle release. A
+			// missed or failed credential-store ACK leaves the key and claim
+			// intact and denies success, never granting backup authority.
+			if len(receiptWriters) == 1 {
+				scope := localPushRequestKeyScope{
+					server: account.Server, account: account.Username, sessionID: account.SessionID,
+					deviceID: proof.DeviceID, rootID: proof.RootID,
+					rootFingerprint: proof.RootFingerprint,
+					sourceID:        sourceID, revision: current.Revision,
+					targetNodeID: *current.TargetNodeID,
+				}
+				if err := receiptWriters[0](configDir, scope, key, candidate); err != nil {
+					return errLocalPushRequestKeyUnavailable
+				}
 			}
 			prepared = candidate
 			return actionCtx.Err()
@@ -157,5 +180,6 @@ func (c *agentController) inspectLocalBoundBackupPreparedOperation(
 			return currentClient.ObserveLocalPushOperation(
 				actionCtx, id, revision, proof, operationID, generation)
 		},
+		persistLocalPushPreparedReceipt,
 	)
 }
