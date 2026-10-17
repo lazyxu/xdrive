@@ -889,14 +889,7 @@ export function XDriveFileExplorerNavigationPane({
     overflowWrap: 'anywhere',
   }
   const organizationReadState = (label: string, knownCount: number) => (
-    organizationLoading ? (
-      <Stack direction="row" alignItems="center" spacing={0.75} role="status" sx={{ px: 0.75, py: 0.75 }}>
-        <CircularProgress size={14} sx={{ flexShrink: 0 }} />
-        <Typography variant="caption" color="text.secondary" sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-          {`正在${knownCount > 0 ? '更新' : '加载'}${label}…`}
-        </Typography>
-      </Stack>
-    ) : organizationError ? (
+    !organizationLoading && organizationError ? (
       <Box role="alert" sx={{ px: 0.75, py: 0.75 }}>
         <Typography variant="caption" color="error.main" sx={{ display: 'block', overflowWrap: 'anywhere' }}>
           {`${label}读取失败：${organizationError}`}
@@ -1166,6 +1159,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="智能文件夹"
+          aria-busy={organizationLoading || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1189,6 +1183,9 @@ export function XDriveFileExplorerNavigationPane({
               </IconButton>
               <SearchRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
               <Typography variant="caption" fontWeight={700} color="text.secondary">智能文件夹</Typography>
+              <Box data-xdrive-organization-quiet-header="saved-searches" sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+                <XDriveNavigationQuietSpinner pending={organizationLoading} size={12} />
+              </Box>
             </Stack>
             {onSaveCurrentSearch ? (
               <Button
@@ -1335,6 +1332,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="标签"
+          aria-busy={organizationLoading || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1358,6 +1356,9 @@ export function XDriveFileExplorerNavigationPane({
               </IconButton>
               <LocalOfferRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
               <Typography variant="caption" fontWeight={700} color="text.secondary">标签</Typography>
+              <Box data-xdrive-organization-quiet-header="tags" sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+                <XDriveNavigationQuietSpinner pending={organizationLoading} size={12} />
+              </Box>
             </Stack>
             {onManageTags ? (
               <Button size="small" aria-label="管理标签" onClick={onManageTags} sx={organizationActionSx}>

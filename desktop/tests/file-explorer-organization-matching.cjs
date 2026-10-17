@@ -193,15 +193,15 @@ async function mount(platform, overrides = {}) {
       observations.push(state)
       return state
     },
-    section(label) {
+    section(label, raw = false) {
       const markup = renderToStaticMarkup(React.createElement(Pane, {
         lifecycleKey: 'account-a', currentCrumbs: current.directory.crumbs,
         loadDirectoryPage: async () => ({ items: [], nextCursor: '', hasMore: false }),
         ...current.binding.nav,
       }))
-      const section = markup.match(new RegExp(`<nav[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</nav>`))?.[1]
+      const section = markup.match(new RegExp(`<nav[^>]*aria-label="${label}"[^>]*>([\\s\\S]*?)</nav>`))?.[raw ? 0 : 1]
       assert.ok(section, `${label} section exists in actual MUI output`)
-      return section.replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '')
+      return raw ? section : section.replace(/<style\b[^>]*>[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, '')
     },
     async dispose() { await TestRenderer.act(async () => renderer.unmount()) },
   }
@@ -321,7 +321,15 @@ for (const platform of ['Web', 'Desktop']) {
       const texts = [h.section('标签'), h.section('智能文件夹')]
       observations.push({ platform, label: 'pending section text', texts })
       assert.equal(texts.some(text => /暂无/.test(text)), false, 'pending read is unknown, not a confirmed empty organization')
-      assert.ok(texts.every(text => /加载/.test(text)), 'both sections explain the pending state')
+      // P43: immediate text rows would shift the entire sidebar on a fast GET.
+      // Preserve the original unknown-not-empty assertion above, and prove
+      // that both real mounted Web/Desktop navs expose busy state and a
+      // reserved, nonblocking visual feedback slot instead.
+      const markup = [h.section('标签', true), h.section('智能文件夹', true)]
+      assert.ok(markup.every(html => /aria-busy="true"/.test(html)), 'both sections announce true pending state')
+      assert.ok(markup[0].includes('data-xdrive-organization-quiet-header="tags"'), 'Tags keeps its own stable feedback slot')
+      assert.ok(markup[1].includes('data-xdrive-organization-quiet-header="saved-searches"'), 'Smart folders keep their own stable feedback slot')
+      assert.ok(texts.every(text => !/正在(?:加载|更新)/.test(text)), 'fast pending must not insert an in-flow status row')
     } finally { await h.dispose() }
   })
 
