@@ -3468,3 +3468,80 @@ test('Mobile Recent and Favorites require a confirmed zero; a failed read offers
     onRefreshFavorites: () => { favoriteRetries++ },
   } })
 })
+
+test('P46 Browse Home root navigation keeps the last home until an authorized first range commits', async () => {
+  const acceptedRoot = { itemCount: 0, interactionKey: 'P46-authorized-root',
+    loadedItems: new Map(), itemAt: () => undefined, onRangeChange() {}, groups: [] }
+  const olderChild = { ...acceptedRoot, interactionKey: 'P46-confirmed-child' }
+  let dispatched = 0
+  await withView(async h => {
+    const cloudRow = () => h.view.root.findAll(n => n.props?.role === 'button' &&
+      typeof n.props?.onClick === 'function').find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(cloudRow())
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    const savedBefore = h.window.values.get('xdrive.mobile.files.v1:ios-files-userA')
+    await act(async () => { cloudRow().props.onClick() })
+    assert.equal(dispatched, 1, 'the existing owner GET must be issued immediately')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'pending root may not replace Browse Home with old child rows')
+    assert.equal(h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'), savedBefore,
+      'a tap may not commit the new persisted directory')
+    await h.update({ loading: true })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    // Accepted crumbs without a completed counted Range still cannot commit.
+    await h.update({ crumbs: [{ id: 1, name: '我的文件' }] })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    await h.update({ loading: false, virtualCollection: acceptedRoot, items: [] })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(state.mobileFilesDecodeState(h.window.values.get(
+      'xdrive.mobile.files.v1:ios-files-userA')).folderID, 1)
+  }, { props: {
+    crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    virtualCollection: olderChild, loading: false,
+    onBrowseRoot: () => { dispatched++ },
+  } })
+})
+
+test('P46 failed or superseded Home root intents never expose a wrong folder or reset scroll', async () => {
+  let attempts = 0
+  await withView(async h => {
+    const cloudRow = h.view.root.findAll(n => n.props?.role === 'button' &&
+      typeof n.props?.onClick === 'function').find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(cloudRow)
+    await act(async () => { cloudRow.props.onClick() })
+    assert.equal(attempts, 1)
+    await h.update({ loading: false })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'failed or stalled root never leaves Browse Home')
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    await h.update({ crumbs: [{ id: 1, name: '我的文件' }],
+      virtualCollection: { itemCount: 0, interactionKey: 'P46-late-root',
+        loadedItems: new Map(), itemAt: () => undefined, onRangeChange() {}, groups: [] } })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'a late result after a newer Recent tap must not steal navigation')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+  }, { props: {
+    crumbs: [{ id: 1, name: '我的文件' }, { id: 2, name: '照片文件夹' }],
+    virtualCollection: { itemCount: 1, interactionKey: 'P46-confirmed-child',
+      loadedItems: new Map(), itemAt: () => undefined, onRangeChange() {}, groups: [] },
+    onBrowseRoot: () => { attempts++ },
+  } })
+})
+
+
+test('P46 accepted nonvirtual root items reopen immediately without a false pending transition', async () => {
+  let dispatches = 0
+  await withView(async h => {
+    const root = h.view.root.findAll(n => n.props?.role === 'button' && n.props?.onClick)
+      .find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(root)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+    await act(async () => { root.props.onClick() })
+    assert.equal(dispatches, 1)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.ok(h.view.root.findAll(n => n.props?.['data-mobile-files-item'] !== undefined).length >= 2,
+      'already accepted synchronous root rows must not be hidden')
+  }, { props: { onBrowseRoot: () => { dispatches++ } } })
+})

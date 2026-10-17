@@ -459,6 +459,8 @@ export default function MobileFiles(props: Props) {
   // A typed path is only a navigation intent until shared authorized crumbs
   // and its counted first range commit. Retain old section/scroll meanwhile.
   const pendingPathOriginRef = useRef<{ directoryID: number | null } | null>(null)
+  // A Browse Home → Cloud root tap is a pending intent, not a committed page.
+  const pendingBrowseRootRef = useRef<{ rootID: number; intent: number } | null>(null)
   const searchReturnHomeRef = useRef(initial.folderID === null)
   const restoreFolderRef = useRef(props.onRestoreFolder)
   restoreFolderRef.current = props.onRestoreFolder
@@ -766,14 +768,22 @@ export default function MobileFiles(props: Props) {
   }, [props.requestedDirectoryID, directoryID, section, browseHome, ready, scrollTop, persist])
 
   useLayoutEffect(() => {
-    if (lastCommittedDirectoryRef.current === directoryID) return
+    const pendingRoot = pendingBrowseRootRef.current
+    const homeRootCommit = Boolean(pendingRoot &&
+      pendingRoot.intent === navigationIntentRef.current &&
+      pendingRoot.rootID === directoryID &&
+      props.virtualCollection && !props.loading)
+    // The root's first counted Range may arrive without changing crumbs when
+    // this owner was already displaying that root behind Browse Home.
+    if (lastCommittedDirectoryRef.current === directoryID && !homeRootCommit) return
     lastCommittedDirectoryRef.current = directoryID
+    if (homeRootCommit) pendingBrowseRootRef.current = null
     const routedCommit = Boolean(props.requestedDirectoryID &&
       directoryID === props.requestedDirectoryID)
     const pathCommit = pendingPathOriginRef.current !== null &&
       pendingPathOriginRef.current.directoryID !== directoryID
     if (pathCommit) pendingPathOriginRef.current = null
-    const authorizedCommit = routedCommit || pathCommit
+    const authorizedCommit = routedCommit || pathCommit || homeRootCommit
     // A deep link opened from Browse Home/Recent/Favorites must enter Browse
     // only AFTER its authorized directory is genuinely visible. This state
     // update is pre-paint, so no intermediate wrong-folder frame is exposed.
@@ -781,6 +791,10 @@ export default function MobileFiles(props: Props) {
       setSection('browse')
       setBrowseHome(false)
       setReady(true)
+      if (homeRootCommit) {
+        setEditBrowseHome(false)
+        searchReturnHomeRef.current = false
+      }
     }
     if ((!ready && !authorizedCommit) ||
         ((section !== 'browse' || browseHome) && !authorizedCommit) ||
@@ -801,7 +815,7 @@ export default function MobileFiles(props: Props) {
     setScrollTop(0)
     if (directoryID !== null) persist({ section: 'browse', folderID: directoryID, scrollTop: 0 })
   }, [directoryID, ready, section, browseHome, props.trashActive, props.searchActive,
-    props.requestedDirectoryID, initial.folderID, persist])
+    props.requestedDirectoryID, props.virtualCollection, props.loading, initial.folderID, persist])
 
   useLayoutEffect(() => {
     // An identical ResizeObserver delivery must not re-render the 100k
@@ -1179,6 +1193,7 @@ export default function MobileFiles(props: Props) {
   }
   const beginBrowse = (id: number | null = null) => {
     pendingPathOriginRef.current = null
+    pendingBrowseRootRef.current = null
     flushBrowseScroll()
     navigationIntentRef.current += 1
     setEditBrowseHome(false)
@@ -1246,6 +1261,7 @@ export default function MobileFiles(props: Props) {
   }
   const changeSection = (next: MobileFilesSection) => {
     pendingPathOriginRef.current = null
+    pendingBrowseRootRef.current = null
     flushBrowseScroll()
     if (section === 'recent' || section === 'favorites') {
       const departingTop = scrollHostRef.current?.scrollTop ?? scrollTop
@@ -2294,10 +2310,24 @@ export default function MobileFiles(props: Props) {
               <Box data-mobile-files-group="locations" sx={{ mx: 2, borderRadius: '13px',
                 overflow: 'hidden', bgcolor: 'background.paper' }}>
               {mobileRow({ id: -1, name: '云端文件', kind: 'dir' }, () => {
+                const rootID = Number(props.crumbs[0]?.id ?? 0)
+                if (!Number.isSafeInteger(rootID) || rootID <= 0) {
+                  props.onOpenError(new Error('云端根目录尚未确认，请重试。'))
+                  return
+                }
+                // A previously accepted root (counted Range or visible legacy items)
+                // opens immediately, without waiting for a redundant network frame.
+                // Otherwise keep the Home visible through the real network GET.
+                if (directoryID === rootID && !props.loading &&
+                    (props.virtualCollection || props.items.length > 0)) {
+                  beginBrowse(rootID)
+                } else {
+                  pendingBrowseRootRef.current = {
+                    rootID, intent: ++navigationIntentRef.current,
+                  }
+                }
                 props.onCloseTrash()
                 props.onBrowseRoot()
-                beginBrowse(Number(props.crumbs[0]?.id ?? 0) || null)
-                setBrowseHome(false)
               }, true, undefined, 'cloud')}
               {mobileRow({ id: -2, name: '最近删除', kind: 'dir' }, () => {
                 props.onOpenTrash(); beginBrowse(null)
