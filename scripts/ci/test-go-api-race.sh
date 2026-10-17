@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Integration tests open independent PostgreSQL pools; the original single
-# long-lived Go test process reproducibly exhausted PostgreSQL connections
-# (SQLSTATE 53300). Keep every test and full race instrumentation, but launch
-# four sequential test processes to release old SQL pools at each boundary.
-# Concurrency INSIDE each test is unchanged.
+# Integration tests open independent PostgreSQL pools. Keeping
+# TestA/TestB quota fixtures and TestC (ChunkedUpload) in the first process
+# repeatedly exhausted PostgreSQL max_connections (SQLSTATE 53300) in the
+# subsequent Upload test even with the original four-process partition.
+# Split only that first process at B/C to release old SQL pools beforehand.
+# Keep EVERY discovered test, -race, -count=1, all concurrency within a test,
+# and the coverage check below. Never skip a failing integration test.
 shards=(
-  '^(Test[A-F]|Example|Fuzz)'
+  '^(Test[A-B]|Example|Fuzz)'
+  '^Test[C-F]'
   '^Test[G-M]'
   '^Test[N-S]'
   '^Test[T-Z]'
@@ -31,7 +34,7 @@ for name in "${listed[@]}"; do
   fi
 done
 
-echo "[ci] internal/api race: ${#listed[@]} tests; four sequential processes; timeout=30m each"
+echo "[ci] internal/api race: ${#listed[@]} tests; five sequential processes; timeout=30m each"
 status=0
 for i in "${!shards[@]}"; do
   echo "[ci] start shard $((i + 1))/${#shards[@]}: ${shards[i]}"

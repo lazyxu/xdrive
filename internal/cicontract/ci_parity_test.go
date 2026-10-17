@@ -287,10 +287,12 @@ func TestGitHubAndGitLabCIStayInParity(t *testing.T) {
 	}
 
 	// Race-instrumented API tests use sequential Go processes to release per-test
-	// DB pools, and the discovery guard must keep every test in exactly one shard.
+	// DB pools, including a B/C boundary before the Chunked Upload integration.
+	// The discovery guard must keep every test in exactly one shard.
 	requireRaw(t, "API race test contract", apiRaceTest,
 		"shards=(",
-		"'^(Test[A-F]|Example|Fuzz)'",
+		"'^(Test[A-B]|Example|Fuzz)'",
+		"'^Test[C-F]'",
 		"'^Test[G-M]'",
 		"'^Test[N-S]'",
 		"'^Test[T-Z]'",
