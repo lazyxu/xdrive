@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"strings"
@@ -16,6 +18,30 @@ import (
 const localPushOperationIntentTTL = 30 * time.Second
 
 var errLocalPushOperationIntentDenied = errors.New("private local operation unavailable")
+
+const localPushOperationRequestKeySize = 32
+const localPushOperationRequestKeyDomain = "xdrive-localpush-operation-request-v1\x00"
+
+// Only a digest of the future native Agent's high-entropy request identifier
+// is stored. This digest is NOT an authorization secret or proof of native
+// bytes. There is intentionally no production transport or runtime caller.
+func localPushOperationRequestKeyDigest(key []byte) (string, bool) {
+	if len(key) != localPushOperationRequestKeySize {
+		return "", false
+	}
+	var nonzero byte
+	for _, b := range key {
+		nonzero |= b
+	}
+	if nonzero == 0 {
+		return "", false
+	}
+	b := make([]byte, 0, len(localPushOperationRequestKeyDomain)+len(key))
+	b = append(b, localPushOperationRequestKeyDomain...)
+	b = append(b, key...)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]), true
+}
 
 // localPushOperationIntentScopeTx must be invoked inside the caller's SQL
 // transaction. It follows Owner SHARE -> Device UPDATE -> Source UPDATE ->
@@ -56,6 +82,27 @@ func (s *Server) localPushOperationIntentScopeTx(
 func (s *Server) reserveBoundLocalPushOperationIntent(
 	c *gin.Context, sourceID, revision uint64,
 ) (meta.LocalPushOperationIntent, error) {
+	return s.reserveBoundLocalPushOperationIntentInternal(c, sourceID, revision, nil)
+}
+
+// reserveBoundLocalPushOperationIntentWithKey is Server-private and unrouted.
+// The 32-byte key must come from a future separately authenticated native
+// session. Exact live retry returns the original row, never new work.
+func (s *Server) reserveBoundLocalPushOperationIntentWithKey(
+	c *gin.Context, sourceID, revision uint64, requestKey []byte,
+) (meta.LocalPushOperationIntent, error) {
+	digest, ok := localPushOperationRequestKeyDigest(requestKey)
+	if !ok {
+		return meta.LocalPushOperationIntent{}, errLocalPushOperationIntentDenied
+	}
+	return s.reserveBoundLocalPushOperationIntentInternal(c, sourceID, revision, &digest)
+}
+
+// A nil digest is the legacy internal reservation path, not a shortcut for
+// keyed admission. All admission paths share exactly the same locked scope.
+func (s *Server) reserveBoundLocalPushOperationIntentInternal(
+	c *gin.Context, sourceID, revision uint64, requestKeyDigest *string,
+) (meta.LocalPushOperationIntent, error) {
 	var empty meta.LocalPushOperationIntent
 	denied := errLocalPushOperationIntentDenied
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
@@ -82,6 +129,31 @@ func (s *Server) reserveBoundLocalPushOperationIntent(
 		if lookup != nil && !errors.Is(lookup, gorm.ErrRecordNotFound) {
 			return denied
 		}
+		if requestKeyDigest != nil {
+			var prior meta.LocalPushOperationIntent
+			keyLookup := tx.Where("source_id = ? AND request_key_digest = ?", sourceID, *requestKeyDigest).
+				Take(&prior).Error
+			if keyLookup == nil {
+				// Stale/expired/aborted idempotency keys can NEVER create a
+				// fresh generation, even if the current scope was reauthorized.
+				if lookup != nil || prior.ID != last.ID || prior.Generation != last.Generation ||
+					prior.RequestKeyDigest == nil || *prior.RequestKeyDigest != *requestKeyDigest ||
+					prior.OwnerID != owner.ID || prior.OwnerSession != owner.SessionVersion ||
+					prior.DeviceID != proof.DeviceID || prior.RootID != proof.RootID ||
+					prior.RootFingerprint != fingerprint || prior.SourceRevision != source.Revision ||
+					source.TargetNodeID == nil || prior.TargetNodeID != *source.TargetNodeID ||
+					prior.State != meta.LocalPushOperationIntentReserved || prior.AbortedAt != nil ||
+					prior.IssuedAt.IsZero() || !prior.ExpiresAt.After(prior.IssuedAt) ||
+					now.Before(prior.IssuedAt) || !now.Before(prior.ExpiresAt) {
+					return denied
+				}
+				created = prior
+				return c.Request.Context().Err()
+			}
+			if !errors.Is(keyLookup, gorm.ErrRecordNotFound) {
+				return denied
+			}
+		}
 		generation := uint64(1)
 		if lookup == nil {
 			if last.Generation == 0 || last.Generation == math.MaxUint64 ||
@@ -99,8 +171,9 @@ func (s *Server) reserveBoundLocalPushOperationIntent(
 			OwnerID: owner.ID, OwnerSession: owner.SessionVersion,
 			SourceRevision: source.Revision, TargetNodeID: *source.TargetNodeID,
 			DeviceID: proof.DeviceID, RootID: proof.RootID, RootFingerprint: fingerprint,
-			State:    meta.LocalPushOperationIntentReserved,
-			IssuedAt: now, ExpiresAt: now.Add(localPushOperationIntentTTL),
+			RequestKeyDigest: requestKeyDigest,
+			State:            meta.LocalPushOperationIntentReserved,
+			IssuedAt:         now, ExpiresAt: now.Add(localPushOperationIntentTTL),
 		}
 		if err := tx.Create(&created).Error; err != nil {
 			return denied
