@@ -1,5 +1,29 @@
 # CAS-A03 / S001-d：真实 4GiB 文件仅修改中间 1MiB 的全文件 CAS 版本空间基准
 
+
+## CAS-A03-d4：4GiB 原片前部真实插入1MiB，块边界偏移的独立性能合同（2026-10-17）
+
+**与 d1/d2/d3 不同：** 这次不是8MiB分片内 **覆盖修改** 1MiB，而是在4GiB原始高熵数据 offset=1MiB 处 **插入** 1MiB，从而改变所有后续固定分块偏移。两个实测方案都属于离线原型：8MiB固定块和64KiB原子、2–16MiB限制的内容锚点。后者不是真正任意字节位置的Rabin CDC。现有生产全文件SHA256 CAS不变，不能将离线 fixed-vs-anchor 视作生产 BEFORE/AFTER。
+
+**首轮本地Linux真实n3/3：** 每轮独立4,294,967,296B non-sparse os.urandom fsync真源、额外随机插入1,048,576B，同源交替测试顺序；全两版SHA、20个4KiB真正的首/尾/中部/跨界Range、块SHA，物理B释放保留A和最终全GC均真通过。脚本完全来源SHA256 **0bcf68395b49ed62d0e923a88772794d01d9551895766ff2087b9bad8d2f4378**，Git Blob **300dc80eb0e0b428ac4b098c69528c769a451b47**；首轮仅是**本地实验**而非CI。Linux内核IO通过/proc/self/io，物理实体st_blocks×512；CPU/wall按阶段，整组三次 /usr/bin/time 最大RSS **172004KiB**。
+
+| n3每轮值 / P50 | 固定8MiB | 64KiB锚点 |
+| --- | ---: | ---: |
+| B新增实体字节sample1 / 2 / 3 | 4,296,015,872 / 4,296,015,872 / 4,296,015,872 | 10,682,368 / 11,337,728 / 7,471,104 |
+| B wall ms sample1 / 2 / 3 | 6279.327 / 6051.561 / 5708.023 | 16164.825 / 14766.122 / 14330.814 |
+| B CPU ms sample1 / 2 / 3 | 4488.791 / 4286.420 / 3978.633 | 16077.914 / 14697.758 / 14272.109 |
+| B新物理字节P50 | **4,296,015,872** | **10,682,368** |
+| B写盘Linux kernel P50 | **4,296,429,568** | **10,682,368** |
+| B wall P50 | **6,051.561ms** | **14,766.122ms** |
+| B CPU P50 | **4,286.420ms** | **14,697.758ms** |
+| B复用块P50 | 0 | 472 |
+| 两代实体空间P50 | 8,590,983,168 | 4,305,649,664 |
+
+锚点离线新字节节省**99.7513%**，但wall增加2.44x、CPU增加3.43x；即使离线节省空间也**不建议立即用于生产默认完整CAS**。原始n3不可变8件及SHA256SUMS： [证据README](performance-evidence/cas-a03-d4-offline-insertion/README.md)，[压缩包](performance-evidence/cas-a03-d4-offline-insertion/n3-local-20261017.tar.gz) SHA256 **1c5a9ab43a10c384a6fecaec07ead52b2f0043e61ea28f8ff2a5c93d1dc63bbb**，Git Blob 88b67f0ac56ea2de4921869cf800e9da0e1f660d。
+
+**交付门禁：** 完全准确的**最终PR HEAD**在GitHub Actions重新执行3个4GiB和完整76-job CI/final-gate并保存源SHA/原始CI Artifact；在此之前仅Local n3，不能宣称CI绿或master已更新。对实际生产 INSERT: CURRENT **Not measured**、AFTER=N/A；全部六客户端均 Not measured。[中央去重登记](performance-test-registry.md)、[六端矩阵](performance-platform-coverage.md)。后续真实源、未对齐按字节insert/delete、冷热Range/视频seek/CfAPI/FUSE、真实PG Owner/RefCount/GC、崩溃回滚、备份还原与六端全链路必须另行冻结同条件工作负载；本PR不改产品或Race。
+
+
 **阶段：Accepted original CURRENT n=3（精确归档新HEAD双CI/final-gate待复验）；BEFORE=CURRENT，AFTER=N/A，生产代码不变。** 固定 `lazyxu/xdrive master@7c71a028066c88a00b7aae0376066a3b1bd398d8`，分支 `perf/cas-a03-4gib-small-edit-version-20261016`，采用一个工作提交。
 
 ## 历史去重与现有观测

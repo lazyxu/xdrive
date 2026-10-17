@@ -1,5 +1,27 @@
 # xDrive 已测性能登记簿（Performance Test Registry）
 
+
+## CAS-A03-d4/S001-d4 · 4GiB 文件前端插入 1MiB（2026-10-17）
+
+**新场景，不重复d1/d2/d3：** 之前是4GiB中间 **覆盖修改** 1MiB，固定8MiB分块位置不变；这里在4,294,967,296B真实非稀疏高熵原始字节的 offset=1,048,576 B **插入** 1,048,576B，B增长为4,296,015,872B，整体后移。严格同源对照两个 **离线** 算法：固定8MiB分块和64KiB对齐、2–16MiB有界内容锚点分块。后者不是任意字节位置的rolling CDC，不是生产Local.Put，也没有生产FileVersion/Owner/数据库/上传、备份或GC语义。
+
+**首轮本地 Linux 三个独立真实物理高熵源 n=3/3，全部通过（非准确PR HEAD GitHub CI）：** 每轮同源交替顺序、真实fsync/st_blocks、Linux进程write_bytes/CPU/wall、两版全文件SHA256、每版20个4KiB随机/跨界Range、每块SHA、先删B保留A再全清零。完整 [原始8文件归档](performance-evidence/cas-a03-d4-offline-insertion/n3-local-20261017.tar.gz) 和 [证据README](performance-evidence/cas-a03-d4-offline-insertion/README.md)。归档SHA256 **1c5a9ab43a10c384a6fecaec07ead52b2f0043e61ea28f8ff2a5c93d1dc63bbb**；脚本GitBlob **300dc80eb0e0b428ac4b098c69528c769a451b47**。
+
+| 相同原片同条件n3中位指标 | 离线固定8MiB | 离线内容锚点 | 判断 |
+| --- | ---: | ---: | --- |
+| B新增实际st_blocks字节 | 4,296,015,872 | 10,682,368 | 锚点少**99.7513%物理空间**，只在离线 |
+| B kernel write_bytes | 4,296,429,568 | 10,682,368 | 不包含重新物化完整4GiB |
+| B wall | 6,051.561ms | 14,766.122ms | 锚点反而慢2.44倍 |
+| B CPU | 4,286.420ms | 14,697.758ms | 锚点反而多3.43倍CPU |
+| B复用旧分块 | 0 | 472 | 64KiB对齐插入后恢复部分块边界 |
+| A+B持久实体bytes | 8,590,983,168 | 4,305,649,664 | 无线上SQL安全引用 |
+| 整轮3×4GiB最大RSS | — | 172,004KiB（共同进程） | 不是单arm的RSS |
+
+**决策：只接受研究证据，生产上线 NO-GO。** 原生产 CAS-A03-d3 的4GiB中部覆盖HTTP仍生成4GiB新Blob，属于**不同源分布**，不能借其旧基线推算本插入负载的线上BEFORE。此次两个arm均为离线，因此生产 CURRENT=Not measured（对这个insert形状），生产 AFTER=N/A、speedup=N/A，产品Blob/RefCount/Upload/Backup/GC全部未改。该离线空间收益伴随显著CPU/时延成本，不能直接推广给实际图库/文件浏览器/移动端。所有六个实机/已安装PWA仍 **Not measured**，见[六平台矩阵](performance-platform-coverage.md)。
+
+**冻结真实CI验收：** 同一脚本 scripts/bench-cas-a03-d4-shifted-insert.py；Python标准库真实n3，源码Sha256 0bcf68395b49ed62d0e923a88772794d01d9551895766ff2087b9bad8d2f4378，GitHub工作流 .github/workflows/cas-a03-d4-shifted-insert-offline.yml。每个真实源/全SHA/20 Range/GC0/非Sparse必须通过，锚点新字节≤固定字节15%，全进程RSS≤512MiB。必须新PR**准确最终HEAD**专项真实4GiB n3、完整76-job CI/final-gate双绿后才可Ready/rebase合并。保留坏样本、环境Invalid；不追不相关master，也不触碰Race或窗口变化时的持久任务。
+
+
 > **2026-10-16 P052最终交付核验：** [#1728](https://github.com/lazyxu/xdrive/pull/1728) 源准确工作提交 `90e816c3421d44e624ba687ed4541117c11a8e84` 的真实六组100k物理JPEG取消专项[CI #38829321827](https://github.com/lazyxu/xdrive/actions/runs/38829321827)与完整[CI #38829321902](https://github.com/lazyxu/xdrive/actions/runs/38829321902)（25作业含final-gate）成功，并线性合入 `master@6229ac6a922ed12da47e618d2ab4f56ab95cde56`，关联临时分支已清理。准确证据HEAD复验原版n3最慢Go通知16.305ms、36/36真正Context.Done/Handler退出、+160ms旧Handler/浪费字节0/0B；**不修改产品，AFTER=N/A。** 所有原始样本及前两次无效夹具继续保留，真实安装PWA仍Not measured。
 
 > 2026-10-15 最新交付核查：P050 [#1709](https://github.com/lazyxu/xdrive/pull/1709) 已在准确HEAD专项CI #38748158459及完整CI #38748158841（含final-gate）成功后线性合入 `master@3dcabd3c12d0da72ec40b56c7c8eb21958977a22`，关联远端分支已经清理。此处仅更新**原始CI历史样本的交付状态**，没有重新测试合入后的master。**本登记簿是所有历史已测工作负载的统一去重入口；原始数值和方案决策以对应的子系统规范、原始 JSON 与源码准确的 CI 为准。** 不能因为这里列有归档目录就假定所有测试均通过，也不能把历史CI结果称为本次最新 master 实测。

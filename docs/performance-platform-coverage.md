@@ -1,5 +1,17 @@
 # xDrive 跨平台性能覆盖矩阵
 
+
+## 2026-10-17 · CAS-A03-d4 shifted-insert 4GiB version (offline storage experiment)
+
+A new **1MiB insertion at offset 1MiB** shifts all subsequent byte offsets in an actually allocated 4GiB high-entropy original; this is not the already-accepted CAS-A03-d3 **1MiB overwrite** inside one 8MiB upload part. A matched independent 4GiB offline A/B runs fixed 8MiB chunks against a 64KiB-aligned content-anchor prototype and verifies two full-file SHA256s, 20 random/cross-boundary Ranges per version, actual Linux st_blocks/write_bytes/CPU/RSS, changed-only GC and last-owner-style sweep (test-local only). The candidate is **not** production full-Blob CAS, byte-granular Rabin CDC or authenticated Server GC. Data/source/limitations: [canonical version benchmarks](cas-version-performance.md), [central registry](performance-test-registry.md), [raw evidence](performance-evidence/cas-a03-d4-offline-insertion/README.md).
+
+| Exact workload | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| New 4GiB shifted-INSERT **real client upload/download/versioned Range/GC** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+These cells cannot be promoted from local Linux Python or GitHub Actions offline storage results. Other earlier 4GiB first-upload and 100k viewport tests retain their distinct historical measurements.
+
+
 > 2026-10-12 · **运行平台分开验收，测试负载可以共享。** **数据量相同**不代表平台、缓存、安装模式或真实性能相同。 本文是所有性能专项的跨端入口；原始测试结果与成功/失败状态以 [性能测试登记簿](performance-test-registry.md) 和各 [FileExplorer](file-explorer-performance.md)、[Gallery](gallery-performance.md)、[同步](sync-performance.md) 子系统规范为准。新增有界样本必须同时修订本矩阵、登记簿、子系统规范与原始 JSON。这里列出的既有 CI 仅为各次**历史来源源码**测量，不是当前 master 或用户设备的新跑分。
 
 ## 2026-10-16 · P052已交付，P053新增基线：六平台直接对照
