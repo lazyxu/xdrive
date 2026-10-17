@@ -58,6 +58,7 @@ import type {
   XDriveFileExplorerExternalDropPayload,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
+import { useXDriveDeferredPendingLoading } from '../../ui/shared/src/mui/useDeferredLoading'
 import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
@@ -331,6 +332,9 @@ function isNativeTouchContext(event: MouseEvent | undefined) {
 
 export default function MobileFiles(props: Props) {
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
+  // Browse Home keeps its rows mounted through organization refreshes.
+  // Only visible feedback waits; the Owner/Server request is never delayed.
+  const showOrganizationLoading = useXDriveDeferredPendingLoading(Boolean(props.organizationLoading))
   // The URL describes a pending intent. In a responsive remount, use it for
   // initial scroll only after the shared controller commits its real crumbs.
   // Until then the last verified folder and scroll position still own the UI.
@@ -2261,9 +2265,17 @@ export default function MobileFiles(props: Props) {
             ) : null}
           </Box>
           {section === 'browse' && !showDirectory ? (
-            <Box data-xdrive-mobile-files-home>
+            <Box data-xdrive-mobile-files-home sx={{ position: 'relative' }}>
               <Typography variant="overline" sx={{ px: 2, color: 'text.secondary',
                 display: 'block', pt: 1.5, pb: 0.5 }}>位置</Typography>
+              <Box
+                data-mobile-files-organization-loading
+                aria-busy={props.organizationLoading || undefined}
+                sx={{ position: 'absolute', top: 12, right: 16, width: 16, height: 16,
+                  display: 'grid', placeItems: 'center', pointerEvents: 'none' }}
+              >
+                {showOrganizationLoading ? <CircularProgress size={14} aria-label="正在读取智能文件夹和标签" /> : null}
+              </Box>
               <Box data-mobile-files-group="locations" sx={{ mx: 2, borderRadius: '13px',
                 overflow: 'hidden', bgcolor: 'background.paper' }}>
               {mobileRow({ id: -1, name: '云端文件', kind: 'dir' }, () => {
@@ -2298,12 +2310,8 @@ export default function MobileFiles(props: Props) {
                   ) : null}
                 </>
               ) : null}
-              {props.organizationLoading ? (
-                <Typography data-mobile-files-organization-loading variant="caption" sx={{ px: 2 }}>
-                  正在加载智能文件夹和标签…
-                </Typography>
-              ) : null}
-              {props.organizationError ? (
+              {/* The fixed header slot above owns pending feedback, never an in-flow row. */}
+              {!props.organizationLoading && props.organizationError ? (
                 <Stack data-mobile-files-organization-error role="alert" direction="row" alignItems="center"
                   sx={{ px: 2, gap: 1, minHeight: MIN_TOUCH }}>
                   <Typography variant="caption" color="error" sx={{ minWidth: 0, flex: 1, overflowWrap: 'anywhere' }}>

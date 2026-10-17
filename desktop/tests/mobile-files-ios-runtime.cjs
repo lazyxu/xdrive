@@ -72,6 +72,16 @@ const propertiesHook = (() => {
   )
   return mod.exports.useXDriveFileExplorerPropertiesController
 })()
+const deferredLoading = (() => {
+  const mod = { exports: {} }
+  new Function('module', 'exports', 'require',
+    compile('ui/shared/src/mui/useDeferredLoading.ts'))(
+    mod, mod.exports, name => {
+      if (name === 'react') return React
+      throw Error('Unexpected deferred loading dependency: ' + name)
+    })
+  return mod.exports
+})()
 const material = new Proxy({}, { get: (_, name) => String(name) })
 const sharedNameDialog = (() => {
   const mod = { exports: {} }
@@ -134,6 +144,7 @@ const imports = {
     xDriveFileExplorerDragAutoScrollDelta: () => 0,
     xDriveFileKind: name => /\.(?:png|jpg|livp)$/i.test(name) ? 'image' : 'file',
   },
+  '../../ui/shared/src/mui/useDeferredLoading': deferredLoading,
   '../../ui/shared/src/mui/usePointerDrag': {
     useXDrivePointerDrag: () => ({
       active: false,
@@ -3373,4 +3384,39 @@ test('U09-D2c2 denied sort or unverified identity never reanchors Mobile scroll'
     createNodeMock: element => element.props?.['data-xdrive-mobile-files-scroll'] !== undefined
       ? host : null,
   })
+})
+
+test('mounted Mobile Browse Home keeps organization rows stable through quick and sustained reads', async () => {
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-organization-loading', true)
+    const ringCount = () => slot().findAll(n => n.type === 'CircularProgress').length
+    const organized = () => find(h.view, 'data-mobile-files-home-section', 'organization')
+    const oldLabels = () => textOf(organized().props.children)
+    const before = oldLabels()
+    assert.ok(before.includes('整理'))
+    assert.equal(ringCount(), 0)
+    await h.update({ organizationLoading: true })
+    assert.equal(slot().props['aria-busy'], true)
+    assert.equal(ringCount(), 0, 'first pending frame is quiet')
+    assert.equal(oldLabels(), before, 'accepted organized entries remain mounted')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
+    assert.equal(ringCount(), 0, 'fast reads never flash a ring')
+    await h.update({ organizationLoading: false })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    assert.equal(ringCount(), 0, 'finished request cannot leave stale delayed progress')
+
+    await h.update({ organizationLoading: true })
+    assert.equal(ringCount(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
+    assert.equal(ringCount(), 1, 'real sustained wait is visible inside the fixed slot')
+    assert.equal(oldLabels(), before, 'the same real organization button stays in place')
+    await h.update({ organizationLoading: false })
+    assert.equal(ringCount(), 0, 'status disappears without removing or shifting the slot')
+    assert.equal(count(h.view, 'data-mobile-files-organization-loading'), 1)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1)
+  }, { props: {
+    organizationLoading: false,
+    savedSearches: [{ id: 60, name: '近期文档' }],
+    tags: [{ id: 61, name: '重要标签' }],
+  } })
 })
