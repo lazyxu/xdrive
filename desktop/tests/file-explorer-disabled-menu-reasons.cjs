@@ -80,3 +80,30 @@ test('F03/U03 Mobile batch More provides real 200/500/1000 reasons, keyboard foc
   assert(!/getSelectionActionDisabledReason\?\.\('manage-tags'.*\) \? 'permission/.test(source),
     'permission must not be guessed from names or client presentation')
 })
+
+test('F03/D01 Desktop native Open With and CfAPI commands explain only temporary busy state', () => {
+  const s = read('desktop/src/renderer/DesktopFileExplorer.tsx')
+  const start = s.indexOf('const getItemMenuItems = (item:')
+  const end = s.indexOf('async function downloadSelected', start)
+  assert.ok(start >= 0 && end > start)
+  const menu = s.slice(start, end)
+  assert.ok(menu.includes('const localActionDisabledReason = explorerActionBusy'))
+  assert.ok(menu.includes('当前文件操作尚未完成，请稍后重试。'))
+  for (const id of ['open-with', 'availability-keep', 'availability-release']) {
+    const p = menu.indexOf(`id: '${id}'`)
+    assert.ok(p >= 0, `missing Desktop-only action ${id}`)
+    const item = menu.slice(p, p + 550)
+    assert.match(item, /disabled: explorerActionBusy,\s*disabledReason: localActionDisabledReason,/, id)
+  }
+  assert.equal((menu.match(/disabledReason: localActionDisabledReason,/g) || []).length, 3,
+    'only the three Desktop-specific busy-disabled actions gain the explicit reason')
+  assert.equal(caption({ disabled: true, disabledReason: '当前文件操作尚未完成，请稍后重试。' }),
+    '不可用：当前文件操作尚未完成，请稍后重试。')
+  assert.equal(caption({ disabled: false, disabledReason: '当前文件操作尚未完成，请稍后重试。' }), null)
+  assert.ok(menu.includes("node.type === 'file' && openWithSupported"),
+    'unsupported old Agents and non-Windows platforms must not gain a fake Open With command')
+  assert.ok(menu.includes('if (!fileAvailabilitySupported) return desktopItems'),
+    'CfAPI commands still require a current device capability')
+  assert.doesNotMatch(menu, /fetch\s*\(|api\/v1|canModify|guessPermission|role.*administrator/i,
+    'busy presentation does not guess Server ACLs or add a transport')
+})
