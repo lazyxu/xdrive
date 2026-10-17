@@ -266,7 +266,9 @@ test('shared FileExplorer keeps the details inspector and opens Properties as a 
   assert.ok(explorer.includes('data-xdrive-file-explorer-inspector-splitter'), 'inspector should expose a resize splitter')
   for (const token of [
     'export function XDriveFilePropertiesDialog({',
-    'aria-label="文件属性"',
+    'aria-labelledby={titleId}',
+    'titleId={titleId}',
+    'component="h3"',
     'data-xdrive-file-properties-preview',
     '<XDriveDescriptionGrid columns={2}>',
     '常规',

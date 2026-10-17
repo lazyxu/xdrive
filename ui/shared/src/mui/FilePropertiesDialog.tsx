@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import { Box, Dialog, Divider, Stack, Typography } from '@mui/material'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveDescriptionGrid, XDriveDescriptionItem } from './DescriptionGrid'
@@ -28,6 +28,7 @@ export function XDriveFilePropertiesDialog({
   onClose: () => void
 }) {
   const { compactTouch, dialogPaper } = useXDriveCompactTouchDialog()
+  const titleId = useId()
   const sections = ([
     ['general', '常规'],
     ['content', '内容'],
@@ -50,10 +51,10 @@ export function XDriveFilePropertiesDialog({
       fullWidth
       fullScreen={compactTouch}
       scroll="paper"
-      aria-label="文件属性"
+      aria-labelledby={titleId}
       slotProps={{ paper: dialogPaper }}
     >
-      <XDriveDialogTitle title={title} onClose={onClose} />
+      <XDriveDialogTitle title={title} titleId={titleId} onClose={onClose} />
       <XDriveDialogContent dividers>
         <Stack spacing={2}>
           {preview ? (
@@ -75,9 +76,9 @@ export function XDriveFilePropertiesDialog({
           ) : null}
 
           {sections.map((section, index) => (
-            <Stack key={section.key} spacing={1}>
+            <Stack key={section.key} spacing={1} role="group" aria-labelledby={`${titleId}-${section.key}`}>
               {index > 0 ? <Divider /> : null}
-              <Typography variant="caption" color="text.secondary">
+              <Typography id={`${titleId}-${section.key}`} component="h3" variant="caption" fontWeight={700} color="text.secondary">
                 {section.label}
               </Typography>
               <XDriveDescriptionGrid columns={2}>

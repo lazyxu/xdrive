@@ -1,5 +1,16 @@
 # xDrive Files UX acceptance audit · 2026-10-16
 
+## U11 · shared file Properties information hierarchy and accessible section headings (2026-10-17)
+
+- **Source-confirmed pre-fix gap:** Shared Web/Desktop FileExplorer listed type and timestamps before the actual path and stored size, placed bytes under Content and current Node Revision under Technical. Its shared `XDriveFilePropertiesDialog` rendered visual caption-only section titles with no heading/group link, and a generic fixed `aria-label="文件属性"` instead of the current file-specific visible dialog title. This is an actionable U11 presentation/a11y improvement, not evidence of an OS screen-reader bug.
+- **Frozen GitHub baseline:** `master@8b61f6f26390389cf65ac09b1c990ad287f335ad`, one scoped work commit on `fix/files-u11-properties-hierarchy-20261017`. No directly related active Files PR/branch was found in the open PR/branch queries; unrelated Gallery/LocalPush/System Dependencies/Performance/Race/PWA work is untouched.
+- **Scoped candidate:** For single files and folders, place true canonical path, size (existing recursive Server stats for directories), timestamps and existing Revision first in General. Keep file type/availability, media dimensions/duration, SHA-256, Node ID and Owner-scoped source bindings; do not change IDs, ordering of FileExplorer itself, range/session scope, or stat requests. The existing full media `XDriveMediaDetailsInspector` remains the sole dedicated media Inspector. Label the shared Dialog using its current title, expose populated General/Content/Technical sections through actual heading and accessible group IDs, and retain the current two-column responsive grid and compact full-screen dialog behavior.
+- **Verification boundary:** New `desktop/tests/file-explorer-properties-hierarchy-u11.cjs` checks source-real canonical priority, no duplicate revision, recursive stats/content, media Inspector reuse and section/title wiring. These are Node **source-contract tests**, not an executed browser DOM, NVDA/VoiceOver/TalkBack announcement, real folder-size network test, iOS 27 pixel comparison, or PWA physical install acceptance. This remains a **candidate, not merged**, until one-work-commit exact-head full GitHub CI/Final Gate succeeds and mergeability is confirmed. Preserve seven-platform S5 `NOT RUN` / Release NO-GO.
+
+### Legacy source-contract migration (same U11 work commit)
+
+The existing `desktop/tests/shared-file-explorer.cjs` historically asserts the now-intentionally-replaced fixed `aria-label="文件属性"`. Preserve the entire original shared Explorer coverage, but update **only** the stale fixed-name expectation to the new `aria-labelledby={titleId}` + `titleId={titleId}` + semantic section heading contract. The first candidate CI is **not valid authority** for this revised tree. Rebuild exactly one work commit on the same fixed parent and require NEW complete exact-HEAD CI; keep Draft until all jobs and final gate pass.
+
 ## Current verified follow-up snapshot · 2026-10-16 (post U09-C merge)
 
 **Evidence boundary:** This section reconciles the historical first-red/candidate notes below with
