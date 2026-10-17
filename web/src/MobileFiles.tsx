@@ -115,6 +115,7 @@ type Props = {
   crumbs: XDriveFileExplorerCrumb[]
   loading: boolean
   trashActive: boolean
+  trashReadState?: 'unverified' | 'ready' | 'error'
   onOpenTrash: () => void
   onCloseTrash: () => void
   onBrowseRoot: () => void
@@ -563,7 +564,13 @@ export default function MobileFiles(props: Props) {
   }, [showRangeLoading, loadFeedbackScope])
   const showArrangementLoading = showRangeLoading && delayedLoadScope === loadFeedbackScope
 
-  const zeroStatePending = (props.loading && !keepAcceptedEmptyDirectory) || searchCountPending
+  const trashReadState = props.trashReadState ?? 'ready'
+  const verifiedTrashEmpty = props.trashActive && trashReadState === 'ready' && totalCount === 0
+  const unverifiedTrashEmpty = props.trashActive && totalCount === 0 &&
+    (trashReadState === 'unverified' || (trashReadState === 'error' && props.loading))
+  const failedTrashEmpty = props.trashActive && totalCount === 0 &&
+    trashReadState === 'error' && !props.loading
+  const zeroStatePending = (props.loading && !keepAcceptedEmptyDirectory && !verifiedTrashEmpty) || searchCountPending
   const zeroStateLoading = zeroStatePending && showArrangementLoading
   // Do not insert a padded zero-state loading panel for a request that
   // finishes before the next meaningful frame. An accepted empty directory
@@ -571,7 +578,8 @@ export default function MobileFiles(props: Props) {
   const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !props.loading
   const showZeroState = totalCount === 0 &&
     ((!zeroStatePending && !coldUnconfirmedBrowse) ||
-      keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed)
+      keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
+      unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
     ? props.searchActive ? '正在查询…' : '正在加载文件…'
     : props.searchActive
@@ -2405,7 +2413,23 @@ export default function MobileFiles(props: Props) {
               </Typography>
               {showZeroState ? (
                 <Box data-mobile-files-zero-state>
-                  <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
+                  {unverifiedTrashEmpty ? (
+                    <Box data-mobile-files-trash-first-read
+                      aria-busy={props.loading || undefined}
+                      sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+                      {zeroStateLoading
+                        ? <XDriveStatePanel variant="plain" loading message="正在读取最近删除…" />
+                        : null}
+                    </Box>
+                  ) : failedTrashEmpty ? (
+                    <Stack data-mobile-files-trash-read-error role="alert" alignItems="center" justifyContent="center"
+                      sx={{ minHeight: 180, px: 2 }} spacing={1}>
+                      <Typography variant="body2" color="error.main">最近删除读取失败，请重试。</Typography>
+                      <Button onClick={props.onRefresh} sx={{ minHeight: MIN_TOUCH }}>重试</Button>
+                    </Stack>
+                  ) : (
+                    <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
+                  )}
                 </Box>
               ) : null}
               {groupedLayout ? (
