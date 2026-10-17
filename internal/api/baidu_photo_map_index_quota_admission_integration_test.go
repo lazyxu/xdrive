@@ -266,9 +266,35 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	verbose := db.Session(&gorm.Session{Logger: gormlogger.New(
 		log.New(&sqlLog, "", 0), gormlogger.Config{LogLevel: gormlogger.Info},
 	)})
-	if err := executeBaiduPhotoMapIndexQuotaAdmitted(context.Background(), verbose,
-		owner.ID, first.ID, licence, converter); err != nil {
-		t.Fatalf("first quota-limited private conversion rejected: %v", err)
+	var secretReads atomic.Int32
+	var forwardCalls atomic.Int32
+	serverAK := func(ctx context.Context, id uint64) (string, error) {
+		if ctx.Err() != nil || id != owner.ID {
+			return "", errors.New("untrusted Owner")
+		}
+		secretReads.Add(1)
+		return "synthetic-owner-server-ak-no-network", nil
+	}
+	offlineForward := func(
+		ctx context.Context, ak string, points []baidumapjsapi.WGS84Coordinate,
+	) ([]baidumapjsapi.BD09Coordinate, error) {
+		if ctx.Err() != nil || ak != "synthetic-owner-server-ak-no-network" ||
+			len(points) != 1 || points[0].Longitude != 0 || points[0].Latitude != 0 {
+			t.Fatal("untrusted source/AK reached offline forwarding")
+		}
+		forwardCalls.Add(1)
+		got, err := converter(ctx, points[0])
+		if err != nil {
+			return nil, err
+		}
+		return []baidumapjsapi.BD09Coordinate{got}, nil
+	}
+	if err := executeBaiduPhotoMapIndexWithTrustedForward(context.Background(), verbose,
+		owner.ID, first.ID, licence, serverAK, offlineForward); err != nil {
+		t.Fatalf("first quota-limited source-bound forward bridge rejected: %v", err)
+	}
+	if secretReads.Load() != 1 || forwardCalls.Load() != 1 {
+		t.Fatal("exact single Server AK read and forward send required after quota")
 	}
 	if err := executeBaiduPhotoMapIndexQuotaAdmitted(context.Background(), peer,
 		owner.ID, second.ID, licence, converter); err != nil {
@@ -288,15 +314,19 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		index.Latitude != 0.006 || index.Longitude != 0.006 {
 		t.Fatalf("zero GPS pair was discarded or swapped: %+v %v", index, err)
 	}
-	if err := executeBaiduPhotoMapIndexQuotaAdmitted(context.Background(), db,
-		owner.ID, third.ID, licence, converter); err == nil {
+	if err := executeBaiduPhotoMapIndexWithTrustedForward(context.Background(), db,
+		owner.ID, third.ID, licence, serverAK, offlineForward); err == nil {
 		t.Fatal("third same-minute Owner quota overrun was accepted")
+	}
+	if secretReads.Load() != 1 || forwardCalls.Load() != 1 {
+		t.Fatal("quota denial must not read Server AK or send exact source GPS")
 	}
 	countQuota(2)
 	if sent.Load() != 2 {
 		t.Fatal("quota denial reached external conversion callback")
 	}
-	if strings.Contains(sqlLog.String(), "35.243951") || strings.Contains(sqlLog.String(), "119.612345") {
+	if strings.Contains(sqlLog.String(), "35.243951") || strings.Contains(sqlLog.String(), "119.612345") ||
+		strings.Contains(sqlLog.String(), "synthetic-owner-server-ak-no-network") {
 		t.Fatal("source GPS escaped private GORM SQL logging")
 	}
 	// Cross-owner and expired-source revisions never bypass current consent.
