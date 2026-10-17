@@ -4,6 +4,12 @@ This document is the normative contract for the separation between xDrive **云�
 
 ## Goals
 
+## 全局存储运行时性能观测（OBS-P001）
+
+管理员的全局存储页面除本规范的每日容量、CAS去重、staging、GC物理清单外，追加一组**来自已存在HTTP计数器**的只读、固定九类进程性能汇总。只在已认证Admin加载/手动刷新`GET /api/v1/admin/storage`时查询累计请求数、HTTP5xx、mean HTTP wall duration；不会为了统计而扫描Blob/写SQL。参见 [OBS-P001规范与局限](global-storage-performance-observability.md)。当前CPU/p95/吞吐字节/跨实例窗口与每日操作延迟**没有**被新增指标覆盖，不能误标为零；已存在的自动每日存储/GC快照不受影响。共享Web/Desktop/Mobile Web界面本身的真实平台验收分别记录在[矩阵](performance-platform-coverage.md)。
+
+
+
 The storage UI must explain where xDrive-managed disk space is actually used. It must not stop at account quota or CAS logical references.
 
 The administrator **全局存储** surface reports:

@@ -43,6 +43,18 @@ import type {
 import { formatBytes, formatSignedBytes } from '../format'
 import type { XDriveAdminStoragePort } from '../admin-management'
 
+const STORAGE_OPERATION_LABELS: Record<NonNullable<StorageStats['performance']>['rows'][number]['key'], string> = {
+  files_list: '文件列表与定位',
+  gallery_list: '图库列表与索引',
+  preview: '缩略图与文件预览',
+  download: '文件与归档下载',
+  upload_chunk: '分片上传',
+  upload_finalize: '上传完成提交',
+  operation_enqueue: '文件操作排队',
+  delete_request: '删除 HTTP 请求',
+  changefeed: '增量变更读取',
+}
+
 const STAGING_PAGE_SIZE = 20
 const STORAGE_DIAGNOSTIC_PAGE_SIZE = 20
 
@@ -482,6 +494,50 @@ export default function StorageStatsPanel({
 
           {stats && (
             <Stack spacing={3}>
+              {scope === 'global' && stats.performance && (
+                <Stack spacing={1.5} data-xdrive-storage-section="performance">
+                  <XDriveSectionHeader
+                    level="h3"
+                    title="读写性能观测"
+                    subtitle="从现有 HTTP 指标汇总，不扫描文件或数据库；刷新页面读取最新进程累计值。"
+                  />
+                  <Typography variant="body2" color="text.secondary">
+                    统计窗口：{new Date(stats.performance.started_at).toLocaleString()}
+                    {' 至 '}{new Date(stats.performance.captured_at).toLocaleString()}。
+                    仅当前 Server 进程；重启后重新累计，多实例不自动合并。
+                  </Typography>
+                  <XDriveTableSurface>
+                    <Table size="small" aria-label="全实例读写请求性能" sx={{ minWidth: 660 }}>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>操作类型</TableCell>
+                          <TableCell align="right">HTTP 请求次数</TableCell>
+                          <TableCell align="right">平均耗时</TableCell>
+                          <TableCell align="right">HTTP 5xx</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {stats.performance.rows.map((metric) => (
+                          <TableRow key={metric.key}>
+                            <TableCell>{STORAGE_OPERATION_LABELS[metric.key]}</TableCell>
+                            <TableCell align="right">{metric.requests.toLocaleString()}</TableCell>
+                            <TableCell align="right">
+                              {metric.requests > 0 ? `${metric.average_ms.toFixed(1)} ms` : '—'}
+                            </TableCell>
+                            <TableCell align="right">{metric.server_errors.toLocaleString()}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </XDriveTableSurface>
+                  <Typography variant="caption" color="text.secondary">
+                    平均耗时包括 HTTP 传输和流式响应耗时，并非 CPU 时间或 p95。
+                    HTTP 404/取消可能是正常操作，错误列仅计 5xx；文件操作排队耗时不等于后台执行耗时。
+                    每日容量与 GC 趋势继续由下方持久快照提供，此处不保存路径、文件名或账户身份。
+                  </Typography>
+                </Stack>
+              )}
+
               {scope === 'global' && health && (
                 <XDriveStatusAlert
                   tone={health.status === 'fail' ? 'bad' : health.status === 'warning' ? 'warning' : 'good'}

@@ -1,5 +1,20 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## OBS-P001 · 管理员运行中HTTP性能概要（2026-10-17）
+
+当前仅用Server已有的匿名路由模板累加计数，**不新增HTTP热路径每请求探针**；新增共享GlobalStorage页的固定九类汇总是非持久的进程内存观察，而现存24h的CAS/GC容量快照保持自动运行。完整指标限制和拒绝过度推论详见[OBS-P001规范](global-storage-performance-observability.md)和[性能台账](performance-test-registry.md)。
+
+| 新验收负载 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| Admin Global Storage 9类进程HTTP性能行（真实GUI/刷新与权限） | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+共同的MUI页面代码复用不是六平台的真机性能证据；Server单层unit与Go benchmark通过也不解除这些状态。
+**新增Go Server单层初轮n3（非六平台）：** [OBS-P001 CI #39009569013](https://github.com/lazyxu/xdrive/actions/runs/39009569013) ​旧HTTP热计数43.28ns/op/0B/0alloc，新管理员读取213.7ns/op/464B/2alloc，两者均单层CPU微基准，不足以验收下列六端真实界面。完整 [原始证据](performance-evidence/obs-p001-global-storage/README.md)；六端仍 Not measured。
+
+
+
+
+
 
 ## 2026-10-17 · CAS-A03-d4 shifted-insert 4GiB version (offline storage experiment)
 

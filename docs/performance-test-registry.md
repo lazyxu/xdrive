@@ -1,5 +1,18 @@
 # xDrive 已测性能登记簿（Performance Test Registry）
 
+> **2026-10-17 OBS-P001 first real source-exact microbenchmark / archive:** [specialized CI #39009569013](https://github.com/lazyxu/xdrive/actions/runs/39009569013), work HEAD `88c00d428a2ae6832a9d3c73870a338a7172dfc2`, n=3 existing unchanged HTTP observer **43.28 ns/op P50, 0 B/op, 0 allocs/op** and new admin-only nine-class read summary **213.7 ns/op P50, 464 B/op, 2 allocs/op**; both pure Go microbenchmark operations, **not** actual 100k CAS, 4GiB transfer, Web/Desktop GUI or p95. The original [four-file Actions ZIP](performance-evidence/obs-p001-global-storage/ci-run-39009569013.zip) is permanently stored with complete [SHA and source manifest](performance-evidence/obs-p001-global-storage/README.md). Frozen new snapshot <=2ms/op and <=64KiB/op passed n3; production original per-request hot-path source **unchanged**, therefore NO measured end-user speedup/B-A percentage and production AFTER=N/A. For this new admin summary capability original BEFORE=N/A, measured candidate P50 as above. Evidence commit moves HEAD, require NEW source-exact dedicated n3 + full 76-job CI/Final Gate before Ready/Merge. Daily capacity/GC snapshot existed already; daily latency and installed PWA remain Not measured.
+
+## OBS-P001 · 管理员全局存储低开销性能摘要（2026-10-17）
+
+**状态：候选实现 / CI 与开销验收待完成；并非新的100k/4GiB生产性能优化。** [规范与指标边界](global-storage-performance-observability.md) · [存储物理审计](storage-inventory.md) · [六平台矩阵](performance-platform-coverage.md)。
+
+**CURRENT已存在：** 所有Gin路由在 `serverObservability.observeRequest` 中按**路由模板+method+status**记录请求数与wall秒数；已有24h Server后台存储/GC历史快照（180天保留）和 Prometheus `/metrics`。本专项不改变请求热路径，管理员打开全局存储才从内存聚合最多9个固定类别：文件列表、图库索引、缩略图/预览、下载、分片上传、Finalize、文件操作排队、HTTP删除、Changefeed。仅匿名计数、HTTP5xx和**累计平均ms**，不输出用户、完整路径/IP/Node ID，不是分位数/p95、下载吞吐或后台Worker耗时。
+
+**工作负载与测试合同：** `OBS-P001/admin-global-storage-read-only-process-HTTP-rollup`。已有请求热路径BEFORE与AFTER代码逻辑不变，无可比较提速；新增只读页面汇总BEFORE=N/A、AFTER=Not measured（直到源准确单次读取benchmark），不得宣称无开销。Go纯单元测试均值20ms/5xx、合法404、未知路由不可泄漏、nil空样本；`BenchmarkStoragePerformanceReadOnlySnapshot`量测平均ns/op及allocs。UI共享Web/Desktop，既有页面“刷新”才取值；持久每日只适用于原有容量/GC，操作时间在重启后归零且多副本不合并。不自动运行100k/4GiB压力基准，不触碰Race、全文件CAS/GC或TaskCenter持久取消。待真实CI后追加源码SHA/benchmark原始数值及接纳结论，不覆盖旧测试。
+
+
+
+
 
 ## CAS-A03-d4/S001-d4 · 4GiB 文件前端插入 1MiB（2026-10-17）
 

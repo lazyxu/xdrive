@@ -1,0 +1,107 @@
+name: OBS-P001 Admin Global Storage Existing HTTP Counter Overhead
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  obs-p001-admin-observability:
+    if: github.head_ref == 'perf/obs-p001-global-storage-runtime-summary-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Check source formatting and shared Desktop/Web contract
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          test -z "$(gofmt -l internal/api/storage_performance_observation.go internal/api/storage_performance_observation_test.go internal/api/storage_intelligence.go internal/api/storage_intelligence_integration_test.go)"
+          node --test desktop/tests/global-storage-performance-obs-p001.cjs desktop/tests/web-storage-metrics.cjs
+          node web/scripts/check-gui-chinese.mjs
+      - name: Verify unchanged authentic first-n3 raw CI archive
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/obs-p001-global-storage/ci-run-39009569013.zip
+          printf '%s  %s\n' '401f8016a634a7a7914ee8d13f5bea7c0779f77736f78df3973a2c25d235c9c4' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,sys,zipfile
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              names=set(z.namelist())
+              assert names=={'run.log','summary.json','source.txt','resources.txt'},names
+              expected={'run.log':'b784e60104b06e71394f0d7715690f7af815d026426f28ee80c104c8099f30e3',
+                        'summary.json':'fb7eb7cba6173ec1baea40daa9f4c1a3d83c8dc2255cbcced689a6d37e8ad036',
+                        'source.txt':'2ad434d5dd24a871feff21383fba755f5013c74c87a868845e4706e9ee4c1574',
+                        'resources.txt':'cd303065059412b2eaf585ff8adfa097b5bd4a2107fd10d52bf82ce853c61910'}
+              for name,sha in expected.items():
+                  assert hashlib.sha256(z.read(name)).hexdigest()==sha,name
+              source=z.read('source.txt').decode()
+              assert 'EXACT_SOURCE_HEAD=88c00d428a2ae6832a9d3c73870a338a7172dfc2' in source
+              assert 'CI_RUN_ID=39009569013' in source
+              for path in ('internal/api/storage_performance_observation.go',
+                           'internal/api/storage_performance_observation_test.go',
+                           'internal/api/observability.go',
+                           'internal/api/storage_intelligence.go'):
+                  digest=hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()
+                  assert digest+'  '+path in source,('benchmark_source_changed',path)
+              summary=json.loads(z.read('summary.json'))
+              assert summary['n']==3 and not summary['production_changed_hot_path']
+              assert summary['median']['ReadOnlySnapshot']['ns_per_op']==213.7
+              assert summary['median']['ExistingHotPath']['ns_per_op']==43.28
+          print('OBS_P001_ORIGINAL_EXACT_RAW_ARCHIVE_VERIFIED_4_FILES')
+          PY
+      - name: Run three source-exact fixed-route microbenchmark samples
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/obs-p001-perf"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/api/storage_performance_observation.go internal/api/storage_performance_observation_test.go internal/api/observability.go internal/api/storage_intelligence.go
+            go version
+            uname -a
+          } > "$out/source.txt"
+          /usr/bin/time -v -o "$out/resources.txt" \
+            go test -mod=readonly ./internal/api \
+              -run '^TestStoragePerformance' \
+              -bench '^BenchmarkStoragePerformance(ExistingHotPath|ReadOnlySnapshot)$' \
+              -benchtime=400ms -count=3 -benchmem -timeout=20m -v \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          out=pathlib.Path(sys.argv[1])
+          log=(out/'run.log').read_text()
+          vals={}
+          rx=re.compile(r'^BenchmarkStoragePerformance(ExistingHotPath|ReadOnlySnapshot)-\d+\s+\d+\s+([\d.]+) ns/op\s+(\d+) B/op\s+(\d+) allocs/op',re.M)
+          for kind,ns,bytes_,allocs in rx.findall(log):
+              vals.setdefault(kind,[]).append({'ns_per_op':float(ns),'bytes_per_op':int(bytes_),'allocs_per_op':int(allocs)})
+          assert set(vals)=={'ExistingHotPath','ReadOnlySnapshot'}, vals
+          assert all(len(v)==3 for v in vals.values()), vals
+          assert '--- FAIL:' not in log
+          snap=vals['ReadOnlySnapshot']
+          assert max(x['ns_per_op'] for x in snap)<=2_000_000, snap
+          assert max(x['bytes_per_op'] for x in snap)<=65_536, snap
+          obj={'workload_id':'OBS-P001/admin-readonly-existing-HTTP-aggregate',
+            'head_source':(out/'source.txt').read_text().splitlines()[0],
+            'n':3,'status':'measured-CI-candidate','production_changed_hot_path':False,
+            'before_snapshot':'N/A - new admin read-only capability',
+            'after_snapshot':'candidate in this CI',
+            'budget_snapshot_ns_op_max':2_000_000,'budget_snapshot_bytes_op_max':65_536,
+            'results':vals,
+            'median':{k:{metric:statistics.median(x[metric] for x in samples) for metric in ('ns_per_op','bytes_per_op','allocs_per_op')} for k,samples in vals.items()},
+            'limits':'Microbenchmark only. No 100k actual CAS content, physical mobile/PWA, real PG/Go upload, or production latency speedup.'}
+          (out/'summary.json').write_text(json.dumps(obj,indent=2)+'\n')
+          print('OBS_P001_VALIDATED_N3',json.dumps(obj['median'],sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs-p001-existing-http-admin-microbenchmark-n3
+          path: ${{ runner.temp }}/obs-p001-perf/
+          retention-days: 14
+          if-no-files-found: warn

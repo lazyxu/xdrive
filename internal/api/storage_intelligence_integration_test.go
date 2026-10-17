@@ -135,6 +135,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if statsA.FileCount != 3 || statsA.LogicalFileBytes != wantLogical {
 		t.Fatalf("user A file stats count=%d logical=%d want count=3 logical=%d", statsA.FileCount, statsA.LogicalFileBytes, wantLogical)
 	}
+	if statsA.Performance != nil {
+		t.Fatal("ordinary account was given instance-wide request performance")
+	}
 	if statsA.CASBlobCount != 0 || statsA.CASPhysicalBytes != 0 || len(statsA.Buckets) != 0 {
 		t.Fatalf("self storage stats exposed CAS data: %#v", statsA)
 	}
@@ -190,6 +193,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	}
 
 	initialGlobal := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
+	if initialGlobal.Performance == nil || len(initialGlobal.Performance.Rows) != len(storagePerformanceKeys) {
+		t.Fatalf("admin performance counters missing: %+v", initialGlobal.Performance)
+	}
 	if initialGlobal.PhysicalSnapshotAt != nil || initialGlobal.Inventory != nil ||
 		initialGlobal.UploadStaging != nil || initialGlobal.UnreferencedBlobCount != 0 {
 		t.Fatalf("global page performed physical discovery before the background snapshot: %#v", initialGlobal)

@@ -247,8 +247,9 @@ if ((files.storageStats.match(/<XDriveConfirmDialog/g) || []).length !== 1) thro
 const sharedTableSurfaceExpectations = [
   [files.audit, 1, '审计日志'],
   [files.users, 1, '用户管理'],
-  [files.storageStats, 6, '存储统计'],
+  [files.storageStats, 7, '存储统计'],
 ]
+if (!files.storageStats.includes('data-xdrive-storage-section="performance"') || !files.storageStats.includes('stats.performance.rows.map')) throw new Error('全局存储性能统计未使用共享 MUI 表格和授权进程汇总')
 if ((files.shareList.match(/<XDriveTableSurface\b/g) || []).length !== 1) throw new Error('共享分享列表的表格模式没有复用 TableSurface')
 for (const [source, expected, label] of sharedTableSurfaceExpectations) {
   if ((source.match(/<XDriveTableSurface\b/g) || []).length !== expected) {
