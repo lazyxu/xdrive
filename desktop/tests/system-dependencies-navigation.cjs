@@ -358,12 +358,13 @@ test('Runtime verification tabs load exact service-specific status without eager
       'verification must not load audit history for '+ name)
     assert.ok(panel.includes('const reload = async () => {'), name)
   }
-  assert.ok(page.includes("!['caddy', 'baidu-map', 'geonames']"),
-    'Caddy, Baidu and GeoNames keep their separate bounded verification panels')
+  assert.ok(page.includes("!['baidu-map', 'geonames']"),
+    'Baidu and GeoNames keep separate bounded verification panels; Caddy also shows current Server evidence')
   for (const [service, proof] of [
     ['database', 'data-xdrive-postgres-liveness-scope'],
     ['background-worker', 'data-xdrive-pull-worker-liveness-scope'],
     ['media-worker', 'data-xdrive-media-worker-liveness-scope'],
+    ['caddy', 'data-xdrive-caddy-liveness-scope'],
   ]) {
     assert.ok(page.includes("selectedPage === '" + service + "' ? ("),
       service + ' must own an explicit live read-only status scope')

@@ -155,7 +155,7 @@ const verifyPortRequirements: Record<XDriveSystemDependencyID, readonly XDriveSy
   database: ['load', 'loadPostgresPoolConfig'],
   storage: ['load'], // A fresh admin inventory invokes Store.Ready(ctx).
   'background-worker': ['load', 'loadSourceWorkerConfig'],
-  caddy: ['loadCaddyHTTPSPreflight'],
+  caddy: ['load', 'loadCaddyHTTPSPreflight'],
   'media-worker': ['load', 'loadMediaWorkerConfig'],
   'photo-face': ['loadPhotoHostPreflight'],
   'photo-smart': ['loadPhotoHostPreflight'],
