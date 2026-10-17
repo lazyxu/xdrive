@@ -335,6 +335,20 @@ function isNativeTouchContext(event: MouseEvent | undefined) {
   return native.pointerType === 'touch' || native.sourceCapabilities?.firesTouchEvents === true
 }
 
+// An inline child Range is real network work, but a brief GET must not replace
+// the disclosure chevron or shift the native-like 44px leading touch target.
+// Keep this mounted per virtual row rather than calling a Hook from renderEntry.
+function MobileInlineDisclosureProgress({ pending }: { pending: boolean }) {
+  const show = useXDriveDeferredPendingLoading(pending)
+  return (
+    <Box component="span" data-mobile-files-folder-disclosure-progress aria-hidden="true"
+      sx={{ position: 'absolute', right: 3, bottom: 3, width: 14, height: 14,
+        display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+      {show ? <CircularProgress size={12} /> : null}
+    </Box>
+  )
+}
+
 export default function MobileFiles(props: Props) {
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
   // Browse Home keeps its rows mounted through organization refreshes.
@@ -1841,7 +1855,7 @@ export default function MobileFiles(props: Props) {
               aria-label={inlineBranch?.error ? '重试展开 ' + item.name :
                 inlineBranch ? '收起 ' + item.name : '展开 ' + item.name}
               aria-expanded={Boolean(inlineBranch)}
-              disabled={Boolean(inlineBranch?.loading)}
+              aria-busy={Boolean(inlineBranch?.loading)}
               onClick={event => {
                 event.stopPropagation()
                 if (inlineBranch?.error) props.onRetryInlineFolder?.(Number(item.id))
@@ -1851,10 +1865,11 @@ export default function MobileFiles(props: Props) {
               onPointerUp={event => event.stopPropagation()}
               onKeyDown={event => event.stopPropagation()}
               sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0,
+                position: 'relative',
                 color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
-              {inlineBranch?.loading ? <CircularProgress size={18}/> :
-                <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
-                  transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>}
+              <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
+                transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>
+              <MobileInlineDisclosureProgress pending={Boolean(inlineBranch?.loading)} />
             </IconButton>
           ) : <Box data-mobile-files-leading-spacer aria-hidden="true"
               sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0 }} />
