@@ -138,6 +138,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	if statsA.Performance != nil {
 		t.Fatal("ordinary account was given instance-wide request performance")
 	}
+	if statsA.RecentPerformance != nil {
+		t.Fatal("ordinary account was given instance-wide recent performance")
+	}
 	if statsA.CASBlobCount != 0 || statsA.CASPhysicalBytes != 0 || len(statsA.Buckets) != 0 {
 		t.Fatalf("self storage stats exposed CAS data: %#v", statsA)
 	}
@@ -195,6 +198,9 @@ func TestStorageIntelligenceScopesDedupAndBuckets(t *testing.T) {
 	initialGlobal := requestStorageStats(t, router, "/api/v1/admin/storage", adminToken, http.StatusOK)
 	if initialGlobal.Performance == nil || len(initialGlobal.Performance.Rows) != len(storagePerformanceKeys) {
 		t.Fatalf("admin performance counters missing: %+v", initialGlobal.Performance)
+	}
+	if initialGlobal.RecentPerformance == nil || initialGlobal.RecentPerformance.Available {
+		t.Fatalf("admin without sampler must disclose unavailable recent metrics: %+v", initialGlobal.RecentPerformance)
 	}
 	if initialGlobal.PhysicalSnapshotAt != nil || initialGlobal.Inventory != nil ||
 		initialGlobal.UploadStaging != nil || initialGlobal.UnreferencedBlobCount != 0 {

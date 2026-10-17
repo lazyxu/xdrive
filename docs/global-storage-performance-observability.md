@@ -41,6 +41,10 @@
 - **维护：** 老HTTP平均受大文件流式连接寿命影响，不代表CPU慢。需要真正p95/窗口吞吐量时，再单独在**固定允许类别**上评估常数大小Histogram/环形桶和每天入库汇总，先同Runner BEFORE/AFTER测量新增CPU/RSS/互斥锁争用。每日用户业务操作不应产生每日100k/4GiB破坏性测压；完整性校验等长任务继续交给Task Center。
 - **PR**：必须与`AGENTS.md`、登记簿、全局存储规范、UI与Go测试处于唯一工作提交；准确最终HEAD完整CI/FinalGate与测试通过后才Ready/Rebase合并，失败保留证据、不动Race/持久任务生命周期。
 
+## OBS-P002（2026-10-17）近期增量的区别
+
+累积的 `performance` 仍来自 [OBS-P001](global-storage-performance-observability.md)，新增只读 `recent_performance` 来自后台每60秒复制一次、最多7个RAM快照，不触及每HTTP请求记录路径。每行明示真实 `window_seconds`、`requests_per_second`、5xx、mean；不是p95/p99和真正的浏览器/后台Worker时间。重启和缺少采样不当作0、单实例可用且不持久化。具体预算、测试约束和状态见 [OBS-P002规格](global-storage-performance-window-obs-p002.md)；源准确新Head本轮尚未完成CI验收时不得宣称已上线。
+
 ## 已有 vs 后续
 
 当前已经有**每日容量/GC持久化快照**、上传staging/孤儿明细、Blob物理/逻辑去重倍率和Prometheus指标。新面板只解决“管理员不接Prometheus也能看到运行中Server哪些请求类别积累延迟/5xx”的第一层可观察性。

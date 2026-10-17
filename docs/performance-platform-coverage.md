@@ -1,5 +1,21 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## OBS-P002 Go-only evidence (2026-10-17, six client cells unchanged)
+
+[Exactly measured Go #39023778259](https://github.com/lazyxu/xdrive/actions/runs/39023778259): old unchanged HTTP observer n3 P50 67.25ns/op/0B/0alloc, old cumulative read P50 351.8ns/464B/2alloc; new once/minute memory-only sample P50 **118.4ns/0B/0alloc** and admin recent read P50 **468.3ns/568B/3alloc**. These are Server unit-level timings and **not** any real Desktop/Web/Mobile/PWA Gallery/Explorer/4GiB workload results. Evidence [original 4-file zip](performance-evidence/obs-p002/README.md); all six OBS-P002 GUI cells remain Not measured.
+
+
+## OBS-P002（2026-10-17）· 全局存储近期HTTP性能增量平台核对
+
+先读 [冻结OBS-P002规格](global-storage-performance-window-obs-p002.md) 与 [性能登记簿](performance-test-registry.md)。Server仅复用已有匿名9类HTTP计数，以60秒只读快照和最多七个RAM槽位计算实际覆盖秒数的请求/s及均值；不会向客户端、请求热路径或CAS添加新I/O。不同于已经持久化的每日Blob/GC快照，此处只保留本Server进程RAM窗口。Go benchmark是Server单层，**不代表任何浏览器首屏或真实设备测量**。
+
+| 新增真实端到端负载 | Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 管理员近期窗口真实GUI刷新、跨请求正确性及权限、Server重启清零 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+老的100k物理JPEG/H264/Live、4GiB完整原片CAS、虚拟化取消与各平台已接受的数值仍按各自原始表格保留；不重复测，也不冒称此专项提高了文件或图库加载速度。
+
+
 ## OBS-P001 · 管理员运行中HTTP性能概要（2026-10-17）
 
 当前仅用Server已有的匿名路由模板累加计数，**不新增HTTP热路径每请求探针**；新增共享GlobalStorage页的固定九类汇总是非持久的进程内存观察，而现存24h的CAS/GC容量快照保持自动运行。完整指标限制和拒绝过度推论详见[OBS-P001规范](global-storage-performance-observability.md)和[性能台账](performance-test-registry.md)。

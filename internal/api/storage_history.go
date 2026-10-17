@@ -128,16 +128,24 @@ func (s *Server) StartStorageSampler(ctx context.Context) {
 	if s == nil || s.DB == nil || s.BackgroundScheduler == nil {
 		return
 	}
+	// Reuse the existing background lifecycle: one in-memory read per minute,
+	// no extra worker/goroutine and no changes to request hot-path metrics.
+	s.ensureObservability()
+	s.recordStoragePerformanceSample(time.Now().UTC())
 	go func() {
 		s.ensureStorageSamplerRunDue(ctx, time.Now().UTC())
 		ticker := time.NewTicker(storageSampleCheckInterval)
 		defer ticker.Stop()
+		performanceTicker := time.NewTicker(storagePerformancePeriod)
+		defer performanceTicker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
 				s.ensureStorageSamplerRunDue(ctx, now.UTC())
+			case now := <-performanceTicker.C:
+				s.recordStoragePerformanceSample(now.UTC())
 			}
 		}
 	}()

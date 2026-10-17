@@ -252,6 +252,25 @@ export interface StoragePerformance {
   rows: StoragePerformanceRow[]
 }
 
+export interface StorageRecentPerformanceRow {
+  key: StoragePerformanceKey
+  requests: number
+  server_errors: number
+  average_ms: number
+  requests_per_second: number
+}
+
+export interface StorageRecentPerformance {
+  available: boolean
+  warming_up: boolean
+  captured_at: string
+  started_at?: string
+  window_seconds: number
+  maximum_seconds: number
+  sampling_seconds: number
+  rows: StorageRecentPerformanceRow[]
+}
+
 export interface StorageStats {
   scope: 'self' | 'global'
   disk_total_bytes?: number
@@ -261,6 +280,7 @@ export interface StorageStats {
   upload_staging?: UploadStagingStats
   inventory?: StorageInventory
   performance?: StoragePerformance
+  recent_performance?: StorageRecentPerformance
   file_count?: number
   logical_file_bytes?: number
   duplicate_group_count?: number
