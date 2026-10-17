@@ -18,6 +18,7 @@ import {
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -227,6 +228,17 @@ export function XDriveMediaGalleryAlbumOrganizer({
   // A Server folder read is valid only until a newer read or committed write.
   // React rendering Busy alone cannot protect an older Promise completion.
   const folderListVersionRef = useRef(0)
+  const [acceptedFolderList, setAcceptedFolderList] = useState<{
+    scope: string
+    list: XDriveMediaGalleryAlbumFolderActions['list']
+  } | null>(null)
+  const foldersVerified = acceptedFolderList?.scope === accountScope &&
+    acceptedFolderList.list === folderActions?.list
+  const scopedFolders = foldersVerified ? folders : []
+  const visibleFolderID = foldersVerified ? activeFolderID : 0
+  const currentFolderLoading = folderBusyState.scope === folderActionScope && foldersLoading
+  const showDelayedFolderLoading = useXDriveDeferredLoading(currentFolderLoading, folderListVersionRef.current)
+  const visibleFolderError = folderBusyState.scope === folderActionScope ? folderError : ''
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
   useEffect(() => {
@@ -247,13 +259,14 @@ export function XDriveMediaGalleryAlbumOrganizer({
   useEffect(() => {
     const load = folderActions?.list
     const readVersion = ++folderListVersionRef.current
-    if (!load) { setFolders([]); setFolderError(''); return }
+    if (!load) { setFolders([]); setAcceptedFolderList(null); setFolderError(''); return }
     let active = true
     setFoldersLoading(true)
     setFolderError('')
     void load().then((nextFolders) => {
       if (!active || readVersion !== folderListVersionRef.current) return
       setFolders(nextFolders)
+      setAcceptedFolderList({ scope: accountScope, list: load })
       setActiveFolderID((current) => (
         current === 0 || nextFolders.some(folder => folder.id === current) ? current : 0
       ))
@@ -270,12 +283,12 @@ export function XDriveMediaGalleryAlbumOrganizer({
   }, [accountScope, folderActions?.list])
 
   const folderPath = useMemo(
-    () => mediaAlbumFolderPath(folders, activeFolderID),
-    [folders, activeFolderID],
+    () => mediaAlbumFolderPath(scopedFolders, visibleFolderID),
+    [scopedFolders, visibleFolderID],
   )
   const visibleAlbumItems = useMemo(
-    () => mediaAlbumsInFolder(albums, activeFolderID, Boolean(search.trim())),
-    [albums, activeFolderID, search],
+    () => mediaAlbumsInFolder(albums, visibleFolderID, Boolean(search.trim())),
+    [albums, visibleFolderID, search],
   )
   const grouped = useMemo(
     () => sortedMediaAlbums(visibleAlbumItems, prefs, search),
@@ -283,12 +296,12 @@ export function XDriveMediaGalleryAlbumOrganizer({
   )
   const visibleFolders = useMemo(() => (
     search.trim()
-      ? folders.filter(folder => folder.name.toLocaleLowerCase('zh-CN')
+      ? scopedFolders.filter(folder => folder.name.toLocaleLowerCase('zh-CN')
         .includes(search.trim().toLocaleLowerCase('zh-CN')))
-      : mediaAlbumFolderChildren(folders, activeFolderID)
-  ), [folders, activeFolderID, search])
+      : mediaAlbumFolderChildren(scopedFolders, visibleFolderID)
+  ), [scopedFolders, visibleFolderID, search])
   const destinations = mediaAlbumFolderDestinations(
-    folders,
+    scopedFolders,
     folderDialog?.kind === 'move-folder' ? folderDialog.folder.id : 0,
   )
   const beginDialog = (next: FolderDialog) => {
@@ -297,7 +310,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
     setFolderName(next.kind === 'create' ? '' : ('folder' in next ? next.folder.name : ''))
     setTargetFolderID(next.kind === 'move-album'
       ? next.album.album_folder_id ?? 0
-      : next.kind === 'move-folder' ? next.folder.parent_id : activeFolderID)
+      : next.kind === 'move-folder' ? next.folder.parent_id : visibleFolderID)
   }
   const confirmFolderDialog = async () => {
     const actionScope = folderActionScope
@@ -347,6 +360,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
         throw new Error('当前客户端不支持该相册文件夹操作')
       }
       if (folderHierarchyChanged) {
+        if (folderActions?.list) setAcceptedFolderList({ scope: accountScope, list: folderActions.list })
         // An earlier list may contain a pre-write snapshot. Invalidate it
         // even if the pending response or error arrives after this commit.
         folderListVersionRef.current += 1
@@ -364,6 +378,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
           if (folderActionScopeRef.current === actionScope &&
               readVersion === folderListVersionRef.current) {
             setFolders(nextFolders)
+            setAcceptedFolderList({ scope: accountScope, list: folderActions.list })
           }
         }).catch(() => undefined)
       }
@@ -411,7 +426,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
   return (
     <Stack spacing={1.75} data-xdrive-gallery-album-organizer>
       {folderActions && (
-        <Stack spacing={1} data-xdrive-gallery-album-folders>
+        <Stack spacing={1} data-xdrive-gallery-album-folders sx={{ position: 'relative', minHeight: 88 }}>
           <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
             <Breadcrumbs aria-label="相册文件夹路径" sx={{ flex: 1, minWidth: 0 }}>
               <Button size="small" onClick={() => { setActiveFolderID(0); setSearch('') }}>
@@ -425,15 +440,22 @@ export function XDriveMediaGalleryAlbumOrganizer({
             </Breadcrumbs>
             {folderActions.create && (
               <Button size="small" variant="outlined" onClick={() =>
-                beginDialog({ kind: 'create', parentID: activeFolderID })}>
+                beginDialog({ kind: 'create', parentID: visibleFolderID })}>
                 新建相册文件夹
               </Button>
             )}
           </Stack>
-          {foldersLoading && <Stack direction="row" alignItems="center" spacing={1}>
-            <CircularProgress size={18} /><Typography variant="caption">加载相册文件夹…</Typography>
-          </Stack>}
-          {folderError && <Alert severity="error" role="alert">{folderError}</Alert>}
+          {showDelayedFolderLoading ? (
+            <Box data-xdrive-gallery-folder-loading role="status" aria-label="加载相册文件夹"
+              sx={{
+                position: 'absolute', top: 50, right: 8, zIndex: 2,
+                pointerEvents: 'none', display: 'flex', alignItems: 'center',
+                gap: 0.75, px: 1.25, py: 0.5, borderRadius: 1, bgcolor: 'background.paper',
+              }}>
+              <CircularProgress size={18} /><Typography variant="caption">加载相册文件夹…</Typography>
+            </Box>
+          ) : null}
+          {visibleFolderError && <Alert severity="error" role="alert">{visibleFolderError}</Alert>}
           {visibleFolders.length > 0 && (
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1 }}>
               {visibleFolders.map(folder => (
@@ -464,7 +486,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
                   )}
                   {folderActions.remove && (
                     <Tooltip title="删除空文件夹"><span><IconButton size="small"
-                      disabled={!mediaAlbumFolderCanDelete(folders, albums, folder.id)}
+                      disabled={!mediaAlbumFolderCanDelete(scopedFolders, albums, folder.id)}
                       aria-label={`删除${folder.name}`}
                       onClick={() => beginDialog({ kind: 'delete', folder })}>
                       <DeleteOutlineIcon fontSize="small" />
@@ -474,7 +496,8 @@ export function XDriveMediaGalleryAlbumOrganizer({
               ))}
             </Box>
           )}
-          <Typography variant="caption" color="text.secondary">
+          <Typography variant="caption" color="text.secondary"
+            sx={{ visibility: foldersVerified ? 'visible' : 'hidden' }}>
             {search.trim() ? '搜索覆盖所有相册文件夹' : `当前文件夹：${visibleFolders.length} 个子文件夹`}
           </Typography>
         </Stack>
@@ -522,7 +545,8 @@ export function XDriveMediaGalleryAlbumOrganizer({
           {cards(grouped.other)}
         </Stack>
       )}
-      {displayedCount === 0 && visibleFolders.length === 0 && !foldersLoading && (
+      {displayedCount === 0 && visibleFolders.length === 0 &&
+        !currentFolderLoading && (!folderActions || foldersVerified) && (
         <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
           <Typography color="text.secondary">
             {albums.length > 0 ? '当前文件夹没有匹配的相册' : '还没有相册'}
