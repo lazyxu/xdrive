@@ -20,3 +20,22 @@ export function useXDriveDeferredLoading(
   }, [pending, requestGeneration, delayMs])
   return pending && visibleGeneration === requestGeneration
 }
+// Some presentational panes expose only a pending Boolean and have no request
+// sequence ID. Restart the *visual* delay for each pending cycle; the real
+// network request, failure and accepted content are never delayed.
+export function useXDriveDeferredPendingLoading(
+  pending: boolean,
+  delayMs = XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS,
+): boolean {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    if (!pending) {
+      setVisible(false)
+      return
+    }
+    setVisible(false)
+    const timer = globalThis.setTimeout(() => setVisible(true), delayMs)
+    return () => globalThis.clearTimeout(timer)
+  }, [pending, delayMs])
+  return pending && visible
+}
