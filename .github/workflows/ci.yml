@@ -3332,7 +3332,8 @@ jobs:
            startsWith(github.head_ref, 'fix/mobile-files-ios27-leading-disclosure-') ||
            startsWith(github.head_ref, 'fix/mobile-files-ios27-metadata-10c-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-viewer-') ||
-           startsWith(github.head_ref, 'test/files-search-return-chromium-u06-'))
+           startsWith(github.head_ref, 'test/files-search-return-chromium-u06-') ||
+           startsWith(github.head_ref, 'test/files-u12-short-viewport-'))
         shell: bash
         run: |
           set -euo pipefail
@@ -3351,6 +3352,38 @@ jobs:
           else
             echo "No native Chrome available on runner"; exit 1
           fi
+      - name: U12 real Chrome Files deep destination 200-percent short viewport
+        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/files-u12-short-viewport-')
+        shell: bash
+        env:
+          XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          XDRIVE_FILES_U12_SHORT: '1'
+        run: |
+          set -euo pipefail
+          checkout="$(git rev-parse HEAD)"
+          if [ "$checkout" != "$XD_PR_HEAD" ]; then
+            git cat-file -p HEAD | grep -Fx "parent $XD_PR_HEAD" >/dev/null || exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/xdrive-files-u12"
+          echo "$XD_PR_HEAD" > "$RUNNER_TEMP/xdrive-files-u12/pr-head.sha"
+          echo "$checkout" > "$RUNNER_TEMP/xdrive-files-u12/tested-checkout.sha"
+          node --check ../desktop/scripts/mobile-web-app-browser.cjs
+          set +e
+          XDRIVE_PLAYWRIGHT_MODULE="$RUNNER_TEMP/xdrive-playwright/node_modules/playwright-core" \
+          XDRIVE_BROWSER_EXECUTABLE="$XD_CHROME" \
+            node ../desktop/scripts/mobile-web-app-browser.cjs --scenario=files-operations \
+              --output-dir="$RUNNER_TEMP/xdrive-files-u12"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/xdrive-files-u12/results.json"
+          exit "$code"
+      - uses: actions/upload-artifact@v4
+        if: always() && github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/files-u12-short-viewport-')
+        with:
+          name: files-u12-real-short-200pct
+          path: ${{ runner.temp }}/xdrive-files-u12/
+          if-no-files-found: warn
+          retention-days: 7
       - name: U06 native Chromium Search to containing folder and Back/Forward regression
         if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/files-search-return-chromium-u06-')
         shell: bash
