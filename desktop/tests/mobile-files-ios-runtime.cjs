@@ -3777,3 +3777,53 @@ test('P53 mounted Mobile Recent/Favorites idle-unverified first read never spins
     favoritesReadState: 'unverified', favoritesLoading: false,
   } })
 })
+
+
+test('P56 Mobile Search summary never flashes in-flow query copy or shifts result metadata', async () => {
+  let retries = 0
+  let cleared = 0
+  await withView(async h => {
+    const summary = () => find(h.view, 'data-mobile-files-search-summary', true)
+    const countSlot = () => find(h.view, 'data-mobile-files-search-count-slot', true)
+    const meta = () => textOf(countSlot().props.children)
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    assert.equal(meta(), '结果待确认', 'pending count is not fake zero or an instant loading phrase')
+    assert.equal(summary().props['aria-busy'], true)
+    assert.equal(summary().props.sx.minHeight, 44)
+    assert.equal(summary().props.sx.minWidth, 0)
+    assert.equal(countSlot().props.component, 'span')
+    assert.equal(countSlot().props.sx.minWidth, '12ch')
+    assert.equal(countSlot().props.sx.whiteSpace, 'nowrap')
+    const oldTree = h.view.root.findAll(n=>n.props?.['data-xdrive-mobile-files-scroll'] !== undefined)
+    assert.equal(oldTree.length, 1)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+    assert.equal(meta(), '结果待确认')
+    assert.equal(count(h.view, 'data-mobile-files-search-summary'), 1)
+    await h.update({ searchSummary: { query: 'needle', resultCount: 240, loading: false } })
+    assert.equal(meta(), '240 个结果')
+    assert.equal(summary().props['aria-busy'], undefined)
+    assert.equal(countSlot().props.sx.minWidth, '12ch')
+    await h.update({ searchSummary: {
+      query: 'needle', resultCount: null, loading: false,
+      error: '503 后端暂不可用', onRetry: () => { retries += 1 },
+    } })
+    assert.equal(meta(), '搜索未完成', 'failed count never claims zero')
+    assert.equal(summary().props['aria-busy'], undefined)
+    assert.ok(h.view.root.findAll(n => n.props?.role === 'alert').some(n =>
+      textOf(n.props.children).includes('503')))
+    const retry = h.view.root.findAll(n => n.props?.onClick &&
+      textOf(n.props.children) === '重试')[0]
+    assert.ok(retry)
+    await act(async () => { retry.props.onClick() })
+    assert.equal(retries, 1)
+    const clear = summary().findAll(n => n.props?.onClick && textOf(n.props.children) === '清除')
+    assert.equal(clear.length, 1)
+    assert.equal(clear[0].props.sx.minHeight, 44)
+    await act(async () => { clear[0].props.onClick() })
+    assert.equal(cleared, 1)
+  }, { props: {
+    searchActive: true, items: [], loading: true, searchValue: 'needle',
+    searchSummary: { query: 'needle', resultCount: null, loading: true },
+    onClearSearch: () => { cleared += 1 },
+  } })
+})
