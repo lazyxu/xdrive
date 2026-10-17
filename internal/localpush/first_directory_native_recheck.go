@@ -116,6 +116,19 @@ func RecheckLocalFirstDirectoryNative(
 	ctx context.Context, configDir string, grant RootGrant,
 	request LocalFirstDirectoryNativeRecheckRequest,
 ) (LocalFirstDirectoryNativeObservation, error) {
+	return recheckLocalFirstDirectoryNativeHeld(ctx, configDir, grant, request, nil)
+}
+
+// recheckLocalFirstDirectoryNativeHeld is strictly package-private. The
+// supplied callback is an Agent-LOCAL read-only observation window: the same
+// native OS directory handle remains open throughout the callback. Success
+// never authorizes a Server SQL/CAS writer, creates a distributed lease, or
+// protects against transient A-B-A path substitutions.
+func recheckLocalFirstDirectoryNativeHeld(
+	ctx context.Context, configDir string, grant RootGrant,
+	request LocalFirstDirectoryNativeRecheckRequest,
+	inspect func(context.Context, LocalFirstDirectoryNativeObservation) error,
+) (LocalFirstDirectoryNativeObservation, error) {
 	var empty LocalFirstDirectoryNativeObservation
 	deny := func(err error) (LocalFirstDirectoryNativeObservation, error) {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -227,7 +240,7 @@ func RecheckLocalFirstDirectoryNative(
 		finalNative.LinkCount != pinnedNative.LinkCount {
 		return deny(err)
 	}
-	return LocalFirstDirectoryNativeObservation{
+	observed := LocalFirstDirectoryNativeObservation{
 		SourceID: request.SourceID, SourceRevision: request.SourceRevision,
 		DeviceID: grant.DeviceID, RootID: grant.RootID,
 		RelativeDirectory: request.RelativeDirectory,
@@ -236,5 +249,47 @@ func RecheckLocalFirstDirectoryNative(
 		CurrentSnapshotSHA256:  generation.CurrentSHA256,
 		NativeObserved:         true, CommitSupported: false, BackupComplete: false,
 		Authoritative: false, MissingInferenceSafe: false,
-	}, nil
+	}
+	if inspect != nil {
+		// An inspect callback receives ONLY read-only, private observation
+		// metadata, never the file descriptor itself or write authority.
+		// The pinned handle remains open until this helper returns.
+		if err := ctx.Err(); err != nil {
+			return deny(err)
+		}
+		if err := inspect(ctx, observed); err != nil {
+			return deny(err)
+		}
+		if err := ctx.Err(); err != nil {
+			return deny(err)
+		}
+		// Re-check the approved native Root and the exact sealed CURRENT
+		// generations after the held window, not just its pathname.
+		stored, err = LoadRootGrant(configDir, grant.Server, grant.Account, grant.RootID)
+		if err != nil || !sameLocalIdentityRoot(stored, grant) {
+			return deny(err)
+		}
+		last, err := LoadLocalReconcileEvidence(ctx, configDir, grant, request.SourceRevision)
+		if err != nil || last.IntegritySHA256 != generation.IntegritySHA256 ||
+			last.PreviousSHA256 != generation.PreviousSHA256 ||
+			last.CurrentSHA256 != generation.CurrentSHA256 ||
+			last.PreviousSnapshot != generation.PreviousSnapshot ||
+			last.CurrentSnapshot != generation.CurrentSnapshot ||
+			last.Authoritative || last.MissingInferenceSafe {
+			return deny(err)
+		}
+		if !currentPinnedFirstDirectoryMatches(grant, request.RelativeDirectory, pinned) {
+			return deny(nil)
+		}
+		lastNative, err := readPinnedDirectoryNativeIdentity(grant.RootID, pinned)
+		if err != nil || lastNative == nil || lastNative.Key != pinnedNative.Key ||
+			lastNative.LinkCount != pinnedNative.LinkCount ||
+			lastNative.Key != request.ExpectedNativeIdentityKey {
+			return deny(err)
+		}
+		if err := ctx.Err(); err != nil {
+			return deny(err)
+		}
+	}
+	return observed, nil
 }
