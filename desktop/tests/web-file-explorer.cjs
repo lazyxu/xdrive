@@ -301,7 +301,7 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
   for (const token of [
     'xDriveFileExplorerResolveFolderUploadTargets({',
     'xDriveFileExplorerEnsureUploadDirectory({',
-    'relativePath: file.webkitRelativePath || file.name',
+    'relativePath: file.webkitRelativePath',
     'createDirectory: (id, directoryName) => api.createDirectory(id, directoryName)',
     'xDriveFileExplorerCaseInsensitiveNameLookupPageOptions(directoryName)',
     'findExistingDirectory: async (id, directoryName) =>',
@@ -314,6 +314,10 @@ test('Web FileExplorer uploads selected folders with preserved relative paths', 
   ]) {
     assert.ok(app.includes(token), `missing Web folder-upload orchestration: ${token}`)
   }
+  assert.equal(app.includes('relativePath: file.webkitRelativePath || file.name'), false,
+    'native picker must not silently flatten nested paths when browsers omit webkitRelativePath')
+  assert.ok(app.includes("selected.some((file) => {"), 'missing-path rejection must precede upload')
+  assert.ok(app.includes('文件夹文件处理完毕'), 'accepted upload must explain empty-directory limitations')
   assert.ok(explorer.includes('folderUploadPickerParentIDRef.current = current.id'), 'Web folder picker must capture its opening parent')
   assert.equal(app.includes('listChildren: (id) => api.list(id)'), false, 'Web folder-upload conflict reuse must not list the whole parent directory')
 })

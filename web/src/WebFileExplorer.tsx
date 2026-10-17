@@ -180,6 +180,7 @@ export default function WebFileExplorer({
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
   const folderUploadPickerParentIDRef = useRef<number | null>(null)
+  const folderPickerLimitNoticeShownRef = useRef(false)
   const renameLifecycleKeyRef = useRef(navigationSessionStorageKey ?? '')
   renameLifecycleKeyRef.current = navigationSessionStorageKey ?? ''
 
@@ -1166,6 +1167,10 @@ export default function WebFileExplorer({
   const openFolderUploadPicker = () => {
     if (!current) return
     folderUploadPickerParentIDRef.current = current.id
+    if (!folderPickerLimitNoticeShownRef.current) {
+      folderPickerLimitNoticeShownRef.current = true
+      onFeedback('warning', '浏览器文件夹选择器只提供文件和相对路径，不能可靠读取纯空目录；如需保留空目录，请使用“新建文件夹”。')
+    }
     folderUploadInputRef.current?.click()
   }
 
