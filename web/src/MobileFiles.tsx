@@ -79,6 +79,21 @@ type SectionEntry = {
 type MobileCollectionAction = 'copy' | 'download' | 'share'
 type SavedEntry = { id: number; name: string; subtitle?: string }
 
+type MobileFilesArrangeTicket = {
+    generation: number
+    scope: string
+    sourceCollectionKey: string
+    targetSignature: string
+    parentID: number
+    nodeID: number
+    revision: number
+    fraction: number
+    selected: boolean
+    selectionIntent: number
+    userGesture: number
+    controller?: AbortController
+  }
+
 type Props = {
   lifecycleKey: string
   requestedDirectoryID?: number
@@ -143,9 +158,15 @@ type Props = {
   searchSummary?: XDriveFileExplorerSearchSummary
   filtersControl?: ReactNode
   sort: XDriveFileExplorerSort
-  onSortChange: (sort: XDriveFileExplorerSort) => void
+  onSortChange: (sort: XDriveFileExplorerSort) => boolean | void | Promise<boolean | void>
   grouping?: XDriveFileExplorerGrouping
-  onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => void
+  onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => boolean | void | Promise<boolean | void>
+  /** Shared Web Owner/Server transport verifies Node+Revision and the exact new Range. */
+  locateVerifiedCurrentChild?: (
+    parentID: number, nodeID: number, revision: number, itemCount: number,
+    sort: XDriveFileExplorerSort, grouping: XDriveFileExplorerGrouping,
+    signal: AbortSignal,
+  ) => Promise<{ index: number; item: XDriveFileExplorerItem } | null>
   actionFeedback?: ReactNode
   viewMode: 'details' | 'grid' | 'columns'
   onViewModeChange: (view: 'details' | 'grid') => void
@@ -415,6 +436,10 @@ export default function MobileFiles(props: Props) {
   const externalDropGenerationRef = useRef(0)
   const selectionIntentRef = useRef(0)
   const selectionAbortRef = useRef<AbortController | null>(null)
+  const arrangeGenerationRef = useRef(0)
+  const [arrangeEpoch, setArrangeEpoch] = useState(0)
+  const arrangeUserGestureRef = useRef(0)
+  const arrangeTicketRef = useRef<MobileFilesArrangeTicket | null>(null)
   const ownerRef = useRef<HTMLDivElement | null>(null)
   const scrollHostRef = useRef<HTMLDivElement | null>(null)
   const lastRequestedDirectoryRef = useRef(props.requestedDirectoryID)
@@ -456,6 +481,20 @@ export default function MobileFiles(props: Props) {
   ].join(':')
   const selectionScopeRef = useRef(selectionScopeKey)
   selectionScopeRef.current = selectionScopeKey
+  // Arrangement identity is independent from the old virtual-page cache key.
+  const arrangeScope = JSON.stringify([
+    props.lifecycleKey, directoryID, section, props.searchActive, props.trashActive,
+  ])
+  const arrangeScopeRef = useRef(arrangeScope)
+  arrangeScopeRef.current = arrangeScope
+  const arrangeSignature = JSON.stringify([
+    props.sort.key, props.sort.direction,
+    props.grouping?.groupBy ?? 'none', props.grouping?.foldersFirst ?? true,
+  ])
+  const arrangeSignatureRef = useRef(arrangeSignature)
+  arrangeSignatureRef.current = arrangeSignature
+  const verifiedLocatorRef = useRef(props.locateVerifiedCurrentChild)
+  verifiedLocatorRef.current = props.locateVerifiedCurrentChild
   const showDirectory = section === 'browse' && (!browseHome || props.trashActive || props.searchActive)
   const viewPositionScope = [
     selectionScopeKey, props.sort.key, props.sort.direction,
@@ -590,6 +629,10 @@ export default function MobileFiles(props: Props) {
   const groupedSegments = useMemo(() => groupedLayout
     ? xDriveFileExplorerVisibleGroupSegments(groupedLayout, scrollTop, Math.max(1, viewport.height), rowHeight * 4)
     : [], [groupedLayout, scrollTop, viewport.height, rowHeight])
+  // Keep the authenticated virtualized list's newest geometry accessible to
+  // a slow result without turning every scroll rerender into a second GET.
+  const arrangeGeometryRef = useRef({ totalCount, groupedLayout, rowHeight, effectiveGrid, columns })
+  arrangeGeometryRef.current = { totalCount, groupedLayout, rowHeight, effectiveGrid, columns }
 
   const toggleBrowseSection = (sectionName: 'quick' | 'organization') => {
     setBrowseSections(current => {
@@ -908,6 +951,81 @@ export default function MobileFiles(props: Props) {
     // through the existing shared PropertiesController cleanup.
     setPropertiesItems([])
   }, [selectionScopeKey])
+
+  // U09-D2c2: only an authorized new current-directory first Range may
+  // validate a previous single Node/visible anchor. Search, Trash and inline
+  // children have different ordinals and cannot borrow this lookup.
+  useEffect(() => {
+    const ticket = arrangeTicketRef.current
+    if (!ticket) return
+    if (ticket.scope !== arrangeScope || !showDirectory || !ready || browseHome ||
+      props.searchActive || props.trashActive || directoryID !== ticket.parentID) {
+      ticket.controller?.abort()
+      arrangeTicketRef.current = null
+      return
+    }
+    const verify = verifiedLocatorRef.current
+    const targetGrouping = props.grouping
+    if (ticket.targetSignature !== arrangeSignature ||
+      ticket.sourceCollectionKey === props.virtualCollection?.interactionKey ||
+      !props.virtualCollection || !verify || !targetGrouping) return
+    const controller = new AbortController()
+    ticket.controller = controller
+    const current = () => !controller.signal.aborted &&
+      arrangeTicketRef.current === ticket &&
+      arrangeGenerationRef.current === ticket.generation &&
+      arrangeScopeRef.current === ticket.scope &&
+      arrangeSignatureRef.current === ticket.targetSignature
+    void verify(
+      ticket.parentID, ticket.nodeID, ticket.revision, totalCount,
+      props.sort, targetGrouping, controller.signal,
+    ).then(position => {
+      if (!current()) return
+      arrangeTicketRef.current = null
+      const geometry = arrangeGeometryRef.current
+      if (!position || !Number.isSafeInteger(position.index) ||
+        position.index < 0 || position.index >= geometry.totalCount ||
+        Number(position.item.id) !== ticket.nodeID ||
+        Number(position.item.revision) !== ticket.revision ||
+        ticket.userGesture !== arrangeUserGestureRef.current ||
+        (ticket.selected && selectionIntentRef.current > ticket.selectionIntent + 1)) return
+      // Group headers must be resolved from the new Server group index.
+      // Never map an unknown group to pixel zero and claim it as an anchor.
+      if (targetGrouping.groupBy !== 'none' &&
+        !geometry.groupedLayout?.groups.some(group => position.index >= group.startIndex &&
+          position.index < group.startIndex + group.itemCount)) return
+      const host = scrollHostRef.current
+      if (!host) return
+      const top = mobileFilesViewportTop({
+        index: position.index, fraction: ticket.fraction,
+      }, geometry.rowHeight, geometry.effectiveGrid ? geometry.columns : 1, geometry.groupedLayout)
+      host.scrollTop = top
+      setScrollTop(host.scrollTop)
+      browseScrollRef.current = host.scrollTop
+      if (scrollSaveRef.current !== null) window.clearTimeout(scrollSaveRef.current)
+      scrollSaveRef.current = null
+      pendingScrollRef.current = null
+      persist({ folderID: ticket.parentID, scrollTop: host.scrollTop })
+      if (ticket.selected) {
+        setSelected(new Map([[String(position.item.id), position.item]]))
+        setSelectionMode(true)
+      }
+    }).catch(() => {
+      if (current()) arrangeTicketRef.current = null
+    })
+    return () => controller.abort()
+  }, [
+    arrangeEpoch, arrangeScope, arrangeSignature, directoryID, ready,
+    showDirectory, browseHome, props.searchActive, props.trashActive,
+    props.virtualCollection?.interactionKey,
+    props.grouping?.groupBy, props.grouping?.foldersFirst, persist,
+  ])
+
+  useEffect(() => () => {
+    arrangeGenerationRef.current += 1
+    arrangeTicketRef.current?.controller?.abort()
+    arrangeTicketRef.current = null
+  }, [])
 
   // Notify the same Web workspace of selected sparse Nodes before their pages
   // can be evicted by scrolling. The callback retains IDs/revisions only;
@@ -1890,6 +2008,63 @@ export default function MobileFiles(props: Props) {
   // iOS 27 Files displays both Icons and List as explicit radio-like actions
   // in More. This changes Mobile presentation only, not the shared Web/Desktop
   // list query, workspace, tabs, Server sort, or virtual scroll owner.
+  // Capture before the shared Web navigation changes sort/group. Await the
+  // same explicit committed-first-Range receipt used by wide Web/Desktop.
+  const chooseMobileArrangement = (
+    nextSort: XDriveFileExplorerSort,
+    nextGrouping: XDriveFileExplorerGrouping | undefined,
+    submit: () => boolean | void | Promise<boolean | void>,
+  ) => {
+    setArrangeAnchor(null)
+    const generation = ++arrangeGenerationRef.current
+    arrangeTicketRef.current?.controller?.abort()
+    arrangeTicketRef.current = null
+    const host = scrollHostRef.current
+    const sourceCollectionKey = props.virtualCollection?.interactionKey
+    let ticket: MobileFilesArrangeTicket | null = null
+    if (host && sourceCollectionKey && props.locateVerifiedCurrentChild &&
+      nextGrouping && ready && showDirectory && !browseHome &&
+      !props.searchActive && !props.trashActive &&
+      directoryID !== null && selection.length <= 1 && totalCount > 0 &&
+      (!inlineLayout || inlineLayout.itemCount === totalCount)) {
+      const anchor = mobileFilesViewportAnchor(
+        displayedCount, host.scrollTop, rowHeight,
+        effectiveGrid ? columns : 1, groupedLayout,
+      )
+      const item = selection.length === 1 ? selection[0] :
+        props.virtualCollection?.itemAt(anchor.index) ?? props.items[anchor.index]
+      const nodeID = Number(item?.id)
+      const revision = Number(item?.revision)
+      if (Number.isSafeInteger(nodeID) && nodeID > 0 &&
+        Number.isSafeInteger(revision) && revision > 0) {
+        ticket = {
+          generation, scope: arrangeScope,
+          sourceCollectionKey,
+          targetSignature: JSON.stringify([
+            nextSort.key, nextSort.direction,
+            nextGrouping.groupBy, nextGrouping.foldersFirst,
+          ]),
+          parentID: directoryID, nodeID, revision,
+          fraction: selection.length === 1 ? 0 : anchor.fraction,
+          selected: selection.length === 1,
+          selectionIntent: selectionIntentRef.current,
+          userGesture: arrangeUserGestureRef.current,
+        }
+      }
+    }
+    const acknowledged = submit()
+    if (!ticket) return
+    const staged = ticket
+    void Promise.resolve(acknowledged).then(accepted => {
+      if (accepted !== true || staged.generation !== arrangeGenerationRef.current ||
+        arrangeScopeRef.current !== staged.scope) return
+      arrangeTicketRef.current = staged
+      setArrangeEpoch(value => value + 1)
+    }).catch(() => {
+      // A denied, obsolete or failed first Range never authorizes reanchor.
+    })
+  }
+
   const chooseMobileView = (next: 'details' | 'grid') => {
     setMoreAnchor(null)
     if (next === viewPreference) return
@@ -2012,6 +2187,9 @@ export default function MobileFiles(props: Props) {
           )}
         </Stack>
         <Box ref={scrollHostRef} data-xdrive-mobile-files-scroll data-xdrive-file-explorer-scroll-host
+          onPointerDownCapture={() => { arrangeUserGestureRef.current += 1 }}
+          onWheelCapture={() => { arrangeUserGestureRef.current += 1 }}
+          onTouchStartCapture={() => { arrangeUserGestureRef.current += 1 }}
           onDragOver={event => externalDragOver(event)}
           onDrop={event => externalDrop(event)}
           onDragLeave={() => { setDropFolderID(null); setDropCrumbID(null) }}
@@ -2555,24 +2733,33 @@ export default function MobileFiles(props: Props) {
           slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 460px)' } } }}>
           {(['name', 'updated', 'type', 'size'] as const).map(key => (
             <MenuItem key={key} selected={props.sort.key === key} sx={{ minHeight: MIN_TOUCH }}
-              onClick={() => { props.onSortChange({ ...props.sort, key }); setArrangeAnchor(null) }}>
+              onClick={() => {
+                const nextSort = { ...props.sort, key }
+                chooseMobileArrangement(nextSort, props.grouping, () => props.onSortChange(nextSort))
+              }}>
               {({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[key]}
             </MenuItem>
           ))}
           <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
-            props.onSortChange({ ...props.sort, direction: props.sort.direction === 'asc' ? 'desc' : 'asc' })
-            setArrangeAnchor(null)
+            const nextSort = { ...props.sort, direction: (props.sort.direction === 'asc' ? 'desc' : 'asc') as 'asc' | 'desc' }
+            chooseMobileArrangement(nextSort, props.grouping, () => props.onSortChange(nextSort))
           }}>方向：{props.sort.direction === 'asc' ? '升序' : '降序'}</MenuItem>
           {props.grouping && props.onGroupingChange ? (['none', 'type', 'modified', 'size'] as const).map(kind => (
             <MenuItem key={kind} selected={props.grouping?.groupBy === kind} sx={{ minHeight: MIN_TOUCH }} onClick={() => {
-              if (props.grouping) props.onGroupingChange?.({ ...props.grouping, groupBy: kind })
-              setArrangeAnchor(null)
+              if (props.grouping) {
+                const nextGrouping = { ...props.grouping, groupBy: kind }
+                chooseMobileArrangement(props.sort, nextGrouping,
+                  () => props.onGroupingChange?.(nextGrouping))
+              }
             }}>{({ none: '不分组', type: '按类型分组', modified: '按修改日期分组', size: '按大小分组' })[kind]}</MenuItem>
           )) : null}
           {props.grouping && props.onGroupingChange ? (
             <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
-              if (props.grouping) props.onGroupingChange?.({ ...props.grouping, foldersFirst: !props.grouping.foldersFirst })
-              setArrangeAnchor(null)
+              if (props.grouping) {
+                const nextGrouping = { ...props.grouping, foldersFirst: !props.grouping.foldersFirst }
+                chooseMobileArrangement(props.sort, nextGrouping,
+                  () => props.onGroupingChange?.(nextGrouping))
+              }
             }}>文件夹优先：{props.grouping.foldersFirst ? '开启' : '关闭'}</MenuItem>
           ) : null}
         </Menu>

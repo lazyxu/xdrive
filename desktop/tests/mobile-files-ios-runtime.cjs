@@ -218,7 +218,7 @@ function textOf(value) {
   if (typeof value === 'string' || typeof value === 'number') return String(value)
   return textOf(value.props?.children)
 }
-async function withView(action, { saved, props } = {}) {
+async function withView(action, { saved, props, createNodeMock } = {}) {
   const previous = global.window
   const win = storage()
   global.window = win
@@ -226,7 +226,10 @@ async function withView(action, { saved, props } = {}) {
   let view
   let current = defaults(props)
   try {
-    await act(async () => { view = Renderer.create(React.createElement(MobileFiles, current)) })
+    await act(async () => { view = Renderer.create(
+      React.createElement(MobileFiles, current),
+      createNodeMock ? { createNodeMock } : undefined,
+    ) })
     await action({
       view, window: win,
       get props() { return current },
@@ -3274,4 +3277,100 @@ test('U09 first-red: 100k Mobile List→Grid→List keeps the same visible logic
     })
     assert(admitted < 2000, 'no materialization of 100k entries or extra Server transport')
   }
+})
+
+
+test('U09-D2c2 mounted Mobile List restores only the verified 100k current Node after an accepted sort', async () => {
+  const before = { id: 42, revision: 7, name: 'original.pdf', kind: 'file' }
+  const old = {
+    interactionKey: 'old-name:1', itemCount: 100000,
+    loadedItems: new Map([[0, before]]), itemAt: index => index === 0 ? before : undefined,
+    groups: [], onRangeChange() {},
+  }
+  const next = {
+    interactionKey: 'new-size:2', itemCount: 100000,
+    loadedItems: new Map(), itemAt: () => undefined,
+    groups: [], onRangeChange() {},
+  }
+  const scrollHost = { scrollTop: 0, clientWidth: 390, clientHeight: 750 }
+  let acknowledge
+  const acknowledged = new Promise(resolve => { acknowledge = resolve })
+  const lookup = []
+  const changes = []
+  await withView(async h => {
+    const sortItem = h.view.root.findAll(n => n.type === 'MenuItem' &&
+      textOf(n.props.children) === '大小' && typeof n.props.onClick === 'function')
+    assert.equal(sortItem.length, 1)
+    await act(async () => { sortItem[0].props.onClick() })
+    assert.equal(lookup.length, 0, 'never look up a guessed new ordinal before authorized first Range')
+    await h.update({ sort: { key: 'size', direction: 'asc' }, virtualCollection: next })
+    await act(async () => { acknowledge(true); await acknowledged })
+    assert.equal(lookup.length, 1)
+    assert.equal(lookup[0][0], 1)
+    assert.equal(lookup[0][1], 42)
+    assert.equal(lookup[0][2], 7)
+    assert.equal(lookup[0][3], 100000)
+    assert.deepEqual(lookup[0][4], { key: 'size', direction: 'asc' })
+    assert.equal(lookup[0][6].aborted, false)
+    assert.equal(scrollHost.scrollTop, 54321 * state.MOBILE_FILES_ROW_HEIGHT)
+    const persisted = state.mobileFilesDecodeState(
+      h.window.localStorage.getItem('xdrive.mobile.files.v1:ios-files-userA'))
+    assert.equal(persisted.scrollTop, scrollHost.scrollTop)
+    assert.deepEqual(changes, [{ key: 'size', direction: 'asc' }])
+  }, {
+    saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }], virtualCollection: old,
+      grouping: { groupBy: 'none', foldersFirst: true },
+      onSortChange: value => { changes.push(value); return acknowledged },
+      locateVerifiedCurrentChild: async (...args) => {
+        lookup.push(args)
+        return { index: 54321, item: before }
+      },
+    },
+    createNodeMock: element => element.props?.['data-xdrive-mobile-files-scroll'] !== undefined
+      ? scrollHost : null,
+  })
+})
+
+test('U09-D2c2 denied sort or unverified identity never reanchors Mobile scroll', async () => {
+  const before = { id: 42, revision: 7, name: 'a.pdf', kind: 'file' }
+  const source = key => ({
+    interactionKey: key, itemCount: 100000,
+    loadedItems: new Map([[0, before]]), itemAt: index => index === 0 ? before : undefined,
+    groups: [], onRangeChange() {},
+  })
+  const host = { scrollTop: 0, clientWidth: 390, clientHeight: 700 }
+  let allowed = false
+  let calls = 0
+  await withView(async h => {
+    const click = async () => {
+      const sortItem = h.view.root.findAll(n => n.type === 'MenuItem' &&
+        textOf(n.props.children) === '大小' && typeof n.props.onClick === 'function')
+      assert.equal(sortItem.length, 1)
+      await act(async () => { sortItem[0].props.onClick() })
+    }
+    await click()
+    await h.update({ sort: { key: 'size', direction: 'asc' }, virtualCollection: source('changed') })
+    assert.equal(calls, 0, 'denied first Range forbids a follow-on child lookup')
+    allowed = true
+    await h.update({ sort: { key: 'name', direction: 'asc' }, virtualCollection: source('fresh') })
+    await click()
+    await h.update({ sort: { key: 'size', direction: 'asc' }, virtualCollection: source('fresh-target') })
+    assert.equal(calls, 1)
+    assert.equal(host.scrollTop, 0, 'a result with a changed Revision cannot restore the old position')
+  }, {
+    saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: {
+      crumbs: [{ id: 1, name: '我的文件' }], virtualCollection: source('old'),
+      grouping: { groupBy: 'none', foldersFirst: true },
+      onSortChange: () => Promise.resolve(allowed),
+      locateVerifiedCurrentChild: async () => {
+        calls += 1
+        return { index: 54321, item: { ...before, revision: 8 } }
+      },
+    },
+    createNodeMock: element => element.props?.['data-xdrive-mobile-files-scroll'] !== undefined
+      ? host : null,
+  })
 })
