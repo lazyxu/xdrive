@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -50,7 +51,26 @@ func executeBaiduPhotoMapIndexQuotaAdmitted(
 	if err := accountPermit(dispatchCtx, ownerID); err != nil || dispatchCtx.Err() != nil {
 		return denied
 	}
-	err := executeBaiduPhotoMapIndexIntent(dispatchCtx, privateDB, ownerID, assetID,
+	// An independent, short-lived fleet+Owner capacity lease is required
+	// BEFORE any source/consent job claim can consume an attempt. The
+	// request Context is bounded by the existing eight-second timeout.
+	flight, err := acquireBaiduGeoconvFlight(dispatchCtx, privateDB, ownerID)
+	if err != nil {
+		return denied
+	}
+	// Register cleanup immediately after a successful claim: even a
+	// cancellation arriving before the next line must release this slot.
+	defer func() {
+		// Cleanup must work even if another Server revoked the request Context.
+		// Any DB outage leaves an expiring lease, never an immortal reservation.
+		releaseCtx, releaseCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer releaseCancel()
+		_ = releaseBaiduGeoconvFlight(releaseCtx, privateDB, flight)
+	}()
+	if dispatchCtx.Err() != nil {
+		return denied
+	}
+	err = executeBaiduPhotoMapIndexIntent(dispatchCtx, privateDB, ownerID, assetID,
 		func(workCtx context.Context, actualOwner uint64) error {
 			if workCtx == nil || workCtx.Err() != nil || actualOwner != ownerID {
 				return denied

@@ -98,7 +98,7 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		&meta.User{}, &meta.Node{}, &meta.MediaMetadata{},
 		&meta.PhotoAsset{}, &meta.BaiduPhotoMapConsent{},
 		&meta.BaiduPhotoMapIndexIntent{}, &meta.BaiduPhotoMapPosition{},
-		&meta.BaiduGeoconvQuotaBucket{},
+		&meta.BaiduGeoconvQuotaBucket{}, &meta.BaiduGeoconvFlight{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +194,13 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 			t.Fatalf("unexpected actual fleet+Owner quota accounting, count=%d", len(rows))
 		}
 	}
+	countFlights := func(want int64) {
+		t.Helper()
+		var got int64
+		if err := peer.Model(&meta.BaiduGeoconvFlight{}).Count(&got).Error; err != nil || got != want {
+			t.Fatalf("in-flight capacity leaked: count=%d want=%d err=%v", got, want, err)
+		}
+	}
 	deny := func(context.Context, uint64) error {
 		return errors.New("reviewed provider licence unavailable")
 	}
@@ -210,6 +217,30 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	if sent.Load() != 0 {
 		t.Fatal("converter was invoked on denied licence")
 	}
+	countFlights(0)
+	// Capacity rejection happens AFTER the real account check but BEFORE any
+	// queue claim, permit recheck, PostgreSQL quota or converter invocation.
+	holding, err := acquireBaiduGeoconvFlight(context.Background(), db, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := executeBaiduPhotoMapIndexQuotaAdmitted(context.Background(), peer,
+		owner.ID, licenceRevoked.ID, licence, converter); err == nil {
+		t.Fatal("Owner saturated flight was still dispatched")
+	}
+	if err := db.Where("asset_id = ?", licenceRevoked.ID).Take(&original).Error; err != nil ||
+		original.Status != baiduMapIndexQueued || original.Attempts != 0 {
+		t.Fatal("capacity denial prematurely claimed the queued job")
+	}
+	countQuota(0)
+	countFlights(1)
+	if sent.Load() != 0 {
+		t.Fatal("capacity denial invoked converter")
+	}
+	if err := releaseBaiduGeoconvFlight(context.Background(), peer, holding); err != nil {
+		t.Fatal(err)
+	}
+	countFlights(0)
 
 	// Revocation during claim must still deny before charging the quota.
 	var checks atomic.Int32
@@ -227,6 +258,7 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	if sent.Load() != 0 || checks.Load() != 2 {
 		t.Fatal("licence was not verified twice")
 	}
+	countFlights(0)
 
 	// No client-provided coordinate: both real sources come only from the
 	// current PostgreSQL Owner/Asset/Node/Ready Media/consent lock chain.
@@ -246,6 +278,7 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		t.Fatalf("conversion call count=%d want=2", sent.Load())
 	}
 	countQuota(2)
+	countFlights(0)
 	var rows []meta.BaiduPhotoMapPosition
 	if err := peer.Order("asset_id").Find(&rows).Error; err != nil || len(rows) != 2 {
 		t.Fatalf("derived photo index count=%d err=%v", len(rows), err)
