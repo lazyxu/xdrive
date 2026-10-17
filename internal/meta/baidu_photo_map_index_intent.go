@@ -19,6 +19,7 @@ type BaiduPhotoMapIndexIntent struct {
 	Attempts          uint32    `gorm:"not null;default:0"`
 	LeaseToken        string    `gorm:"size:36;not null;default:''"`
 	LeaseUntil        *time.Time
+	RetryAfter        *time.Time `gorm:"index"`
 	CancelRequestedAt *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time `gorm:"index:idx_xd_baidu_map_intent_status_updated,priority:2"`

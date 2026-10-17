@@ -16,6 +16,7 @@ const (
 	baiduMapIndexQueued    = "queued"
 	baiduMapIndexLeased    = "leased"
 	baiduMapIndexCancelled = "cancelled"
+	baiduMapIndexFailed    = "failed"
 	baiduMapIndexMaxClaims = 3
 	baiduMapIndexLeaseTTL  = 20 * time.Second
 )
@@ -175,7 +176,7 @@ func enqueueBaiduPhotoMapIndexIntent(
 				"media_updated_at": source.mediaUpdatedAt, "consent_revision": source.consentRevision,
 				"session_version": source.sessionVersion, "status": baiduMapIndexQueued,
 				"attempts": 0, "lease_token": "", "lease_until": nil,
-				"cancel_requested_at": nil,
+				"retry_after": nil, "cancel_requested_at": nil,
 			})
 		if result.Error != nil || result.RowsAffected != 1 {
 			return denied
@@ -208,14 +209,37 @@ func claimBaiduPhotoMapIndexIntent(
 		var row meta.BaiduPhotoMapIndexIntent
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("asset_id = ? AND owner_id = ?", assetID, ownerID).
-			Take(&row).Error; err != nil || !baiduMapIndexIntentMatches(row, source) ||
-			row.Attempts >= baiduMapIndexMaxClaims {
+			Take(&row).Error; err != nil || !baiduMapIndexIntentMatches(row, source) {
 			return denied
 		}
 		now, err := baiduMapIndexClockTx(tx)
-		if err != nil || (row.Status != baiduMapIndexQueued &&
-			(row.Status != baiduMapIndexLeased || row.LeaseUntil == nil ||
-				row.LeaseUntil.After(now))) {
+		if err != nil {
+			return denied
+		}
+		// A crashed Server's expired lease is ONLY repaired on this explicit
+		// Owner+Asset demand. Never immediately redispatch it or bypass the
+		// PostgreSQL-clock retry delay. Old lease tokens become invalid now.
+		if row.Status == baiduMapIndexLeased {
+			if row.LeaseUntil == nil || row.LeaseUntil.After(now) ||
+				row.Attempts == 0 || row.Attempts > baiduMapIndexMaxClaims {
+				return denied
+			}
+			status, retryAfter := baiduMapIndexNextRetry(row.Attempts, now)
+			repair := tx.Model(&meta.BaiduPhotoMapIndexIntent{}).
+				Where("owner_id = ? AND asset_id = ? AND status = ? AND lease_token = ? AND attempts = ?",
+					ownerID, assetID, baiduMapIndexLeased, row.LeaseToken, row.Attempts).
+				Updates(map[string]any{
+					"status": status, "retry_after": retryAfter,
+					"lease_token": "", "lease_until": nil,
+				})
+			if repair.Error != nil || repair.RowsAffected != 1 {
+				return denied
+			}
+			return nil // durable repair only, not a new claim/AK read
+		}
+		if row.Status != baiduMapIndexQueued ||
+			row.Attempts >= baiduMapIndexMaxClaims ||
+			(row.RetryAfter != nil && row.RetryAfter.After(now)) {
 			return denied
 		}
 		token := uuid.NewString()
@@ -225,7 +249,7 @@ func claimBaiduPhotoMapIndexIntent(
 			Where("asset_id = ? AND owner_id = ?", assetID, ownerID).
 			Updates(map[string]any{
 				"status": baiduMapIndexLeased, "attempts": nextAttempt,
-				"lease_token": token, "lease_until": until,
+				"lease_token": token, "lease_until": until, "retry_after": nil,
 			})
 		if updated.Error != nil || updated.RowsAffected != 1 {
 			return denied
@@ -233,7 +257,7 @@ func claimBaiduPhotoMapIndexIntent(
 		result = baiduMapIndexLease{source: source, token: token, until: until, attempt: nextAttempt}
 		return nil
 	})
-	if err != nil || ctx.Err() != nil {
+	if err != nil || ctx.Err() != nil || result.token == "" {
 		return baiduMapIndexLease{}, denied
 	}
 	return result, nil
@@ -314,7 +338,8 @@ func cancelBaiduPhotoMapIndexIntent(
 		// A completed receipt is terminal. Cancelling old work must not
 		// retroactively erase a successfully committed position; the Owner's
 		// separate consent revocation path purges derived data atomically.
-		if row.Status == baiduMapIndexCancelled || row.Status == baiduMapIndexCompleted {
+		if row.Status == baiduMapIndexCancelled || row.Status == baiduMapIndexCompleted ||
+			row.Status == baiduMapIndexFailed {
 			return nil
 		}
 		now, err := baiduMapIndexClockTx(tx)
@@ -325,7 +350,7 @@ func cancelBaiduPhotoMapIndexIntent(
 			Where("asset_id = ? AND owner_id = ?", asset.ID, owner.ID).
 			Updates(map[string]any{
 				"status": baiduMapIndexCancelled, "cancel_requested_at": now,
-				"lease_token": "", "lease_until": nil,
+				"lease_token": "", "lease_until": nil, "retry_after": nil,
 			})
 		if updated.Error != nil || updated.RowsAffected != 1 {
 			return denied

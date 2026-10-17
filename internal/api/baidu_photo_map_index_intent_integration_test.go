@@ -267,9 +267,25 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 	if err := validateBaiduPhotoMapIndexLease(context.Background(), db, lease1); err == nil {
 		t.Fatal("expired lease still usable")
 	}
+	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, second.ID); err == nil {
+		t.Fatal("expired claim must repair only, never bypass retry delay")
+	}
+	var repaired meta.BaiduPhotoMapIndexIntent
+	if err := peer.Where("asset_id = ?", second.ID).Take(&repaired).Error; err != nil ||
+		repaired.Status != baiduMapIndexQueued || repaired.RetryAfter == nil ||
+		repaired.LeaseToken != "" || repaired.LeaseUntil != nil {
+		t.Fatalf("expired lease lacked durable cooldown: %+v %v", repaired, err)
+	}
+	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, second.ID); err == nil {
+		t.Fatal("PostgreSQL-clock cooldown bypassed")
+	}
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).Where("asset_id = ?", second.ID).
+		Update("retry_after", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
 	lease2, err := claimBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, second.ID)
 	if err != nil || lease2.token == lease1.token || lease2.attempt != 2 {
-		t.Fatalf("expired cross-replica reclaim invalid: %+v, %v", lease2, err)
+		t.Fatalf("expired cross-replica retry invalid: %+v, %v", lease2, err)
 	}
 	if err := validateBaiduPhotoMapIndexLease(context.Background(), db, lease1); err == nil {
 		t.Fatal("stale generation retained dispatch authority")
@@ -279,6 +295,13 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 	}
 	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).Where("asset_id = ?", second.ID).
 		Update("lease_until", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, second.ID); err == nil {
+		t.Fatal("second expired lease bypassed explicit cooldown")
+	}
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).Where("asset_id = ?", second.ID).
+		Update("retry_after", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatal(err)
 	}
 	lease3, err := claimBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, second.ID)
@@ -291,6 +314,18 @@ func TestBaiduPhotoMapIndexIntentAcrossPostgresReplicas(t *testing.T) {
 	}
 	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, second.ID); err == nil {
 		t.Fatal("unbounded retries accepted")
+	}
+	var exhausted meta.BaiduPhotoMapIndexIntent
+	if err := peer.Where("asset_id = ?", second.ID).Take(&exhausted).Error; err != nil ||
+		exhausted.Status != baiduMapIndexFailed || exhausted.RetryAfter != nil ||
+		exhausted.LeaseToken != "" || exhausted.LeaseUntil != nil || exhausted.Attempts != 3 {
+		t.Fatalf("third expired lease did not become durable terminal failure: %+v %v", exhausted, err)
+	}
+	if err := cancelBaiduPhotoMapIndexIntent(context.Background(), peer, alice.ID, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := claimBaiduPhotoMapIndexIntent(context.Background(), db, alice.ID, second.ID); err == nil {
+		t.Fatal("terminal failed attempt re-dispatched")
 	}
 	// Session rotation invalidates even a previously valid consent-linked
 	// claim. No raw GPS/AK or derived index is created by this test.

@@ -320,6 +320,17 @@ func TestBaiduMapExecutorRealPostgresCompletionCancellationAndPrivacy(t *testing
 	if err := peer.Model(&meta.BaiduPhotoMapPosition{}).Count(&count).Error; err != nil || count != 1 {
 		t.Fatal("invalid BD09 altered index")
 	}
+	var failedReceipt meta.BaiduPhotoMapIndexIntent
+	if err := peer.Where("asset_id = ?", fifth.ID).Take(&failedReceipt).Error; err != nil ||
+		failedReceipt.Status != baiduMapIndexQueued || failedReceipt.Attempts != 1 ||
+		failedReceipt.RetryAfter == nil || failedReceipt.LeaseToken != "" ||
+		failedReceipt.LeaseUntil != nil {
+		t.Fatalf("provider failure must settle with durable retry cooldown: %+v %v", failedReceipt, err)
+	}
+	if err := executeBaiduPhotoMapIndexIntent(context.Background(), db,
+		owner.ID, fifth.ID, approve, convert); err == nil {
+		t.Fatal("retry cooldown permitted immediate second upstream call")
+	}
 	sixth := addPhoto("session-rotated.jpg", 29.1, 124.3)
 	if err := db.Model(&meta.User{}).Where("id = ?", owner.ID).
 		Update("session_version", 2).Error; err != nil {

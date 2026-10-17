@@ -861,7 +861,7 @@ export type MediaBaiduMapConsentInput = {
 
 /** Owner-only persisted request receipt, never a completed Baidu map runtime. */
 export type MediaBaiduMapIndexJob = {
-  status: 'not_queued' | 'queued' | 'leased' | 'completed' | 'cancelled'
+  status: 'not_queued' | 'queued' | 'leased' | 'completed' | 'cancelled' | 'failed'
   consent_revision: number
   attempts: number
   dispatch_enabled: boolean
