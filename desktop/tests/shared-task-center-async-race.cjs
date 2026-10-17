@@ -63,6 +63,8 @@ function fixture() {
   let global = empty()
   let mineLoading = false
   let moreLoading = false
+  let mineLoadEpoch = 0
+  let globalLoadEpoch = 0
   const core = {
     useCallback: (fn) => fn,
     xDriveNormalizeBackgroundTaskPage: (page) => page,
@@ -77,6 +79,8 @@ function fixture() {
     setGlobalTasks: (value) => { global = typeof value === 'function' ? value(global) : value },
     setMineLoading: (value) => { mineLoading = value },
     setGlobalLoading: () => {},
+    setMineLoadEpoch: (value) => { mineLoadEpoch = typeof value === 'function' ? value(mineLoadEpoch) : value },
+    setGlobalLoadEpoch: (value) => { globalLoadEpoch = typeof value === 'function' ? value(globalLoadEpoch) : value },
     setMineLoadingMore: (value) => { moreLoading = value },
     setGlobalLoadingMore: () => {},
     onError: (error) => { events.push(error.message) },
@@ -89,6 +93,8 @@ function fixture() {
     get global() { return global },
     get mineLoading() { return mineLoading },
     get moreLoading() { return moreLoading },
+    get mineLoadEpoch() { return mineLoadEpoch },
+    get globalLoadEpoch() { return globalLoadEpoch },
     setMine(value) { mine = value },
   }
   const summaryCallback = (port, lifecycleKey = 'same-owner') => {
@@ -138,6 +144,9 @@ test('Task Center older Mine refresh cannot erase a newer completed task list', 
   await tick()
   await f.listCallback('refresh', newPort)()
   assert.deepEqual(values(f.mine), ['newest'])
+  assert.equal(f.mine.hasLoaded, true, 'only an accepted first page marks tasks as loaded')
+  assert.equal(f.mine.failed, false)
+  assert.equal(f.mineLoadEpoch, 2, 'two current owner reads own distinct visual generations')
   older.resolve(settledPage('older'))
   await old
   assert.deepEqual(values(f.mine), ['newest'],
@@ -185,6 +194,8 @@ test('Task Center older failures cannot overwrite newest success or publish stal
   assert.deepEqual(values(f.mine), ['latest'])
   assert.deepEqual(f.events, [],
     'stale failed Task Center request must not report a fresh-scope error')
+  assert.equal(f.mine.hasLoaded, true)
+  assert.equal(f.mine.failed, false, 'old-account failures cannot poison accepted task rows')
   assert.equal(f.mineLoading, false)
 })
 

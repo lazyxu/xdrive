@@ -73,6 +73,12 @@ export interface XDriveTaskCenterPageProps {
   globalBackgroundTasks?: XDriveBackgroundTask[]
   backgroundTasksLoading?: boolean
   globalBackgroundTasksLoading?: boolean
+  backgroundTasksLoaded?: boolean
+  globalBackgroundTasksLoaded?: boolean
+  backgroundTasksReadFailed?: boolean
+  globalBackgroundTasksReadFailed?: boolean
+  backgroundTasksLoadEpoch?: number
+  globalBackgroundTasksLoadEpoch?: number
   backgroundTasksAvailable?: boolean
   globalTasksEnabled?: boolean
   globalTasksAvailable?: boolean
@@ -118,6 +124,12 @@ export function XDriveTaskCenterPage({
   globalBackgroundTasks = [],
   backgroundTasksLoading = false,
   globalBackgroundTasksLoading = false,
+  backgroundTasksLoaded = true,
+  globalBackgroundTasksLoaded = true,
+  backgroundTasksReadFailed = false,
+  globalBackgroundTasksReadFailed = false,
+  backgroundTasksLoadEpoch = 0,
+  globalBackgroundTasksLoadEpoch = 0,
   backgroundTasksAvailable = false,
   globalTasksEnabled = false,
   globalTasksAvailable = globalTasksEnabled,
@@ -231,7 +243,7 @@ export function XDriveTaskCenterPage({
         </Stack>
         {scope === 'global' ? (
           <XDriveTaskCenterSection title="服务器后台任务"
-            loadedCount={globalTasksAvailable ? globalBackgroundTasks.length : undefined}
+            loadedCount={globalTasksAvailable && globalBackgroundTasksLoaded ? globalBackgroundTasks.length : undefined}
             description="管理员可查看跨用户与系统任务；控制操作由服务端授权决定。">
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }}
               justifyContent="space-between" sx={{ mb: 1.5 }}>
@@ -259,6 +271,9 @@ export function XDriveTaskCenterPage({
               <XDriveBackgroundTaskList
                 tasks={globalBackgroundTasks}
                 loading={globalBackgroundTasksLoading}
+                loaded={globalBackgroundTasksLoaded}
+                failed={globalBackgroundTasksReadFailed}
+                loadEpoch={globalBackgroundTasksLoadEpoch}
                 emptyMessage="暂无全局后台任务"
                 controlKey={backgroundControlKey}
                 focusedTaskID={backgroundFocusTaskID}
@@ -269,6 +284,9 @@ export function XDriveTaskCenterPage({
               <XDriveBackgroundTaskTable
                 tasks={globalBackgroundTasks}
                 loading={globalBackgroundTasksLoading}
+                loaded={globalBackgroundTasksLoaded}
+                failed={globalBackgroundTasksReadFailed}
+                loadEpoch={globalBackgroundTasksLoadEpoch}
                 controlKey={backgroundControlKey}
                 focusedTaskID={backgroundFocusTaskID}
                 onControl={onBackgroundTaskControl}
@@ -325,10 +343,13 @@ export function XDriveTaskCenterPage({
             {backgroundTasksAvailable ? (
               <>
                 <Divider />
-                <XDriveTaskCenterSection title="同步文件夹" loadedCount={syncTasks.length}>
+                <XDriveTaskCenterSection title="同步文件夹" loadedCount={backgroundTasksLoaded ? syncTasks.length : undefined}>
                   <XDriveBackgroundTaskList
                     tasks={syncTasks}
                     loading={backgroundTasksLoading}
+                    loaded={backgroundTasksLoaded}
+                    failed={backgroundTasksReadFailed}
+                    loadEpoch={backgroundTasksLoadEpoch}
                     emptyMessage="暂无同步文件夹任务"
                     controlKey={backgroundControlKey}
                     focusedTaskID={backgroundFocusTaskID}
@@ -336,10 +357,13 @@ export function XDriveTaskCenterPage({
                   />
                 </XDriveTaskCenterSection>
                 <Divider />
-                <XDriveTaskCenterSection title="后台处理" loadedCount={derivedTasks.length}>
+                <XDriveTaskCenterSection title="后台处理" loadedCount={backgroundTasksLoaded ? derivedTasks.length : undefined}>
                   <XDriveBackgroundTaskList
                     tasks={derivedTasks}
                     loading={backgroundTasksLoading}
+                    loaded={backgroundTasksLoaded}
+                    failed={backgroundTasksReadFailed}
+                    loadEpoch={backgroundTasksLoadEpoch}
                     emptyMessage="暂无后台处理任务"
                     controlKey={backgroundControlKey}
                     focusedTaskID={backgroundFocusTaskID}
