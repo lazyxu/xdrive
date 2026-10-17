@@ -25,6 +25,9 @@ type caddyHostStatus struct {
 	LiveConfigSHA256        string `json:"live_config_sha256,omitempty"`
 	InstanceGenerationState string `json:"instance_generation_state,omitempty"`
 	AliDNSModuleState       string `json:"alidns_module_state,omitempty"`
+	LANHTTPSConfigured      bool   `json:"lan_https_configured,omitempty"`
+	LANTLSState             string `json:"lan_tls_state,omitempty"`
+	LANVerifiedIPSHA256     string `json:"lan_verified_ip_sha256,omitempty"`
 }
 
 func validCaddyHostState(state string) bool {
@@ -136,10 +139,18 @@ func (s *Server) readCaddyHostStatus() (caddyHostStatus, bool) {
 		}
 	}
 	raw, err := os.ReadFile(filepath.Join(s.HostControlDir, caddyHostStatusName))
-	if err != nil || len(raw) == 0 || len(raw) > 512 {
+	if err != nil || len(raw) == 0 || len(raw) > 768 {
 		return caddyHostStatus{}, false
 	}
 	if json.Unmarshal(raw, &status) != nil || !validCaddyHostState(status.State) ||
+		(status.LANHTTPSConfigured && !validCaddyTLSState(status.LANTLSState)) ||
+		(!status.LANHTTPSConfigured && status.LANTLSState != "" && status.LANTLSState != "disabled") ||
+		(status.LANTLSState == "verified" &&
+			(!status.LANHTTPSConfigured || status.State != "healthy" ||
+				!validCaddyTLSVerifiedDomainDigest(status.LANVerifiedIPSHA256))) ||
+		(status.LANVerifiedIPSHA256 != "" &&
+			(status.LANTLSState != "verified" ||
+				!validCaddyTLSVerifiedDomainDigest(status.LANVerifiedIPSHA256))) ||
 		(status.TLSCheckSupported && !validCaddyTLSState(status.TLSState)) ||
 		(!status.TLSCheckSupported && status.TLSState != "") ||
 		(status.TLSState == "verified" && (!status.HTTPSConfigured || status.State != "healthy")) ||

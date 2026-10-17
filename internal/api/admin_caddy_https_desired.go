@@ -50,6 +50,7 @@ type adminCaddyHTTPSConfigDTO struct {
 	HostObserved                  bool       `json:"host_observed"`
 	HostHTTPSConfigured           bool       `json:"host_https_configured"`
 	HostTLSState                  string     `json:"host_tls_state"`
+	HostLANTLSState               string     `json:"host_lan_tls_state"`
 }
 
 const caddyHTTPSApplyRequirement = "已保存的 HTTPS 期望配置尚未应用。修改实际域名、DNS 凭据或启停 Caddy 需要具备防管理入口失联、预检、回滚及审计能力的受限 Host Manager；当前阶段不允许从 Server 或浏览器执行容器操作。"
@@ -118,7 +119,8 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 		ApplyState: state, Editable: true, ApplySupported: false,
 		RequiresRestrictedMaintenance: true, Requirement: caddyHTTPSApplyRequirement,
 		HostObserved: observed, HostHTTPSConfigured: observed && host.HTTPSConfigured,
-		HostTLSState: tlsState,
+		HostTLSState:    tlsState,
+		HostLANTLSState: caddyLANLocalEffectState(host, observed, hostLANIP),
 	})
 }
 

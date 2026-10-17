@@ -784,6 +784,7 @@ export type AgentAdminCaddyHTTPSConfig = {
   host_observed: boolean
   host_https_configured: boolean
   host_tls_state: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
+  host_lan_tls_state?: 'unknown' | 'disabled' | 'verified' | 'failed' | 'unavailable' | 'invalid-config'
 }
 export type AgentAdminCaddyHTTPSUpdate = {
   revision: number

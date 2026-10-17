@@ -356,6 +356,7 @@ type AdminCaddyHTTPSConfig struct {
 	HostObserved                  bool       `json:"host_observed"`
 	HostHTTPSConfigured           bool       `json:"host_https_configured"`
 	HostTLSState                  string     `json:"host_tls_state"`
+	HostLANTLSState               string     `json:"host_lan_tls_state"`
 }
 type AdminCaddyHTTPSUpdate struct {
 	Revision   uint64  `json:"revision"`

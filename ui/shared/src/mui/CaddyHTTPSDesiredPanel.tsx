@@ -41,6 +41,14 @@ const tlsLabels: Record<XDriveCaddyHTTPSConfig['host_tls_state'], string> = {
   disabled: '宿主机未启用 HTTPS',
   unknown: '宿主机 TLS 状态未知',
 }
+const lanTLSLabels: Record<NonNullable<XDriveCaddyHTTPSConfig['host_lan_tls_state']>, string> = {
+  verified: '当前 IP 证书链与 IP SAN 在本机核验通过（非外部可达证明）',
+  failed: '本机 IP HTTPS 握手或健康检测失败',
+  unavailable: '本机 IP TLS 检测不可用',
+  'invalid-config': '宿主机 IP/HTTPS 端口配置非法',
+  disabled: '宿主机未声明 IP HTTPS',
+  unknown: '尚无可信的本机 IP TLS 检测结果',
+}
 
 export function XDriveCaddyHTTPSDesiredPanel({
   source, refreshID, onConfigurationChanged, section = 'config', onDirtyChange,
@@ -232,9 +240,10 @@ export function XDriveCaddyHTTPSDesiredPanel({
               {' · '}{config.desired_lan_ip || '未设置地址'}
               {' · '}部署环境仅声明 LAN 地址：{config.host_lan_configured
                 ? config.host_lan_ip || '已配置' : '未声明或无法核对'}（不代表 IP TLS 已验证）
-              {' · '}宿主机：{!config.host_observed ? '无法观察' :
-                config.host_https_configured ? '配置了 HTTPS' : '未配置 HTTPS'}
-              {' · '}{tlsLabels[config.host_tls_state] ?? '状态未知'}
+              {' · '}私网 IP TLS：{lanTLSLabels[config.host_lan_tls_state ?? 'unknown']}
+              {' · '}域名入口：{!config.host_observed ? '无法观察' :
+                config.host_https_configured ? '已声明 HTTPS' : '未声明 HTTPS'}
+              {' · '}域名 TLS：{tlsLabels[config.host_tls_state] ?? '状态未知'}
             </Typography>
             {section === 'config' && (<>
             <FormControlLabel

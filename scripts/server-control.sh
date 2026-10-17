@@ -723,6 +723,66 @@ caddy_local_tls_state() {
   fi
 }
 
+# Read-only host-side proof of the configured RFC1918 IP HTTPS listener.
+# A local Caddy CA root never enters the Server/shared status directory.
+caddy_valid_private_lan_ip() {
+  local ip="$1" a b c d octet
+  [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || return 1
+  IFS=. read -r a b c d <<< "$ip"
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+    (( 10#$octet <= 255 )) || return 1
+  done
+  (( a == 10 || (a == 172 && b >= 16 && b <= 31) ||
+      (a == 192 && b == 168) ))
+}
+
+caddy_local_lan_tls_state() {
+  local ip="$1" port bind cert bytes status=unavailable
+  if ! caddy_valid_private_lan_ip "$ip"; then
+    printf 'invalid-config\n'
+    return
+  fi
+  port="$(env_value XD_HTTPS_PORT)"
+  [[ -n "$port" ]] || port=8443
+  bind="$(env_value XD_HTTPS_BIND)"
+  [[ -n "$bind" ]] || bind=0.0.0.0
+  if [[ ! "$port" =~ ^[1-9][0-9]{0,4}$ ]] || (( port > 65535 )); then
+    printf 'invalid-config\n'
+    return
+  fi
+  # Never direct this probe at a LAN peer. It is valid ONLY for an IPv4
+  # assigned to this Linux host on a configured local HTTPS listener.
+  if [[ "$bind" != 0.0.0.0 && "$bind" != "$ip" ]] ||
+      ! command -v ip >/dev/null 2>&1 ||
+      ! ip -o -4 addr show | awk -v wanted="$ip"         '{split($4,addr,"/"); if (addr[1] == wanted) seen=1} END {exit !seen}'; then
+    printf 'unavailable\n'
+    return
+  fi
+  if ! command -v curl >/dev/null 2>&1 || ! command -v timeout >/dev/null 2>&1; then
+    printf 'unavailable\n'
+    return
+  fi
+  cert="$(mktemp /tmp/xdrive-caddy-lan-root.XXXXXX)" || {
+    printf 'unavailable\n'
+    return
+  }
+  chmod 0600 "$cert"
+  # Only the fixed running Caddy container and fixed local PKI path. No
+  # arbitrary domain/path/command from the browser may influence Docker.
+  if timeout 4s docker exec xdrive-caddy cat       /data/caddy/pki/authorities/local/root.crt > "$cert" 2>/dev/null; then
+    bytes="$(wc -c < "$cert" | tr -d ' ')"
+    if [[ "$bytes" =~ ^[0-9]+$ ]] && (( bytes >= 256 && bytes <= 8192 )); then
+      status=failed
+      if timeout 8s curl -fsS --noproxy '*' --cacert "$cert"           --connect-timeout 3 --max-time 6           "https://$ip:$port/api/v1/readyz" >/dev/null 2>&1; then
+        status=verified
+      fi
+    fi
+  fi
+  rm -f -- "$cert"
+  printf '%s\n' "$status"
+}
+
 # Compare the fixed running xdrive-caddy container's *startup* XD_DOMAIN
 # with the SNI whose chain and hostname passed the local loopback TLS probe.
 # Docker's server-side template outputs ONLY the XD_DOMAIN entry; it never
@@ -806,10 +866,16 @@ caddy_container_generation_sample() {
 # "verified" never asserts external DNS, firewall or public reachability.
 caddy_host_refresh() {
   local dir tmp observed domain generation_before="" generation_after="" live_config_before="" live_config_after="" instance_generation_state=unverified alidns_module_state=unverified module_generation_before="" module_generation_after="" state=unknown https_configured=false tls_state=disabled tls_domain_sha256="" runtime_tls_alignment=unverified live_config_sha256=""
+  local lan_ip="" lan_https_configured=false lan_tls_state=disabled lan_verified_ip_sha256="" lan_generation_before="" lan_generation_after=""
   domain="$(env_value XD_DOMAIN)"
+  lan_ip="$(env_value XD_LAN_HTTPS_IP)"
   if [[ -n "$domain" ]]; then
     https_configured=true
     tls_state=unavailable
+  fi
+  if [[ -n "$lan_ip" ]]; then
+    lan_https_configured=true
+    lan_tls_state=unavailable
   fi
   observed=""
   if [[ -f "$COMPOSE_PATH" && -f "$ENV_PATH" ]]; then
@@ -875,6 +941,23 @@ caddy_host_refresh() {
       tls_state=unavailable
     fi
   fi
+  # Independent private-IP HTTPS verification, including IP SAN, is kept
+  # separate from public-domain TLS. No result is an applied DB revision.
+  if [[ "$lan_https_configured" == true && "$state" == healthy ]]; then
+    lan_generation_before="$(caddy_container_generation_sample)" || lan_generation_before=""
+    lan_tls_state="$(caddy_local_lan_tls_state "$lan_ip")"
+    lan_generation_after="$(caddy_container_generation_sample)" || lan_generation_after=""
+    if [[ -z "$lan_generation_before" ||
+          "$lan_generation_before" != "$lan_generation_after" ]]; then
+      lan_tls_state=unavailable
+    elif [[ "$lan_tls_state" == verified ]] && command -v sha256sum >/dev/null 2>&1; then
+      lan_verified_ip_sha256="$(printf '%s' "$lan_ip" | sha256sum | awk '{print $1}')" || lan_verified_ip_sha256=""
+      if [[ ! "$lan_verified_ip_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+        lan_verified_ip_sha256=""
+        lan_tls_state=unavailable
+      fi
+    fi
+  fi
   # AliDNS is optional: observe the binary even if this Caddy serves only
   # HTTP. Fence the fixed read with healthy container generation samples.
   if [[ "$state" == healthy ]]; then
@@ -901,8 +984,9 @@ caddy_host_refresh() {
   fi
   dir="$(prepare_dir)"
   tmp="$(mktemp "$dir/.caddy-runtime.XXXXXX")" || return 1
-  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s","alidns_module_state":"%s"}\n' \
-    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" "$alidns_module_state" > "$tmp"
+  printf '{"state":"%s","https_configured":%s,"tls_check_supported":true,"tls_state":"%s","tls_verified_domain_sha256":"%s","runtime_tls_alignment":"%s","live_config_sha256":"%s","instance_generation_state":"%s","alidns_module_state":"%s","lan_https_configured":%s,"lan_tls_state":"%s","lan_verified_ip_sha256":"%s"}\n' \
+    "$state" "$https_configured" "$tls_state" "$tls_domain_sha256" "$runtime_tls_alignment" "$live_config_sha256" "$instance_generation_state" "$alidns_module_state" \
+    "$lan_https_configured" "$lan_tls_state" "$lan_verified_ip_sha256" > "$tmp"
   chmod 0660 "$tmp"
   mv -f "$tmp" "$dir/caddy-runtime-status.json"
 }
