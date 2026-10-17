@@ -67,6 +67,8 @@ import {
 } from '@mui/material'
 import type { ButtonProps } from '@mui/material'
 import type { MediaItem, NodeLocation } from '../models'
+import type { XDriveCloudFilesPosition } from '../cloud-files'
+import { xDriveFileExplorerVerifiedChildReanchor } from './FileExplorerReanchor'
 import { formatBytes } from '../format'
 import { XDRIVE_MOBILE_ITEM_HOLD_MS, xDriveMobileItemMoved } from '../mobile-item-gesture'
 import { XDRIVE_VIRTUAL_COLLECTION_DEFAULT_PAGE_SIZE } from '../virtual-collection'
@@ -930,6 +932,7 @@ export function XDriveFileExplorer({
   onSortChange,
   grouping: controlledGrouping,
   onGroupingChange,
+  locateCurrentChild,
   groupingEnabled = true,
   commandBarStart,
   commandBarEnd,
@@ -1034,9 +1037,13 @@ export function XDriveFileExplorer({
   viewMode?: XDriveFileExplorerViewMode
   onViewModeChange?: (mode: XDriveFileExplorerViewMode) => void
   sort?: XDriveFileExplorerSort
-  onSortChange?: (sort: XDriveFileExplorerSort) => void
+  onSortChange?: (sort: XDriveFileExplorerSort) => boolean | void | Promise<boolean | void>
   grouping?: XDriveFileExplorerGrouping
-  onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => void
+  onGroupingChange?: (grouping: XDriveFileExplorerGrouping) => boolean | void | Promise<boolean | void>
+  locateCurrentChild?: (
+    parentID: number, nodeID: number, sort: XDriveFileExplorerSort,
+    grouping: XDriveFileExplorerGrouping, signal: AbortSignal,
+  ) => Promise<XDriveCloudFilesPosition>
   groupingEnabled?: boolean
   commandBarStart?: ReactNode
   commandBarEnd?: ReactNode
@@ -1168,6 +1175,30 @@ export function XDriveFileExplorer({
   } | null>(null)
   const [viewRestoreVersion, setViewRestoreVersion] = useState(0)
   const [viewRestoreFeedback, setViewRestoreFeedback] = useState('')
+  const [reanchorVersion, setReanchorVersion] = useState(0)
+  const reanchorGenerationRef = useRef(0)
+  const pendingReanchorRef = useRef<{
+    generation: number
+    lifecycle: string
+    stateKey: string
+    derivedPath: string
+    fromVirtualKey: string
+    targetSignature: string
+    parentID: number
+    nodeID: number
+    revision: number
+    offset: number
+    wasSelected: boolean
+    selectionGeneration: number
+    controller?: AbortController
+  } | null>(null)
+  const locateCurrentChildRef = useRef(locateCurrentChild)
+  locateCurrentChildRef.current = locateCurrentChild
+  useEffect(() => () => {
+    reanchorGenerationRef.current += 1
+    pendingReanchorRef.current?.controller?.abort()
+    pendingReanchorRef.current = null
+  }, [])
   const pendingKeyboardRangeRef = useRef<{ scope: string; intent: number } | null>(null)
   const [keyboardRangeVersion, setKeyboardRangeVersion] = useState(0)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
@@ -3173,18 +3204,82 @@ export function XDriveFileExplorer({
     onViewModeChange?.(mode)
   }
 
+  // A sort/group request must first commit a newly authorized first Range.
+  // Only then can the previous item identity be reanchored at the current Server ordinal.
+  const stageAuthoritativeReanchor = (
+    nextSort: XDriveFileExplorerSort,
+    nextGrouping: XDriveFileExplorerGrouping,
+    committed: boolean | void | Promise<boolean | void>,
+  ) => {
+    const generation = ++reanchorGenerationRef.current
+    pendingReanchorRef.current?.controller?.abort()
+    pendingReanchorRef.current = null
+    const host = scrollHostRef.current
+    const parentID = Number(crumbs.at(-1)?.id)
+    const sourceVirtualKey = virtualCollection?.interactionKey
+    if (!host || !locateCurrentChild || !viewState || !virtualCollection?.collectRange || !sourceVirtualKey ||
+      !Number.isSafeInteger(parentID) || parentID <= 0 || viewMode === 'columns' ||
+      searchSummary || selectedItems.length > 1) return
+    const layout = viewMode === 'details' ? groupedDetailsLayout : groupedGridLayout
+    const contentTop = viewMode === 'details'
+      ? Math.max(0, host.scrollTop - detailsHeaderHeight)
+      : host.scrollTop
+    const segment = layout
+      ? xDriveFileExplorerVisibleGroupSegments(layout, contentTop, 1, 0)[0]
+      : undefined
+    const firstIndex = Math.min(Math.max(0, logicalItemCount - 1), Math.max(0,
+      segment?.startIndex ?? (viewMode === 'details'
+        ? Math.floor(contentTop / detailsRowHeight)
+        : Math.floor(Math.max(0, contentTop - gridPaddingPx) / gridRowStep) * gridColumns)))
+    const candidate = selectedItems.length === 1
+      ? selectedItems[0]
+      : logicalItemAt(firstIndex)
+    const revision = Number(candidate?.revision)
+    const nodeID = Number(candidate?.id)
+    if (!Number.isSafeInteger(nodeID) || nodeID <= 0 ||
+      !Number.isSafeInteger(revision) || revision <= 0) return
+    const sourceIndex = logicalIndexOf(nodeID) ?? firstIndex
+    const sourceTop = viewMode === 'details'
+      ? detailsHeaderHeight + (groupedDetailsLayout
+          ? xDriveFileExplorerGroupedItemTop(groupedDetailsLayout, sourceIndex) ?? 0
+          : sourceIndex * detailsRowHeight)
+      : groupedGridLayout
+        ? xDriveFileExplorerGroupedItemTop(groupedGridLayout, sourceIndex) ?? gridPaddingPx
+        : gridPaddingPx + Math.floor(sourceIndex / gridColumns) * gridRowStep
+    const offset = Math.abs(host.scrollTop - sourceTop) <= host.clientHeight
+      ? Math.max(-host.clientHeight, Math.min(host.clientHeight, host.scrollTop - sourceTop))
+      : 0
+    const staged = {
+      generation, lifecycle: interactionLifecycleKey,
+      stateKey: viewState.stateKey, derivedPath,
+      fromVirtualKey: sourceVirtualKey,
+      targetSignature: [nextSort.key, nextSort.direction,
+        xDriveFileExplorerGroupingSignature(nextGrouping)].join('|'),
+      parentID, nodeID, revision, offset,
+      wasSelected: selectedItems.length === 1,
+      selectionGeneration: selectionIntentRef.current,
+    }
+    void Promise.resolve(committed).then((accepted) => {
+      if (accepted !== true || generation !== reanchorGenerationRef.current) return
+      pendingReanchorRef.current = staged
+      setReanchorVersion((value) => value + 1)
+    }).catch(() => {
+      // Failed and superseded directory commits never authorize stale scroll.
+    })
+  }
+
   const setSort = (next: XDriveFileExplorerSort) => {
     setArrangeAnchor(null)
     if (next.key === sort.key && next.direction === sort.direction) return
     if (controlledSort === undefined) setInternalSort(next)
-    onSortChange?.(next)
+    stageAuthoritativeReanchor(next, grouping, onSortChange?.(next))
   }
 
   const setGrouping = (next: XDriveFileExplorerGrouping) => {
     setArrangeAnchor(null)
     if (xDriveFileExplorerGroupingSignature(next) === groupingSignature) return
     if (controlledGrouping === undefined) setInternalGrouping(next)
-    onGroupingChange?.(next)
+    stageAuthoritativeReanchor(sort, next, onGroupingChange?.(next))
   }
 
   const chooseDetailsDensity = (detailsDensity: XDriveFileExplorerDetailsDensity) => {
@@ -4982,6 +5077,60 @@ export function XDriveFileExplorer({
     rowStep: viewMode === 'grid' ? gridRowStep : detailsRowHeight,
     itemTop: itemScrollTop,
   }
+
+  useEffect(() => {
+    const pending = pendingReanchorRef.current
+    if (!pending) return
+    const stateKey = viewState?.stateKey
+    const locate = locateCurrentChildRef.current
+    if (pending.lifecycle !== interactionLifecycleKey ||
+      pending.stateKey !== stateKey || pending.derivedPath !== derivedPath) {
+      pending.controller?.abort()
+      pendingReanchorRef.current = null
+      return
+    }
+    const collectRange = virtualCollection?.collectRange
+    if (pending.targetSignature !== [sort.key, sort.direction, groupingSignature].join('|') ||
+      pending.fromVirtualKey === virtualCollection?.interactionKey ||
+      !collectRange || !viewState?.ready || !stateKey || !locate) return
+    const controller = new AbortController()
+    pending.controller = controller
+    const current = () => !controller.signal.aborted &&
+      pendingReanchorRef.current === pending &&
+      pending.generation === reanchorGenerationRef.current &&
+      pending.lifecycle === interactionLifecycleKey &&
+      pending.stateKey === stateKey &&
+      pending.derivedPath === derivedPath &&
+      pending.targetSignature === [sort.key, sort.direction, groupingSignature].join('|')
+    void xDriveFileExplorerVerifiedChildReanchor({
+      parentID: pending.parentID, nodeID: pending.nodeID,
+      revision: pending.revision, itemCount: logicalItemCount,
+      sort, grouping, signal: controller.signal,
+      locate, collectRange,
+    }).then((result) => {
+      if (!current()) return
+      pendingReanchorRef.current = null
+      // New user selection always wins over an obsolete reanchor.
+      if (pending.wasSelected &&
+        selectionIntentRef.current > pending.selectionGeneration + 1) return
+      if (!result || !scrollHostRef.current || !restoreLayoutRef.current ||
+        restoreLayoutRef.current.mode === 'columns') return
+      const host = scrollHostRef.current
+      host.scrollTop = Math.max(0, restoreLayoutRef.current.itemTop(result.index) + pending.offset)
+      pendingScrollTopRef.current = host.scrollTop
+      setScrollTop(host.scrollTop)
+      setActiveItemID(result.item.id)
+      setActiveLogicalIndex(result.index)
+      if (pending.wasSelected) applySelection([result.item.id], [result.item])
+    }).catch(() => {
+      if (current()) pendingReanchorRef.current = null
+    })
+    return () => controller.abort()
+  }, [
+    reanchorVersion, interactionLifecycleKey, derivedPath, viewState?.stateKey,
+    viewState?.ready, sort.key, sort.direction, groupingSignature,
+    virtualCollection?.interactionKey, logicalItemCount, viewMode,
+  ])
 
   useLayoutEffect(() => {
     const pending = pendingViewModeAnchorRef.current

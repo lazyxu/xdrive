@@ -687,6 +687,14 @@ unchanged D3/D4/Undo/Redo, then Ready/Rebase merge. No Server/Agent/Web UI,
 permission rule, REST implementation or production test oracle is weakened.
 
 
+## U09-D2c1 · Wide Web/Desktop authorized current-directory reanchor (2026-10-17)
+
+- **Baseline:** related U11 [PR #1940](https://github.com/lazyxu/xdrive/pull/1940) passed exact-HEAD [76-job CI #38996775414](https://github.com/lazyxu/xdrive/actions/runs/38996775414) and Rebase-merged as `master@c70f09f86242cb2a3716489f8c61d2111aef92b7`. U09 related PR/branch search empty; old U11 merged branch awaits cleanup workflow.
+- **Source gap:** shared Wide Files resets scroll and selection after newly committed Server sort/group. D1/D2a/D2b supplied real signed Owner direct-child ordinal but no visual consumer.
+- **Scoped candidate:** stage one selected Node or loaded visible anchor before a sort/group; accept an explicit success receipt only *after* the authoritative directory first Range commits. On new distinct virtual scope, use existing cancelable Web Server `childPosition` or Desktop capability-fenced Main→Agent→Go→Server relay, confirm the same Parent/Node/Revision/Sort/Group and true total, fetch just `collectRange(index,index)`, then validate the Node and Revision again before updating focus/selection/scroll with the existing real group offsets. Cancel superseded consumer with AbortController. No 100k scan, Search ordinal, Server ordering rewrite, additional original/thumbnail API, SW cache change or duplicate virtualizer.
+- **Boundary:** D2c1 covers **wide Web/Desktop** only. Dedicated iOS27 Mobile Web/PWA List/Grid/inline presentation, multi-selection, Search ordering, real 100k physical CAS and OS/AT must receive independent D2c2+ tests. Keep PWA S5 seven-platform `NOT RUN`/Release NO-GO and 52px App Frame/900px breakpoint.
+- **Evidence:** pure compiled Node helper tests verify one authoritative 100k ordinal, 1 bounded Range, invalid revision/Node/order and actual abort, plus original source-contract wiring. Must pass **NEW exact-head full CI** including Web/Windows/Desktop/Go PostgreSQL Race, single-work-commit/final-gate and mergeability before Ready/Rebase. No physical-device or real-browser frame measurement claimed.
+
 ## U09-D1 · Authenticated current Server child ordinal by stable Node ID (2026-10-17)
 
 - After directly related #1912 U05-B passed [exact-head CI #38963394699](https://github.com/lazyxu/xdrive/actions/runs/38963394699), 76 jobs (25 success, 51 conditional skips, real browser PostgreSQL/Gin including U05 404/restore and original Undo/Redo), merged via Rebase as `master@39fa0af916810c480f48c85f78bbd5a388d06494`; its branch was independently absent. Freeze this master once for ONE bounded U09-D1 work commit; unrelated Admin/Gallery/LocalPush/Performance/PWA/Race branches stay untouched.

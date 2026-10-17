@@ -2876,6 +2876,7 @@ export default function App({
               mediaDetailsSupported: fileMediaDetailsSupported,
               mediaPropertiesSupported: agent.hello?.capabilities.includes('media-item-properties') ?? false,
               nodeLocationSupported: agent.hello?.capabilities.includes('node-location') ?? false,
+              childPositionSupported: agent.hello?.capabilities.includes('cloud-child-position') ?? false,
               fileAvailabilitySupported,
               openWithSupported: fileOpenWithSupported,
               quickAccessSupported: fileQuickAccessSupported,
