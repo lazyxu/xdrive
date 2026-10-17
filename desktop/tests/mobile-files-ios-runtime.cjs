@@ -3545,3 +3545,43 @@ test('P46 accepted nonvirtual root items reopen immediately without a false pend
       'already accepted synchronous root rows must not be hidden')
   }, { props: { onBrowseRoot: () => { dispatches++ } } })
 })
+
+
+test('P47 Mobile Trash never claims empty before accepted GET; failed reads offer retry and refresh retains zero', async () => {
+  let reloads = 0
+  await withView(async h => {
+    assert.equal(count(h.view, 'data-mobile-files-zero-state'), 1)
+    assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'first unverified frame must not advertise a real empty Trash')
+    await h.update({ loading: true })
+    assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-trash-first-read', true).props['aria-busy'], true)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'short Trash GET is visually quiet')
+    await h.update({ loading: false, trashReadState: 'error' })
+    const error = find(h.view, 'data-mobile-files-trash-read-error', true)
+    assert.equal(error.props.role, 'alert')
+    assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 0)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    const retry = error.findAll(n => typeof n.props?.onClick === 'function')
+    assert.equal(retry.length, 1)
+    await act(async () => { retry[0].props.onClick() })
+    assert.equal(reloads, 1)
+    await h.update({ loading: true })
+    assert.equal(count(h.view, 'data-mobile-files-trash-read-error'), 0,
+      'retry in flight must not show a stale error row')
+    assert.equal(count(h.view, 'data-mobile-files-trash-first-read'), 1)
+    await h.update({ loading: false, trashReadState: 'ready' })
+    const verified = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(verified.length, 1)
+    assert.equal(verified[0].props.message, '最近删除为空')
+    await h.update({ loading: true })
+    const kept = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(kept.length, 1)
+    assert.equal(kept[0].props.message, '最近删除为空',
+      'a confirmed zero must remain visible during a same-Owner refresh')
+    assert.equal(kept[0].props.loading, false)
+  }, { props: { items: [], trashActive: true, trashReadState: 'unverified',
+    loading: false, onRefresh: () => { reloads += 1 } } })
+})

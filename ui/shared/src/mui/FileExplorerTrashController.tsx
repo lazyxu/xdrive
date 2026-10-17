@@ -55,6 +55,13 @@ export function useXDriveFileExplorerTrash({
 }) {
   const [nodes, setNodes] = useState<Node[]>([])
   const [loading, setLoading] = useState(false)
+  // An empty array is not a verified empty Trash until a current Owner GET succeeds.
+  // A receipt is scoped to the actual query (account, enablement and sort).
+  const [readReceipt, setReadReceipt] = useState<{
+    queryKey: string
+    state: 'unverified' | 'ready' | 'error'
+  }>({ queryKey: '', state: 'unverified' })
+  const visibleScopeRef = useRef({ lifecycleKey, enabled })
   const [workingKey, setWorkingKey] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Node | null>(null)
   const requestRef = useRef(0)
@@ -135,7 +142,8 @@ export function useXDriveFileExplorerTrash({
     try {
       if (adapter.listTrashRange) {
         countedRangeKeyRef.current = ''
-        rangeCollection.reset(rangeQueryKey)
+        // Retain the accepted sparse page while a same-account refresh is pending.
+        // Discard it only when the next authoritative first page wins.
         const page = await adapter.listTrashRange({
           offset: 0,
           limit: fileExplorerTrashPageSize,
@@ -144,6 +152,7 @@ export function useXDriveFileExplorerTrash({
           includeCount: true,
         })
         if (requestID === requestRef.current && enabledRef.current) {
+          rangeCollection.reset(rangeQueryKey)
           countedRangeKeyRef.current = rangeQueryKey
           rangeCollection.primePage({
             items: page.items,
@@ -152,14 +161,21 @@ export function useXDriveFileExplorerTrash({
             limit: page.limit,
           })
           setNodes(page.items)
+          setReadReceipt({ queryKey: rangeQueryKey, state: 'ready' })
         }
         return page.items
       }
       const next = await adapter.listTrash()
-      if (requestID === requestRef.current && enabledRef.current) setNodes(next)
+      if (requestID === requestRef.current && enabledRef.current) {
+        setNodes(next)
+        setReadReceipt({ queryKey: rangeQueryKey, state: 'ready' })
+      }
       return next
     } catch (error) {
-      if (requestID === requestRef.current && enabledRef.current) onErrorRef.current(error)
+      if (requestID === requestRef.current && enabledRef.current) {
+        setReadReceipt({ queryKey: rangeQueryKey, state: 'error' })
+        onErrorRef.current(error)
+      }
       return []
     } finally {
       if (requestID === requestRef.current) setLoading(false)
@@ -174,6 +190,10 @@ export function useXDriveFileExplorerTrash({
   ])
 
   useEffect(() => {
+    visibleScopeRef.current = { lifecycleKey, enabled }
+  }, [lifecycleKey, enabled])
+
+  useEffect(() => {
     requestRef.current += 1
     workingGenerationRef.current += 1
     workingRef.current = null
@@ -182,6 +202,7 @@ export function useXDriveFileExplorerTrash({
     setWorkingKey('')
     setDeleteTarget(null)
     setNodes([])
+    setReadReceipt({ queryKey: '', state: 'unverified' })
   }, [lifecycleKey])
 
   useEffect(() => {
@@ -192,6 +213,8 @@ export function useXDriveFileExplorerTrash({
       setLoading(false)
       setWorkingKey('')
       setDeleteTarget(null)
+      setNodes([])
+      setReadReceipt({ queryKey: '', state: 'unverified' })
       return
     }
     void refresh()
@@ -329,12 +352,21 @@ export function useXDriveFileExplorerTrash({
     },
   ], [requestPermanentDelete, restore, workingKey])
 
+  // Never publish previous Owner/disabled Trash data in the first render
+  // before React runs the effect that clears the old virtual collection.
+  const scopeVisible = enabled &&
+    visibleScopeRef.current.lifecycleKey === lifecycleKey &&
+    visibleScopeRef.current.enabled === enabled
+  const readState = scopeVisible && readReceipt.queryKey === rangeQueryKey
+    ? readReceipt.state : 'unverified'
+
   return {
-    items,
-    itemCount,
-    virtualCollection,
+    items: scopeVisible ? items : [],
+    itemCount: scopeVisible ? itemCount : 0,
+    virtualCollection: scopeVisible ? virtualCollection : undefined,
+    readState,
     crumbs: XDRIVE_FILE_EXPLORER_TRASH_CRUMBS,
-    loading,
+    loading: scopeVisible ? loading : enabled,
     working: Boolean(workingKey),
     workingKey,
     deleteTarget,

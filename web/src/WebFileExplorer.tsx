@@ -1281,6 +1281,7 @@ export default function WebFileExplorer({
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
           trashActive={trashActive}
+          trashReadState={trash.readState}
           onOpenTrash={() => { beginNavigationIntent(); onOpenTrash() }}
           onCloseTrash={onCloseTrash}
           onBrowseRoot={() => {
