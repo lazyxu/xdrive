@@ -4,6 +4,7 @@ import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRounded'
 import {
   Box,
+  Button,
   CircularProgress,
   List,
   ListItemButton,
@@ -12,6 +13,7 @@ import {
 } from '@mui/material'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
+import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerID,
@@ -28,6 +30,7 @@ type ColumnState = {
   nextCursor: string
   loading: boolean
   loaded: boolean
+  error: boolean
   generation: number
 }
 
@@ -36,8 +39,32 @@ const emptyColumn = (): ColumnState => ({
   nextCursor: '',
   loading: false,
   loaded: false,
+  error: false,
   generation: 0,
 })
+
+// The column scroll host is fixed; a pending Range must never insert a
+// temporary spinner row that pushes real files down. Requests run immediately,
+// while decorative progress belongs to the current generation after 300ms.
+function ColumnNetworkFeedback({
+  loading,
+  generation,
+}: {
+  loading: boolean
+  generation: number
+}) {
+  const visible = useXDriveDeferredLoading(loading, generation)
+  return visible ? (
+    <Box data-xdrive-column-loading role="status" aria-label="正在读取文件夹"
+      sx={{
+        position: 'absolute', right: 8, bottom: 8, zIndex: 2,
+        pointerEvents: 'none', p: 0.5, borderRadius: 1,
+        bgcolor: 'background.paper',
+      }}>
+      <CircularProgress size={18} />
+    </Box>
+  ) : null
+}
 
 export function XDriveFileExplorerColumnView({
   lifecycleKey = '',
@@ -65,6 +92,8 @@ export function XDriveFileExplorerColumnView({
   const generationRef = useRef(new Map<string, number>())
   const lifecycleKeyRef = useRef(lifecycleKey)
   const crumbSignature = crumbs.map((crumb) => String(crumb.id)).join('/')
+  const ownerCurrent = lifecycleKeyRef.current === lifecycleKey
+  const displayColumns = ownerCurrent ? columns : {}
 
   const load = useCallback(async (parentID: XDriveFileExplorerID, append: boolean) => {
     const key = String(parentID)
@@ -78,7 +107,7 @@ export function XDriveFileExplorerColumnView({
     const cursor = append ? current.nextCursor : ''
     setColumns((value) => ({
       ...value,
-      [key]: { ...(value[key] ?? emptyColumn()), loading: true, generation },
+      [key]: { ...(value[key] ?? emptyColumn()), loading: true, error: false, generation },
     }))
     try {
       const page = await loadPage(parentID, cursor, controller.signal)
@@ -100,6 +129,7 @@ export function XDriveFileExplorerColumnView({
             nextCursor: page.nextCursor ?? '',
             loading: false,
             loaded: true,
+            error: false,
             generation,
           },
         }
@@ -108,7 +138,7 @@ export function XDriveFileExplorerColumnView({
       if (controller.signal.aborted || generationRef.current.get(key) !== generation) return
       setColumns((value) => ({
         ...value,
-        [key]: { ...(value[key] ?? emptyColumn()), loading: false, loaded: true, generation },
+        [key]: { ...(value[key] ?? emptyColumn()), loading: false, error: true, generation },
       }))
       throw error
     }
@@ -137,7 +167,7 @@ export function XDriveFileExplorerColumnView({
     }
     for (const crumb of crumbs) {
       const state = columnsRef.current[String(crumb.id)]
-      if (!state?.loaded && !state?.loading) {
+      if (!state?.loaded && !state?.loading && !state?.error) {
         void load(crumb.id, false).catch(() => undefined)
       }
     }
@@ -167,7 +197,7 @@ export function XDriveFileExplorerColumnView({
       }}
     >
       {crumbs.map((crumb, columnIndex) => {
-        const state = columns[String(crumb.id)] ?? emptyColumn()
+        const state = displayColumns[String(crumb.id)] ?? emptyColumn()
         const nextCrumbID = crumbs[columnIndex + 1]?.id
         return (
           <Box
@@ -183,6 +213,7 @@ export function XDriveFileExplorerColumnView({
               borderColor: 'divider',
               overflowY: 'auto',
               minHeight: 0,
+              position: 'relative',
             }}
           >
             <List dense disablePadding sx={{ py: 0.5 }}>
@@ -221,19 +252,31 @@ export function XDriveFileExplorerColumnView({
                 )
               })}
             </List>
-            {state.loading ? (
-              <Box sx={{ py: 1.5, display: 'grid', placeItems: 'center' }}><CircularProgress size={18} /></Box>
-            ) : state.nextCursor ? (
+            {state.nextCursor ? (
               <Stack sx={{ px: 1, pb: 1 }}>
                 <XDriveAutoLoadSentinel
                   enabled
                   loading={false}
                   label="正在加载更多项目…"
-                  onLoad={() => load(crumb.id, true)}
+                  onLoad={() => state.loading ? undefined : load(crumb.id, true)}
                 />
               </Stack>
-            ) : state.loaded && state.items.length === 0 ? (
+            ) : state.loaded && !state.error && state.items.length === 0 ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1.25, py: 1 }}>空文件夹</Typography>
+            ) : null}
+            <ColumnNetworkFeedback loading={state.loading} generation={state.generation} />
+            {state.error ? (
+              <Box role="alert" data-xdrive-column-error sx={{
+                position: 'absolute', left: 8, right: 8, bottom: 8, zIndex: 3,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                gap: 1, px: 1.25, py: 0.5, borderRadius: 1,
+                bgcolor: 'background.paper', boxShadow: 2,
+              }}>
+                <Typography variant="caption" color="text.secondary">文件夹读取失败</Typography>
+                <Button size="small" onClick={() => {
+                  void load(crumb.id, state.loaded && Boolean(state.nextCursor)).catch(() => undefined)
+                }}>重试</Button>
+              </Box>
             ) : null}
           </Box>
         )
