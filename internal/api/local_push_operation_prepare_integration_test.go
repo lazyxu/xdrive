@@ -59,6 +59,10 @@ func TestLocalPushOperationPrepareRealHTTPPostgresTwoPoolReplayAndRevocation(t *
 	post := func(router http.Handler, jwt, route, body string, headers map[string]string, status int) localPushOperationPrepareResponse {
 		t.Helper()
 		rec := requestWithHeaders(t, router, http.MethodPost, route, jwt, strings.NewReader(body), status, headers)
+		// Middleware denials must be no-store just like handler-owned errors.
+		if rec.Header().Get("Cache-Control") != "private, no-store" {
+			t.Fatal("private operation prepare response can be cached")
+		}
 		raw := rec.Body.String()
 		for _, secret := range []string{f.token, f.rootID, f.fingerprint, base64.RawURLEncoding.EncodeToString(key)} {
 			if strings.Contains(raw, secret) {
