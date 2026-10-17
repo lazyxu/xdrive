@@ -68,8 +68,22 @@ export default function WebOverviewPage({
   onOpenGallery: () => void
   onOpenTransfers: () => void
 }) {
-  const [recentItems, setRecentItems] = useState<XDriveFileRecentItem<Node>[]>([])
-  const [favoriteItems, setFavoriteItems] = useState<XDriveFileFavoriteItem<Node>[]>([])
+  // Only an accepted response from the current Server/account is allowed to
+  // establish an empty Recent/Favorites list. Retain same-scope rows on refresh.
+  const [listsSnapshot, setListsSnapshot] = useState<{
+    source: XDriveApi
+    scope: string
+    recent: XDriveFileRecentItem<Node>[]
+    favorites: XDriveFileFavoriteItem<Node>[]
+  } | null>(null)
+  const [readState, setReadState] = useState<{
+    source: XDriveApi
+    scope: string
+    epoch: number
+    pending: boolean
+    failed: boolean
+  } | null>(null)
+  const readRequestRef = useRef(0)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const folderUploadInputRef = useRef<HTMLInputElement | null>(null)
   const uploadPickerParentIDRef = useRef<number | null>(null)
@@ -79,29 +93,50 @@ export default function WebOverviewPage({
   useEffect(() => {
     uploadPickerParentIDRef.current = null
     folderUploadPickerParentIDRef.current = null
-    setRecentItems([])
-    setFavoriteItems([])
   }, [lifecycleKey])
 
   useEffect(() => {
     let active = true
     const refreshLists = () => {
+      const epoch = ++readRequestRef.current
+      setReadState({ source: api, scope: lifecycleKey, epoch, pending: true, failed: false })
       void Promise.all([
         api.fileRecent(6),
         api.fileFavorites(),
       ]).then(([recent, favorites]) => {
-        if (!active) return
-        setRecentItems(recent)
-        setFavoriteItems(favorites.slice(0, 6))
-      }).catch(() => undefined)
+        if (!active || readRequestRef.current !== epoch) return
+        setListsSnapshot({
+          source: api, scope: lifecycleKey,
+          recent, favorites: favorites.slice(0, 6),
+        })
+      }).catch(() => {
+        if (!active || readRequestRef.current !== epoch) return
+        setReadState({ source: api, scope: lifecycleKey, epoch, pending: false, failed: true })
+      }).finally(() => {
+        if (!active || readRequestRef.current !== epoch) return
+        setReadState((previous) => previous?.source === api &&
+          previous.scope === lifecycleKey && previous.epoch === epoch
+          ? { ...previous, pending: false } : previous)
+      })
     }
     refreshLists()
     const timer = window.setInterval(refreshLists, 30_000)
     return () => {
       active = false
+      readRequestRef.current += 1
       window.clearInterval(timer)
     }
   }, [activityRevision, api, lifecycleKey])
+
+  const acceptedLists = listsSnapshot?.source === api && listsSnapshot.scope === lifecycleKey
+    ? listsSnapshot : null
+  const currentRead = readState?.source === api && readState.scope === lifecycleKey
+    ? readState : null
+  const recentItems = acceptedLists?.recent ?? []
+  const favoriteItems = acceptedLists?.favorites ?? []
+  const listsVerified = acceptedLists !== null
+  const listsPending = !listsVerified && Boolean(currentRead?.pending)
+  const listsFailed = !listsVerified && Boolean(currentRead?.failed)
 
   const loadThumbnail = useCallback(async (item: XDriveFileExplorerItem, signal?: AbortSignal) => {
     if (item.kind !== 'file' || signal?.aborted) return null
@@ -274,6 +309,13 @@ export default function WebOverviewPage({
         recentActivity={recentActivity}
         recentItems={recentHomeItems}
         favoriteItems={favoriteHomeItems}
+        recentVerified={listsVerified}
+        favoritesVerified={listsVerified}
+        recentLoading={listsPending}
+        favoritesLoading={listsPending}
+        listReadEpoch={currentRead?.epoch ?? 0}
+        recentError={listsFailed ? '最近使用读取失败，请重新进入页面。' : undefined}
+        favoritesError={listsFailed ? '收藏读取失败，请重新进入页面。' : undefined}
         loadThumbnail={loadThumbnail}
         onUploadFiles={() => {
           if (uploadParentID === undefined) {
