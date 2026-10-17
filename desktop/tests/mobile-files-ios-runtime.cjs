@@ -2644,6 +2644,9 @@ test('P29 pending navigation from settled empty folder keeps its truthful empty 
     assert.equal(panel().props.message,'此文件夹为空')
   },{saved:{section:'browse',folderID:1,scrollTop:0,view:'details'},
     props:{items:[],loading:false,requestedDirectoryID:1,
+      virtualCollection: { itemCount: 0, interactionKey: 'accepted-counted-zero',
+      loadedItems: new Map(), itemAt: () => undefined,
+      onRangeChange() {}, groups: [] },
       crumbs:[{id:1,name:'我的文件'}]}})
 })
 
@@ -3027,7 +3030,10 @@ test('U08: Mobile Files uses shared StatePanel for authorized empty folder, Tras
     await act(async () => { root.props.onClick() })
     assert.equal(statePanel(h).props.message, '此文件夹为空')
     assert.equal(statePanel(h).props.loading, false)
-  }, { props: { items: [] } })
+  }, { props: { items: [],
+    virtualCollection: { itemCount: 0, interactionKey: 'accepted-counted-zero',
+      loadedItems: new Map(), itemAt: () => undefined,
+      onRangeChange() {}, groups: [] } } })
   await withView(async h => {
     assert.equal(statePanel(h).props.message, '最近删除为空')
     assert.equal(statePanel(h).props.loading, false)
@@ -3073,6 +3079,29 @@ test('U08: unanswered Search, error and cold load do not flash a fake empty fold
     await initiallyQuietThenLoading(h, '正在加载文件…')
   }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
     props: { items: [], loading: true,
+      crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
+test('Mobile Files failed cold first Range cannot claim an authoritative empty folder', async () => {
+  const panels = h => h.view.root.findAll(n => n.type === 'state-panel')
+  await withView(async h => {
+    assert.equal(panels(h).length, 0, 'pending cold read stays quiet initially')
+    await h.update({ loading: false })
+    assert.equal(panels(h).length, 1)
+    assert.equal(panels(h)[0].props.loading, false)
+    assert.equal(panels(h)[0].props.message,
+      '文件夹内容尚未确认，请刷新页面后重试。')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+    assert.equal(panels(h)[0].props.loading, false,
+      'failed first range cannot resurrect a delayed loading indicator')
+    await h.update({ virtualCollection: { itemCount: 0, interactionKey: 'accepted-counted-zero',
+      loadedItems: new Map(), itemAt: () => undefined,
+      onRangeChange() {}, groups: [] } })
+    assert.equal(panels(h).length, 1)
+    assert.equal(panels(h)[0].props.message, '此文件夹为空',
+      'only accepted counted zero may display the true empty state')
+  }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { items: [], loading: true, requestedDirectoryID: 1,
       crumbs: [{ id: 1, name: '我的文件' }] } })
 })
 

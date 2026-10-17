@@ -480,10 +480,12 @@ export default function MobileFiles(props: Props) {
   useEffect(() => {
     if (emptyDirectoryKey === null || totalCount > 0) {
       acceptedEmptyDirectoryRef.current = null
-    } else if (!props.loading && totalCount === 0) {
+    } else if (!props.loading && totalCount === 0 && props.virtualCollection) {
+      // A failed cold first read also ends loading but cannot confirm zero.
+      // Only an accepted counted Server range certifies an empty directory.
       acceptedEmptyDirectoryRef.current = emptyDirectoryKey
     }
-  }, [emptyDirectoryKey, props.loading, totalCount])
+  }, [emptyDirectoryKey, props.loading, props.virtualCollection, totalCount])
   const keepAcceptedEmptyDirectory = totalCount === 0 &&
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
@@ -517,15 +519,19 @@ export default function MobileFiles(props: Props) {
   // Do not insert a padded zero-state loading panel for a request that
   // finishes before the next meaningful frame. An accepted empty directory
   // is content and remains visible throughout an uncommitted navigation.
+  const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !props.loading
   const showZeroState = totalCount === 0 &&
-    (!zeroStatePending || keepAcceptedEmptyDirectory || zeroStateLoading)
+    ((!zeroStatePending && !coldUnconfirmedBrowse) ||
+      keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed)
   const zeroStateMessage = zeroStateLoading
     ? props.searchActive ? '正在查询…' : '正在加载文件…'
     : props.searchActive
       ? props.searchSummary?.error ? '搜索失败，请重试'
         : searchCountPending ? '正在查询…'
           : '未找到匹配的文件或文件夹'
-      : props.trashActive ? '最近删除为空' : '此文件夹为空'
+      : props.trashActive ? '最近删除为空'
+        : coldDirectoryReadUnconfirmed ? '文件夹内容尚未确认，请刷新页面后重试。'
+          : '此文件夹为空'
   const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
     !props.searchActive && directoryID !== null && Boolean(props.onToggleInlineFolder)
   // Run-length projection: no full-directory materialization at 100k items.
