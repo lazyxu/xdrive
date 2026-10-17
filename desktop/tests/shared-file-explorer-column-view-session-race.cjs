@@ -124,6 +124,9 @@ function loadColumnView(runtime) {
     if (request === './AutoLoadSentinel') {
       return { XDriveAutoLoadSentinel: () => null }
     }
+    if (request === './useDeferredLoading') {
+      return { useXDriveDeferredLoading: () => false }
+    }
     return require(request)
   }
 
@@ -178,7 +181,20 @@ test('FileExplorer Column View reloads identical crumb ids after account lifecyc
   assert.equal(requests[0].account, 'A')
 
   account = 'B'
-  render('server-b:user-b')
+  const firstOtherAccountFrame = render('server-b:user-b')
+  // The first B frame executes before effect-driven cleanup. It must not
+  // expose any A-only item even if both accounts share the root node ID.
+  function hasPreviousAccountItem(node) {
+    if (!node || typeof node !== 'object') return false
+    if (node.props?.children === 'A-only.txt') return true
+    return Object.values(node.props ?? {}).some((value) => (
+      Array.isArray(value) ? value.some(hasPreviousAccountItem)
+        : value && typeof value === 'object' ? hasPreviousAccountItem(value)
+          : false
+    ))
+  }
+  assert.equal(hasPreviousAccountItem(firstOtherAccountFrame), false,
+    'new account must not display the previous account files before cleanup effect')
   await flushAsync()
   render('server-b:user-b')
 
