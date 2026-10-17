@@ -641,8 +641,8 @@ export default function MobileFiles(props: Props) {
   const collectionFirstRead = section !== 'browse' && sectionItems.length === 0 &&
     (collectionReadState === 'unverified' ||
       (collectionReadState === 'error' && collectionLoading))
-  const showRecentFirstRead = useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead)
-  const showFavoriteFirstRead = useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead)
+  const showRecentFirstRead = useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead && collectionLoading)
+  const showFavoriteFirstRead = useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead && collectionLoading)
   const sortLabel = ({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[props.sort.key]
   const groupLabel = props.grouping?.groupBy === 'type' ? '类型' :
     props.grouping?.groupBy === 'modified' ? '修改日期' :
