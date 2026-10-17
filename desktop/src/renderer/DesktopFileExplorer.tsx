@@ -4,7 +4,7 @@ import { xDriveDesktopViewportRequest } from './abortableViewportRequest'
 import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudOutlinedIcon from '@mui/icons-material/CloudOutlined'
-import { Box } from '@mui/material'
+import { Box, Button } from '@mui/material'
 import {
   type XDriveByteProgressHandler,
   type XDriveFileExplorerKeyboardProfile,
@@ -101,6 +101,18 @@ type DesktopFileAvailabilityEntry = {
   path: string
   state?: AgentFileAvailability
   error?: string
+}
+
+// An unavailable Agent and an old incompatible Agent are not damaged files.
+// Never render raw IPC error text, paths or a speculative Server permission.
+function desktopFileAvailabilityProbeMessage(code?: string): string {
+  if (code === 'agent_unavailable' || code === 'invalid_discovery') {
+    return 'Agent 不可用，无法确认此设备的文件可用性。请检查连接后重试。'
+  }
+  if (code === 'unsupported_capability' || code === 'unsupported_ipc_version') {
+    return '当前 Agent 不支持设备文件状态查询，请升级 xdrive-agent 后重试。'
+  }
+  return '设备文件状态读取失败，请重试。这不表示文件已损坏。'
 }
 
 export type DesktopFileExplorerAction =
@@ -343,6 +355,7 @@ export default function DesktopFileExplorer({
   const [availabilityByID, setAvailabilityByID] = useState<Map<number, DesktopFileAvailabilityEntry>>(
     () => new Map(),
   )
+  const [availabilityReadFailure, setAvailabilityReadFailure] = useState<string | null>(null)
   const [navigationAvailabilityItems, setNavigationAvailabilityItems] = useState<readonly XDriveFileExplorerItem[]>([])
   const [availabilityRefreshToken, setAvailabilityRefreshToken] = useState(0)
   const availabilityRequestRef = useRef(0)
@@ -350,6 +363,7 @@ export default function DesktopFileExplorer({
   useEffect(() => {
     availabilityRequestRef.current += 1
     setAvailabilityByID(new Map())
+    setAvailabilityReadFailure(null)
     setNavigationAvailabilityItems([])
   }, [navigationSessionStorageKey])
 
@@ -1158,37 +1172,59 @@ export default function DesktopFileExplorer({
     const requestID = ++availabilityRequestRef.current
     if (!fileAvailabilitySupported) {
       setAvailabilityByID(new Map())
+      setAvailabilityReadFailure(null)
       return
     }
 
     const requests = availabilityRequests
     if (requests.length === 0) {
       setAvailabilityByID(new Map())
+      setAvailabilityReadFailure(null)
       return
     }
 
     const paths = [...new Set(requests.map((item) => item.path))]
     let cancelled = false
+    // A failed probe must not leave the last device's previously accepted
+    // CfAPI snapshot displayed as if this request had verified it. Retain
+    // the file list and all navigation; only invalidate availability badges.
+    const rejectProbe = (code?: string) => {
+      if (cancelled || requestID !== availabilityRequestRef.current) return
+      setAvailabilityByID(new Map())
+      setAvailabilityReadFailure(desktopFileAvailabilityProbeMessage(code))
+    }
+    setAvailabilityReadFailure(null)
     void (async () => {
-      const items: AgentFileAvailabilityBatchItem[] = []
-      for (let offset = 0; offset < paths.length; offset += desktopFileAvailabilityBatchLimit) {
-        const batchPaths = paths.slice(offset, offset + desktopFileAvailabilityBatchLimit)
-        const result = await window.xdriveDesktop.agent.getFileAvailabilityBatch(batchPaths)
-        if (cancelled || requestID !== availabilityRequestRef.current || !result.ok) return
-        items.push(...result.data.items)
-      }
-      const byPath = new Map(items.map((item) => [item.path, item] as const))
-      const next = new Map<number, DesktopFileAvailabilityEntry>()
-      for (const request of requests) {
-        const resolved = byPath.get(request.path)
-        if (resolved?.availability) {
-          next.set(request.nodeID, { path: request.path, state: resolved.availability })
-        } else if (resolved?.error) {
-          next.set(request.nodeID, { path: request.path, error: resolved.error })
+      try {
+        const items: AgentFileAvailabilityBatchItem[] = []
+        for (let offset = 0; offset < paths.length; offset += desktopFileAvailabilityBatchLimit) {
+          const batchPaths = paths.slice(offset, offset + desktopFileAvailabilityBatchLimit)
+          const result = await window.xdriveDesktop.agent.getFileAvailabilityBatch(batchPaths)
+          if (cancelled || requestID !== availabilityRequestRef.current) return
+          if (!result.ok) {
+            rejectProbe(result.error.code)
+            return
+          }
+          items.push(...result.data.items)
         }
-      }
-      if (!cancelled && requestID === availabilityRequestRef.current) {
-        setAvailabilityByID(next)
+        const byPath = new Map(items.map((item) => [item.path, item] as const))
+        const next = new Map<number, DesktopFileAvailabilityEntry>()
+        for (const request of requests) {
+          const resolved = byPath.get(request.path)
+          if (resolved?.availability) {
+            next.set(request.nodeID, { path: request.path, state: resolved.availability })
+          } else if (resolved?.error) {
+            next.set(request.nodeID, { path: request.path, error: resolved.error })
+          }
+        }
+        if (!cancelled && requestID === availabilityRequestRef.current) {
+          setAvailabilityByID(next)
+          setAvailabilityReadFailure(null)
+        }
+      } catch {
+        // Electron IPC itself can reject during an Agent restart. The
+        // lifecycle/request fence prevents old-session error projection.
+        rejectProbe()
       }
     })()
 
@@ -2026,7 +2062,30 @@ const desktopTransferLifecycleChildBatchSize = 1000
           setTagDialogMode('assign')
         } : undefined}
         getSelectionActionDisabledReason={getSelectionActionDisabledReason}
-        actionFeedback={actionFeedback}
+        actionFeedback={fileAvailabilitySupported && availabilityReadFailure ? (
+          <>
+            {actionFeedback}
+            <Box
+              data-xdrive-desktop-availability-probe-error
+              role="status"
+              aria-live="polite"
+              sx={{ mx: 1.25, my: 0.75, px: 1.5, py: 1, borderRadius: 1,
+                bgcolor: 'action.hover', color: 'text.secondary', display: 'flex',
+                gap: 1, alignItems: 'center', flexWrap: 'wrap', overflowWrap: 'anywhere' }}
+            >
+              <Box component="span" sx={{ flex: '1 1 240px' }}>{availabilityReadFailure}</Box>
+              <Button
+                type="button"
+                size="small"
+                variant="outlined"
+                onClick={() => setAvailabilityRefreshToken((value) => value + 1)}
+                sx={{ minHeight: 44, minWidth: 44 }}
+              >
+                重试状态查询
+              </Button>
+            </Box>
+          </>
+        ) : actionFeedback}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         sort={trashActive ? trashSort : sort}

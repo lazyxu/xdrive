@@ -127,6 +127,12 @@ test('Desktop FileExplorer availability response cannot cross account lifecycle 
     writes.push(rows)
   }
 
+  // Keep the extraction fixture aligned with the original Desktop effect:
+  // the new per-device probe notice is separate from authoritative file rows.
+  const probeMessages = []
+  const setAvailabilityReadFailure = (message) => { probeMessages.push({ account, message }) }
+  const desktopFileAvailabilityProbeMessage = (code) => 'Probe failure: ' + (code || 'unknown')
+
   const compileForCurrentAccount = () => compileEffect(filename, callback, {
     availabilityRequestRef,
     fileAvailabilitySupported: true,
@@ -134,6 +140,8 @@ test('Desktop FileExplorer availability response cannot cross account lifecycle 
     desktopFileAvailabilityBatchLimit: 2048,
     window,
     setAvailabilityByID,
+    setAvailabilityReadFailure,
+    desktopFileAvailabilityProbeMessage,
   })
 
   const effectA = compileForCurrentAccount()
@@ -168,5 +176,10 @@ test('Desktop FileExplorer availability response cannot cross account lifecycle 
     nonEmptyWrites,
     [[{ id: 1, mode: 'B' }]],
     'a late account-A availability response must never publish into account B',
+  )
+  assert.equal(
+    probeMessages.filter(({ message }) => message !== null).length,
+    0,
+    'stale account-A successful read cannot publish an Agent failure into account B',
   )
 })
