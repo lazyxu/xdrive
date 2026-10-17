@@ -289,9 +289,30 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 		}
 		return []baidumapjsapi.BD09Coordinate{got}, nil
 	}
-	if err := executeBaiduPhotoMapIndexWithTrustedForward(context.Background(), verbose,
-		owner.ID, first.ID, licence, serverAK, offlineForward); err != nil {
-		t.Fatalf("first quota-limited source-bound forward bridge rejected: %v", err)
+	// The private one-shot selector chooses exactly one already-queued Owner
+	// intent, never reads PhotoAsset GPS or Browser-provided map viewport.
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id != first.ID {
+		t.Fatalf("first explicit Owner job was not selected: %d %v", id, err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, other.ID); err == nil ||
+		id != 0 {
+		t.Fatal("Owner with no queued map job enumerated another Owner")
+	}
+	if err := executeOneBaiduPhotoMapIndexWithTrustedForward(context.Background(), db,
+		owner.ID, deny, serverAK, offlineForward); err == nil {
+		t.Fatal("unlicensed one-shot demand admitted")
+	}
+	if secretReads.Load() != 0 || forwardCalls.Load() != 0 {
+		t.Fatal("denied one-shot demand accessed Server AK or exported GPS")
+	}
+	if err := executeOneBaiduPhotoMapIndexWithTrustedForward(context.Background(), verbose,
+		owner.ID, licence, serverAK, offlineForward); err != nil {
+		t.Fatalf("first quota-limited Owner one-shot demand failed: %v", err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id != second.ID {
+		t.Fatalf("completed photo remained selected, or next Owner job skipped: %d %v", id, err)
 	}
 	if secretReads.Load() != 1 || forwardCalls.Load() != 1 {
 		t.Fatal("exact single Server AK read and forward send required after quota")
@@ -302,6 +323,25 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	}
 	if sent.Load() != 2 {
 		t.Fatalf("conversion call count=%d want=2", sent.Load())
+	}
+	// A future PostgreSQL retry clock must not be bypassed by selecting the
+	// smallest pending asset. The other queued jobs remain eligible instead.
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
+		Where("asset_id = ?", third.ID).
+		Update("retry_after", time.Now().UTC().Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id == third.ID {
+		t.Fatal("early PostgreSQL retry cooldown was selected")
+	}
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
+		Where("asset_id = ?", third.ID).Update("retry_after", nil).Error; err != nil {
+		t.Fatal(err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id != third.ID {
+		t.Fatalf("ready third Owner job not selected: %d %v", id, err)
 	}
 	countQuota(2)
 	countFlights(0)
@@ -351,4 +391,42 @@ func TestBaiduMapQuotaAdmissionRealPostgresTwoReplicas(t *testing.T) {
 	if sent.Load() != 2 {
 		t.Fatal("changed source triggered conversion")
 	}
+
+	// A crashed Server leaves an expired intent, not renewed permission to
+	// immediately export GPS. The next explicit one-shot demand performs
+	// repair ONLY and never touches the current Server AK or fleet quota.
+	if err := db.Model(&meta.BaiduPhotoMapIndexIntent{}).
+		Where("asset_id = ?", third.ID).
+		Updates(map[string]any{
+			"status": baiduMapIndexLeased, "attempts": 1,
+			"lease_token": "offline-expired-lease", "retry_after": nil,
+			"lease_until": time.Now().UTC().Add(-time.Minute),
+		}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id != third.ID {
+		t.Fatalf("expired lease not prioritized for repair: %d %v", id, err)
+	}
+	// Quotas exhausted from the two previous photo conversions. Expired
+	// repair happens before quota and must not invoke our offline sender.
+	if err := executeOneBaiduPhotoMapIndexWithTrustedForward(context.Background(), peer,
+		owner.ID, licence, serverAK, offlineForward); err == nil {
+		t.Fatal("expired lease repair incorrectly reported a conversion")
+	}
+	if secretReads.Load() != 1 || forwardCalls.Load() != 1 {
+		t.Fatal("expired lease repair read Server AK or exported a photo")
+	}
+	var repaired meta.BaiduPhotoMapIndexIntent
+	if err := db.Where("asset_id = ?", third.ID).Take(&repaired).Error; err != nil ||
+		repaired.Status != baiduMapIndexQueued || repaired.RetryAfter == nil ||
+		repaired.LeaseToken != "" || repaired.LeaseUntil != nil {
+		t.Fatalf("one-shot did not durably repair its expired intent: %+v %v", repaired, err)
+	}
+	if id, err := selectBaiduPhotoMapIndexDemand(context.Background(), peer, owner.ID); err != nil ||
+		id == third.ID {
+		t.Fatal("post-crash cooldown was selected immediately")
+	}
+	countQuota(2)
+	countFlights(0)
 }
