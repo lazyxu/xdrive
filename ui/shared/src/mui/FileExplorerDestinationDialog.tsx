@@ -148,6 +148,15 @@ export function XDriveFileExplorerDestinationDialog({
           ...dialogPaper.sx,
           minHeight: 0,
           '& .MuiDialogTitle-root .MuiIconButton-root': { minHeight: 44, minWidth: 44 },
+          // At 200% text and 200px landscape height, keep Cancel/Confirm
+          // inside the visible Paper; shrink vertical chrome, not buttons.
+          '@media (max-height: 320px)': {
+            maxHeight: '100dvh',
+            overflow: 'hidden',
+            '& .MuiDialogTitle-root': { minHeight: 0, py: 0.5, px: 1.5, flexShrink: 0 },
+            '& .MuiDialogContent-root': { minHeight: 0, flex: '1 1 0%', overflowY: 'auto' },
+            '& .MuiDialogActions-root': { minHeight: 44, py: 0.5, flexShrink: 0 },
+          },
         },
       } }}
     >

@@ -31,6 +31,13 @@ const rootChildren = [childFolder, ...Array.from({ length: 96 }, (_, index) =>
   makeNode(100 + index, `document-${String(index + 1).padStart(3, '0')}.txt`, 1))];
 const folderChildren = Array.from({ length: 64 }, (_, index) =>
   makeNode(300 + index, `nested-${String(index + 1).padStart(3, '0')}.txt`, 2));
+const filesU12ShortScenario = process.env.XDRIVE_FILES_U12_SHORT === '1';
+const u12DeepFolders = filesU12ShortScenario ? [
+  makeNode(90000, '第三层长中文目录_2026_路径完整性', 2, 'dir'),
+  makeNode(90001, '第四层更深目录_长中文名称_emoji😀_重要', 90000, 'dir'),
+] : [];
+// The authoritative tree page lists directories before files. Match that in U12's fixture.
+if (u12DeepFolders.length) folderChildren.unshift(u12DeepFolders[0]);
 const searchReturnScenario = options.scenario === 'search-return';
 const filesOperationsScenario = options.scenario === 'files-operations';
 const filesOrganizationScenario = options.scenario === 'files-organization';
@@ -99,7 +106,8 @@ const gallerySelectionFixture = {
   })), { id: 'qa-smart-album', name: '验收智能相册', kind: 'smart', revision: 4, item_count: 12, query: { favorite: true }, created_at: stamp, updated_at: stamp }],
   attempts: [], accepted: [], rejectNext: true,
 };
-let operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
+let operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true,
+  rejectCopyOnce: filesU12ShortScenario, deniedTargets: [] };
 const organizationFixture = { tags: [], savedSearches: [], tagCreates: [], savedCreates: [], assignments: [], tagQueries: [], assignedNodeIDs: new Set(), rejectTagRead: true };
 const mediaItems = Array.from({ length: searchReturnScenario ? 1024 : (filesOrganizationScenario || gallerySelectionScenario) ? 24 : 240 }, (_, index) => ({
   node: makeNode(1000 + index, `photo-${String(index + 1).padStart(searchReturnScenario ? 4 : 3, '0')}.png`, searchReturnScenario || filesOrganizationScenario ? 2 : 1),
@@ -112,7 +120,7 @@ const mediaByID = new Map(mediaItems.map((item) => [item.node.id, item]));
 // One image in the real Files API enables the actual Quick Look caller route.
 if (options.scenario === 'fullscreen') rootChildren.push(mediaItems[0].node);
 if (searchReturnScenario || filesOrganizationScenario) folderChildren.push(...mediaItems.map((item) => item.node));
-const allNodes = new Map([rootNode, ...rootChildren, ...folderChildren, ...mediaItems.map((item) => item.node)].map((node) => [node.id, node]));
+const allNodes = new Map([rootNode, ...rootChildren, ...folderChildren, ...u12DeepFolders, ...mediaItems.map((item) => item.node)].map((node) => [node.id, node]));
 // A small, valid 80x80 PNG exercises the real thumbnail/preview decode path.
 const imagePNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAFAAAABQCAIAAAABc2X6AAAAc0lEQVR4nO3PgQ0AEADAMPz/M1+Q1HrBNvf4y3odcFvDuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNewrmFdw7qGdQ3rGtY1rGtY17CuYV3DuoZ1Desa1jWsa1jXsK5hXcO6hnUN6xrWNaxrWNew7gDdvwGf2GYUOgAAAABJRU5ErkJggg==', 'base64');
 
@@ -205,8 +213,17 @@ function fixtureFor(request, role) {
       const body = jsonBody(request);
       assert.deepEqual(Object.keys(body).sort(), ['items', 'parent_id', 'type']);
       assert.equal(body.type, filesTouchDragScenario ? 'move' : 'copy');
+      if (filesU12ShortScenario && operationFixture.rejectCopyOnce) {
+        assert.equal(body.parent_id, 90001);
+        assert.deepEqual(body.items, [{ id: 100, revision: 1 }, { id: 101, revision: 1 }]);
+        operationFixture.rejectCopyOnce = false;
+        operationFixture.deniedTargets.push(body.parent_id);
+        return { __fixtureStatus: 403,
+          __fixturePurpose: 'actual U12 Server denial in deep destination',
+          __fixtureBody: { error: '验收：没有此目录写入权限，请重新选择目标。' } };
+      }
       assert.equal(body.parent_id, 2);
-      assert.deepEqual(body.items, [{ id: 100, revision: filesTouchDragScenario ? 1 : 2 }, { id: 101, revision: 1 }]);
+      assert.deepEqual(body.items, [{ id: 100, revision: filesTouchDragScenario || filesU12ShortScenario ? 1 : 2 }, { id: 101, revision: 1 }]);
       operationFixture.creates.push(body);
       const operation = { id: filesTouchDragScenario ? 'qa-touch-move-1' : 'qa-copy-1', type: body.type, parent_id: body.parent_id, status: 'queued',
         conflict_policy: 'fail', total_items: body.items.length, processed_items: 0, total_bytes: 8192,
@@ -733,10 +750,12 @@ function fixtureFor(request, role) {
     return {items:partition.slice(offset,offset+limit),total_count:partition.length,offset,limit,
       timeline_group_sets:{year:group('2026'),month:group('2026-10'),day:group('2026-10-08')}};
   }
-  let match = /^GET \/api\/v1\/nodes\/(1|2|5)\/children$/.exec(key);
+  let match = /^GET \/api\/v1\/nodes\/(1|2|5|90000|90001)\/children$/.exec(key);
   if (match) {
+    if (match[1] === '90000' || match[1] === '90001') assert(filesU12ShortScenario);
     queryOnly(url, ['limit', 'offset', 'sort', 'order', 'include_count', 'name', 'name_ci']);
-    const nodes = match[1] === '1' ? rootChildren : match[1] === '2' ? folderChildren : [];
+    const nodes = match[1] === '1' ? rootChildren : match[1] === '2' ? folderChildren :
+      match[1] === '90000' ? [u12DeepFolders[1]] : [];
     const sort = url.searchParams.get('sort') || 'name';
     const order = url.searchParams.get('order') || 'asc';
     assert.equal(sort, 'name'); assert.equal(order, 'asc');
@@ -1085,7 +1104,10 @@ async function loadFiles(context, origin, role) {
   // Mobile Files now has an independent presentation without the wide tile's
   // data selector. Gallery-only acceptance needs to wait for visible data, not
   // assert a Files-specific DOM implementation detail.
-  if (filesIos27ChromeScenario) {
+  if (filesU12ShortScenario) {
+    // U12 original app mounts the dedicated iOS Files List, not Wide Details.
+    await page.locator('[data-mobile-files-item]').filter({ hasText: 'document-001.txt' }).waitFor();
+  } else if (filesIos27ChromeScenario) {
     await page.locator('[data-xdrive-mobile-files]').waitFor();
   } else if (galleryIos27Fixture || gallerySelectionScenario) {
     // Gallery-only scenarios share the current Mobile Files readiness check;
@@ -1314,9 +1336,109 @@ async function filesAcceptance(role) {
   }
 }
 
+
+async function filesU12MobileAcceptance(role) {
+  activeStage=role+'-U12-original-mobile-selection';
+  const sourceURL=page.url(),sourceHistory=await page.evaluate(() => history.length);
+  const sourceUnchanged=()=>page.evaluate(({url,n}) => {
+    const mobile=document.querySelector('[data-xdrive-mobile-files]');
+    const wide=document.querySelector('[data-xdrive-file-explorer]');
+    const scroll=document.querySelector('[data-xdrive-file-explorer-scroll-host]');
+    // The 900px breakpoint legitimately remounts Files as the wide presenter.
+    // Require a single current Files owner, stable route/history and scroll.
+    return location.href===url && history.length===n &&
+      Boolean(scroll && (mobile || wide));
+  }, {url:sourceURL,n:sourceHistory});
+  await page.getByRole('button',{name:'文件操作菜单',exact:true}).tap();
+  await page.getByRole('menuitem',{name:'选择',exact:true}).tap();
+  const a=page.locator('[data-mobile-files-item]').filter({hasText:'document-001.txt'});
+  const b=page.locator('[data-mobile-files-item]').filter({hasText:'document-002.txt'});
+  await a.tap(); await b.tap();
+  check(activeStage+': real original rows selected',await a.getAttribute('aria-pressed')==='true' && await b.getAttribute('aria-pressed')==='true');
+  await page.getByRole('button',{name:'更多已选操作',exact:true}).tap();
+  await page.locator('[data-mobile-files-selection-action="copy-to"]').tap();
+  const copy=page.getByRole('dialog',{name:/^复制到文件夹/});
+  await copy.waitFor();
+  await copy.getByRole('button',{name:'打开文件夹 验收目录',exact:true}).tap();
+    const first = u12DeepFolders[0], last = u12DeepFolders[1];
+    activeStage = role + '-U12-deep-target';
+    await copy.getByRole('button', { name: '打开文件夹 ' + first.name, exact: true }).tap();
+    await copy.getByRole('button', { name: '打开文件夹 ' + last.name, exact: true }).tap();
+    await copy.getByText('此位置没有子文件夹。', { exact: true }).waitFor();
+    const targetPath = copy.locator('[data-xdrive-file-explorer-destination-path]');
+    const canonicalPath = await targetPath.innerText();
+    check(activeStage + ': full four-level authorized path',
+      ['我的文件', '验收目录', first.name, last.name].every(s => canonicalPath.includes(s)), canonicalPath);
+    const count = copy.getByText('2 个项目', { exact: true });
+    const cancel = copy.getByRole('button', { name: '取消', exact: true });
+    const confirm = copy.getByRole('button', { name: '复制到这里', exact: true });
+    const visible = locator => locator.evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      let x0=Math.max(0,rect.left),x1=Math.min(innerWidth,rect.right);
+      let y0=Math.max(0,rect.top),y1=Math.min(innerHeight,rect.bottom);
+      for(let parent=element.parentElement;parent;parent=parent.parentElement){
+        const css=getComputedStyle(parent),r=parent.getBoundingClientRect();
+        if(/(auto|scroll|hidden|clip)/.test(css.overflowX)){x0=Math.max(x0,r.left);x1=Math.min(x1,r.right)}
+        if(/(auto|scroll|hidden|clip)/.test(css.overflowY)){y0=Math.max(y0,r.top);y1=Math.min(y1,r.bottom)}
+      }
+      return {width:rect.width,height:rect.height,visibleWidth:Math.max(0,x1-x0),visibleHeight:Math.max(0,y1-y0)};
+    });
+    const full44 = r => r.width>=43.9 && r.height>=43.9 && r.visibleWidth>=43.9 && r.visibleHeight>=43.9;
+    for (const viewport of [{width:844,height:200},{width:390,height:260},{width:900,height:320}]) {
+      activeStage = role + '-U12-' + viewport.width + 'x' + viewport.height + '-200pct';
+      await page.setViewportSize(viewport);
+      await page.evaluate(() => { document.documentElement.style.fontSize='200%'; });
+      await settle();
+      await targetPath.scrollIntoViewIfNeeded();
+      const sizes={count:await visible(count),path:await visible(targetPath),cancel:await visible(cancel),confirm:await visible(confirm)};
+      result.samples[activeStage+'-geometry']=sizes;
+      check(activeStage+': source count is exact and visible',(await count.innerText()).trim()==='2 个项目' && sizes.count.visibleHeight>0,sizes);
+      check(activeStage+': deep path reachable and not truncated by data',(await targetPath.innerText())===canonicalPath && sizes.path.visibleHeight>0,sizes);
+      check(activeStage+': Cancel and Confirm full 44px reachable',full44(sizes.cancel)&&full44(sizes.confirm),sizes);
+      check(activeStage+': no navigation or premature operation',operationFixture.creates.length===0 && await sourceUnchanged(),operationFixture);
+      await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+    }
+    activeStage=role+'-U12-denied-deep-target';
+    await page.setViewportSize({width:844,height:200});
+    await page.evaluate(() => {document.documentElement.style.fontSize='200%';});
+    await settle();
+    await confirm.tap();
+    const error=copy.getByText('验收：没有此目录写入权限，请重新选择目标。',{exact:true});
+    await error.waitFor();
+    await error.scrollIntoViewIfNeeded();
+    check(activeStage+': real HTTP403 preserves original snapshot and exact path',
+      await copy.isVisible() && await error.isVisible() &&
+      (await count.innerText()).trim()==='2 个项目' &&
+      (await targetPath.innerText())===canonicalPath &&
+      JSON.stringify(operationFixture.deniedTargets)==='[90001]' &&
+      operationFixture.creates.length===0,operationFixture);
+    const buttons={cancel:await visible(cancel),confirm:await visible(confirm)};
+    check(activeStage+': actions survive long permission failure',full44(buttons.cancel)&&full44(buttons.confirm),buttons);
+    await page.screenshot({path:path.join(outputDir,activeStage+'.png')});
+    await page.evaluate(() => {document.documentElement.style.fontSize='';});
+    await page.setViewportSize({width:390,height:844});
+    await copy.getByRole('button',{name:'前往 验收目录',exact:true}).tap();
+    await copy.getByRole('button',{name:'打开文件夹 '+first.name,exact:true}).waitFor();
+    check(activeStage+': ancestor navigation clears stale failure without writing',
+      await error.count()===0 && operationFixture.creates.length===0 && await sourceUnchanged());
+
+  activeStage=role+'-U12-approved-parent';
+  const finalPath=await copy.locator('[data-xdrive-file-explorer-destination-path]').innerText();
+  check(activeStage+': verified permitted parent',finalPath.includes('验收目录') && !finalPath.includes(u12DeepFolders[0].name));
+  await copy.getByRole('button',{name:'复制到这里',exact:true}).tap();
+  await copy.waitFor({state:'hidden'});
+  check(activeStage+': one authorized copy after real 403 with immutable original revisions',
+    operationFixture.creates.length===1 && operationFixture.creates[0].parent_id===2 &&
+    JSON.stringify(operationFixture.creates[0].items)===JSON.stringify([
+      {id:100,revision:1},{id:101,revision:1}
+    ]) && JSON.stringify(operationFixture.deniedTargets)==='[90001]',operationFixture);
+  check(activeStage+': Files route/history and mounted Mobile scroll owner retained',await sourceUnchanged());
+}
+
 // Actual built Web adapter and App composition, including the real REST payloads
 // and Task Center route. The controlled service never writes user data.
 async function filesOperationsAcceptance(role) {
+  if (filesU12ShortScenario) return filesU12MobileAcceptance(role);
   activeStage = `${role}-operations-setup`;
   if (role === 'admin') {
     await navigateWorkspace('全局任务', 'tasks');
@@ -1346,10 +1468,16 @@ async function filesOperationsAcceptance(role) {
   await page.getByText('已选择 2 项', { exact: true }).waitFor();
   const sourceURL = page.url(), sourceHistory = await page.evaluate(() => history.length);
   await page.evaluate(() => { window.__mobileQaOperationIdentity = { files: document.querySelector('[data-xdrive-file-explorer]'), scroll: document.querySelector('[data-xdrive-file-explorer-scroll-host]') }; });
-  const sourceUnchanged = () => page.evaluate(({ sourceURL, sourceHistory }) =>
+  const sourceUnchanged = () => page.evaluate(({ sourceURL, sourceHistory, u12 }) =>
     location.href === sourceURL && history.length === sourceHistory &&
-    window.__mobileQaOperationIdentity.files === document.querySelector('[data-xdrive-file-explorer]') &&
-    window.__mobileQaOperationIdentity.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]'), { sourceURL, sourceHistory });
+    (u12
+      // 899→900 deliberately swaps only the responsive Files presenter.
+      // Require mounted content, not the *same* old DOM node after that swap.
+      ? Boolean(document.querySelector('[data-xdrive-file-explorer]') &&
+          document.querySelector('[data-xdrive-file-explorer-scroll-host]'))
+      : window.__mobileQaOperationIdentity.files === document.querySelector('[data-xdrive-file-explorer]') &&
+        window.__mobileQaOperationIdentity.scroll === document.querySelector('[data-xdrive-file-explorer-scroll-host]')),
+    { sourceURL, sourceHistory, u12: filesU12ShortScenario });
   activeStage = `${role}-operations-move-cancel`;
   await page.getByRole('button', { name: '移动到…', exact: true }).tap();
   const move = page.getByRole('dialog', { name: /^移动到文件夹/ });
@@ -7503,7 +7631,8 @@ async function main() {
         galleryViewerCreativeFixture.denyNext = false;
       }
       if (filesOperationsScenario || filesTouchDragScenario) {
-        operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true };
+        operationFixture = { operations: [], creates: [], renames: [], continuations: [], cancellations: [], rejectRename: true,
+          rejectCopyOnce: filesU12ShortScenario, deniedTargets: [] };
         Object.assign(allNodes.get(100), { name: 'document-001.txt', revision: 1 });
       }
       const scenarioLabel = viewerPointer ? role + '-gallery-viewer-' + viewerPointer : viewMode ? `${role}-inherited-${viewMode}` : galleryDensity ? `${role}-gallery-density-${galleryDensity}` : role;
