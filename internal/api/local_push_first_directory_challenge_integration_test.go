@@ -326,3 +326,91 @@ func TestLocalPushDurableFirstDirectoryChallengeFailClosedInputs(t *testing.T) {
 		t.Fatal("nil Gin context consumed a challenge")
 	}
 }
+
+// Transaction-scoped consumption is a prerequisite for an eventual atomic
+// pending-directory commit, NOT a native proof or an active executor.
+func TestLocalPushFirstDirectoryChallengeConsumptionRollsBackWithFutureWrite(t *testing.T) {
+	f := makeLocalDirectoryChallengeDBFixture(t)
+	challenge := f.issue(t)
+	seal := f.seal(t, challenge)
+	c := f.owningRequest()
+	s := &Server{DB: f.primary}
+	failAfter := errors.New("synthetic downstream directory commit failure")
+	err := f.primary.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.consumeBoundLocalPushFirstDirectoryChallengeTx(tx, c, challenge, seal); err != nil {
+			return err
+		}
+		var consumed meta.LocalPushFirstDirectoryChallenge
+		if err := tx.Where("source_id = ?", f.source.ID).Take(&consumed).Error; err != nil {
+			return err
+		}
+		if consumed.State != meta.LocalPushFirstDirectoryChallengeConsumed || consumed.ConsumedAt == nil {
+			return errors.New("transaction did not observe its own consumed challenge")
+		}
+		// A synthetic future SQL directory write demonstrates that the same
+		// outer rollback restores both changes. This is NOT the real writer.
+		node := meta.Node{OwnerID: f.owner.ID, Name: "uncommitted-test-directory", Type: meta.NodeTypeDir, Revision: 1}
+		if err := tx.Create(&node).Error; err != nil {
+			return err
+		}
+		return failAfter
+	})
+	if !errors.Is(err, failAfter) {
+		t.Fatalf("expected injected rollback, got %v", err)
+	}
+	var persisted meta.LocalPushFirstDirectoryChallenge
+	if err := f.replica.Where("source_id = ?", f.source.ID).Take(&persisted).Error; err != nil ||
+		persisted.State != meta.LocalPushFirstDirectoryChallengeIssued || persisted.ConsumedAt != nil {
+		t.Fatalf("outer rollback incorrectly spent private challenge: %+v %v", persisted, err)
+	}
+	var nodes, items, runs int64
+	if err := f.replica.Model(&meta.Node{}).Count(&nodes).Error; err != nil || nodes != 1 {
+		t.Fatalf("aborted future SQL write left a cloud Node: %d %v", nodes, err)
+	}
+	if err := f.replica.Model(&meta.SourceItem{}).Count(&items).Error; err != nil || items != 0 {
+		t.Fatalf("aborted transaction invented SourceItem: %d %v", items, err)
+	}
+	if err := f.replica.Model(&meta.SyncRun{}).Count(&runs).Error; err != nil || runs != 0 {
+		t.Fatalf("aborted transaction invented SyncRun: %d %v", runs, err)
+	}
+	if ok, err := (&Server{DB: f.replica}).consumeBoundLocalPushFirstDirectoryChallenge(
+		f.owningRequest(), challenge, seal,
+	); !ok || err != nil {
+		t.Fatalf("rollback must preserve exactly one subsequent valid consume: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestLocalPushFirstDirectoryChallengeSameTxRejectsReplayAndRollsBack(t *testing.T) {
+	f := makeLocalDirectoryChallengeDBFixture(t)
+	challenge := f.issue(t)
+	seal := f.seal(t, challenge)
+	c := f.owningRequest()
+	s := &Server{DB: f.primary}
+	err := f.primary.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
+		if err := s.consumeBoundLocalPushFirstDirectoryChallengeTx(tx, c, challenge, seal); err != nil {
+			return err
+		}
+		// A second use must fail even before this transaction commits.
+		again := s.consumeBoundLocalPushFirstDirectoryChallengeTx(tx, c, challenge, seal)
+		if !errors.Is(again, errLocalPushFirstDirectoryChallengeDenied) {
+			return errors.New("same transaction replay was accepted")
+		}
+		return again
+	})
+	if !errors.Is(err, errLocalPushFirstDirectoryChallengeDenied) {
+		t.Fatalf("second transaction-scoped use did not fail closed: %v", err)
+	}
+	var row meta.LocalPushFirstDirectoryChallenge
+	if err := f.replica.Where("source_id = ?", f.source.ID).Take(&row).Error; err != nil ||
+		row.State != meta.LocalPushFirstDirectoryChallengeIssued || row.ConsumedAt != nil {
+		t.Fatalf("replay-triggered rollback spent nonce: %+v %v", row, err)
+	}
+	if err := s.consumeBoundLocalPushFirstDirectoryChallengeTx(nil, c, challenge, seal); !errors.Is(err, errLocalPushFirstDirectoryChallengeDenied) {
+		t.Fatalf("nil transaction was accepted: %v", err)
+	}
+	if ok, err := (&Server{DB: f.replica}).consumeBoundLocalPushFirstDirectoryChallenge(
+		f.owningRequest(), challenge, seal,
+	); !ok || err != nil {
+		t.Fatalf("post-rollback single consume denied: ok=%t err=%v", ok, err)
+	}
+}
