@@ -156,11 +156,78 @@ func (s *Server) issueBoundLocalPushFirstDirectoryChallenge(
 	return issued, nil
 }
 
-// consumeBoundLocalPushFirstDirectoryChallenge atomically burns exactly one
-// Server-recorded challenge after repeating Owner/Device/Root/Source/target
-// checks and verifying the MAC. A TRUE return means only that one advisory
-// challenge was consumed. It is NEVER authority to call a SQL/CAS writer:
-// there is no native inode lifetime lock or SourceRun in this transaction.
+// consumeBoundLocalPushFirstDirectoryChallengeTx is PRIVATE, transaction-scoped
+// nonce consumption. A future real executor must perform any other durable
+// writes in the CALLER'S SAME transaction and retain separate native lifetime
+// authorization. This method alone provides NO permission for a directory,
+// SourceItem, FileVersion, CAS write or SourceRun; it is never routed.
+func (s *Server) consumeBoundLocalPushFirstDirectoryChallengeTx(
+	tx *gorm.DB, c *gin.Context,
+	challenge localpush.LocalFirstDirectoryAdvisoryChallenge,
+	seal localpush.LocalFirstDirectoryAdvisorySeal,
+) error {
+	denied := errLocalPushFirstDirectoryChallengeDenied
+	if s == nil || s.DB == nil || tx == nil || c == nil || c.Request == nil ||
+		challenge.OwnerID == 0 || challenge.SourceID == 0 ||
+		challenge.SourceRevision == 0 || c.Request.Context().Err() != nil {
+		return denied
+	}
+	proof, ok := localPushStageProof(c)
+	if !ok || proof.SourceRevision != challenge.SourceRevision ||
+		proof.DeviceID != challenge.DeviceID || proof.RootID != challenge.RootID ||
+		challenge.OwnerID != userID(c) {
+		return denied
+	}
+	var owner meta.User
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("id = ? AND disabled_at IS NULL AND session_version > 0", challenge.OwnerID).
+		Take(&owner).Error; err != nil {
+		return denied
+	}
+	source, err := s.checkLocalPushStageScopeTx(tx, c, challenge.SourceID, challenge.SourceRevision, proof)
+	if err != nil || source.TargetNodeID == nil ||
+		*source.TargetNodeID != challenge.TargetNodeID {
+		return denied
+	}
+	var binding meta.LocalSourceBinding
+	if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
+		Where("source_id = ? AND owner_id = ? AND device_id = ?", challenge.SourceID, owner.ID, proof.DeviceID).
+		Take(&binding).Error; err != nil || binding.RootID != proof.RootID ||
+		binding.RootFingerprint != challenge.RootFingerprint {
+		return denied
+	}
+	var row meta.LocalPushFirstDirectoryChallenge
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("source_id = ? AND owner_id = ?", challenge.SourceID, owner.ID).
+		Take(&row).Error; err != nil ||
+		row.State != meta.LocalPushFirstDirectoryChallengeIssued ||
+		row.ConsumedAt != nil ||
+		!privateFirstDirectoryChallengeMatches(row, challenge, owner.SessionVersion) {
+		return denied
+	}
+	now, err := localPushFirstDirectoryDBClock(tx)
+	if err != nil || now.Before(row.IssuedAt) || !now.Before(row.ExpiresAt) ||
+		!localpush.VerifyLocalFirstDirectoryAdvisoryObservation(
+			c.Request.Context(), seal, challenge,
+			c.GetHeader("X-XDrive-Device-Token"), now,
+		) {
+		return denied
+	}
+	updated := tx.Model(&meta.LocalPushFirstDirectoryChallenge{}).
+		Where("source_id = ? AND owner_id = ? AND state = ? AND nonce_sha256 = ? AND consumed_at IS NULL",
+			challenge.SourceID, owner.ID, meta.LocalPushFirstDirectoryChallengeIssued, row.NonceSHA256).
+		Updates(map[string]any{
+			"state":       meta.LocalPushFirstDirectoryChallengeConsumed,
+			"consumed_at": now,
+		})
+	if updated.Error != nil || updated.RowsAffected != 1 {
+		return denied
+	}
+	return c.Request.Context().Err()
+}
+
+// consumeBoundLocalPushFirstDirectoryChallenge preserves the existing
+// standalone private one-time consume contract and atomic locking order.
 func (s *Server) consumeBoundLocalPushFirstDirectoryChallenge(
 	c *gin.Context,
 	challenge localpush.LocalFirstDirectoryAdvisoryChallenge,
@@ -172,59 +239,8 @@ func (s *Server) consumeBoundLocalPushFirstDirectoryChallenge(
 		challenge.SourceRevision == 0 || c.Request.Context().Err() != nil {
 		return false, denied
 	}
-	proof, ok := localPushStageProof(c)
-	if !ok || proof.SourceRevision != challenge.SourceRevision ||
-		proof.DeviceID != challenge.DeviceID || proof.RootID != challenge.RootID ||
-		challenge.OwnerID != userID(c) {
-		return false, denied
-	}
 	err := s.DB.WithContext(c.Request.Context()).Transaction(func(tx *gorm.DB) error {
-		var owner meta.User
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("id = ? AND disabled_at IS NULL AND session_version > 0", challenge.OwnerID).
-			Take(&owner).Error; err != nil {
-			return denied
-		}
-		source, err := s.checkLocalPushStageScopeTx(tx, c, challenge.SourceID, challenge.SourceRevision, proof)
-		if err != nil || source.TargetNodeID == nil ||
-			*source.TargetNodeID != challenge.TargetNodeID {
-			return denied
-		}
-		var binding meta.LocalSourceBinding
-		if err := tx.Clauses(clause.Locking{Strength: "SHARE"}).
-			Where("source_id = ? AND owner_id = ? AND device_id = ?", challenge.SourceID, owner.ID, proof.DeviceID).
-			Take(&binding).Error; err != nil || binding.RootID != proof.RootID ||
-			binding.RootFingerprint != challenge.RootFingerprint {
-			return denied
-		}
-		var row meta.LocalPushFirstDirectoryChallenge
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("source_id = ? AND owner_id = ?", challenge.SourceID, owner.ID).
-			Take(&row).Error; err != nil ||
-			row.State != meta.LocalPushFirstDirectoryChallengeIssued ||
-			row.ConsumedAt != nil ||
-			!privateFirstDirectoryChallengeMatches(row, challenge, owner.SessionVersion) {
-			return denied
-		}
-		now, err := localPushFirstDirectoryDBClock(tx)
-		if err != nil || now.Before(row.IssuedAt) || !now.Before(row.ExpiresAt) ||
-			!localpush.VerifyLocalFirstDirectoryAdvisoryObservation(
-				c.Request.Context(), seal, challenge,
-				c.GetHeader("X-XDrive-Device-Token"), now,
-			) {
-			return denied
-		}
-		updated := tx.Model(&meta.LocalPushFirstDirectoryChallenge{}).
-			Where("source_id = ? AND owner_id = ? AND state = ? AND nonce_sha256 = ? AND consumed_at IS NULL",
-				challenge.SourceID, owner.ID, meta.LocalPushFirstDirectoryChallengeIssued, row.NonceSHA256).
-			Updates(map[string]any{
-				"state":       meta.LocalPushFirstDirectoryChallengeConsumed,
-				"consumed_at": now,
-			})
-		if updated.Error != nil || updated.RowsAffected != 1 {
-			return denied
-		}
-		return c.Request.Context().Err()
+		return s.consumeBoundLocalPushFirstDirectoryChallengeTx(tx, c, challenge, seal)
 	})
 	if err != nil || c.Request.Context().Err() != nil {
 		return false, denied
