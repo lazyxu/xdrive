@@ -1,0 +1,133 @@
+name: P056 Real 100k Distinct Physical CAS Folder Copy and Undo
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  p056-real-physical-copy-undo:
+    if: github.head_ref == 'perf/p056-real-100k-physical-copy-undo-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 140
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      P056_RESULTS: ${{ github.workspace }}/p056-physical-copy-undo-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Source exact opt-out Go compilation and formatting gate
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$(jq -r '.pull_request.head.sha' "$GITHUB_EVENT_PATH")"
+          test -z "$(gofmt -l internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go)"
+          env -u XD_P056_REAL_COPY_PERF go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=90s
+          df -h .
+      - name: Verify immutable P056 original n3 archive checksums
+        run: |
+          set -euo pipefail
+          cd docs/performance-evidence/p056-real-100k-physical-copy-undo/ci-run-38997607916
+          sha256sum -c SHA256SUMS
+          grep -Fx 'EXACT_SOURCE_HEAD=f96bfaa1441c74e82a3dad2d8f93cad8c1ede61c' source.txt
+          grep -Fx 'RUN_ID=38997607916' source.txt
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          summary = json.loads(Path('summary.json').read_text())
+          assert summary['n'] == 3 and summary['passed'] is True
+          assert summary['valid_physical_sources'] == 100000
+          rows = [json.loads(Path(f'sample-{i}.json').read_text()) for i in (1, 2, 3)]
+          assert len({r['source_aggregate_sha256'] for r in rows}) == 3
+          assert all(r['passed'] and r['physical_sources'] == 100000 for r in rows)
+          assert all(r['original_physical_CAS_inodes'] == 100001 for r in rows)
+          assert all(r['physical_allocated_bytes_before'] == r['physical_allocated_bytes_after_purge'] for r in rows)
+          PY
+      - name: P056 genuine 1k physical PostgreSQL17/Gin/CAS worker+undo smoke only
+        run: |
+          set -euo pipefail
+          XD_P056_REAL_COPY_PERF=1 XD_P056_SMOKE=1 XD_P056_SAMPLE=sample-1 \
+            go test -mod=readonly ./internal/api -run '^TestP056Real100KPhysicalCASCopyUndo$' \
+              -count=1 -timeout=18m -v
+      - name: Three independent 100k SHA-distinct physically written CAS HTTP Copy and Undo
+        run: |
+          set -euo pipefail
+          mkdir -p "$P056_RESULTS"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$P056_RESULTS/source.txt"
+          for i in 1 2 3; do
+            name="sample-$i"
+            df -h .
+            /usr/bin/time -v -o "$P056_RESULTS/$name-resources.txt" \
+              env XD_P056_REAL_COPY_PERF=1 XD_P056_SAMPLE="$name" \
+              go test -mod=readonly ./internal/api \
+                -run '^TestP056Real100KPhysicalCASCopyUndo$' -count=1 -timeout=38m -v |
+                tee "$P056_RESULTS/$name.log"
+            python3 - "$P056_RESULTS/$name.log" "$P056_RESULTS/$name.json" <<'PY'
+          import json,sys
+          raw=[x for x in open(sys.argv[1]) if 'P056_REAL_PHYSICAL_COPY_UNDO ' in x]
+          assert len(raw)==1, f"invalid original P056 Go result count {len(raw)}"
+          row=json.loads(raw[0].split('P056_REAL_PHYSICAL_COPY_UNDO ',1)[1])
+          assert row['passed'] is True and row['smoke_only'] is False
+          assert row['physical_sources']==100000
+          assert row['verified_copied_file_metadata_count']==100000
+          assert row['source_copy_content_blob_ref_count_2']==100000
+          assert row['trash_retained_content_blob_ref_count_2_after_undo']==100000
+          assert row['sentinel_content_blob_ref_count_1_after_undo']==1
+          assert row['trashed_copied_file_count_after_undo']==100000
+          assert row['original_content_blob_ref_count_after_purge']==100001
+          assert row['physical_allocated_bytes_after_purge']==row['physical_allocated_bytes_before']
+          assert row['original_physical_CAS_inodes']==100001
+          assert row['physical_allocated_bytes_before']==row['physical_allocated_bytes_after_copy']
+          assert row['physical_allocated_bytes_before']==row['physical_allocated_bytes_after_undo']
+          with open(sys.argv[2],'w') as f: json.dump(row,f,indent=2,sort_keys=True)
+          PY
+          done
+          python3 - "$P056_RESULTS" <<'PY'
+          import json,os,statistics,sys
+          root=sys.argv[1]
+          rows=[json.load(open(os.path.join(root,f'sample-{i}.json'))) for i in (1,2,3)]
+          assert len({r['source_aggregate_sha256'] for r in rows})==3
+          assert all(r['passed'] for r in rows)
+          keys=['seed_local_cas_and_metadata_ms','copy_http_enqueue_ms',
+                'copy_actual_durable_worker_ms','undo_http_enqueue_ms',
+                'undo_actual_durable_worker_ms','authenticated_purge_100k_copy_trash_ms',
+                'complete_physical_original_sha_verify_ms',
+                'go_process_kernel_write_bytes_for_all_stages',
+                'go_process_25ms_peak_rss_growth_bytes']
+          summary={'workload':'P056','valid_physical_sources':100000,'n':3,'passed':True,
+                   'median':{k:statistics.median(r[k] for r in rows) for k in keys},
+                   'max':{k:max(r[k] for r in rows) for k in keys},
+                   'source_hashes':[r['source_aggregate_sha256'] for r in rows]}
+          with open(os.path.join(root,'summary.json'),'w') as f:
+            json.dump(summary,f,indent=2,sort_keys=True)
+          print('P056_REAL_100K_SOURCE_EXACT_SUMMARY',json.dumps(summary,sort_keys=True))
+          PY
+      - name: Upload original raw three-source machine sample evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p056-real-physical-copy-undo-${{ github.run_id }}
+          path: p056-physical-copy-undo-100k-results/
+          if-no-files-found: warn
+          retention-days: 30

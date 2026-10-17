@@ -282,10 +282,25 @@ func (s *Server) executeUndoCopyTx(
 		for _, node := range snapshot.Nodes {
 			expected[node.ID] = node.Revision
 		}
+		// Keep large subtrees below PostgreSQL's 65,535 bind parameter limit.
+		// The permanent-delete path already validates/encodes these Node IDs.
+		// Retain the small IN query and one atomic Undo transaction.
+		idsArg := any(ids)
+		nodePredicate := "id IN ?"
+		sharePredicate := "node_id IN ?"
+		if len(ids) > 32000 {
+			literal, err := fileOperationDeleteIDArrayLiteral(ids)
+			if err != nil {
+				return err
+			}
+			idsArg = literal
+			nodePredicate = "id = ANY(CAST(? AS bigint[]))"
+			sharePredicate = "node_id = ANY(CAST(? AS bigint[]))"
+		}
 		var current []meta.Node
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Select("id", "revision").
-			Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, uid).
+			Where(nodePredicate+" AND owner_id = ? AND deleted_at IS NULL", idsArg, uid).
 			Find(&current).Error; err != nil {
 			return err
 		}
@@ -301,12 +316,12 @@ func (s *Server) executeUndoCopyTx(
 
 		now := time.Now()
 		if err := tx.Model(&meta.Share{}).
-			Where("node_id IN ? AND owner_id = ? AND revoked_at IS NULL", ids, uid).
+			Where(sharePredicate+" AND owner_id = ? AND revoked_at IS NULL", idsArg, uid).
 			Update("revoked_at", &now).Error; err != nil {
 			return err
 		}
 		if err := tx.Model(&meta.Node{}).
-			Where("id IN ? AND owner_id = ? AND deleted_at IS NULL", ids, uid).
+			Where(nodePredicate+" AND owner_id = ? AND deleted_at IS NULL", idsArg, uid).
 			Updates(map[string]any{"deleted_at": &now, "trash_root_id": root.ID}).Error; err != nil {
 			return err
 		}
