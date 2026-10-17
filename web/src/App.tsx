@@ -107,6 +107,7 @@ import { useXDriveDeferredLoading } from '../../ui/shared/src/mui/useDeferredLoa
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
+import XDriveManualConnectionDialog from './ManualConnectionDialog'
 import { xDriveHasPendingBrowserDownload, xDriveHasPendingBrowserUpload, xDriveWarnBeforeLeavingUpload } from './pwaTransferSafety'
 import { xDriveClearPwaWindowActivity, xDriveReportPwaWindowActivity } from './pwaWorkloadSafety'
 import { xDriveCanResumeBrowserUpload, xDrivePwaResumeFileError } from './pwaUploadResume'
@@ -179,11 +180,13 @@ function WebAccountMenu({
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [installOpen, setInstallOpen] = useState(false)
+  const [connectionOpen, setConnectionOpen] = useState(false)
   useEffect(() => {
     if (!disabled) return
     setAnchorEl(null)
     setSettingsOpen(false)
     setInstallOpen(false)
+    setConnectionOpen(false)
   }, [disabled])
 
   return (
@@ -206,6 +209,13 @@ function WebAccountMenu({
           <ListItemIcon><InstallDesktopRoundedIcon fontSize="small" /></ListItemIcon>
           <ListItemText>安装应用 / 运行环境</ListItemText>
         </MenuItem>
+        <MenuItem data-xdrive-manual-connection-menu onClick={() => {
+          setAnchorEl(null)
+          setConnectionOpen(true)
+        }}>
+          <ListItemIcon><DnsRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>手动切换公网 / 局域网入口</ListItemText>
+        </MenuItem>
         <XDriveAccountMenuActions
           onClose={() => setAnchorEl(null)}
           onSettings={() => { if (!disabled) setSettingsOpen(true) }}
@@ -220,6 +230,8 @@ function WebAccountMenu({
         onAppearanceChange={onAppearanceChange}
         buildInfo={[{ title: 'Server 构建信息', info: serverBuild }]}
       />
+      <XDriveManualConnectionDialog open={connectionOpen && !disabled}
+        onClose={() => setConnectionOpen(false)} />
       {installOpen && !disabled ? (
         <Suspense fallback={null}>
           <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />
@@ -372,6 +384,7 @@ function AuthView({
   const [usernameError, setUsernameError] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [installOpen, setInstallOpen] = useState(false)
+  const [connectionOpen, setConnectionOpen] = useState(false)
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -454,10 +467,16 @@ function AuthView({
         <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
           账户由 xDrive 管理员创建。
         </Typography>
+        <Button data-xdrive-manual-connection-login variant="text" sx={{ minHeight: 44 }}
+          onClick={() => setConnectionOpen(true)}>
+          手动切换公网 / 局域网入口
+        </Button>
         <Button data-xdrive-pwa-login-entry variant="text" sx={{ minHeight: 44 }}
           onClick={() => setInstallOpen(true)}>
           安装 xDrive 到主屏幕 / 桌面
         </Button>
+        <XDriveManualConnectionDialog open={connectionOpen}
+          onClose={() => setConnectionOpen(false)} />
         {installOpen ? (
           <Suspense fallback={null}>
             <XDrivePwaInstallDialog open onClose={() => setInstallOpen(false)} />

@@ -297,6 +297,8 @@ Data is persisted in Docker volumes:
 
 For production, set `XD_DOMAIN`, provide `ALIYUN_ACCESS_KEY_ID` / `ALIYUN_ACCESS_KEY_SECRET`, point the domain at the server, and allow inbound TCP `XD_HTTPS_PORT` (default 8443). The bundled Caddy service uses AliDNS DNS-01 for certificate issuance/renewal, so inbound 80/443 are not required for ACME. No hand-written reverse-proxy configuration is required.
 
+**Optional manual LAN IP HTTPS login:** With a public domain already configured, set `XD_LAN_HTTPS_IP=192.168.2.4` (replace with your stable RFC1918 Linux address) in the server's persistent `~/.xd/config/.env`, then use the existing controlled Host Manager update to rebuild/restart with the option. The SAME HTTPS port also serves `https://192.168.2.4:8443`; the IP certificate uses Caddy's private CA (`tls internal`), not the public AliDNS certificate. Each client must securely obtain and trust the CA root after independently checking its fingerprint before entering credentials; never bypass TLS warnings. No LAN HTTP login port is added, and the default when unset is unchanged. See [manual LAN/WAN login and CA trust](docs/network-manual-connection.md).
+
 ### Backup, restore, and storage consistency
 
 The Docker deployment installs five maintenance tools in `~/.xd`:

@@ -1326,6 +1326,16 @@ export default function App({
     }
   }
 
+  const requestSwitchServer = () => {
+    requestConfirmation(
+      '手动切换服务器连接入口？',
+      '当前 Agent 会话将退出，活动传输与同步可能中断。请在登录页手动填写可信的局域网 IP 或公网 HTTPS 地址。不同地址不会自动继承已保存密码；不绕过证书校验。',
+      '退出并选择服务器地址',
+      async () => { await run('logout', () => window.xdriveDesktop.agent.logout()) },
+      'warning',
+    )
+  }
+
   const requestLogout = () => {
     requestConfirmation(
       '退出当前设备？',
@@ -2630,6 +2640,14 @@ export default function App({
         secondary={status?.server}
         status={status?.auth_status}
       >
+        <MenuItem data-xdrive-manual-server-switch disabled={!!busy} onClick={() => {
+          setAccountMenuAnchor(null)
+          requestSwitchServer()
+        }}>
+          <ListItemIcon><DnsRoundedIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="手动切换公网 / 局域网入口"
+            secondary="退出当前会话后编辑服务器地址" />
+        </MenuItem>
         <XDriveAccountMenuActions
           onClose={() => setAccountMenuAnchor(null)}
           onAbout={() => {
