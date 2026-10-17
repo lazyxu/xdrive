@@ -122,3 +122,12 @@
 - [百度 Static Map Server API 设计](baidu-map-server-api.md)
 - [Places iOS 27 Photos 1:1 路线图](gallery-places-ios27-roadmap.md)
 - [Geoconv 与 JSAPI4 生产许可门禁 Issue #1798](https://github.com/lazyxu/xdrive/issues/1798)
+
+## 7. A3d2m1b2b2c7 — 私有签名额度证明与唯一原子额度预留（尚未授权生产上线）
+
+- 前序 [#1982](https://github.com/lazyxu/xdrive/pull/1982) 的 `reserveBaiduGeoconvQuotaWithLowerAccountCaps` 已通过 [76-job CI #39024792348](https://github.com/lazyxu/xdrive/actions/runs/39024792348)，Ready/Rebase 合入 `master@6f65e7658e357548217bb46fc48de667e8359aed`。另一条独立 SQL 写入方案 [#1980](https://github.com/lazyxu/xdrive/pull/1980) 已关闭且未合并，不能复活为第二套额度引擎。
+- 新增私有候选 `reserveBaiduGeoconvSignedAccountQuota`：要求明确传入可信 Owner、当前会话和 Server AK 修订、许可证据哈希及签名公共密钥；用 PostgreSQL 时钟两次核对 c5 域隔离 Ed25519 证明，在同一个外层事务中**只复用**已合入 c6 的分钟／点数／每秒／UTC 日 Fleet-first+Owner-second 低额度预留。任何回滚均不遗留部分费用或试图返还此前已消耗的配额。这里只支持一张明确授权的照片候选，不执行任何 Geoconv 网络请求。
+- 安全门禁仍为生产 NO-GO：测试生成的签名不是第三方真实授权，生产 pinned operator key 仍为空且生产验证路径硬拒绝；没有 Browser AK/Server AK 实际读取、地图 JSAPI4 会话、Cookie、Loader、跨域代理或个人 GPS 传输。没有真实证据的主体、版权、请求范围和长期留存不被静态代码推断。JSAPI4 `runtime_enabled=false`、已审查动态子资源数量 0。
+- 采用旧关闭候选 #1980 的隔离 **两独立 PostgreSQL pool** 合成用例，验证串行和并发时签名造假、Owner/AK 修订错配、过期、低额度以及全天拒绝后的整笔回滚；增加 Node 源码契约保证不引入第二套 SQL 写入或任何公开 JSAPI4 代理路由。必须有本 c7 准确 HEAD 的全 76-job CI（含真实 PostgreSQL API Race、Rootless、Web/Desktop/Windows、final-gate）与 GitHub clean 可合并才能 Ready/Rebase。
+- 用户已在 [#1798](https://github.com/lazyxu/xdrive/issues/1798) 报告自托管 PWA/Electron/BD09 许可与无额外费用，此处只保留其报告，勿重复询问；要解除动态地图封锁，还需要授权测试环境产生的三平台×冷加载/平移/缩放 **九组浏览器+上游原始 HAR**、独立复核固定第三方子资源规则、AK 原始字节泄漏验证、生产签名根、Caddy/CSP 与真机 iOS27/Android/Desktop 验收。
+
