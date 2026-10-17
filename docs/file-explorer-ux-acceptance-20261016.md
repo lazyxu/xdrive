@@ -1,5 +1,65 @@
 # xDrive Files UX acceptance audit · 2026-10-16
 
+## 最新验收核查快照：2026-10-17（43 项）
+
+**核查边界**：本快照是合并状态、已有自动化与源码契约的复核，不是本轮重新执行所有测试。已合入不等于实机或发布验收通过。下方历史候选/待合入表述以原日期为准，不再代表最新状态。
+
+- **冻结源基线**：master@42b00133e09bc6b22999d963bcc825840fcf87f3。Mobile Browse Home → Cloud root P46 [#1973](https://github.com/lazyxu/xdrive/pull/1973) 已在 2026-10-17 09:53 UTC 合入；工作分支已查无。其准确 HEAD 2b13fa5309c73571a785c4a7cfd33dbc9003178c 的 [76-job CI #39010324687](https://github.com/lazyxu/xdrive/actions/runs/39010324687) 已完成 25 success/51 conditional skipped，包括 single-commit 与 final-gate。条件跳过不等于物理测试通过。
+- **PR 整理**：直接相关未合入文件管理 PR 已查无。其他开放 PR 是独立网络、图库、设备备份、Race、性能等专题，未碰触。此次只更新本文件台账；不修改 Web/Desktop/Server/PWA、900px 分界、52px 全局 App Frame、真实操作与 SW 安全边界。
+- **唯一发布基准**：[PWA S5 七平台验收矩阵](pwa-s5-acceptance.md) 仍为 NOT RUN / NO-GO。iOS 27、Android Installed、Windows CfAPI、真实 1–4 GiB OS 下载、读屏和系统分享必须由脱敏真机记录签收；不能拿 Chrome UA 模拟或源码测试代替。
+
+| ID | 优先级 | 当前代码/自动化证据 | 尚缺的独立验收 |
+| --- | --- | --- | --- |
+| F02 | P1 | #1766 merged；100k 虚拟 ARIA 逻辑行 | NVDA、VoiceOver、TalkBack 真机 |
+| F03 | P1 | #1769、#1784、#1969 merged；Web/Mobile/Desktop 禁用原因 | 真实权限/大选择/键盘/长按 |
+| F04 | P2 | #1769 merged；宽命中区、键盘 Resize | 真鼠标/高 DPI/读屏焦点 |
+| U01 | P1 | #1789、#1876、#1973 merged；首批 Range 确认才提交页面 | 403/超时/Abort/Back/Forward/物理 CLS |
+| U02 | P1 | #1791、#1819、#1827 merged；899↔900 选择/草稿/焦点 | 真实软键盘、滚动、搜索与弹窗 |
+| U03 | P1 | #1784 merged；200/500/1000 阈值与原因 | 100k 实际选中和聚合反馈 |
+| U04 | P1 | #1869、#1880 merged；真实 PostgreSQL Worker 队列/取消测试 | 多端 UI 与最终持久任务收据 |
+| U05 | P1 | #1802 merged；403/409/Revision 及草稿测试 | 实际 Server 权限和中文 255 UTF-8 字节 |
+| U06 | P1 | #1811 merged；Search → 所在目录 → Back/Forward Chromium 测试 | 真 100k、Server 排序、物理浏览器 |
+| U07 | P2 | 完整名称与 Unicode/RTL 截断隔离测试存在 | CJK/emoji/RTL 原生呈现 |
+| U08 | P2 | #1803、#1949 merged；未确认/真正空/失败分离 | 离线/403/超时/PWA 实机 |
+| U09 | P2 | #1944、#1950 merged；真实 Server 索引回锚 | 大量文件各视图滚动/焦点 |
+| U10 | P2 | #1777 merged；缩略图失败/生成/不支持提示 | RAW/Live/视频/100k 网络 |
+| U11 | P2 | #1940 merged；属性优先级和无障碍分组 | 真读屏/共享 Inspector |
+| U12 | P2 | #1953 merged；短高 200% Chrome 深路径/403 | 原生短横屏/目标选择器可见性 |
+| U13 | P2 | #1863 merged；仅授权后重试/撤销/查看任务 | 真持久任务重连/关闭提示 |
+| U14 | P2 | Cmd/Ctrl/F2/Delete/Space/IME 229 测试存在 | 中日文 IME、外设混合操作 |
+| M01 | P1 | iOS 27 Files 页面适配与 52px App Frame 已存在 | iOS 27 1:1 视觉/动画/明暗对比 |
+| M02 | P1 | #1864 merged；动态 viewport 约束 | Safari/Chrome 地址栏/软件键盘 |
+| M03 | P1 | #1838 merged；长按/拖放/滚动手势自动化 | 第二指针/OS 返回/实机触摸 |
+| M04 | P1 | #1864、#1953 merged；短窗弹窗与目标选择器 | 200% 字体/短横屏全部菜单和批量栏 |
+| M05 | P1 | Files 内上一层/浏览器历史/Viewer 返回各有处理 | 浏览器、Installed PWA 与 OS 返回矩阵 |
+| M06 | P2 | 单标题与祖先菜单存在 | 深层目录/长路径/快速祖先返回 |
+| M07 | P2 | #1808 merged；Browse/Recent/Favorites 独立滚动 | 各集合选择/搜索恢复尚需验收 |
+| M08 | P2 | #1965 merged；层级上传及空目录限制说明 | iOS/Android picker 空目录、取消 |
+| M09 | P2 | 真字节分享与 16MiB 上限存在 | 接收 App/内存/取消/下载回退 |
+| M10 | P2 | 共享键盘/鼠标/触摸处理存在 | iPad 组合输入/鼠标右键/拖放 |
+| D01 | P1 | #1969 merged；busy 禁用原因与 Agent capability gate | 旧 Agent 不可用/升级/失败表达 |
+| D02 | P1 | CfAPI 文件可用性 Adapter 存在 | Windows 各设备在线/固定/同步状态 |
+| D03 | P1 | 双击系统打开、Space Quick Look 测试存在 | 系统 Shell 失败与焦点恢复 |
+| D04 | P2 | Finder/Explorer drag-in/out 代码及测试存在 | 未水合文件/跨窗口/取消 |
+| D05 | P2 | 共享 Tabs 与恢复/历史模型存在 | Electron 真窗口/键盘/拖动排序 |
+| D06 | P2 | 可持久化分隔条及尺寸边界存在 | Windows 125/150/200% DPI |
+| D07 | P2 | Agent session/reconnect/transfer 测试存在 | 真实 Agent 断线后提交字节 |
+| P01 | P1 | PWA 安装/深链接已有自动化 | iOS27 OS 图标启动 NOT RUN |
+| P02 | P1 | Chrome tab/standalone 检测存在 | Android Installed 真实系统 NOT RUN |
+| P03 | P1 | 分块上传/重选续传存在 | 系统回收/锁屏/重选 SHA-256 NOT RUN |
+| P04 | P1 | OPFS/浏览器/Gin 下载自动化存在 | 1–4GiB 最终系统落盘 SHA-256 NOT RUN |
+| P05 | P1 | SW 等待更新/Chromium 多窗口测试存在 | 真安装模式上传/Viewer/编辑保护 NOT RUN |
+| P06 | P1 | 公开离线/私有 CacheStorage 排除契约存在 | 跨账号真实 SW 缓存审计 NOT RUN |
+| P07 | P2 | 白名单 GET 有界重试逻辑存在 | 真断网/TLS/401/403/429/503 NOT RUN |
+| P08 | P2 | 系统分享入口与回退存在 | iOS/Android 系统分享真实接收 NOT RUN |
+| P09 | P2 | 持久任务与文件入口已有代码 | Installed 图标冷启恢复 NOT RUN |
+
+**继续顺序**：先 P1 真实 403/409/取消/任务生命周期、899/900 与短横屏、物理 OS 启动/键盘/文件分享；再 P2 大目录、长文件名、跨设备 DPI/拖放与外接输入。M07 选中/搜索集合级恢复尚无实机闭环，不应为恢复滚动而误复活跨 Owner 或旧 Revision 的选择。每个平台需记录构建 SHA、OS/浏览器/模式、可复现步骤、真实字节数/SHA-256（适用时）、脱敏证据与 PASS/FAIL/NOT_RUN；缺失保持 NOT RUN。
+
+---
+
+
+
 ## U11 · shared file Properties information hierarchy and accessible section headings (2026-10-17)
 
 - **Source-confirmed pre-fix gap:** Shared Web/Desktop FileExplorer listed type and timestamps before the actual path and stored size, placed bytes under Content and current Node Revision under Technical. Its shared `XDriveFilePropertiesDialog` rendered visual caption-only section titles with no heading/group link, and a generic fixed `aria-label="文件属性"` instead of the current file-specific visible dialog title. This is an actionable U11 presentation/a11y improvement, not evidence of an OS screen-reader bug.
