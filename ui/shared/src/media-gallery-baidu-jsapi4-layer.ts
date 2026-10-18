@@ -17,8 +17,21 @@ import type {
  * still has NO caller. A future caller must independently prove an approved
  * Baidu license, complete code-owned child rules, and current Server authority.
  */
+/** Two separately validated native GeoJSON data contracts share the official
+ * ClusterLayer, but never share coordinate conversion or identity validation.
+ * Photo features are pre-derived BD09 and must not pass through WGS84 Convertor. */
+export type XDriveBaiduJSAPI4ClusterGeoJSON = {
+  type: 'FeatureCollection'
+  features: Array<XDriveBaiduConvertedFeatureCollection['features'][number] | {
+    type: 'Feature'
+    id: string
+    geometry: { type: 'Point'; coordinates: [number, number] }
+    properties: { asset_id: number; node_id: number }
+  }>
+}
+
 export interface XDriveBaiduJSAPI4ClusterLayerPort {
-  setData(data: XDriveBaiduConvertedFeatureCollection): unknown
+  setData(data: XDriveBaiduJSAPI4ClusterGeoJSON): unknown
   clearData(): unknown
   addEventListener(type: 'click', handler: (event: { value?: unknown }) => void): void
   removeEventListener(type: 'click', handler: (event: { value?: unknown }) => void): void
