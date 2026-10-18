@@ -1,0 +1,32 @@
+# SH-P005 — true browser public-share 100k physical JPEG original downloads
+
+## First source-exact real original CURRENT (2026-10-18)
+
+[Native original SH-P005 CI #39130331355](https://github.com/lazyxu/xdrive/actions/runs/39130331355) on `47c7e447396409fb4206d06c8ee070a871be712f` completed **6/6 real browser production PublicShare page sequences and 12/12 native file-saves with original SHA**; all frozen criteria PASS. One genuine 100k independent SHA-original JPEG physical PG17/LocalCAS corpus reused for six new BrowserWindows (n3 Wide1440 + n3 CDP Mobile390). Actual public GET/POST counters exactly 12 page POST, 12 ticket POST, 12 original-stream GET. Source 70,893,376B, physical allocated 409,604,096B; 77,366.482ms corpus seed excluded. Original first-page P50 87.526ms/max96.392ms; next page P50 98.610ms/max103.012ms; 12 native signed downloads P50 44.685ms/max55.731ms, no stale rows/overflow, 100 rows each, correct source file names, sizes and SHA. This **is not** six physical independent source populations, installed PWA, native Desktop Agent or 100k thumbnail decoding. BEFORE=CURRENT, AFTER/speedup N/A, no production optimization. Seven original JSON plus original artifact in [SH-P005 evidence](performance-evidence/sh-p005-browser-physical-jpeg-share-100k/README.md). First source `5ed52f02` was invalid `gofmt` harness before all measurement; subsequent source passed. Require completely new source-exact six-session CI and full 77+ Final Gate and clean mergeability after evidence/AGENTS updates before Ready/Merge.
+
+**Frozen BEFORE first native run (2026-10-18). CURRENT=Not measured (valid n=0), AFTER=N/A, speedup=N/A.** This supplements already merged SH-P001–SH-P004 without repeating their accepted workloads.
+
+## Exact new workload
+
+- Current production Web build/PublicShare React + XDriveApi and authenticated owner public-folder capability, in **real Linux Chromium** (Electron BrowserWindow running Web page), **1440px Wide Web** and **390px CDP mobile/touch emulation**, three separately created browser sessions per width. This is not native Desktop Agent, installed PWA or actual Android/iOS.
+- **ONE shared genuinely physical fixture** per dedicated run: PostgreSQL17/Gin/LocalCAS 100000 individually generated/decodable SHA-distinct 80x64 JPEG original CAS objects plus one protected outside file; actual 100k File/ContentBlob records and allocated filesystem inodes. Source seeding time is separately reported and **excluded** from UI timings. Six sessions are independent browser lifetimes but **not three independently seeded physical fixtures per platform**.
+- Each of six actual public share UI sessions clicks **浏览文件夹**, visibly renders exactly 100 bounded rows with real original file metadata, clicks the first actual **下载** button, and waits for **Chromium's genuine will-download/done event**. Verify real on-disk bytes, file name, length and SHA-256 against the seed-proven CAS identity. Then click **下一页**, verify exactly 100 NEW rows without stale first item, click the first file download again and compare its distinct SHA. Expected 12 native file saves, 12 real ticket POSTs, 12 real original-stream GETs and 12 public children POSTs. No mocked routes, fake click effects or invented completion events. The browser's private share bearer and download tickets MUST NOT appear in logs or archived artifacts.
+- P004 already proved server-only real 100k original bytes/1000 keyset pages P50 3.903 seconds on a different baseline. P003 already proved browser-to-Go/PG request cancellation on 100k **metadata**. Neither covers actual Chromium UI clicking and downloading a file whose backing corpus contains 100k real JPEG originals. This new workload tests that missing physical client link, not 100k thumbnails decoded simultaneously.
+
+## Frozen acceptance budgets
+
+| Requirement | Threshold |
+| --- | --- |
+| Genuine fixed source | 100000 SHA-distinct decoded JPEG CAS originals + outside sentinel, 100001 physical allocated file objects, source byte total >=50MB, SHA/size for first and next |
+| Browser sessions | Wide 1440px n3 and Mobile Web 390px CDP touch n3, actual production PublicShare UI; six lifetimes, one physical fixture shared |
+| First/second page | Each browser first/next <=2000ms; 100 DOM rows each, no horizontal overflow or stale previous-page row |
+| Signed native original downloads | Each of 12 actual browser download-event completions <=5000ms; resulting saved JPEG bytes/file name/SHA exact; no mock fetch or invented completion callback |
+| Server evidence | At least 12 production children POSTs, 12 signed ticket POSTs and 12 signed physical original GETs through the genuine Gin Server |
+| Resource provenance | Go/Node/Chromium versions and source HEAD, standalone source seed ms, Electron Main process maxRSS and CPU, raw per-session timings; no claim of combined process RSS delta as Renderer/Server RSS |
+| Decision | Valid original green within budgets => preserve production source, AFTER=N/A, speedup=N/A. If genuine production RED, archive exact first red before any minimum performance optimization, compare same-host matching corpus/viewport n>=3 BEFORE/AFTER and retain only material gains |
+
+**Not measured/never infer:** 100k thumbnail decode, Gallery/Explorer image virtual grid, original H264/Live Motion, actual phone/installed PWA, native Desktop Agent IPC, WAN/4GiB transfer or user-owned durable upload/download/sync/delete task cancellation. Public Share intentionally shows icons/file names rather than loading 100k thumbnail images; do not label a signed original-download test a thumbnail benchmark.
+
+## Deliverable gate
+
+One frozen-master scoped commit, opt-in `TestSHP005RealBrowserPhysicalJPEG100KFixture` and branch-only [exact-source native Chromium CI](../.github/workflows/sh-p005-browser-physical-jpeg-share-100k.yml). After genuine valid six sessions, save source/runner, untouched raw JSON and logs plus evidence SHA into [SH-P005 evidence log](performance-evidence/sh-p005-browser-physical-jpeg-share-100k/README.md); an evidence amendment moves commit HEAD and **requires entirely NEW source-accurate six-session specialized CI and complete 77+ Go/Postgres API Race, Linux/Windows, Web/Desktop, Rootless, artifacts, single-commit and Final Gate**. Also require current GitHub mergeable_state=clean before Ready/Rebase. Do not modify Race, Blob/CAS production, download backend/API, UI, or persistent task lifecycle.
