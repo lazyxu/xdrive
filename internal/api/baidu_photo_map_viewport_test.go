@@ -162,15 +162,18 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 
 	world := baiduPhotoMapBounds{West: -180, South: -90, East: 180, North: 90, CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL}
 	page, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 1, 0)
-	if err != nil || page.TotalCount != 2 || len(page.Items) != 1 || !page.HasMore || page.Items[0].AssetID != firstAsset.ID {
+	if err != nil || page.TotalCount != 2 || len(page.Items) != 1 || !page.HasMore || page.Items[0].AssetID != firstAsset.ID ||
+		page.Items[0].NodeID != first.ID {
 		t.Fatalf("first owner page incorrect: %+v, %v", page, err)
 	}
 	next, err := queryBaiduPhotoMapViewport(context.Background(), db, alice.ID, world, 1, 1)
-	if err != nil || len(next.Items) != 1 || next.Items[0].AssetID != secondAsset.ID || next.HasMore {
+	if err != nil || len(next.Items) != 1 || next.Items[0].AssetID != secondAsset.ID || next.Items[0].NodeID != second.ID ||
+		next.HasMore {
 		t.Fatalf("second page incorrect: %+v, %v", next, err)
 	}
 	peer, err := queryBaiduPhotoMapViewport(context.Background(), db, bob.ID, world, 100, 0)
-	if err != nil || peer.TotalCount != 1 || len(peer.Items) != 1 || peer.Items[0].AssetID != bobAsset.ID {
+	if err != nil || peer.TotalCount != 1 || len(peer.Items) != 1 || peer.Items[0].AssetID != bobAsset.ID ||
+		peer.Items[0].NodeID != bobNode.ID {
 		t.Fatalf("other owner leaked: %+v, %v", peer, err)
 	}
 	// Rows with an absent source-bound opt-in must disappear from the real

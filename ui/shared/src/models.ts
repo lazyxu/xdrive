@@ -964,6 +964,27 @@ export interface MediaPlacesViewportPage extends MediaPlacesPage {
   total_photo_count: number
 }
 
+/** Map viewport space is *derived* BD09LL, never source photo WGS84.
+ * Only source-bound, currently opted-in and indexed PhotoAssets participate. */
+export interface MediaBaiduNativeViewportBounds extends MediaPlacesViewportBounds {
+  coordinate_space: 'bd09ll'
+}
+
+export interface MediaBaiduNativeViewportPage {
+  coordinate_space: 'bd09ll'
+  index_scope: 'explicit_opt_in_only'
+  items: Array<{
+    asset_id: number
+    node_id: number
+    latitude: number
+    longitude: number
+  }>
+  total_count: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export interface MediaMemory {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string

@@ -1859,6 +1859,24 @@ export type AgentMediaPlacesViewportPage = AgentMediaPlacesPage & {
   total_photo_count: number
 }
 
+export type AgentBaiduNativeViewportBounds = AgentMediaPlacesViewportBounds & {
+  coordinate_space: 'bd09ll'
+}
+export type AgentBaiduNativeViewportPage = {
+  coordinate_space: 'bd09ll'
+  index_scope: 'explicit_opt_in_only'
+  items: Array<{
+    asset_id: number
+    node_id: number
+    latitude: number
+    longitude: number
+  }>
+  total_count: number
+  offset: number
+  limit: number
+  has_more: boolean
+}
+
 export type AgentMediaMemory = {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string
@@ -2704,6 +2722,27 @@ export class AgentIPCClient {
     })
     return this.request<AgentMediaPlacesViewportPage>(
       'GET', `/v1/media/places/viewport?${query.toString()}`, undefined, 10_000, signal,
+    )
+  }
+
+  mediaBaiduNativeViewport(
+    bounds: AgentBaiduNativeViewportBounds, limit = 64, offset = 0, signal?: AbortSignal,
+  ) {
+    if (!bounds || bounds.coordinate_space !== 'bd09ll' ||
+        ![bounds.west, bounds.south, bounds.east, bounds.north].every(Number.isFinite) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000) {
+      return Promise.reject(new Error('Invalid BD09 native viewport'))
+    }
+    const query = new URLSearchParams({
+      coordinate_space: 'bd09ll',
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      limit: String(limit), offset: String(offset),
+    })
+    return this.request<AgentBaiduNativeViewportPage>(
+      'GET', `/v1/media/places/baidu-native-viewport?${query.toString()}`,
+      undefined, 10_000, signal,
     )
   }
 

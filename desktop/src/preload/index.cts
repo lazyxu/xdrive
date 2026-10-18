@@ -186,6 +186,10 @@ const agent = Object.freeze({
     bounds: { west: number; south: number; east: number; north: number },
     limit = 64, offset = 0, requestID?: string,
   ) => ipcRenderer.invoke('agent:get-media-places-viewport', bounds, limit, offset, requestID),
+  getMediaBaiduNativeViewport: (
+    bounds: { coordinate_space: 'bd09ll'; west: number; south: number; east: number; north: number },
+    limit = 64, offset = 0, requestID?: string,
+  ) => ipcRenderer.invoke('agent:get-media-baidu-native-viewport', bounds, limit, offset, requestID),
   getMediaMemories: (anchorDate = '', limit = 24, timeZone = 'UTC') =>
     ipcRenderer.invoke('agent:get-media-memories', anchorDate, limit, timeZone),
   getMediaMemoryItemRange: (memoryID: string, limit = 200, offset = 0, timeZone = 'UTC') =>

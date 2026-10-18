@@ -61,6 +61,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduNativeViewportBounds,
+  MediaBaiduNativeViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -566,6 +568,9 @@ declare global {
         getMediaPlacesViewport: (
           bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, requestID?: string,
         ) => Promise<DesktopResult<MediaPlacesViewportPage>>
+        getMediaBaiduNativeViewport: (
+          bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, requestID?: string,
+        ) => Promise<DesktopResult<MediaBaiduNativeViewportPage>>
         getMediaMemories: (
           anchorDate?: string,
           limit?: number,

@@ -263,6 +263,12 @@ export interface MediaGalleryDataSource {
   listPlacesViewport?: (
     bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<MediaPlacesViewportPage>
+  /** Separately indexed Baidu BD09LL positions, NEVER the WGS84 list.
+   * Source-only transport for a future signed native map; not a UI toggle. */
+  listBaiduNativeViewport?: (
+    bounds: import('../models').MediaBaiduNativeViewportBounds, limit?: number, offset?: number,
+    signal?: AbortSignal,
+  ) => Promise<import('../models').MediaBaiduNativeViewportPage>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
