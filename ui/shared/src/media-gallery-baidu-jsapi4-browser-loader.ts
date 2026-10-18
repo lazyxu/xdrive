@@ -1,0 +1,227 @@
+import type {
+  XDriveBaiduJSAPI4AuthorizedMountPort,
+  XDriveBaiduJSAPI4InitialPhotoCamera,
+  XDriveBaiduJSAPI4MountedMap,
+} from './media-gallery-baidu-jsapi4-mount'
+import type { XDriveBaiduJSAPI4TrustedWGS84Bounds } from './media-gallery-baidu-jsapi4-viewport'
+
+/**
+ * Real same-origin JSAPI 4.0 script acquisition for an independently APPROVED
+ * Server session, shared by Web, Mobile Web/PWA and an HTTPS-isolated Desktop
+ * map view. This file cannot grant permission: /_BMapService/* MUST reject
+ * requests unless Server verifies the current signed release, Owner/session,
+ * epoch, Browser AK revision, resource allowlist, quota and map-only Cookie.
+ *
+ * In particular, NEVER render the provider's public AK-bearing URL and NEVER treat
+ * a local flag, existing window.BMap or a mocked session as production proof.
+ * An Electron file: page cannot mint/use an HTTPS host-only map Cookie; it
+ * must use an independently reviewed HTTPS-isolated map view.
+ */
+export type XDriveBaiduJSAPI4SessionGrant = {
+  provider: 'baidu-jsapi-4.0'
+  runtime_enabled: true
+}
+
+type NativePoint = { lng: number; lat: number }
+type NativeMap = {
+  centerAndZoom(point: NativePoint, zoom: number): void
+  destroy?(): void
+}
+type NativeNamespace = {
+  Map: new (element: HTMLElement) => NativeMap
+  Point: new (longitude: number, latitude: number) => NativePoint
+  Convertor: new () => {
+    translate(points: NativePoint[], from: number, to: number,
+      callback: (result: { status?: number; points?: NativePoint[] }) => void): void
+  }
+  ClusterLayer: new (options: unknown) => unknown
+}
+type MapWindow = Window & {
+  BMap?: unknown
+  _BMapSecurityConfig?: { serviceHost?: string }
+}
+export type XDriveBaiduJSAPI4SameOriginOptions = {
+  /** Authenticated Server POST; must issue a real Secure/HttpOnly map Cookie. */
+  mintMapOnlySession(signal: AbortSignal): Promise<XDriveBaiduJSAPI4SessionGrant>
+  /** Independent PHOTO-WGS84 view, never BMap.getBounds() relabeled as GPS. */
+  trustedWGS84Bounds: XDriveBaiduJSAPI4TrustedWGS84Bounds
+}
+
+const unavailable = 'baidu_jsapi4_not_authorized'
+const trustedSDK = new WeakMap<Document, NativeNamespace>()
+const pendingSDK = new WeakMap<Document, Promise<NativeNamespace>>()
+
+function validNativeNamespace(candidate: unknown): candidate is NativeNamespace {
+  if (!candidate || typeof candidate !== 'object') return false
+  const v = candidate as Partial<NativeNamespace>
+  return typeof v.Map === 'function' && typeof v.Point === 'function' &&
+    typeof v.Convertor === 'function' && typeof v.ClusterLayer === 'function'
+}
+
+function secureDocument(): {
+  document: Document
+  browser: MapWindow
+  serviceHost: string
+} {
+  if (typeof document === 'undefined' || !document.head || !document.defaultView) {
+    throw new Error(unavailable)
+  }
+  const browser = document.defaultView as MapWindow
+  const origin = browser.location.origin
+  // No file:, http:, opaque, mixed-origin or client-provided base URL.
+  if (browser.location.protocol !== 'https:' ||
+      !/^https:\/\/[^/?#]+$/.test(origin) ||
+      new URL(origin).origin !== origin) {
+    throw new Error(unavailable)
+  }
+  return { document, browser, serviceHost: origin + '/_BMapService/' }
+}
+
+/** Abort this consumer immediately even if a third-party script ignores abort. */
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new Error(unavailable))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => { cleanup(); reject(new Error(unavailable)) }
+    const cleanup = () => signal.removeEventListener('abort', onAbort)
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(value => { cleanup(); resolve(value) },
+      () => { cleanup(); reject(new Error(unavailable)) })
+  })
+}
+
+function loadSDK(doc: Document, browser: MapWindow, serviceHost: string,
+  signal: AbortSignal): Promise<NativeNamespace> {
+  const previous = browser._BMapSecurityConfig
+  if (previous && previous.serviceHost !== serviceHost) {
+    return Promise.reject(new Error(unavailable))
+  }
+  const already = trustedSDK.get(doc)
+  if (already) {
+    if (browser.BMap !== already) return Promise.reject(new Error(unavailable))
+    return abortable(Promise.resolve(already), signal)
+  }
+  let promise = pendingSDK.get(doc)
+  if (!promise) {
+    browser._BMapSecurityConfig = { serviceHost }
+    promise = new Promise<NativeNamespace>((resolve, reject) => {
+      const script = doc.createElement('script')
+      script.async = true
+      script.type = 'text/javascript'
+      // Fixed same-origin, exact JSAPI4 route. No Browser AK or untrusted URL.
+      script.src = new URL('/_BMapService/api?v=4.0', serviceHost).href
+      script.referrerPolicy = 'no-referrer'
+      script.onload = () => {
+        script.onload = null
+        script.onerror = null
+        if (!validNativeNamespace(browser.BMap)) {
+          script.remove()
+          reject(new Error(unavailable))
+          return
+        }
+        trustedSDK.set(doc, browser.BMap)
+        resolve(browser.BMap)
+      }
+      script.onerror = () => {
+        script.onload = null
+        script.onerror = null
+        script.remove()
+        reject(new Error(unavailable))
+      }
+      doc.head.appendChild(script)
+    })
+    pendingSDK.set(doc, promise)
+    const active = promise
+    void promise.catch(() => {
+      if (pendingSDK.get(doc) === active) {
+        pendingSDK.delete(doc)
+        if (!trustedSDK.has(doc) && browser._BMapSecurityConfig?.serviceHost === serviceHost) {
+          if (previous) browser._BMapSecurityConfig = previous
+          else delete browser._BMapSecurityConfig
+        }
+      }
+    })
+  }
+  return abortable(promise, signal)
+}
+
+/** Official WGS84 (1) -> BD-09 (5), not a hand-rolled coordinate guess. */
+function originalPhotoPoint(namespace: NativeNamespace,
+  camera: XDriveBaiduJSAPI4InitialPhotoCamera,
+  signal: AbortSignal): Promise<NativePoint> {
+  return abortable(new Promise<NativePoint>((resolve, reject) => {
+    try {
+      const converter = new namespace.Convertor()
+      const original = new namespace.Point(camera.longitude, camera.latitude)
+      converter.translate([original], 1, 5, response => {
+        const p = response?.points?.[0]
+        if (response?.status !== 0 || response.points?.length !== 1 || !p ||
+            !Number.isFinite(p.lng) || !Number.isFinite(p.lat) ||
+            Math.abs(p.lng) > 180 || Math.abs(p.lat) > 85) {
+          reject(new Error(unavailable))
+        } else resolve(p)
+      })
+    } catch {
+      reject(new Error(unavailable))
+    }
+  }), signal)
+}
+
+/**
+ * One production-shaped browser SDK loader. The source of authorization is the
+ * Server POST and subsequent per-resource Cookie checks, never this factory.
+ * Unlike the existing synthetic mount tests, this loads the REAL /api script
+ * when—and only when—the Server has issued a valid map session.
+ */
+export function xDriveCreateBaiduJSAPI4SameOriginMount(
+  options: XDriveBaiduJSAPI4SameOriginOptions,
+): XDriveBaiduJSAPI4AuthorizedMountPort {
+  if (!options || typeof options.mintMapOnlySession !== 'function' ||
+      typeof options.trustedWGS84Bounds !== 'function') {
+    throw new Error(unavailable)
+  }
+  return {
+    async acquire(container, signal, camera): Promise<XDriveBaiduJSAPI4MountedMap> {
+      if (!container || signal.aborted || !camera ||
+          ![camera.latitude, camera.longitude, camera.zoom].every(Number.isFinite) ||
+          Math.abs(camera.latitude) > 85 || Math.abs(camera.longitude) > 180 ||
+          !Number.isInteger(camera.zoom) || camera.zoom < 3 || camera.zoom > 18) {
+        throw new Error(unavailable)
+      }
+      const { document: doc, browser, serviceHost } = secureDocument()
+      if (container.ownerDocument !== doc) throw new Error(unavailable)
+      // This must be an authenticated Owner API request. No bearer is passed
+      // to the external script; the result contains no token/AK/GPS.
+      let grant: XDriveBaiduJSAPI4SessionGrant
+      try {
+        grant = await abortable(options.mintMapOnlySession(signal), signal)
+      } catch {
+        throw new Error(unavailable)
+      }
+      if (signal.aborted || grant?.provider !== 'baidu-jsapi-4.0' ||
+          grant.runtime_enabled !== true) throw new Error(unavailable)
+      const namespace = await loadSDK(doc, browser, serviceHost, signal)
+      if (signal.aborted) throw new Error(unavailable)
+      let map: NativeMap | null = null
+      try {
+        // The API's public BMap namespace is accepted only after our
+        // authenticated, same-origin loader actually completed.
+        const point = await originalPhotoPoint(namespace, camera, signal)
+        if (signal.aborted) throw new Error(unavailable)
+        map = new namespace.Map(container)
+        map.centerAndZoom(point, camera.zoom)
+        const initialized = map
+        return {
+          map: initialized,
+          namespace,
+          trustedWGS84Bounds: options.trustedWGS84Bounds,
+          dispose() {
+            try { initialized.destroy?.() } catch { /* no raw SDK errors */ }
+          },
+        }
+      } catch {
+        try { map?.destroy?.() } catch { /* no raw SDK errors */ }
+        throw new Error(unavailable)
+      }
+    },
+  }
+}

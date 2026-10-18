@@ -3,6 +3,7 @@ package baidumapjsapi
 import (
 	"crypto/ed25519"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"time"
@@ -102,15 +103,23 @@ func verifyJSAPI4ReleaseAttestation(a JSAPI4ReleaseAttestation, trustedKey ed255
 	return nil
 }
 
-// VerifyPinnedJSAPI4ProductionRelease is the sole production-facing guard.
-// A real operator-approved pinned verification key and complete code-reviewed
-// inventory do not exist, so production activation is unconditionally denied.
-// A future phase must separately couple signature, revocation, licence and
-// trusted current Server state to authenticated map requests before changing
-// this contract. Never accept a key or proof decision from Renderer/admin UI.
-func VerifyPinnedJSAPI4ProductionRelease(_ JSAPI4ReleaseAttestation, _ JSAPI4ReleaseScope, _ time.Time) error {
+// VerifyPinnedJSAPI4ProductionRelease validates the operator's actual
+// source-pinned Ed25519 public key, a COMPLETE independently reviewed child
+// inventory and the exact current Server build/policy/origin/Browser AK/epoch
+// scope. A signature is not a provider licence: release metadata must only be
+// pinned after separate legal and raw-HAR audits and Server policy review.
+// Empty/invalid pin and incomplete inventory always fail closed.
+// Never accept this key from an administrator field or browser request.
+func VerifyPinnedJSAPI4ProductionRelease(a JSAPI4ReleaseAttestation, expected JSAPI4ReleaseScope, now time.Time) error {
 	if jsapi4PinnedProductionPublicKey == "" || !JSAPI4ChildInventoryComplete() {
 		return ErrGateClosed
 	}
-	return ErrGateClosed
+	key, err := base64.StdEncoding.Strict().DecodeString(jsapi4PinnedProductionPublicKey)
+	if err != nil || len(key) != ed25519.PublicKeySize {
+		return ErrGateClosed
+	}
+	if verifyJSAPI4ReleaseAttestation(a, ed25519.PublicKey(key), expected, now) != nil {
+		return ErrGateClosed
+	}
+	return nil
 }
