@@ -560,4 +560,11 @@ class OfflineHostStageTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # NET-M5-C0: the existing server-validation entrypoint executes the real
+    # isolated loopback TLS fixture without changing unrelated CI workflows.
+    subprocess.run(
+        [sys.executable, str(Path(__file__).with_name(
+            "test-caddy-https-remote-login-check.py"))],
+        check=True, timeout=120,
+    )
     unittest.main()
