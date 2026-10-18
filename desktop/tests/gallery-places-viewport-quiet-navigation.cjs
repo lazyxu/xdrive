@@ -43,6 +43,14 @@ const galleryMap = compile(uiFile,{
   './MediaGalleryBaiduJSAPI4Surface': {
     XDriveMediaGalleryBaiduJSAPI4Surface: () => null,
   },
+  // This legacy mounted React test deliberately has no Server-authorized
+  // Session/Native Photo port. Resolve the optional dynamic import but throw
+  // if it is EVER rendered, preserving the real static viewport coverage.
+  './MediaGalleryBaiduJSAPI4PhotoSurface': {
+    XDriveMediaGalleryBaiduJSAPI4PhotoSurface: () => {
+      throw new Error('native photo layer must not mount without signed Server status')
+    },
+  },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
       React.createElement('map-fixture',{onViewportChange:props.onViewportChange}),

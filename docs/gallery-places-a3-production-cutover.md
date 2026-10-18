@@ -94,3 +94,10 @@ node scripts/ci/baidu-jsapi4-evidence-matrix.cjs /private/baidu-jsapi4/manifest.
 | iOS27 视觉、深浅色、横屏、无障碍和可见性能数据 | 待实测 | 待实测 | 待实测 |
 
 真实验收通过并签署 Server 发布证明、完成最后一次授权检查后，才能在独立可审计部署版本上开启动态服务；未通过则保留百度静态图和原有图库。完整设计参考 [A3 代理安全评审](gallery-places-jsapi4-proxy-review.md)、[Places 1:1 路线图](gallery-places-ios27-roadmap.md) 和 [GO/NO-GO #1798](https://github.com/lazyxu/xdrive/issues/1798)。
+## A3c16 · 真实 Web/Mobile Web 签名 Session 与 BD09 原生照片地图 UI 接入（2026-10-18）
+
+- **新增真实浏览器通信**：Web/Mobile Web/PWA 的同一 `XDriveApi` 读取 `GET /api/v1/media/places/baidu-jsapi/status`，只有 Server 当前返回 `provider=baidu-jsapi-4.0, enabled=true, activation_state=authorized_signed_release` 才在图库「地图」准备原生载入。接着真实已登录 Bearer 发送无请求体的 `POST /api/v1/media/places/baidu-jsapi/session`，从可信同源 HTTPS 取得独立、短效、Secure/HttpOnly Cookie；Server 未签名放行默认 503/false，浏览器不加载任何百度动态脚本。Browser AK 不在 HTML、链接、Session 响应或 JSAPI URL。
+- 复用既有官方形状 JSAPI 4.0 同源 `/_BMapService/api?v=4.0` Loader、同一个 `_BMapSecurityConfig.serviceHost`（末尾带斜杠）；**未开放**未知 JS/瓦片/字体/WASM 子资源。重用同一原生 Map/ClusterLayer，`getBounds` 坐标是 **BD09LL**，只能请求 A3c13 已有 Owner signed-release-gated BD09 API，不得使用 WGS84 网格中心或二次坐标转换。照片点最多 100 个、Server 真总数、仅完整窗聚合；平移缩放立刻 Abort，旧结果不提交。
+- 地图单点点击后必须重新通过 **现有 Owner Gallery Range**：基于最新用户排序向 Range 请求 `anchor_node_id` 获取可信逻辑序号，再按该序号读取单项；只有 Node 身份与当前响应一致，才调用既有 Range/VirtualCollection/Viewer。SDK 单点回调不拥有直接媒体访问权限；退出、导航与账号切换取消旧请求。
+- 一套 shared MUI 地图组件和 DataSource 供宽屏 Web、Mobile Web/PWA 复用，不加第二份移动端实现，52px 全屏 App Frame 与原有照片布局不变。Desktop `file:` 页面**没有**地图 Session port，仍安全使用百度静态图；后续需要单独 HTTPS isolated BrowserWindow + Agent/Owner 身份桥，绝不可为了三端表面齐平在 Electron renderer 放开 Node/Token。
+- 本阶段是**真实路由与 UI 集成、但实际 JSAPI4 生产仍 NO-GO**：资源白名单数量 0、公钥 pin 空、九组真实 Browser/Server upstream HAR、许可签字、Caddy/CSP/Electron/physical iOS27 像素+手势/100k 仍不具备。即使本 PR CI 全绿也不能写成三端百度动态实测通过。Server Static PNG 一直保留。

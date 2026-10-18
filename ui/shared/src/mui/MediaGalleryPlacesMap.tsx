@@ -9,6 +9,7 @@ import type {
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
 import { XDriveMediaGalleryBaiduJSAPI4Surface } from './MediaGalleryBaiduJSAPI4Surface'
+import { XDriveMediaGalleryBaiduJSAPI4PhotoSurface } from './MediaGalleryBaiduJSAPI4PhotoSurface'
 import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
 import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
@@ -29,6 +30,10 @@ export function XDriveMediaGalleryPlacesMap({
   onCameraChange,
   getBaiduMapProvider,
   loadBaiduStaticMap,
+  listBaiduNativeViewport,
+  getBaiduJSAPI4Status,
+  mintBaiduJSAPI4Session,
+  onOpenBaiduNativePhoto,
   authorizedJSAPI4Runtime,
   activePlaceID,
   focusPlaceID,
@@ -42,6 +47,10 @@ export function XDriveMediaGalleryPlacesMap({
   onCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  listBaiduNativeViewport?: import('./MediaGallery').MediaGalleryDataSource['listBaiduNativeViewport']
+  getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
+  mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
+  onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   /** Only supplied by a future independently released Server-authorized proxy.
    * Production currently supplies NO runtime, so there are zero SDK requests. */
   authorizedJSAPI4Runtime?: XDriveBaiduJSAPI4AuthorizedMountPort
@@ -51,6 +60,23 @@ export function XDriveMediaGalleryPlacesMap({
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
   const [nativeMapReady, setNativeMapReady] = useState(false)
+  const [serverNativeAuthorized, setServerNativeAuthorized] = useState(false)
+  useEffect(() => {
+    setServerNativeAuthorized(false)
+    if (!getBaiduJSAPI4Status || !mintBaiduJSAPI4Session ||
+        !listBaiduNativeViewport || !onOpenBaiduNativePhoto) return
+    const signal = new AbortController()
+    // A desired Browser AK is NOT a signed runtime; ask Server itself.
+    void getBaiduJSAPI4Status(signal.signal).then(status => {
+      if (!signal.signal.aborted && status?.provider === 'baidu-jsapi-4.0' &&
+          status.enabled === true &&
+          status.activation_state === 'authorized_signed_release') {
+        setServerNativeAuthorized(true)
+      }
+    }).catch(() => { /* signed release absent: static Baidu map stays visible */ })
+    return () => signal.abort()
+  }, [getBaiduJSAPI4Status, mintBaiduJSAPI4Session,
+    listBaiduNativeViewport, onOpenBaiduNativePhoto])
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
     places.find((item) => item.id === focusPlaceID) ??
@@ -67,9 +93,12 @@ export function XDriveMediaGalleryPlacesMap({
     ? { latitude: selectedPlace.sample_latitude!, longitude: selectedPlace.sample_longitude!,
         zoom: xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.zoom : 12 }
     : null
-  const canMountNative = Boolean(authorizedJSAPI4Runtime && listPlacesViewport &&
+  const canMountNativePhoto = Boolean(serverNativeAuthorized &&
+    mintBaiduJSAPI4Session && listBaiduNativeViewport &&
+    onOpenBaiduNativePhoto && nativeCamera)
+  const canMountLegacy = Boolean(authorizedJSAPI4Runtime && listPlacesViewport &&
     onOpenPlace && nativeCamera)
-  const showingNative = canMountNative && nativeMapReady
+  const showingNative = (canMountNativePhoto || canMountLegacy) && nativeMapReady
 
   const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
   const [viewportOffset, setViewportOffset] = useState(
@@ -222,7 +251,18 @@ export function XDriveMediaGalleryPlacesMap({
           </Button>
         ) : null}
       </Stack>
-      {canMountNative && authorizedJSAPI4Runtime && listPlacesViewport &&
+      {canMountNativePhoto && mintBaiduJSAPI4Session && listBaiduNativeViewport &&
+        onOpenBaiduNativePhoto && nativeCamera ? (
+          <XDriveMediaGalleryBaiduJSAPI4PhotoSurface
+            key={selectedPlace?.id}
+            mintMapOnlySession={mintBaiduJSAPI4Session}
+            listOwnerViewport={listBaiduNativeViewport}
+            camera={nativeCamera}
+            onOpenPhoto={onOpenBaiduNativePhoto}
+            onReady={setNativeMapReady}
+          />
+        ) : null}
+      {!canMountNativePhoto && canMountLegacy && authorizedJSAPI4Runtime && listPlacesViewport &&
         onOpenPlace && nativeCamera ? (
           <XDriveMediaGalleryBaiduJSAPI4Surface
             key={selectedPlace?.id}
