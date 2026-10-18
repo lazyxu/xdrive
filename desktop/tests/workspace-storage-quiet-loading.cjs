@@ -46,36 +46,39 @@ test('storage navigation keeps a 300ms quiet window and discards superseded prog
   await act(async () => { view.unmount() })
 })
 
-test('cloud and local workspace have one quiet initial loading state, stable chrome and immediate errors', () => {
-  for (const [file, slot] of [
-    ['CloudStoragePage.tsx', 'data-xdrive-cloud-storage-loading-slot'],
-    ['LocalStoragePage.tsx', 'data-xdrive-local-storage-loading-slot'],
+test('cold Cloud and Local Storage never mount a timed or false-empty page, even after 300ms', () => {
+  for (const [file, slot, label] of [
+    ['CloudStoragePage.tsx', 'data-xdrive-cloud-storage-loading-slot', '云端'],
+    ['LocalStoragePage.tsx', 'data-xdrive-local-storage-loading-slot', '本地'],
   ]) {
     const page = fs.readFileSync(path.join(root, 'ui/shared/src/mui', file), 'utf8')
-    assert.ok(page.includes('const [loading, setLoading] = useState(true)'), file + ': initial first paint must not claim empty')
-    assert.ok(page.includes('useXDriveDeferredLoading(loading, requestGeneration)'), file + ': use generation-scoped timer')
-    assert.ok(page.includes('setRequestGeneration(value => value + 1)'), file + ': refresh must disarm old timer')
-    assert.ok(page.includes('disabled={loading}'), file + ': pending refresh stays disabled even before spinner')
-    assert.ok(page.includes('loading={showDelayedLoading}'), file + ': only delayed progress may alter button')
-    assert.ok(page.includes('loadingLabel="刷新"'), file + ': refresh text width stays fixed')
-    assert.ok(page.includes(slot), file + ': reserve bounded content height before first range')
-    assert.ok(page.includes('showDelayedLoading\n              ? <XDriveStatePanel'), file + ': no short-lived spinner')
-    assert.ok(page.includes('aria-busy={loading || undefined}'),file + ': first real pending is accessible')
-    const errorMarker=file.startsWith('Cloud')
+    assert.ok(page.includes('const [loading, setLoading] = useState(true)'), file + ': first paint is not verified empty')
+    assert.equal(page.includes('useXDriveDeferredLoading'), false, file + ': a cold navigation may never schedule an ornamental timer')
+    assert.equal(page.includes('showDelayedLoading'), false, file + ': remove the slow GET spinner as well')
+    assert.equal(page.includes('正在加载' + label + '存储信息…'), false)
+    assert.equal(page.includes('message="暂无' + label + '存储信息"'), false, file + ': null is not an authorized empty read')
+    assert.ok(page.includes('disabled={loading}'), file + ': duplicate refresh is still blocked')
+    assert.ok(page.includes('startIcon={<RefreshRoundedIcon />}'), file + ': refresh icon remains stable')
+    assert.ok(page.includes(slot), file + ': first read reserves fixed geometry')
+    assert.ok(page.includes('aria-busy={loading || undefined}'), file + ': real pending state remains accessible')
+    const coldStart = page.indexOf(slot)
+    const coldEnd = page.indexOf('/>', coldStart)
+    assert.ok(coldEnd > coldStart, file + ': the quiet cold slot is self-contained')
+    const coldSlot = page.slice(coldStart, coldEnd)
+    assert.ok(coldSlot.includes('minHeight: 180'), file + ': reserve the original 180px')
+    assert.ok(!coldSlot.includes('XDriveStatePanel'), file + ': no slow-GET status panel')
+    const errorMarker = file.startsWith('Cloud')
       ? 'data-xdrive-cloud-storage-first-read-error' : 'data-xdrive-local-storage-first-read-error'
-    assert.ok(page.includes(errorMarker),file + ': first-read failure keeps the waiting geometry')
+    assert.ok(page.includes(errorMarker), file + ': original true terminal error remains')
     assert.ok(page.includes("minHeight: 180, display: 'grid', placeItems: 'center'"),
-      file + ': first error and pending layout must use same minimum height')
+      file + ': failure and unverified use the same 180px geometry')
     assert.ok(page.includes('<XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>'),
-      file + ': true first-read failure must be visible')
-    assert.ok(!page.includes("message={loading ? '正在加载"), file + ': no false empty→spinner jump')
+      file + ': true failure is visible')
   }
   const local = fs.readFileSync(path.join(root, 'ui/shared/src/mui/LocalStoragePage.tsx'), 'utf8')
-  assert.ok(local.includes('subtitle="管理当前客户端站点缓存'), 'local subtitle must not change after data arrives')
+  assert.ok(local.includes('subtitle="管理当前客户端站点缓存'), 'local subtitle must remain unchanged')
   const headerStart = local.indexOf('<XDriveWorkspaceSurface')
   const headerEnd = local.indexOf('pageActions=', headerStart)
-  assert.ok(headerStart >= 0 && headerEnd > headerStart, 'local page header must exist')
-  const pageHeader = local.slice(headerStart, headerEnd)
-  assert.ok(!pageHeader.includes('subtitle={desktop'),
-    'the page header must not switch between Browser and Desktop descriptions after first load')
+  assert.ok(headerStart >= 0 && headerEnd > headerStart)
+  assert.ok(!local.slice(headerStart, headerEnd).includes('subtitle={desktop'))
 })

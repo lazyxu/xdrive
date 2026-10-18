@@ -13,7 +13,6 @@ import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 
 export type XDriveLocalStorageMode = 'default' | 'exclude' | 'always-local'
 
@@ -201,15 +200,12 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
   const [snapshot, setSnapshot] = useState<XDriveLocalStorageSnapshot | null>(null)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
-  const [requestGeneration, setRequestGeneration] = useState(0)
-  const showDelayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
   const [action, setAction] = useState('')
   const [pendingAction, setPendingAction] = useState<'browser' | 'desktop' | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
-    setRequestGeneration(value => value + 1)
     setLoading(true)
     setError('')
     try {
@@ -320,9 +316,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
-          loading={showDelayedLoading}
           disabled={loading}
-          loadingLabel="刷新"
           onClick={() => { void load() }}
         >
           刷新
@@ -339,13 +333,7 @@ export function XDriveLocalStoragePage({ source }: { source: XDriveLocalStorageD
       {!snapshot && !error ? (
         <Box data-xdrive-local-storage-loading-slot
           aria-busy={loading || undefined}
-          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-          {loading ? (
-            showDelayedLoading
-              ? <XDriveStatePanel variant="plain" loading message="正在加载本地存储信息…" />
-              : null
-          ) : <XDriveStatePanel variant="plain" message="暂无本地存储信息" />}
-        </Box>
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
       ) : null}
 
       {snapshot ? (

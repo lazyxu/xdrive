@@ -6,11 +6,9 @@ import { formatBytes } from '../format'
 import { XDriveActionButton } from './ActionButton'
 import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
 import { XDriveSectionHeader } from './SectionHeader'
-import { XDriveStatePanel } from './StatePanel'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveStorageDistributionChart } from './StorageDistributionChart'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 
 export type XDriveCloudStorageSnapshot = {
   quota: QuotaUsage
@@ -29,12 +27,9 @@ export function XDriveCloudStoragePage({
 }) {
   const [snapshot, setSnapshot] = useState<XDriveCloudStorageSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
-  const [requestGeneration, setRequestGeneration] = useState(0)
-  const showDelayedLoading = useXDriveDeferredLoading(loading, requestGeneration)
   const [error, setError] = useState('')
 
   const load = useCallback(async () => {
-    setRequestGeneration(value => value + 1)
     setLoading(true)
     setError('')
     try {
@@ -62,9 +57,7 @@ export function XDriveCloudStoragePage({
       pageActions={(
         <XDriveActionButton
           startIcon={<RefreshRoundedIcon />}
-          loading={showDelayedLoading}
           disabled={loading}
-          loadingLabel="刷新"
           onClick={() => { void load() }}
         >
           刷新
@@ -81,13 +74,7 @@ export function XDriveCloudStoragePage({
       {!snapshot && !error ? (
         <Box data-xdrive-cloud-storage-loading-slot
           aria-busy={loading || undefined}
-          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-          {loading ? (
-            showDelayedLoading
-              ? <XDriveStatePanel variant="plain" loading message="正在加载云端存储信息…" />
-              : null
-          ) : <XDriveStatePanel variant="plain" message="暂无云端存储信息" />}
-        </Box>
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
       ) : null}
 
       {snapshot ? (
