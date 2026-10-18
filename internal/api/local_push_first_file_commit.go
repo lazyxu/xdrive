@@ -174,6 +174,14 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspectorAndOperation(
 		!time.Now().Before(stage.ExpiresAt) {
 		return empty, false, errLocalPushStageConflict
 	}
+	if operation != nil {
+		// Unlike the legacy CI-only writer, the current-operation variant
+		// must have an immutable Stage/UUID/generation binding BEFORE any
+		// CAS/hash/Node or canonical metadata lock is taken.
+		if err := s.requireLocalPushStageOperationBindingTx(tx, c, stage, operation); err != nil {
+			return empty, false, err
+		}
+	}
 	stageKey, err := localPushStageStoreKey(stage.StageID)
 	if err != nil {
 		return empty, false, errLocalPushStageConflict
@@ -388,6 +396,13 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspectorAndOperation(
 				if err := s.validateCurrentLocalPushWriterFenceTx(
 					tx, c, sourceID, revision, operation.requestKey,
 					operation.operationID, operation.generation,
+				); err != nil {
+					return err
+				}
+				// Revalidate immutable Stage/operation provenance while
+				// the original SQL and physical CAS/Stage pins are held.
+				if err := s.requireLocalPushStageOperationBindingTx(
+					tx, c, stage, operation,
 				); err != nil {
 					return err
 				}
