@@ -214,6 +214,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
     <Paper variant="outlined" sx={{ mt: 1.5, p: { xs: 1.5, sm: 2 }, borderRadius: 2 }}
       data-xdrive-admin-caddy-https-desired>
       <Stack spacing={1.5}>
+        {section === 'config' && (<>
         <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
           <Typography variant="subtitle2" fontWeight={700}>Caddy · HTTPS 期望配置</Typography>
           <Button size="small" variant="outlined" disabled={busy || loading || !source.loadCaddyHTTPSConfig}
@@ -224,8 +225,10 @@ export function XDriveCaddyHTTPSDesiredPanel({
           保存会审计期望修订，不修改宿主机 .env、证书、Caddy 或启动参数；实际生效需要后续独立
           的受限 Host Manager 验证和受控重启，不能将“保存成功”误当成运行入口已变化。
         </Typography>
+        </>)}
         {config ? (
           <>
+            {section === 'config' && (<>
             <Stack direction="row" spacing={1} flexWrap="wrap" alignItems="center" useFlexGap>
               <Chip variant="outlined" size="small" color="warning"
                 label={config.apply_state === 'pending' ? '期望配置未应用' : '未由管理员管理'} />
@@ -245,6 +248,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
                 config.host_https_configured ? '已声明 HTTPS' : '未声明 HTTPS'}
               {' · '}域名 TLS：{tlsLabels[config.host_tls_state] ?? '状态未知'}
             </Typography>
+            </>)}
             {section === 'config' && (<>
             <FormControlLabel
               control={<Switch checked={enabled} disabled={!canEdit}
@@ -289,7 +293,10 @@ export function XDriveCaddyHTTPSDesiredPanel({
             </>)}
             {section === 'history' && source.loadCaddyHTTPSRevisions && source.rollbackCaddyHTTPS && (
               <Box>
-                <Typography variant="subtitle2" fontWeight={700}>历史修订与审计回滚</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  当前期望修订 #{config.revision}。选择历史修订只会创建新的审计记录；
+                  不能证明运行中的 Caddy 已应用，且不会直接操作宿主机。
+                </Typography>
                 <TextField fullWidth select size="small" label="选择历史期望配置"
                   sx={{ mt: 1 }} value={target} disabled={!canEdit}
                   onChange={(event) => setTarget(event.target.value)}>

@@ -1652,48 +1652,6 @@ export function XDriveServiceDependenciesPage({
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
                     {group.description}
                   </Typography>
-                  {selectedItem && selectedItem.config_mode && selectedItem.apply_mode && (() => {
-                    const capability = XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES[selectedItem.id as XDriveSystemDependencyID]
-                    const { configTarget, verifyTarget, activationTarget } = xDriveSystemDependencyAvailableTargets(
-                      selectedItem.id as XDriveSystemDependencyID, systemServices, source,
-                    )
-                    return (
-                      <Paper variant="outlined" data-xdrive-system-dependency-actions
-                        sx={{ p: 1.5, mb: 2, borderRadius: 2 }}>
-                        <Stack direction={{ xs: 'column', sm: 'row' }}
-                          alignItems={{ xs: 'flex-start', sm: 'center' }}
-                          justifyContent="space-between" gap={1}>
-                          <Box>
-                            <Typography variant="subtitle2" fontWeight={700}>配置与检测</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {capability.enable}；实际权限与结果以 Server 为准。
-                            </Typography>
-                          </Box>
-                          <Stack direction="row" gap={1} useFlexGap flexWrap="wrap">
-                            {configTarget && (
-                              <Button size="small" variant="outlined"
-                                onClick={() => navigateTo(configTarget)}>
-                                {activationTarget ? capability.activationLabel : '配置与修改'}
-                              </Button>
-                            )}
-                            {verifyTarget && (
-                              <Button size="small" variant="outlined"
-                                onClick={() => navigateTo(verifyTarget)}>
-                                {selectedPage === 'storage' ? '存储就绪检测' :
-                                  verifyTarget.tab === 'status' ? '查看状态' : '生效检测'}
-                              </Button>
-                            )}
-                            {((capability.configTarget && !configTarget) ||
-                              (capability.verifyTarget && !verifyTarget)) && (
-                              <Typography variant="caption" color="text.secondary">
-                                当前连接未确认对应的管理接口，请核对 Server/Agent 版本。
-                              </Typography>
-                            )}
-                          </Stack>
-                        </Stack>
-                      </Paper>
-                    )
-                  })()}
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
                     当前服务的状态、设置、检测和审计历史统一在此页；历史按需读取。

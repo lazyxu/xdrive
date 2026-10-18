@@ -411,7 +411,12 @@ test('one shared detail page replaces status/config/verify/history tabs without 
     'Baibu AK must expire even if its reveal child unmounts on section collapse')
   assert.ok(page.includes("!next && selectedPage === 'baidu-map' && currentTab === 'config'"),
     'closing the configuration accordion must immediately redact any exposed AK')
-  assert.ok(caddy.includes('!lanEnabled && !enabled') || caddy.includes('!lanEnabled && !enabled'))
+  assert.ok(caddy.includes("(lanEnabled || enabled)"),
+    'both-disable rejection remains in the editable configuration panel')
+  assert.ok(caddy.includes("{section === 'config' && (<>"),
+    'full current HTTPS/TLS summary belongs only to configuration, not history')
+  assert.ok(caddy.includes("当前期望修订 #{config.revision}。选择历史修订只会创建新的审计记录"),
+    'history contains a concise revision context, not duplicated runtime and TLS status')
   assert.ok(caddy.includes("(lanEnabled || enabled)"))
   assert.ok(caddy.includes("期望配置未应用"))
   for (const forbidden of ['docker.sock', 'adminRestartHost', 'adminStopHost'])
