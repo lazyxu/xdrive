@@ -2102,9 +2102,23 @@ export default function MobileFiles(props: Props) {
   const hasFolderAncestors = showDirectory && section === 'browse' && !props.trashActive &&
     !props.searchActive && !selectionActive && props.crumbs.length > 1
   const compactTitle = selectionActive ? `已选 ${selection.length} 项` : editTitle ? '整理浏览' : heading
-  const overflowAction = (label: string, action: () => void, disabled = false) => (
-    <MenuItem key={label} disabled={disabled} onClick={() => { setMoreAnchor(null); action() }} sx={{ minHeight: MIN_TOUCH }}>{label}</MenuItem>
-  )
+  const overflowAction = (label: string, action: () => void, disabled = false, disabledReason?: string) => {
+    const reason = xDriveFileExplorerMenuDisabledReason({ disabled, disabledReason })
+    return (
+      <MenuItem key={label} disabled={disabled}
+        title={reason ?? undefined}
+        aria-label={reason ? label + '：' + reason : undefined}
+        onClick={() => { setMoreAnchor(null); action() }} sx={{ minHeight: MIN_TOUCH }}>
+        {reason ? <Box sx={{ minWidth: 0 }}>
+          {label}
+          <Typography component="span" variant="caption" display="block"
+            sx={{ overflowWrap: 'anywhere' }}>
+            {xDriveFileExplorerMenuReasonLabel({ disabled, disabledReason })}
+          </Typography>
+        </Box> : label}
+      </MenuItem>
+    )
+  }
   // iOS 27 Files displays both Icons and List as explicit radio-like actions
   // in More. This changes Mobile presentation only, not the shared Web/Desktop
   // list query, workspace, tabs, Server sort, or virtual scroll owner.
@@ -2745,7 +2759,8 @@ export default function MobileFiles(props: Props) {
             }}>{selectionMoreLabel('所选项目属性', selectionMoreReasons.common)}</MenuItem>
         </Menu>
         <Menu data-mobile-files-more-menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)}
-          slotProps={{ paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 520px)' } } }}>
+          slotProps={{ list: { disabledItemsFocusable: true },
+            paper: { sx: { ...MOBILE_FILES_MENU_TOUCH_SX, maxHeight: 'min(70dvh, 520px)' } } }}>
           {showDirectory ? <MenuItem disabled data-mobile-files-arrangement-summary sx={{ minHeight: MIN_TOUCH }}>
             {`${totalCount} 个项目 · ${arrangementLabel}`}
           </MenuItem> : null}
@@ -2774,14 +2789,19 @@ export default function MobileFiles(props: Props) {
           {showDirectory ? <Divider data-mobile-files-view-group="end" sx={{ my: 0.5 }} /> : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件', props.onUpload) : null}
           {showDirectory && !props.trashActive ? overflowAction('上传文件夹', props.onUploadFolder) : null}
-          {showDirectory && !props.trashActive ? overflowAction('粘贴', props.onPaste, !props.canPaste) : null}
+          {showDirectory && !props.trashActive ? overflowAction('粘贴', props.onPaste, !props.canPaste,
+            '当前目录暂不能粘贴，请检查剪贴板与目标目录') : null}
           {!props.trashActive && props.onPathSubmit
             ? overflowAction('前往文件夹路径…', openGoToPath) : null}
           {!props.trashActive ? <Divider sx={{ my: 0.5 }} /> : null}
-          {!props.trashActive ? overflowAction('撤销', () => props.onUndo?.(), !props.canUndo || !props.onUndo) : null}
-          {!props.trashActive ? overflowAction('重做', () => props.onRedo?.(), !props.canRedo || !props.onRedo) : null}
-          {showDirectory && !props.trashActive ? overflowAction('后退（浏览历史）', () => props.onHistoryBack?.(), !props.canHistoryBack || !props.onHistoryBack) : null}
-          {showDirectory && !props.trashActive ? overflowAction('前进（浏览历史）', () => props.onHistoryForward?.(), !props.canHistoryForward || !props.onHistoryForward) : null}
+          {!props.trashActive ? overflowAction('撤销', () => props.onUndo?.(), !props.canUndo || !props.onUndo,
+            '当前没有可用的撤销操作') : null}
+          {!props.trashActive ? overflowAction('重做', () => props.onRedo?.(), !props.canRedo || !props.onRedo,
+            '当前没有可用的重做操作') : null}
+          {showDirectory && !props.trashActive ? overflowAction('后退（浏览历史）', () => props.onHistoryBack?.(), !props.canHistoryBack || !props.onHistoryBack,
+            '当前没有可用的浏览历史返回操作') : null}
+          {showDirectory && !props.trashActive ? overflowAction('前进（浏览历史）', () => props.onHistoryForward?.(), !props.canHistoryForward || !props.onHistoryForward,
+            '当前没有可用的浏览历史前进操作') : null}
           {section === 'recent' ? overflowAction('清空最近记录', () => setClearRecentConfirm(true)) : null}
           {overflowAction('刷新', refresh)}
           {overflowAction('管理标签', props.onManageTags)}
