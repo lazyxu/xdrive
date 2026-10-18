@@ -1,0 +1,12 @@
+{
+  "entries": 100000,
+  "http_body_bytes": 5733793,
+  "page_p50_ms": 16.702,
+  "page_p95_ms": 19.264,
+  "page_walk_ms": 16894,
+  "page_worst_ms": 29.478,
+  "pages": 1000,
+  "sample": "1",
+  "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+  "seed_ms": 1618
+}

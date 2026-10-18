@@ -64,6 +64,7 @@ import type {
   UpdateMediaPersonIdentityInput,
   Node,
   PublicShare,
+  PublicShareChildren,
   QuotaUsage,
   StorageHealth,
   StorageHistory,
@@ -3137,7 +3138,7 @@ export class XDriveApi {
   }
 
   createShare(nodeID: number, input: { expires_at?: string; password?: string; max_downloads?: number }) {
-    return this.request<CreatedFileShare>(`/api/v1/files/${nodeID}/shares`, {
+    return this.request<CreatedFileShare>(`/api/v1/nodes/${nodeID}/shares`, {
       method: 'POST',
       body: JSON.stringify({
         expires_at: input.expires_at || null,
@@ -3148,7 +3149,7 @@ export class XDriveApi {
   }
 
   shares(nodeID: number) {
-    return this.request<FileShare[]>(`/api/v1/files/${nodeID}/shares`)
+    return this.request<FileShare[]>(`/api/v1/nodes/${nodeID}/shares`)
   }
 
   revokeShare(shareID: number) {
@@ -3161,7 +3162,16 @@ export class XDriveApi {
     }, false)
   }
 
-  async downloadPublicShare(token: string, password: string, filename: string) {
+  publicShareChildren(token: string, password: string, parentID: number, cursor = 0, signal?: AbortSignal) {
+    return this.request<PublicShareChildren>('/api/v1/public/share/children', {
+      method: 'POST',
+      headers: { 'X-XDrive-Share-Token': token },
+      body: JSON.stringify({ password, parent_id: parentID, cursor }),
+      signal,
+    }, false)
+  }
+
+  async downloadPublicShare(token: string, password: string, filename: string, nodeID?: number) {
     const response = await fetch(
       `${API_BASE}/api/v1/public/share/download-ticket`,
       {
@@ -3170,7 +3180,7 @@ export class XDriveApi {
           'Content-Type': 'application/json',
           'X-XDrive-Share-Token': token,
         },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, node_id: nodeID ?? 0 }),
       },
     )
     if (!response.ok) {

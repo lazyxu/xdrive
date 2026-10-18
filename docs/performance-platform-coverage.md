@@ -1,5 +1,13 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## SH-P001 · shared-folder public page (2026-10-18)
+
+[Shared-folder performance protocol](folder-share-performance.md) and [immutable original SH-P001 n3 evidence](performance-evidence/folder-share-100k-public-metadata/README.md) record one **accepted genuine PostgreSQL17 Server/Gin HTTP metadata** baseline: 100,000 Node directory metadata, 1,000×100 keyset pages, n3 complete walks 16,894 / 16,699 / 16,630ms, full-walk P50 **16,699ms**, slowest page **31.165ms**, 5,733,793 HTTP body bytes each; first accurate-source [CI #39099608613](https://github.com/lazyxu/xdrive/actions/runs/39099608613) passed original freeze. This is **not** any of the six Client/GUI columns and not 100k original physical media CAS. AFTER=N/A, speedup=N/A. Separately, the true Go/PostgreSQL cancellation **single-source n1** [subtest #39099609595](https://github.com/lazyxu/xdrive/actions/runs/39099609595) observed 1 blocked SQL waiter and measured **0.290ms** `Request.Context` cancellation to handler exit with zero residual SQL waiters, below a frozen 160ms limit; still **not** a six-client or user-task-cancellation benchmark. Shared MUI and Web code cannot stand in for a real installed-PWA/browser test.
+
+| Independent new public-folder workload | Desktop Electron | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| Real 100k-child public share browsing, signed descendant file download and Go canceled navigation | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
 ## OBS-P002 Go-only evidence (2026-10-17, six client cells unchanged)
 
 [Exactly measured Go #39023778259](https://github.com/lazyxu/xdrive/actions/runs/39023778259): old unchanged HTTP observer n3 P50 67.25ns/op/0B/0alloc, old cumulative read P50 351.8ns/464B/2alloc; new once/minute memory-only sample P50 **118.4ns/0B/0alloc** and admin recent read P50 **468.3ns/568B/3alloc**. These are Server unit-level timings and **not** any real Desktop/Web/Mobile/PWA Gallery/Explorer/4GiB workload results. Evidence [original 4-file zip](performance-evidence/obs-p002/README.md); all six OBS-P002 GUI cells remain Not measured.

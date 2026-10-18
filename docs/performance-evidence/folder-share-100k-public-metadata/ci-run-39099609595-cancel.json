@@ -1,0 +1,17 @@
+{
+  "workload_id": "SH-P001/request-scoped-public-folder-real-PostgreSQL-lock-wait-cancel",
+  "source_head": "76a75e288b2b02b927abaa540b9432d6caba4481",
+  "ci_run_id": 39099609595,
+  "ci_job_id": 117593216035,
+  "n": 1,
+  "status": "measured regression subtest PASS; full CI is separately gated",
+  "test": "TestFolderShareReadRequestContextCancellation",
+  "real_postgresql_access_exclusive_lock": true,
+  "waiters_before_cancel": 1,
+  "request_context_handler_exit_ms": 0.29,
+  "remaining_sql_lock_waiters": 0,
+  "frozen_max_cancel_ms": 160,
+  "after_optimization": null,
+  "speedup": null,
+  "scope_note": "single authentic Gin HTTP and PG17 Context canceled while blocked on xd_nodes; NOT 100k physical media or durable task cancel"
+}

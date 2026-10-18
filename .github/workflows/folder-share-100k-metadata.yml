@@ -1,0 +1,107 @@
+name: SH-P001 Real 100k Public Folder Page Baseline
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  real-folder-share-100k-metadata:
+    if: github.head_ref == 'feat/folder-share-bounded-readonly-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_FOLDER_SHARE_100K_PERF: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Validate exact source and benchmark formatting
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test -z "$(gofmt -l internal/api/folder_shares.go internal/api/folder_shares_integration_test.go internal/api/shares.go)"
+      - name: Three fresh PostgreSQL17 owner-capability 100k keyset page measurements
+        run: |
+          set -euo pipefail
+          out="perf-results/folder-share-100k"
+          mkdir -p "$out"
+          printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$out/source.txt"
+          go version >> "$out/source.txt"
+          for sample in 1 2 3; do
+            export XD_FOLDER_SHARE_SAMPLE="$sample"
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+              -o "$out/sample-$sample.time" \
+              go test -mod=readonly ./internal/api \
+                -run '^TestFolderShare100kRealPostgresPageBaseline$' \
+                -count=1 -timeout=12m -v | tee "$out/sample-$sample.log"
+          done
+          python3 - "$out" <<'PY'
+          import json, pathlib, re, statistics, sys
+          out = pathlib.Path(sys.argv[1])
+          records = []
+          for i in (1, 2, 3):
+              log = (out / f"sample-{i}.log").read_text()
+              matches = re.findall(r"FOLDER_SHARE_100K (\{[^\n]+\})", log)
+              assert len(matches) == 1, (i, len(matches))
+              x = json.loads(matches[0])
+              assert x["sample"] == str(i), (i, x["sample"])
+              assert x["entries"] == 100000 and x["pages"] == 1000, x
+              assert x["http_body_bytes"] > 2000000, x
+              assert x["page_p50_ms"] <= x["page_p95_ms"] <= x["page_worst_ms"], x
+              assert x["seed_ms"] > 0 and x["page_walk_ms"] > 0, x
+              assert x["scope"].startswith("real PostgreSQL17 metadata Nodes"), x
+              (out / f"sample-{i}.json").write_text(json.dumps(x, indent=2, sort_keys=True) + "\n")
+              records.append(x)
+          summary = {
+              "workload": "SH-P001/real-postgresql17-100k-keyset-public-folder-metadata",
+              "source": (out / "source.txt").read_text().splitlines()[0],
+              "n": 3,
+              "physical_CAS_originals": 0,
+              "status": "original CURRENT measurement (not BEFORE/AFTER optimization)",
+              "samples": records,
+              "page_walk_p50_ms": statistics.median(x["page_walk_ms"] for x in records),
+              "page_p95_max_ms": max(x["page_p95_ms"] for x in records),
+              "page_worst_max_ms": max(x["page_worst_ms"] for x in records),
+              "pass_budget": all(
+                x["page_walk_ms"] <= 60000
+                and x["page_p95_ms"] <= 500
+                and x["page_worst_ms"] <= 2000
+                for x in records),
+              "after": None,
+              "speedup": None,
+          }
+          (out / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+          print("SH_P001_100K_ORIGINAL_CURRENT_N3", json.dumps(summary, separators=(",", ":")))
+          if not summary["pass_budget"]:
+              raise SystemExit("genuine source-exact 100k public-folder metadata budget RED; retain raw evidence and profile before optimizing")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p001-100k-public-folder-metadata-n3-${{ github.run_id }}
+          path: perf-results/folder-share-100k/
+          if-no-files-found: warn
+          retention-days: 30

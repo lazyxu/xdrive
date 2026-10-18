@@ -1670,7 +1670,7 @@ const desktopTransferLifecycleChildBatchSize = 1000
           : undefined,
       downloadLabel: node.type === 'file' ? '另存为…' : '下载到…',
       onReveal: () => { void openLocalNode(node, true) },
-      onShare: node.type === 'file' ? () => onOpenShares(node) : undefined,
+      onShare: () => onOpenShares(node),
       onHistory: node.type === 'file'
         ? () => onOpenHistory(node, searchByID.get(node.id)?.crumbs ?? crumbs)
         : undefined,

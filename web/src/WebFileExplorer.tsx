@@ -1065,7 +1065,7 @@ export default function WebFileExplorer({
       favorite: favorites.favoriteIDs.has(node.id),
       favoriteDisabled: favorites.busyID !== null,
       onDownload: () => { void downloadSelected([item]) },
-      onShare: node.type === 'file' ? () => onShare(node) : undefined,
+      onShare: () => onShare(node),
       onHistory: node.type === 'file' ? () => onHistory(node) : undefined,
       onDelete: () => onRemove(node),
     })
@@ -1117,7 +1117,7 @@ export default function WebFileExplorer({
       } catch (error) {
         onError(error)
       }
-    } else if (node.type === 'file') {
+    } else {
       onShare(node)
     }
   }

@@ -402,7 +402,7 @@ func TestCloudManagementAPIs(t *testing.T) {
 				t.Fatalf("version restore If-Match=%q", got)
 			}
 			_ = json.NewEncoder(w).Encode(Node{ID: 9, Name: "report.pdf", Type: "file", Revision: 5})
-		case "/api/v1/files/9/shares":
+		case "/api/v1/nodes/9/shares":
 			if r.Method == http.MethodGet {
 				_ = json.NewEncoder(w).Encode([]FileShare{{ID: 21, NodeID: 9, Status: "active"}})
 				return

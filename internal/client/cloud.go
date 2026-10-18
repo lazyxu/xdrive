@@ -122,13 +122,13 @@ func (c *Client) RestoreVersion(ctx context.Context, nodeID, currentRevision, ve
 
 func (c *Client) CreateShare(ctx context.Context, nodeID uint64, input CreateShareInput) (CreatedFileShare, error) {
 	var out CreatedFileShare
-	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/files/%d/shares", nodeID), input, &out)
+	err := c.json(ctx, http.MethodPost, fmt.Sprintf("/api/v1/nodes/%d/shares", nodeID), input, &out)
 	return out, err
 }
 
 func (c *Client) Shares(ctx context.Context, nodeID uint64) ([]FileShare, error) {
 	var out []FileShare
-	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/files/%d/shares", nodeID), nil, &out)
+	err := c.json(ctx, http.MethodGet, fmt.Sprintf("/api/v1/nodes/%d/shares", nodeID), nil, &out)
 	return out, err
 }
 

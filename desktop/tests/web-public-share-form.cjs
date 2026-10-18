@@ -305,3 +305,97 @@ test('Public Share sustained first read reveals only overlay progress and preser
   assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
   assert.equal(renderer.root.findAll(node => typeof node.type === 'string' && node.props['data-xdrive-public-share-delayed-feedback'] === true).length, 0)
 })
+
+
+test('Shared folder browser keeps at most one 100-item mounted page and downloads one descendant', async (t) => {
+  const calls = []
+  const downloads = []
+  const rows = (start) => Array.from({ length: 100 }, (_, i) => ({
+    id: start + i, name: `item-${start + i}.txt`, type: 'file', size: 12,
+  }))
+  class Api {
+    async publicShare(token) {
+      assert.equal(token, 'test-share-token')
+      return {
+        type: 'dir', name: 'Shared Album', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null,
+      }
+    }
+    async publicShareChildren(token, password, parentID, cursor, signal) {
+      calls.push({ token, password, parentID, cursor, signal })
+      return { parent_id: 42, items: cursor === 0 ? rows(1) : rows(101),
+        next_cursor: cursor === 0 ? 100 : 0 }
+    }
+    async downloadPublicShare(token, password, name, nodeID) {
+      downloads.push({ token, password, name, nodeID })
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+
+  async function click(label) {
+    const button = renderer.root.findAllByType('button')
+      .find((item) => textContent(item.children).trim() === label)
+    assert.ok(button, `missing ${label} button`)
+    await act(async () => { button.props.onClick() })
+  }
+  const visibleRows = () => renderer.root.findAll(
+    (node) => typeof node.type === 'string' && node.props.role === 'listitem')
+
+  await click('浏览文件夹')
+  assert.equal(visibleRows().length, 100, 'first page must be bounded')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].cursor, 0)
+  assert.ok(textContent(renderer.toJSON()).includes('item-1.txt'))
+  assert.ok(!textContent(renderer.toJSON()).includes('item-101.txt'))
+
+  await click('下一页')
+  assert.equal(visibleRows().length, 100, 'second page must replace rather than append old rows')
+  assert.equal(calls.length, 2)
+  assert.equal(calls[1].cursor, 100)
+  assert.ok(!textContent(renderer.toJSON()).includes('item-1.txt'))
+  assert.ok(textContent(renderer.toJSON()).includes('item-101.txt'))
+
+  await click('下载')
+  assert.deepEqual(downloads, [{
+    token: 'test-share-token', password: '', name: 'item-101.txt', nodeID: 101,
+  }])
+
+  await click('上一页')
+  assert.equal(visibleRows().length, 100, 'Back must not grow retained rows')
+  assert.equal(calls.length, 3)
+  assert.equal(calls[2].cursor, 0)
+})
+
+test('Unmounting an unconsumed public-folder page aborts its actual signal', async () => {
+  let signal
+  let resolvePage
+  class Api {
+    async publicShare() {
+      return {
+        type: 'dir', name: 'Shared Album', size: 0, requires_password: false,
+        max_downloads: 0, download_count: 0, expires_at: null,
+      }
+    }
+    publicShareChildren(_token, _password, _parentID, _cursor, inFlightSignal) {
+      signal = inFlightSignal
+      return new Promise((resolve) => { resolvePage = resolve })
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  const button = renderer.root.findAllByType('button')
+    .find(item => textContent(item.children).trim() === '浏览文件夹')
+  assert.ok(button)
+  await act(async () => { button.props.onClick() })
+  assert.ok(signal && !signal.aborted, 'real in-flight directory read must have AbortSignal')
+  await act(async () => { renderer.unmount() })
+  assert.equal(signal.aborted, true, 'leaving the public share must stop its unused network request')
+  await act(async () => {
+    resolvePage({ parent_id: 1, items: [], next_cursor: 0 })
+    await Promise.resolve()
+  })
+})
