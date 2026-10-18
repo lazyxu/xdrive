@@ -880,6 +880,8 @@ declare global {
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyAliDNSReadVerify>>
         cloudAdminCaddyHTTPSPreflight: () =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSPreflight>>
+        cloudAdminCaddyHTTPSHostPlan: () =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSHostPlan>>
         cloudAdminCaddyAliDNSConfig: () =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyAliDNSConfig>>
         cloudSetAdminCaddyAliDNS: (input: import('../../../ui/shared/src').XDriveCaddyAliDNSUpdate) =>

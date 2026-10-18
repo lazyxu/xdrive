@@ -1740,6 +1740,11 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    loadCaddyHTTPSHostPlan: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminCaddyHTTPSHostPlan()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
 
     loadCaddyAliDNSConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminCaddyAliDNSConfig()

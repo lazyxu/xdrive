@@ -134,6 +134,18 @@ export type XDriveCaddyPreflightCheck = {
   state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
   detail: string
 }
+// The seven canonical, nonsecret fields returned by the administrator-only
+// dry-run Host Plan. It is never a permit to restart or apply Caddy.
+export type XDriveCaddyHTTPSHostPlan = {
+  protocol: 'xdrive.caddy.https.host-plan.v1'
+  desired_revision: number
+  credential_revision: number
+  domain_enabled: boolean
+  domain: string
+  lan_enabled: boolean
+  lan_ip: string
+}
+
 export type XDriveCaddyHTTPSPreflight = {
   checked_at: string
   action: 'enable' | 'disable' | 'unset'

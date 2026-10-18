@@ -728,6 +728,7 @@ const agent = Object.freeze({
   cloudVerifyAdminCaddyAliDNSRead: (input: { desired_revision: number; credential_revision: number }) =>
     ipcRenderer.invoke('agent:cloud-verify-admin-caddy-alidns-read', input),
   cloudAdminCaddyHTTPSPreflight: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-preflight'),
+  cloudAdminCaddyHTTPSHostPlan: () => ipcRenderer.invoke('agent:cloud-admin-caddy-https-host-plan'),
   cloudAdminCaddyAliDNSConfig: () => ipcRenderer.invoke('agent:cloud-admin-caddy-alidns'),
   cloudSetAdminCaddyAliDNS: (input: { revision: number; access_key_id?: string; access_key_secret?: string; clear?: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-caddy-alidns', input),

@@ -43,3 +43,10 @@ python3 scripts/caddy-https-host-plan.py \
 ## 回归
 
 CI server-validation 执行 `python3 scripts/test-caddy-https-host-plan.py`。离线测试覆盖 IP-only、双入口、启停/切换、错 IP/FQDN/端口/Bind、双关、缺少 AliDNS 修订、重复与未知字段、错误摘要、损坏或可替换文件、FIFO、软链接与保守无密钥输出。Go 纯函数输出与 Python 严格规范必须一致，新的管理员只读路由仍在 requireAdmin 保护下。只有本工作提交完整准确 HEAD CI（Go PostgreSQL Race、Linux/Windows、Web/Desktop、Rootless、制品、Final Gate）全绿且 GitHub clean，才可合并。
+
+## NET-M5-B2-UI — 在系统依赖页面核对应用计划（2026-10-18）
+
+管理员可以在 **系统依赖 → Caddy → 检测** 点击“查看宿主机应用计划（只读）”，不需要手动调用 REST API。Web、Mobile Web、PWA、Desktop 共用同一 MUI 面板，访问管理员专用 Host Plan GET；Desktop 使用当前认证 Agent IPC，显式检查 `admin-services` 能力。UI 只显示规范的双入口启停意图、局域网 IP/域名以及已保存的 HTTPS/AliDNS 修订号，不会读取或复制加密凭据、宿主机环境文件或 Root CA。7 字段响应接受严格运行时 Schema；旧 Server/Agent、不完整字段、双入口同时关闭、非法 IP/FQDN、额外 `apply_supported`/applied 字段、无效修订都会显式报错。保存与历史回滚后，复用现有失效信号清空旧预览，避免误把缓存计划当成当前应用状态。
+
+此按钮只提供**保存值预览**，不是宿主机已应用验收；本机 HTTPS 的独立检测仍在原预检页。实际“应用配置并重启”需要单独开发并通过物理验收，受限 Host Manager/Rescue/超时回滚门禁没有因此放宽，现有 Caddy 启停仍禁用。
+

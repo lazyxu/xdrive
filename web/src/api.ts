@@ -821,6 +821,12 @@ export class XDriveApi {
     )
   }
 
+  adminCaddyHTTPSHostPlan() {
+    return this.request<import('../../ui/shared/src').XDriveCaddyHTTPSHostPlan>(
+      '/api/v1/admin/services/caddy/https/host-plan', { cache: 'no-store' },
+    )
+  }
+
   adminCaddyAliDNSConfig() {
     return this.request<import('../../ui/shared/src').XDriveCaddyAliDNSConfig>(
       '/api/v1/admin/services/caddy/alidns', { cache: 'no-store' },
