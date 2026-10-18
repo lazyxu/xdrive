@@ -193,6 +193,8 @@ import {
   type AgentMediaBaiduMapConsentInput,
   type AgentMediaPlacesViewportBounds,
   type AgentMediaPlacesViewportPage,
+  type AgentBaiduNativeViewportBounds,
+  type AgentBaiduNativeViewportPage,
   type AgentMediaMemory,
   type AgentMediaDuplicateGroupList,
   type AgentMediaBurstReviewList,
@@ -3046,6 +3048,36 @@ function registerIPCHandlers() {
       }
       return requireAgentClient().mediaPlacesViewport(
         obj as unknown as AgentMediaPlacesViewportBounds, limit, offset, signal,
+      )
+    }), false))
+
+  ipcMain.handle('agent:get-media-baidu-native-viewport', (
+    event, bounds: unknown, limit: unknown = 64, offset: unknown = 0,
+    requestID: unknown = undefined,
+  ) => runAgentAction<AgentBaiduNativeViewportPage>(
+    () => viewportRequests.run(event.sender, requestID, async signal => {
+      const hello = await requireAgentLifecycle().ensureRunning()
+      requireAgentCapability(hello, 'media-gallery')
+      if (!bounds || typeof bounds !== 'object' || Array.isArray(bounds)) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid BD09 viewport bounds.')
+      }
+      const v = bounds as Record<string, unknown>
+      if (Object.keys(v).length !== 5 ||
+          Object.keys(v).some(k => !['coordinate_space', 'west', 'south', 'east', 'north'].includes(k)) ||
+          v.coordinate_space !== 'bd09ll' ||
+          !['west', 'south', 'east', 'north'].every(k =>
+            typeof v[k] === 'number' && Number.isFinite(v[k])) ||
+          (v.west as number) < -180 || (v.west as number) > 180 ||
+          (v.east as number) < -180 || (v.east as number) > 180 ||
+          (v.south as number) < -90 || (v.north as number) > 90 ||
+          (v.south as number) >= (v.north as number) ||
+          v.west === v.east || (v.west === 180 && v.east === -180) ||
+          typeof limit !== 'number' || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          typeof offset !== 'number' || !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000) {
+        throw new AgentIPCError('invalid_input', 0, 'Invalid BD09 viewport geometry or window.')
+      }
+      return requireAgentClient().mediaBaiduNativeViewport(
+        v as unknown as AgentBaiduNativeViewportBounds, limit, offset, signal,
       )
     }), false))
 

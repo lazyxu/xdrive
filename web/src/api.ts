@@ -56,6 +56,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduNativeViewportBounds,
+  MediaBaiduNativeViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -1496,6 +1498,43 @@ export class XDriveApi {
       `/api/v1/media/places/viewport?${query.toString()}`,
       { signal, cache: 'no-store' },
     )
+  }
+
+  // An authenticated native BD09LL viewport is *not* a WGS84 photo
+  // query, is not an SDK loader and never carries Browser AK or provider URLs.
+  mediaBaiduNativeViewport(
+    bounds: MediaBaiduNativeViewportBounds, limit = 64, offset = 0, signal?: AbortSignal,
+  ) {
+    if (!bounds || bounds.coordinate_space !== 'bd09ll' ||
+        ![bounds.west, bounds.south, bounds.east, bounds.north].every(Number.isFinite) ||
+        bounds.west < -180 || bounds.west > 180 ||
+        bounds.east < -180 || bounds.east > 180 ||
+        bounds.south < -90 || bounds.north > 90 ||
+        bounds.south >= bounds.north || bounds.west === bounds.east ||
+        (bounds.west === 180 && bounds.east === -180) ||
+        !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+        !Number.isSafeInteger(offset) || offset < 0 || offset > 10000000) {
+      return Promise.reject(new Error('Invalid BD09 native viewport'))
+    }
+    const q = new URLSearchParams({
+      west: String(bounds.west), south: String(bounds.south),
+      east: String(bounds.east), north: String(bounds.north),
+      limit: String(limit), offset: String(offset),
+    })
+    return this.request<MediaBaiduNativeViewportPage>(
+      `/api/v1/media/places/baidu-jsapi/viewport?${q.toString()}`,
+      { signal, cache: 'no-store' },
+    ).then(page => {
+      if (page.coordinate_space !== 'bd09ll' ||
+          page.index_scope !== 'explicit_opt_in_only' ||
+          page.offset !== offset || page.limit !== limit ||
+          !Number.isSafeInteger(page.total_count) || page.total_count < 0 ||
+          !Array.isArray(page.items) || page.items.length > limit ||
+          page.has_more !== (page.total_count > offset + page.items.length)) {
+        throw new Error('Invalid BD09 native viewport response')
+      }
+      return page
+    })
   }
 
   mediaPlaces(limit = 24) {

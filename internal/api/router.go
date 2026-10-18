@@ -274,6 +274,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
 	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
+	// A3c13: signed-release gated exact BD09 Owner opt-in viewport, not WGS84.
+	authed.GET("/media/places/baidu-jsapi/viewport", s.listBaiduNativeMapViewport)
 	// A signed release is required before the authenticated Owner can mint a map Cookie.
 	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)

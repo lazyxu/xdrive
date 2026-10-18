@@ -42,9 +42,11 @@ func (b baiduPhotoMapBounds) valid() bool {
 }
 
 type baiduPhotoMapPoint struct {
-	AssetID   uint64
-	Latitude  float64
-	Longitude float64
+	// Only the derived BD-09 point, no original WGS84/GPS provenance.
+	AssetID   uint64  `json:"asset_id"`
+	NodeID    uint64  `json:"node_id"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
 }
 
 type baiduPhotoMapPage struct {
@@ -107,7 +109,7 @@ func queryBaiduPhotoMapViewport(
 		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport cancelled")
 	}
 	var items []baiduPhotoMapPoint
-	if err := query.Select("p.asset_id AS asset_id, p.latitude AS latitude, p.longitude AS longitude").
+	if err := query.Select("p.asset_id AS asset_id, p.primary_node_id AS node_id, p.latitude AS latitude, p.longitude AS longitude").
 		Order("p.asset_id ASC").Limit(limit).Offset(offset).Scan(&items).Error; err != nil {
 		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport page unavailable")
 	}

@@ -33,6 +33,8 @@ import type {
   MediaPlacesPage,
   MediaPlacesViewportBounds,
   MediaPlacesViewportPage,
+  MediaBaiduNativeViewportBounds,
+  MediaBaiduNativeViewportPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -148,6 +150,9 @@ export interface XDriveMediaGalleryPort {
   listPlacesViewport?: (
     bounds: MediaPlacesViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaPlacesViewportPage>>
+  listBaiduNativeViewport?: (
+    bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
+  ) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeViewportPage>>
   getBaiduMapProvider?: () => Promise<XDriveMediaGalleryTransportResult<XDriveBaiduMapProviderInfo>>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<Blob>>
   getBaiduMapConsent?: (nodeID: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
@@ -544,6 +549,11 @@ export function createXDriveMediaGalleryDataSource(
     listPlacesViewport: port.listPlacesViewport
       ? (bounds, limit, offset, signal) => resolveXDriveTransport(
           port.listPlacesViewport!(bounds, limit, offset, signal),
+        )
+      : undefined,
+    listBaiduNativeViewport: port.listBaiduNativeViewport
+      ? (bounds, limit, offset, signal) => resolveXDriveTransport(
+          port.listBaiduNativeViewport!(bounds, limit, offset, signal),
         )
       : undefined,
     getBaiduMapProvider: port.getBaiduMapProvider
