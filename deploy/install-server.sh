@@ -2173,9 +2173,12 @@ if [[ -n "$(env_value XD_DOMAIN)" ]]; then
   public_url="$(https_url "$(env_value XD_DOMAIN)" "$(env_value XD_HTTPS_PORT)")"
   echo "xDrive is running at: $public_url"
   echo "TLS mode: AliDNS DNS-01; inbound TCP $(env_value XD_HTTPS_PORT) must reach this server. Ports 80/443 are not required for ACME."
-elif [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
+fi
+# Report BOTH active access URLs. Domain configuration must never hide the
+# separately enabled LAN IP address after a successful install or upgrade.
+if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then
   echo "xDrive LAN HTTPS is running at: $(https_url "$(env_value XD_LAN_HTTPS_IP)" "$(env_value XD_HTTPS_PORT)")"
-elif [[ "$(env_value XD_LEGACY_HTTP_ONLY)" == "1" ]]; then
+elif [[ -z "$(env_value XD_DOMAIN)" && "$(env_value XD_LEGACY_HTTP_ONLY)" == "1" ]]; then
   echo "Legacy HTTP-only deployment retained on the loopback Web port $(env_value XD_WEB_PORT)."
 fi
 if [[ -n "$(env_value XD_LAN_HTTPS_IP)" ]]; then

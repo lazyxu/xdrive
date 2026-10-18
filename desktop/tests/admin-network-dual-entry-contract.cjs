@@ -26,11 +26,17 @@ test('Caddy network policy is two separate audited, revisioned desired entries',
   }
   assert.match(preload, /lan_enabled\?: boolean/)
   assert.match(compose, /XD_LAN_HTTPS_IP: \$\{XD_LAN_HTTPS_IP:-\}/)
+  assert.ok((compose.match(/XD_DOMAIN: \$\{XD_DOMAIN:-\}/g) || []).length >= 2,
+    'both Caddy and Server must receive the read-only deployment domain hint')
   assert.match(api, /recordCaddyHTTPSRevisionTx/)
   assert.match(api, /validCaddyIngressSelection/)
   assert.match(api, /errCaddyHTTPSIngress/)
   assert.match(api, /recordAuditTx/)
   assert.match(api, /ApplySupported: false/)
+  assert.match(api, /desired\.Revision == 0/)
+  assert.match(api, /os\.Getenv\("XD_DOMAIN"\)/)
+  assert.match(api, /validCaddyHTTPSDomain\(hostDomain\)/)
+  assert.match(api, /strings\.ToLower\(hostDomain\)/)
   assert.match(validate, /ip\.Is4\(\) && ip\.IsPrivate\(\)/)
   assert.match(validate, /domainEnabled \|\| lanEnabled/)
 })
@@ -49,6 +55,11 @@ test('shared Caddy MUI page requires at least one enabled HTTPS entry, rejects s
   assert.match(page, /config\.host_lan_configured/)
   assert.match(page, /不代表 IP TLS 已验证/)
   assert.match(page, /仅保存期望配置（不操作 Caddy）/)
+  assert.match(page, /局域网 IP HTTPS · 默认部署入口/)
+  assert.match(page, /公网域名 HTTPS · 可选入口/)
+  assert.ok(page.indexOf('局域网 IP HTTPS · 默认部署入口') <
+    page.indexOf('公网域名 HTTPS · 可选入口'),
+    'the default LAN access method should appear first')
   assert.match(web, /XDriveServiceDependenciesPage/)
   assert.match(desk, /XDriveServiceDependenciesPage/)
   for (const bad of ['docker.sock', 'adminRestartHost', 'adminStopHost']) {

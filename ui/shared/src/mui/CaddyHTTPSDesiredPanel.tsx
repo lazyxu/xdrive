@@ -237,7 +237,7 @@ export function XDriveCaddyHTTPSDesiredPanel({
               </Typography>
             </Stack>
             <Typography variant="body2" color="text.secondary">
-              期望：{config.desired_enabled ? '启用 HTTPS' : '保持 HTTPS 禁用'}
+              公网域名 HTTPS 期望：{config.desired_enabled ? '开启' : '关闭'}
               {' · '}域名：{config.desired_domain || '未填写'}
               {' · '}内网 IP 期望：{config.desired_lan_enabled ? '开启' : '关闭'}
               {' · '}{config.desired_lan_ip || '未设置地址'}
@@ -250,18 +250,9 @@ export function XDriveCaddyHTTPSDesiredPanel({
             </Typography>
             </>)}
             {section === 'config' && (<>
-            <FormControlLabel
-              control={<Switch checked={enabled} disabled={!canEdit}
-                onChange={(event) => setEnabled(event.target.checked)} />}
-              label="启用公网域名 HTTPS（保存后不会改变当前网关）"
-            />
-            <TextField fullWidth size="small" label="期望 HTTPS 域名 (FQDN)"
-              value={domain} disabled={!canEdit}
-              onChange={(event) => setDomain(event.target.value)}
-              error={!valid}
-              placeholder="photos.example.com"
-              helperText="仅接受纯 DNS 域名，不含 https://、端口、路径、IP 或通配符。禁用时可清空。"
-            />
+            <Typography variant="subtitle2" fontWeight={700}>
+              局域网 IP HTTPS · 默认部署入口
+            </Typography>
             <FormControlLabel
               control={<Switch checked={lanEnabled} disabled={!canEdit || !supportsLAN}
                 onChange={(event) => setLANEnabled(event.target.checked)} />}
@@ -273,6 +264,21 @@ export function XDriveCaddyHTTPSDesiredPanel({
               error={Boolean(lanIP) && !validPrivateLANIP(lanIP)}
               placeholder="192.168.2.4"
               helperText="必须是标准私有 IPv4；证书通过本机 CA 签发，设备需要自行安全地信任 CA。"
+            />
+            <Typography variant="subtitle2" fontWeight={700}>
+              公网域名 HTTPS · 可选入口
+            </Typography>
+            <FormControlLabel
+              control={<Switch checked={enabled} disabled={!canEdit}
+                onChange={(event) => setEnabled(event.target.checked)} />}
+              label="启用公网域名 HTTPS（保存后不会改变当前网关）"
+            />
+            <TextField fullWidth size="small" label="期望 HTTPS 域名 (FQDN)"
+              value={domain} disabled={!canEdit}
+              onChange={(event) => setDomain(event.target.value)}
+              error={!valid}
+              placeholder="photos.example.com"
+              helperText="仅接受纯 DNS 域名，不含 https://、端口、路径、IP 或通配符。禁用时可清空。"
             />
             {!supportsLAN && <Typography variant="caption" color="warning.main">
               当前 Server/Agent 尚未报告双入口合同，禁止保存不完整的网络启停意图。

@@ -117,6 +117,35 @@ func TestAdminCaddyHTTPSDesiredRevisionAndActualStatus(t *testing.T) {
 		freshIP.ApplySupported || freshIP.HostLANIP != "192.168.2.4" {
 		t.Fatalf("fresh IP deployment did not initialize an honest default: %+v", freshIP)
 	}
+	// On a fresh deployment, the domain is an optional SECOND entry, sourced
+	// only from a canonical operator declaration. It stays unsaved/unapplied.
+	t.Setenv("XD_DOMAIN", "PHOTOS.EXAMPLE.COM")
+	dualDefault := get()
+	if dualDefault.Revision != 0 || dualDefault.Source != "default" ||
+		!dualDefault.DesiredEnabled || dualDefault.DesiredDomain != "photos.example.com" ||
+		!dualDefault.DesiredLANEnabled || dualDefault.DesiredLANIP != "192.168.2.4" ||
+		dualDefault.ApplyState != "unmanaged" || dualDefault.ApplySupported {
+		t.Fatalf("dual-entry deployment defaults were not independently reflected: %+v", dualDefault)
+	}
+	t.Setenv("XD_LAN_HTTPS_IP", "")
+	domainOnlyDefault := get()
+	if domainOnlyDefault.Revision != 0 || !domainOnlyDefault.DesiredEnabled ||
+		domainOnlyDefault.DesiredDomain != "photos.example.com" ||
+		domainOnlyDefault.DesiredLANEnabled || domainOnlyDefault.DesiredLANIP != "" ||
+		domainOnlyDefault.ApplySupported || domainOnlyDefault.ApplyState != "unmanaged" {
+		t.Fatalf("domain-only deployment default was inaccurate: %+v", domainOnlyDefault)
+	}
+	// Invalid or spoofed host domains must never become enabled admin intent.
+	for _, badDomain := range []string{"https://example.com", "localhost", "8.8.8.8",
+		"*.example.com", " photos.example.com", "photos.example.com:8443"} {
+		t.Setenv("XD_DOMAIN", badDomain)
+		invalidDomain := get()
+		if invalidDomain.DesiredEnabled || invalidDomain.DesiredDomain != "" ||
+			invalidDomain.ApplySupported {
+			t.Fatalf("unsafe host domain became an initial HTTPS choice %q: %+v", badDomain, invalidDomain)
+		}
+	}
+	t.Setenv("XD_DOMAIN", "")
 	// Invalid public or spoofed host environment never becomes a login option.
 	t.Setenv("XD_LAN_HTTPS_IP", "8.8.8.8")
 	unsafeIP := get()
