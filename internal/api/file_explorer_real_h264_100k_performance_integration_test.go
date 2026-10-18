@@ -99,8 +99,9 @@ func TestFileExplorerRealH264PosterBrowser100K(t *testing.T) {
 	}
 	cancelMode := os.Getenv("XD_FILEEXPLORER_H264_CANCEL_100K_PERF") == "1"
 	physicalMode := os.Getenv("XD_FILEEXPLORER_REAL_H264_PHYSICAL_100K_PERF") == "1"
-	if physicalMode && cancelMode {
-		t.Fatal("physical-source baseline and deliberately slow cancellation fixture must not be combined")
+	if physicalMode && cancelMode &&
+		os.Getenv("XD_P058_REAL_PHYSICAL_H264_CANCEL_100K_PERF") != "1" {
+		t.Fatal("physical-source baseline and slow cancellation may combine only in P058 opt-in fixture")
 	}
 	dsn := os.Getenv("XD_TEST_DATABASE_URL")
 	readyFile := os.Getenv("XD_FILEEXPLORER_REAL_H264_READY_FILE")
