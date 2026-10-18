@@ -183,6 +183,57 @@ def validate_compose(data):
     # Not an authenticated parsed Compose or a resource/signature verification.
 
 
+# NET-M5-B3-A: build an immutable in-memory .env CANDIDATE only.
+# The raw bytes (possibly including unrelated credentials) never leave this
+# process. Its SHA-256 is a review aid, NOT an installed revision or CAS permit.
+CANDIDATE_KEYS = ("XD_DOMAIN", "XD_LAN_HTTPS_IP", "XD_LEGACY_HTTP_ONLY")
+
+
+def render_candidate_env(plan, original):
+    check(isinstance(original, bytes) and 0 < len(original) <= 131072)
+    check(original.endswith(b"\n") and b"\r" not in original and b"\x00" not in original)
+    try:
+        source = original.decode("utf-8")
+    except UnicodeError:
+        raise Blocked() from None
+    replacements = {
+        "XD_DOMAIN": plan["domain"] if plan["domain_enabled"] else "",
+        "XD_LAN_HTTPS_IP": plan["lan_ip"] if plan["lan_enabled"] else "",
+        "XD_LEGACY_HTTP_ONLY": "0",
+    }
+    # No shell parsing, interpolation, free-form additions or secret replacement.
+    # Reject malformed/duplicate *all* assignments before computing a digest.
+    seen = set()
+    lines = []
+    for raw in source.splitlines(keepends=True):
+        check(raw.endswith("\n"))
+        line = raw[:-1]
+        if not line or line.startswith("#"):
+            lines.append(raw)
+            continue
+        parsed = LINE.fullmatch(line)
+        check(parsed is not None)
+        key = parsed.group(1)
+        check(len(key) <= 128 and key not in seen)
+        seen.add(key)
+        if key in replacements:
+            lines.append(key + "=" + replacements[key] + "\n")
+        else:
+            lines.append(raw)
+    for key in CANDIDATE_KEYS:
+        if key not in seen:
+            lines.append(key + "=" + replacements[key] + "\n")
+    candidate = "".join(lines).encode("utf-8")
+    check(0 < len(candidate) <= 131072)
+    # Do not allow a rendered candidate that violates the existing Host
+    # parser, even though this phase never writes it to disk.
+    actual = validate_env(candidate)
+    check(actual["domain"] == replacements["XD_DOMAIN"])
+    check(actual["ip"] == replacements["XD_LAN_HTTPS_IP"])
+    check(not actual["legacy"])
+    return candidate
+
+
 def mode(domain, ip):
     if domain and ip:
         return "both"
@@ -224,6 +275,12 @@ def preview(plan_file, env_file, compose_file, pinned_hash):
     installed = validate_env(snapshots[1][1][0])
     validate_compose(snapshots[2][1][0])
     changes, blockers, desired_mode = calculate_changes(plan, installed)
+    # A bind migration cannot be represented by these three fixed keys.
+    # Retain the existing readonly risk report but NEVER mint a digest for an
+    # unusable candidate until a separate reviewed bind migration exists.
+    candidate = None
+    if "https-bind-migration-required" not in blockers:
+        candidate = render_candidate_env(plan, snapshots[1][1][0])
     # Recheck all original file identities/content after every local read.
     check(all(same_snapshot(path, original, limit, secret)
               for path, original, limit, secret in snapshots))
@@ -234,6 +291,7 @@ def preview(plan_file, env_file, compose_file, pinned_hash):
         "credential_revision": plan["credential_revision"],
         "candidate_sha256": fingerprint(snapshots[0][1][0]),
         "host_environment_sha256": fingerprint(snapshots[1][1][0]),
+        "candidate_environment_sha256": fingerprint(candidate) if candidate is not None else None,
         "host_compose_sha256": fingerprint(snapshots[2][1][0]),
         "current_mode": mode(installed["domain"], installed["ip"]),
         "desired_mode": desired_mode,
