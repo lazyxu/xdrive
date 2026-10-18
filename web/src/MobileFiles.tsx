@@ -597,8 +597,12 @@ export default function MobileFiles(props: Props) {
   // finishes before the next meaningful frame. An accepted empty directory
   // is content and remains visible throughout an uncommitted navigation.
   const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !props.loading
+  // The first cold Folder GET needs the SAME 180px geometry before and
+  // after the 300ms display-only delay. A transient loading panel must never
+  // be inserted into a previously zero-height list on a slow response.
+  const coldDirectoryFirstRead = coldUnconfirmedBrowse && props.loading
   const showZeroState = totalCount === 0 &&
-    ((!zeroStatePending && !coldUnconfirmedBrowse) ||
+    (coldDirectoryFirstRead || (!zeroStatePending && !coldUnconfirmedBrowse) ||
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
       unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
@@ -2493,7 +2497,12 @@ export default function MobileFiles(props: Props) {
                 正在加载… · {arrangementLabel}{groupedLayout ? ' · 已分组' : ''}
               </Typography>
               {showZeroState ? (
-                <Box data-mobile-files-zero-state>
+                <Box data-mobile-files-zero-state
+                  data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}
+                  aria-busy={coldDirectoryFirstRead || undefined}
+                  sx={coldUnconfirmedBrowse
+                    ? { minHeight: 180, display: 'grid', placeItems: 'center' }
+                    : undefined}>
                   {unverifiedTrashEmpty ? (
                     <Box data-mobile-files-trash-first-read
                       aria-busy={props.loading || undefined}
@@ -2508,6 +2517,10 @@ export default function MobileFiles(props: Props) {
                       <Typography variant="body2" color="error.main">最近删除读取失败，请重试。</Typography>
                       <Button onClick={props.onRefresh} sx={{ minHeight: MIN_TOUCH }}>重试</Button>
                     </Stack>
+                  ) : coldDirectoryFirstRead && !zeroStateLoading ? (
+                    // Cold Directory is unverified: quiet, height-stable, no
+                    // false empty claim or first-frame loading caption.
+                    null
                   ) : (
                     <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
                   )}
