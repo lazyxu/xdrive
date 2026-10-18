@@ -487,6 +487,9 @@ declare global {
         }
       }>>
       openExternal: (url: string) => Promise<DesktopResult<{ opened: boolean }>>
+      openBaiduMapSecure: () => Promise<DesktopResult<{
+        opened: true; separate_login_required: true
+      }>>
       startNativeDragOut: (relativePath: string) => void
       copyText: (text: string) => void
       hide: () => void

@@ -575,6 +575,7 @@ export interface XDriveMediaGalleryPageProps {
   onSectionRouteChange?: (section: MediaGallerySection) => void
   onOpenViewer?: (item: MediaItem, context: XDriveMediaGalleryOpenViewerContext) => void
   onShowInFolder?: (location: NodeLocation) => void
+  onOpenSecureDesktopMap?: () => void
   onError?: (error: unknown) => void
 }
 
@@ -592,6 +593,7 @@ export function XDriveMediaGalleryPage({
   onSectionRouteChange,
   onOpenViewer,
   onShowInFolder,
+  onOpenSecureDesktopMap,
   onError,
 }: XDriveMediaGalleryPageProps) {
   const mobileGalleryViewport = useMediaQuery('(max-width:899.95px)') && mobileWebChrome
@@ -3047,6 +3049,7 @@ export function XDriveMediaGalleryPage({
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
+        onOpenSecureDesktopMap={onOpenSecureDesktopMap}
         placesCameraSnapshot={placesCameraSnapshot}
         onPlacesCameraChange={rememberPlacesCamera}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
@@ -3498,6 +3501,7 @@ export interface XDriveMediaGalleryProps {
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
+  onOpenSecureDesktopMap?: () => void
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
@@ -5199,6 +5203,7 @@ export function XDriveMediaGallery({
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
+  onOpenSecureDesktopMap,
   placesCameraSnapshot,
   onPlacesCameraChange,
   focusPlaceID,
@@ -7397,6 +7402,7 @@ export function XDriveMediaGallery({
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
+            onOpenSecureDesktopMap={onOpenSecureDesktopMap}
             initialCamera={placesCameraSnapshot}
             onCameraChange={onPlacesCameraChange}
             getBaiduMapProvider={getBaiduMapProvider}

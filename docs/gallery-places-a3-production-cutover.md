@@ -1,3 +1,9 @@
+## A3c17 · Desktop 独立 HTTPS 地图窗口（2026-10-18，JSAPI4 仍 NO-GO）
+
+已为 Desktop 增加从当前登录 Agent 所指定 HTTPS Server 地址打开的独立、非持久 Session 的 Electron BrowserWindow。它使用 xDrive 已有的 Web Gallery 路由 /#/app/gallery?section=places，因而与 Web/Mobile Web 复用同一个 Owner API、Gallery Range、VirtualCollection、Viewer 与 MUI 组件，无第二地图 Provider；原 Desktop file Renderer、全屏 App Frame 和 52px 标题栏不变。该新窗口 nodeIntegration=false、contextIsolation=true、sandbox=true，禁止任何 preload、webview、弹窗、权限及跨 Origin 请求/导航，证书由 Electron 默认 HTTPS 严格校验，不复制 Desktop Agent JWT、密码、AK 或默认 Session Cookie。首次需在独立安全窗口登录，切换 Desktop 账号或 Server、退出、认证过期/账号停用会关闭窗口。
+
+安全链路回归覆盖 HTTPS IP/域名、错误协议/路径/凭据、跨 Origin 和百度直连拒绝、主进程/Preload/组件接线；Node 合成测试不能替代真实 Electron/iOS/Android。地图 JSAPI 正式代理仍被独立签名根和资源白名单源码门禁拒绝：没有完整原始真实百度资源/HAR/泄漏审计，不能放行，也不能声称 A3 已达到生产 GO。外部许可证、两类 AK/额度及零额外费用的操作员报告已在 Issue #1798 留存，不重复要求确认。
+
 ## A3c14 · 已转换 BD09LL 相片点的原生 ClusterLayer 数据边界（2026-10-18）
 
 本阶段只提供经过 Server Owner 来源、定位同意及独立签名状态验证后的 **BD09LL 点列表**与原生百度 ClusterLayer 的安全连接适配器；**尚未挂载到产品页面，未启用真实百度动态 SDK 或生产资源代理。** Web/Mobile Web/PWA/Desktop 可使用 A3c13 相同的取消型 DataSource 接口；本实现不创建平台分叉。摄像机 Native getBounds() 坐标保持 `bd09ll`，绝不能改称照片原始 WGS84，已经官方正向转换的坐标不能再 Convertor.translate。原生点在无分页、有准确 100 以内总数时才绘制；100k/超过范围仅报告 `incomplete`，不伪造完整聚合。
