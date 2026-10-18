@@ -3355,6 +3355,43 @@ test('P59: cold Mobile Files folder reserves the same quiet 180px slot before/af
     crumbs: [{ id: 1, name: '我的文件' }] } })
 })
 
+test('P75: a cold directory before its first request never flashes a false error', async () => {
+  const countedZero = { itemCount: 0, interactionKey: 'p75-verified-empty',
+    loadedItems: new Map(), itemAt: () => undefined, onRangeChange() {}, groups: [] }
+  const panels = h => h.view.root.findAll(n => n.type === 'state-panel')
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-cold-read-slot', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(slot().props['aria-busy'], true,
+      'unrequested current-Owner folder is semantically unresolved, not failed')
+    assert.equal(panels(h).length, 0, 'initial loading=false must not show a false terminal error')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+    assert.equal(panels(h).length, 0, 'a delayed network start never inserts an intermediate error/loading frame')
+    await h.update({ loading: true })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(panels(h).length, 0, 'the real pending GET shares the same silent geometry')
+    await h.update({ loading: false })
+    assert.equal(slot().props['aria-busy'], undefined)
+    assert.equal(panels(h)[0]?.props.message,
+      '文件夹内容尚未确认，请刷新页面后重试。',
+      'a real pending→terminal failure still reports the existing recovery guidance')
+    await h.update({ sort: { key: 'size', direction: 'asc' } })
+    assert.equal(slot().props['aria-busy'], true,
+      'the prior arrangement error must not leak into a new query key')
+    assert.equal(panels(h).length, 0)
+    await h.update({ loading: true })
+    assert.equal(panels(h).length, 0)
+    await h.update({ loading: false, virtualCollection: countedZero })
+    assert.equal(panels(h)[0]?.props.message, '此文件夹为空',
+      'only accepted counted Server zero may show the empty folder')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, {
+    saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { items: [], loading: false, requestedDirectoryID: 1,
+      crumbs: [{ id: 1, name: '我的文件' }] },
+  })
+})
+
 test('Mobile Files failed cold first Range cannot claim an authoritative empty folder', async () => {
   const panels = h => h.view.root.findAll(n => n.type === 'state-panel')
   await withView(async h => {
@@ -4442,4 +4479,30 @@ test('P74 Mobile Recent/Favorites keep an honest 180px first-read slot with no 3
     recentItems: [], favorites: [], recentLoading: true, favoritesLoading: true,
     recentReadState: 'unverified', favoritesReadState: 'unverified',
   } })
+})
+
+
+test('P75: unrelated file operation busy cannot certify that a cold directory GET failed', async () => {
+  await withView(async h => {
+    const panel = () => h.view.root.findAll(n => n.type === 'state-panel')
+    const slot = () => find(h.view, 'data-mobile-files-cold-read-slot', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(panel().length, 0)
+    await h.update({ loading: true, directoryLoading: false })
+    assert.equal(panel().length, 0, 'composite FileOperation pending must keep current directory unverified')
+    await h.update({ loading: false, directoryLoading: false })
+    assert.equal(panel().length, 0,
+      'operation completion must not show a false directory failure')
+    assert.equal(slot().props['aria-busy'], true)
+    await h.update({ loading: true, directoryLoading: true })
+    assert.equal(panel().length, 0)
+    await h.update({ loading: false, directoryLoading: false })
+    assert.equal(panel()[0]?.props.message,
+      '文件夹内容尚未确认，请刷新页面后重试。',
+      'only a real directory GET lifecycle may authorize its terminal failure')
+  }, {
+    saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { items: [], loading: false, directoryLoading: false,
+      requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }] },
+  })
 })

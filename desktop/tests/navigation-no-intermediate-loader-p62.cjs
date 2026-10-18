@@ -49,3 +49,29 @@ test('P62 first-frame and sustained Directory GETs never paint navigation loadin
   assert.ok(gallery.includes('data-xdrive-gallery-load-error'))
   assert.ok(mobile.includes('文件夹内容尚未确认，请刷新页面后重试。'))
 })
+
+
+test('P75 Mobile Files unrequested directory remains silent until a real first-Range terminal failure', () => {
+  const mobile = read('web/src/MobileFiles.tsx')
+  const wide = read('ui/shared/src/mui/FileExplorer.tsx')
+  const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
+  for (const marker of [
+    "const coldReadScope = [",
+    "props.lifecycleKey, directoryID ?? 0, props.sort.key, props.sort.direction,",
+    "const coldReadAttemptRef = useRef({ scope: coldReadScope, began: false })",
+    "coldReadAttemptRef.current = { scope: coldReadScope, began: false }",
+    "const ownerDirectoryLoading = props.directoryLoading ?? props.loading",
+    "if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true",
+    "const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&",
+    "const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !coldDirectoryReadFailed",
+    "aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}",
+    "coldDirectoryFirstRead || coldDirectoryReadUnconfirmed ||",
+    "coldDirectoryReadFailed ? '文件夹内容尚未确认，请刷新页面后重试。'",
+  ]) assert.ok(mobile.includes(marker), 'missing actual pre-request quiet/verified failure fence: ' + marker)
+  assert.ok(wide.includes('data-xdrive-file-explorer-cold-first-range'))
+  assert.ok(gallery.includes('data-xdrive-gallery-cold-pending'))
+  assert.ok(mobile.includes('data-xdrive-file-explorer-scroll-host'))
+  const web = read('web/src/WebFileExplorer.tsx')
+  assert.ok(web.includes('directoryLoading={loading}'),
+    'cold directory receipt must use only real CloudFiles GET, not composite Search/Operation busy')
+})
