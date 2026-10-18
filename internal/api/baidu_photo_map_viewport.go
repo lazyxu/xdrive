@@ -78,7 +78,37 @@ func queryBaiduPhotoMapViewport(
 	}
 	readCtx, cancel := context.WithTimeout(ctx, baiduPhotoMapQueryTimeout)
 	defer cancel()
-	query := db.WithContext(readCtx).
+	query := baiduPhotoMapOwnerEligibleQuery(readCtx, db, ownerID, bounds, projection)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport count unavailable")
+	}
+	if err := readCtx.Err(); err != nil {
+		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport cancelled")
+	}
+	var items []baiduPhotoMapPoint
+	if err := query.Select("p.asset_id AS asset_id, p.primary_node_id AS node_id, p.latitude AS latitude, p.longitude AS longitude").
+		Order("p.asset_id ASC").Limit(limit).Offset(offset).Scan(&items).Error; err != nil {
+		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport page unavailable")
+	}
+	if items == nil {
+		items = []baiduPhotoMapPoint{}
+	}
+	return baiduPhotoMapPage{
+		Items: items, TotalCount: total,
+		Offset: offset, Limit: limit, HasMore: total > int64(offset)+int64(len(items)),
+	}, nil
+}
+
+// baiduPhotoMapOwnerEligibleQuery is the SINGLE Owner/consent/source-version
+// predicate shared by precise photo Range and bounded 100k-safe map grid cells.
+// Do not loosen any join here: stale or revoked index rows must disappear
+// before counts, grouping, or sampled geometry can be computed.
+func baiduPhotoMapOwnerEligibleQuery(
+	ctx context.Context, db *gorm.DB, ownerID uint64,
+	bounds baiduPhotoMapBounds, projection string,
+) *gorm.DB {
+	query := db.WithContext(ctx).
 		Table("xd_baidu_photo_map_positions AS p").
 		Joins("JOIN xd_users AS u ON u.id = p.owner_id AND u.disabled_at IS NULL AND u.must_change_password = FALSE").
 		Joins("JOIN xd_photo_assets AS pa ON pa.id = p.asset_id AND pa.owner_id = p.owner_id AND pa.primary_node_id = p.primary_node_id").
@@ -101,23 +131,5 @@ func queryBaiduPhotoMapViewport(
 	} else {
 		query = query.Where("(p.longitude >= ? OR p.longitude <= ?)", bounds.West, bounds.East)
 	}
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport count unavailable")
-	}
-	if err := readCtx.Err(); err != nil {
-		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport cancelled")
-	}
-	var items []baiduPhotoMapPoint
-	if err := query.Select("p.asset_id AS asset_id, p.primary_node_id AS node_id, p.latitude AS latitude, p.longitude AS longitude").
-		Order("p.asset_id ASC").Limit(limit).Offset(offset).Scan(&items).Error; err != nil {
-		return baiduPhotoMapPage{}, fmt.Errorf("baidu map viewport page unavailable")
-	}
-	if items == nil {
-		items = []baiduPhotoMapPoint{}
-	}
-	return baiduPhotoMapPage{
-		Items: items, TotalCount: total,
-		Offset: offset, Limit: limit, HasMore: total > int64(offset)+int64(len(items)),
-	}, nil
+	return query
 }

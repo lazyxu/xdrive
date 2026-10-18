@@ -1,3 +1,11 @@
+## A3c19 · 100k-safe Owner BD09 派生位置 8×8 有界聚合（2026-10-18）
+
+新增真实 Go Server `GET /api/v1/media/places/baidu-jsapi/cells?west=...&south=...&east=...&north=...`，继续沿用原 `/viewport` 的 **当前 Owner JWT/SessionVersion、撤销 Epoch、实际签名发布**三重检查（查询前、SQL 后、写出前），未批准动态发布仍返回 503。坐标帧严格为 `bd09ll`；未知字段、重复参数、任意 AK、伪造 WGS84、异常范围或取消请求一律拒绝。**没有任何新地图 Provider、百度网络调用、Browser AK 或原始 WGS84 位置暴露。**
+
+所有可见数据与原始 precise Viewport **复用完全相同**的 Owner+PhotoAsset+原始有效 GPS+Node/MediaMetadata revision+逐资产显式同意未过期 JOIN 谓词。单条 PostgreSQL 语句对**视窗全部合格照片**按固定 8×8 网格进行分组，`COUNT(*) OVER(PARTITION BY ...)` 汇总真实数量，`ROW_NUMBER` 在每格选中一张实际照片的成对 BD09 坐标与 Asset/Node ID；不使用人工网格中心冒充照片位置，不把前 100 张算作全部。返回 `{coordinate_space,index_scope,grid_columns:8,grid_rows:8,total_count,cells:[...]}`，最多 64 个网格对象，支持跨 ±180° 视窗；旧精确分页 /viewport 不改变。
+
+测试：真实 PostgreSQL Owner 隔离/同意/修订与跨日界线查询复用源 fixture；同 bin 多照片准确计数与单张真实代表坐标；新 Gin 精确路由未签名不可用、严格参数、无 Cookie/AK 原始坐标泄漏；合成 100k 响应体算术 64-cell 上界。**合成 100k 不等于真实 100k 性能实测**，还需真实 PostgreSQL 100k 和 Web/Mobile/Desktop 物理跑分、ClusterLayer 数字/缩略图交互的后续 A3c20/C1 测试。此阶段仍 **NO-GO**：尚无私有 9 组真 HAR、源审核全部百度子资源、受信签名根与真实地图/真机 1:1 验收，不能开放通配代理或冒充生产地图。
+
 ## A3c18 · 百度 JSAPI4 Server 发布前置状态可观测（2026-10-18，仍 NO-GO）
 
 现有管理员「系统依赖 → 百度地图 → 检测」在 Web/Mobile Web/PWA/Desktop 共用 `GET /api/v1/admin/services/baidu-jsapi` 与 MUI 面板，新增有界只读 `release_blockers` 枚举：期望配置、独立 Browser AK、安全密钥环、可信 HTTPS Origin、代码固定的 Ed25519 发布公钥、完整审核资源清单和当前签名发布。所有原因都由实际 Server/源码生成，不读取、回显 Browser AK、Server AK、Origin 或 Owner/GPS；旧 Server 未返回此字段仍兼容。
