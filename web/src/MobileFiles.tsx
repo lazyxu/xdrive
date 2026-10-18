@@ -2085,10 +2085,13 @@ export default function MobileFiles(props: Props) {
     const item = inlineLayout ? inline?.item : props.virtualCollection?.itemAt(index) ?? props.items[index]
     return item ? renderEntry(item, `${index}:${mobileItemKey(item)}`,
       inline?.depth ?? 0, inline?.ownerID ?? directoryID ?? 0, inline?.sourceIndex ?? index, index) : (
-      <Box key={index} data-mobile-files-placeholder aria-label="正在加载文件"
+      // Unloaded sparse-range cells reserve geometry but never flash a
+      // temporary "加载中…" filename; real thumbnail progress stays independent.
+      <Box key={index} data-mobile-files-placeholder aria-hidden
         sx={{ minHeight: effectiveGrid ? MOBILE_FILES_GRID_ROW_HEIGHT : MOBILE_FILES_ROW_HEIGHT,
-          p: 2, color: 'text.disabled' }}>
-        <Typography variant="caption">加载中…</Typography>
+          p: 2, display: 'flex', alignItems: 'center', pointerEvents: 'none' }}>
+        <Box sx={{ width: effectiveGrid ? '55%' : '36%', height: 10,
+          bgcolor: 'action.hover', borderRadius: 0.75, opacity: 0.55 }} />
       </Box>
     )
   }
