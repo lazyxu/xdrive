@@ -44,7 +44,13 @@ test('quick-access, favorites and recent cold reads use stable silent slots, nev
   ]) {
     assert.ok(pane.includes('data-xdrive-sidebar-' + kind + '-first-read'))
     assert.ok(pane.includes('data-xdrive-sidebar-' + kind + '-empty'))
-    assert.ok(pane.includes('aria-busy={' + pending + ' || undefined}'))
+    const readState = kind === 'quick-access' ? 'quickAccessReadState'
+      : kind === 'favorites' ? 'favoritesReadState' : 'recentReadState'
+    assert.ok(pane.includes('aria-busy={' + pending + ' || ' + readState + " === 'unverified' || undefined}"))
+    assert.ok(pane.includes(readState + " === 'unverified'"),
+      'unanswered first request must not show false empty for '+kind)
+    assert.ok(pane.includes('data-xdrive-sidebar-' + kind + '-error'),
+      'failed first read must not falsely advertise empty for '+kind)
     assert.ok(pane.includes('minHeight: compactViewport ? ' + floor),
       'unverified and verified-zero keep a matching geometry floor: ' + kind)
   }

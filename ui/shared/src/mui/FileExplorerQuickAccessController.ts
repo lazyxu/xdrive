@@ -66,6 +66,8 @@ export function useXDriveFileExplorerQuickAccess<
 }) {
   const [items, setItems] = useState<XDriveFileExplorerQuickAccessEntry[]>([])
   const [loading, setLoading] = useState(false)
+  // An initial [] is unverified until this Owner's current list succeeds.
+  const [readState, setReadState] = useState<'unverified' | 'ready' | 'error'>('unverified')
   const [busyID, setBusyID] = useState<number | null>(null)
   const loadItemsRef = useRef(loadItems)
   const pinItemRef = useRef(pinItem)
@@ -113,7 +115,10 @@ export function useXDriveFileExplorerQuickAccess<
     if (
       requestID === loadRequestRef.current &&
       reorderGeneration === reorderGenerationRef.current
-    ) setItems(next)
+    ) {
+      setItems(next)
+      setReadState('ready')
+    }
     return next
   }, [])
 
@@ -122,6 +127,7 @@ export function useXDriveFileExplorerQuickAccess<
       loadRequestRef.current += 1
       setItems([])
       setLoading(false)
+      setReadState('unverified')
       setBusyID(null)
       return []
     }
@@ -131,7 +137,10 @@ export function useXDriveFileExplorerQuickAccess<
     try {
       return await loadFresh(requestID)
     } catch (error) {
-      if (requestID === loadRequestRef.current) onErrorRef.current(error)
+      if (requestID === loadRequestRef.current) {
+        setReadState('error')
+        onErrorRef.current(error)
+      }
       return []
     } finally {
       if (requestID === loadRequestRef.current) setLoading(false)
@@ -142,6 +151,7 @@ export function useXDriveFileExplorerQuickAccess<
     visibleScopeRef.current = { lifecycleKey, enabled }
     setItems([])
     setLoading(false)
+    setReadState('unverified')
     setBusyID(null)
     void refresh()
   }, [lifecycleKey, refresh])
@@ -222,6 +232,7 @@ export function useXDriveFileExplorerQuickAccess<
         // snapshot after this write succeeds. Give the write ownership.
         loadRequestRef.current += 1
         setLoading(false)
+        setReadState('ready')
         setItems((current) => (
           current.some((item) => item.id === pinned.id)
             ? current.map((item) => item.id === pinned.id ? pinned : item)
@@ -249,6 +260,7 @@ export function useXDriveFileExplorerQuickAccess<
         ) return true
         loadRequestRef.current += 1
         setLoading(false)
+        setReadState('ready')
         setItems((current) => current.filter((item) => item.id !== nodeID))
         return true
       } catch (error) {
@@ -317,6 +329,7 @@ export function useXDriveFileExplorerQuickAccess<
   return {
     items: visibleItems,
     loading: scopeVisible ? loading : enabled,
+    readState: scopeVisible ? readState : 'unverified',
     busyID: scopeVisible ? busyID : null,
     pinnedIDs,
     refresh,
