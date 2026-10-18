@@ -3134,6 +3134,89 @@ test('U08: unanswered Search, error and cold load do not flash a fake empty fold
       crumbs: [{ id: 1, name: '我的文件' }] } })
 })
 
+test('P61: Mobile Search never mounts an in-flow intermediate loading row or collapses accepted zero', async () => {
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-zero-state', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(slot().props.sx.display, 'grid')
+    assert.equal(slot().props['aria-busy'], true)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'first Search frame must reserve space but display no temporary message')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 330)) })
+    assert.equal(slot().props.sx.minHeight, 180, 'sustained feedback stays inside identical geometry')
+    const sustained = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(sustained.length, 1)
+    assert.equal(sustained[0].props.loading, true)
+    assert.equal(sustained[0].props.message, '正在查询…')
+    await h.update({
+      loading: false,
+      searchSummary: { query: 'empty', resultCount: 0, loading: false },
+    })
+    assert.equal(slot().props.sx.minHeight, 180,
+      'verified zero must not collapse the former pending slot')
+    assert.equal(slot().props['aria-busy'], undefined)
+    const accepted = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(accepted.length, 1)
+    assert.equal(accepted[0].props.loading, false)
+    assert.equal(accepted[0].props.message, '未找到匹配的文件或文件夹')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 325)) })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel')[0].props.loading, false,
+      'old generation cannot resurrect network progress after COUNT commits')
+  }, { props: { items: [], searchActive: true, loading: true,
+    searchSummary: { query: 'empty', resultCount: null, loading: true } } })
+
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-zero-state', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+    await h.update({ loading: false, items: [
+      { id: 91, name: 'real-search-result.jpg', kind: 'file', revision: 1 },
+    ], searchSummary: { query: 'quick', resultCount: 1, loading: false } })
+    assert.equal(count(h.view, 'data-mobile-files-zero-state'), 0)
+    assert.ok(h.view.root.findAll(n => n.props?.['data-mobile-files-item'] === true)
+      .some(n => n.props['aria-label'] === 'real-search-result.jpg'))
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'fast Search cannot show a late loading caption')
+  }, { props: { items: [], searchActive: true, loading: true,
+    searchSummary: { query: 'quick', resultCount: null, loading: true } } })
+})
+
+test('P61: mobile Cold Folder, Trash and Search use a height-stable authorized empty/error slot', async () => {
+  const empty = { itemCount: 0, interactionKey: 'p61-counted-empty',
+    loadedItems: new Map(), itemAt: () => undefined,
+    onRangeChange() {}, groups: [] }
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-zero-state', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    await h.update({ loading: false })
+    assert.equal(slot().props.sx.minHeight, 180)
+    await h.update({ virtualCollection: empty })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel')[0].props.message, '此文件夹为空')
+  }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
+    props: { items: [], loading: true, requestedDirectoryID: 1,
+      crumbs: [{ id: 1, name: '我的文件' }] } })
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-zero-state', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    await h.update({ loading: false, trashReadState: 'error' })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(count(h.view, 'data-mobile-files-trash-read-error'), 1)
+    await h.update({ loading: false, trashReadState: 'ready' })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel')[0].props.message, '最近删除为空')
+  }, { props: { items: [], trashActive: true, trashReadState: 'unverified', loading: true } })
+})
+
 test('P59: cold Mobile Files folder reserves the same quiet 180px slot before/after 300ms', async () => {
   const pending = { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' }
   const realCountedZero = { itemCount: 0, interactionKey: 'p59-authorized-empty',
