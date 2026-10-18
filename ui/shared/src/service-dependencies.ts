@@ -143,6 +143,11 @@ export type XDriveCaddyHTTPSPreflight = {
   host_observed: boolean
   host_ingress_ready: boolean
   host_local_tls_verified: boolean
+  // Optional for previous Server/Agent releases. The IP proof is a bound,
+  // read-only LOCAL TLS observation, never a revisioned host-apply receipt.
+  desired_lan_enabled?: boolean
+  host_lan_local_tls_verified?: boolean
+  desired_lan_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Only host-configured SNI matched a successful local TLS handshake.
   // Not a desired revision receipt, public DNS/HTTPS or safe Caddy apply.
   desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
@@ -158,7 +163,7 @@ export type XDriveCaddyHTTPSPreflight = {
   // Optional fixed Caddy binary module inventory; not DNS credential or HTTPS effect.
   host_alidns_module_state?: 'present-local' | 'absent-local' | 'unverified'
   // Advisory only; a missing or unverified value is never a safe-ingress proof.
-  ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
+  ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch' | 'local-lan-removal' | 'local-lan-switch'
   // Only an admin preflight read-window check; NOT actual HTTPS configuration effect.
   revision_snapshot_consistent?: boolean
   apply_supported: boolean

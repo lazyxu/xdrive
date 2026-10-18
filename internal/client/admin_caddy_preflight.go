@@ -23,6 +23,9 @@ type AdminCaddyPreflight struct {
 	HostObserved            bool                       `json:"host_observed"`
 	HostIngressReady        bool                       `json:"host_ingress_ready"`
 	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
+	DesiredLANEnabled       bool                       `json:"desired_lan_enabled"`
+	HostLANLocalTLSVerified bool                       `json:"host_lan_local_tls_verified"`
+	DesiredLANLocalMatch    string                     `json:"desired_lan_local_match"`
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
 	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment,omitempty"`
 	HostLiveConfigState     string                     `json:"host_live_config_state,omitempty"`

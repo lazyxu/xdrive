@@ -836,6 +836,11 @@ export type AgentAdminCaddyHTTPSPreflight = {
   host_observed: boolean
   host_ingress_ready: boolean
   host_local_tls_verified: boolean
+  // Optional for previous Server/Agent releases. The IP proof is a bound,
+  // read-only LOCAL TLS observation, never a revisioned host-apply receipt.
+  desired_lan_enabled?: boolean
+  host_lan_local_tls_verified?: boolean
+  desired_lan_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Optional for old Server/Agent: matching local TLS SNI is never revision/apply proof.
   desired_domain_local_match?: 'matched-local' | 'mismatch-local' | 'unverified'
   // Fixed running Caddy startup Env vs verified local TLS SNI only.
@@ -850,7 +855,7 @@ export type AgentAdminCaddyHTTPSPreflight = {
   // Optional running Caddy binary capability; never HTTPS/DNS apply proof.
   host_alidns_module_state?: 'present-local' | 'absent-local' | 'unverified'
   // Advisory only; no HTTPS change or rollback is authorized by this field.
-  ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch'
+  ingress_change_risk?: 'unverified' | 'local-https-removal' | 'local-domain-switch' | 'local-lan-removal' | 'local-lan-switch'
   // Two revisioned settings remained stable during this one readonly preflight.
   // Never a host-apply receipt or license to switch ingress.
   revision_snapshot_consistent?: boolean

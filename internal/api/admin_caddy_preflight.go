@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,9 @@ type adminCaddyPreflightDTO struct {
 	HostObserved            bool                       `json:"host_observed"`
 	HostIngressReady        bool                       `json:"host_ingress_ready"`
 	HostLocalTLSVerified    bool                       `json:"host_local_tls_verified"`
+	DesiredLANEnabled       bool                       `json:"desired_lan_enabled"`
+	HostLANLocalTLSVerified bool                       `json:"host_lan_local_tls_verified"`
+	DesiredLANLocalMatch    string                     `json:"desired_lan_local_match"`
 	DesiredDomainLocalMatch string                     `json:"desired_domain_local_match"`
 	HostRuntimeTLSAlignment string                     `json:"host_runtime_tls_alignment"`
 	HostLiveConfigState     string                     `json:"host_live_config_state"`
@@ -98,6 +102,8 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 	}
 
 	host, observed := s.readCaddyHostStatus()
+	deploymentLANIP := os.Getenv("XD_LAN_HTTPS_IP")
+	lanLocalVerified := caddyLANLocalEffectState(host, observed, deploymentLANIP) == "verified"
 	if observed {
 		add("host-manager", "pass", "最近存在受信任的宿主机只读状态心跳；不代表支持部署控制")
 	} else {
@@ -133,12 +139,15 @@ func (s *Server) adminCaddyHTTPSPreflight(c *gin.Context) {
 		ConfigurationComplete: complete,
 		HostObserved:          observed, HostIngressReady: ingressReady,
 		HostLocalTLSVerified:    observed && host.HTTPSConfigured && host.TLSCheckSupported && host.TLSState == "verified",
+		DesiredLANEnabled:       desired.LANEnabled,
+		HostLANLocalTLSVerified: lanLocalVerified,
+		DesiredLANLocalMatch:    caddyDesiredLANLocalMatch(desired, host, observed, deploymentLANIP),
 		DesiredDomainLocalMatch: caddyDesiredDomainLocalMatch(desired, host, observed),
 		HostRuntimeTLSAlignment: caddyObservedRuntimeTLSAlignment(host, observed),
 		HostLiveConfigState:     caddyObservedLiveConfigState(host, observed),
 		HostInstanceGeneration:  caddyObservedInstanceGeneration(host, observed),
 		HostAliDNSModuleState:   caddyObservedAliDNSModuleState(host, observed),
-		IngressChangeRisk:       caddyIngressChangeRisk(desired, host, observed),
+		IngressChangeRisk:       caddyIngressChangeRiskDual(desired, host, observed, deploymentLANIP),
 		SnapshotStable:          true,
 		ApplySupported:          false, Checks: checks,
 	})

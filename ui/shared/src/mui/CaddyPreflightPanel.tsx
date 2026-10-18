@@ -122,8 +122,8 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
           <>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Chip size="small" variant="outlined"
-                label={`意图：${result.action === 'enable' ? '启用 HTTPS' : result.action === 'disable' ? '停用 HTTPS' : '未设置'}`} />
-              <Chip size="small" variant="outlined" label={`域名修订 #${result.desired_revision}`} />
+                label={`公网域名意图：${result.action === 'enable' ? '启用 HTTPS' : result.action === 'disable' ? '停用域名 HTTPS（仍可能启用 IP）' : '未设置'}`} />
+              <Chip size="small" variant="outlined" label={`HTTPS 期望修订 #${result.desired_revision}`} />
               <Chip size="small" variant="outlined" label={`凭据修订 #${result.credential_revision}`} />
               <Chip size="small" variant="outlined" color={result.configuration_complete ? 'default' : 'warning'}
                 label={result.configuration_complete ? '本地配置齐全（未应用）' : '本地配置不完整'} />
@@ -131,7 +131,9 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
             <Typography variant="caption" color="text.secondary">
               既有网关观测：{result.host_observed ? '新鲜可信' : '未知'}；
               内部 HTTP：{result.host_ingress_ready ? '健康' : '未确认健康'}；
-              既有配置本机 TLS：{result.host_local_tls_verified ? '证书校验通过（非本次修订证明）' : '未确认'}。
+              公网域名本机 TLS：{result.host_local_tls_verified ? '证书校验通过（非公网证明）' : '未确认'}；
+              局域网 IP 本机 TLS：{result.host_lan_local_tls_verified === true
+                ? 'CA、IP SAN 与健康接口已验证（仅本机）' : '尚无可靠证明'}。
             </Typography>
             <Typography variant="body2"
               data-xdrive-caddy-desired-domain-local-match
@@ -141,6 +143,19 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                 : result.desired_domain_local_match === 'mismatch-local'
                   ? '不匹配：当前 HTTPS 证书验证使用的部署域名与期望域名不同；不能认定配置已生效。'
                   : '尚未核验：缺少新鲜的 TLS 验证域名指纹、旧版 Host Manager，或当前期望不是启用 HTTPS。'}
+            </Typography>
+
+            <Typography variant="body2"
+              data-xdrive-caddy-desired-lan-local-match
+              color={result.desired_lan_local_match === 'mismatch-local' ? 'error.main' : 'text.secondary'}>
+              期望局域网 IP 与本机已验证 IP HTTPS：{result.desired_lan_local_match === 'matched-local'
+                ? '匹配：期望私网 IP 与本机证书 IP SAN 验证地址一致（并非已应用修订或终端信任证明）'
+                : result.desired_lan_local_match === 'mismatch-local'
+                  ? result.desired_lan_enabled === false
+                    ? '冲突：已保存关闭 IP HTTPS，但当前本机仍验证到 IP HTTPS 入口。'
+                    : '冲突：管理员期望 IP 与当前本机验证的私网 IP 不一致。'
+                  : '无法确认：未保存期望、旧版 Host Manager、IP 证书检测缺失或运行状态不可信。'}
+              不证明外部设备能够访问，也不证明关闭后的入口已经不可达。
             </Typography>
             <Typography variant="body2"
               data-xdrive-caddy-host-runtime-tls-alignment
@@ -191,7 +206,11 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
                 ? '当前本机 HTTPS 证书已验证；若将保存的停用意图真正部署，可能移除现有 HTTPS 访问路径。未证明存在备用管理入口。'
                 : result.ingress_change_risk === 'local-domain-switch'
                   ? '管理员期望域名与既有本机 TLS 域名不同；如果执行切换，可能影响当前访问。未验证 DNS、证书和回滚路径。'
-                  : '无法证明切换安全；缺少可靠的本机风险证据，或目前未观察到以上两类变更风险。'}
+                  : result.ingress_change_risk === 'local-lan-removal'
+                    ? '当前私网 IP HTTPS 已通过本机证书检测；真正停用它可能失去现有内网管理入口，不能仅凭另一个待保存入口保证不会失联。'
+                    : result.ingress_change_risk === 'local-lan-switch'
+                      ? '期望私网 IP 与已经验证的当前 IP 不同；切换地址可能导致内网管理入口断开，必须先有独立的恢复通道。'
+                      : '无法证明切换安全；缺少可靠的本机风险证据，或目前未观察到明确的 HTTPS 变更风险。'}
               这是只读风险提示，不是应用许可或公网 HTTPS 生效证明。
             </Typography>
             <Stack spacing={1}>
