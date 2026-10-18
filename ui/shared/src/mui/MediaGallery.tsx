@@ -6134,8 +6134,6 @@ export function XDriveMediaGallery({
   const showPlacesIndex = isRootSection && section === 'places'
   // These are presentational delays only; real Source/Server/Agent GETs and
   // the previously accepted albums/places lists are never delayed or cleared.
-  const showDelayedSyncFolders = useXDriveDeferredPendingLoading(
-    showAlbumIndex && syncFoldersLoading && syncFolders.length === 0)
   const showDelayedPlacesInitial = useXDriveDeferredPendingLoading(
     showPlacesIndex && placesStatus === 'loading' && places.length === 0)
   const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
@@ -7213,8 +7211,8 @@ export function XDriveMediaGallery({
         <XDriveStatusAlert tone="bad">{syncFoldersError}</XDriveStatusAlert>
       ) : null}
 
-      {showAlbumIndex && (showDelayedSyncFolders || syncFolders.length > 0) ? (
-        <Box data-xdrive-gallery-sync-folders>
+      {showAlbumIndex && syncFolders.length > 0 ? (
+        <Box data-xdrive-gallery-sync-folders aria-busy={syncFoldersLoading || undefined}>
           <Stack direction="row" spacing={0.75} alignItems="baseline" sx={{ mb: 1.25 }}>
             <Typography variant="subtitle1" fontWeight={700}>
               同步文件夹
@@ -7223,65 +7221,56 @@ export function XDriveMediaGallery({
               按 xDrive 本地同步目录逐层浏览，不递归展开子目录
             </Typography>
           </Stack>
-          {syncFoldersLoading && syncFolders.length === 0 ? (
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ minHeight: 80 }}>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">
-                正在加载同步文件夹…
-              </Typography>
-            </Stack>
-          ) : (
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-                gap: 1.5,
-              }}
-            >
-              {syncFolders.map((folder) => (
-                <Paper
-                  key={folder.source_id}
-                  variant="outlined"
-                  role={onOpenSyncFolder ? 'button' : undefined}
-                  tabIndex={onOpenSyncFolder ? 0 : undefined}
-                  data-xdrive-gallery-sync-folder={folder.source_id}
-                  onClick={() => onOpenSyncFolder?.(folder)}
-                  onKeyDown={(event) => {
-                    if (onOpenSyncFolder) keyboardActivate(event, () => onOpenSyncFolder(folder))
-                  }}
-                  sx={{
-                    overflow: 'hidden',
-                    cursor: onOpenSyncFolder ? 'pointer' : 'default',
-                    '&:hover': onOpenSyncFolder ? { boxShadow: 2 } : undefined,
-                  }}
-                >
-                  <Box sx={{ aspectRatio: '16 / 9', overflow: 'hidden' }}>
-                    <XDriveMediaGalleryCoverThumbnail
-                      nodeID={folder.cover_node_id}
-                      alt={folder.source_name}
-                      loadThumbnail={loadThumbnail}
-                      fallback={(
-                        <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', bgcolor: 'action.hover', color: 'text.secondary' }}>
-                          <FolderOutlinedIcon sx={{ fontSize: 44 }} />
-                        </Box>
-                      )}
-                    />
-                  </Box>
-                  <Box sx={{ px: 1.5, py: 1.2 }}>
-                    <Typography variant="body2" fontWeight={650} noWrap>
-                      {folder.source_name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" display="block" noWrap>
-                      {folder.target_path}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {folder.direct_media_count.toLocaleString('zh-CN')} 个媒体 · {folder.child_folder_count.toLocaleString('zh-CN')} 个子目录
-                    </Typography>
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
-          )}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: 1.5,
+            }}
+          >
+            {syncFolders.map((folder) => (
+              <Paper
+                key={folder.source_id}
+                variant="outlined"
+                role={onOpenSyncFolder ? 'button' : undefined}
+                tabIndex={onOpenSyncFolder ? 0 : undefined}
+                data-xdrive-gallery-sync-folder={folder.source_id}
+                onClick={() => onOpenSyncFolder?.(folder)}
+                onKeyDown={(event) => {
+                  if (onOpenSyncFolder) keyboardActivate(event, () => onOpenSyncFolder(folder))
+                }}
+                sx={{
+                  overflow: 'hidden',
+                  cursor: onOpenSyncFolder ? 'pointer' : 'default',
+                  '&:hover': onOpenSyncFolder ? { boxShadow: 2 } : undefined,
+                }}
+              >
+                <Box sx={{ aspectRatio: '16 / 9', overflow: 'hidden' }}>
+                  <XDriveMediaGalleryCoverThumbnail
+                    nodeID={folder.cover_node_id}
+                    alt={folder.source_name}
+                    loadThumbnail={loadThumbnail}
+                    fallback={(
+                      <Box sx={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', bgcolor: 'action.hover', color: 'text.secondary' }}>
+                        <FolderOutlinedIcon sx={{ fontSize: 44 }} />
+                      </Box>
+                    )}
+                  />
+                </Box>
+                <Box sx={{ px: 1.5, py: 1.2 }}>
+                  <Typography variant="body2" fontWeight={650} noWrap>
+                    {folder.source_name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" noWrap>
+                    {folder.target_path}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {folder.direct_media_count.toLocaleString('zh-CN')} 个媒体 · {folder.child_folder_count.toLocaleString('zh-CN')} 个子目录
+                  </Typography>
+                </Box>
+              </Paper>
+            ))}
+          </Box>
         </Box>
       ) : null}
 

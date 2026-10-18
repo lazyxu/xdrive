@@ -73,10 +73,13 @@ test('People keep one quiet first-read/error pane, accepted empty and real thumb
     'onClick={onRefresh}',
     'indexFacetsVerified ? (',
     '还没有可浏览的人物',
-    "showAlbumIndex && (showDelayedSyncFolders || syncFolders.length > 0)",
+    "showAlbumIndex && syncFolders.length > 0 ? (",
     'data-xdrive-gallery-places-first-read',
     'XDriveMediaGalleryCoverThumbnail',
   ]) assert.ok(source.includes(token),token)
+  assert.equal(source.includes('showDelayedSyncFolders'),false,
+    'unverified sync-folder read must not insert a spinner section above Albums')
+  assert.equal(source.includes('正在加载同步文件夹…'),false)
   assert.equal(source.includes("coldAlbumIndex || coldPeopleIndex"),false)
 })
 
