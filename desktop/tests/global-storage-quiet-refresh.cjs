@@ -15,7 +15,7 @@ test('cold Global Storage never claims zero or flashes immediate progress before
     'useXDriveDeferredLoading(loading, loadGeneration)',
     'data-xdrive-storage-first-read',
     'minHeight: 180',
-    'showDeferredLoading ? (',
+    'stats && showDeferredLoading ? (',
     'data-xdrive-storage-first-read-error',
     'aria-busy={loading || undefined}',
     "minHeight: 180, display: 'grid', placeItems: 'center'",
@@ -29,7 +29,8 @@ test('cold Global Storage never claims zero or flashes immediate progress before
   assert.ok(terminal.includes('minHeight: 180'))
   assert.ok(terminal.includes('XDriveStatusAlert'),
     'genuine first-load error must be visible without shrinking the page')
-  assert.equal(page.includes("message={loading ? '正在加载存储统计…' : '暂无存储统计'}"), false)
+  assert.equal(page.includes('正在加载存储统计…'), false,
+    'an unverified Global Storage first GET must remain silent beyond 300ms')
   assert.ok(page.includes('if (active) setError('), 'real initial failure must remain visible')
 })
 

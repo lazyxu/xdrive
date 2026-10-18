@@ -484,11 +484,7 @@ export default function StorageStatsPanel({
           {!stats && !error ? (
             <Box data-xdrive-storage-first-read
               aria-busy={loading || undefined}
-              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-              {showDeferredLoading ? (
-                <XDriveStatePanel variant="plain" loading message="正在加载存储统计…" />
-              ) : null}
-            </Box>
+              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
           ) : null}
           {stats && showDeferredLoading ? (
             <LinearProgress aria-label="正在刷新存储统计" sx={{
