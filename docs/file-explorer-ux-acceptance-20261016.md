@@ -1,5 +1,26 @@
 # xDrive Files UX · 43 项验收账本（2026-10-18）
 
+## P79/P80 · 43 项闭环核查与独立验收边界（2026-10-18，最新）
+
+**冻结核验基线**：GitHub `lazyxu/xdrive` `master@f193ad744ecdf978f2a6619cac3f631972f2b85f`。这是本轮源代码、已合并 PR、准确 HEAD CI 与验收范围复核，**不是**重新执行所有 43 项、操作系统真机、部署服务或发布验收。保留以下全部 P73/P74/P72 和更早阶段原始记录，历史阶段以各自记录的 SHA 为准。
+
+| 对象 | 代码/CI 核验 | 最新 PR/分支结论 | 不可据此宣称 |
+| --- | --- | --- | --- |
+| **P79** · Mobile Web Trash 首次真实读前/慢读静默 | [PR #2088](https://github.com/lazyxu/xdrive/pull/2088) 准确工作 HEAD `59ca43d04501701eebad30de132c7a9ef0808e6f` 的 [CI #39135125863](https://github.com/lazyxu/xdrive/actions/runs/39135125863)：77 jobs，25 success / 52 conditional skip / 0 failure，含 Go PostgreSQL API Race、Web/Desktop/Windows/Linux、Rootless、single-commit、Final Gate | Ready 后 Rebase Merge `d9028974f55eeb65ddcee242bbc1ef6dcebf7bb3`；工作分支搜索确认消失 | 真 iOS/Android、辅助技术实际朗读、慢 WAN CLS/FPS 或 100k 原件性能 |
+| **P80** · Home Recent/Favorites 首次读静默 | [PR #2094](https://github.com/lazyxu/xdrive/pull/2094) 准确工作 HEAD `ebff6cbcb8a1451883feaf641fc6ea7517db6b97` 的 [CI #39134703144](https://github.com/lazyxu/xdrive/actions/runs/39134703144)：77 jobs，25 success / 52 conditional skip / 0 failure，含上述核心门槛 | Ready 后 Rebase Merge `f193ad744ecdf978f2a6619cac3f631972f2b85f`；工作分支搜索确认消失 | 真实 WebView、iOS Safari、OS 原生返回、真实全量网络布局或安装态验证 |
+| **Files UX F02–F04 / U01–U14** | 原有修复与测试交付见下方 43 项主表；F02 [#1766](https://github.com/lazyxu/xdrive/pull/1766)/[#1911](https://github.com/lazyxu/xdrive/pull/1911)，F03/F04 [#1769](https://github.com/lazyxu/xdrive/pull/1769)、F03 [#2013](https://github.com/lazyxu/xdrive/pull/2013)/[#2014](https://github.com/lazyxu/xdrive/pull/2014)/[#1969](https://github.com/lazyxu/xdrive/pull/1969)，U03 [#2038](https://github.com/lazyxu/xdrive/pull/2038)，U04 [#2049](https://github.com/lazyxu/xdrive/pull/2049)，U05 [#2044](https://github.com/lazyxu/xdrive/pull/2044)，U06/U09 [#2036](https://github.com/lazyxu/xdrive/pull/2036) 均已合并 | 本轮查询无仍开放的直接 Files UX PR；其他 Gallery/Host/LocalPush/Perf/Race 专题与分支未关闭 | 43 项真实环境均 PASS、真实 100k Server 已全部跑过或键盘/读屏/原生系统行为已签收 |
+
+### 43 项验收结果应分三层，不得混用
+
+1. **源码/CI 交付层**：F02 共享 Details `aria-rowcount` = 完整逻辑数 + 组标题 + 表头，`aria-rowindex` 使用真实逻辑行序；Grid `aria-setsize` / `aria-posinset`，Mobile 提供逻辑位置说明。F03 共享 `disabledReason` 和触屏/键盘可读菜单说明；F04 6/8px 视觉分隔条、不可见大命中区和键盘焦点/Resize。既有基线分别有 `desktop/tests/file-explorer-virtual-aria.cjs`、`file-explorer-disabled-menu-reasons.cjs`、`file-explorer-splitter-hitbox.cjs`。U01–U14 交付依据详见紧随其后的原始主表；未复现缺陷不要再次实现相同组件。
+2. **真实 Server/浏览器/Agent 独立 E2E 层**：U03 [#2038](https://github.com/lazyxu/xdrive/pull/2038) 的完整 100k Select All 使用 **500 × 200 内存 VirtualCollection**，不等于 100k 网络/真实 Go/CPU/RSS/FPS；U04 [#2049](https://github.com/lazyxu/xdrive/pull/2049) 是 **真实 Gin/PostgreSQL + 全新 Go Client** 重新进入，不等于真实 Electron Agent 断线/进程重启；U05 [#2044](https://github.com/lazyxu/xdrive/pull/2044) 有真实 Gin/PostgreSQL 255/256 UTF-8、Revision 和名称冲突回归；U06/U09 [#2036](https://github.com/lazyxu/xdrive/pull/2036) 的真实 Chromium 场景仍采用受控 Server-shaped fixture，不能当作真实部署 100k SQL/WAN。部署上慢网、权限、取消负载、Agent 重连与原生文件字节完整性**缺独立目标环境证据**；这是额外的 E2E 工作，不可简单归为“只剩手机真机”。
+3. **物理 OS/辅助技术/发布层**：M01–M10 的 iOS 27 1:1 视觉、Safari/Android 键盘手势及真实文件选择/分享；D01–D07 的 Windows CfAPI、Explorer/Finder、原生 Shell、125/150/200% DPI、真实 Agent 设备差异；P01–P09 的 Installed iOS/Android/Desktop PWA、锁屏/系统回收、1–4 GiB 真正系统落盘全字节 SHA-256、SW 身份隔离；F02–F04 的 NVDA/VoiceOver/TalkBack/焦点手感均需要各自实测。**这些没有真实证据一律 `NOT RUN`**。权威 [PWA S5 七平台验收矩阵](pwa-s5-acceptance.md) 仍 `NOT RUN`，Release `NO-GO`。
+
+**本次限定**：只追加这一处闭环说明，不改任何 UI、REST、权限、Server 排序、虚拟列表、Desktop IPC、SW 缓存及测试执行门槛。保留全屏 App Frame、52px 全局标题栏和 900px 响应式分界。后续新实际 FAIL 才以固定基线、独立单工作提交、准确 HEAD CI 和实证复测修复；不能将所有未执行的 E2E 自动标为 PASS，也不能以真实系统证据不足推断已有代码失败。
+
+---
+
+
 ## P73/P74 · 验收账本最新补充（已合入当前 master）
 
 **冻结核验基线**：`lazyxu/xdrive` GitHub `master@08d7513d0566525489175a1206e43f770ca657b3`。以下为本次新增实际合入证明，紧随其后的 P72 阶段完整 43 项表以及其他历史审计仍按其原日期、构建 SHA 解读；不将旧资料覆写为新实测结论。
