@@ -1,3 +1,5 @@
+**NET-M5-B2 Host 变更计划：** 管理员已保存的 IP/域名入口可经只读 Host Plan API 导出为规范候选配置，再由独立操作员在宿主机离线复核；它尚未执行 Caddy 重启。参阅 [Caddy HTTPS Host Plan](caddy-https-host-plan.md)，完成受控应用/回滚验收前必须保留至少一个可恢复的管理入口。私网 CA 信任仍需每台客户端安全配置。
+
 **NET-M4 首次部署默认值说明：** 当 DB 还没有管理员 Caddy 修订时，已通过规范 RFC1918 校验的 `XD_LAN_HTTPS_IP` 作为“系统依赖”页面**未保存的默认启用 IP**显示。它来自 Server 配置声明，只用于降低首次配置混淆；仍显示 `revision=0`、`apply_state=unmanaged`、`apply_supported=false`，不表示 Caddy 重启、TLS 验证、浏览器 CA 信任或已保存的宿主修订。
 
 ## NET-M4：系统依赖页双入口配置合同（阶段性交付，未开放 Caddy 在线应用）

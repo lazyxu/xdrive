@@ -1,5 +1,10 @@
 # Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
+
+## NET-M5-B2（2026-10-18）— 局域网 IP / 公网域名 HTTPS 宿主配置应用计划（只读）
+
+已合并 NET-M5-A / NET-M5-B1 的真实本机证书检测和管理员目标/宿主状态对比。当前阶段通过管理员专用 GET /api/v1/admin/services/caddy/https/host-plan 导出**无密钥、双修订绑定**的规范计划，并通过宿主机本地 Python 检查器独立校验计划指纹、目标开关、保存的 IP/域名、当前 .env/Compose 及变更失联风险。该计划永远不会提交 Docker 变更，不会自动同步已保存的 AliDNS 凭据，也不能作为已重启生效证明。详细协议、示例与回归见 [Caddy HTTPS Host Plan](caddy-https-host-plan.md)。真正的一键应用仍需受限 Host Manager CAS、受信独立救援入口、真实登录验证、超时回滚和审计回执；完整验收前 apply_supported=false。
+
 ## Scope and status
 
 **Status:** Shared Web/Desktop **系统依赖** page exposes 11 instance-wide dependency health contracts and real administrator controls for encrypted Baidu Server AK, GeoNames radius/reload/history/rollback, and Photo Intelligence automatic scheduling. Independent Pull Worker liveness is observable through expiring PostgreSQL heartbeats (P1-D1), and its bounded scheduling policy is administrator-controlled with safe task-boundary acknowledgement (merged P1-D2 #1300). Other dependencies remain deployment-owned or planned. It is **not** a Docker controller, Compose editor, arbitrary host-path editor, or general-purpose credentials service.

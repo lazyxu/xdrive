@@ -6,3 +6,4 @@ feat/gallery-creative-cutout	bb221d2ab0f18a5887332907bcb139b68219baa9	obsolete c
 feat/gallery-ai-cutout	b02d2958606fd808e97bdf060d6917fca726e20f	obsolete standalone UI and IPC superseded by shared Creative UI #964 #1003
 perf/gallery-selection-jobs-10k-100k	476c9936be201d779223be7d4758fddab12bb0f2	unmeasured duplicate of merged Desktop G07 #1180 and PostgreSQL baseline #1182
 perf/gallery-go-context-cancel-100k-baseline	f4df69854f1b80b719e7bab21e20b33b898cdec9	already ancestor of master; #1144 and #1147
+feat/system-dependencies-lan-tls-effect-netm5a-20261017	21852a3b8ac296a282e293cc5da8b650609f6352	superseded unmerged NET-M5-A candidate by merged #2007 and #2011; exact SHA pinned; no open PR

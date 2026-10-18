@@ -2624,6 +2624,7 @@ jobs:
           bash scripts/test-media-worker-control.sh
           bash -n scripts/test-caddy-host-status.sh
           bash scripts/test-caddy-host-status.sh
+          python3 scripts/test-caddy-https-host-plan.py
           bash -n scripts/test-caddy-rescue-profile.sh
           bash scripts/test-caddy-rescue-profile.sh
           bash -n scripts/test-photo-intelligence-host-status.sh
