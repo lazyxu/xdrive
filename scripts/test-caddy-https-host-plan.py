@@ -429,5 +429,135 @@ class OfflineHostStageTest(unittest.TestCase):
         self.assertNotIn("exec(", source)
         self.assertNotIn("socket.", source)
 
+
+    def make_signed_review(self, created, changes=None):
+        import datetime as dt
+        now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+        def utc(x):
+            return x.strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.review_private = self.root / "test-approval-key.pem"
+        self.review_public = self.root / "test-approval-public.pem"
+        self.review_manifest = self.root / "test-approval.json"
+        self.review_signature = self.root / "test-approval.sig"
+        for argv in (
+            ["openssl", "genpkey", "-algorithm", "Ed25519",
+             "-out", str(self.review_private)],
+            ["openssl", "pkey", "-in", str(self.review_private),
+             "-pubout", "-out", str(self.review_public)],
+        ):
+            subprocess.run(argv, check=True, capture_output=True, timeout=6)
+        der = subprocess.run(
+            ["openssl", "pkey", "-pubin", "-in", str(self.review_public),
+             "-outform", "DER"], check=True, capture_output=True,
+            timeout=6).stdout
+        self.review_public_pin = hashlib.sha256(der).hexdigest()
+        manifest = {
+            "schema": 1,
+            "scope": "xdrive.caddy.https.operator-stage-review.v1",
+            "action": "candidate-review-only",
+            "desired_revision": 7,
+            "credential_revision": 0,
+            "plan_sha256": hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "stage_receipt_sha256": created["stage_receipt_sha256"],
+            "host_environment_sha256": hashlib.sha256(self.env.read_bytes()).hexdigest(),
+            "host_compose_sha256": hashlib.sha256(self.compose.read_bytes()).hexdigest(),
+            "candidate_environment_sha256": created["candidate_environment_sha256"],
+            "issued_at": utc(now - dt.timedelta(minutes=1)),
+            "expires_at": utc(now + dt.timedelta(minutes=9)),
+            "nonce": "12" * 32,
+        }
+        manifest.update(changes or {})
+        self.review_manifest.write_bytes(canonical(manifest))
+        self.review_manifest.chmod(0o600)
+        self.review_public.chmod(0o600)
+        self.review_private.chmod(0o600)
+        subprocess.run(
+            ["openssl", "pkeyutl", "-sign", "-inkey", str(self.review_private),
+             "-rawin", "-in", str(self.review_manifest),
+             "-out", str(self.review_signature)],
+            check=True, capture_output=True, timeout=6)
+        self.review_signature.chmod(0o600)
+
+    def run_signed_review(self, created, key_pin=None):
+        script = Path(__file__).with_name("caddy-https-host-signed-review.py")
+        before = (self.plan.read_bytes(), self.env.read_bytes(),
+                  self.compose.read_bytes())
+        argv = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", created["stage_receipt_sha256"],
+            "--review-manifest", str(self.review_manifest),
+            "--review-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", key_pin or self.review_public_pin,
+        ]
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=14)
+        self.assertNotIn("never-print-this", result.stdout + result.stderr)
+        self.assertNotIn("192.168.2.4", result.stdout + result.stderr)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+        self.assertEqual(before, (self.plan.read_bytes(), self.env.read_bytes(),
+                                  self.compose.read_bytes()))
+        return result.returncode, json.loads(result.stdout)
+
+    def test_operator_ed25519_signed_review_is_unapplied(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.make_signed_review(created)
+        rc, out = self.run_signed_review(created)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["state"], "signed-review-verified-unapplied")
+        self.assertFalse(out["apply_supported"])
+        self.assertIn("revision-bound-host-cas-required", out["blockers"])
+        self.assertEqual(out["stage_receipt_sha256"], created["stage_receipt_sha256"])
+        self.assertEqual(out["review_manifest_sha256"],
+                         hashlib.sha256(self.review_manifest.read_bytes()).hexdigest())
+
+    def test_operator_review_rejects_wrong_key_and_stale_live_env(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.make_signed_review(created)
+        self.assertEqual(self.run_signed_review(created, "f" * 64)[0], 2)
+        self.env.write_text(ENV + "UNRELATED_SAFE_SETTING=changed\n")
+        self.env.chmod(0o600)
+        rc, out = self.run_signed_review(created)
+        self.assertEqual((rc, out["state"]), (2, "blocked"))
+        self.assertFalse(out["apply_supported"])
+
+    def test_operator_review_rejects_signed_apply_scope_expiry_and_tamper(self):
+        import datetime as dt
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.make_signed_review(created, {"action": "apply-and-restart"})
+        self.assertEqual(self.run_signed_review(created)[0], 2)
+        self.make_signed_review(created, {
+            "issued_at": (dt.datetime.now(dt.timezone.utc) -
+                          dt.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (dt.datetime.now(dt.timezone.utc) -
+                           dt.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        self.assertEqual(self.run_signed_review(created)[0], 2)
+        self.make_signed_review(created)
+        signature = self.review_signature.read_bytes()
+        self.review_signature.write_bytes(signature[:-1] + bytes([signature[-1] ^ 1]))
+        self.assertEqual(self.run_signed_review(created)[0], 2)
+        self.review_signature.write_bytes(signature)
+        self.review_signature.chmod(0o644)
+        self.assertEqual(self.run_signed_review(created)[0], 2)
+        self.review_signature.chmod(0o600)
+        self.review_manifest.write_bytes(self.review_manifest.read_bytes() + b"\n")
+        self.assertEqual(self.run_signed_review(created)[0], 2)
+
+    def test_operator_review_script_never_grants_runtime_mutation(self):
+        src = Path(__file__).with_name("caddy-https-host-signed-review.py").read_text()
+        for denied in ("docker compose", "os.replace(", "os.unlink(",
+                       "socket.", "requests.", "--insecure",
+                       '"apply_supported": True'):
+            self.assertNotIn(denied, src)
+
+
 if __name__ == "__main__":
     unittest.main()

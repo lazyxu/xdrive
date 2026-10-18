@@ -71,3 +71,11 @@ CI server-validation 执行 `python3 scripts/test-caddy-https-host-plan.py`。�
 例：`python3 scripts/caddy-https-host-verify-stage.py --plan "$HOME/.xd/state/caddy-host-plan.json" --env-file "$HOME/.xd/config/.env" --compose-file "$HOME/.xd/config/docker-compose.yml" --expected-plan-sha256 "$TRUSTED_PLAN_SHA256" --staging-dir "$HOME/.xd/state/caddy-https-staging" --expected-stage-receipt-sha256 "$TRUSTED_STAGE_RECEIPT_SHA256"`。
 
 输出永远是 `candidate-verified-unapplied` 或 `blocked`，且 `apply_supported=false`；不返回原始 IP、域名、凭据、候选内容或路径。即使验收通过，也只代表固定时点的私有暂存工件正确，**不证明管理员保存修订已应用、当前 Caddy 运行配置、异机登录、独立救援或自动回滚可用**。它不修改文件、Docker、Caddy、DNS、证书和系统信任。必须先完成真实独立救援的停机验证、签名批准、受限 Host CAS、双入口登录证明、独立超时看门狗及不可变应用回执，才可以提供真正的“应用并重启”操作。
+
+## NET-M5-B3-C2 — 受操作员签名的候选复核（非 Apply 授权，2026-10-18）
+
+新的宿主机私有脚本 scripts/caddy-https-host-signed-review.py 严格重用 B3-C1 完整候选复核，另要求操作员经独立可信通道固定 Ed25519 公钥 DER SHA-256 指纹，验证私有 0600 签名清单和签名。私钥绝不进入 Server、Agent、Web、Desktop 或 Git；测试仅生成临时密钥。清单为规范 JSON + LF，固定 scope=xdrive.caddy.https.operator-stage-review.v1 与 action=candidate-review-only，绑定 HTTPS/AliDNS 双修订、Plan/Stage Receipt/原始 .env/Compose/候选五个 SHA-256、UTC 有效期（最长 60 分钟）及 nonce。
+
+拒绝非规范/重复字段、过期与未来或超长有效期、错误类型/公钥/签名/摘要、源文件替换和权限错误；有效签名但包含 apply-and-restart 的越权 action 也拒绝。签名后再次验证保护文件与私有阶段收据没有更改。唯一成功返回 signed-review-verified-unapplied，所有路径一律 apply_supported=false，不输出 IP/域名/Secret/私有路径。
+
+这不是可防重放的在线 Host Apply 授权，也不证明救援、DNS、真实 HTTPS 登录、宿主启动修订或回滚。实际生效仍必须由不同 scope 的一次性 Host 事务、独立离线授权和现网物理恢复证据构成；不得将 review-only 签名升级为重启许可。现有 server-validation 运行的 scripts/test-caddy-https-host-plan.py 增加临时真实 OpenSSL Ed25519 正反测试，不改线上 Docker/Caddy。
