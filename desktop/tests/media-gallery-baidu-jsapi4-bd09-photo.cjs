@@ -12,7 +12,19 @@ const js = ts.transpileModule(code, { compilerOptions: {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
 } }).outputText
 const mod = { exports: {} }
-new Function('module', 'exports', js)(mod, mod.exports)
+// C20 adds an optional verified CellOverlay for dense maps; A3c14 fixtures
+// test raw <=100 ClusterLayer and must resolve the optional TS module without
+// granting a signed runtime or constructing unreviewed SDK objects.
+const optionalCells = {
+  XDriveBaiduJSAPI4NativeCellOverlays: class {
+    constructor() { throw new Error('A3c14 must not instantiate dense overlays') }
+  },
+  xDriveValidBaiduNativeCellsPage() { return false },
+}
+new Function('module', 'exports', 'require', js)(mod, mod.exports, id => {
+  assert.equal(id, './media-gallery-baidu-jsapi4-cells')
+  return optionalCells
+})
 const { xDrivePrepareBaiduNativePhotoWindow: prepare,
   XDriveBaiduJSAPI4NativePhotoController: Controller,
   XDriveBaiduJSAPI4IndexedViewportBridge: Bridge,

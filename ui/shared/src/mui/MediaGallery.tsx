@@ -269,6 +269,8 @@ export interface MediaGalleryDataSource {
     bounds: import('../models').MediaBaiduNativeViewportBounds, limit?: number, offset?: number,
     signal?: AbortSignal,
   ) => Promise<import('../models').MediaBaiduNativeViewportPage>
+  listBaiduNativeCells?: (bounds: import('../models').MediaBaiduNativeViewportBounds,
+    signal: AbortSignal) => Promise<import('../models').MediaBaiduNativeCellsPage>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
     provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
   }>
@@ -3046,6 +3048,7 @@ export function XDriveMediaGalleryPage({
         places={places}
         listPlacesViewport={source.listPlacesViewport}
         listBaiduNativeViewport={source.listBaiduNativeViewport}
+        listBaiduNativeCells={source.listBaiduNativeCells}
         getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
         mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
         onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
@@ -3498,6 +3501,7 @@ export interface XDriveMediaGalleryProps {
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   listPlacesViewport?: MediaGalleryDataSource['listPlacesViewport']
   listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
+  listBaiduNativeCells?: MediaGalleryDataSource['listBaiduNativeCells']
   getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
@@ -5200,6 +5204,7 @@ export function XDriveMediaGallery({
   places = [],
   listPlacesViewport,
   listBaiduNativeViewport,
+  listBaiduNativeCells,
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
@@ -7399,6 +7404,7 @@ export function XDriveMediaGallery({
             totalCount={placesTotalCount}
             listPlacesViewport={listPlacesViewport}
             listBaiduNativeViewport={listBaiduNativeViewport}
+            listBaiduNativeCells={listBaiduNativeCells}
             getBaiduJSAPI4Status={getBaiduJSAPI4Status}
             mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
             onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}

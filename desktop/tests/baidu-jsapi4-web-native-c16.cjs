@@ -140,7 +140,7 @@ test('C16 real Web and Mobile Web share the Owner status/Session/BD09/viewer bri
 test('C16 aborted late SDK and post-grant failure release native Map/ClusterLayer', () => {
   const surface = read('ui/shared/src/mui/MediaGalleryBaiduJSAPI4PhotoSurface.tsx')
   assert.match(surface, /if \(!active \|\| pending\.signal\.aborted\) \{\s*\/\/[\s\S]*?native\.dispose\(\)/)
-  assert.match(surface, /bridge\?\.dispose\(\)\s*bridge = null\s*native\?\.dispose\(\)\s*native = null/)
+  assert.match(surface, /bridge\?\.dispose\(\)\s*bridge = null\s*latestBridge\.current = null\s*native\?\.dispose\(\)\s*native = null/)
   assert.match(surface, /pending\.abort\(\)/)
-  assert.match(surface, /bridge\?\.dispose\(\)\s*native\?\.dispose\(\)/)
+  assert.match(surface, /bridge\?\.dispose\(\)\s*latestBridge\.current = null\s*native\?\.dispose\(\)/)
 })

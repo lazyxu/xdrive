@@ -59,6 +59,7 @@ export function createWebMediaGalleryDataSource(api: XDriveApi) {
       api.mediaPlacesViewport(bounds, limit, offset, signal),
     listBaiduNativeViewport: (bounds, limit = 64, offset = 0, signal) =>
       api.mediaBaiduNativeViewport(bounds, limit, offset, signal),
+    listBaiduNativeCells: (bounds, signal) => api.mediaBaiduNativeCells(bounds, signal),
     getBaiduJSAPI4Status: signal => api.mediaBaiduJSAPI4Status(signal),
     mintBaiduJSAPI4Session: signal => api.mediaBaiduJSAPI4Session(signal),
     getBaiduMapProvider: () => api.mediaBaiduMapProvider(),

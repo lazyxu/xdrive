@@ -35,6 +35,7 @@ import type {
   MediaPlacesViewportPage,
   MediaBaiduNativeViewportBounds,
   MediaBaiduNativeViewportPage,
+  MediaBaiduNativeCellsPage,
   MediaBaiduMapConsent,
   MediaBaiduMapConsentInput,
   MediaBaiduMapIndexJob,
@@ -153,6 +154,8 @@ export interface XDriveMediaGalleryPort {
   listBaiduNativeViewport?: (
     bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeViewportPage>>
+  listBaiduNativeCells?: (bounds: MediaBaiduNativeViewportBounds, signal: AbortSignal) =>
+    Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeCellsPage>>
   getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<
     XDriveMediaGalleryTransportResult<{
       provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
@@ -563,6 +566,9 @@ export function createXDriveMediaGalleryDataSource(
       ? (bounds, limit, offset, signal) => resolveXDriveTransport(
           port.listBaiduNativeViewport!(bounds, limit, offset, signal),
         )
+      : undefined,
+    listBaiduNativeCells: port.listBaiduNativeCells
+      ? (bounds, signal) => resolveXDriveTransport(port.listBaiduNativeCells!(bounds, signal))
       : undefined,
     getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
       ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))
