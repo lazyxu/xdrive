@@ -29,15 +29,25 @@ test('shared wide FileExplorer never claims empty on an unverified/failed first 
     "emptyReadState = 'ready'", "emptyReadState?: 'unverified' | 'ready' | 'error'",
     "(emptyReadState === 'unverified' || (emptyReadState === 'error' && loading))",
     "data-xdrive-file-explorer-unverified-first-read",
-    "aria-busy={loading || undefined}", "minHeight: 180, display: 'grid', placeItems: 'center'",
+    "aria-busy={loading || emptyReadState === 'unverified' || undefined}",
+    "minHeight: 180, display: 'grid', placeItems: 'center'",
     "data-xdrive-file-explorer-empty-read-error", "role=\"alert\"",
     '回收站读取失败，请重试。', 'onClick={onRefresh}',
-    'sx={{ minHeight: 44, minWidth: 44 }}>重试</Button>', '正在读取回收站…',
+    'sx={{ minHeight: 44, minWidth: 44 }}>重试</Button>',
+    'refreshFeedbackPending = loading && logicalItemCount > 0',
     'showDelayedLoading', 'logicalItemCount === 0', 
     '<XDriveStatePanel variant="plain" message={emptyMessage} />',
   ]) assert.ok(explorer.includes(term),term)
   const render = explorer.indexOf('data-xdrive-file-explorer-unverified-first-read')
   const firstNormalEmpty = explorer.indexOf('<XDriveStatePanel variant="plain" message={emptyMessage} />',render)
   assert.ok(render > 0 && firstNormalEmpty > render, 'truthful first read must precede old generic empty')
+  assert.equal(explorer.includes('正在读取回收站…'), false,
+    'unverified Trash must not mount an ornamental loading label after 300ms')
+  const cold = explorer.slice(
+    explorer.indexOf('data-xdrive-file-explorer-unverified-first-read'),
+    explorer.indexOf('data-xdrive-file-explorer-empty-read-error'),
+  )
+  assert.equal(cold.includes('showDelayedLoading'), false,
+    'unverified 180px pending surface must be silent for any request duration')
   assert.ok(explorer.includes('XDriveFileExplorerThumbnail'), 'network thumbnails remain unmodified')
 })

@@ -40,7 +40,10 @@ test('both Web and Desktop retain the same authenticated shared Search/Range and
     assert.ok(src.includes('api.searchRange') || src.includes('cloudSearch'),name)
   }
   assert.ok(shared.includes("globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)"))
-  assert.ok(shared.includes('showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey'))
+  assert.ok(shared.includes('refreshFeedbackPending = loading && logicalItemCount > 0'),
+    'only populated-list refresh may schedule decorative progress')
+  assert.ok(shared.includes('showDelayedLoading = refreshFeedbackPending &&'),
+    'the existing 2px true refresh overlay remains available')
   assert.ok(shared.includes('XDriveFileExplorerThumbnail'), 'actual thumbnail bytes/progress not replaced')
   assert.ok(column.includes('aria-busy={state.loading || undefined}'),
     'Column exposes actual pending Range without a decorative navigation overlay')

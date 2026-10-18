@@ -1521,8 +1521,9 @@ export function XDriveFileExplorer({
     ? Math.max(0, Math.trunc(virtualCollection.itemCount) || 0)
     : visibleItems.length
   // An already-accepted empty folder is content, not a transient loader.
-  // The shared controller keeps its previous count/identity while a new
-  // counted first Range is pending; defer cold/refresh feedback by 300ms.
+  // Only refreshes of populated views need the existing delayed 2px status;
+  // the quiet 180px cold/Trash first read must never schedule a decorative
+  // timer or get a new intermediate visual state after 300ms.
   const acceptedEmptyScopeRef = useRef<string | null>(null)
   useEffect(() => {
     if (logicalItemCount > 0) acceptedEmptyScopeRef.current = null
@@ -1530,16 +1531,18 @@ export function XDriveFileExplorer({
   }, [interactionScopeKey, loading, logicalItemCount])
   const keepAcceptedEmpty = logicalItemCount === 0 &&
     acceptedEmptyScopeRef.current === interactionScopeKey
+  const refreshFeedbackPending = loading && logicalItemCount > 0
   const [delayedLoadingScope, setDelayedLoadingScope] = useState<string | null>(null)
   useEffect(() => {
-    if (!loading) {
+    if (!refreshFeedbackPending) {
       setDelayedLoadingScope(null)
       return
     }
     const timer = globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)
     return () => globalThis.clearTimeout(timer)
-  }, [interactionScopeKey, loading])
-  const showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey
+  }, [interactionScopeKey, refreshFeedbackPending])
+  const showDelayedLoading = refreshFeedbackPending &&
+    delayedLoadingScope === interactionScopeKey
   const groupIndex = virtualCollection?.groups ?? []
   const groupedDetailsLayout = useMemo(
     () => xDriveCreateFileExplorerGroupLayout({
@@ -6595,12 +6598,8 @@ export function XDriveFileExplorer({
         ) : logicalItemCount === 0 &&
           (emptyReadState === 'unverified' || (emptyReadState === 'error' && loading)) ? (
           <Box data-xdrive-file-explorer-unverified-first-read
-            aria-busy={loading || undefined}
-            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-            {showDelayedLoading
-              ? <XDriveStatePanel variant="plain" loading message="正在读取回收站…" />
-              : null}
-          </Box>
+            aria-busy={loading || emptyReadState === 'unverified' || undefined}
+            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
         ) : logicalItemCount === 0 && emptyReadState === 'error' && !loading ? (
           <Stack data-xdrive-file-explorer-empty-read-error role="alert"
             alignItems="center" justifyContent="center" spacing={1}
