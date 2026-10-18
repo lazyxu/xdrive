@@ -89,7 +89,7 @@ def fixture(port, phase):
 
 
 def run_case(phase, specimen, expect_ok, allow_anon=False,
-             change_primary_after=None):
+             change_primary_after=None, json_mode=False):
     HTTP.allow_anon = allow_anon
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -109,16 +109,34 @@ def run_case(phase, specimen, expect_ok, allow_anon=False,
         env = dict(os.environ)
         env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
         env["XDRIVE_RESCUE_PHASE_FIXTURE"] = str(root)
+        args = [sys.executable, str(SCRIPT)]
+        if json_mode:
+            args.append("--json")
         reply = subprocess.run(
-            [sys.executable, str(SCRIPT), phase, str(envf), str(composef)],
+            [*args, phase, str(envf), str(composef)],
             text=True, capture_output=True, env=env, timeout=25,
             check=False,
         )
         assert (reply.returncode == 0) == expect_ok, reply.stderr
         if expect_ok:
-            assert "primary-caddy-observed-phase: " + phase in reply.stdout
-            assert "off-host-ssh-admin-while-primary-down: unverified" in reply.stdout
-            assert "public-https-and-caddy-apply-rollback: blocked" in reply.stdout
+            if json_mode:
+                evidence = json.loads(reply.stdout)
+                assert set(evidence) == {
+                    "protocol", "phase", "observed_at_utc", "project_sha256",
+                    "primary_id_sha256", "server_generation_sha256",
+                    "rescue_generation_sha256", "primary_started_at",
+                    "primary_finished_at", "apply_supported"}
+                assert evidence["protocol"] == "xdrive.caddy.rescue.primary-phase-readonly.v1"
+                assert evidence["phase"] == phase and evidence["apply_supported"] is False
+                assert all(len(evidence[k]) == 64 for k in (
+                    "project_sha256", "primary_id_sha256",
+                    "server_generation_sha256", "rescue_generation_sha256"))
+                assert evidence["primary_finished_at"] != "" if phase == "primary-down" else evidence["primary_finished_at"] == ""
+                assert len(reply.stdout.splitlines()) == 1
+            else:
+                assert "primary-caddy-observed-phase: " + phase in reply.stdout
+                assert "off-host-ssh-admin-while-primary-down: unverified" in reply.stdout
+                assert "public-https-and-caddy-apply-rollback: blocked" in reply.stdout
         else:
             assert "blocked" in reply.stderr
             assert "primary-caddy-observed-phase" not in reply.stdout
@@ -134,6 +152,7 @@ def main():
         port = server.server_address[1]
         for stage in ("before", "primary-down", "restored"):
             run_case(stage, fixture(port, stage), True)
+            run_case(stage, fixture(port, stage), True, json_mode=True)
             print("read-only phase observed:", stage)
         base = fixture(port, "primary-down")
         attacks = (
@@ -163,6 +182,7 @@ def main():
             print("reject unsafe phase fixture:", name)
         run_case("not-a-phase", base, False)
         run_case("primary-down", base, False, allow_anon=True)
+        run_case("primary-down", base, False, allow_anon=True, json_mode=True)
         replaced = copy.deepcopy(base["primary"][0])
         replaced["Id"] = "e" * 64
         run_case("primary-down", base, False, change_primary_after=replaced)

@@ -5,6 +5,8 @@ PHASE is independently observed before/during/after an OUTSIDE-supervised
 Caddy maintenance operation. This script NEVER changes the deployment and
 does not prove SSH administrator continuity or public TLS restoration.
 """
+import datetime as dt
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -121,11 +123,49 @@ def stable(first, second):
              "Container generation or lifecycle changed during observation")
 
 
+def nonsecret_hash(parts):
+    """Only hashed, bounded container identity crosses the operator SSH link."""
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=True,
+                                     separators=(",", ":")).encode("ascii")).hexdigest()
+
+
+def phase_receipt(phase, samples):
+    primary = samples["xdrive-caddy"]
+    cfg = primary["Config"]["Labels"]
+    project = cfg["com.docker.compose.project"]
+    def container_identity(name, include_started):
+        value = samples[name]
+        labels = value["Config"]["Labels"]
+        fields = [name, value["Id"], value["Image"],
+                  labels["com.docker.compose.project"],
+                  labels["com.docker.compose.service"]]
+        if include_started:
+            fields.append(value["State"]["StartedAt"])
+        return nonsecret_hash(fields)
+    return {
+        "protocol": "xdrive.caddy.rescue.primary-phase-readonly.v1",
+        "phase": phase,
+        "observed_at_utc": dt.datetime.now(dt.timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"),
+        "project_sha256": nonsecret_hash([project]),
+        "primary_id_sha256": container_identity("xdrive-caddy", False),
+        "server_generation_sha256": container_identity("xdrive-server", True),
+        "rescue_generation_sha256": container_identity("xdrive-caddy-rescue", True),
+        "primary_started_at": primary["State"]["StartedAt"],
+        "primary_finished_at": (primary["State"]["FinishedAt"]
+                                if phase == "primary-down" else ""),
+        "apply_supported": False,
+    }
+
+
 def check():
-    need(len(sys.argv) == 4 and sys.argv[1] in STAGES,
-         "Usage: primary-state-witness.py before|primary-down|restored ENV_FILE COMPOSE_FILE")
-    phase = sys.argv[1]
-    env_file, compose_file = [Path(s) for s in sys.argv[2:]]
+    json_mode = len(sys.argv) == 5 and sys.argv[1] == "--json"
+    need((json_mode and sys.argv[2] in STAGES) or
+         (len(sys.argv) == 4 and sys.argv[1] in STAGES),
+         "Usage: primary-state-witness.py [--json] before|primary-down|restored ENV_FILE COMPOSE_FILE")
+    phase = sys.argv[2] if json_mode else sys.argv[1]
+    env_file, compose_file = [Path(s) for s in
+                              (sys.argv[3:] if json_mode else sys.argv[2:])]
     need(env_file.is_file() and compose_file.is_file(),
          "Trusted deployment files are missing")
 
@@ -153,6 +193,12 @@ def check():
     second = {name: inspect(name) for name in CONTAINERS}
     enforce(phase, second)
     stable(first, second)
+    if json_mode:
+        # This receipt is immediate local observation, NOT an offline signed
+        # attestation and never a Host Apply grant. Do not relay Docker/Env.
+        receipt = phase_receipt(phase, second)
+        print(json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        return
     print("primary-caddy-observed-phase: " + phase)
     print("server-and-rescue-same-project: healthy")
     print("rescue-loopback-and-anonymous-denial: independently-checked")
