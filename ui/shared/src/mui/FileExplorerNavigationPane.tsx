@@ -16,7 +16,6 @@ import {
   Box,
   Button,
   Checkbox,
-  CircularProgress,
   Collapse,
   Divider,
   IconButton,
@@ -54,7 +53,6 @@ import type { XDriveFileSavedSearch, XDriveFileTag } from '../file-explorer-orga
 import { xDriveFileExplorerSavedSearchRuleLabels } from '../file-explorer-organization'
 import { xDriveFileExplorerDragAutoScrollDelta } from '../file-explorer-controller'
 import { useXDrivePointerDrag } from './usePointerDrag'
-import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import type { XDrivePointerDragPoint } from './usePointerDrag'
 
 export type XDriveFileExplorerNavigationTreeCrumb = {
@@ -112,14 +110,8 @@ const defaultSidebarPreferences: XDriveFileExplorerSidebarPreferences = {
 }
 
 
-// Keep disclosure controls mounted and delay *only* the visual spinner.
-// The underlying directory/quick-access REST call still starts immediately;
-// requests that finish within one frame never flash an intermediate state.
-function XDriveNavigationQuietSpinner({ pending, size = 14 }: { pending: boolean; size?: number }) {
-  const visible = useXDriveDeferredPendingLoading(pending)
-  return visible ? <CircularProgress size={size} /> : null
-}
-
+// All navigation reads retain their real request ownership and accessible
+// busy state. A transient progress ring is not part of folder navigation.
 function loadSidebarPreferences(storageKey: string): XDriveFileExplorerSidebarPreferences {
   if (typeof window === 'undefined') return { ...defaultSidebarPreferences, visible: { ...defaultSidebarPreferences.visible } }
   try {
@@ -678,6 +670,7 @@ export function XDriveFileExplorerNavigationPane({
             ) : null}
             <Box
               data-xdrive-file-explorer-tree-load-feedback
+              aria-hidden="true"
               sx={{
                 position: 'absolute',
                 right: 0,
@@ -688,9 +681,7 @@ export function XDriveFileExplorerNavigationPane({
                 placeItems: 'center',
                 pointerEvents: 'none',
               }}
-            >
-              <XDriveNavigationQuietSpinner pending={loading && !loaded && expanded} size={12} />
-            </Box>
+            />
           </Box>
 
           <ListItemButton
@@ -1029,6 +1020,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="快速访问"
+          aria-busy={quickAccessLoading || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1078,13 +1070,15 @@ export function XDriveFileExplorerNavigationPane({
           </Stack>
 
           {quickAccessLoading && quickAccessItems.length === 0 ? (
-            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <XDriveNavigationQuietSpinner pending={quickAccessLoading && quickAccessItems.length === 0} />
-            </Box>
+            <Box data-xdrive-sidebar-quick-access-first-read aria-busy="true"
+              sx={{ minHeight: compactViewport ? 96 : 112 }} />
           ) : quickAccessItems.length === 0 ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无固定文件夹。打开文件夹的“更多操作”，选择“固定到快速访问”；也可固定当前文件夹。
-            </Typography>
+            <Box data-xdrive-sidebar-quick-access-empty
+              sx={{ minHeight: compactViewport ? 96 : 112, display: 'flex', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+                暂无固定文件夹。打开文件夹的“更多操作”，选择“固定到快速访问”；也可固定当前文件夹。
+              </Typography>
+            </Box>
           ) : (
             <Stack spacing={0.25}>
               {displayedQuickAccessItems.map((item) => (
@@ -1183,9 +1177,8 @@ export function XDriveFileExplorerNavigationPane({
               </IconButton>
               <SearchRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
               <Typography variant="caption" fontWeight={700} color="text.secondary">智能文件夹</Typography>
-              <Box data-xdrive-organization-quiet-header="saved-searches" sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
-                <XDriveNavigationQuietSpinner pending={organizationLoading} size={12} />
-              </Box>
+              <Box data-xdrive-organization-quiet-header="saved-searches" aria-hidden="true"
+                sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }} />
             </Stack>
             {onSaveCurrentSearch ? (
               <Button
@@ -1356,9 +1349,8 @@ export function XDriveFileExplorerNavigationPane({
               </IconButton>
               <LocalOfferRoundedIcon sx={{ fontSize: 15, color: 'text.secondary', flexShrink: 0 }} />
               <Typography variant="caption" fontWeight={700} color="text.secondary">标签</Typography>
-              <Box data-xdrive-organization-quiet-header="tags" sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }}>
-                <XDriveNavigationQuietSpinner pending={organizationLoading} size={12} />
-              </Box>
+              <Box data-xdrive-organization-quiet-header="tags" aria-hidden="true"
+                sx={{ width: 14, height: 14, flexShrink: 0, display: 'grid', placeItems: 'center' }} />
             </Stack>
             {onManageTags ? (
               <Button size="small" aria-label="管理标签" onClick={onManageTags} sx={organizationActionSx}>
@@ -1402,6 +1394,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="收藏"
+          aria-busy={favoritesLoading || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1428,13 +1421,15 @@ export function XDriveFileExplorerNavigationPane({
             </Typography>
           </Stack>
           {favoritesLoading && favoriteItems.length === 0 ? (
-            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <XDriveNavigationQuietSpinner pending={favoritesLoading && favoriteItems.length === 0} />
-            </Box>
+            <Box data-xdrive-sidebar-favorites-first-read aria-busy="true"
+              sx={{ minHeight: compactViewport ? 72 : 80 }} />
           ) : favoriteItems.length === 0 ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无收藏文件。打开文件的“更多操作”，选择“添加到收藏”。文件夹可固定到快速访问。
-            </Typography>
+            <Box data-xdrive-sidebar-favorites-empty
+              sx={{ minHeight: compactViewport ? 72 : 80, display: 'flex', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+                暂无收藏文件。打开文件的“更多操作”，选择“添加到收藏”。文件夹可固定到快速访问。
+              </Typography>
+            </Box>
           ) : (
             <Stack spacing={0.25}>
               {favoriteItems.map((item) => (
@@ -1488,6 +1483,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="最近使用"
+          aria-busy={recentLoading || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1532,13 +1528,15 @@ export function XDriveFileExplorerNavigationPane({
           </Stack>
 
           {recentLoading && recentItems.length === 0 ? (
-            <Box sx={{ minHeight: compactViewport ? 44 : 32, display: 'grid', placeItems: 'center' }}>
-              <XDriveNavigationQuietSpinner pending={recentLoading && recentItems.length === 0} />
-            </Box>
+            <Box data-xdrive-sidebar-recent-first-read aria-busy="true"
+              sx={{ minHeight: compactViewport ? 44 : 32 }} />
           ) : recentItems.length === 0 ? (
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
-              暂无最近访问
-            </Typography>
+            <Box data-xdrive-sidebar-recent-empty
+              sx={{ minHeight: compactViewport ? 44 : 32, display: 'flex', alignItems: 'center' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 0.75, py: 0.5 }}>
+                暂无最近访问
+              </Typography>
+            </Box>
           ) : (
             <Stack spacing={0.25}>
               {recentItems.slice(0, 8).map((item) => (

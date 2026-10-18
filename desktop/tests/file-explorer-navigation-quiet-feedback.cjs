@@ -25,23 +25,29 @@ test('tree disclosure keeps a stable real button throughout a pending directory 
   assert.ok(tree.includes('data-xdrive-file-explorer-tree-load-feedback'))
   assert.ok(tree.includes("position: 'absolute'"))
   assert.ok(tree.includes("pointerEvents: 'none'"))
-  assert.ok(tree.includes('<XDriveNavigationQuietSpinner pending={loading && !loaded && expanded} size={12} />'))
+  assert.ok(tree.includes('aria-hidden="true"'), 'fixed progress slot stays inaccessible and silent')
+  assert.equal(tree.includes('XDriveNavigationQuietSpinner'), false)
   assert.ok(tree.includes('children.map((child) => renderNode(child, depth + 1))'))
   assert.ok(tree.includes('onLoad={() => loadChildren(node, true)}'), 'network pagination remains active')
 })
 
-test('quick-access, favorites and recent cold spinners share one delayed nonblocking feedback contract', () => {
-  assert.ok(pane.includes("import { useXDriveDeferredPendingLoading } from './useDeferredLoading'"))
-  assert.ok(pane.includes('const visible = useXDriveDeferredPendingLoading(pending)'))
-  assert.ok(pane.includes('return visible ? <CircularProgress size={size} /> : null'))
+test('quick-access, favorites and recent cold reads use stable silent slots, never decorative timers', () => {
+  assert.equal(pane.includes('XDriveNavigationQuietSpinner'), false)
+  assert.equal(pane.includes('useXDriveDeferredPendingLoading'), false)
+  assert.equal(pane.includes('CircularProgress'), false)
+  // The shared hook still belongs to real network feedback elsewhere.
   assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'))
-  assert.ok(hook.includes('return pending && visible'), 'resolved requests must hide a pending-only ring')
-  for (const term of [
-    'pending={quickAccessLoading && quickAccessItems.length === 0}',
-    'pending={favoritesLoading && favoriteItems.length === 0}',
-    'pending={recentLoading && recentItems.length === 0}',
-  ]) assert.ok(pane.includes(term), term)
-  assert.ok(pane.includes('minHeight: compactViewport ? 44 : 32'), 'cold sidebar slot must remain stable')
+  for (const [kind, pending, floor] of [
+    ['quick-access', 'quickAccessLoading', '96 : 112'],
+    ['favorites', 'favoritesLoading', '72 : 80'],
+    ['recent', 'recentLoading', '44 : 32'],
+  ]) {
+    assert.ok(pane.includes('data-xdrive-sidebar-' + kind + '-first-read'))
+    assert.ok(pane.includes('data-xdrive-sidebar-' + kind + '-empty'))
+    assert.ok(pane.includes('aria-busy={' + pending + ' || undefined}'))
+    assert.ok(pane.includes('minHeight: compactViewport ? ' + floor),
+      'unverified and verified-zero keep a matching geometry floor: ' + kind)
+  }
 })
 
 test('Web and Desktop retain the same shared navigation state and requests', () => {
