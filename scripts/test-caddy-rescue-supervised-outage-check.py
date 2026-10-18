@@ -186,6 +186,144 @@ class Tests(unittest.TestCase):
             mod.supervised_sequence(stopped_first, interrupted_login, confirm)
         self.assertEqual(interrupted_calls, ["before", "primary-down"])
 
+
+    def test_optional_signed_rescue_mode_validates_all_pins_and_private_paths(self):
+        witness = "/home/operator/xdrive/scripts/caddy-rescue-primary-state-witness.py"
+        args = (
+            "--require-approved-runtime", "a" * 64, "b" * 64,
+            "/home/operator/.xd/state/approval.json",
+            "/home/operator/.xd/state/approval.sig",
+            "/home/operator/.xd/state/public.pem",
+            "c" * 64,
+            "ghcr.io/lazyxu/xdrive-caddy@sha256:" + "d" * 64,
+        )
+        validated = mod.validate_approved_runtime(args, witness)
+        self.assertEqual(validated["runtime"], witness.replace(
+            "caddy-rescue-primary-state-witness.py",
+            "caddy-rescue-approved-runtime-check.py"))
+        self.assertEqual(validated["image_checker"], witness.replace(
+            "caddy-rescue-primary-state-witness.py",
+            "caddy-rescue-image-approval-check.py"))
+        self.assertEqual(validated["key_pin"], "c" * 64)
+        self.assertNotIn("docker.sock", str(validated))
+        for wrong in (
+            args[:4],  # incomplete signed approval arguments
+            ("--skip-approval", *args[1:]),
+            (args[0], "f" * 63, *args[2:]),
+            (*args[:4], "/home/operator/../manifest.json", *args[5:]),
+            (*args[:7], "ghcr.io/lazyxu/xdrive-caddy:latest"),
+            (*args[:7], "ghcr.io/lazyxu/xdrive-caddy@sha256:" + "f" * 63),
+            (*args[:7], "ghcr.io/a/../caddy@sha256:" + "f" * 64),
+            (*args[:7], "ghcr.io/lazyxu/caddy@sha256:" + "f" * 64, "extra"),
+        ):
+            with self.subTest(bad=str(wrong)[:50]), self.assertRaises(mod.Blocked):
+                mod.validate_approved_runtime(wrong, witness)
+
+    def test_five_remote_private_hashes_are_strictly_bound_to_requested_paths(self):
+        paths = (
+            "/home/operator/.xd/config/.env",
+            "/home/operator/.xd/config/compose.yml",
+            "/home/operator/.xd/state/approval.json",
+            "/home/operator/.xd/state/approval.sig",
+            "/home/operator/.xd/state/public.pem",
+        )
+        value = ("a" * 64 + "  " + paths[0] + "\n" +
+                 "b" * 64 + "  " + paths[1] + "\n" +
+                 "c" * 64 + "  " + paths[2] + "\n" +
+                 "d" * 64 + "  " + paths[3] + "\n" +
+                 "e" * 64 + "  " + paths[4] + "\n").encode("ascii")
+        with mock.patch.object(mod, "silent_run", return_value=value) as called:
+            proof = mod.remote_hashes("user@trusted-host", "/tmp/hosts", 22, paths)
+        self.assertEqual(proof, tuple(letter * 64 for letter in "abcde"))
+        argv = called.call_args.args[0]
+        self.assertEqual(argv[0], "ssh")
+        self.assertIn("sha256sum --", argv[-1])
+        self.assertNotIn("cat ", argv[-1])
+        for corrupt in (
+            value[:-1], value + value[:64],
+            value.replace(paths[0].encode(), paths[1].encode(), 1),
+            value.replace(b"b" * 64, b"z" * 64, 1),
+        ):
+            with mock.patch.object(mod, "silent_run", return_value=corrupt):
+                with self.assertRaises(mod.Blocked):
+                    mod.remote_hashes("user@trusted-host", "/tmp/hosts", 22, paths)
+        with self.assertRaises(mod.Blocked):
+            mod.remote_hashes("user@trusted-host", "/tmp/hosts", 22, paths[:4])
+        with self.assertRaises(mod.Blocked):
+            mod.remote_hashes("user@trusted-host", "/tmp/hosts", 22,
+                              (*paths[:4], paths[3]))
+
+    def test_approved_runtime_proof_is_only_local_and_never_an_apply_grant(self):
+        config = mod.validate_approved_runtime((
+            "--require-approved-runtime", "a" * 64, "b" * 64,
+            "/home/u/approval.json", "/home/u/approval.sig",
+            "/home/u/public.pem", "c" * 64,
+            "ghcr.io/lazyxu/caddy@sha256:" + "d" * 64,
+        ), "/home/u/caddy-rescue-primary-state-witness.py")
+        good = (
+            b"approved-rescue-runtime-local-phase: primary-down\n"
+            b"operator-pinned-signature-and-deployed-image: matched-within-same-local-window\n"
+            b"server-rescue-current-generation: consistent-local\n"
+            b"public-https-restore-and-caddy-apply-rollback: blocked\n"
+        )
+        with mock.patch.object(mod, "silent_run", return_value=good) as called:
+            mod.remote_approved_runtime(
+                "user@host", "/tmp/hosts", 22, config, "primary-down",
+                "/home/u/config/.env", "/home/u/config/compose.yml")
+        cmd = called.call_args.args[0][-1]
+        self.assertIn("caddy-rescue-approved-runtime-check.py", cmd)
+        self.assertIn("primary-down", cmd)
+        self.assertNotIn("docker restart", cmd)
+        self.assertNotIn("apply-and-restart", cmd)
+        for denied in (
+            good.replace(b"matched-within-same-local-window", b"unverified"),
+            good.replace(b"blocked", b"allowed"),
+            b"approved-rescue-runtime-local-phase: primary-down\n",
+        ):
+            with mock.patch.object(mod, "silent_run", return_value=denied):
+                with self.assertRaises(mod.Blocked):
+                    mod.remote_approved_runtime(
+                        "user@host", "/tmp/hosts", 22, config, "primary-down",
+                        "/home/u/config/.env", "/home/u/config/compose.yml")
+
+    def test_approved_phase_fences_signed_inputs_before_after_and_across_four_phases(self):
+        stable = tuple(k * 64 for k in "abcde")
+        other = tuple(k * 64 for k in "abcdz")
+        events = []
+        def read():
+            events.append("pin-inputs")
+            return stable
+        def signed(phase):
+            events.append("signed:" + phase)
+        def sample(phase):
+            events.append("snapshot:" + phase)
+            return {"phase": phase, "apply_supported": False}
+        first, anchored = mod.approved_phase("before", read, signed, sample, None)
+        self.assertEqual(first["phase"], "before")
+        self.assertEqual(anchored, stable)
+        self.assertEqual(events, ["pin-inputs", "signed:before", "pin-inputs",
+                                  "snapshot:before", "pin-inputs"])
+        events.clear()
+        next_sample, next_anchor = mod.approved_phase(
+            "primary-down", read, signed, sample, stable)
+        self.assertEqual((next_sample["phase"], next_anchor),
+                         ("primary-down", stable))
+        self.assertEqual(len(events), 5)
+        events.clear()
+        with self.assertRaises(mod.Blocked):
+            mod.approved_phase("restored", lambda: other, signed, sample, stable)
+        self.assertEqual(events, [])
+        for values in ((stable, other, other), (stable, stable, other)):
+            seq = iter(values)
+            events.clear()
+            with self.assertRaises(mod.Blocked):
+                mod.approved_phase(
+                    "primary-down", lambda: next(seq), signed, sample, stable)
+            self.assertTrue(any(event.startswith("signed:") for event in events))
+            self.assertTrue(not (events[-1] == "snapshot:primary-down" and
+                                  len(events) == 1))
+
+
     def test_admin_password_only_anonymous_private_pipe_not_ssh_argv(self):
         import subprocess as sp
         sent = []

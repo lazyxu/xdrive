@@ -20,6 +20,7 @@ import time
 PROTOCOL = "xdrive.caddy.rescue.primary-phase-readonly.v1"
 PHASES = ("before", "primary-down", "primary-down", "restored")
 HEX = re.compile(r"[0-9a-f]{64}\Z", re.ASCII)
+OCI = re.compile(r"[a-z0-9][a-z0-9./:_-]{2,180}@sha256:[0-9a-f]{64}\Z", re.ASCII)
 TARGET = re.compile(r"[A-Za-z_][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,252}\Z")
 PATH = re.compile(r"/(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\Z")
 FIELDS = frozenset((
@@ -160,6 +161,34 @@ def validate_options(target, hosts, rescue_port, ssh_port, witness, env, compose
     return witness, env, compose, operator
 
 
+def validate_approved_runtime(args, witness):
+    """Opt-in approved-image proof; never accept the old review-only signature as Apply.
+
+    The two fixed remote checkers must live beside the already pinned witness,
+    and every approval input must be a bounded absolute private host path.
+    """
+    require(len(args) == 8 and args[0] == "--require-approved-runtime",
+            "Complete signed rescue approval parameters are required")
+    _, runtime_sha, image_checker_sha, manifest, signature, public_key, key_pin, image = args
+    require(all(isinstance(v, str) and bool(HEX.fullmatch(v))
+                for v in (runtime_sha, image_checker_sha, key_pin)),
+            "Unsigned or unpinned Rescue verification input")
+    require(isinstance(image, str) and bool(OCI.fullmatch(image)) and ".." not in image,
+            "Operator-approved Rescue image must be a fixed digest")
+    root = witness.rsplit("/", 1)[0]
+    return {
+        "runtime": root + "/caddy-rescue-approved-runtime-check.py",
+        "runtime_sha": runtime_sha,
+        "image_checker": root + "/caddy-rescue-image-approval-check.py",
+        "image_checker_sha": image_checker_sha,
+        "manifest": remote_path(manifest),
+        "signature": remote_path(signature),
+        "public_key": remote_path(public_key),
+        "key_pin": key_pin,
+        "image": image,
+    }
+
+
 def build_ssh(target, pinned_hosts, ssh_port, tokens):
     # Fixed pinned OpenSSH identity; remote shell command is only quoted tokens.
     return [
@@ -192,6 +221,60 @@ def check_remote_pin(target, hosts, port, script, expected):
                                   ["sha256sum", "--", script]), 30, 512)
     require(output == (expected + "  " + script + "\n").encode("ascii"),
             "Remote read-only checker digest differs from independent pin")
+
+
+def remote_hashes(target, hosts, port, files):
+    """Read a stable set of remote hashes, never its private bytes."""
+    require(isinstance(files, (tuple, list)) and len(files) == 5
+            and len(set(files)) == 5, "Five distinct private approval inputs required")
+    normalized = [remote_path(path) for path in files]
+    output = silent_run(build_ssh(target, hosts, port,
+                                  ["sha256sum", "--", *normalized]), 35, 2048)
+    rows = output.splitlines(keepends=True)
+    require(len(rows) == len(normalized), "Incomplete private approval SHA evidence")
+    values = []
+    for item, path in zip(rows, normalized):
+        expected = b"  " + path.encode("ascii") + b"\n"
+        require(item.endswith(expected), "Private approval hash path mismatch")
+        value = item[:len(item) - len(expected)]
+        require(bool(re.fullmatch(rb"[0-9a-f]{64}", value)),
+                "Invalid private approval hash")
+        values.append(value.decode("ascii"))
+    return tuple(values)
+
+
+def remote_approved_runtime(target, hosts, port, approved, stage, env, compose):
+    command = [
+        "python3", "-I", approved["runtime"], stage, env, compose,
+        approved["manifest"], approved["signature"], approved["public_key"],
+        approved["key_pin"], approved["image"],
+    ]
+    result = silent_run(build_ssh(target, hosts, port, command), 180, 8192)
+    require(
+        ("approved-rescue-runtime-local-phase: " + stage + "\n").encode() in result
+        and b"operator-pinned-signature-and-deployed-image: matched-within-same-local-window\n" in result
+        and b"server-rescue-current-generation: consistent-local\n" in result
+        and b"public-https-restore-and-caddy-apply-rollback: blocked\n" in result,
+        "Operator-signed immutable Rescue runtime not proven in this phase",
+    )
+
+
+def approved_phase(stage, read_fingerprints, verify_signed_runtime,
+                   observe_phase, anchored):
+    """Fence approved inputs before/proof/after, throughout the one outage."""
+    first = read_fingerprints()
+    require(isinstance(first, tuple) and len(first) == 5
+            and all(type(x) is str and bool(HEX.fullmatch(x)) for x in first),
+            "Missing complete signed Rescue input evidence")
+    require(anchored is None or first == anchored,
+            "Signed Rescue inputs changed between outage phases")
+    verify_signed_runtime(stage)
+    require(read_fingerprints() == first,
+            "Signed Rescue inputs changed during local approved-runtime proof")
+    receipt = observe_phase(stage)
+    require(read_fingerprints() == first,
+            "Signed Rescue inputs changed during remote primary observation")
+    return receipt, first
 
 
 def remote_observe(target, hosts, port, witness, env, compose, stage):
@@ -245,13 +328,14 @@ def supervised_sequence(observe, authenticate, confirm):
 
 
 def check():
-    require(len(sys.argv) == 10,
-            "Usage: supervised-outage-check.py USER@HOST PINNED_KNOWN_HOSTS RESCUE_PORT SSH_PORT REMOTE_WITNESS REMOTE_ENV REMOTE_COMPOSE PINNED_WITNESS_SHA256 PINNED_OPERATOR_SHA256")
+    require(len(sys.argv) in (10, 18),
+            "Usage: supervised-outage-check.py USER@HOST KNOWN_HOSTS RESCUE_PORT SSH_PORT REMOTE_WITNESS REMOTE_ENV REMOTE_COMPOSE PINNED_WITNESS_SHA256 PINNED_OPERATOR_SHA256 [--require-approved-runtime PINNED_RUNTIME_SHA256 PINNED_IMAGE_CHECKER_SHA256 REMOTE_MANIFEST REMOTE_SIGNATURE REMOTE_PUBKEY INDEPENDENT_DER_KEY_SHA256 APPROVED_OCI_IMAGE_DIGEST]")
     require(sys.stdin.isatty() and sys.stdout.isatty(),
             "Physical outage verification requires a real supervised operator terminal")
-    _, target, hosts_file, rescue_port, ssh_port, witness, env, compose, witness_sha, operator_sha = sys.argv
+    _, target, hosts_file, rescue_port, ssh_port, witness, env, compose, witness_sha, operator_sha = sys.argv[:10]
     witness, env, compose, operator = validate_options(
         target, hosts_file, rescue_port, ssh_port, witness, env, compose, witness_sha, operator_sha)
+    approved = validate_approved_runtime(sys.argv[10:], witness) if len(sys.argv) == 18 else None
     ssh = sibling_module("caddy-rescue-ssh-auth-check.py")
     try:
         snapshot = ssh.pinned_known_hosts_bytes(Path(hosts_file).expanduser().absolute())
@@ -262,11 +346,42 @@ def check():
         hosts.write_bytes(snapshot)
         hosts.chmod(0o600)
         start = time.monotonic()
+        anchored = None
         def observe(stage):
+            nonlocal anchored
             check_remote_pin(target, hosts, ssh_port, witness, witness_sha)
             check_remote_pin(target, hosts, ssh_port, operator, operator_sha)
-            data = remote_observe(target, hosts, ssh_port, witness, env, compose, stage)
-            record = decode_phase(data, stage)
+            if approved:
+                check_remote_pin(target, hosts, ssh_port,
+                                 approved["runtime"], approved["runtime_sha"])
+                check_remote_pin(target, hosts, ssh_port,
+                                 approved["image_checker"], approved["image_checker_sha"])
+                def read_inputs():
+                    return remote_hashes(
+                        target, hosts, ssh_port,
+                        (env, compose, approved["manifest"],
+                         approved["signature"], approved["public_key"]),
+                    )
+                def signed(stage_name):
+                    remote_approved_runtime(target, hosts, ssh_port, approved,
+                                            stage_name, env, compose)
+                def original(stage_name):
+                    return decode_phase(remote_observe(
+                        target, hosts, ssh_port, witness, env, compose, stage_name
+                    ), stage_name)
+                record, anchored = approved_phase(
+                    stage, read_inputs, signed, original, anchored)
+                # Recheck fixed scripts after running the remote local checker
+                # so even same-window script substitution cannot silently pass.
+                check_remote_pin(target, hosts, ssh_port, witness, witness_sha)
+                check_remote_pin(target, hosts, ssh_port, operator, operator_sha)
+                check_remote_pin(target, hosts, ssh_port,
+                                 approved["runtime"], approved["runtime_sha"])
+                check_remote_pin(target, hosts, ssh_port,
+                                 approved["image_checker"], approved["image_checker_sha"])
+            else:
+                data = remote_observe(target, hosts, ssh_port, witness, env, compose, stage)
+                record = decode_phase(data, stage)
             require(time.monotonic() - start <= 900,
                     "Supervised outage exceeded the observation window")
             return record
@@ -280,6 +395,8 @@ def check():
         print("supervised-primary-outage: sampled-before-down-down-restored")
         print("off-host-pinned-ssh-admin: verified-between-two-down-samples")
         print("server-and-rescue-generations: unchanged-across-samples")
+        print("signed-rescue-runtime-across-phases: " +
+              ("observed-approved-local-per-phase" if approved else "not-checked"))
         print("cross-phase-observation: consistent-readonly-unapplied")
         print("outage-continuous-between-samples: unverified")
         print("physical-network-other-clients-and-public-https: unverified")
