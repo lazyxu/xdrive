@@ -7,7 +7,7 @@ const read = file => fs.readFileSync(path.join(root,file),'utf8')
 const shared = read('ui/shared/src/mui/FileExplorer.tsx')
 const web = read('web/src/WebFileExplorer.tsx')
 const desktop = read('desktop/src/renderer/DesktopFileExplorer.tsx')
-const existing = read('desktop/tests/file-explorer-column-quiet-loading.cjs')
+const column = read('ui/shared/src/mui/FileExplorerColumnView.tsx')
 
 test('FileExplorer Search result status never adds a fast in-flow progress caption or changes summary width',()=>{
   const start=shared.indexOf('data-xdrive-file-explorer-search-summary')
@@ -42,6 +42,10 @@ test('both Web and Desktop retain the same authenticated shared Search/Range and
   assert.ok(shared.includes("globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)"))
   assert.ok(shared.includes('showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey'))
   assert.ok(shared.includes('XDriveFileExplorerThumbnail'), 'actual thumbnail bytes/progress not replaced')
-  assert.ok(existing.includes('useXDriveDeferredLoading(loading, generation)'),
-    "other Column view's request-scoped network progress remains unaffected")
+  assert.ok(column.includes('aria-busy={state.loading || undefined}'),
+    'Column exposes actual pending Range without a decorative navigation overlay')
+  assert.ok(column.includes('controller.signal.aborted || generationRef.current.get(key) !== generation'),
+    'Column preserves request generation cancellation')
+  assert.equal(column.includes('ColumnNetworkFeedback'), false,
+    'P70 intentionally removed the cosmetic delayed Column spinner')
 })

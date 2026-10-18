@@ -38,7 +38,7 @@ test('Album Organizer owns exactly one stable 160px first-read, error/retry and 
     'indexError?: boolean',
     'onRetryIndex?: () => void',
     'indexVerified = true',
-    'showDelayedIndexRead = useXDriveDeferredPendingLoading(!indexVerified && indexPending)',
+    'aria-busy={(!indexVerified && indexPending) || (Boolean(folderActions) && !foldersVerified) || undefined}',
     "visibility: indexVerified ? 'visible' : 'hidden'",
     'data-xdrive-gallery-album-index-read-state',
     "minHeight: 160, display: 'grid', placeItems: 'center'",
@@ -46,11 +46,12 @@ test('Album Organizer owns exactly one stable 160px first-read, error/retry and 
     "相册索引读取失败，请重试。",
     'onClick={onRetryIndex}',
     'minWidth: 44, minHeight: 44',
-    "正在读取相册…",
     "(!currentFolderLoading && (!folderActions || foldersVerified))",
     "albums.length > 0 ? '当前文件夹没有匹配的相册' : '还没有相册'",
     'aria-busy={currentFolderLoading || undefined}',
   ]) assert.ok(organizer.includes(token),token)
+  assert.equal(organizer.includes('showDelayedIndexRead'),false)
+  assert.equal(organizer.includes('正在读取相册…'),false)
   assert.equal(organizer.includes('showDelayedFolderLoading'),false)
   assert.equal(organizer.includes('加载相册文件夹…'),false)
   for(const token of [
@@ -147,7 +148,7 @@ test('Mounted shared Album Organizer keeps one fixed status slot through fast, s
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,35))})
     assert.equal(ring(),0,'fast pending window remains quiet')
     await act(async()=>{await new Promise(resolve=>setTimeout(resolve,360))})
-    assert.ok(ring()>0,'real sustained wait shows existing shared 300ms spinner')
+    assert.equal(ring(),0,'real sustained index wait must stay visually quiet')
     assert.equal(has('还没有相册'),false)
     await act(async()=>{view.update(React.createElement(Organizer,{
       ...props,indexPending:false,indexError:true,

@@ -12,13 +12,12 @@ import {
   DeleteOutline as DeleteOutlineIcon,
 } from '@mui/icons-material'
 import {
-  Alert, Box, Breadcrumbs, Button, CircularProgress,
+  Alert, Box, Breadcrumbs, Button,
   Dialog, DialogActions, DialogContent, DialogTitle,
   IconButton, MenuItem, Paper, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import type { MediaAlbum, MediaAlbumFolder } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
-import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 import {
   changeAlbumPin, moveAlbum, readMediaAlbumPreferences,
   sortedMediaAlbums, subscribeMediaAlbumPreferences, writeMediaAlbumPreferences,
@@ -247,7 +246,6 @@ export function XDriveMediaGalleryAlbumOrganizer({
   const scopedFolders = foldersVerified ? folders : []
   const visibleFolderID = foldersVerified ? activeFolderID : 0
   const currentFolderLoading = folderBusyState.scope === folderActionScope && foldersLoading
-  const showDelayedIndexRead = useXDriveDeferredPendingLoading(!indexVerified && indexPending)
   const visibleFolderError = folderBusyState.scope === folderActionScope ? folderError : ''
   const [prefs, setPrefs] = useState<MediaAlbumOrganizePreferences>(() =>
     readMediaAlbumPreferences(accountScope))
@@ -586,11 +584,6 @@ export function XDriveMediaGalleryAlbumOrganizer({
                 <Typography variant="body2" color="error.main">相册索引读取失败，请重试。</Typography>
                 {onRetryIndex ? <Button size="small" onClick={onRetryIndex}
                   sx={{ minWidth: 44, minHeight: 44 }}>重试</Button> : null}
-              </Stack>
-            ) : showDelayedIndexRead ? (
-              <Stack alignItems="center" spacing={1} role="status">
-                <CircularProgress size={20} />
-                <Typography variant="body2" color="text.secondary">正在读取相册…</Typography>
               </Stack>
             ) : null
           ) : (!currentFolderLoading && (!folderActions || foldersVerified)) ? (

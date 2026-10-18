@@ -5,7 +5,6 @@ import InsertDriveFileRoundedIcon from '@mui/icons-material/InsertDriveFileRound
 import {
   Box,
   Button,
-  CircularProgress,
   List,
   ListItemButton,
   Stack,
@@ -13,7 +12,6 @@ import {
 } from '@mui/material'
 import type { MouseEvent as ReactMouseEvent } from 'react'
 import { XDriveAutoLoadSentinel } from './AutoLoadSentinel'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type {
   XDriveFileExplorerCrumb,
   XDriveFileExplorerID,
@@ -43,29 +41,8 @@ const emptyColumn = (): ColumnState => ({
   generation: 0,
 })
 
-// The column scroll host is fixed; a pending Range must never insert a
-// temporary spinner row that pushes real files down. Requests run immediately,
-// while decorative progress belongs to the current generation after 300ms.
-function ColumnNetworkFeedback({
-  loading,
-  generation,
-}: {
-  loading: boolean
-  generation: number
-}) {
-  const visible = useXDriveDeferredLoading(loading, generation)
-  return visible ? (
-    <Box data-xdrive-column-loading role="status" aria-label="正在读取文件夹"
-      sx={{
-        position: 'absolute', right: 8, bottom: 8, zIndex: 2,
-        pointerEvents: 'none', p: 0.5, borderRadius: 1,
-        bgcolor: 'background.paper',
-      }}>
-      <CircularProgress size={18} />
-    </Box>
-  ) : null
-}
-
+// A pending Range keeps the same fixed-width scroll host. Report truthful
+// busy semantics without adding a decorative folder-navigation overlay.
 export function XDriveFileExplorerColumnView({
   lifecycleKey = '',
   crumbs,
@@ -204,6 +181,8 @@ export function XDriveFileExplorerColumnView({
             key={String(crumb.id)}
             role="group"
             aria-label={crumb.name}
+            aria-busy={state.loading || undefined}
+            data-xdrive-column-pending={state.loading || undefined}
             sx={{
               width: 252,
               minWidth: 220,
@@ -264,7 +243,6 @@ export function XDriveFileExplorerColumnView({
             ) : state.loaded && !state.error && state.items.length === 0 ? (
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', px: 1.25, py: 1 }}>空文件夹</Typography>
             ) : null}
-            <ColumnNetworkFeedback loading={state.loading} generation={state.generation} />
             {state.error ? (
               <Box role="alert" data-xdrive-column-error sx={{
                 position: 'absolute', left: 8, right: 8, bottom: 8, zIndex: 3,

@@ -7,14 +7,12 @@ import {
 import {
   Box,
   Chip,
-  CircularProgress,
   Paper,
   Stack,
   Typography,
 } from '@mui/material'
 import type { MediaMemory } from '../models'
 import { XDriveMediaGalleryCoverThumbnail } from './MediaGalleryCoverThumbnail'
-import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 
 type MediaThumbnailLoader = (nodeID: number) => Promise<string | null>
 
@@ -58,20 +56,16 @@ export function XDriveMediaGalleryMemories({
   loadThumbnail: MediaThumbnailLoader
   onOpenMemory?: (memory: MediaMemory) => void
 }) {
-  // Memory index reads are real network requests, but a quick first response
-  // must not flash a progress ring in the same 180px layout slot.
-  const showFirstReadLoading = useXDriveDeferredPendingLoading(
-    Boolean(loading) && memories.length === 0,
-  )
+  // Keep the stable first-read footprint silent during navigation, without
+  // delaying data. Actual media thumbnail progress remains card-owned.
   if (memories.length === 0 && loading) {
     return (
       <Paper
         data-xdrive-gallery-memories-first-read
+        aria-busy="true"
         variant="outlined"
         sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
-      >
-        {showFirstReadLoading ? <CircularProgress size={28} /> : null}
-      </Paper>
+      />
     )
   }
 
