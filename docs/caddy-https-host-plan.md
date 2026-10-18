@@ -79,3 +79,26 @@ CI server-validation 执行 `python3 scripts/test-caddy-https-host-plan.py`。�
 拒绝非规范/重复字段、过期与未来或超长有效期、错误类型/公钥/签名/摘要、源文件替换和权限错误；有效签名但包含 apply-and-restart 的越权 action 也拒绝。签名后再次验证保护文件与私有阶段收据没有更改。唯一成功返回 signed-review-verified-unapplied，所有路径一律 apply_supported=false，不输出 IP/域名/Secret/私有路径。
 
 这不是可防重放的在线 Host Apply 授权，也不证明救援、DNS、真实 HTTPS 登录、宿主启动修订或回滚。实际生效仍必须由不同 scope 的一次性 Host 事务、独立离线授权和现网物理恢复证据构成；不得将 review-only 签名升级为重启许可。现有 server-validation 运行的 scripts/test-caddy-https-host-plan.py 增加临时真实 OpenSSL Ed25519 正反测试，不改线上 Docker/Caddy。
+
+## NET-M5-C0 — 独立设备真实 IP/域名 HTTPS 与管理员登录验收（仍非 Host Apply）
+
+操作员在**另一台受信任的终端**显式运行 `scripts/caddy-https-remote-login-check.py`，读取已安全保存的 Canonical Host Plan；Plan 文件须由独立可信通道固定 SHA-256，包含严格有效的局域网 RFC1918 IPv4、公网 FQDN、IP/域名独立启停以及正修订。至少一个 HTTPS 入口启用。要求显式提供 HTTPS 主机端口，不猜测公网/NAT 端口；不修改 DNS、Caddy 或服务器配置。
+
+对于已启用的 LAN IP，必须从可信渠道取得 Caddy 本地 Root CA PEM 并**独立固定其文件 SHA-256**，用单独的 TLS 客户端信任上下文验证完整链、IP SAN 和所访问的 IP 主机名；对于已启用的公网域名，使用系统受信任 CA 验证完整链、DNS 主机名，不自动接受私有 CA。不使用代理、不跟随跳转、不绕过 TLS 证书校验，不允许明文 HTTP。尚未信任本地 CA 的浏览器和手机不可无视安全告警登录。
+
+每个已启用入口通过真实网络、独立 TLS 会话执行固定顺序：GET /api/v1/readyz（200 且 ok=true）；匿名 GET /api/v1/admin/services 必须是 401；使用操作员**在本机交互输入**的账号密码 POST /api/v1/auth/login，必须成功且角色为 admin；再以该入口自己的临时 Bearer 获取严格 11 个服务项，并取得 GET /api/v1/admin/services/caddy/https/host-plan，要求其原始规范字节与独立固定的 Plan **完全相同**。拒绝非 200、重定向、TLS/身份错误、缺失权限、计划改动、响应超限、密码/Token 泄露。两入口同时开启时都必须独立通过，Token 不跨 Origin 复用；终端输出仅最小枚举、修订与哈希，不输出真实 IP、域名、Root CA 路径、密码或 Token。
+
+典型 IP-only/双入口命令（port 以真实部署配置为准；domain-only 省略两项 lan-root-ca 参数）：
+
+```bash
+python3 scripts/caddy-https-remote-login-check.py \
+  --plan "$HOME/.xd/state/caddy-host-plan.json" \
+  --expected-plan-sha256 "$TRUSTED_PLAN_SHA256" \
+  --https-port 8443 \
+  --lan-root-ca "$TRUSTED_CADDY_ROOT_CA_PEM" \
+  --expected-lan-ca-sha256 "$TRUSTED_ROOT_CA_SHA256"
+```
+
+**证据边界：** 只验证当前操作员所在网络能够到达开启的入口，并通过真实证书、管理员登录和已保存期望修订一致性检查；没有检测已关闭入口是否完全不可访问，无法断言两个 Origin 由同一 Server 进程服务、所有客户设备信任私有 CA、当前 Caddy 使用了该修订、WAN 所有路径可达或改动能够安全重启/回滚。`state=enabled-origin-logins-verified-unapplied`，固定 `apply_supported=false`。证据仍需由可信 Host Manager 与事务、启动配置摘要、不可变 Applied Receipt、独立超时回滚和实际设备验收联合使用，不能单独向“系统依赖”页面开放应用按钮。
+
+CI 现有 `server-validation` 执行 `scripts/test-caddy-https-host-plan.py`，由此固定入口调用 `test-caddy-https-remote-login-check.py`，不需要修改 CI 工作流 YAML：使用真实临时 OpenSSL CA/IP SAN 证书和 loopback TLS HTTP Server，验证真实匿名 401、登录、权限、原始 Plan 字节、错误证书名/CA、阻断非管理员/篡改/健康失败、HTTP 代理旁路和不修改宿主机。所有密钥/管理员口令都是临时无效测试夹具，不连接生产网络。
