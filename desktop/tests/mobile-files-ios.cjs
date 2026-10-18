@@ -271,12 +271,23 @@ test('global Search and saved rules retain browsing context and authoritative Se
   assert.doesNotMatch(mobileSource, /onClearSearch\(\); setBrowseHome\(true\)/)
 })
 
-test('recent and pinned folders navigate only after the existing Web controller accepts', () => {
+test('P69: Recent, pinned and menu-open folders await the authorized counted Range', () => {
   assert.match(webAdapter, /return recent\.activate\(/)
   assert.match(webAdapter, /return quickAccess\.navigate\(/)
-  assert.match(mobileSource, /void open\.then\(accepted => \{/)
-  assert.match(mobileSource, /accepted && intent === navigationIntentRef\.current/)
-  assert.match(mobileSource, /props\.onOpenQuickAccess\(entry\.id\)\.then\(accepted =>/)
+  for (const fragment of [
+    'const openExternalDirectory = (id: number, activate: () => Promise<boolean>)',
+    'pendingExternalDirectoryRef.current = { directoryID: id, intent, alreadyCommitted }',
+    'externalDirectoryCommit = Boolean(',
+    'pendingExternal.directoryID === directoryID',
+    'props.virtualCollection && !props.loading',
+    'openExternalDirectory(entry.id, open)',
+    'openExternalDirectory(entry.id, () => props.onOpenQuickAccess(entry.id))',
+    'openExternalDirectory(selectedEntry.id, open)',
+    'openExternalDirectory(location.parent_id, async () =>',
+    'lookupIntent !== navigationIntentRef.current',
+  ]) assert.ok(mobileSource.includes(fragment), fragment)
+  assert.doesNotMatch(mobileSource, /accepted && intent === navigationIntentRef\.current && selectedEntry\.kind === 'dir'\) beginBrowse/)
+  assert.doesNotMatch(mobileSource, /if \(accepted !== false\) beginBrowse\(location\.parent_id\)/)
 })
 
 test('F-PARITY-07F: Mobile bulk selection uses shared chunks, progress, cancel and preserves previous state', () => {

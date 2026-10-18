@@ -476,6 +476,11 @@ export default function MobileFiles(props: Props) {
   const pendingPathOriginRef = useRef<{ directoryID: number | null } | null>(null)
   // A Browse Home → Cloud root tap is a pending intent, not a committed page.
   const pendingBrowseRootRef = useRef<{ rootID: number; intent: number } | null>(null)
+  // A Recent/Quick Access folder is only an intent until the shared counted
+  // first Range and crumbs commit. Promise completion alone cannot reset UI.
+  const pendingExternalDirectoryRef = useRef<{
+    directoryID: number; intent: number; alreadyCommitted: boolean
+  } | null>(null)
   const searchReturnHomeRef = useRef(initial.folderID === null)
   // A Search entered from Recent/Favorites is still the one global Search.
   // Remember its presentation origin, without retaining another query/ACL.
@@ -815,17 +820,27 @@ export default function MobileFiles(props: Props) {
       pendingRoot.intent === navigationIntentRef.current &&
       pendingRoot.rootID === directoryID &&
       props.virtualCollection && !props.loading)
-    // The root's first counted Range may arrive without changing crumbs when
-    // this owner was already displaying that root behind Browse Home.
-    if (lastCommittedDirectoryRef.current === directoryID && !homeRootCommit) return
+    const pendingExternal = pendingExternalDirectoryRef.current
+    const externalDirectoryCommit = Boolean(pendingExternal &&
+      pendingExternal.intent === navigationIntentRef.current &&
+      pendingExternal.directoryID === directoryID &&
+      !pendingExternal.alreadyCommitted &&
+      !props.trashActive && !props.searchActive &&
+      props.virtualCollection && !props.loading)
+    // Both Home-root and Recent/Quick Access may commit a counted Range
+    // without changing an already known crumb. Never treat a Promise
+    // resolution or a pending first Range as an authorized page switch.
+    if (lastCommittedDirectoryRef.current === directoryID &&
+        !homeRootCommit && !externalDirectoryCommit) return
     lastCommittedDirectoryRef.current = directoryID
     if (homeRootCommit) pendingBrowseRootRef.current = null
+    if (externalDirectoryCommit) pendingExternalDirectoryRef.current = null
     const routedCommit = Boolean(props.requestedDirectoryID &&
       directoryID === props.requestedDirectoryID)
     const pathCommit = pendingPathOriginRef.current !== null &&
       pendingPathOriginRef.current.directoryID !== directoryID
     if (pathCommit) pendingPathOriginRef.current = null
-    const authorizedCommit = routedCommit || pathCommit || homeRootCommit
+    const authorizedCommit = routedCommit || pathCommit || homeRootCommit || externalDirectoryCommit
     // A deep link opened from Browse Home/Recent/Favorites must enter Browse
     // only AFTER its authorized directory is genuinely visible. This state
     // update is pre-paint, so no intermediate wrong-folder frame is exposed.
@@ -1257,6 +1272,34 @@ export default function MobileFiles(props: Props) {
     restoredScrollRef.current = true
     persist({ section: 'browse', folderID: id, scrollTop: 0 })
     scrollHostRef.current?.scrollTo({ top: 0 })
+  }
+  const openExternalDirectory = (id: number, activate: () => Promise<boolean>) => {
+    const intent = ++navigationIntentRef.current
+    const alreadyCommitted = directoryID === id && Boolean(props.virtualCollection) && !props.loading
+    pendingExternalDirectoryRef.current = { directoryID: id, intent, alreadyCommitted }
+    // Start the real Server/Agent navigation immediately. If completion beats
+    // the authorized counted Range, keep the old rail and scroll intact.
+    void activate().then(accepted => {
+      if (intent !== navigationIntentRef.current) return
+      if (!accepted) {
+        if (pendingExternalDirectoryRef.current?.intent === intent) {
+          pendingExternalDirectoryRef.current = null
+        }
+        return
+      }
+      // Reopening an already accepted SAME folder requires a successful
+      // activation, but does not require a different breadcrumb to commit.
+      if (alreadyCommitted && pendingExternalDirectoryRef.current?.intent === intent) {
+        pendingExternalDirectoryRef.current = null
+        beginBrowse(id)
+      }
+    }).catch(error => {
+      if (intent !== navigationIntentRef.current) return
+      if (pendingExternalDirectoryRef.current?.intent === intent) {
+        pendingExternalDirectoryRef.current = null
+      }
+      props.onOpenError(error)
+    })
   }
   const openGoToPath = () => {
     if (!props.onPathSubmit || props.trashActive) return
@@ -2444,10 +2487,7 @@ export default function MobileFiles(props: Props) {
                     <Box data-mobile-files-group="quick" sx={{ mx: 2, borderRadius: '13px',
                       overflow: 'hidden', bgcolor: 'background.paper' }}>
                       {props.quickAccess.map((entry, index) => editableHomeRow(entry, () => {
-                        const intent = ++navigationIntentRef.current
-                        void props.onOpenQuickAccess(entry.id).then(accepted => {
-                          if (accepted && intent === navigationIntentRef.current) beginBrowse(entry.id)
-                        }).catch(props.onOpenError)
+                        openExternalDirectory(entry.id, () => props.onOpenQuickAccess(entry.id))
                       }, 'quick', index))}
                     </Box>
                   ) : null}
@@ -2608,13 +2648,14 @@ export default function MobileFiles(props: Props) {
                 borderRadius: '13px', overflow: 'hidden', bgcolor: 'background.paper' }}>
                 <Box sx={{ height: sectionWindow.before }}/>
                 {sectionItems.slice(sectionWindow.start, sectionWindow.end).map((entry, offset) => mobileRow(entry, () => {
-                  const intent = ++navigationIntentRef.current
-                  const open = section === 'recent'
-                    ? props.onOpenRecent(entry.id)
-                    : props.onOpenFavorite(entry.id)
-                  void open.then(accepted => {
-                    if (accepted && intent === navigationIntentRef.current && entry.kind === 'dir') beginBrowse(entry.id)
-                  }).catch(props.onOpenError)
+                  const open = () => section === 'recent'
+                    ? props.onOpenRecent(entry.id) : props.onOpenFavorite(entry.id)
+                  if (entry.kind === 'dir') {
+                    openExternalDirectory(entry.id, open)
+                  } else {
+                    navigationIntentRef.current += 1
+                    void open().catch(props.onOpenError)
+                  }
                 }, false, section === 'recent' ? 'recent' : 'favorites', undefined, sectionWindow.start + offset))}
                 <Box sx={{ height: sectionWindow.after }}/>
               </Box>
@@ -3062,21 +3103,32 @@ export default function MobileFiles(props: Props) {
             const selectedEntry = collectionMenu.entry
             const owner = collectionMenu.owner
             setCollectionMenu(null)
-            const intent = ++navigationIntentRef.current
-            const work = owner === 'recent' ? props.onOpenRecent(selectedEntry.id) : props.onOpenFavorite(selectedEntry.id)
-            void work.then(accepted => {
-              if (accepted && intent === navigationIntentRef.current && selectedEntry.kind === 'dir') beginBrowse(selectedEntry.id)
-            }).catch(props.onOpenError)
+            const open = () => owner === 'recent'
+              ? props.onOpenRecent(selectedEntry.id) : props.onOpenFavorite(selectedEntry.id)
+            // P69: ContextMenu, Shift+F10 and long press must use the SAME
+            // counted first-Range gate as tapping a collection folder row.
+            if (selectedEntry.kind === 'dir') {
+              openExternalDirectory(selectedEntry.id, open)
+            } else {
+              navigationIntentRef.current += 1
+              void open().catch(props.onOpenError)
+            }
           }}>打开</MenuItem> : null}
           {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const entry = collectionMenu.entry
             setCollectionMenu(null)
+            // The location lookup is an intent too: a newer rail/owner
+            // interaction must win over its late completion.
+            const lookupIntent = ++navigationIntentRef.current
             void props.loadNodeLocation(entry.id).then(location => {
-              if (!location.parent_id) return
-              void Promise.resolve(props.onShowInFolder(location)).then(accepted => {
-                if (accepted !== false) beginBrowse(location.parent_id)
-              }).catch(props.onOpenError)
-            }).catch(props.onOpenError)
+              if (lookupIntent !== navigationIntentRef.current || !location.parent_id) return
+              // A caller may return void, a boolean or a Promise. Only an
+              // accepted counted directory Range may reveal Browse.
+              openExternalDirectory(location.parent_id, async () =>
+                (await props.onShowInFolder(location)) !== false)
+            }).catch(error => {
+              if (lookupIntent === navigationIntentRef.current) props.onOpenError(error)
+            })
           }}>显示所在文件夹</MenuItem> : null}
           {collectionMenu ? <MenuItem sx={{ minHeight: MIN_TOUCH }} onClick={() => {
             const entry = collectionMenu.entry
