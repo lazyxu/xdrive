@@ -1,3 +1,9 @@
+## A3c14 · 已转换 BD09LL 相片点的原生 ClusterLayer 数据边界（2026-10-18）
+
+本阶段只提供经过 Server Owner 来源、定位同意及独立签名状态验证后的 **BD09LL 点列表**与原生百度 ClusterLayer 的安全连接适配器；**尚未挂载到产品页面，未启用真实百度动态 SDK 或生产资源代理。** Web/Mobile Web/PWA/Desktop 可使用 A3c13 相同的取消型 DataSource 接口；本实现不创建平台分叉。摄像机 Native getBounds() 坐标保持 `bd09ll`，绝不能改称照片原始 WGS84，已经官方正向转换的坐标不能再 Convertor.translate。原生点在无分页、有准确 100 以内总数时才绘制；100k/超过范围仅报告 `incomplete`，不伪造完整聚合。
+
+Marker 点击仅返回经过当前窗口验证的 `assetID + nodeID`，后续仍需真实 Owner Gallery Range/VirtualCollection/Viewer 重新校验权限；该模块自身不加载 SDK、不发请求、不显示媒体，也不保存定位。移动/缩放、页面卸载同步调用 AbortSignal；旧结果不改变新窗口。Node 回归测试验证 BD09(0,0)、ID、GeoJSON、分页/100k、恶意坐标、取消与晚到响应。不触碰静态地图、Server AK/Browser AK、Caddy、许可发布或 iOS27 布局。本层代码不代表 A3 GO，仍需私有 18 个真实 HAR、完整子资源白名单、Operator 公钥签名和三端真实隔离/视觉/性能验收。
+
 ## A3c13 · signed-release-fenced native BD-09 Owner viewport (2026-10-18)
 
 **This is actual route + three-client transport, NOT yet a licensed JSAPI4 production map.** Until Baidu entitlement, complete child-resource allowlist, raw 9-pair Browser+upstream HAR leak audit, pinned production signing root and physical client isolation tests are independently approved, the Server's production release guard still rejects these requests. Static PNG remains the sole authorized map rendered in the Gallery; do NOT substitute a local/second Provider or pretend the new point API is a complete dynamic ClusterLayer.
