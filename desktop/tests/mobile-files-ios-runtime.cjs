@@ -3128,7 +3128,12 @@ test('U08: unanswered Search, error and cold load do not flash a fake empty fold
   }, { props: { items: [], searchActive: true, loading: true,
     searchSummary: { query: 'loading', resultCount: 0, loading: true } } })
   await withView(async h => {
-    await initiallyQuietThenLoading(h, '正在加载文件…')
+    const slot = () => find(h.view, 'data-mobile-files-cold-read-slot', true)
+    assert.equal(slot().props['aria-busy'], true)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'even a slow unaccepted Folder Range must not insert a navigation spinner')
+    assert.equal(slot().props.sx.minHeight, 180)
   }, { saved: { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' },
     props: { items: [], loading: true,
       crumbs: [{ id: 1, name: '我的文件' }] } })
@@ -3237,9 +3242,7 @@ test('P59: cold Mobile Files folder reserves the same quiet 180px slot before/af
     assert.equal(slot().props.sx.minHeight, 180,
       'slow GET must reuse the exact same footprint, not insert a new row')
     const slow = h.view.root.findAll(n => n.type === 'state-panel')
-    assert.equal(slow.length, 1)
-    assert.equal(slow[0].props.loading, true)
-    assert.equal(slow[0].props.message, '正在加载文件…')
+    assert.equal(slow.length, 0, 'even a sustained cold folder GET stays quiet')
     await h.update({ loading: false })
     assert.equal(slot().props.sx.minHeight, 180)
     assert.equal(slot().props['aria-busy'], undefined)

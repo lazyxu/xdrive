@@ -6611,11 +6611,7 @@ export function XDriveFileExplorer({
         ) : loading && logicalItemCount === 0 && !keepAcceptedEmpty ? (
           <Box data-xdrive-file-explorer-cold-first-range
             aria-busy="true"
-            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-            {showDelayedLoading
-              ? <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
-              : null}
-          </Box>
+            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
         ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
         ) : viewMode === 'details' ? (

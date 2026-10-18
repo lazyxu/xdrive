@@ -3318,6 +3318,7 @@ jobs:
         if: >-
           github.event_name == 'pull_request' &&
           (startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-') ||
+           startsWith(github.head_ref, 'fix/navigation-no-intermediate-files-gallery-loading-p62-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-selection-more-') ||
            startsWith(github.head_ref, 'fix/mobile-gallery-ios27-web-selection-') ||
            startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-') ||
@@ -3446,11 +3447,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
       - name: Real Web Gallery iOS 27 360-900px browser geometry and actions
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-')
+        if: github.event_name == 'pull_request' && (startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-') || startsWith(github.head_ref, 'fix/navigation-no-intermediate-files-gallery-loading-p62-'))
         shell: bash
         env:
           XD_PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          XDRIVE_GALLERY_COLD_P39: ${{ startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-p39-') && '1' || '0' }}
+          XDRIVE_GALLERY_COLD_P39: ${{ (startsWith(github.head_ref, 'test/mobile-gallery-ios27-real-chrome-p39-') || startsWith(github.head_ref, 'fix/navigation-no-intermediate-files-gallery-loading-p62-')) && '1' || '0' }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/xdrive-gallery-ios27"
