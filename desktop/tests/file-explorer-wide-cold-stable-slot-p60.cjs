@@ -25,8 +25,11 @@ test('Web/Desktop shared cold first Range reserves one silent slot through a slo
   assert.equal(cold.includes('XDriveStatePanel'), false,
     'cold directory transition must not paint an intermediate spinner or caption')
   assert.ok(explorer.includes('globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)'),
-    'long-running Trash and accepted-row refresh feedback remain independent')
-  assert.ok(explorer.includes('showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey'))
+    'original 2px refresh progress remains for populated directories')
+  assert.ok(explorer.includes('refreshFeedbackPending = loading && logicalItemCount > 0'),
+    'cold zero-item read must not schedule an unused visual timer')
+  assert.ok(explorer.includes('showDelayedLoading = refreshFeedbackPending &&'),
+    'only a current populated refresh can display its subtle overlay')
   assert.ok(explorer.includes('keepAcceptedEmpty'), 'accepted empty remains visible')
   assert.ok(explorer.includes('data-xdrive-file-explorer-unverified-first-read'))
   assert.ok(explorer.includes('data-xdrive-file-explorer-empty-read-error'))
