@@ -468,7 +468,12 @@ export default function StorageStatsPanel({
           </XDriveActionButton>
         }
       >
-          {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert>}
+          {error ? !stats ? (
+            <Box data-xdrive-storage-first-read-error
+              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+              <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+            </Box>
+          ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
 
           {scope === 'global' && (
             <XDriveStatusAlert tone="neutral" title="范围：全实例" sx={{ mb: 2 }}>
@@ -477,9 +482,9 @@ export default function StorageStatsPanel({
           )}
 
           {!stats && !error ? (
-            <Box data-xdrive-storage-first-read sx={{
-              minHeight: 180, display: 'grid', placeItems: 'center',
-            }}>
+            <Box data-xdrive-storage-first-read
+              aria-busy={loading || undefined}
+              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
               {showDeferredLoading ? (
                 <XDriveStatePanel variant="plain" loading message="正在加载存储统计…" />
               ) : null}

@@ -60,7 +60,14 @@ test('cloud and local workspace have one quiet initial loading state, stable chr
     assert.ok(page.includes('loadingLabel="刷新"'), file + ': refresh text width stays fixed')
     assert.ok(page.includes(slot), file + ': reserve bounded content height before first range')
     assert.ok(page.includes('showDelayedLoading\n              ? <XDriveStatePanel'), file + ': no short-lived spinner')
-    assert.ok(page.includes('{error ? <XDriveStatusAlert'), file + ': true error not suppressed')
+    assert.ok(page.includes('aria-busy={loading || undefined}'),file + ': first real pending is accessible')
+    const errorMarker=file.startsWith('Cloud')
+      ? 'data-xdrive-cloud-storage-first-read-error' : 'data-xdrive-local-storage-first-read-error'
+    assert.ok(page.includes(errorMarker),file + ': first-read failure keeps the waiting geometry')
+    assert.ok(page.includes("minHeight: 180, display: 'grid', placeItems: 'center'"),
+      file + ': first error and pending layout must use same minimum height')
+    assert.ok(page.includes('<XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>'),
+      file + ': true first-read failure must be visible')
     assert.ok(!page.includes("message={loading ? '正在加载"), file + ': no false empty→spinner jump')
   }
   const local = fs.readFileSync(path.join(root, 'ui/shared/src/mui/LocalStoragePage.tsx'), 'utf8')

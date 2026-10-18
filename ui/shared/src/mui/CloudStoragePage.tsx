@@ -71,10 +71,17 @@ export function XDriveCloudStoragePage({
         </XDriveActionButton>
       )}
     >
-      {error ? <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
+      {error ? !snapshot ? (
+        <Box data-xdrive-cloud-storage-first-read-error
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>
+        </Box>
+      ) : <XDriveStatusAlert tone="bad" sx={{ mb: 2 }}>{error}</XDriveStatusAlert> : null}
 
       {!snapshot && !error ? (
-        <Box data-xdrive-cloud-storage-loading-slot sx={{ minHeight: 180 }}>
+        <Box data-xdrive-cloud-storage-loading-slot
+          aria-busy={loading || undefined}
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
           {loading ? (
             showDelayedLoading
               ? <XDriveStatePanel variant="plain" loading message="正在加载云端存储信息…" />
