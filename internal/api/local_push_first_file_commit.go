@@ -59,6 +59,42 @@ func (s *Server) commitBoundLocalPushFirstLeaf(
 	)
 }
 
+// localPushFirstLeafOperation is Server-private. No Router, native Agent,
+// Electron IPC or renderer may construct one from client-supplied identifiers
+// alone. A future owning Agent must supply the independently verified original
+// request key, native held Root and current operation ID/generation.
+type localPushFirstLeafOperation struct {
+	requestKey  []byte
+	operationID string
+	generation  uint64
+}
+
+// commitBoundLocalPushFirstLeafWithCurrentOperation is a deliberately UNROUTED
+// operation-fenced physical/CAS/SQL first-leaf writer. It is NOT a runnable
+// backup endpoint: the owning Agent native CURRENT witness, durable cancel
+// exclusion and SourceRun integration still have no production caller.
+func (s *Server) commitBoundLocalPushFirstLeafWithCurrentOperation(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID, relativeLeaf string, requestKey []byte, operationID string,
+	generation uint64,
+) (localPushFirstFileCommitResult, bool, error) {
+	if s == nil || s.Store == nil {
+		return localPushFirstFileCommitResult{}, false, errLocalPushOperationIntentDenied
+	}
+	local, ok := s.Store.(*storage.Local)
+	if !ok || local == nil {
+		return localPushFirstFileCommitResult{}, false, errLocalPushOperationIntentDenied
+	}
+	operation := &localPushFirstLeafOperation{
+		requestKey:  append([]byte(nil), requestKey...),
+		operationID: operationID, generation: generation,
+	}
+	return s.commitBoundLocalPushFirstLeafWithInspectorAndOperation(
+		c, sourceID, revision, proof, stageID, relativeLeaf,
+		local.InspectMatchingLocalPushStageAndCASPinned, operation,
+	)
+}
+
 // Test-injected inspectors cannot create authority: this path has no
 // production caller, and only actual Local Store double-hash pin admission
 // may support a future externally callable executor. All canonical writes,
@@ -67,6 +103,21 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
 	stageID, relativeLeaf string,
 	inspect func(context.Context, string, string, int64, func(context.Context) error) (bool, error),
+) (localPushFirstFileCommitResult, bool, error) {
+	// Retained for the old CI-only un-routed first-leaf fixture. Neither this
+	// compatibility entry nor the CI route is production operation authority.
+	return s.commitBoundLocalPushFirstLeafWithInspectorAndOperation(
+		c, sourceID, revision, proof, stageID, relativeLeaf, inspect, nil,
+	)
+}
+
+// The operation-aware variant owns the ORIGINAL SQL transaction across both
+// operation checks, Stage/CAS/Node locks and physical CAS/SQL COMMIT.
+func (s *Server) commitBoundLocalPushFirstLeafWithInspectorAndOperation(
+	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
+	stageID, relativeLeaf string,
+	inspect func(context.Context, string, string, int64, func(context.Context) error) (bool, error),
+	operation *localPushFirstLeafOperation,
 ) (localPushFirstFileCommitResult, bool, error) {
 	var empty localPushFirstFileCommitResult
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
@@ -99,6 +150,16 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 	quota, err := s.loadQuotaUsage(tx, userID(c), true)
 	if err != nil {
 		return empty, false, err
+	}
+	// Owner quota lock is acquired first; the current operation then locks
+	// Device -> Source -> Root -> latest intent BEFORE Stage/CAS/Node.
+	if operation != nil {
+		if err := s.validateCurrentLocalPushWriterFenceTx(
+			tx, c, sourceID, revision, operation.requestKey,
+			operation.operationID, operation.generation,
+		); err != nil {
+			return empty, false, err
+		}
 	}
 	stage, err := s.loadLocalPushStageTx(tx, c, sourceID, revision, proof, stageID)
 	if err != nil {
@@ -315,6 +376,20 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspector(
 						return updateStage.Error
 					}
 					return errLocalPushStageConflict
+				}
+			}
+			// The *same* retained transaction and physical CAS/Stage pins
+			// still protect the canonical bytes and metadata. A timed-out,
+			// aborted or superseded operation cannot cross final SQL COMMIT.
+			if operation != nil {
+				if err := heldCtx.Err(); err != nil {
+					return err
+				}
+				if err := s.validateCurrentLocalPushWriterFenceTx(
+					tx, c, sourceID, revision, operation.requestKey,
+					operation.operationID, operation.generation,
+				); err != nil {
+					return err
 				}
 			}
 			if err := tx.Commit().Error; err != nil {
