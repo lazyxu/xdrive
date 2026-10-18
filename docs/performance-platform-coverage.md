@@ -1,5 +1,24 @@
 # xDrive 跨平台性能覆盖矩阵
 
+**P057 master-reconciled performance status (2026-10-18):** Historical exact real PG17/LocalCAS 100k different physical-original n3 [#39028684342](https://github.com/lazyxu/xdrive/actions/runs/39028684342) DELETE Worker P50 **1.610s**, Undo **1.459s**, actual allocated 409604096B and 100001 SHA/refcounts unchanged. Old full CI [#39029596381](https://github.com/lazyxu/xdrive/actions/runs/39029596381) was RED in unrelated PostgreSQL/upload integration ([#1997](https://github.com/lazyxu/xdrive/issues/1997)), not a measured DELETE slow path. New HEAD must pass full accurate CI; six true GUI/installed-PWA modes for the same durable work remain **Not measured**. No Race or viewport cancellation of user-owned jobs.
+
+## P057 Server真实物理原版 n3（非六平台GUI），2026-10-17
+
+新P057 Owner HTTP持久FileOperation **DELETE→Undo** 已在原版Go/Gin/PG17/LocalCAS真实100k SHA-distinct物理数据n3验证：DELETE Worker P50 **1610.082ms**、Undo Worker P50 **1459.302ms**、HTTP入队 P50 **125.329/3.294ms**；100001原始CAS SHA、RefCount与409604096B实际分配各阶段不变，Go核写0B。源准确 [专用CI #39028684342](https://github.com/lazyxu/xdrive/actions/runs/39028684342) 及 [14文件永久原始归档](performance-evidence/p057-physical-100k-delete-undo/README.md)。**所有六个实际GUI/真机PWA端到端单元保持Not measured**；这是Go后台Worker延迟，不能推成UI性能提升。预算内**不优化生产**。
+
+
+
+## P057 · 100k真实物理SHA不同 CAS 软删除/Undo（2026-10-17）
+
+[冻结源码/性能合同](p057-physical-delete-undo-performance.md) · [测试登记簿](performance-test-registry.md) · [机器原始证据](performance-evidence/p057-physical-100k-delete-undo/README.md)。新维度是Owner HTTP enqueue→生产持久FileOperation DELETE Worker→Trash→HTTP Undo enqueue→Undo Worker，验证10万独立原片CAS物理字节与引用不变，不能把P047永久unlink、P055 Trash RESTORE或P056 Copy Undo旧数算作同场景。
+
+| 场景 | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| P057 100k真实物理文件由GUI发起持久DELETE→Undo，完整原片验证与Go取消边界 | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** | **Not measured** |
+
+**Server层 P057 Go/Gin/PG17/LocalCAS：** 首轮原版当前未测，valid n=0，不是任何客户端/GUI/PWA绩效证明；只接受新3份独立真实Local.Put CAS原片和真OwnerHTTP/Worker的专项 CI 原始SHA日志，源准确最终CI通过再更新数值。虚拟列表滚动关闭仅取消无消费的短期请求，不隐式终止持久DELETE任务。
+
+
 ## SH-P002 首次公共分享元数据取消（2026-10-18）
 
 **SH-P002 candidate server n3 proven, NOT 6 client acceptance:** [special #39108356394](https://github.com/lazyxu/xdrive/actions/runs/39108356394) React current→candidate cancel 0/3→3/3, new React P50 0.073157ms within 16ms; real Go/PostgreSQL held SQL Handler P50 0.114ms, SQL waiter release P50 6.439ms (all 3 under 160ms), no residual waits. Simulated held frontend Promise and separate real Go router do not form one real browser→Go proof; all six physical platform rows below remain **Not measured**. Immutable exact raw [React](performance-evidence/sh-p002-public-share-first-get/ci-run-39108356394-react.zip) / [Go](performance-evidence/sh-p002-public-share-first-get/ci-run-39108356394-go.zip). Original successful-cancel latency absent, speedup=N/A. Latest evidence-source full CI still required.
