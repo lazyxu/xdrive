@@ -827,6 +827,16 @@ export type AgentAdminCaddyPreflightCheck = {
   state: 'pass' | 'missing' | 'blocked' | 'unknown' | 'not-required'
   detail: string
 }
+export type AgentAdminCaddyHTTPSHostPlan = {
+  protocol: 'xdrive.caddy.https.host-plan.v1'
+  desired_revision: number
+  credential_revision: number
+  domain_enabled: boolean
+  domain: string
+  lan_enabled: boolean
+  lan_ip: string
+}
+
 export type AgentAdminCaddyHTTPSPreflight = {
   checked_at: string
   action: 'enable' | 'disable' | 'unset'
@@ -3748,6 +3758,10 @@ export class AgentIPCClient {
 
   cloudAdminCaddyHTTPSPreflight() {
     return this.request<AgentAdminCaddyHTTPSPreflight>('GET', '/v1/cloud/admin-caddy-https/preflight')
+  }
+
+  cloudAdminCaddyHTTPSHostPlan() {
+    return this.request<AgentAdminCaddyHTTPSHostPlan>('GET', '/v1/cloud/admin-caddy-https/host-plan')
   }
 
   cloudAdminCaddyAliDNSConfig() {

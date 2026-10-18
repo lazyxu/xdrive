@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Chip, Paper, Stack, Typography } from '@mui/material'
 import { XDriveStatusAlert } from './StatusAlert'
 import { verifyCaddyPreflightContract, verifyCaddyAliDNSReadContract } from './CaddyPreflightValidation'
+import { verifyCaddyHTTPSHostPlan } from './CaddyHostPlanValidation'
 import type {
-  XDriveCaddyHTTPSPreflight, XDriveCaddyPreflightCheck,
+  XDriveCaddyHTTPSPreflight, XDriveCaddyPreflightCheck, XDriveCaddyHTTPSHostPlan,
   XDriveCaddyAliDNSReadVerify, XDriveCaddyAliDNSReadVerifyInput,
 } from '../service-dependencies'
 
 export type XDriveCaddyPreflightPort = {
   loadCaddyHTTPSPreflight?: () => Promise<XDriveCaddyHTTPSPreflight>
+  loadCaddyHTTPSHostPlan?: () => Promise<XDriveCaddyHTTPSHostPlan>
   verifyCaddyAliDNSRead?: (input: XDriveCaddyAliDNSReadVerifyInput) => Promise<XDriveCaddyAliDNSReadVerify>
 }
 
@@ -36,23 +38,31 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
 }) {
   const epochRef = useRef(0)
   const probeEpochRef = useRef(0)
+  const planEpochRef = useRef(0)
   const [result, setResult] = useState<XDriveCaddyHTTPSPreflight | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [probeResult, setProbeResult] = useState<XDriveCaddyAliDNSReadVerify | null>(null)
   const [probeBusy, setProbeBusy] = useState(false)
   const [probeError, setProbeError] = useState('')
+  const [hostPlan, setHostPlan] = useState<XDriveCaddyHTTPSHostPlan | null>(null)
+  const [planBusy, setPlanBusy] = useState(false)
+  const [planError, setPlanError] = useState('')
 
   useEffect(() => {
     ++epochRef.current
     ++probeEpochRef.current
+    ++planEpochRef.current
+    setHostPlan(null)
+    setPlanBusy(false)
+    setPlanError('')
     setProbeResult(null)
     setProbeBusy(false)
     setProbeError('')
     setResult(null)
     setLoading(false)
     setError('')
-    return () => { ++epochRef.current; ++probeEpochRef.current }
+    return () => { ++epochRef.current; ++probeEpochRef.current; ++planEpochRef.current }
   }, [source, refreshID])
 
   const check = async () => {
@@ -61,6 +71,9 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
     setLoading(true)
     setResult(null)
     ++probeEpochRef.current
+    ++planEpochRef.current
+    setHostPlan(null)
+    setPlanError('')
     setProbeResult(null)
     setProbeError('')
     setError('')
@@ -100,6 +113,27 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
       }
     } finally {
       if (epoch === probeEpochRef.current) setProbeBusy(false)
+    }
+  }
+
+  // A candidate preview is NOT a Host Manager operation. It never returns
+  // deployment evidence or applies/restarts Caddy, even if fields match.
+  const previewHostPlan = async () => {
+    if (!source.loadCaddyHTTPSHostPlan || planBusy || loading) return
+    const epoch = ++planEpochRef.current
+    setPlanBusy(true)
+    setHostPlan(null)
+    setPlanError('')
+    try {
+      const next = await source.loadCaddyHTTPSHostPlan()
+      if (epoch !== planEpochRef.current) return
+      setHostPlan(verifyCaddyHTTPSHostPlan(next))
+    } catch (err) {
+      if (epoch === planEpochRef.current) {
+        setPlanError(err instanceof Error ? err.message : '无法读取已保存的 HTTPS 运维候选计划。')
+      }
+    } finally {
+      if (epoch === planEpochRef.current) setPlanBusy(false)
     }
   }
 
@@ -289,6 +323,31 @@ export function XDriveCaddyPreflightPanel({ source, refreshID }: {
               : '旧版 Server/Agent 暂不支持预检，不提供无效的应用按钮。'}
           </Typography>
         )}
+        <Stack spacing={1} alignItems="flex-start" data-xdrive-caddy-host-plan>
+          <Button size="small" variant="outlined"
+            disabled={planBusy || loading || !source.loadCaddyHTTPSHostPlan}
+            onClick={() => { void previewHostPlan() }}>
+            {planBusy ? '正在核对候选计划…' : '查看宿主机应用计划（只读）'}
+          </Button>
+          <Typography variant="caption" color="text.secondary">
+            只读取已保存的 HTTPS 目标和 AliDNS 凭据修订号。不会发送凭据、修改 DNS、
+            更新宿主机 .env 或重启 Caddy。宿主机配置是否匹配，仍需独立受信任的 Host Manager 核验。
+          </Typography>
+          {hostPlan && (
+            <Stack spacing={0.5}>
+              <Chip size="small" variant="outlined" label={`候选期望修订 #${hostPlan.desired_revision} · 凭据修订 #${hostPlan.credential_revision}`} />
+              <Typography variant="body2" color="text.secondary">
+                局域网 IP HTTPS：{hostPlan.lan_enabled ? `期望启用（${hostPlan.lan_ip}）` : '期望关闭'}；
+                公网域名 HTTPS：{hostPlan.domain_enabled ? `期望启用（${hostPlan.domain}）` : '期望关闭'}。
+              </Typography>
+              <Typography variant="caption" color="warning.main">
+                此处仅是管理员已保存的候选设置，不是 Caddy 已应用修订、浏览器 CA 信任、
+                外部访问或登录成功证明。安全应用、重启与自动回滚功能尚未开放。
+              </Typography>
+            </Stack>
+          )}
+          {planError && <XDriveStatusAlert tone="bad">{planError}</XDriveStatusAlert>}
+        </Stack>
         {error && <XDriveStatusAlert tone="bad">{error}</XDriveStatusAlert>}
       </Stack>
     </Paper>

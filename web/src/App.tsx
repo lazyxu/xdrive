@@ -1142,6 +1142,7 @@ function FileManager({
     verifyCaddyAliDNSRead: (input: import('../../ui/shared/src').XDriveCaddyAliDNSReadVerifyInput) =>
       api.adminVerifyCaddyAliDNSRead(input),
     loadCaddyHTTPSPreflight: () => api.adminCaddyHTTPSPreflight(),
+    loadCaddyHTTPSHostPlan: () => api.adminCaddyHTTPSHostPlan(),
     loadCaddyAliDNSConfig: () => api.adminCaddyAliDNSConfig(),
     saveCaddyAliDNS: (input: import('../../ui/shared/src').XDriveCaddyAliDNSUpdate) =>
       api.adminSaveCaddyAliDNS(input),
