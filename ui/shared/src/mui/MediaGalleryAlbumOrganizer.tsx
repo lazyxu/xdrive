@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, MouseEvent } from 'react'
 import {
   ArrowDownward as ArrowDownwardIcon,
@@ -207,6 +207,7 @@ export function XDriveMediaGalleryAlbumOrganizer({
 }: Props) {
   const [search, setSearch] = useState('')
   const [activeFolderID, setActiveFolderID] = useState(0)
+  const folderBreadcrumbViewportRef = useRef<HTMLDivElement | null>(null)
   const [folders, setFolders] = useState<MediaAlbumFolder[]>([])
   const [foldersLoading, setFoldersLoading] = useState(false)
   const [folderError, setFolderError] = useState('')
@@ -296,6 +297,14 @@ export function XDriveMediaGalleryAlbumOrganizer({
     () => mediaAlbumFolderPath(scopedFolders, visibleFolderID),
     [scopedFolders, visibleFolderID],
   )
+  useLayoutEffect(() => {
+    // Album folder navigation uses the already accepted full folder index:
+    // keep the toolbar on one row and reveal the committed last breadcrumb
+    // before paint, never scroll the Gallery's independent photo wall.
+    const viewport = folderBreadcrumbViewportRef.current
+    if (!viewport) return
+    viewport.scrollLeft = visibleFolderID === 0 ? 0 : viewport.scrollWidth
+  }, [visibleFolderID, foldersVerified])
   const visibleAlbumItems = useMemo(
     () => mediaAlbumsInFolder(albums, visibleFolderID, Boolean(search.trim())),
     [albums, visibleFolderID, search],
@@ -437,20 +446,40 @@ export function XDriveMediaGalleryAlbumOrganizer({
     <Stack spacing={1.75} data-xdrive-gallery-album-organizer>
       {folderActions && (
         <Stack spacing={1} data-xdrive-gallery-album-folders sx={{ position: 'relative', minHeight: 88 }}>
-          <Stack direction="row" alignItems="center" spacing={1} flexWrap="wrap" useFlexGap>
-            <Breadcrumbs aria-label="相册文件夹路径" sx={{ flex: 1, minWidth: 0 }}>
-              <Button size="small" onClick={() => { setActiveFolderID(0); setSearch('') }}>
-                所有相册
-              </Button>
-              {folderPath.map(folder => (
-                <Button key={folder.id} size="small" onClick={() => {
-                  setActiveFolderID(folder.id); setSearch('')
-                }}>{folder.name}</Button>
-              ))}
-            </Breadcrumbs>
+          <Stack data-xdrive-gallery-album-folder-nav-row direction="row" alignItems="center"
+            spacing={1} sx={{ minHeight: 44, minWidth: 0, flexWrap: 'nowrap' }}>
+            <Box ref={folderBreadcrumbViewportRef} data-xdrive-gallery-album-breadcrumb-viewport
+              sx={{
+                flex: '1 1 auto', minWidth: 0, overflowX: 'auto', overflowY: 'hidden',
+                overscrollBehaviorX: 'contain', WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' },
+              }}>
+              <Breadcrumbs aria-label="相册文件夹路径" sx={{
+                minWidth: 'max-content',
+                '& .MuiBreadcrumbs-ol': { flexWrap: 'nowrap', width: 'max-content' },
+                '& .MuiBreadcrumbs-li': { flexShrink: 0 },
+              }}>
+                <Button size="small" aria-current={visibleFolderID === 0 ? 'page' : undefined}
+                  sx={{ flexShrink: 0, minHeight: 44, whiteSpace: 'nowrap' }}
+                  onClick={() => { setActiveFolderID(0); setSearch('') }}>
+                  所有相册
+                </Button>
+                {folderPath.map(folder => (
+                  <Button key={folder.id} size="small" title={folder.name}
+                    aria-current={folder.id === visibleFolderID ? 'page' : undefined}
+                    sx={{ flexShrink: 0, minHeight: 44, maxWidth: 180 }}
+                    onClick={() => {
+                      setActiveFolderID(folder.id); setSearch('')
+                    }}>
+                    <Typography component="span" variant="body2" noWrap>{folder.name}</Typography>
+                  </Button>
+                ))}
+              </Breadcrumbs>
+            </Box>
             {folderActions.create && (
-              <Button size="small" variant="outlined" onClick={() =>
-                beginDialog({ kind: 'create', parentID: visibleFolderID })}>
+              <Button size="small" variant="outlined" sx={{
+                minHeight: 44, flexShrink: 0, whiteSpace: 'nowrap',
+              }} onClick={() => beginDialog({ kind: 'create', parentID: visibleFolderID })}>
                 新建相册文件夹
               </Button>
             )}
