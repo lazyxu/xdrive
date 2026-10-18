@@ -41,7 +41,21 @@ export interface CreatedFileShare extends FileShare {
   token: string
 }
 
+export interface PublicShareChild {
+  id: number
+  name: string
+  type: NodeType
+  size: number
+}
+
+export interface PublicShareChildren {
+  parent_id: number
+  items: PublicShareChild[]
+  next_cursor: number
+}
+
 export interface PublicShare {
+  type?: NodeType
   name: string
   size: number
   requires_password: boolean

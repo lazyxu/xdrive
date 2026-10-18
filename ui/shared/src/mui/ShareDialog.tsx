@@ -21,6 +21,7 @@ import { XDriveStatusAlert } from './StatusAlert'
 export interface XDriveShareNode {
   id: number
   name: string
+  type?: 'dir' | 'file'
 }
 
 export interface XDriveShareCreateInput {
@@ -270,7 +271,7 @@ export function XDriveShareDialog({
             />
           ) : null}
 
-          <XDriveSectionHeader level="h3" title="创建下载链接" sx={{ mb: 1.5 }} />
+          <XDriveSectionHeader level="h3" title={node?.type === 'dir' ? '创建文件夹链接' : '创建下载链接'} sx={{ mb: 1.5 }} />
           <Box component="form" onSubmit={(event) => void create(event)}>
             <XDriveShareCreateFields
               expiryMode={expiryMode}
@@ -313,7 +314,7 @@ export function XDriveShareDialog({
           {loading && shares.length === 0 ? (
             <XDriveStatePanel variant="plain" loading message="正在加载已有分享…" />
           ) : shares.length === 0 ? (
-            <XDriveStatePanel variant="plain" message="此文件暂无分享链接" />
+            <XDriveStatePanel variant="plain" message={node?.type === 'dir' ? '此文件夹暂无分享链接' : '此文件暂无分享链接'} />
           ) : (
             <XDriveShareList
               shares={shares}

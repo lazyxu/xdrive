@@ -43,7 +43,7 @@ test('Web public share uses the shared auth and brand surfaces', () => {
 test('Web public share keeps native download, password and eligibility feedback', () => {
   for (const token of [
     'api.publicShare(token)',
-    'api.downloadPublicShare(token, password, share.name)',
+    'api.downloadPublicShare(token, password, entry?.name ?? share.name, entry?.id)',
     "setNotice('已交给浏览器下载。')",
     'share.requires_password',
     'placeholder="分享密码"',
@@ -56,6 +56,25 @@ test('Web public share keeps native download, password and eligibility feedback'
   }
 })
 
+
+test('Web folder share stays bounded, read-only and cancels stale page requests', () => {
+  for (const token of [
+    "share.type === 'dir'",
+    'api.publicShareChildren(',
+    'pendingPage.current?.abort()',
+    "document.visibilityState === 'hidden'",
+    "document.addEventListener('visibilitychange', onVisibilityChange)",
+    'const controller = new AbortController()',
+    'items: page.items',
+    'next: page.next_cursor',
+    'folder.items.map((entry)',
+    'folder.next > 0',
+    'folder.history.length > 0',
+  ]) {
+    assert.ok(publicShare.includes(token), `Shared folder pagination missing: ${token}`)
+  }
+  assert.equal(publicShare.includes('items: [...old.items'), false, '100k folder must not accumulate every page in the DOM')
+})
 
 test('Web public share delegates the file stream to a short-lived native ticket', () => {
   const api = fs.readFileSync(path.join(repo, 'web', 'src', 'api.ts'), 'utf8')

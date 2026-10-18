@@ -1,0 +1,51 @@
+{
+  "workload": "SH-P001/real-postgresql17-100k-keyset-public-folder-metadata",
+  "source": "EXACT_SOURCE_HEAD=76a75e288b2b02b927abaa540b9432d6caba4481",
+  "n": 3,
+  "physical_CAS_originals": 0,
+  "status": "original CURRENT measurement (not BEFORE/AFTER optimization)",
+  "samples": [
+    {
+      "entries": 100000,
+      "http_body_bytes": 5733793,
+      "page_p50_ms": 16.702,
+      "page_p95_ms": 19.264,
+      "page_walk_ms": 16894,
+      "page_worst_ms": 29.478,
+      "pages": 1000,
+      "sample": "1",
+      "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+      "seed_ms": 1618
+    },
+    {
+      "entries": 100000,
+      "http_body_bytes": 5733793,
+      "page_p50_ms": 16.544,
+      "page_p95_ms": 19.025,
+      "page_walk_ms": 16699,
+      "page_worst_ms": 30.632,
+      "pages": 1000,
+      "sample": "2",
+      "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+      "seed_ms": 1618
+    },
+    {
+      "entries": 100000,
+      "http_body_bytes": 5733793,
+      "page_p50_ms": 16.378,
+      "page_p95_ms": 18.824,
+      "page_walk_ms": 16630,
+      "page_worst_ms": 31.165,
+      "pages": 1000,
+      "sample": "3",
+      "scope": "real PostgreSQL17 metadata Nodes, NOT original physical CAS",
+      "seed_ms": 1603
+    }
+  ],
+  "page_walk_p50_ms": 16699,
+  "page_p95_max_ms": 19.264,
+  "page_worst_max_ms": 31.165,
+  "pass_budget": true,
+  "after": null,
+  "speedup": null
+}
