@@ -1347,6 +1347,44 @@ test('F-PARITY-07B: child error retry never navigates or starts a second API', a
   } })
 })
 
+test('P57: Mobile Files 100k sparse pages replace quiet fixed-height slots without list remount', async () => {
+  const first = { id: 2, name: 'photo.jpg', kind: 'file', revision: 1 }
+  const second = { id: 3, name: 'folder.txt', kind: 'file', revision: 1 }
+  const visible = new Map([[0, first]])
+  const page = {
+    interactionKey: 'p57-100k-owner-range', itemCount: 100_000,
+    loadedItems: visible, itemAt: index => visible.get(index), onRangeChange() {},
+  }
+  const placeholders = h => h.view.root.findAll(n =>
+    Object.hasOwn(n.props ?? {}, 'data-mobile-files-placeholder'))
+  await withView(async h => {
+    const root = h.view.root.findAll(n => n.props?.role === 'button' && n.props?.onClick)
+      .find(n => textOf(n.props.children).includes('云端文件'))
+    assert.ok(root, 'real mounted Browse Home should contain the Cloud entry')
+    await act(async () => { root.props.onClick() })
+    const cells = placeholders(h)
+    assert.ok(cells.length > 0 && cells.length < 30, 'only visible sparse window is rendered')
+    for (const cell of cells) {
+      assert.equal(cell.props['aria-hidden'], true)
+      assert.equal(cell.props.sx.minHeight, state.MOBILE_FILES_ROW_HEIGHT)
+      assert.equal(cell.props.sx.pointerEvents, 'none')
+      assert.equal(textOf(cell.props.children).includes('加载中'), false,
+        'a short real first-Range read must not flash a caption')
+    }
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.ok(h.view.root.findAll(n => n.props?.['data-mobile-files-item'] === true)
+      .some(n => n.props['aria-label'] === 'photo.jpg'))
+    visible.set(1, second)
+    await h.update({ virtualCollection: { ...page, loadedItems: new Map(visible) } })
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(placeholders(h).length, cells.length - 1,
+      'one authorized sparse item replaces one reserved row')
+    assert.ok(h.view.root.findAll(n => n.props?.['data-mobile-files-item'] === true)
+      .some(n => n.props['aria-label'] === 'folder.txt'))
+  }, { props: { items: [first], virtualCollection: page,
+    grouping: { groupBy: 'none', foldersFirst: true } } })
+})
+
 test('F-PARITY-07B: 100k root plus 100k child renders only one shared visible window', async () => {
   const rootRange = []
   const childRange = []
