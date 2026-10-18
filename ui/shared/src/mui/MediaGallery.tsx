@@ -659,6 +659,20 @@ export function XDriveMediaGalleryPage({
   const [memories, setMemories] = useState<MediaMemory[]>([])
   const [burstReviews, setBurstReviews] =
     useState<MediaBurstReviewList | null>(null)
+  // An empty [] or null is not an authenticated zero before the Owner index
+  // was accepted. Scope receipts to BOTH user/session and current DataSource:
+  // the previous account must never appear in a newly mounted first frame.
+  type IndexReceipt = {
+    owner: string
+    dataSource: MediaGalleryDataSource
+    state: 'ready' | 'error'
+  }
+  const [memoryIndexReceipt, setMemoryIndexReceipt] = useState<IndexReceipt | null>(null)
+  const [cleanupIndexReceipt, setCleanupIndexReceipt] = useState<IndexReceipt | null>(null)
+  const memoriesReadState = memoryIndexReceipt?.owner === preferenceScope &&
+    memoryIndexReceipt.dataSource === source ? memoryIndexReceipt.state : 'unverified'
+  const cleanupReadState = cleanupIndexReceipt?.owner === preferenceScope &&
+    cleanupIndexReceipt.dataSource === source ? cleanupIndexReceipt.state : 'unverified'
   const [cleanupMoreLoading, setCleanupMoreLoading] = useState<'burst' | null>(null)
   const cleanupMoreInFlightRef = useRef(false)
   const [pendingCleanupDeleteIDs, setPendingCleanupDeleteIDs] = useState<string[]>([])
@@ -1161,6 +1175,7 @@ export function XDriveMediaGalleryPage({
   const loadMemories = useCallback(async () => {
     if (!source.listMemories) {
       setMemories([])
+      setMemoryIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'error' })
       setError('当前客户端不支持回忆')
       return
     }
@@ -1184,13 +1199,17 @@ export function XDriveMediaGalleryPage({
       )
       if (request !== requestID.current) return
       setMemories(nextMemories)
+      setMemoryIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
     } catch (loadError) {
       if (request !== requestID.current) return
+      setMemoryIndexReceipt(current =>
+        current?.owner === preferenceScope && current.dataSource === source && current.state === 'ready'
+          ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
       if (request === requestID.current) setLoading(false)
     }
-  }, [reportError, source, virtualCollection.reset])
+  }, [preferenceScope, reportError, source, virtualCollection.reset])
 
   const changeFoldDuplicates = useCallback((enabled: boolean) => {
     const acceptedKind = collectionTargetRef.current?.kind
@@ -1308,6 +1327,7 @@ export function XDriveMediaGalleryPage({
   const loadCleanup = useCallback(async () => {
     if (!source.listBurstReviews) {
       setBurstReviews(emptyMediaBurstReviewList())
+      setCleanupIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'error' })
       setError('当前客户端不支持图库清理建议')
       return
     }
@@ -1330,13 +1350,17 @@ export function XDriveMediaGalleryPage({
       const nextBursts = await source.listBurstReviews(48, 0)
       if (request !== requestID.current) return
       setBurstReviews(nextBursts)
+      setCleanupIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
     } catch (loadError) {
       if (request !== requestID.current) return
+      setCleanupIndexReceipt(current =>
+        current?.owner === preferenceScope && current.dataSource === source && current.state === 'ready'
+          ? current : { owner: preferenceScope, dataSource: source, state: 'error' })
       reportError(loadError)
     } finally {
       if (request === requestID.current) setLoading(false)
     }
-  }, [reportError, source, virtualCollection.reset])
+  }, [preferenceScope, reportError, source, virtualCollection.reset])
 
   const loadMoreCleanupGroups = useCallback(async () => {
     if (cleanupMoreInFlightRef.current) return
@@ -1412,6 +1436,9 @@ export function XDriveMediaGalleryPage({
     collectionsSourcesLoadedRef.current = false
     setMobileCollectionsOverview(false)
     setMemories([])
+    setBurstReviews(null)
+    setMemoryIndexReceipt(null)
+    setCleanupIndexReceipt(null)
     setSyncFolders([])
     return () => { collectionsPreviewRef.current.request += 1 }
   }, [preferenceScope, source])
@@ -1612,6 +1639,7 @@ export function XDriveMediaGalleryPage({
       setTimelineGroupSets(emptyMediaTimelineGroupSets())
       virtualCollection.reset(`media-gallery:cleanup:index:${request}`)
       setBurstReviews(nextBursts)
+      setCleanupIndexReceipt({ owner: preferenceScope, dataSource: source, state: 'ready' })
       setSection('cleanup')
       setActiveMediaType('')
       setDraftFilters(emptyMediaGalleryFilterDraft)
@@ -1624,7 +1652,7 @@ export function XDriveMediaGalleryPage({
     } finally {
       if (request === requestID.current) setLoading(false)
     }
-  }, [onSectionRouteChange, reportError, source, virtualCollection.reset])
+  }, [onSectionRouteChange, preferenceScope, reportError, source, virtualCollection.reset])
 
   // Page replacement (not append) bounds the number of live location cards.
   // The photo-wall remains on the existing shared sparse VirtualCollection.
@@ -3036,8 +3064,10 @@ export function XDriveMediaGalleryPage({
         placesPagePending={placesPagePending}
         placesPageError={placesPageError}
         onPlacesPageChange={source.listPlacesPage ? changePlacesPage : undefined}
-        memories={memories}
-        burstReviews={burstReviews}
+        memories={memoriesReadState === 'ready' ? memories : []}
+        memoriesReadState={memoriesReadState}
+        burstReviews={cleanupReadState === 'ready' ? burstReviews : null}
+        cleanupReadState={cleanupReadState}
         pets={acceptedFacetOwner === preferenceScope ? pets : []}
         suggestedPeople={acceptedFacetOwner === preferenceScope ? suggestedPeople : []}
         people={acceptedFacetOwner === preferenceScope ? people : []}
@@ -3484,7 +3514,9 @@ export interface XDriveMediaGalleryProps {
   placesPageError?: string
   onPlacesPageChange?: (offset: number) => void
   memories?: MediaMemory[]
+  memoriesReadState?: 'unverified' | 'ready' | 'error'
   burstReviews?: MediaBurstReviewList | null
+  cleanupReadState?: 'unverified' | 'ready' | 'error'
   pets?: MediaPetFacet[]
   suggestedPeople?: MediaSuggestedPerson[]
   people?: MediaPersonIdentity[]
@@ -5185,7 +5217,9 @@ export function XDriveMediaGallery({
   placesPageError = '',
   onPlacesPageChange,
   memories = [],
+  memoriesReadState = 'ready',
   burstReviews = null,
+  cleanupReadState = 'ready',
   pets = [],
   suggestedPeople = [],
   people = [],
@@ -6195,8 +6229,6 @@ export function XDriveMediaGallery({
   const showPlacesIndex = isRootSection && section === 'places'
   // These are presentational delays only; real Source/Server/Agent GETs and
   // the previously accepted albums/places lists are never delayed or cleared.
-  const showDelayedPlacesInitial = useXDriveDeferredPendingLoading(
-    showPlacesIndex && placesStatus === 'loading' && places.length === 0)
   const showDelayedPlacesPage = useXDriveDeferredPendingLoading(
     showPlacesIndex && placesPagePending)
   useEffect(() => {
@@ -6211,8 +6243,6 @@ export function XDriveMediaGallery({
   // An initial [] is not the same as a verified zero. Do not even mount the
   // final empty-state message until the current Owner's facets were accepted.
   const coldPeopleIndex = showPeopleIndex && !indexFacetsVerified
-  const showDelayedColdFacetRead = useXDriveDeferredPendingLoading(
-    coldPeopleIndex && (loading || placesStatus === 'loading'))
   const showMediaTypeIndex = isRootSection && section === 'media-types' && !activeMediaType
   const isTrashSection = isRootSection && section === 'trash'
   const showPhotoCollection =
@@ -7238,6 +7268,8 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryMemories
           memories={memories}
           loading={loading}
+          readState={memoriesReadState}
+          onRetry={onRefresh}
           loadThumbnail={loadThumbnail}
           onOpenMemory={onOpenMemory}
         />
@@ -7247,6 +7279,7 @@ export function XDriveMediaGallery({
         <XDriveMediaGalleryCleanup
           bursts={burstReviews}
           loading={loading}
+          readState={cleanupReadState}
           loadThumbnail={loadThumbnail}
           onOpenBurst={onOpenBurstReview}
           onLoadMoreBurst={onLoadMoreBurst}
@@ -8095,7 +8128,7 @@ export function XDriveMediaGallery({
 
       {coldPeopleIndex ? (
         <Paper data-xdrive-gallery-unverified-facet-index
-          aria-busy={placesStatus === 'loading' || loading || undefined}
+          aria-busy={placesStatus !== 'error' || loading || undefined}
           variant="outlined"
           sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
           {placesStatus === 'error' && !loading ? (
@@ -8104,25 +8137,13 @@ export function XDriveMediaGallery({
               {onRefresh ? <Button size="small" onClick={onRefresh}
                 sx={{ minWidth: 44, minHeight: 44 }}>重试</Button> : null}
             </Stack>
-          ) : showDelayedColdFacetRead ? (
-            <Stack alignItems="center" spacing={1} role="status">
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">正在读取人物…</Typography>
-            </Stack>
           ) : null}
         </Paper>
       ) : null}
       {showPlacesIndex && placesStatus === 'loading' && places.length === 0 ? (
         <Paper data-xdrive-gallery-places-first-read variant="outlined"
           aria-busy="true"
-          sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>
-          {showDelayedPlacesInitial ? (
-            <Stack role="status" alignItems="center" spacing={1}>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">正在加载地点…</Typography>
-            </Stack>
-          ) : null}
-        </Paper>
+          sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }} />
       ) : null}
       {showPlacesIndex && places.length === 0 && !loading && placesStatus === 'ready' ? (
         <Paper variant="outlined" sx={{ minHeight: 160, display: 'grid', placeItems: 'center', p: 3 }}>

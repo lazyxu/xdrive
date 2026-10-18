@@ -52,8 +52,9 @@ test('Gallery quick pending first read is silent, true 300ms wait shows feedback
 
 test('Memories and Cleanup first read preserve fixed slots without instant Circle progress', () => {
   assert.ok(memories.includes('data-xdrive-gallery-memories-first-read'))
-  assert.ok(memories.includes('aria-busy="true"'))
-  assert.ok(memories.includes('memories.length === 0 && loading'))
+  assert.ok(memories.includes("aria-busy={readState === 'unverified' || undefined}"))
+  assert.ok(memories.includes("memories.length === 0 && readState !== 'ready'"))
+  assert.ok(memories.includes("readState === 'unverified' || undefined"))
   assert.equal(memories.includes('showFirstReadLoading'), false)
   assert.equal(memories.includes('CircularProgress'), false)
   assert.ok(cleanup.includes('data-xdrive-gallery-cleanup-first-read'))

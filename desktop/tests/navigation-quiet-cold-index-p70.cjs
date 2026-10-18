@@ -75,7 +75,7 @@ test('P70 mounted real Memories first read stays quiet even after 360ms', async 
     async (view, update) => {
       const slot = () => view.root.findAll(node =>
         node.props['data-xdrive-gallery-memories-first-read'] !== undefined)[0]
-      assert.equal(slot().props['aria-busy'], 'true')
+      assert.equal(slot().props['aria-busy'], true)
       assert.equal(slot().props.sx.minHeight, 180)
       assert.equal(rings(view).length, 0)
       await act(async () => { await delay(360) })
