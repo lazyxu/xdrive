@@ -1,3 +1,11 @@
+## A3c20 · 百度 JSAPI4 三端真实 Owner 8×8 数量气泡（2026-10-18；依赖 #2083，生产 NO-GO）
+
+本阶段**不启用百度动态代理**，只把 A3c19 新 Server 有界 Owner `/media/places/baidu-jsapi/cells` 的真实聚合数据贯通 xDrive 同一 Gallery：Web、Mobile Web/PWA、独立安全 HTTPS Desktop 窗口共享后端接口、数据源、照片选择 Range/VirtualCollection 和 Viewer。原生 JSAPI4 仅在 Server 当前签名发布、HTTPS 同源、单独签发 Map-only Cookie 后可以加载。超过 100 张照片时，最多 64 个官方 BMap.Label 标注显示 Server 全量精确数量；标注位置为该格真实代表照片 BD09LL（非网格中心），不将一格一个代表点投进 ClusterLayer 当作只有 64 张。点击多张区域逐级放大并重新有界查询，单张经 Gallery Range 重新授权后打开 Viewer；同步提供 44px 键盘可操作的区域列表。100 张以内沿用真实完整 JSAPI4 ClusterLayer。
+
+客户端请求端严格校验 BD09 范围及坐标框架、总数/逐格数量的一致性、8×8 最多 64 格、有限浮点与安全整数、真实配对 Asset/Node ID、重复标识和额外响应字段；转动/平移/缩放即 Abort 上次 Server 查询、撤除过期气泡，导航/登出销毁覆盖物且不允许旧点击打开照片。单个 100k 合成 fixture 是纯离线契约测试，不等于物理大图库、原生 iOS/Android/Windows 截图或百度瓦片网络真实性证明。若 A3c19 未合入、SDK资源审核未完成、当前发布无有效签名，则继续安全降级百度静态地图，不提供伪造的已运行动态地图。
+
+**A3 仍不得宣布生产 GO**：#1798 要求 9 对真实 Browser+upstream HAR、Provider 实际版本许可/AK 审核、来源固定签名根及逐资源白名单、HTTPS 三端 Web/Mobile/PWA/Desktop 真机手势和 iOS 27 照片 1:1 截图、实际 100k 性能/Viewer/删除/撤销等真实验收；静态 Server AK 与 Browser AK 已独立配置，不能把 4.0 代理无约束转发。保持百度唯一 Provider、全屏 App Frame/52px 全局标题栏、Web/Desktop 后端共享架构。
+
 ## A3c19 · 100k-safe Owner BD09 派生位置 8×8 有界聚合（2026-10-18）
 
 新增真实 Go Server `GET /api/v1/media/places/baidu-jsapi/cells?west=...&south=...&east=...&north=...`，继续沿用原 `/viewport` 的 **当前 Owner JWT/SessionVersion、撤销 Epoch、实际签名发布**三重检查（查询前、SQL 后、写出前），未批准动态发布仍返回 503。坐标帧严格为 `bd09ll`；未知字段、重复参数、任意 AK、伪造 WGS84、异常范围或取消请求一律拒绝。**没有任何新地图 Provider、百度网络调用、Browser AK 或原始 WGS84 位置暴露。**

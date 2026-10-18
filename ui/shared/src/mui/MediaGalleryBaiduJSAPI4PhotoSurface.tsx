@@ -5,6 +5,8 @@ import {
 } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4SessionGrant } from '../media-gallery-baidu-jsapi4-browser-loader'
 import type { XDriveBaiduJSAPI4InitialPhotoCamera } from '../media-gallery-baidu-jsapi4-mount'
+import type { MediaBaiduNativeCellsPage } from '../models'
+import type { XDriveBaiduNativePhotoCellsRequest } from '../media-gallery-baidu-jsapi4-cells'
 import { xDriveBindBaiduJSAPI4NativeMap } from '../media-gallery-baidu-jsapi4-native'
 import {
   XDriveBaiduJSAPI4IndexedViewportBridge,
@@ -27,12 +29,14 @@ import type {
 export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   mintMapOnlySession,
   listOwnerViewport,
+  listOwnerCells,
   camera,
   onOpenPhoto,
   onReady,
 }: {
   mintMapOnlySession: (signal: AbortSignal) => Promise<XDriveBaiduJSAPI4SessionGrant>
   listOwnerViewport: XDriveBaiduNativePhotoViewportRequest
+  listOwnerCells?: XDriveBaiduNativePhotoCellsRequest
   camera: XDriveBaiduJSAPI4InitialPhotoCamera
   onOpenPhoto: (identity: XDriveBaiduNativePhotoIdentity) => void
   onReady: (ready: boolean) => void
@@ -41,6 +45,8 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
   const latestOpenPhoto = useRef(onOpenPhoto)
   latestOpenPhoto.current = onOpenPhoto
   const [result, setResult] = useState('')
+  const [cellSummary, setCellSummary] = useState<MediaBaiduNativeCellsPage | null>(null)
+  const latestBridge = useRef<XDriveBaiduJSAPI4IndexedViewportBridge | null>(null)
 
   useEffect(() => {
     const container = host.current
@@ -52,6 +58,7 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
     let bridge: XDriveBaiduJSAPI4IndexedViewportBridge | null = null
     let clock: ReturnType<typeof setTimeout> | null = setTimeout(() => pending.abort(), 8000)
     setResult('')
+    setCellSummary(null)
     onReady(false)
     const opened = async () => {
       native = await mount.acquire(container, pending.signal, camera)
@@ -76,23 +83,28 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
           if (active && !pending.signal.aborted) latestOpenPhoto.current(identity)
         },
         onViewportInvalidated: () => {},
+        onCells: page => { if (active && !pending.signal.aborted) setCellSummary(page) },
         onResult: response => {
           if (!active || pending.signal.aborted) return
           setResult(response.kind)
           // A truncated result may show a licensed map but no invented cluster.
-          onReady(response.kind === 'rendered' || response.kind === 'incomplete')
+          onReady(response.kind === 'rendered' || response.kind === 'aggregated' ||
+            response.kind === 'incomplete')
         },
-      })
+      }, listOwnerCells, native.namespace)
+      latestBridge.current = bridge
       const first = await bridge.refresh()
       if (!active || pending.signal.aborted) return
       setResult(first.kind)
-      onReady(first.kind === 'rendered' || first.kind === 'incomplete')
+      onReady(first.kind === 'rendered' || first.kind === 'aggregated' ||
+        first.kind === 'incomplete')
     }
     void opened().catch(() => {
       // A failed SDK bind, revoked Session or unusable viewport must release
       // the native map immediately, not only after a later component unmount.
       bridge?.dispose()
       bridge = null
+      latestBridge.current = null
       native?.dispose()
       native = null
       if (active && !pending.signal.aborted) {
@@ -105,10 +117,11 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
       pending.abort()
       if (clock !== null) clearTimeout(clock)
       bridge?.dispose()
+      latestBridge.current = null
       native?.dispose()
       onReady(false)
     }
-  }, [mintMapOnlySession, listOwnerViewport, onReady,
+  }, [mintMapOnlySession, listOwnerViewport, listOwnerCells, onReady,
     camera.latitude, camera.longitude, camera.zoom])
 
   return (
@@ -118,11 +131,35 @@ export function XDriveMediaGalleryBaiduJSAPI4PhotoSurface({
         data-xdrive-baidu-jsapi4-bd09-photo-canvas
         sx={{ width: '100%', height: { xs: 320, sm: 400 },
           minHeight: 280, borderRadius: 1.5 }} />
+      {result === 'aggregated' && cellSummary ? (
+        <Box data-xdrive-baidu-true-cell-aggregation sx={{mt: 1, px: 0.5}}>
+          <Typography role="status" variant="caption" color="text.secondary">
+            当前范围共 {cellSummary.total_count.toLocaleString('zh-CN')} 张已授权照片，
+            按 {cellSummary.cells.length} 个区域显示真实计数。
+            数字标记使用真实照片位置；选择多张区域将放大地图；
+            查看单张照片需经图库重新鉴权。
+          </Typography>
+          <Box sx={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(112px, 1fr))',
+            gap:0.75,maxHeight:158,overflowY:'auto',mt:1}}
+            aria-label="当前地图照片聚合区域">
+            {cellSummary.cells.map(cell => (
+              <Box component="button" type="button" key={cell.cell_x+':'+cell.cell_y}
+                data-xdrive-baidu-owner-cell-button
+                onClick={() => latestBridge.current?.focusCell(cell)}
+                sx={{font:'inherit',color:'text.primary',border:'1px solid',
+                  borderColor:'divider',borderRadius:1,background:'background.paper',
+                  minHeight:44,cursor:'pointer',px:1}}>
+                区域 {cell.cell_y*8+cell.cell_x+1} · {cell.photo_count.toLocaleString('zh-CN')} 张
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
       {result === 'incomplete' ? (
         <Typography role="status" variant="caption" color="text.secondary">
           当前地图范围内的已授权照片超过 100 张，请放大地图；不显示不完整的聚合结果。
         </Typography>
-      ) : result && result !== 'rendered' && result !== 'cancelled' ? (
+      ) : result && result !== 'rendered' && result !== 'aggregated' && result !== 'cancelled' ? (
         <Typography role="status" variant="caption" color="text.secondary">
           百度动态照片地图暂不可用，仍可使用原有地点与静态地图。
         </Typography>

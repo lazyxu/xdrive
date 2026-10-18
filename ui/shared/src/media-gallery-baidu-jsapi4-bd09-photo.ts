@@ -1,4 +1,6 @@
-import type { MediaBaiduNativeViewportPage } from './models'
+import type { MediaBaiduNativeViewportPage, MediaBaiduNativeCellsPage } from './models'
+import { XDriveBaiduJSAPI4NativeCellOverlays, xDriveValidBaiduNativeCellsPage } from './media-gallery-baidu-jsapi4-cells'
+import type { XDriveBaiduNativePhotoCellsRequest } from './media-gallery-baidu-jsapi4-cells'
 import type {
   XDriveBaiduJSAPI4AuthorizedRuntimePort,
   XDriveBaiduJSAPI4ClusterLayerPort,
@@ -223,6 +225,7 @@ export type XDriveBaiduNativePhotoViewportRequest = (
   signal: AbortSignal,
 ) => Promise<MediaBaiduNativeViewportPage>
 export type XDriveBaiduIndexedViewportResult = XDriveBaiduNativePhotoLayerResult |
+  { kind: 'aggregated'; totalPhotos: number; cells: number } |
   { kind: 'invalid-bounds' | 'cancelled' | 'query-unavailable' }
 
 /** BMap.getBounds is already BD09, never forward it as photo WGS84. */
@@ -248,6 +251,7 @@ export function xDriveReadBaiduNativePhotoBounds(
  * through the existing Owner viewport adapter to Go request cancellation. */
 export class XDriveBaiduJSAPI4IndexedViewportBridge {
   private readonly controller: XDriveBaiduJSAPI4NativePhotoController
+  private readonly overlays: XDriveBaiduJSAPI4NativeCellOverlays | null
   private generation = 0
   private request: AbortController | null = null
   private disposed = false
@@ -259,10 +263,15 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     private readonly listViewport: XDriveBaiduNativePhotoViewportRequest,
     private readonly callbacks: XDriveBaiduNativePhotoCallbacks & {
       onResult?(result: XDriveBaiduIndexedViewportResult): void
+      onCells?(page: MediaBaiduNativeCellsPage | null): void
     },
+    private readonly listCells?: XDriveBaiduNativePhotoCellsRequest,
+    nativeNamespace?: unknown,
   ) {
     if (!runtime || typeof runtime.map?.getBounds !== 'function' ||
         typeof listViewport !== 'function') throw new Error('baidu_indexed_viewport_unavailable')
+    this.overlays = listCells ? new XDriveBaiduJSAPI4NativeCellOverlays(
+      runtime.map, nativeNamespace, id => callbacks.onOpenPhoto(id)) : null
     this.controller = new XDriveBaiduJSAPI4NativePhotoController(runtime, {
       onOpenPhoto: identity => callbacks.onOpenPhoto(identity),
       onViewportInvalidated: () => { void this.refresh() },
@@ -280,6 +289,8 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     this.request?.abort()
     this.request = null
     this.controller.invalidate()
+    this.overlays?.clear()
+    try { this.callbacks.onCells?.(null) } catch {}
   }
   async refresh(): Promise<XDriveBaiduIndexedViewportResult> {
     if (this.disposed) return { kind: 'query-unavailable' }
@@ -291,6 +302,37 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     try {
       const bounds = xDriveReadBaiduNativePhotoBounds(this.runtime.map)
       if (!bounds) return this.deliver({ kind: 'invalid-bounds' }, generation)
+      let priorCount: number | null = null
+      if (this.listCells && this.overlays) {
+        // Dense view: 1 bounded /cells request rather than 100k points to DOM.
+        const summary = await new Promise<MediaBaiduNativeCellsPage>((resolve,reject) => {
+          let settled=false
+          const cancel=()=>finish(false)
+          const finish=(ok:boolean, value?:MediaBaiduNativeCellsPage)=>{
+            if(settled)return
+            settled=true
+            abort.signal.removeEventListener('abort',cancel)
+            if(ok && value)resolve(value)
+            else reject(new Error('baidu_cells_unavailable'))
+          }
+          if(abort.signal.aborted)return cancel()
+          abort.signal.addEventListener('abort',cancel,{once:true})
+          try { this.listCells!(bounds,abort.signal).then(
+            value=>finish(true,value),()=>finish(false)) } catch {finish(false)}
+        })
+        if(this.disposed || abort.signal.aborted || generation!==this.generation)
+          return {kind:'cancelled'}
+        if(!xDriveValidBaiduNativeCellsPage(summary,bounds))
+          return this.deliver({kind:'query-unavailable'},generation)
+        priorCount=summary.total_count
+        if(priorCount>XDRIVE_BAIDU_NATIVE_PHOTO_WINDOW_MAX) {
+          if(!this.overlays.apply(summary,bounds,abort.signal))
+            return this.deliver({kind:'query-unavailable'},generation)
+          try {this.callbacks.onCells?.(summary)} catch {}
+          return this.deliver({kind:'aggregated',totalPhotos:priorCount,
+            cells:summary.cells.length},generation)
+        }
+      }
       const page = await new Promise<MediaBaiduNativeViewportPage>((resolve, reject) => {
         let settled = false
         const finish = (ok: boolean, value?: MediaBaiduNativeViewportPage) => {
@@ -311,7 +353,11 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
       if (this.disposed || abort.signal.aborted || generation !== this.generation) {
         return { kind: 'cancelled' }
       }
-      return this.deliver(this.controller.applyOwnerBD09Page(page, abort.signal), generation)
+      // A consent/index update between the two independent authenticated GETs
+      // cannot turn a partial 100-point window into a fake complete cluster.
+      if (priorCount !== null && page.total_count !== priorCount)
+        return this.deliver({kind:'query-unavailable'},generation)
+      return this.deliver(this.controller.applyOwnerBD09Page(page,abort.signal),generation)
     } catch {
       if (this.disposed || abort.signal.aborted || generation !== this.generation) {
         return { kind: 'cancelled' }
@@ -329,10 +375,14 @@ export class XDriveBaiduJSAPI4IndexedViewportBridge {
     }
     return result
   }
+  focusCell(cell: MediaBaiduNativeCellsPage['cells'][number]) {
+    this.overlays?.focusCell(cell)
+  }
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
     this.cancel()
+    this.overlays?.dispose()
     try { this.runtime.map.removeEventListener('movestart', this.onMapStarted) } catch {}
     try { this.runtime.map.removeEventListener('zoomstart', this.onMapStarted) } catch {}
     this.controller.dispose()

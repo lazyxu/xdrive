@@ -989,6 +989,25 @@ export interface MediaBaiduNativeViewportPage {
   has_more: boolean
 }
 
+/** A3c20: Source/Owner/consent-revision validated BD09 8x8 summary.
+ * Each point belongs to a REAL representative PhotoAsset, never a grid center. */
+export interface MediaBaiduNativeCellsPage {
+  coordinate_space: 'bd09ll'
+  index_scope: 'explicit_opt_in_only'
+  grid_columns: 8
+  grid_rows: 8
+  total_count: number
+  cells: Array<{
+    cell_x: number
+    cell_y: number
+    photo_count: number
+    asset_id: number
+    node_id: number
+    latitude: number
+    longitude: number
+  }>
+}
+
 export interface MediaMemory {
   id: string
   kind: 'recent_day' | 'on_this_day' | 'trip' | string
