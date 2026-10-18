@@ -380,10 +380,10 @@ test('Runtime verification tabs load exact service-specific status without eager
 test('one shared detail page replaces status/config/verify/history tabs without eager history', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
   const caddy = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
-  assert.ok(page.includes("selectedTabs.map((currentTab) => {"),
+  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"),
     'each relevant capability is an in-page section of the same service')
   assert.ok(page.includes('data-xdrive-unified-detail-intro'))
-  assert.ok(page.includes('data-xdrive-unified-detail-section={currentTab}'))
+  assert.ok(page.includes('data-xdrive-unified-detail-section={sectionTab}'))
   assert.ok(page.includes('<AccordionSummary'))
   assert.ok(page.includes('<AccordionDetails'))
   assert.equal(page.includes('<Tabs'), false)
@@ -409,7 +409,7 @@ test('one shared detail page replaces status/config/verify/history tabs without 
   assert.ok(page.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
   assert.ok(page.includes('window.setTimeout(hideBaiduAK, seconds * 1000)'),
     'Baibu AK must expire even if its reveal child unmounts on section collapse')
-  assert.ok(page.includes("!next && selectedPage === 'baidu-map' && currentTab === 'config'"),
+  assert.ok(page.includes("!next && selectedPage === 'baidu-map' && sectionTab === 'config'"),
     'closing the configuration accordion must immediately redact any exposed AK')
   assert.ok(caddy.includes("(lanEnabled || enabled)"),
     'both-disable rejection remains in the editable configuration panel')
@@ -445,4 +445,31 @@ test('Photo model details expose shared manual verification but only the host ow
   assert.ok(hostPanel.includes("if (section !== 'verify' || !source.loadPhotoHostPreflight"),
     'private model inference must remain behind an explicit administrator click')
   assert.ok(hostPanel.includes('source.loadPhotoHostPreflight()'))
+})
+
+
+test('SD-UI-V1.4: status and verification share one accordion without eager probes or broken deep links', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  assert.ok(page.includes("selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {"),
+    'verify must not render a duplicate top-level accordion')
+  assert.ok(page.includes("sectionTab === 'status' && selectedTabs.includes('verify')"),
+    'one combined header retains a status and verification affordance')
+  assert.ok(page.includes("sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab]"),
+    'expensive verification panels must remain unmounted until opened')
+  assert.ok(page.includes("data-xdrive-unified-verify-toggle aria-expanded={showVerify}"),
+    'inline verification control must expose its disclosure state')
+  assert.ok(page.includes('expandDependencySection(prior, selectedPage, next.tab)'),
+    'legacy verify links must reopen parent status accordion and verification content')
+  assert.ok(page.includes('expandDependencySection(prior, selectedPage, incoming.tab)'),
+    'external browser back/forward must preserve verify anchors')
+  assert.ok(page.includes('id={`dependency-${selectedPage}-verify-header`}'),
+    'legacy verify scroll target must still exist while expanded')
+  assert.ok(page.includes("currentTab === 'verify' && !showVerify"),
+    'hidden verification cannot be mistaken for visible scrolled-to panel')
+  assert.ok(page.includes("if (!next && unsavedRef.current) return"),
+    'editing and secret-reveal safety gates cannot regress')
+  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"),
+    'history must still be fetched only on deliberate expansion')
+  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'verify'"),
+    'original Caddy read-only host preflight remains separate from applying config')
 })

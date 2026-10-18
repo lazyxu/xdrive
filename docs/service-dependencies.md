@@ -1,3 +1,11 @@
+## SD-UI-V1.4 · 合并「当前状态」与「检测与生效证据」（2026-10-18）
+
+- 为 11 个全局系统依赖保留单个共享详情页；将原「当前状态」「检测与生效证据」两个顶级折叠区合为**「状态与检测」**，配置与修改、配置历史与回滚继续分离，避免重复的状态区与入口。没有 Verify 合同的全局自动分析策略仍保留「当前状态」。
+- 检测内容在状态区域用有 `aria-expanded` 的按钮按需显示；除原先默认展开的 Caddy 检测外，其他服务首次访问只显示真实状态，不会为了一次页面合并而提前加载模型、数据库、Host Manager 的额外探针。展开后保留原有手动检测、服务特定证据、Caddy 七项只读预检。
+- 原有 `?service=...&tab=verify` 深链接、浏览器前进/后退、同服务跳区块会恢复合并的父状态区和检测内容并定位到原 Verify 锚点。配置草稿不重置；历史只在展开时读取；当前安全编辑确认、百度 AK 失焦与折叠脱敏均不变。
+- 原始文件：共享 `ServiceDependenciesPage.tsx`、两个现有桌面共享 UI 契约测试、本文和完整 `AGENTS.md`，共五个文件，一工作提交；Web/Mobile Web/PWA/Desktop 复用同一 React/MUI 页面和 Server/Agent API，不改变 API、宿主机或启动条件。
+- 本次无 Caddy Host Apply/Restart；保存 IP/域名启停意图仍不等于已生效。只有全新准确工作 HEAD 完整 GitHub CI（含真实 PostgreSQL API Race、Windows/Linux/Web/Desktop、Rootless、single-commit 与 Final Gate）、当前 `mergeable_state=clean` 后才能 Ready/Rebase。实体 IP/domain TLS/独立 Rescue 验收 NOT RUN，`apply_supported=false`。
+
 # Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
 ## NET-M5-U1 · 双入口初始显示与安装完成入口核对（2026-10-18）
