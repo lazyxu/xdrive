@@ -80,6 +80,182 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  obs-p003-quantile-overhead:
+    if: github.head_ref == 'perf/obs-p003-bounded-quantile-overhead-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify unchanged historical observer function bytes in test-only same-process baseline
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          files="$(gofmt -l internal/api/observability.go internal/api/storage_performance_histogram.go internal/api/storage_performance_window.go internal/api/storage_performance_histogram_test.go internal/api/storage_performance_histogram_benchmark_test.go)"
+          if [[ -n "$files" ]]; then
+            printf '%s\n' "$files"
+            gofmt -d $files
+            exit 1
+          fi
+          python3 - <<'PY'
+          import subprocess,pathlib,os,json,base64,urllib.request
+          sha='9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a'
+          # Actions default shallow checkout does not include this earlier blob.
+          # Fetch ONLY the immutable verified Git blob through the GitHub
+          # Contents-read REST endpoint, never trust a human-authored baseline.
+          try:
+              frozen_bytes=subprocess.check_output(['git','cat-file','-p',sha],stderr=subprocess.DEVNULL)
+          except subprocess.CalledProcessError:
+              token=os.environ.get('GITHUB_TOKEN')
+              assert token,'missing GitHub Actions read-only token for old source'
+              url='https://api.github.com/repos/lazyxu/xdrive/git/blobs/'+sha
+              request=urllib.request.Request(url,headers={
+                  'Authorization':'Bearer '+token,
+                  'Accept':'application/vnd.github+json',
+                  'X-GitHub-Api-Version':'2022-11-28'})
+              with urllib.request.urlopen(request,timeout=30) as response:
+                  result=json.load(response)
+              assert result.get('sha')==sha and result.get('encoding')=='base64'
+              frozen_bytes=base64.b64decode(result['content'])
+          actual_git_blob_sha=subprocess.check_output(['git','hash-object','--stdin'],input=frozen_bytes).decode().strip()
+          assert actual_git_blob_sha==sha,'historical original blob hash mismatch'
+          old=frozen_bytes.decode()
+          bench=pathlib.Path('internal/api/storage_performance_histogram_benchmark_test.go').read_text()
+          start=old.index('func (o *serverObservability) observeRequest(')
+          stop=old.index('func uploadOperation(',start)
+          frozen=old[start:stop].replace('func (o *serverObservability) observeRequest(','func obsP003LegacyObserve(o *serverObservability, ',1)
+          current=bench[bench.index('func obsP003LegacyObserve('):bench.index('type obsP003Request struct')]
+          assert current.strip()==frozen.strip(),'original observeRequest method body was altered; no valid before/after'
+          print('OBS_P003_FROZEN_PRODUCTION_BASELINE_METHOD_BYTE_IDENTICAL')
+          PY
+          node --test desktop/tests/global-storage-performance-obs-p001.cjs desktop/tests/global-storage-performance-obs-p002.cjs desktop/tests/obs-p003-histogram-source.cjs
+          node web/scripts/check-gui-chinese.mjs
+      - name: Verify original first valid exact-source n3 artifact and immutable code hashes
+        run: |
+          set -euo pipefail
+          archive=docs/performance-evidence/obs-p003/ci-run-39084449383.zip
+          printf '%s  %s\n' '7fd8fb55c77833b1cfa5ea6e1340e83573b1fbcc40c8198677f64d0bbf0841c8' "$archive" | sha256sum -c -
+          python3 - "$archive" <<'PY'
+          import hashlib,json,pathlib,sys,zipfile
+          from pathlib import Path
+          expected={
+            'run.log':'11f7a7b276cc039ecde509df1739ef0ece75724f6b190f4ed6aa11fb31c172f0',
+            'source.txt':'9de288c41bfa8a92807d8022e8a90b1570de87b66b883a0b79a284f61ea17e0d',
+            'resources.txt':'bba0e69371c8bd1e3f488a2da3b48e1eb2e0f91f32d3c8184e37c10b3ba98be7',
+            'summary.json':'09daf159e014d05c727f746026ab3b64f046861f90bca37a8d8af4cf2c063a94'
+          }
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              assert set(z.namelist()) == set(expected),z.namelist()
+              for name,digest in expected.items():
+                  assert hashlib.sha256(z.read(name)).hexdigest()==digest,name
+              sources=z.read('source.txt').decode()
+              assert 'EXACT_SOURCE_HEAD=98537d4d5b6681952e67adce944e84cf3c381172' in sources
+              assert 'CI_RUN_ID=39084449383' in sources
+              historical_names=(
+                  'internal/api/observability.go',
+                  'internal/api/storage_performance_observation.go',
+                  'internal/api/storage_performance_window.go',
+                  'internal/api/storage_performance_histogram.go',
+                  'internal/api/storage_performance_histogram_benchmark_test.go',
+                  'ui/shared/src/mui/GlobalStorageStatsPage.tsx')
+              for name in historical_names:
+                  assert sum(line.endswith('  '+name) and len(line.split('  ')[0])==64 for line in sources.splitlines())==1,('missing_historical_source',name)
+              # The six historical source hashes are pinned by the unchanged
+              # ZIP SHA256. Independently merged current UI is compiled by CI,
+              # not forced to match an earlier unrelated source snapshot.
+              for name in historical_names[:-1]:
+                  digest=hashlib.sha256(Path(name).read_bytes()).hexdigest()
+                  assert digest+'  '+name in sources,('benchmark_go_source_changed',name)
+              result=json.loads(z.read('summary.json'))
+              assert result['n']==3 and result['candidate_admission']=='ACCEPT'
+              assert result['median']['CandidateSequential']['ns_per_op']==97.37
+              assert result['median']['OriginalSequential']['ns_per_op']==83.76
+              assert result['median']['CandidateParallel']['ns_per_op']==134.4
+              assert result['median']['OriginalParallel']['ns_per_op']==121.1
+          print('OBS_P003_PERMANENT_FIRST_N3_ORIGINAL_ZIP_4_FILES_6_SOURCES_VERIFIED')
+          PY
+      - name: Three repeat same Go binary serial and four CPU contention A/B
+        env:
+          GOMAXPROCS: '4'
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/obs-p003-results"
+          mkdir -p "$out"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/api/observability.go \
+              internal/api/storage_performance_observation.go \
+              internal/api/storage_performance_window.go \
+              internal/api/storage_performance_histogram.go \
+              internal/api/storage_performance_histogram_benchmark_test.go \
+              ui/shared/src/mui/GlobalStorageStatsPage.tsx
+            go version
+            uname -a
+          } > "$out/source.txt"
+          /usr/bin/time -v -o "$out/resources.txt" \
+            go test -mod=readonly ./internal/api \
+              -run '^TestOBSP003' \
+              -bench '^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)$' \
+              -cpu=4 -benchtime=450ms -count=3 -benchmem -timeout=20m -v \
+              | tee "$out/run.log"
+          python3 - "$out" <<'PY'
+          import json,pathlib,re,statistics,sys
+          out=pathlib.Path(sys.argv[1])
+          log=(out/'run.log').read_text()
+          kinds=['OriginalSequential','CandidateSequential','OriginalParallel','CandidateParallel','PeriodicSample','AdminRecentRead']
+          values={}
+          rx=re.compile(r'^BenchmarkOBSP003(OriginalSequential|CandidateSequential|OriginalParallel|CandidateParallel|PeriodicSample|AdminRecentRead)-4\s+\d+\s+([\d.]+) ns/op\s+(\d+) B/op\s+(\d+) allocs/op',re.M)
+          for kind,ns,bytes_,allocs in rx.findall(log):
+              values.setdefault(kind,[]).append({'ns_per_op':float(ns),'bytes_per_op':int(bytes_),'allocs_per_op':int(allocs)})
+          assert set(values)==set(kinds),values
+          assert all(len(values[k])==3 for k in kinds),values
+          assert '--- FAIL:' not in log
+          med={k:{metric:statistics.median(v[metric] for v in values[k]) for metric in ('ns_per_op','bytes_per_op','allocs_per_op')} for k in kinds}
+          gains={}
+          valid=True
+          for mode in ('Sequential','Parallel'):
+              original=med['Original'+mode]['ns_per_op']
+              cand=med['Candidate'+mode]['ns_per_op']
+              ratio=cand/original
+              add_ns=cand-original
+              gains[mode]={'baseline_ns':original,'candidate_ns':cand,'ratio':ratio,'increment_ns':add_ns}
+              valid &= ratio<=1.25 and add_ns<=50
+          valid &= all(x['bytes_per_op']==0 and x['allocs_per_op']==0 for kind in kinds[:4] for x in values[kind])
+          for kind in ['PeriodicSample','AdminRecentRead']:
+              valid &= max(x['ns_per_op'] for x in values[kind])<=2_000_000
+              valid &= max(x['bytes_per_op'] for x in values[kind])<=65_536
+          summary={'workload':'OBS-P003/nine-class-fixed-histogram-original-vs-candidate',
+            'n':3,'source_exact_baseline_git_blob':'9a247e2b086d53f0b26bf03f6d8d8a7956b21e0a',
+            'head':(out/'source.txt').read_text().splitlines()[0],
+            'budget_ratio_max':1.25,'budget_increment_ns_max':50,'budget_zero_alloc':True,
+            'budget_admin_max_ns_per_op':2_000_000,'budget_admin_max_bytes_per_op':65_536,
+            'source_note':'Real xDrive original method body copied exactly (only declaration changed) and candidate product method compared on same Go1.25 runner; synthetic nine fixed route templates, not actual end-user p95 latency.',
+            'raw':values,'median':med,'deltas':gains,
+            'candidate_admission':'ACCEPT' if valid else 'REJECT',
+            'limits':'Server-only HTTP in-memory counter hot path. Does not measure real CAS originals, 100k GUI rendering, 4GiB upload, OS-installed PWA, or full multi-server p95.'
+          }
+          (out/'summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          print('OBS_P003_SAME_RUNNER_AB',json.dumps({'median':med,'deltas':gains,'candidate_admission':summary['candidate_admission']},sort_keys=True))
+          assert valid,'P003 instrumentation exceeds predeclared CPU/alloc budget; reject production hotpath and preserve raw evidence'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: obs-p003-nine-class-histogram-original-vs-candidate-n3
+          path: ${{ runner.temp }}/obs-p003-results/
+          retention-days: 30
+          if-no-files-found: warn
+
   single-commit:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
