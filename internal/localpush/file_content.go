@@ -53,6 +53,23 @@ func streamVerifiedInventoryFileBytes(
 	staging io.Writer,
 	onProgress func(done, total int64) error,
 ) (VerifiedInventoryFileDigest, error) {
+	return streamVerifiedInventoryFileBytesWithHeldCheckpoint(
+		ctx, grant, item, staging, onProgress, nil,
+	)
+}
+
+// Only the new owning-native read-only witness uses this variant. It holds
+// the *same* securely opened file descriptor throughout a bounded callback,
+// then REHASHES that descriptor and rechecks the pathname and native identity.
+// The callback is NOT a distributed physical commit lease or backup authority.
+func streamVerifiedInventoryFileBytesWithHeldCheckpoint(
+	ctx context.Context,
+	grant RootGrant,
+	item InventoryItem,
+	staging io.Writer,
+	onProgress func(done, total int64) error,
+	checkpoint func(context.Context, VerifiedInventoryFileDigest) error,
+) (VerifiedInventoryFileDigest, error) {
 	var empty VerifiedInventoryFileDigest
 	if ctx == nil {
 		return empty, errors.New("local file hashing context is required")
@@ -173,14 +190,76 @@ func streamVerifiedInventoryFileBytes(
 	if err != nil || !matchesNative(nativeAfter) {
 		return empty, ErrRootChanged
 	}
+	verified := VerifiedInventoryFileDigest{
+		Path: relative, Size: processed, SHA256: hex.EncodeToString(digest.Sum(nil)),
+		NativeIdentityKey: item.NativeIdentity.Key,
+	}
+	if checkpoint != nil {
+		// All checks above passed on this exact opened native handle. Keep it
+		// open while the caller performs its *read-only* checkpoint.
+		if err := VerifyRootGrant(grant); err != nil {
+			return empty, err
+		}
+		if err := checkpoint(ctx, verified); err != nil {
+			return empty, err
+		}
+		if err := ctx.Err(); err != nil {
+			return empty, err
+		}
+		// Hash the SAME descriptor a second time: keeping the fd open
+		// prevents replacement-by-path from silently switching identity,
+		// but not concurrent in-place edits to the original file.
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			return empty, ErrRootChanged
+		}
+		recheckHash := sha256.New()
+		var rechecked int64
+		for {
+			if err := ctx.Err(); err != nil {
+				return empty, err
+			}
+			n, readErr := file.Read(buf)
+			if n > 0 {
+				rechecked += int64(n)
+				if rechecked > item.Size {
+					return empty, ErrRootChanged
+				}
+				if _, err := recheckHash.Write(buf[:n]); err != nil {
+					return empty, err
+				}
+			}
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return empty, ErrRootChanged
+			}
+			if errors.Is(readErr, io.EOF) {
+				break
+			}
+			if n == 0 {
+				return empty, ErrRootChanged
+			}
+		}
+		if rechecked != processed || hex.EncodeToString(recheckHash.Sum(nil)) != verified.SHA256 {
+			return empty, ErrRootChanged
+		}
+		againHandle, err := file.Stat()
+		if err != nil || !expected(againHandle) || !os.SameFile(opened, againHandle) {
+			return empty, ErrRootChanged
+		}
+		againPath, err := os.Lstat(full)
+		if err != nil || !expected(againPath) || againPath.Mode()&os.ModeSymlink != 0 ||
+			!os.SameFile(opened, againPath) {
+			return empty, ErrRootChanged
+		}
+		againNative, err := readInventoryNativeIdentity(grant.RootID, full, againPath)
+		if err != nil || !matchesNative(againNative) {
+			return empty, ErrRootChanged
+		}
+	}
 	if err := VerifyRootGrant(grant); err != nil {
 		return empty, err
 	}
 	if err := ctx.Err(); err != nil {
 		return empty, err
 	}
-	return VerifiedInventoryFileDigest{
-		Path: relative, Size: processed, SHA256: hex.EncodeToString(digest.Sum(nil)),
-		NativeIdentityKey: item.NativeIdentity.Key,
-	}, nil
+	return verified, nil
 }
