@@ -4086,3 +4086,326 @@ test('P56 Mobile Search summary never flashes in-flow query copy or shifts resul
     onClearSearch: () => { cleared += 1 },
   } })
 })
+
+
+function p69CountedDirectory(id, label = 'accepted.txt') {
+  const item = { id: id * 10 + 1, name: label, kind: 'file', revision: 1 }
+  return {
+    itemCount: 1, interactionKey: 'p69-authoritative:' + id,
+    loadedItems: new Map([[0, item]]), itemAt: index => index === 0 ? item : undefined,
+    onRangeChange() {}, groups: [],
+  }
+}
+function p69ClickHomeFolder(view, label) {
+  const title = view.root.findAll(node =>
+    Object.hasOwn(node.props ?? {}, 'data-mobile-files-collection-title') &&
+    node.props.children === label)[0]
+  assert.ok(title, 'missing original Browse Home row: ' + label)
+  let node = title
+  while (node && node.props.role !== 'button') node = node.parent
+  assert.ok(node?.props.onClick, 'same original row must own the click')
+  node.props.onClick()
+}
+test('P69: Recent folder Promise completion is not a counted directory commit', async () => {
+  let resolveOpen
+  const activation = new Promise(resolve => { resolveOpen = resolve })
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    await h.update({ loading: true })
+    await act(async () => { resolveOpen(true); await activation })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'completion can precede the React commit; keep the accepted Recent rail')
+    assert.equal(saved().folderID, 1, 'do not pre-persist an unverified destination')
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '相册文件夹' }],
+      items: [{ id: 421, name: 'verified.txt', kind: 'file', revision: 1 }],
+      virtualCollection: p69CountedDirectory(42, 'verified.txt'),
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(saved().folderID, 42)
+    assert.equal(saved().section, 'browse')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 42, kind: 'dir', name: '相册文件夹' }],
+    onOpenRecent: () => activation,
+  } })
+})
+test('P69: a late successful Recent callback cannot reset the committed scroll twice', async () => {
+  let resolveOpen
+  const activation = new Promise(resolve => { resolveOpen = resolve })
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '已授权' }],
+      virtualCollection: p69CountedDirectory(42),
+    })
+    assert.equal(saved().folderID, 42)
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    await act(async () => {
+      find(h.view, 'data-xdrive-file-explorer-scroll-host', true)
+        .props.onScroll({ currentTarget: { scrollTop: 286 } })
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 230)) })
+    assert.equal(saved().scrollTop, 286)
+    await act(async () => { resolveOpen(true); await activation })
+    assert.equal(saved().scrollTop, 286,
+      'late Promise must not call beginBrowse after the first pre-paint commit')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 42, kind: 'dir', name: '已授权' }],
+    onOpenRecent: () => activation,
+  } })
+})
+test('P69: Quick Access rejected and successful folder activations never expose unverified contents', async () => {
+  let resolveOpen
+  const denied = new Promise(resolve => { resolveOpen = resolve })
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { p69ClickHomeFolder(h.view, '快捷相册') })
+    await h.update({ loading: true })
+    await act(async () => { resolveOpen(false); await denied })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'a failed shortcut keeps Browse Home visible')
+    assert.notEqual(saved().folderID, 77)
+    await h.update({ loading: false, onOpenQuickAccess: async () => true })
+    await act(async () => { p69ClickHomeFolder(h.view, '快捷相册') })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 1,
+      'a quick successful Promise does not reveal the old folder below a new title')
+    await h.update({
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 77, name: '快捷相册' }],
+      items: [{ id: 771, name: 'new.txt', kind: 'file', revision: 1 }],
+      virtualCollection: p69CountedDirectory(77, 'new.txt'),
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-home'), 0)
+    assert.equal(saved().folderID, 77)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    crumbs: [{ id: 1, name: '我的文件' }],
+    quickAccess: [{ id: 77, name: '快捷相册', kind: 'dir' }],
+    onOpenQuickAccess: () => denied,
+  } })
+})
+test('P69: a superseding rail tap defeats an older Recent directory receipt', async () => {
+  let resolveOpen
+  const activation = new Promise(resolve => { resolveOpen = resolve })
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    await h.update({
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '旧请求' }],
+      virtualCollection: p69CountedDirectory(42),
+      loading: false,
+    })
+    await act(async () => { resolveOpen(true); await activation })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'favorites').props['aria-current'], 'page')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 42, kind: 'dir', name: '旧请求' }],
+    onOpenRecent: () => activation,
+  } })
+})
+
+test('P69: keyboard collection Open waits for authorized counted first Range', async () => {
+  let resolveOpen
+  const pending = new Promise(resolve => { resolveOpen = resolve })
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    const recent = find(h.view, 'data-mobile-files-collection-row', 'recent')
+    const rect = { getBoundingClientRect: () => ({ left: 30, top: 60 }) }
+    await act(async () => { recent.props.onKeyDown({
+      key: 'ContextMenu', target: rect, currentTarget: rect,
+      shiftKey: false, preventDefault() {},
+    }) })
+    const menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    const open = menu.findAll(node => node.type === 'MenuItem' && node.props?.children === '打开')
+    assert.equal(open.length, 1)
+    await act(async () => { open[0].props.onClick() })
+    await h.update({ loading: true })
+    await act(async () => { resolveOpen(true); await pending })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'menu acceptance cannot expose old rows under an unverified folder')
+    assert.notEqual(saved().folderID, 42)
+    await h.update({
+      loading: false,
+      crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '获准文件夹' }],
+      items: [{ id: 421, name: 'verified.txt', kind: 'file', revision: 1 }],
+      virtualCollection: p69CountedDirectory(42),
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(saved().folderID, 42)
+    assert.equal(saved().section, 'browse')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 42, kind: 'dir', name: '获准文件夹' }],
+    onOpenRecent: () => pending,
+  } })
+})
+
+test('P69: long-press Favorite menu folder rejection stays on old rail', async () => {
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const favorite = find(h.view, 'data-mobile-files-collection-row', 'favorites')
+    await act(async () => { favorite.props.onContextMenu({
+      preventDefault() {}, clientX: 55, clientY: 90,
+    }) })
+    const menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    const open = menu.findAll(node => node.type === 'MenuItem' && node.props?.children === '打开')
+    assert.equal(open.length, 1)
+    await act(async () => { open[0].props.onClick(); await Promise.resolve() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'favorites').props['aria-current'], 'page')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    favorites: [{ id: 77, kind: 'dir', name: '拒绝的收藏文件夹' }],
+    onOpenFavorite: async () => false,
+  } })
+})
+
+
+test('P69: collection Show in Folder waits for the true parent Range, not location Promise', async () => {
+  let finishNavigation
+  const navigation = new Promise(resolve => { finishNavigation = resolve })
+  await withView(async h => {
+    const saved = () => state.mobileFilesDecodeState(
+      h.window.values.get('xdrive.mobile.files.v1:ios-files-userA'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const row = find(h.view, 'data-mobile-files-collection-row', 'favorites')
+    await act(async () => { row.props.onContextMenu({
+      preventDefault() {}, clientX: 55, clientY: 90,
+    }) })
+    const menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    const show = menu.findAll(node =>
+      node.type === 'MenuItem' && node.props?.children === '显示所在文件夹')
+    assert.equal(show.length, 1)
+    await act(async () => { show[0].props.onClick(); await Promise.resolve() })
+    await h.update({ loading: true })
+    await act(async () => { finishNavigation(true); await navigation })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'authoritative parent has not committed; keep original Favorites rail')
+    assert.notEqual(saved().folderID, 42)
+    await h.update({
+      loading: false, crumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '实际位置' }],
+      items: [{ id: 421, name: '真实文件.txt', kind: 'file', revision: 1 }],
+      virtualCollection: p69CountedDirectory(42),
+    })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(saved().folderID, 42)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    favorites: [{ id: 3, kind: 'file', name: '真实文件.txt' }],
+    loadNodeLocation: async () => ({ node_id: 3, parent_id: 42,
+      breadcrumbs: [{ id: 1, name: '我的文件' }, { id: 42, name: '实际位置' }] }),
+    onShowInFolder: () => navigation,
+  } })
+})
+
+test('P69: stale Show in Folder location lookup cannot navigate after a newer rail tap', async () => {
+  let resolveLocation
+  const lookup = new Promise(resolve => { resolveLocation = resolve })
+  const navigation = []
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    const row = find(h.view, 'data-mobile-files-collection-row', 'favorites')
+    await act(async () => { row.props.onContextMenu({
+      preventDefault() {}, clientX: 60, clientY: 95,
+    }) })
+    const menu = find(h.view, 'data-mobile-files-collection-menu', true)
+    const show = menu.findAll(node =>
+      node.type === 'MenuItem' && node.props?.children === '显示所在文件夹')
+    assert.equal(show.length, 1)
+    await act(async () => { show[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { resolveLocation({ node_id: 3, parent_id: 42 }); await lookup })
+    assert.deepEqual(navigation, [], 'new rail wins: no stale parent navigation')
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
+    assert.equal(find(h.view, 'data-mobile-files-section', 'recent').props['aria-current'], 'page')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    favorites: [{ id: 3, kind: 'file', name: '真实文件.txt' }],
+    loadNodeLocation: () => lookup,
+    onShowInFolder: location => { navigation.push(location); return true },
+  } })
+})
+
+test('P69: re-entering an already accepted directory still requires a successful activation', async () => {
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'a rejected same-folder activation cannot reveal Browse')
+    await h.update({ onOpenRecent: async () => true })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 1, kind: 'dir', name: '我的文件' }],
+    onOpenRecent: async () => false,
+  } })
+})
+
+test('P69: same-directory refresh never commits a pending unaccepted Recent activation', async () => {
+  let finish
+  const activation = new Promise(resolve => { finish = resolve })
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    await h.update({ loading: true })
+    await h.update({ loading: false })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'a coincidental background refresh must not approve the unresolved activation')
+    await act(async () => { finish(false); await activation })
+    assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1,
+      'rejected same-directory activation remains in the old rail')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 1, kind: 'dir', name: '我的文件' }],
+    onOpenRecent: () => activation,
+  } })
+})
+test('P69: a superseded rejected directory Promise does not show an old-error toast', async () => {
+  let rejectOpen
+  const activation = new Promise((_, reject) => { rejectOpen = reject })
+  const errors = []
+  await withView(async h => {
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-collection-row', 'recent').props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    await act(async () => { rejectOpen(new Error('stale old navigation')); await activation.catch(() => {}) })
+    assert.equal(errors.length, 0, 'the newer rail owns errors, not stale navigation callbacks')
+    assert.equal(find(h.view, 'data-mobile-files-section', 'favorites').props['aria-current'], 'page')
+  }, { props: {
+    requestedDirectoryID: 1, crumbs: [{ id: 1, name: '我的文件' }],
+    virtualCollection: p69CountedDirectory(1),
+    recentItems: [{ id: 42, kind: 'dir', name: '旧请求' }],
+    onOpenRecent: () => activation,
+    onOpenError: error => errors.push(error.message),
+  } })
+})
