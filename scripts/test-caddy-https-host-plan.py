@@ -559,6 +559,155 @@ class OfflineHostStageTest(unittest.TestCase):
             self.assertNotIn(denied, src)
 
 
+
+    def create_apply_intent(self, created, changes=None):
+        """Sign a separate scoped request with the fixture-only Ed25519 key."""
+        import uuid
+        self.make_signed_review(created)
+        request = json.loads(self.review_manifest.read_bytes())
+        request.update({
+            "scope": "xdrive.caddy.https.operator-apply-intent.v1",
+            "action": "request-restricted-caddy-apply",
+            "operation_uuid": str(uuid.uuid4()),
+            "approved_rescue_image":
+                "ghcr.io/lazyxu/xdrive-caddy@sha256:" + "a" * 64,
+        })
+        request.update(changes or {})
+        self.review_manifest.write_bytes(canonical(request))
+        self.review_manifest.chmod(0o600)
+        subprocess.run([
+            "openssl", "pkeyutl", "-sign", "-inkey", str(self.review_private),
+            "-rawin", "-in", str(self.review_manifest),
+            "-out", str(self.review_signature),
+        ], check=True, capture_output=True, timeout=6)
+        self.review_signature.chmod(0o600)
+        return request
+
+    def inspect_apply_intent(self, created, key_pin=None, plan_pin=None):
+        script = Path(__file__).with_name("caddy-https-host-apply-intent-check.py")
+        before = (self.plan.read_bytes(), self.env.read_bytes(),
+                  self.compose.read_bytes())
+        argv = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", plan_pin or
+                hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", created["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256",
+                key_pin or self.review_public_pin,
+        ]
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=14)
+        self.assertNotIn("never-print-this", result.stdout + result.stderr)
+        self.assertNotIn("192.168.2.4", result.stdout + result.stderr)
+        self.assertNotIn(str(self.root), result.stdout + result.stderr)
+        self.assertEqual(before, (self.plan.read_bytes(), self.env.read_bytes(),
+                                  self.compose.read_bytes()))
+        self.assertEqual(len(result.stdout.splitlines()), 1)
+        return result.returncode, json.loads(result.stdout)
+
+    def test_separately_signed_apply_intent_binds_db_revisions_and_stage_but_cannot_apply(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        request = self.create_apply_intent(created)
+        rc, proof = self.inspect_apply_intent(created)
+        self.assertEqual(rc, 0)
+        self.assertEqual(proof["state"], "signed-apply-intent-inspected-unapplied")
+        self.assertIs(proof["apply_supported"], False)
+        self.assertEqual(proof["desired_revision"], 7)
+        self.assertEqual(proof["credential_revision"], 0)
+        self.assertEqual(proof["plan_sha256"], request["plan_sha256"])
+        self.assertEqual(proof["stage_receipt_sha256"], created["stage_receipt_sha256"])
+        self.assertEqual(proof["apply_intent_sha256"],
+                         hashlib.sha256(self.review_manifest.read_bytes()).hexdigest())
+        self.assertIn("durable-single-use-nonce-and-host-cas-not-implemented",
+                      proof["blockers"])
+        self.assertIn("independent-watchdog-rollback-not-armed", proof["blockers"])
+        self.assertEqual(self.run_signed_review(created)[0], 2,
+                         "The old candidate-review-only verifier MUST reject apply intent scope")
+        # A passive signature inspection must NOT pretend it consumed a nonce.
+        self.assertEqual(self.inspect_apply_intent(created)[0], 0)
+        self.assertFalse(self.inspect_apply_intent(created)[1]["apply_supported"])
+
+    def test_signed_apply_intent_rejects_review_scope_wrong_revision_and_false_identity(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.make_signed_review(created)
+        self.assertEqual(self.inspect_apply_intent(created)[0], 2,
+                         "candidate-review-only must never upgrade to a host apply request")
+        for change in (
+            {"scope": "xdrive.caddy.https.operator-stage-review.v1"},
+            {"action": "candidate-review-only"},
+            {"desired_revision": 8},
+            {"desired_revision": True},
+            {"credential_revision": 2},
+            {"host_compose_sha256": "e" * 64},
+            {"host_environment_sha256": "e" * 64},
+            {"candidate_environment_sha256": "e" * 64},
+            {"plan_sha256": "e" * 64},
+            {"stage_receipt_sha256": "e" * 64},
+            {"nonce": "0" * 64},
+            {"nonce": "e" * 63},
+            {"operation_uuid": "00000000-0000-0000-0000-000000000000"},
+            {"approved_rescue_image": "ghcr.io/lazyxu/xdrive-caddy:latest"},
+            {"approved_rescue_image": "ghcr.io/bad/../x@sha256:" + "e" * 64},
+        ):
+            with self.subTest(change=change):
+                self.create_apply_intent(created, change)
+                self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+        self.create_apply_intent(created)
+        self.assertEqual(self.inspect_apply_intent(created, "f" * 64)[0], 2)
+
+    def test_apply_intent_rejects_expired_future_invalid_canonical_and_mutation(self):
+        import datetime as dt
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        now = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+        stamp = lambda when: when.strftime("%Y-%m-%dT%H:%M:%SZ")
+        for change in (
+            {"issued_at": stamp(now - dt.timedelta(hours=2)),
+             "expires_at": stamp(now - dt.timedelta(hours=1))},
+            {"issued_at": stamp(now + dt.timedelta(minutes=3)),
+             "expires_at": stamp(now + dt.timedelta(minutes=4))},
+            {"issued_at": stamp(now - dt.timedelta(minutes=1)),
+             "expires_at": stamp(now + dt.timedelta(minutes=11))},
+            {"expires_at": "2026-13-89T80:11:09Z"},
+            {"schema": 1.0},
+        ):
+            with self.subTest(change=change):
+                self.create_apply_intent(created, change)
+                self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+        self.create_apply_intent(created)
+        raw = self.review_manifest.read_bytes()
+        signature = self.review_signature.read_bytes()
+        self.review_manifest.write_bytes(raw + b"\n")
+        self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+        self.review_manifest.write_bytes(raw)
+        self.review_signature.write_bytes(signature[:-1] + bytes(
+            [signature[-1] ^ 1]))
+        self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+        self.review_signature.write_bytes(signature)
+        self.review_signature.chmod(0o644)
+        self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+        self.review_signature.chmod(0o600)
+        self.env.write_text(ENV + "UNRELATED_SAFE_VARIABLE=changed\n")
+        self.env.chmod(0o600)
+        self.assertEqual(self.inspect_apply_intent(created)[0], 2)
+
+    def test_apply_intent_inspector_remains_read_only_and_separate_from_host_apply(self):
+        src = Path(__file__).with_name("caddy-https-host-apply-intent-check.py").read_text()
+        for forbidden in (
+            "docker compose", "docker stop", "docker restart", "os.replace(",
+            "os.unlink(", "os.rename(", "socket.", "requests.", "--insecure",
+            '"apply_supported": True', "subprocess.run(",
+        ):
+            self.assertNotIn(forbidden, src)
+
 if __name__ == "__main__":
     # NET-M5-C0: the existing server-validation entrypoint executes the real
     # isolated loopback TLS fixture without changing unrelated CI workflows.

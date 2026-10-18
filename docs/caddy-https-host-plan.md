@@ -1,5 +1,36 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C2-A · 独立签名 Host Apply 请求意图只读校验（2026-10-18）
+
+**当前能力边界：** C1-A 与 C1-B 解决 operator-only 主 Caddy 维护窗口 / SSH Rescue / Ed25519 Rescue 镜像证据的分阶段关联；尚未执行生产宿主机的受监督真实停机，也没有 Host CAS、Docker 操作或 watchdog。管理员页面仍只能保存**期望修订**和只读检测，不能重启并发布虚假的已应用状态。C2-A 仅实现未来安全事务前所需的签名请求**只读校验**。
+
+新的受信操作员宿主工具 `scripts/caddy-https-host-apply-intent-check.py` 接受与旧 `candidate-review-only` **完全不同的**规范 Ed25519 签名请求：`scope=xdrive.caddy.https.operator-apply-intent.v1`、`action=request-restricted-caddy-apply`。固定字段要求：
+- `schema=1`、RFC4122 canonical v4 `operation_uuid`、独立 32 字节随机非零 `nonce`（64 位十六进制字符）；意图生成和首次校验**不表示**请求已单次消费。
+- `desired_revision`（必须大于 0）和 `credential_revision`，均与实时读到且独立固定原始 SHA 的 Canonical Host Plan 匹配。
+- `plan_sha256`、`stage_receipt_sha256`、`host_environment_sha256`、`host_compose_sha256`、`candidate_environment_sha256` 与既有 B3-C1 严格私有候选复核完全一致。只允许符合 B3-C1 禁止危险变更策略的已私有暂存候选（现阶段对 AliDNS 新凭据交付、切换或禁用现有入口仍会拒绝）。
+- 独立运营者预批准的 immutable OCI `approved_rescue_image`（必须为 `@sha256`，不能是可移动 tag）。此字段仅绑定申请者声明，**不**替代 C1-B 的现场已签名 Rescue 镜像验证、发行商 provenance。
+- UTC `issued_at`／`expires_at`，窗口不得超过 10 分钟；阻止过期、过早生效、重复键、浮点、布尔型修订、非法 UUID/nonce、错误指纹、额外字段、非规范 JSON 或签名/密钥与操作者 PIN 不一致。
+- 签名通过既有 `openssl` Ed25519 public DER 固定指纹完成；校验前后核对所有源文件 inode/mtime/ctime/内容及 B3-C1 暂存回执，不能用更改了但具有相同哈希的文件替换。
+
+工具是**纯只读验签和请求一致性检查**。成功结果为 `state=signed-apply-intent-inspected-unapplied`、`apply_supported=false`，包含意图 SHA、两个期望修订、Plan／Stage 摘要，以及**必须继续阻断**的真实宿主机单次 nonce 消费 / 双修订 CAS、物理 Rescue 验收、AliDNS Secret 安全交付、独立超时 watchdog、启停入口正反验证及不可变 Applied Receipt。重复调用相同已签名意图仍是“通过静态验签”，不是一票使用一次的运行事务；不能被 Host Manager 当成执行许可证。
+
+操作员离线命令示例（计划、阶段收据、公钥 DER 指纹应来自独立可信渠道，签名由用户私有密钥离线产生；**不填写凭据原文**）：
+
+```bash
+python3 scripts/caddy-https-host-apply-intent-check.py \
+  --plan "$PINNED_PLAN_JSON" --env-file "$HOME/.xd/config/.env" \
+  --compose-file "$HOME/.xd/config/docker-compose.yml" \
+  --expected-plan-sha256 "$TRUSTED_PLAN_SHA256" \
+  --staging-dir "$HOME/.xd/state/caddy-https-staging" \
+  --expected-stage-receipt-sha256 "$TRUSTED_STAGE_SHA256" \
+  --apply-intent-manifest "$PRIVATE_APPLY_INTENT_JSON" \
+  --apply-intent-signature "$PRIVATE_APPLY_INTENT_ED25519_SIGNATURE" \
+  --operator-public-key "$TRUSTED_OPERATOR_PUBLIC_KEY_PEM" \
+  --expected-operator-key-der-sha256 "$TRUSTED_OPERATOR_KEY_DER_SHA256"
+```
+
+旧的 `scripts/caddy-https-host-signed-review.py` 必须继续拒绝新的 apply-intent scope，新工具也拒绝任何旧的 `candidate-review-only` 签名。该校验脚本没有 Docker、网络、服务重启、Host Manager API、新 Web/Desktop IPC 或修改正式 `.env` 的能力；其 **C2-A 离线验收不等于生产配置已应用**。现有 `scripts/test-caddy-https-host-plan.py` 扩展正反例，在原 `server-validation` 中自动执行，不新增 CI 工作流入口。
+
 ## NET-M5-C1-B · 已签名批准的 Rescue 镜像与异机停机观察绑定（只读，2026-10-18）
 
 **前置：** NET-M5-C1-A #2080 已通过准确工作提交的完整 CI 并以 Rebase 合并，旧 Caddy 专题分支已清理。C1-A 四阶段 before → primary-down → 异机 SSH 管理员登录 → primary-down → restored 只证明相互关联的只读观察，原先**没有在每阶段复核已签名批准的 Rescue 镜像**。
