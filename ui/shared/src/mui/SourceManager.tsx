@@ -17,6 +17,7 @@ import type { XDriveSourceErrorDialogState } from './SourceManagerDialogs'
 import { XDriveSourceDetailsDialog } from './SourceManagerDetailsDialog'
 import type {
   XDriveSourceCollectionItemPage,
+  XDriveSourceDetailReadState,
   XDriveSourceRunFailurePage,
   XDriveSourceRunSkipPage,
 } from './SourceManagerDetailsDialog'
@@ -210,10 +211,17 @@ export function XDriveSourceManager({
   const [historyPage, setHistoryPage] = useState(1)
   const [historyHasNext, setHistoryHasNext] = useState(false)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyReadState, setHistoryReadState] = useState<XDriveSourceDetailReadState>('unverified')
+  // Source details identity and per-request generations prevent an old
+  // account/Source/Agent reply from repopulating a newly selected dialog.
+  const detailScopeRef = useRef(0)
+  const historyRequestRef = useRef(0)
+  const collectionItemRequestRef = useRef<Record<number, number>>({})
   const [runFailurePages, setRunFailurePages] = useState<Record<string, XDriveSourceRunFailurePage>>({})
   const [runSkipPages, setRunSkipPages] = useState<Record<string, XDriveSourceRunSkipPage>>({})
   const [collections, setCollections] = useState<ExternalSourceCollection[]>([])
   const [collectionsLoading, setCollectionsLoading] = useState(false)
+  const [collectionsReadState, setCollectionsReadState] = useState<XDriveSourceDetailReadState>('unverified')
   const [collectionItemPages, setCollectionItemPages] = useState<Record<number, XDriveSourceCollectionItemPage>>({})
   const [setting, setSetting] = useState<ExternalSourceRow | null>(null)
   const [savingSettings, setSavingSettings] = useState(false)
@@ -422,17 +430,25 @@ export function XDriveSourceManager({
   }, [rows, load])
   const loadRunHistory = useCallback(async (sourceID: number, page: number, silent = false) => {
     const nextPage = Math.max(1, Math.trunc(page))
+    const scope = detailScopeRef.current
+    const request = ++historyRequestRef.current
     if (!silent) setHistoryLoading(true)
     try {
       const offset = (nextPage - 1) * SOURCE_HISTORY_PAGE_SIZE
       const runs = await adapter.sourceRuns(sourceID, SOURCE_HISTORY_PAGE_SIZE + 1, offset)
+      if (detailScopeRef.current !== scope || historyRequestRef.current !== request) return
       setHistoryRuns(runs.slice(0, SOURCE_HISTORY_PAGE_SIZE))
       setHistoryHasNext(runs.length > SOURCE_HISTORY_PAGE_SIZE)
       setHistoryPage(nextPage)
+      setHistoryReadState('ready')
     } catch (error) {
+      if (detailScopeRef.current !== scope || historyRequestRef.current !== request) return
+      setHistoryReadState((previous) => previous === 'ready' ? previous : 'error')
       onError(error)
     } finally {
-      if (!silent) setHistoryLoading(false)
+      if (!silent && detailScopeRef.current === scope && historyRequestRef.current === request) {
+        setHistoryLoading(false)
+      }
     }
   }, [adapter, onError])
 
@@ -1144,18 +1160,27 @@ export function XDriveSourceManager({
   }
 
   const loadCollections = useCallback(async (sourceID: number) => {
+    const scope = detailScopeRef.current
     setCollectionsLoading(true)
     try {
-      setCollections(await adapter.sourceCollections(sourceID))
+      const next = await adapter.sourceCollections(sourceID)
+      if (detailScopeRef.current !== scope) return
+      setCollections(next)
+      setCollectionsReadState('ready')
     } catch (error) {
+      if (detailScopeRef.current !== scope) return
+      setCollectionsReadState((previous) => previous === 'ready' ? previous : 'error')
       showActionError('加载相册/集合失败', error, '无法读取该来源的相册/集合，请稍后重试。')
     } finally {
-      setCollectionsLoading(false)
+      if (detailScopeRef.current === scope) setCollectionsLoading(false)
     }
   }, [adapter])
 
   const loadCollectionItems = useCallback(async (sourceID: number, collectionID: number, page = 1) => {
     const nextPage = Math.max(1, Math.trunc(page))
+    const scope = detailScopeRef.current
+    const request = (collectionItemRequestRef.current[collectionID] ?? 0) + 1
+    collectionItemRequestRef.current[collectionID] = request
     setCollectionItemPages((current) => ({
       ...current,
       [collectionID]: {
@@ -1174,6 +1199,8 @@ export function XDriveSourceManager({
         SOURCE_COLLECTION_ITEM_PAGE_SIZE + 1,
         offset,
       )
+      if (detailScopeRef.current !== scope ||
+        collectionItemRequestRef.current[collectionID] !== request) return
       setCollectionItemPages((current) => ({
         ...current,
         [collectionID]: {
@@ -1185,6 +1212,8 @@ export function XDriveSourceManager({
         },
       }))
     } catch (error) {
+      if (detailScopeRef.current !== scope ||
+        collectionItemRequestRef.current[collectionID] !== request) return
       setCollectionItemPages((current) => ({
         ...current,
         [collectionID]: {
@@ -1200,6 +1229,10 @@ export function XDriveSourceManager({
   }, [adapter])
 
   const openDetails = async (row: ExternalSourceRow) => {
+    const scope = ++detailScopeRef.current
+    collectionItemRequestRef.current = {}
+    setHistoryReadState('unverified')
+    setCollectionsReadState('unverified')
     setSelected(row)
     onSelectedSourceChange?.(row.source.id)
     setFailedItems([])
@@ -1217,12 +1250,14 @@ export function XDriveSourceManager({
     void loadCollections(row.source.id)
     try {
       const items = await adapter.sourceItems(row.source.id, 'error', 1000, 0)
+      if (detailScopeRef.current !== scope) return
       setFailedItems(items)
       setFailedItemsLimitReached(items.length >= 1000)
     } catch (error) {
+      if (detailScopeRef.current !== scope) return
       showActionError('加载来源详情失败', error, '无法读取当前失败文件列表，请稍后重试。')
     } finally {
-      setFailedItemsLoading(false)
+      if (detailScopeRef.current === scope) setFailedItemsLoading(false)
     }
   }
 
@@ -1235,6 +1270,12 @@ export function XDriveSourceManager({
   }, [initialSourceID, rows])
 
   const closeDetails = () => {
+    ++detailScopeRef.current
+    collectionItemRequestRef.current = {}
+    setHistoryReadState('unverified')
+    setCollectionsReadState('unverified')
+    setHistoryLoading(false)
+    setFailedItemsLoading(false)
     setSelected(null)
     onSelectedSourceChange?.()
     setFailedItems([])
@@ -1287,12 +1328,15 @@ export function XDriveSourceManager({
         row={selected}
         collections={collections}
         collectionsLoading={collectionsLoading}
+        collectionsReadState={collectionsReadState}
+        onReloadCollections={(sourceID) => { void loadCollections(sourceID) }}
         collectionItemPages={collectionItemPages}
         collectionPageSize={SOURCE_COLLECTION_ITEM_PAGE_SIZE}
         historyRuns={historyRuns}
         historyPage={historyPage}
         historyHasNext={historyHasNext}
         historyLoading={historyLoading}
+        historyReadState={historyReadState}
         historyPageSize={SOURCE_HISTORY_PAGE_SIZE}
         runFailurePages={runFailurePages}
         runSkipPages={runSkipPages}

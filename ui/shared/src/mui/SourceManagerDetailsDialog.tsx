@@ -5,7 +5,6 @@ import {
   AccordionSummary,
   Box as MuiBox,
   Button as MuiButton,
-  CircularProgress,
   Dialog,
   IconButton,
   Stack,
@@ -65,6 +64,8 @@ export type XDriveSourceRunSkipPage = {
   loaded: boolean
 }
 
+export type XDriveSourceDetailReadState = 'unverified' | 'ready' | 'error'
+
 export type XDriveSourceCollectionItemPage = {
   items: ExternalSourceCollectionItem[]
   page: number
@@ -77,12 +78,15 @@ export function XDriveSourceDetailsDialog({
   row,
   collections,
   collectionsLoading,
+  collectionsReadState,
+  onReloadCollections,
   collectionItemPages,
   collectionPageSize,
   historyRuns,
   historyPage,
   historyHasNext,
   historyLoading,
+  historyReadState,
   historyPageSize,
   runFailurePages,
   runSkipPages,
@@ -105,12 +109,15 @@ export function XDriveSourceDetailsDialog({
   row: ExternalSourceRow | null
   collections: ExternalSourceCollection[]
   collectionsLoading: boolean
+  collectionsReadState: XDriveSourceDetailReadState
+  onReloadCollections: (sourceID: number) => void | Promise<void>
   collectionItemPages: Record<number, XDriveSourceCollectionItemPage>
   collectionPageSize: number
   historyRuns: ExternalSourceRun[]
   historyPage: number
   historyHasNext: boolean
   historyLoading: boolean
+  historyReadState: XDriveSourceDetailReadState
   historyPageSize: number
   runFailurePages: Record<string, XDriveSourceRunFailurePage>
   runSkipPages: Record<string, XDriveSourceRunSkipPage>
@@ -209,10 +216,22 @@ export function XDriveSourceDetailsDialog({
             </XDriveDescriptionGrid>
 
             <XDriveSectionHeader level="h3" title="相册与集合" sx={{ my: 2 }} />
-            {collectionsLoading ? (
-              <XDriveStatePanel loading variant="plain" message="正在加载相册/集合" />
+            {collections.length === 0 && collectionsReadState !== 'ready' ? (
+              <MuiBox data-xdrive-source-collections-first-read
+                aria-busy={collectionsLoading || undefined}
+                sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+                {collectionsReadState === 'error' ? (
+                  <Stack spacing={1} alignItems="center" role="alert">
+                    <MuiTypography variant="body2">相册/集合读取失败，请重试。</MuiTypography>
+                    <MuiButton size="small" onClick={() => void onReloadCollections(row.source.id)}>重试</MuiButton>
+                  </Stack>
+                ) : null}
+              </MuiBox>
             ) : collections.length === 0 ? (
-              <XDriveStatePanel variant="plain" message="该来源暂无相册/集合元数据" />
+              <MuiBox data-xdrive-source-collections-empty
+                sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+                <XDriveStatePanel variant="plain" message="该来源暂无相册/集合元数据" />
+              </MuiBox>
             ) : (
               <Stack spacing={1}>
                 {collections.map((collection) => {
@@ -232,8 +251,10 @@ export function XDriveSourceDetailsDialog({
                         <XDriveSourceCollectionSummary collection={collection} wideAt="md" />
                       </AccordionSummary>
                       <AccordionDetails>
-                        {page?.loading && !page.loaded ? (
-                          <XDriveStatePanel loading variant="plain" message="正在加载集合成员" />
+                        {!page || (page.loading && !page.loaded) ? (
+                          <MuiBox data-xdrive-source-collection-members-first-read
+                            aria-busy={Boolean(page?.loading) || undefined}
+                            sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }} />
                         ) : page?.loaded && page.items.length > 0 ? (
                           <Stack spacing={0.75}>
                             {page.items.map((item) => (
@@ -255,7 +276,10 @@ export function XDriveSourceDetailsDialog({
                             />
                           </Stack>
                         ) : page?.loaded ? (
-                          <XDriveStatePanel variant="plain" message="该集合暂无成员" />
+                          <MuiBox data-xdrive-source-collection-members-empty
+                            sx={{ minHeight: 120, display: 'grid', placeItems: 'center' }}>
+                            <XDriveStatePanel variant="plain" message="该集合暂无成员" />
+                          </MuiBox>
                         ) : (
                           <MuiTypography variant="caption" color="text.secondary">展开后加载成员。</MuiTypography>
                         )}
@@ -341,8 +365,10 @@ export function XDriveSourceDetailsDialog({
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
                               本次跳过项（含当时路径和原因）
                             </MuiTypography>
-                            {skipPage?.loading && !skipPage.loaded ? (
-                              <CircularProgress size={18} />
+                            {!skipPage || (skipPage.loading && !skipPage.loaded) ? (
+                              <MuiBox data-xdrive-source-run-skips-first-read
+                                aria-busy={Boolean(skipPage?.loading) || undefined}
+                                sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }} />
                             ) : skipPage?.loaded && skipPage.items.length > 0 ? (
                               <Stack spacing={0.75}>
                                 {skipPage.items.map((skip) => (
@@ -359,9 +385,12 @@ export function XDriveSourceDetailsDialog({
                                 />
                               </Stack>
                             ) : skipPage?.loaded ? (
-                              <XDriveStatusAlert tone="warning">
-                                该历史运行没有可读取的逐项跳过快照（可能在统计升级前执行或明细已过保留期）。
-                              </XDriveStatusAlert>
+                              <MuiBox data-xdrive-source-run-skips-empty
+                                sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
+                                <XDriveStatusAlert tone="warning">
+                                  该历史运行没有可读取的逐项跳过快照（可能在统计升级前执行或明细已过保留期）。
+                                </XDriveStatusAlert>
+                              </MuiBox>
                             ) : (
                               <MuiTypography variant="caption" color="text.secondary">
                                 展开后加载本次跳过项明细。
@@ -374,8 +403,10 @@ export function XDriveSourceDetailsDialog({
                             <MuiTypography variant="body2" sx={{ fontWeight: 700, mb: 0.75 }}>
                               本次失败文件
                             </MuiTypography>
-                            {failurePage?.loading && !failurePage.loaded ? (
-                              <CircularProgress size={18} />
+                            {!failurePage || (failurePage.loading && !failurePage.loaded) ? (
+                              <MuiBox data-xdrive-source-run-failures-first-read
+                                aria-busy={Boolean(failurePage?.loading) || undefined}
+                                sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }} />
                             ) : failurePage?.loaded && failurePage.items.length > 0 ? (
                               <Stack spacing={0.75}>
                                 {failurePage.items.map((failure) => (
@@ -401,9 +432,12 @@ export function XDriveSourceDetailsDialog({
                                 />
                               </Stack>
                             ) : failurePage?.loaded ? (
-                              <XDriveStatusAlert tone="warning">
-                                该历史 Run 记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
-                              </XDriveStatusAlert>
+                              <MuiBox data-xdrive-source-run-failures-empty
+                                sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
+                                <XDriveStatusAlert tone="warning">
+                                  该历史 Run 记录了 {runDetail.failedItems.toLocaleString('zh-CN')} 个失败项，但没有可恢复的逐文件失败快照。
+                                </XDriveStatusAlert>
+                              </MuiBox>
                             ) : (
                               <MuiTypography variant="caption" color="text.secondary">
                                 展开后加载本次失败文件明细。
@@ -425,15 +459,25 @@ export function XDriveSourceDetailsDialog({
                   sx={{ pt: 0.5 }}
                 />
               </Stack>
+            ) : historyReadState === 'ready' ? (
+              <MuiBox data-xdrive-source-run-history-empty
+                sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                <XDriveStatePanel variant="plain" message="尚无运行记录" />
+              </MuiBox>
             ) : (
-              <XDriveStatePanel variant="plain" message={historyLoading ? '正在加载运行历史' : '尚无运行记录'} />
+              <MuiBox data-xdrive-source-run-history-first-read
+                aria-busy={historyLoading || undefined}
+                sx={{ minHeight: 160, display: 'grid', placeItems: 'center' }}>
+                {historyReadState === 'error' ? (
+                  <Stack spacing={1} alignItems="center" role="alert">
+                    <MuiTypography variant="body2">运行历史读取失败，请重试。</MuiTypography>
+                    <MuiButton size="small" onClick={() => void onLoadRunHistory(row.source.id, 1)}>重试</MuiButton>
+                  </Stack>
+                ) : null}
+              </MuiBox>
             )}
 
-            {failedItemsLoading ? (
-              <MuiTypography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-                正在检查逐文件失败记录…
-              </MuiTypography>
-            ) : null}
+            <MuiBox data-xdrive-source-failed-items aria-busy={failedItemsLoading || undefined}>
             {!failedItemsLoading && failedItems.length > 0 ? (
               <XDriveStatusAlert
                 tone="bad"
@@ -457,6 +501,7 @@ export function XDriveSourceDetailsDialog({
                 当前仍有 {failedItems.length} 个文件处于失败状态；下一次扫描会自动重试。
               </XDriveStatusAlert>
             ) : null}
+            </MuiBox>
           </>
         ) : null}
       </XDriveDialogContent>
