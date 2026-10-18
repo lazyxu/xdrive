@@ -1,3 +1,9 @@
+## A3c18 · 百度 JSAPI4 Server 发布前置状态可观测（2026-10-18，仍 NO-GO）
+
+现有管理员「系统依赖 → 百度地图 → 检测」在 Web/Mobile Web/PWA/Desktop 共用 `GET /api/v1/admin/services/baidu-jsapi` 与 MUI 面板，新增有界只读 `release_blockers` 枚举：期望配置、独立 Browser AK、安全密钥环、可信 HTTPS Origin、代码固定的 Ed25519 发布公钥、完整审核资源清单和当前签名发布。所有原因都由实际 Server/源码生成，不读取、回显 Browser AK、Server AK、Origin 或 Owner/GPS；旧 Server 未返回此字段仍兼容。
+
+该面板与 API 不执行百度 SDK/Tile 测试或外部请求，不改变 Server 授权路由，不能靠修改 `desired_enabled` 清除签名/子资源门禁。**这是软件发布前置可见性，不等于百度正式生产运行或 1:1 验收。** 真实双端 HAR 9 组、资源依赖图谱、AK 泄漏审计、发布签名与轮换，以及真实 iOS27/Android/Desktop、100k 缩略图簇仍不具备；不得开放未经批准的通配资源代理。
+
 ## A3c17 · Desktop 独立 HTTPS 地图窗口（2026-10-18，JSAPI4 仍 NO-GO）
 
 已为 Desktop 增加从当前登录 Agent 所指定 HTTPS Server 地址打开的独立、非持久 Session 的 Electron BrowserWindow。它使用 xDrive 已有的 Web Gallery 路由 /#/app/gallery?section=places，因而与 Web/Mobile Web 复用同一个 Owner API、Gallery Range、VirtualCollection、Viewer 与 MUI 组件，无第二地图 Provider；原 Desktop file Renderer、全屏 App Frame 和 52px 标题栏不变。该新窗口 nodeIntegration=false、contextIsolation=true、sandbox=true，禁止任何 preload、webview、弹窗、权限及跨 Origin 请求/导航，证书由 Electron 默认 HTTPS 严格校验，不复制 Desktop Agent JWT、密码、AK 或默认 Session Cookie。首次需在独立安全窗口登录，切换 Desktop 账号或 Server、退出、认证过期/账号停用会关闭窗口。

@@ -4,6 +4,18 @@ import type { XDriveBaiduJSAPIConfig, XDriveBaiduJSAPIUpdate } from '../service-
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStatusAlert } from './StatusAlert'
 
+type ReleaseBlocker = NonNullable<XDriveBaiduJSAPIConfig['release_blockers']>[number]
+const releaseBlockerLabels: Record<ReleaseBlocker, string> = {
+  browser_ak_not_configured: '还没有安全保存独立的 Browser AK',
+  desired_disabled: '管理员期望开关未开启',
+  encryption_keyring_unavailable: 'Server 尚未配置凭据加密密钥环',
+  trusted_https_origin_invalid: 'Server 的 HTTPS Origin 尚未配置正确',
+  operator_signing_root_not_pinned: '当前构建未固定生产签名公钥',
+  child_resource_inventory_not_reviewed: '尚无完整、逐项审核的地图子资源白名单',
+  signed_release_not_installed: '尚未安装当前有效的 Server 受信签名发布',
+}
+const releaseBlockerIDs = Object.keys(releaseBlockerLabels)
+
 export type XDriveBaiduJSAPIDesiredPort = {
   loadBaiduJSAPIConfig?: () => Promise<XDriveBaiduJSAPIConfig>
   saveBaiduJSAPIConfig?: (input: XDriveBaiduJSAPIUpdate) => Promise<XDriveBaiduJSAPIConfig>
@@ -18,7 +30,13 @@ function validConfig(value: unknown): value is XDriveBaiduJSAPIConfig {
     typeof v.requires_restart === 'boolean' &&
     typeof v.revision === 'number' && Number.isSafeInteger(v.revision) && v.revision >= 0 &&
     ['blocked_pending_licence_and_proxy', 'authorized_signed_release'].includes(String(v.activation_state)) &&
-    v.runtime_enabled === (v.activation_state === 'authorized_signed_release')
+    v.runtime_enabled === (v.activation_state === 'authorized_signed_release') &&
+    (v.release_blockers === undefined ||
+      (Array.isArray(v.release_blockers) && v.release_blockers.length <= 7 &&
+        v.release_blockers.every(reason =>
+          typeof reason === 'string' && releaseBlockerIDs.includes(reason)) &&
+        new Set(v.release_blockers).size === v.release_blockers.length &&
+        (!v.runtime_enabled || v.release_blockers.length === 0)))
 }
 
 /** ONE shared admin UI across Web, Mobile Web/PWA and Desktop.
@@ -164,6 +182,20 @@ export function XDriveBaiduJSAPIDesiredPanel({
               <XDriveStatusAlert tone="good">当前 Server 返回已签名放行；仍须以真实三端地图交互和资源审计作为验收依据。</XDriveStatusAlert>
             ) : (
               <XDriveStatusAlert tone="bad">动态地图仍受 Server 安全门禁限制；现有百度静态地图可继续使用。</XDriveStatusAlert>
+            )}
+            {!verified && config?.release_blockers && (
+              <Box data-xdrive-baidu-jsapi4-release-blockers>
+                <Typography variant="subtitle2">当前 Server 未生效的原因</Typography>
+                <Stack component="ul" spacing={0.5} sx={{ m: 0, pl: 2.5 }}>
+                  {config.release_blockers.map(reason => (
+                    <Typography key={reason} component="li" variant="body2"
+                      color="text.secondary">{releaseBlockerLabels[reason]}</Typography>
+                  ))}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  仅展示 Server 结构性门禁；仍须进行真实资源 HAR、许可和三端真机验收。此处不请求 SDK，也不能强制放行。
+                </Typography>
+              </Box>
             )}
           </>
         )}

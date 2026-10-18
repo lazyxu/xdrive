@@ -527,6 +527,13 @@ export type XDriveBaiduJSAPIConfig = {
   runtime_enabled: boolean
   activation_state: 'blocked_pending_licence_and_proxy' | 'authorized_signed_release'
   requires_restart: boolean
+  /** Server-derived, no AK/Owner/location, not an authorization grant. */
+  release_blockers?: Array<
+    | 'browser_ak_not_configured' | 'desired_disabled'
+    | 'encryption_keyring_unavailable' | 'trusted_https_origin_invalid'
+    | 'operator_signing_root_not_pinned' | 'child_resource_inventory_not_reviewed'
+    | 'signed_release_not_installed'
+  >
 }
 
 export type XDriveBaiduJSAPIUpdate = {
