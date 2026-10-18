@@ -8,6 +8,7 @@ import { ApiError, XDriveApi } from './api'
 import type { PublicShare } from '../../ui/shared/src'
 import { formatBytes } from '../../ui/shared/src'
 import xDriveBrandIcon from '../../assets/icon/master/xdrive-icon-master.svg'
+import { useXDriveDeferredPendingLoading } from '../../ui/shared/src/mui/useDeferredLoading'
 
 export default function PublicShareView({ token }: { token: string }) {
   const api = useMemo(() => new XDriveApi(), [])
@@ -17,6 +18,8 @@ export default function PublicShareView({ token }: { token: string }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  // The network starts immediately; only sustained first reads reveal progress.
+  const showFirstReadLoading = useXDriveDeferredPendingLoading(loading && !share && !error)
 
   useEffect(() => {
     let active = true
@@ -77,67 +80,83 @@ export default function PublicShareView({ token }: { token: string }) {
           subtitle="安全文件分享"
         />
 
-        {loading && <XDriveStatePanel variant="plain" loading message="正在加载分享…" />}
-        {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
-        {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
-
-        {share && (
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={1.5} alignItems="flex-start">
-              <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
-              <Box sx={{ minWidth: 0 }}>
-                <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
-                  {share.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">{formatBytes(share.size)}</Typography>
-              </Box>
-            </Stack>
-
-            <Typography variant="body2" color="text.secondary">
-              {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
-              {' · '}
-              {share.max_downloads > 0
-                ? `剩余 ${Math.max(0, share.max_downloads - share.download_count)} / ${share.max_downloads} 次下载`
-                : '不限下载次数'}
-            </Typography>
-
-            {share.requires_password && (
-              <TextField
-                fullWidth
-                size="small"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                label="分享密码"
-                placeholder="分享密码"
-                autoComplete="current-password"
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <LockRoundedIcon fontSize="small" />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-            )}
-
-            {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
-
-            <XDriveActionButton
-              intent="primary"
-              type="submit"
-              fullWidth
-              startIcon={<DownloadRoundedIcon />}
-              loading={downloading}
-              loadingLabel="正在下载…"
-              disabled={!canDownload}
+        <Box
+          data-xdrive-public-share-read-slot
+          aria-busy={loading}
+          sx={{ minHeight: 180, minWidth: 0, position: 'relative' }}
+        >
+          {showFirstReadLoading ? (
+            <Box
+              data-xdrive-public-share-delayed-feedback
+              sx={{
+                position: 'absolute', inset: 0, display: 'grid',
+                placeItems: 'center', pointerEvents: 'none',
+              }}
             >
-              下载
-            </XDriveActionButton>
-          </Stack>
-        )}
+              <XDriveStatePanel variant="plain" loading message="正在加载分享…" />
+            </Box>
+          ) : null}
+          {error && <XDriveStatusAlert tone="bad" sx={{ mb: 2.25 }}>{error}</XDriveStatusAlert>}
+          {notice && <XDriveStatusAlert tone="good" sx={{ mb: 2.25 }}>{notice}</XDriveStatusAlert>}
+
+          {share && (
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                <InsertDriveFileRoundedIcon sx={{ fontSize: 28, mt: 0.5 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography component="h2" variant="h6" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>
+                    {share.name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">{formatBytes(share.size)}</Typography>
+                </Box>
+              </Stack>
+
+              <Typography variant="body2" color="text.secondary">
+                {share.expires_at ? `过期时间 ${new Date(share.expires_at).toLocaleString()}` : '永不过期'}
+                {' · '}
+                {share.max_downloads > 0
+                  ? `剩余 ${Math.max(0, share.max_downloads - share.download_count)} / ${share.max_downloads} 次下载`
+                  : '不限下载次数'}
+              </Typography>
+
+              {share.requires_password && (
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  label="分享密码"
+                  placeholder="分享密码"
+                  autoComplete="current-password"
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <LockRoundedIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                />
+              )}
+
+              {exhausted && <XDriveStatusAlert tone="warning">此分享已达到下载上限。</XDriveStatusAlert>}
+
+              <XDriveActionButton
+                intent="primary"
+                type="submit"
+                fullWidth
+                startIcon={<DownloadRoundedIcon />}
+                loading={downloading}
+                loadingLabel="正在下载…"
+                disabled={!canDownload}
+              >
+                下载
+              </XDriveActionButton>
+            </Stack>
+          )}
+        </Box>
       </XDriveAuthPanel>
     </XDriveAuthShell>
   )

@@ -63,6 +63,7 @@ function loadPublicShare(api) {
       if (name.endsWith('.svg')) return { __esModule: true, default: 'test-brand.svg' }
       if (name === './api') return { ApiError: TestApiError, XDriveApi: api }
       if (name === '../../ui/shared/src') return load('ui/shared/src/format.ts')
+      if (name === '../../ui/shared/src/mui/useDeferredLoading') return load('ui/shared/src/mui/useDeferredLoading.ts')
       if (name === '@xdrive/ui/mui') {
         return {
           ...load('ui/shared/src/mui/AuthSurface.tsx'),
@@ -237,4 +238,70 @@ test('Public Share without password protection accepts submission with no passwo
   assert.deepEqual(view.downloads.map((call) => call.password), [''])
   assert.ok(view.text().includes('剩余 1 / 3 次下载'))
   assert.ok(view.text().includes('已交给浏览器下载。'))
+})
+
+
+test('Public Share first read has stable geometry and no 40ms loading flash', async (t) => {
+  const pending = deferred()
+  class Api {
+    publicShare(token) {
+      assert.equal(token, 'test-share-token')
+      return pending.promise
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  const readSlot = () => renderer.root.findAll(
+    node => typeof node.type === 'string' && node.props['data-xdrive-public-share-read-slot'] === true
+  )[0]
+  assert.ok(readSlot(), 'the first-read layout slot must be mounted from the first paint')
+  assert.equal(readSlot().props.sx.minHeight, 180)
+  assert.equal(readSlot().props['aria-busy'], true, 'active request is immediately accessible')
+  assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'), 'first paint must be quiet')
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+  assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'), 'quick reads must never show interim loading')
+  assert.equal(readSlot().props['aria-busy'], true)
+  await act(async () => {
+    pending.resolve({
+      name: 'shared-report.txt', size: 2048, requires_password: false,
+      max_downloads: 0, download_count: 0, expires_at: null,
+    })
+    await pending.promise
+  })
+  assert.equal(readSlot().props['aria-busy'], false)
+  assert.ok(textContent(renderer.toJSON()).includes('shared-report.txt'))
+  assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
+})
+
+test('Public Share sustained first read reveals only overlay progress and preserves error', async (t) => {
+  // Keep the original resolve-only deferred() helper for existing download tests.
+  let rejectPending
+  const pending = { promise: new Promise((_resolve, reject) => { rejectPending = reject }) }
+  class Api {
+    publicShare(token) {
+      assert.equal(token, 'test-share-token')
+      return pending.promise
+    }
+  }
+  const PublicShare = loadPublicShare(Api)
+  let renderer
+  await act(async () => { renderer = create(React.createElement(PublicShare, { token: 'test-share-token' })) })
+  t.after(() => act(() => renderer.unmount()))
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 350)) })
+  const overlay = renderer.root.findAll(
+    node => typeof node.type === 'string' && node.props['data-xdrive-public-share-delayed-feedback'] === true
+  )
+  assert.equal(overlay.length, 1, 'sustained progress must occupy one permanent, non-flow position')
+  assert.equal(overlay[0].props.sx.position, 'absolute')
+  assert.equal(overlay[0].props.sx.pointerEvents, 'none')
+  assert.ok(textContent(renderer.toJSON()).includes('正在加载分享'))
+  await act(async () => {
+    rejectPending(new TestApiError(404, 'not found'))
+    await Promise.resolve()
+  })
+  assert.ok(textContent(renderer.toJSON()).includes('此分享链接不存在。'))
+  assert.ok(!textContent(renderer.toJSON()).includes('正在加载分享'))
+  assert.equal(renderer.root.findAll(node => typeof node.type === 'string' && node.props['data-xdrive-public-share-delayed-feedback'] === true).length, 0)
 })
