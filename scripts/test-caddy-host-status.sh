@@ -66,6 +66,10 @@ elif [[ "$#" == 5 && "$1" == exec && "$2" == xdrive-caddy &&
         "$5" == 'modules="$(caddy list-modules --skip-standard 2>/dev/null)" || exit 2; if printf "%s\n" "$modules" | grep -Fxq dns.providers.alidns; then printf "present-local\n"; else code="$?"; [ "$code" -eq 1 ] || exit 2; printf "absent-local\n"; fi' ]]; then
   [[ -f "$XD_CADDY_MODULE_FIXTURE" ]] || exit 1
   cat "$XD_CADDY_MODULE_FIXTURE"
+elif [[ "$#" == 4 && "$1" == exec && "$2" == xdrive-caddy &&
+        "$3" == cat && "$4" == /data/caddy/pki/authorities/local/root.crt ]]; then
+  [[ -f "$XD_CADDY_LAN_CA_FIXTURE" ]] || exit 1
+  cat "$XD_CADDY_LAN_CA_FIXTURE"
 else
   exit 2
 fi
@@ -86,6 +90,42 @@ case "${XD_TEST_CADDY_TLS_RESULT:-verified}" in
 esac
 TLSFAKE
 chmod +x "$scratch/fakebin/openssl"
+# Deterministic unit fixtures never open a network socket; the existing
+# Rootless E2E separately proves real CA/IP SAN TLS against real Caddy.
+export XD_CADDY_LAN_CA_FIXTURE="$scratch/local-ca-root.crt"
+head -c 512 /dev/zero | tr '\0' A > "$XD_CADDY_LAN_CA_FIXTURE"
+cat > "$scratch/fakebin/ip" <<'FAKEIP'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$*" == "-o -4 addr show" ]] || exit 2
+printf '2: eth0 inet 192.168.2.4/24 brd 192.168.2.255 scope global eth0\n'
+FAKEIP
+chmod +x "$scratch/fakebin/ip"
+cat > "$scratch/fakebin/curl" <<'FAKECURL'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ " $* " == *' --noproxy * '* ]] || exit 90
+[[ " $* " == *' https://192.168.2.4:8443/api/v1/readyz '* ]] || exit 91
+[[ " $* " != *' --insecure '* && " $* " != *' -k '* ]] || exit 92
+cert=""
+output=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == --cacert ]]; then cert="$arg"; fi
+  if [[ "$prev" == --output ]]; then output="$arg"; fi
+  prev="$arg"
+done
+[[ -n "$cert" && -s "$cert" && -n "$output" ]] || exit 93
+[[ "$(stat -c %a "$cert")" == 600 && "$(stat -c %a "$output")" == 600 ]] || exit 94
+[[ " $* " == *' --max-filesize 1024 '* ]] || exit 95
+case "${XD_TEST_CADDY_LAN_RESULT:-verified}" in
+  verified) printf '{"ok":true}\n' > "$output"; exit 0 ;;
+  invalid-json) printf '{"ok":false}\n' > "$output"; exit 0 ;;
+  empty-json) exit 0 ;;
+  *) exit 5 ;;
+esac
+FAKECURL
+chmod +x "$scratch/fakebin/curl"
 printf 'XD_DOMAIN=example.invalid\n' > "$XD_CADDY_RUNTIME_DOMAIN_FIXTURE"
 expected_live_sha="$(printf 'a%.0s' {1..64})"
 printf '%s  -\n' "$expected_live_sha" > "$XD_CADDY_LIVE_SHA_FIXTURE"
@@ -287,6 +327,59 @@ test "$(json_value "$status" tls_verified_domain_sha256)" = ""
 printf 'XD_DOMAIN=example.invalid\nXD_HTTPS_PORT=8443\n' > "$scratch/config/.env"
 caddy_host_refresh
 test "$(json_value "$status" tls_state)" = verified
+
+# A domainless deployment must test the actual HTTPS IP instead of
+# incorrectly reporting plain HTTP, with no root CA bytes in the Server JSON.
+printf 'XD_DOMAIN=\nXD_LAN_HTTPS_IP=192.168.2.4\nXD_HTTPS_BIND=192.168.2.4\nXD_HTTPS_PORT=8443\n' > "$scratch/config/.env"
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = verified
+test "$(json_bool_value "$status" lan_https_configured)" = true
+test "$(json_value "$status" tls_state)" = disabled
+test "$(json_bool_value "$status" https_configured)" = false
+expected_lan_ip_sha="$(printf '192.168.2.4' | sha256sum | awk '{print $1}')"
+test "$(json_value "$status" lan_verified_ip_sha256)" = "$expected_lan_ip_sha"
+! grep -q '192.168.2.4' "$status"
+! grep -q 'AAAAA' "$status"
+# HTTP 2xx without a true API readiness JSON must not be green.
+for result in invalid-json empty-json; do
+  export XD_TEST_CADDY_LAN_RESULT="$result"
+  caddy_host_refresh
+  test "$(json_value "$status" lan_tls_state)" = failed
+  test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+done
+# A failed curl is never green even if the fake writes a positive message.
+export XD_TEST_CADDY_LAN_RESULT=failed
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = failed
+test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+unset XD_TEST_CADDY_LAN_RESULT
+# An in-place configuration change between the two live JSON snapshots
+# revokes proof even with an unchanged fixed Docker container generation.
+printf '%s  -\n' "$(printf 'e%.0s' {1..64})" > "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE"
+printf '0\n' > "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = unavailable
+test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+rm -f "$XD_CADDY_LIVE_SHA_NEXT_FIXTURE" "$XD_CADDY_LIVE_SHA_COUNT_FIXTURE"
+rm -f "$XD_CADDY_LAN_CA_FIXTURE"
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = unavailable
+test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+# Spoofed/public IPs, malformed octets and interface-specific mismatches
+# fail without probing any other LAN host or broadening CA trust.
+for bad in 8.8.8.8 127.0.0.1 192.168.02.4 192.168.2.256; do
+  printf 'XD_DOMAIN=\nXD_LAN_HTTPS_IP=%s\n' "$bad" > "$scratch/config/.env"
+  caddy_host_refresh
+  test "$(json_value "$status" lan_tls_state)" = invalid-config
+  test "$(json_value "$status" lan_verified_ip_sha256)" = ""
+done
+printf 'XD_DOMAIN=\nXD_LAN_HTTPS_IP=192.168.2.4\nXD_HTTPS_BIND=127.0.0.1\n' > "$scratch/config/.env"
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = unavailable
+printf 'XD_DOMAIN=\n' > "$scratch/config/.env"
+caddy_host_refresh
+test "$(json_value "$status" lan_tls_state)" = disabled
+test "$(json_bool_value "$status" lan_https_configured)" = false
 
 rm -f "$XD_CADDY_TEST_FIXTURE"
 caddy_host_refresh
