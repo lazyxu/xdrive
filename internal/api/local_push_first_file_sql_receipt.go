@@ -81,12 +81,18 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 	c *gin.Context, sourceID, revision uint64, proof localSourceExecutorProof,
 	stageID, relativeLeaf string,
 	inspect func(context.Context, string, int64, func(context.Context) error) (bool, error),
+	selectors ...*localPushHistoricalOperationPhysicalSelector,
 ) (localPushFirstLeafSQLReceipt, error) {
 	var empty localPushFirstLeafSQLReceipt
 	if s == nil || s.DB == nil || c == nil || c.Request == nil ||
 		sourceID == 0 || revision == 0 || stageID == "" {
 		return empty, errLocalPushStageConflict
 	}
+	if len(selectors) > 1 ||
+		(len(selectors) == 1 && (selectors[0] == nil || inspect == nil || s.Store == nil)) {
+		return empty, errLocalPushOperationIntentDenied
+	}
+
 	bound, ok := localPushStageProof(c)
 	if !ok || bound != proof || proof.SourceRevision != revision {
 		return empty, errLocalSourceExecutorTransactionUnauthorized
@@ -142,6 +148,19 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 		if !validLocalEvidenceDigest(hint.ContentSHA256) ||
 			hint.CurrentPathKey != pathKey || hint.SourceRevision != revision {
 			return errLocalPushStageConflict
+		}
+		// An operation-scoped physical read holds the ORIGINAL operation,
+		// immutable Stage binding and durable SQL outcome SHARE locks BEFORE
+		// the CAS hash, Blob and Node locks. The existing unscoped historical
+		// receipt remains unchanged for compatibility.
+		var historicalOutcome *meta.LocalPushFirstLeafOperationCommit
+		if len(selectors) == 1 {
+			matched, err := s.validateLocalPushHistoricalOperationPhysicalTx(
+				tx, c, owner, source, proof, stageID, hint, selectors[0])
+			if err != nil {
+				return err
+			}
+			historicalOutcome = &matched
 		}
 		if err := lockContentHash(tx, hint.ContentSHA256); err != nil {
 			return err
@@ -210,6 +229,14 @@ func (s *Server) readBoundLocalPushFirstLeafReceiptWithCASInspector(
 			meta.SourceItemKindFile, meta.SourceItemStatePending, "",
 		).Take(&item).Error; err != nil {
 			return errLocalPushStageConflict
+		}
+		if historicalOutcome != nil &&
+			(historicalOutcome.NodeID != node.ID ||
+				historicalOutcome.SourceItemID != item.ID ||
+				historicalOutcome.ContentSHA256 != intent.ContentSHA256 ||
+				historicalOutcome.CurrentPathKey != intent.CurrentPathKey ||
+				historicalOutcome.TotalSize != intent.TotalSize) {
+			return errLocalPushOperationIntentDenied
 		}
 		result = localPushFirstLeafSQLReceipt{
 			NodeID: node.ID, SourceItemID: item.ID,
