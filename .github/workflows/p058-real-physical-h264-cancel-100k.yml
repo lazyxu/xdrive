@@ -1,0 +1,120 @@
+name: P058 Actual 100k Physical MP4 H264 Browser Cancel
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  real-physical-mp4-100k-cancel:
+    if: github.head_ref == 'perf/p058-physical-h264-preview-cancel-100k-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_P058_SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+      XD_P058_TEST_BINARY: ${{ github.workspace }}/desktop/p058-real-physical-h264-bin/api.test
+      XD_P058_RESULTS: ${{ github.workspace }}/desktop/p058-physical-h264-cancel-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Freeze original source and ensure no production code changes
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_P058_SOURCE_HEAD"
+          gofile=internal/api/file_explorer_real_h264_100k_performance_integration_test.go
+          bad="$(gofmt -l "$gofile")"
+          if [ -n "$bad" ]; then gofmt -d "$gofile"; exit 1; fi
+          node --check desktop/scripts/p058-real-physical-h264-cancel-100k.cjs
+          node - <<'NODE'
+          const fs=require('fs')
+          const go=fs.readFileSync('internal/api/file_explorer_real_h264_100k_performance_integration_test.go','utf8')
+          const js=fs.readFileSync('desktop/scripts/p058-real-physical-h264-cancel-100k.cjs','utf8')
+          for(const s of ['XD_P058_REAL_PHYSICAL_H264_CANCEL_100K_PERF','physicalMode && cancelMode','fileExplorerH264PhysicalContainer','ctx.Done()'])if(!go.includes(s))throw Error('actual-source invariant '+s)
+          for(const s of ['100000','P058_PHYSICAL_H264_CANCEL_SUMMARY','worstContextNotificationMs','staleBytesSentAfterCancel','window-destroy','viewport-eviction','goRSSPeakGrowthWorstBytes'])if(!js.includes(s))throw Error('native workload invariant '+s)
+          if(js.includes('mockFetch')||js.includes('route.fulfill('))throw Error('invalid mocked native preview')
+          NODE
+      - name: Build genuine Linux Chromium and native PostgreSQL17 Go Server
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb
+          npm --prefix desktop install --no-audit --no-fund
+          mkdir -p desktop/p058-real-physical-h264-bin "$XD_P058_RESULTS"
+          go test -mod=readonly -c -o "$XD_P058_TEST_BINARY" ./internal/api
+      - name: Three independent actual 100k CAS corpora and eighteen canceled previews
+        run: |
+          set -euo pipefail
+          printf 'EXACT_HEAD=%s\nCI_RUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID" > "$XD_P058_RESULTS/source.txt"
+          go version >> "$XD_P058_RESULTS/source.txt"
+          node --version >> "$XD_P058_RESULTS/source.txt"
+          /usr/bin/time -f 'main_maxrss_kib=%M\nmain_user_cpu_seconds=%U\nmain_system_cpu_seconds=%S' \
+            -o "$XD_P058_RESULTS/resources.txt" \
+            timeout --signal=TERM --kill-after=15s 45m \
+            xvfb-run -a --server-args="-screen 0 1920x1200x24" \
+            ./desktop/node_modules/.bin/electron --no-sandbox \
+              desktop/scripts/p058-real-physical-h264-cancel-100k.cjs \
+            2>&1 | tee "$XD_P058_RESULTS/run.log"
+          node - <<'NODE'
+          const fs=require('fs'),path=require('path')
+          const root=process.env.XD_P058_RESULTS
+          const s=JSON.parse(fs.readFileSync(path.join(root,'summary.json'),'utf8'))
+          if(s.sourceHead!==process.env.XD_P058_SOURCE_HEAD||
+            s.passed!==true||s.runCount!==3||s.modeRuns!==6||
+            s.physical_sources_per_fixture!==100000||s.physical_corpora!==3||
+            s.signed_cancelled_range_requests!==18||
+            s.maxContextNotificationMs>160||s.goRSSPeakGrowthWorstBytes>268435456)
+            throw Error('source-exact P058 real physical cancellation baseline incomplete')
+          const rows=[]
+          for(let n=1;n<=3;n++){
+            const p=JSON.parse(fs.readFileSync(path.join(root,'sample-'+n+'.json'),'utf8'))
+            if(p.physicalOriginals!==100000||p.uniqueSHA256!==100000||
+              p.physicalSourceBytes!==p.physicalOriginals*p.viewportEviction.actualMP4BytesEach||
+              p.healthy.status!==206||p.healthy.bytes!==1024||
+              p.resource.goRSSPeakGrowthBytes>268435456)throw Error('original physical fixture failed')
+            for(const r of [p.viewportEviction,p.windowDestroy]){
+              if(r.requestsStarted!==3||r.rangeRequests<3||
+                r.contextDone!==3||r.cancelledHandlers!==3||
+                r.serverActiveAt160Ms!==0||r.staleBytesSentAfterCancel!==0||
+                r.posterPuts!==0||r.worstContextNotificationMs>160)
+                throw Error('real canceled Gin Context/Range or byte boundary failed')
+              rows.push(r)
+            }
+          }
+          if(rows.length!==6)throw Error('missing six real browser lifetime modes')
+          console.log('P058_REAL_PHYSICAL_ORIGINAL_CURRENT',JSON.stringify({
+            exact_head:s.sourceHead,independent_physical_corpora:3,
+            real_sha_distinct_mp4_per_corpus:100000,
+            canceled_streams:18,cancel_worst_ms:s.maxContextNotificationMs,
+            after160_active:0,stale_bytes:0,go_rss_growth_worst:s.goRSSPeakGrowthWorstBytes,
+            source_limitation:'same encoded H264 bitstream, 100k SHA-distinct ISO BMFF MP4 containers; not virtual FileExplorer UI/independent encoded movies'
+          }))
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p058-three-physical-mp4-100k-cancel-native
+          path: desktop/p058-physical-h264-cancel-100k-results/
+          if-no-files-found: warn
+          retention-days: 30
