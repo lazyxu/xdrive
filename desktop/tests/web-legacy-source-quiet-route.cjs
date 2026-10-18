@@ -4,19 +4,20 @@ const fs = require('node:fs')
 const path = require('node:path')
 const root = path.join(__dirname,'..','..')
 const app = fs.readFileSync(path.join(root,'web/src/App.tsx'),'utf8')
-const hook = fs.readFileSync(path.join(root,'ui/shared/src/mui/useDeferredLoading.ts'),'utf8')
 const apps = fs.readFileSync(path.join(root,'web/src/webApps.ts'),'utf8')
 
-test('legacy Sync Folders redirect stays quiet for a quick owner lookup', () => {
-  assert.ok(app.includes("useXDriveDeferredLoading(\n    legacyPending, legacyGeneration,"))
+test('legacy Sync Folders redirect has no intermediate loading UI at any lookup duration', () => {
   assert.ok(app.includes('data-xdrive-legacy-source-quiet-redirect'))
   assert.ok(app.includes("minHeight: 180, display: 'grid', placeItems: 'center'"))
-  assert.ok(app.includes('showDelayedLegacyLoading ? ('))
-  assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'))
+  assert.ok(app.includes('aria-busy={!legacyFailure || undefined}'))
+  assert.equal(app.includes('showDelayedLegacyLoading'), false)
+  assert.equal(app.includes('legacyPending'), false)
+  assert.equal(app.includes('正在根据旧链接确认所属应用'), false)
+  assert.equal(app.includes("import { useXDriveDeferredLoading }"), false)
   assert.equal(app.includes('loading={!legacySourceMissing}'), false)
 })
 
-test('different route IDs and accounts never inherit old failure or delayed spinner', () => {
+test('different route IDs and accounts never inherit old failure or a redirect spinner', () => {
   for(const token of [
     "route.app === 'sync-folders' ? route.params.source : undefined",
     'legacyOwnerRef.current.api !== api',

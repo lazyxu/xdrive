@@ -103,7 +103,6 @@ import WebUnsupportedFileDialog from './WebUnsupportedFileDialog'
 import { WebFileViewerApps, xDriveWebOpenRouteForNode } from './WebFileViewerApps'
 import { useXDriveWebAppRuntime, xDriveCreateWebAppBrowseSession } from './webAppRuntime'
 import { xDriveWebAppRouteForWorkspaceKey, xDriveWebAppWorkspaceKey } from './webApps'
-import { useXDriveDeferredLoading } from '../../ui/shared/src/mui/useDeferredLoading'
 import { createWebMediaGalleryDataSource } from './mediaGalleryAdapter'
 import { createWebShareDialogAdapter, createWebTrashDialogAdapter, createWebVersionHistoryDialogAdapter } from './fileDialogAdapters'
 import { clearWebBrowserCache, createWebBrowserStorageSnapshot } from './browserStorage'
@@ -709,10 +708,10 @@ function FileManager({
     const next = xDriveWebAppRouteForWorkspaceKey(view)
     if (next) launchWebApp(next)
   }, [launchWebApp])
-  // A legacy route only needs an authenticated source direction lookup.
-  // Suppress the sub-300ms transition chrome, never delay the network read.
-  // The generation advances synchronously before a new account/route paints,
-  // so the last route's spinner or authorization error cannot flash here.
+  // A legacy route only needs a real authorized source-direction lookup.
+  // The redirect's fixed 180px region remains visually silent for any
+  // duration: a loading panel would only be an intermediate page flash.
+  // Generation fencing still prevents an old account's error from painting.
   const legacySourceID = route.app === 'sync-folders' ? route.params.source : undefined
   const legacyOwnerRef = useRef({ api, sourceID: legacySourceID, generation: 1 })
   if (legacyOwnerRef.current.api !== api || legacyOwnerRef.current.sourceID !== legacySourceID) {
@@ -731,11 +730,6 @@ function FileManager({
     legacyResolution.sourceID === legacySourceID &&
     legacyResolution.generation === legacyGeneration &&
     legacyResolution.failed
-  const legacyPending = route.app === 'sync-folders' &&
-    Boolean(legacySourceID) && !legacyFailure
-  const showDelayedLegacyLoading = useXDriveDeferredLoading(
-    legacyPending, legacyGeneration,
-  )
   useEffect(() => {
     if (route.app !== 'sync-folders') return
     const sourceID = legacySourceID
@@ -1916,15 +1910,12 @@ function FileManager({
           />
         ) : appView === 'remote-pull' ? (
           route.app === 'sync-folders' ? (
-            <Box data-xdrive-legacy-source-quiet-redirect sx={{
-              minHeight: 180, display: 'grid', placeItems: 'center',
-            }}>
+            <Box data-xdrive-legacy-source-quiet-redirect
+              aria-busy={!legacyFailure || undefined}
+              sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
               {legacyFailure ? (
                 <XDriveStatePanel variant="plain"
                   message="该来源不存在或没有查看权限，请从设备备份或远程拉取重新打开。" />
-              ) : showDelayedLegacyLoading ? (
-                <XDriveStatePanel variant="plain" loading
-                  message="正在根据旧链接确认所属应用（设备备份或远程拉取）…" />
               ) : null}
             </Box>
           ) : (
