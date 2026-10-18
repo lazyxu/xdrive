@@ -7,6 +7,14 @@
 	}
 	@pwa_static path /sw.js /site.webmanifest /offline.html
 	header @pwa_static Cache-Control "no-cache, must-revalidate"
+	# Never forward JSAPI requests directly to Baidu or the SPA fallback.
+	# Go enforces signed release, Cookie, Owner, fixed upstream and resource policy.
+	handle /_BMapService/* {
+		header Cache-Control "private, no-store"
+		header Referrer-Policy "no-referrer"
+		header X-Content-Type-Options "nosniff"
+		reverse_proxy server:8080
+	}
 	handle /api/* {
 		reverse_proxy server:8080
 	}

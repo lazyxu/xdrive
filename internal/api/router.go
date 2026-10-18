@@ -53,6 +53,7 @@ type Server struct {
 	BaiduMapAK                     string
 	BaiduMapEnabled                bool
 	BaiduMapHTTPClient             *http.Client
+	baiduJSAPI4Authority           atomic.Pointer[baiduJSAPI4LiveAuthority]
 	baiduMapLimiter                baiduMapLimiter
 	baiduMapVerifyMu               sync.Mutex
 	baiduMapVerifyAt               time.Time
@@ -117,6 +118,8 @@ func (s *Server) Router() *gin.Engine {
 	r := gin.New()
 	r.Use(s.requestID(), s.observeHTTP(), s.recovery(), s.cors())
 	r.MaxMultipartMemory = 8 << 20
+	// Only exact reviewed map Loader resources are routable; children fail closed.
+	r.GET("/_BMapService/api", s.baiduJSAPI4LoaderHTTP)
 	r.GET("/metrics", s.metrics)
 
 	v1 := r.Group("/api/v1")
@@ -270,6 +273,8 @@ func (s *Server) Router() *gin.Engine {
 	authed.GET("/media/places/baidu-static", s.mediaBaiduStaticMap)
 	// JSAPI 4.0 remains blocked until proxy, licence and native bridges pass review.
 	authed.GET("/media/places/baidu-jsapi/status", s.mediaBaiduJSAPIStatus)
+	// A signed release is required before the authenticated Owner can mint a map Cookie.
+	authed.POST("/media/places/baidu-jsapi/session", s.baiduJSAPI4SessionHTTP)
 	authed.GET("/media/memories", s.listMediaMemories)
 	authed.GET("/media/memories/:memoryID/items", s.listMediaMemoryItems)
 	authed.GET("/media/duplicate-organize/plan", s.mediaDuplicateOrganizePlan)

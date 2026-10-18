@@ -28,13 +28,24 @@ test('signed account reservation reuses the one c6 atomic lower-cap transaction'
   }
 })
 
-test('no JSAPI4 production loader or leaked Browser AK is introduced by signed proof', () => {
+test('signed Geoconv remains private when JSAPI4 has real but unapproved HTTP entry', () => {
   const router = read('internal/api/router.go')
   const bootstrap = read('internal/api/baidu_jsapi_bootstrap_candidate.go')
   const candidate = read('internal/api/baidu_geoconv_signed_quota.go')
-  assert.equal(router.includes('/_BMapService/'), false)
-  assert.equal(router.includes('/baidu-jsapi/session'), false)
-  assert.equal(bootstrap.includes('RuntimeEnabled: true'), false)
+  const live = read('internal/api/baidu_jsapi4_http.go')
+  const resources = read('internal/baidumapjsapi/resource_policy.go')
+  const release = read('internal/baidumapjsapi/release_attestation.go')
+  // A3c11 deliberately provides REAL protected entry points. Old A3c7
+  // "no route exists" source assumptions must not hide a production gap.
+  assert.match(router, /r\.GET\("\/_BMapService\/api", s\.baiduJSAPI4LoaderHTTP\)/)
+  assert.match(router, /authed\.POST\("\/media\/places\/baidu-jsapi\/session", s\.baiduJSAPI4SessionHTTP\)/)
+  assert.match(live, /currentBaiduJSAPI4OperatorRelease\(/)
+  assert.match(live, /baiduJSAPI4SignedLiveLoader\(/)
+  // Unlike Geoconv, JSAPI is still default NO-GO: no pinned release signer
+  // or complete reviewed JS, tile, font, WASM child inventory.
+  assert.match(resources, /reviewedJSAPI4ChildResourceCount = 0/)
+  assert.match(release, /jsapi4PinnedProductionPublicKey = ""/)
+  assert.equal(bootstrap.includes('RuntimeAuthorized:     true'), false)
   assert.equal(candidate.includes('func (s *Server)'), false)
   assert.equal(candidate.includes('http.Handler'), false)
   assert.match(candidate, /ctx.Err\(\)/)

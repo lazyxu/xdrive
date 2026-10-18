@@ -1,5 +1,17 @@
 # xDrive Places A3 · 百度 JSAPI 4.0 生产放行与三端验收
 
+## c11 · 实际 HTTP 路由及 Caddy 反向代理闭环（2026-10-18）
+
+**部署运行状态仍为 NO-GO。** 此次补全真正的 Gin/Caddy 地址路由，而非仅向 Go 包中添加未被调用的 Loader 函数：
+
+- `POST /api/v1/media/places/baidu-jsapi/session`：使用正常登录 Bearer 的已认证 Gallery Owner，在独立的 `Origin` / Sec-Fetch-Site / JWT iat / DB User SessionVersion / Map Epoch / Browser AK revision / 签名发布根及当前源代码资源政策校验成功后，才签发 **120 秒**的 `XD_BMAP_SESSION` host-only、Secure、HttpOnly、SameSite=Strict、Path=`/_BMapService/` Cookie。无 Body、无浏览器传入 GPS/AK/Scope；不把 JWT 变成子资源 Cookie。当前由于无批准发布根与完整子资源清单，返回 503，绝不签发。
+- `GET /_BMapService/api?v=4.0`：真实 Gin 精确 Loader 路由，向 Caddy 的 `/_BMapService/*` 由 Go Server 处理，Server 在签名发布、当前 Cookie/Owner/配置/epoch/跨副本限流及请求头/上游严格检查全部通过后才能对百度正式网络发请求。放行后只回送经清洗且无 AK 的限定 JS；关闭/轮换/过期期间的请求体在响应前再次确认并丢弃。**未列入源代码的 JS/瓦片/字体/WASM 子资源没有 Go 路由且返回 404，绝不可使用通配直连百度。**
+- 所有 Caddy 类型（域名 HTTPS、LAN IP HTTPS、LAN-only）共同引入 `deploy/Caddyfile.common`，有 `no-store`、`no-referrer`、`nosniff`；不存在直接 Nginx/Caddy 反向代理百度的密钥插入。现有 PWA Service Worker 仅在 `/`/`/index.html` 导航失败时离线回退，不缓存地图 JS、地图 Cookie 或地点数据。默认 JavaScript API 状态与系统依赖配置继续清楚表示 `runtime_enabled=false`，当前仅 Server Static PNG 服务可用于生产。
+- `InstallBaiduJSAPI4OperatorRelease` 只是**内存内受信部署配置入口**，不是公共管理或客户端设置；只有当真实账号许可、逐子资源白名单、敏感信息原始字节审计、源代码固定签名根及当前构建/策略/Origin/AK revision/epoch 受签名批准后，才能由未来安全部署加载凭证。当前没有任何启动调用方。不要把“路由 503”或一次成功编译写成三端实际访问成功。
+
+**专项回归：** `internal/api/baidu_jsapi4_http_test.go` 验证真实 Gin 404/503、无 Cookie/AK 泄露、真正 Router 中精确地图路由与恶意模拟授权拒绝；`desktop/tests/baidu-jsapi4-protected-http-route.cjs` 验证 Caddy 先转到 Go、没有通配上游、PWA 非地图缓存及 Web/Mobile/Desktop 共享 Server Range 路径。真实授权用的前端 Map Session Provider、Desktop HTTPS-isolated Map、动态 BD09 视窗、官方资源白名单和真机仍**未交付**，详见本文件其他门禁。
+
+
 ## 2026-10-18 · signed-live transport and same-origin SDK implementation candidate
 
 **Status: engineering candidate only; dynamic A3 production remains NO-GO.** This section records real source changes, not authorized Baidu production traffic or physical device results.

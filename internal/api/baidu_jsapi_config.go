@@ -80,10 +80,18 @@ func (s *Server) mediaBaiduJSAPIStatus(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
+	approved := false
+	if _, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); err == nil {
+		approved = true
+	}
+	state := "blocked_pending_licence_and_proxy"
+	if approved {
+		state = "authorized_signed_release"
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"provider":         "baidu-jsapi-4.0",
-		"enabled":          false,
-		"activation_state": "blocked_pending_licence_and_proxy",
+		"enabled":          approved,
+		"activation_state": state,
 		"attribution":      "© 百度地图",
 	})
 }
@@ -98,6 +106,14 @@ func (s *Server) adminBaiduJSAPIConfig(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "JSAPI configuration is unavailable")
 		return
 	}
+	approved := false
+	if _, err := s.currentBaiduJSAPI4OperatorRelease(c.Request.Context()); err == nil {
+		approved = true
+	}
+	state := "blocked_pending_licence_and_proxy"
+	if approved {
+		state = "authorized_signed_release"
+	}
 	c.JSON(http.StatusOK, adminBaiduJSAPIConfigDTO{
 		Provider:        "baidu-jsapi-4.0",
 		DesiredEnabled:  cfg.DesiredEnabled,
@@ -105,8 +121,8 @@ func (s *Server) adminBaiduJSAPIConfig(c *gin.Context) {
 		Editable:        s != nil && s.DB != nil && s.ConnectorSecrets != nil,
 		Revision:        cfg.Revision,
 		UpdatedAt:       cfg.UpdatedAt,
-		RuntimeEnabled:  false,
-		ActivationState: "blocked_pending_licence_and_proxy",
+		RuntimeEnabled:  approved,
+		ActivationState: state,
 		RequiresRestart: false,
 	})
 }
