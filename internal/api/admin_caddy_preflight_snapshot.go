@@ -50,6 +50,8 @@ func sameCaddyPreflightSnapshot(first, last caddyPreflightSnapshot) bool {
 	return first.Desired.Revision == last.Desired.Revision &&
 		first.Desired.Enabled == last.Desired.Enabled &&
 		first.Desired.Domain == last.Desired.Domain &&
+		first.Desired.LANEnabled == last.Desired.LANEnabled &&
+		first.Desired.LANIP == last.Desired.LANIP &&
 		first.CredentialExists == last.CredentialExists &&
 		first.Credential.Revision == last.Credential.Revision &&
 		first.Credential.Enabled == last.Credential.Enabled &&

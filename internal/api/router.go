@@ -434,6 +434,7 @@ func (s *Server) Router() *gin.Engine {
 	admin.POST("/services/caddy/alidns/reveal", s.adminRevealCaddyAliDNS)
 	admin.POST("/services/caddy/alidns/verify-read", s.adminVerifyCaddyAliDNSRead)
 	admin.GET("/services/caddy/https/preflight", s.adminCaddyHTTPSPreflight)
+	admin.GET("/services/caddy/https/host-plan", s.adminCaddyHTTPSHostPlan)
 	admin.GET("/services/media-worker", s.adminMediaWorkerConfig)
 	admin.PUT("/services/media-worker", s.adminSaveMediaWorkerConfig)
 	admin.POST("/services/media-worker/apply", s.adminApplyMediaWorker)
