@@ -1280,6 +1280,7 @@ export default function WebFileExplorer({
           getSelectionActionDisabledReason={getSelectionActionDisabledReason}
           crumbs={trashActive ? trash.crumbs : explorerCrumbs}
           loading={trashActive ? trash.loading : loading || searchLoading || fileOperationBusy}
+          directoryLoading={loading}
           trashActive={trashActive}
           trashReadState={trash.readState}
           onOpenTrash={() => { beginNavigationIntent(); onOpenTrash() }}

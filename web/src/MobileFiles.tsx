@@ -113,6 +113,8 @@ type Props = {
   ) => string | null
   crumbs: XDriveFileExplorerCrumb[]
   loading: boolean
+  /** Only the real Owner directory first-Range request; excludes Search/operations. */
+  directoryLoading?: boolean
   trashActive: boolean
   trashReadState?: 'unverified' | 'ready' | 'error'
   onOpenTrash: () => void
@@ -570,6 +572,24 @@ export default function MobileFiles(props: Props) {
   const coldUnconfirmedBrowse = showDirectory && !props.searchActive &&
     !props.trashActive && totalCount === 0 && !keepAcceptedEmptyDirectory &&
     !props.virtualCollection
+  // Before the very first Owner Range is dispatched, loading may still be
+  // false. It is NOT a failed directory read. Track a genuine pending cycle
+  // for this exact account/directory/arrangement before showing a terminal
+  // unverified error; a cold navigation must never flash an error then blank.
+  const coldReadScope = [
+    props.lifecycleKey, directoryID ?? 0, props.sort.key, props.sort.direction,
+    props.grouping?.groupBy ?? 'none', props.grouping?.foldersFirst ?? true,
+  ].join(':')
+  const coldReadAttemptRef = useRef({ scope: coldReadScope, began: false })
+  if (coldReadAttemptRef.current.scope !== coldReadScope) {
+    coldReadAttemptRef.current = { scope: coldReadScope, began: false }
+  }
+  // Composite Files busy may include Search/Operations. Only the CloudFiles
+  // controller's directory GET can confirm this exact cold-read lifecycle.
+  const ownerDirectoryLoading = props.directoryLoading ?? props.loading
+  if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true
+  const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&
+    coldReadAttemptRef.current.began
   const showRangeLoading = (props.loading || searchCountPending) &&
     (props.searchActive || props.trashActive)
   const loadFeedbackScope = props.searchActive
@@ -598,7 +618,7 @@ export default function MobileFiles(props: Props) {
   // Do not insert a padded zero-state loading panel for a request that
   // finishes before the next meaningful frame. An accepted empty directory
   // is content and remains visible throughout an uncommitted navigation.
-  const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !props.loading
+  const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !coldDirectoryReadFailed
   // Keep an identical silent slot from the first paint through an arbitrarily
   // slow Directory GET. Only a real counted result or terminal error changes
   // its content; no delayed network spinner is inserted during navigation.
@@ -610,7 +630,7 @@ export default function MobileFiles(props: Props) {
     (coldDirectoryFirstRead || (props.searchActive && zeroStatePending) ||
       (!zeroStatePending && !coldUnconfirmedBrowse) ||
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
-      unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
+      coldDirectoryReadFailed || unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
     ? props.searchActive ? '正在查询…' : '正在读取最近删除…'
     : props.searchActive
@@ -618,7 +638,7 @@ export default function MobileFiles(props: Props) {
         : searchCountPending ? '正在查询…'
           : '未找到匹配的文件或文件夹'
       : props.trashActive ? '最近删除为空'
-        : coldDirectoryReadUnconfirmed ? '文件夹内容尚未确认，请刷新页面后重试。'
+        : coldDirectoryReadFailed ? '文件夹内容尚未确认，请刷新页面后重试。'
           : '此文件夹为空'
   const inlineEnabled = showDirectory && !effectiveGrid && !props.trashActive &&
     !props.searchActive && directoryID !== null && Boolean(props.onToggleInlineFolder)
@@ -2538,7 +2558,7 @@ export default function MobileFiles(props: Props) {
               {showZeroState ? (
                 <Box data-mobile-files-zero-state
                   data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}
-                  aria-busy={zeroStatePending || undefined}
+                  aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}
                   sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
                   {unverifiedTrashEmpty ? (
                     <Box data-mobile-files-trash-first-read
@@ -2554,8 +2574,8 @@ export default function MobileFiles(props: Props) {
                       <Typography variant="body2" color="error.main">最近删除读取失败，请重试。</Typography>
                       <Button onClick={props.onRefresh} sx={{ minHeight: MIN_TOUCH }}>重试</Button>
                     </Stack>
-                  ) : (coldDirectoryFirstRead || (props.searchActive && zeroStatePending)) &&
-                      !zeroStateLoading ? (
+                  ) : (coldDirectoryFirstRead || coldDirectoryReadUnconfirmed ||
+                        (props.searchActive && zeroStatePending)) && !zeroStateLoading ? (
                     // Directory remains silent until an authoritative reply;
                     // Search alone may show delayed progress in this same slot.
                     null

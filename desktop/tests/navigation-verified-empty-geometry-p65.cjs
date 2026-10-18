@@ -8,7 +8,9 @@ const read = name => fs.readFileSync(path.join(root,name),'utf8')
 function firstMatchMinHeight(code,marker) {
   const i=code.indexOf(marker)
   assert.ok(i>0,'missing real page marker: '+marker)
-  const snippet=code.slice(i,i+220)
+  // A semantic aria-busy contract may grow before the same actual sx.minHeight.
+  // Inspect the selected original JSX element, not an arbitrary 220-char crop.
+  const snippet=code.slice(i,i+400)
   const match=snippet.match(/minHeight: (\d+)/)
   assert.ok(match,'missing stable minimum height on '+marker)
   return Number(match[1])
@@ -61,7 +63,7 @@ test('P65 existing Mobile Web Files accepted/cold/error slots remain height-stab
   assert.equal(firstMatchMinHeight(mobile,'data-mobile-files-trash-first-read'),180)
   assert.equal(firstMatchMinHeight(mobile,'data-mobile-files-trash-read-error'),180)
   assert.ok(mobile.includes('data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}'))
-  assert.ok(mobile.includes('aria-busy={zeroStatePending || undefined}'))
+  assert.ok(mobile.includes('aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}'))
   assert.ok(mobile.includes('coldDirectoryFirstRead'))
   assert.ok(mobile.includes('keepAcceptedEmptyDirectory'))
 })
