@@ -1,5 +1,21 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## SH-P005 physical 100k JPEG original download via actual Wide/Mobile Web Chromium (2026-10-18)
+
+**Original source-exact specialized #39130331355 accepted** at `47c7e447`, one authentic PG17/LocalCAS corpus 100000 SHA-distinct true JPEG files, no aliases, six actual Chromium production PublicShare sessions (Wide1440 n3, CDP Mobile390 n3, same corpus). Browser renders first/next bounded 100 rows, saves 2 distinct signed original downloads via actual Chromium download event each, SHA+bytes checked. Full six first page P50 87.526ms/worst96.392ms, next P50 98.610ms/worst103.012ms, original file native download across 12 P50 44.685ms/worst55.731ms; **all within frozen original budgets, production unchanged, AFTER N/A**. [Immutable original evidence](performance-evidence/sh-p005-browser-physical-jpeg-share-100k/README.md). This does NOT measure OS-installed PWA, real Android/iOS phones, native Electron Desktop Agent, true WAN, 100k decoded thumbnails or actual H264/Live Motion; BrowserWindow simulates Web mobile CSS/touch with CDP. Updated evidence HEAD CI/FinalGate still required to merge.
+
+| True SH-P005 client physical JPEG workload | Native Desktop | Wide Web Chromium | Mobile Web Chromium CDP390 | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| 100k SHA-distinct real JPEG original corpus, actual PublicShare two-page DOM + native file download SHA | Not measured | **Accepted original n3** | **Accepted original n3 emulated mobile** | Not measured | Not measured | Not measured |
+
+## SH-P005 real PublicShare Chromium original download with 100k physical JPEG CAS (2026-10-18)
+
+New client-specific **Not measured** until valid six native Chromium sessions. Owner-authenticated read-only PublicShare GUI (real production Web), Linux Wide1440 and CDP Mobile Web390 touch each n3 browser instances, ONE PG17/LocalCAS corpus of 100000 different decodable JPEG original physical blobs; every instance actual first/next 100-row DOM and two signed native-browser original file saves with verified SHA/bytes. This is not the already measured SH-P003 100k metadata only or the SH-P004 Server-only signed original GET. [Frozen source](sh-p005-browser-physical-jpeg-share-100k.md) · [evidence](performance-evidence/sh-p005-browser-physical-jpeg-share-100k/README.md) · [registry](performance-test-registry.md).
+
+| New real visual/client workload | Native Desktop | Wide Web Chromium | Mobile Web Chromium CDP390 | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| Public Share 100k independent real physical JPEG originals, 2 pages and 2 OS-native browser downloads per viewport session | Not measured | Benchmark pending n3 | Benchmark pending n3 CDP emulation | Not measured | Not measured | Not measured |
+
 ## SH-P004 physical original 100k JPEG public-folder Go HTTP — first real n3 (2026-10-18)
 
 **Server genuine original n3 measured; six actual GUI clients remain Not measured.** [Original physical n3 #39126802572](https://github.com/lazyxu/xdrive/actions/runs/39126802572): 3 fresh PG17/LocalCAS samples each 100000 decodable independently SHA-distinct actual JPEG CAS, plus protected outside object. Real 1000 public pages and three signed original file GETs; 3/3 Go tests passed with 100k walk P50 **3224.434ms**, page slowest **6.554ms**, ticket slowest 5.634ms, original GET slowest 3.560ms, Go RSS peak growth worst 622592B. User-visible browser thumbnails/Live Motion/WAN/OS installed clients NOT run. Workflow overall RED only because post-test Python used nonexistent JSON key `original_source_bytes` instead of real `physical_source_bytes`; do not label full CI green. [Raw 3 sample artifacts and limitations](performance-evidence/sh-p004-physical-public-jpeg-100k/README.md); re-run accurate HEAD+all CI before merge. Original within frozen budget, no production optimization, AFTER/speedup N/A.
