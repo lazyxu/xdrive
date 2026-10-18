@@ -1,5 +1,17 @@
 # xDrive 跨平台性能覆盖矩阵
 
+## SH-P004 physical original 100k JPEG public-folder Go HTTP — first real n3 (2026-10-18)
+
+**Server genuine original n3 measured; six actual GUI clients remain Not measured.** [Original physical n3 #39126802572](https://github.com/lazyxu/xdrive/actions/runs/39126802572): 3 fresh PG17/LocalCAS samples each 100000 decodable independently SHA-distinct actual JPEG CAS, plus protected outside object. Real 1000 public pages and three signed original file GETs; 3/3 Go tests passed with 100k walk P50 **3224.434ms**, page slowest **6.554ms**, ticket slowest 5.634ms, original GET slowest 3.560ms, Go RSS peak growth worst 622592B. User-visible browser thumbnails/Live Motion/WAN/OS installed clients NOT run. Workflow overall RED only because post-test Python used nonexistent JSON key `original_source_bytes` instead of real `physical_source_bytes`; do not label full CI green. [Raw 3 sample artifacts and limitations](performance-evidence/sh-p004-physical-public-jpeg-100k/README.md); re-run accurate HEAD+all CI before merge. Original within frozen budget, no production optimization, AFTER/speedup N/A.
+
+## SH-P004 public folder 100k independently real JPEG CAS (2026-10-18)
+
+**NEW Server Go/Gin/PostgreSQL17/LocalCAS actual HTTP benchmark, CURRENT Not measured (n=0).** 100000 separately encoded/decodable SHA-distinct JPEG originals + protected outside CAS, 1000 actual public share 100-row pages, 3 signed original-byte GETs, outside scope and ticket revocation. Frozen [contract](folder-share-physical-jpeg-100k-performance.md), [evidence](performance-evidence/sh-p004-physical-public-jpeg-100k/README.md), [registry](performance-test-registry.md). Not native Desktop Agent/OS-installed PWA, real handset/WAN, 100k concurrently decoded thumbnails, videos/Live Motion or persistent user-task cancellation.
+
+| Workload | Native Desktop | Wide Web | Mobile Web | Desktop installed PWA | Android installed PWA | iOS installed PWA |
+| --- | --- | --- | --- | --- | --- | --- |
+| SH-P004 real physical 100k JPEG public share through authentic original HTTP | Not measured | Not measured | Not measured | Not measured | Not measured | Not measured |
+
 ## SH-P003 genuine browser public-share GET cancel + bounded 100k metadata pages (2026-10-18)
 
 **SH-P003 measured genuine browser CURRENT (2026-10-18):** [CI #39118655827](https://github.com/lazyxu/xdrive/actions/runs/39118655827), exact original SHA `0121b4a5`; 1440px Chromium Web and 390px Chromium CDP Mobile Web simulation each n3, with 100000 actual PostgreSQL17 metadata Nodes, 0 distinct physical CAS originals. Six browser-initiated real Gin/PG first GET cancels and six genuine Browse/Next-page samples all accepted. Browser navigation→PG waiting SQL release P50 45.580ms / worst 64.762ms (≤500ms); first 100-row real DOM page P50 59.867ms / worst 62.649ms (≤2000ms); zero residual SQL waiter, no duplicate/stale rows. [Exact original machine metrics](performance-evidence/sh-p003-public-share-real-browser/README.md). Do not relabel emulator as physical handset, installed PWA, Native Desktop Agent, WAN, or original 100k JPEG/Live/H264 CAS. Production unchanged, AFTER=N/A.

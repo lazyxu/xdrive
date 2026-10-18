@@ -1,0 +1,111 @@
+name: SH-P004 True 100k Physical JPEG Public Share HTTP
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  real-jpeg-100k-public-sharing:
+    if: github.head_ref == 'perf/sh-p004-real-physical-jpeg-public-100k-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports: ['5432:5432']
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      XD_SH_P004_PHYSICAL_SHARE_PERF: '1'
+      XD_SH_P004_SOURCE_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Exact HEAD original Go source formatting and API compilation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$XD_SH_P004_SOURCE_HEAD"
+          source=internal/api/sh_p004_real_physical_jpeg_share_100k_performance_linux_test.go
+          changed="$(gofmt -l "$source")"
+          if [ -n "$changed" ]; then gofmt -d "$source"; exit 1; fi
+          mkdir -p results/sh-p004
+          printf 'HEAD=%s\n' "$XD_SH_P004_SOURCE_HEAD" > results/sh-p004/source.txt
+          go version >> results/sh-p004/source.txt
+          go test -mod=readonly -c -o results/sh-p004/api.test ./internal/api
+      - name: True PostgreSQL and CAS 1k smoke not counted as n3
+        run: |
+          set -euo pipefail
+          XD_SH_P004_SAMPLE=sample-1 XD_SH_P004_SMOKE=1 \
+            timeout --signal=TERM --kill-after=15s 20m \
+            results/sh-p004/api.test -test.run '^TestSHP004RealPhysicalJPEG100KSharedFolder$' -test.v -test.timeout 19m \
+            2>&1 | tee results/sh-p004/smoke.log
+      - name: Three independently seeded true 100k source baselines
+        run: |
+          set -euo pipefail
+          for n in 1 2 3; do
+            export XD_SH_P004_SAMPLE="sample-$n"
+            unset XD_SH_P004_SMOKE || true
+            /usr/bin/time -f 'maxrss_kib=%M\nuser_cpu_seconds=%U\nsystem_cpu_seconds=%S' \
+              -o "results/sh-p004/sample-$n.resources.txt" \
+              timeout --signal=TERM --kill-after=15s 20m \
+              results/sh-p004/api.test -test.run '^TestSHP004RealPhysicalJPEG100KSharedFolder$' -test.v -test.timeout 19m \
+              2>&1 | tee "results/sh-p004/sample-$n.log"
+          done
+          python3 - <<'PY'
+          import json,os,pathlib,statistics
+          root=pathlib.Path("results/sh-p004")
+          rows=[]
+          for n in (1,2,3):
+              text=(root/f"sample-{n}.log").read_text()
+              seen=[line.split("SH_P004_REAL_100K_PHYSICAL_SHARE ",1)[1]
+                    for line in text.splitlines() if "SH_P004_REAL_100K_PHYSICAL_SHARE {" in line]
+              assert len(seen)==1,(n,len(seen))
+              row=json.loads(seen[0])
+              assert row["sample"]==f"sample-{n}" and row["smoke_only"] is False
+              assert row["source_head"]==os.environ["XD_SH_P004_SOURCE_HEAD"]
+              assert row["passed"] and row["physical_jpeg_originals"]==100000
+              assert row["physical_cas_inodes_with_protected_sentinel"]==100001
+              assert row["physical_allocated_bytes"] >=100001*4096
+              assert row["physical_source_bytes"]>=50000000
+              assert row["pages"]==1000 and row["listed_originals"]==100000
+              assert row["walk_ms"]<=90000 and row["page_p95_ms"]<=500 and row["page_worst_ms"]<=2000
+              assert max(row["ticket_ms"])<=3000 and max(row["original_download_ms"])<=3000
+              assert row["outside_denied"] and row["revoked_signed_ticket_denied"]
+              assert row["go_peak_rss_growth_bytes"]<=268435456
+              rows.append(row)
+              (root/f"sample-{n}.json").write_text(json.dumps(row,indent=2,sort_keys=True)+"\n")
+          summary={
+            "workload":"SH-P004/GinPG17-100k-physical-JPEG-public-share",
+            "exact_source_head":os.environ["XD_SH_P004_SOURCE_HEAD"],
+            "n":len(rows),"all_passed":all(row["passed"] for row in rows),
+            "physical_jpeg_originals_per_sample":100000,
+            "page_walk_p50_ms":statistics.median(row["walk_ms"] for row in rows),
+            "page_worst_ms":max(row["page_worst_ms"] for row in rows),
+            "ticket_worst_ms":max(max(row["ticket_ms"]) for row in rows),
+            "download_worst_ms":max(max(row["original_download_ms"]) for row in rows),
+            "scope":"REAL Gin/PG17 LocalCAS plus signed original HTTP, NOT actual Desktop/Web GUI or installed PWA"
+          }
+          (root/"summary.json").write_text(json.dumps(summary,indent=2,sort_keys=True)+"\n")
+          print("SH_P004_ORIGINAL_CURRENT",json.dumps(summary,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sh-p004-real-100k-physical-jpeg-public-share
+          path: results/sh-p004/
+          if-no-files-found: warn
+          retention-days: 30
