@@ -138,6 +138,75 @@ class OfflineHostPlanTest(unittest.TestCase):
         rc, result = self.run_plan()
         self.assertEqual(rc, 0)
         self.assertIn("https-bind-migration-required", result["blockers"])
+        self.assertIsNone(result["candidate_environment_sha256"])
+
+    def test_candidate_digest_only_and_unchanged_unrelated_secrets(self):
+        data = {**BASE, "lan_ip": "192.168.2.5"}
+        source = "# operator note\n" + ENV + "\n"
+        self.prepare(data=data, env=source)
+        rc, result = self.run_plan()
+        self.assertEqual(rc, 0)
+        expected = source.replace("XD_LAN_HTTPS_IP=192.168.2.4",
+                                  "XD_LAN_HTTPS_IP=192.168.2.5")
+        self.assertEqual(result["candidate_environment_sha256"],
+                         hashlib.sha256(expected.encode()).hexdigest())
+        self.assertEqual(result["host_environment_sha256"],
+                         hashlib.sha256(source.encode()).hexdigest())
+        self.assertNotEqual(result["candidate_environment_sha256"],
+                            result["host_environment_sha256"])
+        self.assertIn("existing-ingress-at-risk", result["blockers"])
+        self.assertFalse(result["apply_supported"])
+        self.assertEqual(self.env.read_text(), source)
+
+    def test_candidate_digest_no_change_and_missing_key_append(self):
+        rc, out = self.run_plan()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["candidate_environment_sha256"],
+                         out["host_environment_sha256"])
+        source = ENV.replace("XD_LEGACY_HTTP_ONLY=0\n", "")
+        self.prepare(env=source)
+        rc, out = self.run_plan()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["candidate_environment_sha256"],
+                         hashlib.sha256((source + "XD_LEGACY_HTTP_ONLY=0\n").encode()).hexdigest())
+        self.assertEqual(self.env.read_text(), source)
+
+    def test_candidate_digest_domain_only_and_dual_are_nonsecret(self):
+        data = {**BASE, "domain_enabled": True, "domain": "drive.example.com",
+                "credential_revision": 5}
+        self.prepare(data=data)
+        rc, out = self.run_plan()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["candidate_environment_sha256"],
+                         hashlib.sha256(ENV.replace("XD_DOMAIN=", "XD_DOMAIN=drive.example.com").encode()).hexdigest())
+        self.assertIn("alidns-secret-host-handoff-required", out["blockers"])
+        self.assertEqual(self.env.read_text(), ENV)
+        self.assertNotIn("never-print-this", json.dumps(out))
+        data = {**data, "lan_enabled": False, "lan_ip": ""}
+        self.prepare(data=data)
+        rc, out = self.run_plan()
+        self.assertEqual(rc, 0)
+        self.assertEqual(out["candidate_environment_sha256"],
+                         hashlib.sha256(ENV.replace("XD_DOMAIN=", "XD_DOMAIN=drive.example.com")
+                                        .replace("XD_LAN_HTTPS_IP=192.168.2.4",
+                                                 "XD_LAN_HTTPS_IP=").encode()).hexdigest())
+
+    def test_candidate_rejects_ambiguous_env_before_any_install(self):
+        for env in (
+            ENV + "XD_DOMAIN=\n",
+            ENV + "ALIYUN_ACCESS_KEY_SECRET=duplicate\n",
+            ENV.replace("XD_DOMAIN=\n", "export XD_DOMAIN=\n"),
+            ENV.replace("XD_DOMAIN=\n", " XD_DOMAIN=\n"),
+            ENV.replace("XD_DOMAIN=\n", "XD_DOMAIN=\r\n"),
+            ENV + "INVALID UNKNOWN LINE\n",
+            ENV.rstrip("\n"),
+        ):
+            with self.subTest(env=env[-45:]):
+                self.prepare(env=env)
+                rc, out = self.run_plan()
+                self.assertEqual(rc, 2)
+                self.assertEqual(out["state"], "blocked")
+                self.assertFalse(out["apply_supported"])
 
     def test_no_special_files_world_writable_or_compose_swaps(self):
         self.plan.chmod(0o644)
