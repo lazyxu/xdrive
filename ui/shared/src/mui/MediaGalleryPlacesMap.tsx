@@ -34,6 +34,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPI4Status,
   mintBaiduJSAPI4Session,
   onOpenBaiduNativePhoto,
+  onOpenSecureDesktopMap,
   authorizedJSAPI4Runtime,
   activePlaceID,
   focusPlaceID,
@@ -51,6 +52,7 @@ export function XDriveMediaGalleryPlacesMap({
   getBaiduJSAPI4Status?: import('./MediaGallery').MediaGalleryDataSource['getBaiduJSAPI4Status']
   mintBaiduJSAPI4Session?: import('./MediaGallery').MediaGalleryDataSource['mintBaiduJSAPI4Session']
   onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
+  onOpenSecureDesktopMap?: () => void
   /** Only supplied by a future independently released Server-authorized proxy.
    * Production currently supplies NO runtime, so there are zero SDK requests. */
   authorizedJSAPI4Runtime?: XDriveBaiduJSAPI4AuthorizedMountPort
@@ -251,6 +253,17 @@ export function XDriveMediaGalleryPlacesMap({
           </Button>
         ) : null}
       </Stack>
+      {onOpenSecureDesktopMap ? (
+        <Box sx={{ px: 1.5, pb: 1.25 }}>
+          <Button variant="outlined" size="small" onClick={onOpenSecureDesktopMap}
+            sx={{ minHeight: 44 }}>
+            在独立安全窗口打开地图
+          </Button>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+            使用独立 HTTPS 会话，首次需要登录；动态地图仍受 Server 签名发布门禁控制。
+          </Typography>
+        </Box>
+      ) : null}
       {canMountNativePhoto && mintBaiduJSAPI4Session && listBaiduNativeViewport &&
         onOpenBaiduNativePhoto && nativeCamera ? (
           <XDriveMediaGalleryBaiduJSAPI4PhotoSurface

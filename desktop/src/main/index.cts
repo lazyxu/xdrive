@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os = require('node:os')
 import path = require('node:path')
+import { randomUUID } from 'node:crypto'
 import {
   app,
   BrowserWindow,
@@ -20,6 +21,11 @@ import {
   type NativeImage,
   type OpenDialogOptions,
 } from 'electron'
+import {
+  xDriveResolveSecureBaiduMapTarget,
+  xDriveBaiduMapResourceAllowed,
+  xDriveBaiduMapNavigationAllowed,
+} from './baidu_map_secure_view.cjs'
 import { DesktopViewportRequests } from './viewport_requests.cjs'
 import { AgentLifecycle } from './agent_lifecycle.cjs'
 import { desktopBuildInfo } from './build_metadata.cjs'
@@ -273,6 +279,7 @@ type DesktopResult<T> =
   | { ok: false; error: { code: string; message: string; status?: number; detail?: string } }
 
 let mainWindow: BrowserWindow | null = null
+let secureBaiduMapWindow: BrowserWindow | null = null
 let desktopWindowIcon: NativeImage | null = null
 let desktopPreferences = defaultDesktopPreferences()
 // All native preference saves target one userData JSON file; preserve call order.
@@ -842,6 +849,82 @@ function restoreWindowsTaskbarIcon() {
   }
 }
 
+/**
+ * A3c17: an independently authenticated and session-isolated HTTPS Web Gallery
+ * for Desktop. Never send Agent JWT, saved password, AK, map Cookie or preload
+ * to this renderer. Only the current Agent-configured HTTPS Server is trusted.
+ */
+function closeSecureBaiduMapWindow() {
+  const win = secureBaiduMapWindow
+  secureBaiduMapWindow = null
+  if (win && !win.isDestroyed()) win.destroy()
+}
+
+async function openSecureBaiduMapWindow(): Promise<DesktopResult<{
+  opened: true; separate_login_required: true
+}>> {
+  if (!agentState.connected || !agentState.status?.configured ||
+      !agentState.status.username) {
+    return { ok: false, error: { code: 'map_login_required',
+      message: '请先登录 xDrive Desktop，才能打开独立 HTTPS 地图窗口。' } }
+  }
+  const target = xDriveResolveSecureBaiduMapTarget(agentState.status.server)
+  if (!target) {
+    return { ok: false, error: { code: 'map_https_required',
+      message: '动态地图需要有效 HTTPS 证书；请先配置域名或有效证书的 HTTPS IP。' } }
+  }
+  if (secureBaiduMapWindow && !secureBaiduMapWindow.isDestroyed()) {
+    if (secureBaiduMapWindow.webContents.getURL().startsWith(target.origin + '/')) {
+      secureBaiduMapWindow.show()
+      secureBaiduMapWindow.focus()
+      return { ok: true, data: { opened: true, separate_login_required: true } }
+    }
+    closeSecureBaiduMapWindow()
+  }
+  // Unique ephemeral Session. It NEVER shares Desktop/defaultSession's tokens.
+  const partition = 'xdrive-baidu-jsapi4-' + randomUUID()
+  const mapSession = session.fromPartition(partition, { cache: false })
+  mapSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  mapSession.setPermissionCheckHandler(() => false)
+  mapSession.webRequest.onBeforeRequest((details, callback) => {
+    callback({ cancel: !xDriveBaiduMapResourceAllowed(details.url, target.origin) })
+  })
+  const win = new BrowserWindow({
+    width: 1080, height: 760, minWidth: 720, minHeight: 520,
+    show: false, autoHideMenuBar: true,
+    title: 'xDrive · 地图',
+    icon: desktopRuntimeIcon(),
+    backgroundColor: desktopWindowBackground(),
+    webPreferences: {
+      partition,
+      contextIsolation: true, nodeIntegration: false,
+      sandbox: true, webSecurity: true, webviewTag: false,
+    },
+  })
+  secureBaiduMapWindow = win
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('will-attach-webview', (event) => event.preventDefault())
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!xDriveBaiduMapNavigationAllowed(url, target.origin)) event.preventDefault()
+  })
+  win.webContents.on('will-redirect', (event, url) => {
+    if (!xDriveBaiduMapNavigationAllowed(url, target.origin)) event.preventDefault()
+  })
+  win.on('closed', () => {
+    if (secureBaiduMapWindow === win) secureBaiduMapWindow = null
+    void mapSession.clearStorageData().catch(() => {})
+  })
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show() })
+  try {
+    await win.loadURL(target.url)
+    return { ok: true, data: { opened: true, separate_login_required: true } }
+  } catch {
+    if (!win.isDestroyed()) win.destroy()
+    return { ok: false, error: { code: 'map_https_unavailable',
+      message: '无法在安全 HTTPS 窗口打开 xDrive，请检查服务器及 TLS 证书。' } }
+  }
+}
+
 function createMainWindow(showOnReady = true) {
   const restoredBounds = resolveWindowBounds(
     desktopPreferences.window_bounds,
@@ -1262,6 +1345,13 @@ function notifyUpdateTransition(previous: AgentUpdateState | null, next: AgentUp
 
 function publishAgentState(next: AgentConnectionState) {
   const previous = agentState
+  if (secureBaiduMapWindow && (
+      !next.connected || !next.status?.configured ||
+      next.status.server !== previous.status?.server ||
+      next.status.username !== previous.status?.username ||
+      next.status.auth_status === '登录已过期' ||
+      next.status.auth_status === '账户已禁用'
+  )) closeSecureBaiduMapWindow()
   const changed = JSON.stringify(previous) !== JSON.stringify(next)
   if (
     previous.status &&
@@ -1974,6 +2064,13 @@ function registerIPCHandlers() {
     } catch (error) {
       return { ok: false, error: agentError(error) }
     }
+  })
+  ipcMain.handle('desktop:open-baidu-map-secure', (event) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
+      return { ok: false, error: { code: 'map_owner_denied',
+        message: '地图窗口仅允许当前 Desktop 主窗口打开。' } }
+    }
+    return openSecureBaiduMapWindow()
   })
   ipcMain.handle('desktop:open-external', async (_event, rawURL: unknown) => {
     if (typeof rawURL !== 'string') return { ok: false, error: { code: 'invalid_input', message: 'URL is required.' } }
@@ -6528,7 +6625,10 @@ function registerIPCHandlers() {
     }
     return result
   })
-  ipcMain.handle('agent:logout', () => runAgentAction(() => requireAgentClient().logout()))
+  ipcMain.handle('agent:logout', () => {
+    closeSecureBaiduMapWindow()
+    return runAgentAction(() => requireAgentClient().logout())
+  })
   ipcMain.handle('agent:change-password', async (_event, input: unknown) => {
     const value = input as Partial<{ current_password: string; new_password: string }>
     if (!value || typeof value.current_password !== 'string' || typeof value.new_password !== 'string') {
