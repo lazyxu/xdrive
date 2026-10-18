@@ -1,5 +1,13 @@
 # Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
+## NET-M5-U1 · 双入口初始显示与安装完成入口核对（2026-10-18）
+
+- 修复新部署但**尚未保存管理员期望修订**时的域名初值缺失：Docker Compose 将非密钥 `XD_DOMAIN` 作为只读部署提示传入 Server；管理员 Caddy 配置在 revision=0 时分别严格验证 `XD_DOMAIN` 和 `XD_LAN_HTTPS_IP`，正确展示 IP-only、domain-only、双入口初值。非法域名、错误 IPv4 不成为可启用的初值；域名统一为小写 ASCII。已有 PostgreSQL 管理员修订永远优先于部署提示。
+- 共享 Web/Mobile Web/PWA/Desktop 页面按**默认局域网 IP → 可选公网域名**排列独立配置开关，清楚标示“域名 HTTPS 期望”，避免域名关闭被误读成全部 HTTPS 停用。双入口都可启用，但不能同时禁用；与原后端校验保持一致。
+- 安装或升级完成后，若双入口同时启用，安装器分别输出两个 HTTPS 登录 URL（以真实配置端口为准）；原先仅打印域名时会隐藏仍可用的 LAN IP 登录方式。IP 私有 CA 需客户端独立安全信任，域名独立配置 AliDNS。此处没有明文网络登录回退。
+- 这些初值仅来自**部署声明**：未保存、未审计、也不是运行中的 Caddy 或域名/IP TLS 已验证证据。真实配置变更仍只保存期望，`apply_supported=false`、七项只读预检、安全 Host Apply/Restart、独立 Rescue 与超时回滚门禁不放宽。回归覆盖四种入口初值、畸形输入、UI 排序以及双 URL 安装完成报告。
+- 严格单工作提交、完整 AGENTS 交接、新准确 HEAD 77-job 全量 CI / Go PostgreSQL API Race / Web Desktop Linux Windows / Rootless / Final Gate + 当前 GitHub clean 后才可合并。实际物理双入口登录与宿主机重启未在本阶段执行。
+
 ## SD-UI-V1.3 · 系统依赖单页去重（2026-10-18）
 
 **前置已合并：** SD-UI-V1.2 [#2061](https://github.com/lazyxu/xdrive/pull/2061) 准确 HEAD [CI #39111381362](https://github.com/lazyxu/xdrive/actions/runs/39111381362) 共 77 job：25 成功、52 条件跳过，Final Gate 通过，旧工作分支清理完毕。Web/Mobile Web/PWA/Desktop 已使用同一个 MUI 服务详情：状态、配置、检测和历史都在同一滚动页面的折叠区块。

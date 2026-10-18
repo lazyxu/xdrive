@@ -90,16 +90,23 @@ func (s *Server) adminCaddyHTTPSConfig(c *gin.Context) {
 		fail(c, http.StatusServiceUnavailable, "Caddy HTTPS desired settings unavailable")
 		return
 	}
-	// A freshly deployed IP-only instance has no persisted admin revision.
-	// Initialize the editor from a canonical deployment declaration without
-	// reporting that the desired revision was saved, applied or TLS-verified.
+	// Initial unsaved editor hints are derived from explicitly declared,
+	// individually validated host entry identities, not running Caddy proof.
+	// Once saved, the PostgreSQL desired revision is authoritative even when
+	// the host environment differs (e.g. until a guarded restart).
 	hostLANIP := os.Getenv("XD_LAN_HTTPS_IP")
 	if !validCaddyLANIP(hostLANIP) {
 		hostLANIP = ""
 	}
-	if desired.Revision == 0 && hostLANIP != "" {
-		desired.LANEnabled = true
-		desired.LANIP = hostLANIP
+	if desired.Revision == 0 {
+		if hostDomain := os.Getenv("XD_DOMAIN"); validCaddyHTTPSDomain(hostDomain) {
+			desired.Enabled = true
+			desired.Domain = strings.ToLower(hostDomain)
+		}
+		if hostLANIP != "" {
+			desired.LANEnabled = true
+			desired.LANIP = hostLANIP
+		}
 	}
 	state := "unmanaged"
 	if desired.Revision > 0 {

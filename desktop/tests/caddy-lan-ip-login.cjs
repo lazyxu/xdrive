@@ -59,6 +59,8 @@ test('installer rejects unsafe/ambiguous private IP and never opens plaintext WA
   assert.doesNotMatch(installer, /curl -k /)
   assert.match(installer, /XD_HTTPS_BIND must permit the LAN IPv4 address/)
   assert.match(installer, /set_env XD_WEB_BIND "127\.0\.0\.1"/)
+  assert.match(installer, /fi\n# Report BOTH active access URLs\.[\s\S]*?\nif \[\[ -n "\$\(env_value XD_LAN_HTTPS_IP\)" \]\]; then/,
+    'installer should not hide the LAN HTTPS URL when a public domain is configured')
   assert.match(compose, /XD_WEB_BIND:-127\.0\.0\.1/)
   assert.doesNotMatch(compose, /XD_LAN_HTTP_BIND|XD_LAN_HTTP_PORT|XD_LAN_NO_TLS/)
 })
