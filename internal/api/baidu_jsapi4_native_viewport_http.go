@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
@@ -29,6 +30,21 @@ type baiduNativeMapViewportDTO struct {
 }
 
 const baiduNativeMapIndexScope = "explicit_opt_in_only"
+
+// A3c15: a viewport must be invalidated if its Owner identity, signed JWT
+// issued-at, database SessionVersion or map revocation epoch changed while
+// the bounded SQL count/page ran. An initial authentication alone is not a
+// response-time grant. These are current Server-owned values, never JSON.
+func baiduNativeViewportOwnerStillCurrent(
+	before auth.MapAccess, previous meta.BaiduJSAPIMapEpoch,
+	after auth.MapAccess, latest meta.BaiduJSAPIMapEpoch,
+) bool {
+	return before.UserID != 0 && before.UserID == after.UserID &&
+		before.SessionVersion != 0 && before.SessionVersion == after.SessionVersion &&
+		!before.IssuedAt.IsZero() && before.IssuedAt.Equal(after.IssuedAt) &&
+		previous.OwnerID == before.UserID && latest.OwnerID == after.UserID &&
+		previous.Epoch != 0 && previous.Epoch == latest.Epoch
+}
 
 // The client MUST send only BD-09 map geometry. There is intentionally no
 // "coordinate_space" query argument: the Server fixes the frame and rejects
@@ -69,8 +85,9 @@ func (s *Server) listBaiduNativeMapViewport(c *gin.Context) {
 	// The regular Gin authorization middleware has already identified the
 	// Owner. Independently check current JWT issued-at, DB SessionVersion
 	// and revocation map epoch, so an old login cannot reuse released maps.
-	access, _, err := s.verifiedMapBootstrapIdentity(c.Request.Context(), bearer, time.Now().UTC())
-	if err != nil || access.UserID == 0 || access.UserID != userID(c) {
+	access, initialEpoch, err := s.verifiedMapBootstrapIdentity(c.Request.Context(), bearer, time.Now().UTC())
+	if err != nil || access.UserID == 0 || access.UserID != userID(c) ||
+		initialEpoch.OwnerID != access.UserID || initialEpoch.Epoch == 0 {
 		c.JSON(http.StatusForbidden, gin.H{"error": "map_viewport_denied"})
 		return
 	}
@@ -89,6 +106,16 @@ func (s *Server) listBaiduNativeMapViewport(c *gin.Context) {
 		bounds, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "map_viewport_unavailable"})
+		return
+	}
+	// Reread the signed login and durable Owner epoch AFTER the DB query.
+	// Logout, account disablement, password/session rotation or per-Owner
+	// map revocation during the SQL work discards all page bytes. A query's
+	// prior count/index snapshot is never a later authorization decision.
+	currentOwner, currentEpoch, ownerErr := s.verifiedMapBootstrapIdentity(ctx, bearer, time.Now().UTC())
+	if ownerErr != nil || !baiduNativeViewportOwnerStillCurrent(
+		access, initialEpoch, currentOwner, currentEpoch) || ctx.Err() != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "map_viewport_denied"})
 		return
 	}
 	// Revocation/Browser AK rotation during a slow DB query must not send
