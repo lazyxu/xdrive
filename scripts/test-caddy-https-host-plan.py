@@ -708,6 +708,170 @@ class OfflineHostStageTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, src)
 
+
+    def admission_dir(self):
+        folder = self.state / "caddy-https-admissions"
+        folder.mkdir(mode=0o700, exist_ok=True)
+        return folder
+
+    def reserve_signed_intent(self, created, directory=None, pin=None):
+        directory = directory or self.state / "caddy-https-admissions"
+        script = Path(__file__).with_name("caddy-https-host-admission.py")
+        arguments = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", created["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", pin or self.review_public_pin,
+            "--admission-dir", str(directory),
+        ]
+        output = subprocess.run(arguments, capture_output=True, text=True, timeout=30)
+        for secret in ("never-print-this", "192.168.2.4", str(self.root),
+                       "test-approval-key.pem"):
+            self.assertNotIn(secret, output.stdout + output.stderr)
+        self.assertEqual(len(output.stdout.splitlines()), 1)
+        return output.returncode, json.loads(output.stdout), arguments
+
+    def test_host_admission_stamps_once_and_never_installs_gateway_config(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        before = (self.env.read_bytes(), self.compose.read_bytes(),
+                  self.review_manifest.read_bytes(), self.review_signature.read_bytes())
+        rc, response, _ = self.reserve_signed_intent(created)
+        self.assertEqual(rc, 0)
+        self.assertEqual(response["state"], "signed-intent-pending-unapplied")
+        self.assertFalse(response["apply_supported"])
+        self.assertIn("no-host-apply-or-signed-applied-receipt", response["blockers"])
+        self.assertIn("no-durable-db-revision-cas-or-apply-controller", response["blockers"])
+        self.assertEqual(response["desired_revision"], 7)
+        self.assertEqual(response["credential_revision"], 0)
+        self.assertEqual(before, (self.env.read_bytes(), self.compose.read_bytes(),
+                                  self.review_manifest.read_bytes(),
+                                  self.review_signature.read_bytes()))
+        self.assertEqual(sorted(x.name for x in directory.iterdir()),
+                         [".intent.lock", "pending.json"])
+        pending = directory / "pending.json"
+        journal = json.loads(pending.read_bytes())
+        self.assertEqual(journal["intent_sha256"],
+                         hashlib.sha256(self.review_manifest.read_bytes()).hexdigest())
+        self.assertIs(journal["apply_supported"], False)
+        self.assertEqual(journal["state"], "signed-intent-pending-unapplied")
+        self.assertEqual(stat.S_IMODE(pending.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE((directory / ".intent.lock").stat().st_mode), 0o600)
+        for private in ("never-print-this", "192.168.2.4", "test-approval-key.pem"):
+            self.assertNotIn(private, pending.read_text())
+        # A journal claim is sticky; it is never automatically released by
+        # expired timestamps or a second valid signature.
+        again, rejected, _ = self.reserve_signed_intent(created)
+        self.assertEqual((again, rejected["state"]), (2, "blocked"))
+        self.create_apply_intent(created)
+        other, denied, _ = self.reserve_signed_intent(created)
+        self.assertEqual((other, denied["state"]), (2, "blocked"))
+        self.assertEqual(journal, json.loads(pending.read_bytes()))
+
+    def test_host_admission_rejects_invalid_private_directory_and_partial_journal(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        # A missing directory must NOT be auto-created inside the live host.
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        folder = self.admission_dir()
+        folder.chmod(0o755)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        folder.chmod(0o700)
+        partial = folder / "pending.json"
+        partial.write_bytes(b"{partial-written-receipt")
+        partial.chmod(0o600)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        self.assertEqual(partial.read_bytes(), b"{partial-written-receipt")
+        partial.unlink()
+        lock = folder / ".intent.lock"
+        if lock.exists():
+            lock.unlink()
+        lock.symlink_to(self.env)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        lock.unlink()
+        folder.rename(self.state / "private-admission-original")
+        folder.symlink_to(self.state / "private-admission-original")
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        folder.unlink()
+        # Trying to use a path outside the installation /state is blocked.
+        outside = self.root / "outside-admission"
+        outside.mkdir(mode=0o700)
+        self.assertEqual(self.reserve_signed_intent(created, outside)[0], 2)
+
+    def test_host_admission_never_claims_signed_review_is_apply_request(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.admission_dir()
+        self.make_signed_review(created)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        self.create_apply_intent(created, {"nonce": "0" * 64})
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+        self.create_apply_intent(created)
+        self.assertEqual(self.reserve_signed_intent(created, pin="f" * 64)[0], 2)
+        self.assertFalse((self.state / "caddy-https-admissions" / "pending.json").exists())
+        # A change to the protected env is also a hard failure, with no
+        # automatic "repair" or live configuration mutation.
+        self.env.write_text(ENV + "UNRELATED_SAFE_VARIABLE=changed\n")
+        self.env.chmod(0o600)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+
+    def test_durable_host_admission_concurrent_calls_one_pending_only(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        argv = [
+            sys.executable,
+            str(Path(__file__).with_name("caddy-https-host-admission.py")),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", created["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", self.review_public_pin,
+            "--admission-dir", str(directory),
+        ]
+        # Genuine concurrent processes compete for the same fixed private
+        # lock and pending.json (never just serial replay).
+        children = [
+            subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            for _ in range(3)
+        ]
+        statuses = []
+        for child in children:
+            out, err = child.communicate(timeout=35)
+            self.assertNotIn(b"never-print-this", out + err)
+            self.assertNotIn(str(self.root).encode(), out + err)
+            statuses.append((child.returncode, json.loads(out)["state"]))
+        self.assertEqual(statuses.count((0, "signed-intent-pending-unapplied")), 1)
+        self.assertEqual(statuses.count((2, "blocked")), 2)
+        self.assertEqual(len(list(directory.glob("pending.json"))), 1)
+        self.assertFalse(json.loads((directory / "pending.json").read_text())["apply_supported"])
+
+    def test_admission_controller_has_no_docker_or_config_mutation_capability(self):
+        source = Path(__file__).with_name("caddy-https-host-admission.py").read_text()
+        for forbidden in (
+            "docker compose", "docker restart", "docker stop", "os.replace(",
+            "os.unlink(", "os.rename(", "subprocess.run(", "socket.",
+            "requests.", "--insecure", '"apply_supported": True',
+            "os.chmod(self.env", "open('/var/run/docker.sock'",
+        ):
+            self.assertNotIn(forbidden, source)
+
 if __name__ == "__main__":
     # NET-M5-C0: the existing server-validation entrypoint executes the real
     # isolated loopback TLS fixture without changing unrelated CI workflows.

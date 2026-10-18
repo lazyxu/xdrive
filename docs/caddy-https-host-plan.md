@@ -1,5 +1,36 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C2-B · 操作员私有的一次性签名申请占位／防重放围栏（未应用，2026-10-18）
+
+**前置：** C1-A、C1-B 的独立 Rescue 离线与已签名镜像验证已合入；C2-A [#2089](https://github.com/lazyxu/xdrive/pull/2089) 的 Ed25519 `operator-apply-intent.v1` **仅做规范签名申请只读检查**，仍处于准确 HEAD 全 CI 验收中。本 C2-B 必须独立验收，不能将 C2-A 的合法申请视为 Caddy 重启许可。
+
+本阶段增加 `scripts/caddy-https-host-admission.py`，只供**宿主机可信操作员**使用。与 C2-A 的签名申请检查相比，这个新的显式独立命令唯一的写入是安装目录旁 `state/caddy-https-admissions` 私有状态子目录中的 `.intent.lock` 和 `pending.json`，**不会修改正在使用的 `config/.env`、Compose、Caddy、Docker、系统信任或 DNS**。
+
+- 操作员先通过自己的可信通道取得 Canonical Host Plan 和 stage receipt 的独立 SHA 固定指纹，完成 C2-A 的正确签名和受监督 Rescue 准备。在宿主同一 xDrive-home 下自行预先建立 `state/caddy-https-admissions`，目录必须属于当前操作员、0700、不能是任何符号链接，`config/.env` 须仍位于同一家的 `config` 兄弟目录。
+- 每次调用在 `O_NOFOLLOW`、`O_CREAT`、0600 的**固定宿主锁文件**上以 `flock(LOCK_EX|LOCK_NB)` 获取独占锁，检查既有 `pending.json` 必须不存在；在锁内重新执行**原样 C2-A 双阶段 Host Plan/stage/签名验证**，并使用受信运维公钥 DER 指纹、签名范围、期望 HTTPS 与 AliDNS 双修订和所有 host/candidate SHA 绑定当前请求。
+- 验证通过后，在固定的同一私有目录用 `O_EXCL|O_NOFOLLOW` 创建 0600 `pending.json`，仅记录哈希过的 operation UUID / nonce、签名申请 SHA、期望修订/配置候选 SHA 和**否定**应用能力。必须 fsync 新收据及宿主状态目录；随后再次复核正式 host 文件、私有暂存候选和签名。若任意一步失败，**不自动删除**可能已经创建的 `pending.json`，阻断以后的请求，防止断电、进程异常或重放时默默再次执行。
+- 同一时刻其他进程的锁竞争，以及相同或**不同**有效申请的第二次进入，都失败关闭；时间到期**不**自动清除占位。它是「最多一个待审查申请」的持久化围栏，而不是未来 Host Apply 的持久 nonce 消费授权、已执行的受信 CAS 事务或防所有操作者手动删除的全局锁。
+- 返回固定 `state=signed-intent-pending-unapplied`、`apply_supported=false`，不回传真实 IP/域名、原始 `.env`、AliDNS 密钥、密码/Token、Caddy 本地 CA、运营者签名私钥、命令行、保密路径。历史未完成或被中断的占位只能通过**另一个独立审核的保守恢复流程**核查，不能靠自动 TTL、静默覆盖或本命令自行删除。
+- **仍缺少：** PostgreSQL 与真实宿主环境版本一致性的一次性原子 CAS、可信 Host Manager 应用 scope 独立授权、AliDNS 秘密安全交付、机器配置备份和原子替换、Caddy 有界重启、与进程无关的超时 watchdog rollback、正反双入口真实 TLS/管理员登录，以及无法伪造的已应用回执。这一工具**不得被系统依赖页面当成应用成功**，不暴露任何 Host Apply/Restart 接口，**生产能力保持 `apply_supported=false`**。
+
+示例（需操作员事先从可信渠道核对计划、签名和收据，并创建私有目录；命令**不会执行部署**）：
+
+```bash
+python3 scripts/caddy-https-host-admission.py \
+  --plan "$TRUSTED_PLAN_JSON" --env-file "$HOME/.xd/config/.env" \
+  --compose-file "$HOME/.xd/config/docker-compose.yml" \
+  --expected-plan-sha256 "$PINNED_PLAN_SHA256" \
+  --staging-dir "$HOME/.xd/state/caddy-https-staging" \
+  --expected-stage-receipt-sha256 "$PINNED_RECEIPT_SHA256" \
+  --apply-intent-manifest "$TRUSTED_SIGNED_INTENT_JSON" \
+  --apply-intent-signature "$TRUSTED_INTENT_SIGNATURE" \
+  --operator-public-key "$TRUSTED_OPERATOR_ED25519_PEM" \
+  --expected-operator-key-der-sha256 "$PINNED_OPERATOR_DER_SHA256" \
+  --admission-dir "$HOME/.xd/state/caddy-https-admissions"
+```
+
+原 `scripts/test-caddy-https-host-plan.py` 添加真实离线签名、目录权限、断电残留、重复申请以及**三个并发进程竞争同一独占锁**的回归，随原有 server-validation 运行，不改 GitHub 工作流。此阶段没有物理停机、真实独立设备 SSH 救援、实际 Caddy Host Apply 或 watchdog 演练。
+
 ## NET-M5-C2-A · 独立签名 Host Apply 请求意图只读校验（2026-10-18）
 
 **当前能力边界：** C1-A 与 C1-B 解决 operator-only 主 Caddy 维护窗口 / SSH Rescue / Ed25519 Rescue 镜像证据的分阶段关联；尚未执行生产宿主机的受监督真实停机，也没有 Host CAS、Docker 操作或 watchdog。管理员页面仍只能保存**期望修订**和只读检测，不能重启并发布虚假的已应用状态。C2-A 仅实现未来安全事务前所需的签名请求**只读校验**。
