@@ -6,6 +6,7 @@ import (
 
 	"github.com/lazyxu/xdrive/internal/client"
 	"github.com/lazyxu/xdrive/internal/localpush"
+	"github.com/lazyxu/xdrive/internal/localpushstage"
 	"github.com/lazyxu/xdrive/internal/userconfig"
 )
 
@@ -15,6 +16,19 @@ import (
 type localPushHeldOriginalOperationObservation struct {
 	native  localpush.NativeHeldCurrentOriginal
 	receipt localPushPrivatePreparedReceipt
+	cas     client.LocalPushFirstLeafPhysicalReceipt
+}
+
+// Only the owning Agent may inject a READ-ONLY physical receipt reader.
+// A CAS receipt need not belong to the currently observed operation, so
+// even a positive joint observation is never a commit or backup proof.
+type localPushHeldOriginalCASReader func(
+	context.Context, uint64, uint64, client.LocalBoundSourceProof, string, string,
+) (client.LocalPushFirstLeafPhysicalReceipt, error)
+
+type localPushHeldOriginalCASCheck struct {
+	stageID string
+	read    localPushHeldOriginalCASReader
 }
 
 // observeBoundLocalPushHeldOriginalOperation correlates a saved, MAC-bound
@@ -27,6 +41,7 @@ func observeBoundLocalPushHeldOriginalOperation(
 	sourceID, revision uint64, relativePath, snapshotSHA256, contentSHA256 string,
 	size int64, currentSession func() (userconfig.Config, error),
 	readBound localFirstDirectoryBoundReader, observe localPushPrivateObserve,
+	casChecks ...localPushHeldOriginalCASCheck,
 ) (localPushHeldOriginalOperationObservation, error) {
 	var empty localPushHeldOriginalOperationObservation
 	deny := func(err error) (localPushHeldOriginalOperationObservation, error) {
@@ -36,7 +51,9 @@ func observeBoundLocalPushHeldOriginalOperation(
 		relativePath == "" || size < 0 || size > 64<<20 ||
 		account.Server == "" || account.Username == "" ||
 		account.SessionID == "" || account.SessionInvalid ||
-		currentSession == nil || readBound == nil || observe == nil {
+		currentSession == nil || readBound == nil || observe == nil ||
+		len(casChecks) > 1 ||
+		(len(casChecks) == 1 && (casChecks[0].stageID == "" || casChecks[0].read == nil)) {
 		return deny(nil)
 	}
 	sameSession := func() bool {
@@ -125,6 +142,51 @@ func observeBoundLocalPushHeldOriginalOperation(
 			reloaded, err := loadLocalPushPreparedReceipt(configDir, scope, key)
 			if err != nil || reloaded != receipt || heldCtx.Err() != nil {
 				return errLocalPushRequestKeyUnavailable
+			}
+			if len(casChecks) == 1 {
+				check := casChecks[0]
+				hint, err := localpushstage.ReadLocalOriginalRecoveryHint(
+					heldCtx, configDir, grant, check.stageID)
+				if err != nil || !matchesLocalPushHeldOriginalCASStage(
+					hint, check.stageID, sourceID, revision, relativePath,
+					snapshotSHA256, contentSHA256, pathKey, size) {
+					return errLocalPushRequestKeyUnavailable
+				}
+				// The Server independently authenticates the SAME owning
+				// device/Root and pins actual CAS during this READ. The
+				// Agent's real original native descriptor is STILL open.
+				physical, err := check.read(heldCtx, sourceID, revision, proof,
+					check.stageID, relativePath)
+				if err != nil || !historicalPhysicalReceiptMatches(
+					physical, sourceID, revision, check.stageID) {
+					return errLocalPushRequestKeyUnavailable
+				}
+				// A CAS observation is not the operation's commit: it can
+				// be historical. Verify that the original operation is
+				// still newest/reserved AFTER the remote physical read.
+				again, err := observe(heldCtx, sourceID, revision, proof,
+					receipt.operationID, receipt.generation)
+				if err != nil || again.SourceID != sourceID ||
+					again.Revision != revision ||
+					again.OperationID != receipt.operationID ||
+					again.Generation != receipt.generation ||
+					again.State != "reserved" || !sameSession() ||
+					heldCtx.Err() != nil {
+					return errLocalPushRequestKeyUnavailable
+				}
+				latestHint, err := localpushstage.ReadLocalOriginalRecoveryHint(
+					heldCtx, configDir, grant, check.stageID)
+				if err != nil || latestHint != hint {
+					return errLocalPushRequestKeyUnavailable
+				}
+				fourth, fourthProof, err := readBound(heldCtx, sourceID)
+				if err != nil || fourthProof != proof ||
+					!validBoundFirstDirectorySource(fourth, fourthProof, sourceID) ||
+					!sameBoundFirstDirectorySource(before, fourth) ||
+					!sameSession() || heldCtx.Err() != nil {
+					return errLocalPushRequestKeyUnavailable
+				}
+				result.cas = physical
 			}
 			result.native = file
 			result.receipt = receipt
