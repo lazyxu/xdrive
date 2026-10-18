@@ -1,3 +1,79 @@
+# 2026-10-18 · Files UX 43 项最新源码/自动化交付核查（P72 已合入）
+
+> 这是位于历史验收记录顶部的**新核查快照**，不是将硬件/系统/部署环境 `NOT RUN` 改为 PASS。下方历史阶段原样保留以避免错误覆盖既有证据。
+
+**仓库和基线**：`lazyxu/xdrive` GitHub `master@48c97eeedaf787771c231bf701f3350e3b5c320f`，43 项 = F02–F04 (3) + U01–U14 (14) + M01–M10 (10) + D01–D07 (7) + P01–P09 (9)。本轮针对历史台账中的实现范围和最新合入 PR 进行复核，不重新发明 REST/Server 排序、同步文件夹、Web/Desktop 共享虚拟器或导航架构。
+
+## 新近实际交付（代码、准确 HEAD、CI 和分支清理）
+
+| 阶段 | 已验证的精准交付 | 准确 HEAD CI | 合并和分支 |
+| --- | --- | --- | --- |
+| P69 #2050 | Mobile Recent/Quick Access/菜单等到授权 counted first Range 再进入 Browse，不多重 reset | [#39110276222](https://github.com/lazyxu/xdrive/actions/runs/39110276222) | Closed + Merged；分支已清理 |
+| P70 #2055 | Gallery Memories/Cleanup/Organizer 首次索引和 Files Column 删除装饰性 300ms 圆环；保留真实加载/错误/缩略图 | [#39111690149](https://github.com/lazyxu/xdrive/actions/runs/39111690149) | Closed + Merged；分支已清理 |
+| P71 #2059 | Web/Desktop 导航树/侧栏集合不再临时插入 spinner，保留固定高度和 aria-busy | [#39110172979](https://github.com/lazyxu/xdrive/actions/runs/39110172979) | Closed + Merged；分支已清理 |
+| P72 #2063 | Quick Access、Favorites、Recent 在首批确认前不误报空；实际失败显示 Retry，保留已接受项 | [#39112374526](https://github.com/lazyxu/xdrive/actions/runs/39112374526) | Closed + Merged；分支已清理 |
+
+四条准确 HEAD 的普通 CI 各记录 **77 个 job / 25 success / 52 条件 skip / 0 failure**，single-commit 与 Final Gate 均 success。**52 条跳过不是 52 条 PASS**，也不意味着专门的硬件/100k WAN/SW 离线/真实保存测试执行完毕。此前 F02 #1766/#1911、F03 #1769/#2013/#2014、F04 #1769、U02 #2032、U03 #2038、U04 #2049、U05 #2044、U06/U09 #2036 都已正式合入，不能把历史旧台账的缺口当成未实现源代码。
+
+## 43 项逐项交付依据与独立验收边界
+
+此表中“已有实现”只表示当前仓库已存在相应代码/测试基线和相关交付；**不代表本轮对真实系统逐项复验，更不代表用户场景 PASS**。若实测发现失败，再依 frozen-baseline → one-work-commit → exact-head CI 修复，不能提前猜测一个新缺陷。
+
+| ID | 优先级 | 已有实现 / 自动化依据 | 仍缺真实环境验收 |
+| --- | --- | --- | --- |
+| F02 | P1 | Details 完整逻辑行/分组序号、Grid 逻辑集合位置；#1766/#1911 已合入 | NVDA/VoiceOver/TalkBack 实际读屏，含 100k 虚拟滚动 |
+| F03 | P1 | 共享 disabledReason 和菜单说明，#1769/#2013/#2014 已合入 | 真权限拒绝、大选择、长按/Shift+F10 读屏 |
+| F04 | P2 | 不改视觉 6/8px，扩大无形命中区域与键盘 Resize；#1769 | Windows/macOS 真鼠标、高 DPI、焦点轮廓 |
+| U01 | P1 | 授权首批 Range 后提交/取消旧请求；#1789/#1876/#1885；P69 #2050 | 弱网/权限/超时/前进后退的真实布局与请求取消 |
+| U02 | P1 | 899↔900 状态和 Chromium 回归；#2032 | 真实软键盘、输入法、弹窗/焦点/滚动锚点 |
+| U03 | P1 | 100k 逻辑选择/上限/禁用反馈回归；#2038 | 多端真实 100k 选择与操作反馈 |
+| U04 | P1 | Worker 状态/持久收据/取消测试；#2049 | 多设备客户端真实队列和完成收据 |
+| U05 | P1 | 403/409/Revision/UTF-8 255 字节真实 Gin 回归；#2044 | 目标设备实际焦点/IME/错误展示 |
+| U06 | P1 | Search → 所在目录 → Search Chromium 回归；#2036；P69 #2050 | 生产规模结果/真实浏览器返回焦点 |
+| U07 | P2 | Unicode/RTL/完整名称展示隔离；#1776 | 中文、emoji、BiDi 在目标操作系统字体下渲染 |
+| U08 | P2 | 未确认/已确认空/失败分离；#1803/#1949；P72 #2063 | 真实离线/弱网/403/超时与 PWA 冷启动 |
+| U09 | P2 | Server 顺序/分组逻辑回锚与 100k Chromium 回归；#2036 | 大量真实文件跨视图滚动和焦点 |
+| U10 | P2 | 图片/视频/RAW/Live 缩略图失败或不支持反馈；#1777 | 真实媒体、网络波动、100k 缩略图 |
+| U11 | P2 | 共享属性信息层级与 Inspector；#1940 | 实际屏幕阅读器和媒体技术元数据 |
+| U12 | P2 | 目标选择器短高 200% 浏览器回归；#1953 | 手机短横屏与实际软件键盘 |
+| U13 | P2 | 任务重试/撤销/查看持久任务入口；#1863 | 跨会话重连、关闭通知、任务收据 |
+| U14 | P2 | 快捷键、组合输入隔离与 splitter 源码/测试 | 真中日文 IME、外接键盘及右键 |
+| M01 | P1 | Files 移动端视觉适配与 52px App Frame 保留 | iOS 27 Files 实机 1:1 截图、暗色、动画及字体比较 |
+| M02 | P1 | VisualViewport 布局约束；#1864 | iOS Safari/Android Chrome 真地址栏与软键盘 |
+| M03 | P1 | 长按/滚动/拖放原手势回归；#1838 | 第二指针、系统边缘返回、实机触摸 |
+| M04 | P1 | 短窗/200% 目标选择器自动化；#1953 | 实机短横屏、200% 字体、菜单底部可见 |
+| M05 | P1 | Files 层级/历史/Viewer 返回各自处理 | OS 返回、浏览器/Installed 模式矩阵 |
+| M06 | P2 | 单标题和祖先菜单模型存在 | 深层路径、快速祖先返回的真触控 |
+| M07 | P2 | Browse/Recent/Favorites 独立滚动；#1808/#1988；P69 #2050 | 多集合实际选择、搜索和位置恢复 |
+| M08 | P2 | 分层目录上传与空目录限制说明；#1965 | iOS/Android picker 多级、空目录、取消 |
+| M09 | P2 | 真实字节 Web Share 与 16 MiB 上限模型 | 接收 App、内存/取消/文件名/下载回退 |
+| M10 | P2 | 共享输入回调与键鼠触组合支持 | iPad 鼠标右键、拖放、外接键盘 |
+| D01 | P1 | Agent capability/busy 分类和禁用解释；#1969 | 旧 Agent/不可用/需升级/失败的实际提示 |
+| D02 | P1 | CfAPI 本地可用性适配器 | Windows 不同设备在线/固定/水合/错误的实际状态 |
+| D03 | P1 | Desktop 双击 Shell；Space Quick Look | 系统打开失败、焦点和恢复 |
+| D04 | P2 | 原生拖入/拖出实现和源码测试 | Explorer/Finder 跨窗口、未水合、权限与取消 |
+| D05 | P2 | 共享标签状态与历史 | 实际 Electron 窗口恢复、拖动、快捷键 |
+| D06 | P2 | DPI/尺寸边界与分隔栏持久化 | Windows 125/150/200% 和短窗口 |
+| D07 | P2 | Agent session/重连/真实传输状态适配和回归 | 实际断线后进度及提交字节一致性 |
+| P01 | P1 | 安装/文件和 Viewer 深链接入口与自动化 | iOS 27 系统图标冷启动、重新登录 |
+| P02 | P1 | Chrome tab/standalone 区分 | 真实 Android Installed 选择/分享/下载 |
+| P03 | P1 | 分块上传、重选续传合同和自动化 | 锁屏、系统回收、重选原文件的真实 SHA-256 |
+| P04 | P1 | OPFS/Browser/Gin 下载流程自动化 | 真实系统保存 1–4 GiB 字节长度与 SHA-256 |
+| P05 | P1 | SW waiting、多窗口 Chromium 自动化 | 真实 Installed 上传/Viewer/编辑期间更新保护 |
+| P06 | P1 | 公开离线与私有响应不得入公共 CacheStorage 的合同 | 真实 OS SW CacheStorage 跨账号/退出审计 |
+| P07 | P2 | 只对安全 GET 有界重试，差异化错误显示 | 部署实例实际断网、TLS、401/403/429/503、取消 |
+| P08 | P2 | 系统分享入口、拒绝与回退模型 | iOS/Android 真实接收 App、权限/取消 |
+| P09 | P2 | 持久任务/文件入口和恢复提示模型 | Installed App 图标冷启与后台任务状态 |
+
+## 明确结论和下一阶段
+
+1. **代码交付结论：** 43 项列明的既有实现、已确认的 F02/F03/F04 与 U 系列后续修复、以及本轮实际发现的 P69–P72 缺陷，均已有代码和/或回归依据，P69–P72 全部合入且直接相关 PR/工作分支已清空。在本次只读核查范围内，没有另一项已证实但尚未提交的 Files UX 源码修复。
+2. **验收结论不是“全部通过”：** 余项不只限于手持手机，还包括**真实部署实例的 HTTPS/权限/慢网/100k 内容行为、Windows CfAPI/Finder/Explorer/Electron/IME、NVDA/VoiceOver/TalkBack、1–4 GiB 操作系统实际落盘 SHA-256、安装态 SW 跨账号隐私以及 iOS 27 Files 1:1 比对**。有些可在专用真实环境端到端测试，不能统称“仅真机”；未取得原始证据则标记 `NOT RUN`。
+3. **发布门槛：** [`docs/pwa-s5-acceptance.md`](pwa-s5-acceptance.md) 的七平台物理矩阵仍全部 `NOT RUN`，S5 Release `NO-GO`。UI/组件级 Node、Desktop、Chromium 和 Go PostgreSQL CI 不能被误列为系统级验收结果。
+4. **架构不变：** xDrive 全屏 52px 全局标题栏、固定 900px 断点、Web/Mobile Web/PWA/Desktop 共用服务端请求与共享组件，Server 授权/排序/虚拟化、持久任务与真正缩略图/上传下载进度全部保留。不得为掩盖短时状态而删除真实的网络/任务反馈。
+
+---
+
 # xDrive Files UX acceptance audit · 2026-10-16
 
 ## 2026-10-18 · P59 合入后的 43 项验收续查（当前证据）
