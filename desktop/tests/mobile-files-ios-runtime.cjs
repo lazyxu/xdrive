@@ -3655,7 +3655,8 @@ test('mounted Mobile Browse Home keeps organization rows stable through quick an
     assert.ok(before.includes('整理'))
     assert.equal(ringCount(), 0)
     await h.update({ organizationLoading: true })
-    assert.equal(slot().props['aria-busy'], true)
+    assert.equal(find(h.view, 'data-xdrive-mobile-files-home', true).props['aria-busy'], true)
+    assert.equal(slot().props['aria-hidden'], 'true')
     assert.equal(ringCount(), 0, 'first pending frame is quiet')
     assert.equal(oldLabels(), before, 'accepted organized entries remain mounted')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
@@ -3667,7 +3668,7 @@ test('mounted Mobile Browse Home keeps organization rows stable through quick an
     await h.update({ organizationLoading: true })
     assert.equal(ringCount(), 0)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
-    assert.equal(ringCount(), 1, 'real sustained wait is visible inside the fixed slot')
+    assert.equal(ringCount(), 0, 'even a sustained organization refresh never inserts an intermediate ring')
     assert.equal(oldLabels(), before, 'the same real organization button stays in place')
     await h.update({ organizationLoading: false })
     assert.equal(ringCount(), 0, 'status disappears without removing or shifting the slot')
@@ -3975,7 +3976,7 @@ test('P52 Mobile inline folder disclosure keeps chevron and 44px hit target thro
     await h.update({ inlineBranches: [pendingBranch] })
     assert.equal(rings(), 0)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 335)) })
-    assert.equal(rings(), 1, 'a genuinely sustained child Range shows small overlay feedback')
+    assert.equal(rings(), 0, 'even a sustained child Range keeps the disclosure visually quiet')
     assert.equal(chevrons(), 1, 'the same expanded chevron remains while busy')
     assert.equal(arrow().props['aria-busy'], true)
     let stopped = 0
@@ -4008,13 +4009,13 @@ test('P53 mounted Mobile Recent/Favorites idle-unverified first read never spins
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 345)) })
     assert.equal(ringCount(), 0, 'an idle unverified collection must remain quiet even after 300ms')
     await h.update({ recentLoading: true })
-    assert.equal(row().props.role, 'status')
+    assert.equal(row().props['aria-hidden'], 'true')
     assert.equal(find(h.view, 'data-mobile-files-collection-state', true).props['aria-busy'], true)
     assert.equal(ringCount(), 0)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
     assert.equal(ringCount(), 0, 'fast current request never flashes its spinner')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 325)) })
-    assert.equal(ringCount(), 1, 'real sustained 360ms Recent request has genuine progress')
+    assert.equal(ringCount(), 0, 'even sustained Recent requests remain silent inside the 180px fixed slot')
     await h.update({ recentLoading: false })
     assert.equal(ringCount(), 0, 'a settled request removes only decorative progress')
     await h.update({ recentReadState: 'error' })
@@ -4026,7 +4027,7 @@ test('P53 mounted Mobile Recent/Favorites idle-unverified first read never spins
     assert.equal(ringCount(), 0, 'idle unverified Favorites must not spin either')
     await h.update({ favoritesLoading: true })
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 330)) })
-    assert.equal(ringCount(), 1, 'real sustained Favorites request is shown after 300ms')
+    assert.equal(ringCount(), 0, 'even sustained Favorites requests remain visually silent while busy')
     await h.update({ favoritesLoading: false })
     assert.equal(ringCount(), 0)
     assert.equal(count(h.view, 'data-xdrive-mobile-files-collection'), 1)
@@ -4407,5 +4408,38 @@ test('P69: a superseded rejected directory Promise does not show an old-error to
     recentItems: [{ id: 42, kind: 'dir', name: '旧请求' }],
     onOpenRecent: () => activation,
     onOpenError: error => errors.push(error.message),
+  } })
+})
+
+
+test('P74 Mobile Recent/Favorites keep an honest 180px first-read slot with no 300ms status ring', async () => {
+  await withView(async h => {
+    const firstRead = () => find(h.view, 'data-mobile-files-collection-first-read', true)
+    const panel = () => find(h.view, 'data-mobile-files-collection-state', true)
+    const rings = () => panel().findAll(n => n.type === 'CircularProgress').length
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'recent').props.onClick() })
+    assert.equal(panel().props.sx.minHeight, 180)
+    assert.equal(panel().props['aria-busy'], true)
+    assert.equal(firstRead().props['aria-hidden'], 'true')
+    assert.equal(rings(), 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 365)) })
+    assert.equal(panel().props.sx.minHeight, 180)
+    assert.equal(rings(), 0, 'a sustained real Owner request must not create a navigational spinner')
+    await h.update({ recentLoading: false, recentReadState: 'ready' })
+    assert.equal(count(h.view, 'data-mobile-files-collection-first-read'), 0)
+    assert.equal(panel().props.sx.minHeight, 180)
+    assert.ok(textOf(panel().props.children).includes('暂无最近打开的项目'))
+    await act(async () => { find(h.view, 'data-mobile-files-section', 'favorites').props.onClick() })
+    assert.equal(panel().props['aria-busy'], true)
+    assert.equal(firstRead().props['aria-hidden'], 'true')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 365)) })
+    assert.equal(panel().props.sx.minHeight, 180)
+    assert.equal(rings(), 0, 'Favorites also has no intermediate timer-inserted spinner')
+    await h.update({ favoritesLoading: false, favoritesReadState: 'error' })
+    assert.equal(count(h.view, 'data-mobile-files-collection-error'), 1)
+    assert.equal(panel().props.sx.minHeight, 180)
+  }, { props: {
+    recentItems: [], favorites: [], recentLoading: true, favoritesLoading: true,
+    recentReadState: 'unverified', favoritesReadState: 'unverified',
   } })
 })

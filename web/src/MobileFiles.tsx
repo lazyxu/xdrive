@@ -58,7 +58,6 @@ import type {
   XDriveFileExplorerExternalDropPayload,
 } from '@xdrive/ui/mui'
 import { useXDrivePointerDrag } from '../../ui/shared/src/mui/usePointerDrag'
-import { useXDriveDeferredPendingLoading } from '../../ui/shared/src/mui/useDeferredLoading'
 import { xDriveFileExplorerMenuDisabledReason, xDriveFileExplorerMenuReasonLabel } from '../../ui/shared/src/mui/FileExplorerMenuReasons'
 import {
   mobileFilesDecodeState, mobileFilesEncodeState, mobileFilesIsMoved, mobileFilesWindow,
@@ -335,25 +334,22 @@ function isNativeTouchContext(event: MouseEvent | undefined) {
   return native.pointerType === 'touch' || native.sourceCapabilities?.firesTouchEvents === true
 }
 
-// An inline child Range is real network work, but a brief GET must not replace
-// the disclosure chevron or shift the native-like 44px leading touch target.
-// Keep this mounted per virtual row rather than calling a Hook from renderEntry.
-function MobileInlineDisclosureProgress({ pending }: { pending: boolean }) {
-  const show = useXDriveDeferredPendingLoading(pending)
+// A child directory expansion retains the 44px chevron and fixed overlay
+// footprint without inserting a transient ring. The real paged Server read,
+// abort-on-collapse and error/retry remain owned by the shared inline store.
+function MobileInlineDisclosureProgress() {
   return (
     <Box component="span" data-mobile-files-folder-disclosure-progress aria-hidden="true"
       sx={{ position: 'absolute', right: 3, bottom: 3, width: 14, height: 14,
-        display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
-      {show ? <CircularProgress size={12} /> : null}
-    </Box>
+        display: 'grid', placeItems: 'center', pointerEvents: 'none' }} />
   )
 }
 
 export default function MobileFiles(props: Props) {
   const storageKey = 'xdrive.mobile.files.v1:' + props.lifecycleKey
-  // Browse Home keeps its rows mounted through organization refreshes.
-  // Only visible feedback waits; the Owner/Server request is never delayed.
-  const showOrganizationLoading = useXDriveDeferredPendingLoading(Boolean(props.organizationLoading))
+  // Browse Home keeps its real rows mounted through organization refreshes.
+  // The original Owner/Server GET runs immediately; decorative progress never
+  // appears, even for a longer wait. Real error/retry remains in the home.
   // The URL describes a pending intent. In a responsive remount, use it for
   // initial scroll only after the shared controller commits its real crumbs.
   // Until then the last verified folder and scroll position still own the UI.
@@ -662,8 +658,6 @@ export default function MobileFiles(props: Props) {
   const collectionFirstRead = section !== 'browse' && sectionItems.length === 0 &&
     (collectionReadState === 'unverified' ||
       (collectionReadState === 'error' && collectionLoading))
-  const showRecentFirstRead = useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead && collectionLoading)
-  const showFavoriteFirstRead = useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead && collectionLoading)
   const sortLabel = ({ name: '名称', updated: '修改日期', type: '类型', size: '大小' })[props.sort.key]
   const groupLabel = props.grouping?.groupBy === 'type' ? '类型' :
     props.grouping?.groupBy === 'modified' ? '修改日期' :
@@ -1960,7 +1954,7 @@ export default function MobileFiles(props: Props) {
                 color: inlineBranch?.error ? 'error.main' : IOS_FILES_MOBILE_BLUE }}>
               <ArrowBackIosNewRoundedIcon sx={{ fontSize: 15,
                 transform: inlineBranch ? 'rotate(90deg)' : 'rotate(180deg)' }}/>
-              <MobileInlineDisclosureProgress pending={Boolean(inlineBranch?.loading)} />
+              <MobileInlineDisclosureProgress />
             </IconButton>
           ) : <Box data-mobile-files-leading-spacer aria-hidden="true"
               sx={{ width: MIN_TOUCH, height: MIN_TOUCH, flexShrink: 0 }} />
@@ -2437,17 +2431,17 @@ export default function MobileFiles(props: Props) {
             ) : null}
           </Box>
           {section === 'browse' && !showDirectory ? (
-            <Box data-xdrive-mobile-files-home sx={{ position: 'relative' }}>
+            <Box data-xdrive-mobile-files-home
+              aria-busy={props.organizationLoading || undefined}
+              sx={{ position: 'relative' }}>
               <Typography variant="overline" sx={{ px: 2, color: 'text.secondary',
                 display: 'block', pt: 1.5, pb: 0.5 }}>位置</Typography>
               <Box
                 data-mobile-files-organization-loading
-                aria-busy={props.organizationLoading || undefined}
+                aria-hidden="true"
                 sx={{ position: 'absolute', top: 12, right: 16, width: 16, height: 16,
                   display: 'grid', placeItems: 'center', pointerEvents: 'none' }}
-              >
-                {showOrganizationLoading ? <CircularProgress size={14} aria-label="正在读取智能文件夹和标签" /> : null}
-              </Box>
+              />
               <Box data-mobile-files-group="locations" sx={{ mx: 2, borderRadius: '13px',
                 overflow: 'hidden', bgcolor: 'background.paper' }}>
               {mobileRow({ id: -1, name: '云端文件', kind: 'dir' }, () => {
@@ -2627,11 +2621,7 @@ export default function MobileFiles(props: Props) {
                   sx={{ minHeight: 180, px: 2, py: 2, display: 'grid', placeItems: 'center' }}
                 >
                   {collectionFirstRead ? (
-                    <Box data-mobile-files-collection-first-read role="status">
-                      {(section === 'recent' ? showRecentFirstRead : showFavoriteFirstRead)
-                        ? <CircularProgress size={24} aria-label={section === 'recent' ? '正在读取最近项目' : '正在读取收藏'} />
-                        : null}
-                    </Box>
+                    <Box data-mobile-files-collection-first-read aria-hidden="true" />
                   ) : collectionReadState === 'error' && !collectionLoading ? (
                     <Stack data-mobile-files-collection-error role="alert" alignItems="center" spacing={1}>
                       <Typography variant="body2" color="error.main">

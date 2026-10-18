@@ -15,23 +15,25 @@ test('real compact Browse Home never inserts an ephemeral organization loading r
   const end = mobile.indexOf('data-mobile-files-arrangement-status', start)
   assert.ok(start >= 0 && end > start)
   const home = mobile.slice(start, end)
-  assert.ok(home.includes("data-xdrive-mobile-files-home sx={{ position: 'relative' }}"))
+  assert.ok(home.includes('data-xdrive-mobile-files-home'))
+  assert.ok(home.includes('aria-busy={props.organizationLoading || undefined}'))
   assert.ok(home.includes('data-mobile-files-organization-loading'))
   assert.equal((mobile.match(/data-mobile-files-organization-loading/g) || []).length, 1,
     'one persistent status slot instead of a conditional extra row')
   assert.ok(home.includes("position: 'absolute', top: 12, right: 16, width: 16, height: 16"))
   assert.ok(home.includes("pointerEvents: 'none'"))
-  assert.ok(home.includes('showOrganizationLoading ? <CircularProgress size={14}'))
-  assert.ok(home.includes('aria-busy={props.organizationLoading || undefined}'))
+  assert.ok(home.includes('data-mobile-files-organization-loading'))
+  assert.ok(home.includes('aria-hidden="true"'))
+  assert.equal(home.includes('showOrganizationLoading'), false)
   assert.equal(home.includes('正在加载智能文件夹和标签…'), false,
     'never shift the Browse Home while a short API read is pending')
 })
 
-test('real organization REST is immediate, visual indication delayed, errors truthful', () => {
-  assert.ok(mobile.includes("useXDriveDeferredPendingLoading(Boolean(props.organizationLoading))"))
-  assert.ok(mobile.includes("import { useXDriveDeferredPendingLoading } from '../../ui/shared/src/mui/useDeferredLoading'"))
-  assert.ok(sharedHook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'))
-  assert.ok(sharedHook.includes('return pending && visible'))
+test('real organization REST is immediate; never mount visual spinner; true errors remain actionable', () => {
+  assert.equal(mobile.includes('showOrganizationLoading'), false)
+  assert.equal(mobile.includes('useXDriveDeferredPendingLoading'), false)
+  assert.ok(sharedHook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'),
+    'other genuinely visible progress indicators retain their own feedback contract')
   assert.ok(mobile.includes('!props.organizationLoading && props.organizationError ? ('))
   for (const text of [
     'data-mobile-files-organization-error',

@@ -14,11 +14,12 @@ test('unverified collection read receipts never pretend an idle operation is pen
   assert.ok(mobile.includes("collectionReadState === 'unverified'"))
   assert.ok(mobile.includes("collectionReadState === 'error' && collectionLoading"))
   for(const area of ['recent','favorites']){
-    const want="useXDriveDeferredPendingLoading(section === '"+area+"' && collectionFirstRead && collectionLoading)"
-    assert.ok(mobile.includes(want), want)
-    assert.ok(existing.includes(want), 'original shared source contract must match actual hook')
-    assert.equal(mobile.includes("useXDriveDeferredPendingLoading(section === '"+area+"' && collectionFirstRead)"),false)
+    const old="useXDriveDeferredPendingLoading(section === '"+area+"' && collectionFirstRead && collectionLoading)"
+    assert.equal(mobile.includes(old), false, 'a real index read must not add a visual timer ring')
   }
+  assert.ok(mobile.includes('<Box data-mobile-files-collection-first-read aria-hidden="true" />'))
+  assert.ok(existing.includes('data-mobile-files-collection-first-read'),
+    'original source-contract test agrees that the honest pending slot remains mounted')
   assert.ok(mobile.includes("aria-busy={collectionFirstRead && collectionLoading || undefined}"))
   assert.ok(mobile.includes('data-mobile-files-collection-first-read'))
   assert.ok(mobile.includes('data-mobile-files-collection-error'))
