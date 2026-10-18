@@ -96,3 +96,30 @@ test('A3c17 Desktop segregates file Renderer and HTTPS Map with no token IPC', (
   assert.match(policy, /reviewedJSAPI4ChildResourceCount = 0/)
   assert.match(policy, /return ErrGateClosed/)
 })
+
+test('A3c21 isolated HTTPS Electron map forbids executable and unbounded data URLs', () => {
+  const origin = 'https://gallery.example'
+  for (const accepted of [
+    'data:image/png;base64,AA==',
+    'data:image/png;base64,sAAA',
+    'data:image/jpeg;base64,AA==',
+    'data:image/webp;base64,AA==',
+    'data:image/gif;base64,AA==',
+  ]) assert.equal(resource(accepted, origin), true, accepted)
+  for (const denied of [
+    'data:text/html,<script>alert(1)</script>',
+    'data:text/javascript,alert(1)',
+    'data:application/javascript;base64,YWxlcnQoMSk=',
+    'data:application/wasm;base64,AA==',
+    'data:image/svg+xml;base64,PHN2Zz48c2NyaXB0Lz48L3N2Zz4=',
+    'data:image/png,AA==',
+    'data:image/png;charset=UTF-8;base64,AA==',
+    'data:image/png;base64,',
+    'data:image/png;base64,!!!',
+    'data:image/png;base64,AA==?script=1',
+    'data:image/png;base64,AA==#fragment',
+    'data:image/png;base64,%41A==',
+    'data:image/png;base64,' + 'A'.repeat(1_398_104),
+    'data:image/png;base64,' + 'A'.repeat(1_398_108),
+  ]) assert.equal(resource(denied, origin), false, denied.slice(0, 120))
+})
