@@ -1184,6 +1184,24 @@ export type AgentAdminGeoNamesReloadResult = {
   checked_at: string
 }
 
+export type AgentAdminBaiduJSAPIConfig = {
+  provider: 'baidu-jsapi-4.0'
+  desired_enabled: boolean
+  configured: boolean
+  editable: boolean
+  revision: number
+  updated_at?: string
+  runtime_enabled: boolean
+  activation_state: 'blocked_pending_licence_and_proxy' | 'authorized_signed_release'
+  requires_restart: boolean
+}
+export type AgentAdminBaiduJSAPIUpdate = {
+  desired_enabled: boolean
+  revision: number
+  browser_ak?: string
+  clear_ak?: boolean
+}
+
 export type AgentAdminBaiduMapConfig = {
   enabled: boolean
   configured: boolean
@@ -3878,6 +3896,12 @@ export class AgentIPCClient {
     return this.request<AgentAdminGeoNamesReloadResult>(
       'POST', '/v1/cloud/admin-geonames/reload', { expected_version: expectedVersion }, 120_000,
     )
+  }
+  cloudAdminBaiduJSAPIConfig() {
+    return this.request<AgentAdminBaiduJSAPIConfig>('GET', '/v1/cloud/admin-baidu-jsapi')
+  }
+  cloudSetAdminBaiduJSAPIConfig(input: AgentAdminBaiduJSAPIUpdate) {
+    return this.request<AgentAdminBaiduJSAPIConfig>('PUT', '/v1/cloud/admin-baidu-jsapi', input)
   }
   cloudAdminBaiduMapConfig() {
     return this.request<AgentAdminBaiduMapConfig>('GET', '/v1/cloud/admin-baidu-map')

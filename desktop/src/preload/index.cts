@@ -785,6 +785,10 @@ const agent = Object.freeze({
     ipcRenderer.invoke('agent:cloud-rollback-admin-geonames', input),
   cloudVerifyAdminBaiduMap: (revision: number) => ipcRenderer.invoke('agent:cloud-verify-admin-baidu-map', revision),
   cloudRevealAdminBaiduMapAK: (revision: number) => ipcRenderer.invoke('agent:cloud-reveal-admin-baidu-map-ak', revision),
+  cloudAdminBaiduJSAPIConfig: () => ipcRenderer.invoke('agent:cloud-admin-baidu-jsapi'),
+  cloudSetAdminBaiduJSAPIConfig: (input: {
+    desired_enabled: boolean; revision: number; browser_ak?: string; clear_ak?: boolean
+  }) => ipcRenderer.invoke('agent:cloud-set-admin-baidu-jsapi', input),
   cloudSetAdminBaiduMapConfig: (input: { enabled: boolean; revision: number; ak?: string; clear_ak?: boolean }) =>
     ipcRenderer.invoke('agent:cloud-set-admin-baidu-map', input),
   cloudBackgroundTaskActiveSummary: () =>

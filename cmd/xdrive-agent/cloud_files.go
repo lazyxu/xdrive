@@ -906,6 +906,24 @@ func (c *agentController) CloudSetAdminBaiduMapConfig(ctx context.Context, input
 	return cli.UpdateAdminBaiduMapConfig(ctx, input)
 }
 
+// The Agent forwards encrypted Browser AK intent to the same authenticated
+// Server admin API used by Web. No plaintext AK is retained in a response.
+func (c *agentController) CloudAdminBaiduJSAPIConfig(ctx context.Context) (client.AdminBaiduJSAPIConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduJSAPIConfig{}, err
+	}
+	return cli.AdminBaiduJSAPIConfig(ctx)
+}
+
+func (c *agentController) CloudSetAdminBaiduJSAPIConfig(ctx context.Context, input client.AdminBaiduJSAPIUpdate) (client.AdminBaiduJSAPIConfig, error) {
+	cli, _, err := c.cloudClient()
+	if err != nil {
+		return client.AdminBaiduJSAPIConfig{}, err
+	}
+	return cli.UpdateAdminBaiduJSAPIConfig(ctx, input)
+}
+
 func (c *agentController) CloudAdminServices(ctx context.Context) (client.ServiceDependenciesSnapshot, error) {
 	cli, _, err := c.cloudClient()
 	if err != nil {

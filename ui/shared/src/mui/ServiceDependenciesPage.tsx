@@ -54,6 +54,7 @@ import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 import { XDriveStatusAlert } from './StatusAlert'
 import { XDriveConfirmDialog } from './ConfirmDialog'
 import { XDriveStoredCredentialField } from './SourceCredentialFields'
+import { XDriveBaiduJSAPIDesiredPanel } from './BaiduJSAPIDesiredPanel'
 import { XDriveSourceWorkerConfigPanel } from './SourceWorkerConfigPanel'
 import { XDrivePostgresPoolConfigPanel, type XDrivePostgresPoolPort } from './PostgresPoolConfigPanel'
 import { XDriveMediaWorkerConfigPanel, type XDriveMediaWorkerPort } from './MediaWorkerConfigPanel'
@@ -72,6 +73,8 @@ export type XDriveServiceDependenciesPort = XDrivePostgresPoolPort & XDriveMedia
   saveBaiduMapConfig?: (input: XDriveBaiduMapAdminUpdate) => Promise<XDriveBaiduMapAdminConfig>
   revealBaiduMapAK?: (revision: number) => Promise<XDriveBaiduMapAKReveal>
   verifyBaiduMap?: (revision: number) => Promise<XDriveBaiduMapVerification>
+  loadBaiduJSAPIConfig?: () => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
+  saveBaiduJSAPIConfig?: (input: import('../service-dependencies').XDriveBaiduJSAPIUpdate) => Promise<import('../service-dependencies').XDriveBaiduJSAPIConfig>
   loadPhotoAutoConfig?: () => Promise<XDrivePhotoAutoConfig>
   savePhotoAutoConfig?: (input: XDrivePhotoAutoUpdate) => Promise<XDrivePhotoAutoConfig>
   loadPhotoAutoRevisions?: () => Promise<XDrivePhotoAutoRevisionPage>
@@ -492,6 +495,7 @@ export function XDriveServiceDependenciesPage({
   const [childDirty, setChildDirty] = useState(false)
   const [caddyHTTPSDirty, setCaddyHTTPSDirty] = useState(false)
   const [caddyAliDirty, setCaddyAliDirty] = useState(false)
+  const [baiduJSAPIDirty, setBaiduJSAPIDirty] = useState(false)
   const unsavedRef = useRef(false)
   const resetKeyRef = useRef(navigationResetKey)
   const externalLocationKey = xDriveSystemDependenciesLocationKey(location ?? {})
@@ -559,7 +563,8 @@ export function XDriveServiceDependenciesPage({
         (kind) => photoPolicy.kinds![kind.key] !== photoKindsDraft[kind.key],
       )))
   const hasUnsavedEdits = Boolean(
-    childDirty || caddyHTTPSDirty || caddyAliDirty || dirtyBaidu || dirtyGeoNames || dirtyPhoto,
+    childDirty || caddyHTTPSDirty || caddyAliDirty || baiduJSAPIDirty ||
+    dirtyBaidu || dirtyGeoNames || dirtyPhoto,
   )
   unsavedRef.current = hasUnsavedEdits
   useEffect(() => {
@@ -1985,6 +1990,10 @@ export function XDriveServiceDependenciesPage({
                     onConfirm={() => { void applyBaiduMap(true) }}
                   />
                 </Paper>
+              )}
+              {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
+                <XDriveBaiduJSAPIDesiredPanel source={source} mode={currentTab}
+                  onDirtyChange={setBaiduJSAPIDirty} />
               )}
               {selectedPage === 'geonames' && currentTab === 'verify' && (
                 <Stack spacing={1.5} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>

@@ -1176,6 +1176,9 @@ function FileManager({
     savePhotoAutoConfig: (input: XDrivePhotoAutoUpdate) => api.adminSavePhotoAutoConfig(input),
     loadPhotoAutoRevisions: () => api.adminPhotoAutoRevisions(),
     rollbackPhotoAuto: (input: XDrivePhotoAutoRollbackInput) => api.adminRollbackPhotoAuto(input),
+    loadBaiduJSAPIConfig: () => api.adminBaiduJSAPIConfig(),
+    saveBaiduJSAPIConfig: (input: import('../../ui/shared/src').XDriveBaiduJSAPIUpdate) =>
+      api.adminSaveBaiduJSAPIConfig(input),
     loadBaiduMapConfig: () => api.adminBaiduMapConfig(),
     saveBaiduMapConfig: (input: XDriveBaiduMapAdminUpdate) => api.adminSaveBaiduMapConfig(input),
     revealBaiduMapAK: (revision: number) => api.adminRevealBaiduMapAK(revision),

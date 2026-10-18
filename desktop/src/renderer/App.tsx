@@ -1928,6 +1928,16 @@ export default function App({
       if (!result.ok) throw new Error(result.error.message)
       return result.data
     },
+    loadBaiduJSAPIConfig: async () => {
+      const result = await window.xdriveDesktop.agent.cloudAdminBaiduJSAPIConfig()
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
+    saveBaiduJSAPIConfig: async (input: import('../../../ui/shared/src').XDriveBaiduJSAPIUpdate) => {
+      const result = await window.xdriveDesktop.agent.cloudSetAdminBaiduJSAPIConfig(input)
+      if (!result.ok) throw new Error(result.error.message)
+      return result.data
+    },
     loadBaiduMapConfig: async () => {
       const result = await window.xdriveDesktop.agent.cloudAdminBaiduMapConfig()
       if (!result.ok) throw new Error(result.error.message)

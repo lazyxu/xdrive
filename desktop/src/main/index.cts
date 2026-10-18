@@ -89,6 +89,8 @@ import {
   type AgentAdminBaiduMapAKReveal,
   type AgentAdminBaiduMapVerification,
   type AgentAdminBaiduMapConfig,
+  type AgentAdminBaiduJSAPIConfig,
+  type AgentAdminBaiduJSAPIUpdate,
   type AgentAdminCaddyHTTPSConfig,
   type AgentAdminCaddyHTTPSUpdate,
   type AgentAdminCaddyHTTPSRevisionPage,
@@ -5499,6 +5501,33 @@ function registerIPCHandlers() {
       revision: input.revision,
       ...(input.ak ? { ak: input.ak } : {}),
       ...(input.clear_ak === true ? { clear_ak: true } : {}),
+    })
+  }, false))
+  ipcMain.handle('agent:cloud-admin-baidu-jsapi', () => runAgentAction<AgentAdminBaiduJSAPIConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    return requireAgentClient().cloudAdminBaiduJSAPIConfig()
+  }, false))
+  ipcMain.handle('agent:cloud-set-admin-baidu-jsapi', (_event, data: unknown) => runAgentAction<AgentAdminBaiduJSAPIConfig>(async () => {
+    const hello = await requireAgentLifecycle().ensureRunning()
+    requireAgentCapability(hello, 'admin-services')
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Browser AK settings.')
+    }
+    const input = data as Partial<AgentAdminBaiduJSAPIUpdate>
+    if (typeof input.desired_enabled !== 'boolean' ||
+        typeof input.revision !== 'number' || !Number.isSafeInteger(input.revision) || input.revision < 0 ||
+        (input.browser_ak !== undefined && (typeof input.browser_ak !== 'string' || input.browser_ak.length > 256 || !/^[!-~]*$/.test(input.browser_ak))) ||
+        (input.clear_ak !== undefined && typeof input.clear_ak !== 'boolean') ||
+        (input.clear_ak === true && (input.desired_enabled || Boolean(input.browser_ak))) ||
+        Object.keys(data).some(k => !['desired_enabled', 'revision', 'browser_ak', 'clear_ak'].includes(k))) {
+      throw new AgentIPCError('invalid_input', 0, 'Invalid Browser AK settings.')
+    }
+    return requireAgentClient().cloudSetAdminBaiduJSAPIConfig({
+      desired_enabled: input.desired_enabled,
+      revision: input.revision,
+      ...(input.browser_ak ? { browser_ak: input.browser_ak } : {}),
+      ...(input.clear_ak ? { clear_ak: true } : {}),
     })
   }, false))
   ipcMain.handle('agent:cloud-admin-services', () => runAgentAction<AgentServiceDependenciesSnapshot>(async () => {

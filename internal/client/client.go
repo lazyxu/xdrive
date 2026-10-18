@@ -1039,6 +1039,39 @@ func (c *Client) UpdateAdminBaiduMapConfig(ctx context.Context, input AdminBaidu
 	return result, err
 }
 
+// AdminBaiduJSAPIConfig is non-secret operator intent, not runtime entitlement.
+// Browser AK never appears in the GET or PUT response.
+type AdminBaiduJSAPIConfig struct {
+	Provider        string     `json:"provider"`
+	DesiredEnabled  bool       `json:"desired_enabled"`
+	Configured      bool       `json:"configured"`
+	Editable        bool       `json:"editable"`
+	Revision        uint64     `json:"revision"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
+	RuntimeEnabled  bool       `json:"runtime_enabled"`
+	ActivationState string     `json:"activation_state"`
+	RequiresRestart bool       `json:"requires_restart"`
+}
+
+type AdminBaiduJSAPIUpdate struct {
+	DesiredEnabled bool   `json:"desired_enabled"`
+	Revision       uint64 `json:"revision"`
+	BrowserAK      string `json:"browser_ak,omitempty"`
+	ClearAK        bool   `json:"clear_ak,omitempty"`
+}
+
+func (c *Client) AdminBaiduJSAPIConfig(ctx context.Context) (AdminBaiduJSAPIConfig, error) {
+	var out AdminBaiduJSAPIConfig
+	err := c.json(ctx, http.MethodGet, "/api/v1/admin/services/baidu-jsapi", nil, &out)
+	return out, err
+}
+
+func (c *Client) UpdateAdminBaiduJSAPIConfig(ctx context.Context, input AdminBaiduJSAPIUpdate) (AdminBaiduJSAPIConfig, error) {
+	var out AdminBaiduJSAPIConfig
+	err := c.json(ctx, http.MethodPut, "/api/v1/admin/services/baidu-jsapi", input, &out)
+	return out, err
+}
+
 type ServiceDependenciesSnapshot struct {
 	CheckedAt string              `json:"checked_at"`
 	Services  []ServiceDependency `json:"services"`
