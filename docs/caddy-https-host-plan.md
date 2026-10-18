@@ -57,3 +57,9 @@ CI server-validation 执行 `python3 scripts/test-caddy-https-host-plan.py`。�
 `host_environment_sha256` 与 `candidate_environment_sha256` 可供未来受信 Host Manager 的预提交版本/文件检查对比；**SHA 相同也不证明已应用**。本阶段无真实 Host CAS、授权令牌、可信 Rescue/失联实测、域名 AliDNS 凭据宿主安全交付、原子写入/备份、Docker/Caddy 重启、双入口浏览器登录或计时回滚，因此依然 `apply_supported=false`。绝对不能把此候选指纹当作应用许可或不可变已应用回执。完整宿主 Apply/Restart 属于后续 NET-M5-B3-B/C。
 
 若目标 IP 与当前 `XD_HTTPS_BIND` 不兼容，仍按既有只读预检返回 `https-bind-migration-required`，但 `candidate_environment_sha256` 必须为 `null`，避免对无法仅靠这三个变量应用的候选生成可误用的摘要；绝不自动把绑定扩大到 `0.0.0.0`。
+
+## NET-M5-B3-B — 受保护的宿主机候选 .env 暂存（不触碰实际网关）
+
+`scripts/caddy-https-host-stage.py` 是**操作员在可信宿主机显式运行**的独立命令。先复用只读 Host Plan 预检与经独立可信通道核对的 Plan SHA，然后通过固定的期望修订、现有 .env 与 Compose 哈希再次核验候选字节；仅在已有的私有 `state/caddy-https-staging`（所属操作员、0700、不可是符号链接）内，以 O_EXCL/O_NOFOLLOW 创建 0600 的候选 .env 与无密钥暂存收据，fsync 文件与目录。二者以同一个输入指纹命名，重复执行拒绝覆盖；失败会尽量清理本次创建的文件。任何已有正式 `config/.env` / Compose 均只读；没有 Docker、DNS、TLS CA、Restart、Save/Apply API 或网页登录凭据。在异常断电时可能留下**没有收据的未完成暂存文件**，这种文件不得安装且需操作员清理。
+
+为防遗漏保护，尚未具备 AliDNS 私密凭据宿主交付、当前私网 Bind 迁移、现有管理入口切换/关闭，或旧 HTTP 安装时，暂存直接失败，不会放宽绑定或删除当前入口。此命令只为后续经过批准的原子 Host Apply 提供可比对的私有输入工件，不是一次部署，也不是一个安全应用许可。收据固定 `state=candidate-staged-unapplied`、`apply_supported=false`；真实重启仍被 Rescue、Host CAS、双 HTTPS/login 与看门狗回滚门禁阻止。测试通过 `python3 scripts/test-caddy-https-host-plan.py` 同时覆盖纯只读计划与暂存权限、无覆盖、无凭据打印、不改原文件及危险入口拒绝。
