@@ -83,7 +83,8 @@ test('shared Web/Desktop/Mobile Web panel separates saving, audited enable and r
   assert.ok(page.includes("case 'photo-face': return ['status', 'config', 'verify', 'history']"))
   assert.ok(page.includes("selectedPage === 'photo-face' && currentTab !== 'status'"))
   assert.ok(page.includes("XDrivePhotoHostDesiredPanel source={source}"))
-  assert.ok(page.includes('onDirtyChange={setChildDirty}'))
+  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"),
+    'only mutable Config can report a dirty draft; Verify/History cannot reset it')
   assert.ok(page.includes("service: 'photo-face', tab: 'config'"))
   for (const m of ['loadPhotoHostConfig', 'savePhotoHostConfig', 'loadPhotoHostRevisions', 'rollbackPhotoHost']) {
     assert.ok(web.includes(m))
