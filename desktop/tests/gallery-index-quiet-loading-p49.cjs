@@ -8,18 +8,20 @@ const hook = fs.readFileSync(path.join(root,'ui/shared/src/mui/useDeferredLoadin
 const albums = fs.readFileSync(path.join(root,'ui/shared/src/mui/MediaGalleryAlbumOrganizer.tsx'),'utf8')
 const map = fs.readFileSync(path.join(root,'ui/shared/src/mui/MediaGalleryPlacesMap.tsx'),'utf8')
 
-test('Gallery album synchronization-folder index never inserts a fast transient loading section',()=>{
+test('Gallery sync-folder index renders only accepted cards, never an interim loading row',()=>{
   assert.ok(code.includes("import { useXDriveDeferredPendingLoading } from './useDeferredLoading'"))
-  assert.ok(code.includes('showAlbumIndex && syncFoldersLoading && syncFolders.length === 0'))
-  assert.ok(code.includes('showAlbumIndex && (showDelayedSyncFolders || syncFolders.length > 0)'))
-  assert.equal(code.includes('showAlbumIndex && (syncFoldersLoading || syncFolders.length > 0)'),false)
+  assert.ok(code.includes('showAlbumIndex && syncFolders.length > 0 ? ('))
+  assert.equal(code.includes('showAlbumIndex && (showDelayedSyncFolders || syncFolders.length > 0)'),false)
+  assert.equal(code.includes('showDelayedSyncFolders'),false)
+  assert.equal(code.includes('正在加载同步文件夹…'),false)
+  assert.ok(code.includes('data-xdrive-gallery-sync-folders aria-busy={syncFoldersLoading || undefined}'))
   assert.ok(code.includes('syncFolders.map((folder)'))
-  assert.ok(code.includes('data-xdrive-gallery-sync-folders'))
-  assert.ok(code.includes('正在加载同步文件夹…'))
-  assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'))
-  assert.ok(hook.includes('return pending && visible'))
+  assert.ok(code.includes("indexPending={!indexFacetsVerified && (loading || placesStatus === 'loading' || syncFoldersLoading)}"),
+    'index remains honest while the first Owner read is unverified')
+  assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'),
+    'Places and other real delayed feedback must remain unchanged')
   assert.ok(albums.includes('showDelayedFolderLoading'),
-    'existing mounted album-folder navigation delayed spinner remains')
+    'existing mounted album-folder navigation and requests remain unchanged')
 })
 
 test('Places first read has stable 160px geometry and delayed only visual progress',()=>{

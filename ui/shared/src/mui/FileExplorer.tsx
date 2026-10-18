@@ -6609,7 +6609,13 @@ export function XDriveFileExplorer({
             {onRefresh ? <Button size="small" onClick={onRefresh} sx={{ minHeight: 44, minWidth: 44 }}>重试</Button> : null}
           </Stack>
         ) : loading && logicalItemCount === 0 && !keepAcceptedEmpty ? (
-          showDelayedLoading ? <XDriveStatePanel variant="plain" loading message="正在加载文件…" /> : null
+          <Box data-xdrive-file-explorer-cold-first-range
+            aria-busy="true"
+            sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+            {showDelayedLoading
+              ? <XDriveStatePanel variant="plain" loading message="正在加载文件…" />
+              : null}
+          </Box>
         ) : logicalItemCount === 0 ? (
           <XDriveStatePanel variant="plain" message={emptyMessage} />
         ) : viewMode === 'details' ? (
