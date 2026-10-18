@@ -176,6 +176,45 @@ func TestBaiduPhotoMapReadRechecksOwnerSourceRevisionsAndDeletion(t *testing.T) 
 		peer.Items[0].NodeID != bobNode.ID {
 		t.Fatalf("other owner leaked: %+v, %v", peer, err)
 	}
+
+	// The SERVER 8x8 view must count all eligible points once using the same
+	// source/consent/revision proof. Both samples are true paired BD09 photos.
+	cells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
+	if err != nil || cells.TotalCount != 2 || len(cells.Items) != 2 ||
+		cells.GridColumns != 8 || cells.GridRows != 8 {
+		t.Fatalf("initial bounded Owner cell count incorrect: %+v %v", cells, err)
+	}
+	for _, cell := range cells.Items {
+		if cell.PhotoCount != 1 || cell.AssetID == 0 || cell.NodeID == 0 {
+			t.Fatalf("invalid exact representative cell: %+v", cell)
+		}
+	}
+	// A second approved photo in the same fixed bin must update the count
+	// to two while returning ONE representative, never a grid-center GPS.
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).
+		Where("asset_id = ?", secondAsset.ID).
+		Updates(map[string]any{"latitude": 0.003, "longitude": 0.003}).Error; err != nil {
+		t.Fatal(err)
+	}
+	joined, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID, world)
+	if err != nil || joined.TotalCount != 2 || len(joined.Items) != 1 ||
+		joined.Items[0].PhotoCount != 2 || joined.Items[0].AssetID != firstAsset.ID ||
+		joined.Items[0].Latitude != 0.0065 || joined.Items[0].Longitude != 0.0065 {
+		t.Fatalf("aggregate count or real photo representative incorrect: %+v %v", joined, err)
+	}
+	if err := db.Model(&meta.BaiduPhotoMapPosition{}).
+		Where("asset_id = ?", secondAsset.ID).
+		Updates(map[string]any{"latitude": 2.005, "longitude": 179.95}).Error; err != nil {
+		t.Fatal(err)
+	}
+	wrapCells, err := queryBaiduPhotoMapCells(context.Background(), db, alice.ID,
+		baiduPhotoMapBounds{West: 179.9, South: -2, East: -179.9, North: 3,
+			CoordinateSpace: meta.BaiduPhotoMapSpaceBD09LL})
+	if err != nil || wrapCells.TotalCount != 1 || len(wrapCells.Items) != 1 ||
+		wrapCells.Items[0].AssetID != secondAsset.ID {
+		t.Fatalf("antimeridian cluster query invalid: %+v %v", wrapCells, err)
+	}
+
 	// Rows with an absent source-bound opt-in must disappear from the real
 	// count, not merely be hidden by the renderer or a later GC task.
 	if err := db.Model(&meta.BaiduPhotoMapConsent{}).Where("asset_id = ?", firstAsset.ID).
