@@ -30,8 +30,29 @@ func makeLocalPushFencedFirstLeafFixture(
 	return f, key, operation
 }
 
-func TestLocalPushFencedFirstLeafCommitsExactCurrentGenerationOnly(t *testing.T) {
+// makeLocalPushBoundFirstLeafFixture adds the immutable Stage/operation SQL
+// prerequisite ONLY to operation-aware writer tests. The original fixture
+// remains unchanged for independent Stage-binding tests and legacy CI writer.
+func makeLocalPushBoundFirstLeafFixture(
+	t *testing.T,
+) (localPushExistingCASTestFixture, []byte, meta.LocalPushOperationIntent) {
+	t.Helper()
 	f, key, operation := makeLocalPushFencedFirstLeafFixture(t)
+	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationStageBinding{}); err != nil {
+		t.Fatal(err)
+	}
+	bound, err := f.server.bindBoundLocalPushOperationStage(
+		f.ctx, f.source.ID, f.source.Revision, f.proof,
+		f.stage.StageID, key, operation.ID, operation.Generation)
+	if err != nil || bound.StageID != f.stage.StageID ||
+		bound.OperationID != operation.ID {
+		t.Fatalf("current Stage/operation prerequisite missing: %+v %v", bound, err)
+	}
+	return f, key, operation
+}
+
+func TestLocalPushFencedFirstLeafCommitsExactCurrentGenerationOnly(t *testing.T) {
+	f, key, operation := makeLocalPushBoundFirstLeafFixture(t)
 	commit := func() (localPushFirstFileCommitResult, bool, error) {
 		return f.server.commitBoundLocalPushFirstLeafWithCurrentOperation(
 			f.ctx, f.source.ID, f.source.Revision, f.proof,
@@ -78,7 +99,7 @@ func TestLocalPushFencedFirstLeafRejectsStaleAndForeignOperationsBeforeCAS(t *te
 		"terminal-receipt", "canceled",
 	} {
 		t.Run(scenario, func(t *testing.T) {
-			f, key, operation := makeLocalPushFencedFirstLeafFixture(t)
+			f, key, operation := makeLocalPushBoundFirstLeafFixture(t)
 			id, generation := operation.ID, operation.Generation
 			switch scenario {
 			case "wrong-key":
@@ -159,7 +180,7 @@ func TestLocalPushFencedFirstLeafRejectsStaleAndForeignOperationsBeforeCAS(t *te
 }
 
 func TestLocalPushFencedFirstLeafRejectsExpiryInsidePinnedCallback(t *testing.T) {
-	f, key, operation := makeLocalPushFencedFirstLeafFixture(t)
+	f, key, operation := makeLocalPushBoundFirstLeafFixture(t)
 	var expiry meta.LocalPushOperationIntent
 	if err := f.server.DB.Model(&meta.LocalPushOperationIntent{}).
 		Where("id = ?", operation.ID).

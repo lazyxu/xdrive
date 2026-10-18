@@ -23,7 +23,7 @@ func TestLocalPushNativeOriginalToCurrentOperationPinnedCASAndSQL(t *testing.T) 
 		t.Fatalf("native-to-Stage precommit failed: %+v %v", original, err)
 	}
 	f.prepareAndReserve(t)
-	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}); err != nil {
+	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}); err != nil {
 		t.Fatal(err)
 	}
 	originalKey := bytes.Repeat([]byte{0x5a}, localPushOperationRequestKeySize)
@@ -32,6 +32,12 @@ func TestLocalPushNativeOriginalToCurrentOperationPinnedCASAndSQL(t *testing.T) 
 	)
 	if err != nil || operation.ID == "" || operation.Generation == 0 {
 		t.Fatalf("owning operation did not reserve: %+v %v", operation, err)
+	}
+	if _, err := f.server.bindBoundLocalPushOperationStage(
+		f.request, f.source.ID, f.source.Revision, f.sqlProof,
+		f.stage.StageID, originalKey, operation.ID, operation.Generation,
+	); err != nil {
+		t.Fatalf("real native Stage not bound to current operation: %v", err)
 	}
 	write := func() (localPushFirstFileCommitResult, bool, error) {
 		return f.server.commitBoundLocalPushFirstLeafWithCurrentOperation(
@@ -98,7 +104,7 @@ func TestLocalPushNativeOriginalToCASRejectsAbortedCurrentOperation(t *testing.T
 		t.Fatalf("native original fixture not verified: %+v %v", observed, err)
 	}
 	f.prepareAndReserve(t)
-	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}); err != nil {
+	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}); err != nil {
 		t.Fatal(err)
 	}
 	key := bytes.Repeat([]byte{0x3a}, localPushOperationRequestKeySize)
@@ -107,6 +113,12 @@ func TestLocalPushNativeOriginalToCASRejectsAbortedCurrentOperation(t *testing.T
 	)
 	if err != nil || operation.ID == "" {
 		t.Fatalf("owning operation unavailable: %+v %v", operation, err)
+	}
+	if _, err := f.server.bindBoundLocalPushOperationStage(
+		f.request, f.source.ID, f.source.Revision, f.sqlProof,
+		f.stage.StageID, key, operation.ID, operation.Generation,
+	); err != nil {
+		t.Fatalf("native Stage pre-abort binding missing: %v", err)
 	}
 	if err := f.server.abortBoundLocalPushOperationIntent(
 		f.request, f.source.ID, f.source.Revision, operation.ID, operation.Generation,
