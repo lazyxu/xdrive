@@ -24,7 +24,10 @@ test('P62 first-frame and sustained Directory GETs never paint navigation loadin
     'P62 must run the compiled 390px Chrome Gallery Range fixture')
   assert.ok(chromeRun.includes("XDRIVE_GALLERY_COLD_P39:"),
     'P62 must assert held Range0 is visually silent, not merely static source')
-  assert.ok(mobile.includes('(props.searchActive || props.trashActive)'))
+  assert.ok(mobile.includes('(props.searchActive || (props.trashActive && totalCount > 0))'),
+    'only real Search and an already-populated Trash refresh may schedule feedback')
+  assert.equal(mobile.includes('正在读取最近删除…'), false,
+    'no slow first-Trash-GET loading caption is ever permitted')
   assert.ok(!mobile.includes('(props.searchActive || props.trashActive || coldUnconfirmedBrowse)'))
   assert.ok(mobile.includes('data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}'))
   assert.ok(mobile.includes("minHeight: 180, display: 'grid', placeItems: 'center'"))
@@ -64,7 +67,7 @@ test('P75 Mobile Files unrequested directory remains silent until a real first-R
     "if (coldUnconfirmedBrowse && ownerDirectoryLoading) coldReadAttemptRef.current.began = true",
     "const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&",
     "const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !coldDirectoryReadFailed",
-    "aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}",
+    "aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || unverifiedTrashEmpty || undefined}",
     "coldDirectoryFirstRead || coldDirectoryReadUnconfirmed ||",
     "coldDirectoryReadFailed ? '文件夹内容尚未确认，请刷新页面后重试。'",
   ]) assert.ok(mobile.includes(marker), 'missing actual pre-request quiet/verified failure fence: ' + marker)

@@ -63,7 +63,9 @@ test('P65 existing Mobile Web Files accepted/cold/error slots remain height-stab
   assert.equal(firstMatchMinHeight(mobile,'data-mobile-files-trash-first-read'),180)
   assert.equal(firstMatchMinHeight(mobile,'data-mobile-files-trash-read-error'),180)
   assert.ok(mobile.includes('data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}'))
-  assert.ok(mobile.includes('aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}'))
+  assert.ok(mobile.includes('aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || unverifiedTrashEmpty || undefined}'))
+  assert.ok(mobile.includes("aria-busy={props.loading || trashReadState === 'unverified' || undefined}"),
+    'unverified zero Trash remains busy before the first GET and through delayed requests')
   assert.ok(mobile.includes('coldDirectoryFirstRead'))
   assert.ok(mobile.includes('keepAcceptedEmptyDirectory'))
 })

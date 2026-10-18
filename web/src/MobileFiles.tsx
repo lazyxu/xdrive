@@ -564,11 +564,11 @@ export default function MobileFiles(props: Props) {
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
 
-  // Ordinary folder transitions keep accepted rows and viewport, while a
-  // truly cold first Directory Range owns one quiet 180px slot until its
-  // authoritative result. Never show a folder-navigation loading caption,
-  // even on a slow read. Search and Trash retain real delayed feedback,
-  // independently of thumbnails and sparse item loading.
+  // Ordinary folder transitions keep accepted rows and viewport. A cold
+  // Directory or Trash first Range owns one silent 180px slot for the entire
+  // current Owner read, even past 300ms. Only an explicit Search or a refresh
+  // of already accepted Trash rows may show delayed in-place feedback.
+  // Network thumbnails and sparse page fetching retain their own progress.
   const coldUnconfirmedBrowse = showDirectory && !props.searchActive &&
     !props.trashActive && totalCount === 0 && !keepAcceptedEmptyDirectory &&
     !props.virtualCollection
@@ -591,7 +591,7 @@ export default function MobileFiles(props: Props) {
   const coldDirectoryReadFailed = coldUnconfirmedBrowse && !ownerDirectoryLoading &&
     coldReadAttemptRef.current.began
   const showRangeLoading = (props.loading || searchCountPending) &&
-    (props.searchActive || props.trashActive)
+    (props.searchActive || (props.trashActive && totalCount > 0))
   const loadFeedbackScope = props.searchActive
     ? `search:${props.lifecycleKey}:${props.searchSummary?.query ?? ''}:${props.virtualCollection?.interactionKey ?? ''}`
     : props.trashActive ? `trash:${props.lifecycleKey}`
@@ -614,7 +614,7 @@ export default function MobileFiles(props: Props) {
   const failedTrashEmpty = props.trashActive && totalCount === 0 &&
     trashReadState === 'error' && !props.loading
   const zeroStatePending = (props.loading && !keepAcceptedEmptyDirectory && !verifiedTrashEmpty) || searchCountPending
-  const zeroStateLoading = zeroStatePending && showArrangementLoading
+  const zeroStateLoading = props.searchActive && zeroStatePending && showArrangementLoading
   // Do not insert a padded zero-state loading panel for a request that
   // finishes before the next meaningful frame. An accepted empty directory
   // is content and remains visible throughout an uncommitted navigation.
@@ -632,7 +632,7 @@ export default function MobileFiles(props: Props) {
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
       coldDirectoryReadFailed || unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
-    ? props.searchActive ? '正在查询…' : '正在读取最近删除…'
+    ? '正在查询…'
     : props.searchActive
       ? props.searchSummary?.error ? '搜索失败，请重试'
         : searchCountPending ? '正在查询…'
@@ -2558,16 +2558,12 @@ export default function MobileFiles(props: Props) {
               {showZeroState ? (
                 <Box data-mobile-files-zero-state
                   data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}
-                  aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || undefined}
+                  aria-busy={zeroStatePending || coldDirectoryReadUnconfirmed || unverifiedTrashEmpty || undefined}
                   sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
                   {unverifiedTrashEmpty ? (
                     <Box data-mobile-files-trash-first-read
-                      aria-busy={props.loading || undefined}
-                      sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
-                      {zeroStateLoading
-                        ? <XDriveStatePanel variant="plain" loading message="正在读取最近删除…" />
-                        : null}
-                    </Box>
+                      aria-busy={props.loading || trashReadState === 'unverified' || undefined}
+                      sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
                   ) : failedTrashEmpty ? (
                     <Stack data-mobile-files-trash-read-error role="alert" alignItems="center" justifyContent="center"
                       sx={{ minHeight: 180, px: 2 }} spacing={1}>
