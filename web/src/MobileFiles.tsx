@@ -2343,11 +2343,21 @@ export default function MobileFiles(props: Props) {
             {props.filtersControl}
             </Stack>
             {props.searchActive || props.searchSummary ? (
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mt: 1 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                  全部文件 · {props.searchSummary?.resultCount === null ? '正在查询…' : `${props.searchSummary?.resultCount ?? totalCount} 个结果`}
+              <Stack data-mobile-files-search-summary
+                direction="row" alignItems="center" spacing={1}
+                aria-busy={Boolean(props.searchActive && props.searchSummary?.loading &&
+                  props.searchSummary?.resultCount == null) || undefined}
+                sx={{ mt: 1, minHeight: 44, minWidth: 0 }}>
+                <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
+                  全部文件 · <Box component="span" data-mobile-files-search-count-slot
+                    sx={{ display: 'inline-block', minWidth: '12ch', whiteSpace: 'nowrap' }}>
+                    {props.searchActive && props.searchSummary?.resultCount == null
+                      ? (props.searchSummary?.error ? '搜索未完成' : '结果待确认')
+                      : `${props.searchSummary?.resultCount ?? totalCount} 个结果`}
+                  </Box>
                 </Typography>
-                <Button size="small" onClick={clearGlobalSearch}>清除</Button>
+                <Button size="small" onClick={clearGlobalSearch}
+                  sx={{ minWidth: 44, minHeight: 44, flexShrink: 0 }}>清除</Button>
               </Stack>
             ) : null}
             {props.searchSummary?.error ? (
