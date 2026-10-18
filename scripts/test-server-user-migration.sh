@@ -1,16 +1,40 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MIGRATOR="$ROOT/scripts/server-migrate-user.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+TEST_CURRENT_CASE=""
+report_failure() {
+  local status=$? line="$1"
+  trap - ERR
+  set +e
+  echo "server migration fixture failed: case=${TEST_CURRENT_CASE:-none} line=$line status=$status" >&2
+  if [[ -n "$TEST_CURRENT_CASE" ]]; then
+    local dir="$TMP/$TEST_CURRENT_CASE"
+    for file in migrate.out migrate.err; do
+      if [[ -f "$dir/$file" ]]; then
+        echo "--- $file ---" >&2
+        tail -n 40 "$dir/$file" >&2
+      fi
+    done
+  fi
+  exit "$status"
+}
+trap 'report_failure "$LINENO"' ERR
+
 mkdir -p "$TMP/bin"
 
 cat > "$TMP/bin/getent" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "$1" == "group" && "$2" == "docker" ]]; then
+  [[ "${TEST_GROUP_PRESENT:-1}" == "1" ]] || exit 2
+  echo 'docker:x:998:'
+  exit 0
+fi
 [[ "$1" == "passwd" && "$2" == "alice" ]]
 printf 'alice:x:1001:1001::%s:/bin/bash\n' "$TEST_TARGET_LOGIN_HOME"
 SH
@@ -21,6 +45,13 @@ cat > "$TMP/bin/id" <<'SH'
 set -euo pipefail
 case "$*" in
   "-u alice"|"-g alice") echo 1001 ;;
+  "-nG alice")
+    if [[ "${TEST_GROUP_ALREADY_MEMBER:-0}" == "1" || -f "${TEST_STATE:-/nonexistent}/docker-group-granted" ]]; then
+      echo 'alice docker'
+    else
+      echo 'alice'
+    fi
+    ;;
   "-u") echo 0 ;;
   *) /usr/bin/id "$@" ;;
 esac
@@ -42,6 +73,27 @@ exit 0
 SH
 chmod +x "$TMP/bin/chown"
 
+cat > "$TMP/bin/stat" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "-Lc %g /var/run/docker.sock" ]]; then
+  echo "${TEST_DOCKER_SOCKET_GID:-998}"
+else
+  /usr/bin/stat "$@"
+fi
+SH
+chmod +x "$TMP/bin/stat"
+
+cat > "$TMP/bin/usermod" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$TEST_STATE/usermod-calls"
+[[ "$#" -eq 3 && "$1" == "-aG" && "$2" == "docker" && "$3" == "alice" ]]
+[[ "${TEST_USERMOD_FAIL:-0}" != "1" ]] || exit 1
+touch "$TEST_STATE/docker-group-granted"
+SH
+chmod +x "$TMP/bin/usermod"
+
 cat > "$TMP/bin/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -50,6 +102,13 @@ printf 'user=%s host=%s context=%s config=%s tls=%s cert=%s api=%s args=%s\n' \
   "${USER:-}" "${DOCKER_HOST:-}" "${DOCKER_CONTEXT:-}" "${DOCKER_CONFIG:-}" \
   "${DOCKER_TLS_VERIFY:-}" "${DOCKER_CERT_PATH:-}" "${DOCKER_API_VERSION:-}" "$*" \
   >> "$TEST_STATE/docker-env-calls"
+
+if [[ "${USER:-}" != "alice" && "${1:-}" == "--host" ]]; then
+  [[ "${2:-}" == "unix:///var/run/docker.sock" && "${3:-}" == "info" ]] || exit 93
+  [[ "${TEST_SYSTEM_DOCKER_AVAILABLE:-1}" == "1" ]] || exit 1
+  if [[ "$*" == *"--format"* ]]; then echo '[]'; fi
+  exit 0
+fi
 
 if [[ "${USER:-}" == "alice" ]]; then
   if [[ -n "${DOCKER_CONTEXT:-}" || -n "${DOCKER_CONFIG:-}" || -n "${DOCKER_TLS_VERIFY:-}" || \
@@ -68,6 +127,12 @@ if [[ "${USER:-}" == "alice" ]]; then
       # Simulate a user whose daemon is reachable only at the conventional
       # rootless socket, so migration must discover the fallback explicitly.
       [[ "${DOCKER_HOST:-}" == "unix:///run/user/1001/docker.sock" ]] || exit 1
+      ;;
+    needs-group)
+      [[ -f "$TEST_STATE/docker-group-granted" && -z "${DOCKER_HOST:-}" ]] || exit 1
+      ;;
+    unavailable)
+      exit 1
       ;;
     *)
       exit 92
@@ -135,10 +200,12 @@ EOF
 EOF
 }
 
-run_case() {
+invoke_case() {
   local name="$1" mode="$2"
+  shift 2
+  TEST_CURRENT_CASE="$name"
+  echo "[migration fixture] $name: $mode $*"
   local base="$TMP/$name"
-  prepare_case "$name"
 
   TEST_STATE="$base/state" \
   TEST_TARGET_LOGIN_HOME="$base/alice-home" \
@@ -155,7 +222,15 @@ run_case() {
   XD_TARGET_CONFIG_DIR="$base/target" \
   XD_TARGET_SHELL_RC="$base/alice.bashrc" \
   XD_MIGRATE_TEST_ALLOW_NONROOT=1 \
-  bash "$MIGRATOR" alice >"$base/migrate.out" 2>"$base/migrate.err"
+  bash "$MIGRATOR" alice "$@" >"$base/migrate.out" 2>"$base/migrate.err"
+}
+
+run_case() {
+  local name="$1" mode="$2"
+  shift 2
+  local base="$TMP/$name"
+  prepare_case "$name"
+  invoke_case "$name" "$mode" "$@"
 
   test -f "$base/source/data/files/file.bin"
   test -f "$base/target/data/files/file.bin"
@@ -166,7 +241,9 @@ run_case() {
   grep -q "^XD_POSTGRES_DATA_DIR=$base/target/data/postgres$" "$base/target/config/.env"
   grep -q "^XD_CADDY_DATA_DIR=$base/target/data/caddy/data$" "$base/target/config/.env"
   grep -q "^XD_CADDY_CONFIG_DIR=$base/target/data/caddy/config$" "$base/target/config/.env"
-  grep -q "^XD_DOCKER_MODE=$mode$" "$base/target/config/.env"
+  local expected_docker_mode="$mode"
+  [[ "$expected_docker_mode" == "needs-group" ]] && expected_docker_mode="rootful"
+  grep -q "^XD_DOCKER_MODE=$expected_docker_mode$" "$base/target/config/.env"
 
   grep -q '# >>> xDrive server PATH >>>' "$base/alice.bashrc"
   grep -Fq "$base/target/bin" "$base/alice.bashrc"
@@ -194,6 +271,14 @@ run_case() {
   grep -q "XD_CONFIG_DIR=$base/target" "$base/state/crontab-alice"
   grep -q "$base/target/bin/server-backup-scheduled.sh" "$base/state/crontab-alice"
 
+  if [[ "$mode" == "needs-group" ]]; then
+    grep -Fxq -- '-aG docker alice' "$base/state/usermod-calls"
+    grep -q 'root-equivalent host access' "$base/migrate.err"
+    grep -q 'docker group membership is permanent' "$base/migrate.err"
+  else
+    test ! -e "$base/state/usermod-calls"
+  fi
+
   if [[ "$mode" == "rootless" ]]; then
     grep -q 'target Docker endpoint: unix:///run/user/1001/docker.sock' "$base/migrate.out"
     grep -q 'user=alice host=unix:///run/user/1001/docker.sock .*args=info' "$base/state/docker-env-calls"
@@ -209,7 +294,36 @@ run_case() {
   fi
 }
 
+run_failing_case() {
+  local name="$1" mode="$2" expected="$3"
+  shift 3
+  local base="$TMP/$name"
+  prepare_case "$name"
+  if invoke_case "$name" "$mode" "$@"; then
+    echo "$name: migration unexpectedly succeeded" >&2
+    exit 1
+  fi
+  grep -Fq "$expected" "$base/migrate.err"
+  test ! -e "$base/state/docker-group-granted"
+  test ! -e "$base/state/usermod-calls"
+  test ! -e "$base/target"
+  test -f "$base/source/data/files/file.bin"
+  if grep -q 'down --remove-orphans' "$base/state/docker-calls"; then
+    echo "$name: migration stopped the source before Docker preflight completed" >&2
+    exit 1
+  fi
+}
+
 run_case rootful rootful
 run_case rootless rootless
+run_case rootful-opt-in rootful --grant-docker-group
+run_case rootless-opt-in rootless --grant-docker-group
+run_case needs-group needs-group --grant-docker-group
+
+run_failing_case no-opt-in needs-group 'cannot access a Docker daemon'
+TEST_GROUP_PRESENT=0 run_failing_case missing-group needs-group 'system docker group does not exist' --grant-docker-group
+TEST_DOCKER_SOCKET_GID=99 run_failing_case wrong-socket-group needs-group 'not owned by docker group' --grant-docker-group
+TEST_SYSTEM_DOCKER_AVAILABLE=0 run_failing_case no-system-daemon needs-group 'rootful system Docker daemon is not available' --grant-docker-group
+TEST_GROUP_ALREADY_MEMBER=1 run_failing_case already-member needs-group 'already in docker group but Docker is inaccessible' --grant-docker-group
 
 echo "server root-to-user migration tests passed"
