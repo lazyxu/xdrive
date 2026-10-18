@@ -601,8 +601,12 @@ export default function MobileFiles(props: Props) {
   // after the 300ms display-only delay. A transient loading panel must never
   // be inserted into a previously zero-height list on a slow response.
   const coldDirectoryFirstRead = coldUnconfirmedBrowse && props.loading
+  // A cold Search COUNT is also an unresolved first Range. Reserve the same
+  // empty-slot geometry before its 300ms *visual-only* delay instead of
+  // inserting a new in-flow search panel when the timer fires.
   const showZeroState = totalCount === 0 &&
-    (coldDirectoryFirstRead || (!zeroStatePending && !coldUnconfirmedBrowse) ||
+    (coldDirectoryFirstRead || (props.searchActive && zeroStatePending) ||
+      (!zeroStatePending && !coldUnconfirmedBrowse) ||
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
       unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
@@ -2499,10 +2503,8 @@ export default function MobileFiles(props: Props) {
               {showZeroState ? (
                 <Box data-mobile-files-zero-state
                   data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}
-                  aria-busy={coldDirectoryFirstRead || undefined}
-                  sx={coldUnconfirmedBrowse
-                    ? { minHeight: 180, display: 'grid', placeItems: 'center' }
-                    : undefined}>
+                  aria-busy={zeroStatePending || undefined}
+                  sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
                   {unverifiedTrashEmpty ? (
                     <Box data-mobile-files-trash-first-read
                       aria-busy={props.loading || undefined}
@@ -2517,9 +2519,11 @@ export default function MobileFiles(props: Props) {
                       <Typography variant="body2" color="error.main">最近删除读取失败，请重试。</Typography>
                       <Button onClick={props.onRefresh} sx={{ minHeight: MIN_TOUCH }}>重试</Button>
                     </Stack>
-                  ) : coldDirectoryFirstRead && !zeroStateLoading ? (
-                    // Cold Directory is unverified: quiet, height-stable, no
-                    // false empty claim or first-frame loading caption.
+                  ) : (coldDirectoryFirstRead || (props.searchActive && zeroStatePending)) &&
+                      !zeroStateLoading ? (
+                    // Neither cold Directory nor cold Search has an accepted
+                    // count yet. The 180px slot is real but stays visually
+                    // silent until sustained latency or a terminal receipt.
                     null
                   ) : (
                     <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />
