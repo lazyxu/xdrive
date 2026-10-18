@@ -45,6 +45,14 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 		if !db.Migrator().HasTable(&meta.LocalPushOperationIntent{}) {
 			t.Fatal("private operation intent table missing")
 		}
+		if !db.Migrator().HasTable(&meta.LocalPushOperationTerminalReceipt{}) ||
+			!db.Migrator().HasIndex(&meta.LocalPushOperationTerminalReceipt{}, "idx_xd_local_push_terminal_generation") {
+			t.Fatal("private immutable operation terminal receipt schema missing")
+		}
+		var terminalCount int64
+		if err := db.Model(&meta.LocalPushOperationTerminalReceipt{}).Count(&terminalCount).Error; err != nil || terminalCount != 0 {
+			t.Fatalf("migration invented terminal backup evidence: count=%d err=%v", terminalCount, err)
+		}
 		var count int64
 		if err := db.Model(&meta.LocalPushOperationIntent{}).Count(&count).Error; err != nil || count != 0 {
 			t.Fatalf("migration auto-activated a local backup: count=%d err=%v", count, err)
