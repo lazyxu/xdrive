@@ -59,6 +59,24 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
       (value.host_ingress_ready && !value.host_observed) ||
       (value.host_local_tls_verified && !value.host_observed)) invalidPreflight()
 
+  // Independent local IP SAN + Caddy CA + readiness proof is OPTIONAL in
+  // older Server/Agent contracts. A local match is NEVER a revision apply
+  // receipt. Missing proof cannot mean an HTTPS listener was turned off.
+  if (value.desired_lan_enabled !== undefined &&
+      typeof value.desired_lan_enabled !== 'boolean') invalidPreflight()
+  if (value.host_lan_local_tls_verified !== undefined &&
+      (typeof value.host_lan_local_tls_verified !== 'boolean' ||
+       (value.host_lan_local_tls_verified &&
+        (!value.host_observed || !value.host_ingress_ready)))) invalidPreflight()
+  if (value.desired_lan_local_match !== undefined &&
+      (typeof value.desired_lan_local_match !== 'string' ||
+       !['matched-local', 'mismatch-local', 'unverified'].includes(value.desired_lan_local_match) ||
+       (value.desired_lan_local_match !== 'unverified' &&
+        (value.desired_revision === 0 || !value.host_lan_local_tls_verified ||
+         typeof value.desired_lan_enabled !== 'boolean')) ||
+       (value.desired_lan_local_match === 'matched-local' &&
+        value.desired_lan_enabled !== true))) invalidPreflight()
+
   // Old Server/Agent can omit this optional signal. A "matched" or
   // "mismatched" LOCAL hostname requires a real successful observed TLS
   // handshake and valid enable-intent domain, but never proves apply.
@@ -114,20 +132,29 @@ export function verifyCaddyPreflightContract(value: unknown): XDriveCaddyHTTPSPr
        (value.host_alidns_module_state !== 'unverified' &&
         (!value.host_observed || !value.host_ingress_ready)))) invalidPreflight()
 
-  // Old Server/Agent can omit this advisory. Positive warnings require
-  // actual verified local HTTPS. Never accept an arbitrary claim as a
-  // deployment or rollback authorization.
+  // Local change-risk warnings require POSITIVE endpoint proof, never a
+  // missing stale Host Manager observation or a saved-but-unapplied intent.
   if (value.ingress_change_risk !== undefined &&
       (typeof value.ingress_change_risk !== 'string' ||
-       !['unverified', 'local-https-removal', 'local-domain-switch'].includes(value.ingress_change_risk) ||
+       !['unverified', 'local-https-removal', 'local-domain-switch',
+         'local-lan-removal', 'local-lan-switch'].includes(value.ingress_change_risk) ||
        (value.ingress_change_risk !== 'unverified' &&
-        (!value.host_observed || !value.host_ingress_ready ||
-         !value.host_local_tls_verified || value.desired_revision === 0)) ||
+        (!value.host_observed || !value.host_ingress_ready || value.desired_revision === 0)) ||
+       (['local-https-removal', 'local-domain-switch'].includes(value.ingress_change_risk) &&
+        !value.host_local_tls_verified) ||
+       (['local-lan-removal', 'local-lan-switch'].includes(value.ingress_change_risk) &&
+        !value.host_lan_local_tls_verified) ||
        (value.ingress_change_risk === 'local-https-removal' &&
         value.action !== 'disable') ||
        (value.ingress_change_risk === 'local-domain-switch' &&
         (value.action !== 'enable' || value.desired_domain_local_match !== 'mismatch-local' ||
-         byID.get('domain') !== 'pass')))) invalidPreflight()
+         byID.get('domain') !== 'pass')) ||
+       (value.ingress_change_risk === 'local-lan-removal' &&
+        value.desired_lan_enabled !== false) ||
+       (value.ingress_change_risk === 'local-lan-switch' &&
+        (value.desired_lan_enabled !== true || value.desired_lan_local_match !== 'mismatch-local')))) {
+    invalidPreflight()
+  }
 
   // Old Agent/Server may omit the new read-window evidence. A new Server
   // returns it only after both settings were read in a repeatable-read
