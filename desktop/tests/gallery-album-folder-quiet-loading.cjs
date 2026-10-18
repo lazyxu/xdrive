@@ -14,7 +14,9 @@ test('Gallery album folder first read is quiet and does not insert spinner rows'
   assert.equal(organizer.includes('data-xdrive-gallery-folder-loading'), false)
   assert.equal(organizer.includes('加载相册文件夹…'), false)
   assert.equal(organizer.includes('foldersLoading && <Stack direction="row"'), false)
-  assert.ok(organizer.includes('showDelayedIndexRead'), 'real Album index latency is still reported separately')
+  assert.ok(organizer.includes('data-xdrive-gallery-album-index-read-state'))
+  assert.equal(organizer.includes('showDelayedIndexRead'), false,
+    'first Album index read must stay semantically busy, without a transient spinner')
 })
 test('only accepted current-account and current-port folder lists claim empty or folder count', () => {
   for(const token of [

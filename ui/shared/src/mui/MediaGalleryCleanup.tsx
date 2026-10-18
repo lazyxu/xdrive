@@ -141,7 +141,6 @@ export function XDriveMediaGalleryCleanup({
   onRequestIndexStatus?: () => void
 }) {
   const firstReadPending = Boolean(loading) && bursts === null
-  const showFirstReadLoading = useXDriveDeferredPendingLoading(firstReadPending)
   const showMoreLoading = useXDriveDeferredPendingLoading(loadingMore === 'burst')
   // An absent canonical Server response is never authoritative zero. Failed
   // first reads retain their real parent error instead of claiming no advice.
@@ -149,17 +148,16 @@ export function XDriveMediaGalleryCleanup({
     return (
       <Paper
         data-xdrive-gallery-cleanup-first-read
+        aria-busy={firstReadPending || undefined}
         variant="outlined"
         sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
       >
-        {firstReadPending ? (
-          showFirstReadLoading ? <CircularProgress size={28} /> : null
-        ) : (
+        {!firstReadPending ? (
           <Stack spacing={0.75} alignItems="center">
             <Typography color="text.secondary">连拍清理结果尚未确认，请重新检查。</Typography>
             {onRefresh ? <Button onClick={onRefresh} sx={{ minHeight: 44 }}>重新检查</Button> : null}
           </Stack>
-        )}
+        ) : null}
       </Paper>
     )
   }

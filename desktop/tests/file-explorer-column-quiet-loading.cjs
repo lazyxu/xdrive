@@ -8,9 +8,10 @@ const web = fs.readFileSync(path.join(__dirname, '..', '..', 'web/src/WebFileExp
 const desktop = fs.readFileSync(path.join(__dirname, '..', '..', 'desktop/src/renderer/DesktopFileExplorer.tsx'), 'utf8')
 
 test('FileExplorer columns never mount a momentary in-flow spinner on fast GET', () => {
-  assert.ok(source.includes('useXDriveDeferredLoading(loading, generation)'))
-  assert.ok(source.includes('<ColumnNetworkFeedback loading={state.loading} generation={state.generation} />'))
-  assert.ok(source.includes("position: 'absolute', right: 8, bottom: 8"))
+  assert.ok(source.includes('aria-busy={state.loading || undefined}'))
+  assert.ok(source.includes('data-xdrive-column-pending={state.loading || undefined}'))
+  assert.equal(source.includes('ColumnNetworkFeedback'), false)
+  assert.equal(source.includes('CircularProgress'), false)
   assert.equal(source.includes("py: 1.5, display: 'grid'"), false)
   assert.ok(source.includes('generationRef.current.set(key, generation)'))
   assert.ok(source.includes('controllersRef.current.get(key)?.abort()'))
