@@ -7849,7 +7849,7 @@ export function XDriveMediaGallery({
           <Paper
             variant="outlined"
             data-xdrive-gallery-load-error
-            sx={{ minHeight: 200, display: 'grid', placeItems: 'center', p: 3 }}
+            sx={{ minHeight: 220, display: 'grid', placeItems: 'center', p: 3 }}
           >
             <Stack alignItems="center" spacing={1.25} sx={{ maxWidth: 520, textAlign: 'center' }}>
               <Typography variant="subtitle1" fontWeight={700}>
@@ -7874,7 +7874,7 @@ export function XDriveMediaGallery({
           <Paper
             variant="outlined"
             data-xdrive-gallery-empty
-            sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
+            sx={{ minHeight: 220, display: 'grid', placeItems: 'center', p: 3 }}
           >
             <Stack alignItems="center" spacing={1} sx={{ maxWidth: 460, textAlign: 'center' }}>
               <ImageIcon color="disabled" sx={{ fontSize: 44 }} />

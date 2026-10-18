@@ -6613,7 +6613,10 @@ export function XDriveFileExplorer({
             aria-busy="true"
             sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
         ) : logicalItemCount === 0 ? (
-          <XDriveStatePanel variant="plain" message={emptyMessage} />
+          <Box data-xdrive-file-explorer-verified-empty
+            sx={{ minHeight: 180, minWidth: 0, display: 'grid', placeItems: 'center' }}>
+            <XDriveStatePanel variant="plain" message={emptyMessage} />
+          </Box>
         ) : viewMode === 'details' ? (
           <Box role="table" aria-label="文件列表"
             aria-rowcount={xDriveFileExplorerAriaTableRowCount(logicalItemCount, groupedDetailsLayout?.groups.length ?? 0)}
