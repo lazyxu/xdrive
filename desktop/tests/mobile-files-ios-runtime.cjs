@@ -3134,6 +3134,68 @@ test('U08: unanswered Search, error and cold load do not flash a fake empty fold
       crumbs: [{ id: 1, name: '我的文件' }] } })
 })
 
+test('P59: cold Mobile Files folder reserves the same quiet 180px slot before/after 300ms', async () => {
+  const pending = { section: 'browse', folderID: 1, scrollTop: 0, view: 'details' }
+  const realCountedZero = { itemCount: 0, interactionKey: 'p59-authorized-empty',
+    loadedItems: new Map(), itemAt: () => undefined,
+    onRangeChange() {}, groups: [] }
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-cold-read-slot', true)
+    assert.equal(slot().props.sx.minHeight, 180, 'first paint already owns the fixed 180px footprint')
+    assert.equal(slot().props.sx.display, 'grid')
+    assert.equal(slot().props['aria-busy'], true, 'real network pending is exposed immediately')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 35)) })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'fast cold GET may not flash a loading caption')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 330)) })
+    assert.equal(slot().props.sx.minHeight, 180,
+      'slow GET must reuse the exact same footprint, not insert a new row')
+    const slow = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(slow.length, 1)
+    assert.equal(slow[0].props.loading, true)
+    assert.equal(slow[0].props.message, '正在加载文件…')
+    await h.update({ loading: false })
+    assert.equal(slot().props.sx.minHeight, 180)
+    assert.equal(slot().props['aria-busy'], undefined)
+    const denied = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(denied.length, 1)
+    assert.equal(denied[0].props.loading, false)
+    assert.equal(denied[0].props.message,
+      '文件夹内容尚未确认，请刷新页面后重试。',
+      'unverified failure must never advertise a false empty')
+    await h.update({ virtualCollection: realCountedZero })
+    assert.equal(h.view.root.findAll(n => n.props?.['data-mobile-files-cold-read-slot'] === true).length, 0)
+    const accepted = h.view.root.findAll(n => n.type === 'state-panel')
+    assert.equal(accepted.length, 1)
+    assert.equal(accepted[0].props.message, '此文件夹为空')
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+  }, { saved: pending, props: { items: [], loading: true, requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }] } })
+
+  await withView(async h => {
+    const slot = () => find(h.view, 'data-mobile-files-cold-read-slot', true)
+    assert.equal(slot().props.sx.minHeight, 180)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 40)) })
+    await h.update({ loading: false, items: [
+      { id: 9, name: 'arrived.txt', kind: 'file', revision: 1 },
+    ], virtualCollection: { ...realCountedZero, itemCount: 1,
+      interactionKey: 'p59-authorized-file',
+      itemAt: index => index === 0 ? { id: 9, name: 'arrived.txt', kind: 'file', revision: 1 } : undefined } })
+    assert.equal(h.view.root.findAll(n => n.props?.['data-mobile-files-cold-read-slot'] === true).length, 0)
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0)
+    assert.equal(count(h.view, 'data-xdrive-file-explorer-scroll-host'), 1)
+    assert.ok(h.view.root.findAll(n => n.props?.['data-mobile-files-item'] === true)
+      .some(n => n.props['aria-label'] === 'arrived.txt'))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 310)) })
+    assert.equal(h.view.root.findAll(n => n.type === 'state-panel').length, 0,
+      'a completed quick GET must not show old delayed feedback')
+  }, { saved: pending, props: { items: [], loading: true, requestedDirectoryID: 1,
+    crumbs: [{ id: 1, name: '我的文件' }] } })
+})
+
 test('Mobile Files failed cold first Range cannot claim an authoritative empty folder', async () => {
   const panels = h => h.view.root.findAll(n => n.type === 'state-panel')
   await withView(async h => {

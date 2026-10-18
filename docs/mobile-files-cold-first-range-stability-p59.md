@@ -1,0 +1,22 @@
+# P59 · Mobile Files cold first Range stable, quiet layout
+
+**Status: prepared on 2026-10-18, exact-head CI not yet verified.**
+
+## Source finding
+The real `web/src/MobileFiles.tsx` cold, no-cache Directory Range path sets `showZeroState=false` during the first 300ms, so no zero-state holder exists. When a legitimate network GET remains pending beyond 300ms, `zeroStateLoading` becomes true and first mounts `data-mobile-files-zero-state` (with a padded `XDriveStatePanel`) in the list's normal flow. On Mobile Web this causes a needless intermediate content-height transition before the actual authorized result. This is a distinct FIRST-COLD-READ issue; already committed folder A→B holds previous rows unchanged (P1/P17/P29/P47), and Search/Trash have their own proven controls.
+
+## Scoped fix
+- Reserve a **stable 180px cold Directory slot from first paint**, with actual request `aria-busy` immediately. Under 300ms it stays blank, never claiming empty, spinning or displaying a loading caption.
+- At 300ms of genuinely unresolved cold Server GET, show the existing `XDriveStatePanel` **inside** that already reserved 180px area, not as a newly inserted row. Same source-only first-read slot remains unchanged on unverified failure; verified owner-counted zero/real rows commit with existing established semantics.
+- Preserve the existing single virtual scroll owner, 52px App Frame, ordinary committed-folder staged navigation, navigation URL/persisted anchor, Search/Trash flows, original Server REST & Desktop Agent interfaces, thumbnail/Live Photo/video poster network progress and real error/retry. No delay to request, extra refetch, new cache, or blanket transition suppression.
+
+## Tests, delivery and limits
+- Augment the **original mounted React MobileFiles** test (not a test clone): cold first-paint and 35ms quiet, 330ms sustained feedback with identical slot geometry, unverified request failure, accepted true zero, and independent 40ms successful nonzero Range; enforce one scroll host throughout and no old timer feedback on completion.
+- Keep prior `desktop/tests/mobile-files-ios-runtime.cjs` U08, P47/P52/P53/P56/P57 behavior tests, actual Web source and server protocol untouched otherwise.
+- Exactly one scoped work commit on frozen master; require new **76-job accurate-head CI** (Web TS/lint/build, Desktop mounted/Windows, Go PostgreSQL Race, rootless, single-commit and Final Gate) AND clean GitHub mergeability before Ready/Rebase. iOS Safari / Android Chrome / installed PWA, physical 100k CAS/WAN FPS/CLS and iOS27 literal 1:1 remain **NOT RUN/NO-GO**. Existing Gallery P58 #2016 is independent.
+
+## P59 first exact-head CI: reject invalid test prop-existence oracle (2026-10-18)
+
+- Original one-work head `466e241e876e13789d8ee16ce9a10518141358a0` launched [full 76-job CI #39089768543](https://github.com/lazyxu/xdrive/actions/runs/39089768543). Authentic `desktop-tests` finished **3,084 passing, 1 failing, 1 expected skip**. The one failed NEW P59 assertion at mounted test line 3170 expected `count(h.view, 'data-mobile-files-cold-read-slot') === 0` after the authorized counted Range commit, but `count` measures React prop-key EXISTENCE, not whether its value is true. Production deliberately supplies `data-mobile-files-cold-read-slot={coldUnconfirmedBrowse || undefined}` to preserve a stable conditional marker; the prop key remains present with value undefined. That makes the test oracle INVALID and not evidence of a product visual regression. Earlier first-paint, 35ms, 330ms, failed read and authoritative-zero tests in this SAME P59 case passed before that incorrect check.
+- Keep `web/src/MobileFiles.tsx` Blob `f5f6f75e7dcc473393cdd2ef0938ff0a125f8c64` **byte-identical** to the attempted production fix. Change ONLY both occurrences of the new P59 assertion to count elements with `node.props['data-mobile-files-cold-read-slot'] === true`, keeping every original test timing, approved real item replacement, 180px geometry, single scroll host, error, and deferred-feedback assertion intact. Preserve all unrelated Web/Desktop/Gallery, F03 and newer mainline code.
+- Rebuild ONE scope-only commit against original frozen `master@5f93f99825f3d0382fbfb1690e4a029cebb92935`, demand an ENTIRELY NEW exact-head 76-job CI including Go PostgreSQL Race and Final Gate plus clean GitHub mergeability before Ready/Rebase. Old failed run does not authorize merge. Physical iOS Safari/Android/installed PWA/WAN/100k real CAS CLS/FPS remains NOT RUN.
