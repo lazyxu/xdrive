@@ -869,6 +869,9 @@ declare global {
         cloudAdminRevokeUserSessions: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudAdminDeleteUser: (id: number) => Promise<DesktopResult<{ ok: boolean }>>
         cloudAdminBaiduMapConfig: () => Promise<DesktopResult<XDriveBaiduMapAdminConfig>>
+        cloudAdminBaiduJSAPIConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveBaiduJSAPIConfig>>
+        cloudSetAdminBaiduJSAPIConfig: (input: import('../../../ui/shared/src').XDriveBaiduJSAPIUpdate) =>
+          Promise<DesktopResult<import('../../../ui/shared/src').XDriveBaiduJSAPIConfig>>
         cloudAdminCaddyHTTPSConfig: () => Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>
         cloudSetAdminCaddyHTTPS: (input: import('../../../ui/shared/src').XDriveCaddyHTTPSUpdate) =>
           Promise<DesktopResult<import('../../../ui/shared/src').XDriveCaddyHTTPSConfig>>

@@ -1,3 +1,12 @@
+## A3c12 · Web/Mobile Web/Desktop Browser AK 共享配置管理（2026-10-18）
+
+**生产动态地图仍为 NO-GO。**「系统依赖 → 百度地图 → 配置/验证」现使用同一个共享 Browser AK 面板。Web/Mobile Web/PWA 使用管理员 Bearer API；Desktop 使用有独立权限校验的 Electron Main→本机 Agent→Server admin API。静态 PNG 的 Server AK 和 JSAPI4 Browser AK 不共享、不复用、不互换；已保存的 Browser AK 不可通过该接口回显或读取。
+
+- Server 既有 `GET/PUT /api/v1/admin/services/baidu-jsapi` 只返回非秘密配置、明确区分 `desired_enabled`（期望）与 `runtime_enabled`（经过生产签名放行）。保存凭据只写加密修订并留存审计，不触发百度上游或 SDK 下载；新界面始终提示不能手动绕过许可、子资源清单和签名门禁。
+- Desktop 增加严格 `GET/PUT /v1/cloud/admin-baidu-jsapi`；Go IPC 拒绝陌生 JSON 字段、超长输入、非法字符和冲突的清除/开启，Electron Main 还执行 admin-services capability 及安全数据结构校验。Server 再做实际管理员角色与修订权限判断，不能仅凭本机 capability 获得 Server 授权。
+- Web、Mobile Web 和 Desktop 复用一套 MUI 面板、单一类型 `XDriveBaiduJSAPIConfig/Update`、错误和未保存编辑导航保护；清除 Browser AK 不影响 Server AK Static PNG。既有 Gallery Range/VirtualCollection/Viewer 和全屏 52px App Frame 完全不改。
+- 下一阶段仍须：独立百度账户许可证明、九组真实 Browser+上游 HAR 原始响应审计、完整 JS/瓦片/字体/WASM 子资源源码白名单、私有受信签名发布启动配置、Web/Mobile SDK 真正挂载、独立 HTTPS Electron Map View、真实坐标视窗、iOS27/Android/100k 设备验收。此提交绝不能标记 A3 GO。
+
 # xDrive Places A3 · 百度 JSAPI 4.0 生产放行与三端验收
 
 ## c11 · 实际 HTTP 路由及 Caddy 反向代理闭环（2026-10-18）

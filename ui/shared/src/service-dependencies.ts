@@ -516,6 +516,26 @@ export type XDriveGeoNamesReloadResult = {
   checked_at: string
 }
 
+// Only non-secret revision-fenced intent. Runtime authorization is independent.
+export type XDriveBaiduJSAPIConfig = {
+  provider: 'baidu-jsapi-4.0'
+  desired_enabled: boolean
+  configured: boolean
+  editable: boolean
+  revision: number
+  updated_at?: string
+  runtime_enabled: boolean
+  activation_state: 'blocked_pending_licence_and_proxy' | 'authorized_signed_release'
+  requires_restart: boolean
+}
+
+export type XDriveBaiduJSAPIUpdate = {
+  desired_enabled: boolean
+  revision: number
+  browser_ak?: string
+  clear_ak?: boolean
+}
+
 export type XDriveBaiduMapAdminConfig = {
   enabled: boolean
   configured: boolean

@@ -1012,6 +1012,17 @@ export class XDriveApi {
       method: 'POST', body: JSON.stringify({ expected_version: expectedVersion }), cache: 'no-store',
     })
   }
+  adminBaiduJSAPIConfig() {
+    return this.request<import('../../ui/shared/src').XDriveBaiduJSAPIConfig>(
+      '/api/v1/admin/services/baidu-jsapi', { cache: 'no-store' },
+    )
+  }
+  adminSaveBaiduJSAPIConfig(input: import('../../ui/shared/src').XDriveBaiduJSAPIUpdate) {
+    return this.request<import('../../ui/shared/src').XDriveBaiduJSAPIConfig>(
+      '/api/v1/admin/services/baidu-jsapi',
+      { method: 'PUT', body: JSON.stringify(input), cache: 'no-store' },
+    )
+  }
   adminBaiduMapConfig() {
     return this.request<XDriveBaiduMapAdminConfig>('/api/v1/admin/services/baidu-map')
   }
