@@ -34,8 +34,10 @@ test('Compact Web receives live read receipts without diverging from the shared 
   assert.ok(mobile.includes("const collectionFirstRead = section !== 'browse' && sectionItems.length === 0"))
   assert.ok(mobile.includes("collectionReadState === 'unverified'"))
   assert.ok(mobile.includes("collectionReadState === 'error' && collectionLoading"))
-  assert.ok(mobile.includes("useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead && collectionLoading)"))
-  assert.ok(mobile.includes("useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead && collectionLoading)"))
+  assert.equal(mobile.includes("useXDriveDeferredPendingLoading(section === 'recent' && collectionFirstRead && collectionLoading)"), false)
+  assert.equal(mobile.includes("useXDriveDeferredPendingLoading(section === 'favorites' && collectionFirstRead && collectionLoading)"), false)
+  assert.ok(mobile.includes('<Box data-mobile-files-collection-first-read aria-hidden="true" />'),
+    'a current-owner first read is semantically busy but remains visually silent')
   assert.ok(mobile.includes('data-mobile-files-collection-state'))
   assert.ok(mobile.includes('data-mobile-files-collection-error'))
   assert.ok(mobile.includes('data-mobile-files-collection-first-read'))

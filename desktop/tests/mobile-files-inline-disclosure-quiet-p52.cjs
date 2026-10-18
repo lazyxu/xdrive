@@ -22,7 +22,7 @@ test('native-like Mobile Files disclosure remains interactive and mounted under 
     "width: MIN_TOUCH, height: MIN_TOUCH",
     "position: 'relative'",
     "<ArrowBackIosNewRoundedIcon",
-    "<MobileInlineDisclosureProgress pending={Boolean(inlineBranch?.loading)} />",
+    "<MobileInlineDisclosureProgress />",
     "props.onToggleInlineFolder?.(item, ownerID, sourceIndex)",
     "props.onRetryInlineFolder?.(Number(item.id))",
     "event.stopPropagation()",
@@ -31,21 +31,25 @@ test('native-like Mobile Files disclosure remains interactive and mounted under 
     'pending requests cannot disable cancellation by collapsing the folder')
   assert.equal(branch.includes('inlineBranch?.loading ? <CircularProgress'), false,
     'a pending GET cannot replace the chevron with a spinner')
-  assert.ok(mobile.includes('function MobileInlineDisclosureProgress({ pending }'))
+  assert.ok(mobile.includes('function MobileInlineDisclosureProgress()'))
 })
 
-test('feedback is delayed only for real network pending, overlay never alters list geometry', () => {
+test('child directory disclosure is silent throughout a real network read and never alters list geometry', () => {
+  const start = mobile.indexOf('function MobileInlineDisclosureProgress()')
+  const end = mobile.indexOf('export default function MobileFiles', start)
+  assert.ok(start >= 0 && end > start)
+  const progress = mobile.slice(start, end)
   for (const token of [
-    'useXDriveDeferredPendingLoading(pending)',
     'data-mobile-files-folder-disclosure-progress',
     'component="span"',
     'aria-hidden="true"',
     "position: 'absolute', right: 3, bottom: 3, width: 14, height: 14",
     "pointerEvents: 'none'",
-    'show ? <CircularProgress size={12} /> : null',
-  ]) assert.ok(mobile.includes(token),token)
-  assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'))
-  assert.ok(hook.includes('return pending && visible'))
+  ]) assert.ok(progress.includes(token),token)
+  assert.equal(progress.includes('CircularProgress'), false)
+  assert.equal(progress.includes('useXDriveDeferredPendingLoading'), false)
+  assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'),
+    'only genuine search and other network-progress surfaces retain separate feedback')
   assert.ok(store.includes('this.abort(branch)'), 'the existing child store supports real abort on collapse')
   assert.ok(store.includes('this.branches.delete(id)'))
   assert.ok(web.includes('inlineStore.toggle(Number(item.id), ownerID, parentIndex, item.name)'))
