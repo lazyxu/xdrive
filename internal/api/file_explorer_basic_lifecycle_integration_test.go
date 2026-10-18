@@ -431,6 +431,64 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	// U04-B: actual running Worker and authenticated cancel RPC, not a
 	// simulated terminal status or queued-before-start cancellation.
 	assertBasicFileOperationRunningCancel(t, srv, db, cli, root.ID, restored)
+	// U05: same Gin/PostgreSQL instance enforces byte length, owner isolation,
+	// same-parent conflict, immutable revision and durable exact UTF-8 rename.
+	assertBasicU05UTF8RenameServerContract(t, router, cli, token, otherToken, root.ID)
+}
+
+// assertBasicU05UTF8RenameServerContract is a real Gin/PostgreSQL/Owner rename
+// path, never a mocked API success. Cross-owner existence is concealed as 404.
+func assertBasicU05UTF8RenameServerContract(
+	t *testing.T,
+	router http.Handler,
+	cli *clientpkg.Client,
+	ownerToken, foreignToken string,
+	rootID uint64,
+) {
+	t.Helper()
+	ctx := context.Background()
+	probe, err := cli.CreateDir(ctx, rootID, "u05-rename-original")
+	if err != nil {
+		t.Fatal(err)
+	}
+	occupied, err := cli.CreateDir(ctx, rootID, "u05-rename-occupied")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodePath := fmt.Sprintf("/api/v1/nodes/%d", probe.ID)
+	patch := func(revision uint64, token, candidate string, status int) {
+		t.Helper()
+		requestWithHeaders(t, router, http.MethodPatch, nodePath, token,
+			strings.NewReader(fmt.Sprintf("{\"name\":%q}", candidate)),
+			status, map[string]string{"If-Match": fmt.Sprintf("\"%d\"", revision)})
+	}
+	check := func(name string, revision uint64) {
+		t.Helper()
+		current, err := cli.Node(ctx, probe.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.ID != probe.ID || current.Name != name || current.Revision != revision {
+			t.Fatalf("U05 persisted node: got=%+v want name=%q revision=%d",
+				current, name, revision)
+		}
+	}
+	revision := probe.Revision
+	exact255 := strings.Repeat("界", 85)
+	over255 := exact255 + "a"
+	if len([]byte(exact255)) != 255 || len([]byte(over255)) != 256 {
+		t.Fatal("U05 precondition must measure UTF-8 bytes, not Unicode characters")
+	}
+	patch(revision, foreignToken, "foreign-overwrite", http.StatusNotFound)
+	check(probe.Name, revision)
+	patch(revision, ownerToken, over255, http.StatusBadRequest)
+	check(probe.Name, revision)
+	patch(revision, ownerToken, occupied.Name, http.StatusConflict)
+	check(probe.Name, revision)
+	patch(revision, ownerToken, exact255, http.StatusOK)
+	check(exact255, revision+1)
+	patch(revision, ownerToken, "stale-overwrite", http.StatusConflict)
+	check(exact255, revision+1)
 }
 
 // assertRealAuthenticatedPendingNavigationAbort preserves the original
