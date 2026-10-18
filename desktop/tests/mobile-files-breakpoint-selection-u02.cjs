@@ -81,3 +81,21 @@ test('U02 real built-Web Chrome captures focused unsent Search draft/caret acros
   assert.ok(!focused.includes('route.fulfill('), 'no fake search API or forced success')
   assert.ok(!focused.includes('page.keyboard.press('), 'do not synthesize unrelated navigation commands')
 })
+
+test('U02 exact branch runs compiled Chromium selection and rename, not just source guards', () => {
+  const branch = 'test/mobile-files-ios27-real-chrome-u02-rename-'
+  const runner = source.slice(source.indexOf('await filesCommittedFolderBreakpointResumeAcceptance(origin);'),
+    source.indexOf("if (process.env.GITHUB_HEAD_REF?.startsWith('test/mobile-files-ios27-real-chrome-p17-')"))
+  assert.ok(runner.includes("startsWith('test/mobile-files-ios27-real-chrome-u02-')"))
+  assert.ok(runner.includes('await filesU02BreakpointSelectedNodeAcceptance(origin)'))
+  assert.ok(runner.includes("startsWith('" + branch + "')"))
+  assert.ok(runner.includes('await filesU02BreakpointRenameDraftAcceptance(origin)'))
+  const preparation = workflow.slice(workflow.indexOf('- name: Prepare opt-in native Chrome iOS 27 Web acceptance'),
+    workflow.indexOf('- name: U12 real Chrome Files deep destination'))
+  const chromeRun = workflow.slice(workflow.indexOf('- name: Verify real Chrome Files 375/390/899/900px shared API parity'),
+    workflow.indexOf('- uses: actions/upload-artifact@v4', workflow.indexOf('- name: Verify real Chrome Files 375/390/899/900px shared API parity')))
+  assert.ok(preparation.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')"))
+  assert.ok(chromeRun.includes("startsWith(github.head_ref, 'test/mobile-files-ios27-real-chrome-')"))
+  assert.ok(preparation.includes('XD_CHROME='))
+  assert.ok(chromeRun.includes('$XD_CHROME'))
+})
