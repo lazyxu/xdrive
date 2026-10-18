@@ -862,6 +862,161 @@ class OfflineHostStageTest(unittest.TestCase):
         self.assertEqual(len(list(directory.glob("pending.json"))), 1)
         self.assertFalse(json.loads((directory / "pending.json").read_text())["apply_supported"])
 
+
+    def inspect_pending_journal(self, created, pinned=None, directory=None,
+                                public_pin=None):
+        directory = directory or self.state / "caddy-https-admissions"
+        existing = directory / "pending.json"
+        digest = (pinned if pinned is not None else
+                  hashlib.sha256(existing.read_bytes()).hexdigest()
+                  if existing.exists() and existing.is_file() else "0" * 64)
+        script = Path(__file__).with_name("caddy-https-host-pending-verify.py")
+        args = [
+            sys.executable, str(script),
+            "--plan", str(self.plan),
+            "--env-file", str(self.env),
+            "--compose-file", str(self.compose),
+            "--expected-plan-sha256", hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+            "--staging-dir", str(self.stage_dir),
+            "--expected-stage-receipt-sha256", created["stage_receipt_sha256"],
+            "--apply-intent-manifest", str(self.review_manifest),
+            "--apply-intent-signature", str(self.review_signature),
+            "--operator-public-key", str(self.review_public),
+            "--expected-operator-key-der-sha256", public_pin or self.review_public_pin,
+            "--admission-dir", str(directory),
+            "--expected-pending-sha256", digest,
+        ]
+        output = subprocess.run(args, capture_output=True, text=True, timeout=30)
+        for secret in ("never-print-this", "192.168.2.4", str(self.root),
+                       "test-approval-key.pem"):
+            self.assertNotIn(secret, output.stdout + output.stderr)
+        self.assertEqual(len(output.stdout.splitlines()), 1)
+        return output.returncode, json.loads(output.stdout)
+
+    def test_pending_journal_reverification_matches_real_signed_intent_and_never_applies(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        accepted, _, _ = self.reserve_signed_intent(created)
+        self.assertEqual(accepted, 0)
+        before = (self.env.read_bytes(), self.compose.read_bytes(),
+                  self.review_manifest.read_bytes(),
+                  (directory / "pending.json").read_bytes())
+        status, inspection = self.inspect_pending_journal(created)
+        self.assertEqual(status, 0)
+        self.assertEqual(inspection["state"],
+                         "signed-intent-pending-reverified-unapplied")
+        self.assertIs(inspection["apply_supported"], False)
+        self.assertEqual(inspection["intent_sha256"],
+                         hashlib.sha256(self.review_manifest.read_bytes()).hexdigest())
+        self.assertEqual(inspection["desired_revision"], 7)
+        self.assertEqual(inspection["credential_revision"], 0)
+        self.assertIn("no-durable-db-revision-cas-or-apply-controller",
+                      inspection["blockers"])
+        self.assertIn("no-host-apply-or-signed-applied-receipt",
+                      inspection["blockers"])
+        self.assertEqual(before, (self.env.read_bytes(), self.compose.read_bytes(),
+                                  self.review_manifest.read_bytes(),
+                                  (directory / "pending.json").read_bytes()))
+        # Re-verification is intentionally repeatable; it never uses up
+        # a signed intent or removes a previous pending request.
+        self.assertEqual(self.inspect_pending_journal(created)[0], 0)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 2)
+
+    def test_pending_journal_refuses_tamper_even_with_a_new_matching_content_hash(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(created)[0], 0)
+        original = (directory / "pending.json").read_bytes()
+        entry = json.loads(original)
+        scenarios = (
+            {**entry, "apply_supported": True},
+            {**entry, "desired_revision": True},
+            {**entry, "desired_revision": 8},
+            {**entry, "nonce_sha256": "f" * 64},
+            {**entry, "operation_sha256": "f" * 64},
+            {**entry, "intent_sha256": "f" * 64},
+            {**entry, "candidate_environment_sha256": "f" * 64},
+            {**entry, "blockers": ["already-applied"]},
+            {**entry, "signed_key_material": "NEVER_PRINT_SECRET"},
+        )
+        journal = directory / "pending.json"
+        for bad in scenarios:
+            with self.subTest(bad=str(list(bad.items())[-1][0])):
+                journal.write_bytes(canonical(bad))
+                journal.chmod(0o600)
+                self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        journal.write_bytes(original + b"\n")
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        journal.write_bytes(original)
+        self.assertEqual(self.inspect_pending_journal(created, pinned="f" * 64)[0], 2)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 0)
+
+    def test_pending_journal_rejects_missing_files_symlinks_wrong_modes_and_untrusted_lock(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        self.assertEqual(self.reserve_signed_intent(created)[0], 0)
+        journal = directory / "pending.json"
+        lock = directory / ".intent.lock"
+        journal.chmod(0o644)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        journal.chmod(0o600)
+        lock.chmod(0o644)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        lock.chmod(0o600)
+        lock.rename(directory / "lock-original")
+        lock.symlink_to(directory / "lock-original")
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        lock.unlink()
+        (directory / "lock-original").rename(lock)
+        journal.rename(directory / "journal-original")
+        journal.symlink_to(directory / "journal-original")
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        journal.unlink()
+        (directory / "journal-original").rename(journal)
+        directory.chmod(0o755)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+        directory.chmod(0o700)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 0)
+        # In-place source change must be checked against original Ed25519 sig,
+        # not merely against a cached journal or a generated digest.
+        self.env.write_text(ENV + "UNRELATED_SETTING=changed\n")
+        self.env.chmod(0o600)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+
+    def test_pending_reader_shared_lock_refuses_inflight_writer(self):
+        import fcntl
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.create_apply_intent(created)
+        directory = self.admission_dir()
+        self.assertEqual(self.reserve_signed_intent(created)[0], 0)
+        lock = directory / ".intent.lock"
+        with lock.open("rb") as held:
+            fcntl.flock(held.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            try:
+                self.assertEqual(self.inspect_pending_journal(created)[0], 2)
+            finally:
+                fcntl.flock(held.fileno(), fcntl.LOCK_UN)
+        self.assertEqual(self.inspect_pending_journal(created)[0], 0)
+
+    def test_pending_verify_is_readonly_and_never_grants_host_apply(self):
+        script = Path(__file__).with_name("caddy-https-host-pending-verify.py").read_text()
+        for denied in ("O_CREAT", "O_TRUNC", "O_WRONLY", "os.replace(",
+                       "os.rename(", "os.unlink(", "docker compose",
+                       "docker restart", "docker stop", "subprocess.run(",
+                       "socket.", "requests.", "--insecure",
+                       '"apply_supported": True'):
+            self.assertNotIn(denied, script)
+        self.assertIn("fcntl.LOCK_SH | fcntl.LOCK_NB", script)
+
+
     def test_admission_controller_has_no_docker_or_config_mutation_capability(self):
         source = Path(__file__).with_name("caddy-https-host-admission.py").read_text()
         for forbidden in (

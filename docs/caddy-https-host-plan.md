@@ -1,5 +1,37 @@
 # NET-M5-B2 — Caddy HTTPS 双入口宿主应用计划（只读准备阶段）
 
+## NET-M5-C2-C · 已登记签名申请的独立只读复核（2026-10-18）
+
+**前置：** [#2089](https://github.com/lazyxu/xdrive/pull/2089) 的 C2-A 规范签名请求检验、[#2091](https://github.com/lazyxu/xdrive/pull/2091) 的 C2-B 宿主私有单 Pending 围栏均已合入。本阶段仍 **不会** 修改正式 Caddy 配置，也不具备 Host Apply/Restart、运行回滚或已应用回执。
+
+新增操作员本地脚本 `scripts/caddy-https-host-pending-verify.py`，用于证明现有的 `state/caddy-https-admissions/pending.json` 仍然与可信签名请求、当前受保护部署文件及预演候选相符。主要核验规则：
+
+- 与同一 xDrive `config/.env` 关联的私有状态目录必须存在且当前操作员拥有、0700、无路径符号链接；仅以 `O_NOFOLLOW|O_NONBLOCK` 打开 **已存在** 的 0600 单硬链接空 `.intent.lock` 和不超过 4096 字节的 0600 `pending.json`，不创建新锁或重写记录。取得 `flock(LOCK_SH|LOCK_NB)`；C2-B 正在独占登记时保守失败。
+- 必须从**另一受信渠道**事先固定 Pending 原始字节 SHA-256，不能在同一不可信文件上现算并冒充独立批准。拒绝非规范 JSON、重复/未知字段、伪造已应用状态、错误版本或固定阻断原因。
+- 复用 C2-A 的真实 Ed25519 签名、独立固定公钥 DER、UUIDv4/nonce、10 分钟窗口、HTTPS 与 AliDNS 修订、Host Plan、私有 Stage 以及原始 `.env`/Compose/candidate SHA 校验。将 Pending 内 operation/nonce 哈希、签名申请哈希、版本和所有源文件摘要逐项与当前签名请求及 Host 实际文件绑定。
+- 完整验签后再次重做 C2-A 验证，重新比对 Pending 内容及 inode/size/mtime/ctime、锁文件和私有目录身份。签名到期、真实文件漂移、FIFO/软链接、锁竞争、部分写入或被篡改的 Pending 一律返回 `blocked`；不自动删除、恢复或覆盖已经登记的申请。
+
+可信操作员示例（所有 PINNED 摘要须独立核验，不包含口令或私钥）：
+
+```bash
+python3 scripts/caddy-https-host-pending-verify.py \
+  --plan "$TRUSTED_PLAN_JSON" --env-file "$HOME/.xd/config/.env" \
+  --compose-file "$HOME/.xd/config/docker-compose.yml" \
+  --expected-plan-sha256 "$PINNED_PLAN_SHA256" \
+  --staging-dir "$HOME/.xd/state/caddy-https-staging" \
+  --expected-stage-receipt-sha256 "$PINNED_STAGE_SHA256" \
+  --apply-intent-manifest "$SIGNED_INTENT_JSON" \
+  --apply-intent-signature "$SIGNED_INTENT_SIG" \
+  --operator-public-key "$PINNED_OPERATOR_KEY_PEM" \
+  --expected-operator-key-der-sha256 "$PINNED_KEY_DER_SHA256" \
+  --admission-dir "$HOME/.xd/state/caddy-https-admissions" \
+  --expected-pending-sha256 "$INDEPENDENT_PENDING_SHA256"
+```
+
+成功只返回 `signed-intent-pending-reverified-unapplied` 和 `apply_supported=false`。它不消费 nonce，不清除 Pending，不能发布宿主 Apply 许可或重启 Caddy。缺少生产实体 Rescue 停机、DB/Host 原子 CAS、AliDNS 安全凭据交付、配置原子替换、独立 watchdog 自动回滚、启用/禁用入口正反 TLS/管理员登录和不可变 Applied Receipt，仍然 NO-GO。
+
+现有 `scripts/test-caddy-https-host-plan.py` 添加真实 Ed25519 签名、Pending 异常、同内容替换、权限、进程锁竞争与无副作用回归；由原 `server-validation` 运行。用户设备的真实 TLS/CA 信任及生产 Host Apply 均未在本阶段执行。
+
 ## NET-M5-C2-B · 操作员私有的一次性签名申请占位／防重放围栏（未应用，2026-10-18）
 
 **前置：** C1-A、C1-B 的独立 Rescue 离线与已签名镜像验证已合入；C2-A [#2089](https://github.com/lazyxu/xdrive/pull/2089) 的 Ed25519 `operator-apply-intent.v1` **仅做规范签名申请只读检查**，仍处于准确 HEAD 全 CI 验收中。本 C2-B 必须独立验收，不能将 C2-A 的合法申请视为 Caddy 重启许可。
