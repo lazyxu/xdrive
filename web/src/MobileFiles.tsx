@@ -561,15 +561,16 @@ export default function MobileFiles(props: Props) {
     emptyDirectoryKey !== null &&
     acceptedEmptyDirectoryRef.current === emptyDirectoryKey
 
-  // Normal folder transitions retain committed items, title and viewport and
-  // must not show loading chrome. A cold, not-yet-accepted empty directory
-  // (including a restored root ID), Search and Trash can signal real network
-  // latency after 300ms. Thumbnail/sparse range loading is independent.
+  // Ordinary folder transitions keep accepted rows and viewport, while a
+  // truly cold first Directory Range owns one quiet 180px slot until its
+  // authoritative result. Never show a folder-navigation loading caption,
+  // even on a slow read. Search and Trash retain real delayed feedback,
+  // independently of thumbnails and sparse item loading.
   const coldUnconfirmedBrowse = showDirectory && !props.searchActive &&
     !props.trashActive && totalCount === 0 && !keepAcceptedEmptyDirectory &&
     !props.virtualCollection
   const showRangeLoading = (props.loading || searchCountPending) &&
-    (props.searchActive || props.trashActive || coldUnconfirmedBrowse)
+    (props.searchActive || props.trashActive)
   const loadFeedbackScope = props.searchActive
     ? `search:${props.lifecycleKey}:${props.searchSummary?.query ?? ''}:${props.virtualCollection?.interactionKey ?? ''}`
     : props.trashActive ? `trash:${props.lifecycleKey}`
@@ -597,9 +598,9 @@ export default function MobileFiles(props: Props) {
   // finishes before the next meaningful frame. An accepted empty directory
   // is content and remains visible throughout an uncommitted navigation.
   const coldDirectoryReadUnconfirmed = coldUnconfirmedBrowse && !props.loading
-  // The first cold Folder GET needs the SAME 180px geometry before and
-  // after the 300ms display-only delay. A transient loading panel must never
-  // be inserted into a previously zero-height list on a slow response.
+  // Keep an identical silent slot from the first paint through an arbitrarily
+  // slow Directory GET. Only a real counted result or terminal error changes
+  // its content; no delayed network spinner is inserted during navigation.
   const coldDirectoryFirstRead = coldUnconfirmedBrowse && props.loading
   // A cold Search COUNT is also an unresolved first Range. Reserve the same
   // empty-slot geometry before its 300ms *visual-only* delay instead of
@@ -610,7 +611,7 @@ export default function MobileFiles(props: Props) {
       keepAcceptedEmptyDirectory || zeroStateLoading || coldDirectoryReadUnconfirmed ||
       unverifiedTrashEmpty || failedTrashEmpty || verifiedTrashEmpty)
   const zeroStateMessage = zeroStateLoading
-    ? props.searchActive ? '正在查询…' : '正在加载文件…'
+    ? props.searchActive ? '正在查询…' : '正在读取最近删除…'
     : props.searchActive
       ? props.searchSummary?.error ? '搜索失败，请重试'
         : searchCountPending ? '正在查询…'
@@ -2521,9 +2522,8 @@ export default function MobileFiles(props: Props) {
                     </Stack>
                   ) : (coldDirectoryFirstRead || (props.searchActive && zeroStatePending)) &&
                       !zeroStateLoading ? (
-                    // Neither cold Directory nor cold Search has an accepted
-                    // count yet. The 180px slot is real but stays visually
-                    // silent until sustained latency or a terminal receipt.
+                    // Directory remains silent until an authoritative reply;
+                    // Search alone may show delayed progress in this same slot.
                     null
                   ) : (
                     <XDriveStatePanel variant="plain" loading={zeroStateLoading} message={zeroStateMessage} />

@@ -56,7 +56,10 @@ test('same network feedback hook defers 300ms visually only while requests and p
   assert.ok(gallery.includes('XDriveMediaAsyncThumbnail'))
   assert.ok(gallery.includes('XDriveMediaAsyncVideoPoster'))
   assert.ok(gallery.includes('hasRequestedPhotoRange'))
-  assert.ok(gallery.includes('showDelayedColdPhotoLoad'))
+  assert.equal(gallery.includes('showDelayedColdPhotoLoad'), false,
+    'P62 intentionally removed the redundant cold photo-wall spinner')
+  assert.ok(gallery.includes('data-xdrive-gallery-cold-pending'))
+  assert.ok(gallery.includes('aria-busy={loading || !hasRequestedPhotoRange || undefined}'))
   assert.ok(gallery.includes('data-xdrive-places-pagination-quiet-status'),
     'keep P49 actual Places pagination slot, not an invented Gallery-prefixed ID')
 })

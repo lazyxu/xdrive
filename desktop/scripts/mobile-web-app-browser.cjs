@@ -3264,8 +3264,8 @@ async function galleryColdFirstRangeAcceptance() {
       {count:early.frames.length,first:early.frames[0],current:early.current});
     await page.waitForTimeout(300);
     const slow=await page.evaluate(()=>window.__p39Read());
-    check('P39 sustained network wait shows delayed progress without shifting App Frame',
-      slow.pending&&slow.progress&&!slow.empty&&slow.rows===0&&
+    check('P62 sustained network wait stays silent without shifting App Frame',
+      slow.pending&&!slow.progress&&!slow.empty&&slow.rows===0&&
       slow.header===52&&Math.abs(slow.top-early.current.top)<=1&&
       Math.abs(slow.height-early.current.height)<=1,
       {early:early.current,slow});

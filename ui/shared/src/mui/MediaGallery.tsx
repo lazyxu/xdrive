@@ -2933,7 +2933,6 @@ export function XDriveMediaGalleryPage({
         items={items}
         virtualCollection={galleryVirtualCollection}
         hasRequestedPhotoRange={collectionTarget !== null}
-        loadingEpoch={requestID.current}
         collectionKey={mediaGalleryCollectionKey(collectionTarget)}
         selectionScopeKey={xDriveMediaGallerySelectionScopeKey(collectionTarget, preferenceScope)}
         albums={acceptedFacetOwner === preferenceScope ? albums : []}
@@ -3391,8 +3390,6 @@ export interface XDriveMediaGalleryProps {
   virtualCollection?: XDriveMediaGalleryVirtualCollection
   /** False only before the first authenticated photo Range has even been requested. */
   hasRequestedPhotoRange?: boolean
-  /** Monotonic request intent, independent of the stable virtual collection key. */
-  loadingEpoch?: number
   collectionKey?: string
   /** Stable logical selection scope, distinct from a sort/range request generation. */
   selectionScopeKey?: string
@@ -5092,7 +5089,6 @@ export function XDriveMediaGallery({
   items,
   virtualCollection,
   hasRequestedPhotoRange = true,
-  loadingEpoch = 0,
   collectionKey = '',
   selectionScopeKey = collectionKey,
   albums = [],
@@ -6160,10 +6156,10 @@ export function XDriveMediaGallery({
     section === 'favorites' ||
     isTrashSection ||
     (section === 'media-types' && Boolean(activeMediaType))
-  // Do not present the first unrequested owner Range as an EMPTY collection.
-  // The previous accepted empty result is real content, and remains mounted
-  // if a later same-scope request is still pending. No tile/thumbnail loading
-  // behavior is changed by this view-only 300ms feedback gate.
+  // Do not present the first unrequested owner Range as EMPTY. An already
+  // accepted empty result remains mounted during refresh; a cold read owns a
+  // stable, silent 220px slot with truthful aria-busy until it commits.
+  // Thumbnail/poster network feedback is independent of folder navigation.
   const acceptedEmptyCollectionRef = useRef<string | null>(null)
   useEffect(() => {
     if (!hasRequestedPhotoRange || logicalItemCount > 0) {
@@ -6175,15 +6171,6 @@ export function XDriveMediaGallery({
   const keepAcceptedEmpty = hasRequestedPhotoRange &&
     acceptedEmptyCollectionRef.current === collectionKey &&
     logicalItemCount === 0
-  const coldPhotoLoadKey = `${collectionKey}:${loadingEpoch}`
-  const [visibleColdPhotoLoadKey, setVisibleColdPhotoLoadKey] = useState<string | null>(null)
-  useEffect(() => {
-    if (!loading || logicalItemCount > 0 || keepAcceptedEmpty || !showPhotoCollection) return
-    const timer = window.setTimeout(() => setVisibleColdPhotoLoadKey(coldPhotoLoadKey), 300)
-    return () => window.clearTimeout(timer)
-  }, [coldPhotoLoadKey, keepAcceptedEmpty, loading, logicalItemCount, showPhotoCollection])
-  const showDelayedColdPhotoLoad = loading && logicalItemCount === 0 &&
-    !keepAcceptedEmpty && visibleColdPhotoLoadKey === coldPhotoLoadKey
   const mediaTypeLabel = mediaGalleryMediaTypeLabel(activeMediaType)
   const showCollectionFilters =
     showPhotoCollection &&
@@ -7880,16 +7867,9 @@ export function XDriveMediaGallery({
           </Paper>
         ) : (loading && logicalItemCount === 0 && !keepAcceptedEmpty) ||
             (!hasRequestedPhotoRange && logicalItemCount === 0) ? (
-          <Box data-xdrive-gallery-cold-pending sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }}>
-            {showDelayedColdPhotoLoad ? (
-              <Stack alignItems="center" spacing={1} role="status">
-                <CircularProgress size={28} />
-                <Typography variant="body2" color="text.secondary">
-                  正在加载图库…
-                </Typography>
-              </Stack>
-            ) : null}
-          </Box>
+          <Box data-xdrive-gallery-cold-pending
+            aria-busy={loading || !hasRequestedPhotoRange || undefined}
+            sx={{ minHeight: 220, display: 'grid', placeItems: 'center' }} />
         ) : logicalItemCount === 0 ? (
           <Paper
             variant="outlined"

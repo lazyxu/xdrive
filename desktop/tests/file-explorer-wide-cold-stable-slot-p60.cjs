@@ -11,27 +11,25 @@ const web = read('web/src/WebFileExplorer.tsx')
 const desktop = read('desktop/src/renderer/DesktopFileExplorer.tsx')
 const gallery = read('ui/shared/src/mui/MediaGallery.tsx')
 
-test('Web/Desktop shared cold first Range reserves geometry before any delayed feedback', () => {
+test('Web/Desktop shared cold first Range reserves one silent slot through a slow GET', () => {
   const begin = explorer.indexOf(') : loading && logicalItemCount === 0 && !keepAcceptedEmpty ? (')
   const end = explorer.indexOf(') : logicalItemCount === 0 ? (', begin)
-  assert.ok(begin >= 0 && end > begin, 'must retain original authoritative cold read gate')
+  assert.ok(begin >= 0 && end > begin, 'retain original authoritative cold read gate')
   const cold = explorer.slice(begin, end)
   for (const token of [
     'data-xdrive-file-explorer-cold-first-range',
     'aria-busy="true"',
     "minHeight: 180, display: 'grid', placeItems: 'center'",
-    'showDelayedLoading',
-    '<XDriveStatePanel variant="plain" loading message="正在加载文件…" />',
   ]) assert.ok(cold.includes(token), token)
-  assert.ok(cold.indexOf('data-xdrive-file-explorer-cold-first-range') <
-    cold.indexOf('showDelayedLoading'), 'feedback must live inside the first-frame slot')
-  assert.ok(explorer.includes('globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)'))
+  assert.equal(cold.includes('showDelayedLoading'), false)
+  assert.equal(cold.includes('XDriveStatePanel'), false,
+    'cold directory transition must not paint an intermediate spinner or caption')
+  assert.ok(explorer.includes('globalThis.setTimeout(() => setDelayedLoadingScope(interactionScopeKey), 300)'),
+    'long-running Trash and accepted-row refresh feedback remain independent')
   assert.ok(explorer.includes('showDelayedLoading = loading && delayedLoadingScope === interactionScopeKey'))
-  assert.ok(explorer.includes('keepAcceptedEmpty'), 'accepted empty directory may not flash progress')
-  assert.ok(explorer.includes('data-xdrive-file-explorer-unverified-first-read'),
-    'original 180px unverified Trash slot remains')
-  assert.ok(explorer.includes('data-xdrive-file-explorer-empty-read-error'),
-    'read failure must remain distinguishable from verified zero')
+  assert.ok(explorer.includes('keepAcceptedEmpty'), 'accepted empty remains visible')
+  assert.ok(explorer.includes('data-xdrive-file-explorer-unverified-first-read'))
+  assert.ok(explorer.includes('data-xdrive-file-explorer-empty-read-error'))
 })
 
 test('same shared Explorer and Mobile cold slot retain original Range, virtual scroll and media progress', () => {

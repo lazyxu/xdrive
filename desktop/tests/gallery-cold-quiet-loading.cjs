@@ -8,25 +8,21 @@ const source = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.t
 const chrome = fs.readFileSync(path.join(root, 'desktop/scripts/mobile-web-app-browser.cjs'), 'utf8')
 const workflow = fs.readFileSync(path.join(root, '.github/workflows/ci.yml'), 'utf8')
 
-test('first unrequested Gallery Range is quiet rather than false empty or instant spinner', () => {
+test('cold Gallery first Range is silently busy, never false empty or a delayed spinner', () => {
   for (const token of [
     'hasRequestedPhotoRange={collectionTarget !== null}',
-    'loadingEpoch={requestID.current}',
     'hasRequestedPhotoRange = true',
-    'const showDelayedColdPhotoLoad = loading && logicalItemCount === 0',
-    'const coldPhotoLoadKey =',
-    'setVisibleColdPhotoLoadKey(coldPhotoLoadKey), 300',
     'data-xdrive-gallery-cold-pending',
+    'aria-busy={loading || !hasRequestedPhotoRange || undefined}',
     '(!hasRequestedPhotoRange && logicalItemCount === 0)',
+    'const keepAcceptedEmpty = hasRequestedPhotoRange &&',
   ]) assert.ok(source.includes(token), 'cold first-Range boundary missing: ' + token)
+  assert.equal(source.includes('showDelayedColdPhotoLoad'), false)
+  assert.equal(source.includes('setVisibleColdPhotoLoadKey'), false)
+  assert.equal(source.includes('正在加载图库…'), false)
   assert.ok(source.includes('(loading || !hasRequestedPhotoRange) && logicalItemCount === 0'),
-    'unverified zero total must not advertise an authoritative count in Gallery subtitle')
-  assert.ok(!source.includes(') : loading && logicalItemCount === 0 ? (\n          <Box sx={{ minHeight: 220'),
-    'old eager spinner branch must not survive')
-  assert.ok(source.includes('const keepAcceptedEmpty = hasRequestedPhotoRange &&'),
-    'previous authorized empty collection is content; keep it during refresh')
-  assert.ok(source.includes('!keepAcceptedEmpty && visibleColdPhotoLoadKey === coldPhotoLoadKey'),
-    'old request progress must not leak into next collection generation')
+    'unverified zero total cannot advertise an authoritative count')
+  assert.ok(!source.includes(') : loading && logicalItemCount === 0 ? (\n          <Box sx={{ minHeight: 220'))
 })
 
 test('Chrome P39 uses compiled Gallery, held authenticated Range0 and painted-frame assertions', () => {
