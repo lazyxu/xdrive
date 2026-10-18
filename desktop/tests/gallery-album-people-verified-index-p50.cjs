@@ -68,11 +68,9 @@ test('Album Organizer owns exactly one stable 160px first-read, error/retry and 
 test('People keep one quiet first-read/error pane, accepted empty and real thumbnails intact',()=>{
   for(const token of [
     'const coldPeopleIndex = showPeopleIndex && !indexFacetsVerified',
-    "coldPeopleIndex && (loading || placesStatus === 'loading')",
     'data-xdrive-gallery-unverified-facet-index',
     'minHeight: 160',
     "人物索引读取失败，请重试。",
-    "正在读取人物…",
     'onClick={onRefresh}',
     'indexFacetsVerified ? (',
     '还没有可浏览的人物',
@@ -80,6 +78,8 @@ test('People keep one quiet first-read/error pane, accepted empty and real thumb
     'data-xdrive-gallery-places-first-read',
     'XDriveMediaGalleryCoverThumbnail',
   ]) assert.ok(source.includes(token),token)
+  assert.equal(source.includes('showDelayedColdFacetRead'), false)
+  assert.equal(source.includes('正在读取人物…'), false)
   assert.equal(source.includes('showDelayedSyncFolders'),false,
     'unverified sync-folder read must not insert a spinner section above Albums')
   assert.equal(source.includes('正在加载同步文件夹…'),false)

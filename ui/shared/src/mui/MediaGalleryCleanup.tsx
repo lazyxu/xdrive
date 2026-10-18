@@ -118,6 +118,7 @@ function BurstCard({
 export function XDriveMediaGalleryCleanup({
   bursts,
   loading,
+  readState = bursts !== null ? 'ready' : loading ? 'unverified' : 'error',
   loadThumbnail,
   onOpenBurst,
   onLoadMoreBurst,
@@ -130,6 +131,8 @@ export function XDriveMediaGalleryCleanup({
 }: {
   bursts: MediaBurstReviewList | null
   loading?: boolean
+  /** Current-Owner receipt; null list is never a verified empty result. */
+  readState?: 'unverified' | 'ready' | 'error'
   loadThumbnail: MediaThumbnailLoader
   onOpenBurst?: (group: MediaBurstReview) => void
   onLoadMoreBurst?: () => void
@@ -140,7 +143,7 @@ export function XDriveMediaGalleryCleanup({
   indexStatusError?: string
   onRequestIndexStatus?: () => void
 }) {
-  const firstReadPending = Boolean(loading) && bursts === null
+  const firstReadPending = bursts === null && readState === 'unverified'
   const showMoreLoading = useXDriveDeferredPendingLoading(loadingMore === 'burst')
   // An absent canonical Server response is never authoritative zero. Failed
   // first reads retain their real parent error instead of claiming no advice.

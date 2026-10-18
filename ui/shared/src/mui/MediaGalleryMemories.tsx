@@ -6,6 +6,7 @@ import {
 } from '@mui/icons-material'
 import {
   Box,
+  Button,
   Chip,
   Paper,
   Stack,
@@ -48,28 +49,40 @@ const memoryKinds = ['on_this_day', 'recent_day', 'trip'] as const
 export function XDriveMediaGalleryMemories({
   memories,
   loading,
+  readState = loading ? 'unverified' : 'ready',
+  onRetry,
   loadThumbnail,
   onOpenMemory,
 }: {
   memories: MediaMemory[]
   loading?: boolean
+  /** Never infer a successful zero from an unrequested or failed Owner index. */
+  readState?: 'unverified' | 'ready' | 'error'
+  onRetry?: () => void
   loadThumbnail: MediaThumbnailLoader
   onOpenMemory?: (memory: MediaMemory) => void
 }) {
-  // Keep the stable first-read footprint silent during navigation, without
-  // delaying data. Actual media thumbnail progress remains card-owned.
-  if (memories.length === 0 && loading) {
+  // Owner-scoped verification, not a transient Boolean, decides whether a
+  // zero-item Memory index is real. Keep the same 180px slot during cold reads.
+  if (memories.length === 0 && readState !== 'ready') {
     return (
       <Paper
         data-xdrive-gallery-memories-first-read
-        aria-busy="true"
+        aria-busy={readState === 'unverified' || undefined}
         variant="outlined"
         sx={{ minHeight: 180, display: 'grid', placeItems: 'center', p: 3 }}
-      />
+      >
+        {readState === 'error' ? (
+          <Stack role="alert" spacing={1} alignItems="center">
+            <Typography variant="body2" color="error.main">回忆索引读取失败，请重试。</Typography>
+            {onRetry ? <Button onClick={onRetry} sx={{ minWidth: 44, minHeight: 44 }}>重试</Button> : null}
+          </Stack>
+        ) : null}
+      </Paper>
     )
   }
 
-  if (memories.length === 0 && !loading) {
+  if (memories.length === 0 && readState === 'ready') {
     return (
       <Paper
         variant="outlined"

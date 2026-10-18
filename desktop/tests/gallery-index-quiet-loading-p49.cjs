@@ -26,17 +26,15 @@ test('Gallery sync-folder index renders only accepted cards, never an interim lo
     'a slow folder list request must not insert a decorative spinner')
 })
 
-test('Places first read has stable 160px geometry and delayed only visual progress',()=>{
+test('Places first index retains the same silent 160px busy slot even past 300ms',()=>{
   assert.ok(code.includes("showPlacesIndex && placesStatus === 'loading' && places.length === 0"))
-  assert.ok(code.includes("showDelayedPlacesInitial = useXDriveDeferredPendingLoading("))
-  assert.ok(code.includes("showPlacesIndex && placesStatus === 'loading' && places.length === 0)"))
   assert.equal(code.includes("showPlacesIndex && placesStatus === 'loading' ? ("), false,
     'a refresh with already accepted place cards cannot mount a second pending panel')
-  assert.ok(code.includes('showDelayedPlacesInitial = useXDriveDeferredPendingLoading('))
   assert.ok(code.includes('data-xdrive-gallery-places-first-read'))
   assert.ok(code.includes('aria-busy="true"'))
   assert.ok(code.includes('minHeight: 160, display: \'grid\', placeItems: \'center\', p: 3'))
-  assert.ok(code.includes('showDelayedPlacesInitial ? ('))
+  assert.equal(code.includes('showDelayedPlacesInitial'),false)
+  assert.equal(code.includes('正在加载地点…'),false)
   assert.ok(code.includes('没有带地点信息的照片'))
   assert.ok(code.includes("placesStatus === 'ready'"))
 })
