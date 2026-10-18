@@ -132,6 +132,17 @@ function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
   }
 }
 
+function expandDependencySection(
+  previous: Record<string, boolean>, service: string, tab?: XDriveSystemDependencyTab,
+): Record<string, boolean> {
+  if (!tab) return previous
+  return {
+    ...previous,
+    [`${service}:${tab === 'verify' ? 'status' : tab}`]: true,
+    ...(tab === 'verify' ? { [`${service}:verify`]: true } : {}),
+  }
+}
+
 const statusLabels: Record<XDriveServiceDependencyState, { label: string; color: 'success' | 'error' | 'warning' | 'default' }> = {
   ready: { label: '可用', color: 'success' },
   unavailable: { label: '不可用', color: 'error' },
@@ -490,6 +501,8 @@ export function XDriveServiceDependenciesPage({
   )
   const selectedPage = visibleLocation.policy === 'photo-auto' ? 'photo-auto' : visibleLocation.service ?? 'overview'
   const selectedTabs = dependencyTabsFor(selectedPage)
+  const showVerify = selectedTabs.includes('verify') &&
+    (expandedSections[`${selectedPage}:verify`] ?? (selectedPage === 'caddy' || visibleLocation.tab === 'verify'))
   const currentTab = selectedTabs.includes(visibleLocation.tab ?? 'status')
     ? visibleLocation.tab ?? 'status' : 'status'
   const historyKey = `${selectedPage}:history`
@@ -585,7 +598,7 @@ export function XDriveServiceDependenciesPage({
     if (xDriveSystemDependenciesLocationKey(next) ===
         xDriveSystemDependenciesLocationKey(visibleLocation)) {
       if (next.tab) {
-        setExpandedSections((prior) => ({ ...prior, [`${selectedPage}:${next.tab}`]: true }))
+        setExpandedSections((prior) => expandDependencySection(prior, selectedPage, next.tab))
         document.getElementById(`dependency-${selectedPage}-${next.tab}-header`)?.scrollIntoView({ block: 'start' })
       }
       return
@@ -594,7 +607,7 @@ export function XDriveServiceDependenciesPage({
     // so moving within the same dependency must not discard or warn about drafts.
     if ((next.service && next.service === visibleLocation.service) ||
         (next.policy && next.policy === visibleLocation.policy)) {
-      if (next.tab) setExpandedSections((prior) => ({ ...prior, [`${selectedPage}:${next.tab}`]: true }))
+      if (next.tab) setExpandedSections((prior) => expandDependencySection(prior, selectedPage, next.tab))
       setVisibleLocation(next)
       onLocationChange?.(next)
       return
@@ -616,9 +629,8 @@ export function XDriveServiceDependenciesPage({
         xDriveSystemDependenciesLocationKey(visibleLocation)) return
     if (((incoming.service && incoming.service === visibleLocation.service) ||
          (incoming.policy && incoming.policy === visibleLocation.policy))) {
-      if (incoming.tab) setExpandedSections((prior) => ({
-        ...prior, [`${selectedPage}:${incoming.tab}`]: true,
-      }))
+      if (incoming.tab) setExpandedSections((prior) =>
+        expandDependencySection(prior, selectedPage, incoming.tab))
       setVisibleLocation(incoming)
     } else if (unsavedRef.current) setPendingNavigation({ next: incoming, external: true })
     else {
@@ -656,10 +668,11 @@ export function XDriveServiceDependenciesPage({
   useEffect(() => {
     // Existing deep links remain section anchors instead of navigation to
     // separate pages. Only navigation/loading changes scroll the viewport.
-    if (loading || cachedSnapshotRef.current === null || selectedPage === 'overview' || currentTab === 'status') return
+    if (loading || cachedSnapshotRef.current === null || selectedPage === 'overview' ||
+        currentTab === 'status' || (currentTab === 'verify' && !showVerify)) return
     document.getElementById(`dependency-${selectedPage}-${currentTab}-header`)
       ?.scrollIntoView({ block: 'start' })
-  }, [selectedPage, currentTab, loading])
+  }, [selectedPage, currentTab, loading, showVerify])
 
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
@@ -1654,41 +1667,52 @@ export function XDriveServiceDependenciesPage({
                   </Typography>
                   <Typography variant="caption" color="text.secondary"
                     sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
-                    当前服务的状态、设置、检测和审计历史统一在此页；历史按需读取。
+                    状态和检测在同一区块内按需展示；配置与审计历史独立管理，历史按需读取。
                     展开区块不会保存配置或执行宿主操作。
                   </Typography>
-                  {selectedTabs.map((currentTab) => {
-                    const sectionKey = `${selectedPage}:${currentTab}`
+                  {selectedTabs.filter((tab) => tab !== 'verify').map((sectionTab) => {
+                    const sectionKey = `${selectedPage}:${sectionTab}`
                     const expanded = expandedSections[sectionKey] ??
-                      (currentTab === 'status' || currentTab === 'config' ||
-                       (selectedPage === 'caddy' && currentTab === 'verify') ||
-                       visibleLocation.tab === currentTab)
-                    const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
-                      : currentTab === 'history' ? 'history' : 'config'
+                      (sectionTab === 'status' || sectionTab === 'config' ||
+                       visibleLocation.tab === sectionTab)
                     return (
                       <Accordion key={sectionKey} expanded={expanded}
                         onChange={(_event, next) => {
                           // A live form with unsaved changes must not be unmounted.
                           if (!next && unsavedRef.current) return
-                          if (!next && selectedPage === 'baidu-map' && currentTab === 'config')
+                          if (!next && selectedPage === 'baidu-map' && sectionTab === 'config')
                             hideBaiduAK()
                           setExpandedSections((prior) => ({ ...prior, [sectionKey]: next }))
                         }}
-                        data-xdrive-unified-detail-section={currentTab}
+                        data-xdrive-unified-detail-section={sectionTab}
                         disableGutters elevation={0}
                         sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important',
                           mb: 1.25, '&:before': { display: 'none' }, overflow: 'hidden' }}>
                         <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}
-                          aria-controls={`dependency-${selectedPage}-${currentTab}-content`}
-                          id={`dependency-${selectedPage}-${currentTab}-header`}
+                          aria-controls={`dependency-${selectedPage}-${sectionTab}-content`}
+                          id={`dependency-${selectedPage}-${sectionTab}-header`}
                           sx={{ px: { xs: 1.5, sm: 2 }, minHeight: 48 }}>
                           <Typography fontWeight={700} variant="subtitle2">
-                            {dependencyTabLabels[currentTab]}
+                            {sectionTab === 'status' && selectedTabs.includes('verify')
+                              ? '状态与检测' : dependencyTabLabels[sectionTab]}
                           </Typography>
                         </AccordionSummary>
-                        <AccordionDetails id={`dependency-${selectedPage}-${currentTab}-content`}
+                        <AccordionDetails id={`dependency-${selectedPage}-${sectionTab}-content`}
                           sx={{ pt: 0.5, px: { xs: 1.5, sm: 2 }, pb: 2 }}>
-                          {expanded && (<>
+                          {expanded && ([sectionTab,
+                            ...(sectionTab === 'status' && showVerify ? ['verify' as XDriveSystemDependencyTab] : []),
+                          ]).map((currentTab) => {
+                            const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
+                              : currentTab === 'history' ? 'history' : 'config'
+                            return (
+                              <Box key={currentTab} data-xdrive-unified-detail-content={currentTab}
+                                id={currentTab === 'verify' ? `dependency-${selectedPage}-verify-content` : undefined}>
+                                {currentTab === 'verify' && (
+                                  <Typography id={`dependency-${selectedPage}-verify-header`}
+                                    fontWeight={700} variant="subtitle2" sx={{ mt: 1, mb: 1 }}>
+                                    检测与生效证据
+                                  </Typography>
+                                )}
                           {currentTab === 'history' && hasUnsavedEdits && (
                             <Typography variant="caption" color="warning.main">
                               当前服务有未保存的修改。请先保存或放弃编辑，再执行历史回滚。
@@ -1700,6 +1724,16 @@ export function XDriveServiceDependenciesPage({
                     <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                     </Paper>
+                  )}
+                  {currentTab === 'status' && selectedTabs.includes('verify') && (
+                    <Button variant="text" size="small" sx={{ mt: 1 }}
+                      data-xdrive-unified-verify-toggle aria-expanded={showVerify}
+                      aria-controls={`dependency-${selectedPage}-verify-content`}
+                      onClick={() => setExpandedSections((prior) => ({
+                        ...prior, [`${selectedPage}:verify`]: !showVerify,
+                      }))}>
+                      {showVerify ? '收起检测与生效证据' : '查看检测与生效证据'}
+                    </Button>
                   )}
                   {['photo-face', 'photo-smart', 'photo-semantic'].includes(selectedPage) && currentTab === 'status' && (
                     <Button size="small" variant="outlined" sx={{ mt: 1.5 }}
@@ -2347,7 +2381,9 @@ export function XDriveServiceDependenciesPage({
                 </Paper>
               )}
                           </Box>
-                          </>)}
+                              </Box>
+                            )
+                          })}
                         </AccordionDetails>
                       </Accordion>
                     )
