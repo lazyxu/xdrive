@@ -14,6 +14,7 @@ import MapRoundedIcon from '@mui/icons-material/MapRounded'
 import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded'
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import HelpOutlineRoundedIcon from '@mui/icons-material/HelpOutlineRounded'
 import { alpha } from '@mui/material/styles'
 import { XDRIVE_SYSTEM_DEPENDENCY_IDS, xDriveNormalizeSystemDependenciesLocation, xDriveSystemDependenciesLocationKey, xDriveVisibleSystemDependencies, xDriveSystemDependencySelectionMissing, xDriveSystemDependenciesOverviewEntries } from '../system-dependencies-navigation'
@@ -21,7 +22,7 @@ import { xDriveSystemDependenciesOverviewCoverage, xDriveSystemDependencyOvervie
 import type { XDriveDashboardFilter, XDriveDashboardState } from '../system-dependencies-overview'
 import { XDRIVE_SYSTEM_DEPENDENCY_CAPABILITIES, xDriveSystemDependencyAvailableTargets } from '../system-dependencies-capabilities'
 import type { XDriveSystemDependenciesLocation, XDriveSystemDependencyTab, XDriveSystemDependencyID } from '../system-dependencies-navigation'
-import { Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, Tab, Tabs, TextField, Typography } from '@mui/material'
+import { Accordion, AccordionDetails, AccordionSummary, Box, Button, Chip, CircularProgress, FormControlLabel, MenuItem, Paper, Stack, Switch, TextField, Typography } from '@mui/material'
 import type {
   XDriveBaiduMapAdminConfig,
   XDriveBaiduMapAdminUpdate,
@@ -114,7 +115,8 @@ const groups: Array<{ id: XDriveServiceDependencyGroup; label: string; descripti
 ]
 
 const dependencyTabLabels: Record<XDriveSystemDependencyTab, string> = {
-  status: '状态', config: '配置', verify: '检测', history: '历史',
+  status: '当前状态', config: '配置与修改',
+  verify: '检测与生效证据', history: '配置历史与回滚',
 }
 
 function dependencyTabsFor(service: string): XDriveSystemDependencyTab[] {
@@ -481,6 +483,8 @@ export function XDriveServiceDependenciesPage({
 }) {
   const [showCapabilityMatrix, setShowCapabilityMatrix] = useState(false)
   const [overviewFilter, setOverviewFilter] = useState<XDriveDashboardFilter>('all')
+  // One shared detail page per service. Sections, not separate routes, own their expansion.
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [visibleLocation, setVisibleLocation] = useState<XDriveSystemDependenciesLocation>(
     () => xDriveNormalizeSystemDependenciesLocation(location),
   )
@@ -488,6 +492,8 @@ export function XDriveServiceDependenciesPage({
   const selectedTabs = dependencyTabsFor(selectedPage)
   const currentTab = selectedTabs.includes(visibleLocation.tab ?? 'status')
     ? visibleLocation.tab ?? 'status' : 'status'
+  const historyKey = `${selectedPage}:history`
+  const historyExpanded = selectedTabs.includes('history') && (expandedSections[historyKey] ?? (currentTab === 'history'))
   const [pendingNavigation, setPendingNavigation] = useState<{
     next: XDriveSystemDependenciesLocation
     external: boolean
@@ -577,7 +583,22 @@ export function XDriveServiceDependenciesPage({
   const navigateTo = (nextInput: XDriveSystemDependenciesLocation) => {
     const next = xDriveNormalizeSystemDependenciesLocation(nextInput)
     if (xDriveSystemDependenciesLocationKey(next) ===
-        xDriveSystemDependenciesLocationKey(visibleLocation)) return
+        xDriveSystemDependenciesLocationKey(visibleLocation)) {
+      if (next.tab) {
+        setExpandedSections((prior) => ({ ...prior, [`${selectedPage}:${next.tab}`]: true }))
+        document.getElementById(`dependency-${selectedPage}-${next.tab}-header`)?.scrollIntoView({ block: 'start' })
+      }
+      return
+    }
+    // Legacy ?tab= links now select an in-page section. No editor is unmounted,
+    // so moving within the same dependency must not discard or warn about drafts.
+    if ((next.service && next.service === visibleLocation.service) ||
+        (next.policy && next.policy === visibleLocation.policy)) {
+      if (next.tab) setExpandedSections((prior) => ({ ...prior, [`${selectedPage}:${next.tab}`]: true }))
+      setVisibleLocation(next)
+      onLocationChange?.(next)
+      return
+    }
     if (unsavedRef.current) {
       setPendingNavigation({ next, external: false })
       return
@@ -593,7 +614,13 @@ export function XDriveServiceDependenciesPage({
     const incoming = xDriveNormalizeSystemDependenciesLocation(location)
     if (xDriveSystemDependenciesLocationKey(incoming) ===
         xDriveSystemDependenciesLocationKey(visibleLocation)) return
-    if (unsavedRef.current) setPendingNavigation({ next: incoming, external: true })
+    if (((incoming.service && incoming.service === visibleLocation.service) ||
+         (incoming.policy && incoming.policy === visibleLocation.policy))) {
+      if (incoming.tab) setExpandedSections((prior) => ({
+        ...prior, [`${selectedPage}:${incoming.tab}`]: true,
+      }))
+      setVisibleLocation(incoming)
+    } else if (unsavedRef.current) setPendingNavigation({ next: incoming, external: true })
     else {
       setChildDirty(false)
       setCaddyHTTPSDirty(false)
@@ -626,6 +653,14 @@ export function XDriveServiceDependenciesPage({
     return () => window.removeEventListener('beforeunload', guard)
   }, [])
 
+  useEffect(() => {
+    // Existing deep links remain section anchors instead of navigation to
+    // separate pages. Only navigation/loading changes scroll the viewport.
+    if (loading || cachedSnapshotRef.current === null || selectedPage === 'overview' || currentTab === 'status') return
+    document.getElementById(`dependency-${selectedPage}-${currentTab}-header`)
+      ?.scrollIntoView({ block: 'start' })
+  }, [selectedPage, currentTab, loading])
+
   const hideBaiduAK = useCallback(() => {
     ++revealEpochRef.current
     setBaiduReveal(null)
@@ -644,6 +679,16 @@ export function XDriveServiceDependenciesPage({
     }
   }, [hideBaiduAK])
 
+  // The reveal TTL must be owned by the persistent page, not only the
+  // credential child: collapsing a section unmounts that child's timer.
+  useEffect(() => {
+    if (!baiduReveal) return
+    const seconds = Number.isFinite(baiduReveal.expires_in_seconds)
+      ? Math.min(30, Math.max(1, baiduReveal.expires_in_seconds)) : 1
+    const timer = window.setTimeout(hideBaiduAK, seconds * 1000)
+    return () => window.clearTimeout(timer)
+  }, [baiduReveal, hideBaiduAK])
+
   useEffect(() => {
     let active = true
     ++revealEpochRef.current
@@ -653,7 +698,7 @@ export function XDriveServiceDependenciesPage({
     setBaiduVerifyError('')
     ++geoNamesEpochRef.current
     ++photoPolicyEpochRef.current
-    const photoHistoryEpoch = ++photoHistoryEpochRef.current
+    ++photoHistoryEpochRef.current
     setPhotoPolicy(null)
     setPhotoAutoDraft(true)
     setPhotoKindsDraft(defaultPhotoAutoKinds)
@@ -695,19 +740,7 @@ export function XDriveServiceDependenciesPage({
         if (active) setPhotoPolicyError('无法读取照片智能分析策略，请检查 Server 或更新客户端。')
       })
     }
-    if (selectedPage === 'photo-auto' && currentTab === 'history' && source.loadPhotoAutoRevisions) {
-      void source.loadPhotoAutoRevisions().then((page) => {
-        if (active && photoHistoryEpoch === photoHistoryEpochRef.current) {
-          setPhotoRevisions(page.items)
-          setPhotoHistoryError('')
-        }
-      }).catch(() => {
-        if (active && photoHistoryEpoch === photoHistoryEpochRef.current) {
-          setPhotoHistoryError('无法读取照片智能分析配置历史，请检查 Server/Agent 版本。')
-        }
-      })
-    }
-    if (selectedPage === 'baidu-map' && currentTab !== 'status' && source.loadBaiduMapConfig) {
+    if (selectedPage === 'baidu-map' && source.loadBaiduMapConfig) {
       void source.loadBaiduMapConfig().then((config) => {
         if (!active) return
         setBaiduConfig(config)
@@ -716,14 +749,7 @@ export function XDriveServiceDependenciesPage({
         if (active) setBaiduError('无法读取百度地图管理配置，请检查 Server 或更新客户端。')
       })
     }
-    if (selectedPage === 'geonames' && currentTab === 'history' && source.loadGeoNamesRevisions) {
-      void source.loadGeoNamesRevisions().then((page) => {
-        if (active) setGeoNamesRevisions(page.items)
-      }).catch(() => {
-        if (active) setGeoNamesHistoryError('当前服务尚无法读取 GeoNames 配置历史，请检查 Server/Agent 版本。')
-      })
-    }
-    if (selectedPage === 'geonames' && currentTab !== 'status' && source.loadGeoNamesConfig) {
+    if (selectedPage === 'geonames' && source.loadGeoNamesConfig) {
       const initialGeoNamesEpoch = geoNamesEpochRef.current
       void source.loadGeoNamesConfig().then((config) => {
         if (active && initialGeoNamesEpoch === geoNamesEpochRef.current) {
@@ -744,7 +770,37 @@ export function XDriveServiceDependenciesPage({
       ++photoPolicyEpochRef.current
       ++photoHistoryEpochRef.current
     }
-  }, [source, selectedPage, currentTab])
+  }, [source, selectedPage])
+
+  // Revision history is intentionally fetched only when its accordion opens.
+  // This separate effect must never reset any already-edited configuration.
+  useEffect(() => {
+    if (!historyExpanded) return
+    let active = true
+    const historyEpoch = ++photoHistoryEpochRef.current
+    if (selectedPage === 'photo-auto' && source.loadPhotoAutoRevisions) {
+      void source.loadPhotoAutoRevisions().then((page) => {
+        if (active && historyEpoch === photoHistoryEpochRef.current) {
+          setPhotoRevisions(page.items)
+          setPhotoHistoryError('')
+        }
+      }).catch(() => {
+        if (active && historyEpoch === photoHistoryEpochRef.current)
+          setPhotoHistoryError('无法读取照片智能分析配置历史，请检查 Server/Agent 版本。')
+      })
+    }
+    if (selectedPage === 'geonames' && source.loadGeoNamesRevisions) {
+      void source.loadGeoNamesRevisions().then((page) => {
+        if (active) {
+          setGeoNamesRevisions(page.items)
+          setGeoNamesHistoryError('')
+        }
+      }).catch(() => {
+        if (active) setGeoNamesHistoryError('当前服务尚无法读取 GeoNames 配置历史，请检查 Server/Agent 版本。')
+      })
+    }
+    return () => { active = false; ++photoHistoryEpochRef.current }
+  }, [source, selectedPage, historyExpanded])
 
   useEffect(() => {
     let active = true
@@ -1017,7 +1073,7 @@ export function XDriveServiceDependenciesPage({
   // Read-only GeoNames status is separate from reloadGeoNames: never validate,
   // copy, switch or reapply a dataset just to check the applied revision.
   const refreshGeoNamesReadOnly = async () => {
-    if (!source.loadGeoNamesConfig || geoNamesBusy || currentTab !== 'verify' || unsavedRef.current) return
+    if (!source.loadGeoNamesConfig || geoNamesBusy || unsavedRef.current) return
     const epoch = ++geoNamesEpochRef.current
     setGeoNamesBusy(true)
     setGeoNamesError('')
@@ -1258,9 +1314,6 @@ export function XDriveServiceDependenciesPage({
   const selectedItem = systemServices.find((item) => item.id === selectedPage)
   const selectedServiceMissing = xDriveSystemDependencySelectionMissing(selectedPage, systemServices)
   const selectedGroup = selectedPage === 'photo-auto' ? 'intelligence' : selectedItem?.group
-  const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
-    : currentTab === 'history' ? 'history' : 'config'
-
   const choosePage = (page: string) => {
     if (page === 'overview') navigateTo({})
     else if (page === 'photo-auto') navigateTo({ policy: 'photo-auto', tab: 'config' })
@@ -1641,17 +1694,50 @@ export function XDriveServiceDependenciesPage({
                       </Paper>
                     )
                   })()}
-                  <Tabs variant="scrollable" scrollButtons="auto" value={currentTab}
-                    onChange={(_event, next: XDriveSystemDependencyTab) =>
-                      navigateTo(selectedPage === 'photo-auto'
-                        ? { policy: 'photo-auto', tab: next }
-                        : { service: selectedPage as XDriveSystemDependenciesLocation['service'], tab: next })}
-                    sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
-                    aria-label="服务详情功能分区">
-                    {selectedTabs.map((tab) => (
-                      <Tab key={tab} value={tab} label={dependencyTabLabels[tab]} />
-                    ))}
-                  </Tabs>
+                  <Typography variant="caption" color="text.secondary"
+                    sx={{ display: 'block', mb: 1.5 }} data-xdrive-unified-detail-intro>
+                    当前服务的状态、设置、检测和审计历史统一在此页；历史按需读取。
+                    展开区块不会保存配置或执行宿主操作。
+                  </Typography>
+                  {selectedTabs.map((currentTab) => {
+                    const sectionKey = `${selectedPage}:${currentTab}`
+                    const expanded = expandedSections[sectionKey] ??
+                      (currentTab === 'status' || currentTab === 'config' ||
+                       (selectedPage === 'caddy' && currentTab === 'verify') ||
+                       visibleLocation.tab === currentTab)
+                    const selectedRuntimeSection = currentTab === 'verify' ? 'verify'
+                      : currentTab === 'history' ? 'history' : 'config'
+                    return (
+                      <Accordion key={sectionKey} expanded={expanded}
+                        onChange={(_event, next) => {
+                          // A live form with unsaved changes must not be unmounted.
+                          if (!next && unsavedRef.current) return
+                          if (!next && selectedPage === 'baidu-map' && currentTab === 'config')
+                            hideBaiduAK()
+                          setExpandedSections((prior) => ({ ...prior, [sectionKey]: next }))
+                        }}
+                        data-xdrive-unified-detail-section={currentTab}
+                        disableGutters elevation={0}
+                        sx={{ border: 1, borderColor: 'divider', borderRadius: '8px !important',
+                          mb: 1.25, '&:before': { display: 'none' }, overflow: 'hidden' }}>
+                        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}
+                          aria-controls={`dependency-${selectedPage}-${currentTab}-content`}
+                          id={`dependency-${selectedPage}-${currentTab}-header`}
+                          sx={{ px: { xs: 1.5, sm: 2 }, minHeight: 48 }}>
+                          <Typography fontWeight={700} variant="subtitle2">
+                            {dependencyTabLabels[currentTab]}
+                          </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails id={`dependency-${selectedPage}-${currentTab}-content`}
+                          sx={{ pt: 0.5, px: { xs: 1.5, sm: 2 }, pb: 2 }}>
+                          {expanded && (<>
+                          {currentTab === 'history' && hasUnsavedEdits && (
+                            <Typography variant="caption" color="warning.main">
+                              当前服务有未保存的修改。请先保存或放弃编辑，再执行历史回滚。
+                            </Typography>
+                          )}
+                          <Box component="fieldset" disabled={currentTab === 'history' && hasUnsavedEdits}
+                            sx={{ m: 0, p: 0, border: 0, minWidth: 0, width: '100%' }}>
                   {currentTab === 'status' && items.length > 0 && (
                     <Paper variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
                       {items.map((service) => <ServiceRow key={service.id} service={service} />)}
@@ -1720,7 +1806,6 @@ export function XDriveServiceDependenciesPage({
                         不代表所有部署节点，也不等同于一次实际媒体分析或同步任务成功。
                       </Typography>
                       )}
-                      {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                       {['photo-smart', 'photo-semantic', 'photo-creative'].includes(selectedPage) && (
                         <Typography variant="body2" color="text.secondary"
                           data-xdrive-direct-shared-photo-verify>
@@ -1739,16 +1824,16 @@ export function XDriveServiceDependenciesPage({
                   currentTab === 'verify')) &&
                 <XDrivePhotoHostDesiredPanel source={source}
                   section={currentTab === 'history' ? 'history' : currentTab === 'verify' ? 'verify' : 'config'}
-                  onDirtyChange={setChildDirty} />}
+                  onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'media-worker' && currentTab !== 'status' &&
                 <XDriveMediaWorkerConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
+                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'database' && currentTab !== 'status' &&
                 <XDrivePostgresPoolConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
+                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history') &&
                 <XDriveCaddyHTTPSDesiredPanel source={source} refreshID={0}
-                  section={currentTab} onDirtyChange={setCaddyHTTPSDirty}
+                  section={currentTab} onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}
                   onConfigurationChanged={invalidateCaddyEvidence} />}
               {selectedPage === 'caddy' && currentTab === 'config' &&
                 <XDriveCaddyAliDNSPanel source={source} refreshID={0}
@@ -1757,7 +1842,7 @@ export function XDriveServiceDependenciesPage({
                 refreshID={caddyEvidenceRevision} />}
               {selectedPage === 'background-worker' && currentTab !== 'status' &&
                 <XDriveSourceWorkerConfigPanel source={source} refreshID={0}
-                  section={selectedRuntimeSection} onDirtyChange={setChildDirty} />}
+                  section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined} />}
               {selectedPage === 'photo-auto' && (currentTab === 'config' || currentTab === 'history') && (
                 <Paper variant="outlined" sx={{ mt: 1.5, borderRadius: 2, p: { xs: 1.5, sm: 2 } }}>
                   <Stack spacing={1.5}>
@@ -1993,7 +2078,7 @@ export function XDriveServiceDependenciesPage({
               )}
               {selectedPage === 'baidu-map' && (currentTab === 'config' || currentTab === 'verify') && (
                 <XDriveBaiduJSAPIDesiredPanel source={source} mode={currentTab}
-                  onDirtyChange={setBaiduJSAPIDirty} />
+                  onDirtyChange={currentTab === 'config' ? setBaiduJSAPIDirty : undefined} />
               )}
               {selectedPage === 'geonames' && currentTab === 'verify' && (
                 <Stack spacing={1.5} sx={{ mt: 1 }} data-xdrive-geonames-readonly-runtime>
@@ -2004,7 +2089,6 @@ export function XDriveServiceDependenciesPage({
                     下方「只读刷新目标与副本修订」读取当前受限管理状态；
                     「校验并热加载」才会修改正在使用的索引，两类操作必须明确区分。
                   </Typography>
-                  {items.map((service) => <ServiceRow key={service.id} service={service} />)}
                   <Button variant="outlined" size="small" sx={{ alignSelf: 'flex-start' }}
                     onClick={() => setRefreshID((value) => value + 1)}
                     disabled={loading || refreshing}>只读刷新当前实例索引状态</Button>
@@ -2304,6 +2388,12 @@ export function XDriveServiceDependenciesPage({
                   </Stack>
                 </Paper>
               )}
+                          </Box>
+                          </>)}
+                        </AccordionDetails>
+                      </Accordion>
+                    )
+                  })}
             </Box>
           )
             })}

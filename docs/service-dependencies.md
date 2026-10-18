@@ -1,5 +1,16 @@
 # Admin service dependencies, Baidu AK and Caddy HTTPS staging
 
+## SD-UI-V1.2 · 系统依赖每项服务一个详情页（2026-10-18）
+
+系统依赖总览保持 11 项固定 ID + 独立全局分析策略；**每项服务不再切换四个顶层 Tab**。使用同一个 Web/Mobile Web/PWA/Desktop 共享 `ServiceDependenciesPage`，在唯一详情页按顺序呈现「当前状态」「配置与修改」「检测与生效证据」「配置历史与回滚」可折叠分区。状态只渲染一次，原 Verify 分区保留真实探针的安全范围说明和手动检测按钮，不再重复绘制 ServiceRow；Caddy 保存/预检/历史沿用已有接口、加密 AliDNS 编辑和七项防失联预检，绝不增加 Apply、Restart 或 Docker 操作。
+
+- 展开状态默认显示、配置默认显示；Caddy 的只读检测也默认展开，历史默认折叠。进入旧 `?service=caddy&tab=verify`、`?tab=history` 等 Web/桌面深链接，只打开和定位对应**同一页面内**的区块，不切换和重置整个详情；跨服务/回总览/离开 App 仍由原有未保存修改确认保护。同一服务内的区块导航不得丢草稿。
+- 实际历史修订只在首次展开或通过旧历史深链接进入后读取：PhotoAuto/GeoNames 的历史请求拆成独立、可取消失效的 effect；普通编辑配置只跟随 Server/账号/选中服务变化，不跟随区块跳转或手动健康刷新。各配置/检测/历史 Panel 仅在其分区展开时挂载，折叠有未保存草稿的分区被阻止。历史处于编辑未保存状态时禁用会修改目标修订的控件，避免跨区块回滚覆盖当前草稿。
+- Server/Agent IPC、权限、REST、持久化和 52px 全屏 App Frame 原样保留，Web/Mobile Web/PWA/Desktop 真正共用同一实现。Caddy LAN/domain 开关仍独立，双关后端拒绝，保存只记录期望修订；`apply_supported=false`、`restricted-apply=blocked`、`public-https=unknown` 和已有本机/异机 TLS 验收边界不变，不出现虚假的「已生效」或「一键重启」。
+**隐私补丁：** 统一页面折叠「配置与修改」时，会立即隐藏临时显示的百度 Server AK；父页面另保留不超过 30 秒的独立自动隐藏计时器，避免折叠造成子组件计时器提前卸载而延长密钥展示。浏览器失焦/页面隐藏也继续立即清除。
+
+- 更新专用 Desktop Node 共享页面源码回归：要求无 Tab 实体导航、统一分区、首屏历史不请求、保留旧深链接、草稿/状态刷新隔离、严格 Caddy 配置/检测/历史与启停安全说明，且未修改其他产品线。
+- 新单工作提交仅限共享系统依赖页面、原导航契约测试、本文件和完整 AGENTS；需要**新的准确 HEAD 全 76 job CI**（Go PostgreSQL API Race、Linux/Windows/Web/Desktop、Caddy Rootless、制品、单提交/Final Gate）及当前 Github `mergeable_state=clean` 后才能 Ready/Rebase。无真实 iOS/Android/WAN 设备验收声明。
 
 ## NET-M5-B2（2026-10-18）— 局域网 IP / 公网域名 HTTPS 宿主配置应用计划（只读）
 

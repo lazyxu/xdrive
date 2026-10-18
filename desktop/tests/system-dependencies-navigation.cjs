@@ -104,13 +104,14 @@ test('Web and Desktop render the same shared navigation without replacing the Ap
   assert.ok(page.includes('确认离开将放弃这些修改'))
   assert.ok(page.includes('window.addEventListener(\'beforeunload\''))
   assert.ok(page.includes("selectedPage === 'photo-auto' && source.loadPhotoAutoConfig"))
-  assert.ok(page.includes("selectedPage === 'geonames' && currentTab === 'history'"))
-  assert.ok(page.includes("selectedPage === 'baidu-map' && currentTab !== 'status'"))
+  assert.ok(page.includes("selectedPage === 'geonames' && source.loadGeoNamesRevisions"))
+  assert.ok(page.includes("historyExpanded"))
+  assert.ok(page.includes("selectedPage === 'baidu-map' && source.loadBaiduMapConfig"))
   assert.ok(page.includes('source.load()'))
   assert.ok(agents.includes('系统依赖'))
   assert.ok(page.includes('XDriveWorkspaceSurface'))
-  assert.ok(page.includes('onDirtyChange={setChildDirty}'))
-  assert.ok(page.includes('onDirtyChange={setCaddyHTTPSDirty}'))
+  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"))
+  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}"))
   assert.ok(page.includes('onDirtyChange={setCaddyAliDirty}'))
   assert.equal(page.includes('docker.sock'), false)
 })
@@ -318,8 +319,10 @@ test('Web, Mobile Web, Desktop and shared editor all use the pre-unmount guard',
 
 test('Status refresh preserves mounted editor, saved draft and last successful inventory on failure', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
-  assert.ok(page.includes("}, [source, selectedPage, currentTab])"),
-    'editor scope should not depend on read-only health refreshID')
+  assert.ok(page.includes("}, [source, selectedPage])"),
+    'editor scope must follow the service, not same-page accordion or health refresh')
+  assert.ok(page.includes("}, [source, selectedPage, historyExpanded])"),
+    'only the history accordion requests revision lists')
   assert.equal(page.includes("}, [source, refreshID, selectedPage, currentTab])"), false)
   assert.ok(page.includes('const sourceChanged = snapshotSourceRef.current !== source'))
   assert.ok(page.includes('cachedSnapshotRef.current = null'))
@@ -335,7 +338,7 @@ test('Status refresh preserves mounted editor, saved draft and last successful i
   for (const service of ['media-worker', 'database', 'background-worker']) {
     assert.ok(page.includes("selectedPage === '" + service + "' && currentTab !== 'status'"))
   }
-  assert.ok(page.includes('section={selectedRuntimeSection} onDirtyChange={setChildDirty}'))
+  assert.ok(page.includes("section={selectedRuntimeSection} onDirtyChange={currentTab === 'config' ? setChildDirty : undefined}"))
   assert.ok(page.includes('refreshID={0}'),
     'read-only inventory refresh must not bump editor instance generations')
   assert.ok(page.includes('refreshID={caddyEvidenceRevision}'),
@@ -372,6 +375,49 @@ test('Runtime verification tabs load exact service-specific status without eager
   }
   assert.equal(page.includes('docker.sock'), false)
 })
+
+
+test('one shared detail page replaces status/config/verify/history tabs without eager history', () => {
+  const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
+  const caddy = read('ui/shared/src/mui/CaddyHTTPSDesiredPanel.tsx')
+  assert.ok(page.includes("selectedTabs.map((currentTab) => {"),
+    'each relevant capability is an in-page section of the same service')
+  assert.ok(page.includes('data-xdrive-unified-detail-intro'))
+  assert.ok(page.includes('data-xdrive-unified-detail-section={currentTab}'))
+  assert.ok(page.includes('<AccordionSummary'))
+  assert.ok(page.includes('<AccordionDetails'))
+  assert.equal(page.includes('<Tabs'), false)
+  assert.equal(page.includes('<Tab '), false)
+  assert.ok(page.includes("const historyExpanded = selectedTabs.includes('history')"),
+    'the audit history must be absent until the section opens or a history link targets it')
+  assert.ok(page.includes("if (!historyExpanded) return"))
+  assert.ok(page.includes("}, [source, selectedPage, historyExpanded])"))
+  assert.ok(page.includes("}, [source, selectedPage])"),
+    'within-page section switches must not reset a configuration draft')
+  assert.ok(page.includes("if (!next && unsavedRef.current) return"),
+    'collapsing an edited section must not unmount the draft')
+  assert.ok(page.includes("disabled={currentTab === 'history' && hasUnsavedEdits}"),
+    'history mutation must not overwrite a dirty in-page editor')
+  assert.ok(page.includes("currentTab === 'verify' ? 'verify'"),
+    'verify panel retains its restricted read-only contract')
+  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'config'"),
+    'HTTPS and encrypted AliDNS inputs remain in the single Caddy detail page')
+  assert.ok(page.includes("selectedPage === 'caddy' && currentTab === 'verify'"),
+    'the seven existing Caddy preflight checks remain manual and separate from saving')
+  assert.ok(page.includes("selectedPage === 'caddy' && (currentTab === 'config' || currentTab === 'history')"))
+  assert.ok(page.includes("onDirtyChange={currentTab === 'config' ? setCaddyHTTPSDirty : undefined}"))
+  assert.ok(page.includes('onConfigurationChanged={invalidateCaddyEvidence}'))
+  assert.ok(page.includes('window.setTimeout(hideBaiduAK, seconds * 1000)'),
+    'Baibu AK must expire even if its reveal child unmounts on section collapse')
+  assert.ok(page.includes("!next && selectedPage === 'baidu-map' && currentTab === 'config'"),
+    'closing the configuration accordion must immediately redact any exposed AK')
+  assert.ok(caddy.includes('!lanEnabled && !enabled') || caddy.includes('!lanEnabled && !enabled'))
+  assert.ok(caddy.includes("(lanEnabled || enabled)"))
+  assert.ok(caddy.includes("期望配置未应用"))
+  for (const forbidden of ['docker.sock', 'adminRestartHost', 'adminStopHost'])
+    assert.equal(page.includes(forbidden), false)
+});
+
 
 test('Photo model details expose shared manual verification but only the host owns mutable configuration', () => {
   const page = read('ui/shared/src/mui/ServiceDependenciesPage.tsx')
