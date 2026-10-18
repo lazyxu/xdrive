@@ -1754,6 +1754,79 @@ test('F-PARITY-07F-B: 1001 selected Nodes disable download and tagging at their 
 })
 
 
+test('U03: actual mounted 100k full Select All commits atomically and explains every bulk limit', async () => {
+  const requests = []
+  const accepted = []
+  const attempted = []
+  const source = {
+    interactionKey: 'u03-full-100k-logical-select', itemCount: 100_000, loadedItems: new Map(),
+    itemAt() { return undefined },
+    onRangeChange() {},
+    retainInteractionIDs() {},
+    collectRange: async (start, end, signal) => {
+      assert.equal(signal?.aborted, false, 'in-scope page should not be aborted')
+      assert.ok(end >= start && end - start < 200, 'each real collection request is at most 200 items')
+      requests.push([start, end])
+      return Array.from({ length: end - start + 1 }, (_, index) => ({
+        id: 1000 + start + index, kind: 'file',
+        name: '100k-' + (start + index) + '.txt', revision: 9,
+      }))
+    },
+  }
+  const limits = action => action === 'download' ? 1000 :
+    action === 'manage-tags' ? 500 : 200
+  await withView(async h => {
+    await act(async () => { find(h.view, 'aria-label', '文件操作菜单').props.onClick({ currentTarget: {} }) })
+    const select = h.view.root.findAll(node => node.props?.children === '选择' && node.props?.onClick)
+    assert.equal(select.length, 1)
+    await act(async () => { select[0].props.onClick() })
+    await act(async () => { find(h.view, 'data-mobile-files-select-all', true).props.onClick() })
+
+    assert.equal(requests.length, 500, '100k must request exactly 500 bounded 200-item chunks')
+    assert.deepEqual(requests[0], [0, 199])
+    assert.deepEqual(requests[499], [99_800, 99_999])
+    assert.equal(count(h.view, 'data-mobile-files-select-progress'), 0, 'progress clears only after atomic success')
+    assert.deepEqual(accepted.at(-1), { count: 100_000, first: [1000, 9], last: [100999, 9] },
+      'all 100k original Node IDs and revisions must commit together, not just a viewport sample')
+
+    for (const action of ['复制已选', '移动已选', '下载已选', '删除已选']) {
+      assert.equal(find(h.view, 'aria-label', action).props.disabled, true, action + ' must remain guarded')
+    }
+    const feedback = textOf(find(h.view, 'data-mobile-files-selection-limits', true).props.children)
+    assert.match(feedback, /200/, 'mutation limit displayed after large logical selection')
+    assert.match(feedback, /1000/, 'download limit displayed after large logical selection')
+    await act(async () => {
+      find(h.view, 'aria-label', '复制已选').props.onClick()
+      find(h.view, 'aria-label', '下载已选').props.onClick()
+    })
+    assert.deepEqual(attempted, [], 'a direct disabled callback invocation must not bypass shared limits')
+    await act(async () => { find(h.view, 'aria-label', '更多已选操作').props.onClick({ currentTarget: {} }) })
+    for (const [action, bound] of [['cut', 200], ['copy-to', 200], ['download', 1000], ['manage-tags', 500]]) {
+      const item = find(h.view, 'data-mobile-files-selection-action', action)
+      assert.equal(item.props.disabled, true, action)
+      assert.match(item.props['aria-label'], new RegExp(String(bound)), action + ' must announce precise limit')
+      assert.match(textOf(item.props.children), /不可用/, action + ' must show visible reason')
+    }
+    const done = h.view.root.findAll(node => node.props?.children === '完成' && node.props?.onClick)
+    assert.equal(done.length, 1)
+    await act(async () => { done[0].props.onClick() })
+    assert.equal(accepted.at(-1)?.count, 0, 'leaving selection drops every selected identity')
+  }, { props: {
+    requestedDirectoryID: 1, items: [], virtualCollection: source,
+    onSelectedItemsChange: items => accepted.push({
+      count: items.length,
+      first: items[0] ? [items[0].id, items[0].revision] : undefined,
+      last: items.at(-1) ? [items.at(-1).id, items.at(-1).revision] : undefined,
+    }),
+    getSelectionActionDisabledReason: (action, _items, count) =>
+      count > limits(action) ? '单次操作最多 ' + limits(action) + ' 项' : null,
+    onCopy: items => attempted.push(['copy', items.length]),
+    onMove: items => attempted.push(['move', items.length]),
+    onDelete: items => attempted.push(['delete', items.length]),
+    onDownload: items => attempted.push(['download', items.length]),
+  } })
+})
+
 test('F-PARITY-07F-C: Mobile multi-item Properties reuses Server recursive stats for a folder plus a file', async () => {
   const requests = []
   await withView(async h => {
