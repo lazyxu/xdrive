@@ -9,6 +9,31 @@
 - Scroll ownership: the Files virtual scroll host owns folder position; the Gallery scroll host owns Gallery media position, and its Viewer retains/restores that anchor; App-level `main` scroll resets only when the actual App changes. Never reset a pending parent/child content pane merely on click.
 - A request-loading badge should not insert a row or animate a height in front of a 100k-indexed list. Do not blanket-disable transitions in menus, Viewer or accessibility/reduced-motion settings.
 
+## 永久防回归门禁：稳定构造，不制造中间帧（P78，2026-10-18）
+
+这是 [AGENTS.md](../AGENTS.md) 中 **Permanent no-jitter contract / P78** 的可执行验收补充；覆盖 Web、Mobile Web、安装后的 PWA、Desktop 的文件、图库/相册、Viewer、搜索、回收站、侧栏、设置与其他异步页面。后续新功能必须先按此规则设计，禁止重新实现一个短暂加载页再交给 UX 专题修补。
+
+### 唯一允许的导航状态机
+
+| 阶段 | 页面允许呈现 | 严禁行为 |
+| --- | --- | --- |
+| 未发起请求 / 初次 `loading=false` | 旧页面保持原样；冷启动显示固定且静默的未确认区域，`aria-busy` 表示仍未验证 | 把 `[]`/`null` 当成“暂无内容”或伪造失败 |
+| 请求进行中（立即、>300ms、弱网） | 保留上次已验证文件/相册/标题/面包屑/滚动，或相同占位高度的静默冷启动区域；请求立即发出 | 为了显示“正在加载…”插入一帧/一行/加载圈/骨架屏，移动标题、搜索栏和列表 |
+| 当前 Owner、会话、请求与目标身份匹配且首个授权 Range/索引成功 | 一次性、绘制前提交目标内容；此时才更新保存的目录、Viewer 返回锚点与目标滚动位置 | Promise 完成先切页面，之后再由异步副作用将滚动归零第二次 |
+| 真实已验证的零结果 | 保持与未验证、失败场景一致的布局高度，显示正确“空” | 为了刷新已确定的空状态反复替换为占位区 |
+| 失败、取消、权限拒绝、过时响应 | 保留已确认页面和真实错误/重试；旧请求不得生效 | 清空列表、改存储位置或吞掉可恢复错误 |
+| 缩略图、Live Photo、视频封面、上传/下载/同步、明确分页/搜索 | 允许其**独立、真实**的固定区域进度或等待反馈，取消立即生效 | 利用“网络需要时间”的理由重新引入装饰性目录跳转 Loading |
+
+### 每个新页面必须做的验收
+
+1. **组件级原实现：** 使用真实共享 React 组件，不重写行为模拟品。注入未发起/快速返回/被 hold 超过 300ms/失败和重试/旧请求后返回/快速连点/切换账号；至少验证真实零与非零列表。
+2. **真实浏览器：** 用构建后的 Web 在 375、390、899 px 和宽屏进行导航。测量 Header、breadcrumb、scroll host 的 DOM 矩形（请求挂起期间每一维变化不超过 1 CSS px）、屏幕上真正可见的锚点、scrollTop、保存的目标 ID、一个且仅一个 DOM scroll host；不要把虚拟化 overscan 第一行当成可见锚点。
+3. **返回与入口：** 文件夹前进/返回、收藏/最近使用、深链接、搜索/回收站、图库相册/人物/地点、Viewer 返回、跨一级应用、键盘和方向变化。取消/过期请求不得改变已提交页面。
+4. **四端验证表：** Web Desktop、Mobile Web、Desktop Electron、安装 PWA。真实 iOS Safari/Android、弱网、100k 实体数据、VoiceOver/TalkBack/屏幕录制如果没有实际执行，必须写 **NOT RUN**；Chrome 触摸模拟不得冒充真机。
+5. **合并门槛：** 代码和测试同一个工作提交，匹配该 HEAD 的完整 CI/Final Gate；新出现的短暂状态、布局跳变或不稳定滚动直接阻止合并。性能提升需独立同负载前后证据，不虚构 CLS/FPS。
+
+**自动防回归入口：** `desktop/tests/navigation-no-jitter-contract-p78.cjs` 检查现有真实 Files/Gallery 导航的关键边界与规范存在性，沿用 P58–P77 已验证的挂载测试；新增入口时必须扩展该矩阵和原组件/浏览器测试，不可只靠静态字符串匹配验收。
+
 ## Audit / reproducible acceptance coverage
 
 | Surface and action | Discovered risk / current change | Gate |
