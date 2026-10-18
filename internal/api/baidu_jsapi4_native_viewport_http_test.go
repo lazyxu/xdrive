@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lazyxu/xdrive/internal/auth"
 	"github.com/lazyxu/xdrive/internal/meta"
 )
 
@@ -108,5 +110,45 @@ func TestBaiduNativeViewportNeverSerializesOriginalGPS(t *testing.T) {
 		if strings.Contains(text, leak) {
 			t.Fatalf("private WGS84/credentials exported: %s", leak)
 		}
+	}
+}
+
+// No production signer is needed to verify this pure Owner/epoch comparison.
+// Real Router tests continue to prove that the unprovisioned runtime is 503.
+func TestBaiduNativeViewportRechecksOwnerAfterSQL(t *testing.T) {
+	now := time.Unix(1_760_000_000, 0).UTC()
+	access := auth.MapAccess{UserID: 42, SessionVersion: 5, IssuedAt: now}
+	epoch := meta.BaiduJSAPIMapEpoch{OwnerID: 42, Epoch: 7}
+	if !baiduNativeViewportOwnerStillCurrent(access, epoch, access, epoch) {
+		t.Fatal("current owner and epoch unexpectedly refused")
+	}
+	cases := []struct {
+		name   string
+		before auth.MapAccess
+		prior  meta.BaiduJSAPIMapEpoch
+		after  auth.MapAccess
+		latest meta.BaiduJSAPIMapEpoch
+	}{
+		{"different owner", access, epoch,
+			auth.MapAccess{UserID: 43, SessionVersion: 5, IssuedAt: now}, epoch},
+		{"rotated session", access, epoch,
+			auth.MapAccess{UserID: 42, SessionVersion: 6, IssuedAt: now}, epoch},
+		{"new issued-at", access, epoch,
+			auth.MapAccess{UserID: 42, SessionVersion: 5, IssuedAt: now.Add(time.Second)}, epoch},
+		{"revoked map epoch", access, epoch,
+			access, meta.BaiduJSAPIMapEpoch{OwnerID: 42, Epoch: 8}},
+		{"epoch owner spoof", access, epoch,
+			access, meta.BaiduJSAPIMapEpoch{OwnerID: 43, Epoch: 7}},
+		{"missing original epoch", access, meta.BaiduJSAPIMapEpoch{OwnerID: 42}, access, epoch},
+		{"missing current epoch", access, epoch, access, meta.BaiduJSAPIMapEpoch{OwnerID: 42}},
+		{"missing current user", access, epoch, auth.MapAccess{}, epoch},
+		{"missing original issued-at", auth.MapAccess{UserID: 42, SessionVersion: 5}, epoch, access, epoch},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if baiduNativeViewportOwnerStillCurrent(tc.before, tc.prior, tc.after, tc.latest) {
+				t.Fatal("revoked/changed map owner escaped the post-query fence")
+			}
+		})
 	}
 }
