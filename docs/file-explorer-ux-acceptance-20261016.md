@@ -1,5 +1,21 @@
 # xDrive Files UX acceptance audit · 2026-10-16
 
+## 2026-10-18 · P59 合入后的 43 项验收续查（当前证据）
+
+**冻结核查基线**：`master@83aeb90c562d334f09e76476daff8d6635c97090`。本节只整理已存在的 PR、源码/回归入口和未执行的物理验收；下方历史快照保留原日期与历史事实。合入状态不等于真实 OS/AT 验收通过，不推导全平台性能结果。
+
+- **最近完成的 Files 专题**：F03 Wide Web/Desktop 主工具栏禁用原因 [#2013](https://github.com/lazyxu/xdrive/pull/2013) `closed+merged`，准确工作 HEAD `078c8487e1eb5a8001e1bceee5a82c3d9fca559a` 的 [完整 76-job CI #39087017517](https://github.com/lazyxu/xdrive/actions/runs/39087017517) 已通过（25 success、51 条件跳过、0 failure、Final Gate success）；Mobile Web/PWA 主 More 禁用原因 [#2014](https://github.com/lazyxu/xdrive/pull/2014) `closed+merged`，准确 HEAD `0791c3c97fa6b1b69b11d6da44fe0fd21a543bd2` 的 [完整 76-job CI #39088109377](https://github.com/lazyxu/xdrive/actions/runs/39088109377) 同样最终 25/51/0。旧错误尝试出现 26 条、后又 2 条移动端 mounted 回归失败，均保持原测试并通过修正「启用项直接文本 / 无重复 aria-label」消除；只有最终准确 HEAD 有资格合并。两者不改变原有 Server ACL、原回调、900px 分界。
+- **首屏/静默加载直接后续**：Mobile 100k 稀疏虚拟单元短暂「加载中…」[P57 #2010](https://github.com/lazyxu/xdrive/pull/2010) 已合入，固定行高 / 一滚动所有者不变；冷文件夹首个无缓存 Range [P59 #2018](https://github.com/lazyxu/xdrive/pull/2018) 已 `closed+merged`，对应准确 HEAD `71fcce7376bd4af06d26b23ac20b7e4b920e8d1e` 的 [完整 76-job CI #39090010426](https://github.com/lazyxu/xdrive/actions/runs/39090010426) 25 success / 51 条件跳过 / 0 failure（含 mounted Mobile、Web、真实 Go PostgreSQL API Race、Rootless、single-commit、Final Gate）。P59 对**真正首次冷读**从首帧预留 180px 相同高度，超过 300ms 才在原位置呈现轻量进度；授权真实内容 / 确认空 / 失败仍按原契约显示，文件夹 A→B 已确认的旧内容不提前清空。不要把这类人工 fixture 测试说成物理 iOS/Android 抖动测量。
+- **F02 正确语义**：共享 Wide Web/Desktop Details 使用 Server 逻辑总行与组标题计算 `aria-rowcount`、`aria-rowindex`，Grid 使用 `aria-setsize`/`aria-posinset`；真实 Mobile Web/PWA List/Grid 每个可聚焦文件使用 `role=button` 和包含逻辑位置/总数的 `aria-description`，不错误附加 table-row 语义到按钮。既有 `desktop/tests/file-explorer-virtual-aria.cjs` 等测试是源码及 100k 逻辑位置证据，**不是** NVDA/VoiceOver/TalkBack 实机 PASS。
+- **F03/F04 正确范围**：共享 `FileExplorerMenuReasons` 只把调用方已知的 `disabledReason` 显示在现有菜单，未知禁用保持中性描述；右键、移动长按、批量、Wide 与 Mobile 主 More 已分别接线。F04 三类视觉 6/8px 分隔条保留视觉宽度而放大无形 hit target、Tab/箭头与焦点 outline；既有 `file-explorer-disabled-menu-reasons.cjs`、`file-explorer-splitter-hitbox.cjs` 仅为桌面自动化/源码合同。无真实设备/屏幕阅读器签收。
+- **43 项单项跟踪**：原始下表的 F02–F04（3）、U01–U14（14）、M01–M10（10）、D01–D07（7）、P01–P09（9）合计 43 项，保留原有「当前代码/自动化」和「尚缺的独立验收」逐项说明。本次没有发现可用来源证明其全部实际 PASS，禁止把 GitHub 76-job 通用 CI 的 51 条件跳过换成 51 通过。U01/U08 追加 P59，F03 追加 #2013/#2014；其他单项无需重复创建第二套 Workspace/REST/虚拟列表、权限、Inspector 或 Task Center。
+- **PR/分支复核**：本次直接相关的 Files UX 开放 PR 与按 `files` 搜索的工作分支均为空；#2018 合入后的分支已自动删除。其他现存 PR 涉及 Gallery、Admin、LocalPush、性能和 Race 等独立专题，**未关闭、未删除、未覆盖**。主分支并发推进时以此冻结 SHA 的只读核查为准，不把别的专题变动归入 Files 验收。
+- **未通过的终验边界**：F02/F03/F04 真读屏与焦点；U01–U06 真权限 / 403、409 / 慢网络 / 899↔900 键盘；M01–M10 iOS 27 Files 视觉 1:1、Safari 地址栏/OS 手势、短横屏 200%、系统文件选择/分享；D01–D07 真实 Windows CfAPI、原生 Shell/拖放/DPI/Agent 重连；P01–P09 实际 iOS/Android Installed、进程回收重选续传、1–4GiB OS 保存字节与 SHA-256、真实 SW 跨账号缓存。权威 [PWA S5 七平台实机矩阵](pwa-s5-acceptance.md) 仍全部 `NOT RUN`、发布 `NO-GO`，本轮未取得新的设备原始材料。
+
+**本轮仅文档续查**：不触及 52px 全屏 App Frame、900px 断点、Web/Mobile Web/PWA/Desktop 共用业务接口、持久任务、服务端排序/安全与缩略图网络加载。新文档 HEAD 自身仍需完整准确 SHA CI/Final Gate 和干净合并状态后才可入主分支。
+
+---
+
 ## 2026-10-18 · 43 项续查、实际合并与自动化证据边界
 
 **本节是最新的只读复核，不是新一轮设备/大文件测试，也不是代码修复。** 历史阶段的“候选/待合入”仅保留当时事实；本节后的 2026-10-17 表仍按其原始日期理解。冻结源为 `master@04303869ebbe899111aed165e06cd8a040b65bdd`（[#2003](https://github.com/lazyxu/xdrive/pull/2003) P56 已实际 Rebase 合入；GitHub [完整 76-job CI #39084053558](https://github.com/lazyxu/xdrive/actions/runs/39084053558)：25 success / 51 条件跳过 / 0 failure，包含 Web、Desktop、Go、Rootless、single-commit、Final Gate）。该流水线不意味着专项真实 100k 或 OS 安装测试执行，不能把条件跳过当 PASS。
