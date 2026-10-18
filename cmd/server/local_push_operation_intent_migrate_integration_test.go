@@ -59,6 +59,16 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 			Count(&stageBindingCount).Error; err != nil || stageBindingCount != 0 {
 			t.Fatalf("migration created unauthorized Stage binding: %d %v", stageBindingCount, err)
 		}
+		if !db.Migrator().HasTable(&meta.LocalPushFirstLeafOperationCommit{}) ||
+			!db.Migrator().HasIndex(&meta.LocalPushFirstLeafOperationCommit{}, "idx_xd_local_push_first_leaf_commit_stage") ||
+			!db.Migrator().HasIndex(&meta.LocalPushFirstLeafOperationCommit{}, "idx_xd_local_push_first_leaf_commit_generation") {
+			t.Fatal("private first-leaf operation SQL commit indexes missing")
+		}
+		var commitCount int64
+		if err := db.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+			Count(&commitCount).Error; err != nil || commitCount != 0 {
+			t.Fatalf("migration invented a device backup SQL commit: %d %v", commitCount, err)
+		}
 		var terminalCount int64
 		if err := db.Model(&meta.LocalPushOperationTerminalReceipt{}).Count(&terminalCount).Error; err != nil || terminalCount != 0 {
 			t.Fatalf("migration invented terminal backup evidence: count=%d err=%v", terminalCount, err)
