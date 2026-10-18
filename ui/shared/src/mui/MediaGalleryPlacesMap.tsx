@@ -8,6 +8,8 @@ import type {
   XDriveBaiduStaticMapRequest,
 } from '../models'
 import { XDriveMediaGalleryBaiduStaticMap } from './MediaGalleryBaiduStaticMap'
+import { XDriveMediaGalleryBaiduJSAPI4Surface } from './MediaGalleryBaiduJSAPI4Surface'
+import type { XDriveBaiduJSAPI4AuthorizedMountPort } from '../media-gallery-baidu-jsapi4-mount'
 import { useXDriveDeferredLoading } from './useDeferredLoading'
 import { xDriveValidPlacesCameraSnapshot } from '../media-gallery-places-camera-session'
 import type { XDrivePlacesCameraPosition, XDrivePlacesCameraSnapshot, XDrivePlacesViewportCamera } from '../media-gallery-places-camera-session'
@@ -27,6 +29,7 @@ export function XDriveMediaGalleryPlacesMap({
   onCameraChange,
   getBaiduMapProvider,
   loadBaiduStaticMap,
+  authorizedJSAPI4Runtime,
   activePlaceID,
   focusPlaceID,
   onOpenPlace,
@@ -39,17 +42,34 @@ export function XDriveMediaGalleryPlacesMap({
   onCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
+  /** Only supplied by a future independently released Server-authorized proxy.
+   * Production currently supplies NO runtime, so there are zero SDK requests. */
+  authorizedJSAPI4Runtime?: XDriveBaiduJSAPI4AuthorizedMountPort
   activePlaceID?: string
   focusPlaceID?: string
   onOpenPlace?: (place: MediaPlaceFacet) => void
 }) {
   const [selectedPlaceID, setSelectedPlaceID] = useState<string | null>(null)
+  const [nativeMapReady, setNativeMapReady] = useState(false)
   const selectedPlace = (
     places.find((item) => item.id === selectedPlaceID) ??
     places.find((item) => item.id === focusPlaceID) ??
     places.find((item) => item.id === activePlaceID) ??
     places[0]
   )
+
+  // Never supply a grid-center to the native SDK as if it were an original
+  // photo position. The authorized mount must use official WGS84→BD-09.
+  const nativeCamera = selectedPlace && Number.isFinite(selectedPlace.sample_latitude) &&
+    Number.isFinite(selectedPlace.sample_longitude) &&
+    Math.abs(selectedPlace.sample_latitude!) <= 85 &&
+    Math.abs(selectedPlace.sample_longitude!) <= 180
+    ? { latitude: selectedPlace.sample_latitude!, longitude: selectedPlace.sample_longitude!,
+        zoom: xDriveValidPlacesCameraSnapshot(initialCamera) ? initialCamera.zoom : 12 }
+    : null
+  const canMountNative = Boolean(authorizedJSAPI4Runtime && listPlacesViewport &&
+    onOpenPlace && nativeCamera)
+  const showingNative = canMountNative && nativeMapReady
 
   const [viewportBounds, setViewportBounds] = useState<MediaPlacesViewportBounds | null>(null)
   const [viewportOffset, setViewportOffset] = useState(
@@ -95,7 +115,7 @@ export function XDriveMediaGalleryPlacesMap({
   }, [onCameraChange])
 
   useEffect(() => {
-    if (!listPlacesViewport || !viewportBounds) return
+    if (showingNative || !listPlacesViewport || !viewportBounds) return
     const controller = new AbortController()
     const generation = ++requestGeneration.current
     activeRequest.current = controller
@@ -126,7 +146,7 @@ export function XDriveMediaGalleryPlacesMap({
       controller.abort()
       if (activeRequest.current === controller) activeRequest.current = null
     }
-  }, [listPlacesViewport, viewportBounds, viewportOffset])
+  }, [listPlacesViewport, viewportBounds, viewportOffset, showingNative])
 
   const changeViewportPage = (nextOffset: number) => {
     if (!Number.isSafeInteger(nextOffset) || nextOffset < 0 ||
@@ -202,7 +222,20 @@ export function XDriveMediaGalleryPlacesMap({
           </Button>
         ) : null}
       </Stack>
-      <XDriveMediaGalleryBaiduStaticMap
+      {canMountNative && authorizedJSAPI4Runtime && listPlacesViewport &&
+        onOpenPlace && nativeCamera ? (
+          <XDriveMediaGalleryBaiduJSAPI4Surface
+            key={selectedPlace?.id}
+            authorizedRuntime={authorizedJSAPI4Runtime}
+            listOwnerViewport={listPlacesViewport}
+            camera={nativeCamera}
+            onOpenPlace={onOpenPlace}
+            onReady={setNativeMapReady}
+          />
+        ) : null}
+      {!showingNative ? (
+        <>
+          <XDriveMediaGalleryBaiduStaticMap
         place={selectedPlace}
         getProvider={getBaiduMapProvider}
         loadStaticMap={loadBaiduStaticMap}
@@ -295,6 +328,8 @@ export function XDriveMediaGalleryPlacesMap({
           </Stack>
         )}
       </Box>
+        </>
+      ) : null}
     </Paper>
   )
 }

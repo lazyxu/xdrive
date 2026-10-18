@@ -37,6 +37,12 @@ const hook = compile(hookPath,{})
 const galleryMap = compile(uiFile,{
   '@mui/material':stub,
   './useDeferredLoading':hook,
+  // A3 adds an optional shared native Map, but this existing Places
+  // viewport test deliberately has NO production authorized runtime.
+  // Keep static map ownership and the original Server Range contract.
+  './MediaGalleryBaiduJSAPI4Surface': {
+    XDriveMediaGalleryBaiduJSAPI4Surface: () => null,
+  },
   './MediaGalleryBaiduStaticMap':{
     XDriveMediaGalleryBaiduStaticMap: props =>
       React.createElement('map-fixture',{onViewportChange:props.onViewportChange}),
