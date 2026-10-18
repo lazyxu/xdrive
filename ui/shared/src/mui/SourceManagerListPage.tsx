@@ -94,15 +94,22 @@ export function XDriveSourceManagerListPage({
         <XDriveStatusAlert tone="bad">刷新{sourceNoun}失败，仍显示上次成功读取的内容；可重试。</XDriveStatusAlert>
       ) : null}
       {!hasLoaded && loading ? (
-        <Box data-xdrive-source-overview-loading-slot sx={{ minHeight: 180 }}>
-          {showDelayedLoading
-            ? <XDriveStatePanel variant="plain" loading message={`正在加载${sourceNoun}…`} />
-            : null}
-        </Box>
+        // The initial owner read has no authoritative count. Keep the same
+        // 180px footprint all the way to an accepted empty or real failure;
+        // never insert a short-lived loading panel during navigation.
+        <Box data-xdrive-source-overview-loading-slot
+          aria-busy="true"
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }} />
       ) : loadError && rows.length === 0 ? (
-        <XDriveStatusAlert tone="bad">无法读取{sourceNoun}，请点击刷新重试。</XDriveStatusAlert>
+        <Box data-xdrive-source-overview-first-read-error
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatusAlert tone="bad">无法读取{sourceNoun}，请点击刷新重试。</XDriveStatusAlert>
+        </Box>
       ) : rows.length === 0 ? (
-        <XDriveStatePanel variant="plain" message={`尚未添加${sourceNoun}`} />
+        <Box data-xdrive-source-overview-verified-empty
+          sx={{ minHeight: 180, display: 'grid', placeItems: 'center' }}>
+          <XDriveStatePanel variant="plain" message={`尚未添加${sourceNoun}`} />
+        </Box>
       ) : (
         <Stack spacing={1.75}>
           {rows.map((row) => {
