@@ -45,6 +45,7 @@ type adminBaiduJSAPIConfigDTO struct {
 	RuntimeEnabled  bool       `json:"runtime_enabled"`
 	ActivationState string     `json:"activation_state"`
 	RequiresRestart bool       `json:"requires_restart"`
+	ReleaseBlockers []string   `json:"release_blockers"`
 }
 
 type baiduJSAPIConfigInput struct {
@@ -124,6 +125,7 @@ func (s *Server) adminBaiduJSAPIConfig(c *gin.Context) {
 		RuntimeEnabled:  approved,
 		ActivationState: state,
 		RequiresRestart: false,
+		ReleaseBlockers: s.baiduJSAPI4ReleaseBlockers(cfg, approved),
 	})
 }
 

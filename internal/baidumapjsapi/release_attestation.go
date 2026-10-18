@@ -123,3 +123,13 @@ func VerifyPinnedJSAPI4ProductionRelease(a JSAPI4ReleaseAttestation, expected JS
 	}
 	return nil
 }
+
+// JSAPI4ProductionSignerPinned checks ONLY the syntax of the build-pinned
+// Ed25519 public key. It is not a licence, operator approval or live release.
+func JSAPI4ProductionSignerPinned() bool {
+	if jsapi4PinnedProductionPublicKey == "" {
+		return false
+	}
+	key, err := base64.StdEncoding.Strict().DecodeString(jsapi4PinnedProductionPublicKey)
+	return err == nil && len(key) == ed25519.PublicKeySize
+}
