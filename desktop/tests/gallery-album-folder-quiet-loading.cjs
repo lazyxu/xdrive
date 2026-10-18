@@ -7,11 +7,14 @@ const organizer = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGaller
 const gallery = fs.readFileSync(path.join(root, 'ui/shared/src/mui/MediaGallery.tsx'), 'utf8')
 
 test('Gallery album folder first read is quiet and does not insert spinner rows', () => {
-  assert.ok(organizer.includes('useXDriveDeferredLoading(currentFolderLoading, folderListVersionRef.current)'))
-  assert.ok(organizer.includes('data-xdrive-gallery-folder-loading'))
-  assert.ok(organizer.includes("position: 'absolute', top: 50, right: 8"))
-  assert.equal(organizer.includes('foldersLoading && <Stack direction="row"'), false)
+  assert.ok(organizer.includes('const currentFolderLoading = folderBusyState.scope === folderActionScope && foldersLoading'))
+  assert.ok(organizer.includes('aria-busy={currentFolderLoading || undefined}'))
   assert.ok(organizer.includes("position: 'relative', minHeight: 88"))
+  assert.equal(organizer.includes('showDelayedFolderLoading'), false)
+  assert.equal(organizer.includes('data-xdrive-gallery-folder-loading'), false)
+  assert.equal(organizer.includes('加载相册文件夹…'), false)
+  assert.equal(organizer.includes('foldersLoading && <Stack direction="row"'), false)
+  assert.ok(organizer.includes('showDelayedIndexRead'), 'real Album index latency is still reported separately')
 })
 test('only accepted current-account and current-port folder lists claim empty or folder count', () => {
   for(const token of [

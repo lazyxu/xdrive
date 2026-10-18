@@ -20,8 +20,10 @@ test('Gallery sync-folder index renders only accepted cards, never an interim lo
     'index remains honest while the first Owner read is unverified')
   assert.ok(hook.includes('XDRIVE_WORKSPACE_LOADING_FEEDBACK_DELAY_MS = 300'),
     'Places and other real delayed feedback must remain unchanged')
-  assert.ok(albums.includes('showDelayedFolderLoading'),
-    'existing mounted album-folder navigation and requests remain unchanged')
+  assert.ok(albums.includes('aria-busy={currentFolderLoading || undefined}'),
+    'real folder index remains visibly stable and accessible while pending')
+  assert.equal(albums.includes('showDelayedFolderLoading'),false,
+    'a slow folder list request must not insert a decorative spinner')
 })
 
 test('Places first read has stable 160px geometry and delayed only visual progress',()=>{

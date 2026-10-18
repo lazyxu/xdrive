@@ -49,8 +49,10 @@ test('Album Organizer owns exactly one stable 160px first-read, error/retry and 
     "正在读取相册…",
     "(!currentFolderLoading && (!folderActions || foldersVerified))",
     "albums.length > 0 ? '当前文件夹没有匹配的相册' : '还没有相册'",
-    'showDelayedFolderLoading',
+    'aria-busy={currentFolderLoading || undefined}',
   ]) assert.ok(organizer.includes(token),token)
+  assert.equal(organizer.includes('showDelayedFolderLoading'),false)
+  assert.equal(organizer.includes('加载相册文件夹…'),false)
   for(const token of [
     'indexVerified={indexFacetsVerified}',
     "indexPending={!indexFacetsVerified && (loading || placesStatus === 'loading' || syncFoldersLoading)}",
