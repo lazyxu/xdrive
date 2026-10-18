@@ -225,3 +225,29 @@ export function xDriveCreateBaiduJSAPI4SameOriginMount(
     },
   }
 }
+
+
+/** A3c16: use the already signed Owner Session + same-origin Loader for a
+ * derived BD09 photo map. This bridge NEVER requests WGS84 bounds: the
+ * dedicated native ClusterLayer reads tagged BD09 Server Owner points.
+ * Old WGS84 bridge is deliberately unavailable (not forged).
+ */
+export function xDriveCreateBaiduJSAPI4IndexedBD09Mount(
+  options: Pick<XDriveBaiduJSAPI4SameOriginOptions, 'mintMapOnlySession'>,
+) {
+  if (!options || typeof options.mintMapOnlySession !== 'function') {
+    throw new Error(unavailable)
+  }
+  const existing = xDriveCreateBaiduJSAPI4SameOriginMount({
+    mintMapOnlySession: options.mintMapOnlySession,
+    trustedWGS84Bounds: async () => { throw new Error(unavailable) },
+  })
+  return {
+    async acquire(container: HTMLElement, signal: AbortSignal,
+      camera: XDriveBaiduJSAPI4InitialPhotoCamera):
+      Promise<Pick<XDriveBaiduJSAPI4MountedMap, 'map' | 'namespace' | 'dispose'>> {
+      const approved = await existing.acquire(container, signal, camera)
+      return { map: approved.map, namespace: approved.namespace, dispose: approved.dispose }
+    },
+  }
+}

@@ -269,6 +269,12 @@ export interface MediaGalleryDataSource {
     bounds: import('../models').MediaBaiduNativeViewportBounds, limit?: number, offset?: number,
     signal?: AbortSignal,
   ) => Promise<import('../models').MediaBaiduNativeViewportPage>
+  getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<{
+    provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
+  }>
+  mintBaiduJSAPI4Session?: (signal: AbortSignal) => Promise<{
+    provider: 'baidu-jsapi-4.0'; runtime_enabled: true
+  }>
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
   getBaiduMapConsent?: (nodeID: number) => Promise<MediaBaiduMapConsent>
@@ -2032,6 +2038,47 @@ export function XDriveMediaGalleryPage({
       null, null, 'default', null, null, null, commitFromCollections)
   }, [loadFirstPage, query])
 
+  const nativePhotoOpenAbort = useRef<AbortController | null>(null)
+  useEffect(() => () => {
+    nativePhotoOpenAbort.current?.abort()
+    nativePhotoOpenAbort.current = null
+  }, [source, preferenceScope])
+  const openBaiduNativePhoto = useCallback((identity: {
+    assetID: number; nodeID: number
+  }) => {
+    if (!onOpenViewer || !Number.isSafeInteger(identity?.assetID) ||
+        identity.assetID <= 0 || !Number.isSafeInteger(identity.nodeID) ||
+        identity.nodeID <= 0) return
+    nativePhotoOpenAbort.current?.abort()
+    const abort = new AbortController()
+    nativePhotoOpenAbort.current = abort
+    const sort = gallerySortRef.current
+    const query: MediaGalleryQuery = {
+      sort_by: sort.by, sort_dir: sort.dir, fold_duplicates: false,
+    }
+    void (async () => {
+      // Rank/target are taken ONLY from the fresh owner-authorized sparse
+      // Range; SDK-selected asset/node IDs never dictate a Viewer offset.
+      const first = await source.listItemRange(1, 0,
+        { ...query, anchor_node_id: identity.nodeID }, abort.signal)
+      const anchor = first.anchor_index
+      if (abort.signal.aborted || !Number.isSafeInteger(anchor) ||
+          anchor === undefined || anchor < 0 || anchor >= first.total_count) return
+      const page = await source.listItemRange(1, anchor, query, abort.signal)
+      const selected = page.items?.[0]
+      if (abort.signal.aborted || page.offset !== anchor ||
+          page.total_count !== first.total_count ||
+          !selected || selected.node.id !== identity.nodeID) return
+      onOpenViewer(selected, {
+        target: { kind: 'all', query },
+        activeIndex: anchor, totalCount: page.total_count,
+      })
+    })().catch(() => { /* no private node/GPS or auth error in UI/logs */ })
+      .finally(() => {
+        if (nativePhotoOpenAbort.current === abort) nativePhotoOpenAbort.current = null
+      })
+  }, [onOpenViewer, source])
+
   const openPlace = useCallback((place: MediaPlaceFacet, fromCollections = false) => {
     const nextDraft: MediaGalleryFilterDraft = {
       ...(fromCollections ? emptyMediaGalleryFilterDraft : draftFilters),
@@ -2968,6 +3015,10 @@ export function XDriveMediaGalleryPage({
         syncFoldersError={syncFoldersError}
         places={places}
         listPlacesViewport={source.listPlacesViewport}
+        listBaiduNativeViewport={source.listBaiduNativeViewport}
+        getBaiduJSAPI4Status={source.getBaiduJSAPI4Status}
+        mintBaiduJSAPI4Session={source.mintBaiduJSAPI4Session}
+        onOpenBaiduNativePhoto={onOpenViewer ? openBaiduNativePhoto : undefined}
         placesCameraSnapshot={placesCameraSnapshot}
         onPlacesCameraChange={rememberPlacesCamera}
         focusPlaceID={lastOpenedPlaceID ?? undefined}
@@ -3413,6 +3464,10 @@ export interface XDriveMediaGalleryProps {
   placesCameraSnapshot?: XDrivePlacesCameraSnapshot
   onPlacesCameraChange?: (camera: XDrivePlacesViewportCamera) => void
   listPlacesViewport?: MediaGalleryDataSource['listPlacesViewport']
+  listBaiduNativeViewport?: MediaGalleryDataSource['listBaiduNativeViewport']
+  getBaiduJSAPI4Status?: MediaGalleryDataSource['getBaiduJSAPI4Status']
+  mintBaiduJSAPI4Session?: MediaGalleryDataSource['mintBaiduJSAPI4Session']
+  onOpenBaiduNativePhoto?: (identity: { assetID: number; nodeID: number }) => void
   focusPlaceID?: string
   getBaiduMapProvider?: () => Promise<XDriveBaiduMapProviderInfo>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<Blob>
@@ -5108,6 +5163,10 @@ export function XDriveMediaGallery({
   syncFoldersError = '',
   places = [],
   listPlacesViewport,
+  listBaiduNativeViewport,
+  getBaiduJSAPI4Status,
+  mintBaiduJSAPI4Session,
+  onOpenBaiduNativePhoto,
   placesCameraSnapshot,
   onPlacesCameraChange,
   focusPlaceID,
@@ -7301,6 +7360,10 @@ export function XDriveMediaGallery({
             places={places}
             totalCount={placesTotalCount}
             listPlacesViewport={listPlacesViewport}
+            listBaiduNativeViewport={listBaiduNativeViewport}
+            getBaiduJSAPI4Status={getBaiduJSAPI4Status}
+            mintBaiduJSAPI4Session={mintBaiduJSAPI4Session}
+            onOpenBaiduNativePhoto={onOpenBaiduNativePhoto}
             initialCamera={placesCameraSnapshot}
             onCameraChange={onPlacesCameraChange}
             getBaiduMapProvider={getBaiduMapProvider}

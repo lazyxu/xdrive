@@ -153,6 +153,14 @@ export interface XDriveMediaGalleryPort {
   listBaiduNativeViewport?: (
     bounds: MediaBaiduNativeViewportBounds, limit?: number, offset?: number, signal?: AbortSignal,
   ) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduNativeViewportPage>>
+  getBaiduJSAPI4Status?: (signal?: AbortSignal) => Promise<
+    XDriveMediaGalleryTransportResult<{
+      provider: 'baidu-jsapi-4.0'; enabled: boolean; activation_state: string
+    }>>
+  mintBaiduJSAPI4Session?: (signal: AbortSignal) => Promise<
+    XDriveMediaGalleryTransportResult<{
+      provider: 'baidu-jsapi-4.0'; runtime_enabled: true
+    }>>
   getBaiduMapProvider?: () => Promise<XDriveMediaGalleryTransportResult<XDriveBaiduMapProviderInfo>>
   loadBaiduStaticMap?: (input: XDriveBaiduStaticMapRequest, signal?: AbortSignal) => Promise<XDriveMediaGalleryTransportResult<Blob>>
   getBaiduMapConsent?: (nodeID: number) => Promise<XDriveMediaGalleryTransportResult<MediaBaiduMapConsent>>
@@ -555,6 +563,12 @@ export function createXDriveMediaGalleryDataSource(
       ? (bounds, limit, offset, signal) => resolveXDriveTransport(
           port.listBaiduNativeViewport!(bounds, limit, offset, signal),
         )
+      : undefined,
+    getBaiduJSAPI4Status: port.getBaiduJSAPI4Status
+      ? (signal) => resolveXDriveTransport(port.getBaiduJSAPI4Status!(signal))
+      : undefined,
+    mintBaiduJSAPI4Session: port.mintBaiduJSAPI4Session
+      ? (signal) => resolveXDriveTransport(port.mintBaiduJSAPI4Session!(signal))
       : undefined,
     getBaiduMapProvider: port.getBaiduMapProvider
       ? () => resolveXDriveTransport(port.getBaiduMapProvider!())

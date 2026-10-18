@@ -1500,6 +1500,48 @@ export class XDriveApi {
     )
   }
 
+  /** Runtime comes only from Server's current signed, revocable release. */
+  mediaBaiduJSAPI4Status(signal?: AbortSignal) {
+    return this.request<{
+      provider: 'baidu-jsapi-4.0'
+      enabled: boolean
+      activation_state: string
+    }>('/api/v1/media/places/baidu-jsapi/status',
+      { signal, cache: 'no-store' }).then(status => {
+      if (!status || status.provider !== 'baidu-jsapi-4.0' ||
+          typeof status.enabled !== 'boolean' ||
+          typeof status.activation_state !== 'string' ||
+          (status.enabled && status.activation_state !== 'authorized_signed_release')) {
+        throw new Error('Invalid signed map runtime status')
+      }
+      return status
+    })
+  }
+
+  /** Real authenticated Session POST sets a Secure HttpOnly Cookie exclusively
+   * for /_BMapService/. Browser AK and Bearer never enter its response or URL.
+   * A cross-origin API_BASE or file:/HTTP view may not mint this Cookie. */
+  mediaBaiduJSAPI4Session(signal: AbortSignal) {
+    if (!signal || signal.aborted || typeof window === 'undefined' ||
+        window.location.protocol !== 'https:' ||
+        new URL(`${API_BASE}/api/v1/media/places/baidu-jsapi/session`,
+          window.location.href).origin !== window.location.origin) {
+      return Promise.reject(new Error('baidu_jsapi4_not_authorized'))
+    }
+    return this.request<{
+      provider: 'baidu-jsapi-4.0'
+      runtime_enabled: true
+    }>('/api/v1/media/places/baidu-jsapi/session', {
+      method: 'POST', cache: 'no-store', credentials: 'same-origin', signal,
+    }).then(grant => {
+      if (!grant || grant.provider !== 'baidu-jsapi-4.0' ||
+          grant.runtime_enabled !== true || signal.aborted) {
+        throw new Error('baidu_jsapi4_not_authorized')
+      }
+      return grant
+    })
+  }
+
   // An authenticated native BD09LL viewport is *not* a WGS84 photo
   // query, is not an SDK loader and never carries Browser AK or provider URLs.
   mediaBaiduNativeViewport(
