@@ -48,7 +48,7 @@ import type {
   XDriveLocalSourceDraftPage,
 } from '../device-backups'
 
-type HistoryPage = { items: XDriveDeviceBackupRun[]; page: number; hasMore: boolean; loading: boolean }
+type HistoryPage = { items: XDriveDeviceBackupRun[]; page: number; hasMore: boolean; loading: boolean; verified: boolean }
 type OverviewState = {
   source?: XDriveDeviceBackupDataSource
   overview: XDriveDeviceBackupOverview | null
@@ -379,9 +379,12 @@ export function XDriveDeviceBackupPage({
         source, pages: {
           ...pages, [id]: {
             items: pages[id]?.items ?? [],
-            page,
+            // Keep the last committed page number while the next Server
+            // page is in flight; stage navigation until the winning receipt.
+            page: pages[id]?.page ?? page,
             hasMore: pages[id]?.hasMore ?? false,
             loading: true,
+            verified: pages[id]?.verified ?? false,
           },
         },
       }
@@ -394,7 +397,7 @@ export function XDriveDeviceBackupPage({
         return {
           source, pages: {
             ...prev.pages,
-            [id]: { items: data.items, page, hasMore: data.has_more, loading: false },
+            [id]: { items: data.items, page, hasMore: data.has_more, loading: false, verified: true },
           },
         }
       })
@@ -406,8 +409,10 @@ export function XDriveDeviceBackupPage({
           source, pages: {
             ...prev.pages,
             [id]: {
-              items: prev.pages[id]?.items ?? [], page,
+              items: prev.pages[id]?.items ?? [],
+              page: prev.pages[id]?.page ?? page,
               hasMore: prev.pages[id]?.hasMore ?? false, loading: false,
+              verified: prev.pages[id]?.verified ?? false,
             },
           },
         }
@@ -513,10 +518,13 @@ export function XDriveDeviceBackupPage({
                   </Typography>
                   {source?.foldersPage ? (
                     !folderPages[device.id]?.complete ? (
-                      <Button size="small" variant="outlined" disabled={Boolean(folderPages[device.id]?.loading)}
+                      <Button size="small" variant="outlined"
+                        disabled={Boolean(folderPages[device.id]?.loading)}
+                        aria-busy={Boolean(folderPages[device.id]?.loading) || undefined}
+                        data-xdrive-device-backup-folder-page-action={device.id}
                         onClick={() => void loadDeviceFolders(device.id)}>
-                        {folderPages[device.id]?.loading ? '正在读取文件夹…'
-                          : folderPages[device.id]?.items.length ? '加载更多此设备文件夹' : '核对并加载此设备文件夹'}
+                        {folderPages[device.id]?.items.length
+                          ? '加载更多此设备文件夹' : '核对并加载此设备文件夹'}
                       </Button>
                     ) : null
                   ) : <Typography variant="caption" color="text.secondary">
@@ -641,18 +649,22 @@ export function XDriveDeviceBackupPage({
                           </Button>
                         ) : null}
                         <Typography variant="subtitle2">同步历史（只读）</Typography>
-                        {history?.loading ? (
-                          <Typography variant="body2">读取历史中…</Typography>
-                        ) : history && history.items.length > 0 ? history.items.map((run) => (
-                          <Box key={run.id} sx={{ py: 1, borderBottom: 1, borderColor: 'divider' }}>
-                            <Typography variant="body2">{runLabel(run.status)} · {timeLabel(run.started_at)}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              扫描 {run.scanned_items} 项
-                              {' · '}传输 {run.transferred_items} 项 / {formatBytes(run.transferred_bytes)}
-                              {' · '}失败 {run.failed_items} 项
-                            </Typography>
-                          </Box>
-                        )) : <Typography variant="body2" color="text.secondary">暂无历史记录。</Typography>}
+                        <Box data-xdrive-device-backup-history-list={folder.source_id}
+                          aria-busy={Boolean(history?.loading) || undefined}
+                          sx={{ minHeight: 72 }}>
+                          {history && history.items.length > 0 ? history.items.map((run) => (
+                            <Box key={run.id} sx={{ py: 1, borderBottom: 1, borderColor: 'divider' }}>
+                              <Typography variant="body2">{runLabel(run.status)} · {timeLabel(run.started_at)}</Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                扫描 {run.scanned_items} 项
+                                {' · '}传输 {run.transferred_items} 项 / {formatBytes(run.transferred_bytes)}
+                                {' · '}失败 {run.failed_items} 项
+                              </Typography>
+                            </Box>
+                          )) : history?.verified
+                            ? <Typography variant="body2" color="text.secondary">暂无历史记录。</Typography>
+                            : null}
+                        </Box>
                         {historyError?.source === source && historyError.id === folder.source_id ? (
                           <Typography variant="caption" color="error">无法加载历史，请重试。</Typography>
                         ) : null}
@@ -681,8 +693,10 @@ export function XDriveDeviceBackupPage({
               </Typography>
               {source?.listPage && overview.next_after_device_id ? (
                 <Button size="small" variant="outlined" disabled={pageLoading}
+                  aria-busy={pageLoading || undefined}
+                  data-xdrive-device-backup-more-devices
                   onClick={() => void loadMoreDevices()}>
-                  {pageLoading ? '正在加载更多设备…' : '加载更多设备'}
+                  加载更多设备
                 </Button>
               ) : (
                 <XDriveStatusAlert tone="neutral">当前 Server 或 Agent 不支持后续设备分页，请升级后查看完整设备列表。</XDriveStatusAlert>

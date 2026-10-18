@@ -1,5 +1,6 @@
-import { Button, Paper, Stack, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Paper, Stack, Typography } from '@mui/material'
 import type { MediaGalleryIndexStatus } from '../models'
+import { useXDriveDeferredPendingLoading } from './useDeferredLoading'
 
 /**
  * This on-demand coverage describes known active PhotoAssets only.
@@ -19,6 +20,10 @@ export function XDriveMediaGalleryCleanupIndexStatus({
   const unready = status
     ? Math.max(0, status.known_assets - status.ready_assets)
     : null
+  // Index-check requests can complete within one frame. Keep the button's
+  // committed label/width unchanged; only show optional progress in its
+  // reserved slot after a genuinely sustained Server read.
+  const showDelayedLoading = useXDriveDeferredPendingLoading(loading)
   return (
     <Paper variant="outlined" data-xdrive-media-cleanup-index-coverage sx={{ p: 1.5 }}>
       <Stack spacing={0.75}>
@@ -31,11 +36,25 @@ export function XDriveMediaGalleryCleanupIndexStatus({
               size="small"
               variant="text"
               disabled={loading}
+              aria-busy={loading || undefined}
               onClick={onRequest}
               data-xdrive-media-cleanup-check-index
               sx={{ minHeight: 44 }}
             >
-              {loading ? '检查中…' : status ? '刷新索引状态' : '查看索引状态'}
+              <Box data-xdrive-media-cleanup-index-quiet-action
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                <Typography component="span" variant="body2">
+                  {status ? '刷新索引状态' : '查看索引状态'}
+                </Typography>
+                <Box data-xdrive-media-cleanup-index-progress-slot
+                  aria-busy={loading || undefined}
+                  sx={{ width: 16, height: 16, flexShrink: 0, display: 'grid',
+                    placeItems: 'center', pointerEvents: 'none' }}>
+                  {showDelayedLoading
+                    ? <CircularProgress size={13} aria-label="正在检查清理索引" />
+                    : null}
+                </Box>
+              </Box>
             </Button>
           ) : null}
         </Stack>
