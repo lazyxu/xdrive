@@ -1,5 +1,16 @@
 # FileExplorer performance roadmap
 
+> **2026-10-17 P057真实100k物理CAS Owner FileOperation DELETE→Undo 新负载 Accepted original CURRENT（源准确最终证据HEAD待重验）：** [专项CI #39028684342](https://github.com/lazyxu/xdrive/actions/runs/39028684342) 三组独立真实 SHA-distinct 100k物理原片、1个受保护原片，POST持久DELETE Worker P50 **1610.082ms**、Undo Worker P50 **1459.302ms**、100001 SHA读回正确、实际allocated 409604096B始终不变、内核写0B、RSS增长P50 50491392B。与P047永久unlink、P055 HTTP Trash Restore、P056 Copy/Undo及模拟key队列Delete不同；未修改生产代码，AFTER=N/A。机器[原始完整14文件](performance-evidence/p057-physical-100k-delete-undo/README.md)已长期保存；归档改变HEAD后必须重新专项3×100k及完整CI/FinalGate，不能提前Ready合并。真实六端GUI/PWA这条新链均Not measured。
+
+
+
+## P057 · 新的100k真实物理CAS原版FileOperation DELETE→Undo (2026-10-17)
+
+**源准确原版 CURRENT 尚未有效测量（n=0）、生产AFTER=N/A。** 作为[P056已合并真实100k Copy/Undo](performance-evidence/p056-real-100k-physical-copy-undo/README.md)及[P047已验收物理永久Delete](performance-evidence/p047-real-http-original-cas-permanent-100k/README.md)之外的新原始数据/工作链，本专项直接测Owner HTTP创建FileOperation Delete→持久Go Worker软删100k原始SHA不同的真实物理LocalCAS→进Trash仍保留全部原片和RefCount1→Owner HTTP Undo→持久Undo Worker完整恢复；前一旧queued Delete测试只有100k模拟StorageKey SQL元数据，不具备上述真物理CAS原片和HTTP入队。按[冻结合同](p057-physical-delete-undo-performance.md)核查每一个源哈希、每个原片物理 allocated及所有权，n=3 CPU/RSS/write_bytes和每段入队/Worker延迟，未得到真实结果前不能宣称已优化或已覆盖GUI。
+
+六端Native Desktop/Wide Web/Mobile Web/Desktop PWA/Android PWA/iOS PWA 的**真实客户端 GUI 上执行此全路径**均Not measured（见[矩阵](performance-platform-coverage.md)），不要用Go Worker的P50代替浏览器DOM/客户端 IPC/真实取消。此PR只收集实测后端基线，不碰Race、网络慢传/预览取消或持久TaskCenter任务Owner语义。产物归档于[原始证据](performance-evidence/p057-physical-100k-delete-undo/README.md)。
+
+
 > **2026-10-16 P052最终核查**：原生100k物理JPEG真实取消性能PR [#1728](https://github.com/lazyxu/xdrive/pull/1728)已经以单提交线性合入 `master@6229ac6a922ed12da47e618d2ab4f56ab95cde56`，已验证临时分支清理。其证据HEAD `90e816c3421d44e624ba687ed4541117c11a8e84` 的[专项CI #38829321827](https://github.com/lazyxu/xdrive/actions/runs/38829321827)、[完整CI #38829321902](https://github.com/lazyxu/xdrive/actions/runs/38829321902)含Final Gate成功。真实六组Grid/Details，每组10万不同JPEG CAS，36/36 HTTP `Request.Context.Done`和Handler终止，复测最慢 **16.305ms**，160ms旧Handler **0**，废弃响应 **0B**；全部预算内，原版不优化，AFTER=N/A。前面试验时间线中“待复验”已经过时，P052真实有效原始样本仍在[物理证据目录](performance-evidence/file-explorer-mobile-physical-go-cancel-p052/ci-run-38779915915/)归档。Desktop真实物理CAS场景还未测，下一阶段P053如下。六平台持续对照[详见矩阵](performance-platform-coverage.md)。
 
 > **2026-10-15 最终交付状态（优先于以下历史时间线）：P050 / M002-e 已 Accepted CURRENT / Merged [#1709](https://github.com/lazyxu/xdrive/pull/1709)。** 在固定master `a7654570` 上唯一工作提交 `3e969074`，原版Web文件管理器100k逻辑/115k不同物理JPEG/H264/Live的3独立PG17/Gin/CAS数据集、30/30 Grid+Details真实可见滚动视口全部预算内；Grid/Details P50 **663.716/485.783ms**，最慢727.933ms，Go并发峰值6、DOM121、非取消5xx0、Go/Renderer RSS增长均小于256MiB。归档后准确HEAD [专项 #38748158459](https://github.com/lazyxu/xdrive/actions/runs/38748158459) 和 [完整 #38748158841](https://github.com/lazyxu/xdrive/actions/runs/38748158841)（含final-gate）双绿，线性合入master `3dcabd3c12d0da72ec40b56c7c8eb21958977a22`，远端分支已清理。**保留生产原版，BEFORE=CURRENT、AFTER=N/A、speedup=N/A**；[完整原始n3机器证据](performance-evidence/file-explorer-wide-mixed-p050/ci-run-38745263789/summary.json)。P049 #1694亦已准确HEAD双绿合入；以下“尚未测出/待复验”属于原始阶段历史，不代表最终状态。P030 Desktop IPC进度 #1185仍为Blocked Draft，不属于Race专题。真正安装Desktop/Android/iOS PWA、物理100k Push/Pull、实机及Live motion播放仍Not measured，见[六平台矩阵](performance-platform-coverage.md)。

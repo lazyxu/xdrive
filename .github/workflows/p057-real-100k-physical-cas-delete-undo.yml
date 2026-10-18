@@ -1,0 +1,184 @@
+name: P057 Real 100k Physical CAS Authenticated Queue DELETE and Undo
+on:
+  pull_request:
+    branches: [master]
+permissions:
+  contents: read
+jobs:
+  p057-real-physical-delete-undo:
+    if: github.head_ref == 'perf/p057-real-100k-physical-cas-delete-undo-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 115
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: xdrive
+          POSTGRES_PASSWORD: xdrive
+          POSTGRES_DB: xdrive_test
+        ports:
+          - 5432:5432
+        options: >-
+          --shm-size=256m
+          --health-cmd "pg_isready -U xdrive -d xdrive_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      XD_TEST_DATABASE_URL: postgres://xdrive:xdrive@localhost:5432/xdrive_test?sslmode=disable
+      P057_RESULTS: ${{ github.workspace }}/p057-physical-delete-undo-100k-results
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+      - name: Freeze exact HEAD and opt-out compilation
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = '${{ github.event.pull_request.head.sha }}'
+          if [[ -n "$(gofmt -l internal/api/p057_real_physical_cas_delete_undo_100k_performance_linux_test.go)" ]]; then
+            gofmt -d internal/api/p057_real_physical_cas_delete_undo_100k_performance_linux_test.go
+            exit 1
+          fi
+          node --test desktop/tests/p057-real-100k-physical-cas-delete-undo-source.cjs
+          env -u XD_P057_REAL_DELETE_UNDO_PERF go test -mod=readonly ./internal/api -run '^TestP057Real100KPhysicalCASDeleteUndo$' -count=1 -timeout=90s
+          df -h .
+          python3 - <<'PY'
+          import shutil
+          assert shutil.disk_usage('.').free >= 4 * 1024**3, "insufficient disk for genuine physical 100k distinct CAS; environment invalid"
+          PY
+      - name: Verify permanent original 14-file n3 archive and exact source hashes
+        run: |
+          set -euo pipefail
+          file=docs/performance-evidence/p057-physical-100k-delete-undo/ci-run-39028684342-original-full.tar.gz
+          printf '%s  %s\n' de4c37dbafa10240a426d82e9435618e59414056dcb6d5b36d851a98015782ee "$file" | sha256sum -c -
+          python3 - "$file" <<'PY'
+          import hashlib,json,pathlib,sys,tarfile
+          manifest="""
+          sample-1-disk.txt 6aa2b7af3a376250e14bee763df87026c873b5a4460f27dbd246668526c88d86
+          sample-1.json 8c33686416072fa64093331e7b4288a75d3a40262010d08a277bdb0eecd7efb5
+          sample-1-resources.txt c5fd4809be1a36d9fec5de1647fd5efa9622fdca6881305e858a73759f917f61
+          sample-1.log d116666f36bed200d7c4cff7938b133e8b9b27f6db310cf60a36a33b12a291bf
+          sample-2-disk.txt 6aa2b7af3a376250e14bee763df87026c873b5a4460f27dbd246668526c88d86
+          sample-2-resources.txt bacb5341f60e9f4762bdf6a7889db240ddd00eefeda24f3c932e8b91266250d1
+          sample-2.json 4a92296c513241e4e8205e832c382e72687482d3b39d64304b733d18cd112e0d
+          sample-2.log 90848c9ac1d4ad054f8d6517ad6f406c4e1cb58f02ed62d4f631a891b0e215cd
+          sample-3-disk.txt 6ffe25ab4fca7b8bfa47a065dffbd2f1ce2b16d6db1b6d844081415cfacc35e2
+          sample-3-resources.txt 9f365c336e496c728a591624618224f5e9d67ba7b488dfec766056175c960762
+          sample-3.json 44e172650f09e3a64cb6f90cfa1b364297bf703bc68d82971d4c851308a2ddb5
+          sample-3.log d4fea54b372fc9160cdafb82bf90af83e024df9e28efb7771ca0491a42f1dfb1
+          source.txt 4ed0a9bfd43af06dfff3fc2744090516a07973d66ff89d9adf9b2fb5dca87a2c
+          summary.json 42f9b2502bdca7086f7acac1db36e6b9d16c40ebf1a71d2e52a1894047a47c52
+          """
+          expected=dict(line.split() for line in manifest.splitlines() if line.strip())
+          with tarfile.open(sys.argv[1],"r:gz") as archive:
+              assert set(archive.getnames())==set(expected),("archive members missing or duplicated",archive.getnames())
+              data={name:archive.extractfile(name).read() for name in expected}
+          for name,want in expected.items():
+              assert hashlib.sha256(data[name]).hexdigest()==want,("tampered original evidence",name)
+          source=data["source.txt"].decode()
+          assert "EXACT_SOURCE_HEAD=22e0c8d1f5f6ecb4e4f6d8f6ac93f2c679e43ae6" in source
+          assert "RUN_ID=39028684342" in source
+          original_code=(
+            "internal/api/p057_real_physical_cas_delete_undo_100k_performance_linux_test.go",
+            "internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go",
+            "internal/api/file_operation_queued_delete_100k_performance_integration_test.go",
+            "internal/api/file_operations_undo.go",
+            "internal/api/file_operations.go",
+            "internal/api/content_blobs.go",
+          )
+          for rel in original_code:
+              digest=hashlib.sha256(pathlib.Path(rel).read_bytes()).hexdigest()
+              assert digest+"  "+rel in source,("source differs from first 100k measured original",rel)
+          summary=json.loads(data["summary.json"])
+          assert summary["n"]==3 and summary["passed"] is True
+          assert summary["correct_physical_sha_distinct_originals"]==100000
+          assert len(set(summary["source_hashes"]))==3
+          for i in (1,2,3):
+              row=json.loads(data[f"sample-{i}.json"])
+              assert row["passed"] is True and row["smoke_only"] is False
+              assert row["physical_sources"]==100000 and row["original_physical_cas_inodes"]==100001
+              assert row["deleted_trash_children"]==100000 and row["restored_children"]==100000
+              assert row["original_ready_refcount_1_after_delete"]==100001
+              assert row["original_ready_refcount_1_after_undo"]==100001
+              assert row["physical_allocated_bytes_before"]==409604096
+              assert row["physical_allocated_bytes_before"]==row["physical_allocated_bytes_after_delete"]==row["physical_allocated_bytes_after_undo"]
+              assert row["go_process_kernel_write_bytes"]==0
+              assert row["source_aggregate_sha256"]==summary["source_hashes"][i-1]
+          print("P057_VERIFIED_SOURCE_EXACT_14_ORIGINAL_FILES_3_REAL_PHYSICAL_100K_RUNS")
+          PY
+      - name: Real 1000 SHA-distinct physical CAS Delete→Undo smoke
+        run: |
+          set -euo pipefail
+          XD_P057_REAL_DELETE_UNDO_PERF=1 XD_P057_SMOKE=1 XD_P057_SAMPLE=sample-1 \
+            go test -mod=readonly ./internal/api -run '^TestP057Real100KPhysicalCASDeleteUndo$' \
+              -count=1 -timeout=15m -v
+      - name: Three independent 100k true physical CAS owner HTTP queued Delete and Undo n3
+        run: |
+          set -euo pipefail
+          mkdir -p "$P057_RESULTS"
+          {
+            printf 'EXACT_SOURCE_HEAD=%s\nRUN_ID=%s\n' "$(git rev-parse HEAD)" "$GITHUB_RUN_ID"
+            sha256sum internal/api/p057_real_physical_cas_delete_undo_100k_performance_linux_test.go \
+              internal/api/p056_real_physical_cas_copy_undo_100k_performance_linux_test.go \
+              internal/api/file_operation_queued_delete_100k_performance_integration_test.go \
+              internal/api/file_operations_undo.go \
+              internal/api/file_operations.go \
+              internal/api/content_blobs.go
+            go version
+            uname -a
+          } > "$P057_RESULTS/source.txt"
+          for i in 1 2 3; do
+            name="sample-$i"
+            df -h . | tee "$P057_RESULTS/$name-disk.txt"
+            /usr/bin/time -v -o "$P057_RESULTS/$name-resources.txt" \
+              env XD_P057_REAL_DELETE_UNDO_PERF=1 XD_P057_SAMPLE="$name" \
+              go test -mod=readonly ./internal/api \
+                -run '^TestP057Real100KPhysicalCASDeleteUndo$' \
+                -count=1 -timeout=35m -v | tee "$P057_RESULTS/$name.log"
+            python3 - "$P057_RESULTS/$name.log" "$P057_RESULTS/$name.json" <<'PY'
+          import json,sys
+          lines=[x for x in open(sys.argv[1]) if 'P057_REAL_100K_PHYSICAL_DELETE_UNDO ' in x]
+          assert len(lines)==1, ("missing/duplicate source-original measurement",len(lines))
+          row=json.loads(lines[0].split('P057_REAL_100K_PHYSICAL_DELETE_UNDO ',1)[1])
+          assert row['passed'] is True and row['smoke_only'] is False
+          assert row['physical_sources']==100000
+          assert row['original_physical_cas_inodes']==100001
+          assert row['deleted_trash_children']==100000 and row['restored_children']==100000
+          assert row['original_ready_refcount_1_after_delete']==100001
+          assert row['original_ready_refcount_1_after_undo']==100001
+          assert row['physical_allocated_bytes_before']==row['physical_allocated_bytes_after_delete']==row['physical_allocated_bytes_after_undo']
+          with open(sys.argv[2],'w') as f: json.dump(row,f,sort_keys=True,indent=2)
+          PY
+          done
+          python3 - "$P057_RESULTS" <<'PY'
+          import json,os,statistics,sys
+          root=sys.argv[1]
+          rows=[json.load(open(os.path.join(root,f'sample-{i}.json'))) for i in (1,2,3)]
+          assert len({x['source_aggregate_sha256'] for x in rows})==3
+          keys=['delete_http_enqueue_ms','delete_actual_durable_worker_ms',
+                'undo_http_enqueue_ms','undo_actual_durable_worker_ms',
+                'complete_original_physical_sha_verify_ms',
+                'go_process_kernel_write_bytes','go_process_cpu_ticks_for_both_worker_stages',
+                'go_25ms_peak_rss_growth_bytes']
+          summary={'workload':'P057-real-100k-distinct-CAS-delete-undo',
+                   'n':3,'passed':True,'correct_physical_sha_distinct_originals':100000,
+                   'head':open(os.path.join(root,'source.txt')).readline().strip(),
+                   'median':{k:statistics.median(x[k] for x in rows) for k in keys},
+                   'max':{k:max(x[k] for x in rows) for k in keys},
+                   'source_hashes':[x['source_aggregate_sha256'] for x in rows],
+                   'limitations':'Owner-authenticated Go/Gin/PG17/LocalCAS HTTP queue and durable workers, NOT real desktop/web/mobile GUI/PWA or 100k physical permanent deletion.'}
+          with open(os.path.join(root,'summary.json'),'w') as f: json.dump(summary,f,indent=2,sort_keys=True)
+          print('P057_REAL_100K_AUTHENTIC_PHYSICAL_DELETE_UNDO_N3',json.dumps(summary,sort_keys=True))
+          PY
+      - name: Upload machine original three-run raw evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p057-real-physical-100k-delete-undo-${{ github.run_id }}
+          path: p057-physical-delete-undo-100k-results/
+          if-no-files-found: warn
+          retention-days: 30
