@@ -63,3 +63,11 @@ CI server-validation 执行 `python3 scripts/test-caddy-https-host-plan.py`。�
 `scripts/caddy-https-host-stage.py` 是**操作员在可信宿主机显式运行**的独立命令。先复用只读 Host Plan 预检与经独立可信通道核对的 Plan SHA，然后通过固定的期望修订、现有 .env 与 Compose 哈希再次核验候选字节；仅在已有的私有 `state/caddy-https-staging`（所属操作员、0700、不可是符号链接）内，以 O_EXCL/O_NOFOLLOW 创建 0600 的候选 .env 与无密钥暂存收据，fsync 文件与目录。二者以同一个输入指纹命名，重复执行拒绝覆盖；失败会尽量清理本次创建的文件。任何已有正式 `config/.env` / Compose 均只读；没有 Docker、DNS、TLS CA、Restart、Save/Apply API 或网页登录凭据。在异常断电时可能留下**没有收据的未完成暂存文件**，这种文件不得安装且需操作员清理。
 
 为防遗漏保护，尚未具备 AliDNS 私密凭据宿主交付、当前私网 Bind 迁移、现有管理入口切换/关闭，或旧 HTTP 安装时，暂存直接失败，不会放宽绑定或删除当前入口。此命令只为后续经过批准的原子 Host Apply 提供可比对的私有输入工件，不是一次部署，也不是一个安全应用许可。收据固定 `state=candidate-staged-unapplied`、`apply_supported=false`；真实重启仍被 Rescue、Host CAS、双 HTTPS/login 与看门狗回滚门禁阻止。测试通过 `python3 scripts/test-caddy-https-host-plan.py` 同时覆盖纯只读计划与暂存权限、无覆盖、无凭据打印、不改原文件及危险入口拒绝。
+
+## NET-M5-B3-C1 — 暂存候选的只读完整性复核（绝不应用）
+
+宿主机操作员可显式执行 `scripts/caddy-https-host-verify-stage.py`。它独立复核已保存的 Canonical Host Plan 指纹、当前受保护的 .env/Compose 快照、确定性候选 .env 全部字节，以及暂存收据的严格规范 JSON 和 SHA-256。所有被读取的暂存文件必须属于当前操作员、0600 常规文件、不可使用符号链接/FIFO，所在目录必须为操作员所有的 0700 私有目录；读入前后核对固定 inode、长度、mtime、ctime，避免将旧候选当成可用部署。需要从独立可信通道核验两个 SHA-256，并保留原有七项 Caddy 只读预检。
+
+例：`python3 scripts/caddy-https-host-verify-stage.py --plan "$HOME/.xd/state/caddy-host-plan.json" --env-file "$HOME/.xd/config/.env" --compose-file "$HOME/.xd/config/docker-compose.yml" --expected-plan-sha256 "$TRUSTED_PLAN_SHA256" --staging-dir "$HOME/.xd/state/caddy-https-staging" --expected-stage-receipt-sha256 "$TRUSTED_STAGE_RECEIPT_SHA256"`。
+
+输出永远是 `candidate-verified-unapplied` 或 `blocked`，且 `apply_supported=false`；不返回原始 IP、域名、凭据、候选内容或路径。即使验收通过，也只代表固定时点的私有暂存工件正确，**不证明管理员保存修订已应用、当前 Caddy 运行配置、异机登录、独立救援或自动回滚可用**。它不修改文件、Docker、Caddy、DNS、证书和系统信任。必须先完成真实独立救援的停机验证、签名批准、受限 Host CAS、双入口登录证明、独立超时看门狗及不可变应用回执，才可以提供真正的“应用并重启”操作。

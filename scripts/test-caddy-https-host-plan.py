@@ -350,5 +350,84 @@ class OfflineHostStageTest(unittest.TestCase):
         self.assertNotIn("socket.", source)
         self.assertNotIn("apply_supported\": True", source)
 
+
+    def verify_staged(self, expected_receipt=None, plan_pin=None):
+        receipts = list(self.stage_dir.glob("receipt-*.json"))
+        receipt_data = receipts[0].read_bytes() if receipts else b""
+        pin = expected_receipt or hashlib.sha256(receipt_data).hexdigest()
+        argv = [sys.executable, str(Path(__file__).with_name("caddy-https-host-verify-stage.py")),
+                "--plan", str(self.plan), "--env-file", str(self.env),
+                "--compose-file", str(self.compose),
+                "--expected-plan-sha256", plan_pin or
+                hashlib.sha256(self.plan.read_bytes()).hexdigest(),
+                "--staging-dir", str(self.stage_dir),
+                "--expected-stage-receipt-sha256", pin]
+        out = subprocess.run(argv, capture_output=True, text=True, timeout=5)
+        self.assertNotIn("never-print-this", out.stdout + out.stderr)
+        self.assertNotIn("192.168.2.4", out.stdout + out.stderr)
+        self.assertNotIn(str(self.root), out.stdout + out.stderr)
+        return out.returncode, json.loads(out.stdout)
+
+    def test_staged_receipt_verifies_but_never_authorizes_apply(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        before = (self.env.read_bytes(), self.compose.read_bytes())
+        rc, result = self.verify_staged(created["stage_receipt_sha256"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(result["state"], "candidate-verified-unapplied")
+        self.assertFalse(result["apply_supported"])
+        self.assertIn("live-host-cas-and-rollback-not-authorized", result["blockers"])
+        self.assertEqual(before, (self.env.read_bytes(), self.compose.read_bytes()))
+        self.assertEqual(result["stage_receipt_sha256"], created["stage_receipt_sha256"])
+
+    def test_staged_verification_rejects_changed_live_env_and_plan(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        self.env.write_text(ENV + "XD_EXTRA_SAFE_VARIABLE=test\n")
+        self.env.chmod(0o600)
+        rc, result = self.verify_staged(created["stage_receipt_sha256"])
+        self.assertEqual(rc, 2)
+        self.assertEqual(result["state"], "blocked")
+        self.env.write_text(ENV)
+        self.plan.write_bytes(canonical({**BASE, "desired_revision": 8}))
+        rc, result = self.verify_staged(created["stage_receipt_sha256"])
+        self.assertEqual(rc, 2)
+        self.assertFalse(result["apply_supported"])
+
+    def test_staged_verification_rejects_tampering_symlink_and_permissions(self):
+        rc, created = self.stage()
+        self.assertEqual(rc, 0)
+        candidate = next(self.stage_dir.glob("candidate-*.env"))
+        receipt = next(self.stage_dir.glob("receipt-*.json"))
+        data = candidate.read_bytes()
+        candidate.write_bytes(data + b"#modified\n")
+        rc, out = self.verify_staged(created["stage_receipt_sha256"])
+        self.assertEqual((rc, out["state"]), (2, "blocked"))
+        candidate.write_bytes(data)
+        self.assertEqual(self.verify_staged(created["stage_receipt_sha256"])[0], 0)
+        receipt_data = receipt.read_bytes()
+        receipt.write_bytes(receipt_data.replace(
+            b"candidate-staged-unapplied", b"candidate-staged-applied!!"))
+        self.assertEqual(self.verify_staged(created["stage_receipt_sha256"])[0], 2)
+        receipt.write_bytes(receipt_data)
+        self.assertEqual(self.verify_staged("f" * 64)[0], 2)
+        receipt.chmod(0o644)
+        self.assertEqual(self.verify_staged(created["stage_receipt_sha256"])[0], 2)
+        receipt.chmod(0o600)
+        candidate.rename(self.state / "candidate-target.env")
+        candidate.symlink_to(self.state / "candidate-target.env")
+        self.assertEqual(self.verify_staged(created["stage_receipt_sha256"])[0], 2)
+
+    def test_stage_verify_is_fixed_readonly_source(self):
+        source = Path(__file__).with_name("caddy-https-host-verify-stage.py").read_text()
+        self.assertNotIn("import subprocess", source)
+        self.assertNotIn("docker compose", source)
+        self.assertNotIn("--insecure", source)
+        self.assertNotIn("os.replace(", source)
+        self.assertNotIn("os.rename(", source)
+        self.assertNotIn("os.unlink(", source)
+        self.assertNotIn("exec(", source)
+        self.assertNotIn("socket.", source)
+
 if __name__ == "__main__":
     unittest.main()
