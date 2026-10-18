@@ -1672,6 +1672,8 @@ export default function WebFileExplorer({
             quickAccessEnabled
             quickAccessItems={quickAccess.items}
             quickAccessLoading={quickAccess.loading}
+            quickAccessReadState={quickAccess.readState}
+            onRetryQuickAccess={() => { void quickAccess.refresh() }}
             quickAccessBusyID={quickAccess.busyID}
             currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
             onNavigateQuickAccess={(nodeID) => {
@@ -1737,6 +1739,8 @@ export default function WebFileExplorer({
             favoritesEnabled
             favoriteItems={favorites.items}
             favoritesLoading={favorites.loading}
+            favoritesReadState={favorites.readState}
+            onRetryFavorites={() => { void favorites.refresh() }}
             favoriteBusyID={favorites.busyID}
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
@@ -1751,6 +1755,8 @@ export default function WebFileExplorer({
             recentEnabled
             recentItems={recent.items}
             recentLoading={recent.loading}
+            recentReadState={recent.readState}
+            onRetryRecent={() => { void recent.refresh() }}
             onActivateRecent={(nodeID) => {
               onCloseTrash()
               const navigationIntentID = beginNavigationIntent()

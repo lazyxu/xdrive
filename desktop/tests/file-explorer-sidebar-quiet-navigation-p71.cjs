@@ -73,9 +73,9 @@ test('P71 original Web/Desktop sidebar first reads stay 360ms quiet, geometry-st
     currentCrumbs: [{ id: 1, name: '我的文件' }],
     loadDirectoryPage: async () => { treeReads++; return treeResult },
     onNavigate() {},
-    quickAccessEnabled: true, quickAccessLoading: true, quickAccessItems: [],
-    favoritesEnabled: true, favoritesLoading: true, favoriteItems: [],
-    recentEnabled: true, recentLoading: true, recentItems: [],
+    quickAccessEnabled: true, quickAccessLoading: true, quickAccessReadState: 'unverified', quickAccessItems: [],
+    favoritesEnabled: true, favoritesLoading: true, favoritesReadState: 'unverified', favoriteItems: [],
+    recentEnabled: true, recentLoading: true, recentReadState: 'unverified', recentItems: [],
     savedSearchesEnabled: true, organizationLoading: true, savedSearches: [],
     tagsEnabled: true, tags: [],
     onError: error => { throw error },
@@ -108,8 +108,11 @@ test('P71 original Web/Desktop sidebar first reads stay 360ms quiet, geometry-st
       view.update(React.createElement(Pane, {
         ...props,
         quickAccessLoading: false,
+        quickAccessReadState: 'ready',
         favoritesLoading: false,
+        favoritesReadState: 'ready',
         recentLoading: false,
+        recentReadState: 'ready',
         organizationLoading: false,
       }))
     })
@@ -130,5 +133,77 @@ test('P71 original Web/Desktop sidebar first reads stay 360ms quiet, geometry-st
     // When an early assertion rejects before the held page has completed,
     // resolve the test-owned Promise so no delayed task remains unobserved.
     if (finishTree) finishTree({ items: [], nextCursor: '', hasMore: false })
+  }
+})
+
+test('P72 sidebar never equates loading=false with accepted empty; current errors have fixed recovery', async () => {
+  let view
+  const retried = { quick: 0, favorite: 0, recent: 0 }
+  const base = {
+    lifecycleKey: 'p72-owner-a',
+    sectionPreferencesKey: 'p72-read-state',
+    currentCrumbs: [],
+    loadDirectoryPage: async () => ({ items: [], nextCursor: '', hasMore: false }),
+    onNavigate() {},
+    quickAccessEnabled: true, quickAccessItems: [],
+    quickAccessLoading: false, quickAccessReadState: 'unverified',
+    favoritesEnabled: true, favoriteItems: [],
+    favoritesLoading: false, favoritesReadState: 'unverified',
+    recentEnabled: true, recentItems: [],
+    recentLoading: false, recentReadState: 'unverified',
+    onRetryQuickAccess: () => { retried.quick++ },
+    onRetryFavorites: () => { retried.favorite++ },
+    onRetryRecent: () => { retried.recent++ },
+  }
+  const groups = [
+    ['quick-access', 'quick', 112],
+    ['favorites', 'favorite', 80],
+    ['recent', 'recent', 32],
+  ]
+  try {
+    await act(async () => { view = Renderer.create(React.createElement(Pane, base)) })
+    for (const [id, , floor] of groups) {
+      assert.equal(one(view, 'data-xdrive-sidebar-'+id+'-first-read', true).props.sx.minHeight, floor)
+      assert.equal(view.root.findAll(n => n.props['data-xdrive-sidebar-'+id+'-empty'] === true).length, 0,
+        'a current unanswered Owner list is not confirmed zero: '+id)
+    }
+    await act(async () => { await sleep(370) })
+    for (const [id] of groups) one(view, 'data-xdrive-sidebar-'+id+'-first-read', true)
+    assert.equal(view.root.findAll(n => n.type === 'circularprogress').length, 0)
+    await act(async () => { view.update(React.createElement(Pane, {
+      ...base,
+      quickAccessReadState: 'error',
+      favoritesReadState: 'error',
+      recentReadState: 'error',
+    })) })
+    for (const [id, action, floor] of groups) {
+      const error = one(view, 'data-xdrive-sidebar-'+id+'-error', true)
+      assert.equal(error.props.sx.minHeight, floor)
+      assert.equal(error.props.role, 'alert')
+      const retry = error.findAll(n => n.type === 'button' && n.props.children === '重试')[0]
+      assert.ok(retry, 'real current error has a retry: '+id)
+      await act(async () => { retry.props.onClick() })
+      assert.equal(retried[action], 1)
+    }
+    await act(async () => { view.update(React.createElement(Pane, {
+      ...base,
+      quickAccessReadState: 'ready',
+      favoritesReadState: 'ready',
+      recentReadState: 'ready',
+    })) })
+    for (const [id, , floor] of groups)
+      assert.equal(one(view, 'data-xdrive-sidebar-'+id+'-empty', true).props.sx.minHeight, floor)
+    await act(async () => { view.update(React.createElement(Pane, {
+      ...base,
+      quickAccessLoading: true, quickAccessReadState: 'ready',
+      favoritesLoading: true, favoritesReadState: 'ready',
+      recentLoading: true, recentReadState: 'ready',
+    })) })
+    for (const [id] of groups) {
+      assert.ok(one(view, 'data-xdrive-sidebar-'+id+'-empty', true),
+        'refresh of a previously verified empty list does not insert another blank intermediary')
+    }
+  } finally {
+    if (view) await act(async () => { view.unmount() })
   }
 })

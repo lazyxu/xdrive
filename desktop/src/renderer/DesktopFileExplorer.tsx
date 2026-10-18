@@ -2205,6 +2205,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
             quickAccessEnabled={quickAccessSupported}
             quickAccessItems={quickAccess.items}
             quickAccessLoading={quickAccess.loading}
+            quickAccessReadState={quickAccess.readState}
+            onRetryQuickAccess={() => { void quickAccess.refresh() }}
             quickAccessBusyID={quickAccess.busyID}
             currentQuickAccessPinned={Boolean(current && quickAccess.pinnedIDs.has(current.id))}
             onNavigateQuickAccess={(nodeID) => {
@@ -2270,6 +2272,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
             favoritesEnabled={favoritesSupported}
             favoriteItems={favorites.items}
             favoritesLoading={favorites.loading}
+            favoritesReadState={favorites.readState}
+            onRetryFavorites={() => { void favorites.refresh() }}
             favoriteBusyID={favorites.busyID}
             onActivateFavorite={(nodeID) => {
               onCloseTrash()
@@ -2284,6 +2288,8 @@ const desktopTransferLifecycleChildBatchSize = 1000
             recentEnabled={recentSupported}
             recentItems={recent.items}
             recentLoading={recent.loading}
+            recentReadState={recent.readState}
+            onRetryRecent={() => { void recent.refresh() }}
             onActivateRecent={(nodeID) => {
               onCloseTrash()
               const navigationIntentID = beginNavigationIntent()

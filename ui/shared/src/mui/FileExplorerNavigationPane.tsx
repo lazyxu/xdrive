@@ -167,6 +167,8 @@ export function XDriveFileExplorerNavigationPane({
   quickAccessEnabled = false,
   quickAccessItems = [],
   quickAccessLoading = false,
+  quickAccessReadState = 'ready',
+  onRetryQuickAccess,
   quickAccessBusyID = null,
   currentQuickAccessPinned = false,
   onNavigateQuickAccess,
@@ -197,12 +199,16 @@ export function XDriveFileExplorerNavigationPane({
   favoritesEnabled = false,
   favoriteItems = [],
   favoritesLoading = false,
+  favoritesReadState = 'ready',
+  onRetryFavorites,
   favoriteBusyID = null,
   onActivateFavorite,
   onUnfavorite,
   recentEnabled = false,
   recentItems = [],
   recentLoading = false,
+  recentReadState = 'ready',
+  onRetryRecent,
   onActivateRecent,
   onClearRecent,
   getItemAvailability,
@@ -236,6 +242,8 @@ export function XDriveFileExplorerNavigationPane({
   quickAccessEnabled?: boolean
   quickAccessItems?: readonly XDriveFileExplorerQuickAccessEntry[]
   quickAccessLoading?: boolean
+  quickAccessReadState?: 'unverified' | 'ready' | 'error'
+  onRetryQuickAccess?: () => void | Promise<void>
   quickAccessBusyID?: number | null
   currentQuickAccessPinned?: boolean
   onNavigateQuickAccess?: (nodeID: number) => void | Promise<void>
@@ -267,12 +275,16 @@ export function XDriveFileExplorerNavigationPane({
   favoritesEnabled?: boolean
   favoriteItems?: readonly XDriveFileExplorerFavoriteNavigationEntry[]
   favoritesLoading?: boolean
+  favoritesReadState?: 'unverified' | 'ready' | 'error'
+  onRetryFavorites?: () => void | Promise<void>
   favoriteBusyID?: number | null
   onActivateFavorite?: (nodeID: number) => void | Promise<void>
   onUnfavorite?: (nodeID: number) => void | Promise<void>
   recentEnabled?: boolean
   recentItems?: readonly XDriveFileExplorerRecentEntry[]
   recentLoading?: boolean
+  recentReadState?: 'unverified' | 'ready' | 'error'
+  onRetryRecent?: () => void | Promise<void>
   onActivateRecent?: (nodeID: number) => void | Promise<void>
   onClearRecent?: () => void | Promise<void>
   getItemAvailability?: (item: XDriveFileExplorerItem) => XDriveFileExplorerAvailability | undefined
@@ -1020,7 +1032,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="快速访问"
-          aria-busy={quickAccessLoading || undefined}
+          aria-busy={quickAccessLoading || quickAccessReadState === 'unverified' || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1069,9 +1081,18 @@ export function XDriveFileExplorerNavigationPane({
             ) : null}
           </Stack>
 
-          {quickAccessLoading && quickAccessItems.length === 0 ? (
+          {quickAccessReadState === 'unverified' && quickAccessItems.length === 0 ? (
             <Box data-xdrive-sidebar-quick-access-first-read aria-busy="true"
               sx={{ minHeight: compactViewport ? 96 : 112 }} />
+          ) : quickAccessReadState === 'error' && quickAccessItems.length === 0 ? (
+            <Box data-xdrive-sidebar-quick-access-error role="alert"
+              sx={{ minHeight: compactViewport ? 96 : 112, px: 0.75, py: 0.5,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.5 }}>
+              <Typography variant="caption" color="error.main">快速访问读取失败。</Typography>
+              {onRetryQuickAccess ? (
+                <Button size="small" onClick={() => { void onRetryQuickAccess() }}>重试</Button>
+              ) : null}
+            </Box>
           ) : quickAccessItems.length === 0 ? (
             <Box data-xdrive-sidebar-quick-access-empty
               sx={{ minHeight: compactViewport ? 96 : 112, display: 'flex', alignItems: 'center' }}>
@@ -1394,7 +1415,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="收藏"
-          aria-busy={favoritesLoading || undefined}
+          aria-busy={favoritesLoading || favoritesReadState === 'unverified' || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1420,9 +1441,18 @@ export function XDriveFileExplorerNavigationPane({
               收藏
             </Typography>
           </Stack>
-          {favoritesLoading && favoriteItems.length === 0 ? (
+          {favoritesReadState === 'unverified' && favoriteItems.length === 0 ? (
             <Box data-xdrive-sidebar-favorites-first-read aria-busy="true"
               sx={{ minHeight: compactViewport ? 72 : 80 }} />
+          ) : favoritesReadState === 'error' && favoriteItems.length === 0 ? (
+            <Box data-xdrive-sidebar-favorites-error role="alert"
+              sx={{ minHeight: compactViewport ? 72 : 80, px: 0.75, py: 0.5,
+                display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.5 }}>
+              <Typography variant="caption" color="error.main">收藏读取失败。</Typography>
+              {onRetryFavorites ? (
+                <Button size="small" onClick={() => { void onRetryFavorites() }}>重试</Button>
+              ) : null}
+            </Box>
           ) : favoriteItems.length === 0 ? (
             <Box data-xdrive-sidebar-favorites-empty
               sx={{ minHeight: compactViewport ? 72 : 80, display: 'flex', alignItems: 'center' }}>
@@ -1483,7 +1513,7 @@ export function XDriveFileExplorerNavigationPane({
         <Box
           component="nav"
           aria-label="最近使用"
-          aria-busy={recentLoading || undefined}
+          aria-busy={recentLoading || recentReadState === 'unverified' || undefined}
           sx={{
             px: 0.75,
             py: 0.5,
@@ -1527,9 +1557,18 @@ export function XDriveFileExplorerNavigationPane({
             ) : null}
           </Stack>
 
-          {recentLoading && recentItems.length === 0 ? (
+          {recentReadState === 'unverified' && recentItems.length === 0 ? (
             <Box data-xdrive-sidebar-recent-first-read aria-busy="true"
               sx={{ minHeight: compactViewport ? 44 : 32 }} />
+          ) : recentReadState === 'error' && recentItems.length === 0 ? (
+            <Box data-xdrive-sidebar-recent-error role="alert"
+              sx={{ minHeight: compactViewport ? 44 : 32, px: 0.75, py: 0.5,
+                display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 0.5 }}>
+              <Typography variant="caption" color="error.main">最近使用读取失败。</Typography>
+              {onRetryRecent ? (
+                <Button size="small" onClick={() => { void onRetryRecent() }}>重试</Button>
+              ) : null}
+            </Box>
           ) : recentItems.length === 0 ? (
             <Box data-xdrive-sidebar-recent-empty
               sx={{ minHeight: compactViewport ? 44 : 32, display: 'flex', alignItems: 'center' }}>
