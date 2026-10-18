@@ -386,6 +386,17 @@ func (s *Server) commitBoundLocalPushFirstLeafWithInspectorAndOperation(
 					return errLocalPushStageConflict
 				}
 			}
+			// Persist the exact operation -> first-leaf canonical SQL
+			// outcome in THIS transaction only. A lost HTTP response must
+			// never erase evidence that SQL already committed. This row
+			// does NOT attest current native bytes or backup completion.
+			if operation != nil {
+				if err := s.persistLocalPushFirstLeafOperationCommitTx(
+					tx, c, stage, operation, result,
+				); err != nil {
+					return err
+				}
+			}
 			// The *same* retained transaction and physical CAS/Stage pins
 			// still protect the canonical bytes and metadata. A timed-out,
 			// aborted or superseded operation cannot cross final SQL COMMIT.

@@ -38,7 +38,10 @@ func makeLocalPushBoundFirstLeafFixture(
 ) (localPushExistingCASTestFixture, []byte, meta.LocalPushOperationIntent) {
 	t.Helper()
 	f, key, operation := makeLocalPushFencedFirstLeafFixture(t)
-	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationStageBinding{}); err != nil {
+	if err := f.server.DB.AutoMigrate(
+		&meta.LocalPushOperationStageBinding{},
+		&meta.LocalPushFirstLeafOperationCommit{},
+	); err != nil {
 		t.Fatal(err)
 	}
 	bound, err := f.server.bindBoundLocalPushOperationStage(

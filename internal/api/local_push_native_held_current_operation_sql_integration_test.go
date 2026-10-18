@@ -34,6 +34,7 @@ func makeHeldNativeOperationFirstLeafFixture(
 		&meta.LocalPushOperationIntent{},
 		&meta.LocalPushOperationTerminalReceipt{},
 		&meta.LocalPushOperationStageBinding{},
+		&meta.LocalPushFirstLeafOperationCommit{},
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -158,6 +159,13 @@ func TestLocalPushRealHeldNativeOriginalAcrossBoundCASAndSQLCommit(t *testing.T)
 	if f.stagePUTs.Load() != 1 {
 		t.Fatalf("native original uploaded more than once: PUTs=%d", f.stagePUTs.Load())
 	}
+	var outcome meta.LocalPushFirstLeafOperationCommit
+	if err := f.server.DB.Where("operation_id = ?", op.ID).Take(&outcome).Error; err != nil ||
+		outcome.StageID != f.stage.StageID ||
+		outcome.NodeID != first.NodeID ||
+		outcome.SourceItemID != first.SourceItemID {
+		t.Fatalf("held original SQL COMMIT outcome missing: %+v %v", outcome, err)
+	}
 }
 
 func TestLocalPushHeldNativeOriginalRevocationBeforeSQLCommitDenies(t *testing.T) {
@@ -202,6 +210,11 @@ func TestLocalPushHeldNativeOriginalRevocationBeforeSQLCommitDenies(t *testing.T
 	if err := f.server.DB.Model(&meta.ContentBlob{}).
 		Count(&blobs).Error; err != nil || blobs != 0 {
 		t.Fatalf("revoked writer retained canonical CAS metadata: %d %v", blobs, err)
+	}
+	var outcomes int64
+	if err := f.server.DB.Model(&meta.LocalPushFirstLeafOperationCommit{}).
+		Count(&outcomes).Error; err != nil || outcomes != 0 {
+		t.Fatalf("revoked writer fabricated SQL commit receipt: %d %v", outcomes, err)
 	}
 }
 
@@ -255,6 +268,14 @@ func TestLocalPushHeldNativePostcommitMutationIsAmbiguousNotRollback(t *testing.
 		Take(&blob).Error; err != nil || blob.RefCount != 1 ||
 		blob.State != meta.ContentBlobStateReady {
 		t.Fatalf("physical CAS receipt was silently rolled back: %+v %v", blob, err)
+	}
+	var outcome meta.LocalPushFirstLeafOperationCommit
+	if err := f.server.DB.Where("operation_id = ?", op.ID).
+		Take(&outcome).Error; err != nil ||
+		outcome.StageID != f.stage.StageID ||
+		outcome.NodeID != committed.NodeID ||
+		outcome.SourceItemID != committed.SourceItemID {
+		t.Fatalf("postcommit native drift erased durable SQL evidence: %+v %v", outcome, err)
 	}
 	var runs int64
 	if err := f.server.DB.Model(&meta.SyncRun{}).

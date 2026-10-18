@@ -11,6 +11,8 @@ test('private operation Stage binding is not a backup writer or remote control s
   const schema = read('internal/meta/local_push_operation_stage_binding.go')
   const physicalWriter = read('internal/api/local_push_first_file_commit.go')
   const admission = read('internal/api/local_push_stage_operation_writer_admission.go')
+  const sqlOutcome = read('internal/api/local_push_first_leaf_operation_sql_commit.go')
+  const commitSchema = read('internal/meta/local_push_first_leaf_operation_commit.go')
   assert.match(binder, /bindBoundLocalPushOperationStage\(/)
   assert.match(binder, /validateCurrentLocalPushWriterFenceTx\(/)
   assert.match(binder, /loadLocalPushStageTx\(/)
@@ -18,6 +20,10 @@ test('private operation Stage binding is not a backup writer or remote control s
   assert.match(schema, /json:"-"/)
   assert.match(physicalWriter, /requireLocalPushStageOperationBindingTx\(/)
   assert.match(admission, /sameLocalPushStageOperationIdentity\(/)
+  assert.match(physicalWriter, /persistLocalPushFirstLeafOperationCommitTx\(/)
+  assert.match(sqlOutcome, /sameLocalPushFirstLeafOperationCommit\(/)
+  assert.match(commitSchema, /json:"-"/)
+  assert.doesNotMatch(sqlOutcome, /BeginSourceRun|SourceItemStateSynced|MirrorDelete|secretstore\.Delete|\.Router\(/)
   assert.doesNotMatch(admission, /BeginSourceRun|SourceItemStateSynced|MirrorDelete|secretstore\.Delete|\.Router\(/)
   assert.doesNotMatch(binder, /BeginSourceRun|SourceItemStateSynced|FileVersion\{|MirrorDelete|Retire|secretstore\.Delete|ContentBlob\{|\.Router\(/)
   for (const name of [
@@ -29,7 +35,7 @@ test('private operation Stage binding is not a backup writer or remote control s
     'web/src/App.tsx',
     'ui/shared/src/mui/DeviceBackupPage.tsx',
   ]) {
-    assert.doesNotMatch(read(name), /bindBoundLocalPushOperationStage|requireLocalPushStageOperationBindingTx|LocalPushOperationStageBinding/,
+    assert.doesNotMatch(read(name), /bindBoundLocalPushOperationStage|requireLocalPushStageOperationBindingTx|LocalPushOperationStageBinding|LocalPushFirstLeafOperationCommit|persistLocalPushFirstLeafOperationCommitTx/,
       name + ' must not expose private operation-to-stage correlation')
   }
 })

@@ -23,7 +23,7 @@ func TestLocalPushNativeOriginalToCurrentOperationPinnedCASAndSQL(t *testing.T) 
 		t.Fatalf("native-to-Stage precommit failed: %+v %v", original, err)
 	}
 	f.prepareAndReserve(t)
-	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}); err != nil {
+	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}, &meta.LocalPushFirstLeafOperationCommit{}); err != nil {
 		t.Fatal(err)
 	}
 	originalKey := bytes.Repeat([]byte{0x5a}, localPushOperationRequestKeySize)
@@ -104,7 +104,7 @@ func TestLocalPushNativeOriginalToCASRejectsAbortedCurrentOperation(t *testing.T
 		t.Fatalf("native original fixture not verified: %+v %v", observed, err)
 	}
 	f.prepareAndReserve(t)
-	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}); err != nil {
+	if err := f.server.DB.AutoMigrate(&meta.LocalPushOperationIntent{}, &meta.LocalPushOperationTerminalReceipt{}, &meta.LocalPushOperationStageBinding{}, &meta.LocalPushFirstLeafOperationCommit{}); err != nil {
 		t.Fatal(err)
 	}
 	key := bytes.Repeat([]byte{0x3a}, localPushOperationRequestKeySize)
