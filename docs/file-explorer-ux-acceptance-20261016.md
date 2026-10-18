@@ -1,5 +1,18 @@
 # xDrive Files UX acceptance audit · 2026-10-16
 
+## 2026-10-18 · 43 项续查、实际合并与自动化证据边界
+
+**本节是最新的只读复核，不是新一轮设备/大文件测试，也不是代码修复。** 历史阶段的“候选/待合入”仅保留当时事实；本节后的 2026-10-17 表仍按其原始日期理解。冻结源为 `master@04303869ebbe899111aed165e06cd8a040b65bdd`（[#2003](https://github.com/lazyxu/xdrive/pull/2003) P56 已实际 Rebase 合入；GitHub [完整 76-job CI #39084053558](https://github.com/lazyxu/xdrive/actions/runs/39084053558)：25 success / 51 条件跳过 / 0 failure，包含 Web、Desktop、Go、Rootless、single-commit、Final Gate）。该流水线不意味着专项真实 100k 或 OS 安装测试执行，不能把条件跳过当 PASS。
+
+- **已再次核对真实合并状态与源码契约**：F02 [#1766](https://github.com/lazyxu/xdrive/pull/1766) 已 merged，当前 `FileExplorerVirtualSurface.ts` 的 `xDriveFileExplorerAriaTableRowCount`、逻辑项/组 `aria-rowindex` 与 `FileExplorer.tsx` 的 `aria-rowcount/colcount` 接线、`file-explorer-virtual-aria.cjs` 原有回归均存在。F03 [#1769](https://github.com/lazyxu/xdrive/pull/1769)、[#1784](https://github.com/lazyxu/xdrive/pull/1784)、[#1969](https://github.com/lazyxu/xdrive/pull/1969) 均 merged；当前共享 `FileExplorerMenuReasons.ts` 用权威 `disabledReason`，宽屏菜单与 Mobile 长按均有原因文字/无障碍标签，旧 Agent/操作 busy 有独立说明。F04 #1769 已 merged，`FileExplorer.tsx` 及 `FileExplorerPaneKeyboardResize.ts` 保留放大的不可见 pointer 命中区、键盘调整及原视觉分隔条；既有 `file-explorer-splitter-hitbox.cjs` 测试仍在。**这三项无需重复写一套新组件。**
+- **逐项 P1 合并核对**：U01 #1789/#1876/#1973、U02 #1791/#1819/#1827、U03 #1784、U04 #1869/#1880、U05 #1802、U06 #1811、U08 #1803/#1949，均经 GitHub 状态证实 merged；M02 #1864、M03 #1838、M04 #1864/#1953、D01 #1969 均 merged。M07 原 #1808 之后，[#1988](https://github.com/lazyxu/xdrive/pull/1988) 又已合入全局 Search 返回 Recent/Favorites；[#1996](https://github.com/lazyxu/xdrive/pull/1996) 已合入空请求假进度消除；P56 #2003 合入全局搜索瞬态计数防跳变。这些更新晚于上一个快照，不能反复当作未修复的代码问题。
+- **逐项 P2 合并核对**：U09 #1944/#1950、U10 #1777、U11 #1940、U12 #1953、U13 #1863、M08 #1965 均 merged。U07/U14、M01/M05/M06/M09/M10、D02–D07、P01–P09 的原有实现/自动化边界仍按下表，未凭静态检查升级为真实系统验收通过。部分 P1 真实场景（如 899↔900 连软键盘、403/409 后的实机焦点、跨账号实际 SW CacheStorage）和所有要求物理硬件的检查仍缺独立证据。
+- **PR 与分支整理**：本次 GitHub open-PR 查询发现 10 个开放 PR，分别属于 Gallery/性能/Public Share/系统依赖/LocalPush/Race 等**独立**专题，未发现直接相关开放 Files UX PR；检索 `file-explorer`、`mobile-files`、`files`、`fileexplorer` 命名分支均无匹配。已合入 Files PR 均为 GitHub `closed+merged`。不关闭、不删除、不修改独立专题或其分支；没有依据删除任何现有分支。
+- **仍待独立验收（不是无证据的“修复完成”）**：F02 NVDA/VoiceOver/TalkBack 真读屏；F03 权限/大选择/禁用焦点实机；F04 高 DPI 鼠标与焦点；U01–U06 慢网/403/409/取消/返回/软键盘；M01–M10 iOS 27 1:1、Safari 地址栏/系统返回/横屏 200%/真实 Touch/分享；D01–D07 Windows CfAPI、旧 Agent、系统 Shell、真 DPI/拖放/会话重连；P01–P09 iOS/Android 系统安装、1–4GiB 系统落盘 SHA-256、后台回收、真实 SW 缓存隔离。具体单项待办仍以紧随其后的完整 43 项表为准。
+- **唯一物理发布结论**：[`docs/pwa-s5-acceptance.md`](pwa-s5-acceptance.md) 的七平台实际设备矩阵仍全部 `NOT RUN`、Release `NO-GO`。Linux Chromium、Node/Go 单测、模拟 UA 或 GitHub 完整常规 CI 不得冒充真实安装/屏幕录制/读屏/操作系统文件保存。此轮仅更新验收账本，不变更 52px 全屏 App Frame、900px 分界、Server 权限/排序/Range、Web/Mobile/PWA 共用模型、Desktop Agent 或 SW 安全策略。
+
+---
+
 ## 最新验收核查快照：2026-10-17（43 项）
 
 **核查边界**：本快照是合并状态、已有自动化与源码契约的复核，不是本轮重新执行所有测试。已合入不等于实机或发布验收通过。下方历史候选/待合入表述以原日期为准，不再代表最新状态。
