@@ -16,9 +16,15 @@ test('Home Recent/Favorites never advertise a false zero before an authorized fi
   assert.ok(home.includes('data-xdrive-home-list-first-read'))
   assert.ok(home.includes('available && verified && items.length > 0'))
   assert.ok(home.includes('!verified ? ('))
-  assert.ok(home.includes('useXDriveDeferredLoading(recentLoading, listReadEpoch)'))
-  assert.ok(home.includes('useXDriveDeferredLoading(favoritesLoading, listReadEpoch)'))
+  assert.equal(home.includes('useXDriveDeferredLoading'), false,
+    'Home first-read indexes never create a 300ms presentation timer')
+  assert.equal(home.includes('正在读取列表…'), false,
+    'a cold Home must remain visually silent even during slow GET')
+  assert.ok(home.includes('aria-busy={!error || undefined}'))
+  assert.ok(home.includes('data-xdrive-home-list-verified-empty'))
   assert.ok(home.includes('minHeight: 160'))
+  assert.ok(home.includes('minHeight: 96, display: \'grid\', placeItems: \'center\''))
+  assert.equal(home.includes('<XDriveStatePanel'), false)
   assert.ok(!web.includes('setRecentItems([])'))
 })
 

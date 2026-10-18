@@ -23,8 +23,6 @@ import {
 import { XDriveMetricCard, XDriveMetricGrid } from './MetricCards'
 import { XDriveSectionHeader } from './SectionHeader'
 import { XDriveStatusAlert } from './StatusAlert'
-import { XDriveStatePanel } from './StatePanel'
-import { useXDriveDeferredLoading } from './useDeferredLoading'
 import type { XDriveStatusTone } from './StatusBadge'
 import { XDriveWorkspaceSurface } from './WorkspaceSurface'
 
@@ -67,9 +65,6 @@ export function XDriveHomePage({
   favoritesAvailable = true,
   recentVerified = true,
   favoritesVerified = true,
-  recentLoading = false,
-  favoritesLoading = false,
-  listReadEpoch = 0,
   recentError,
   favoritesError,
   loadThumbnail,
@@ -113,8 +108,6 @@ export function XDriveHomePage({
   onOpenTransfers: () => void
   onOpenConflicts?: () => void
 }) {
-  const showRecentLoading = useXDriveDeferredLoading(recentLoading, listReadEpoch)
-  const showFavoritesLoading = useXDriveDeferredLoading(favoritesLoading, listReadEpoch)
   const cloudUsage = !quota
     ? '—'
     : quota.quotaBytes > 0
@@ -140,7 +133,6 @@ export function XDriveHomePage({
     verified: boolean,
     items: readonly XDriveHomeListItem[],
     empty: string,
-    showLoading: boolean,
     error?: string,
   ) => (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, minWidth: 0, minHeight: 160 }}>
@@ -172,19 +164,21 @@ export function XDriveHomePage({
             此列表在当前客户端暂不可用。
           </Typography>
         ) : !verified ? (
-          <Box data-xdrive-home-list-first-read sx={{
-            minHeight: 96, display: 'grid', placeItems: 'center',
-          }}>
+          // First unrequested/slow index GET owns the same quiet 96px area
+          // until an authenticated result or real failure. No timer-driven
+          // intermediate spinner may alter the Home list presentation.
+          <Box data-xdrive-home-list-first-read
+            aria-busy={!error || undefined}
+            sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
             {error ? (
               <Typography variant="body2" color="text.secondary">{error}</Typography>
-            ) : showLoading ? (
-              <XDriveStatePanel variant="plain" loading message="正在读取列表…" />
             ) : null}
           </Box>
         ) : (
-          <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
-            {empty}
-          </Typography>
+          <Box data-xdrive-home-list-verified-empty
+            sx={{ minHeight: 96, display: 'grid', placeItems: 'center' }}>
+            <Typography variant="body2" color="text.secondary">{empty}</Typography>
+          </Box>
         )}
       </Stack>
     </Paper>
@@ -294,9 +288,9 @@ export function XDriveHomePage({
             }}
           >
             {itemSection('最近使用', recentAvailable, recentVerified, recentItems,
-              '暂无最近访问文件。', showRecentLoading, recentError)}
+              '暂无最近访问文件。', recentError)}
             {itemSection('收藏', favoritesAvailable, favoritesVerified, favoriteItems,
-              '暂无收藏文件。', showFavoritesLoading, favoritesError)}
+              '暂无收藏文件。', favoritesError)}
           </Box>
         </Stack>
       </XDriveWorkspaceSurface>
