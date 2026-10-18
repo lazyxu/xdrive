@@ -49,6 +49,16 @@ func TestMigratePrivateLocalPushOperationIntentsRemainEmpty(t *testing.T) {
 			!db.Migrator().HasIndex(&meta.LocalPushOperationTerminalReceipt{}, "idx_xd_local_push_terminal_generation") {
 			t.Fatal("private immutable operation terminal receipt schema missing")
 		}
+		if !db.Migrator().HasTable(&meta.LocalPushOperationStageBinding{}) ||
+			!db.Migrator().HasIndex(&meta.LocalPushOperationStageBinding{}, "idx_xd_local_push_stage_generation") ||
+			!db.Migrator().HasIndex(&meta.LocalPushOperationStageBinding{}, "idx_xd_local_push_stage_operation") {
+			t.Fatal("private Stage/Operation immutable indexes missing")
+		}
+		var stageBindingCount int64
+		if err := db.Model(&meta.LocalPushOperationStageBinding{}).
+			Count(&stageBindingCount).Error; err != nil || stageBindingCount != 0 {
+			t.Fatalf("migration created unauthorized Stage binding: %d %v", stageBindingCount, err)
+		}
 		var terminalCount int64
 		if err := db.Model(&meta.LocalPushOperationTerminalReceipt{}).Count(&terminalCount).Error; err != nil || terminalCount != 0 {
 			t.Fatalf("migration invented terminal backup evidence: count=%d err=%v", terminalCount, err)
