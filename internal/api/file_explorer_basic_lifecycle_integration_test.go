@@ -255,6 +255,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertBasicQueuedFileOperation(t, cli, cancelProbe)
+	assertBasicU04DurableTaskReceipt(t, httpServer.URL, token, otherToken, cancelProbe.ID, meta.FileOperationStatusQueued)
 	request(
 		t, router, http.MethodGet,
 		"/api/v1/file-operations/"+cancelProbe.ID,
@@ -269,6 +270,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertBasicU04DurableTaskReceipt(t, httpServer.URL, token, otherToken, cancelProbe.ID, meta.FileOperationStatusCancelled)
 	if cancelledProbe.Status != meta.FileOperationStatusCancelled ||
 		cancelledProbe.ProcessedItems != 0 || cancelledProbe.ProcessedBytes != 0 ||
 		cancelledProbe.Percent != 0 || cancelledProbe.FinishedAt == nil {
@@ -303,6 +305,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		t.Fatalf("accepted copy changed target before worker execution: %+v", page)
 	}
 	processBasicFileOperation(t, srv, cli, copyOperation.ID)
+	assertBasicU04DurableTaskReceipt(t, httpServer.URL, token, otherToken, copyOperation.ID, meta.FileOperationStatusCompleted)
 
 	movedOperation, err := cli.CreateFileOperation(
 		ctx,
@@ -318,6 +321,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		t.Fatalf("accepted move removed source before worker execution: %+v", beforeMove)
 	}
 	processBasicFileOperation(t, srv, cli, movedOperation.ID)
+	assertBasicU04DurableTaskReceipt(t, httpServer.URL, token, otherToken, movedOperation.ID, meta.FileOperationStatusCompleted)
 
 	targetRange := basicFileExplorerRange(t, cli, target.ID)
 	if targetRange.TotalCount != 2 {
@@ -363,6 +367,7 @@ func TestFileExplorerBasicLifecycleAcrossClientAndServer(t *testing.T) {
 		t.Fatalf("accepted delete removed source before worker execution: %+v", beforeDelete)
 	}
 	processBasicFileOperation(t, srv, cli, deleteOperation.ID)
+	assertBasicU04DurableTaskReceipt(t, httpServer.URL, token, otherToken, deleteOperation.ID, meta.FileOperationStatusCompleted)
 
 	deleteChanges, err := observer.NodeChanges(ctx, cursor, 1000)
 	if err != nil {
@@ -872,6 +877,75 @@ func processBasicFileOperation(
 		t.Fatalf("file operation did not complete cleanly: %+v", current)
 	}
 	return current
+}
+
+// assertBasicU04DurableTaskReceipt opens a NEW authenticated Client against
+// the same real Gin/PostgreSQL store after task status transitions.
+// A persisted Task Center receipt is independent of a one-off UI toast.
+func assertBasicU04DurableTaskReceipt(
+	t *testing.T,
+	baseURL, ownerToken, foreignToken, operationID, expectedStatus string,
+) {
+	t.Helper()
+	ctx := context.Background()
+	reconnected := clientpkg.New(baseURL, ownerToken)
+	got, err := reconnected.GetFileOperation(ctx, operationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != operationID || got.Status != expectedStatus ||
+		got.TotalItems != 1 || got.Type == "" {
+		t.Fatalf("U04 reconnected GET: %+v want=%s %s", got, operationID, expectedStatus)
+	}
+	switch expectedStatus {
+	case meta.FileOperationStatusQueued:
+		if got.StartedAt != nil || got.FinishedAt != nil ||
+			got.ProcessedItems != 0 || got.ProcessedBytes != 0 || got.Percent != 0 {
+			t.Fatalf("U04 queued receipt falsely implied completion: %+v", got)
+		}
+	case meta.FileOperationStatusCancelled:
+		if got.FinishedAt == nil || got.ProcessedItems != 0 ||
+			got.ProcessedBytes != 0 || got.Percent != 0 {
+			t.Fatalf("U04 cancelled receipt falsely implied committed bytes: %+v", got)
+		}
+	case meta.FileOperationStatusCompleted:
+		if got.FinishedAt == nil || got.ProcessedItems != got.TotalItems ||
+			got.ProcessedBytes != got.TotalBytes || got.Percent != 100 {
+			t.Fatalf("U04 completed receipt lacks actual Worker commit: %+v", got)
+		}
+	default:
+		t.Fatalf("unsupported U04 receipt status: %q", expectedStatus)
+	}
+	rows, err := reconnected.ListFileOperations(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range rows {
+		if row.ID != operationID {
+			continue
+		}
+		if found || row.Status != got.Status || row.Type != got.Type ||
+			row.TotalItems != got.TotalItems || row.ProcessedItems != got.ProcessedItems ||
+			row.TotalBytes != got.TotalBytes || row.ProcessedBytes != got.ProcessedBytes ||
+			row.Percent != got.Percent || (row.FinishedAt == nil) != (got.FinishedAt == nil) {
+			t.Fatalf("U04 Task Center list disagrees with GET: get=%+v list=%+v", got, row)
+		}
+		found = true
+	}
+	if !found {
+		t.Fatalf("U04 operation missing after re-entry: %s", operationID)
+	}
+	foreign := clientpkg.New(baseURL, foreignToken)
+	foreignRows, err := foreign.ListFileOperations(ctx, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range foreignRows {
+		if row.ID == operationID {
+			t.Fatalf("U04 Owner boundary leaked task after re-entry: %s", operationID)
+		}
+	}
 }
 
 // assertBasicQueuedFileOperation uses the actual Client->Gin->PostgreSQL
