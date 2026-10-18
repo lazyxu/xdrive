@@ -107,3 +107,33 @@ test('F03/D01 Desktop native Open With and CfAPI commands explain only temporary
   assert.doesNotMatch(menu, /fetch\s*\(|api\/v1|canModify|guessPermission|role.*administrator/i,
     'busy presentation does not guess Server ACLs or add a transport')
 })
+
+test('F03 wide command overflow shows disabled reasons, permits keyboard inspection and preserves operations', () => {
+  const s = read('ui/shared/src/mui/FileExplorer.tsx')
+  const begin = s.indexOf('anchorEl={commandBarOverflowAnchor}')
+  const end = s.indexOf('</Menu>', begin)
+  assert.ok(begin > 0 && end > begin)
+  const overflow = s.slice(begin, end)
+  assert.ok(overflow.includes('slotProps={{ list: { disabledItemsFocusable: true } }}'))
+  const expected = [
+    ['undo', '!canUndo', '撤销', 'onUndo'],
+    ['redo', '!canRedo', '重做', 'onRedo'],
+    ['paste', '!canPaste', '粘贴', '() => onPaste()'],
+    ['refresh', 'loading', '刷新', 'onRefresh'],
+  ]
+  for (const [kind, predicate, label, callback] of expected) {
+    assert.ok(overflow.includes('disabled={' + predicate + '}'), kind + ': original predicate')
+    assert.ok(overflow.includes('title={commandBarOverflowDisabledReasons.' + kind + ' ?? undefined}'), kind + ': visible hint')
+    assert.ok(overflow.includes('aria-label={commandBarOverflowDisabledReasons.' + kind + ' ?'), kind + ': reader hint')
+    assert.ok(overflow.includes('primary="' + label + '"'), kind + ': original label')
+    assert.ok(overflow.includes('disabledReason: commandBarOverflowDisabledReasons.' + kind + ' ?? undefined'), kind + ': visible secondary text')
+    assert.ok(overflow.includes('runCommandBarOverflowAction(' + callback + ')'), kind + ': original operation owner')
+  }
+  assert.ok(s.includes('当前没有可用的撤销操作'))
+  assert.ok(s.includes('当前没有可用的重做操作'))
+  assert.ok(s.includes('当前目录暂不能粘贴'))
+  assert.ok(s.includes('列表正在读取，暂不能刷新'))
+  assert.equal(caption({ disabled: false, disabledReason: '旧错误' }), null)
+  assert.equal(caption({ disabled: true, disabledReason: '权限不足' }), '不可用：权限不足')
+  assert.doesNotMatch(overflow, /fetch\s*\(|api\/v1|localStorage|guessPermission|isAdmin/)
+})

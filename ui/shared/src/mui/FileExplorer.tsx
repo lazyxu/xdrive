@@ -1120,6 +1120,13 @@ export function XDriveFileExplorer({
   } | null>(null)
   const compactViewport = useMediaQuery('(max-width:899.95px)')
   const compactTouch = useMediaQuery('(max-width:899.95px) and (pointer: coarse)')
+  // Presentation-only explanations: the original caller booleans remain authoritative.
+  const commandBarOverflowDisabledReasons = {
+    undo: canUndo ? null : '当前没有可用的撤销操作',
+    redo: canRedo ? null : '当前没有可用的重做操作',
+    paste: canPaste ? null : '当前目录暂不能粘贴，请检查剪贴板与目标目录',
+    refresh: loading ? '列表正在读取，暂不能刷新' : null,
+  }
   const [touchSelectionMode, setTouchSelectionMode] = useState(false)
   const [selectionLoad, setSelectionLoad] = useState<FileExplorerSelectionLoad | null>(null)
   const selectionLoadRef = useRef<FileExplorerSelectionLoad | null>(null)
@@ -6148,6 +6155,7 @@ export function XDriveFileExplorer({
         anchorEl={commandBarOverflowAnchor}
         open={Boolean(commandBarOverflowAnchor)}
         onClose={() => setCommandBarOverflowAnchor(null)}
+        slotProps={{ list: { disabledItemsFocusable: true } }}
       >
         {(compactViewport || commandBarOverflowLevel >= 2) && onCreateFolder ? (
           <MenuItem onClick={() => runCommandBarOverflowAction(onCreateFolder)}>
@@ -6168,27 +6176,75 @@ export function XDriveFileExplorer({
           </MenuItem>
         ) : null}
         {(compactViewport || commandBarOverflowLevel >= 1) && onUndo ? (
-          <MenuItem disabled={!canUndo} onClick={() => runCommandBarOverflowAction(onUndo)}>
+          <MenuItem
+            disabled={!canUndo}
+            title={commandBarOverflowDisabledReasons.undo ?? undefined}
+            aria-label={commandBarOverflowDisabledReasons.undo ? '撤销：' + commandBarOverflowDisabledReasons.undo : '撤销'}
+            onClick={() => runCommandBarOverflowAction(onUndo)}
+          >
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><UndoRoundedIcon fontSize="small" /></Box>
-            撤销
+            <ListItemText
+              primary="撤销"
+              secondary={xDriveFileExplorerMenuReasonLabel({
+                disabled: !canUndo,
+                disabledReason: commandBarOverflowDisabledReasons.undo ?? undefined,
+              }) ?? undefined}
+              secondaryTypographyProps={{ sx: { overflowWrap: 'anywhere' } }}
+            />
           </MenuItem>
         ) : null}
         {(compactViewport || commandBarOverflowLevel >= 1) && onRedo ? (
-          <MenuItem disabled={!canRedo} onClick={() => runCommandBarOverflowAction(onRedo)}>
+          <MenuItem
+            disabled={!canRedo}
+            title={commandBarOverflowDisabledReasons.redo ?? undefined}
+            aria-label={commandBarOverflowDisabledReasons.redo ? '重做：' + commandBarOverflowDisabledReasons.redo : '重做'}
+            onClick={() => runCommandBarOverflowAction(onRedo)}
+          >
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><RedoRoundedIcon fontSize="small" /></Box>
-            重做
+            <ListItemText
+              primary="重做"
+              secondary={xDriveFileExplorerMenuReasonLabel({
+                disabled: !canRedo,
+                disabledReason: commandBarOverflowDisabledReasons.redo ?? undefined,
+              }) ?? undefined}
+              secondaryTypographyProps={{ sx: { overflowWrap: 'anywhere' } }}
+            />
           </MenuItem>
         ) : null}
         {compactViewport && onPaste ? (
-          <MenuItem disabled={!canPaste} onClick={() => runCommandBarOverflowAction(() => onPaste())}>
+          <MenuItem
+            disabled={!canPaste}
+            title={commandBarOverflowDisabledReasons.paste ?? undefined}
+            aria-label={commandBarOverflowDisabledReasons.paste ? '粘贴：' + commandBarOverflowDisabledReasons.paste : '粘贴'}
+            onClick={() => runCommandBarOverflowAction(() => onPaste())}
+          >
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><ContentPasteRoundedIcon fontSize="small" /></Box>
-            粘贴
+            <ListItemText
+              primary="粘贴"
+              secondary={xDriveFileExplorerMenuReasonLabel({
+                disabled: !canPaste,
+                disabledReason: commandBarOverflowDisabledReasons.paste ?? undefined,
+              }) ?? undefined}
+              secondaryTypographyProps={{ sx: { overflowWrap: 'anywhere' } }}
+            />
           </MenuItem>
         ) : null}
         {compactViewport && onRefresh ? (
-          <MenuItem disabled={loading} onClick={() => runCommandBarOverflowAction(onRefresh)}>
+          <MenuItem
+            disabled={loading}
+            title={commandBarOverflowDisabledReasons.refresh ?? undefined}
+            aria-label={commandBarOverflowDisabledReasons.refresh ? '刷新：' + commandBarOverflowDisabledReasons.refresh : '刷新'}
+            onClick={() => runCommandBarOverflowAction(onRefresh)}
+          >
             <Box sx={{ width: 24, mr: 1, display: 'flex' }}><RefreshRoundedIcon fontSize="small" /></Box>
-            刷新
+            <ListItemText
+              primary="刷新"
+              secondary={xDriveFileExplorerMenuReasonLabel({
+                disabled: loading,
+                disabledReason: commandBarOverflowDisabledReasons.refresh ?? undefined,
+              }) ?? undefined}
+              secondaryTypographyProps={{ sx: { overflowWrap: 'anywhere' } }}
+            />
           </MenuItem>
         ) : null}
         {!compactViewport && commandBarOverflowLevel >= 1 && navigationPane ? (
